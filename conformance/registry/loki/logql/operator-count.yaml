@@ -1,7 +1,7 @@
 id: operator-count
 kind: operator
 logql: "count"
-loki_constant: OpTypeCount
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

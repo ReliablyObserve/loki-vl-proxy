@@ -96,7 +96,7 @@ func TestPlanDelegatesVectorLiteralOperands(t *testing.T) {
 		rate + ` > bool vector(1)`:          "BinOp bool",
 		`vector(1) == bool vector(2)`:       "BinOp bool",
 		rate + ` + (vector(1) * 2)`:         "BinOp operand BinOp",
-		`vector(1) + vector(2) * vector(3)`: "BinOp operand BinOp",
+		`vector(1) + vector(2) * vector(3)`: "BinOp constant operands",
 		rate + ` + vector (1)`:              "BinOp operand spelling",
 		`vector (1) + ` + rate:              "BinOp operand spelling",
 		`vector(1) + vector(2)`:             "BinOp constant operands",

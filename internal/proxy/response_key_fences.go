@@ -86,6 +86,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	if streamLevel || levelChainReadIn(query) {
 		b.add(streamLevelSeriesResponseVersion)
 	}
+	b.add(emptyWithoutOperandResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceFence(r, query, other))
 	}

@@ -35,6 +35,18 @@ generators either. Loki is used only as a test comparison.
     reviewed exceptions for API names only (such as the template function
     names a query may call), never code. Its limits are never raised to make a
     pull request pass.
+- No generator, script or workflow reads Loki's source. The registry's Loki
+  surface comes from Loki's public documentation (the HTTP API reference and
+  the LogQL pages: `conformance/scripts/sync_loki.py`, `sync_ast.py`), Loki's
+  recorded answers and live probes, and is held to Loki by checks that ask Loki
+  itself: `TestLogQLSurfaceMatchesLokiParser` (every documented construct
+  parses with Loki's parser, daily in `query-corpus.yaml`) and
+  `sync_loki.py --record-live` (every route and method against the stack's
+  Loki, weekly in `parity-refresh.yaml`). The parity corpus takes its Loki queries
+  from the published query documentation, never from Loki's test files. The one
+  exception is inside the test-only oracle module and awaits the owner's
+  decision: the similarity scan above fingerprints Loki's `pkg/` to detect
+  copies. Add no other.
 
 ### Expected answers come from Loki, recorded (hard rule)
 
@@ -59,6 +71,14 @@ by default.
   `TestVectorFoldReferenceMatchesRecordedLoki`, `TestUnwrapWindowReferenceMatchesRecordedLoki`, ...).
 - Ingest-time values Loki adds (`service_name` from `app`, `detected_level` as structured metadata) are written
   into the recorded data explicitly, as Loki's documented ingest gives them.
+- Loki's ingest-time `detected_level` has no oracle (the engine has no ingest): its answers are recorded from a real
+  Loki by pushing each row of `internal/proxy/testdata/detected_level_golden.json` as its own stream
+  (`TestCompat_DetectedLevelGoldenMatchesLoki`, test/e2e-compat). The rows are our own generated inputs. Record
+  them again on every Loki pin bump and whenever rows are added, on a fresh stack:
+  `LVP_RECORD_DETECTED_LEVEL_GOLDEN=1 go test -tags e2e -count=1 -run '^TestCompat_DetectedLevelGoldenMatchesLoki$' ./test/e2e-compat/`
+  (it rewrites the table and its evidence file, `detected_level_golden_loki.json`). Without the variable it checks
+  about 200 rows (every category) against the stack's Loki, about 200 streams per run;
+  `LVP_DETECTED_LEVEL_GOLDEN_FULL=1` checks every row.
 
 ## Loki difference registry and query matrix
 
@@ -420,7 +440,11 @@ A construct moves from the string translator to the typed plan (`internal/queryp
 
 - The plan must write the translator's text byte for byte, not an equal parsed query: the text is the cache key and the
   request VictoriaLogs sees. `TestPlanShadow` and the generated grids assert it for every native row under the 12
-  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`.
+  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`. Where the translator is
+  wrong against Loki, the plan writes Loki's reading as a recorded known divergence; once the proxy serves such a row
+  (`proxy.PlanServedText` answers it), the shadow holds it to that text and counts it `native_loki_held`, which needs
+  the case's Loki differential in `servedDivergences`. Corpus queries the request validation rejects are `rejected`,
+  never rows.
 - Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
   plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. A log
   query with more than line and label filters moves by stage family (`proxy.QueryPlanFlippedLogStages`): it goes

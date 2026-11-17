@@ -212,3 +212,33 @@ func TestPatternStateKeysKeepTenantsApart(t *testing.T) {
 		t.Fatal("two tenants share a pattern state key")
 	}
 }
+
+// A peer that forwards a selector to its owner keeps no empty answer: the owner may answer empty only because the
+// lines have not reached VictoriaLogs yet (a range ending after now is counted on every request, never held in a
+// state), so the next request asks the owner again, which counts again, and the patterns appear with the lines.
+// Before, the forwarding peer cached the owner's empty answer as read and served it for the cache's retention
+// (seen in the stack when the pattern-state key's owner moved to another peer).
+//
+// conformance: peer-cache-patterns, loki_api_v1_patterns
+func TestPatternsForwardedEmptyAnswerIsAskedAgain(t *testing.T) {
+	vl := &fakeStateVL{}
+	now := stateNow
+	sp := newStatePeers(t, vl, &now, 3)
+	start, end := now.Add(-time.Hour), now.Add(time.Hour) // a range ending after now, as Grafana and the e2e ask
+	for i := range sp.proxies {
+		if got := sp.patternsVia(t, i, "0", `{app="late"}`, start, end); got != "[]" {
+			t.Fatalf("peer %d answers %s before any line", i, got)
+		}
+	}
+	countsBefore := vl.counts
+	vl.add(stateLines("late/a", "info", "order %d shipped to berlin", now.Add(-5*time.Minute), 60)...)
+	for i := range sp.proxies {
+		got := sp.patternsVia(t, i, "0", `{app="late"}`, start, end)
+		if !strings.Contains(got, "shipped to berlin") {
+			t.Fatalf("peer %d still answers %s once the lines arrived: an empty answer was kept", i, got)
+		}
+	}
+	if vl.counts == countsBefore {
+		t.Fatal("no request counted the lines again once they arrived")
+	}
+}

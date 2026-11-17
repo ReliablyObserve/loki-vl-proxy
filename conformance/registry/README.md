@@ -101,7 +101,7 @@ for normal pinned Grafana Explore, Logs Drilldown or peer cache lookup.
 ## Refreshing the generated data
 
 ```bash
-python3 conformance/scripts/sync_loki.py --version v3.7.7   # Loki API surface, from the Loki source
+python3 conformance/scripts/sync_loki.py --version v3.7.7   # Loki API surface: the published HTTP API reference, recorded answers, live probes
 python3 conformance/scripts/sync_proxy.py --endpoints conformance/registry/generated/loki/v3.7.7/endpoints.json
 python3 conformance/scripts/sync_impl.py --coverage conformance/registry/generated/proxy/coverage.json
 python3 conformance/scripts/sync_vl.py                      # VictoriaLogs surface the proxy uses

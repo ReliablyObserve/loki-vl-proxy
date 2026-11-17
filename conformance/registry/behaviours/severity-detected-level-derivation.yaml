@@ -3,13 +3,18 @@ kind: severity
 title: detected_level is derived on the read path
 
 loki: |
-  Loki sets detected_level at ingest when
-  discover_log_levels is on: it takes the level from structured metadata
-  (level, LEVEL, Level, severity, SEVERITY, Severity, levelname, severity_text),
-  then from the log line (JSON key or logfmt key, first match), then from
-  keyword scanning, and normalises it (err/error -> error, warn/warning -> warn,
-  inf/info -> info, dbg/debug -> debug, trace/trc, critical, fatal). A line with
-  no signal gets detected_level="unknown". The value is structured metadata, so
+  Loki sets detected_level at ingest when discover_log_levels is on (recorded
+  answers, severity/recorded-level-table): a pushed detected_level, else the
+  stream's first label of log_level_fields (level, LEVEL, Level, log.level,
+  severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text,
+  Severity_Text, SEVERITY_TEXT), else the first such structured metadata
+  field (log.level is stored as log_level and not read), else
+  severity_number by the OTel ranges, else the log line (JSON key or logfmt
+  key, a known spelling only), else a keyword scan. Known spellings are
+  normalised (err/error -> error, warn/warning/wrn -> warn,
+  inf/info/information -> info, dbg/debug -> debug, trc/trace -> trace,
+  critical, fatal); any other stored value is kept as it is. A line with no
+  signal gets detected_level="unknown". The value is structured metadata, so
   it appears on every stream response, in detected_fields, and as a grouping
   dimension.
 
@@ -45,6 +50,8 @@ cases:
   - severity/keyword-scan-fallback
   - severity/detected-level-filter-json-level
   - severity/otlp-severity-before-vl-1.50
+  - severity/recorded-level-table
+  - severity/stored-log-dot-level-in-metric-chain
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

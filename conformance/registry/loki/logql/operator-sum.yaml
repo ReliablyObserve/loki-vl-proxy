@@ -1,7 +1,7 @@
 id: operator-sum
 kind: operator
 logql: "sum"
-loki_constant: OpTypeSum
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

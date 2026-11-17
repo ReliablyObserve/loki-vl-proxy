@@ -108,6 +108,10 @@ func TestProxyLifecycle_ShutdownStopsPeerPushReplay(t *testing.T) {
 	if took := time.Since(started); took > 3*time.Second {
 		t.Errorf("shutdown took %s with a push waiting on a hung peer (peer timeout 30s)", took)
 	}
+	// The peer cache closes its own connections on Close; an idle connection
+	// a test client of the shared default transport left behind is not this
+	// test's (race-stress runs every test in one process).
+	http.DefaultTransport.(*http.Transport).CloseIdleConnections()
 	if report := settleGoroutines(baseline, before); report != "" {
 		t.Fatalf("peer push replay outlived Shutdown: %s", report)
 	}

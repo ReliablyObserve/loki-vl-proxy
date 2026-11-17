@@ -166,7 +166,7 @@ def main():
         "# Coverage Map", "",
         ("Generated from the conformance registry by "
          + "`conformance/scripts/coverage_map.py`. Do not edit by hand."), "",
-        f"Loki surface: **{loki_version}**, extracted from the Loki source.", "",
+        f"Loki surface: **{loki_version}**, from Loki's published HTTP API reference, its recorded answers and a live probe (no Loki source is read).", "",
         SCOPE_SENTENCE, "",
         "## Read API scores", "",
         "| Score | Value | Meaning |", "|---|---|---|",

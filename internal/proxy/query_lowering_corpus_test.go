@@ -163,6 +163,12 @@ func FuzzMetricFlipGate(f *testing.F) {
 		"count_over_time({A=\"0\"} | logfmt\r\na [5m])", "count_over_time({A=\"0\"} | regexp\n`(?P<a>x)` [5m])",
 		"count_over_time({A=\"0\"} | pattern\r\"<a> x\" [5m])", "sum(count_over_time({A=\"0\"} | json | label_format\ta=b [5m]))",
 		"max_over_time({A=\"0\"}| unwrap\rA[0])", "sum_over_time({A=\"0\"} | json |\tunwrap\nduration(a) [5m])",
+		// A bool modifier, a set operator and a chain, which the plan holds to the binary route, with a keep before an
+		// unwrap in an operand.
+		`sum by (app) (rate({app="a"}[5m])) > bool 1`, `sum(rate({app="a"}[5m])) and sum(rate({app="b"}[5m]))`,
+		`sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m])) * 100`,
+		`sum by (x) (sum_over_time({a="b"} | json | keep x | unwrap n [5m])) > bool 1`,
+		`sum by (x) (sum_over_time({a="b"} | json | keep x | unwrap n [5m])) unless on (x) sum by (x) (rate({a="c"}[5m]))`,
 	} {
 		f.Add(q)
 	}

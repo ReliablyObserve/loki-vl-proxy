@@ -5,7 +5,6 @@
 // internal/querycorpus TestProductModuleHasNoOracleDependency holds. The proxy's LogQL code is written without
 // Loki's: the similar command measures how much of it matches Loki's LogQL sources.
 //
-//	go run . cases -src "$(go list -m -f '{{.Dir}}' github.com/grafana/loki/v3)" -out cases.json
 //	go run . check -in inputs.jsonl -out verdicts.jsonl
 //	go run . similar -src "$(go list -m -f '{{.Dir}}' github.com/grafana/loki/v3)" -ours ../../internal/logql -out similar.json
 //	go run . facts -in queries.jsonl -out facts.jsonl
@@ -13,7 +12,7 @@
 //	go run . pipeline -in queries.jsonl -out verdicts.jsonl
 //	go run . process -in lines.jsonl -out verdicts.jsonl
 //
-// cases writes the queries of Loki's syntax tests (pkg/logql/syntax/*_test.go); check parses every input with
+// check parses every input with
 // Loki, builds its pipelines, and writes whether Loki accepts it, its error text and whether the proxy's printed form means the same
 // to Loki; similar compares the proxy's Go files with every Go file under Loki's pkg/, tests included, by token
 // fingerprints and writes the share of each proxy file that matches; facts writes what Loki's tree says about each
@@ -27,8 +26,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"go/ast"
-	"go/parser"
 	"go/scanner"
 	"go/token"
 	"hash/fnv"
@@ -36,7 +33,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -68,18 +64,16 @@ type Verdict struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: loki cases -src DIR -out FILE | loki check -in FILE -out FILE | loki similar -src DIR -ours DIR -out FILE | loki facts -in FILE -out FILE | loki ipfilter -in FILE -out FILE | loki pipeline -in FILE -out FILE | loki process -in FILE -out FILE"))
+		fail(fmt.Errorf("usage: loki check -in FILE -out FILE | loki similar -src DIR -ours DIR -out FILE | loki facts -in FILE -out FILE | loki ipfilter -in FILE -out FILE | loki pipeline -in FILE -out FILE | loki process -in FILE -out FILE"))
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
-	src := fs.String("src", "", "the Loki module directory (cases, similar)")
+	src := fs.String("src", "", "the Loki module directory (similar)")
 	in := fs.String("in", "", "inputs, one JSON object per line (check, facts, ipfilter, pipeline, process)")
 	ours := fs.String("ours", "", "comma-separated directories of the proxy's Go files (similar)")
 	out := fs.String("out", "", "output file")
 	_ = fs.Parse(os.Args[2:])
 	var err error
 	switch os.Args[1] {
-	case "cases":
-		err = writeCases(*src, *out)
 	case "check":
 		err = check(*in, *out)
 	case "similar":
@@ -117,73 +111,6 @@ func parse(q string) (canonical string, err error) {
 		return "", err
 	}
 	return expr.String(), nil
-}
-
-// caseKeys are the struct fields Loki's syntax tests hold their query in.
-var caseKeys = map[string]bool{"in": true, "input": true, "query": true, "expr": true, "q": true, "qs": true}
-
-// caseFuncs are the calls whose first argument is a query in Loki's syntax tests.
-var caseFuncs = map[string]bool{"ParseExpr": true, "MustParseExpr": true, "ParseSampleExpr": true, "ParseLogSelector": true}
-
-// writeCases collects the query strings of Loki's pkg/logql/syntax tests. Whether Loki accepts each is the
-// oracle's verdict, not the test's expectation.
-func writeCases(src, out string) error {
-	files, err := filepath.Glob(filepath.Join(src, "pkg", "logql", "syntax", "*_test.go"))
-	if err != nil {
-		return err
-	}
-	seen := map[string]bool{}
-	var cases []string
-	add := func(e ast.Expr) {
-		if s, ok := literal(e); ok && strings.TrimSpace(s) != "" && !seen[s] {
-			seen[s] = true
-			cases = append(cases, s)
-		}
-	}
-	for _, f := range files {
-		file, err := parser.ParseFile(token.NewFileSet(), f, nil, parser.SkipObjectResolution)
-		if err != nil {
-			return err
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			switch v := n.(type) {
-			case *ast.KeyValueExpr:
-				if k, ok := v.Key.(*ast.Ident); ok && caseKeys[k.Name] {
-					add(v.Value)
-				}
-			case *ast.CallExpr:
-				name := ""
-				switch fn := v.Fun.(type) {
-				case *ast.Ident:
-					name = fn.Name
-				case *ast.SelectorExpr:
-					name = fn.Sel.Name
-				}
-				if caseFuncs[name] && len(v.Args) > 0 {
-					add(v.Args[0])
-				}
-			}
-			return true
-		})
-	}
-	if len(cases) == 0 {
-		return fmt.Errorf("no syntax test queries under %s", src)
-	}
-	sort.Strings(cases)
-	b, err := json.MarshalIndent(cases, "", " ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(out, append(b, '\n'), 0o644)
-}
-
-func literal(e ast.Expr) (string, bool) {
-	lit, ok := e.(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
-		return "", false
-	}
-	s, err := strconv.Unquote(lit.Value)
-	return s, err == nil
 }
 
 func check(in, out string) error {

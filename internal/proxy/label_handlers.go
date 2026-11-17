@@ -82,11 +82,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		// The fetch above covers the full requested [start, end] range, so this first
 		// response is already complete; no follow-up refresh is needed.
 		result := lokiLabelsResponse(labels)
-		if len(labels) == 0 {
-			p.setMetadataListCache("labels", cacheKey, result, 0, labelsTTL)
-		} else {
-			p.mergeLabelsIntoCache("labels", cacheKey, labels, labelsTTL)
-		}
+		p.storeLabelsCache("labels", cacheKey, labels, labelsTTL)
 		p.recordMetadataEdgeRead(cacheKey, started)
 		return result, nil
 	}

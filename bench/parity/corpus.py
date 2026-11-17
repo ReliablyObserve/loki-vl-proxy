@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """Build the differential query corpus: every request the runner sends to Loki and the proxy.
 
-  corpus.py --out corpus.json [--loki-src DIR] [--captures DIR ...] [--seeded URL --end UNIX]
+  corpus.py --out corpus.json [--loki-docs VERSION] [--sweep FILE] [--captures DIR ...] [--seeded URL --end UNIX]
 
 Sources (each entry records its `source`):
-  loki-tests   LogQL strings from Loki's own test suites (--loki-src: a checkout of
-               grafana/loki at the reference version, pkg/logql at least). Stream
-               selectors are rewritten onto the seeded data (a JSON, logfmt, plain
-               or mixed stream, picked by the parser the query uses); sharding and
-               template fixtures are dropped, and ranges longer than the seeded
-               hour are clamped to [1h].
+  loki-docs    the LogQL examples of Loki's published query documentation (--loki-docs: the documentation
+               version, such as v3.7.x; the pages are fetched from grafana.com, no Loki source is read).
+               Stream selectors are rewritten onto the seeded data (a JSON, logfmt, plain or mixed stream,
+               picked by the parser the query uses), and ranges longer than the seeded hour are clamped to
+               [1h].
+  sweep        queries of the repository's grammar sweep (internal/querycorpus TestGrammarSweep: queries enumerated
+               from the LogQL grammar by a covering design, with Loki's recorded accept or reject for each;
+               --sweep: the recorded file). Per query shape and outer operation a few accepted queries, moved onto
+               the seeded data; per Loki error text a few rejected ones, as written (a parse or validation answer
+               does not depend on the data); and our own compositions of the sweep's pipelines (one per stage set)
+               inside the range and vector aggregations Explore and Logs Drilldown build, with and without unwrap,
+               so every aggregation meets every stage the sweep knows. Nothing here is read from Loki.
   repo         the repository's own parity cases: LogQL in test/e2e-compat/*_test.go,
                test/e2e-compat/query-semantics-matrix.json, bench/ab/shapes.json and
                every conformance/registry case's request. Selectors naming data the
@@ -31,6 +37,7 @@ from the seeded window.
 """
 import argparse
 import glob
+import gzip
 import hashlib
 import json
 import os
@@ -202,16 +209,186 @@ def clamp_ranges(query, limit_s=3600):
     return RANGE.sub(lambda m: m.group(0) if int(m.group(1)) * UNIT_S[m.group(2)] <= limit_s else "[1h]", query)
 
 
-def loki_tests(src):
-    paths = glob.glob(os.path.join(src, "pkg", "logql", "**", "*_test.go"), recursive=True)
+# The query documentation pages whose examples join the corpus.
+DOCS_URL = "https://grafana.com/docs/loki/{version}/query/{page}/"
+DOCS_PAGES = ("log_queries", "metric_queries", "query_examples", "query_reference", "template_functions")
+QUERY_START = re.compile(r"^(?:\{|[a-z_]+\s*(?:(?:by|without)\s*\([^)]*\)\s*)?\()")
+
+
+def docs_examples(text):
+    """The LogQL queries of a documentation page: the lines of its code blocks that start a query, a query that
+    spans several lines joined until its brackets close."""
+    import html
+    out = []
+    for block in re.findall(r"<pre[^>]*>(.*?)</pre>", text, re.S):
+        lines = html.unescape(re.sub(r"<[^>]+>", "", block)).splitlines()
+        current, depth = "", 0
+        for line in lines:
+            line = re.sub(r"\s+#.*$|\s+//.*$", "", line).strip()
+            if not line:
+                continue
+            if not current and not QUERY_START.match(line):
+                continue
+            current = (current + " " + line).strip()
+            depth += line.count("(") + line.count("{") - line.count(")") - line.count("}")
+            if depth <= 0:
+                out.append(current)
+                current, depth = "", 0
+    return out
+
+
+def loki_docs(version):
     out, seen = [], set()
-    for raw in sorted(extract_strings(paths)):
-        query = rewrite(raw, force=True)
-        query = clamp_ranges(query) if query else query
-        if not query or query in seen:
+    for page in DOCS_PAGES:
+        url = DOCS_URL.format(version=version, page=page)
+        request = urllib.request.Request(url, headers={"User-Agent": "loki-vl-proxy-parity"})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                text = response.read().decode()
+        except OSError as err:  # a page that does not load leaves its examples out; a source with none refuses prune
+            print(f"loki-docs: {url}: {err}", file=sys.stderr)
             continue
-        seen.add(query)
-        out += query_entries("loki-tests", query, origin=raw)
+        for raw in docs_examples(text):
+            query = rewrite(raw, force=True)
+            query = clamp_ranges(query) if query else query
+            if not query or query in seen:
+                continue
+            seen.add(query)
+            out += query_entries("loki-docs", query, origin=f"{page}: {raw}")
+    return out
+
+
+# ---------------------------------------------------------------- grammar sweep
+
+# The recorded grammar sweep: the first line holds the query set's hash and count, each next line one query with
+# Loki's answer (a: accepted, e: its error text when rejected).
+SWEEP_FILE = os.path.join(ROOT, "internal", "querycorpus", "testdata", "grammar-sweep-loki.jsonl.gz")
+SWEEP_PER_BUCKET = 1   # accepted queries kept per query shape
+SWEEP_PER_ERROR = 1    # rejected queries kept per Loki error text
+# What the compositions wrap a pipeline in: the range functions of a log range, those of an unwrapped range, and the
+# vector operations over either.
+SWEEP_RANGE_FUNCS = ("count_over_time", "rate", "bytes_over_time", "bytes_rate")
+SWEEP_UNWRAP_FUNCS = ("sum_over_time", "avg_over_time", "max_over_time", "min_over_time", "first_over_time",
+                      "last_over_time", "rate", "stddev_over_time", "quantile_over_time")
+SWEEP_VECTOR_OPS = ("sum", "min", "max", "avg", "count", "topk", "sort", "sort_desc", "stddev", "label_replace")
+# Pipelines of the Explore and Logs Drilldown pages (the stages their breakdowns build on a field): every one meets
+# every wrapping, on top of the pipelines of the sweep, which meet two each.
+SWEEP_IDIOMS = ("", "| json", "| logfmt", '|= "error"', '| json |= "error"', '| logfmt |= "error"',
+                "| json | status >= 500", '| logfmt | level="error"', '| json |= "error" | status >= 500',
+                '| logfmt |= "error" | level="error"', '| json | label_format code="{{.status}}"',
+                '| logfmt | label_format lvl="{{.level}}"', '| json | line_format "{{.msg}}"',
+                '| json | status >= 500 |= "error" | label_format code="{{.status}}"',
+                '|= "error" | status >= 500')
+
+
+def sweep_rows(path=SWEEP_FILE):
+    with gzip.open(path, "rt") as handle:
+        rows = [json.loads(line) for line in handle if line.strip()]
+    return [r for r in rows if "q" in r]
+
+
+def _digest(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def sweep_wrap(op, inner):
+    if op == "topk":
+        return f"topk(3, {inner})"
+    if op in ("sort", "sort_desc"):
+        return f"{op}({inner})"
+    if op == "label_replace":
+        return f'label_replace({inner}, "svc", "$1", "service_name", "(.*)")'
+    return f"{op} by (level) ({inner})"
+
+
+def sweep_unwrap(func, body, errors=True):
+    """An unwrapped range; Drilldown adds the filter that drops the lines the conversion failed on."""
+    lead = "0.9, " if func == "quantile_over_time" else ""
+    tail = ' | __error__=""' if errors else ""
+    return f"{func}({lead}{body} | unwrap duration_ms{tail} [5m])"
+
+
+def sweep_pipelines(rows):
+    """One pipeline per stage set of the accepted log queries of the sweep: what follows the stream selector."""
+    import cluster
+    found = {}
+    for row in sorted((r for r in rows if r.get("a")), key=lambda r: _digest(r["q"])):
+        query = row["q"].strip()
+        if "#" in query or "\n" in query or not query.startswith("{"):
+            continue
+        spans = scan_selectors(query)
+        if spans and spans[0][0] == 0:
+            found.setdefault(cluster.shape(query), query[spans[0][1]:].strip())
+    return [found[key] for key in sorted(found)]
+
+
+def sweep_composed(pipelines):
+    """The sweep's pipelines and the Explore/Drilldown idioms inside the aggregations the pages build. The stream
+    selector is the seeded one of the pipeline's parser; an unwrap names a field the JSON stream holds. A pipeline of
+    every other stage set of the sweep gets one composition, a range aggregation or an unwrapped one under a vector
+    operation, drawn by rotation. An idiom meets every range function and every unwrap function on its own, every vector operation over
+    a range aggregation and over an unwrapped one (with the filter on `__error__` under every other operation), and the two ways
+    Loki rejects an unwrap (in a log query, under count_over_time)."""
+    out = []
+    ops = SWEEP_VECTOR_OPS
+    for i, pipeline in enumerate(pipelines):
+        if i % 2:
+            continue  # every other stage set, in the sweep's order: the idioms below meet every wrapping
+        body = f"{SELECTORS[parser_of(pipeline)]} {pipeline}".strip()
+        if i % 4 == 2:
+            inner = sweep_unwrap(SWEEP_UNWRAP_FUNCS[i % len(SWEEP_UNWRAP_FUNCS)], body, errors=i % 8 == 2)
+        else:
+            inner = f"{SWEEP_RANGE_FUNCS[i % 4]}({body} [5m])"
+        out.append(sweep_wrap(ops[i % len(ops)], inner))
+    for i, pipeline in enumerate(SWEEP_IDIOMS):
+        body = f"{SELECTORS[parser_of(pipeline)]} {pipeline}".strip()
+        for func in SWEEP_RANGE_FUNCS:
+            out.append(f"{func}({body} [5m])")
+        for func in SWEEP_UNWRAP_FUNCS:
+            out.append(sweep_unwrap(func, body, errors=False))
+        for j, op in enumerate(ops):
+            out.append(sweep_wrap(op, f"{SWEEP_RANGE_FUNCS[(i + j) % 4]}({body} [5m])"))
+            out.append(sweep_wrap(op, sweep_unwrap(SWEEP_UNWRAP_FUNCS[(i + j) % len(SWEEP_UNWRAP_FUNCS)], body, errors=j % 2 == 0)))
+        out += [f"{body} | unwrap duration_ms", f"count_over_time({body} | unwrap duration_ms [5m])"]
+    return out
+
+
+def sweep_queries(rows):
+    """(query, origin) of the sweep source, in a fixed order."""
+    import cluster
+    out, seen = [], set()
+    kept, errors = {}, {}
+
+    def add(query, origin):
+        if query and query not in seen:
+            seen.add(query)
+            out.append((query, origin))
+
+    for row in sorted(rows, key=lambda r: _digest(r["q"])):
+        query = row["q"].strip()
+        if not query:
+            continue
+        shape = cluster.shape(query)
+        if row.get("a"):
+            if kept.get(shape, 0) < SWEEP_PER_BUCKET:
+                kept[shape] = kept.get(shape, 0) + 1
+                moved = rewrite(query, force=True)
+                add(clamp_ranges(moved) if moved else None, "sweep: accepted")
+        else:
+            template = cluster.error_template(row.get("e", ""))
+            seen_shapes = errors.setdefault(template, set())
+            if len(seen_shapes) < SWEEP_PER_ERROR and shape not in seen_shapes:
+                seen_shapes.add(shape)
+                add(query, "sweep: rejected")
+    for query in sweep_composed(sweep_pipelines(rows)):
+        add(clamp_ranges(query), "sweep: composed")
+    return out
+
+
+def sweep(path=SWEEP_FILE):
+    out = []
+    for query, origin in sweep_queries(sweep_rows(path)):
+        out += query_entries("sweep", query, origin)
     return out
 
 
@@ -385,15 +562,19 @@ def grafana_requests(capture_dirs, loki_uid="vp-loki"):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--loki-src", default="", help="checkout of grafana/loki at the reference version")
+    ap.add_argument("--loki-docs", default="", help="Loki documentation version whose query examples to add, such as v3.7.x")
+    ap.add_argument("--sweep", nargs="?", const=SWEEP_FILE, default="",
+                    help="add queries of the grammar sweep (the recorded file, by default the repository's)")
     ap.add_argument("--captures", action="append", default=[], help="bench/visual capture output directory")
     ap.add_argument("--seeded", default="", help="Loki URL of the seeded stack, to generate the seeded corpus")
     ap.add_argument("--end", type=int, default=0, help="end of the seeded window (unix seconds)")
     ap.add_argument("--no-repo", action="store_true")
     a = ap.parse_args()
     entries = []
-    if a.loki_src:
-        entries += loki_tests(a.loki_src)
+    if a.loki_docs:
+        entries += loki_docs(a.loki_docs)
+    if a.sweep:
+        entries += sweep(a.sweep)
     if not a.no_repo:
         entries += repo_queries()
     if a.seeded:

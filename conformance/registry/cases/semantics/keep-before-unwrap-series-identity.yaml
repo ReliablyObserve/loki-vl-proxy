@@ -46,6 +46,14 @@ why: |
   semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile,
   semantics/stdvar-grouped-pooled-variance, semantics/keep-before-parser-unwrap-identity,
   semantics/drop-before-unwrap-stream-label and semantics/unwrap-rate-counter-window-extrapolation.
+
+  The corpus shadow (TestPlanShadow) holds every row the proxy serves from the
+  lowering (proxy.PlanServedText) to that text, byte for byte, and counts it
+  native and held to Loki by the differential above (native_loki_held in
+  conformance/registry/query-plan.json): 81 of the 90 corpus rows. The rows
+  left as this known divergence are a label_replace around the function, whose
+  operand keeps the stream's series
+  (semantics/keep-before-unwrap-identity-in-operands, open).
 corpus:
   size: 6
   dimensions:

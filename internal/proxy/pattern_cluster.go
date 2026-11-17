@@ -80,7 +80,8 @@ func newPatternClusterer(level string) *patternClusterer {
 }
 
 // train reads one line's tokens and returns the cluster it joined or started, or nil when the clusterer admits no
-// more lines. The clusterer keeps tokens and spacesAfter for a cluster it starts: the caller hands them over.
+// more lines. The clusterer keeps copies of tokens and spacesAfter for a cluster it starts: the caller's slices
+// are its own again once train returns.
 func (c *patternClusterer) train(tokens []string, spacesAfter []int, format patternFormat) *patternBucket {
 	if float64(c.evicted) > patternMaxEvictionShare*float64(c.admitted) {
 		return nil
@@ -107,6 +108,7 @@ func (c *patternClusterer) train(tokens []string, spacesAfter []int, format patt
 	if len(c.live) >= patternMaxClusters {
 		c.evictLeastRecentlyUsed()
 	}
+	tokens, spacesAfter = slices.Clone(tokens), slices.Clone(spacesAfter)
 	node := root.place(tokens, depth)
 	cluster := &patternBucket{
 		level:       c.level,
@@ -166,19 +168,22 @@ func (n *patternTreeNode) leaf(tokens []string, depth int) *patternTreeNode {
 // node of its own while the node has room for it, and the variable child once it does not, the last room going to
 // the variable child itself.
 func (n *patternTreeNode) place(tokens []string, depth int) *patternTreeNode {
-	for _, token := range tokens[:depth] {
+	// The nodes made for the cluster: once one is made, every node below it on the path is new too, so they are
+	// made together, in one allocation.
+	var made []patternTreeNode
+	for i, token := range tokens[:depth] {
 		next := n.get(token)
 		if next == nil {
 			variable := n.get(patternVarPlaceholder)
 			children := n.count()
 			switch {
 			case patternTokenHasNumber(token):
-				next = n.child(patternVarPlaceholder)
+				next = n.child(patternVarPlaceholder, &made, depth-i)
 			case variable != nil && children < patternTreeMaxChildren,
 				variable == nil && children+1 < patternTreeMaxChildren:
-				next = n.child(token)
+				next = n.child(token, &made, depth-i)
 			default:
-				next = n.child(patternVarPlaceholder)
+				next = n.child(patternVarPlaceholder, &made, depth-i)
 			}
 		}
 		n = next
@@ -186,12 +191,17 @@ func (n *patternTreeNode) place(tokens []string, depth int) *patternTreeNode {
 	return n
 }
 
-// child is the node's child for a key, made when it has none.
-func (n *patternTreeNode) child(key string) *patternTreeNode {
+// child is the node's child for a key, made when it has none from made, which is filled with path nodes (the
+// child and those below it) when empty.
+func (n *patternTreeNode) child(key string, made *[]patternTreeNode, path int) *patternTreeNode {
 	if next := n.get(key); next != nil {
 		return next
 	}
-	next := &patternTreeNode{}
+	if len(*made) == 0 {
+		*made = make([]patternTreeNode, path)
+	}
+	next := &(*made)[0]
+	*made = (*made)[1:]
 	if n.first == nil {
 		n.firstKey, n.first = key, next
 		return next
