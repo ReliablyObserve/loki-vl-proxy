@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
 - **Breaking:** the delete API (`-delete-api-enabled`, behind `-delete-api-auth-token`) now deletes, and answers as
   Loki's delete API does. A create request (`POST`/`PUT /loki/api/v1/delete`) gets Loki's checks in Loki's order with
   its texts (`query not set`, `invalid query expression`, `start time not set`, `invalid start time: require unix

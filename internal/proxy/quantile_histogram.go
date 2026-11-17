@@ -18,7 +18,7 @@ import (
 	"github.com/grafana/jsonparser"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // quantile_over_time (Loki v3.7.7; registry semantics/quantile-over-time-out-of-range) sorts every sample of the window (t-range, t]
@@ -87,7 +87,7 @@ func quantileStatsGroupBy(spec statsCompatSpec) []string {
 		}
 		by = append(by, quoteLogsQLIdent(g))
 	}
-	return append(by, translator.UnwrapValueAlias)
+	return append(by, translate.UnwrapValueAlias)
 }
 
 // collectQuantileHistogram asks VictoriaLogs for the value counts of the gated
@@ -139,7 +139,7 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 			resultErr = fmt.Errorf("parse stats response: %w", err)
 			return
 		}
-		value, err := strconv.ParseFloat(string(metric.GetStringBytes(translator.UnwrapValueAlias)), 64)
+		value, err := strconv.ParseFloat(string(metric.GetStringBytes(translate.UnwrapValueAlias)), 64)
 		if err != nil {
 			return // the gate keeps only values that convert
 		}
