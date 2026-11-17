@@ -64,3 +64,19 @@ func TestLokiRefusalsSendNoVictoriaLogsCall(t *testing.T) {
 		t.Fatalf("only %d recorded refusals checked", checked)
 	}
 }
+
+// BenchmarkTailHandshakeComplete is the check a tail now makes before its
+// history read.
+func BenchmarkTailHandshakeComplete(b *testing.B) {
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/tail?query=%7Bapp%3D%22api%22%7D", nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	b.ReportAllocs()
+	for b.Loop() {
+		if !tailHandshakeComplete(req) {
+			b.Fatal("complete handshake refused")
+		}
+	}
+}
