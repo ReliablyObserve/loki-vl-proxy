@@ -17,7 +17,7 @@ import (
 )
 
 // Loki evaluates a range query at start, start+step, ... up to and including
-// end (pkg/logql/range_vector.go step iteration), so a source that stops at
+// end, so a source that stops at
 // `end` still has a sample there. VictoriaLogs' bucket labelled T holds the
 // lines from T on: the sample at `end` was the bucket after the last line, and
 // sum, avg, max and min over time with unwrap answered one point short.
@@ -185,7 +185,7 @@ func TestUnwrapOverTimeTumblingMatchesLoki(t *testing.T) {
 							for ts, v := range got[pod] {
 								gotNs[ts*1e9] = v
 							}
-							compareUnwrapSum(t, fmt.Sprintf("%s #%d pod=%s", name, i, pod), s, gotNs, lokiUnwrapSum(rows, fn, int64(s.window), s.times()), 1)
+							compareUnwrapSum(t, fmt.Sprintf("%s #%d pod=%s", name, i, pod), s, gotNs, unwrapSumReference(rows, fn, int64(s.window), s.times()), 1)
 						}
 					}
 				})
@@ -255,7 +255,7 @@ func TestUnwrapOverTimeShortRangeMatchesLoki(t *testing.T) {
 								for ts, v := range got[pod] {
 									gotNs[ts*1e9] = v
 								}
-								want := lokiUnwrapSum(rows, fn, int64(s.window), s.times())
+								want := unwrapSumReference(rows, fn, int64(s.window), s.times())
 								if form.name == "vector operands" {
 									for ts, v := range want {
 										want[ts] = 2 * v

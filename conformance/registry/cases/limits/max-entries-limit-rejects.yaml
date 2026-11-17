@@ -4,9 +4,10 @@ proves:
   - tenant-query-limits
   - loki_api_v1_query_range
 consumer: api
+evidence: needs recording
 why: |
   Loki rejects a log query whose limit is above max_entries_limit_per_query
-  (pkg/querier/http.go validateMaxEntriesLimits); the proxy used to lower the
+  (default 5000, https://grafana.com/docs/loki/latest/configure/); the proxy used to lower the
   limit and answer, so a client could not tell it received fewer lines than it
   asked for.
 request:

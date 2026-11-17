@@ -41,7 +41,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/proxy bare-parser metric evaluator (fetchBareParserMetricSeries) and the ordered JSON pushdown (without grouping)'
-  loki: 'pkg/logql range aggregation keeps every label of the sample'
+  loki: 'a bare range aggregation keeps every label of the sample, one series per stream and parsed label set (parsed-identity/dynamic-key-parsers)'
   proxy: 'raw-row evaluation bounded by -manual-range-metric-row-limit'
   planned_test: 'TestCompat_ExtractedUngroupedMetricAtSixHours (test/e2e-compat, group core)'
   note: 'Related: parsed-identity/dynamic-key-parsers, limits table entry for -manual-range-metric-row-limit.'

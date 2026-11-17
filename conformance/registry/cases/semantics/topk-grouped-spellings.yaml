@@ -5,8 +5,7 @@ proves:
   - loki_api_v1_query
 consumer: explore
 why: |
-  Loki keeps one heap per grouping key and step (pkg/logql/evaluator.go:443-494,
-  :551-561, :596-621), so `topk by (container) (5, ...)` keeps the 5 best
+  Loki ranks within each grouping key at every step, so `topk by (container) (5, ...)` keeps the 5 best
   samples of every container at every step: the recorded parity run has Loki at
   791 series on a range and 45 at an instant where the proxy returned 5.
 
@@ -18,8 +17,7 @@ why: |
   (a `streams` 200 on query_range, a 400 at an instant), `topk (k, e)` with a
   space too, and `topk(k, e) by (l)` was a 400 on query_range with a mangled
   inner expression. The wrapper the stats handlers read ignored the clause, so
-  an instant grouped topk was cut to k series in total. Grammar:
-  pkg/logql/syntax/syntax.y:182-184.
+  an instant grouped topk was cut to k series in total. The clause may stand before or after the arguments.
 
   Fixed: parseTopKPostAgg reads the clause from the parsed query and the inner
   text as written; a query the typed parser reads as something else (a binary
@@ -27,9 +25,8 @@ why: |
   applyTopKToVector and the instant sort rank per step and group (topKGroupKey:
   by() keeps the listed labels, a missing one is empty; without() drops the
   listed labels and __name__) with one comparison, topKCompare: NaN ranks after
-  every number and never blocks one (pkg/logql/vector.go). Ties at the k-th place
-  follow Go map order in Loki (pkg/logql/range_vector.go keeps its window in a
-  map), so the series chosen there are not reproducible; the proxy breaks them
+  every number and never blocks one. Ties at the k-th place
+  follow Go map order in Loki (it keeps its window in a map), so the series chosen there are not reproducible; the proxy breaks them
   by label order and the tests compare the selected values at such steps. On the
   window-stats route the union of the series that ranked counts against
   -max-stats-query-series (Loki: an error; Drilldown: Loki keeps the series it
@@ -61,7 +58,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy metric_agg.go (parseTopKPostAgg, topKGroupKey, topKCompare), metric_binary.go (applyTopKToMatrix, applyTopKToVector), sliding_window_stats.go (encodeTopK)'
-  loki: 'pkg/logql/evaluator.go:443-494, :551-561, :596-621 VectorAggEvaluator topk/bottomk per step and grouping key; pkg/logql/vector.go heaps; pkg/logql/syntax/syntax.y:182-184'
+  loki: 'topk and bottomk rank per step and group, with the clause before or after the arguments; ties follow Go map order (test/e2e-compat topk_range_per_step_test.go)'
   proxy: 'every spelling parsed; k series per step and group, bounded heap over the VictoriaLogs window stats'
   planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential, TestTopKRangeDifferentialRawEvaluator, TestTopKRangeResultBounds, TestTopKMatrixEdges, TestParseTopKPostAgg, TestInstantTopKPerGroup and TestInstantTopKByHandler (internal/proxy)'
   note: 'Measured on origin/main cf738b80. The e2e is written and not yet run against Loki 3.7.7 and VictoriaLogs.'

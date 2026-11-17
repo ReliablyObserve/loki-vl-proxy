@@ -2,48 +2,15 @@ package proxy
 
 import (
 	"bytes"
-	"errors"
 	"regexp"
 	"strings"
-	"unicode"
 	"unicode/utf8"
-
-	"github.com/grafana/jsonparser"
 )
-
-// Read-path detected_level.
-//
-// Loki attaches detected_level to every entry at ingest. The proxy has no
-// ingest path, so it derives the same value on the read path from what
-// VictoriaLogs stores for a row: stream fields, non-stream fields and _msg.
-// Loki's result for the stored row defines the value; the rule order is:
-//
-//  1. a non-empty non-stream detected_level field, normalised. A
-//     detected_level stream field is an index label for Loki: it does not
-//     take part, and the derived value is exposed as detected_level_extracted;
-//  2. the first non-empty stream field named in levelFieldNames, normalised;
-//  3. the first non-empty non-stream field named in levelFieldNames,
-//     normalised. A severity_text that VictoriaLogs synthesised from
-//     severity_number (OTLP rows without a text) is skipped;
-//  4. a non-empty severity_number field, mapped by OTel ranges;
-//  5. the line body: JSON (objects at depth 0 and 1, first string value
-//     under a level key), then logfmt (case-insensitive keys, lowest list
-//     index wins, stops at the first syntax error), then a bounded keyword
-//     scan of the whole line, else "unknown".
-//
-// Normalisation maps the known spellings to trace, debug, info, warn, error,
-// critical and fatal, and keeps any other value unchanged. Rows whose _msg is
-// VictoriaLogs' missing-message value (built-in or customised) had their JSON body unpacked into
-// fields at ingestion: their fields are read as JSON body keys (an unknown
-// word falls through to the keyword scan) and the keyword scan runs on the
-// line rebuilt from those fields (storedLogLineFromFJ).
 
 const (
 	detectedLevelLabel                   = "detected_level"
 	detectedLevelMutationResponseVersion = "@detected-level-mutation-v2:"
-	// detectedLevelExtractedLabel names the derived value on entries whose
-	// stream already has a detected_level label, as Loki renames structured
-	// metadata that collides with a stream label.
+
 	detectedLevelExtractedLabel = "detected_level_extracted"
 
 	levelTrace    = "trace"
@@ -90,7 +57,32 @@ func mayHoldDropStage(query string) bool {
 	}
 }
 
-// levelFieldNames is Loki's default log_level_fields list, in priority order.
+// The detected_level Loki gives an entry at ingest, derived on the read path from what VictoriaLogs stores. The
+// rules below are written from Loki's documented settings (discover_log_levels, log_level_fields,
+// log_level_from_json_max_depth) and from Loki's answers to the inputs of testdata/detected_level_golden.json,
+// recorded from a real Loki (TestCompat_DetectedLevelGoldenMatchesLoki, evidence in
+// testdata/detected_level_golden_loki.json). In order:
+//
+//  1. a stored detected_level field (Loki's structured metadata), normalised;
+//  2. the stream's first level label in levelFieldNames order, normalised (a word Loki does not know stays as
+//     it is; a log.level stream field, which no Loki stream label can be, counts);
+//  3. the row's first level field in levelFieldNames order, normalised; log.level is never one: Loki stores
+//     structured metadata named log.level as log_level, which it does not read;
+//  4. severity_number: 1-4 trace, 5-8 debug, 9-12 info, 13-16 warn, 17-20 error, 21-24 fatal, below 1 trace, 0
+//     and above 24 unknown, a value that is not a decimal integer info;
+//  5. the line: a line with braces first and last is read as JSON, its first level key holding a string (decoded
+//     names, document order, two objects deep, arrays skipped, up to the first syntax error); any other line as
+//     logfmt, its level key earliest in levelFieldNames (names compared case-insensitively, up to the first syntax
+//     error); the value counts when it is a known spelling, otherwise the first level word of the line (the
+//     keyword scan) decides;
+//  6. unknown.
+//
+// VictoriaLogs stores an OTLP record's severity with a severity text it derives from the number when the record
+// has none (v1.50 and later: severity_number with severity_text; v1.47 to v1.49: one severity field). Loki stores
+// only what the record holds, so a derived text is read as absent.
+
+// levelFieldNames are the level field names Loki reads, in the order it reads them: the default of Loki's
+// log_level_fields setting as its configuration reference documents it.
 var levelFieldNames = [...]string{
 	"level", "LEVEL", "Level", "log.level",
 	"severity", "SEVERITY", "Severity", "SeverityText",
@@ -98,85 +90,112 @@ var levelFieldNames = [...]string{
 	"severity_text", "Severity_Text", "SEVERITY_TEXT",
 }
 
-var levelFieldNameBytes = func() [len(levelFieldNames)][]byte {
-	var out [len(levelFieldNames)][]byte
-	for i, name := range levelFieldNames {
-		out[i] = []byte(name)
-	}
-	return out
-}()
-
-// Indexes into levelFields.vals. Slot 0 is detected_level, slots 1..14 follow
-// levelFieldNames, the last slot is severity_number.
 const (
 	levelSlotDetected       = 0
 	levelSlotFirstName      = 1
-	levelSlotSeverity       = 1 + 4  // severity
-	levelSlotSeverityText   = 1 + 11 // severity_text
+	levelSlotLogDotLevel    = 1 + 3
+	levelSlotSeverity       = 1 + 4
+	levelSlotSeverityText   = 1 + 11
 	levelSlotSeverityNumber = 1 + len(levelFieldNames)
 	levelSlotCount          = levelSlotSeverityNumber + 1
 )
 
-// levelFieldSlot returns the levelFields slot for a field name, or -1.
+// levelFieldSlot is the slot of a field name: detected_level, a name of levelFieldNames (exact) or
+// severity_number; -1 for any other name.
 func levelFieldSlot(name []byte) int {
 	switch len(name) {
-	case 3, 5, 8, 9, 12, 13, 14, 15:
-	default:
-		return -1
-	}
-	switch string(name) {
-	case "detected_level":
-		return levelSlotDetected
-	case "level":
-		return 1
-	case "LEVEL":
-		return 2
-	case "Level":
-		return 3
-	case "log.level":
-		return 4
-	case "severity":
-		return 5
-	case "SEVERITY":
-		return 6
-	case "Severity":
-		return 7
-	case "SeverityText":
-		return 8
-	case "lvl":
-		return 9
-	case "LVL":
-		return 10
-	case "Lvl":
-		return 11
-	case "severity_text":
-		return 12
-	case "Severity_Text":
-		return 13
-	case "SEVERITY_TEXT":
-		return 14
-	case "severity_number":
-		return levelSlotSeverityNumber
+	case 3:
+		switch string(name) {
+		case "lvl":
+			return levelSlotFirstName + 8
+		case "LVL":
+			return levelSlotFirstName + 9
+		case "Lvl":
+			return levelSlotFirstName + 10
+		}
+	case 5:
+		switch string(name) {
+		case "level":
+			return levelSlotFirstName
+		case "LEVEL":
+			return levelSlotFirstName + 1
+		case "Level":
+			return levelSlotFirstName + 2
+		}
+	case 8:
+		switch string(name) {
+		case "severity":
+			return levelSlotSeverity
+		case "SEVERITY":
+			return levelSlotSeverity + 1
+		case "Severity":
+			return levelSlotSeverity + 2
+		}
+	case 9:
+		if string(name) == "log.level" {
+			return levelSlotLogDotLevel
+		}
+	case 12:
+		if string(name) == "SeverityText" {
+			return levelSlotSeverity + 3
+		}
+	case 13:
+		switch string(name) {
+		case "severity_text":
+			return levelSlotSeverityText
+		case "Severity_Text":
+			return levelSlotSeverityText + 1
+		case "SEVERITY_TEXT":
+			return levelSlotSeverityText + 2
+		}
+	case 14:
+		if string(name) == detectedLevelLabel {
+			return levelSlotDetected
+		}
+	case 15:
+		if string(name) == "severity_number" {
+			return levelSlotSeverityNumber
+		}
 	}
 	return -1
 }
 
-// levelFields holds the non-empty level-like values of one row or stream.
-// Values alias the caller's buffers and are valid while those buffers are.
+// levelFields holds the level-like fields of a row or a stream: one value per slot (the first non-empty one
+// observed) and the first nested level key of an unpacked JSON line (parent.name, name in levelFieldNames).
 type levelFields struct {
 	vals [levelSlotCount][]byte
-	// nested is the "<parent>.<name>" field with name in levelFieldNames and
-	// the smallest field name, used only for rows unpacked from a JSON body.
+
 	nested     []byte
 	nestedName []byte
 }
 
-// mayBeLevelField reports whether observe can record a field with this name.
+// mayBeLevelField reports whether observe keeps anything for a field of this name.
 func mayBeLevelField(name []byte) bool {
-	return levelFieldSlot(name) >= 0 || bytes.IndexByte(name, '.') > 0
+	return levelFieldSlot(name) >= 0 || nestedLevelName(name)
 }
 
-// observe records name=value when name is level-like and value is non-empty.
+// nestedLevelName reports a field name VictoriaLogs writes for a level key one object down in a JSON line:
+// parent.name with one dot and name in levelFieldNames.
+func nestedLevelName(name []byte) bool {
+	// every level name ends in l, y or t (either case): most names are turned away before any scan
+	if len(name) < 5 {
+		return false
+	}
+	switch name[len(name)-1] {
+	case 'l', 'L', 'y', 'Y', 't', 'T':
+	default:
+		return false
+	}
+	i := bytes.IndexByte(name, '.')
+	if i <= 0 || i == len(name)-1 || bytes.IndexByte(name[i+1:], '.') >= 0 {
+		return false
+	}
+	slot := levelFieldSlot(name[i+1:])
+	return slot >= levelSlotFirstName && slot < levelSlotSeverityNumber
+}
+
+// observe records one field. Empty values are never stored (Loki drops empty structured metadata, VictoriaLogs
+// empty fields).
 func (f *levelFields) observe(name, value []byte) {
 	if len(value) == 0 {
 		return
@@ -187,68 +206,60 @@ func (f *levelFields) observe(name, value []byte) {
 		}
 		return
 	}
-	dot := bytes.IndexByte(name, '.')
-	if dot <= 0 || bytes.IndexByte(name[dot+1:], '.') >= 0 {
-		return
-	}
-	if slot := levelFieldSlot(name[dot+1:]); slot < levelSlotFirstName || slot >= levelSlotSeverityNumber {
-		return
-	}
-	if f.nested == nil || bytes.Compare(name, f.nestedName) < 0 {
+	if f.nested == nil && nestedLevelName(name) {
 		f.nested, f.nestedName = value, name
 	}
 }
 
-// firstName returns the first non-empty value among levelFieldNames.
+// firstName is the first level name with a value, in levelFieldNames order; -1 when none. A stream field named
+// log.level (which no Loki stream label can be) counts, as the level-less stream rule reads it.
 func (f *levelFields) firstName() (int, []byte) {
 	if f == nil {
 		return -1, nil
 	}
 	for slot := levelSlotFirstName; slot < levelSlotSeverityNumber; slot++ {
-		if v := f.vals[slot]; len(v) > 0 {
-			return slot, v
+		if f.vals[slot] != nil {
+			return slot, f.vals[slot]
 		}
 	}
 	return -1, nil
 }
 
-// value returns the value in slot; a nil receiver holds nothing.
 func (f *levelFields) value(slot int) []byte {
-	if f == nil {
+	if f == nil || slot < 0 || slot >= levelSlotCount {
 		return nil
 	}
 	return f.vals[slot]
 }
 
-// nestedValue returns the nested level value; a nil receiver holds nothing.
-func (f *levelFields) nestedValue() []byte {
-	if f == nil {
-		return nil
-	}
-	return f.nested
-}
-
-// detectedLevel is a derived value: a canonical constant, or the raw stored
-// value when it is not a known spelling (Loki keeps those unchanged).
+// detectedLevel is a derived level: one of Loki's level names, or a stored word Loki keeps as it is.
 type detectedLevel struct {
 	canonical string
 	raw       []byte
 }
 
 func (d detectedLevel) String() string {
-	if d.canonical != "" {
+	if d.canonical != "" || d.raw == nil {
+		if d.canonical == "" {
+			return levelUnknown
+		}
 		return d.canonical
 	}
 	return string(d.raw)
 }
 
 func (d detectedLevel) appendTo(dst []byte) []byte {
-	if d.canonical != "" {
+	if d.canonical != "" || d.raw == nil {
+		if d.canonical == "" {
+			return append(dst, levelUnknown...)
+		}
 		return append(dst, d.canonical...)
 	}
 	return append(dst, d.raw...)
 }
 
+// normalizedDetectedLevel is a stored level value as Loki writes it into detected_level: a known spelling as
+// Loki's level name, any other value as it is.
 func normalizedDetectedLevel(v []byte) detectedLevel {
 	if c := canonicalLevel(v); c != "" {
 		return detectedLevel{canonical: c}
@@ -256,95 +267,46 @@ func normalizedDetectedLevel(v []byte) detectedLevel {
 	return detectedLevel{raw: v}
 }
 
-// detectedLevelInput is one row as VictoriaLogs returned it.
 type detectedLevelInput struct {
-	stream *levelFields // level-like stream fields (constant per stream)
-	fields *levelFields // level-like non-stream fields of the row
-	body   []byte       // _msg, or the rebuilt line for unpacked rows
-	// jsonUnpacked marks rows stored without a message: their fields came
-	// from a JSON body, so they follow the JSON body rule.
+	stream *levelFields
+	fields *levelFields
+	body   []byte
+
+	// jsonUnpacked: the row's fields are the keys of a JSON line VictoriaLogs unpacked and body is the line
+	// rebuilt from them.
 	jsonUnpacked bool
-	bodyScan     bool // -detected-level-body-scan
+	bodyScan     bool
 }
 
-// detectedLevelName returns the label name the derived value is exposed under
-// for a stream: detected_level, or detected_level_extracted when the stream
-// itself carries a detected_level label.
+// detectedLevelName is the label the derived level is written to: Loki keeps a detected_level stream label as
+// the stream's and writes the derived value as detected_level_extracted.
 func detectedLevelName(streamLabels map[string]string) string {
-	if _, ok := streamLabels[detectedLevelLabel]; ok {
+	if streamLabels[detectedLevelLabel] != "" {
 		return detectedLevelExtractedLabel
 	}
 	return detectedLevelLabel
 }
 
-// deriveDetectedLevel returns Loki's detected_level for one stored row.
 func deriveDetectedLevel(in detectedLevelInput) detectedLevel {
 	return deriveRowLevel(in.stream, in.fields, in.body, in.jsonUnpacked, in.bodyScan)
 }
 
-// deriveRowLevel is deriveDetectedLevel with separate arguments: the body
-// escapes into the JSON parser, and passing it apart from the levelFields
-// pointers lets callers keep their per-row levelFields on the stack.
+// deriveRowLevel applies the rules at the top of this file. stream and fields may be nil; body is read only with
+// bodyScan.
 func deriveRowLevel(stream, fields *levelFields, body []byte, jsonUnpacked, bodyScan bool) detectedLevel {
-	if v := fields.value(levelSlotDetected); len(v) > 0 {
+	if v := fields.value(levelSlotDetected); v != nil {
 		return normalizedDetectedLevel(v)
 	}
 	if _, v := stream.firstName(); v != nil {
 		return normalizedDetectedLevel(v)
 	}
-	if jsonUnpacked {
-		// Fields unpacked from a JSON body: a level key with a known word wins,
-		// anything else falls through to the keyword scan of the line.
-		_, v := fields.firstName()
-		if v == nil {
-			v = fields.nestedValue()
+	if fields != nil {
+		if jsonUnpacked {
+			return unpackedRowLevel(fields, body, bodyScan)
 		}
-		if c := canonicalLevel(v); c != "" {
-			return detectedLevel{canonical: c}
+		if d, ok := storedFieldLevel(fields); ok {
+			return d
 		}
-		if !bodyScan {
-			return detectedLevel{canonical: levelUnknown}
-		}
-		return detectedLevel{canonical: levelFromKeywords(body)}
-	}
-	skipSeverityNumber := false
-	// derived is the OTel number behind a VictoriaLogs-derived severity name
-	// stored without severity_number (v1.50.0 and newer always store it).
-	derived := 0
-	if slot, v := fields.firstName(); v != nil {
-		synthesized := false
-		if slot == levelSlotSeverity && len(fields.value(levelSlotSeverityNumber)) == 0 {
-			// VictoriaLogs before v1.50.0 stores an OTLP record's severity as
-			// a single "severity" field (the text, or the name derived from
-			// the number) and no severity_number. It stores an out-of-range
-			// number as Unspecified too, so the line is scanned where Loki
-			// gives unknown: the number is lost at ingest.
-			if n := vlSeverityIndex(v); n >= 0 {
-				synthesized, derived, skipSeverityNumber = true, n, n == 0
-			}
-		}
-		if slot == levelSlotSeverityText {
-			var zero bool
-			synthesized, zero = isVLSynthesizedSeverityText(v, fields.value(levelSlotSeverityNumber))
-			// VictoriaLogs writes severity_number=0 and "Unspecified" for OTLP
-			// records without a severity; Loki stores neither.
-			skipSeverityNumber = synthesized && zero
-		}
-		if !synthesized {
-			return normalizedDetectedLevel(v)
-		}
-		// Loki never stored the synthesised text: later names still count.
-		for next := slot + 1; next < levelSlotSeverityNumber; next++ {
-			if v := fields.value(next); len(v) > 0 {
-				return normalizedDetectedLevel(v)
-			}
-		}
-	}
-	if derived > 0 {
-		return detectedLevel{canonical: levelFromSeverityInt(int64(derived))}
-	}
-	if v := fields.value(levelSlotSeverityNumber); len(v) > 0 && !skipSeverityNumber {
-		return detectedLevel{canonical: levelFromSeverityNumber(v)}
 	}
 	if !bodyScan {
 		return detectedLevel{canonical: levelUnknown}
@@ -352,9 +314,62 @@ func deriveRowLevel(stream, fields *levelFields, body []byte, jsonUnpacked, body
 	return detectedLevel{canonical: levelFromBody(body)}
 }
 
-// vlSeverityTexts is VictoriaLogs' severity_text for each OTel severity
-// number, used when an OTLP record carries no text.
-var vlSeverityTexts = [...]string{
+// storedFieldLevel is rules 3 and 4 over a row's stored fields; ok is false when they leave it to the line.
+func storedFieldLevel(f *levelFields) (detectedLevel, bool) {
+	if v := f.vals[levelSlotFirstName]; v != nil {
+		return normalizedDetectedLevel(v), true // level: first, never a derived OTLP text
+	}
+	number, text, severity := f.vals[levelSlotSeverityNumber], f.vals[levelSlotSeverityText], f.vals[levelSlotSeverity]
+	derivedText := number != nil && text != nil && string(text) == vlSeverityText(number)
+	// Before v1.50 VictoriaLogs stores an OTLP record's severity as one severity field, the record's text or the
+	// name it derives from the number, and no number: a derived name stands for the number, read after the names.
+	derivedSeverity := -1
+	if number == nil && text == nil && severity != nil {
+		derivedSeverity = vlSeverityIndex(severity)
+	}
+	for slot := levelSlotFirstName; slot < levelSlotSeverityNumber; slot++ {
+		v := f.vals[slot]
+		if v == nil || slot == levelSlotLogDotLevel || (slot == levelSlotSeverityText && derivedText) || (slot == levelSlotSeverity && derivedSeverity >= 0) {
+			continue
+		}
+		return normalizedDetectedLevel(v), true
+	}
+	switch {
+	case derivedSeverity > 0:
+		return detectedLevel{canonical: levelFromSeverityInt(int64(derivedSeverity))}, true
+	case derivedSeverity == 0:
+		return detectedLevel{}, false // Unspecified: the record had no severity
+	case number == nil:
+		return detectedLevel{}, false
+	case derivedText && bytes.Equal(number, []byte("0")):
+		return detectedLevel{}, false // an OTLP record without a severity
+	}
+	return detectedLevel{canonical: levelFromSeverityNumber(number)}, true
+}
+
+// unpackedRowLevel reads the fields of an unpacked JSON line as the line's keys: the first level key at the top
+// of the object in levelFieldNames order (VictoriaLogs returns fields sorted, so the line's key order is gone),
+// else the nested one; a value that is not a known spelling leaves it to the keyword scan of the rebuilt line.
+func unpackedRowLevel(f *levelFields, body []byte, bodyScan bool) detectedLevel {
+	v := f.nested
+	for slot := levelSlotFirstName; slot < levelSlotSeverityNumber; slot++ {
+		if f.vals[slot] != nil {
+			v = f.vals[slot]
+			break
+		}
+	}
+	if c := canonicalLevel(v); c != "" {
+		return detectedLevel{canonical: c}
+	}
+	if !bodyScan {
+		return detectedLevel{canonical: levelUnknown}
+	}
+	return detectedLevel{canonical: levelFromKeywords(body)}
+}
+
+// vlSeverityTexts are the severity texts VictoriaLogs derives from an OTLP severity number (OpenTelemetry's
+// severity names), by number; every other number is Unspecified.
+var vlSeverityTexts = [25]string{
 	"Unspecified",
 	"Trace", "Trace2", "Trace3", "Trace4",
 	"Debug", "Debug2", "Debug3", "Debug4",
@@ -364,8 +379,7 @@ var vlSeverityTexts = [...]string{
 	"Fatal", "Fatal2", "Fatal3", "Fatal4",
 }
 
-// vlSeverityIndex returns the OTel severity number whose VictoriaLogs name is
-// text, or -1.
+// vlSeverityIndex is the number whose derived name text is (0 for Unspecified), -1 for any other text.
 func vlSeverityIndex(text []byte) int {
 	for i, name := range vlSeverityTexts {
 		if string(text) == name {
@@ -375,76 +389,71 @@ func vlSeverityIndex(text []byte) int {
 	return -1
 }
 
-// isVLSynthesizedSeverityText reports whether text is the value VictoriaLogs
-// derives from number, and whether that number is zero.
-func isVLSynthesizedSeverityText(text, number []byte) (synthesized, zero bool) {
-	if len(number) == 0 {
-		return false, false
-	}
+// vlSeverityText is the text VictoriaLogs derives from a stored severity number; "" for a value that is no
+// integer, which VictoriaLogs never stores as an OTLP number.
+func vlSeverityText(number []byte) string {
 	n, ok := parseLevelInt(number)
-	if !ok {
-		return false, false
+	switch {
+	case !ok:
+		return ""
+	case n < 1 || n > 24:
+		return vlSeverityTexts[0]
 	}
-	want := vlSeverityTexts[0]
-	if n >= 0 && n < int64(len(vlSeverityTexts)) {
-		want = vlSeverityTexts[n]
-	}
-	return string(text) == want, n == 0
+	return vlSeverityTexts[n]
 }
 
-// canonicalLevel returns the canonical level for a known spelling (case
-// insensitive), or "".
+// canonicalLevel is Loki's level name for a known spelling of a level (compared case-insensitively), "" for any
+// other value.
 func canonicalLevel(v []byte) string {
 	switch len(v) {
 	case 3:
 		switch {
-		case bytes.EqualFold(v, []byte("trc")):
+		case asciiEqualFold(v, "trc"):
 			return levelTrace
-		case bytes.EqualFold(v, []byte("dbg")):
+		case asciiEqualFold(v, "dbg"):
 			return levelDebug
-		case bytes.EqualFold(v, []byte("inf")):
+		case asciiEqualFold(v, "inf"):
 			return levelInfo
-		case bytes.EqualFold(v, []byte("wrn")):
+		case asciiEqualFold(v, "wrn"):
 			return levelWarn
-		case bytes.EqualFold(v, []byte("err")):
+		case asciiEqualFold(v, "err"):
 			return levelError
 		}
 	case 4:
 		switch {
-		case bytes.EqualFold(v, []byte("info")):
+		case asciiEqualFold(v, "info"):
 			return levelInfo
-		case bytes.EqualFold(v, []byte("warn")):
+		case asciiEqualFold(v, "warn"):
 			return levelWarn
 		}
 	case 5:
 		switch {
-		case bytes.EqualFold(v, []byte("trace")):
-			return levelTrace
-		case bytes.EqualFold(v, []byte("debug")):
-			return levelDebug
-		case bytes.EqualFold(v, []byte("error")):
+		case asciiEqualFold(v, "error"):
 			return levelError
-		case bytes.EqualFold(v, []byte("fatal")):
+		case asciiEqualFold(v, "debug"):
+			return levelDebug
+		case asciiEqualFold(v, "trace"):
+			return levelTrace
+		case asciiEqualFold(v, "fatal"):
 			return levelFatal
 		}
 	case 7:
-		if bytes.EqualFold(v, []byte("warning")) {
+		if asciiEqualFold(v, "warning") {
 			return levelWarn
 		}
 	case 8:
-		if bytes.EqualFold(v, []byte("critical")) {
+		if asciiEqualFold(v, "critical") {
 			return levelCritical
 		}
 	case 11:
-		if bytes.EqualFold(v, []byte("information")) {
+		if asciiEqualFold(v, "information") {
 			return levelInfo
 		}
 	}
 	return ""
 }
 
-// levelFromSeverityNumber maps an OTel severity number the way Loki does:
-// an unparsable value is info, 0 and values above 24 are unknown.
+// levelFromSeverityNumber is the level of a stored severity_number; a value that is not a decimal integer is info.
 func levelFromSeverityNumber(v []byte) string {
 	n, ok := parseLevelInt(v)
 	if !ok {
@@ -453,10 +462,9 @@ func levelFromSeverityNumber(v []byte) string {
 	return levelFromSeverityInt(n)
 }
 
-// levelFromSeverityInt maps a parsed OTel severity number.
 func levelFromSeverityInt(n int64) string {
 	switch {
-	case n == 0:
+	case n == 0 || n > 24:
 		return levelUnknown
 	case n <= 4:
 		return levelTrace
@@ -468,422 +476,456 @@ func levelFromSeverityInt(n int64) string {
 		return levelWarn
 	case n <= 20:
 		return levelError
-	case n <= 24:
-		return levelFatal
 	}
-	return levelUnknown
+	return levelFatal
 }
 
-// parseLevelInt parses a decimal integer with strconv.Atoi's syntax and
-// 64-bit range (optional sign, digits only) without allocating.
+// parseLevelInt reads a decimal int64 with an optional sign, as strconv.ParseInt(v, 10, 64) does.
 func parseLevelInt(v []byte) (int64, bool) {
-	neg := false
+	i, neg := 0, false
 	if len(v) > 0 && (v[0] == '+' || v[0] == '-') {
-		neg = v[0] == '-'
-		v = v[1:]
+		neg, i = v[0] == '-', 1
 	}
-	if len(v) == 0 {
+	if i == len(v) {
 		return 0, false
 	}
-	const cutoff = uint64(1) << 63
 	var n uint64
-	for _, c := range v {
+	for ; i < len(v); i++ {
+		c := v[i]
 		if c < '0' || c > '9' {
 			return 0, false
 		}
-		if n > (cutoff-uint64(c-'0'))/10 {
+		if n > (1<<63)/10 {
 			return 0, false
 		}
 		n = n*10 + uint64(c-'0')
+		if n > 1<<63 {
+			return 0, false
+		}
 	}
-	switch {
-	case neg && n == cutoff:
-		return -1 << 63, true
-	case n >= cutoff:
+	if !neg && n == 1<<63 {
 		return 0, false
-	case neg:
-		return -int64(n), true
+	}
+	if neg {
+		return -int64(n), true // -1<<63 wraps to itself
 	}
 	return int64(n), true
 }
 
-// levelFromBody derives the level from a line body (rule 5).
+// levelFromBody is rule 5 over a line: Loki's level name or unknown. A line whose first and last bytes after ASCII
+// blanks are braces is read as JSON (and never as logfmt), any other line as logfmt; a value that is not a known
+// spelling, or no value, leaves the level to the keyword scan.
 func levelFromBody(body []byte) string {
-	json := isLokiJSONLine(body)
-	if !json && bytes.IndexByte(body, '=') < 0 {
-		return levelFromKeywords(body)
-	}
-	keyword, mayHoldKey, exact := scanLevelLine(body)
-	if mayHoldKey {
-		var c string
-		if json {
-			v, _ := levelFromJSONBody(body)
-			c = canonicalLevel(v)
-		} else {
-			c = levelFromLogfmtBody(body)
+	if t := trimLevelBlanks(body); len(t) >= 2 && t[0] == '{' && t[len(t)-1] == '}' {
+		if v, found := levelFromJSONBody(t); found {
+			if c := canonicalLevel(v); c != "" {
+				return c
+			}
 		}
-		if c != "" {
-			return c
-		}
+	} else if c := levelFromLogfmtBody(body); c != "" {
+		return c
 	}
-	if !exact {
-		return levelFromKeywords(body)
-	}
-	return keyword
+	return levelFromKeywords(body)
 }
 
-// scanLevelLine reads a line once for the earliest bounded keyword and for
-// whether it can hold a level key: an ASCII case-insensitive "lvl", "level"
-// or "severity", or any byte (non-ASCII or a backslash escape) that could
-// spell one in another form. Lines without one skip key parsing, whose result
-// could only be "no key". exact is false when the keyword must be recomputed
-// with Unicode lowering (see levelFromKeywords).
-func scanLevelLine(line []byte) (keyword string, mayHoldKey, exact bool) {
-	keyword, exact = levelUnknown, true
-	found := false
-	for i := 0; i < len(line); i++ {
-		c := line[i]
-		switch lower := c | 0x20; {
-		case c >= utf8.RuneSelf:
-			mayHoldKey = true
-			if c == 0xC4 && i+1 < len(line) && line[i+1] == 0xB0 {
-				exact = false
-			}
-		case c == '\\':
-			mayHoldKey = true
-		case lower == 'l' && c >= 'A':
-			rest := line[i:]
-			if (len(rest) >= 3 && asciiEqualFold(rest[:3], []byte("lvl"))) || (len(rest) >= 5 && asciiEqualFold(rest[:5], []byte("level"))) {
-				mayHoldKey = true
-			}
-		case lower == 's' && c >= 'A':
-			if rest := line[i:]; len(rest) >= 8 && asciiEqualFold(rest[:8], []byte("severity")) {
-				mayHoldKey = true
-			}
-		case !found:
-			if level := keywordAt(line, i); level != "" {
-				keyword, found = level, true
-			}
-		}
-		if found && mayHoldKey {
-			return keyword, mayHoldKey, exact
-		}
+// trimLevelBlanks trims the blanks Loki's JSON reading skips around a line: space, tab, CR and LF.
+func trimLevelBlanks(line []byte) []byte {
+	isBlank := func(c byte) bool { return c == ' ' || c == '\t' || c == '\r' || c == '\n' }
+	for len(line) > 0 && isBlank(line[0]) {
+		line = line[1:]
 	}
-	return keyword, mayHoldKey, exact
+	for len(line) > 0 && isBlank(line[len(line)-1]) {
+		line = line[:len(line)-1]
+	}
+	return line
 }
 
-// isLokiJSONLine reports whether the first non-space rune is '{' and the last
-// non-space byte is '}', with Loki's unicode.IsSpace trimming.
-func isLokiJSONLine(line []byte) bool {
-	first := rune(0)
-	for i := 0; i < len(line); {
-		r, size := utf8.DecodeRune(line[i:])
-		if !unicode.IsSpace(r) {
-			first = r
-			break
-		}
-		i += size
+// levelJSONMaxDepth is Loki's default log_level_from_json_max_depth: the keys of the top object and of the
+// objects one level down.
+const levelJSONMaxDepth = 2
+
+// levelFromJSONBody walks a JSON line (from its opening brace) and returns the value of its first level key in
+// document order (names of levelFieldNames after decoding the key, levelJSONMaxDepth objects deep, arrays not
+// entered) that holds a string, raw as the line writes it and possibly empty. The walk is lenient (numbers are
+// read as a run of number bytes, a comma may precede a closing brace) and stops at the first syntax error,
+// keeping what it found before it.
+func levelFromJSONBody(body []byte) (v []byte, found bool) {
+	w := jsonLevelWalk{data: body}
+	w.skipBlanks()
+	if w.pos >= len(w.data) || w.data[w.pos] != '{' {
+		return nil, false
 	}
-	if first != '{' {
+	w.value(1)
+	return w.found, w.hasFound
+}
+
+type jsonLevelWalk struct {
+	data     []byte
+	pos      int
+	found    []byte
+	hasFound bool
+	nest     int
+}
+
+// levelJSONMaxNesting bounds the objects and arrays the walk enters: a walk nested deeper stops there.
+const levelJSONMaxNesting = 10000
+
+func (w *jsonLevelWalk) skipBlanks() {
+	for w.pos < len(w.data) {
+		switch w.data[w.pos] {
+		case ' ', '\t', '\n', '\r':
+			w.pos++
+		default:
+			return
+		}
+	}
+}
+
+// str reads the string at pos (an opening quote) and returns its raw contents; ok is false for a string that does
+// not end or holds an escape JSON does not have.
+func (w *jsonLevelWalk) str() ([]byte, bool) {
+	start := w.pos + 1
+	for i := start; i < len(w.data); i++ {
+		switch w.data[i] {
+		case '"':
+			w.pos = i + 1
+			return w.data[start:i], true
+		case '\\':
+			i++
+			if i >= len(w.data) {
+				return nil, false
+			}
+			switch w.data[i] {
+			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+			case 'u':
+				if i+4 >= len(w.data) || !isHex4(w.data[i+1:i+5]) {
+					return nil, false
+				}
+				i += 4
+			default:
+				return nil, false
+			}
+		}
+	}
+	return nil, false
+}
+
+// value reads the value at pos; the keys of an object there are at depth. It reports whether the walk may go on.
+func (w *jsonLevelWalk) value(depth int) bool {
+	if w.pos >= len(w.data) {
 		return false
 	}
-	for i := len(line) - 1; i >= 0; i-- {
-		if r := rune(line[i]); !unicode.IsSpace(r) {
-			return r == '}'
+	switch c := w.data[w.pos]; {
+	case c == '{':
+		return w.object(depth)
+	case c == '[':
+		return w.array()
+	case c == '"':
+		_, ok := w.str()
+		return ok
+	case c == 't':
+		return w.literal("true")
+	case c == 'f':
+		return w.literal("false")
+	case c == 'n':
+		return w.literal("null")
+	case c == '-' || ('0' <= c && c <= '9'):
+		for w.pos < len(w.data) && isJSONNumberByte(w.data[w.pos]) {
+			w.pos++
 		}
+		return true
 	}
 	return false
 }
 
-var errLevelKeyFound = errors.New("level key found")
-
-type jsonLevelWalk struct {
-	value []byte
-	found bool
+func isJSONNumberByte(c byte) bool {
+	return ('0' <= c && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'
 }
 
-// levelFromJSONBody returns the string value of the first key in
-// levelFieldNames, walking objects at depth 0 and 1 in document order. Keys
-// before a syntax error still count. The value is the raw JSON string content.
-func levelFromJSONBody(body []byte) ([]byte, bool) {
-	var w jsonLevelWalk
-	_ = w.walk(body, 0)
-	return w.value, w.found
-}
-
-func (w *jsonLevelWalk) walk(data []byte, depth int) error {
-	if depth >= 2 {
-		return nil
+func (w *jsonLevelWalk) literal(word string) bool {
+	if !bytes.HasPrefix(w.data[w.pos:], []byte(word)) {
+		return false
 	}
-	return jsonparser.ObjectEach(data, func(key, value []byte, dataType jsonparser.ValueType, _ int) error {
-		switch dataType {
-		case jsonparser.String:
-			if slot := levelFieldSlot(key); slot >= levelSlotFirstName && slot < levelSlotSeverityNumber {
-				w.value, w.found = value, true
-				return errLevelKeyFound
-			}
-		case jsonparser.Object:
-			return w.walk(value, depth+1)
-		}
-		return nil
-	})
+	w.pos += len(word)
+	return true
 }
 
-// levelFieldGroup returns the lowest levelFieldNames index whose name equals
-// key case-insensitively (Unicode folding, like strings.EqualFold), or -1.
+// object reads the object at pos (an opening brace) whose keys are at depth.
+func (w *jsonLevelWalk) object(depth int) bool {
+	if w.nest++; w.nest > levelJSONMaxNesting {
+		return false
+	}
+	defer func() { w.nest-- }()
+	w.pos++
+	for {
+		w.skipBlanks()
+		if w.pos >= len(w.data) {
+			return false
+		}
+		if w.data[w.pos] == '}' {
+			w.pos++
+			return true
+		}
+		if w.data[w.pos] != '"' {
+			return false
+		}
+		key, ok := w.str()
+		if !ok {
+			return false
+		}
+		w.skipBlanks()
+		if w.pos >= len(w.data) || w.data[w.pos] != ':' {
+			return false
+		}
+		w.pos++
+		w.skipBlanks()
+		if w.pos >= len(w.data) {
+			return false
+		}
+		switch c := w.data[w.pos]; {
+		case c == '"':
+			v, ok := w.str()
+			if !ok {
+				return false
+			}
+			if !w.hasFound && depth <= levelJSONMaxDepth && isJSONLevelKey(key) {
+				w.found, w.hasFound = v, true
+			}
+		case c == '{' && depth < levelJSONMaxDepth:
+			if !w.object(depth + 1) {
+				return false
+			}
+		default:
+			// deeper objects and arrays are read for their syntax only
+			if !w.value(levelJSONMaxDepth + 1) {
+				return false
+			}
+		}
+		w.skipBlanks()
+		if w.pos >= len(w.data) {
+			return false
+		}
+		switch w.data[w.pos] {
+		case ',':
+			w.pos++
+		case '}':
+			w.pos++
+			return true
+		default:
+			return false
+		}
+	}
+}
+
+// array reads the array at pos; nothing in it is a level key.
+func (w *jsonLevelWalk) array() bool {
+	if w.nest++; w.nest > levelJSONMaxNesting {
+		return false
+	}
+	defer func() { w.nest-- }()
+	w.pos++
+	for {
+		w.skipBlanks()
+		if w.pos >= len(w.data) {
+			return false
+		}
+		if w.data[w.pos] == ']' {
+			w.pos++
+			return true
+		}
+		if !w.value(levelJSONMaxDepth + 1) {
+			return false
+		}
+		w.skipBlanks()
+		if w.pos >= len(w.data) {
+			return false
+		}
+		switch w.data[w.pos] {
+		case ',':
+			w.pos++
+		case ']':
+			w.pos++
+			return true
+		default:
+			return false
+		}
+	}
+}
+
+func isJSONLevelKey(key []byte) bool {
+	if bytes.IndexByte(key, '\\') >= 0 {
+		var buf [32]byte
+		decoded, ok := unquoteLogfmtLevel(key, buf[:0])
+		if !ok {
+			return false
+		}
+		key = decoded
+	}
+	slot := levelFieldSlot(key)
+	return slot >= levelSlotFirstName && slot < levelSlotSeverityNumber
+}
+
+// levelFieldGroup is the priority of a logfmt key, its name compared case-insensitively with levelFieldNames
+// (level, log.level, severity, severitytext, lvl, severity_text); -1 for any other key.
 func levelFieldGroup(key []byte) int {
-	for _, c := range key {
-		if c >= utf8.RuneSelf {
-			// Unicode folding can match a key of another byte length (for
-			// example U+017F folds to 's'); compare the slow way.
-			for i, name := range levelFieldNameBytes {
-				if bytes.EqualFold(key, name) {
-					return i
-				}
-			}
-			return -1
-		}
-	}
-	// ASCII keys: the names fold into six groups, identified by length.
-	var group int
 	switch len(key) {
 	case 3:
-		group = 8 // lvl
+		if asciiEqualFold(key, "lvl") {
+			return 4
+		}
 	case 5:
-		group = 0 // level
+		if asciiEqualFold(key, "level") {
+			return 0
+		}
 	case 8:
-		group = 4 // severity
+		if asciiEqualFold(key, "severity") {
+			return 2
+		}
 	case 9:
-		group = 3 // log.level
+		if asciiEqualFold(key, "log.level") {
+			return 1
+		}
 	case 12:
-		group = 7 // SeverityText
+		if asciiEqualFold(key, "severitytext") {
+			return 3
+		}
 	case 13:
-		group = 11 // severity_text
-	default:
-		return -1
-	}
-	if asciiEqualFold(key, levelFieldNameBytes[group]) {
-		return group
+		if asciiEqualFold(key, "severity_text") {
+			return 5
+		}
 	}
 	return -1
 }
 
-// asciiEqualFold compares ASCII strings of equal length case-insensitively.
-func asciiEqualFold(a, b []byte) bool {
+// asciiEqualFold compares a with the lower-case ASCII word b, ignoring ASCII case.
+func asciiEqualFold(a []byte, b string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		x, y := a[i], b[i]
-		if x == y {
-			continue
+	for i := 0; i < len(a); i++ {
+		c := a[i]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
 		}
-		if x|0x20 != y|0x20 || x|0x20 < 'a' || x|0x20 > 'z' {
+		if c != b[i] {
 			return false
 		}
 	}
 	return true
 }
 
-// levelFromLogfmtBody scans logfmt pairs with the semantics of Loki's logfmt
-// decoder, takes the value of the key with the lowest levelFieldNames index
-// (case-insensitive) and returns its canonical level, or "" when that value
-// is not a known word. Decoding stops at the first syntax error.
+const levelFieldGroups = 6
+
+// levelFromLogfmtBody reads a logfmt line and returns Loki's level name for the value of its level key earliest in
+// levelFieldNames (names compared case-insensitively, the first occurrence of each; a bare or empty value counts and
+// is no level), "" when that value is not a known spelling or the line has no level key. The read stops at the
+// first syntax error (a quote or an equals sign inside a key or an unquoted value, an unterminated quoted value, an
+// escape JSON strings do not have), keeping the keys before it.
 func levelFromLogfmtBody(line []byte) string {
-	pos := len(levelFieldNames)
-	res := ""
-	d := logfmtLevelDecoder{line: line}
-	for !d.eol() && d.scan() {
-		if len(d.key) == 0 || len(d.key) > len("SEVERITY_TEXT")*3 {
-			continue
-		}
-		group := levelFieldGroup(d.key)
-		if group < 0 || group >= pos {
-			continue
-		}
-		pos = group
-		if d.hasEsc {
-			var buf [16]byte
-			res = canonicalLevel(unquoteLogfmtLevel(d.value, buf[:0]))
-		} else {
-			res = canonicalLevel(d.value)
-		}
-		if group == 0 {
-			return res
-		}
+	if bytes.IndexByte(line, '=') < 0 {
+		return ""
 	}
-	return res
-}
-
-// logfmtLevelDecoder is Loki's logfmt key/value decoder (pkg/logql/log/logfmt)
-// reduced to what level detection reads. For quoted values with escapes value
-// holds the quoted text and hasEsc is set; the caller unquotes it.
-type logfmtLevelDecoder struct {
-	line   []byte
-	pos    int
-	key    []byte
-	value  []byte
-	hasEsc bool
-}
-
-func (d *logfmtLevelDecoder) eol() bool { return d.pos >= len(d.line) }
-
-//nolint:gocyclo // mirrors Loki's logfmt decoder state machine one to one.
-func (d *logfmtLevelDecoder) scan() bool {
-	d.key, d.value, d.hasEsc = nil, nil, false
-	line := d.line
-
-	// garbage
-	i := d.pos
-	for i < len(line) && line[i] <= ' ' {
-		i++
-	}
-	if i >= len(line) {
-		d.pos = len(line)
-		return false
-	}
-	d.pos = i
-
-	// key
-	start, multibyte := d.pos, false
-	for i = d.pos; i < len(line); i++ {
-		c := line[i]
-		switch {
-		case c == '=':
-			d.pos = i
-			if d.pos > start {
-				d.key = line[start:d.pos]
-				if multibyte && bytes.ContainsRune(d.key, utf8.RuneError) {
-					return d.skipValue()
-				}
-			}
-			if d.key == nil {
-				return d.skipValue()
-			}
-			return d.equal()
-		case c == '"':
-			d.pos = i
-			return d.skipValue()
-		case c <= ' ':
-			d.pos = i
-			if d.pos > start {
-				d.key = line[start:d.pos]
-				if multibyte && bytes.ContainsRune(d.key, utf8.RuneError) {
-					return false
-				}
-			}
-			return true
-		case c >= utf8.RuneSelf:
-			multibyte = true
-		}
-	}
-	d.pos = len(line)
-	if d.pos > start {
-		d.key = line[start:d.pos]
-		if multibyte && bytes.ContainsRune(d.key, utf8.RuneError) {
-			return false
-		}
-	}
-	return true
-}
-
-func (d *logfmtLevelDecoder) equal() bool {
-	line := d.line
-	d.pos++
-	if d.pos >= len(line) {
-		return true
-	}
-	switch c := line[d.pos]; {
-	case c <= ' ':
-		return true
-	case c == '"':
-		return d.quotedValue()
-	}
-	start := d.pos
-	for i := d.pos; i < len(line); i++ {
-		c := line[i]
-		switch {
-		case c == '=' || c == '"':
-			d.pos = i
-			return d.skipValue()
-		case c <= ' ':
-			d.pos = i
-			if d.pos > start {
-				d.value = line[start:d.pos]
-			}
-			return true
-		}
-	}
-	d.pos = len(line)
-	if d.pos > start {
-		d.value = line[start:d.pos]
-	}
-	return true
-}
-
-func (d *logfmtLevelDecoder) skipValue() bool {
-	line := d.line
-	for i := d.pos; i < len(line); i++ {
+	// best is the highest-ranked level group seen so far; a group is taken only when it outranks best, so the value
+	// and quoting of best are all the scan keeps.
+	var bestValue []byte
+	var bestQuoted bool
+	best := levelFieldGroups
+scan:
+	for i := 0; i < len(line) && best > 0; {
 		if line[i] <= ' ' {
-			d.pos = i
-			return false
-		}
-	}
-	d.pos = len(line)
-	return false
-}
-
-func (d *logfmtLevelDecoder) quotedValue() bool {
-	line := d.line
-	hasEsc, esc := false, false
-	start := d.pos
-	for i := d.pos + 1; i < len(line); i++ {
-		c := line[i]
-		switch {
-		case esc:
-			esc = false
-		case c == '\\':
-			hasEsc, esc = true, true
-		case c == '"':
-			d.pos = i + 1
-			if hasEsc {
-				quoted := line[start:d.pos]
-				if !validLogfmtQuoted(quoted) {
-					return false
-				}
-				d.value, d.hasEsc = quoted, true
-				return true
-			}
-			start++
-			if end := d.pos - 1; end > start {
-				d.value = line[start:end]
-			}
-			return true
-		}
-	}
-	d.pos = len(line)
-	return false
-}
-
-// validLogfmtQuoted reports whether Loki's unquoteBytes accepts the quoted
-// value s (including its quotes).
-func validLogfmtQuoted(s []byte) bool {
-	s = s[1 : len(s)-1]
-	for r := 0; r < len(s); r++ {
-		if s[r] != '\\' {
+			i++
 			continue
 		}
-		r++
-		if r >= len(s) {
+		start := i
+		for i < len(line) && line[i] > ' ' && line[i] != '=' {
+			if line[i] == '"' {
+				break scan
+			}
+			i++
+		}
+		if i == start {
+			break // a key that is empty
+		}
+		key := line[start:i]
+		var value []byte
+		isQuoted := false
+		if i < len(line) && line[i] == '=' {
+			i++
+			switch {
+			case i < len(line) && line[i] == '"':
+				end, ok := logfmtClosingQuote(line, i)
+				if !ok || !validLogfmtEscapes(line[i+1:end]) {
+					break scan
+				}
+				value, isQuoted = line[i+1:end], true
+				i = end + 1
+				if i < len(line) && line[i] > ' ' {
+					break scan
+				}
+			default:
+				vs := i
+				for i < len(line) && line[i] > ' ' {
+					if line[i] == '"' || line[i] == '=' {
+						break scan
+					}
+					i++
+				}
+				value = line[vs:i]
+			}
+		}
+		g := levelFieldGroup(key)
+		if g < 0 || g >= best {
+			continue
+		}
+		if value == nil {
+			value = line[i:i] // a bare key: present, empty
+		}
+		bestValue, bestQuoted, best = value, isQuoted, g
+	}
+	if best == levelFieldGroups {
+		return ""
+	}
+	v := bestValue
+	if bestQuoted {
+		var buf [16]byte
+		if len(v) > 6*len("information") {
+			return "" // longer than any known spelling written as \u escapes
+		}
+		v, _ = unquoteLogfmtLevel(v, buf[:0])
+	}
+	return canonicalLevel(v)
+}
+
+// logfmtClosingQuote is the index of the quote that ends the quoted value starting at open.
+func logfmtClosingQuote(line []byte, open int) (int, bool) {
+	for i := open + 1; i < len(line); i++ {
+		switch line[i] {
+		case '\\':
+			i++
+		case '"':
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// validLogfmtEscapes reports a quoted value whose escapes unquoteLogfmtLevel accepts.
+func validLogfmtEscapes(quoted []byte) bool {
+	for i := bytes.IndexByte(quoted, '\\'); i >= 0 && i < len(quoted); i++ {
+		if quoted[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(quoted) {
 			return false
 		}
-		switch s[r] {
-		case '"', '\\', '/', '\'', 'b', 'f', 'n', 'r', 't':
+		switch quoted[i] {
+		case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
 		case 'u':
-			if r+5 > len(s) || !isHex4(s[r+1:r+5]) {
+			if i+4 >= len(quoted) || !isHex4(quoted[i+1:i+5]) {
 				return false
 			}
-			r += 4
+			i += 4
 		default:
 			return false
 		}
@@ -891,168 +933,139 @@ func validLogfmtQuoted(s []byte) bool {
 	return true
 }
 
+// unquoteLogfmtLevel unescapes a quoted logfmt value (\" \\ \/ \b \f \n \r \t \uXXXX); ok is false for any other
+// escape. A value without escapes is returned as it is; one with escapes is written into buf.
+func unquoteLogfmtLevel(quoted, buf []byte) ([]byte, bool) {
+	if bytes.IndexByte(quoted, '\\') < 0 {
+		return quoted, true
+	}
+	out := buf
+	for i := 0; i < len(quoted); i++ {
+		c := quoted[i]
+		if c != '\\' {
+			out = append(out, c)
+			continue
+		}
+		i++
+		if i >= len(quoted) {
+			return nil, false
+		}
+		switch quoted[i] {
+		case '"', '\\', '/':
+			out = append(out, quoted[i])
+		case 'b':
+			out = append(out, '\b')
+		case 'f':
+			out = append(out, '\f')
+		case 'n':
+			out = append(out, '\n')
+		case 'r':
+			out = append(out, '\r')
+		case 't':
+			out = append(out, '\t')
+		case 'u':
+			if i+4 >= len(quoted) || !isHex4(quoted[i+1:i+5]) {
+				return nil, false
+			}
+			r := rune(0)
+			for _, h := range quoted[i+1 : i+5] {
+				r = r<<4 | rune(hexValue(h))
+			}
+			out = utf8.AppendRune(out, r)
+			i += 4
+		default:
+			return nil, false
+		}
+	}
+	return out, true
+}
+
 func isHex4(s []byte) bool {
 	for _, c := range s {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+		if hexValue(c) < 0 {
 			return false
 		}
 	}
-	return true
+	return len(s) == 4
 }
 
-// nonLevelWord stands for a decoded value that cannot be a level word.
-var nonLevelWord = []byte{0}
-
-// unquoteLogfmtLevel decodes a validated quoted logfmt value into buf. Level
-// words are ASCII and short, so a value that decodes to a non-ASCII rune or
-// does not fit buf comes back as nonLevelWord.
-func unquoteLogfmtLevel(quoted, buf []byte) []byte {
-	s := quoted[1 : len(quoted)-1]
-	for r := 0; r < len(s); r++ {
-		c := s[r]
-		if c == '\\' {
-			r++
-			switch s[r] {
-			case 'b':
-				c = '\b'
-			case 'f':
-				c = '\f'
-			case 'n':
-				c = '\n'
-			case 'r':
-				c = '\r'
-			case 't':
-				c = '\t'
-			case 'u':
-				var rr rune
-				for _, h := range s[r+1 : r+5] {
-					rr <<= 4
-					switch {
-					case h >= '0' && h <= '9':
-						rr |= rune(h - '0')
-					case h >= 'a' && h <= 'f':
-						rr |= rune(h-'a') + 10
-					default:
-						rr |= rune(h-'A') + 10
-					}
-				}
-				r += 4
-				if rr >= utf8.RuneSelf {
-					return nonLevelWord
-				}
-				c = byte(rr)
-			default:
-				c = s[r]
-			}
-		} else if c >= utf8.RuneSelf {
-			return nonLevelWord
-		}
-		if len(buf) == cap(buf) {
-			return nonLevelWord
-		}
-		buf = append(buf, c)
+func hexValue(c byte) int {
+	switch {
+	case '0' <= c && c <= '9':
+		return int(c - '0')
+	case 'a' <= c && c <= 'f':
+		return int(c-'a') + 10
+	case 'A' <= c && c <= 'F':
+		return int(c-'A') + 10
 	}
-	return buf
+	return -1
 }
 
-// levelFromKeywords returns the level of the earliest bounded keyword in the
-// line (case-insensitive), or "unknown". Boundaries follow Loki: a keyword
-// must start the line or follow space, tab, LF, '[', '(', '{', '"' or '=',
-// and must end the line or precede space, tab, LF, brackets, braces, parens,
-// ':', ',', '!', '"' or '='.
+// levelKeywords are the level words of the keyword scan with Loki's level name for each; a word that starts
+// another (warning, error) comes first.
+var levelKeywords = [...]struct{ word, level string }{
+	{"trace", levelTrace}, {"debug", levelDebug}, {"info", levelInfo},
+	{"warning", levelWarn}, {"warn", levelWarn},
+	{"error", levelError}, {"err", levelError},
+	{"critical", levelCritical}, {"fatal", levelFatal},
+}
+
+// levelWordStart marks the bytes a level word can start with: their letters in either case, and the first byte
+// of U+0130, which Loki's lower-casing turns into i.
+var levelWordStart = func() (t [256]bool) {
+	for _, c := range []byte("tdiwecfTDIWECF") {
+		t[c] = true
+	}
+	t[0xC4] = true
+	return t
+}()
+
+// levelLeftBoundary and levelRightBoundary are the bytes a level word may follow and be followed by.
+var levelLeftBoundary, levelRightBoundary = func() (l, r [256]bool) {
+	for _, c := range []byte(" \t\n[({\"=") {
+		l[c] = true
+	}
+	for _, c := range []byte(" \t\n[]{}()\":=,!") {
+		r[c] = true
+	}
+	return l, r
+}()
+
+// levelFromKeywords is the keyword scan: the level of the first level word of the line (any letter case,
+// standing between the boundary bytes), unknown when it has none.
 func levelFromKeywords(line []byte) string {
-	if bytes.Contains(line, []byte("İ")) {
-		// strings.ToLower maps U+0130 to a one-byte 'i', which can complete
-		// "info"; use the same lowering so positions and matches agree.
-		return levelFromKeywordsLower([]byte(strings.ToLower(string(line))))
-	}
-	return levelFromKeywordsLower(line)
-}
-
-func levelFromKeywordsLower(line []byte) string {
 	for i := 0; i < len(line); i++ {
-		if level := keywordAt(line, i); level != "" {
-			return level
+		if !levelWordStart[line[i]] || (i > 0 && !levelLeftBoundary[line[i-1]]) {
+			continue
+		}
+		for _, k := range levelKeywords {
+			if end := matchLevelWord(line, i, k.word); end >= 0 && (end == len(line) || levelRightBoundary[line[end]]) {
+				return k.level
+			}
 		}
 	}
 	return levelUnknown
 }
 
-// keywordAt returns the level of a bounded keyword starting at line[i], or "".
-func keywordAt(line []byte, i int) string {
-	b := line[i]
-	if b < 'A' || (b > 'Z' && b < 'a') || b > 'z' {
-		return ""
-	}
-	c := b | 0x20
-	switch c {
-	case 't', 'd', 'f', 'c', 'e', 'w', 'i':
-	default:
-		return ""
-	}
-	if i > 0 && !isLevelLeftBoundary(line[i-1]) {
-		return ""
-	}
-	rest := line[i:]
-	switch c {
-	case 't':
-		if boundedKeyword(rest, "trace") {
-			return levelTrace
-		}
-	case 'd':
-		if boundedKeyword(rest, "debug") {
-			return levelDebug
-		}
-	case 'f':
-		if boundedKeyword(rest, "fatal") {
-			return levelFatal
-		}
-	case 'c':
-		if boundedKeyword(rest, "critical") {
-			return levelCritical
-		}
-	case 'e':
-		if boundedKeyword(rest, "error") || boundedKeyword(rest, "err") {
-			return levelError
-		}
-	case 'w':
-		if boundedKeyword(rest, "warning") || boundedKeyword(rest, "warn") {
-			return levelWarn
-		}
-	case 'i':
-		if boundedKeyword(rest, "info") {
-			return levelInfo
-		}
-	}
-	return ""
-}
-
-// boundedKeyword reports whether s starts with word (ASCII case-insensitive)
-// followed by the end of s or a right boundary.
-func boundedKeyword(s []byte, word string) bool {
-	if len(s) < len(word) {
-		return false
-	}
+// matchLevelWord is the end of word (lower-case ASCII) at line[i:], letters compared lower-cased (U+0130 is i),
+// -1 when it is not there.
+func matchLevelWord(line []byte, i int, word string) int {
 	for j := 0; j < len(word); j++ {
-		c := s[j]
-		if c >= 'A' && c <= 'Z' {
+		if i >= len(line) {
+			return -1
+		}
+		c := line[i]
+		if c == 0xC4 && word[j] == 'i' && i+1 < len(line) && line[i+1] == 0xB0 {
+			i += 2
+			continue
+		}
+		if 'A' <= c && c <= 'Z' {
 			c += 'a' - 'A'
 		}
 		if c != word[j] {
-			return false
+			return -1
 		}
+		i++
 	}
-	return len(s) == len(word) || isLevelRightBoundary(s[len(word)])
-}
-
-func isLevelLeftBoundary(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '[' || c == '(' || c == '{' || c == '"' || c == '='
-}
-
-func isLevelRightBoundary(c byte) bool {
-	switch c {
-	case ' ', '\t', '\n', '[', ']', '(', ')', '{', '}', ':', ',', '!', '"', '=':
-		return true
-	}
-	return false
+	return i
 }

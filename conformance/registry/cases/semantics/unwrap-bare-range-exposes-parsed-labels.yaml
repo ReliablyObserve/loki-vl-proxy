@@ -1,5 +1,5 @@
 id: semantics/unwrap-bare-range-exposes-parsed-labels
-title: a range function with unwrap and no outer aggregation exposes every parsed label although the parser names one key (open)
+title: a range function with unwrap and no outer aggregation exposes every parsed label although the parser names one key (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -8,8 +8,7 @@ consumer: explore
 why: |
   `rate({service_name="payment-service"} | logfmt amount | unwrap amount [5m])` has
   one series per stream on Loki 3.7.7: `| logfmt amount` extracts only the
-  unwrapped label, which the series identity drops
-  (pkg/logql/log/metrics_extraction.go:150-178). The proxy answers a series per
+  unwrapped label, which the series identity drops. The proxy answers a series per
   stream and per value of every other key of the lines (msg, error_code,
   currency, provider, latency_ms ...), because the raw-row route that answers a
   bare range function with unwrap keeps all parsed labels.
@@ -18,6 +17,17 @@ why: |
   stack): at an instant Loki answers 268 series, the proxy 2035; on query_range
   over 10 minutes 364 against 2769. The same for `sum without () (...)` at an
   instant (semantics/without-empty-grouping-range-collapses).
+
+  Now answered with Loki's series: a named extraction exposes only the labels it
+  lists (the bare parser metric path classifies each row's fields by the
+  pipeline's exposure). TestExtractionListIdentityMatchLoki
+  (internal/querycorpus) holds the bare range functions over `| logfmt amount`,
+  `| logfmt amount, route`, `| json amount` and `| json amount, route` to
+  Loki's engine answers on VictoriaLogs v1.49.0 and v1.53.0 (instant and
+  query_range with the step at, under and over the range): the series are the
+  stream and the listed labels, less the unwrapped one. Still different there:
+  a line without a listed key, which Loki labels with the key empty
+  (semantics/extraction-list-empty-label).
 request:
   method: GET
   path: /loki/api/v1/query
@@ -32,12 +42,15 @@ compare:
   expect: |
     One series per stream, labelled with the stream labels only.
 gap:
-  status: open
+  status: fixed
+  fixed_by: 'verified against recorded Loki answers in the extraction-list differential'
+  visual: none
+  visual_reason: 'no code change: the answer already matched; the series labels are held by the recorded Loki differential (API), and the Explore graph of the stack check shows them'
   impact: explore-visible
   effort: M
   area: 'internal/proxy raw-row range metric evaluator (the labels of a series built from the parsed fields)'
-  loki: 'pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + the labels the parsers extract, less the unwrapped one)'
+  loki: 'the series are the stream plus the labels the parsers extract, less the unwrapped one (268 series on Loki against 2035 on the proxy, in this case)'
   proxy: 'a series per stream and per value of every parsed key'
-  planned_test: 'TestCompat_UnwrapBareRangeSeriesLabels (test/e2e-compat, group core) over rate and the over-time functions, extraction list, range and instant'
+  planned_test: 'TestExtractionListIdentityMatchLoki (internal/querycorpus, Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0); TestCompat_UnwrapBareRangeSeriesLabels (test/e2e-compat, group core) over rate and the over-time functions, extraction list, range and instant'
   note: 'Found while fixing semantics/unwrap-sum-without-collapses; related semantics/unwrap-per-series-identity-raw-rows and profiles/json-extraction-list-exposes-only-listed (the same for log queries).'
   clusters: []

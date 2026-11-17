@@ -12,6 +12,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -106,6 +107,9 @@ func keepRows(rng *rand.Rand, s0 time.Time, n int, logfmt bool) []pushdownRow {
 		for k := range keys {
 			names = append(names, k)
 		}
+		// Sorted before the shuffle, so a seed gives the same lines in every run (Loki's recorded answers are
+		// keyed by the data).
+		sort.Strings(names)
 		rng.Shuffle(len(names), func(i, j int) { names[i], names[j] = names[j], names[i] })
 		parts := make([]string, 0, len(names))
 		for _, k := range names {
@@ -229,84 +233,6 @@ func fakeVLRequestRange(r *http.Request) (int64, int64, bool) {
 	return from, to, ok1 && ok2
 }
 
-// lokiKeepReference evaluates fn(X | parser | keep labels [window]) with
-// Loki's semantics (pkg/logql/log/parser.go, keep_labels.go, range_vector.go):
-// the stream labels and service_name discovered at ingest, a parsed key named
-// like a stream label renamed name_extracted, every label the keep does not
-// name deleted, and the samples of equal label sets summed. outer is "" or a
-// vector aggregation without grouping (sum, count).
-func lokiKeepReference(rows []pushdownRow, parser string, keep []string, fn, outer string, window time.Duration, start, end time.Time, step time.Duration) map[string]map[int64]string {
-	out := map[string]map[int64]string{}
-	for at := start; !at.After(end); at = at.Add(step) {
-		values := map[string]float64{}
-		labelSets := map[string]map[string]string{}
-		for _, row := range rows {
-			if !row.ts.After(at.Add(-window)) || row.ts.After(at) {
-				continue
-			}
-			labels := cloneStringMap(row.stream)
-			labels["service_name"] = row.stream["app"]
-			parsed := map[string]string{}
-			switch parser {
-			case "json":
-				var obj map[string]string
-				_ = json.Unmarshal([]byte(row.msg), &obj)
-				parsed = obj
-			case "logfmt":
-				for _, kv := range strings.Fields(row.msg) {
-					k, v, _ := strings.Cut(kv, "=")
-					parsed[k] = v
-				}
-			}
-			for k, v := range parsed {
-				if _, ok := row.stream[k]; ok {
-					k += "_extracted"
-				}
-				labels[k] = v
-			}
-			kept := map[string]string{}
-			for _, k := range keep {
-				if v, ok := labels[k]; ok && v != "" {
-					kept[k] = v
-				}
-			}
-			key := canonicalLabelsKey(kept)
-			labelSets[key] = kept
-			if fn == "bytes_over_time" {
-				values[key] += float64(len(row.msg))
-			} else {
-				values[key]++
-			}
-		}
-		if len(values) == 0 {
-			continue
-		}
-		emit := func(key string, v float64) {
-			if out[key] == nil {
-				out[key] = map[int64]string{}
-			}
-			out[key][at.Unix()] = strconv.FormatFloat(v, 'f', -1, 64)
-		}
-		total := 0.0
-		for key, v := range values {
-			if fn == "rate" {
-				v /= window.Seconds()
-			}
-			total += v
-			if outer == "" {
-				emit(key, v)
-			}
-		}
-		switch outer {
-		case "sum":
-			emit(canonicalLabelsKey(nil), total)
-		case "count":
-			emit(canonicalLabelsKey(nil), float64(len(values)))
-		}
-	}
-	return out
-}
-
 // A differential run of range aggregations over a pipeline ending in | keep:
 // random rows (stream level or not, a body level colliding with it or not,
 // foo present or absent) and random keep lists, parsers, functions and outer
@@ -358,7 +284,7 @@ func TestKeepSeriesGrouping_Differential(t *testing.T) {
 				continue
 			}
 			seen[query] = true
-			want := lokiKeepReference(rows, parser, keep, fn, outer, time.Minute, start, end, time.Minute)
+			want := lokiPushdownMatrix(t, "keep_series_grouping", rows, query, start, end, time.Minute)
 			params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
 			rec := httptest.NewRecorder()
 			p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
@@ -388,7 +314,7 @@ func TestKeepSeriesGrouping_InstantCount(t *testing.T) {
 	at := s0.Add(6 * time.Minute)
 	for _, keep := range []string{"zzz", "foo", "pod", "foo, pod"} {
 		query := fmt.Sprintf(`count(rate({app="api"} | json | keep %s [5m]))`, keep)
-		want := lokiKeepReference(rows, "json", strings.Split(keep, ", "), "rate", "count", 5*time.Minute, at, at, time.Minute)
+		want := lokiPushdownMatrix(t, "keep_series_grouping_instant", rows, query, at, at, time.Minute)
 		params := url.Values{"query": {query}, "time": {strconv.FormatInt(at.UnixNano(), 10)}}
 		rec := httptest.NewRecorder()
 		p.handleQuery(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil))
@@ -538,7 +464,7 @@ func TestKeepSeriesGrouping_JSONFoldKeepsSettledSteps(t *testing.T) {
 	const query = `count(rate({app="api"} | json | keep foo [5m]))`
 	for i, shift := range []time.Duration{0, time.Minute, 2 * time.Minute} {
 		start, end := s0.Add(6*time.Minute+shift), s0.Add(26*time.Minute+shift)
-		want := lokiKeepReference(rows, "json", []string{"foo"}, "rate", "count", 5*time.Minute, start, end, time.Minute)
+		want := lokiPushdownMatrix(t, "keep_series_grouping_settled", rows, query, start, end, time.Minute)
 		stats, raw := counts.stats.Load(), counts.raw.Load()
 		params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
 		rec := httptest.NewRecorder()

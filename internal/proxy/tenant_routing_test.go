@@ -90,7 +90,7 @@ var tenantRoutingConfigs = map[string]func(*Config){
 	},
 }
 
-// conformance: tenant-numeric-routing
+// conformance: tenant-numeric-routing, semantics/tenant-numeric-canonical
 func TestTenantRouting_Matrix(t *testing.T) {
 	const missing = "<missing>"
 	ok := func(acct, proj string) tenantExpect { return tenantExpect{http.StatusOK, acct, proj} }
@@ -151,7 +151,7 @@ func TestTenantRouting_Matrix(t *testing.T) {
 	}
 }
 
-// conformance: tenant-numeric-routing
+// conformance: tenant-numeric-routing, semantics/tenant-numeric-canonical
 func TestTenantRouting_RefusalCarriesTheReason(t *testing.T) {
 	p := newTestProxyWithOptions(t, tenantRoutingConfigs["default"])
 	_, _, err := tenantProbe(t, p, "0042", false)

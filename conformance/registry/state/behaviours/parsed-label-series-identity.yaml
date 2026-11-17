@@ -61,7 +61,7 @@ known_gaps:
       unmatched line is attributed.
     next_step: |
       Establish Loki's exact attribution for a non-matching line in a metric
-      pipeline (3.7.x vectorAggEvaluator over the pipeline's per-line labels),
+      pipeline (Loki 3.7.x's vector aggregation over the pipeline's per-line labels),
       then decide whether the proxy should drop the row, keep it under the
       bare stream identity, or emit it with an empty capture. Needs its own
       change with a Loki-vs-proxy test over a fixture whose match rate is

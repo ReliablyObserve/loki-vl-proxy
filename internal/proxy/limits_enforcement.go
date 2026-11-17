@@ -212,7 +212,7 @@ func (p *Proxy) requestQueryLimits(ctx context.Context) queryLimits {
 	return p.queryLimitsFor(getOrgID(ctx))
 }
 
-// flagMaxQuerySeries is -max-stats-query-series, or Loki's default 500.
+// flagMaxQuerySeries is -max-stats-query-series, or the proxy's default 1000.
 func (p *Proxy) flagMaxQuerySeries() int {
 	if p != nil && p.maxStatsQuerySeries > 0 {
 		return p.maxStatsQuerySeries
@@ -441,9 +441,8 @@ func normalizeUnenforcedLimit(v any) any {
 	return v
 }
 
-// tenantLimitsMiddleware applies Loki's query limits (limitsMiddleware,
-// validateMaxEntriesLimits, checkIntervalLimit and the per-tenant
-// query_timeout) before a request reaches its handler, with the combined
+// tenantLimitsMiddleware applies Loki's query limits (entries limit, query length
+// and interval limits and the per-tenant query_timeout) before a request reaches its handler, with the combined
 // limits of every tenant of a multi-tenant request. A request no limit can
 // affect passes without being parsed.
 func (p *Proxy) tenantLimitsMiddleware(endpoint string, next http.HandlerFunc) http.HandlerFunc {
@@ -530,7 +529,7 @@ func rangeOverLength(r *http.Request, maxLen time.Duration) bool {
 }
 
 // tenantLimitsTimeoutEndpoints are the requests Loki runs under the tenant's
-// query_timeout (WrapQuerySpanAndTimeout in pkg/loki/modules.go). Tail,
+// query_timeout (registry limits/query-timeout-per-tenant). Tail,
 // patterns and the other routes are not bounded by it.
 var tenantLimitsTimeoutEndpoints = map[string]bool{
 	"query":        true,
@@ -570,7 +569,7 @@ var tenantLimitsLookbackEndpoints = map[string]bool{
 }
 
 // lokiMaxEntriesErrorTemplate is Loki's max_entries_limit_per_query rejection
-// (pkg/querier/http.go validateMaxEntriesLimits), HTTP 400.
+// (registry limits/max-entries-limit-rejects), HTTP 400.
 const lokiMaxEntriesErrorTemplate = "max entries limit per query exceeded, limit > max_entries_limit_per_query (%d > %d)"
 
 // entryLimitAbove reports whether the request's limit parameter exceeds a

@@ -147,12 +147,9 @@ func foldResult(t *testing.T, body []byte) []foldSeries {
 	return out
 }
 
-// foldByGrouping is Loki's VectorAggEvaluator over the series the manual
-// evaluator returns: per step, the series that share the labels the grouping
-// keeps become one; a series with no sample at a step is not counted at it.
-//
-// conformance: semantics/non-sum-vector-aggregation-unreduced, metric-series-identity
-func TestFoldByGroupingEdgeCases(t *testing.T) {
+// foldByGroupingCases are the edge cases of the fold: each case's want is Loki's answer
+// (TestFoldByGroupingCasesMatchRecordedLoki holds every one to Loki's recorded answer).
+func foldByGroupingCases() []foldCase {
 	ab := func(pod, zone string) map[string]string {
 		return map[string]string{"app": "a", "pod": pod, "zone": zone, "service_name": "a", "detected_level": "unknown"}
 	}
@@ -162,7 +159,7 @@ func TestFoldByGroupingEdgeCases(t *testing.T) {
 		{ab("p2", "x"), [][2]float64{pt(60, 3), pt(180, 8)}},
 		{ab("p3", "y"), [][2]float64{pt(120, 10)}},
 	}
-	for _, tc := range []foldCase{
+	return []foldCase{
 		{"max ungrouped", "max", nil, three, []foldSeries{{map[string]string{}, [][2]float64{pt(60, 3), pt(120, 10), pt(180, 8)}}}},
 		{"min ungrouped", "min", nil, three, []foldSeries{{map[string]string{}, [][2]float64{pt(60, 1), pt(120, 4), pt(180, 4)}}}},
 		{"count ungrouped counts the series with a sample", "count", nil, three, []foldSeries{{map[string]string{}, [][2]float64{pt(60, 2), pt(120, 2), pt(180, 2)}}}},
@@ -196,7 +193,16 @@ func TestFoldByGroupingEdgeCases(t *testing.T) {
 		{"max of NaN only is NaN", "max", nil, nan([]float64{math.NaN(), math.NaN()}), []foldSeries{{map[string]string{}, [][2]float64{pt(60, math.NaN())}}}},
 		{"min of NaN only is NaN", "min", nil, nan([]float64{math.NaN(), math.NaN()}), []foldSeries{{map[string]string{}, [][2]float64{pt(60, math.NaN())}}}},
 		{"no series", "max", nil, nil, nil},
-	} {
+	}
+}
+
+// foldByGrouping is Loki's vector aggregation over the series the manual
+// evaluator returns: per step, the series that share the labels the grouping
+// keeps become one; a series with no sample at a step is not counted at it.
+//
+// conformance: semantics/non-sum-vector-aggregation-unreduced, metric-series-identity
+func TestFoldByGroupingEdgeCases(t *testing.T) {
+	for _, tc := range foldByGroupingCases() {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/instant=%v", tc.name, instant), func(t *testing.T) {
 				series, want := tc.series, tc.want

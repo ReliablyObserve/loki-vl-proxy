@@ -43,7 +43,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy stage-field exposure (parsed-label naming)'
-  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; :152 json, :342 logfmt, :696 json expression'
+  loki: 'a parsed key that equals a stream label or structured-metadata key becomes name_extracted, for json, logfmt and json expressions (TestCompat_ExtractedSuffixOnParsedCollision; https://grafana.com/docs/loki/latest/query/log_queries/)'
   proxy: 'parsed key merged into the stream label''s name'
   planned_test: 'TestCompat_ExtractedSuffixOnParsedCollision (test/e2e-compat, group core); proxy TestLogQuery_ParsedKeyNamedLikeStreamLabelGetsExtractedSuffix; translator TestExtractedSuffixLabelFilter'
   note: |

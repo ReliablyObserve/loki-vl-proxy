@@ -1,10 +1,8 @@
 package proxy
 
 import (
-	"container/heap"
 	"encoding/json"
 	"fmt"
-	"math"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -14,15 +12,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
 // This file pins topk and bottomk on query_range to Loki's: every step is
 // ranked on its own, within each group of the by()/without() labels, and the
 // result holds the union of the series that ranked at some step with their
-// samples at those steps only. The reference is written apart from the proxy:
-// it evaluates every window from the lines (Loki v3.7.7 pkg/logql/range_vector.go,
-// the window (t-range, t]) and ranks with the heap of pkg/logql/evaluator.go
-// VectorAggEvaluator.Next and pkg/logql/vector.go (vectorByValueHeap).
+// samples at those steps only. Loki's answers are recorded with Loki's engine
+// over the same lines (test/oracle/loki engine; LVP_RUN_ORACLES=1 records them
+// again).
 //
 // The proxy under test is the real handler over a simulated VictoriaLogs that
 // answers the stats pipes of the window evaluator.
@@ -33,68 +32,10 @@ type topKLine struct {
 	msg      string
 }
 
-// topKSeries is one series of the reference inner vector.
+// topKSeries is one series of an instant vector: its labels and value.
 type topKSeries struct {
 	app, env string
 	value    float64
-}
-
-// lokiTopK ranks one step's vector like VectorAggEvaluator.Next. group maps a
-// series to its grouping key.
-func lokiTopK(vec []topKSeries, k int, descending bool, group func(topKSeries) string) []topKSeries {
-	heaps := map[string]*refHeap{}
-	order := []string{}
-	for _, s := range vec {
-		key := group(s)
-		h, ok := heaps[key]
-		if !ok {
-			h = &refHeap{descending: descending}
-			heaps[key] = h
-			order = append(order, key)
-			heap.Push(h, s)
-			continue
-		}
-		root := h.items[0].value
-		better := root < s.value
-		if !descending {
-			better = root > s.value
-		}
-		if len(h.items) < k || better || math.IsNaN(root) {
-			if len(h.items) == k {
-				heap.Pop(h)
-			}
-			heap.Push(h, s)
-		}
-	}
-	var out []topKSeries
-	for _, key := range order {
-		out = append(out, heaps[key].items...)
-	}
-	return out
-}
-
-// refHeap is vectorByValueHeap (topk) and vectorByReverseValueHeap (bottomk).
-type refHeap struct {
-	items      []topKSeries
-	descending bool
-}
-
-func (h *refHeap) Len() int { return len(h.items) }
-func (h *refHeap) Less(i, j int) bool {
-	if math.IsNaN(h.items[i].value) {
-		return true
-	}
-	if h.descending {
-		return h.items[i].value < h.items[j].value
-	}
-	return h.items[i].value > h.items[j].value
-}
-func (h *refHeap) Swap(i, j int) { h.items[i], h.items[j] = h.items[j], h.items[i] }
-func (h *refHeap) Push(x any)    { h.items = append(h.items, x.(topKSeries)) }
-func (h *refHeap) Pop() any {
-	last := h.items[len(h.items)-1]
-	h.items = h.items[:len(h.items)-1]
-	return last
 }
 
 // topKFixture generates lines for app x env series with gaps and changing
@@ -118,33 +59,6 @@ func topKFixture(seed int64, base time.Time, minutes int) []topKLine {
 		}
 	}
 	return lines
-}
-
-// topKReferenceVector is the inner vector at step t: one sample per series
-// whose window (t-window, t] holds a line.
-func topKReferenceVector(lines []topKLine, fn string, t time.Time, window time.Duration) []topKSeries {
-	type id struct{ app, env string }
-	count, size := map[id]float64{}, map[id]float64{}
-	for _, l := range lines {
-		if l.ts <= t.Add(-window).UnixNano() || l.ts > t.UnixNano() {
-			continue
-		}
-		count[id{l.app, l.env}]++
-		size[id{l.app, l.env}] += float64(len(l.msg))
-	}
-	var vec []topKSeries
-	for k, c := range count {
-		v := c
-		switch fn {
-		case "rate":
-			v = c / window.Seconds()
-		case "bytes_over_time":
-			v = size[k]
-		}
-		vec = append(vec, topKSeries{k.app, k.env, v})
-	}
-	sort.Slice(vec, func(i, j int) bool { return vec[i].app+vec[i].env < vec[j].app+vec[j].env })
-	return vec
 }
 
 func newTopKTestBackend(t *testing.T, lines []topKLine) *httptest.Server {
@@ -219,8 +133,8 @@ func topKSpelling(format string, key func(topKSeries) string) topKGrouping {
 	return topKGrouping{func(op string, k int, inner string) string { return fmt.Sprintf(format, op, k, inner) }, key}
 }
 
-// topKGroupings are the spellings of Loki's grammar (syntax.y:182-184) with
-// the key the reference groups by.
+// topKGroupings are the grouping spellings LogQL accepts on topk and bottomk
+// (before and after the parameters) with the key a series groups by.
 var topKGroupings = map[string]topKGrouping{
 	"ungrouped":       topKSpelling("%s(%d, %s)", func(topKSeries) string { return "" }),
 	"spaced":          topKSpelling("%s (%d, %s)", func(topKSeries) string { return "" }),
@@ -237,63 +151,171 @@ type topKShape struct {
 	window time.Duration
 }
 
-// runTopKDifferential compares the proxy with the per-step reference over
-// generated data: the union of ranked series, the samples they keep, and the
-// values selected at every step and group. Ties at a boundary are broken by an
-// unordered map in Loki, so there the selected values are compared and the
-// series are not.
-func runTopKDifferential(t *testing.T, start, end time.Time, version string, seeds []int64, ks []int, shapes []topKShape) {
+// topKLineStreams are the fixture lines as Loki streams: one stream per app x env, the line the message.
+func topKLineStreams(lines []topKLine) []oraclerun.EngineStream {
+	var out []oraclerun.EngineStream
+	index := map[string]int{}
+	for _, l := range lines {
+		key := l.app + "/" + l.env
+		i, ok := index[key]
+		if !ok {
+			i = len(out)
+			index[key] = i
+			out = append(out, oraclerun.EngineStream{Labels: map[string]string{"app": l.app, "env": l.env}})
+		}
+		out[i].Entries = append(out[i].Entries, oraclerun.EngineEntry{TS: l.ts, Line: l.msg})
+	}
+	return out
+}
+
+// topKRangeForm is a query_range request form over the differential's window.
+func topKRangeForm(query string, start, end time.Time, step time.Duration) string {
+	return url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {strconv.FormatFloat(step.Seconds(), 'f', -1, 64)}}.Encode()
+}
+
+// topKLokiPoints reads a recorded Loki answer as series -> unix second -> value.
+func topKLokiPoints(t *testing.T, id string, a lokiEngineAnswer) topKPoints {
+	t.Helper()
+	if a.Status != http.StatusOK {
+		t.Fatalf("%s: Loki answered %d %s", id, a.Status, a.Error)
+	}
+	s, err := decodeLokiSeries(a.Body)
+	if err != nil || s.ResultType != "matrix" {
+		t.Fatalf("%s: %v %s", id, err, s.ResultType)
+	}
+	out := topKPoints{}
+	for key, points := range s.Points {
+		name := fmt.Sprintf("app=%s,env=%s", s.Labels[key]["app"], s.Labels[key]["env"])
+		out[name] = map[int64]float64{}
+		for ms, text := range points {
+			v, _ := strconv.ParseFloat(text, 64)
+			out[name][ms/1000] = v
+		}
+	}
+	return out
+}
+
+// runTopKDifferential compares the proxy with Loki's recorded answers (test/oracle/loki engine, Loki's engine at
+// the request's own, unaligned bounds) over generated data: the union of ranked series, the samples they keep,
+// and the values selected at every step and group. Ties at a boundary are broken by the order Loki meets the
+// series, so there the selected values are compared and the series are not; the ties are read from Loki's answer
+// for the inner aggregation.
+func runTopKDifferential(t *testing.T, name string, start, end time.Time, version string, seeds []int64, ks []int, shapes []topKShape) {
 	base := time.Unix(1699999200, 0).UTC()
+	type request struct {
+		seed         int64
+		query, inner string
+		grouping     string
+		op           string
+		step         time.Duration
+	}
+	var sets []oraclerun.EngineDataSet
+	var requests []request
+	groupingNames := make([]string, 0, len(topKGroupings))
+	for g := range topKGroupings {
+		groupingNames = append(groupingNames, g)
+	}
+	sort.Strings(groupingNames)
 	for _, seed := range seeds {
-		lines := topKFixture(seed, base, 60)
-		backend := newTopKTestBackend(t, lines)
-		p := newGapTestProxy(t, backend.URL)
-		p.storeBackendVersion(version, version)
+		set := oraclerun.EngineDataSet{Streams: topKLineStreams(topKFixture(seed, base, 60))}
 		for _, shape := range shapes {
 			inner := fmt.Sprintf(`sum by (app, env) (%s({app=~".+"}[%s]))`, shape.fn, formatPromDuration(shape.window))
+			set.Requests = append(set.Requests, oraclerun.EngineRequest{ID: fmt.Sprintf("%d|%s|%s", seed, shape.step, inner), Unaligned: true, Form: topKRangeForm(inner, start, end, shape.step)})
 			for _, op := range []string{"topk", "bottomk"} {
 				for _, k := range ks {
-					for name, g := range topKGroupings {
-						query := g.clause(op, k, inner)
-						t.Run(fmt.Sprintf("seed%d/%s/%s", seed, name, query), func(t *testing.T) {
-							got := queryTopKRange(t, p, query, start, end, shape.step)
-							want, tied := topKPoints{}, map[string]bool{}
-							rng := rand.New(rand.NewSource(seed))
-							for ts := start; !ts.After(end); ts = ts.Add(shape.step) {
-								vec := topKReferenceVector(lines, shape.fn, ts, shape.window)
-								// Loki meets the series in map order: a tie at the k-th
-								// place keeps whichever came first, not the first label.
-								shuffled := append([]topKSeries(nil), vec...)
-								rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
-								picked := lokiTopK(shuffled, k, op == "topk", g.key)
-								for _, s := range picked {
-									key := fmt.Sprintf("app=%s,env=%s", s.app, s.env)
-									if want[key] == nil {
-										want[key] = map[int64]float64{}
-									}
-									want[key][ts.Unix()] = s.value
-								}
-								for group := range tiedGroups(vec, g.key, k, op == "topk") {
-									tied[fmt.Sprintf("%d|%s", ts.Unix(), group)] = true
-								}
-								assertTopKStep(t, query, ts, vec, picked, got, g.key, op == "topk")
-							}
-							for key, pts := range got {
-								for ts := range pts {
-									var app, env string
-									_, _ = fmt.Sscanf(key, "app=%2s,env=%s", &app, &env)
-									if _, ok := want[key][ts]; !ok && !tied[fmt.Sprintf("%d|%s", ts, g.key(topKSeries{app: app, env: env}))] {
-										t.Errorf("%s: unexpected sample %s @%d", query, key, ts)
-									}
-								}
-							}
-						})
+					for _, g := range groupingNames {
+						query := topKGroupings[g].clause(op, k, inner)
+						set.Requests = append(set.Requests, oraclerun.EngineRequest{ID: fmt.Sprintf("%d|%s|%s", seed, shape.step, query), Unaligned: true, Form: topKRangeForm(query, start, end, shape.step)})
+						requests = append(requests, request{seed: seed, query: query, inner: inner, grouping: g, op: op, step: shape.step})
 					}
 				}
 			}
 		}
-		backend.Close()
+		sets = append(sets, set)
 	}
+	answers := lokiEngineAnswers(t, name, sets)
+	proxies := map[int64]*Proxy{}
+	for _, seed := range seeds {
+		backend := newTopKTestBackend(t, topKFixture(seed, base, 60))
+		t.Cleanup(backend.Close)
+		p := newGapTestProxy(t, backend.URL)
+		p.storeBackendVersion(version, version)
+		proxies[seed] = p
+	}
+	for _, rq := range requests {
+		t.Run(fmt.Sprintf("seed%d/%s/%s", rq.seed, rq.grouping, rq.query), func(t *testing.T) {
+			g := topKGroupings[rq.grouping]
+			got := queryTopKRange(t, proxies[rq.seed], rq.query, start, end, rq.step)
+			lokiID := fmt.Sprintf("%d|%s|%s", rq.seed, rq.step, rq.query)
+			innerID := fmt.Sprintf("%d|%s|%s", rq.seed, rq.step, rq.inner)
+			loki := topKLokiPoints(t, lokiID, answers[lokiID])
+			vectors := topKLokiPoints(t, innerID, answers[innerID])
+			tied := map[string]bool{}
+			for ts := start; !ts.After(end); ts = ts.Add(rq.step) {
+				var vec, picked []topKSeries
+				for key, pts := range vectors {
+					if v, ok := pts[ts.Unix()]; ok {
+						s := topKSeriesOf(key, v)
+						vec = append(vec, s)
+						if lv, ok := loki[key][ts.Unix()]; ok {
+							s.value = lv
+							picked = append(picked, s)
+						}
+					}
+				}
+				for group := range topKTiedGroups(vec, picked, g.key) {
+					tied[fmt.Sprintf("%d|%s", ts.Unix(), group)] = true
+				}
+				assertTopKStep(t, rq.query, ts, vec, picked, got, g.key, rq.op == "topk")
+			}
+			for key, pts := range got {
+				for ts := range pts {
+					if _, ok := loki[key][ts]; !ok && !tied[fmt.Sprintf("%d|%s", ts, g.key(topKSeriesOf(key, 0)))] {
+						t.Errorf("%s: unexpected sample %s @%d", rq.query, key, ts)
+					}
+				}
+			}
+		})
+	}
+}
+
+// topKSeriesOf reads a series name app=<a>,env=<e>.
+func topKSeriesOf(key string, value float64) topKSeries {
+	var app, env string
+	if i := strings.Index(key, ",env="); i > 0 {
+		app, env = strings.TrimPrefix(key[:i], "app="), key[i+len(",env="):]
+	}
+	return topKSeries{app: app, env: env, value: value}
+}
+
+// topKTiedGroups are the groups of a step whose kept samples tie across the k-th place: some series not kept has
+// the value of the last kept one, so Loki could have kept either.
+func topKTiedGroups(vec, picked []topKSeries, group func(topKSeries) string) map[string]bool {
+	kept := map[string]map[float64]int{}
+	for _, s := range picked {
+		g := group(s)
+		if kept[g] == nil {
+			kept[g] = map[float64]int{}
+		}
+		kept[g][s.value]++
+	}
+	all := map[string]map[float64]int{}
+	for _, s := range vec {
+		g := group(s)
+		if all[g] == nil {
+			all[g] = map[float64]int{}
+		}
+		all[g][s.value]++
+	}
+	out := map[string]bool{}
+	for g, values := range kept {
+		for v, n := range values {
+			if all[g][v] > n {
+				out[g] = true
+			}
+		}
+	}
+	return out
 }
 
 // conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings, limits/top-n-ranking-not-silent, loki_api_v1_query_range
@@ -301,7 +323,7 @@ func TestTopKRangeDifferential(t *testing.T) {
 	base := time.Unix(1699999200, 0).UTC()
 	// An unaligned start: Grafana's now-1h is never on a step boundary.
 	start, end := base.Add(10*time.Minute+7300*time.Millisecond), base.Add(50*time.Minute+7300*time.Millisecond)
-	runTopKDifferential(t, start, end, "v1.50.0", []int64{1, 2, 3}, []int{1, 2, 5, 100}, []topKShape{
+	runTopKDifferential(t, "topk_range", start, end, "v1.50.0", []int64{1, 2, 3}, []int{1, 2, 5, 100}, []topKShape{
 		{"count_over_time", time.Minute, 5 * time.Minute},  // sliding
 		{"count_over_time", time.Minute, time.Minute},      // tumbling
 		{"rate", 90 * time.Second, 5 * time.Minute},        // window not a multiple of the step
@@ -316,7 +338,7 @@ func TestTopKRangeDifferential(t *testing.T) {
 func TestTopKRangeDifferentialRawEvaluator(t *testing.T) {
 	base := time.Unix(1699999200, 0).UTC()
 	start, end := base.Add(10*time.Minute+30*time.Second), base.Add(40*time.Minute+30*time.Second)
-	runTopKDifferential(t, start, end, "v1.44.0", []int64{4}, []int{2}, []topKShape{
+	runTopKDifferential(t, "topk_range_raw", start, end, "v1.44.0", []int64{4}, []int{2}, []topKShape{
 		{"count_over_time", time.Minute, 5 * time.Minute},
 		{"bytes_over_time", time.Minute, 2 * time.Minute},
 	})
@@ -379,24 +401,4 @@ func assertTopKStep(t *testing.T, query string, ts time.Time, vec, picked []topK
 			}
 		}
 	}
-}
-
-// tiedGroups returns the groups of vec with a tie across the k-th place, where
-// Loki's choice depends on map order.
-func tiedGroups(vec []topKSeries, group func(topKSeries) string, k int, descending bool) map[string]bool {
-	byGroup := map[string][]float64{}
-	for _, s := range vec {
-		byGroup[group(s)] = append(byGroup[group(s)], s.value)
-	}
-	tied := map[string]bool{}
-	for g, values := range byGroup {
-		sort.Float64s(values)
-		if descending {
-			sort.Sort(sort.Reverse(sort.Float64Slice(values)))
-		}
-		if len(values) > k && values[k-1] == values[k] {
-			tied[g] = true
-		}
-	}
-	return tied
 }

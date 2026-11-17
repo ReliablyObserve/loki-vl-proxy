@@ -157,7 +157,14 @@ func screenLogQuery(canon string, flipped lower.LogStages) (stages, allowed lowe
 // screenMetricQuery is the text screen of lowerMetric for a canonical metric query, under the flipped metric
 // constructs: true for a query the lowering plans.
 func screenMetricQuery(canon string, flipped lower.MetricSet) bool {
-	return strings.Contains(canon, "keep") && strings.Contains(canon, "unwrap") || lower.ScreenMetricIn(canon, flipped) != ""
+	return strings.Contains(canon, "keep") && strings.Contains(canon, "unwrap") || countVarianceScreen(canon) ||
+		lower.ScreenMetricIn(canon, flipped) != ""
+}
+
+// countVarianceScreen is the text screen of countVarianceConstruct: a query that starts with count and names
+// stdvar_over_time and an unwrap. The plan decides.
+func countVarianceScreen(canon string) bool {
+	return strings.HasPrefix(canon, "count") && strings.Contains(canon, "stdvar_over_time") && strings.Contains(canon, "unwrap")
 }
 
 // lowersParse reports a query the translation plans, read with the text screens of the stage families and
@@ -266,6 +273,12 @@ func labelFilterTurnedAway(e *logqlpkg.LabelFilterExpr, staged, keyParsed, logQu
 // translator, and the Loki differential (internal/querycorpus TestKeepUnwrapIdentityMatchLoki) holds the answers.
 const keepIdentityConstruct = "UnwrapKeepIdentity"
 
+// countVarianceConstruct is the flip of a count by labels over stdvar_over_time (lower.CountsVarianceSeries): Loki
+// answers the number of series of each group, the string translator a variance, and the lowering writes the count, so
+// the query is served from it (semantics/count-over-stdvar-answers-variance). The Loki differentials
+// (internal/querycorpus TestStddevStdvarMatchLoki and TestExtractionListIdentityMatchLoki) hold the answers.
+const countVarianceConstruct = "UnwrapCountVariance"
+
 // lowerMetric translates a canonical metric query with the typed lowering and reports whether it did: a query whose
 // series a keep before its unwrap decides (keepIdentityConstruct), or one whose plan is a flipped metric construct
 // and whose lowered text is the string translator's (writesTranslatorText). The query is planned once for both
@@ -298,9 +311,11 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	if err != nil {
 		return "", false
 	}
-	// The keep identity is decided first: it is served whatever is flipped. The screen named the construct; the plan's
-	// root has the last word.
-	if !lower.KeepDecidesUnwrapIdentity(plan) {
+	// The keep identity and the count over stdvar_over_time are decided first: they are served whatever is flipped.
+	// The screen named the construct; the plan's root has the last word.
+	if lower.CountsVarianceSeries(plan) {
+		construct = countVarianceConstruct
+	} else if !lower.KeepDecidesUnwrapIdentity(plan) {
 		if !metricFlipped {
 			return "", false
 		}

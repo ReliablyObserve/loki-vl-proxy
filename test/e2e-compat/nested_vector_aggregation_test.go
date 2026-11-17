@@ -17,9 +17,8 @@ import (
 )
 
 // Loki folds a vector aggregation over another one level by level, and each
-// level keeps exactly its own grouping labels (pkg/logql/evaluator.go
-// VectorAggEvaluator.Next: `by` keeps the listed labels a series has, `without`
-// drops the listed ones): min by (zone) (avg by (pod, zone) (count_over_time(...)))
+// level keeps exactly its own grouping labels (`by` keeps the listed labels a
+// series has, `without` drops the listed ones): min by (zone) (avg by (pod, zone) (count_over_time(...)))
 // is one series per zone, valued by the lowest of the per-pod averages. The
 // proxy sent the whole nest to VictoriaLogs and dropped the outer `by`, so every
 // zone folded into one series without labels, at an instant and over a tumbling

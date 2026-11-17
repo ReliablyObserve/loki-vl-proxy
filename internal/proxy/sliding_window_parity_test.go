@@ -124,6 +124,13 @@ func newSlidingFakeVL(t testing.TB, lines []slidingFixtureLine) (*httptest.Serve
 			t.Errorf("parse form: %v", err)
 			return
 		}
+		if r.Form.Get("extra_filters") != "" || strings.Contains(r.Form.Get("query"), " as __p_h") {
+			// The read of the streams without a level label and the presence probe of its chain
+			// (withLevelLessStreams): the fake answers no row, so every stream keeps the first read's series,
+			// whose windows these tests check.
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+			return
+		}
 		switch r.URL.Path {
 		case "/select/logsql/stats_query_range":
 			q := r.Form.Get("query")

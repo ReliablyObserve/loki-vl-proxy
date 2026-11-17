@@ -1,0 +1,58 @@
+id: semantics/count-over-stdvar-answers-variance
+pending: true
+title: count by labels over stdvar_over_time answers a variance where Loki answers the number of series (fixed)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `count by (ns) (stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`
+  counts the series of each namespace in Loki: 2 at every point of the
+  extraction-list differential's fixture. The string translator writes
+  stdvar_over_time under a vector aggregation with a clause as the standard
+  deviation of the group's pooled samples, which the proxy squares, and leaves the
+  count out, so the proxy answered the variance of the namespace (20336.51 for
+  ns=x at the instant). Every request kind: instant, step = range, step < range
+  and step > range, with and without a parser.
+
+  Recorded with Loki's engine against VictoriaLogs' own handlers (v1.49.0 and
+  v1.53.0) through the proxy's handlers: TestExtractionListIdentityMatchLoki
+  (count by (ns) over stdvar_over_time after `| logfmt amount`, `| logfmt amount,
+  route`, `| json amount`, `| json amount, route` and a json alias) and
+  TestStddevStdvarMatchLoki (count by (app) and by (app, pod) after `| json`,
+  `| logfmt` and no parser).
+
+  Fixed: the lowering writes the deviation of each series (the stream and its
+  stored level, or the labels a keep leaves), then the count of those per group,
+  as it writes count over stddev_over_time, with no power the proxy takes; the
+  proxy serves the query from the plan (UnwrapCountVariance). After an extraction
+  list of more keys than the unwrapped one the count is of the stream's series,
+  not Loki's (semantics/unwrap-extraction-list-series-identity: count over the
+  series).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'count by (namespace) (stdvar_over_time({service_name="payment-service"} | logfmt amount | unwrap amount [5m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    The number of series of each group, as Loki answers.
+gap:
+  status: fixed
+  fixed_by: 'the lowering counts the series of the deviation (varianceVector) and the proxy serves the query from the plan'
+  visual: none
+  visual_reason: 'the values are held by the recorded Loki differentials (API); the stack check graphs the shape in Explore next to Loki'
+  impact: explore-visible
+  effort: S
+  area: 'internal/queryplan/lower unwrap.go (varianceVector), unwrap_count_variance.go; internal/proxy query_lowering.go (countVarianceConstruct), unwrap_count_variance.go (the response key fence)'
+  loki: 'count by labels counts the series of each group, whatever the function over them'
+  proxy: 'the deviation of each series, then their count per group'
+  planned_test: 'TestExtractionListIdentityMatchLoki and TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0); TestCountOverStdvarCountsSeries (internal/queryplan/lower); an e2e test vs Loki in group semantics (TestCompat_CountOverStdvarCountsSeries) when the stack check confirms it'
+  note: 'Found by the extraction-list differential (semantics/unwrap-extraction-list-series-identity); related semantics/stdvar-grouped-pooled-variance (the other aggregations by labels over stdvar_over_time on a range longer than the step).'
+  clusters: []

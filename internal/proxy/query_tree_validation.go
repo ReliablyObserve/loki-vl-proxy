@@ -10,19 +10,47 @@ import (
 )
 
 // validateQueryTree is the validation of a query the cache in cachedQueryValidation holds: the parser and its
-// semantic pass, then Loki's checks on the typed tree (queryplan.Validate). It returns the parsed expression
-// (nil for the bare wildcard or on a rejection) and Loki's error text, or "", and whether the text is one of
-// the tree's checks (the query passed the parser and its semantic pass).
+// semantic pass, then Loki's checks on the typed tree (queryplan.Validate), then the pipeline build, in Loki's
+// order. It returns the parsed expression (nil for the bare wildcard or on a rejection) and Loki's error text, or
+// "", and whether the text is one of the tree's checks (the query passed the parser and its semantic pass).
 func validateQueryTree(query string) (logqlpkg.Expr, string, bool) {
-	expr, msg := logqlpkg.ValidateLogQLExpr(query)
+	expr, msg, phase := validateQueryPhases(query)
+	if phase == phaseBuild {
+		expr = nil
+	}
+	return expr, msg, phase == phaseTree
+}
+
+// validateQueryPhases is validateQueryTree with the phase of the rejection: tree is set for one of the query plan's
+// tree checks, build for a pipeline stage Loki refuses to build (its last check before it runs the query, which
+// the query routes answer after the request's limits and the instant query type). With phaseBuild the parsed
+// expression is returned beside the error, for the routes to read its type; it is no valid query.
+func validateQueryPhases(query string) (expr logqlpkg.Expr, msg string, phase queryPhase) {
+	expr, msg, build := logqlpkg.ValidateLogQLPhases(query)
 	if msg != "" || expr == nil {
-		return expr, msg, false
+		return expr, msg, phaseParse
 	}
 	if rejection := queryplan.Validate(expr); rejection != nil {
-		return nil, treeRejection(rejection).Text(), true
+		return nil, treeRejection(rejection).Text(), phaseTree
 	}
-	return expr, "", false
+	if build != "" {
+		return expr, build, phaseBuild
+	}
+	return expr, "", phaseNone
 }
+
+// queryPhase is the phase of Loki's checks a query validation rejected a query in.
+type queryPhase uint8
+
+const (
+	phaseNone queryPhase = iota
+	// phaseParse: the parser, its actions, the lexer and the parser's semantic pass.
+	phaseParse
+	// phaseTree: the query plan's checks over the typed tree.
+	phaseTree
+	// phaseBuild: a pipeline stage Loki refuses to build.
+	phaseBuild
+)
 
 // treeRejection is the client error of a tree check's rejection: Loki's parse error without a position.
 func treeRejection(r *queryplan.Rejection) *lokierr.Error { return lokierr.Parse(0, 0, r.Detail) }
@@ -86,11 +114,37 @@ func emptyWhateverTheData(expr logqlpkg.Expr) bool {
 	return false
 }
 
+// dataFreeAnswer is the answer Loki gives a metric query whatever the data, if it gives one.
+type dataFreeAnswer uint8
+
+const (
+	noDataFreeAnswer dataFreeAnswer = iota
+	// emptyResult: no series (emptyWhateverTheData).
+	emptyResult
+	// absentAtEveryStep: one series valued 1 at every step (absentEveryStep).
+	absentAtEveryStep
+)
+
+// dataFreeAnswerOf is the data-free answer of a metric expression.
+func dataFreeAnswerOf(expr logqlpkg.Expr) dataFreeAnswer {
+	switch {
+	case emptyWhateverTheData(expr):
+		return emptyResult
+	case absentEveryStep(expr):
+		return absentAtEveryStep
+	}
+	return noDataFreeAnswer
+}
+
 // answerEmptyResult answers a query cachedQueryValidation found empty whatever the data with Loki's empty result
-// (a matrix on query_range, a vector on query), before any other work; it reports whether it answered.
-func (p *Proxy) answerEmptyResult(w http.ResponseWriter, endpoint, query string, start time.Time) bool {
-	if !cachedQueryValidation(query).empty {
+// (a matrix on query_range, a vector on query), and an absent_over_time over a zero range with Loki's 1 at every
+// step (answerAbsentEveryStep), before any other work; it reports whether it answered.
+func (p *Proxy) answerEmptyResult(w http.ResponseWriter, r *http.Request, endpoint, query string, start time.Time) bool {
+	switch cachedQueryValidation(query).answer {
+	case noDataFreeAnswer:
 		return false
+	case absentAtEveryStep:
+		return p.answerAbsentEveryStep(w, r, endpoint, query, start)
 	}
 	p.writeJSON(w, emptyLimitedResponse(endpoint, query))
 	p.metrics.RecordRequest(endpoint, http.StatusOK, time.Since(start))

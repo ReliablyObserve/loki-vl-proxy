@@ -266,7 +266,7 @@ func TestHeavyQueryAdmission_SaturatedReturns429AndLabelsStillServe(t *testing.T
 	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("saturated heavy query status = %d, want 429; body=%s", w.Code, w.Body.String())
 	}
-	// Loki's queue-full text exactly (pkg/queue/queue.go:21); the flag goes to the log.
+	// Loki's queue-full text exactly; the flag goes to the log.
 	if got := lokiErrorText(t, w); got != "too many outstanding requests" {
 		t.Fatalf("429 text = %q, want Loki's %q", got, "too many outstanding requests")
 	}

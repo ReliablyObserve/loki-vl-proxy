@@ -3178,6 +3178,27 @@
   "shape": "F2 logfmt amount first_over_time by service, range = step"
  },
  {
+  "added": "2026-11-16",
+  "commit": "5b5c7965fcffc797fcbb46b673b4a7c83073a008",
+  "range": "1h",
+  "set": "unwrap-first-last",
+  "shape": "F4 logfmt amount last_over_time behind a keep, 5m range over a shorter step"
+ },
+ {
+  "added": "2026-11-16",
+  "commit": "5b5c7965fcffc797fcbb46b673b4a7c83073a008",
+  "range": "24h",
+  "set": "unwrap-first-last",
+  "shape": "F4 logfmt amount last_over_time behind a keep, 5m range over a shorter step"
+ },
+ {
+  "added": "2026-11-16",
+  "commit": "5b5c7965fcffc797fcbb46b673b4a7c83073a008",
+  "range": "6h",
+  "set": "unwrap-first-last",
+  "shape": "F4 logfmt amount last_over_time behind a keep, 5m range over a shorter step"
+ },
+ {
   "added": "2026-10-29",
   "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
   "range": "1h",

@@ -1,7 +1,7 @@
 id: formatter-label-format
 kind: formatter
 logql: "label_format"
-loki_constant: OpFmtLabel
+source: https://grafana.com/docs/loki/v3.7.x/query/log_queries/
 generated:
   supported_by_proxy: true
   seen_in:

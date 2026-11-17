@@ -25,7 +25,7 @@ func TestPlanDelegatesEveryConstruct(t *testing.T) {
 		"VectorAgg operand":                                    `sum by (app) (rate({app="a"}[5m]) > 1)`,
 		"Rank operand BinOp":                                   `topk(3, sum by (app) (rate({app="a"}[5m])) > 1)`,
 		"Rank grouping":                                        `sort by (app) (rate({app="a"}[5m]))`,
-		"BinOp set operator":                                   `sum(rate({app="a"}[5m])) and sum(rate({app="b"}[5m]))`,
+		"BinOp set operator":                                   `sum(rate({app="a"}[5m])) and 1`,
 		"BinOp operand without empty nest":                     `sum without () (rate({app="a"}[5m])) / sum by (app) (sum without () (rate({app="a"}[5m])))`,
 		"LabelReplace operand Rank":                            `label_replace(topk(3, rate({app="a"}[5m]) > 1), "b", "$1", "app", "(.*)")`,
 		"VectorLit":                                            `vector(1)`,

@@ -9,9 +9,7 @@ why: |
   `sum by (level) (max_over_time({service_name="payment-service"} | logfmt amount | unwrap amount [5m]))`
   takes the maximum per series (the stream, since `| logfmt amount` extracts only the
   unwrapped label, which is dropped from the identity) and sums those maxima per
-  level (pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next over the series
-  of the range aggregation, pkg/logql/log/metrics_extraction.go:150-178 for the
-  identity). The proxy groups the inner stats by `level` alone
+  level (the vector aggregation folds the series of the range aggregation). The proxy groups the inner stats by `level` alone
   (unwrapInnerGrouping returns the by labels), so it answers the maximum of the
   whole level, not the sum of the per-stream maxima.
 
@@ -46,7 +44,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/translator unwrapInnerGrouping (sum by over a per-series function: the inner stats groups by the by labels only)'
-  loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next; pkg/logql/log/metrics_extraction.go:150-178 (series = stream + parsed labels)'
+  loki: 'the vector aggregation folds the per-series values of the range aggregation, a series being the stream plus the parsed labels (generator data on Loki 3.7.7, in this case)'
   proxy: 'the maximum of the group, not the sum of the per-series maxima'
   planned_test: 'TestCompat_UnwrapSumByPerSeriesFunction (test/e2e-compat, group core) over sum by x avg/max/min, extraction list, range and instant'
   note: 'Found while fixing semantics/unwrap-sum-without-collapses; related semantics/unwrap-per-series-identity-raw-rows (the same defect for a bare parser).'

@@ -3,9 +3,11 @@ package lower
 import (
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 // splitRangeOps and splitVectorOps are the functions taken per series and the aggregations over them that a
@@ -87,8 +89,8 @@ func aggregateBySplit(vec logql.VectorOp, rng logql.RangeOp, samples []float64, 
 	return overSeries(vec, vs)
 }
 
-// The aggregations the lowering answers without the series hash (seriesSplitFree) are exactly the ones whose answer
-// is the same for every split of a group's samples into series: over random samples (negative values, repeats,
+// The aggregations the lowering answers from the rows of each group, without the series hash (foldsRows), are
+// exactly the ones whose answer is the same for every split of a group's samples into series: over random samples (negative values, repeats,
 // single-sample series), Loki's split (each line's parsed labels) and the stream's coarser split (series merged)
 // agree on every trial for a maximum of maximums and a minimum of minimums, and differ on some trial for every other
 // pair, which so keeps the dynamic identity.
@@ -114,22 +116,25 @@ func TestSeriesSplitFreeAggregations(t *testing.T) {
 					differs++
 				}
 			}
-			if free := seriesSplitFree(vec, rng); free != (differs == 0) {
-				t.Errorf("%s over %s: seriesSplitFree %v, but %d of 2000 random splits differ", vec, rng, free, differs)
+			if free := foldsRows(vec, rng); free != (differs == 0) {
+				t.Errorf("%s over %s: foldsRows %v, but %d of 2000 random splits differ", vec, rng, free, differs)
 			}
 		}
 	}
 }
 
-// A maximum of maximums and a minimum of minimums are not written with the dynamic identity, with or without a label
-// filter after the parser; the other aggregations over a function taken per series keep it.
+// A maximum of maximums and a minimum of minimums, with or without a label filter after the parser, are a parser's
+// dynamic identity that the lowering answers from the rows of each group (foldsRows): one stats pipe by the clause,
+// no series hash. The other aggregations over a function taken per series write the hash, filtered or not.
 //
-// conformance: semantics/unwrap-per-series-identity-raw-rows
-func TestDynamicIdentitySkipsSplitFreeAggregations(t *testing.T) {
-	for q, want := range map[string]bool{
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-per-series-identity-label-filter
+func TestDynamicIdentityFoldsRowsOfSplitFreeAggregations(t *testing.T) {
+	for q, hash := range map[string]bool{
 		`max by (app) (max_over_time({app="a"} | json | unwrap n [5m]))`:                                 false,
 		`min(min_over_time({app="a"} | logfmt | unwrap n [5m]))`:                                         false,
 		`max by (service_name) (max_over_time({a="b"} | json | unwrap duration_ms | __error__="" [1m]))`: false,
+		`min(min_over_time({a="b"} | json | __error__="" | unwrap duration_ms [5m]))`:                    false,
+		`max by (app) (max_over_time({a="b"} | logfmt | route="/a" | unwrap n [5m]))`:                    false,
 		`max by (app) (min_over_time({app="a"} | json | unwrap n [5m]))`:                                 true,
 		`sum(max_over_time({app="a"} | json | unwrap n [5m]))`:                                           true,
 		`min(avg_over_time({app="a"} | json | unwrap n [5m]))`:                                           true,
@@ -139,8 +144,15 @@ func TestDynamicIdentitySkipsSplitFreeAggregations(t *testing.T) {
 		if p == nil {
 			t.Fatalf("%s: does not parse", q)
 		}
-		if got := DynamicUnwrapIdentity(p); got != want || WritesDynamicUnwrapIdentity(p) != want {
-			t.Errorf("%s: dynamic identity %v, want %v", q, got, want)
+		if !DynamicUnwrapIdentity(p) || !WritesDynamicUnwrapIdentity(p) {
+			t.Fatalf("%s: not a dynamic identity", q)
+		}
+		op, err := PlanQuery(q, p, Profile{})
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if text := physical.Encode(op); strings.Contains(text, dynamicSeriesField) != hash {
+			t.Errorf("%s: series hash written %v, want %v: %s", q, !hash, hash, text)
 		}
 	}
 }

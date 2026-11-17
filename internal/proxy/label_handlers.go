@@ -82,11 +82,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		// The fetch above covers the full requested [start, end] range, so this first
 		// response is already complete; no follow-up refresh is needed.
 		result := lokiLabelsResponse(labels)
-		if len(labels) == 0 {
-			p.setMetadataListCache("labels", cacheKey, result, 0, labelsTTL)
-		} else {
-			p.mergeLabelsIntoCache("labels", cacheKey, labels, labelsTTL)
-		}
+		p.storeLabelsCache("labels", cacheKey, labels, labelsTTL)
 		p.recordMetadataEdgeRead(cacheKey, started)
 		return result, nil
 	}
@@ -569,8 +565,8 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordCacheMiss()
 
 	r = p.withRequestScope(r)
-	// Loki reads index/stats over its range window (codec.go:384-394
-	// ParseIndexStatsQuery -> ParseRangeQuery): a missing start or end is the
+	// Loki reads index/stats over its range window (registry
+	// quality/index-stats-default-window): a missing start or end is the
 	// last hour, never all of VictoriaLogs' retention.
 	qStart, qEnd := r.FormValue("start"), r.FormValue("end")
 	if strings.TrimSpace(qStart) == "" || strings.TrimSpace(qEnd) == "" {
@@ -614,11 +610,9 @@ func (p *Proxy) computeIndexStatsResult(ctx context.Context, query, start, end s
 	// estimate of 100 bytes per entry, as before.
 	//
 	// Loki's streams and entries are estimates read from chunk metadata: a
-	// chunk that straddles the window adds its entries pro rata by time
-	// (tsdb/index/chunk.go:262-267, ingester/instance.go:809-814), and the
+	// chunk that straddles the window adds its entries pro rata by time, and the
 	// ingester, store, 24h-split and results-cache answers are summed without
-	// deduplication (index/stats/stats.go:17-28, storage/async_store.go:167-171,
-	// queryrange/index_stats_cache.go:34-48). The counts here are exact; they
+	// deduplication (registry quality/index-stats-loki-chunk-accounting). The counts here are exact; they
 	// equal Loki's when each chunk lies inside the window and is counted once.
 	//
 	// count_uniq_hash keeps one 64-bit hash per stream instead of the stream id
@@ -739,8 +733,7 @@ func (p *Proxy) resolveTargetLabelFields(ctx context.Context, targetLabels strin
 }
 
 // detectedFieldsPayload is the detected_fields answer for fields. Loki sets
-// its limit only when it lists a field (pkg/querier/queryrange/detected_fields.go:86-89,
-// "otherwise all they get is the field limit"), and its JSON omits an empty
+// its limit only when it lists a field (registry semantics/detected-fields-empty-answer), and its JSON omits an empty
 // list and a zero limit, so an answer without fields carries no limit.
 func detectedFieldsPayload(fields []map[string]interface{}) map[string]interface{} {
 	if fields == nil {
@@ -810,8 +803,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Loki lists only the fields of the lines the query itself returns
-	// (pkg/querier/queryrange/detected_fields.go:42-73): a query that matches
+	// Loki lists only the fields of the lines the query itself returns: a query that matches
 	// no line, or only lines without fields, has no fields. Only a scan that
 	// ran out of time falls back to a native-only index lookup on the bare
 	// stream selector, so the Drilldown fields panel is not left blank by the

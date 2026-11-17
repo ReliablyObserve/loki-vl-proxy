@@ -5,17 +5,16 @@ proves:
   - loki_api_v1_query_range
 consumer: api
 why: |
-  Loki does not match `| label =~ "re"` as written. parseRegexpFilter
-  (pkg/logql/log/filter.go:645, from NewStringLabelFilter in
-  label_filter.go:360) first runs RegexSimplifier.Simplify (filter.go:696) and
-  anchors only what it cannot simplify, as ^(?:re)$ without the s flag. A
+  Loki does not match `| label =~ "re"` as written. It first simplifies the
+  expression and anchors only what it cannot simplify, as ^(?:re)$ without the
+  s flag. A
   literal is an equality check (`| json | other=~"no"` selects only the value
   "no"); `.*` and the empty pattern keep every line; `.+` keeps non-empty
   values; a literal with `.*` parts (`api.*`, `.*api`) is a substring check; a
   literal followed by an alternation, which is what Go's parser makes of a
   common prefix (`api|api-gateway`, `prod-eu|prod`), is one substring check
-  per branch; and an alternation drops a branch that keeps everything
-  (newOrFilter, filter.go:309), so `GET|` is an equality check on GET.
+  per branch; and an alternation drops a branch that keeps everything, so
+  `GET|` is an equality check on GET.
 
   The proxy translated `label=~"re"` to VictoriaLogs' `field:~"re"`, a
   substring match: `| json | other=~"no"` selected a line whose value is "no
@@ -53,7 +52,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/translator/label_matcher_regexp.go lokiLabelFilterPattern + labelFilterRegexpFieldFilter (label filters, sanitized-key variants, service_name label filter)'
-  loki: 'pkg/logql/log/filter.go:645 parseRegexpFilter, :696 RegexSimplifier.Simplify, :309 newOrFilter; label_filter.go:360 NewStringLabelFilter'
+  loki: 'a label regexp is simplified, then anchored as ^(?:re)$ only where it cannot be (TestCompat_LabelMatcherRegexpAnchoring)'
   proxy: 'the filter Loki simplification describes, anchored where Loki anchors'
   planned_test: 'TestCompat_LabelMatcherRegexpAnchoring (test/e2e-compat, group core); TestLabelRegexpMatchesWhatLokiMatches (internal/translator)'
   clusters: []

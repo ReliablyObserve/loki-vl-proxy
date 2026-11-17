@@ -1,7 +1,7 @@
 id: operator-stdvar
 kind: operator
 logql: "stdvar"
-loki_constant: OpTypeStdvar
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

@@ -1,0 +1,40 @@
+id: drilldown/long-range-pieces-answer-like-loki
+title: Every piece of a long metric range that Grafana loads in pieces is answered like Loki, so the joined chart is Loki's
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: grafana-datasource
+why: |
+  Grafana's Loki datasource loads a metric range longer than a day in pieces:
+  Explore, dashboards and Logs Drilldown send one /api/ds/query request per
+  piece, each with its own from/to, and the browser joins the pieces' frames
+  into one chart (observed through the stack's Grafana 13.3.0:
+  test/e2e-ui explore-long-range-pieces.spec.ts). The joined chart is Loki's
+  when every piece's answer is Loki's answer to the same request: the same
+  series, the same sample times inside the piece's bounds, the same values.
+  That holds whatever the pieces are and however Grafana joins them, so the
+  checks compare pieces with Loki and model nothing of Grafana: the whole
+  ranges, day-long pieces with starts off the step grid, and short first and
+  last pieces (shorter than one step, one step, just over one step).
+
+  One documented exception: Logs Drilldown's piece shorter than one step is
+  answered with the empty matrix (docs/KNOWN_ISSUES.md "Grafana query-split
+  residual chunk"); joined with the other pieces, its one-bucket answer showed
+  as a spike on one edge of Logs Drilldown's charts at 24h and longer.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({namespace="prod",pod!=""}[2m]))'
+    start: 'now-48h'
+    end: 'now'
+    step: '120'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [data.result]
+  expect: |
+    For every piece Grafana sends (and the pieces listed above), Loki's series
+    and samples; in Grafana, the same pieces on the proxy and the Loki
+    datasources with equal frames.

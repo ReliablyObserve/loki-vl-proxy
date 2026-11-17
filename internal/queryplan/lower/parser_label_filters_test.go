@@ -24,10 +24,6 @@ func TestPlanLowersParserLabelFilters(t *testing.T) {
 		`sum(rate({service_name="api-gateway"} | json | __error__="" | unwrap duration_ms [5m]))`,
 		`sum_over_time({app="a"} | json | status >= 500 | unwrap duration_ms [5m])`,
 		`avg_over_time({service_name="api-gateway"} | json | unwrap duration_ms | __error__="" [5m]) by (service_name)`,
-		// a maximum of maximums: the same answer whatever the series, written with the stream's (seriesSplitFree)
-		`max by (service_name) (max_over_time({env="production"} | logfmt | unwrap latency_ms | __error__="" [1m]))`,
-		`max by (service_name) (max_over_time({service_name="api-gateway"} | json | unwrap duration_ms | __error__="" [1m]))`,
-		`min(min_over_time({app="a"} | json | __error__="" | unwrap duration_ms [5m]))`,
 		// a drop after the parser
 		`sum by (service_version) (count_over_time({app="a"} | json | drop __error__ [5m]))`,
 		`sum by (level_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))`,
@@ -54,17 +50,20 @@ func TestPlanLowersParserLabelFilters(t *testing.T) {
 	}
 }
 
-// The same filters under a sum, max, min or avg over a function taken per series (a maximum of maximums and a
-// minimum of minimums aside) of an unwrapped label after a bare
+// The same filters under a sum, max, min or avg over a function taken per series of an unwrapped label after a bare
 // parser: the series are the stream and every parsed label (lower.DynamicUnwrapIdentity), which the lowering names
-// with the series hash where the translator groups by the stream and each line; the filter after the parser, before
-// or after the unwrap, is one more stage of that query.
+// with the series hash where the translator groups by the stream and each line (a maximum of maximums and a minimum of
+// minimums read the rows of each group instead, foldsRows); the filter after the parser, before or after the unwrap,
+// is one more stage of that query.
 //
 // conformance: architecture-syntax-package-layering, semantics/unwrap-per-series-identity-raw-rows
 func TestPlanLowersParserLabelFiltersWithDynamicIdentity(t *testing.T) {
-	for _, q := range []string{
-		`sum(avg_over_time({service_name="api-gateway"} | json | unwrap duration_ms | __error__="" [5m]))`,
-		`sum(stddev_over_time({app="api-gateway"} | json | __error__="" | unwrap duration_ms [5m]))`,
+	for q, hash := range map[string]bool{
+		`sum(avg_over_time({service_name="api-gateway"} | json | unwrap duration_ms | __error__="" [5m]))`:                    true,
+		`sum(stddev_over_time({app="api-gateway"} | json | __error__="" | unwrap duration_ms [5m]))`:                          true,
+		`max by (service_name) (max_over_time({env="production"} | logfmt | unwrap latency_ms | __error__="" [1m]))`:          false,
+		`max by (service_name) (max_over_time({service_name="api-gateway"} | json | unwrap duration_ms | __error__="" [1m]))`: false,
+		`min(min_over_time({app="a"} | json | __error__="" | unwrap duration_ms [5m]))`:                                       false,
 	} {
 		p := rangeAggPlan(q)
 		if p == nil || !DynamicUnwrapIdentity(p) {
@@ -76,8 +75,8 @@ func TestPlanLowersParserLabelFiltersWithDynamicIdentity(t *testing.T) {
 				t.Fatalf("%s: %v", q, err)
 			}
 			text := physical.Encode(op)
-			if !strings.Contains(text, dynamicSeriesField) || !strings.Contains(text, `filter __error__:=""`) {
-				t.Errorf("label=%v: %s: want the series hash and the error filter, got %s", label != nil, q, text)
+			if strings.Contains(text, dynamicSeriesField) != hash || !strings.Contains(text, `filter __error__:=""`) {
+				t.Errorf("label=%v: %s: want the series hash %v and the error filter, got %s", label != nil, q, hash, text)
 			}
 		}
 	}

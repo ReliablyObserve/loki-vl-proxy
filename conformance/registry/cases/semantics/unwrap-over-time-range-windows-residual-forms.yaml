@@ -6,11 +6,9 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki takes these functions per series over the window (t-range, t]
-  (pkg/logql/range_vector.go:102-189, range_vector.go:371-420), a series being
-  the stream plus the labels a parser extracted less the unwrapped one
-  (pkg/logql/log/metrics_extraction.go), and applies the outer aggregations per
-  step (pkg/logql/evaluator.go VectorAggEvaluator.Next).
+  Loki takes these functions per series over the window (t-range, t], a series being
+  the stream plus the labels a parser extracted less the unwrapped one, and applies the outer aggregations per
+  step.
 
   The window merge of semantics/unwrap-over-time-range-windows reads per-series
   buckets of partial aggregates and applies the outer aggregation after the
@@ -51,7 +49,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/proxy unwrap_samples.go unwrapWindowBuckets and unwrapWindowForm (these forms keep native step buckets); the translator''s per-series grouping of parser queries'
-  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator; range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime; pkg/logql/evaluator.go VectorAggEvaluator.Next'
+  loki: 'sum, avg, max and min over unwrap are taken per series over (t-range, t], then the outer aggregations per step (TestCompat_UnwrapOverTimeRangeWindows)'
   proxy: 'native step buckets: the step-sized bucket, not the window'
   planned_test: 'TestUnwrapOverTimeResidualShapesKeepStatsBuckets pins the route today (internal/proxy); the forms join TestUnwrapOverTimeWindowsDifferential and TestCompat_UnwrapOverTimeRangeWindows once fixed'
   note: 'Residual of semantics/unwrap-over-time-range-windows; depends on the parsed series identity rows.'

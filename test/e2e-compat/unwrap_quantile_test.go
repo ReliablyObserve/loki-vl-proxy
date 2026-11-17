@@ -10,15 +10,12 @@ import (
 	"time"
 )
 
-// quantile_over_time (Loki v3.7.7 pkg/logql/range_vector.go:449-487) sorts the
-// samples of the window (t-range, t] and interpolates at rank phi*(n-1). The
-// proxy reads VictoriaLogs' row counts per converted value and bucket and
-// interpolates over the counts of each window
-// (semantics/unwrap-quantile-response-limit). A range aggregation's own
-// by (...) takes one quantile over the group's samples
-// (pkg/logql/syntax/extractor.go); a vector aggregation over the quantile folds
-// the quantile of every series per step (pkg/logql/evaluator.go
-// newVectorAggEvaluator).
+// quantile_over_time sorts the samples of the window (t-range, t] and
+// interpolates at rank phi*(n-1). The proxy reads VictoriaLogs' row counts
+// per converted value and bucket and interpolates over the counts of each
+// window (semantics/unwrap-quantile-response-limit). A range aggregation's
+// own by (...) takes one quantile over the group's samples; a vector
+// aggregation over the quantile folds the quantile of every series per step.
 
 type unwrapQuantileFixtures struct {
 	s0 time.Time

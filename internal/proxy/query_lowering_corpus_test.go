@@ -58,7 +58,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			// No translation cache: every row is translated, not read back.
 			on.translationCache, off.translationCache = nil, nil
 			ctx := context.Background()
-			differs, keep, dynamic := 0, 0, 0
+			differs, keep, dynamic, countVariance := 0, 0, 0, 0
 			for _, q := range corpus {
 				if strings.HasPrefix(strings.TrimSpace(q), "{") {
 					continue
@@ -71,6 +71,15 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 				want, wantErr := off.translateQueryOpts(ctx, spelledAsTranslatorReads(q), false)
 				if _, kept := on.keepUnwrapIdentity(q); kept {
 					keep++
+					continue
+				}
+				// A count by labels over stdvar_over_time counts the series where the translator answers a variance:
+				// the plan's text, held to Loki by the differentials (lower.CountsVarianceSeries).
+				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.CountsVarianceSeries(plan) {
+					countVariance++
+					if strings.HasPrefix(got, "__binary__") || !strings.HasSuffix(got, "count()") {
+						t.Errorf("%q: served %q, not the count of the series", q, got)
+					}
 					continue
 				}
 				if got != want && blankgrouping.Cut(q) != q {
@@ -105,6 +114,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			counts := shadowCounts(t, on)
 			total["keep identity rows"] += keep
 			total["dynamic identity rows"] += dynamic
+			total["count over stdvar rows"] += countVariance
 			for _, c := range metricFlipCandidates {
 				n := counts["flipped "+c]
 				total[c] += n
@@ -163,6 +173,19 @@ func FuzzMetricFlipGate(f *testing.F) {
 		"count_over_time({A=\"0\"} | logfmt\r\na [5m])", "count_over_time({A=\"0\"} | regexp\n`(?P<a>x)` [5m])",
 		"count_over_time({A=\"0\"} | pattern\r\"<a> x\" [5m])", "sum(count_over_time({A=\"0\"} | json | label_format\ta=b [5m]))",
 		"max_over_time({A=\"0\"}| unwrap\rA[0])", "sum_over_time({A=\"0\"} | json |\tunwrap\nduration(a) [5m])",
+		// An unwrap with no parser before it after another blank, and keywords written with the Kelvin sign or U+0130,
+		// which the request path writes in lower case.
+		"max_over_time({A=\"0\"} | unwrap\tA [5m])", "sum(max_over_time({A=\"0\"} |\nunwrap\r\nA [5m]))",
+		"top\u212A(2, sum by (app) (rate({app=\"a\"}[5m])))", "avg_over_t\u0130me({app=\"a\"} | unwrap n [5m])",
+		"sum w\u0130thout (pod) (rate({app=\"a\"}[5m]))", "max_over_time({A=\"0\"} |unwrap A [5m])", "rate({A=\"0\"} |unwrap\tA [5m])",
+		// A log query in parentheses (found by this target): the log flip's, held by FuzzLogFlipGate.
+		"({A=\"0\"} |A0> + 00)",
+		// A bool modifier, a set operator and a chain, which the plan holds to the binary route, with a keep before an
+		// unwrap in an operand.
+		`sum by (app) (rate({app="a"}[5m])) > bool 1`, `sum(rate({app="a"}[5m])) and sum(rate({app="b"}[5m]))`,
+		`sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m])) * 100`,
+		`sum by (x) (sum_over_time({a="b"} | json | keep x | unwrap n [5m])) > bool 1`,
+		`sum by (x) (sum_over_time({a="b"} | json | keep x | unwrap n [5m])) unless on (x) sum by (x) (rate({a="c"}[5m]))`,
 	} {
 		f.Add(q)
 	}
@@ -190,6 +213,12 @@ func FuzzMetricFlipGate(f *testing.F) {
 		if logqlpkg.ParseAndValidate(q) != nil {
 			return
 		}
+		// A log query written in parentheses (`({A="0"} |A0> + 00)`) is a log query to the translation, served by the
+		// log query flip whatever the metric constructs: FuzzLogFlipGate holds it, with its recorded divergences (here
+		// the signed number written with a blank, semantics/translator-writes-signed-number-with-blank).
+		if strings.HasPrefix(logqlpkg.CanonicalizeLogRanges(q), "{") {
+			return
+		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
 		// The translator reads a grouping of blanks (`by( )`) as no grouping, Loki and the plan as `by ()`
 		// (semantics/translator-reads-blank-grouping-as-none), and a tab, a line feed or a carriage return after a
@@ -202,7 +231,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
 		// nothing flipped; one the plan serves may escape a byte the spaced spelling's text copies raw.
 		respelled, delegated := false, false
-		if respaced(blankspace.Collapse(q)) != q {
+		if respaced(blankspace.UnwrapSpaced(q)) != q {
 			unflipped, unflippedErr := off.translateQueryOpts(context.Background(), q, false)
 			// A construct the plan leaves to the translator (its text and its failure are the translator's own) is not
 			// served from this text: the handlers read it through their own path, which TestBlankAfterKeywordRequests
@@ -230,7 +259,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 // skips written as one space, a parser expression with a blank before it, and a `by` clause of only blanks as `by ()`.
 // Loki's tree holds the same query for every spelling of it (Loki oracle, TestBlankAfterKeywordMatchesLoki).
 func spelledAsTranslatorReads(q string) string {
-	return respaced(blankgrouping.Cut(blankspace.Collapse(q)))
+	return respaced(blankgrouping.Cut(blankspace.UnwrapSpaced(q)))
 }
 
 // The metric screen (lower.ScreenMetric) holds to the plan on every metric query of the corpus under every translator

@@ -15,10 +15,11 @@ const dynamicHash = `| unpack_json from _msg result_prefix "__lvp_p_" | delete _
 
 // The plan's series of a range function over an unwrapped label after a json or logfmt parser with no keep: the
 // stream and every parsed label less the unwrapped one (and the stored level), whatever the clause of the outer
-// aggregation; a query with a keep, a drop, a format, a named extraction, two parsers or a range by keeps the
-// translator's identity.
+// aggregation; after an extraction list of plain keys the stream and the labels it names. A query with a keep, a drop,
+// a format, an alias or a json path in the list, a listed key named like a stream selector label or a level, two
+// parsers or a range by keeps the translator's identity.
 //
-// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/stdvar-grouped-pooled-variance
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/stdvar-grouped-pooled-variance, semantics/unwrap-extraction-list-series-identity
 func TestDynamicUnwrapIdentity(t *testing.T) {
 	const j = `{app="a"} | json | unwrap n [5m]`
 	for _, tc := range []struct {
@@ -46,7 +47,22 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 		// The series are not every parsed label, or the unpack would read another line.
 		{`sum(avg_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`, false, false},
 		{`sum(avg_over_time({app="a"} | json | drop pod | unwrap n [5m]))`, false, false},
-		{`sum(avg_over_time({app="a"} | json n | unwrap n [5m]))`, false, false},
+		// An extraction list of plain keys: the stream and the labels it names.
+		{`sum(avg_over_time({app="a"} | json n | unwrap n [5m]))`, true, true},
+		{`sum(avg_over_time({app="a"} | json n, m | unwrap n [5m]))`, true, true},
+		{`max by (app) (max_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`, true, true},
+		{`avg(stddev_over_time({app="a"} | logfmt m, n | unwrap n [5m]))`, true, true},
+		{`sum(avg_over_time({app="a"} | json x="n" | unwrap x [5m]))`, false, false},
+		{`sum(avg_over_time({app="a"} | json n="a.b" | unwrap n [5m]))`, false, false},
+		{`sum(avg_over_time({app="a"} | logfmt x="n" | unwrap x [5m]))`, false, false},
+		{`sum(avg_over_time({app="a"} | logfmt n, app | unwrap n [5m]))`, false, false},
+		{`sum(avg_over_time({app="a"} | logfmt n, level | unwrap n [5m]))`, false, false},
+		{`sum(avg_over_time({app="a"} | logfmt n, service_name | unwrap n [5m]))`, false, false},
+		{`sum(avg_over_time({app="a"} | json n, detected_level | unwrap n [5m]))`, false, false},
+		{`sum(avg_over_time({app="a"} | logfmt n, _m | unwrap n [5m]))`, false, false},
+		{`sum(avg_over_time({app="a"} | json n | logfmt m | unwrap n [5m]))`, false, false},
+		{`count(avg_over_time({app="a"} | json n, m | unwrap n [5m]))`, false, false},
+		{`sum(first_over_time({app="a"} | json n, m | unwrap n [5m]))`, false, false},
 		{`sum(avg_over_time({app="a"} | json | logfmt | unwrap n [5m]))`, false, false},
 		{`sum(avg_over_time({app="a"} | logfmt --strict | unwrap n [5m]))`, false, false},
 		{`sum(avg_over_time({app="a"} | regexp "(?P<n>[0-9]+)" | unwrap n [5m]))`, false, false},
@@ -75,7 +91,8 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 }
 
 // The stats of the dynamic identity: the identity pipes after the unwrap gate, a value per series (the stream and
-// the hash), then the clause's aggregation over them; stdvar squares the deviation of each series in VictoriaLogs.
+// the hash; after an extraction list the stream, its stored level fields and the listed labels), then the clause's
+// aggregation over them; stdvar squares the deviation of each series in VictoriaLogs.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/stdvar-grouped-pooled-variance
 func TestDynamicUnwrapIdentityLowering(t *testing.T) {
@@ -113,6 +130,72 @@ func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 			t.Errorf("value forms: %s holds no %s", got, part)
 		}
 	}
+	// An extraction list: the series are the stream, its stored level fields and the listed labels, which the query's
+	// own unpack writes, so the stats group by them: no second unpack, no hash, no detected_level chain. The unpack
+	// reads the listed keys alone (not the clause's labels, which Loki reads from the stream), and a clause that names
+	// detected_level derives it as any grouping by it does.
+	for q, want := range map[string]struct{ unpack, stats string }{
+		`sum by (app) (max_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: {
+			`| unpack_logfmt fields (n, m) skip_empty_results <gate n >`,
+			`| stats by (app, _stream, level, detected_level, m) max(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats by (app) sum(__lvp_inner)`},
+		`sum(max_over_time({app="a"} | logfmt n | unwrap n [5m]))`: {
+			`| unpack_logfmt fields (n) skip_empty_results <gate n >`,
+			`| stats by (_stream, level, detected_level) max(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)`},
+		`avg by (m) (avg_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: {
+			`| unpack_logfmt fields (n, m) skip_empty_results <gate n >`,
+			`| stats by (m, _stream, level, detected_level) avg(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats by (m) avg(__lvp_inner)`},
+		`sum by (app) (stdvar_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: {
+			`| unpack_logfmt fields (n, m) skip_empty_results <gate n >`,
+			`| stats by (app, _stream, level, detected_level, m) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) sum(__lvp_inner_var)`},
+		`max(stdvar_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: {
+			`| unpack_logfmt fields (n, m) skip_empty_results <gate n >`,
+			`| stats by (_stream, level, detected_level, m) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats max(__lvp_inner_var)`},
+		`sum(max_over_time({app="a"} | logfmt m | unwrap n [5m]))`: {
+			`| unpack_logfmt fields (n, m) skip_empty_results <gate n >`,
+			`| stats by (_stream, level, detected_level, m) max(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)`},
+		`sum(max_over_time({app="a"} | json n, m | unwrap n [5m]))`: {
+			`app:="a" | unpack_json <gate n >`,
+			`| stats by (_stream, level, detected_level, m) max(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)`},
+		`sum by (detected_level) (min_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: {
+			`app:="a" <chain> | unpack_logfmt fields (n, m) skip_empty_results <gate n >`,
+			`| stats by (detected_level, _stream, level, m) min(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats by (detected_level) sum(__lvp_inner)`},
+	} {
+		got := unwrapText(t, q, Profile{})
+		for _, part := range []string{want.unpack, want.stats} {
+			if !strings.Contains(got, part) {
+				t.Errorf("extraction list %s: %s holds no %s", q, got, part)
+			}
+		}
+		for _, part := range []string{"__lvp_sid", "__lvp_p_", "| pack_json", "math __lvp_v as"} {
+			if strings.Contains(got, part) {
+				t.Errorf("extraction list %s: %s holds %s", q, got, part)
+			}
+		}
+		if !strings.Contains(q, "detected_level") && strings.Contains(got, "<chain>") {
+			t.Errorf("extraction list %s: %s derives detected_level", q, got)
+		}
+		op, err := PlanQuery(q, rangeAggPlan(q), Profile{})
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		if _, err := logsql.Parse(physical.Encode(op)); err != nil {
+			t.Errorf("extraction list %s: %s does not parse: %v", q, physical.Encode(op), err)
+		}
+	}
+	// A listed label the clause names too, with an underscore: the unpack, the spellings it resolves into the label
+	// and both stats read the one field, so a series and its group agree (the underscore-style proxy reads its
+	// clause the same way).
+	got = unwrapText(t, `sum by (user_id) (max_over_time({app="a"} | logfmt n, user_id | unwrap n [5m]))`, Profile{})
+	for _, part := range []string{
+		`| unpack_logfmt fields (n, user_id, "user.id", "user-id") skip_empty_results`,
+		`"<user.id>" as user_id keep_original_fields`,
+		`| stats by (user_id, _stream, level, detected_level) max(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats by (user_id) sum(__lvp_inner)`,
+	} {
+		if !strings.Contains(got, part) {
+			t.Errorf("listed clause label: %s holds no %s", got, part)
+		}
+	}
 	// The text VictoriaLogs reads: every pipe parses.
 	const q = `sum(avg_over_time({app="a"} | logfmt | unwrap a_b [5m]))`
 	op, err := PlanQuery(q, rangeAggPlan(q), Profile{})
@@ -121,6 +204,88 @@ func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 	}
 	if _, err := logsql.Parse(op.(physical.VLQuery).Text); err != nil {
 		t.Errorf("logfmt: %s does not parse: %v", op.(physical.VLQuery).Text, err)
+	}
+}
+
+// The maximum of the series' maxima is the maximum of the group's rows, and the minimum of their minima the minimum
+// (foldsRows): under a parser's series identity, of every key or of an extraction list, the lowering writes one stats
+// pipe by the clause, with no second unpack, no hash, no per-series stats and no re-read of a series' value, and the
+// query's logfmt unpack reads the unwrapped key and the clause labels the line can hold. The other pairs keep the
+// identity (TestDynamicUnwrapIdentityLowering).
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-extraction-list-series-identity
+func TestFoldsRowsLowering(t *testing.T) {
+	for q, want := range map[string]struct{ unpack, stats string }{
+		`max(max_over_time({app="a"} | logfmt | unwrap n [5m]))`: {
+			`app:="a" | unpack_logfmt fields (n) skip_empty_results <gate n >`, `> | stats max(__lvp_v)`},
+		`max by (app) (max_over_time({app="a"} | logfmt | unwrap n [5m]))`: {
+			`app:="a" | unpack_logfmt fields (n, app) skip_empty_results <gate n >`, `> | stats by (app) max(__lvp_v)`},
+		`min by (app) (min_over_time({app="a"} | json | unwrap n [5m]))`: {
+			`app:="a" | unpack_json <gate n >`, `> | stats by (app) min(__lvp_v)`},
+		`max(max_over_time({app="a"} | logfmt n | unwrap n [5m]))`: {
+			`app:="a" | unpack_logfmt fields (n) skip_empty_results <gate n >`, `> | stats max(__lvp_v)`},
+		// The clause's stream label is not read from the line; its listed label is.
+		`max by (app) (max_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: {
+			`app:="a" | unpack_logfmt fields (n) skip_empty_results <gate n >`, `> | stats by (app) max(__lvp_v)`},
+		`min by (m, app) (min_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: {
+			`app:="a" | unpack_logfmt fields (n, m) skip_empty_results <gate n >`, `> | stats by (m, app) min(__lvp_v)`},
+		`min(min_over_time({app="a"} | json n, m | unwrap n [5m]))`: {
+			`app:="a" | unpack_json <gate n >`, `> | stats min(__lvp_v)`},
+		// A label filter after the parser keeps the unpack bare, as before.
+		`max by (app) (max_over_time({app="a"} | logfmt n, m | m="x" | unwrap n [1m]))`: {
+			`app:="a" | unpack_logfmt | filter m:="x" <gate n >`, `> | stats by (app) max(__lvp_v)`},
+		// A clause naming detected_level derives it, as any grouping by it does.
+		`max by (detected_level) (max_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: {
+			`app:="a" <chain> | unpack_logfmt fields (n) skip_empty_results <gate n >`, `> | stats by (detected_level) max(__lvp_v)`},
+	} {
+		got := unwrapText(t, q, Profile{})
+		for _, part := range []string{want.unpack, want.stats} {
+			if !strings.Contains(got, part) {
+				t.Errorf("%s: %s holds no %s", q, got, part)
+			}
+		}
+		if !strings.HasSuffix(got, want.stats[2:]) || strings.Count(got, "| stats ") != 1 {
+			t.Errorf("%s: %s does not end in its one stats pipe %s", q, got, want.stats[2:])
+		}
+		for _, part := range []string{"__lvp_sid", "__lvp_p_", "| pack_json", "__lvp_inner", "math __lvp_v as"} {
+			if strings.Contains(got, part) {
+				t.Errorf("%s: %s holds %s", q, got, part)
+			}
+		}
+		if !strings.Contains(q, "detected_level") && strings.Contains(got, "<chain>") {
+			t.Errorf("%s: %s derives detected_level", q, got)
+		}
+		p := rangeAggPlan(q)
+		if !DynamicUnwrapIdentity(p) || !WritesDynamicUnwrapIdentity(p) {
+			t.Errorf("%s: no longer served as a parser's series identity", q)
+		}
+		op, err := PlanQuery(q, p, Profile{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := logsql.Parse(physical.Encode(op)); err != nil {
+			t.Errorf("%s: %s does not parse: %v", q, physical.Encode(op), err)
+		}
+	}
+	// The other pairs read a value per series: the identity stays.
+	for _, q := range []string{
+		`max(min_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`,
+		`min(max_over_time({app="a"} | logfmt | unwrap n [5m]))`,
+		`sum(max_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`,
+		`max(avg_over_time({app="a"} | json | unwrap n [5m]))`,
+		`max(stddev_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`,
+		`avg by (app) (min_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`,
+	} {
+		got := unwrapText(t, q, Profile{})
+		if !strings.Contains(got, "__lvp_inner") || !strings.Contains(got, "__lvp_sid") && !strings.Contains(got, "_stream, level, detected_level") {
+			t.Errorf("%s: %s reads no value per series", q, got)
+		}
+	}
+	// The stream profile (a request whose windows keep the stream's series) writes the string translator's text,
+	// unchanged: a value per stream, then the clause.
+	const q = `max by (app) (max_over_time({app="a"} | logfmt | unwrap n [5m]))`
+	if got := unwrapText(t, q, Profile{StreamIdentity: true}); !strings.HasSuffix(got, "| stats by (app, _stream) max(__lvp_v) as __lvp_inner | stats by (app) max(__lvp_inner)") {
+		t.Errorf("stream profile: %s is not the stream's value, then the clause", got)
 	}
 }
 
@@ -155,6 +320,9 @@ func FuzzDynamicUnwrapIdentity(f *testing.F) {
 		`sum(avg_over_time({app="a"} | json | unwrap "a\"b" [5m]))`,
 		`sum(avg_over_time({app="a"} | json | keep n | unwrap n [5m]))`,
 		`topk(1, sum(rate_counter({app="a"} | json | unwrap n [5m])))`,
+		`max by (app) (max_over_time({app="a"} | logfmt | unwrap n [5m]))`,
+		`min(min_over_time({app="a"} | json n, m | unwrap n [5m]))`,
+		`max by (m, app) (max_over_time({app="a"} | logfmt n, m | n > 1 | unwrap n [1m]))`,
 	} {
 		f.Add(q)
 	}
@@ -191,8 +359,16 @@ func FuzzDynamicUnwrapIdentity(f *testing.F) {
 			t.Fatalf("%q: lowered to %T, not one query", q, op)
 		}
 		text := vq.Text
-		if !strings.Contains(text, "| hash(__lvp_sid) as __lvp_sid") {
-			t.Fatalf("%q: %s holds no series hash", q, text)
+		va := p.Root.(*queryplan.VectorAgg)
+		switch {
+		case foldsRows(va.Op, ra.Op):
+			// The maximum of maxima and the minimum of minima read the rows of each group: one stats pipe, no
+			// identity, no hash.
+			if strings.Count(text, "| stats ") != 1 || strings.Contains(text, "__lvp_sid") || strings.Contains(text, "__lvp_inner") {
+				t.Fatalf("%q: %s is not one stats pipe over the rows", q, text)
+			}
+		case !strings.Contains(text, "| hash(__lvp_sid) as __lvp_sid") && !strings.Contains(text, "_stream, level, detected_level"):
+			t.Fatalf("%q: %s holds no series identity", q, text)
 		}
 		if _, err := logsql.Parse(text); err != nil {
 			t.Fatalf("%q: %s does not parse: %v", q, text, err)

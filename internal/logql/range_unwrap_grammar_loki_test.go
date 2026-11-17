@@ -222,18 +222,19 @@ func TestWildcardTakesOnlyLokisWhiteSpace(t *testing.T) {
 	}
 }
 
-// Only the log queries with a stage Loki builds while it parses are kept for the order of errors at an unwrap.
+// Only the log queries with a matcher or stage Loki builds while it parses are kept for the order of errors at an unwrap.
 func TestMayFailWhileParsed(t *testing.T) {
 	for q, want := range map[string]bool{
 		`{a="b"} | json | x="y"`: true, `{a="b"} | regexp "(?P<a>.)"`: true, `{a="b"} | pattern "<a>"`: true,
 		`{a="b"} | drop x="y"`: true, `{a="b"} | keep x=~"y"`: true, `{a="b"} | keep x | drop y`: false,
 		`{a="b"} | json | logfmt |= "x" | line_format "x"`: false, `{a="b"}`: false,
+		`{a=~"b"}`: true, `{a!~"b", c="d"} | json`: true,
 	} {
 		expr, err := Parse(q)
 		if err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
-		if got := mayFailWhileParsed(expr.(*LogQuery).Pipeline); got != want {
+		if got := mayFailWhileParsed(expr.(*LogQuery)); got != want {
 			t.Errorf("%s: %v, want %v", q, got, want)
 		}
 	}

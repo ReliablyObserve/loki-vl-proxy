@@ -97,25 +97,13 @@ func (c topKFuzzCase) refGroup(s topKSeries) string {
 	return strings.Join(parts, ",")
 }
 
-// refLess orders values for the reference tie check: NaN is last.
-func refLess(a, b float64, descending bool) bool {
-	switch {
-	case math.IsNaN(a):
-		return false
-	case math.IsNaN(b):
-		return true
-	case descending:
-		return a > b
-	}
-	return a < b
-}
-
 // topKFuzzStep is the samples of the answer at one step: series name -> value.
 type topKFuzzStep map[string]float64
 
-// checkStep compares what an implementation kept at one step with Loki's heap
-// (lokiTopK) over the same vector, group by group: the kept values must be
-// Loki's, and where no tie sits across the k-th place the kept series too.
+// checkStep compares what an implementation kept at one step with the reference
+// (rankTopK, held to Loki's recorded answers) over the same vector, group by
+// group: the kept values must be the reference's, and where no tie sits across
+// the k-th place the kept series too.
 func (c topKFuzzCase) checkStep(t *testing.T, impl string, step int, got topKFuzzStep) {
 	t.Helper()
 	var vec []topKSeries
@@ -130,7 +118,7 @@ func (c topKFuzzCase) checkStep(t *testing.T, impl string, step int, got topKFuz
 	rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
 	var picked []topKSeries
 	if c.k >= 1 {
-		picked = lokiTopK(shuffled, c.k, c.descending, c.refGroup)
+		picked = rankTopK(shuffled, c.k, c.descending, c.refGroup)
 	}
 	format := func(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
 	byGroup := func(values func(group string) []string) map[string]string {
@@ -175,9 +163,9 @@ func (c topKFuzzCase) checkStep(t *testing.T, impl string, step int, got topKFuz
 		}
 	}
 	if fmt.Sprint(want) != fmt.Sprint(have) {
-		t.Fatalf("%s step %d k=%d desc=%v group=%+v: kept values %v, Loki's heap %v\ninput %+v", impl, step, c.k, c.descending, c.group, have, want, vec)
+		t.Fatalf("%s step %d k=%d desc=%v group=%+v: kept values %v, the reference %v\ninput %+v", impl, step, c.k, c.descending, c.group, have, want, vec)
 	}
-	// A group with no tie across its k-th place keeps the same series as Loki.
+	// A group with no tie across its k-th place keeps the same series as the reference.
 	for g := range want {
 		var members []topKSeries
 		for _, s := range vec {
@@ -185,7 +173,7 @@ func (c topKFuzzCase) checkStep(t *testing.T, impl string, step int, got topKFuz
 				members = append(members, s)
 			}
 		}
-		sort.SliceStable(members, func(i, j int) bool { return refLess(members[i].value, members[j].value, c.descending) })
+		sort.SliceStable(members, func(i, j int) bool { return ranksBefore(members[i].value, members[j].value, c.descending) })
 		if c.k < 1 || len(members) <= c.k || format(members[c.k-1].value) == format(members[c.k].value) {
 			continue
 		}
@@ -194,7 +182,7 @@ func (c topKFuzzCase) checkStep(t *testing.T, impl string, step int, got topKFuz
 				continue
 			}
 			if _, ok := got[s.app+"/"+s.env]; !ok {
-				t.Fatalf("%s step %d k=%d group %q: Loki keeps %s/%s, the implementation dropped it (kept %v)", impl, step, c.k, g, s.app, s.env, got)
+				t.Fatalf("%s step %d k=%d group %q: the reference keeps %s/%s, the implementation dropped it (kept %v)", impl, step, c.k, g, s.app, s.env, got)
 			}
 		}
 	}
@@ -250,11 +238,11 @@ func decodeTopKMatrix(t *testing.T, body []byte, start time.Time, step time.Dura
 }
 
 // FuzzTopKPerStep: topk and bottomk rank every step on its own, inside each
-// group of the by()/without() labels, with NaN last and ties kept to k
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next, pkg/logql/vector.go). The
+// group of the by()/without() labels, with NaN last and ties kept to k, as
+// Loki's recorded answers do (TestTopKReferenceMatchesRecordedLoki). The
 // four places the proxy ranks (the bounded heap over the VictoriaLogs window
 // stats, the filter over a finished matrix, the filter over an instant vector
-// and the instant sort) must keep what Loki's heap keeps over the same vector, for any grid
+// and the instant sort) must keep what the reference keeps over the same vector, for any grid
 // of samples (absent, tied, NaN, +Inf), any k from 0 to 6 (the heap is only
 // reached with k above 0: Loki's parser rejects a smaller one), topk and
 // bottomk, and every kind of clause.
