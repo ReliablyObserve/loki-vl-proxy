@@ -2834,7 +2834,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	orderedHandled := p.handleOrderedJSONMetric(orderedWriter, r, start, logqlQuery, true)
 	if orderedCapture != nil {
-		if orderedHandled && r.Context().Err() == nil && !unwrapAnswerFailed(r.Context(), unwrapLookup) && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
+		if orderedHandled && r.Context().Err() == nil && !unwrapAnswerFailed(r.Context(), unwrapLookup) && !unwrapAnswerUncertain(r.Context(), unwrapLookup) && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
 			if body := orderedCapture.CapturedBody(); len(body) > 0 {
 				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
 			}
@@ -2843,6 +2843,14 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	if orderedHandled {
 		return
+	}
+	// Loki fails a metric whose JSON parser rejects a line its samples carry,
+	// under any function: the metric's own VictoriaLogs queries mark such lines.
+	if checked, jsonLookup := p.startJSONParserErrorCheck(w, r, logqlQuery, true); jsonLookup != nil {
+		r, w, unwrapLookup = checked, jsonLookup, jsonLookup
+		defer jsonLookup.finish("query_range", logqlQuery, start)
+	} else {
+		r = checked
 	}
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
@@ -2986,8 +2994,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if unwrapAnswerFailed(r.Context(), unwrapLookup) {
-		cacheable = false // the answer sent is Loki's error, not this body
+	if unwrapAnswerFailed(r.Context(), unwrapLookup) || unwrapAnswerUncertain(r.Context(), unwrapLookup) {
+		cacheable = false // the answer sent is Loki's error, not this body, or its marks were not all confirmed
 	}
 	if capture != nil {
 		cacheOut := capture.body
@@ -3185,6 +3193,12 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	if p.handleOrderedJSONMetric(w, r, start, logqlQuery, false) {
 		return
+	}
+	if checked, jsonLookup := p.startJSONParserErrorCheck(w, r, logqlQuery, false); jsonLookup != nil {
+		r, w, unwrapLookup = checked, jsonLookup, jsonLookup
+		defer jsonLookup.finish("query", logqlQuery, start)
+	} else {
+		r = checked
 	}
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))

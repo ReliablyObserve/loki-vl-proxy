@@ -52,7 +52,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 | 405 | 3 | 3 | 0 | 0 | 0 | 0 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 184 | 1 | 180 | 2 | 1 | 1 |
+| set at run time | 185 | 1 | 181 | 2 | 1 | 1 |
 
 The registry holds one item per status (12) and one per Loki error message (53) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 
