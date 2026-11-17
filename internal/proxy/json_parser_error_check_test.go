@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	fj "github.com/valyala/fastjson"
+
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
@@ -211,6 +213,81 @@ func TestJSONTakeRawRow(t *testing.T) {
 	}
 	if len(c.rawHits) != jsonMaxHits {
 		t.Errorf("%d hits kept, want the bound %d", len(c.rawHits), jsonMaxHits)
+	}
+}
+
+// The one-pass read of a raw row finds the mark wherever VictoriaLogs places the field (first, middle, last,
+// absent), reads the time, stream and level as the lookups do (first of a repeated key, a non-string field as
+// absent, a mark of any value type), and takes the mark off the row.
+//
+// conformance: semantics/json-parser-error-under-wrappers
+func TestJSONRawRowHeadFindsMarkAnywhere(t *testing.T) {
+	const (
+		timeField   = `"_time":"2024-01-01T00:00:00Z"`
+		streamField = `"_stream":"{app=\"a\"}"`
+		levelField  = `"level":"info"`
+		msgField    = `"_msg":"x"`
+		mark        = `"` + jsonErrorField + `":"1"`
+	)
+	row := func(fields ...string) string { return "{" + strings.Join(fields, ",") + "}" }
+	c := &jsonErrorCheck{}
+	var p fj.Parser
+	for _, tc := range []struct {
+		name   string
+		line   string
+		marked bool
+		stream string
+		level  string
+		ts     string
+	}{
+		{"mark first", row(mark, timeField, streamField, levelField, msgField), true, `{app="a"}`, "info", "2024-01-01T00:00:00Z"},
+		{"mark middle", row(timeField, streamField, mark, levelField, msgField), true, `{app="a"}`, "info", "2024-01-01T00:00:00Z"},
+		{"mark last", row(msgField, levelField, streamField, timeField, mark), true, `{app="a"}`, "info", "2024-01-01T00:00:00Z"},
+		{"mark absent", row(timeField, streamField, levelField, msgField), false, `{app="a"}`, "info", "2024-01-01T00:00:00Z"},
+		{"mark of another type", row(timeField, `"`+jsonErrorField+`":true`), true, "", "", "2024-01-01T00:00:00Z"},
+		{"no level, no stream", row(timeField, mark), true, "", "", "2024-01-01T00:00:00Z"},
+		{"first of a repeated key wins", row(`"level":"warn"`, timeField, levelField, `"level":"error"`), false, "", "warn", "2024-01-01T00:00:00Z"},
+		{"a non-string field reads as absent", row(`"level":5`, `"_time":7`, `"_stream":null`, mark), true, "", "", ""},
+		{"an escaped key is read unescaped", row(`"_ti\u006de":"t"`, `"__lvp_p\u0065rr":"1"`), true, "", "", "t"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v, err := p.Parse(tc.line)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotTS, gotStream, gotLevel, marked := c.rawRowHead(v)
+			if marked != tc.marked || string(gotTS) != tc.ts || string(gotStream) != tc.stream || string(gotLevel) != tc.level {
+				t.Fatalf("got time %q stream %q level %q marked %v, want %q %q %q %v", gotTS, gotStream, gotLevel, marked, tc.ts, tc.stream, tc.level, tc.marked)
+			}
+			// The same fields read by lookup: the one-pass read changes no answer.
+			if string(v.GetStringBytes("_time")) != tc.ts || string(v.GetStringBytes("_stream")) != tc.stream || string(v.GetStringBytes("level")) != tc.level || (v.Get(jsonErrorField) != nil) != tc.marked {
+				t.Fatalf("the lookups read other fields than the one-pass read on %s", tc.line)
+			}
+			before := len(c.rawHits)
+			if marked {
+				c.takeRawRowMark(v, 9)
+				if v.Get(jsonErrorField) != nil || len(c.rawHits) != before+1 || c.rawHits[before].from.UnixNano() != 9 {
+					t.Errorf("the mark stays on the row or no hit recorded: %v", c.rawHits)
+				}
+			}
+		})
+	}
+	// A request without a check reads the fields by lookup and never reports a mark.
+	var none *jsonErrorCheck
+	v, err := p.Parse(row(timeField, mark, levelField))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ts, _, level, marked := none.rawRowHead(v); marked || string(ts) != "2024-01-01T00:00:00Z" || string(level) != "info" {
+		t.Errorf("no check: time %q level %q marked %v", ts, level, marked)
+	}
+	// A line that is not an object holds no field.
+	v, err = p.Parse(`[1,2]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ts, stream, level, marked := c.rawRowHead(v); ts != nil || stream != nil || level != nil || marked {
+		t.Errorf("an array line read as %q %q %q %v", ts, stream, level, marked)
 	}
 }
 
