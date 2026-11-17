@@ -91,10 +91,9 @@ func BenchmarkRankedTopKCold(b *testing.B)   { benchRankedTopK(b, "cold") }
 func BenchmarkRankedTopKRepeat(b *testing.B) { benchRankedTopK(b, "repeat") }
 func BenchmarkRankedTopKMoved(b *testing.B)  { benchRankedTopK(b, "moved") }
 
-// A ranking and a stddev over a binary operation of a count and a number (range route: the binary operand is
-// evaluated by the binary route): over a grouped count in a sliding window, with and without a parenthesis in a quoted
-// line filter, and over a count in a tumbling window (range == step), which the route answered right before it read
-// binary operands from their tree.
+// A ranking and a stddev over a binary operation of a count and a number: over a grouped count in a sliding window
+// (the binary route), with and without a parenthesis in a quoted line filter, and over a count in a tumbling window on
+// the step's grid (range == step), which the scalar fast path answers from one stats request (rangeRankScalarOperand).
 const (
 	rankedTopKBinaryBenchQuery         = `topk(3, sum by (app) (count_over_time({env="production"}[5m])) * 2)`
 	rankedTopKBinaryQuotedBenchQuery   = `topk(3, sum by (app) (count_over_time({env="production"} != "(" [5m])) * 2)`
@@ -124,4 +123,19 @@ func BenchmarkRankedTopKBinaryTumblingRepeat(b *testing.B) {
 }
 func BenchmarkStddevBinaryTumblingCold(b *testing.B) {
 	benchRankedTopKQuery(b, "cold", stddevBinaryTumblingBenchQuery)
+}
+func BenchmarkRankedTopKBinaryTumblingMoved(b *testing.B) {
+	benchRankedTopKQuery(b, "moved", rankedTopKBinaryTumblingBenchQuery)
+}
+func BenchmarkStddevBinaryTumblingRepeat(b *testing.B) {
+	benchRankedTopKQuery(b, "repeat", stddevBinaryTumblingBenchQuery)
+}
+func BenchmarkStddevBinaryTumblingMoved(b *testing.B) {
+	benchRankedTopKQuery(b, "moved", stddevBinaryTumblingBenchQuery)
+}
+func BenchmarkStddevBinaryRepeat(b *testing.B) {
+	benchRankedTopKQuery(b, "repeat", stddevBinaryBenchQuery)
+}
+func BenchmarkStddevBinaryMoved(b *testing.B) {
+	benchRankedTopKQuery(b, "moved", stddevBinaryBenchQuery)
 }

@@ -1,0 +1,67 @@
+id: semantics/rank-binary-operand-label-replace-once
+title: a label_replace inside the binary operand of topk, bottomk, sort, stddev or stdvar is applied once (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki applies a label_replace once, to the vector of its own operand:
+  `topk(1, label_replace(count_over_time({..}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)`
+  keeps pod="x-p1". The post-aggregation handlers evaluate a binary operand by
+  the binary route, operand by operand (semantics/rank-over-binary-operation),
+  and an operand applies its own label_replace calls; the handlers then applied
+  the label_replace markers of the translator's text for the whole operand
+  again over the ranking's answer, so the proxy answered pod="x-x-p1" on query
+  and query_range alike, and for a label_replace around the binary operation
+  inside the ranking (`topk(1, label_replace(.. * 2, ..))`) too. A regexp that
+  matches its own output once more shows it; `"(.*)"` into `"$1"` does not.
+  The handlers now leave the calls to the operands, and answers cached before
+  are fenced (@rank-over-binary-label-replace-v1:).
+
+  The same route answers a range function of lines and a number over a
+  tumbling window on the step's grid (`topk(3, count_over_time({..}[15s]) * 2)`
+  at step 15s) from one stats request, as before #1541 (proxyScalarStatsBinary,
+  rangeRankScalarOperand): TestRankScalarFastPathMatchesBinaryRoute holds those
+  1440 gated requests to the binary route's answer, and every other operand
+  takes the binary route.
+
+  Recorded with Loki's engine (TestRankingOverBinaryOperandMatchesRecordedLoki,
+  internal/proxy, emulated VictoriaLogs v1.49.0 and v1.53.0): 16 shapes over
+  five operands (three quoted texts, a matcher, a control), 1m and 5m windows,
+  query and query_range at a 15s and a 60s step. On main after #1541 every
+  answer of the three label_replace shapes differs (x-x-p1), and nothing else.
+corpus:
+  size: 3
+  dimensions:
+    shapes:
+      - query: 'topk(2, label_replace(count_over_time({env="production"}[5m]), "app", "x-$1", "app", "(.*)") * 2)'
+      - query: 'topk(2, label_replace(count_over_time({env="production"}[5m]) * 2, "app", "x-$1", "app", "(.*)"))'
+      - query: 'topk(2, count_over_time({env="production"} != "(" [1m]) * 2)'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topk(2, label_replace(count_over_time({env="production"}[5m]), "app", "x-$1", "app", "(.*)") * 2)'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    Each app label rewritten once (x-<app>), on the two largest series of twice the line count.
+gap:
+  status: fixed
+  fixed_by: '#1614'
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy metric_agg.go handleRangeMetricPostAggregation and handleInstantMetricPostAggregation (label transforms of a binary operand), rank_binary_fence.go, rank_binary_scalar_fast.go'
+  loki: 'a label_replace is applied once, to its own operand'
+  proxy: 'the same: the operands apply their own label_replace calls and the handlers do not apply them again'
+  planned_test: 'TestRankingOverBinaryOperandMatchesRecordedLoki (internal/proxy; recorded Loki engine answers, VictoriaLogs v1.49.0 and v1.53.0), TestRankScalarFastPathGate, TestRankScalarFastPathMatchesBinaryRoute, the rank-over-binary-label-replace rows of TestResponseKeyFencesFireOnTheSpellingsTheParserReads'
+  visual: none
+  visual_reason: 'hand-written queries: Grafana and Drilldown build no ranking over a binary operation; the series labels and values are compared with recorded Loki answers'
+  clusters: []

@@ -597,6 +597,10 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		// A binary operation under aggregations or a label_replace: the operand is a query of its own.
 		dispatched = p.serveWrappedBinaryOperand(sc, r, parsedInner, "vector")
 	}
+	if dispatched {
+		// The operands apply their own label_replace calls.
+		transforms = labelTransforms{}
+	}
 
 	if bin, isBin := binaryOfStats(innerStats, innerIsStats); !dispatched && isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
@@ -733,11 +737,16 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	if p.serveRangeBinaryOperand(sc, innerR, parsedInner) {
+	if scalarStats, ok := rangeRankScalarOperand(innerR, parsedInner, innerStats, innerIsStats); ok {
+		// A range function and a number over a tumbling window on the step's grid: one stats request, the binary
+		// route's answer.
+		p.proxyScalarStatsBinary(sc, innerR, scalarStats, "matrix")
+	} else if p.serveRangeBinaryOperand(sc, innerR, parsedInner) {
 		// A binary operand (or one under aggregations or a label_replace) is
 		// evaluated operand by operand: the translation of the whole operation
 		// is the marker of its operands' queries, never a query VictoriaLogs
-		// can read.
+		// can read. The operands apply their own label_replace calls.
+		transforms = labelTransforms{}
 	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.

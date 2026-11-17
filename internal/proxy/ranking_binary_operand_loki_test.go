@@ -60,19 +60,20 @@ func rankingBinaryOperandQueries(op string) []string {
 		`sum(topk(1, ` + x + ` * 2))`,
 		`topk(1, label_replace(` + x + `, "pod", "x-$1", "pod", "(.*)") * 2)`,
 		`sort_desc(label_replace(` + x + `, "pod", "x-$1", "pod", "(.*)") * 2)`,
+		`topk(1, label_replace(` + x + ` * 2, "pod", "x-$1", "pod", "(.*)"))`,
 	}
 }
 
 // A ranking, stddev, stdvar or sort over a binary operation answers Loki's series and values on query_range as on
-// query, whatever the operand's quoted text holds. The range route evaluated the operand by the string translator's
-// text for it, which drops the operation when a quoted value holds a parenthesis (the `* 2` was lost, the ranking ran
-// on raw rows, and `topk(1, sum by (pod) (..) * 2)` answered 500), splits a chain at its first operator, drops bool and
-// a vector(n) operand, and stamped a tumbling `sum by` operand one step early; it now evaluates the operation from its
-// parsed tree, operand by operand, as the instant route does. Loki's answers are recorded from its engine over the
-// same lines (test/oracle/loki engine; LVP_RUN_ORACLES=1 records again); the Loki streams carry the service_name
-// Loki gives them. Each request runs against the emulated VictoriaLogs v1.49.0 and v1.53.0.
+// query, whatever the operand's quoted text holds (a parenthesis, an operator, a matcher value: the string translator's
+// text for such an operand drops the operation, the binary route reads its tree), over chains, bool and vector(n)
+// operands, at a step equal to and shorter than the range, and with a label_replace inside the operand applied once
+// (the handlers applied it again over the answer: pod="x-x-p1"). The gated shapes (`topk(1, count_over_time(..[1m]) *
+// 2)` at step 60) take the scalar fast path. Loki's answers are recorded from its engine over the same lines
+// (test/oracle/loki engine; LVP_RUN_ORACLES=1 records again); the Loki streams carry the service_name Loki gives them.
+// Each request runs against the emulated VictoriaLogs v1.49.0 and v1.53.0.
 //
-// conformance: semantics/range-ranking-binary-operand-from-tree, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/rank-binary-operand-label-replace-once, loki_api_v1_query_range, loki_api_v1_query
 func TestRankingOverBinaryOperandMatchesRecordedLoki(t *testing.T) {
 	at := int64(1_800_000_000)
 	start, end := at-10*60, at
