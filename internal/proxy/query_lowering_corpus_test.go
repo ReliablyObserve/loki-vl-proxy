@@ -58,7 +58,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			// No translation cache: every row is translated, not read back.
 			on.translationCache, off.translationCache = nil, nil
 			ctx := context.Background()
-			differs, keep, dynamic := 0, 0, 0
+			differs, keep, dynamic, countVariance := 0, 0, 0, 0
 			for _, q := range corpus {
 				if strings.HasPrefix(strings.TrimSpace(q), "{") {
 					continue
@@ -71,6 +71,15 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 				want, wantErr := off.translateQueryOpts(ctx, spelledAsTranslatorReads(q), false)
 				if _, kept := on.keepUnwrapIdentity(q); kept {
 					keep++
+					continue
+				}
+				// A count by labels over stdvar_over_time counts the series where the translator answers a variance:
+				// the plan's text, held to Loki by the differentials (lower.CountsVarianceSeries).
+				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.CountsVarianceSeries(plan) {
+					countVariance++
+					if strings.HasPrefix(got, "__binary__") || !strings.HasSuffix(got, "count()") {
+						t.Errorf("%q: served %q, not the count of the series", q, got)
+					}
 					continue
 				}
 				if got != want && blankgrouping.Cut(q) != q {
@@ -105,6 +114,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			counts := shadowCounts(t, on)
 			total["keep identity rows"] += keep
 			total["dynamic identity rows"] += dynamic
+			total["count over stdvar rows"] += countVariance
 			for _, c := range metricFlipCandidates {
 				n := counts["flipped "+c]
 				total[c] += n

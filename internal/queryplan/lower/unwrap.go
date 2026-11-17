@@ -226,6 +226,8 @@ type unwrapQuery struct {
 	chain, service bool
 	// squares says the pipes square the deviation themselves (a stdvar under a vector aggregation without a clause).
 	squares bool
+	// counted says the pipes count the series of a stdvar (count by labels): no deviation is left to square.
+	counted bool
 	// parser says the log query has a parser: the series are then the stream (and each line, for an unwrapped
 	// value) instead of the stream and its level.
 	parser bool
@@ -481,7 +483,7 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 		log.pipes = narrowedUnpack(log.pipes[:log.bareLogfmt], names)
 	}
 	text := physical.VLQuery{Text: q.text(log, field, conv, keys.text, prof)}
-	if op.variance && !q.squares {
+	if op.variance && !q.squares && !q.counted {
 		return physical.Binary{Op: "^", L: text, R: squared}, nil
 	}
 	return text, nil
@@ -876,6 +878,19 @@ func (q *unwrapQuery) varianceVector(vop logql.VectorOp, op unwrapOp, labels []s
 		q.pipes = append(q.pipes, logsql.PipeMath{Alias: "__lvp_inner_var", Expr: "__lvp_inner*__lvp_inner"}.String())
 		q.squares = true
 		q.stats(labels, false, outerFuncOf(vop, "__lvp_inner_var"), "")
+		return
+	}
+	if len(labels) > 0 && vop == logql.VectorCount {
+		// count by labels reads the number of series of each group, not their values: the deviation of each series
+		// (the stream, its stored level, and the labels a keep leaves), then the count of those per group, as count
+		// over stddev_over_time writes it. Nothing is squared.
+		identity := seriesIdentity(q.parser)
+		if q.keptSet {
+			identity = q.kept
+		}
+		q.seriesStats(op, translate.JoinByLabels(labels, identity))
+		q.stats(labels, false, logsql.Count{}, "")
+		q.counted = true
 		return
 	}
 	if len(labels) > 0 {

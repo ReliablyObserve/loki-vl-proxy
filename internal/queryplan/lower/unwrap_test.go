@@ -212,6 +212,11 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 	if lerr == nil && WritesDynamicUnwrapIdentity(p) {
 		return "", "", false, false
 	}
+	// A count by labels over stdvar_over_time: the lowering counts the series, the translator answers the group's
+	// variance (semantics/count-over-stdvar-answers-variance, held to Loki by the Loki differentials).
+	if lerr == nil && WritesCountVarianceSeries(p) {
+		return "", "", false, false
+	}
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, true, terr == nil
 	}
@@ -235,6 +240,9 @@ func FuzzUnwrapLowering(f *testing.F) {
 	f.Add("a", "x", "ab", "error", uint8(9), uint8(36), uint8(8), uint8(9), uint8(4))
 	f.Add("service_name", "é\n", "status", ".*", uint8(7), uint8(3), uint8(5), uint8(9), uint8(4))
 	f.Add("k8s.pod", "[5m]", "a-b", "10.0.0.0/8", uint8(200), uint8(9), uint8(11), uint8(31), uint8(77))
+	// count by a label over stdvar_over_time, after no parser and after a logfmt one.
+	f.Add("a", "x", "n", "app", uint8(7), uint8(0), uint8(0), uint8(8), uint8(2))
+	f.Add("a", "x", "n", "app", uint8(7), uint8(0), uint8(16), uint8(8), uint8(2))
 	f.Fuzz(func(t *testing.T, sel, line, name, val string, fn, shape, rng, group, wrap uint8) {
 		for _, s := range []string{sel, line, name, val} {
 			if translatorReadsAsSyntax(s) || strings.Contains(s, "stats") || strings.Contains(s, "service_name") || strings.Contains(s, "detected_level") {

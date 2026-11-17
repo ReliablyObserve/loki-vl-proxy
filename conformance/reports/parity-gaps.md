@@ -211,6 +211,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/absent-over-time-semantics` — absent_over_time is the series valued 1 at the steps without data and nothing at the steps with data, after a parser too (fixed) | #737 | 0 | 0 |
 | `semantics/aggregation-over-binary-dropped` — A vector aggregation over a binary expression aggregates the whole binary, like Loki (fixed) | #741 | 0 | 0 |
 | `semantics/binary-operand-literals-reprint` — Binary metric queries keep compound duration and exponent literals in their operands | #1177 | 0 | 0 |
+| `semantics/count-over-stdvar-answers-variance` — count by labels over stdvar_over_time answers a variance where Loki answers the number of series (fixed) | the lowering counts the series of the deviation (varianceVector) and the proxy serves the query from the plan | 0 | 0 |
 | `semantics/detected-level-missing-from-stats-answers` — A bare or without() metric names its series by detected_level, "unknown" included, like Loki (fixed) | #750 | 0 | 0 |
 | `semantics/detected-level-one-value-per-stream` — Every metric series built from one stream carries the same detected_level, the stream's normalised level, whatever the query type or step... | TBD-PR | 0 | 0 |
 | `semantics/detected-level-stream-stats-without-level` — A metric series read per stream from a stream without a level field carries the level of its lines, as in Loki (fixed) | TBD-PR | 0 | 0 |
