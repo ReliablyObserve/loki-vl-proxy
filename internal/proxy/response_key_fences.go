@@ -95,6 +95,10 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		// Only the range handler's answers of a ranking over a binary operation changed.
 		b.add(rankOverBinaryResponseKeyVersion(query, ranked || words.stddev))
 	}
+	if site == responseKeyCompatQuery {
+		// An instant ranking over a binary operand that holds a label_replace applies it once now.
+		b.add(rankOverBinaryLabelReplaceResponseKeyVersion(query, ranked || words.stddev))
+	}
 	if site == responseKeyCompatQuery || site == responseKeyCompatQueryRange {
 		// The compat edge looks its cache up before the handler validates the query.
 		b.add(runeResponseKeyVersion(query))

@@ -25,9 +25,63 @@ func rankOverBinaryResponseKeyVersion(query string, ranked bool) string {
 		return ""
 	}
 	if plan := resolvedPlan(query); plan != nil && rankOverBinary(plan.Root) {
+		if rankOverBinaryLabelReplace(plan.Root) {
+			return rankOverBinaryResponseVersion + rankOverBinaryLabelReplaceResponseVersion
+		}
 		return rankOverBinaryResponseVersion
 	}
 	return ""
+}
+
+// rankOverBinaryLabelReplaceResponseVersion fences the answers cached before a label_replace inside the binary operand
+// of a ranking, stddev or stdvar was applied once (semantics/rank-binary-operand-label-replace-once): the operand's own
+// request applied it, and the handlers applied it again over the ranking's answer, on query and query_range alike.
+const rankOverBinaryLabelReplaceResponseVersion = "@rank-over-binary-label-replace-v1:"
+
+// rankOverBinaryLabelReplaceResponseKeyVersion is that fence of an instant query (the range sites carry it in
+// rankOverBinaryResponseKeyVersion), read like it: a text screen first, then the query's shared plan.
+func rankOverBinaryLabelReplaceResponseKeyVersion(query string, ranked bool) string {
+	if !ranked {
+		return ""
+	}
+	if plan := resolvedPlan(query); plan != nil && rankOverBinaryLabelReplace(plan.Root) {
+		return rankOverBinaryLabelReplaceResponseVersion
+	}
+	return ""
+}
+
+// rankOverBinaryLabelReplace reports a ranking, stddev or stdvar over a binary operand (binaryOperandNode) that holds a
+// label_replace call, anywhere in n.
+func rankOverBinaryLabelReplace(n queryplan.Node) bool {
+	switch v := n.(type) {
+	case *queryplan.Rank:
+		return binaryOperandNode(v.In) && holdsLabelReplace(v.In) || rankOverBinaryLabelReplace(v.In)
+	case *queryplan.VectorAgg:
+		if (v.Op == logqlpkg.VectorStddev || v.Op == logqlpkg.VectorStdvar) && binaryOperandNode(v.In) && holdsLabelReplace(v.In) {
+			return true
+		}
+		return rankOverBinaryLabelReplace(v.In)
+	case *queryplan.LabelReplace:
+		return rankOverBinaryLabelReplace(v.In)
+	case *queryplan.BinOp:
+		return rankOverBinaryLabelReplace(v.L) || rankOverBinaryLabelReplace(v.R)
+	}
+	return false
+}
+
+// holdsLabelReplace reports a label_replace call anywhere in the metric operators of n.
+func holdsLabelReplace(n queryplan.Node) bool {
+	switch v := n.(type) {
+	case *queryplan.LabelReplace:
+		return true
+	case *queryplan.VectorAgg:
+		return holdsLabelReplace(v.In)
+	case *queryplan.Rank:
+		return holdsLabelReplace(v.In)
+	case *queryplan.BinOp:
+		return holdsLabelReplace(v.L) || holdsLabelReplace(v.R)
+	}
+	return false
 }
 
 // rankOverBinary reports a ranking, stddev or stdvar whose operand is a binary operation, or one under aggregations and
