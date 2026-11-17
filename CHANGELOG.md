@@ -20,6 +20,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checks beside an ordered-JSON stats attempt) send the same requests on every run, a request the test marks waits for
   every probe it started before reading the verdicts, in the probes' order. Nothing in the proxy marks a request: no
   answer, status, request sent to VictoriaLogs or cache key changes.
+- Metric queries with a label filter or a drop after a `| json` or `| logfmt` parser, under a grouping or unwrapped
+  label whose name holds `_` (`sum by (service_name) (sum_over_time({app="api"} | json | unwrap duration_ms |
+  __error__="" [5m]))`, `sum by (user_id) (count_over_time({app="api"} | json | drop __error__ [5m]))`), and the same
+  stages in a `without` fold over a parser or behind a trailing `keep`, are translated by the query plan. The requests
+  sent to VictoriaLogs are the same as before, and the translation costs fewer allocations than the string
+  translator's.
+
+### Fixed
+
+- `sum`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` and
+  `stdvar_over_time` after `| json` or `| logfmt` with a label filter after the parser, before or after the unwrap
+  (`sum(stddev_over_time({app="api"} | json | __error__="" | unwrap duration_ms [5m]))`), now read Loki's series:
+  the stream plus every parsed label except the unwrapped one, as the same queries without the filter already do. They
+  read the stream and each line as a series, so a range query answered 0 where Loki sums the deviation of each series
+  (`semantics/unwrap-per-series-identity-label-filter`). A range longer than the step keeps the stream's series, as
+  without the filter. Answers cached before are not served again. A `max` over `max_over_time` and a `min` over
+  `min_over_time` with the filter read the rows of each group, as they do without it.
 
 ## [2.326.0] - 2026-11-17
 

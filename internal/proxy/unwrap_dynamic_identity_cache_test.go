@@ -22,6 +22,9 @@ var dynamicIdentityCacheQueries = []string{
 	`sum by (app) (avg_over_time({app="api"} | json | unwrap n [$__auto]))`,
 	`sum(stddev_over_time({app="api"} | json | unwrap n [$__auto]))`,
 	`max by (app) (stdvar_over_time({app="api"} | json | unwrap n [$__auto]))`,
+	// A label filter after the parser under an unwrapped label the lowering resolves under its other spellings.
+	`sum(stddev_over_time({app="api"} | json | __error__="" | unwrap duration_ms [$__auto]))`,
+	`sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms | __error__="" [$__auto]))`,
 }
 
 // stubCallCounter counts the requests VictoriaLogs answers and the bytes of its answers.

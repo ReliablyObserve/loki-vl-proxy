@@ -1,5 +1,5 @@
 id: semantics/unwrap-per-series-identity-label-filter
-title: A label filter between a json or logfmt parser and an unwrapped label whose name holds an underscore keeps the stream and each line as the series of a function taken per series (open)
+title: A label filter between a json or logfmt parser and an unwrapped label whose name holds an underscore keeps the stream and each line as the series of a function taken per series (fixed)
 pending: true
 proves:
   - metric-series-identity
@@ -21,6 +21,15 @@ why: |
   max and min over time, on step = range, step < range and step > range; the
   instant query reads the rows per stream, which is Loki's answer only when the
   stream is one series.
+
+  Fixed: the lowering writes a label filter or a drop after the parser under
+  a resolved label like any other stage, and the metric screen no longer turns
+  these queries away, so the proxy serves them from the plan with the parser's
+  dynamic identity (lowerDynamicIdentity): the stream and every parsed label
+  less the unwrapped one, as without the filter. A max over max_over_time and a
+  min over min_over_time read the rows of each group (foldsRows), filtered or
+  not. A range longer than the step keeps the stream's series, as without the
+  filter (semantics/unwrap-per-series-identity-raw-rows).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -37,11 +46,14 @@ compare:
   expect: |
     Loki's sum of the deviation of each series.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#1536'
+  visual: none
+  visual_reason: 'the values are held by the recorded Loki differentials (API); the stack check graphs the shape in Explore next to Loki'
   impact: explore-visible
   effort: M
-  area: 'internal/queryplan/lower parser_labels.go (keyPipes refuses the resolved labels of a filter after a parser), unwrap_dynamic.go (the identity pipes)'
+  area: 'internal/queryplan/lower parser_labels.go (the resolved labels of a filter after a parser), metric_screen.go, unwrap_dynamic.go (the identity pipes); internal/proxy response_key_fences.go (@unwrap-dynamic-identity-v2)'
   loki: 'the series are the stream and every parsed label less the unwrapped one; a label filter only drops lines'
-  proxy: 'the string translator groups by the stream and each line'
-  planned_test: 'TestUnwrapDynamicIdentityMatchLoki (internal/querycorpus) lists the de rows with the filter as known differences'
+  proxy: 'the parser''s dynamic identity with the filter as one more stage, as without the filter'
+  planned_test: 'TestUnwrapDynamicIdentityMatchLoki and TestKeepUnwrapIdentityMatchLoki (internal/querycorpus, Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0) hold the filtered rows to Loki with no known difference; TestPlanLowersParserLabelFiltersWithDynamicIdentity and TestDynamicIdentityFoldsRowsOfSplitFreeAggregations (internal/queryplan/lower)'
   clusters: []
