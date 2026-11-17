@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.334.0] - 2026-11-17
-
 ### Changed
 
 - Identical read requests no longer each ask VictoriaLogs while one of them runs, and a failed answer is held for a
@@ -42,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loki_vl_proxy_request_coalesced_success_total`, `loki_vl_proxy_request_flight_saved_total`,
   `loki_vl_proxy_error_cache_entries` and `loki_vl_proxy_error_cache_bytes`. Helm: the same flags under
   `extraArgs`.
+
+## [2.334.0] - 2026-11-17
+
+### Changed
+
 - A metric read as raw rows (a function the ordered JSON evaluator does not own, such as `sort(rate(... | json [2m]))`
   or `topk(...)`) spends less time per row. The check that makes a JSON parser error fail such a metric as Loki does now
   reads the row's time, stream, level and the check's mark in one pass over the row's keys, wherever VictoriaLogs places
