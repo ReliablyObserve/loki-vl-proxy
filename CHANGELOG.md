@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.334.0] - 2026-11-17
+
 ### Changed
 
 - A metric read as raw rows (a function the ordered JSON evaluator does not own, such as `sort(rate(... | json [2m]))`
@@ -17,7 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs do not change.
 
 ### Fixed
-
 - `query_range` with a range longer than the step (sliding windows, the `$__auto` steps Grafana sends under a `[5m]`
   range) now reads Loki's series for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`,
   `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream
