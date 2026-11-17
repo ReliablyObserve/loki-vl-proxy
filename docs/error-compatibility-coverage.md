@@ -16,9 +16,9 @@ The answers are those of Grafana Loki 3.7.9, recorded over HTTP on 2026-11-15. E
 | Errors that match Loki | 97.2% (241/248) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 58.9% (73/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
 | Cells that match | 101/124 | cells where every comparable row matches and no known leak remains |
-| Messages recorded | 27/36 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
+| Messages recorded | 36/46 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
-72 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
+141 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
 
 ## Matrix
 
@@ -60,7 +60,7 @@ Error kinds:
 ## Order of Loki's checks
 
 1. **request decoding**: The URL and form body are decoded first. Messages: `post-too-large`, `url-escape`, `url-semicolon`.
-2. **parameters**: Parameters are read next, in the order end, start, limit, step and direction; an end not after the start and the 11,000-point resolution check come before the query is parsed. Messages: `aggregate-by`, `delay-for`, `direction`, `end-before-start`, `interval-negative`, `limit-not-positive`, `number`, `param-duration`, `param-number`, `step-duration`, `step-not-positive`, `step-overflow`, `step-too-many-points`.
+2. **parameters**: Parameters are read next, in the order end, start, limit, step and direction; an end not after the start and the 11,000-point resolution check come before the query is parsed. Messages: `aggregate-by`, `delay-for`, `delete-end-in-future`, `delete-max-interval-invalid`, `delete-max-interval-too-long`, `delete-query-invalid`, `delete-query-not-set`, `delete-start-not-before-end`, `delete-start-not-set`, `delete-time-invalid`, `direction`, `end-before-start`, `interval-negative`, `limit-not-positive`, `number`, `param-duration`, `param-number`, `step-duration`, `step-not-positive`, `step-overflow`, `step-too-many-points`.
 3. **logql syntax**: The query text is parsed; a syntax error is answered before the query-length limit on query_range, and on tail before the parameters. Messages: `parse`, `parse-input-size`.
 4. **limits**: The query-length limit follows the syntax check on query_range and comes before it on the metadata routes. Messages: `limit-lookback`, `limit-query-length`.
 5. **logql validation**: Checks of a query that parsed (stage compilation, matcher rules, query type) come last. Messages: `instant-log-query`, `only-label-matchers`, `only-log-selector`.
@@ -76,6 +76,15 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-canceled` | 499 | canceled | 0 | - | documented | TestErrorLayer_NoVictoriaLogsLeak, TestErrorLayer_WindowRetryCancelDeadline | - |
 | `msg-deadline` | 504 | deadline | 0 | - | documented | TestErrorLayer_NoVictoriaLogsLeak, TestErrorLayer_WindowRetryCancelDeadline | - |
 | `msg-delay-for` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-delete-end-in-future` | 400 | param | 1 | - | recorded-not-comparable | - | - |
+| `msg-delete-max-interval-invalid` | 400 | param | 8 | - | recorded-not-comparable | - | - |
+| `msg-delete-max-interval-too-long` | 400 | param | 1 | - | recorded-not-comparable | - | - |
+| `msg-delete-query-invalid` | 400 | param | 4 | - | recorded-not-comparable | - | - |
+| `msg-delete-query-not-set` | 400 | param | 2 | - | recorded-not-comparable | - | - |
+| `msg-delete-request-not-found` | 404 | route | 4 | - | recorded-not-comparable | - | - |
+| `msg-delete-start-not-before-end` | 400 | param | 9 | - | recorded-not-comparable | - | - |
+| `msg-delete-start-not-set` | 400 | param | 1 | - | recorded-not-comparable | - | - |
+| `msg-delete-time-invalid` | 400 | param | 15 | - | recorded-not-comparable | - | - |
 | `msg-direction` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-end-before-start` | 400 | param | 5 | 5/5 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-instant-log-query` | 400 | param | 8 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
@@ -88,7 +97,8 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-limit-reached` | 400 | limit | 0 | - | documented | TestLimitAnswersAreLokisTextAndLogTheFlag, TestErrorLayer_NoVictoriaLogsLeak | - |
 | `msg-limit-response-size` | 500 | limit | 0 | - | documented | TestLimitAnswersAreLokisTextAndLogTheFlag, TestErrorLayer_NoVictoriaLogsLeak | - |
 | `msg-limit-series` | 400 | limit | 0 | - | documented | TestErrorLayer_LokiLimitTexts | - |
-| `msg-method-not-allowed` | 405 | route | 61 | 61/61 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-method-not-allowed` | 405 | route | 62 | 61/61 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-no-org-id` | 401 | route | 0 | - | documented | TestTenantAuth_AnswersLikeLoki, TestDeleteAuth_TokenGatesTheHandler | - |
 | `msg-not-found` | 404 | route | 21 | 21/21 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-number` | 400 | param | 8 | 8/8 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-only-label-matchers` | 400 | param | 11 | 11/11 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
@@ -104,7 +114,6 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-step-overflow` | 400 | param | 1 | 1/1 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-step-too-many-points` | 400 | param | 3 | 3/3 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-tail-not-websocket` | 400 | route | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `unmapped-delete-query-not-set` | 400 | unmapped | 1 | - | recorded-not-comparable | - | - |
 | `unmapped-evaluator-unexpected-expr` | 500 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `unmapped-index-shards-target-bytes` | 400 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `unmapped-path-cleaning-redirect` | 301 | unmapped | 7 | 7/7 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |

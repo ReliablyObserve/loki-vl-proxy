@@ -2447,28 +2447,6 @@ type bareParserMetricSeries struct {
 	samples []bareParserMetricSample
 }
 
-// parseDeleteTimestamp parses a timestamp string used in delete requests and
-// returns Unix nanoseconds. It accepts float seconds, float nanoseconds (>1e15),
-// RFC3339Nano, and RFC3339. Returns an error for unrecognized formats so callers
-// can reject them rather than forwarding an unbounded time range.
-func parseDeleteTimestamp(ts string) (int64, error) {
-	if f, err := strconv.ParseFloat(ts, 64); err == nil {
-		if f > 1e15 {
-			// Already nanoseconds — keep as-is (truncated to int64).
-			return int64(f), nil
-		}
-		// Seconds — multiply to nanoseconds.
-		return int64(f * 1e9), nil
-	}
-	if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
-		return parsed.UnixNano(), nil
-	}
-	if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
-		return parsed.UnixNano(), nil
-	}
-	return 0, fmt.Errorf("unrecognized timestamp format: %q", ts)
-}
-
 func formatVLTimestamp(ts string) string {
 	// Loki sends Unix timestamps (seconds, milliseconds, or nanoseconds).
 	// Grafana drilldown resource endpoints send RFC3339 timestamps, while

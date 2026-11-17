@@ -112,7 +112,9 @@ var upstreamRequestTypeByRoute = map[string]string{
 	"/select/logsql/stream_field_names":  "select_logsql_stream_field_names",
 	"/select/logsql/field_values":        "select_logsql_field_values",
 	"/select/logsql/stream_field_values": "select_logsql_stream_field_values",
-	"/select/logsql/delete":              "select_logsql_delete",
+	"/delete/run_task":                   "delete_run_task",
+	"/delete/stop_task":                  "delete_stop_task",
+	"/delete/active_tasks":               "delete_active_tasks",
 	"/select/logsql/tail":                "select_logsql_tail",
 }
 

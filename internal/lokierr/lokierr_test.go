@@ -113,6 +113,8 @@ func build(t *testing.T, a answer) *Error {
 		LengthNS int64  `json:"length_ns"`
 		LimitNS  int64  `json:"limit_ns"`
 		Escape   string `json:"escape"`
+		Param    string `json:"param"`
+		Interval int64  `json:"interval_ns"`
 	}
 	if len(a.Args) > 0 {
 		if err := json.Unmarshal(a.Args, &args); err != nil {
@@ -174,6 +176,24 @@ func build(t *testing.T, a answer) *Error {
 		return MethodNotAllowed()
 	case "tail-not-websocket":
 		return TailNotWebSocket()
+	case "delete-query-not-set":
+		return DeleteQueryNotSet()
+	case "delete-query-invalid":
+		return DeleteQueryInvalid(nil)
+	case "delete-start-not-set":
+		return DeleteStartNotSet()
+	case "delete-time-invalid":
+		return DeleteTimeInvalid(args.Param)
+	case "delete-start-not-before-end":
+		return DeleteStartNotBeforeEnd()
+	case "delete-end-in-future":
+		return DeleteEndInFuture()
+	case "delete-max-interval-invalid":
+		return DeleteMaxIntervalInvalid()
+	case "delete-max-interval-too-long":
+		return DeleteMaxIntervalTooLong(time.Duration(args.Interval))
+	case "delete-request-not-found":
+		return DeleteRequestNotFound()
 	}
 	t.Fatalf("%s: no constructor for message %q", a.ID, a.Msg)
 	return nil
@@ -219,7 +239,9 @@ func TestConstructorsRenderLokiRecordedAnswers(t *testing.T) {
 		"interval-negative", "aggregate-by", "delay-for", "instant-log-query", "only-label-matchers",
 		"only-log-selector", "url-escape", "url-semicolon", "post-too-large", "parse-input-size",
 		"limit-query-length", "limit-lookback", "limit-index-series", "not-found", "method-not-allowed",
-		"tail-not-websocket"} {
+		"tail-not-websocket", "delete-query-not-set", "delete-query-invalid", "delete-start-not-set",
+		"delete-time-invalid", "delete-start-not-before-end", "delete-end-in-future", "delete-max-interval-invalid",
+		"delete-max-interval-too-long", "delete-request-not-found"} {
 		if seen[id] == 0 {
 			t.Errorf("no recorded Loki answer renders message %q", id)
 		}
@@ -251,6 +273,7 @@ func TestConstructorTexts(t *testing.T) {
 		{ParserMessage("parse error : queries require at least one regexp or equality matcher"), KindParse, http.StatusBadRequest, "parse error : queries require at least one regexp or equality matcher"},
 		{MethodNotAllowed(), KindRoute, http.StatusMethodNotAllowed, ""},
 		{WriteNotSupported(), KindRoute, http.StatusMethodNotAllowed, "write operations are not supported, this is a read-only proxy"},
+		{NoOrgID(cause), KindRoute, http.StatusUnauthorized, "no org id"},
 		{LimitReached("some-flag", 7, cause), KindLimit, http.StatusBadRequest, "limit reached while evaluating the query"},
 		{ResponseTooLarge("some-flag", 65, 64, cause), KindLimit, http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)"},
 	}

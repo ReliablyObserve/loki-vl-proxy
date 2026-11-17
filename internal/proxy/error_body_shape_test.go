@@ -204,12 +204,15 @@ func TestErrorBody_RulerAndDeleteShapes(t *testing.T) {
 		{"loki_rules/more_segments_than_the_route", "GET", "/loki/api/v1/rules/a/b/c", 404, plain, true, "404 page not found\n"},
 		{"loki_rules/traversal_is_a_client_error", "GET", "/loki/api/v1/rules/%2e%2e/escape", 400, plain, true, "invalid namespace: path traversal not allowed\n"},
 		{"loki_rules/escape_cannot_be_decoded", "GET", "/loki/api/v1/rules/%25zz", 500, plain, false, `{"status":"error","data":null,"errorType":"server_error","error":"invalid namespace: invalid URL escape \"%zz\""}`},
-		{"delete/missing_confirmation_post", "POST", "/loki/api/v1/delete?query=%7Bapp%3D%22a%22%7D&start=1&end=2", 400, plain, true, "delete requires X-Delete-Confirmation: true header for safety\n"},
-		{"delete/missing_confirmation_put", "PUT", "/loki/api/v1/delete?query=%7Bapp%3D%22a%22%7D&start=1&end=2", 400, plain, true, "delete requires X-Delete-Confirmation: true header for safety\n"},
-		// Loki serves GET (list) and DELETE (cancel) here; the proxy does not
-		// (open gap semantics/error-request-validation-parity).
-		{"delete/get_list_not_implemented", "GET", "/loki/api/v1/delete", 405, "", false, ""},
-		{"delete/delete_cancel_not_implemented", "DELETE", "/loki/api/v1/delete", 405, "", false, ""},
+		// The delete API answers Loki's texts (recorded from a Loki that serves it, rows r1700 and later).
+		{"delete/start_loki_refuses_post", "POST", "/loki/api/v1/delete?query=%7Bapp%3D%22a%22%7D&start=1&end=2", 400, plain, true, "invalid start time: require unix seconds or RFC3339 format\n"},
+		{"delete/start_loki_refuses_put", "PUT", "/loki/api/v1/delete?query=%7Bapp%3D%22a%22%7D&start=1&end=2", 400, plain, true, "invalid start time: require unix seconds or RFC3339 format\n"},
+		{"delete/query_not_set", "POST", "/loki/api/v1/delete", 400, plain, true, "query not set\n"},
+		// VictoriaLogs keeps no record of a request to list: Loki's 500.
+		{"delete/get_list_not_served", "GET", "/loki/api/v1/delete", 500, plain, true, "Internal Server Error\n"},
+		// A cancel without a request_id is Loki's 204, with no body and no Content-Type.
+		{"delete/cancel_without_id", "DELETE", "/loki/api/v1/delete", 204, "", true, ""},
+		{"delete/unknown_method", "PATCH", "/loki/api/v1/delete", 405, "", false, ""},
 	}
 	handler := shippedChain(mux)
 	for _, tc := range cases {
