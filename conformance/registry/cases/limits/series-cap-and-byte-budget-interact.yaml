@@ -33,5 +33,5 @@ compare:
   expect: |
     The error names -backend-max-buffered-response-bytes, and the limits
     registry's sizing entries for both flags state the interaction and the
-    series x steps x 40 bytes estimate. At the 500 default the same query
-    answers 491 series.
+    series x steps x 40 bytes estimate. With a cap of 500 the same query
+    answered 491 series.

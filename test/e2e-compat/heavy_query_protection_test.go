@@ -73,7 +73,7 @@ func TestCompat_HeavyQueryProtection(t *testing.T) {
 		start := time.Unix((s0.Unix()/87)*87, 0)
 		end := start.Add(2 * time.Hour)
 		// 510 steady pods with one line per 5 minutes outnumber
-		// -max-stats-query-series (500). The leader holds three lines in every
+		// Loki's default max_query_series (500). The leader holds three lines in every
 		// 5m window and wins every step except those holding the spike pod's
 		// burst; the spike pod has the smallest total of all.
 		var vlRows strings.Builder

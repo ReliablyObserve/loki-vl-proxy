@@ -36,16 +36,16 @@ func TestCapSeriesByTotalCount_MapVariant(t *testing.T) {
 	}
 }
 
-// TestResolvedMaxStatsQuerySeries_Default verifies the 500 default and override.
+// TestResolvedMaxStatsQuerySeries_Default verifies the 1000 default and override.
 func TestResolvedMaxStatsQuerySeries_Default(t *testing.T) {
-	if got := (&Proxy{maxStatsQuerySeries: 0}).resolvedMaxStatsQuerySeries(context.Background()); got != 500 {
-		t.Errorf("default: expected 500, got %d", got)
+	if got := (&Proxy{maxStatsQuerySeries: 0}).resolvedMaxStatsQuerySeries(context.Background()); got != 1000 {
+		t.Errorf("default: expected 1000, got %d", got)
 	}
 	if got := (&Proxy{maxStatsQuerySeries: 1200}).resolvedMaxStatsQuerySeries(context.Background()); got != 1200 {
 		t.Errorf("override: expected 1200, got %d", got)
 	}
-	if got := (*Proxy)(nil).resolvedMaxStatsQuerySeries(context.Background()); got != 500 {
-		t.Errorf("nil receiver: expected 500, got %d", got)
+	if got := (*Proxy)(nil).resolvedMaxStatsQuerySeries(context.Background()); got != 1000 {
+		t.Errorf("nil receiver: expected 1000, got %d", got)
 	}
 }
 

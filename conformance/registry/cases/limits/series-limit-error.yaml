@@ -9,7 +9,7 @@ why: |
   Above `max_query_series` Loki rejects the query rather than answering with part
   of the data: a chart or an alert that reads a truncated answer as the whole one
   is wrong in a way nothing on screen reveals. The proxy's limit is
-  `-max-stats-query-series` (default 500, Loki's own default), and the message
+  `-max-stats-query-series` (default 1000; Loki's own default is 500), and the message
   stays Loki's word for word because Grafana renders it; the flag that set the
   limit is named in the proxy's log line instead.
 
