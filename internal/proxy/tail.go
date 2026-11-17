@@ -252,6 +252,21 @@ func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tail
 	}
 }
 
+// tailSettleDelay is how long a row may take to become searchable in
+// VictoriaLogs. An ingested row is searchable only once its rows-buffer shard
+// flushes: shards are filled round-robin and each flushes a second after its
+// first row (lib/logstorage/datadb.go rowsBuffer), and a cluster's vlinsert
+// buffers rows on its own, so rows of one stream pushed in separate requests
+// can become searchable out of order. VictoriaLogs' live tail skips every row
+// of a stream at or below the newest one of that stream it already sent
+// (app/vlselect/logsql tailProcessor.getTailRows), so a tail that reads up to
+// now loses such rows for good, while Loki's tail delivers every line pushed
+// after it started. The native tail therefore reads up to this long before
+// now (VictoriaLogs' own default tail offset), and the polled tail reads this
+// span again on every poll and drops the rows it already sent. It is the
+// default of -tail.settle-delay (Proxy.tailSettle).
+const tailSettleDelay = 5 * time.Second
+
 // errTailStreamEnded is a native tail stream that ended without an error.
 var errTailStreamEnded = errors.New("native tail stream ended")
 
@@ -451,22 +466,18 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 func (p *Proxy) openNativeTailStreamFrom(parent context.Context, logsqlQuery string, startOffset time.Duration) (*http.Response, bool, error) {
 	// Use the full request context (parent) so that the response body reader — which
 	// the caller uses to forward the VL streaming tail — is not cancelled by a short
-	// probe deadline.  VL v1.50+ accepts the request immediately (200 OK headers
-	// arrive before any data) and then streams NDJSON lines as they are ingested.
-	// A cancelled probe context would kill the body reader within 1500 ms, causing
-	// the forwarded WebSocket to close with "unexpected EOF".
+	// probe deadline.  VictoriaLogs answers the headers before its first read
+	// (v1.49 and v1.53 flush them first) and then streams NDJSON lines as they
+	// become searchable. A cancelled probe context would kill the body reader,
+	// causing the forwarded WebSocket to close with "unexpected EOF".
 	// For backends that do not support the tail endpoint, VL returns a 4xx response
 	// quickly, so no timeout guard is needed here.
 	//
-	// offset=0s overrides VL's default 5-second tail offset (tailOffsetNsecs = 5e9
-	// in VL source).  Without this override, VL's streaming window end is always
-	// now-5s, so data pushed at T+0 only becomes visible to the tail at T+5s —
-	// colliding with the 5s ResponseHeaderTimeout on the tailClient.  With offset=0s
-	// the window end is now, data is visible within one refresh_interval (~1s), and
-	// VL sends headers well within the 5s budget.  VL expects a duration string
-	// (e.g. "0s"), not a bare integer.
-
-	params := url.Values{"query": {logsqlQuery}, "offset": {"0s"}}
+	// offset is the settle delay (-tail.settle-delay): VictoriaLogs reads only rows
+	// older than that, so rows of a stream that become searchable out of order
+	// are all in the read that sends them, and its per-stream skip of rows at or
+	// below the newest sent one drops none of them.
+	params := url.Values{"query": {logsqlQuery}, "offset": {strconv.FormatInt(p.tailSettle.Milliseconds(), 10) + "ms"}}
 	if startOffset > 0 {
 		params.Set("start_offset", strconv.FormatInt(startOffset.Milliseconds(), 10)+"ms")
 	}
@@ -544,12 +555,16 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQu
 	}
 }
 
+// syntheticTailPollLimit is the most rows one poll of the polled tail reads.
+const syntheticTailPollLimit = 200
+
 func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logsqlQuery string, tp *tailPipeline, windowStart *time.Time, lastSeen *syntheticTailSeen) error {
+	end := time.Now()
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time)")
 	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
-	params.Set("end", formatVLTimestamp(time.Now().UTC().Format(time.RFC3339Nano)))
-	params.Set("limit", "200")
+	params.Set("end", formatVLTimestamp(end.UTC().Format(time.RFC3339Nano)))
+	params.Set("limit", strconv.Itoa(syntheticTailPollLimit))
 
 	resp, err := p.vlGet(ctx, "/select/logsql/query", params)
 	if err != nil {
@@ -570,16 +585,23 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 	newest := *windowStart
 	var batch []byte
 	var pending []string
+	rows := 0
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
+		rows++
 
 		seenKey, entryTime, err := syntheticTailRowKey(line)
 		if err != nil {
 			// A row that is not JSON is a broken body, not a row to skip.
 			return fmt.Errorf("synthetic tail row is not JSON: %w: %w", errTailMalformedRow, err)
+		}
+		// Rows sent before count too: a poll that reads only those still
+		// moves the cursor.
+		if entryTime.After(newest) {
+			newest = entryTime
 		}
 		if lastSeen.Contains(seenKey) {
 			continue
@@ -587,10 +609,6 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 		// Noted as seen once the batch is delivered: a body that breaks
 		// part-way is read again from the same cursor.
 		pending = append(pending, seenKey)
-
-		if entryTime.After(newest) {
-			newest = entryTime
-		}
 
 		batch = append(append(batch, line...), '\n')
 	}
@@ -607,7 +625,17 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 		lastSeen.Add(key)
 	}
 
-	*windowStart = newest.Add(time.Nanosecond)
+	// The next poll reads the last -tail.settle-delay again: a row of that span
+	// that was not searchable yet arrives then, and the rows already sent
+	// are dropped. A full poll moves on from its newest row instead, so a
+	// busy tail never reads the same page again.
+	next := newest.Add(time.Nanosecond)
+	if settled := end.Add(-p.tailSettle); rows < syntheticTailPollLimit && settled.Before(next) {
+		next = settled
+	}
+	if next.After(*windowStart) {
+		*windowStart = next
+	}
 	return nil
 }
 

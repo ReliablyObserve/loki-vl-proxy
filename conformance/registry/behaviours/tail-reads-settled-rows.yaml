@@ -1,0 +1,54 @@
+id: tail-reads-settled-rows
+kind: semantics
+title: A live tail reads only rows VictoriaLogs has made searchable, so no line of a stream is skipped
+
+loki: |
+  Loki's tail delivers every line pushed after it started, in push order per
+  stream (the ingester's tailer sees each pushed entry).
+
+victorialogs: |
+  An ingested row is searchable only once its rows-buffer shard flushes:
+  shards are filled round-robin and each flushes a second after its first row
+  (lib/logstorage/datadb.go rowsBuffer.mustAddRows, v1.49.0 and v1.53.0); a
+  cluster's vlinsert buffers rows too. Rows of one stream pushed in separate
+  requests can therefore become searchable out of order. /select/logsql/tail
+  reads [now-offset-start_offset, now-offset] first and then, every refresh
+  interval, [previous end - 5s, now-offset], skipping each row of a stream at
+  or below the newest row of that stream it already sent
+  (app/vlselect/logsql/logsql.go ProcessLiveTailRequest,
+  tailProcessor.getTailRows). The default offset is 5s. The response headers
+  are flushed before the first read.
+
+proxy: |
+  The native tail sends offset=-tail.settle-delay (5s by default,
+  VictoriaLogs' default) instead of 0s, so each read covers rows that are already searchable and the
+  per-stream skip never passes an unsent row. The polled tail reads the last
+  tailSettleDelay again on every poll (unless the poll was full) and drops the
+  rows it already sent, so it adds no delay. -tail.settle-delay (Helm
+  extraArgs.tail.settle-delay, limits registry) sets the delay; 0 reads up
+  to now. A reopened native stream asks for
+  start_offset from the last delivered row; with the offset VictoriaLogs' read
+  starts a further offset earlier and the repeated rows are dropped.
+
+implementation:
+  - internal/proxy/tail.go
+  - internal/proxy/proxy.go
+
+decisions:
+  - id: tail-native-offset-settle-delay
+    chosen: 'Native tail offset = -tail.settle-delay, default 5s (VictoriaLogs default); polled tail re-reads the last settle delay and drops rows already sent. Owner decision 2026-11-17: the ~5s delay for native and auto tails is accepted, made configurable by the flag, with no second backfill query'
+    over: [offset=0s (before; loses rows of a stream that become searchable out of order, about 3 of 7 lines in the e2e fixture; still available as -tail.settle-delay=0), a smaller default such as 1-2s (covers one single-node buffer flush but not client batching or a cluster vlinsert hop; operators can set it), a second backfill query beside the native stream (doubles VictoriaLogs calls per tail; declined by the owner 2026-11-17)]
+    why: |
+      Loki's tail delivers every line pushed after it started; a missing
+      line is a wrong answer. The skip is VictoriaLogs' own and cannot be
+      turned off, so the only exact form is to read rows that are already
+      searchable. offset=0s was set so the headers would arrive within the
+      tail client's 5s header timeout; v1.49.0 and v1.53.0 flush the headers
+      before their first read, so the offset does not delay them. Cost: lines reach a native
+      tail about 5s later than Loki's (Loki: under a second). The polled
+      tail keeps its latency and reads at most 200 rows per 2s poll as before.
+    evidence: 'TestTailSettle_RowsVisibleOutOfOrderAllArrive fails on main for native, auto and polled tails (rows 2-4 of 7 never delivered, the CI failure of TestFeature_Tail_PipelineParity in runs 43774571657 and 43777680234) and passes here (2026-11-16)'
+    code: [internal/proxy/tail.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go]
+    tests: [TestTailSettle_RowsVisibleOutOfOrderAllArrive, TestTailSettle_NativeOffsetIsTheSettleDelay, TestTailSettle_FlagSetsTheNativeOffset, TestBuildProxyConfig_TailSettleDelay, TestTailSettle_ReopenedStreamLosesNothing, TestTailRetry_OpenNativeTailStreamFromStartOffset, TestFeature_Tail_PipelineParity]
+    quality: 'Every line pushed after a tail went live arrives once, native, auto and polled, also across a reopened stream.'
+    pending: true

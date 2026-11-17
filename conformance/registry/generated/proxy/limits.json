@@ -311,6 +311,20 @@
       "sizing": "100ms: an idle VictoriaLogs answers the edge listing in 5-40 ms (p95 of /labels on an idle e2e stack), so answers stay exact; under 32 heavy clients stream_field_names took 0.35-0.6 s at p95 and up to 2.6 s, which the budget turns into bounded-stale answers. Raise it to prefer exact answers over latency; 0 serves the last answer at once whenever one is within the bound."
     },
     {
+      "flag": "tail.settle-delay",
+      "helm_value": "extraArgs.tail.settle-delay",
+      "type": "Duration",
+      "default": "5s",
+      "unit": "duration",
+      "bounds": "how far behind now a live tail (/loki/api/v1/tail) reads. VictoriaLogs makes an ingested row searchable only when its rows-buffer shard flushes (shards fill round-robin and each flushes about a second after its first row, lib/logstorage/datadb.go rowsBuffer in v1.49.0 and v1.53.0; a cluster's vlinsert buffers rows again), so rows of one stream pushed in separate requests can become searchable out of order, and its live tail skips every row of a stream at or below the newest one of that stream it already sent (app/vlselect/logsql tailProcessor.getTailRows). The native and auto tails send this as VictoriaLogs' tail offset, so a read covers only rows that are already searchable and lines reach the client about this long after they are written; the polled (synthetic) tail reads this span again on every poll that did not return a full page and drops the lines it already sent, so its latency does not change. A reopened native stream starts one delay earlier and drops the lines it repeats",
+      "error": "none: a delay, not a refusal; a value below the time VictoriaLogs takes to make a row searchable loses that row for a native or auto tail (it never arrives), as before this flag with 0",
+      "metric": "none",
+      "alert": "none",
+      "loki_parity": "Loki's tail delivers every line pushed after it started, within about a second (its querier tails the ingesters); VictoriaLogs' own default tail offset is 5s for the same reason this flag exists",
+      "per_tenant": false,
+      "sizing": "5s (VictoriaLogs' default tail offset): covers a rows-buffer flush plus a tail refresh with room for a loaded single node and for clients that batch their pushes. 1-2s covers one single-node buffer flush only, not clients that batch their pushes or a cluster vlinsert hop, so lines can be lost; raise it (10s and more) behind a vlinsert that buffers longer. 0 reads up to now: lowest latency, and lines that become searchable out of order are lost for good. The polled tail reads at most 200 rows per poll either way."
+    },
+    {
       "flag": "tail.backend-retry-window",
       "helm_value": "extraArgs.tail.backend-retry-window",
       "type": "Duration",

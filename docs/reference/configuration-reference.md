@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (267), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (268), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -127,6 +127,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-tail.allowed-origins` | string | (empty) | `extraArgs.tail.allowed-origins` | Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins. |
 | `-tail.backend-retry-window` | duration | `30s` | `extraArgs.tail.backend-retry-window` | How long a live tail keeps its websocket open while VictoriaLogs fails for a reason a retry can fix (connection refused or reset, a timeout, a stream that ends or breaks, a 429 or 5xx answer): the proxy reopens the stream, or polls again, with a jittered backoff from 250 ms up to 5 s, and resumes from the last line sent without repeating or skipping one. Past the window, and at once for a failure no retry fixes (a malformed or oversize row, a 4xx VictoriaLogs answer), the tail closes with 1011 and Loki's text. 0 closes on the first failure. |
 | `-tail.mode` | string | `"auto"` | `extraArgs.tail.mode` | Tail streaming mode: auto (native with synthetic fallback), native, or synthetic |
+| `-tail.settle-delay` | duration | `5s` | `extraArgs.tail.settle-delay` | How far behind now a live tail reads, so a line VictoriaLogs makes searchable out of order is still delivered: the native and auto tails send it as VictoriaLogs' tail offset (lines arrive about this long after they are written), and the polled tail reads this span again on every poll and drops the lines it already sent. VictoriaLogs makes a row searchable when its rows-buffer shard flushes (about 1 s on a single node) and its live tail skips a row older than the newest of its stream already sent, so a shorter delay can lose lines: 1-2 s covers one single-node buffer flush, not client batching or a cluster vlinsert hop. 0 reads up to now. |
 | `-translate-otel-attributes` | bool | `true` | `extraArgs.translate-otel-attributes` | Translate known OTel semantic convention labels from underscore to dotted form in upstream queries (set false to preserve client label names) |
 
 ## limits

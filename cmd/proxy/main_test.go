@@ -1423,6 +1423,35 @@ func TestBuildProxyConfig_AlignQueriesWithStep(t *testing.T) {
 	}
 }
 
+// -tail.settle-delay reaches the proxy: a set value as is, 0 as "read up to
+// now" (a negative Config value; Config's zero selects the 5s default), and a
+// negative value is refused.
+// conformance: tail-reads-settled-rows
+func TestBuildProxyConfig_TailSettleDelay(t *testing.T) {
+	for _, tc := range []struct {
+		flag time.Duration
+		want time.Duration
+	}{{5 * time.Second, 5 * time.Second}, {1500 * time.Millisecond, 1500 * time.Millisecond}, {0, -1}} {
+		got, err := buildProxyConfig(proxyRuntimeConfig{
+			backendURL:        "http://backend",
+			cache:             cache.New(60*time.Second, 1000),
+			logLevel:          "error",
+			labelStyle:        "passthrough",
+			metadataFieldMode: "hybrid",
+			tailSettleDelay:   tc.flag,
+		})
+		if err != nil {
+			t.Fatalf("-tail.settle-delay=%s: unexpected buildProxyConfig error: %v", tc.flag, err)
+		}
+		if got.TailSettleDelay != tc.want {
+			t.Fatalf("-tail.settle-delay=%s: TailSettleDelay = %s, want %s", tc.flag, got.TailSettleDelay, tc.want)
+		}
+	}
+	if _, err := buildProxyConfig(proxyRuntimeConfig{labelStyle: "passthrough", metadataFieldMode: "hybrid", tailSettleDelay: -time.Second}); err == nil || !strings.Contains(err.Error(), "-tail.settle-delay") {
+		t.Fatalf("-tail.settle-delay=-1s: got %v, want an error naming the flag", err)
+	}
+}
+
 func TestBuildProxyConfig_DefaultsAlertsBackendToRuler(t *testing.T) {
 	got, err := buildProxyConfig(proxyRuntimeConfig{
 		backendURL:        "http://backend",
