@@ -10,7 +10,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // The post-aggregation handlers evaluate a ranking, a stddev or a stdvar (and the layers above a ranking)
@@ -59,7 +59,7 @@ func (p *Proxy) evaluatedShadowProfile(in evaluatedShadowInput) lower.Profile {
 	text, _ := postAggTranslatedText(in.postAgg)
 	streamLabels := p.plainStreamLabelNamesFrom(in.ctx, strings.TrimSpace(text), p.knownTenantStreamLabelNames)
 	p.configMu.RLock()
-	labelFn := translator.WithStreamLabels(p.labelTranslator.ToVL, streamLabels)
+	labelFn := translate.WithStreamLabels(p.labelTranslator.ToVL, streamLabels)
 	streamFields := p.streamFieldsMap
 	p.configMu.RUnlock()
 	caps := p.logsqlCapabilities()

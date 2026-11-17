@@ -2745,14 +2745,7 @@ func scalarValue(s string) (float64, bool) {
 }
 
 // VectorMatchInfo holds vector matching modifiers for binary expressions.
-type VectorMatchInfo struct {
-	MatchOn    bool     // preserves an explicit empty on() modifier
-	GroupSide  string   // preserves group_left()/group_right() without extra labels
-	On         []string // on(labels) — match on these labels only
-	Ignoring   []string // ignoring(labels) — match ignoring these labels
-	GroupLeft  []string // group_left(extra_labels) — one-to-many, left side is "many"
-	GroupRight []string // group_right(extra_labels) — one-to-many, right side is "many"
-}
+type VectorMatchInfo = physical.Matching
 
 // ParseBinaryMetricExpr parses a "__binary__:op:left|||right[@@@modifier:labels...]" string.
 // Returns the operator, left query, right query, vector matching info, and whether it's valid.

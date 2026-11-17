@@ -26,7 +26,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -720,7 +720,7 @@ func lokiClientText(status int, err error) string {
 		return typed.Text()
 	}
 	var (
-		parseErr    *translator.ParseError
+		parseErr    *translate.ParseError
 		pipelineErr *orderedJSONPipelineError
 		matchingErr vectorMatchError
 	)
@@ -763,7 +763,7 @@ func isOrderedJSONPipelineError(err error) bool {
 // isTranslatorParseError reports a query the translator could not read: a
 // query Loki rejects with a position (unplacedSyntaxError answers it).
 func isTranslatorParseError(err error) bool {
-	_, ok := asType[*translator.ParseError](err)
+	_, ok := asType[*translate.ParseError](err)
 	return ok
 }
 
@@ -994,7 +994,7 @@ func (e *upstreamStatusError) StatusCode() int { return e.status }
 // tenant and every retry: a series limit, a translator parse error (a query
 // Loki rejects, 400) or a VictoriaLogs parse or argument error
 // (vlErrorQueryRejected, a plan defect answered with Loki's 500).
-// translator.UnsupportedError is excluded: it marks valid LogQL (for example
+// translate.UnsupportedError is excluded: it marks valid LogQL (for example
 // count_values) that Loki accepts. Callers must not retry such a failure, fall
 // back to another backend path, or mask it with a stale answer. VictoriaLogs also answers resource limits and
 // execution failures with 400/422; those, and unrecognised messages, are not
@@ -1008,7 +1008,7 @@ func isUpstreamQueryRejected(err error) bool {
 	if errors.As(err, &statusErr) {
 		return statusErr.class == vlErrorQueryRejected
 	}
-	var parseErr *translator.ParseError
+	var parseErr *translate.ParseError
 	return errors.As(err, &parseErr)
 }
 
@@ -1304,7 +1304,7 @@ var trustedProxyForwardHeaders = []string{
 // isVLInternalField returns true for VictoriaLogs core internal field names
 // that should never be exposed in Loki-compatible responses.
 func isVLInternalField(name string) bool {
-	return name == "_time" || name == "_msg" || name == "_stream" || name == "_stream_id" || name == translator.StoredLineField
+	return name == "_time" || name == "_msg" || name == "_stream" || name == "_stream_id" || name == translate.StoredLineField
 }
 
 // appendJSONStringToBuilder writes s as a JSON-encoded string into a strings.Builder.

@@ -12,14 +12,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // A parser stage never overwrites a label the entry has from its stream in
 // Loki: the parsed key is renamed name_extracted and a later filter, grouping
 // or unwrap on the plain name reads the stream value. VictoriaLogs' parsers
 // overwrite the stored field, so the translator reads the stored value aside
-// for the stream label names this returns (translator.WithStreamLabels).
+// for the stream label names this returns (translate.WithStreamLabels).
 // VictoriaLogs' Loki push API also stores a JSON line's key over the stream
 // label of the same name at ingest, so a parser-free metric query restores the
 // names it groups by from _stream first, without the tenant's listing. A
@@ -143,7 +143,7 @@ func (p *Proxy) plainStreamLabelNamesFrom(ctx context.Context, query string, kno
 // name the detected_level derivation reads as stored.
 func (p *Proxy) restorableName(name string) bool {
 	return plainLabelNameRE.MatchString(name) && name != "service_name" && name != detectedLevelLabel &&
-		!slices.Contains(translator.DetectedLevelFieldNames, name) && p.labelTranslator.ToVL(name) == name
+		!slices.Contains(translate.DetectedLevelFieldNames, name) && p.labelTranslator.ToVL(name) == name
 }
 
 // groupingByRE finds a `by (...)` grouping (vector or range aggregation).
