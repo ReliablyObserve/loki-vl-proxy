@@ -419,3 +419,69 @@ func TestErrorFlightsEdge_RefusedRequestSendsNoBackendCall(t *testing.T) {
 		t.Fatalf("a refused request reached the backend %d times", calls.Load())
 	}
 }
+
+// When a window-free hold expires during an outage, requests of every window
+// join one probe: one VictoriaLogs call answers them all with the failure;
+// once the backend answers, the probe's success lets each window run on its
+// own.
+//
+// conformance: semantics/error-cache-classes-and-ttl
+func TestErrorFlightsEdge_WindowFreeProbeAfterHoldExpires(t *testing.T) {
+	var failing atomic.Bool
+	failing.Store(true)
+	stub := newFlightStub(t, func(n int64, w http.ResponseWriter, r *http.Request) {
+		if failing.Load() {
+			answer500(n, w, r)
+			return
+		}
+		answerLogs(n, w, r)
+	})
+	p, h := newFlightProxy(t, stub.srv.URL, nil)
+	at := func(end int) string {
+		return "/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D&start=1700000000&end=" + strconv.Itoa(end) + "&limit=100"
+	}
+	flightGet(h, context.Background(), at(1700003600), "team-a")
+	restore := cache.AdvanceClockForTesting(1100 * time.Millisecond) // the hold expired, the outage is recent
+	defer restore()
+	stub.calls.Store(0)
+	var n atomic.Int64
+	answers := burst(t, p, stub, 10, func() *httptest.ResponseRecorder {
+		return flightGet(h, context.Background(), at(1700003700+int(n.Add(1))), "team-a")
+	})
+	for _, a := range answers {
+		if a.Code != http.StatusInternalServerError {
+			t.Fatalf("answer %d", a.Code)
+		}
+	}
+	if got := stub.calls.Load(); got != 1 {
+		t.Fatalf("10 windows of one query during an outage sent %d calls, want the probe's 1", got)
+	}
+	restore2 := cache.AdvanceClockForTesting(1100 * time.Millisecond)
+	defer restore2()
+	failing.Store(false)
+	stub.calls.Store(0)
+	n.Store(100)
+	answers = burst(t, p, stub, 5, func() *httptest.ResponseRecorder {
+		return flightGet(h, context.Background(), at(1700003700+int(n.Add(1))), "team-a")
+	})
+	for _, a := range answers {
+		if a.Code != http.StatusOK {
+			t.Fatalf("after recovery a window answered %d", a.Code)
+		}
+	}
+}
+
+// The per-request headers are matched in canonical form: a follower never
+// carries the leader's debug counters.
+//
+// conformance: semantics/error-cache-byte-equal-answers
+func TestErrorFlightsEdge_PerRequestHeadersCanonical(t *testing.T) {
+	h := http.Header{}
+	h.Set(vlBackendCallsHeader, "3")
+	h.Set(vlCacheResultHeader, "miss")
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	out := flightHeader(h)
+	if out.Get(vlBackendCallsHeader) != "" || out.Get(vlCacheResultHeader) != "" || out.Get("Content-Type") == "" {
+		t.Fatalf("shared header %v", out)
+	}
+}

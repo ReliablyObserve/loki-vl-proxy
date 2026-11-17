@@ -292,6 +292,8 @@ type flightLead struct {
 	overflowed bool
 	stored     bool
 	flushed    bool
+	// windowFreeProbe: the flight is the probe of a window-free key.
+	windowFreeProbe bool
 	// w is the tap, kept here so a lead is one allocation.
 	w flightTap
 	// The answer to build when one is needed (BuildAnswer).
@@ -551,12 +553,22 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 			return
 		}
 	}
-	if p.windowFreeHeldUntil.Load() > cache.Now().UnixNano() {
+	if now := cache.Now().UnixNano(); p.windowFreeSeenUntil.Load() > now {
 		// A backend failure that does not depend on the window is held for
 		// the request whatever its window (a refresh moves end=now).
-		if held := ef.Peek(p.windowFreeKey(endpoint, r)); held != nil {
-			p.errorFlightCounters.held[held.Class].Add(1)
-			p.writeFlightAnswer(endpoint, route, w, r, held, start)
+		wk := p.windowFreeKey(endpoint, r)
+		if p.windowFreeHeldUntil.Load() > now {
+			if held := ef.Peek(wk); held != nil {
+				p.errorFlightCounters.held[held.Class].Add(1)
+				p.writeFlightAnswer(endpoint, route, w, r, held, start)
+				return
+			}
+		}
+		// Such a failure was held moments ago: the backend may still be down.
+		// Requests of every window join one probe instead of each asking
+		// VictoriaLogs when the hold expires; the probe's failure answers
+		// them all, its success lets each run on its own.
+		if p.serveWindowFreeProbe(endpoint, route, w, r, wk, start, run) {
 			return
 		}
 	}
@@ -608,6 +620,40 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 	}
 	run(w, r, nil)
 }
+
+// serveWindowFreeProbe runs r through the probe flight of its window-free key
+// wk; it reports whether r was answered (as the probe, or by the probe's
+// window-free failure).
+func (p *Proxy) serveWindowFreeProbe(endpoint, route string, w http.ResponseWriter, r *http.Request, wk string, start time.Time, run func(http.ResponseWriter, *http.Request, *flightLead)) bool {
+	probe := &flightLead{key: flightKey{join: wk}, windowFreeProbe: true}
+	held, f, leads := p.errorFlights.Join(wk, &probe.fl)
+	if held != nil {
+		p.errorFlightCounters.held[held.Class].Add(1)
+		p.writeFlightAnswer(endpoint, route, w, r, held, start)
+		return true
+	}
+	if leads {
+		probe.f = f
+		p.leadFlight(endpoint, w, r, probe, run)
+		return true
+	}
+	outcome, answer, ok := f.Wait(r.Context())
+	if !ok {
+		status := p.fail(w, r, r.Context().Err())
+		p.metrics.RecordRequestWithRoute(endpoint, route, status, time.Since(start))
+		return true
+	}
+	if outcome == cache.OutcomeFailed {
+		p.errorFlightCounters.coalesced[answer.Class].Add(1)
+		p.writeFlightAnswer(endpoint, route, w, r, answer, start)
+		return true
+	}
+	return false // the backend answered the probe: this request runs as usual
+}
+
+// windowFreeProbeWindow is how long after a window-free failure was held its
+// requests still join a probe when the hold has expired.
+const windowFreeProbeWindow = 10 * time.Second
 
 // leadFlight runs r as the leader of f and ends f with its answer. Only a
 // leader whose own request ended (its client went away or ran out of time)
@@ -663,6 +709,11 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 			lead.answerCode, lead.answerHeader, lead.answerClass = code, header, class
 			outcome, build = cache.OutcomeFailed, lead
 		}
+	}
+	if lead.windowFreeProbe && (outcome != cache.OutcomeFailed || !windowFree) {
+		// A probe hands its waiters only a failure of every window; anything
+		// else is its own window's answer.
+		outcome, build = cache.OutcomeReleased, nil
 	}
 }
 
@@ -720,9 +771,15 @@ func (p *Proxy) windowFreeKey(endpoint string, r *http.Request) string {
 // for every window of the request, for the same TTL.
 func (p *Proxy) holdWindowFree(endpoint string, r *http.Request, a *cache.Answer, ttl time.Duration) {
 	until := p.errorFlights.Hold(p.windowFreeKey(endpoint, r), a, ttl)
+	raiseTo(&p.windowFreeHeldUntil, until.UnixNano())
+	raiseTo(&p.windowFreeSeenUntil, until.Add(windowFreeProbeWindow).UnixNano())
+}
+
+// raiseTo sets v to at least t.
+func raiseTo(v *atomic.Int64, t int64) {
 	for {
-		cur := p.windowFreeHeldUntil.Load()
-		if until.UnixNano() <= cur || p.windowFreeHeldUntil.CompareAndSwap(cur, until.UnixNano()) {
+		cur := v.Load()
+		if t <= cur || v.CompareAndSwap(cur, t) {
 			return
 		}
 	}
@@ -756,7 +813,7 @@ func heldHintKey(join string) string { return join + "\x00held" }
 // flightPerRequestHeaders are the response headers each request writes for
 // itself (framing, encoding, the client's rate limit, the debug counters): a
 // shared answer never carries the leader's.
-var flightPerRequestHeaders = map[string]bool{
+var flightPerRequestHeaders = canonicalSet(map[string]bool{
 	"Content-Length":        true,
 	"Content-Encoding":      true,
 	"Transfer-Encoding":     true,
@@ -768,6 +825,16 @@ var flightPerRequestHeaders = map[string]bool{
 	"X-Ratelimit-Remaining": true,
 	vlBackendCallsHeader:    true,
 	vlCacheResultHeader:     true,
+})
+
+// canonicalSet is set with its names in canonical header form, the form
+// http.Header keys hold.
+func canonicalSet(set map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(set))
+	for name := range set {
+		out[http.CanonicalHeaderKey(name)] = true
+	}
+	return out
 }
 
 // flightHeader is the part of a leader's response header a follower answers
