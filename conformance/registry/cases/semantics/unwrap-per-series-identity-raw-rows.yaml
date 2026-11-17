@@ -93,6 +93,12 @@ why: |
   [5m]))` answered 0 at a step of one minute (each line its own series, each
   step bucket read as the window). A clause by level or detected_level keeps
   the stream's series (the level of a line is read from raw rows there).
+  A listed label of many values over a long range (`| logfmt amount, user_id`
+  over hours) is read in time chunks under -manual-range-metric-row-limit,
+  each with the range before it, and folded chunk by chunk (decision
+  metric-series-identity/extraction-list-window-chunks):
+  TestListedWindowChunksMatchLoki holds six hours at steps of 15 s and 7 s to
+  Loki's answers, read whole and in 38-39 chunks.
 
   Still open: after a parser of every key, a range longer than the step
   (step < range) keeps the stream's series: the window evaluator merges the

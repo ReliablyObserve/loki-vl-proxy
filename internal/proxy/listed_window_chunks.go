@@ -106,14 +106,15 @@ var listedWindowChunksOff bool
 var listedWindowChunksObserve func(first, last int64, m statsReadMeter)
 
 // writeListedWindowChunks answers a window metric over an extraction list's series identity in time chunks (see
-// above) and reports true; false when the bucket reads do not answer it (no route applies, or VictoriaLogs failed),
-// and the window evaluator goes on as without chunks.
-func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, routes []statsBucketRoute, manualFunc string, start, end time.Time, step, window, bucket, shift time.Duration, fold *matrixFold) bool {
+// above) and reports handled; otherwise the bucket reads did not answer it (no route applies, or VictoriaLogs failed)
+// and the window evaluator goes on as without chunks, past the bucket reads when whole is set (they were tried over
+// the whole request already, so they are not sent again).
+func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, routes []statsBucketRoute, manualFunc string, start, end time.Time, step, window, bucket, shift time.Duration, fold *matrixFold) (handled, whole bool) {
 	ctx := r.Context()
 	n := stepCount(start.UnixNano(), end.UnixNano(), step.Nanoseconds())
 	bucketSteps := listedChunkBucketSteps(step, window, bucket)
 	if n <= 0 || bucketSteps < 1 || len(fold.levels) == 0 {
-		return false
+		return false, false
 	}
 	budget := p.resolvedMaxStatsQuerySeries(ctx)
 	maxBytes := p.limits().BufferedBackendBodyBytes
@@ -160,21 +161,21 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 		case meter.over:
 			rows, _ := p.manualMetricRowBudget()
 			p.writeErr(w, ctx, newRowLimitError(rows, "series in the window of one step", 0))
-			return true
+			return true, false
 		case err != nil:
 			p.writeErr(w, ctx, err)
-			return true
+			return true, false
 		case answered < 0 || route >= 0 && answered != route:
-			return false
+			return false, first == 0 && last == n-1
 		}
 		route = answered
 		if _, err := hitsRangeMetricSeries(manualFunc, shiftSeriesSamples(series, shift), from, to, step, window, maxBytes, sink); err != nil {
 			p.writeErr(w, ctx, err)
-			return true
+			return true, false
 		}
 		if len(fold.levels) == 1 && limit > 0 && len(sink.acc.groups) > limit && !requestKeepsPartialSeries(ctx) {
 			p.writeErr(w, ctx, seriesLimitReached(tenantSeriesLimitContext(ctx), limit))
-			return true
+			return true, false
 		}
 		read := last - first + 1
 		if halved {
@@ -187,11 +188,11 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 	body, err := sink.finish(fold, maxBytes)
 	if err != nil {
 		p.writeErr(w, ctx, err)
-		return true
+		return true, false
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
-	return true
+	return true, false
 }
 
 // listedChunkBucketSteps is the number of steps a chunk may hold so that its read, from the range before its first

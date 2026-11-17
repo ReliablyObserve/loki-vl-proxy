@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,4 +250,51 @@ func countOver(chunks []statsReadMeter) int {
 		}
 	}
 	return n
+}
+
+// TestListedWindowChunksEdges pins the chunked read's edges: a single step whose window holds more series than the
+// budget is the one refusal (Loki's limit error, the flag in the log only), and a VictoriaLogs whose bucket read fails
+// is asked once before the window evaluator reads the raw rows, as without chunks.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
+func TestListedWindowChunksEdges(t *testing.T) {
+	end := int64(1_800_000_000) * 1e9
+	query := fmt.Sprintf(listedChunkShapes[0], 5*time.Minute)
+	rows := listedChunkRows(rand.New(rand.NewSource(3)), end, 40*time.Minute, time.Second, 5_000)
+	t.Run("a step over the budget", func(t *testing.T) {
+		run := runListedChunks(t, rows, query, end, 30*time.Minute, 30*time.Second, 50, false)[0]
+		if run.code != http.StatusBadRequest || !strings.Contains(run.body, "limit reached while evaluating the query") || strings.Contains(run.body, "manual-range-metric-row-limit") {
+			t.Fatalf("want Loki's limit answer, got %d %.300s", run.code, run.body)
+		}
+		if n := len(run.chunks); n < 2 || !run.chunks[n-1].over {
+			t.Fatalf("want the read cut down to one step over the budget, read %d chunks", n)
+		}
+	})
+	t.Run("a failed bucket read", func(t *testing.T) {
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+		inner := emu.Handler()
+		statsCalls := 0
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/select/logsql/stats_query_range" {
+				statsCalls++
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			inner.ServeHTTP(w, r)
+		}))
+		defer backend.Close()
+		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = p.Shutdown(context.Background()) }()
+		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		params := url.Values{"query": {query}, "start": {strconv.FormatInt(end/1e9-1800, 10)}, "end": {strconv.FormatInt(end/1e9, 10)}, "step": {"30"}}
+		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+		if statsCalls != 1 {
+			t.Fatalf("the bucket read was sent %d times (answer %d %.200s), want once", statsCalls, res.Code, res.Body.String())
+		}
+	})
 }

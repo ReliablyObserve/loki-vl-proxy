@@ -790,15 +790,18 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 		return true
 	}
+	bucketsTried := false // the bucket reads were sent over the whole request and did not answer
 	if fold := matrixFoldFrom(r.Context()); fold != nil && !listedWindowChunksOff && bucketsOK && statsAggFunc != "" && !forceRawLevelRows && counterProof == nil && !quantileCounts &&
 		p.listedIdentityWindows(r.Context(), r.FormValue("query")) {
 		// An extraction list's series identity on a range longer than the step: the windows are evaluated in time
 		// chunks, each read under the per-chunk bound and folded as it is read (listed_window_chunks.go).
 		chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
 		routes := p.statsBucketRoutes(spec, chunked, bucket, origSpec.Window != step)
-		if p.writeListedWindowChunks(w, r, routes, manualFunc, startTS, endTS, step, origSpec.Window, bucket, sampleShift, fold) {
+		handled, whole := p.writeListedWindowChunks(w, r, routes, manualFunc, startTS, endTS, step, origSpec.Window, bucket, sampleShift, fold)
+		if handled {
 			return true
 		}
+		bucketsTried = whole
 	}
 	if !bucketsOK || (bucket > 0 && (endTS.Sub(startTS)+origSpec.Window)/bucket > heavyQueryBucketThreshold) {
 		// No bucket grid, or more buckets than Loki's 11,000-point limit:
@@ -827,7 +830,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	statsAggFunc = p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
 	routes := p.statsBucketRoutes(spec, statsAggFunc, bucket, streamBuckets)
 	for route, collect := range routes {
-		if forceRawLevelRows {
+		if forceRawLevelRows || bucketsTried {
 			break
 		}
 		series, ok, err := collect(r.Context(), fetchStart, endTS)
