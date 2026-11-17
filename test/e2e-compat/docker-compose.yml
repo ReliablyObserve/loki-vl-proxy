@@ -742,6 +742,9 @@ services:
       - "-backend-timeout=3s"
       - "-log-level=info"
       - "-debug-vl-calls-header"
+      # No label warm-up: only the parity proxies warm, and its background
+      # reads would mix with the calls the tests count.
+      - "-labels-cache-warm=false"
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
