@@ -36,15 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream
   plus every parsed label except the unwrapped one, as `query` and a range up to the step already did. Those requests
   kept one series per stream or per group, so `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms
-  [5m]))` at a 1m step answered the group's pooled mean instead of the sum of the per-series means. VictoriaLogs now
-  takes the function's partial aggregates per series hash and per anchored bucket in one stats query, the proxy merges
-  each series' buckets into Loki's windows and folds the series by the outer aggregation. The read is bounded by
-  construction: a cheap row count of the selection sizes time chunks whose bucket answers stay under an eighth of
-  what the proxy reads from one stats answer, each chunk is read, folded and merged in turn, so the proxy holds one
-  chunk's buckets whatever the range (a key of its own on every line makes a series per line). No raw rows are read;
-  a single evaluation window too large for one stats answer answers Loki's response-too-large error. Binary operations
-  of such operands read the same series. `max by` over `max_over_time` and `min by` over `min_over_time` keep their
-  per-group read, which already matched Loki. Answers cached before the fix are not served again
+  [5m]))` at a 1m step answered the group's pooled mean instead of the sum of the per-series means (over six hours of
+  lines that each carry a request id, the points added up to 9.0e5 instead of 3.0e9). VictoriaLogs takes the function's partial
+  aggregates per series and per anchored bucket and, in the same stats query, folds the series that lie wholly in
+  one bucket of the read (a subquery over the read lists the series that span buckets): the answer holds a row per
+  bucket and group for those, and the partials of the spanning series, not a row per line. The proxy merges the
+  kept series' buckets into Loki's windows and adds the folded rows to the outer aggregation. One VictoriaLogs call
+  per request (more only when the series that span buckets pass the read budget, read in the time chunks of the
+  extraction list's windows); no raw rows are read; proxy memory does not grow with the lines. These reads are not
+  kept in the stats extent cache (their buckets depend on the read's window): a refresh reads its window again, and
+  identical requests in flight share one call. `max by` over `max_over_time` and `min by` over `min_over_time` keep
+  their per-group read. Answers cached before the fix are not served again
   (semantics/unwrap-per-series-identity-raw-rows).
 
 ### Changed

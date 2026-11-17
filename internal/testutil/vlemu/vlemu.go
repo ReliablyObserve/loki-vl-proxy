@@ -403,13 +403,22 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 		}
 		recs = append(recs, emuRec{t: row.TS, f: f})
 	}
-	var span map[string]bool
 	if fold != nil {
-		span = fold.spanning(subRows, subRaw)
+		// The series classes over the read's rows, then the fold's pipes before the bucket stats.
+		fold.classify(subRows, subRaw)
+		for _, pipe := range pipes[:first] {
+			fold.foldPipe(pipe, recs)
+		}
+		// The blanked series of one line keep no class.
+		for _, rec := range recs {
+			if _, ok := rec.f["__lvp_c"]; !ok {
+				rec.f["__lvp_c"] = ""
+			}
+		}
 	}
 	var by, names []string
 	for _, pipe := range pipes[first:] {
-		if fold != nil && foldPipe(pipe, recs, span) {
+		if fold != nil && fold.foldPipe(pipe, recs) {
 			continue
 		}
 		if m := emuMathRE.FindStringSubmatch(pipe); m != nil {

@@ -66,14 +66,18 @@ func seriesFoldScopeQuery(t *testing.T, start time.Time) string {
 		t.Fatalf("no gate before the first stats pipe: %s", text)
 	}
 	shift := ((start.UnixNano()+1)%int64(time.Minute) + int64(time.Minute)) % int64(time.Minute)
-	pipes, ok := lower.SeriesFold{Outer: logql.VectorSum, By: []string{"__lvp_sid"}, Columns: []string{"__lvp_sum", "__sample_count"},
-		Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Field: field,
-		Bucket: "60s", Offset: "-" + strconv.FormatInt(shift, 10) + "ns"}.Pipes(ungated)
+	read, ok := lower.SeriesFold{Outer: logql.VectorSum, By: []string{"__lvp_sid"}, Columns: []string{"__lvp_sum", "__sample_count"},
+		Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Singletons: lower.SingletonsKept,
+		Field: field, Bucket: "60s", Offset: "-" + strconv.FormatInt(shift, 10) + "ns"}.Pipes(ungated)
 	if !ok {
 		t.Fatal("no fold")
 	}
-	out := text[:first] + " | stats by (__lvp_sid) sum(__lvp_v) as __lvp_sum, count() as __sample_count"
-	for _, pipe := range pipes {
+	out := text[:first]
+	for _, pipe := range read.Before {
+		out += " " + pipe.String()
+	}
+	out += " | stats by (" + strings.Join(read.By, ", ") + ") sum(__lvp_v) as __lvp_sum, count() as __sample_count"
+	for _, pipe := range read.After {
 		out += " " + pipe.String()
 	}
 	return out

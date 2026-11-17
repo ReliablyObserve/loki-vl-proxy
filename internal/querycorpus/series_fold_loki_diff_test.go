@@ -21,10 +21,8 @@ import (
 //   - Data, two sets of json lines on two streams of one service over an hour and the range before it:
 //   - per line (seriesFoldPerLine): a request id on every line, so every line is a series of its own;
 //   - mixed (seriesFoldMixed): the same, plus health checks that repeat one series per stream all along, request
-//     ids logged twice (two seconds apart, and seventy seconds apart, across a bucket edge), and a line of a NaN (a
-//     series that keeps its partials). An infinity is left out: Loki's mean of the series is NaN unless the infinite
-//     series is the last one in its order, which the series hash does not keep (semantics/unwrap-per-series-identity-raw-rows
-//     lists it).
+//     ids logged twice (two seconds apart, and seventy seconds apart, across a bucket edge), a line of a NaN and one
+//     of an infinity (series that keep their partials), and a third stream whose lines carry no level.
 //   - Queries (seriesFoldQueries): sum, avg, max and min over avg, max, min, stddev and stdvar over time, by a stream
 //     label, by a parsed label and none.
 //   - Requests (seriesFoldRequests): an hour at steps of 60 s, 20 s, 7 s (buckets of one second) and 120 s (a range
@@ -99,6 +97,10 @@ func seriesFoldFixture(mixed bool) metricFixture {
 		{"service_name": svc, "pod": "a"},
 		{"service_name": svc, "pod": "b"},
 	}}
+	if mixed {
+		// A stream whose lines carry no level.
+		f.Streams = append(f.Streams, map[string]string{"service_name": svc, "pod": "c"})
+	}
 	first := metricEnd.Add(-seriesFoldSpan - 10*time.Minute)
 	add := func(s int, at time.Time, line string) {
 		f.Entries = append(f.Entries, metricEntry{Stream: s, TS: at.UnixNano(), Line: line, Metadata: map[string]string{"detected_level": "info"}})
@@ -126,6 +128,10 @@ func seriesFoldFixture(mixed bool) metricFixture {
 			add(s, at.Add(70*time.Second), seriesFoldLine(strconv.Itoa(i%400+1), "req", req, "route", route))
 		case i == 1801:
 			add(s, at.Add(time.Millisecond), seriesFoldLine(`"NaN"`, "req", "nan", "route", route))
+		case i == 2402:
+			add(s, at.Add(time.Millisecond), seriesFoldLine(`"+Inf"`, "req", "inf", "route", route))
+		case i%10 == 9: // a line of the stream without a level
+			f.Entries = append(f.Entries, metricEntry{Stream: 2, TS: at.Add(3 * time.Millisecond).UnixNano(), Line: seriesFoldLine(duration, "req", "c"+req)})
 		}
 	}
 	sort.SliceStable(f.Entries, func(i, j int) bool { return f.Entries[i].TS < f.Entries[j].TS })
@@ -186,7 +192,7 @@ func TestSeriesFoldMatchLoki(t *testing.T) {
 				}
 				folded := 0
 				for _, k := range run.sent {
-					if strings.HasPrefix(k, "/select/logsql/stats_query_range?") && strings.Contains(k, "__lvp_sid%3Ain%28") {
+					if strings.HasPrefix(k, "/select/logsql/stats_query_range?") && strings.Contains(k, "__lvp_ks%3Ain%28") {
 						folded++
 					}
 				}

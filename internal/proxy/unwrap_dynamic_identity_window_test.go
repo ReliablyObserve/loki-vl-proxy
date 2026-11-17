@@ -369,7 +369,7 @@ func checkSeriesFoldScenario(t *testing.T, label string, s dynWindowScenario, ve
 			t.Fatalf("%s %s: read raw rows: %s", label, s.query(), raw[0])
 		}
 		reads := identityStatsCalls(emu)
-		if len(reads) != 1 || strings.Contains(reads[0], "__lvp_sid:in(") == off {
+		if len(reads) != 1 || strings.Contains(reads[0], "__lvp_ks:in(") == off {
 			t.Fatalf("%s %s (fold off %v): %d bucket reads grouped by the series hash, want one: %v", label, s.query(), off, len(reads), reads)
 		}
 	}
@@ -600,7 +600,7 @@ func shimReadsFold(s *extentShim) bool {
 	for _, c := range s.calls {
 		hash := strings.Index(c.query, "| hash(__lvp_sid) as __lvp_sid |")
 		gate := strings.Index(c.query, "| copy ")
-		if hash < 0 || gate < hash || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") || !strings.Contains(c.query, "-__lvp_sid:in(") {
+		if hash < 0 || gate < hash || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") || !strings.Contains(c.query, "__lvp_ks:in(") {
 			return false
 		}
 	}

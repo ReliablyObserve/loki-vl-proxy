@@ -180,14 +180,18 @@ func seriesFoldCloneTexts(text string) []string {
 	var out []string
 	for _, grid := range [][2]string{{"60s", "-1ns"}, {"20s", "-17000000001ns"}} {
 		for _, outer := range []logql.VectorOp{logql.VectorSum, logql.VectorMax} {
-			pipes, ok := SeriesFold{Outer: outer, By: strings.Split(by, ", "), Columns: []string{"__lvp_sum", "__sample_count"},
-				Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Field: field,
-				Bucket: grid[0], Offset: grid[1]}.Pipes(ungated)
+			read, ok := SeriesFold{Outer: outer, By: strings.Split(by, ", "), Columns: []string{"__lvp_sum", "__sample_count"},
+				Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Singletons: SingletonsKept,
+				Field: field, Bucket: grid[0], Offset: grid[1]}.Pipes(ungated)
 			if !ok {
 				continue
 			}
-			b := text[:first] + " | stats by (" + by + ") sum(__lvp_v) as __lvp_sum, count() as __sample_count"
-			for _, p := range pipes {
+			b := text[:first]
+			for _, p := range read.Before {
+				b += " " + p.String()
+			}
+			b += " | stats by (" + strings.Join(read.By, ", ") + ") sum(__lvp_v) as __lvp_sum, count() as __sample_count"
+			for _, p := range read.After {
 				b += " " + p.String()
 			}
 			out = append(out, b)

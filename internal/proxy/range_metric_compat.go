@@ -1615,7 +1615,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	statsQuery := baseQuery + by + statsAggFunc + rowBucketPick(statsAggFunc, by)
 	// A parser's series identity folds the series that lie in one bucket (series_fold_read.go).
 	fold := seriesFoldFrom(ctx)
-	if folded, ok := fold.query(statsQuery, groupBy, start, hitStep); ok {
+	if folded, ok := fold.query(baseQuery, groupBy, statsAggFunc, start, hitStep); ok {
 		statsQuery = folded
 	} else {
 		fold = nil
@@ -1632,14 +1632,23 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	// Acquire concurrency slot. The Drilldown Fields page fires ~30 of these
 	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
-	// Block until a slot is free or the request is cancelled.
-	release, err := p.takeStatsQueryRangeSlot(ctx)
-	if err != nil {
-		return nil, nil, err
+	// Block until a slot is free or the request is cancelled. A folded read takes
+	// it in the call its identical reads share (seriesFoldPost).
+	release := func() {}
+	if fold == nil {
+		var err error
+		if release, err = p.takeStatsQueryRangeSlot(ctx); err != nil {
+			return nil, nil, err
+		}
 	}
 	defer release()
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
+	if errors.Is(err, errSeriesFoldTooLong) {
+		// A folded read too long for VictoriaLogs reads every series instead.
+		release()
+		return p.collectRangeMetricHitsAux(context.WithValue(ctx, seriesFoldKey{}, (*seriesFoldRead)(nil)), baseQuery, groupBy, origGroupBy, byExplicit, statsAggFunc, start, end, hitStep, aux)
+	}
 	if err != nil {
 		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
@@ -2874,6 +2883,9 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	// The folded rows of a parser's series identity join each group after its series one by one: a mean over the
+	// series is NaN when a finite series follows an infinite one, and the folded series are finite.
+	sort.SliceStable(keys, func(i, j int) bool { return !series[keys[i]].Folded && series[keys[j]].Folded })
 
 	startNS, endNS, stepNS := start.UnixNano(), end.UnixNano(), step.Nanoseconds()
 	expectedBuckets := min(int(end.Sub(start)/step)+1, 32768) // pre-size cap; appends grow beyond it

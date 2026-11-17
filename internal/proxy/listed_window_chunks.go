@@ -134,7 +134,7 @@ func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, 
 	chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
 	routes := p.statsBucketRoutes(spec, chunked, bucket, origSpec.Window != step)
 	// A parser's series hash folds, in VictoriaLogs, the series that lie in one bucket (series_fold_read.go).
-	r = withSeriesFold(r, spec, manualFunc, fold)
+	r = p.withSeriesFold(r, spec, manualFunc, fold)
 	handled, whole := p.writeListedWindowChunks(w, r, routes, manualFunc, start, end, step, origSpec.Window, bucket, shift, fold)
 	*reads.rawRows = whole
 	return handled
