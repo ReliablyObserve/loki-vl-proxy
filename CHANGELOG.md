@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
   answers are unchanged.
 
+### Changed
+
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
+
 ## [2.325.0] - 2026-11-17
 
 ### Fixed
@@ -36,13 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
   Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
   the body). A request that fits one chunk reads exactly as before.
-
-### Changed
-
-- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
-  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
-  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
-  translator. No answer, request or cache key changes.
 
 ## [2.324.0] - 2026-11-17
 
