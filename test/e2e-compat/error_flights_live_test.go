@@ -144,6 +144,16 @@ func efWaitLines(t *testing.T, params url.Values, want int) efAnswer {
 	}
 }
 
+// efSumCalls is the VictoriaLogs attempts the answers report: each request's
+// own, a follower's or held answer's 0, so background calls never count.
+func efSumCalls(answers []efAnswer) int {
+	n := 0
+	for _, a := range answers {
+		n += a.calls()
+	}
+	return n
+}
+
 func efBurst(n int, send func(i int) efAnswer) []efAnswer {
 	out := make([]efAnswer, n)
 	var wg sync.WaitGroup
@@ -177,7 +187,8 @@ func TestErrorFlightsLive_ConcurrentIdenticalSuccessesShareOneCall(t *testing.T)
 
 	before := efBackendCalls(t)
 	answers := efBurst(50, func(int) efAnswer { return efGet(t, params) })
-	calls := efBackendCalls(t) - before
+	background := efBackendCalls(t) - before
+	calls := int64(efSumCalls(answers))
 	one := efGet(t, func() url.Values { p := efLogParams(app, start, end); p.Set("limit", "99"); return p }())
 	for _, a := range answers {
 		if a.err != nil || a.code != http.StatusOK || a.data() != answers[0].data() {
@@ -187,7 +198,7 @@ func TestErrorFlightsLive_ConcurrentIdenticalSuccessesShareOneCall(t *testing.T)
 	if calls > int64(one.calls()) {
 		t.Fatalf("50 identical requests sent %d VictoriaLogs calls, one request sends %d", calls, one.calls())
 	}
-	t.Logf("50 identical successes: %d VictoriaLogs calls (one request: %d)", calls, one.calls())
+	t.Logf("50 identical successes: %d VictoriaLogs attempts by the requests (one request: %d); %d calls on /metrics, background included", calls, one.calls(), background)
 	// The stack's main proxy runs another label profile: the lines, not the
 	// stream labels, are compared.
 	main := efDo(t, context.Background(), proxyURL, http.MethodGet, "/loki/api/v1/query_range", params, "0")
@@ -266,7 +277,8 @@ func TestErrorFlightsLive_SeriesLimitHeldForDataTTL(t *testing.T) {
 	one := efWaitSeriesLimit(t, app, start, end, 117)
 	before := efBackendCalls(t)
 	answers := efBurst(50, func(int) efAnswer { return efGet(t, params) })
-	calls := efBackendCalls(t) - before
+	background := efBackendCalls(t) - before
+	calls := int64(efSumCalls(answers))
 	for _, a := range answers {
 		if a.code != http.StatusBadRequest || !bytes.Equal(a.body, answers[0].body) ||
 			a.header.Get("Content-Type") != one.header.Get("Content-Type") || a.header.Get("X-Content-Type-Options") != one.header.Get("X-Content-Type-Options") {
@@ -276,7 +288,7 @@ func TestErrorFlightsLive_SeriesLimitHeldForDataTTL(t *testing.T) {
 	if calls > int64(one.calls()) {
 		t.Fatalf("50 identical failing requests sent %d VictoriaLogs calls, one request sends %d", calls, one.calls())
 	}
-	t.Logf("50 identical requests over the series limit: %d VictoriaLogs calls (one request: %d)", calls, one.calls())
+	t.Logf("50 identical requests over the series limit: %d VictoriaLogs attempts by the requests (one request: %d); %d calls on /metrics, background included", calls, one.calls(), background)
 	held := efGet(t, params)
 	if held.calls() != 0 || held.header.Get(efCacheResultHeader) != "hit" || !bytes.Equal(held.body, answers[0].body) {
 		t.Fatalf("repeat: %d calls, cache result %q", held.calls(), held.header.Get(efCacheResultHeader))
