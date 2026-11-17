@@ -6,12 +6,20 @@ timeout_seconds="${1:-180}"
 wait_http() {
   local name="$1"
   local url="$2"
+  # Optional: the service's container, so a container that exited fails the
+  # wait at once instead of after the timeout.
+  local container="${3:-}"
   local deadline=$((SECONDS + timeout_seconds))
 
   while (( SECONDS < deadline )); do
     if curl -fsS "$url" >/dev/null 2>&1; then
       echo "ready: $name"
       return 0
+    fi
+    if [[ -n "$container" ]] && [[ "$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)" == "exited" ]]; then
+      echo "$name exited:" >&2
+      docker logs --tail 40 "$container" >&2 || true
+      return 1
     fi
     sleep 2
   done
@@ -37,7 +45,7 @@ wait_http "proxy-native-metadata" "http://127.0.0.1:13106/ready"
 wait_http "proxy-translated-metadata" "http://127.0.0.1:13107/ready"
 wait_http "proxy-otel-hybrid" "http://127.0.0.1:13111/ready"
 wait_http "proxy-no-metadata" "http://127.0.0.1:13108/ready"
-wait_http "proxy-errflight" "http://127.0.0.1:13120/ready"
+wait_http "proxy-errflight" "http://127.0.0.1:13120/ready" "e2e-proxy-errflight"
 wait_http "proxy-tail" "http://127.0.0.1:13103/ready"
 wait_http "tail-ingress" "http://127.0.0.1:13104/ready"
 wait_http "proxy-tail-native" "http://127.0.0.1:13105/ready"

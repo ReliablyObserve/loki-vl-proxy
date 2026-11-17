@@ -736,7 +736,8 @@ services:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
       - "-max-stats-query-series=1"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
+      # query_timeout may not exceed -backend-timeout: both 3 s.
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"3s","retention_period":"3d"}'
       - "-tenant.numeric-passthrough=true"
       - "-backend-timeout=3s"
       - "-log-level=info"
