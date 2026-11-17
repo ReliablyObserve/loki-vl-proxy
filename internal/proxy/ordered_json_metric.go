@@ -1568,6 +1568,10 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	}
 	statsDone := make(chan orderedJSONStatsResult, 1)
 	running.Go(func() { statsDone <- runStats(statsCtx, false) })
+	if deterministicProbes(ctx) {
+		// Every check and the stats reach VictoriaLogs before a verdict cancels them.
+		running.Wait()
+	}
 	// A strict split's unparsed-line lookup is read first: a line Loki's parser rejects decides the answer (Loki's
 	// error, from the row evaluator) without waiting for the scans the other checks and the stats run.
 	unparsed := <-unparsedDone
@@ -2111,6 +2115,9 @@ func (p *Proxy) logfmtParseRisk(ctx context.Context, base string, fields []strin
 	}()
 	risky, err = p.statsPushdownRiskExists(ctx, full, start, end)
 	if risky || err != nil {
+		if deterministicProbes(ctx) {
+			<-done // the candidate probe reaches VictoriaLogs too
+		}
 		return risky, logfmtCandidatesSeen, err // never remembered
 	}
 	<-done
@@ -2815,9 +2822,12 @@ func (p *Proxy) rememberedRisk(ctx context.Context, key string, start, end time.
 
 // anyRisk runs the probes beside each other, one round trip. The first risky
 // verdict (or error) decides; the other probes are cancelled, and waited for
-// only until they return, so none outlives the request.
+// only until they return, so none outlives the request. A request marked by
+// deterministicProbes waits for every probe and reads the verdicts in the
+// probes' order.
 func anyRisk(ctx context.Context, probes []func(context.Context) (bool, error)) (bool, error) {
 	type result struct {
+		i     int
 		risky bool
 		err   error
 	}
@@ -2828,11 +2838,25 @@ func anyRisk(ctx context.Context, probes []func(context.Context) (bool, error)) 
 		running.Wait()
 	}()
 	results := make(chan result, len(probes))
-	for _, probe := range probes {
+	for i, probe := range probes {
 		running.Go(func() {
 			risky, err := probe(probeCtx)
-			results <- result{risky, err}
+			results <- result{i, risky, err}
 		})
+	}
+	if deterministicProbes(ctx) {
+		running.Wait()
+		ordered := make([]result, len(probes))
+		for range probes {
+			r := <-results
+			ordered[r.i] = r
+		}
+		for _, r := range ordered {
+			if r.err != nil || r.risky {
+				return r.risky, r.err
+			}
+		}
+		return false, nil
 	}
 	for range probes {
 		r := <-results
