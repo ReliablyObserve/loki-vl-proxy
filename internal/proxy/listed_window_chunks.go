@@ -1,0 +1,240 @@
+package proxy
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Time chunks of an extraction list's series windows (listedIdentityWindows).
+//
+// On a range longer than the step, VictoriaLogs answers one row per series and sub-step bucket that holds the
+// series' lines, and the window evaluator holds those partials until the vector aggregation folds them. A listed
+// label of high cardinality over a long range (`| logfmt amount, user_id` over a day) has more such rows than one
+// read may hold: the read stops at its bound (-manual-range-metric-row-limit series before the fold, the stats body
+// bound), where Loki answers.
+//
+// Each output step t depends only on the buckets in (t-range, t]. So the steps [start, end] are evaluated in chunks,
+// as a query frontend splits a range: a chunk of the steps [a, b] reads its buckets from a-range to b (the range
+// before the chunk read again), its windows are evaluated and folded into the one fold of the request
+// (matrixFoldSink) as they are read, and the chunk's partials are dropped. The answer is the unchunked one: every
+// step is evaluated from the same buckets (the chunk's fetch starts a whole number of steps, so of buckets, after the
+// request's), and the fold visits a step's series in the same order (sorted keys of the chunk that holds the step,
+// which holds every series with a line in the step's window). The fold keeps a cell per group and sample time, so the
+// chunks add to it in turn.
+//
+// The chunk's size:
+//   - known up front: no chunk reads more than heavyQueryBucketThreshold buckets (the bound past which the
+//     unchunked request is read from raw rows), and a size this replica measured for the same read before;
+//   - measured: a chunk whose read passes its bound (the series before the fold, or the body bound) is halved and
+//     read again; after a read, the next chunk is sized from the share of the bound that read used, at most half of
+//     it. A single step whose window holds more than the bound is the only refusal left: Loki's limit error naming
+//     -manual-range-metric-row-limit, a bound on one chunk's memory.
+//
+// Chunks are read one after another (one stats_query_range slot each, takeStatsQueryRangeSlot), so the request holds
+// one chunk's partials and the fold's groups at a time. A request that fits one chunk reads exactly as before.
+
+// statsReadMeterKey carries a statsReadMeter in a context.
+type statsReadMeterKey struct{}
+
+// statsReadMeter records the stats_query_range reads of a chunk: whether one passed its bound, and what they held.
+type statsReadMeter struct {
+	over   bool
+	bytes  int
+	series int
+}
+
+func withStatsReadMeter(ctx context.Context) (context.Context, *statsReadMeter) {
+	m := &statsReadMeter{}
+	return context.WithValue(ctx, statsReadMeterKey{}, m), m
+}
+
+// noteStatsReadOverflow records a read that stopped at its bound: more series than the read may hold, or a body over
+// the stats body bound.
+func noteStatsReadOverflow(ctx context.Context, err error) {
+	if m, _ := ctx.Value(statsReadMeterKey{}).(*statsReadMeter); m != nil && (errors.Is(err, errBodyTooLarge) || isSeriesLimitError(err)) {
+		m.over = true
+	}
+}
+
+// noteStatsRead records a read's body and series, and an overflow of its series cap.
+func noteStatsRead(ctx context.Context, bytes, series int, err error) {
+	if m, _ := ctx.Value(statsReadMeterKey{}).(*statsReadMeter); m != nil {
+		m.bytes += bytes
+		m.series += series
+		noteStatsReadOverflow(ctx, err)
+	}
+}
+
+// statsBucketRoute reads the stats buckets of a window metric over [from, to]: ok false when the route does not
+// apply or VictoriaLogs failed, a non-nil error when it is the request's answer.
+type statsBucketRoute func(ctx context.Context, from, to time.Time) (map[string]manualSeriesSamples, bool, error)
+
+// statsBucketRoutes are the bucket reads of spec in the order the window evaluator tries them.
+func (p *Proxy) statsBucketRoutes(spec statsCompatSpec, statsAggFunc string, bucket time.Duration, streamBuckets bool) []statsBucketRoute {
+	return []statsBucketRoute{
+		func(ctx context.Context, from, to time.Time) (map[string]manualSeriesSamples, bool, error) {
+			return p.collectStatsFastPathHits(ctx, spec, statsAggFunc, from, to, bucket, streamBuckets, false)
+		},
+		func(ctx context.Context, from, to time.Time) (map[string]manualSeriesSamples, bool, error) {
+			return p.collectParserStageStatsFastPathHits(ctx, spec, statsAggFunc, from, to, bucket)
+		},
+		func(ctx context.Context, from, to time.Time) (map[string]manualSeriesSamples, bool, error) {
+			return p.collectStatsFastPathHits(ctx, spec, statsAggFunc, from, to, bucket, streamBuckets, true)
+		},
+	}
+}
+
+// listedChunkSizeTTL is how long a replica keeps the chunk size a read needed.
+const listedChunkSizeTTL = 10 * time.Minute
+
+// listedChunkLoad is the share of a read's bound a chunk is sized to use.
+const listedChunkLoad = 0.5
+
+// listedWindowChunksObserve, when set, sees each chunk a request read (tests).
+var listedWindowChunksObserve func(first, last int64, m statsReadMeter)
+
+// writeListedWindowChunks answers a window metric over an extraction list's series identity in time chunks (see
+// above) and reports true; false when the bucket reads do not answer it (no route applies, or VictoriaLogs failed),
+// and the window evaluator goes on as without chunks.
+func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, routes []statsBucketRoute, manualFunc string, start, end time.Time, step, window, bucket, shift time.Duration, fold *matrixFold) bool {
+	ctx := r.Context()
+	n := stepCount(start.UnixNano(), end.UnixNano(), step.Nanoseconds())
+	bucketSteps := listedChunkBucketSteps(step, window, bucket)
+	if n <= 0 || bucketSteps < 1 || len(fold.levels) == 0 {
+		return false
+	}
+	budget := p.resolvedMaxStatsQuerySeries(ctx)
+	maxBytes := p.limits().BufferedBackendBodyBytes
+	sizeKey := listedChunkSizeKey(ctx, r.FormValue("query"), step, bucket)
+	size := min64(n, bucketSteps)
+	known, measured := p.listedChunkSize(ctx, sizeKey)
+	if measured {
+		size = min64(size, known)
+	}
+	// The tenant's series limit applies to the folded answer (capSeriesToLimit afterwards): a fold of one level
+	// whose groups pass it fails as that would, before more chunks are read.
+	limit := p.requestQueryLimits(ctx).MaxQuerySeries
+	sink := newMatrixFoldSink(fold)
+	route, halved := -1, false
+	for first := int64(0); first < n; {
+		last := min64(n-1, first+size-1)
+		from, to := start.Add(time.Duration(first)*step), start.Add(time.Duration(last)*step)
+		// The window before the chunk's first step, as the unchunked read starts before the request's.
+		fetchFrom := from.Add(-window)
+		if shift != 0 {
+			fetchFrom = from.Add(-step)
+		}
+		readCtx, meter := withStatsReadMeter(ctx)
+		var series map[string]manualSeriesSamples
+		var err error
+		answered := -1
+		for i, collect := range routes {
+			var ok bool
+			series, ok, err = collect(readCtx, fetchFrom, to)
+			if ok && err == nil && !meter.over {
+				answered = i
+			}
+			if ok || err != nil || meter.over {
+				break
+			}
+		}
+		if listedWindowChunksObserve != nil {
+			listedWindowChunksObserve(first, last, *meter)
+		}
+		switch {
+		case meter.over && last > first:
+			size, halved = (last-first+1)/2, true
+			continue
+		case meter.over:
+			rows, _ := p.manualMetricRowBudget()
+			p.writeErr(w, ctx, newRowLimitError(rows, "series in the window of one step", 0))
+			return true
+		case err != nil:
+			p.writeErr(w, ctx, err)
+			return true
+		case answered < 0 || route >= 0 && answered != route:
+			return false
+		}
+		route = answered
+		if _, err := hitsRangeMetricSeries(manualFunc, shiftSeriesSamples(series, shift), from, to, step, window, maxBytes, sink); err != nil {
+			p.writeErr(w, ctx, err)
+			return true
+		}
+		if len(fold.levels) == 1 && limit > 0 && len(sink.acc.groups) > limit && !requestKeepsPartialSeries(ctx) {
+			p.writeErr(w, ctx, seriesLimitReached(tenantSeriesLimitContext(ctx), limit))
+			return true
+		}
+		read := last - first + 1
+		if halved {
+			p.setLocalReadCacheWithTTL(sizeKey, []byte(strconv.FormatInt(read, 10)), listedChunkSizeTTL)
+		}
+		first = last + 1
+		size = nextListedChunkSize(read, bucketSteps, *meter, budget, int(maxStatsBucketResponseBytes))
+	}
+	markQueryStepsRoute(ctx, "buckets-"+strconv.Itoa(route))
+	body, err := sink.finish(fold, maxBytes)
+	if err != nil {
+		p.writeErr(w, ctx, err)
+		return true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+	return true
+}
+
+// listedChunkBucketSteps is the number of steps a chunk may hold so that its read, from the range before its first
+// step to its last, holds no more than heavyQueryBucketThreshold buckets; 0 when the range alone holds more.
+func listedChunkBucketSteps(step, window, bucket time.Duration) int64 {
+	if step <= 0 || bucket <= 0 {
+		return 0
+	}
+	room := time.Duration(heavyQueryBucketThreshold)*bucket - window
+	if room < 0 {
+		return 0
+	}
+	return int64(room/step) + 1
+}
+
+// nextListedChunkSize sizes the chunk after one of read steps whose reads held m: the steps that use
+// listedChunkLoad of the tighter of the two bounds (the series before the fold, the body bytes), at least one step
+// and at most bucketSteps.
+func nextListedChunkSize(read, bucketSteps int64, m statsReadMeter, budget, bodyBound int) int64 {
+	load := 0.0
+	if budget > 0 {
+		load = float64(m.series) / float64(budget)
+	}
+	if bodyBound > 0 {
+		load = max(load, float64(m.bytes)/float64(bodyBound))
+	}
+	if load <= 0 {
+		return bucketSteps
+	}
+	next := float64(read) * listedChunkLoad / load
+	if next >= float64(bucketSteps) {
+		return bucketSteps
+	}
+	return max(1, int64(next))
+}
+
+// listedChunkSizeKey names the chunk size a read of query at step needed, in the tenant's scope.
+func listedChunkSizeKey(ctx context.Context, query string, step, bucket time.Duration) string {
+	return "listed-window-chunk:v1:" + getOrgID(ctx) + ":" + strconv.FormatInt(int64(step), 10) + ":" + strconv.FormatInt(int64(bucket), 10) + ":" + strings.TrimSpace(query)
+}
+
+// listedChunkSize is the chunk size this replica measured for the key, if any: its memory tier only (a hint,
+// written there by setLocalReadCacheWithTTL), so a request pays no disk or peer lookup for it.
+func (p *Proxy) listedChunkSize(ctx context.Context, key string) (int64, bool) {
+	if p.cache == nil {
+		return 0, false
+	}
+	raw, ok := p.cachePeek(ctx, p.cache, key)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(string(raw), 10, 64)
+	return n, err == nil && n > 0
+}
