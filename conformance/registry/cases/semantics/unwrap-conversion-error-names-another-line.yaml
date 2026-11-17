@@ -1,0 +1,55 @@
+id: semantics/unwrap-conversion-error-names-another-line
+pending: true
+title: the SampleExtractionErr of an unwrap over values it cannot convert names another failing line than Loki's (open)
+proves:
+  - parser-error-and-label-collision
+  - status-400
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `max(max_over_time({app="ub"} | logfmt | unwrap amount [5m]))` over a stream
+  where every seventh line holds `amount=abc` fails on Loki and on the proxy
+  with 400 `pipeline error: 'SampleExtractionErr' for series: '{...}'`, and the
+  status, the error and the details match. The series the text names is the
+  label set of one failing line, which holds the line's own keys (`id`,
+  `route`), and the proxy names another failing line of the window than Loki
+  does: at the instant of the extraction-list differential's fixture Loki names
+  `id="r6-353"` and the proxy `id="r6-346"`, the failing line before it; on a
+  query_range with the step equal to the range Loki names `id="r6-80"` and the
+  proxy `id="r6-73"`. With the step shorter or longer than the range the two
+  name the same line.
+
+  Loki does not name the same failing line of a range in every recording: three
+  recordings named `id="r6-73"`, `id="r6-80"` or `id="r6-87"` for the same
+  range request, so the range kinds that differ follow the recording that is
+  checked in (extractionListKnownRuns); the instant query names `id="r6-353"` in
+  all of them.
+
+  Recorded with Loki's engine against VictoriaLogs' own handlers (v1.49.0 and
+  v1.53.0) through the proxy's handlers (TestExtractionListIdentityMatchLoki,
+  internal/querycorpus). Before the maximum of maxima read the group's rows in
+  one stats pipe, the proxy named another line on all four request kinds.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'max(max_over_time({service_name="payment-service"} | logfmt | unwrap amount [5m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error]
+  expect: |
+    Loki's status and error text, the series of the line Loki names included.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy unwrap conversion check (unwrap_conversion_error.go): which unconvertible row of the window the error names'
+  loki: 'the error names a failing line of the window, chosen by its own order of evaluation'
+  proxy: 'the same status, error and details, naming another failing line on an instant query and on a range equal to the step'
+  planned_test: 'TestExtractionListIdentityMatchLoki (internal/querycorpus) lists the runs in extractionListKnownRuns'
+  note: 'Found while proving that the maximum of maxima keeps its error answers (decision max-of-max-reads-group-rows); related semantics/unwrap-conversion-error and semantics/pipeline-error-text-parity.'
+  clusters: []

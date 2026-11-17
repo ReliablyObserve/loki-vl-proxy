@@ -97,7 +97,7 @@ func TestPlanLowersUnwrapDerivedGroupings(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 	for q, construct := range map[string]string{
-		`sum_over_time({app="a"} |unwrap n [5m])`:                               "RangeAgg unwrap spelling",
+		`sum_over_time({app="a"} |= "| unwrap m" | unwrap n [5m])`:              "RangeAgg unwrap spelling",
 		`sum_over_time({app="a"} | unwrap bytes (n) [5m])`:                      "RangeAgg unwrap spelling",
 		`sum_over_time({app="a"} | unwrap bytes( n ) [5m])`:                     "RangeAgg unwrap spelling",
 		`sum_over_time({app="a"} |= "| unwrap x" | unwrap n [5m])`:              "RangeAgg unwrap spelling",
@@ -118,7 +118,7 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`sum by (app) (sum_over_time({app="a"} |= "| stats " | unwrap n [5m]))`: "VectorAgg quoted clause",
 		`sum without (x) (sum_over_time({x!="  "} | unwrap n [5m]))`:            "VectorAgg quoted clause",
 		`avg(sum_over_time({app="a"} |= "| json" | unwrap n [5m]))`:             "VectorAgg quoted clause",
-		`sum(sum_over_time({app="a"} |unwrap n [5m]))`:                          "VectorAgg unwrap spelling",
+		`sum(sum_over_time({app="a"} |= "| unwrap m" | unwrap n [5m]))`:         "VectorAgg unwrap spelling",
 		`sum(bytes_rate({app="a"} | unwrap n [5m]))`:                            "VectorAgg unwrap bytes_rate",
 		// the quoted text a translator regexp reads out of a rate or a count, min, max and avg (a parser in the text
 		// takes the level from their series identity, an unwrap makes a rate a sum).

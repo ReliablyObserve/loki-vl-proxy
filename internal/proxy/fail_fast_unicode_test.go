@@ -72,6 +72,10 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 		{"{app=\"a\"} |= ip # c\n(\"1.2.3.4\")", "rate # c\n({app=\"a\"}[5m])", "syntax error: unexpected IDENTIFIER"},
 		{"{app=\"a\"} | x = ip#c\n(\"1.2.3.4\")", "label_replace # c\n(vector # c\n(1), \"d\", \"$1\", \"a\", \"(.*)\")", "syntax error: unexpected IDENTIFIER"},
 		{"{app=\"a\"} | unwrap bytes # c\n(c)", "sum_over_time({app=\"a\"} | logfmt | unwrap bytes # c\n(c) [5m])", "syntax error: unexpected"},
+		// A NUL byte in a string or a comment (semantics/raw-nul-in-string-literal-accepted): Loki's lexer error.
+		{"{app=\"a\"} |= \"a\x00b\"", "sum(rate({app=\"a\"} |= \"a\x00b\" [5m]))", "invalid character NUL"},
+		{"{app=\"a\"} | x=`a\x00`", "topk(1, rate({app=\"a\"} | x=\"\x00\" [5m]))", "invalid character NUL"},
+		{"{app=\"a\"} # c\x00\n|= \"b\"", "rate({app=\"a\"}[5m]) # c\x00", "invalid character NUL"},
 	} {
 		for _, rt := range failFastRoutes {
 			query := tc.log

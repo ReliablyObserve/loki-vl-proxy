@@ -376,9 +376,48 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 // semantics/translator-reads-only-space-between-tokens, semantics/translator-reads-blank-grouping-as-none). The plan
 // keeps the query as the client sent it, so the pair still holds the plan's text of every blank spelling to the
 // translator's text of the spaced one, as the metric and log flip gates do (internal/proxy spelledAsTranslatorReads).
-// The text must have no comment left: a comment runs to the end of its line.
+// The text must have no comment left: a comment runs to the end of its line. The translator reads an ip() line filter
+// only with its parenthesis right after the name, where Loki reads `|= ip<TAB>("1.2.3.4")` and `|= ip  (…)` as
+// `|= ip("1.2.3.4")` (recorded Loki answers, internal/logql testdata/keyword-blank-loki.jsonl.gz): the blank before
+// that parenthesis is left out (ipCallUnspaced).
 func spelledAsTranslatorReads(q string) string {
-	return blankgrouping.Cut(blankspace.Collapse(q))
+	return ipCallUnspaced(blankgrouping.Cut(blankspace.Collapse(q)))
+}
+
+// ipCallUnspaced leaves out the space between the name ip (any case, not part of a longer name) and its opening
+// parenthesis, outside quoted strings. blankspace.Collapse has written each run of blanks there as one space.
+func ipCallUnspaced(q string) string {
+	if !strings.Contains(q, " (") {
+		return q
+	}
+	var out strings.Builder
+	for i := 0; i < len(q); i++ {
+		switch c := q[i]; {
+		case c == '"' || c == '`':
+			j := i + 1
+			for j < len(q) && q[j] != c {
+				if c == '"' && q[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			j = min(j, len(q)-1)
+			out.WriteString(q[i : j+1])
+			i = j
+		case (c == 'i' || c == 'I') && strings.HasPrefix(strings.ToLower(q[i:min(i+4, len(q))]), "ip (") &&
+			(i == 0 || !isNameByte(q[i-1])):
+			out.WriteString(q[i : i+2])
+			i += 2 // the space; the parenthesis is written next
+		default:
+			out.WriteByte(c)
+		}
+	}
+	return out.String()
+}
+
+// isNameByte reports a byte that continues a LogQL name.
+func isNameByte(c byte) bool {
+	return c == '_' || c == '.' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
 }
 
 // guardedPair is the two texts as the proxy sends them: every query it sends to VictoriaLogs passes the outbound
