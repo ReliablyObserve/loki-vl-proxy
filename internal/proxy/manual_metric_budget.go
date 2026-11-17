@@ -459,6 +459,22 @@ func checkManualMetricRead(ctx context.Context, limited *io.LimitedReader) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	return checkManualMetricBudget(ctx, limited)
+}
+
+// checkManualMetricReadDone is checkManualMetricRead for a per-row loop: done
+// is ctx.Done(), taken once, so a row costs one channel poll instead of a walk
+// down the request's context chain (a checked request adds layers to it).
+func checkManualMetricReadDone(ctx context.Context, done <-chan struct{}, limited *io.LimitedReader) error {
+	select {
+	case <-done:
+		return ctx.Err()
+	default:
+	}
+	return checkManualMetricBudget(ctx, limited)
+}
+
+func checkManualMetricBudget(ctx context.Context, limited *io.LimitedReader) error {
 	if limited.N <= 0 {
 		return newManualMetricResponseTooLarge(int64(executionLimitsFrom(ctx).BufferedBackendBodyBytes))
 	}

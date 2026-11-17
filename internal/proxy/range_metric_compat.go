@@ -2000,8 +2000,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 
 	rows, badRows := 0, 0
+	done := ctx.Done()
 	for scanner.Scan() {
-		if err := checkManualMetricRead(ctx, limited); err != nil {
+		if err := checkManualMetricReadDone(ctx, done, limited); err != nil {
 			return nil, err
 		}
 		line := scanner.Bytes()
@@ -2019,7 +2020,8 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			continue
 		}
 
-		rawTS := string(v.GetStringBytes("_time"))
+		timeBytes, streamBytes, levelBytes, marked := jsonCheck.rawRowHead(v)
+		rawTS := string(timeBytes)
 		if rawTS == "" {
 			continue
 		}
@@ -2034,7 +2036,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		if ts < 1e12 {
 			ts *= int64(time.Second)
 		}
-		jsonCheck.takeRawRowFJ(v, ts)
+		if marked {
+			jsonCheck.takeRawRowMark(v, ts)
+		}
 
 		sampleValue, ok := p.extractManualSampleValueFJ(v, field, unwrapConv)
 		if !ok {
@@ -2042,8 +2046,8 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			continue
 		}
 
-		streamStr := string(v.GetStringBytes("_stream"))
-		levelStr := strings.TrimSpace(string(v.GetStringBytes("level")))
+		streamStr := string(streamBytes)
+		levelStr := strings.TrimSpace(string(levelBytes))
 		var derived *string
 		derivedKey := ""
 		if streamIdentity {
