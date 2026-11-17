@@ -601,11 +601,11 @@
     }
   },
   "shadow": {
-    "rows": 23880,
+    "rows": 23889,
     "profiles": 12,
-    "native": 21916,
+    "native": 21925,
     "native_proxy_evaluated": 4419,
-    "native_loki_held": 480,
+    "native_loki_held": 489,
     "mismatches": 0,
     "rejected": 345,
     "delegated_by_construct": {
