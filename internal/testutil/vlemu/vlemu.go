@@ -527,6 +527,18 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 					f[fx.alias] = string(enc)
 					continue
 				}
+				if fx.kind == "stddev" {
+					// The population standard deviation of the group's values.
+					var mean, m2 float64
+					for i, rec := range g.recs {
+						v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)
+						d := v - mean
+						mean += d / float64(i+1)
+						m2 += d * (v - mean)
+					}
+					f[fx.alias] = strconv.FormatFloat(math.Sqrt(m2/float64(len(g.recs))), 'f', -1, 64)
+					continue
+				}
 				var acc float64
 				for i, rec := range g.recs {
 					v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)

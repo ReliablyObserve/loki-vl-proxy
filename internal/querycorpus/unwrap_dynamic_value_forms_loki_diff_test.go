@@ -77,8 +77,9 @@ var dynamicValueFormsFuncs = []string{"max_over_time", "min_over_time", "avg_ove
 // than Loki):
 //
 //   - a range longer than the step (step<range) of an ungrouped sum, avg or min, and of max by over a json line's
-//     min, avg or stddev: the string translator's window evaluator, the route of base, leaves out or makes NaN the
-//     windows of these values;
+//     min, avg or stddev, after a parser of every key: the string translator's window evaluator, the route of base,
+//     leaves out or makes NaN the windows of these values (after an extraction list the series' windows are merged
+//     from their step buckets and match);
 //   - avg over the series of an infinity: Loki's mean of +Inf and +Inf is NaN, VictoriaLogs' is +Inf;
 //   - sum, sum by or avg over stddev or stdvar of an infinity on an instant: Loki answers NaN, VictoriaLogs' outer sum
 //     leaves the NaN series out (0). For sum by (app) over a logfmt line the recording before 2026-11-16 had
@@ -96,7 +97,11 @@ var dynamicValueFormsKnown = func() map[string]map[string]string {
 				infinity := strings.Contains(pipe, `"inf"`) || strings.Contains(pipe, `"neginf"`)
 				deviation := fn == "stddev_over_time" || fn == "stdvar_over_time"
 				var kinds []string
+				// An extraction list's series merge their step buckets into each window (listedIdentityWindows): its
+				// ranges longer than the step are Loki's.
+				listedWindows := listed != pipe
 				switch {
+				case listedWindows:
 				case strings.HasPrefix(shape, "sum(") || strings.HasPrefix(shape, "avg("):
 					kinds = append(kinds, "step<range")
 				case strings.HasPrefix(shape, "min(") && fn != "min_over_time":

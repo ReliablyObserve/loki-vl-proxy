@@ -62,6 +62,22 @@ func DynamicUnwrapIdentity(p *queryplan.Plan) bool {
 	return ok
 }
 
+// ListedUnwrapIdentity reports a query DynamicUnwrapIdentity names whose parser is an extraction list: its series are
+// the stream, its stored level fields and the labels the list names, which the stats group by as fields of the row
+// (listedStored), so the window evaluator can merge each series' step buckets on a range longer than the step.
+func ListedUnwrapIdentity(p *queryplan.Plan) bool {
+	va, ok := p.Root.(*queryplan.VectorAgg)
+	if !ok {
+		return false
+	}
+	ra, ok := va.In.(*queryplan.RangeAgg)
+	if !ok {
+		return false
+	}
+	parser, ok := dynamicIdentity(va, ra)
+	return ok && parser.Fields != nil
+}
+
 // dynamicIdentity is the parser of a query DynamicUnwrapIdentity names, ok false for any other.
 func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *queryplan.Parse, ok bool) {
 	switch va.Op {

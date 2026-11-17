@@ -790,6 +790,12 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 		return true
 	}
+	// An extraction list's series identity on a range longer than the step: the windows are evaluated in time chunks,
+	// each read under the per-chunk bound and folded as it is read (listed_window_chunks.go).
+	if p.listedWindowChunksRoute(w, r, listedChunkReads{bucketsOK: bucketsOK, counter: counterProof != nil, quantile: quantileCounts, rawRows: &forceRawLevelRows},
+		spec, origSpec, manualFunc, statsAggFunc, startTS, endTS, step, bucket, sampleShift) {
+		return true
+	}
 	if !bucketsOK || (bucket > 0 && (endTS.Sub(startTS)+origSpec.Window)/bucket > heavyQueryBucketThreshold) {
 		// No bucket grid, or more buckets than Loki's 11,000-point limit:
 		// VictoriaLogs would build every point in memory. The raw evaluator is
@@ -815,21 +821,12 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// parsed fields and counts every line, as the raw evaluator does.
 	streamBuckets := origSpec.Window != step
 	statsAggFunc = p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
-	for route, collect := range []func() (map[string]manualSeriesSamples, bool, error){
-		func() (map[string]manualSeriesSamples, bool, error) {
-			return p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, false)
-		},
-		func() (map[string]manualSeriesSamples, bool, error) {
-			return p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket)
-		},
-		func() (map[string]manualSeriesSamples, bool, error) {
-			return p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, true)
-		},
-	} {
+	routes := p.statsBucketRoutes(spec, statsAggFunc, bucket, streamBuckets)
+	for route, collect := range routes {
 		if forceRawLevelRows {
 			break
 		}
-		series, ok, err := collect()
+		series, ok, err := collect(r.Context(), fetchStart, endTS)
 		if err != nil {
 			p.writeErr(w, r.Context(), err)
 			return true
@@ -1641,6 +1638,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
+		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
@@ -1654,6 +1652,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
 	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc))
 	if err != nil {
+		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
 	}
 	// A stream without a level label is one series per level its lines carry.
@@ -1661,6 +1660,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// not hold it.
 	release()
 	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
+		noteStatsReadOverflow(ctx, err)
 		return nil, nil, p.levelLessErr("stats_query_range backend", err)
 	}
 
@@ -1757,6 +1757,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	}
 	devs.fold(seriesMap)
 	series, err := capHitSeries(ctx, seriesMap, limit, aux)
+	noteStatsRead(ctx, len(body), len(seriesMap), err)
 	return series, auxEdges, err
 }
 
@@ -2833,6 +2834,20 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 	if end.Before(start) || step <= 0 {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{}), nil
 	}
+	sink := newMatrixFoldSink(fold) // nil without a fold
+	results, err := hitsRangeMetricSeries(manualFunc, series, start, end, step, window, maxBytes, sink)
+	if err != nil {
+		return nil, err
+	}
+	if sink != nil {
+		return sink.finish(fold, maxBytes)
+	}
+	return marshalManualMetricResponse("matrix", results), nil
+}
+
+// hitsRangeMetricSeries evaluates the windows of series at the steps of [start, end]: into sink when there is one
+// (nothing is returned then), or as the matrix's series.
+func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxBytes int, sink *matrixFoldSink) ([]map[string]interface{}, error) {
 	encodedBytes := 0
 	windowNS := window.Nanoseconds()
 	windowSec := window.Seconds()
@@ -2852,9 +2867,11 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 	startNS, endNS, stepNS := start.UnixNano(), end.UnixNano(), step.Nanoseconds()
 	expectedBuckets := min(int(end.Sub(start)/step)+1, 32768) // pre-size cap; appends grow beyond it
 
-	sink := newMatrixFoldSink(fold) // nil without a fold
 	var folded []typedPoint
-	results := make([]map[string]interface{}, 0, len(keys))
+	var results []map[string]interface{}
+	if sink == nil {
+		results = make([]map[string]interface{}, 0, len(keys))
+	}
 	for _, key := range keys {
 		seriesEntry := series[key]
 		samples := sortedHitsSamples(seriesEntry.Samples)
@@ -2951,10 +2968,7 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 			})
 		}
 	}
-	if sink != nil {
-		return sink.finish(fold, maxBytes)
-	}
-	return marshalManualMetricResponse("matrix", results), nil
+	return results, nil
 }
 
 // sortedHitsSamples returns samples in time order. Coalesced results are shared

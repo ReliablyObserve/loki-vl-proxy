@@ -88,6 +88,9 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	}
 	b.add(unwrapBlankSpellingResponseKeyVersion(query))
 	b.add(emptyWithoutOperandResponseKeyVersion(query))
+	if site != responseKeyCompatQuery {
+		b.add(listedWindowsResponseKeyVersion(r, query))
+	}
 	b.add(countVarianceResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceFence(r, query, other))
