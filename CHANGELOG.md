@@ -49,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A tail request whose websocket handshake fails (no upgrade, another protocol, a missing version or key) is
+  answered before the tail reads its history from VictoriaLogs, as Loki's router answers it before any query work:
+  such requests no longer cost a VictoriaLogs call. Every request Loki refuses with a 4xx from the request alone is
+  now refused before any VictoriaLogs call (pinned against Loki's recorded answers).
+- A failed answer held while the configuration was reloaded (tenant map, field mappings) is never served after the
+  reload, even when its request was still running during the reload: held answers are keyed by a configuration
+  epoch that every reload changes.
 - `query_range` with a range longer than the step (sliding windows, the `$__auto` steps Grafana sends under a `[5m]`
   range) now reads Loki's series for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`,
   `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream

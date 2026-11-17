@@ -437,6 +437,7 @@
     "semantics/error-layer-silent-success | gap:open",
     "semantics/error-layer-transport-text | compare:exact",
     "semantics/error-layer-transport-text | gap:fixed",
+    "semantics/error-plan-time-refusals | compare:exact",
     "semantics/error-request-validation-parity | compare:observed",
     "semantics/error-request-validation-parity | gap:open",
     "semantics/error-request-validation-parity | query",
@@ -1573,6 +1574,8 @@
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-silent-success",
     "internal/proxy/error_phase_grid_test.go | semantics/loki-error-phase-order",
     "internal/proxy/error_phase_grid_test.go | semantics/loki-error-phases",
+    "internal/proxy/error_prediction_discovery_test.go | semantics/error-plan-time-refusals",
+    "internal/proxy/error_prediction_discovery_test.go | semantics/error-request-validation-parity",
     "internal/proxy/error_refusals_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/error_refusals_test.go | semantics/error-request-validation-parity",
     "internal/proxy/error_refusals_test.go | semantics/offset-different-per-range-vector",
@@ -3187,7 +3190,7 @@
   ],
   "counts": {
     "case_consumers": {
-      "any": 47,
+      "any": 48,
       "api": 116,
       "drilldown": 53,
       "explore": 202,
@@ -3195,7 +3198,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 742,
+      "go": 743,
       "playwright": 2
     },
     "page_kinds": {
@@ -3215,7 +3218,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 442
+    "wired_items": 443
   },
   "gates": [
     "A/B shape selection",

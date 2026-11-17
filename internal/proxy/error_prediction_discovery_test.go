@@ -2,10 +2,8 @@ package proxy
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,13 +12,15 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
-// TestLokiErrorRowsReachingVictoriaLogs lists the recorded Loki error rows
-// (a 4xx Loki decides from the request) that the proxy answers only after
-// asking VictoriaLogs: the candidates for an answer from the plan.
-func TestLokiErrorRowsReachingVictoriaLogs(t *testing.T) {
-	if os.Getenv("LVP_ERROR_DISCOVERY") == "" {
-		t.Skip("set LVP_ERROR_DISCOVERY=1")
-	}
+// Every request Loki refuses with a 4xx in the recorded answers (the error
+// rows, the pipeline build phase and the check order) is refused before any
+// VictoriaLogs call: what Loki decides from the request alone, the proxy
+// decides from the request and its plan. A row that reaches VictoriaLogs fails
+// here; rows recorded under a configuration the proxy cannot match are not
+// compared.
+//
+// conformance: semantics/error-request-validation-parity, semantics/error-plan-time-refusals
+func TestLokiRefusalsSendNoVictoriaLogsCall(t *testing.T) {
 	var calls atomic.Int64
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/select/") {
@@ -41,7 +41,6 @@ func TestLokiErrorRowsReachingVictoriaLogs(t *testing.T) {
 	front := httptest.NewServer(shippedChain(mux))
 	t.Cleanup(front.Close)
 	addr := strings.TrimPrefix(front.URL, "http://")
-	n := 0
 	rows := readLokiErrorAnswers(t)
 	for _, extra := range []string{"loki_build_phase.jsonl", "loki_check_order.jsonl"} {
 		saved := lokiErrorAnswersPath
@@ -49,16 +48,19 @@ func TestLokiErrorRowsReachingVictoriaLogs(t *testing.T) {
 		rows = append(rows, readLokiErrorAnswers(t)...)
 		lokiErrorAnswersPath = saved
 	}
+	checked := 0
 	for _, row := range rows {
-		if row.Loki.Status < 400 || row.Loki.Status >= 500 {
+		if row.Loki.Status < 400 || row.Loki.Status >= 500 || row.NotComparable != "" {
 			continue
 		}
+		checked++
 		before := calls.Load()
-		reply := row.replay(t, addr)
+		row.replay(t, addr)
 		if d := calls.Load() - before; d > 0 {
-			n++
-			fmt.Printf("%s %s calls=%d loki=%d proxy=%d %q target=%.160s\n", row.ID, row.Route, d, row.Loki.Status, reply.Status, row.Loki.Body, row.Target)
+			t.Errorf("%s (%s): Loki answers %d %q from the request; the proxy asked VictoriaLogs %d times first", row.ID, row.Route, row.Loki.Status, row.Loki.Body, d)
 		}
 	}
-	fmt.Printf("rows reaching VictoriaLogs: %d\n", n)
+	if checked < 100 {
+		t.Fatalf("only %d recorded refusals checked", checked)
+	}
 }

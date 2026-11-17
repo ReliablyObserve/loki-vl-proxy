@@ -413,9 +413,39 @@ func TestErrorFlightsEdge_RefusedRequestSendsNoBackendCall(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), origRequestKey, req))
 	k := p.uncachedFlightKey("query_range", req)
 	_ = k.exactKey()
-	_ = p.windowFreeKey("query_range", req)
+	_ = p.windowFreeKey(p.flightPrefix(), "query_range", req)
 	time.Sleep(200 * time.Millisecond) // a refresh started in the background would land by now
 	if calls.Load() != 0 {
 		t.Fatalf("a refused request reached the backend %d times", calls.Load())
+	}
+}
+
+// A failure of a request that was running when the configuration reloaded is
+// held under the old configuration's key epoch, which no later request reads.
+//
+// conformance: semantics/error-cache-tenant-isolation
+func TestErrorFlightsEdge_ReloadDuringFlightServesNoOldVerdict(t *testing.T) {
+	gate := make(chan struct{})
+	stub := newFlightStub(t, func(n int64, w http.ResponseWriter, r *http.Request) {
+		if n == 1 {
+			<-gate
+		}
+		answer500(n, w, r)
+	})
+	p, h := newFlightProxy(t, stub.srv.URL, nil)
+	done := make(chan struct{})
+	go func() { flightGet(h, context.Background(), flightLogTarget, "team-a"); close(done) }()
+	waitFor(t, func() bool { return stub.calls.Load() == 1 })
+	before := p.flightPrefix()
+	p.ReloadFieldMappings(nil)
+	if p.flightPrefix() == before {
+		t.Fatal("a reload must start a new key epoch")
+	}
+	close(gate)
+	<-done
+	calls := stub.calls.Load()
+	flightGet(h, context.Background(), flightLogTarget, "team-a")
+	if stub.calls.Load() == calls {
+		t.Fatal("a verdict made before the reload answered a request after it")
 	}
 }
