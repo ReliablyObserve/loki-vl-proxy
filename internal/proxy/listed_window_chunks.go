@@ -105,6 +105,30 @@ var listedWindowChunksOff bool
 // listedWindowChunksObserve, when set, sees each chunk a request read (tests).
 var listedWindowChunksObserve func(first, last int64, m statsReadMeter)
 
+// listedChunkReads is what the window evaluator decided about a request before the chunks: bucketsOK, a bucket grid
+// exists; counter, a rate_counter proof reads the rows; quantile, the quantile's counts are read; rawRows, the level is
+// read from raw rows (set here when the bucket reads were sent over the whole request and did not answer, so the
+// evaluator goes on to the raw rows without sending them again).
+type listedChunkReads struct {
+	bucketsOK, counter, quantile bool
+	rawRows                      *bool
+}
+
+// listedWindowChunksRoute answers a window metric over an extraction list's series identity in time chunks when the
+// request folds it (a matrix fold) and its windows are read from stats buckets, and reports whether it did.
+func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, reads listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
+	fold := matrixFoldFrom(r.Context())
+	if fold == nil || listedWindowChunksOff || !reads.bucketsOK || statsAggFunc == "" || *reads.rawRows || reads.counter || reads.quantile ||
+		!p.listedIdentityWindows(r.Context(), r.FormValue("query")) {
+		return false
+	}
+	chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
+	routes := p.statsBucketRoutes(spec, chunked, bucket, origSpec.Window != step)
+	handled, whole := p.writeListedWindowChunks(w, r, routes, manualFunc, start, end, step, origSpec.Window, bucket, shift, fold)
+	*reads.rawRows = whole
+	return handled
+}
+
 // writeListedWindowChunks answers a window metric over an extraction list's series identity in time chunks (see
 // above) and reports handled; otherwise the bucket reads did not answer it (no route applies, or VictoriaLogs failed)
 // and the window evaluator goes on as without chunks, past the bucket reads when whole is set (they were tried over
