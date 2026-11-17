@@ -364,7 +364,8 @@ func appendMatchingModifier(dst []byte, keyword string, labels []string) []byte 
 //
 // A binary operation the lowering does not write (binOpShape) is left to it to name, and one with an operand that
 // has a without clause or is a vector(n) is not screened for the translator's reading (RoutedBinary: the proxy's
-// route does not read the query's text); a vector(n) operand's own spelling is (screenVectorOperands).
+// route does not read the query's text); a vector(n) operand's own spelling is (screenVectorOperands), at any depth of
+// a chain too (screenChainVectors).
 func screenBinOp(query string, n *queryplan.BinOp) error {
 	if binOpShape(n) != nil {
 		return nil
@@ -374,6 +375,9 @@ func screenBinOp(query string, n *queryplan.BinOp) error {
 		if err := screenVectorOperands(query, n); err != nil {
 			return err
 		}
+	}
+	if err := screenChainVectors(query, n); err != nil {
+		return err
 	}
 	if withoutOperand(n) {
 		// The proxy's binary route translates each operand alone, as its printed LogQL (logql.Expr.String), which

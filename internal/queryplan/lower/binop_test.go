@@ -74,7 +74,10 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 
 // routeOperands holds the operands of a lowered binary operation to the proxy's binary route under prof: each operand
 // that is not a number or a vector(n) is the translator's text for its printed LogQL (logql.Expr.String) alone, byte
-// for byte and operator for operator. It returns both sides' texts joined by " ||| " for a failure message.
+// for byte and operator for operator, and an operand that is itself a binary operation is held to the route the same
+// way, operation by operation (the route sends it through the handlers, which take the binary route again:
+// proxy.binaryRoutePhysical), not to the translator's text for it. It returns both sides' texts joined by " ||| " for
+// a failure message.
 func routeOperands(t testing.TB, q string, op physical.Binary, prof rangeProfile) (lowered, routed string, same bool) {
 	t.Helper()
 	expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
@@ -85,6 +88,11 @@ func routeOperands(t testing.TB, q string, op physical.Binary, prof rangeProfile
 	if !ok {
 		return physical.Encode(op), "", false
 	}
+	return routeBinary(bin, op, prof)
+}
+
+// routeBinary is routeOperands of one binary operation of the route, bin, lowered to op.
+func routeBinary(bin *logql.BinOpExpr, op physical.Binary, prof rangeProfile) (lowered, routed string, same bool) {
 	same = true
 	var lt, rt []string
 	for i, side := range [2]logql.Expr{bin.Left, bin.Right} {
@@ -94,6 +102,18 @@ func routeOperands(t testing.TB, q string, op physical.Binary, prof rangeProfile
 		}
 		if _, lit := side.(*logql.LiteralExpr); lit {
 			lt, rt = append(lt, physical.Encode(got)), append(rt, side.String())
+			continue
+		}
+		if nested, chain := side.(*logql.BinOpExpr); chain {
+			b, isBinary := got.(physical.Binary)
+			if !isBinary || b.Op != nested.Op || b.Bool != nested.ReturnBool {
+				lt, rt = append(lt, physical.Encode(got)), append(rt, nested.String())
+				same = false
+				continue
+			}
+			l, r, s := routeBinary(nested, b, prof)
+			lt, rt = append(lt, "("+l+")"), append(rt, "("+r+")")
+			same = same && s
 			continue
 		}
 		if v, vector := VectorLiteral(side.String()); vector {
@@ -303,6 +323,12 @@ func FuzzBinOpLowering(f *testing.F) {
 	// bool and set operators over two range functions: the route evaluates them, and their text is the translator's.
 	f.Add("a", "x", "app", "$1", uint8(15), uint8(0), uint8(0), uint8(0))
 	f.Add("a", "x", "app", "$1", uint8(12), uint8(0), uint8(0), uint8(0))
+	// A chain whose operand holds a parenthesis in a quoted line filter: the route evaluates the operand as a binary
+	// operation of its own, so it is held to the route operation by operation, not to the translator's text for it.
+	f.Add("0", "(", "0", "0", uint8('G'), uint8('U'), uint8(0), uint8('F'))
+	// A chain with a vector(n) spelled with a blank before its parenthesis, which the route sends on as a query: left
+	// to the translator (screenChainVectors).
+	f.Add("0", "0", "0", "0", uint8(0x9a), uint8(0xc7), uint8('d'), uint8('E'))
 	f.Fuzz(func(t *testing.T, sel, line, label, arg string, opSel, left, right, mod uint8) {
 		ident := func(s string) string {
 			var b strings.Builder

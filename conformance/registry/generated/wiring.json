@@ -2448,7 +2448,8 @@
       "internal/querycorpus/grammar_sweep_test.go"
     ],
     "semantics/vector-call-blank-before-parenthesis-as-query": [
-      "internal/proxy/keyword_fold_runes_test.go"
+      "internal/proxy/keyword_fold_runes_test.go",
+      "internal/queryplan/lower/binop_vector_test.go"
     ],
     "semantics/vl-refusal-is-plan-defect": [
       "internal/proxy/multitenant_tenant_failure_test.go",
@@ -4921,7 +4922,8 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/binop_vector_test.go": [
-      "architecture-syntax-package-layering"
+      "architecture-syntax-package-layering",
+      "semantics/vector-call-blank-before-parenthesis-as-query"
     ],
     "internal/queryplan/lower/binop_without_empty_test.go": [
       "semantics/binary-operand-without-empty-collapses"
