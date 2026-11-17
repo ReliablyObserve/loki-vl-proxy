@@ -191,13 +191,8 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 		case meter.over && last > first:
 			size, halved = max(1, (last-first+1)/listedChunkShrink), true
 			continue
-		case meter.overBytes:
-			// One step's stats pass the body bound: Loki's answer to a response over its message size.
-			p.writeErr(w, ctx, newManualMetricResponseTooLarge(int64(p.limits().BufferedBackendBodyBytes)))
-			return true, false
 		case meter.over:
-			rows, _ := p.manualMetricRowBudget()
-			p.writeErr(w, ctx, newRowLimitError(rows, "series in the window of one step", 0))
+			p.writeErr(w, ctx, p.listedStepOverflowError(meter.overBytes))
 			return true, false
 		case err != nil:
 			p.writeErr(w, ctx, err)
@@ -230,6 +225,17 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true, false
+}
+
+// listedStepOverflowError is the answer to a single step whose window passes a chunk's bound: Loki's answer to a
+// response over its message size for the stats body (overBytes), Loki's limit error naming
+// -manual-range-metric-row-limit in the log for the series.
+func (p *Proxy) listedStepOverflowError(overBytes bool) error {
+	if overBytes {
+		return newManualMetricResponseTooLarge(int64(p.limits().BufferedBackendBodyBytes))
+	}
+	rows, _ := p.manualMetricRowBudget()
+	return newRowLimitError(rows, "series in the window of one step", 0)
 }
 
 // listedChunkBucketSteps is the number of steps a chunk may hold so that its read, from the range before its first

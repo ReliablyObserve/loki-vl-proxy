@@ -772,19 +772,7 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "ctx, newManualMetricResponseTooLarge(int64(p.limits().BufferedBackendBodyBytes))",
-      "kind": "layer",
-      "message": null,
-      "status": null,
-      "status_token": null,
-      "where": "internal/proxy/listed_window_chunks.go writeListedWindowChunks",
-      "writer": "writeErr"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": null,
-      "expression": "ctx, newRowLimitError(rows, \"series in the window of one step\", 0)",
+      "expression": "ctx, p.listedStepOverflowError(meter.overBytes)",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -2850,11 +2838,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 186,
+        "count": 185,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 182,
+        "layer_sites": 181,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2862,6 +2850,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 229
+    "call_sites": 228
   }
 }
