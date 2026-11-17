@@ -7,21 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.324.0] - 2026-11-17
-
-### Changed
-
-- The default `-max-stats-query-series`, the proxy's `max_query_series`, rises from 500 to 1000. The proxy answers
-  faster than Loki, so it can afford more series per query than Loki's own default of 500, which stays Loki's. A metric
-  query with 501 to 1000 series, which answered Loki's HTTP 400 `maximum number of series (N) reached for a single
-  query`, now answers, and Logs Drilldown's partial result (the busiest N series and Loki's warning) holds up to 1000
-  series. `/loki/api/v1/drilldown-limits` and `/config/tenant/v1/limits` publish 1000 where no flag or tenant limit sets
-  it, and the chart's commented `max-stats-query-series` example and the generated configuration and limits pages say
-  1000. Operators who want Loki's 500 set `-max-stats-query-series=500`, or `max_query_series` in
-  `-tenant-limits` or `-tenant-default-limits`. Sizing: `-backend-max-buffered-response-bytes` (64 MiB by default)
-  holds about 1,500 dense series over 1,000 steps, so a full 1000-series result over 1,000 steps (about 40 MB) fits,
-  and over about 1,600 steps the byte budget has to be raised with the cap.
-
 ### Fixed
 
 - After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
@@ -39,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
   Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
   the body). A request that fits one chunk reads exactly as before.
+
+## [2.324.0] - 2026-11-17
+
+### Changed
+
+- The default `-max-stats-query-series`, the proxy's `max_query_series`, rises from 500 to 1000. The proxy answers
+  faster than Loki, so it can afford more series per query than Loki's own default of 500, which stays Loki's. A metric
+  query with 501 to 1000 series, which answered Loki's HTTP 400 `maximum number of series (N) reached for a single
+  query`, now answers, and Logs Drilldown's partial result (the busiest N series and Loki's warning) holds up to 1000
+  series. `/loki/api/v1/drilldown-limits` and `/config/tenant/v1/limits` publish 1000 where no flag or tenant limit sets
+  it, and the chart's commented `max-stats-query-series` example and the generated configuration and limits pages say
+  1000. Operators who want Loki's 500 set `-max-stats-query-series=500`, or `max_query_series` in
+  `-tenant-limits` or `-tenant-default-limits`. Sizing: `-backend-max-buffered-response-bytes` (64 MiB by default)
+  holds about 1,500 dense series over 1,000 steps, so a full 1000-series result over 1,000 steps (about 40 MB) fits,
+  and over about 1,600 steps the byte budget has to be raised with the cap.
 
 ## [2.323.0] - 2026-11-17
 
