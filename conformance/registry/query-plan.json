@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2613,
-      "keys": 2558,
+      "rows": 2614,
+      "keys": 2559,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -318,7 +318,7 @@
       "the plan does not route it: VectorAgg route operand": 8,
       "the plan does not route it: VectorAgg route pipeline": 199,
       "the plan does not route it: VectorAgg route rewrite": 1,
-      "the plan does not route it: VectorAgg route unwrap pipeline": 104,
+      "the plan does not route it: VectorAgg route unwrap pipeline": 105,
       "the plan does not route it: VectorAgg route unwrap quantile": 8,
       "the plan does not route it: VectorAgg route unwrap rate": 20,
       "the plan does not route it: VectorAgg route unwrap rate_counter": 3,
@@ -467,8 +467,8 @@
     }
   },
   "route_parity": {
-    "rows": 2572,
-    "runs": 25720,
+    "rows": 2573,
+    "runs": 25730,
     "profiles": [
       "instant",
       "step=range",
@@ -543,7 +543,7 @@
       "VectorAgg route operand": 80,
       "VectorAgg route pipeline": 2010,
       "VectorAgg route rewrite": 10,
-      "VectorAgg route unwrap pipeline": 1040,
+      "VectorAgg route unwrap pipeline": 1050,
       "VectorAgg route unwrap quantile": 80,
       "VectorAgg route unwrap rate": 200,
       "VectorAgg route unwrap rate_counter": 30,
@@ -553,7 +553,7 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 25091,
+      "200": 25101,
       "400": 596,
       "500": 33
     },
@@ -564,7 +564,7 @@
       "24h chunk/RangeAgg": "c34403be94389b40",
       "24h chunk/Rank": "5d5c6fdee6b08cd7",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "f89b077291fb4275",
+      "24h chunk/VectorAgg": "02ff798b77f35bd6",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "c41ecce22814dd46",
       "instant/LabelReplace": "1eda7f007cfc3480",
@@ -572,7 +572,7 @@
       "instant/RangeAgg": "5c4ee78a21df03d3",
       "instant/Rank": "0c8885e689a4acce",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "ff78eb82ccdaaf99",
+      "instant/VectorAgg": "fc00ddeb77e712df",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "0eac893ff08877c5",
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
@@ -580,7 +580,7 @@
       "step\u003crange/RangeAgg": "c35b83d89fb796b5",
       "step\u003crange/Rank": "d008b658c941bc31",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "c5bb0f37e9da03c2",
+      "step\u003crange/VectorAgg": "1f1d65b3339c690c",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "fd30b3bd34bf78b8",
       "step=range/LabelReplace": "f814664e0f744be4",
@@ -588,7 +588,7 @@
       "step=range/RangeAgg": "69e9d33c90709518",
       "step=range/Rank": "67c430aa6cf09e59",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "f1591e3b8f78871d",
+      "step=range/VectorAgg": "b0b86012f1d243cc",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "23b2baa3590c0c47",
       "step\u003erange/LabelReplace": "266dba9d6112ebe9",
@@ -596,7 +596,7 @@
       "step\u003erange/RangeAgg": "e7562e724849265d",
       "step\u003erange/Rank": "08fa4e81d264875d",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "76c11b616093e9af",
+      "step\u003erange/VectorAgg": "3cee408ceea46168",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     }
   },
