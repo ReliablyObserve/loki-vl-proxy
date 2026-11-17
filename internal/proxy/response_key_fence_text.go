@@ -430,6 +430,7 @@ type wordFences struct {
 	reservedLabel    bool // _time, _stream, _stream_id in any case or _msg, followed by a comparison
 	keywordFire      bool // a label spelled Ip, IP or Label_replace, no parenthesis after it
 	keywordCandidate bool // a keyword word where no keyword stands: the parser decides
+	stddev           bool // the word stddev or stdvar in any case (rankOverBinaryResponseKeyVersion)
 }
 
 // scanFenceWords reads the words of query once, outside quoted text, for the reserved field case and label fences
@@ -449,6 +450,9 @@ func scanFenceWords(query string) (w wordFences) {
 			j, ascii := queryWordEnd(query, i)
 			if !w.keywordFire {
 				w.readKeywordWord(query, i, j, ascii)
+			}
+			if !w.stddev && ascii && j-i == 6 && (strings.EqualFold(query[i:j], "stddev") || strings.EqualFold(query[i:j], "stdvar")) {
+				w.stddev = true
 			}
 			if (!w.reservedCase || !w.reservedLabel) && strings.IndexByte(query[i:j], '_') >= 0 && comparisonFollows(query, j) {
 				w.readReservedName(afterNumberUnit(query, i, j))
