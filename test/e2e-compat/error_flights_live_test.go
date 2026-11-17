@@ -406,9 +406,12 @@ func TestErrorFlightsLive_ZOutageHeldAndRecovers(t *testing.T) {
 	for _, a := range burst {
 		burstHeader += a.calls()
 	}
-	t.Logf("outage burst of 50: %d VictoriaLogs calls by the requests (header), %d on /metrics (background included), status %d", burstHeader, burstCalls, burst[0].code)
+	// The header counts every attempt handed to the transport, a retry
+	// included; /metrics counts each call once however often it was retried,
+	// background calls included.
+	t.Logf("outage burst of 50: %d VictoriaLogs attempts by the requests (header, retries included), %d calls on /metrics (retries not counted, background included), status %d", burstHeader, burstCalls, burst[0].code)
 	if burstHeader > 4 {
-		t.Fatalf("50 identical requests during the outage sent %d VictoriaLogs calls, want one request's", burstHeader)
+		t.Fatalf("50 identical requests during the outage made %d VictoriaLogs attempts, want one request's", burstHeader)
 	}
 
 	// Refresh storm: end=now moves on every request.
@@ -440,12 +443,12 @@ func TestErrorFlightsLive_ZOutageHeldAndRecovers(t *testing.T) {
 	}
 	wg.Wait()
 	storm := efBackendCalls(t) - before
-	t.Logf("3 s refresh storm, 20 clients, end=now: %d requests, %d VictoriaLogs calls by the requests (header), %d on /metrics (background included), statuses %v", requests, byHeader, storm, statuses)
-	// One request's calls (its retries included, as the burst's leader made
+	t.Logf("3 s refresh storm, 20 clients, end=now: %d requests, %d VictoriaLogs attempts by the requests (header, retries included), %d calls on /metrics (retries not counted, background included), statuses %v", requests, byHeader, storm, statuses)
+	// One request's attempts (its retries included, as the burst's leader made
 	// them) per transient TTL: three seconds, plus an expiry on each edge.
 	perRequest := max(burstHeader, 1)
 	if byHeader > 5*perRequest {
-		t.Fatalf("a 3 s refresh storm of 20 clients sent %d VictoriaLogs calls, want about %d per second", byHeader, perRequest)
+		t.Fatalf("a 3 s refresh storm of 20 clients made %d VictoriaLogs attempts, want about %d per second", byHeader, perRequest)
 	}
 
 	efDocker(t, "start")
