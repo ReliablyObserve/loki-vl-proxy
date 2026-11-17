@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -489,5 +490,58 @@ func TestBackendBodyTooLargeError_Message(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "123 bytes") || !strings.Contains(err.Error(), "-backend-max-buffered-response-bytes") {
 		t.Fatalf("message %q must name the limit and the flag", err)
+	}
+}
+
+// The unwrap check's strip reads a VictoriaLogs answer of known length (a folded read's shared answer, a body sent
+// with its length) in one allocation of that length, and one of unknown length (a chunked answer) from a small
+// buffer that grows, not a 128 KiB one per read; either answers the size error past
+// -backend-max-buffered-response-bytes.
+// conformance: operator-configurable-limits, semantics/unwrap-conversion-error
+func TestUnwrapStripResponseReadsEitherLength(t *testing.T) {
+	old := decodedBackendBodyFloor
+	decodedBackendBodyFloor = 1 << 10
+	t.Cleanup(func() { decodedBackendBodyFloor = old })
+	p := newBoundsProxy(t, Config{BackendURL: "http://127.0.0.1:1"})
+	upper := func(b []byte) ([]byte, error) { return bytes.ToUpper(b), nil }
+	small := []byte(`{"status":"success"}`)
+	for _, tc := range []struct {
+		name   string
+		body   []byte
+		length int64
+	}{
+		{"known length", small, int64(len(small))},
+		{"unknown length", small, -1},
+		{"known length past the limit", bytes.Repeat([]byte("x"), boundsTestCap+1), boundsTestCap + 1},
+		{"unknown length past the limit", bytes.Repeat([]byte("x"), boundsTestCap+1), -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(tc.body)), ContentLength: tc.length}
+			err := p.unwrapStripResponse(resp, upper)
+			if len(tc.body) > boundsTestCap {
+				requireTooLargeError(t, err)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _ := io.ReadAll(resp.Body)
+			if !bytes.Equal(got, bytes.ToUpper(tc.body)) || resp.ContentLength != int64(len(got)) || resp.Header.Get("Content-Length") != strconv.Itoa(len(got)) {
+				t.Fatalf("stripped %q (length %d, header %q), want %q", got, resp.ContentLength, resp.Header.Get("Content-Length"), bytes.ToUpper(tc.body))
+			}
+		})
+	}
+	// A small answer of unknown length reads with a buffer near its size.
+	allocated := testing.Benchmark(func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(small)), ContentLength: -1}
+			if err := p.unwrapStripResponse(resp, upper); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}).AllocedBytesPerOp()
+	if !raceDetectorEnabled && allocated > 16<<10 {
+		t.Fatalf("a %d byte answer of unknown length allocated %d bytes per strip", len(small), allocated)
 	}
 }

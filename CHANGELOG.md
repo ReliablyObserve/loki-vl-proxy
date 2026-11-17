@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lookup early) was one process-wide map shared by every Proxy instance; it is now each Proxy's own (locked,
   at most 1024 keys, expiring after 10 minutes, no goroutine to stop). A server runs one Proxy, so no answer changes;
   a second instance in the same process (tests) no longer inherits another's recent errors and their extra reads.
+- A metric checked for unwrap conversion errors or for JSON parser errors no longer allocates a 128 KiB buffer for
+  each VictoriaLogs answer that arrives without a length (a chunked answer), which 2.333.0 started doing: such an
+  answer is read from a small buffer that grows, as before, and an answer with its length (a folded read of a
+  parser's series identity) still in one allocation of that length. `max by (pod) (max_over_time({...} | json |
+  unwrap n [5m]))` over an hour at a 1m step allocated 258 KiB per request on 2.333.0 and 142 KiB with this fix, as
+  before 2.333.0.
 
 ## [2.333.0] - 2026-11-17
 
