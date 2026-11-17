@@ -6,8 +6,8 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   dynamic_sites: 0
   literal_messages:
     - "group does not exist"
-  loki_messages: ["msg-not-found"]
-  recorded_rows: 21
+  loki_messages: ["msg-delete-request-not-found", "msg-not-found"]
+  recorded_rows: 25
   comparable_rows: 21
   matching_rows: 21
 
