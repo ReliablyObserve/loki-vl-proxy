@@ -121,6 +121,9 @@ func extractionListQueryTexts() []string {
 		`max_over_time({app="ub"} | logfmt amount | unwrap amount [5m])`,
 		`sum by (ns) (max_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`,
 		`max_over_time({app="ub"} | logfmt amount | __error__="" | unwrap amount [5m])`,
+		// The maximum of maxima and the minimum of minima over a value the unwrap cannot convert (lower.foldsRows).
+		`max(max_over_time({app="ub"} | logfmt | unwrap amount [5m]))`,
+		`min by (ns) (min_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`,
 	)
 	return out
 }
@@ -232,7 +235,9 @@ var extractionListKnown = func() map[string]map[string]string {
 //     that stream as one series, after `| logfmt amount, route` the metadata is the listed label and is read;
 //   - semantics/extraction-list-empty-label: Loki labels a line without an extracted key with the key empty;
 //   - semantics/unwrap-rate-counter-window-extrapolation: rate_counter's sixth digit;
-//   - semantics/unwrap-extraction-list-conversion-error: a value the unwrap cannot convert after an extraction list.
+//   - semantics/unwrap-extraction-list-conversion-error: a value the unwrap cannot convert after an extraction list;
+//   - semantics/unwrap-conversion-error-names-another-line: the error over such a value after a parser of every key
+//     names another failing line than Loki's.
 var extractionListKnownRuns = []struct {
 	id, q string
 	kinds []string
@@ -326,6 +331,8 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-extraction-list-conversion-error", `max_over_time({app="ub"} | logfmt amount | unwrap amount [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-conversion-error", `sum by (ns) (max_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-conversion-error", `max_over_time({app="ub"} | logfmt amount | __error__="" | unwrap amount [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
+	{"semantics/unwrap-extraction-list-conversion-error", `min by (ns) (min_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
+	{"semantics/unwrap-conversion-error-names-another-line", `max(max_over_time({app="ub"} | logfmt | unwrap amount [5m]))`, []string{"instant", "step=range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/stdvar-grouped-pooled-variance", `sum by (ns) (stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/stdvar-grouped-pooled-variance", `count by (ns) (stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
@@ -348,7 +355,7 @@ var extractionListKnownRuns = []struct {
 // TestExtractionListIdentityMatchLoki replays the recorded answers through the handlers and holds every run to Loki's
 // answer, or to its listed difference.
 //
-// conformance: semantics/unwrap-extraction-list-series-identity, semantics/unwrap-bare-range-exposes-parsed-labels
+// conformance: semantics/unwrap-extraction-list-series-identity, semantics/unwrap-bare-range-exposes-parsed-labels, semantics/unwrap-conversion-error-names-another-line
 func TestExtractionListIdentityMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")

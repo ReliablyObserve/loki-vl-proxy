@@ -48,7 +48,7 @@ perf:
 
 decisions:
   - id: max-of-max-reads-group-rows
-    chosen: 'max over max_over_time and min over min_over_time (by labels or none) after a json or logfmt parser are one stats pipe by the clause over the group''s rows: no series identity (no second unpack and hash after a parser of every key, no per-series stats after an extraction list), the logfmt unpack reading the unwrapped key and the clause''s listed labels only'
+    chosen: 'max over max_over_time and min over min_over_time (by labels or none) after a json or logfmt parser are one stats pipe by the clause over the group''s rows: no series identity (no second unpack and hash after a parser of every key, no per-series stats after an extraction list, whose logfmt unpack reads the unwrapped key and the clause labels the list names only)'
     over:
       - 'the series identity of the other functions (a value per series, then the aggregation): exact, and up to 5x the VictoriaLogs time after a parser of every key'
       - 'leaving these shapes to the stream identity of the string translator (exact for this pair, a stats pipe per stream and line)'
@@ -64,7 +64,7 @@ decisions:
       exact grouping was found: _stream_id for _stream measures the same, and
       reading ns back from each series' stream instead of grouping by it 3-4%
       less, through a text extract of the stream it was not worth.
-    evidence: 'TestExtractionListIdentityMatchLoki, TestUnwrapDynamicIdentityMatchLoki, TestUnwrapDynamicValueFormsMatchLoki and TestJSONLineFieldsMatchLoki (internal/querycorpus, Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0, 2026-11-17): the same runs match Loki as on base (extraction lists 106 instant / 99 step=range / 72 step<range / 99 step>range of 167), 18 new extraction-list and 8 new parser rows match on every request kind but the empty-label one; TestExtractionListIdentityVictoriaLogsCost (600,000 rows, 21 interleaved runs, p50): extraction list 197 -> 126 ms (-36%), parser of every key 718 -> 140 ms (-81%), every other shape within 0.6%'
+    evidence: 'TestExtractionListIdentityMatchLoki, TestUnwrapDynamicIdentityMatchLoki, TestUnwrapDynamicValueFormsMatchLoki and TestJSONLineFieldsMatchLoki (internal/querycorpus, Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0, 2026-11-17): the same runs match Loki as on base and two more (extraction lists 106 instant / 99 step=range / 73 step<range / 100 step>range of 169, base 106 / 99 / 72 / 99: the error over an unconvertible value names Loki''s line at step<range and step>range), and the new max and min rows over convertible values (17 extraction-list, 8 parser) match on every request kind but the empty-label one; TestExtractionListIdentityVictoriaLogsCost (600,000 rows, 21 interleaved runs, p50): extraction list 197 -> 126 ms (-36%), parser of every key 718 -> 140 ms (-81%), every other shape within 0.6%'
     code: [internal/queryplan/lower/unwrap_dynamic.go, internal/queryplan/lower/unwrap.go]
     tests: [TestFoldsRowsLowering, FuzzDynamicUnwrapIdentity, TestExtractionListOutsideWithoutKeepsItsGrouping, TestExtractionListIdentityMatchLoki, TestUnwrapDynamicIdentityMatchLoki, TestUnwrapDynamicValueFormsMatchLoki]
     quality: 'Every answer as before and as Loki''s recorded answer; one stats pipe for these shapes.'
