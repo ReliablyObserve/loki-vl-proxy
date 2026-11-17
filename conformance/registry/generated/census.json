@@ -2394,6 +2394,7 @@
     "internal/queryplan/lower/binop_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_vector_loki_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_vector_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/binop_vector_test.go | semantics/vector-call-blank-before-parenthesis-as-query",
     "internal/queryplan/lower/binop_without_empty_test.go | semantics/binary-operand-without-empty-collapses",
     "internal/queryplan/lower/detected_level_ast_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/detected_level_test.go | architecture-syntax-package-layering",
@@ -3069,8 +3070,8 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 95,
-    "wired_items": 416
+    "unwired_items": 94,
+    "wired_items": 417
   },
   "gates": [
     "A/B shape selection",
