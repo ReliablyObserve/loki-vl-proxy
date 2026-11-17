@@ -1634,6 +1634,7 @@
       "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/json_parser_error_check_test.go",
       "internal/proxy/json_parser_error_corpus_test.go",
+      "internal/proxy/unwrap_conversion_error_test.go",
       "internal/querycorpus/parser_error_wrappers_loki_diff_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go"
     ],
@@ -4552,6 +4553,7 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
+      "semantics/json-parser-error-under-wrappers",
       "semantics/unwrap-conversion-error",
       "semantics/unwrap-conversion-error-postfilter-forms",
       "semantics/unwrap-gate-parsefloat-divergences",

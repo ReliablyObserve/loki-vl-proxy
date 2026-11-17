@@ -13,7 +13,9 @@ why: |
   does not see the rows the unwrap operand reads when the other operand of the set operation reads a clean
   stream (an `and` whose right operand is empty is not evaluated on its left, and an offset unwrap operand
   is not checked). Recorded with Loki's engine, Loki 3.7.9, and VictoriaLogs v1.49.0 and v1.53.0
-  (TestParserErrorsUnderWrappersMatchLoki lists the runs as this case).
+  (TestParserErrorsUnderWrappersMatchLoki lists the runs as this case). The `or` form without an offset
+  matches Loki on query_range since the conversion check decides again on hits that come later (#1595);
+  its instant run, the offset `or` form and the `and` form stay open.
 
   Fix to make: check the unwrap operands of a set operation like the JSON parser check does (every operand
   of the parsed tree, offsets included), and evaluate an operand Loki evaluates even when the result is

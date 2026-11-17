@@ -138,9 +138,9 @@ var parserErrorKnown = func() map[string]map[string]string {
 	all := []string{"instant", "step=range", "step<range", "step>range"}
 	for q, kinds := range map[string][]string{
 		// An unwrap conversion error in an operand of `and`/`or` whose other operand reads a clean stream: the
-		// conversion check does not see the rows the operand reads.
+		// conversion check does not see the rows an offset operand reads, nor the left operand of an `and` whose
+		// right operand is empty (the `or` form without an offset matches Loki since main's #1595 check).
 		`count_over_time({job="ok"}[1m]) or sum_over_time({job="sp", enc="logfmt"} | logfmt | unwrap n [1m] offset 40m)`:  all,
-		`count_over_time({job="ok"}[1m]) or sum_over_time({job="sp", enc="logfmt"} | logfmt | unwrap n [1m])`:             all[1:],
 		`sum_over_time({job="sp", enc="logfmt"} | logfmt | unwrap n [1m] offset 40m) and count_over_time({job="ok"}[1m])`: all,
 	} {
 		known[q] = map[string]string{}

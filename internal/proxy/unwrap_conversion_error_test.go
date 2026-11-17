@@ -921,3 +921,36 @@ func TestUnwrapNaNOnlyChecksShareTheBackendCall(t *testing.T) {
 		})
 	}
 }
+
+// A binary operation's operands are evaluated on the step-aligned axis (alignBinaryRangeRequest), so the conversion
+// check of a binary range query reads its windows from the aligned start and end, as the JSON parser error check
+// does; an unaligned start would put the evaluated windows off the operands' axis and miss their hits (step >
+// range with an offset: TestParserErrorsUnderWrappersMatchLoki). A single aggregation keeps the request's bounds.
+//
+// conformance: semantics/json-parser-error-under-wrappers, semantics/unwrap-conversion-error
+func TestUnwrapConversionCheckAlignsBinaryOperands(t *testing.T) {
+	p := newTestProxy(t, "http://127.0.0.1:1")
+	start, end := time.Unix(1700000017, 0), time.Unix(1700003617, 0)
+	for q, aligned := range map[string]bool{
+		`sum by (app) (sum_over_time({a="b"} | logfmt | unwrap n [1m] offset 40m)) / on (app) sum by (app) (sum_over_time({a="b"} | logfmt | unwrap n [1m] offset 40m))`: true,
+		`sum by (app) (sum_over_time({a="b"} | logfmt | unwrap n [1m] offset 40m))`:                                                                                      false,
+	} {
+		v := url.Values{"query": {q}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"300"}}
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+v.Encode(), nil)
+		r, l := p.startUnwrapConversionCheck(httptest.NewRecorder(), r, q, true)
+		c := unwrapCheckFrom(r.Context())
+		if c == nil {
+			t.Fatalf("%s: no check", q)
+		}
+		wantStart, wantEnd := start, end
+		if aligned {
+			wantStart, wantEnd = time.Unix(1700000000-1700000000%300, 0), time.Unix(1700003617-1700003617%300, 0)
+		}
+		if !c.start.Equal(wantStart) || !c.end.Equal(wantEnd) {
+			t.Errorf("%s: check bounds %v..%v, want %v..%v", q, c.start, c.end, wantStart, wantEnd)
+		}
+		if l != nil && l.check.cancel != nil {
+			l.check.cancel()
+		}
+	}
+}

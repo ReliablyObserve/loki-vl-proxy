@@ -1817,6 +1817,12 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 			check.end = time.Unix(0, ns)
 		}
 		check.step, _ = parsePositiveStepDuration(r.FormValue("step"))
+		if _, binary := expr.(*logqlpkg.BinOpExpr); binary && check.step > 0 {
+			// Binary operands are evaluated on the step-aligned axis (alignBinaryRangeRequest), as the JSON parser
+			// error check reads them (startJSONParserErrorCheck).
+			check.start = check.start.Add(-time.Duration(check.start.UnixNano() % int64(check.step)))
+			check.end = check.end.Add(-time.Duration(check.end.UnixNano() % int64(check.step)))
+		}
 	} else {
 		at := time.Now()
 		if ns, ok := parseLokiTimeToUnixNano(r.FormValue("time")); ok {
