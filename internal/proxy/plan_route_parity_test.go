@@ -818,6 +818,37 @@ func TestAnyRiskDeterministicProbes(t *testing.T) {
 	})
 }
 
+// Marked with deterministicProbes, logfmtParseRisk returns a risky verdict only once its candidate probe, which
+// runs beside the full probe, has reached VictoriaLogs and answered.
+//
+// conformance: architecture-syntax-package-layering
+func TestLogfmtParseRiskDeterministicProbes(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	base, fields := `app:="api"`, []string{"level"}
+	full, candidate := logfmtParseRiskQueries(base, fields, nil)
+	var candidateAnswered atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		switch r.Form.Get("query") {
+		case full:
+			_, _ = w.Write([]byte(`{"_msg":"level=info level=warn"}` + "\n")) // risky at once
+		case candidate:
+			time.Sleep(20 * time.Millisecond)
+			candidateAnswered.Store(true)
+		}
+	}))
+	defer srv.Close()
+	p := newSlidingTestProxy(t, srv.URL)
+	ctx := context.WithValue(context.Background(), deterministicProbesKey{}, true)
+	risky, held, err := p.logfmtParseRisk(ctx, base, fields, nil, s0, s0.Add(time.Minute), "")
+	if !risky || err != nil || held != logfmtCandidatesSeen {
+		t.Fatalf("risky %v, held %q, err %v: want the full probe's risky verdict", risky, held, err)
+	}
+	if !candidateAnswered.Load() {
+		t.Fatal("returned before the candidate probe answered")
+	}
+}
+
 func joinFirstRoute(lines []string, n int) string {
 	if len(lines) > n {
 		return strings.Join(lines[:n], "\n") + fmt.Sprintf("\n… and %d more", len(lines)-n)
