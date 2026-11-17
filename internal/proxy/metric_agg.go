@@ -547,8 +547,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	innerStats, innerIsStats := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
-	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
-	if innerIsBinary {
+	if holdsBinaryOperand(parsedInner) {
 		// The operands of a binary expression fold and are limited on their own.
 		withoutLabels = nil
 	}
@@ -594,6 +593,9 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		}
 		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, left, right, binOpExprToVMInfo(binOp))
 		dispatched = true
+	} else {
+		// A binary operation under aggregations or a label_replace: the operand is a query of its own.
+		dispatched = p.serveWrappedBinaryOperand(sc, r, parsedInner, "vector")
 	}
 
 	if bin, isBin := binaryOfStats(innerStats, innerIsStats); !dispatched && isBin {
@@ -700,11 +702,10 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	innerStats, innerIsStats := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
-	if parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner); parsedInner != nil {
-		if _, binary := parsedInner.(*logqlpkg.BinOpExpr); binary {
-			// The operands of a binary expression fold on their own.
-			withoutLabels = nil
-		}
+	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
+	if holdsBinaryOperand(parsedInner) {
+		// The operands of a binary expression fold on their own.
+		withoutLabels = nil
 	}
 	foldWithout = foldWithout && len(withoutLabels) > 0
 	if foldWithout {
@@ -732,7 +733,12 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
+	if p.serveRangeBinaryOperand(sc, innerR, parsedInner) {
+		// A binary operand (or one under aggregations or a label_replace) is
+		// evaluated operand by operand: the translation of the whole operation
+		// is the marker of its operands' queries, never a query VictoriaLogs
+		// can read.
+	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.
 		if scalarStats, ok := scalarStatsBinaryOf(bin); ok {

@@ -39,6 +39,8 @@ type fenceFacts struct {
 	// perStreamSeries is a construct whose series the proxy reads per stream: a without fold, an unwrap, or topk,
 	// bottomk, sort, sort_desc or label_replace.
 	perStreamSeries bool
+	// rankOverBinary is a ranking, stddev or stdvar whose operand is a binary operation.
+	rankOverBinary bool
 	// levelChain is a read that may carry the detected_level chain: a range aggregation, or a stage that names
 	// detected_level (a label filter on it, keep or drop of it).
 	levelChain bool
@@ -190,6 +192,12 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 		if e.Grouping != nil && e.Grouping.Without {
 			f.perStreamSeries = true
 		}
+		if holdsBinaryOperand(e.Inner) {
+			switch e.Op {
+			case logqlpkg.VectorTopK, logqlpkg.VectorBottomK, logqlpkg.VectorSort, logqlpkg.VectorSortDesc, logqlpkg.VectorStddev, logqlpkg.VectorStdvar:
+				f.rankOverBinary = true
+			}
+		}
 		f.expr(e.Inner)
 	case *logqlpkg.BinOpExpr:
 		if keepsEveryOperandSeries(e.Left) || keepsEveryOperandSeries(e.Right) {
@@ -326,6 +334,7 @@ func fenceWants(query string) map[string]bool {
 		"reserved-field-labels":    f.reservedLabel,
 		"keyword-label-names":      f.keywordSpelling,
 		"stream-level-series":      f.perStreamSeries || f.levelChain,
+		"rank-over-binary":         f.rankOverBinary,
 		"binary-empty-without":     f.emptyWithoutOperand,
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
@@ -414,6 +423,10 @@ var fenceSpellingBases = []string{
 	`sum by (x) (avg_over_time({app="a"} | json | unwrap n [5m]))`,
 	`max(stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`,
 	`min by (x) (min_over_time({app="a"} | json | unwrap n [5m])) / sum(max_over_time({app="a"} | json | unwrap n [5m]))`,
+	`topk(2, sum by (x) (rate({app="a"}[1m])) / sum by (x) (rate({app="b"}[1m])))`,
+	`sort_desc(sum by (x) (count_over_time({app="a"}[1m])) > bool 3)`,
+	`sum(bottomk(1, sum by (x) (rate({app="a"}[1m])) and sum by (x) (rate({app="b"}[1m]))))`,
+	`stddev by (x) (sum by (x, y) (rate({app="a"}[1m])) * 2) + 1`,
 	`sum without () (count_over_time({app="a"} | json [5m])) / 2`,
 	`max without () (rate({app="a"}[5m])) > on(app) group_left sum by (app) (rate({app="a"}[5m]))`,
 }
@@ -652,7 +665,10 @@ func fenceFires(name, query string) bool {
 		"logfmt-presence":          func() string { return logfmtPresenceResponseKeyVersion(r, query) },
 		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
-		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
+		"rank-over-binary": func() string {
+			return rankOverBinaryFence(query)
+		},
+		"binary-empty-without": func() string { return emptyWithoutOperandResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -764,6 +780,23 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"binary-empty-without", `sum by (a) (sum without () (count_over_time({a="b"}[5m]))) / 2`, false},
 		// Longer than the plan memo holds: the plan is built for the fence, uncached.
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} |= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `" | JSON | UNWRAP n [5m]))`, true},
+		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m])) / sum by (x) (rate({a="c"}[1m])))`, true},
+		{"rank-over-binary", `TOPK(2, SUM BY (x) (RATE({a="b"}[1m])) / SUM BY (x) (RATE({a="c"}[1m])))`, true},
+		{"rank-over-binary", "top\u212a(2, sum by (x) (rate({a=\"b\"}[1m])) > bool 1)", true},
+		{"rank-over-binary", "Sort_Desc\t(sum by (x) (rate({a=\"b\"}[1m])) and #c\n sum by (x) (rate({a=\"c\"}[1m])))", true},
+		{"rank-over-binary", `sum(bottomk(1, (sum by (x) (rate({a="b"}[1m])) - 1)))`, true},
+		{"rank-over-binary", `stdvar(sum by (x) (rate({a="b"}[1m])) * 2) / 3`, true},
+		{"rank-over-binary", `STDDEV BY (x) (SUM BY (x, y) (RATE({a="b"}[1m])) / 2)`, true},
+		{"rank-over-binary", "StdVar\t(sum by (x) (rate({a=\"b\"}[1m])) * 2)", true},
+		{"rank-over-binary", `stddev(stddev_over_time({a="b"} | unwrap n [1m]))`, false},
+		{"rank-over-binary", `label_replace(sort(sum by (x) (rate({a="b"}[1m])) unless sum by (x) (rate({a="c"}[1m]))), "y", "$1", "x", "(.*)")`, true},
+		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m]) / rate({a="c"}[1m])))`, true},
+		{"rank-over-binary", `sort(label_replace(sum by (x) (rate({a="b"}[1m])) > 1, "y", "$1", "x", "(.*)"))`, true},
+		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m]))) / sum by (x) (rate({a="c"}[1m]))`, false},
+		{"rank-over-binary", `sort(rate({a="b"}[1m]))`, false},
+		{"rank-over-binary", `sum by (x) (rate({a="b"}[1m])) / sum by (x) (rate({a="c"}[1m]))`, false},
+		{"rank-over-binary", `stddev(rate({a="b"}[1m]))`, false},
+		{"rank-over-binary", `sum(rate({a="b"}[1m]) / 2)`, false},
 	} {
 		if got := fenceFires(tc.fence, tc.query); got != tc.want {
 			t.Errorf("%s: %+q fires %v, want %v", tc.fence, tc.query, got, tc.want)
