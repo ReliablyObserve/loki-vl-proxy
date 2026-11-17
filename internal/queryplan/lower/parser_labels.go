@@ -31,12 +31,11 @@ import (
 // a resolved label that a label filter checks for existence has that filter moved behind the key pipes: where the
 // first such text is not in the printed pipes (the client's quoted text, or the stream-label restore), the
 // translator edits text the lowering does not hold, and the query is left to it. A label filter or a drop after the
-// parser, under a label the lowering resolves, costs more allocations to write than the translator spends on the
-// same text (the stage's own lowering does, before this step too), so the query stays with the translator.
+// parser, under a label the lowering resolves, is written like any other stage: the lowering costs no more
+// allocations than the translator on those shapes (TestParserLabelsLoweringAllocatesNoMoreThanTheTranslator).
 const (
 	extractedConstruct = " parser extracted label"
 	existsConstruct    = " parser label filter"
-	costConstruct      = " parser label cost"
 )
 
 // keyed is the pipes keyPipes writes: the text, each pipe after a blank, and whether one of them is a copy pipe.
@@ -58,15 +57,10 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 		return keyed{}, nil
 	}
 	// A count of one label behind its existence check keeps the exact key the field breakdown of Grafana Drilldown
-	// relies on. A rate sums that count by the same label next, which then resolves it in the middle of the query;
-	// the existence check is a label filter after the parser, which costs more to write than the translator spends
-	// (costConstruct) for a label that may be a sanitized key.
+	// relies on. A rate sums that count by the same label next, which then resolves it in the middle of the query.
 	if _, count := fn.(logsql.Count); count && len(by) == 1 && m.breakdownShape(by[0]) {
-		switch {
-		case again:
+		if again {
 			return keyed{}, &NotLoweredError{Construct: owner + existsConstruct}
-		case translate.ParsedLabelCandidate(by[0]):
-			return keyed{}, &NotLoweredError{Construct: owner + costConstruct}
 		}
 		return keyed{}, nil
 	}
@@ -96,9 +90,6 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 		if copies, err = m.extractedPipes(&b, bases, extracted, owner); err != nil {
 			return keyed{}, err
 		}
-	}
-	if len(labels) > 0 && m.afterParser {
-		return keyed{}, &NotLoweredError{Construct: owner + costConstruct}
 	}
 	// An existence check on a resolved label, anywhere in the printed query (a label filter after the parser is
 	// delegated above; quoted text can spell one), is moved by the translator behind the key pipes.
@@ -282,22 +273,6 @@ func trailingKeepLabels(sel *queryplan.LogSelect, unwrapped bool) (kept []string
 	return kept, true
 }
 
-// filteredAfterParser reports whether a label filter or a drop stage stands after a parser stage of the log query.
-func filteredAfterParser(sel *queryplan.LogSelect) bool {
-	parsed := false
-	for _, st := range sel.Stages {
-		switch st.(type) {
-		case *queryplan.Parse:
-			parsed = true
-		case *queryplan.LabelFilter, *queryplan.Drop:
-			if parsed {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // bareIdentifier reports whether s is a label name made of letters, digits and underscores, as the translator reads
 // the names of a keep.
 func bareIdentifier(s string) bool {
@@ -456,9 +431,6 @@ func parserLabels(st *queryplan.Parse) (names []string, known bool) {
 // that leaves no label (an explicit `by ()`). It returns nil for the default identity (seriesIdentity).
 func seriesIdent(sel *queryplan.LogSelect, parser, fold, unwrapped bool, owner string, prof Profile) ([]string, error) {
 	if kept, ok := trailingKeepLabels(sel, unwrapped); ok {
-		if filteredAfterParser(sel) {
-			return nil, &NotLoweredError{Construct: owner + costConstruct}
-		}
 		by := translate.NormalizeByLabels(kept, prof.Label)
 		if len(kept) == 0 && unwrapStage(sel) != nil {
 			// A keep of the unwrapped label alone: one series, the samples of every line.

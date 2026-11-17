@@ -723,11 +723,6 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	if without && (textHas(log, "  ") || selectionHas(ra.In, "  ")) {
 		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
-	// A fold over a parser, with a label filter or a drop after it, costs more allocations to write than the
-	// translator spends on the same text (the stage's own lowering does).
-	if without && log.parser && log.afterParser {
-		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg" + costConstruct}
-	}
 	// The pipes start in room a query rarely outgrows.
 	var pipeBuf [4]string
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
