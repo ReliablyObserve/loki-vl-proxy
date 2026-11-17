@@ -1,6 +1,8 @@
 package lower
 
 import (
+	"slices"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
@@ -160,6 +162,14 @@ func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan
 	if !ok {
 		return
 	}
+	if foldsRows(va.Op, ra.Op) {
+		// No identity: the aggregation reads the rows of its groups (foldsRows).
+		q.rows, q.rowsListed = true, parser.Fields != nil
+		if q.rowsListed {
+			q.rowsUnpack = listedClause(parser, label, clause)
+		}
+		return
+	}
 	if parser.Fields != nil {
 		// The stored fields, then the listed labels; a list of the unwrapped label alone shares listedStored (its
 		// capacity is its length: an append copies it).
@@ -240,4 +250,30 @@ func plainExtraction(st *queryplan.Parse) bool {
 		}
 	}
 	return true
+}
+
+// foldsRows reports a vector aggregation over a range function whose value over the series of a group is the
+// function over the group's rows: the maximum of the series' maxima is the maximum of all their samples, and the
+// minimum of their minima the minimum. Such a query needs no series identity: one stats pipe by the clause is exact,
+// whatever the series are.
+func foldsRows(vop logql.VectorOp, fn logql.RangeOp) bool {
+	return vop == logql.VectorMax && fn == logql.RangeMaxOverTime || vop == logql.VectorMin && fn == logql.RangeMinOverTime
+}
+
+// listedClause are the labels of the clause that the extraction list of parser names, less the unwrapped one: the
+// clause labels the query's unpack must read from the line (the others are the stream's). nil when there are none.
+func listedClause(parser *queryplan.Parse, unwrapped string, clause []string) []string {
+	var out []string
+	for _, l := range clause {
+		if l == unwrapped || slices.Contains(out, l) {
+			continue
+		}
+		for _, f := range parser.Fields {
+			if f.Name == l {
+				out = append(out, l)
+				break
+			}
+		}
+	}
+	return out
 }

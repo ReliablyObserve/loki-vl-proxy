@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
   read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
 
+### Performance
+
+- `max` over `max_over_time` and `min` over `min_over_time` (by labels or none) of a label unwrapped after a json or
+  logfmt parser (of every key, or an extraction list such as `| logfmt amount, route`) send VictoriaLogs one stats
+  pipe over the rows of each group. The maximum of the series' maxima is the maximum of the group's rows, so no series
+  identity is written: no second unpack and hash after a parser of every key, no per-series stats after an extraction
+  list, and the logfmt unpack reads the unwrapped key and the clause's listed labels only. Answers are unchanged (held
+  to recorded Loki answers on instant, step = range, step < range and step > range, VictoriaLogs v1.49.0 and
+  v1.53.0). VictoriaLogs time per query, measured with its own handlers on 600,000 logfmt rows (p50, both versions):
+  36-37% lower for an extraction list (`max(max_over_time(... | logfmt amount, route ...))` 197 to 126 ms), 5-8% lower
+  for a list of the unwrapped key alone, and 80% lower after a parser of every key (`max by (ns)
+  (max_over_time(... | logfmt | unwrap amount [5m]))` 718 to 140 ms); 44-71% lower than before the extraction list's
+  series identity. A range longer than the step was already answered from the group's rows and is unchanged.
+
 ## [2.317.0] - 2026-11-16
 
 ### Performance

@@ -76,10 +76,25 @@ func extractionListQueryTexts() []string {
 			out = append(out, inner, "sum("+inner+")", "count by (ns) ("+inner+")")
 		}
 	}
+	// The maximum of the series' maxima and the minimum of their minima, which read the rows of each group
+	// (lower.foldsRows): ungrouped, by a stream label and, below, by a listed label.
+	for _, p := range []string{
+		`{app="uw"} | logfmt amount | unwrap amount [5m]`,
+		`{app="uw"} | logfmt amount, route | unwrap amount [5m]`,
+		`{app="uj"} | json amount | unwrap amount [5m]`,
+		`{app="uj"} | json amount, route | unwrap amount [5m]`,
+	} {
+		for _, fn := range []string{"max", "min"} {
+			inner := fn + "_over_time(" + p + ")"
+			out = append(out, fn+"("+inner+")", fn+" by (ns) ("+inner+")")
+		}
+	}
 	inner := `max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m])`
 	out = append(out,
 		`avg by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
 		`max by (route) (`+inner+`)`,
+		`min by (ns, route) (min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
+		`max by (route) (max_over_time({app="um"} | logfmt amount, route | unwrap amount [5m]))`,
 		`min without (route) (`+inner+`)`,
 		`topk(2, `+inner+`)`,
 		`sort_desc(`+inner+`)`,
@@ -303,6 +318,7 @@ var extractionListKnownRuns = []struct {
 	{"semantics/extraction-list-empty-label", `max_over_time({app="uj"} | json amount, route | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
 	{"semantics/extraction-list-empty-label", `max_over_time({app="uj"} | json a="amount", route | unwrap a [5m])`, []string{"step=range", "step<range", "step>range"}},
 	{"semantics/extraction-list-empty-label", `max_over_time({app="uw"} | logfmt amount, route | __error__="" | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
+	{"semantics/extraction-list-empty-label", `min by (ns, route) (min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/extraction-list-empty-label", `rate({app="uw"} | logfmt route [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/extraction-list-empty-label", `bytes_over_time({app="uw"} | logfmt route [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-rate-counter-window-extrapolation", `rate_counter({app="uw"} | logfmt amount | unwrap amount [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},

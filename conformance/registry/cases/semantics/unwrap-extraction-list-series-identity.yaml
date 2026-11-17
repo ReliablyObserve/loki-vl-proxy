@@ -69,6 +69,13 @@ why: |
   logfmt route [5m]))`); a range longer than the step keeps the stream's series
   (semantics/unwrap-per-series-identity-raw-rows).
 
+  max over max_over_time and min over min_over_time need no identity: the
+  extreme of the series' extremes is the group's extreme, so the lowering writes
+  one stats pipe by the clause (decision max-of-max-reads-group-rows of
+  metric-series-identity); 17 of the 18 such rows the differential runs match
+  Loki on every request kind, and `min by (ns, route)` is
+  semantics/extraction-list-empty-label.
+
   The emulator figures above (the real handler over an emulated VictoriaLogs)
   are held to Loki's engine answers recorded over the same lines
   (TestExtractionListSeriesIdentityStillDiffers). Related:
