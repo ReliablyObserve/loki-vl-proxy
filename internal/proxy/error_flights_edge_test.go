@@ -515,3 +515,57 @@ func TestErrorFlightsEdge_PerRequestHeadersCanonical(t *testing.T) {
 		t.Fatalf("shared header %v", out)
 	}
 }
+
+// Probing is per query: while one query probes after its window-free failure,
+// identical successes of another query (GET and POST) still share one call
+// and wait on no probe; once a probe of the failed query succeeds, that query
+// stops probing.
+//
+// conformance: semantics/error-coalescing-request-flights
+func TestErrorFlightsEdge_ProbeIsPerQuery(t *testing.T) {
+	var failA atomic.Bool
+	failA.Store(true)
+	stub := newFlightStub(t, func(n int64, w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if failA.Load() && strings.Contains(r.Form.Get("query"), `"api"`) {
+			answer500(n, w, r)
+			return
+		}
+		answerLogs(n, w, r)
+	})
+	p, h := newFlightProxy(t, stub.srv.URL, nil)
+	a := func(end int) string {
+		return "/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D&start=1700000000&end=" + strconv.Itoa(end) + "&limit=100"
+	}
+	flightGet(h, context.Background(), a(1700003600), "team-a")
+	restore := cache.AdvanceClockForTesting(1100 * time.Millisecond)
+	defer restore()
+	stub.calls.Store(0)
+	answers := burst(t, p, stub, 10, func() *httptest.ResponseRecorder {
+		return flightGet(h, context.Background(), "/loki/api/v1/query_range?query=%7Bapp%3D%22web%22%7D&start=1700000000&end=1700003600&limit=100", "team-a")
+	})
+	if stub.calls.Load() != 1 || answers[0].Code != http.StatusOK {
+		t.Fatalf("another query's successes: %d calls, status %d; want 1 shared call", stub.calls.Load(), answers[0].Code)
+	}
+	form := url.Values{"query": {`{app="web"}`}, "start": {"1700000000"}, "end": {"1700003600"}, "limit": {"100"}}.Encode()
+	stub.calls.Store(0)
+	burst(t, p, stub, 10, func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/loki/api/v1/query_range", strings.NewReader(form))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("X-Scope-OrgID", "team-a")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	})
+	if stub.calls.Load() != 1 {
+		t.Fatalf("another query's POST successes sent %d calls, want 1", stub.calls.Load())
+	}
+	failA.Store(false)
+	if ok := flightGet(h, context.Background(), a(1700003700), "team-a"); ok.Code != http.StatusOK {
+		t.Fatalf("the failed query after recovery: %d", ok.Code)
+	}
+	wk := p.windowFreeKey(p.flightPrefix(), "query_range", httptest.NewRequest(http.MethodGet, a(1700003800), nil))
+	if p.errorFlights.Peek(probeMarkerKey(wk)) != nil {
+		t.Fatal("a probe the backend answered must end the query's probing")
+	}
+}
