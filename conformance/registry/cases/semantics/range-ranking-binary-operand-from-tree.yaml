@@ -63,7 +63,7 @@ compare:
     The two largest series of twice the line count at each step, as Loki answers.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: '#1614'
   impact: explore-visible
   effort: S
   area: 'internal/proxy metric_agg.go handleRangeMetricPostAggregation (the operand of a range ranking, sort, stddev or stdvar)'
