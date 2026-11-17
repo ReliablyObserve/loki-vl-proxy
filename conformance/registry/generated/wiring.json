@@ -1273,7 +1273,8 @@
       "internal/queryplan/lower/binop_without_empty_test.go"
     ],
     "semantics/blank-before-call-parenthesis-read-unlike-loki": [
-      "internal/proxy/keyword_fold_runes_test.go"
+      "internal/proxy/keyword_fold_runes_test.go",
+      "internal/querycorpus/typed_pair_blank_test.go"
     ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
@@ -4872,6 +4873,7 @@
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/querycorpus/typed_pair_blank_test.go": [
+      "semantics/blank-before-call-parenthesis-read-unlike-loki",
       "semantics/translator-reads-only-space-between-tokens"
     ],
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go": [

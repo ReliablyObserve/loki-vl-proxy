@@ -16,6 +16,14 @@ why: |
   answers differ from the spelling without the blank: the handlers and the
   string translator match the name and the parenthesis together.
 
+  An ip() line filter spelled so (`{app="a"} |= ip<TAB>("1.2.3.4")`, `|= ip  (…)`) is
+  served from the plan (the default) with the requests and the answer of
+  `|= ip("1.2.3.4")`; the string translator, which serves it with
+  `-query-plan-lowering=false`, reads `ip (` as the word filter "ip" and a phrase
+  VictoriaLogs rejects. The VictoriaLogs oracle's typed-selector
+  pair holds the translator to the spelling without the blank
+  (internal/querycorpus TestTypedPairOfIPCallBlankIsTheUnspacedOnes).
+
   Found by the keyword blank sweep (internal/proxy
   TestKeywordBlankRequestsEqualSpaced pins these rows; a range function and
   vector() spelled so are semantics/translator-reads-blank-before-range-call-as-text
@@ -36,7 +44,7 @@ gap:
   area: 'internal/proxy handlers and the string translator (the call name and its parenthesis are matched as one text)'
   loki: 'the lexer reads a call name followed by any blank it skips and a parenthesis as the call'
   proxy: 'the requests and the answer differ from the spelling without the blank'
-  planned_test: 'TestKeywordBlankRequestsEqualSpaced (internal/proxy, pinned rows); TestKeywordBlankMatchesLoki (internal/logql, recorded Loki answers)'
+  planned_test: 'TestKeywordBlankRequestsEqualSpaced (internal/proxy, pinned rows); TestKeywordBlankMatchesLoki (internal/logql, recorded Loki answers); TestTypedPairOfIPCallBlankIsTheUnspacedOnes (internal/querycorpus, the ip() line filter typed-selector pair)'
   visual: none
   visual_reason: 'a spelling no Grafana panel writes'
   clusters: []
