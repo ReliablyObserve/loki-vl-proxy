@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -579,6 +580,12 @@ func TestPlanRouteParity(t *testing.T) {
 	if got.Native < want.Native {
 		t.Errorf("native runs fell from %d to %d", want.Native, got.Native)
 	}
+	// More VictoriaLogs calls over the same runs fail even when they are recorded, like a fall of native runs.
+	for _, k := range slices.Sorted(maps.Keys(got.VLCalls)) {
+		if g, w := got.VLCalls[k], want.VLCalls[k]; g.Runs == w.Runs && (g.Cold > w.Cold || g.Repeat > w.Repeat) {
+			t.Errorf("%s: more VictoriaLogs calls over the same %d runs: cold %d (recorded %d), exact repeat %d (recorded %d)", k, g.Runs, g.Cold, w.Cold, g.Repeat, w.Repeat)
+		}
+	}
 	if os.Getenv("LVP_QUERY_PLAN_UPDATE") == "1" {
 		file["route_parity"], _ = json.Marshal(got)
 		out, err := json.MarshalIndent(file, "", "  ")
@@ -608,11 +615,7 @@ func TestPlanRouteParity(t *testing.T) {
 			if got.Calls[k] != want.Calls[k] {
 				t.Errorf("the handlers' VictoriaLogs calls changed (digest %s, recorded %s): a request sent to VictoriaLogs moved (LVP_ROUTE_DUMP=<file> writes every run; compare it with main's); if intended, run LVP_QUERY_PLAN_UPDATE=1 and say why in the PR", got.Calls[k], want.Calls[k])
 			}
-			g, w := got.VLCalls[k], want.VLCalls[k]
-			switch {
-			case g.Cold > w.Cold || g.Repeat > w.Repeat:
-				t.Errorf("more VictoriaLogs calls: cold %d (recorded %d), exact repeat %d (recorded %d) over %d runs", g.Cold, w.Cold, g.Repeat, w.Repeat, g.Runs)
-			case g != w:
+			if g, w := got.VLCalls[k], want.VLCalls[k]; g != w {
 				t.Errorf("VictoriaLogs calls moved to %+v (recorded %+v): run LVP_QUERY_PLAN_UPDATE=1 to record it", g, w)
 			}
 		})

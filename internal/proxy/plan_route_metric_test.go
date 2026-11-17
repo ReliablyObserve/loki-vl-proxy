@@ -640,8 +640,11 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 				for _, rp := range routeProfiles() {
 					for _, data := range []bool{true, false} {
 						want, werr := predictMetricRoute(row.q, row.plan, rp, data, nil)
-						got, gerr := predictMetricRoute(row.q, row.plan, rp, data, c.mutate)
 						var nl *lower.NotLoweredError
+						if werr != nil && (!errors.As(werr, &nl) || !strings.HasSuffix(nl.Construct, " route shared operand read")) {
+							continue // delegated before the route is changed
+						}
+						got, gerr := predictMetricRoute(row.q, row.plan, rp, data, c.mutate)
 						switch {
 						case gerr != nil && errors.As(gerr, &nl):
 						case gerr != nil || werr != nil || !got.equal(want):
