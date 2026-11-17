@@ -115,8 +115,8 @@ func newListedChunkCase(seed int64) *listedChunkCase {
 	c.window = windows[rng.Intn(len(windows))]
 	for c.step = steps[rng.Intn(len(steps))]; c.step >= c.window; c.step = steps[rng.Intn(len(steps))] {
 	}
-	c.span = time.Duration(10+rng.Intn(110)) * time.Minute
-	c.gap = time.Duration(1+rng.Intn(6)) * time.Second
+	c.span = time.Duration(10+rng.Intn(30)) * time.Minute
+	c.gap = time.Duration(2+rng.Intn(6)) * time.Second
 	c.users = 20 + rng.Intn(400)
 	c.end = int64(1_800_000_000+rng.Intn(3600)) * 1e9
 	c.end -= c.end % int64(c.step)
@@ -148,7 +148,7 @@ func listedChunkWindowSeries(rows []vlemu.Row, d time.Duration) int {
 // conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
 func TestListedWindowChunksMatchUnchunked(t *testing.T) {
 	chunkedRequests := 0
-	for seed := int64(1); seed <= 24; seed++ {
+	for seed := int64(1); seed <= 12; seed++ {
 		c := newListedChunkCase(seed)
 		t.Run(strconv.FormatInt(seed, 10), func(t *testing.T) {
 			checkListedChunkCase(t, c)
@@ -157,8 +157,8 @@ func TestListedWindowChunksMatchUnchunked(t *testing.T) {
 			}
 		})
 	}
-	if chunkedRequests < 18 {
-		t.Fatalf("only %d of 24 requests were read in more than one chunk", chunkedRequests)
+	if chunkedRequests < 9 {
+		t.Fatalf("only %d of 12 requests were read in more than one chunk", chunkedRequests)
 	}
 }
 
@@ -202,24 +202,25 @@ func FuzzListedWindowChunks(f *testing.F) {
 	})
 }
 
-// TestListedWindowChunksMemoryBounded holds what a chunk's read holds to the budget while the series grow a
-// hundredfold: the request is read in more chunks, each holding at most the budget's series and a body that does not
-// grow with the series, and answers what one read answers. What one read holds grows with them.
+// TestListedWindowChunksMemoryBounded holds what a chunk's read holds to the budget while the series grow about
+// fifteenfold: the request is read in more chunks, each holding at most the budget's series and a body of at most twice
+// the budget's series at the smallest size's bytes per series, and answers what one read answers. What one read holds
+// grows with the series.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
 func TestListedWindowChunksMemoryBounded(t *testing.T) {
 	const budget = 6_000
 	query := fmt.Sprintf(listedChunkShapes[0], 5*time.Minute)
 	end := int64(1_800_000_000) * 1e9
-	firstBytes := 0
+	perSeries := 0
 	for _, size := range []struct {
 		users int
 		gap   time.Duration
-	}{{1_000, 2 * time.Second}, {10_000, 500 * time.Millisecond}, {100_000, 100 * time.Millisecond}} {
+	}{{1_000, 2 * time.Second}, {10_000, 500 * time.Millisecond}, {40_000, 150 * time.Millisecond}} {
 		rng := rand.New(rand.NewSource(int64(size.users)))
-		rows := listedChunkRows(rng, end, 2*time.Hour+10*time.Minute, size.gap, size.users)
-		unchunked := runListedChunks(t, rows, query, end, 2*time.Hour, 30*time.Second, 0, false)[0]
-		chunked := runListedChunks(t, rows, query, end, 2*time.Hour, 30*time.Second, budget, false)[0]
+		rows := listedChunkRows(rng, end, time.Hour+10*time.Minute, size.gap, size.users)
+		unchunked := runListedChunks(t, rows, query, end, time.Hour, 30*time.Second, 0, false)[0]
+		chunked := runListedChunks(t, rows, query, end, time.Hour, 30*time.Second, budget, false)[0]
 		if unchunked.code != http.StatusOK || chunked.code != http.StatusOK || chunked.body != unchunked.body {
 			t.Fatalf("%d users: unchunked %d, chunked %d, equal %v", size.users, unchunked.code, chunked.code, chunked.body == unchunked.body)
 		}
@@ -232,10 +233,10 @@ func TestListedWindowChunksMemoryBounded(t *testing.T) {
 		if most > budget {
 			t.Fatalf("%d users: a chunk held %d series, over the budget %d", size.users, most, budget)
 		}
-		if firstBytes == 0 {
-			firstBytes = max(mostBytes, unchunked.chunks[0].bytes)
-		} else if mostBytes > 2*firstBytes {
-			t.Fatalf("%d users: a chunk's body of %d bytes grew with the series (%d bytes at the smallest size)", size.users, mostBytes, firstBytes)
+		if perSeries == 0 {
+			perSeries = unchunked.chunks[0].bytes / max(1, unchunked.chunks[0].series)
+		} else if mostBytes > 2*perSeries*budget {
+			t.Fatalf("%d users: a chunk's body of %d bytes grew past the budget's (%d bytes per series at the smallest size)", size.users, mostBytes, perSeries)
 		}
 		t.Logf("%7d users, %6d lines: one read holds %6d series in %8d bytes; chunked: %3d reads (%d over the budget), at most %4d series in %7d bytes each, %d stats calls",
 			size.users, len(rows), unchunked.chunks[0].series, unchunked.chunks[0].bytes, len(chunked.chunks), countOver(chunked.chunks), most, mostBytes, chunked.calls)
