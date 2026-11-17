@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the series the list names (the stream, its level fields and the listed labels), and the proxy merges each series'
   buckets into its window, then applies the aggregation. Answers cached before the fix are not served again; a parser
   of every key keeps the stream's series on such a range (registry `semantics/unwrap-per-series-identity-raw-rows`).
+  A listed label of many values over a long range (`| logfmt amount, user_id` over hours or a day) is read in time
+  chunks, each with the range before it, and folded chunk by chunk, so it answers Loki's values with the proxy holding
+  one chunk at a time. A chunk reads at most 11,000 buckets, and `-manual-range-metric-row-limit` now bounds the
+  series one chunk's read holds: a chunk over it is halved and read again, and the next chunks are sized from what
+  the last one held. Only a single step whose window holds more series than the limit is refused. A request that fits
+  one chunk reads exactly as before.
 
 ### Performance
 

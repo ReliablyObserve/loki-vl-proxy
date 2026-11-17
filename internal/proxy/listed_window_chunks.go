@@ -91,8 +91,16 @@ func (p *Proxy) statsBucketRoutes(spec statsCompatSpec, statsAggFunc string, buc
 // listedChunkSizeTTL is how long a replica keeps the chunk size a read needed.
 const listedChunkSizeTTL = 10 * time.Minute
 
+// listedChunkShrink divides a chunk whose read passed its bound: a read past the bound was computed by VictoriaLogs
+// in full and is thrown away, so a quarter (two reads thrown away where halving threw away three, measured over a
+// tenfold overflow) rather than a half; the next chunks grow again from what the smaller one held.
+const listedChunkShrink = 4
+
 // listedChunkLoad is the share of a read's bound a chunk is sized to use.
 const listedChunkLoad = 0.5
+
+// listedWindowChunksOff reads the windows in one read, as before the chunks (tests measure the two).
+var listedWindowChunksOff bool
 
 // listedWindowChunksObserve, when set, sees each chunk a request read (tests).
 var listedWindowChunksObserve func(first, last int64, m statsReadMeter)
@@ -147,7 +155,7 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 		}
 		switch {
 		case meter.over && last > first:
-			size, halved = (last-first+1)/2, true
+			size, halved = max(1, (last-first+1)/listedChunkShrink), true
 			continue
 		case meter.over:
 			rows, _ := p.manualMetricRowBudget()

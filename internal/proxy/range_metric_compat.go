@@ -790,7 +790,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 		return true
 	}
-	if fold := matrixFoldFrom(r.Context()); fold != nil && bucketsOK && statsAggFunc != "" && !forceRawLevelRows && counterProof == nil && !quantileCounts &&
+	if fold := matrixFoldFrom(r.Context()); fold != nil && !listedWindowChunksOff && bucketsOK && statsAggFunc != "" && !forceRawLevelRows && counterProof == nil && !quantileCounts &&
 		p.listedIdentityWindows(r.Context(), r.FormValue("query")) {
 		// An extraction list's series identity on a range longer than the step: the windows are evaluated in time
 		// chunks, each read under the per-chunk bound and folded as it is read (listed_window_chunks.go).
@@ -1642,6 +1642,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
+		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
@@ -1663,6 +1664,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// not hold it.
 	release()
 	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
+		noteStatsReadOverflow(ctx, err)
 		return nil, nil, p.levelLessErr("stats_query_range backend", err)
 	}
 
