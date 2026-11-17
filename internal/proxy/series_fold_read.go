@@ -89,7 +89,7 @@ func (p *Proxy) withSeriesFold(r *http.Request, spec statsCompatSpec, manualFunc
 		read.columns, read.value, read.valueColumn, read.countColumn = []string{"__lvp_sum", "__sample_count"}, "__lvp_sum / __sample_count", "__lvp_sum", "__sample_count"
 		read.stats = []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: v}, Alias: "__lvp_sum"}, {Func: logsql.Count{}, Alias: "__sample_count"}}
 		if read.outer == logql.VectorSum || read.outer == logql.VectorAvg {
-			// The bucket's sum of the lines of one line each is the sum of their values (not their extreme).
+			// The bucket stats add up the values of the series of one line: their sum, not their extreme.
 			read.singletons = lower.SingletonsKept
 		}
 	case "max", "min":
