@@ -7,30 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
+- The route parity test now also gates the VictoriaLogs requests every plan-corpus query sends under each request
+  profile, and counts its VictoriaLogs calls (`X-Loki-VL-Backend-Calls`) cold and on an exact repeat, recorded per
+  profile and construct in `conformance/registry/query-plan.json`: a change that adds a call fails, and one that moves
+  a request fails until it is recorded. So that the probes the proxy races (the json and logfmt parse-risk probes, the
+  checks beside an ordered-JSON stats attempt) send the same requests on every run, a request the test marks waits for
+  every probe it started before reading the verdicts, in the probes' order. Nothing in the proxy marks a request: no
+  answer, status, request sent to VictoriaLogs or cache key changes.
+- Metric queries with a label filter or a drop after a `| json` or `| logfmt` parser, under a grouping or unwrapped
+  label whose name holds `_` (`sum by (service_name) (sum_over_time({app="api"} | json | unwrap duration_ms |
+  __error__="" [5m]))`, `sum by (user_id) (count_over_time({app="api"} | json | drop __error__ [5m]))`), and the same
+  stages in a `without` fold over a parser or behind a trailing `keep`, are translated by the query plan. The requests
+  sent to VictoriaLogs are the same as before, and the translation costs fewer allocations than the string
+  translator's.
+
 ### Fixed
 
-- After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
-  (by labels or none) over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` or
-  `stdvar_over_time` now answer Loki's values on a query_range whose range is longer than the step. For example
-  `sum(stdvar_over_time({...} | logfmt amount | unwrap amount [5m]))` at a step of one minute answered 0 (each line
-  was a series of its own, and each step bucket was read as the window). VictoriaLogs groups each step bucket by
-  the series the list names (the stream, its level fields and the listed labels), and the proxy merges each series'
-  buckets into its window, then applies the aggregation. Answers cached before the fix are not served again; a parser
-  of every key keeps the stream's series on such a range (registry `semantics/unwrap-per-series-identity-raw-rows`).
-  A listed label of many values over a long range (`| logfmt amount, user_id` over hours or a day) is read in time
-  chunks, each with the range before it, and folded chunk by chunk, so it answers Loki's values with the proxy holding
-  one chunk at a time. A chunk reads at most 11,000 buckets, its series before the fold stay under
-  `-manual-range-metric-row-limit` (or the tenant's `max_query_series` when larger) and its stats body under 64 MiB: a
-  chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
-  Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
-  the body). A request that fits one chunk reads exactly as before.
-- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
-  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
-  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
-  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
-  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
-  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
-  answers are unchanged.
+- `sum`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` and
+  `stdvar_over_time` after `| json` or `| logfmt` with a label filter after the parser, before or after the unwrap
+  (`sum(stddev_over_time({app="api"} | json | __error__="" | unwrap duration_ms [5m]))`), now read Loki's series:
+  the stream plus every parsed label except the unwrapped one, as the same queries without the filter already do. They
+  read the stream and each line as a series, so a range query answered 0 where Loki sums the deviation of each series
+  (`semantics/unwrap-per-series-identity-label-filter`). A range longer than the step keeps the stream's series, as
+  without the filter. Answers cached before are not served again. A `max` over `max_over_time` and a `min` over
+  `min_over_time` with the filter read the rows of each group, as they do without it.
 - `query_range` with a range longer than the step (sliding windows, the `$__auto` steps Grafana sends under a `[5m]`
   range) now reads Loki's series for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`,
   `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream
@@ -49,12 +55,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their per-group read. Answers cached before the fix are not served again
   (semantics/unwrap-per-series-identity-raw-rows).
 
-### Changed
+## [2.326.0] - 2026-11-17
 
-- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
-  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
-  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
-  translator. No answer, request or cache key changes.
+### Fixed
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
+  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
+  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
+  answers are unchanged.
+
+## [2.325.0] - 2026-11-17
+
+### Fixed
+
+- After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
+  (by labels or none) over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` or
+  `stdvar_over_time` now answer Loki's values on a query_range whose range is longer than the step. For example
+  `sum(stdvar_over_time({...} | logfmt amount | unwrap amount [5m]))` at a step of one minute answered 0 (each line
+  was a series of its own, and each step bucket was read as the window). VictoriaLogs groups each step bucket by
+  the series the list names (the stream, its level fields and the listed labels), and the proxy merges each series'
+  buckets into its window, then applies the aggregation. Answers cached before the fix are not served again; a parser
+  of every key keeps the stream's series on such a range (registry `semantics/unwrap-per-series-identity-raw-rows`).
+  A listed label of many values over a long range (`| logfmt amount, user_id` over hours or a day) is read in time
+  chunks, each with the range before it, and folded chunk by chunk, so it answers Loki's values with the proxy holding
+  one chunk at a time. A chunk reads at most 11,000 buckets, its series before the fold stay under
+  `-manual-range-metric-row-limit` (or the tenant's `max_query_series` when larger) and its stats body under 64 MiB: a
+  chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
+  Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
+  the body). A request that fits one chunk reads exactly as before.
 
 ## [2.324.0] - 2026-11-17
 

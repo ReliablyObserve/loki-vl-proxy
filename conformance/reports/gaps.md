@@ -8,7 +8,7 @@ An endpoint the owner named a priority for is placed by that first: `first` abov
 others (and always listed), `last` after normal gaps, `optional` after those; the score orders within each group.
 Optional gaps remain in the declared API inventory and compatibility scores.
 
-The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler runs Loki's create and cancel as VictoriaLogs delete tasks, and answers Loki's 500 for the list and for queries a VictoriaLogs filter cannot select. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 | Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |
 |---:|---|---|---|---:|---:|---|
@@ -21,20 +21,19 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 | 5 | `/loki/api/v1/status/buildinfo` | datasource, api | proxy_side | 8 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 4 | `/loki/api/v1/cache/generation_numbers` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 3 | `/loki/api/v1/drilldown-limits` | api | proxy_side | 8 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/prometheus/api/v1/alerts` | api | proxy_side | 5 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/loki/api/v1/rules/{namespace}/{groupName}` | api | proxy_side | 4 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/loki/api/v1/rules/{namespace}` | api | proxy_side | 4 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/api/prom/rules/{namespace}/{groupName}` | api | proxy_side | 4 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/api/prom/rules/{namespace}` | api | proxy_side | 1 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/api/prom/rules` | api | proxy_side | 2 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 3 | `/prometheus/api/v1/rules` | api | proxy_side | 5 | 1 | proxy-side: justify in the registry or push down to VictoriaLogs |
-| 3 | `/loki/api/v1/rules` | api | proxy_side | 10 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
+| 4 | `/prometheus/api/v1/alerts` | api | native_vl | 5 | 0 | no test compares it against Loki |
+| 4 | `/loki/api/v1/rules/{namespace}/{groupName}` | api | native_vl | 4 | 0 | no test compares it against Loki |
+| 4 | `/loki/api/v1/rules/{namespace}` | api | native_vl | 4 | 0 | no test compares it against Loki |
+| 4 | `/api/prom/rules/{namespace}/{groupName}` | api | native_vl | 4 | 0 | no test compares it against Loki |
+| 4 | `/api/prom/rules/{namespace}` | api | native_vl | 1 | 0 | no test compares it against Loki |
+| 4 | `/api/prom/rules` | api | native_vl | 2 | 0 | no test compares it against Loki |
 | optional | `/loki/api/v1/index/shards` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry; optional: Optional planner compatibility only: no proxy route or differential proof. This endpoint is not a blocker for normal pinned Grafana Explore, Logs Drilldown or peer cache lookup. It remains a declared read API gap and stays in totals and compatibility scores. |
 
 ## Optional deletion management
 
 Outside the read API score and ranking: the opt-in `/loki/api/v1/delete` handler
-does not implement VictoriaLogs deletion. It is not a proven working delete API.
+runs Loki's create and cancel as VictoriaLogs delete tasks with Loki's answers; the list and
+queries a VictoriaLogs filter cannot select answer Loki's 500 (semantics/delete-api-via-victorialogs).
 
 ## Error surface
 
@@ -46,16 +45,16 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 
 | Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
 |---|---:|---:|---:|---:|---:|---:|
-| 400 | 24 | 7 | 0 | 17 | 9 | 0 |
-| 401 | 5 | 5 | 0 | 0 | 0 | 0 |
+| 400 | 16 | 2 | 0 | 14 | 7 | 0 |
+| 401 | 4 | 4 | 0 | 0 | 0 | 0 |
 | 403 | 2 | 2 | 0 | 0 | 0 | 0 |
 | 404 | 1 | 1 | 0 | 0 | 0 | 0 |
-| 405 | 4 | 3 | 0 | 0 | 0 | 1 |
+| 405 | 3 | 3 | 0 | 0 | 0 | 0 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 185 | 1 | 181 | 2 | 1 | 1 |
+| set at run time | 184 | 1 | 180 | 2 | 1 | 1 |
 
-The registry holds one item per status (12) and one per Loki error message (44) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
+The registry holds one item per status (12) and one per Loki error message (53) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 
 The error-layer gate (`TestErrorLayer_NoVictoriaLogsLeak`, every route through every VictoriaLogs failure mode) lists 0 route × failure-mode cells that still leak (0 cell × case pairs, ceiling 0) in `conformance/registry/error-layer-known-leaks.json`; the list may only shrink. Sites outside those routes and modes are not driven by the gate.
 
@@ -66,7 +65,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
-| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 102 | unknown |
+| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 103 | unknown |
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 11 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |

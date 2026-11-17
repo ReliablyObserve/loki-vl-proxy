@@ -312,6 +312,10 @@ request's VictoriaLogs calls are its own count (`X-Loki-VL-Backend-Calls`), neve
 holds the proxy's background calls (health probes, inventory refreshes) and other clients; a report that cannot say which
 source counted a number does not publish it as an improvement. The perf smoke asks an exact repeat (the same request
 twice at a settled window, 0 calls expected) apart from the repeat that moves the window (judged by the bytes it reads).
+In the unit tests, `TestPlanRouteParity` counts every plan-corpus run's calls from the same header, cold and on the
+exact repeat, per request profile and construct (`vl_calls` in `conformance/registry/query-plan.json`), and digests
+every request each run sends: a change that adds a call fails, and one that moves a request fails until it is
+recorded with `LVP_QUERY_PLAN_UPDATE=1` and explained in the PR.
 
 ## Fleet scale
 

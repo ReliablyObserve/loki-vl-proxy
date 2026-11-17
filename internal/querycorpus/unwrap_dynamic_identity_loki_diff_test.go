@@ -95,6 +95,13 @@ var dynamicIdentityRowsQueries = []string{
 	`max(max_over_time({job="dm"} | json | unwrap duration_ms [5m]))`,
 	`min(min_over_time({job="de"} | json | unwrap duration_ms [5m]))`,
 	`max(max_over_time({job="de"} | json | __error__="" | unwrap duration_ms [5m]))`,
+	// with a label filter after the parser, before or after the unwrap, and on a parsed label
+	`max by (app) (max_over_time({job="dj"} | json | unwrap duration_ms | __error__="" [5m]))`,
+	`min(min_over_time({job="de"} | json | __error__="" | unwrap duration_ms [5m]))`,
+	`min by (app) (min_over_time({job="dj"} | json | unwrap duration_ms [5m]))`,
+	`max by (app) (max_over_time({job="dl"} | logfmt | route="/a" | unwrap duration_ms [5m]))`,
+	`min by (route) (min_over_time({job="dl"} | logfmt | region="" | unwrap duration_ms [5m]))`,
+	`max by (app) (max_over_time({job="dl"} | logfmt duration_ms, route | route="/a" | unwrap duration_ms [5m]))`,
 }
 
 // dynamicIdentityKnown are the runs that differ from Loki, by query and request kind, with the registry case that
@@ -135,12 +142,6 @@ var dynamicIdentityKnown = func() map[string]map[string]string {
 		default:
 			add(perSeries, all, q)
 		}
-	}
-	// A label filter between the parser and an unwrapped label whose name holds an underscore (duration_ms, which the
-	// line can spell duration.ms or duration-ms): the lowering does not serve the query, and the string translator's
-	// series are the stream and each line.
-	for _, fn := range []string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"} {
-		add("semantics/unwrap-per-series-identity-label-filter", all[1:], fmt.Sprintf(`sum(%s{job="de"} | json | __error__="" | unwrap duration_ms [5m]))`, keepIdentityHead(fn)))
 	}
 	return known
 }()
@@ -284,7 +285,7 @@ func dynamicIdentityFixture() metricFixture {
 // TestUnwrapDynamicIdentityMatchLoki replays the recorded answers through the handlers and holds every run to Loki's
 // answer, or to its listed difference.
 //
-// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance, semantics/unwrap-per-series-identity-label-filter
 func TestUnwrapDynamicIdentityMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")

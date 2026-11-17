@@ -80,6 +80,18 @@ var keepIdentityExtraQueries = []string{
 	`sum(last_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m])) + sum(quantile_over_time(0.9, {job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]))`,
 }
 
+// keepIdentityFilteredQueries are shapes with a label filter or a drop after the parser under a label the lowering
+// resolves under its other spellings (duration_ms): the plan writes them (the translator's text, or a parser's series
+// identity under a sum, max or avg over a function taken per series).
+var keepIdentityFilteredQueries = []string{
+	`sum by (app) (sum_over_time({job="kj"} | json | unwrap duration_ms | __error__="" [5m]))`,
+	`sum(rate({job="kj"} | json | __error__="" | unwrap duration_ms [5m]))`,
+	`sum by (app) (count_over_time({job="kj"} | json | drop __error__ | duration_ms > 2500 [5m]))`,
+	`max by (app) (max_over_time({job="kj"} | json | unwrap duration_ms | __error__="" [5m]))`,
+	`sum(avg_over_time({job="kj"} | json | unwrap duration_ms | __error__="" [5m]))`,
+	`sum(stddev_over_time({job="kj"} | json | __error__="" | unwrap duration_ms [5m]))`,
+}
+
 // keepIdentityKnown are the runs that differ from Loki, by query and request kind, with the registry case that holds
 // the difference open.
 var keepIdentityKnown = func() map[string]map[string]string {
@@ -163,6 +175,9 @@ func keepIdentityQueries(t *testing.T) []metricQuery {
 		}
 	}
 	for _, q := range keepIdentityExtraQueries {
+		add(q)
+	}
+	for _, q := range keepIdentityFilteredQueries {
 		add(q)
 	}
 	return out

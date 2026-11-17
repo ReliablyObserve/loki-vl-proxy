@@ -10,23 +10,25 @@ loki: |
   internal/proxy/testdata/tenant_auth_loki_answers.jsonl, delete/*).
 
 victorialogs: |
-  VictoriaLogs' /select/logsql/delete is an admin endpoint; current releases
-  reject the forwarded request.
+  VictoriaLogs deletes with its asynchronous delete task API (/delete/run_task, -delete.enable), which the delete
+  API drives (semantics/delete-api-via-victorialogs, vl-delete-tasks-tenant-and-time).
 
 proxy: |
   -delete-api-enabled registers the route; it requires -delete-api-auth-token
   (startup and proxy.New refuse the configuration without one; the Helm chart
   refuses to render without deleteAuth.existingSecret or the plain value).
   deleteAuthMiddleware answers every request without the token (X-Delete-Token
-  or Authorization: Bearer, constant-time compare) with 401 "delete
-  authentication required" before the method, tenant, rate limit, confirmation
-  and parameter checks, and removes the token from the request so it is never
-  forwarded to VictoriaLogs or logged. The admin token does not open the route
-  and the delete token does not open the admin routes; the admin token and the
-  loopback -admin-listen behave exactly as without deletes. After the token,
-  Loki's tenant answers and the existing safeguards (X-Delete-Confirmation, a
-  stream selector, start and end, 30 days at most, tenant scoping, audit log
-  lines before and after) apply unchanged.
+  or Authorization: Bearer, constant-time compare) with Loki's answer to a
+  request without the credential its route needs, 401 "no org id" (recorded
+  from a Loki with auth enabled, delete/absent), before the method, tenant,
+  rate limit and parameter checks, and removes the token from the request so it
+  is never forwarded to VictoriaLogs or logged. The admin token does not open
+  the route and the delete token does not open the admin routes; the admin
+  token and the loopback -admin-listen behave exactly as without deletes. After
+  the token, every answer is Loki's: its tenant answers, then its checks of the
+  request (semantics/delete-api-via-victorialogs). The proxy-only safeguards it
+  had before (an X-Delete-Confirmation header, a refusal of `{}`, a 30-day cap)
+  are gone: Loki has none of them, and the token is the delete API's guard.
 
 implementation:
   - internal/proxy/middleware.go

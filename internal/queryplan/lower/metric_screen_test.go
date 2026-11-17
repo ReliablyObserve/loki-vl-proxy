@@ -81,8 +81,23 @@ func TestScreenMetric(t *testing.T) {
 		{`label_replace(rate({app="a"}[5m]), "d" "e", "$1", "app", "x")`, ""},
 		{`label_replace(sum by (service_name) (rate({e="p"}[5m])), "s", "$1", "service_name", "(.*)")`, ""},
 		{`label_replace(rate({a=~"x\\(y"}[5m]) + rate({b="z"}[5m]), "d", "$1", "app", "(.*)")`, ""},
-		{`max by (service_name) (max_over_time({e="p"} | logfmt | unwrap latency_ms | __error__="" [1m]))`, ""},
-		{`first_over_time({app="a"} | json duration_ms | drop pod | unwrap duration_ms [5m])`, ""},
+		{`max by (service_name) (max_over_time({e="p"} | logfmt | unwrap latency_ms | __error__="" [1m]))`, "VectorAgg"},
+		{`first_over_time({app="a"} | json duration_ms | drop pod | unwrap duration_ms [5m])`, "RangeAgg"},
+		// An existence check after the parser under a resolved label: left to the translator under a rate or before
+		// another stage, served as the Drilldown field breakdown.
+		{`sum by (a_b) (rate({app="a"} | json | a_b != "" [5m]))`, ""},
+		{`sum by (a_b) (bytes_rate({app="a"} | logfmt | a_b!=` + "``" + ` [5m]))`, ""},
+		{`sum by (export_ms) (count_over_time({e="p"} | json | export_ms!="" | pipeline="x" [2m]))`, ""},
+		{`sum by (a_b) (count_over_time({app="a"} | json | a_b != "" [5m]))`, "VectorAgg"},
+		{`sum by (app) (rate({app="a"} | json | b != "" [5m]))`, "VectorAgg"},
+		{`sum by (a_b) (rate({app="a"} | json | a_b != "x" [5m]))`, "VectorAgg"},
+		// A filter on an _extracted label after the parser, and a json extraction expression the lowering does not
+		// write.
+		{`sum by (level_extracted) (count_over_time({app="a"} | json | level_extracted="error" [1m]))`, ""},
+		{`sum by (a_b) (count_over_time({app="a"} | json a_b="[\"a.b\"]" [1m]))`, ""},
+		{`sum by (a_b) (count_over_time({app="a"} | json a_b="a,b" [1m]))`, ""},
+		{`sum by (a_b) (count_over_time({app="a"} | json a_b="a.b" [1m]))`, "VectorAgg"},
+		{`sum by (app) (count_over_time({app="a"} | json | level_extracted="error" [1m]))`, "VectorAgg"},
 		// Label filters, values and names the translator reads unlike Loki.
 		{`sum(count_over_time({app="api"} |= "x" | json | status == 500 [5m]))`, ""},
 		{`sum(count_over_time({app="api"} | logfmt | status = 500 [5m]))`, ""},
@@ -176,6 +191,9 @@ func FuzzScreenMetric(f *testing.F) {
 		`label_replace(rate({app="a"}[5m]), "x", "$1", "app", "(.*)")`, `sum(rate({a="b"}[5m])) / 2`,
 		`max(sum(rate({app="uw"} | logfmt [30s])) by (pod, zone)) by (zone)`, `quantile_over_time(0.9, {a="b"} | unwrap d [5m])`,
 		`sum(count_over_time({app="x"} | o="\u0001" [5m]))`, `topk(2, rate({a="b"}[5m]))`, "rate({a=`b`}[5m])",
+		`sum by (a_b) (rate({app="a"} | json | a_b != "" [5m]))`, `sum by (x_extracted) (count_over_time({a="b"} | logfmt | x_extracted="y" [1m]))`,
+		`sum by (a_b) (count_over_time({app="a"} | json a_b="[\"a\"]" | a_b != "" [1m]))`,
+		`max by (service_name) (max_over_time({e="p"} | json | unwrap duration_ms | __error__="" [1m]))`,
 	} {
 		f.Add(q)
 	}

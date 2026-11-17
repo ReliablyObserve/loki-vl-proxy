@@ -15,7 +15,7 @@ description: Security model, network exposure, tenant isolation, header forwardi
 - `/metrics` not served unless `-server.register-instrumentation=true`
 - query callers are not authenticated (see [Caller authentication](#caller-authentication))
 
-`/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it behind its own token (`-delete-api-auth-token`, required: the proxy refuses to start without it) and request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
+`/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it behind its own token (`-delete-api-auth-token`, required: the proxy refuses to start without it) and runs Loki's delete requests as VictoriaLogs delete tasks (see [Delete API](#3-delete-api)).
 
 Behavior changes from the 1.67.0 and 1.68.0 hardening releases (wildcard denial, tenant-scoped cache keys, execution limits) are described in the [security hardening migration guide](security-hardening-migration.md).
 
@@ -55,18 +55,17 @@ Setups, defaults and every option: [Tenancy and authentication](tenancy-and-auth
 - use `-tail.allowed-origins` for Grafana/browser clients
 - keep restrictive defaults for internet-exposed deployments
 
-### 3) Delete API (unsupported)
+### 3) Delete API
 
-By default `/loki/api/v1/delete` is not registered: every method answers `404` with the body `404 page not found`, which is what Loki returns when deletion is disabled (Loki registers the route only with `-compactor.retention-enabled=true`, off by default). No tenant header or other check runs first, as in Loki. With `-delete-api-enabled=true` the route is registered and validates each request before contacting the backend:
+By default `/loki/api/v1/delete` is not registered: every method answers `404` with the body `404 page not found`, which is what Loki returns when deletion is disabled (Loki registers the route only with `-compactor.retention-enabled=true`, off by default). No tenant header or other check runs first, as in Loki. With `-delete-api-enabled=true` the route is registered:
 
-- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers `401 delete authentication required` before any other check, so an unauthenticated caller learns nothing about the route. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
+- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers Loki's `401 no org id` before any other check, so an unauthenticated caller learns nothing about the route; the log line names the missing token. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
 - the tenant, as Loki checks it (`401 no org id`, Loki's tenant ID texts, `400 multiple org IDs present` for a multi-tenant header)
-- `POST` only and `X-Delete-Confirmation: true`
-- explicit query selector (`{}` and `*` are rejected)
-- explicit `start` and `end` time bounds, at most 30 days apart
-- tenant-scoped execution and a warning-level audit log entry
+- Loki's checks of the request, with Loki's texts (`query not set`, `invalid query expression`, `start time not set`, the time formats, `start time can't be greater than or equal to end time`, `max_interval`). Loki has no other guard, and neither has the proxy after the token: a token holder can delete every stream of a tenant (`{}`) over any range. Treat the token like a credential that can erase data
+- a create request runs as one VictoriaLogs delete task (`/delete/run_task`) scoped by the tenant's `AccountID`/`ProjectID` and a filter of the time range (both ends included) and the rows the same log query reads; a warning-level audit log line names the tenant, the query, the range, the client and the task id
+- a cancel stops a task only when VictoriaLogs lists it with the request's tenant alone (`/delete/stop_task` checks no tenant itself); any other id answers Loki's `404`
 
-The handler then forwards to `/select/logsql/delete`, which VictoriaLogs rejects as an unsupported path (VictoriaLogs deletes through its asynchronous `/delete/run_task` API). Deletion is therefore not supported; do not rely on this endpoint. See [Remaining delete API gap](security-hardening-migration.md#remaining-delete-api-gap).
+Not served, each answered with Loki's `500`: the list of requests, a query whose rows a VictoriaLogs filter cannot select (a parser, a filter on a parsed label), a tenant tenant-label routing confines with its label (a tenant mapped to its own account is served) and the unmapped global tenant `*`. VictoriaLogs answers the delete task API only with `-delete.enable` (and, from v1.53, a `-deleteAuthKey` the proxy does not send yet); a refusal is Loki's `500`, VictoriaLogs' text in the log line only. See [Remaining delete API gap](security-hardening-migration.md#remaining-delete-api-gap).
 
 ### 4) Request Hardening
 

@@ -32,9 +32,10 @@ func TestDynamicIdentityServedFromPlan(t *testing.T) {
 	}
 	on, off := newProxy(false), newProxy(true)
 	for q, want := range map[string]string{
-		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                dynamicSeriesHashPipe + " | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)",
-		`sum(min_over_time({app="a"} | json | n > 1 | unwrap n [5m]))`:        dynamicSeriesHashPipe + " | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner",
-		`max by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [5m]))`: "| math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) max(__lvp_inner_var)",
+		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                             dynamicSeriesHashPipe + " | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)",
+		`sum(min_over_time({app="a"} | json | n > 1 | unwrap n [5m]))`:                     dynamicSeriesHashPipe + " | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner",
+		`max by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [5m]))`:              "| math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) max(__lvp_inner_var)",
+		`sum(stddev_over_time({app="a"} | json | __error__="" | unwrap duration_ms [5m]))`: dynamicSeriesHashPipe + " | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner",
 	} {
 		got, err := on.translateQuery(q)
 		if err != nil {
@@ -183,11 +184,12 @@ func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
 // conformance: semantics/unwrap-per-series-identity-raw-rows
 func TestDynamicIdentityCacheKeysFenced(t *testing.T) {
 	for q, want := range map[string]string{
-		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                 dynamicUnwrapIdentityResponseVersion,
-		` max by (app) (stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`: dynamicUnwrapIdentityResponseVersion,
-		`sum(sum_over_time({app="a"} | json | unwrap n [5m]))`:                 "",
-		`sum(avg_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`:   "",
-		`sum(avg_over_time({app="a"} | unwrap n [5m]))`:                        "",
+		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                             dynamicUnwrapIdentityResponseVersion,
+		`sum(stddev_over_time({app="a"} | json | __error__="" | unwrap duration_ms [5m]))`: dynamicUnwrapIdentityResponseVersion,
+		` max by (app) (stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`:             dynamicUnwrapIdentityResponseVersion,
+		`sum(sum_over_time({app="a"} | json | unwrap n [5m]))`:                             "",
+		`sum(avg_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`:               "",
+		`sum(avg_over_time({app="a"} | unwrap n [5m]))`:                                    "",
 		`{app="a"} | json`: "",
 		// An identity operand of a binary operation, a ranking, a label_replace or an aggregation over a binary
 		// operation: the handlers evaluate it as the operand alone, so the answer changed too.
