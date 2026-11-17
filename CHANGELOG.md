@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shutting the proxy down closes the peer cache's connections to its peers: idle ones are closed, and a dial that
+  finishes after the shutdown is closed instead of kept open for its 30 s idle timeout.
+- `/labels` no longer keeps label names whose last stream left the requested window. Each listing of a window now
+  replaces the cached answer instead of being merged into it, so a refreshed or re-read answer lists the labels of the
+  streams with data in the window, as Loki does; an empty listing replaces it too (kept for the short negative TTL).
+  Storing a listing is also cheaper (40 labels: 4.4 µs and 16 allocations instead of 11.9 µs and 64).
+- Rows written with old timestamps into an hour or day the label inventory already cached with data are listed by the
+  next `/labels` or `/label/{name}/values` request, as Loki lists them as soon as they are ingested. Within
+  `-max-metadata-cache-freshness` every bucket whose row count is known (empty buckets, and hours and days that ended
+  more than an hour ago) is confirmed
+  by one row count per contiguous run, compared with the rows the buckets held; a run that grew is halved to find the
+  buckets that received rows, and only those are rescanned. Before, only empty buckets were confirmed this way and a
+  bucket with data showed backfilled rows only after its revalidation delay. A run count taken within
+  `-recent-tail-refresh-max-staleness` is reused, so a repeat inside it sends no count; non-empty 5-minute and
+  1-minute buckets (no row count), hours with rows from the last hour (where shippers' late rows land, revalidated
+  every labels TTL) and listings that cannot be counted keep their revalidation schedule.
 - A `label_replace` inside the binary operand of `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` or `stdvar` is now
   applied once, as Loki does, on `query` and `query_range`:
   `topk(1, label_replace(count_over_time({...}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)` answered `pod="x-x-p1"`. The
