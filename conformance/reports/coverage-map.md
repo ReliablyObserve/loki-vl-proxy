@@ -9,7 +9,7 @@ Generated from the conformance registry by `conformance/scripts/coverage_map.py`
 
 Loki surface: **v3.7.7**, from Loki's published HTTP API reference, its recorded answers and a live probe (no Loki source is read).
 
-The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler runs Loki's create and cancel as VictoriaLogs delete tasks, and answers Loki's 500 for the list and for queries a VictoriaLogs filter cannot select. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 ## Read API scores
 
@@ -79,11 +79,11 @@ Where the proxy computes a result instead of passing a VictoriaLogs answer throu
 
 ## VictoriaLogs surface in use
 
-- Endpoints: `/select/logsql/delete`, `/select/logsql/field_names`, `/select/logsql/field_values`, `/select/logsql/hits`, `/select/logsql/query`, `/select/logsql/stats_query`, `/select/logsql/stats_query_range`, `/select/logsql/stream_field_names`, `/select/logsql/stream_field_values`, `/select/logsql/streams`, `/select/logsql/tail`
-- Pipes: `coalesce`, `drop`, `extract`, `field_names`, `field_values`, `filter`, `format`, `json_array_len`, `keep`, `len`, `limit`, `math`, `pack_json`, `replace`, `running`, `sort`, `stats by`, `stats count`, `top`, `uniq`, `unpack_json`, `unpack_logfmt`, `unroll`
+- Endpoints: `/select/logsql/delete`, `/select/logsql/field_names`, `/select/logsql/field_values`, `/select/logsql/hits`, `/select/logsql/query`, `/select/logsql/stats_query`, `/select/logsql/stats_query_range`, `/select/logsql/stream_field_names`, `/select/logsql/stream_field_values`, `/select/logsql/stream_ids`, `/select/logsql/streams`, `/select/logsql/tail`
+- Pipes: `coalesce`, `drop`, `extract`, `field_names`, `field_values`, `filter`, `format`, `hits`, `json_array_len`, `keep`, `len`, `limit`, `math`, `pack_json`, `replace`, `running`, `sort`, `stats by`, `stats count`, `top`, `uniq`, `unpack_json`, `unpack_logfmt`, `unroll`
 - Stats functions: `avg`, `count()`, `count_uniq`, `histogram`, `max`, `min`, `quantile`, `rate`, `rate_sum`, `row_any`, `sum`, `sum_len`, `uniq_values`, `values`
 
 | Version-gated capability | Since | Used in |
 |---|---|---:|
 | DensePatternWindowing | v1.50 | 0 |
-| PipeCoalesce | v1.51 | 2 |
+| PipeCoalesce | v1.51 | 3 |

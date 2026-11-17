@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
+
+### Fixed
+
+- A metric whose JSON parser meets a line it cannot parse now fails with Loki's `400` and its
+  `pipeline error: 'JSONParserErr' for series: ...` text under every function Loki keeps the error through: `sort`,
+  `sort_desc`, `topk`, `bottomk`, `label_replace`, `max`/`avg`/`count` and other aggregations, nested aggregations,
+  arithmetic and comparisons with a number, `+`, `and`, `or` and `unless` between two metrics, and offsets. Only a
+  bare range aggregation, a `sum` over it and `label_replace` around those failed before; `sort(rate({...} | json [1m]))`
+  answered `200` with every series. As in Loki, a `sum` without grouping of `rate` or `count_over_time`,
+  `absent_over_time`, a `__error__` label filter and `drop __error__` still answer. The check rides on the metric's
+  own VictoriaLogs reads, so a query whose lines all parse sends no other request; those reads cost VictoriaLogs
+  about 7% to 30% more (one literal replacement per line). Not covered yet: lines both parsers read as JSON while
+  Loki's rejects them (a value `NaN`, `.5` or `+1`) under `sort` or `topk`, `| logfmt --strict` syntax errors, a
+  JSON pipeline with a `line_format` or a second parser, and `sort` over a range aggregation whose pipeline ends in
+  `keep` (read as a log query, as before).
+- A binary operation between two metrics with a parser (`rate({...} | json [1m]) + rate({...} | json [1m])`,
+  `count_over_time({...}[1m]) or rate({...} | json [1m])`) no longer answers `500`: it was read as one metric whose
+  selector ran through the operator.
+- An unwrap conversion error under `label_replace` now fails with Loki's `400`, as it does under other functions.
+
+## [2.326.0] - 2026-11-17
+
+### Fixed
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
+  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
+  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
+  answers are unchanged.
+
+## [2.325.0] - 2026-11-17
+
 ### Fixed
 
 - After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
@@ -24,29 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
   Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
   the body). A request that fits one chunk reads exactly as before.
-- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
-  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
-  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
-  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
-  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
-  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
-  answers are unchanged.
-- A metric whose JSON parser meets a line it cannot parse now fails with Loki's `400` and its
-  `pipeline error: 'JSONParserErr' for series: ...` text under every function Loki keeps the error through: `sort`,
-  `sort_desc`, `topk`, `bottomk`, `label_replace`, `max`/`avg`/`count` and other aggregations, nested aggregations,
-  arithmetic and comparisons with a number, `+`, `and`, `or` and `unless` between two metrics, and offsets. Only a
-  bare range aggregation, a `sum` over it and `label_replace` around those failed before; `sort(rate({...} | json [1m]))`
-  answered `200` with every series. As in Loki, a `sum` without grouping of `rate` or `count_over_time`,
-  `absent_over_time`, a `__error__` label filter and `drop __error__` still answer. The check rides on the metric's
-  own VictoriaLogs reads, so a query whose lines all parse sends no other request; those reads cost VictoriaLogs
-  about 7% to 30% more (one literal replacement per line). Not covered yet: lines both parsers read as JSON while
-  Loki's rejects them (a value `NaN`, `.5` or `+1`) under `sort` or `topk`, `| logfmt --strict` syntax errors, a
-  JSON pipeline with a `line_format` or a second parser, and `sort` over a range aggregation whose pipeline ends in
-  `keep` (read as a log query, as before).
-- A binary operation between two metrics with a parser (`rate({...} | json [1m]) + rate({...} | json [1m])`,
-  `count_over_time({...}[1m]) or rate({...} | json [1m])`) no longer answers `500`: it was read as one metric whose
-  selector ran through the operator.
-- An unwrap conversion error under `label_replace` now fails with Loki's `400`, as it does under other functions.
 
 ## [2.324.0] - 2026-11-17
 

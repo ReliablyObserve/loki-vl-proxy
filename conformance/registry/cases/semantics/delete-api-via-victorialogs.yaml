@@ -1,0 +1,73 @@
+id: semantics/delete-api-via-victorialogs
+title: "Loki's delete API (create, cancel) is executed as VictoriaLogs delete tasks with Loki's answers; the list and pipeline queries answer Loki's 500 (open)"
+pending: true
+proves:
+  - loki_api_v1_delete
+consumer: api
+why: |
+  Loki's compactor serves /loki/api/v1/delete: POST and PUT create a delete request (204), GET lists them, DELETE
+  cancels one (204). Its answers are recorded from a Loki 3.7.9 that serves the API (rows r1201 and r1700 to r1762
+  of internal/lokierr/testdata/loki_error_answers.jsonl). A create request is checked in this order: `query not set`,
+  `invalid query expression` (anything but a log query; Loki reads the query without building its pipeline, so
+  `| json`, a label filter after a parser, `{}` and a line filter regexp that does not compile are accepted), `start
+  time not set`, `invalid start time: require unix seconds or RFC3339 format` (ten digits of seconds or RFC3339; 1,
+  0, milliseconds, a leading zero, a sign, a fraction or spaces are refused), the same for the end (now when not
+  set), `start time can't be greater than or equal to end time` (ten digits of seconds are read through Unix
+  nanoseconds, so past 2262 they wrap: an end of 9999999999 is before any start; an RFC3339 time does not wrap),
+  `deletes in the future are not allowed` (an end after now), then, for a query with a line or label filter only, `invalid
+  max_interval: valid time units are 's', 'm', 'h'` (also for 0, 1d, 1ms and -1h) and `max_interval can't be greater
+  than the interval to be deleted (1h0m0s)`. A cancel without request_id is 204; an unknown id is 404 `could not
+  find delete request with given id`. Any other method is a bodyless 405.
+
+  The proxy (-delete-api-enabled, behind -delete-api-auth-token, delete-api-requires-token) makes the same checks in
+  the same order with Loki's texts (internal/lokierr/messages.go). A create request starts a VictoriaLogs
+  delete task (POST /delete/run_task, VictoriaLogs v1.49 and later with -delete.enable) with the tenant's
+  AccountID/ProjectID and the filter `_time:[start, end] (<filter>)`, both ends included, where <filter> is the
+  filter of the same log query on the read path (lower.PlanLogFilter, the read path's lowering profile), so a delete
+  removes the rows that query reads. A cancel stops the task (POST /delete/stop_task) only when /delete/active_tasks
+  lists it with the request's tenant alone; any other id answers Loki's 404 and stops nothing.
+
+  Open differences, each Loki's `500 Internal Server Error` with the construct in the log line:
+  - the list (GET): VictoriaLogs keeps neither a request's LogQL query nor its range, only its own filter, and
+    forgets a task when it ends, so the proxy cannot list Loki's requests (a proxy-held record is a follow-up);
+  - a query Loki accepts whose rows a VictoriaLogs filter cannot select exactly: a parser (`| json`), a filter on a
+    parsed or derived label, a formatting stage, a line filter regexp that does not compile;
+  - a tenant tenant-label routing confines with its label (a delete task takes no tenant stream filter; a tenant
+    mapped to its own AccountID/ProjectID is served) and the unmapped global tenant `*`;
+  - a start of ten digits past 2262 (r1763, r1768): it wraps to 1702 and Loki answers 204, deleting a tenant's
+    history back to then; the proxy serves no such request (a deliberate safety difference), nor a start before 1678
+    (r1765, Loki 204), which VictoriaLogs' nanosecond times cannot hold. A start before 1970 (r1766) is served.
+  Loki processes a request after its cancellation period (24h by default); VictoriaLogs runs the task at once, so
+  a cancel can only stop a task that is still running, and what it already deleted stays deleted (as Loki's
+  force=true leaves it). Answers cached before a delete (the response cache, the extent cache and the peer tier)
+  keep serving the deleted rows until they expire; Loki moves its results cache past a delete.
+
+  Decisions (owner, 2026-11-17): (1) answers cached before a delete keep serving the deleted rows until they expire,
+  documented (docs/security-hardening-migration.md), with a per-tenant cache fence on delete as a follow-up; (2) a
+  request without the delete token answers Loki's `401 no org id` (delete-api-requires-token); (3) the list of delete
+  requests (a record held by the proxy fleet) is a follow-up; (4) a start that wraps keeps Loki's 500, the proxy does
+  not mirror Loki's destructive wrap; (5) no cancellation period: a task runs at once, documented.
+request:
+  method: POST
+  path: /loki/api/v1/delete
+  params:
+    query: '{app="api-gateway"}'
+    start: '1794567075'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's statuses and texts for the recorded rows; 204 for a create the proxy serves.
+gap:
+  status: open
+  impact: api-only
+  effort: M
+  area: 'internal/proxy delete API (delete_api.go), internal/queryplan/lower PlanLogFilter'
+  loki: 'create, list and cancel delete requests'
+  proxy: 'create and cancel as VictoriaLogs delete tasks with Loki answers; list and pipeline queries Loki 500'
+  planned_test: 'TestDeleteAPIAnswersLikeLoki, TestDeleteCreateStartsTheTenantsTask, TestDeleteCancelStopsOnlyTheTenantsTask, TestDeleteRefusalsStartNoTask, TestDeleteRequestChecksInLokisOrder, FuzzDeleteRequest (internal/proxy), TestPlanLogFilterIsTheReadQuerysFilter (internal/queryplan/lower)'
+  visual: none
+  visual_reason: 'the delete API is no Grafana panel'
+  clusters: []

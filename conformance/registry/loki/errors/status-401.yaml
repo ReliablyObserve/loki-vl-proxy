@@ -2,14 +2,13 @@ id: status-401
 status: 401
 error_type: bad_data
 generated:   # rewritten by conformance/scripts/error_registry.py
-  proxy_call_sites: 5
+  proxy_call_sites: 4
   dynamic_sites: 0
   literal_messages:
     - "admin authentication required"
-    - "delete authentication required"
     - "multiple org IDs present"
     - "peer authentication required"
-  loki_messages: []
+  loki_messages: ["msg-no-org-id"]
   recorded_rows: 0
   comparable_rows: 0
   matching_rows: 0

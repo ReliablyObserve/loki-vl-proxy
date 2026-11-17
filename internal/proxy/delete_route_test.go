@@ -110,15 +110,15 @@ func TestDeleteRoute_EnabledRegistersExistingHandler(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, `/loki/api/v1/delete?query={app="nginx"}&start=1&end=2`, nil)
 	w := httptest.NewRecorder()
 	serveWithDeleteToken(mux, w, r)
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("GET status = %d, want the handler's 405; body %q", w.Code, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("GET (the list) status = %d, want the handler's 500; body %q", w.Code, w.Body.String())
 	}
 
 	r = httptest.NewRequest(http.MethodPost, `/loki/api/v1/delete?query={app="nginx"}&start=1&end=2`, nil)
 	w = httptest.NewRecorder()
 	serveWithDeleteToken(mux, w, r)
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("POST without confirmation status = %d, want the handler's 400; body %q", w.Code, w.Body.String())
+		t.Fatalf("POST with a start Loki refuses status = %d, want the handler's 400; body %q", w.Code, w.Body.String())
 	}
 }
 
@@ -151,8 +151,8 @@ func TestDeleteAuth_ClosedWithoutToken(t *testing.T) {
 		r.Header.Set("X-Scope-OrgID", "0")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
-		if w.Code != http.StatusUnauthorized || w.Body.String() != "delete authentication required" {
-			t.Fatalf("%v: %d %q, want 401 delete authentication required", h, w.Code, w.Body.String())
+		if w.Code != http.StatusUnauthorized || w.Body.String() != "no org id\n" {
+			t.Fatalf("%v: %d %q, want Loki's 401 no org id", h, w.Code, w.Body.String())
 		}
 	}
 	if n := hits.Load(); n != 0 {
@@ -202,7 +202,7 @@ func TestDeleteAuth_TokenGatesTheHandler(t *testing.T) {
 		}
 		return h
 	}
-	const denied = "delete authentication required"
+	const denied = "no org id\n"
 	for _, c := range []tc{
 		{"no token", http.MethodPost, ok, full(), 401, denied},
 		{"wrong token", http.MethodPost, ok, full("X-Delete-Token", "nope"), 401, denied},
@@ -211,10 +211,11 @@ func TestDeleteAuth_TokenGatesTheHandler(t *testing.T) {
 		{"basic auth is no token", http.MethodPost, ok, full("Authorization", "Basic dGVzdDp0ZXN0"), 401, denied},
 		{"no token, GET", http.MethodGet, ok, http.Header{}, 401, denied},
 		{"no token, no tenant", http.MethodPost, ok, http.Header{}, 401, denied},
-		{"token, GET is the handler's 405", http.MethodGet, ok, full("X-Delete-Token", testDeleteToken), 405, ""},
-		{"token, no confirmation", http.MethodPost, ok, http.Header{"X-Delete-Token": {testDeleteToken}, "X-Scope-Orgid": {"team-a"}}, 400, "delete requires X-Delete-Confirmation: true header for safety\n"},
-		{"token, wildcard", http.MethodPost, `/loki/api/v1/delete?query={}&start=1700000000&end=1700003600`, full("X-Delete-Token", testDeleteToken), 400, "wildcard delete rejected — query must target specific streams (e.g., {app=\"nginx\"})\n"},
-		{"token, range too wide", http.MethodPost, `/loki/api/v1/delete?query={app="nginx"}&start=1600000000&end=1700000000`, full("X-Delete-Token", testDeleteToken), 400, ""},
+		{"token, GET is the list Loki's 500 answers", http.MethodGet, ok, full("X-Delete-Token", testDeleteToken), 500, "Internal Server Error\n"},
+		{"token, PATCH is Loki's 405", http.MethodPatch, ok, full("X-Delete-Token", testDeleteToken), 405, ""},
+		{"token, no confirmation header is Loki's request", http.MethodPost, ok, http.Header{"X-Delete-Token": {testDeleteToken}, "X-Scope-Orgid": {"team-a"}}, 204, ""},
+		{"token, every stream as Loki accepts it", http.MethodPost, `/loki/api/v1/delete?query={}&start=1700000000&end=1700003600`, full("X-Delete-Token", testDeleteToken), 204, ""},
+		{"token, a range above 30 days as Loki accepts it", http.MethodPost, `/loki/api/v1/delete?query={app="nginx"}&start=1600000000&end=1700000000`, full("X-Delete-Token", testDeleteToken), 204, ""},
 		{"token, unknown tenant", http.MethodPost, ok, http.Header{"X-Delete-Token": {testDeleteToken}, "X-Delete-Confirmation": {"true"}, "X-Scope-Orgid": {"nobody"}}, 403, ""},
 		{"token, invalid tenant is Loki's", http.MethodPost, ok, http.Header{"X-Delete-Token": {testDeleteToken}, "X-Delete-Confirmation": {"true"}, "X-Scope-Orgid": {"a b"}}, 400, "tenant ID 'a b' contains unsupported character ' '\n"},
 		{"token in X-Delete-Token", http.MethodPost, ok, full("X-Delete-Token", testDeleteToken), 204, ""},
@@ -245,7 +246,7 @@ func TestDeleteAuth_TokenGatesTheHandler(t *testing.T) {
 		})
 	}
 	out := strings.Join(logs.lines(), "\n")
-	if !strings.Contains(out, `"msg":"DELETE request"`) || !strings.Contains(out, `"msg":"DELETE completed"`) ||
+	if !strings.Contains(out, `"msg":"DELETE request"`) || !strings.Contains(out, `"msg":"DELETE started"`) ||
 		!strings.Contains(out, `"tenant":"team-a"`) || !strings.Contains(out, `app=\"nginx\"`) {
 		t.Fatalf("audit log lines missing: %s", out)
 	}

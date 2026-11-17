@@ -88,9 +88,9 @@ cache keys invalidate old entries and can increase misses. Formatting buffers
 before responding. Range topk may expose more than k changing winners. Read the
 [migration guide](security-hardening-migration.md) before rollout.
 
-Delete remains unsupported: the opt-in (`-delete-api-enabled`) `/loki/api/v1/delete` handler
-targets a path VictoriaLogs rejects, and no adapter for VL's asynchronous deletion
-API exists. The
+The opt-in (`-delete-api-enabled`) `/loki/api/v1/delete` handler runs Loki's delete
+requests as VictoriaLogs delete tasks; the list, pipeline queries and tenant-label
+routing are not served (see the migration guide). The
 existing browser suite also contains explicit known-gap skips and permissive
 legacy assertions. The new strict tests do not turn those gaps into guarantees.
 

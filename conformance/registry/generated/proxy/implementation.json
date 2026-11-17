@@ -107,29 +107,19 @@
       "implemented": false
     },
     {
-      "execution": "native_vl",
-      "functions_reached": 82,
+      "execution": "proxy_side",
+      "functions_reached": 104,
       "handler": "handleDelete",
       "id": "loki_api_v1_delete",
       "implemented": true,
       "proxy_side_work": {},
       "route": "delete",
-      "vl_endpoints": [
-        "/select/logsql/delete",
-        "/select/logsql/field_names",
-        "/select/logsql/field_values",
-        "/select/logsql/hits",
-        "/select/logsql/query",
-        "/select/logsql/stats_query",
-        "/select/logsql/stats_query_range",
-        "/select/logsql/stream_field_names",
-        "/select/logsql/stream_field_values",
-        "/select/logsql/streams",
-        "/select/logsql/tail"
+      "vl_endpoints": [],
+      "vl_pipes": [
+        "len"
       ],
-      "vl_pipes": [],
       "where": [
-        "internal/proxy/patterns.go:1638 handleDelete"
+        "internal/proxy/delete_api.go:55 handleDelete"
       ]
     },
     {
@@ -342,7 +332,7 @@
     },
     {
       "execution": "hybrid",
-      "functions_reached": 270,
+      "functions_reached": 265,
       "handler": "handlePatterns",
       "id": "loki_api_v1_patterns",
       "implemented": true,
@@ -351,7 +341,6 @@
       },
       "route": "patterns",
       "vl_endpoints": [
-        "/select/logsql/delete",
         "/select/logsql/field_names",
         "/select/logsql/field_values",
         "/select/logsql/hits",
