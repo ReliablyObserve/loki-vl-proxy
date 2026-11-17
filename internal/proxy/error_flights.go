@@ -261,7 +261,11 @@ func windowFreeFailure(err error, typed *lokierr.Error) bool {
 
 // flightLead is the flight a request leads, and what its answer was.
 type flightLead struct {
+	// fl is the flight the lead runs, f the flight it ended up with (fl when
+	// it leads); key is what the flight was joined on.
+	fl         cache.Flight
 	f          *cache.Flight
+	key        flightKey
 	code       int
 	body       []byte
 	overflowed bool
@@ -269,6 +273,20 @@ type flightLead struct {
 	flushed    bool
 	// w is the tap, kept here so a lead is one allocation.
 	w flightTap
+	// The answer to build when one is needed (BuildAnswer).
+	answerCode   int
+	answerHeader http.Header
+	answerClass  cache.ErrorClass
+}
+
+// BuildAnswer is the leader's answer, carrying its exact key when the flight
+// was joined on a pre-key.
+func (l *flightLead) BuildAnswer() *cache.Answer {
+	a := answerOf(l.answerCode, l.answerHeader, l.body, l.answerClass)
+	if l.key.r != nil {
+		a.Key = l.key.exactKey()
+	}
+	return a
 }
 
 func (l *flightLead) release() {
@@ -370,26 +388,81 @@ func (t *flightTap) Unwrap() http.ResponseWriter { return t.ResponseWriter }
 // a request no response cache keeps.
 func (p *Proxy) uncachedShareLimit() int { return uncachedFlightShareBytes }
 
+// flightKey is what identical requests join on. join is the exact response
+// key, or for a request no response cache keys (a POST, -stream-response, a
+// disabled cache) a cheap pre-key (method, endpoint, path, parameters, the
+// form body's digest, tenant): the exact key, which reads the credentials'
+// fingerprint and the response profile, is built only when another request
+// with the same pre-key is in flight or a failure of it is held, and an
+// answer is taken only by a request whose exact key is the leader's.
+type flightKey struct {
+	join string
+	// Set for a pre-key: what the exact key is built from.
+	p        *Proxy
+	r        *http.Request
+	endpoint string
+	raw      string
+	digest   uint64
+	post     bool
+	memo     string
+}
+
+// exactKey is the exact key of the request (join when join is exact).
+func (k *flightKey) exactKey() string {
+	if k.r == nil {
+		return k.join
+	}
+	if k.memo == "" {
+		// The raw parameters and digest as the request arrived; the rest
+		// (credentials, profile, names, fences) from the request.
+		var tail string
+		if k.post {
+			tail = digestTail(k.digest)
+		}
+		k.memo = errorFlightKeyVersion + k.p.buildResponseKey(k.r.Method+":", k.endpoint, k.r, k.raw, tail)
+	}
+	return k.memo
+}
+
 // uncachedFlightKey is the flight key of a read request the response cache
-// does not keep (a POST, -stream-response, a disabled cache): the response key
-// of its method, path and every parameter, the form body's included.
-func (p *Proxy) uncachedFlightKey(endpoint string, r *http.Request) string {
+// does not keep (a POST, -stream-response, a disabled cache): a pre-key of its
+// method, endpoint, path, every parameter (the form body's as a digest) and
+// tenant, and its exact response key built when needed.
+func (p *Proxy) uncachedFlightKey(endpoint string, r *http.Request) flightKey {
 	if !compatCacheableEndpoint(endpoint) || strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
-		return ""
+		return flightKey{}
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodPost:
 	default:
-		return ""
+		return flightKey{}
 	}
-	var tail string
-	if r.Method == http.MethodPost {
+	var digest uint64
+	post := r.Method == http.MethodPost
+	if post {
 		if r.PostForm == nil {
-			return "" // the body was not read as a form: the request is not known
+			return flightKey{} // the body was not read as a form: the request is not known
 		}
-		tail = formDigest(r.PostForm)
+		digest = formDigest(r.PostForm)
 	}
-	return p.buildResponseKey(r.Method+":", endpoint, r, r.URL.RawQuery, tail)
+	raw, tenant := r.URL.RawQuery, r.Header.Get("X-Scope-OrgID")
+	var b strings.Builder
+	b.Grow(len(errorFlightKeyVersion) + len(r.Method) + len(endpoint) + len(r.URL.Path) + len(raw) + len(tenant) + 32)
+	b.WriteString(errorFlightKeyVersion)
+	b.WriteString(r.Method)
+	b.WriteByte(':')
+	b.WriteString(endpoint)
+	b.WriteByte(':')
+	b.WriteString(r.URL.Path)
+	b.WriteByte('?')
+	b.WriteString(raw)
+	if post {
+		var n [24]byte
+		b.Write(strconv.AppendUint(append(n[:0], "&post:"...), digest, 36))
+	}
+	b.WriteByte('@')
+	b.WriteString(tenant)
+	return flightKey{join: b.String(), p: p, r: r, endpoint: endpoint, raw: raw, digest: digest, post: post}
 }
 
 // formSeed keys formDigest: random per process, so no client can aim two
@@ -398,7 +471,7 @@ var formSeed = maphash.MakeSeed()
 
 // formDigest is a 64-bit digest of a form body: every name and value, in name
 // order, each delimited by its length.
-func formDigest(v url.Values) string {
+func formDigest(v url.Values) uint64 {
 	var room [16]string
 	names := room[:0]
 	for name := range v {
@@ -418,20 +491,32 @@ func formDigest(v url.Values) string {
 			h.WriteString(value)
 		}
 	}
-	var out [24]byte
-	return string(strconv.AppendUint(append(out[:0], "&post:"...), h.Sum64(), 36))
+	return h.Sum64()
+}
+
+// digestTail is a form digest as the exact key writes it after the URL query.
+func digestTail(d uint64) string {
+	return "&post:" + strconv.FormatUint(d, 36)
 }
 
 // serveFlight runs r through the flight of key: it answers a held failure,
 // waits for a leader in flight, or leads a new flight with run. run gets a
 // nil lead when it runs as a follower or on its own.
-func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *http.Request, key string, start time.Time, run func(http.ResponseWriter, *http.Request, *flightLead)) {
+func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *http.Request, k flightKey, start time.Time, run func(http.ResponseWriter, *http.Request, *flightLead)) {
 	ef := p.errorFlights
-	if ef == nil || key == "" {
+	if ef == nil || k.join == "" {
 		run(w, r, nil)
 		return
 	}
-	key = errorFlightKeyVersion + key
+	key := k.join
+	if k.r != nil && ef.Peek(heldHintKey(key)) != nil {
+		// A failure of this pre-key is held: read it under the exact key.
+		if held := ef.Peek(k.exactKey()); held != nil {
+			p.errorFlightCounters.held[held.Class].Add(1)
+			p.writeFlightAnswer(endpoint, route, w, r, held, start)
+			return
+		}
+	}
 	if p.windowFreeHeldUntil.Load() > cache.Now().UnixNano() {
 		// A backend failure that does not depend on the window is held for
 		// the request whatever its window (a refresh moves end=now).
@@ -442,14 +527,16 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 		}
 	}
 	for round := 0; round < maxFlightRounds; round++ {
-		held, f, lead := ef.Lookup(key)
+		lead := &flightLead{key: k}
+		held, f, leads := ef.Join(key, &lead.fl)
 		if held != nil {
 			p.errorFlightCounters.held[held.Class].Add(1)
 			p.writeFlightAnswer(endpoint, route, w, r, held, start)
 			return
 		}
-		if lead {
-			p.leadFlight(endpoint, w, r, key, f, run)
+		if leads {
+			lead.f = f
+			p.leadFlight(endpoint, w, r, lead, run)
 			return
 		}
 		outcome, answer, ok := f.Wait(r.Context())
@@ -457,6 +544,12 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 			// This client went away while it waited: its own cancellation.
 			status := p.fail(w, r, r.Context().Err())
 			p.metrics.RecordRequestWithRoute(endpoint, route, status, time.Since(start))
+			return
+		}
+		if answer != nil && answer.Key != "" && answer.Key != lead.key.exactKey() {
+			// Same pre-key, another exact request (other credentials or
+			// profile): the leader's answer is not this request's.
+			run(w, r, nil)
 			return
 		}
 		switch outcome {
@@ -487,11 +580,11 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 // sends the followers back to start again; any other answer it cannot share
 // lets them run on their own at once, so a follower never waits longer than
 // it would have run.
-func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Request, key string, f *cache.Flight, run func(http.ResponseWriter, *http.Request, *flightLead)) {
-	lead := &flightLead{f: f}
+func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Request, lead *flightLead, run func(http.ResponseWriter, *http.Request, *flightLead)) {
+	key, f := lead.key.join, lead.f
 	outcome := cache.OutcomeReleased
 	var (
-		build      func() *cache.Answer
+		build      cache.AnswerBuilder
 		pol        cache.Policy
 		windowFree bool
 	)
@@ -500,6 +593,11 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 		answer, ttl := p.errorFlights.Finish(key, f, outcome, build, pol)
 		if ttl > 0 {
 			p.errorFlightCounters.stored[answer.Class].Add(1)
+			if lead.key.r != nil {
+				// Requests with this pre-key look for the held failure under
+				// their exact key while it is held.
+				p.errorFlights.Hold(heldHintKey(key), heldHint, ttl)
+			}
 			if windowFree {
 				p.holdWindowFree(endpoint, r, answer, ttl)
 			}
@@ -520,14 +618,16 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 		outcome = cache.OutcomeStored
 	case code == http.StatusOK:
 		if !lead.overflowed && !lead.flushed && lead.body != nil && len(header.Values("Set-Cookie")) == 0 {
-			outcome, build = cache.OutcomeSucceeded, func() *cache.Answer { return answerOf(code, header, lead.body, cache.ErrorNever) }
+			lead.answerCode, lead.answerHeader, lead.answerClass = code, header, cache.ErrorNever
+			outcome, build = cache.OutcomeSucceeded, lead
 		}
 	case code >= http.StatusBadRequest && !lead.overflowed:
 		var reach queryplan.Failures
 		pol, reach = p.errorPolicy(endpoint, r)
 		var class cache.ErrorClass
 		if class, windowFree = heldFailureClass(r.Context(), code, reach); class != cache.ErrorNever {
-			outcome, build = cache.OutcomeFailed, func() *cache.Answer { return answerOf(code, header, lead.body, class) }
+			lead.answerCode, lead.answerHeader, lead.answerClass = code, header, class
+			outcome, build = cache.OutcomeFailed, lead
 		}
 	}
 }
@@ -585,6 +685,11 @@ func (p *Proxy) holdWindowFree(endpoint string, r *http.Request, a *cache.Answer
 func answerOf(code int, header http.Header, body []byte, class cache.ErrorClass) *cache.Answer {
 	return &cache.Answer{Status: code, Header: flightHeader(header), Body: body, Class: class}
 }
+
+// heldHint marks a pre-key with a held failure; it is never answered.
+var heldHint = &cache.Answer{}
+
+func heldHintKey(join string) string { return join + "\x00held" }
 
 // flightPerRequestHeaders are the response headers each request writes for
 // itself (framing, encoding, the client's rate limit, the debug counters): a
