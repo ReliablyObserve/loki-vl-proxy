@@ -338,10 +338,16 @@ func TestChaining_MetricQueryComplexMultiStepChains(t *testing.T) {
 			logql:  `count_over_time({app="payment-service"} | logfmt [1m])`,
 			wantOK: true,
 		},
-		// topk applied to rate with parser
+		// topk applied to rate with parser: the cluster holds logfmt lines (payment-service), which Loki's JSON
+		// parser rejects, so Loki fails the metric with its pipeline error; dropping the errors answers.
 		{
 			name:   "topk_rate_json",
 			logql:  `topk(3, rate({cluster="us-east-1"} | json [5m]))`,
+			wantOK: false,
+		},
+		{
+			name:   "topk_rate_json_errors_dropped",
+			logql:  `topk(3, rate({cluster="us-east-1"} | json | __error__="" [5m]))`,
 			wantOK: true,
 		},
 	}

@@ -1,0 +1,36 @@
+id: semantics/logfmt-strict-parser-error-not-raised
+title: "A strict logfmt parser error does not fail the metric (open)"
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: any
+why: |
+  `count_over_time({...} | logfmt --strict [1m])` fails in Loki with HTTP 400 and
+  `pipeline error: 'LogfmtParserErr' for series: '{__error__="LogfmtParserErr", __error_details__="logfmt syntax error at pos 29 : unterminated quoted value", ...}'`
+  when a line in a window is no valid logfmt, under every function as the JSON parser's error
+  (semantics/json-parser-error-under-wrappers), and answers under a sum without grouping. The proxy
+  answers 200: VictoriaLogs' unpack_logfmt accepts every line, and no check marks the lines Loki's strict
+  parser rejects (recorded with Loki's engine, Loki 3.7.9, and VictoriaLogs v1.49.0 and v1.53.0:
+  TestParserErrorsUnderWrappersMatchLoki lists every such run as this case).
+
+  Fix to make: mark the lines Loki's strict logfmt parser rejects in the metric's own reads, as the JSON
+  check does, and confirm them with a Loki-faithful strict logfmt parser that writes Loki's position and
+  message.
+request:
+  scope: query-grammar
+  entry: "TestParserErrorsUnderWrappersMatchLoki (internal/querycorpus): the runs of the logfmt --strict leaf Loki fails"
+  setup: "Send as the query of /loki/api/v1/query_range over a stream holding a line with an unterminated quote: count_over_time({job=\"x\"} | logfmt --strict [1m]) ."
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: "Loki's 400 with the LogfmtParserErr pipeline error."
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy (no check marks strict logfmt syntax errors)'
+  loki: '400 LogfmtParserErr'
+  proxy: '200 with the series'
+  planned_test: 'TestParserErrorsUnderWrappersMatchLoki (internal/querycorpus) lists the runs as known differences'
+  clusters: []

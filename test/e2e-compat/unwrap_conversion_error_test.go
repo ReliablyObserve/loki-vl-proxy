@@ -97,7 +97,7 @@ func unwrapResultCount(t *testing.T, a unwrapErrorAnswer) int {
 // Shapes the detection leaves out are registered and not asserted here
 // (semantics/unwrap-conversion-error-postfilter-forms, -stored-value-overwritten,
 // -undetected-shapes).
-// conformance: semantics/unwrap-conversion-error, semantics/unwrap-conversion-error-stored-value-overwritten, status-400, parser-error-and-label-collision, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/unwrap-conversion-error, semantics/json-parser-error-under-wrappers, semantics/unwrap-conversion-error-stored-value-overwritten, status-400, parser-error-and-label-collision, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_UnwrapConversionErrorParity(t *testing.T) {
 	now := time.Now()
 	fx := slidingLiveFixture{app: fmt.Sprintf("unwrap-converr-%d", now.UnixNano()), service: true}
@@ -212,6 +212,7 @@ func TestCompat_UnwrapConversionErrorParity(t *testing.T) {
 		{"instant quantile", instantPath, instant(`quantile_over_time(0.5, `+sel+` | logfmt | unwrap v [5m])`, 20*time.Minute), 400},
 		{"instant ungrouped sum of rate", instantPath, instant(`sum(rate(`+sel+` | logfmt | unwrap t [5m]))`, 20*time.Minute), 400},
 		{"instant ungrouped sum of rate over json", instantPath, instant(`sum(rate(`+jsonSel+` | json | unwrap s [5m]))`, 20*time.Minute), 400},
+		{"label_replace around the metric", rangePath, window(`label_replace(sum by (service_name) (sum_over_time(` + sel + ` | logfmt | unwrap t [5m])), "x", "$1", "service_name", "(.*)")`), 400},
 		{"instant window holding the value", instantPath, instant(`max_over_time(`+sel+` | logfmt | unwrap w [1m])`, 12*time.Minute+30*time.Second), 400},
 
 		{"json boolean", rangePath, window(`sum by (service_name) (sum_over_time(` + jsonSel + ` | json | unwrap c [5m]))`), 400},
@@ -282,7 +283,6 @@ func TestCompat_UnwrapConversionErrorParity(t *testing.T) {
 	// Shapes Loki fails that the detection leaves out (registered, open): the
 	// test checks Loki still fails them and skips with the case named.
 	for _, tc := range []struct{ name, query, open string }{
-		{"label_replace around the metric", `label_replace(sum by (service_name) (sum_over_time(` + sel + ` | logfmt | unwrap t [5m])), "x", "$1", "service_name", "(.*)")`, "semantics/unwrap-conversion-error-undetected-shapes"},
 		{"a comparison after the unwrap", `sum_over_time(` + sel + ` | logfmt | unwrap v | v > 3 [5m])`, "semantics/unwrap-conversion-error-postfilter-forms"},
 	} {
 		t.Run("open/"+tc.name, func(t *testing.T) {

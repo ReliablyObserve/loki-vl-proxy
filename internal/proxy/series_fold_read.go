@@ -252,7 +252,7 @@ func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentPar
 			return nil, err
 		}
 		defer release()
-		resp, err := p.vlPostSend(callCtx, path, params, sentParams, nil)
+		resp, err := p.vlPostSend(callCtx, path, params, sentParams, nil, nil)
 		if err != nil {
 			return nil, err
 		}

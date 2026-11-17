@@ -1,0 +1,93 @@
+id: semantics/json-parser-error-under-wrappers
+title: "A JSON parser error fails a metric under any function, as in Loki (fixed; strict logfmt open)"
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: any
+why: |
+  Loki fails a metric query with HTTP 400 and its pipeline error text
+  (`pipeline error: 'JSONParserErr' for series: '{__error__="JSONParserErr", ...}'`) when a line its JSON
+  parser rejects reaches a range vector: the parser runs (some label is required), and no label filter on
+  `__error__` or drop of it intercepts the error. Every function above the range aggregation keeps the
+  failure: sort, sort_desc, topk, bottomk, label_replace, max/avg/count by, nested aggregations, arithmetic
+  and comparisons with a scalar, `+ and or unless` between vectors, offsets. Loki does not parse under a sum
+  without grouping of rate or count_over_time (no label is required) and never fails absent_over_time
+  (recorded with Loki's engine, test/oracle/loki engine, Loki 3.7.9).
+
+  The proxy raised the error only on the shapes its ordered JSON evaluator owns (a bare range aggregation,
+  a sum over it, label_replace around those). Every other function went to the native VictoriaLogs route,
+  whose unpack_json drops a line it cannot parse without an error, so `sort(rate({...} | json [1m]))`
+  answered 200 with every series where Loki answers 400. A binary operation over parser operands was also
+  read by a text pattern as one bare parser metric, whose selector ran through the operator into the next
+  operand: VictoriaLogs rejected the query it made and the proxy answered 500, also where Loki answers 200.
+
+  Fixed: the decision is taken on the parsed query (jsonErrorProbes, internal/proxy
+  json_parser_error_check.go): every range aggregation under any wrapper whose JSON parser errors reach
+  the result, with Loki's parser hints. The detection rides on the metric's own VictoriaLogs reads, as the
+  unwrap conversion check does: the reads that unpack JSON splice a sentinel member into the line after its
+  first brace (a literal replacement, no regular expression), so the query's own unpack_json reports whether
+  the line is one JSON object; a stats query groups by the sentinel and the groups without it are taken out
+  before any caller reads the answer, a raw-row read flags the row; the line is restored when a later pipe
+  reads it. Only after a mark, one lookup per probe (eight per request at most) reads the stored rows of the
+  marked span and evaluates them with the evaluator's Loki-faithful parser; only a row Loki fails on answers
+  Loki's 400, and a lookup VictoriaLogs does not answer answers Loki's failed-backend 500 (never a cached
+  200). A marked stats answer Loki does not fail on (`{ }`, or leading whitespace on VictoriaLogs v1.49) is
+  read again without the mark; `{}` is spliced without a comma, so it is not marked. A query whose lines all
+  parse sends no other request. The bare-parser text pattern no longer reads a query whose parsed tree is
+  not a range aggregation.
+
+  Which failing series Loki names changes from run to run of the same query (three recordings of one query
+  name different series at the same step), so no fixed order reproduces it. The proxy names the earliest
+  failing line it finds, rendered as Loki renders a label set (names in byte order, so `LEVEL` before
+  `__error__`), and the differential holds it to Loki: the series must be one of the series Loki's reference
+  query (the leaf with `| __error__!=""`) answers at Loki's first failing step, stream level labels in every
+  spelling included (`LEVEL`, `level`, `severity`, `lvl`); the status, errorType and every other word are
+  Loki's. A sum with a grouping directly over the leaf (Loki's parser hints) is held to the form only.
+  Not marked: a line both parsers read as JSON while Loki's rejects it (a value `NaN`, `.5` or `+1`, an
+  invalid key escape): the filter that finds such lines costs VictoriaLogs about 9 ms to compile on every
+  query and a regular expression per line, measured +100% to +250% on the success path, which no request
+  may pay. Open, in their own cases: the strict logfmt parser's errors
+  (semantics/logfmt-strict-parser-error-not-raised) and an unwrap conversion error in an `and`/`or` operand
+  next to a clean operand (semantics/unwrap-conversion-error-set-operand).
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'sort(rate({service_name="payment-service"} | json [1m]))'
+      - query: 'label_replace(sum by (service_name) (sum_over_time({service_name="payment-service"} | logfmt | unwrap msg [5m])), "x", "$1", "service_name", "(.*)")'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sort(rate({service_name="payment-service"} | json [1m]))'
+    start: now-1h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The stream holds at least one line that is not a JSON object in the window.
+  verify:
+    met_by: stack
+    evidence: "payment-service writes only logfmt lines (gen_payment_service, test/e2e-compat/log-generator.py:264-300, pushed at test/e2e-compat/log-generator.py:762-763): lines that are no JSON object, in every window of the stack's standing data."
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: |
+    HTTP 400 on both, Loki's errorType and text with the series named of Loki's form; 200 with Loki's
+    series and values where Loki answers (a sum without grouping, absent_over_time, a filter or drop of
+    __error__, data without such a line).
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy json_parser_error_check.go (the check), backend.go (the stats hook), range_metric_compat.go and query_translation.go (raw rows), proxy.go (the handlers)'
+  loki: '400 with the pipeline error under every function'
+  proxy: '400 with Loki''s text under every function (was 200 with every series, or 500 for binary operations)'
+  planned_test: 'TestParserErrorsUnderWrappersMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs v1.49.0/v1.53.0 recorded), TestJSONErrorProbes, TestJSONCountingStatsQuery, TestJSONFlagUnpack, TestJSONWindows, TestBareParserMetricSpecRejectsWrappedQueries, FuzzJSONErrorProbesWrapperNesting (internal/proxy)'
+  visual: none
+  visual_reason: 'an error answer: Grafana shows Loki''s message, no panel'
+  clusters: []

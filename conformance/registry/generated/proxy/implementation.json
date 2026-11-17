@@ -370,7 +370,7 @@
     },
     {
       "execution": "hybrid",
-      "functions_reached": 387,
+      "functions_reached": 391,
       "handler": "handleQuery",
       "id": "loki_api_v1_query",
       "implemented": true,
@@ -397,12 +397,12 @@
         "unpack_json"
       ],
       "where": [
-        "internal/proxy/proxy.go:3086 handleQuery"
+        "internal/proxy/proxy.go:3094 handleQuery"
       ]
     },
     {
       "execution": "hybrid",
-      "functions_reached": 518,
+      "functions_reached": 525,
       "handler": "handleQueryRange",
       "id": "loki_api_v1_query_range",
       "implemented": true,

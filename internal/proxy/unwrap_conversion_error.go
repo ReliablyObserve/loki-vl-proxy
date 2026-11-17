@@ -66,6 +66,10 @@ func unwrapErrorProbes(expr logqlpkg.Expr) []unwrapErrorProbe {
 		case *logqlpkg.BinOpExpr:
 			walk(n.Left, nil)
 			walk(n.Right, nil)
+		case *logqlpkg.OpaqueMetricExpr:
+			if n.Typed && n.Inner != nil {
+				walk(n.Inner, nil) // label_replace keeps its sample expression's errors
+			}
 		}
 	}
 	if expr != nil {
@@ -1002,6 +1006,10 @@ type unwrapCheck struct {
 	looked             map[unwrapHit]bool
 	// query is the request's query as it arrived, the key of the recent errors.
 	query string
+
+	// json is the request's JSON parser error detection, nil when the query
+	// has nothing to check (json_parser_error_check.go).
+	json *jsonErrorCheck
 }
 
 // unwrapFirstWindow is the lookup of the first evaluation window: done closes when it answered, err is Loki's
@@ -1254,8 +1262,9 @@ func (r *unwrapRecent) mark(key string) {
 	r.at[key] = now
 }
 
-// confirm decides the check: Loki's error when a line of the read's hits fails Loki's conversion, nil otherwise.
-func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelineError {
+// confirmUnwrap decides the check: Loki's error when a line of the read's hits fails Loki's conversion, nil
+// otherwise (the JSON parser error is decided after it, jsonErrorCheck.confirm).
+func (c *unwrapCheck) confirmUnwrap(ctx context.Context, p *Proxy) *orderedJSONPipelineError {
 	if c == nil || len(c.probes) == 0 {
 		return nil
 	}
@@ -1809,6 +1818,11 @@ type unwrapLookupWriter struct {
 	err      *orderedJSONPipelineError
 	recorded bool
 	mu       sync.Mutex
+	// backendErr is a JSON parser error lookup VictoriaLogs did not answer:
+	// the request answers it as a failed backend (jsonErrorCheck.failure);
+	// backendStatus is the status the error layer gave it.
+	backendErr    error
+	backendStatus int
 }
 
 // startUnwrapConversionCheck gives a metric request with an unwrap its check: the request to serve (carrying the
@@ -1835,6 +1849,12 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 			check.end = time.Unix(0, ns)
 		}
 		check.step, _ = parsePositiveStepDuration(r.FormValue("step"))
+		if _, binary := expr.(*logqlpkg.BinOpExpr); binary && check.step > 0 {
+			// Binary operands are evaluated on the step-aligned axis (alignBinaryRangeRequest), as the JSON parser
+			// error check reads them (startJSONParserErrorCheck).
+			check.start = check.start.Add(-time.Duration(check.start.UnixNano() % int64(check.step)))
+			check.end = check.end.Add(-time.Duration(check.end.UnixNano() % int64(check.step)))
+		}
 	} else {
 		at := time.Now()
 		if ns, ok := parseLokiTimeToUnixNano(r.FormValue("time")); ok {
@@ -1919,12 +1939,29 @@ func (l *unwrapLookupWriter) setQuery(logql string) {
 // byte, when the route records its status, and when the route asks whether the answer failed. Loki's error is written
 // at once and ends the decision.
 func (l *unwrapLookupWriter) decide() {
-	if l.err != nil || l.passed {
+	if l.err != nil || l.backendErr != nil || l.passed {
 		return
 	}
-	l.err = l.check.confirm(l.ctx, l.p)
+	l.err = l.check.confirmUnwrap(l.ctx, l.p)
+	unwrapFailed := l.err != nil
+	if l.err == nil && l.check.json != nil {
+		l.err = l.check.json.confirm(l.ctx, l.p, l.check)
+	}
+	if l.err == nil {
+		if l.backendErr = l.check.json.backendFailure(); l.backendErr != nil {
+			// A JSON parser error lookup VictoriaLogs did not answer: Loki's failed-backend answer, through the
+			// error layer, with the client's context.
+			l.backendStatus = l.p.writeErr(l.out, l.parent, l.backendErr)
+			if l.check.cancel != nil {
+				l.check.cancel()
+			}
+		}
+		return
+	}
 	if l.err != nil {
-		if key := l.recentHitKey(); key != "" {
+		// Only a conversion error starts a later request's early first-window lookup (a JSON parser error is not
+		// what that lookup finds).
+		if key := l.recentHitKey(); unwrapFailed && key != "" {
 			unwrapRecentErrors.mark(key)
 		}
 		// Written with the client's context; the request's own reads (a later operand's) stop: the answer is sent.
@@ -1966,12 +2003,12 @@ func (l *unwrapLookupWriter) Header() http.Header { return l.header }
 func (l *unwrapLookupWriter) WriteHeader(code int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.passed || l.err != nil {
+	if l.passed || l.err != nil || l.backendErr != nil {
 		return
 	}
 	l.status = code
 	l.decide()
-	if l.err == nil {
+	if l.err == nil && l.backendErr == nil {
 		l.pass()
 	}
 }
@@ -1981,7 +2018,7 @@ func (l *unwrapLookupWriter) Write(b []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.decide()
-	if l.err != nil {
+	if l.err != nil || l.backendErr != nil {
 		return len(b), nil
 	}
 	if !l.passed {
@@ -2035,7 +2072,31 @@ func (l *unwrapLookupWriter) failed() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.decide()
-	return l.err != nil
+	return l.err != nil || l.backendErr != nil
+}
+
+// unwrapAnswerUncertain reports whether the answer a route is about to keep holds JSON parser error marks that were
+// not all confirmed, for the route's own check or, for an inner request (an operand), the check of the request it
+// serves (as unwrapAnswerFailed).
+func unwrapAnswerUncertain(ctx context.Context, l *unwrapLookupWriter) bool {
+	if l == nil {
+		if c := unwrapCheckFrom(ctx); c != nil {
+			l = c.writer
+		}
+	}
+	return l.uncertain()
+}
+
+// uncertain reports an answer whose JSON parser error marks were not all
+// confirmed: it is sent, and not kept in the response cache.
+func (l *unwrapLookupWriter) uncertain() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.decide()
+	return l.check.json.uncertain()
 }
 
 // unwrapRecordedStatus is the status a route records for its request: Loki's 400 when the check answers the
@@ -2053,6 +2114,9 @@ func unwrapRecordedStatus(ctx context.Context, code int) int {
 	if l.err != nil {
 		return http.StatusBadRequest
 	}
+	if l.backendErr != nil {
+		return l.backendStatus // a lookup VictoriaLogs did not answer
+	}
 	return code
 }
 
@@ -2061,14 +2125,18 @@ func unwrapRecordedStatus(ctx context.Context, code int) int {
 func (l *unwrapLookupWriter) finish(endpoint, logql string, requestStart time.Time) {
 	l.mu.Lock()
 	l.decide()
-	failed, recorded := l.err != nil, l.recorded
+	failed, recorded := l.err != nil || l.backendErr != nil, l.recorded
+	status := http.StatusBadRequest
+	if l.err == nil && l.backendErr != nil {
+		status = l.backendStatus
+	}
 	l.mu.Unlock()
 	if l.check.cancel != nil {
 		l.check.cancel()
 	}
 	if failed && !recorded {
 		elapsed := time.Since(requestStart)
-		l.p.metrics.RecordRequest(endpoint, http.StatusBadRequest, elapsed)
+		l.p.metrics.RecordRequest(endpoint, status, elapsed)
 		l.p.queryTracker.Record(endpoint, logql, elapsed, true)
 	}
 }

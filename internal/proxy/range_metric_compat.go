@@ -1981,7 +1981,10 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	// A limit query argument makes VL sort all candidates by timestamp. The
 	// limit pipe streams an arbitrary subset instead; successful responses are
 	// complete because overflow is rejected, and samples are sorted below.
-	params.Set("query", baseQuery+" | limit "+strconv.Itoa(rowLimit+1))
+	// A metric checked for JSON parser errors marks the lines VictoriaLogs
+	// cannot vouch for in the same read; the mark is taken off each row below.
+	jsonCheck := jsonErrorCheckFrom(ctx)
+	params.Set("query", jsonCheck.rawRowsQuery(baseQuery)+" | limit "+strconv.Itoa(rowLimit+1))
 	if err := p.precheckRawMetricRows(ctx, precheckQuery, params, end.Sub(start), rowLimit); err != nil {
 		return nil, err
 	}
@@ -2048,6 +2051,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		if ts < 1e12 {
 			ts *= int64(time.Second)
 		}
+		jsonCheck.takeRawRowFJ(v, ts)
 
 		sampleValue, ok := p.extractManualSampleValueFJ(v, field, unwrapConv)
 		if !ok {

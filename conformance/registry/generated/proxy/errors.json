@@ -2560,6 +2560,18 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "l.parent, l.backendErr",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/unwrap_conversion_error.go decide",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "l.parent, l.err",
       "kind": "layer",
       "message": null,
@@ -2697,11 +2709,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 184,
+        "count": 185,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 180,
+        "layer_sites": 181,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2709,6 +2721,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 217
+    "call_sites": 218
   }
 }

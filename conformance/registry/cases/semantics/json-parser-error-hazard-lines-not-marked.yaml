@@ -1,0 +1,38 @@
+id: semantics/json-parser-error-hazard-lines-not-marked
+title: "A JSON line both parsers read while Loki's rejects it does not fail the metric under a wrapper (open)"
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: any
+why: |
+  Loki's JSON parser rejects some lines VictoriaLogs parses as JSON: a value `NaN`, `Inf`, `.5`, `e5` or `+1`,
+  and a key with an invalid escape. A metric over such a line fails in Loki with `pipeline error: 'JSONParserErr'`
+  under every function (semantics/json-parser-error-under-wrappers). The JSON parser error check marks the lines
+  VictoriaLogs' own unpack_json cannot parse, so these lines are not marked and a wrapped metric answers 200.
+  The filter that finds them (jsonLokiRejectHazard, used by the stats split once a probe has found such a line)
+  costs VictoriaLogs about 9 ms to compile on every query and a regular expression per line: +100% to +250% on
+  the success path when it ran on every read (TestParserErrorMarkVictoriaLogsCost, v1.49.0 and v1.53.0). Recorded
+  with Loki's engine, Loki 3.7.9: TestParserErrorsUnderWrappersMatchLoki lists the runs over the `{"status":NaN}`
+  stream as this case.
+
+  Fix to make: mark such lines without a per-line regular expression on every read (a gated probe, as the stats
+  split does, or a cheaper VictoriaLogs-side test).
+request:
+  scope: query-grammar
+  entry: "TestParserErrorsUnderWrappersMatchLoki (internal/querycorpus): the job=hz rows"
+  setup: "Send as the query of /loki/api/v1/query_range over a stream holding {\"status\":NaN}: sort(rate({job=\"x\"} | json [1m])) ."
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: "Loki's 400 with the JSONParserErr pipeline error."
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy json_parser_error_check.go (jsonErrorMarkSpec has no hazard filter)'
+  loki: '400 JSONParserErr'
+  proxy: '200 with the series'
+  planned_test: 'TestParserErrorsUnderWrappersMatchLoki (internal/querycorpus) lists the runs as known differences'
+  clusters: []

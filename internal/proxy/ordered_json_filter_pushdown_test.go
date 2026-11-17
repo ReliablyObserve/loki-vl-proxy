@@ -802,6 +802,22 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 					delete(values, strings.Trim(field, "`"))
 				}
 			}
+		case strings.HasPrefix(pipe, "replace ("):
+			// The JSON parser error mark's literal splice and restore (logsql.JSONMark).
+			m := fakeReplaceRE.FindStringSubmatch(pipe)
+			if m == nil {
+				t.Errorf("fake VL: unsupported replace pipe %q", pipe)
+				return nil, false
+			}
+			from, _ := strconv.Unquote(m[1])
+			to, _ := strconv.Unquote(m[2])
+			values[m[3]] = strings.Replace(values[m[3]], from, to, 1)
+		case fakeMarkFlagRE.MatchString(pipe):
+			// format if (NOT sentinel:*) "1" as flag: the mark's flag on a row whose line did not unpack.
+			m := fakeMarkFlagRE.FindStringSubmatch(pipe)
+			if values[m[1]] == "" {
+				values[m[2]] = "1"
+			}
 		case strings.HasPrefix(pipe, "replace_regexp ("):
 			m := regexp.MustCompile(`^replace_regexp \(("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")\) at (\S+)$`).FindStringSubmatch(pipe)
 			if m == nil {
@@ -857,6 +873,8 @@ func (f *pushdownFakeVL) guardMatches(t testing.TB, query string, row pushdownRo
 }
 
 var (
+	fakeReplaceRE       = regexp.MustCompile(`^replace \(("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")\) at (\S+) limit 1$`)
+	fakeMarkFlagRE      = regexp.MustCompile(`^format if \(NOT (\S+):\*\) "1" as (\S+)$`)
 	fakeExtractRegexpRE = regexp.MustCompile("^extract_regexp `(.*)` from (\\S+)$")
 	fakeExtractWholeRE  = regexp.MustCompile(`^extract if \((\S+):\*\) "<([^>]+)>" from (\S+)$`)
 )
