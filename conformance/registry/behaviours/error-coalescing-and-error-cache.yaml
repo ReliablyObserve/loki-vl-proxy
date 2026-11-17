@@ -33,13 +33,15 @@ proxy: |
   A failure's class comes from the type of the error the request answered
   through the error layer, and is kept only when the request's query plan
   (queryplan.Failures) says the request can fail in that class: transient
-  (VictoriaLogs 5xx, 429, queue timeout, a refused, reset or timed-out
-  connection, an aborted body; held -error-cache-transient-ttl, default 1s),
+  (VictoriaLogs 5xx, 429, queue timeout, a refused or reset connection; held
+  -error-cache-transient-ttl, default 1s),
   data-dependent (Loki's series limit, a line or response size limit, a JSON
   parser or unwrap conversion error under a metric whose plan lets a pipeline
   error reach it; held -error-cache-data-ttl, default 5s), and request-decided
   (parse, parameter, query length; shared between requests in flight, held by
   no TTL yet). Never held or shared: the client's own cancellation or deadline,
+  any timeout or body VictoriaLogs aborted (a retry may answer), a failure
+  written after the first streamed byte, a partial answer,
   the proxy's own queue and load shedding, missing credentials, a proxy
   defect, an untyped failure, two failures of different classes in one
   request, and an answer whose status is not the recorded failure's. A backend

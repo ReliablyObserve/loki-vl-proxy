@@ -222,13 +222,24 @@ func TestErrorFlightsConcurrent(t *testing.T) {
 
 // finish ends f with a ready answer; it returns how long the answer is held.
 func finish(e *ErrorFlights, key string, f *Flight, o Outcome, a *Answer, pol Policy) time.Duration {
-	var build func() *Answer
+	var build AnswerBuilder
 	if a != nil {
-		build = func() *Answer { return a }
+		build = builtAnswer{a}
 	}
 	_, ttl := e.Finish(key, f, o, build, pol)
 	return ttl
 }
+
+type builtAnswer struct{ a *Answer }
+
+func (b builtAnswer) BuildAnswer() *Answer { return b.a }
+
+type countingBuilder struct {
+	a *Answer
+	n *int
+}
+
+func (b countingBuilder) BuildAnswer() *Answer { *b.n++; return b.a }
 
 // A success is built and handed over only when a request joined; Peek and
 // Hold read and write a held answer under a second key.
@@ -238,7 +249,7 @@ func TestErrorFlightsSuccessAndSecondKey(t *testing.T) {
 	e := NewErrorFlights(16, 1<<20, 1<<10, true)
 	built := 0
 	ok := &Answer{Status: 200, Body: []byte("{}")}
-	build := func() *Answer { built++; return ok }
+	build := countingBuilder{ok, &built}
 	_, f, _ := e.Lookup("s")
 	if a, _ := e.Finish("s", f, OutcomeSucceeded, build, testPolicy); a != nil || built != 0 {
 		t.Fatal("nobody joined: nothing is built")

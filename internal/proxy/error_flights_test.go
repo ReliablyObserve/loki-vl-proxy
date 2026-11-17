@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -495,14 +496,20 @@ func TestErrorFlights_FailureClassOf(t *testing.T) {
 		{"parse", context.Background(), nil, lokierr.Parse(1, 2, "syntax error"), cache.ErrorRequest, 0},
 		{"query length", context.Background(), nil, lokierr.QueryLength(2*time.Hour, time.Hour), cache.ErrorRequest, 0},
 		{"queue full", context.Background(), nil, lokierr.QueueFull(nil), cache.ErrorNever, 0},
-		{"backend deadline, request alive", context.Background(), nil, lokierr.Deadline(nil), cache.ErrorTransient, queryplan.FailBackend},
+		{"backend deadline, request alive", context.Background(), nil, lokierr.Deadline(nil), cache.ErrorNever, 0},
+		{"backend failed by a timeout", context.Background(), nil, lokierr.BackendFailed(&url.Error{Op: "Post", URL: "x", Err: timeoutErr{}}), cache.ErrorNever, 0},
+		{"backend failed by a refused connection", context.Background(), nil, lokierr.BackendFailed(&url.Error{Op: "Post", URL: "x", Err: errors.New("connection refused")}), cache.ErrorTransient, queryplan.FailBackend},
+		{"vl query deadline", context.Background(), &upstreamStatusError{status: 503, class: vlErrorDeadline}, nil, cache.ErrorNever, 0},
+		{"vl 504", context.Background(), &upstreamStatusError{status: 504}, nil, cache.ErrorNever, 0},
+		{"expired deadline", context.Background(), fmt.Errorf("read: %w", context.DeadlineExceeded), nil, cache.ErrorNever, 0},
 		{"client deadline", cancelled, nil, lokierr.Deadline(nil), cache.ErrorNever, 0},
 		{"pipeline", context.Background(), pipeline, nil, cache.ErrorData, queryplan.FailPipeline},
 		{"vl 503", context.Background(), &upstreamStatusError{status: 503}, nil, cache.ErrorTransient, queryplan.FailBackend},
 		{"vl rejected", context.Background(), &upstreamStatusError{status: 400, class: vlErrorQueryRejected}, nil, cache.ErrorNever, 0},
 		{"plan defect", context.Background(), &planDefectError{cause: &upstreamStatusError{status: 400, class: vlErrorQueryRejected}}, nil, cache.ErrorNever, 0},
-		{"aborted body", context.Background(), &vlResponseAbortedError{}, nil, cache.ErrorTransient, queryplan.FailBackend},
-		{"transport", context.Background(), &url.Error{Op: "Get", URL: "x", Err: &timeoutErr{}}, nil, cache.ErrorTransient, queryplan.FailBackend},
+		{"aborted body", context.Background(), &vlResponseAbortedError{}, nil, cache.ErrorNever, 0},
+		{"transport timeout", context.Background(), &url.Error{Op: "Get", URL: "x", Err: &timeoutErr{}}, nil, cache.ErrorNever, 0},
+		{"refused", context.Background(), &url.Error{Op: "Get", URL: "x", Err: &net.OpError{Op: "dial", Err: errors.New("connection refused")}}, nil, cache.ErrorTransient, queryplan.FailBackend},
 		{"canceled call", context.Background(), context.Canceled, nil, cache.ErrorNever, 0},
 		{"untyped", context.Background(), io.ErrUnexpectedEOF, nil, cache.ErrorNever, 0},
 	}
@@ -656,26 +663,32 @@ func TestErrorFlights_ReachAndBypassKey(t *testing.T) {
 	}
 	p, _ := newFlightProxy(t, "http://127.0.0.1:1", nil)
 	get := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil)
-	if p.uncachedFlightKey("tail", get) != "" {
+	if p.uncachedFlightKey("tail", get).join != "" {
 		t.Fatal("tail is not joined")
 	}
 	ws := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil)
 	ws.Header.Set("Upgrade", "websocket")
-	if p.uncachedFlightKey("labels", ws) != "" {
+	if p.uncachedFlightKey("labels", ws).join != "" {
 		t.Fatal("a websocket is not joined")
 	}
-	if p.uncachedFlightKey("labels", httptest.NewRequest(http.MethodDelete, "/loki/api/v1/labels", nil)) != "" {
+	if p.uncachedFlightKey("labels", httptest.NewRequest(http.MethodDelete, "/loki/api/v1/labels", nil)).join != "" {
 		t.Fatal("only reads are joined")
 	}
-	if p.uncachedFlightKey("labels", httptest.NewRequest(http.MethodPost, "/loki/api/v1/labels", nil)) != "" {
+	if p.uncachedFlightKey("labels", httptest.NewRequest(http.MethodPost, "/loki/api/v1/labels", nil)).join != "" {
 		t.Fatal("a POST whose body was not read as a form is not joined")
 	}
 	post := httptest.NewRequest(http.MethodPost, "/loki/api/v1/labels?start=1", strings.NewReader("end=2"))
 	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	_ = post.ParseForm()
 	pk, gk := p.uncachedFlightKey("labels", post), p.uncachedFlightKey("labels", get)
-	if pk == "" || gk == "" || pk == gk || !strings.HasPrefix(pk, "POST:") {
-		t.Fatalf("keys %q %q", pk, gk)
+	if pk.join == "" || gk.join == "" || pk.join == gk.join || !strings.HasPrefix(pk.join, errorFlightKeyVersion+"POST:") {
+		t.Fatalf("pre-keys %q %q", pk.join, gk.join)
+	}
+	if pe, ge := pk.exactKey(), gk.exactKey(); pe == ge || !strings.HasPrefix(pe, errorFlightKeyVersion+"POST:compat:v2:labels:") || pe != pk.exactKey() {
+		t.Fatalf("exact keys %q %q", pe, ge)
+	}
+	if exact := (&flightKey{join: "j"}); exact.exactKey() != "j" {
+		t.Fatal("a join that is exact is its own exact key")
 	}
 	tap := (&flightLead{f: nil}).tap(httptest.NewRecorder(), 1)
 	if u, ok := tap.(interface{ Unwrap() http.ResponseWriter }); !ok || u.Unwrap() == nil {
@@ -704,7 +717,7 @@ func TestErrorFlights_UnsharedFailureReleasesFollowers(t *testing.T) {
 		begin := time.Now()
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil)
 		req = req.WithContext(context.WithValue(req.Context(), requestTelemetryKey, newRequestTelemetry()))
-		p.serveFlight("labels", "/loki/api/v1/labels", httptest.NewRecorder(), req, "queue-full-key", begin, func(w http.ResponseWriter, r *http.Request, l *flightLead) {
+		p.serveFlight("labels", "/loki/api/v1/labels", httptest.NewRecorder(), req, flightKey{join: "queue-full-key"}, begin, func(w http.ResponseWriter, r *http.Request, l *flightLead) {
 			ran.Add(1)
 			if l != nil {
 				close(started)
@@ -909,7 +922,7 @@ func TestErrorFlights_WindowFreeFailureHeldForEveryWindow(t *testing.T) {
 //
 // conformance: semantics/error-cache-tenant-isolation
 func TestErrorFlights_FormDigest(t *testing.T) {
-	d := func(pairs ...string) string {
+	d := func(pairs ...string) uint64 {
 		v := url.Values{}
 		for i := 0; i+1 < len(pairs); i += 2 {
 			v.Add(pairs[i], pairs[i+1])
@@ -920,7 +933,7 @@ func TestErrorFlights_FormDigest(t *testing.T) {
 	if d("start", "1", "query", `{a="b"}`) != base {
 		t.Fatal("name order must not matter")
 	}
-	for _, other := range []string{
+	for _, other := range []uint64{
 		d("query", `{a="c"}`, "start", "1"),
 		d("query", `{a="b"}`, "start", "2"),
 		d("query", `{a="b"}`, "start", "1", "start", "1"),
@@ -930,5 +943,70 @@ func TestErrorFlights_FormDigest(t *testing.T) {
 		if other == base {
 			t.Fatal("different bodies share a digest")
 		}
+	}
+}
+
+// Two POSTs with the same pre-key but different exact keys (another client
+// profile) never share an answer: the follower runs on its own, and a held
+// failure answers only the exact request that failed.
+//
+// conformance: semantics/error-cache-tenant-isolation
+func TestErrorFlights_PreKeyNeverSharesAcrossExactKeys(t *testing.T) {
+	stub := newFlightStub(t, answer500)
+	p, h := newFlightProxy(t, stub.srv.URL, nil)
+	form := url.Values{"query": {`{app="api"}`}, "start": {"1700000000"}, "end": {"1700003600"}, "limit": {"100"}}.Encode()
+	post := func(ua string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/loki/api/v1/query_range", strings.NewReader(form))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("X-Scope-OrgID", "team-a")
+		req.Header.Set("User-Agent", ua)
+		req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+		if ua == "" {
+			req.Header.Del("X-Query-Tags")
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	keyOf := func(ua string) string {
+		req := httptest.NewRequest(http.MethodPost, "/loki/api/v1/query_range", strings.NewReader(form))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("X-Scope-OrgID", "team-a")
+		req.Header.Set("User-Agent", ua)
+		if ua != "" {
+			req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+		}
+		_ = req.ParseForm()
+		k := p.uncachedFlightKey("query_range", req)
+		return k.join + "|" + k.exactKey()
+	}
+	grafana, plain := keyOf("Grafana/12.1.0"), keyOf("")
+	gj, ge, _ := strings.Cut(grafana, "|")
+	pj, pe, _ := strings.Cut(plain, "|")
+	if gj != pj || ge == pe {
+		t.Skipf("the profiles do not differ in the exact key only: %q %q", grafana, plain)
+	}
+	var i atomic.Int64
+	answers := burst(t, p, stub, 2, func() *httptest.ResponseRecorder {
+		if i.Add(1) == 1 {
+			return post("Grafana/12.1.0")
+		}
+		return post("")
+	})
+	if stub.calls.Load() != 2 || answers[0].Code != 500 || answers[1].Code != 500 {
+		t.Fatalf("in flight: %d calls, want each profile its own", stub.calls.Load())
+	}
+	restore := cache.AdvanceClockForTesting(2 * time.Second)
+	defer restore()
+	post("Grafana/12.1.0")
+	calls := stub.calls.Load()
+	post("")
+	if stub.calls.Load() == calls {
+		t.Fatal("a failure held for one profile answered another")
+	}
+	calls = stub.calls.Load()
+	post("Grafana/12.1.0")
+	if stub.calls.Load() != calls {
+		t.Fatal("the held failure must answer its own exact request")
 	}
 }

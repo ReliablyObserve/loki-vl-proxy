@@ -98,6 +98,11 @@ type Answer struct {
 	Header http.Header
 	Body   []byte
 	Class  ErrorClass
+	// Key, when set, is the exact key of the request that produced the
+	// answer, for a flight joined on a coarser key: a follower takes the
+	// answer only when its own exact key is the same, and a failure is held
+	// under it.
+	Key string
 }
 
 func (a *Answer) size(key string) int {
@@ -135,10 +140,12 @@ const (
 )
 
 // Flight is one request running for every identical request that arrives
-// while it runs.
+// while it runs. The zero value is a flight not started; a caller may embed
+// one and hand it to Join, so leading costs no allocation of its own.
 type Flight struct {
-	done    chan struct{}
-	once    sync.Once
+	mu      sync.Mutex
+	done    chan struct{} // made by the first waiter
+	ended   bool
 	outcome Outcome
 	answer  *Answer
 	waiters atomic.Int64
@@ -151,9 +158,23 @@ type Flight struct {
 // first.
 func (f *Flight) Wait(ctx context.Context) (Outcome, *Answer, bool) {
 	f.waiters.Add(1)
+	f.mu.Lock()
+	if f.ended {
+		o, a := f.outcome, f.answer
+		f.mu.Unlock()
+		return o, a, true
+	}
+	if f.done == nil {
+		f.done = make(chan struct{})
+	}
+	done := f.done
+	f.mu.Unlock()
 	select {
-	case <-f.done:
-		return f.outcome, f.answer, true
+	case <-done:
+		f.mu.Lock()
+		o, a := f.outcome, f.answer
+		f.mu.Unlock()
+		return o, a, true
 	case <-ctx.Done():
 		return OutcomeUnshared, nil, false
 	}
@@ -171,10 +192,15 @@ func (f *Flight) Joined() int64 { return f.joined.Load() }
 func (f *Flight) Release() { f.end(OutcomeReleased, nil) }
 
 func (f *Flight) end(o Outcome, a *Answer) {
-	f.once.Do(func() {
-		f.outcome, f.answer = o, a
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ended {
+		return
+	}
+	f.ended, f.outcome, f.answer = true, o, a
+	if f.done != nil {
 		close(f.done)
-	})
+	}
 }
 
 // ErrorFlights coalesces identical requests in flight and holds failed
@@ -221,6 +247,12 @@ func NewErrorFlights(maxEntries, maxBytes, maxAnswerBytes int, join bool) *Error
 // Lookup returns the answer held for key, or the flight to wait on, or a new
 // flight that the caller leads (lead) and must end with Finish.
 func (e *ErrorFlights) Lookup(key string) (held *Answer, f *Flight, lead bool) {
+	return e.Join(key, nil)
+}
+
+// Join is Lookup with own as the flight to lead (a zero Flight the caller
+// keeps); a new one is allocated when own is nil.
+func (e *ErrorFlights) Join(key string, own *Flight) (held *Answer, f *Flight, lead bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if el, ok := e.held[key]; ok {
@@ -234,7 +266,10 @@ func (e *ErrorFlights) Lookup(key string) (held *Answer, f *Flight, lead bool) {
 		f.joined.Add(1)
 		return nil, f, false
 	}
-	f = &Flight{done: make(chan struct{})}
+	f = own
+	if f == nil {
+		f = new(Flight)
+	}
 	if e.join {
 		e.flights[key] = f
 	}
@@ -278,7 +313,12 @@ func (e *ErrorFlights) Hold(key string, a *Answer, ttl time.Duration) time.Time 
 // a failure may be held. A failed answer is held for its class's TTL under
 // pol. Finish returns the shared answer and how long it is held (zero when it
 // is not).
-func (e *ErrorFlights) Finish(key string, f *Flight, o Outcome, build func() *Answer, pol Policy) (*Answer, time.Duration) {
+// AnswerBuilder builds the answer a flight ends with, when it is needed.
+type AnswerBuilder interface {
+	BuildAnswer() *Answer
+}
+
+func (e *ErrorFlights) Finish(key string, f *Flight, o Outcome, build AnswerBuilder, pol Policy) (*Answer, time.Duration) {
 	e.mu.Lock()
 	if e.flights[key] == f {
 		delete(e.flights, key) // no request joins after this
@@ -288,14 +328,14 @@ func (e *ErrorFlights) Finish(key string, f *Flight, o Outcome, build func() *An
 	switch o {
 	case OutcomeFailed:
 		if build != nil {
-			a = build()
+			a = build.BuildAnswer()
 		}
 		if a == nil || len(a.Body) > e.maxAnswerBytes || !pol.Shares(a.Class) {
 			o, a = OutcomeUnshared, nil
 		}
 	case OutcomeSucceeded:
 		if f.joined.Load() > 0 && build != nil {
-			a = build()
+			a = build.BuildAnswer()
 		}
 		if a == nil {
 			o = OutcomeReleased
@@ -304,8 +344,12 @@ func (e *ErrorFlights) Finish(key string, f *Flight, o Outcome, build func() *An
 	var ttl time.Duration
 	if o == OutcomeFailed {
 		if ttl = pol.TTL(a.Class); ttl > 0 {
+			held := key
+			if a.Key != "" {
+				held = a.Key
+			}
 			e.mu.Lock()
-			e.holdLocked(key, a, ttl)
+			e.holdLocked(held, a, ttl)
 			e.mu.Unlock()
 		}
 	}

@@ -996,6 +996,7 @@
     ],
     "profiles/dotted-name-parse-error": [
       "internal/logql/dotted_names_test.go",
+      "internal/proxy/error_flights_edge_test.go",
       "internal/proxy/loki_profile_test.go",
       "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-compat/loki_profile_parity_test.go",
@@ -1366,16 +1367,22 @@
       "internal/querycorpus/grammar_sweep_test.go"
     ],
     "semantics/error-cache-bounded-memory": [
-      "internal/cache/error_flights_test.go"
+      "internal/cache/error_flights_test.go",
+      "internal/proxy/error_flights_edge_test.go"
     ],
     "semantics/error-cache-byte-equal-answers": [
-      "internal/proxy/error_flights_test.go"
+      "internal/proxy/error_flights_edge_test.go",
+      "internal/proxy/error_flights_test.go",
+      "test/e2e-compat/error_flights_live_test.go"
     ],
     "semantics/error-cache-classes-and-ttl": [
       "internal/cache/error_flights_test.go",
-      "internal/proxy/error_flights_test.go"
+      "internal/proxy/error_flights_edge_test.go",
+      "internal/proxy/error_flights_test.go",
+      "test/e2e-compat/error_flights_live_test.go"
     ],
     "semantics/error-cache-operator-switches": [
+      "internal/proxy/error_flights_edge_test.go",
       "internal/proxy/error_flights_test.go"
     ],
     "semantics/error-cache-plan-policy": [
@@ -1383,15 +1390,21 @@
       "internal/queryplan/failures_test.go"
     ],
     "semantics/error-cache-tenant-isolation": [
-      "internal/proxy/error_flights_test.go"
+      "internal/proxy/error_flights_edge_test.go",
+      "internal/proxy/error_flights_test.go",
+      "test/e2e-compat/error_flights_live_test.go"
     ],
     "semantics/error-coalescing-no-inherited-cancel": [
       "internal/middleware/coalescer_cancel_test.go",
-      "internal/proxy/error_flights_test.go"
+      "internal/proxy/error_flights_edge_test.go",
+      "internal/proxy/error_flights_test.go",
+      "test/e2e-compat/error_flights_live_test.go"
     ],
     "semantics/error-coalescing-request-flights": [
       "internal/cache/error_flights_test.go",
-      "internal/proxy/error_flights_test.go"
+      "internal/proxy/error_flights_edge_test.go",
+      "internal/proxy/error_flights_test.go",
+      "test/e2e-compat/error_flights_live_test.go"
     ],
     "semantics/error-layer-backend-failure-status": [
       "internal/lokierr/lokierr_test.go",
@@ -3462,6 +3475,16 @@
       "semantics/error-layer-silent-success",
       "status-400",
       "status-500"
+    ],
+    "internal/proxy/error_flights_edge_test.go": [
+      "profiles/dotted-name-parse-error",
+      "semantics/error-cache-bounded-memory",
+      "semantics/error-cache-byte-equal-answers",
+      "semantics/error-cache-classes-and-ttl",
+      "semantics/error-cache-operator-switches",
+      "semantics/error-cache-tenant-isolation",
+      "semantics/error-coalescing-no-inherited-cancel",
+      "semantics/error-coalescing-request-flights"
     ],
     "internal/proxy/error_flights_test.go": [
       "semantics/error-cache-byte-equal-answers",
@@ -5653,6 +5676,13 @@
       "status-400",
       "status-404"
     ],
+    "test/e2e-compat/error_flights_live_test.go": [
+      "semantics/error-cache-byte-equal-answers",
+      "semantics/error-cache-classes-and-ttl",
+      "semantics/error-cache-tenant-isolation",
+      "semantics/error-coalescing-no-inherited-cancel",
+      "semantics/error-coalescing-request-flights"
+    ],
     "test/e2e-compat/error_layer_like_loki_test.go": [
       "backend-deadlines-and-cancellation",
       "semantics/error-layer-backend-failure-status",
@@ -6294,7 +6324,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 742,
+  "tests_with_markers": 744,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
