@@ -17,14 +17,12 @@ why: |
   does: at the instant of the extraction-list differential's fixture Loki names
   `id="r6-353"` and the proxy `id="r6-346"`, the failing line before it; on a
   query_range with the step equal to the range Loki names `id="r6-80"` and the
-  proxy `id="r6-73"`. With the step shorter or longer than the range the two
-  name the same line.
-
-  Loki does not name the same failing line of a range in every recording: three
-  recordings named `id="r6-73"`, `id="r6-80"` or `id="r6-87"` for the same
-  range request, so the range kinds that differ follow the recording that is
-  checked in (extractionListKnownRuns); the instant query names `id="r6-353"` in
-  all of them.
+  proxy `id="r6-73"`. Loki does not name the same failing line of a range in every
+  recording: three recordings named `id="r6-73"`, `id="r6-80"` or `id="r6-87"` for
+  the same range request, so the range
+  kinds that differ follow the recording that is checked in
+  (extractionListKnownRuns: now the step equal to and longer than the range, with
+  the instant query). The instant query names `id="r6-353"` in all of them.
 
   Recorded with Loki's engine against VictoriaLogs' own handlers (v1.49.0 and
   v1.53.0) through the proxy's handlers (TestExtractionListIdentityMatchLoki,
@@ -49,7 +47,7 @@ gap:
   effort: M
   area: 'internal/proxy unwrap conversion check (unwrap_conversion_error.go): which unconvertible row of the window the error names'
   loki: 'the error names a failing line of the window, chosen by its own order of evaluation'
-  proxy: 'the same status, error and details, naming another failing line on an instant query and on a range equal to the step'
+  proxy: 'the same status, error and details, naming another failing line on an instant query and on the ranges the recording checked in lists (step equal to and longer than the range)'
   planned_test: 'TestExtractionListIdentityMatchLoki (internal/querycorpus) lists the runs in extractionListKnownRuns'
   note: 'Found while proving that the maximum of maxima keeps its error answers (decision max-of-max-reads-group-rows); related semantics/unwrap-conversion-error and semantics/pipeline-error-text-parity.'
   clusters: []

@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `count by (...)` over `stdvar_over_time` of an unwrapped label now answers the number of series of each group, as
+  Loki does, where the proxy answered the variance of the group's pooled samples (for example 20336.51 where Loki
+  answers 2). The proxy counts the series of the deviation, as it does for `stddev_over_time`, with and without a parser
+  (held to recorded Loki answers on instant queries and query_range); answers cached before the fix are not served
+  again. After a json or logfmt parser of every key on a range longer than the step the count is read from the step
+  buckets of the stream, as count over `stddev_over_time` is, and can miss a series where a step holds none of its
+  lines (registry `semantics/unwrap-over-time-range-windows-residual-forms`). After an
+  extraction list of more keys than the unwrapped one (`| logfmt amount, route`) the count is of the stream's series,
+  not Loki's (registry `semantics/unwrap-extraction-list-series-identity`). VictoriaLogs runs the query it runs for
+  `count by (...)` over `stddev_over_time`, one stats request as before. After a parser it costs about what the
+  variance did (-17% to +7% measured); without a parser the series include each line's detected_level, which the query
+  derives as count over `stddev_over_time` does (32 to 268 ms on 600,000 rows, the cost of count over
+  `stddev_over_time`).
+
+## [2.322.0] - 2026-11-17
+
+### Fixed
+
 - Shutting the proxy down closes the peer cache's connections to its peers: idle ones are closed, and a dial that
   finishes after the shutdown is closed instead of kept open for its 30 s idle timeout.
 - `/labels` no longer keeps label names whose last stream left the requested window. Each listing of a window now
@@ -42,19 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rate({app="a"} |<tab>unwrap n [5m])` counted the lines instead of reading the unwrapped value. Such a query gets a
   new response cache key, so an answer cached before is not served; it may miss the cache once after the upgrade, and
   queries written with `| unwrap ` keep their keys.
-- `count by (...)` over `stdvar_over_time` of an unwrapped label now answers the number of series of each group, as
-  Loki does, where the proxy answered the variance of the group's pooled samples (for example 20336.51 where Loki
-  answers 2). The proxy counts the series of the deviation, as it does for `stddev_over_time`, with and without a parser
-  (held to recorded Loki answers on instant queries and query_range); answers cached before the fix are not served
-  again. After a json or logfmt parser of every key on a range longer than the step the count is read from the step
-  buckets of the stream, as count over `stddev_over_time` is, and can miss a series where a step holds none of its
-  lines (registry `semantics/unwrap-over-time-range-windows-residual-forms`). After an
-  extraction list of more keys than the unwrapped one (`| logfmt amount, route`) the count is of the stream's series,
-  not Loki's (registry `semantics/unwrap-extraction-list-series-identity`). VictoriaLogs runs the query it runs for
-  `count by (...)` over `stddev_over_time`, one stats request as before. After a parser it costs about what the
-  variance did (-17% to +7% measured); without a parser the series include each line's detected_level, which the query
-  derives as count over `stddev_over_time` does (32 to 268 ms on 600,000 rows, the cost of count over
-  `stddev_over_time`).
 
 ### Performance
 
