@@ -1,6 +1,8 @@
 package lower
 
 import (
+	"strings"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
@@ -68,8 +70,10 @@ const (
 type SeriesFold struct {
 	// Outer is the vector aggregation over the series: sum and avg add the values up, max and min take their extreme.
 	Outer logql.VectorOp
-	// By is the grouping of the bucket stats pipe, the series hash among it (VictoriaLogs names).
-	By []string
+	// By is the grouping of the bucket stats pipe, the series hash among it (VictoriaLogs names), and Stats its
+	// functions.
+	By    []string
+	Stats []logsql.StatsFuncAlias
 	// Columns are the bucket stats' results, read again as numbers before the second stats pipe.
 	Columns []string
 	// Value is the math expression of a series' value in a bucket over Columns (`__lvp_sum / __sample_count`).
@@ -88,11 +92,10 @@ type SeriesFold struct {
 }
 
 // SeriesFoldRead is the fold of a read whose query before the unwrap gate (the series hash its last pipe) is
-// identity: Before stands between the read's base query and its bucket stats pipe, which groups by By (the fold's
-// grouping plus the class), and After follows that pipe. ok is false for an outer aggregation that does not fold.
+// identity: the pipes that follow the read's base query, the bucket stats pipe (grouped by the fold's grouping plus
+// the class) among them.
 type SeriesFoldRead struct {
-	Before, After []logsql.Pipe
-	By            []string
+	Pipes []logsql.Pipe
 }
 
 // Pipes is the fold of a read over identity.
@@ -108,7 +111,7 @@ func (f SeriesFold) Pipes(identity string) (SeriesFoldRead, bool) {
 	default:
 		return SeriesFoldRead{}, false
 	}
-	if identity == "" || f.Value == "" || f.ValueColumn == "" || len(f.By) == 0 || f.Bucket == "" ||
+	if identity == "" || f.Value == "" || f.ValueColumn == "" || len(f.By) == 0 || len(f.Stats) == 0 || f.Bucket == "" ||
 		f.Singletons != SingletonsNone && f.CountColumn == "" {
 		return SeriesFoldRead{}, false
 	}
@@ -124,8 +127,13 @@ func (f SeriesFold) Pipes(identity string) (SeriesFoldRead, bool) {
 		before = append(before, logsql.PipeFormat{Template: "", ResultField: dynamicSeriesField,
 			If: logsql.Exclude{Expr: logsql.FieldFilter{Field: SeriesFoldClass, Op: logsql.FieldOpAny}}})
 	}
-	by := append(append(make([]string, 0, len(f.By)+1), f.By...), SeriesFoldClass)
-	after := make([]logsql.Pipe, 0, 2*len(f.Columns)+10)
+	keys := make([]logsql.GroupKey, 0, len(f.By)+1)
+	for _, b := range f.By {
+		keys = append(keys, logsql.GroupKey{Field: b})
+	}
+	bucketStats := logsql.PipeStats{By: append(keys, logsql.GroupKey{Field: SeriesFoldClass}), Funcs: f.Stats}
+	after := make([]logsql.Pipe, 0, 2*len(f.Columns)+11)
+	after = append(after, bucketStats)
 	// A stats result is text to the pipes after it, which VictoriaLogs' stats read with a parser that refuses an
 	// infinity and long numbers: math gives them numbers again.
 	for _, c := range f.Columns {
@@ -153,10 +161,6 @@ func (f SeriesFold) Pipes(identity string) (SeriesFoldRead, bool) {
 			logsql.PipeMath{Expr: f.CountColumn, Alias: f.CountColumn})
 	}
 	after = append(after, logsql.PipeFormat{Template: "", ResultField: dynamicSeriesField, If: blankedAfter})
-	keys := make([]logsql.GroupKey, len(f.By))
-	for i, b := range f.By {
-		keys[i] = logsql.GroupKey{Field: b}
-	}
 	funcs := make([]logsql.StatsFuncAlias, 0, len(f.Columns)+1)
 	for _, c := range f.Columns {
 		fn := logsql.StatsFunc(logsql.Sum{Field: c})
@@ -168,7 +172,7 @@ func (f SeriesFold) Pipes(identity string) (SeriesFoldRead, bool) {
 	if f.CountColumn == "" && f.Outer == logql.VectorAvg {
 		funcs = append(funcs, logsql.StatsFuncAlias{Func: logsql.Count{}, Alias: SeriesFoldCount})
 	}
-	return SeriesFoldRead{Before: before, After: append(after, logsql.PipeStats{By: keys, Funcs: funcs}), By: by}, true
+	return SeriesFoldRead{Pipes: append(append(before, after...), logsql.PipeStats{By: keys[:len(f.By)], Funcs: funcs})}, true
 }
 
 // blanked selects the rows of the series whose hash the fold blanked; blankedAfter the ones it blanks after the
@@ -189,7 +193,7 @@ func (f SeriesFold) classes(identity string) string {
 		return logsql.FieldFilter{Field: field, Op: logsql.FieldOpLTE, Value: v}
 	}
 	spans := logsql.OrExpr{Left: gt(seriesFoldBuckets, "1"), Right: gt(seriesFoldOdd, "0"), Lower: true}
-	q := logsql.Query{Filter: logsql.DeferredExpr{Raw: identity}, Pipes: []logsql.Pipe{
+	pipes := []logsql.Pipe{
 		logsql.PipeStats{By: []logsql.GroupKey{{Field: dynamicSeriesField}, {Field: "_time", Bucket: f.Bucket, Offset: f.Offset}},
 			Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: SeriesFoldCount}, {Func: logsql.Count{}, If: odd, Alias: seriesFoldOdd}}},
 		logsql.PipeStats{By: []logsql.GroupKey{{Field: dynamicSeriesField}},
@@ -200,8 +204,14 @@ func (f SeriesFold) classes(identity string) string {
 		logsql.PipeFormat{Template: "m<" + dynamicSeriesField + ">", ResultField: seriesFoldKey,
 			If: logsql.AllOf{lte(seriesFoldBuckets, "1"), lte(seriesFoldOdd, "0")}},
 		logsql.PipeFields{Labels: []string{seriesFoldKey}},
-	}}
-	return q.String()
+	}
+	var b strings.Builder
+	b.WriteString(identity)
+	for _, p := range pipes {
+		b.WriteByte(' ')
+		b.WriteString(p.String())
+	}
+	return b.String()
 }
 
 // SeriesFoldIdentity is the subquery's reading of a read's query before the unwrap gate: ungated, less the pipes

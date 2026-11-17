@@ -16,6 +16,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	fj "github.com/valyala/fastjson"
 )
 
@@ -49,8 +50,10 @@ type seriesFoldRead struct {
 	// and countColumn the results a folded row's value and count are read from (countColumn may be
 	// lower.SeriesFoldCount, which the fold adds).
 	columns                  []string
+	stats                    []logsql.StatsFuncAlias
 	value                    string
 	valueColumn, countColumn string
+	// stats are the bucket stats' functions (unwrapBucketAgg's, typed).
 	// added says the fold adds lower.SeriesFoldCount to the bucket stats' results.
 	added bool
 	// singletons is how the bucket stats fold the series of one line (lower.SeriesFoldSingletons).
@@ -80,20 +83,28 @@ func (p *Proxy) withSeriesFold(r *http.Request, spec statsCompatSpec, manualFunc
 	}
 	identity := lower.SeriesFoldIdentity(resolvedPlan(dynamicQuery(r.FormValue("query"))), p.logsqlCapabilities(), ungated)
 	read := &seriesFoldRead{outer: chain[0].Op, identity: identity, field: spec.UnwrapField}
+	v := translate.UnwrapValueAlias
 	switch manualFunc {
 	case "avg":
 		read.columns, read.value, read.valueColumn, read.countColumn = []string{"__lvp_sum", "__sample_count"}, "__lvp_sum / __sample_count", "__lvp_sum", "__sample_count"
+		read.stats = []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: v}, Alias: "__lvp_sum"}, {Func: logsql.Count{}, Alias: "__sample_count"}}
 		if read.outer == logql.VectorSum || read.outer == logql.VectorAvg {
 			// The bucket's sum of the lines of one line each is the sum of their values (not their extreme).
 			read.singletons = lower.SingletonsKept
 		}
 	case "max", "min":
 		read.columns, read.value, read.valueColumn = []string{"c"}, "c", "c"
+		read.stats = []logsql.StatsFuncAlias{{Func: logsql.Max{Field: v}, Alias: "c"}}
+		if manualFunc == "min" {
+			read.stats[0].Func = logsql.Min{Field: v}
+		}
 		if read.outer == logql.VectorAvg {
 			read.countColumn, read.added = lower.SeriesFoldCount, true
 		}
 	case "stddev", "stdvar":
 		read.columns = []string{deviationMeanName, "__sample_count", deviationBucketName}
+		read.stats = []logsql.StatsFuncAlias{{Func: logsql.Avg{Field: v}, Alias: deviationMeanName}, {Func: logsql.Count{}, Alias: "__sample_count"},
+			{Func: logsql.Stddev{Field: v}, Alias: deviationBucketName}}
 		read.value, read.valueColumn, read.countColumn = deviationBucketName, deviationBucketName, "__sample_count"
 		read.singletons = lower.SingletonsZero
 		if manualFunc == "stdvar" {
@@ -116,11 +127,12 @@ func seriesFoldFrom(ctx context.Context) *seriesFoldRead {
 // for a read from start in buckets of hitStep; ok is false when the fold does not apply (the read then reads every
 // series).
 func (s *seriesFoldRead) query(baseQuery string, groupBy []string, statsAggFunc string, start time.Time, hitStep time.Duration) (string, bool) {
-	if s == nil {
+	// The bucket stats are the ones the window evaluator asked for (statsAggFunc), written typed.
+	if s == nil || !strings.HasSuffix(logsql.PipeStats{Funcs: s.stats}.String(), statsAggFunc) {
 		return "", false
 	}
 	bucket, offset := slidingStatsGrid(start, hitStep)
-	read, ok := lower.SeriesFold{Outer: s.outer, By: groupBy, Columns: s.columns, Value: s.value, ValueColumn: s.valueColumn,
+	read, ok := lower.SeriesFold{Outer: s.outer, By: groupBy, Stats: s.stats, Columns: s.columns, Value: s.value, ValueColumn: s.valueColumn,
 		CountColumn: s.countColumnIn(), Singletons: s.singletons, Field: s.field, Bucket: bucket, Offset: offset}.Pipes(s.identity)
 	if !ok {
 		return "", false
@@ -128,12 +140,7 @@ func (s *seriesFoldRead) query(baseQuery string, groupBy []string, statsAggFunc 
 	var b strings.Builder
 	b.Grow(len(baseQuery) + 2*len(s.identity) + 2048)
 	b.WriteString(baseQuery)
-	for _, p := range read.Before {
-		b.WriteByte(' ')
-		b.WriteString(p.String())
-	}
-	b.WriteString(" | stats by (" + strings.Join(read.By, ", ") + ") " + statsAggFunc)
-	for _, p := range read.After {
+	for _, p := range read.Pipes {
 		b.WriteByte(' ')
 		b.WriteString(p.String())
 	}
