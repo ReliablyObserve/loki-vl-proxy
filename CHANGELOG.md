@@ -18,10 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The memory of queries that lately met an unwrap conversion error (it starts the next request's first-window
-  lookup early) was one process-wide map shared by every Proxy instance; it is now each Proxy's own (locked,
-  at most 1024 keys, expiring after 10 minutes, no goroutine to stop). A server runs one Proxy, so no answer changes;
-  a second instance in the same process (tests) no longer inherits another's recent errors and their extra reads.
 - `query_range` with a range longer than the step (sliding windows, the `$__auto` steps Grafana sends under a `[5m]`
   range) now reads Loki's series for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`,
   `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream
@@ -39,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identical requests in flight share one call. `max by` over `max_over_time` and `min by` over `min_over_time` keep
   their per-group read. Answers cached before the fix are not served again
   (semantics/unwrap-per-series-identity-raw-rows).
+
+## [2.333.1] - 2026-11-17
+
+### Fixed
+
+- The memory of queries that lately met an unwrap conversion error (it starts the next request's first-window
+  lookup early) was one process-wide map shared by every Proxy instance; it is now each Proxy's own (locked,
+  at most 1024 keys, expiring after 10 minutes, no goroutine to stop). A server runs one Proxy, so no answer changes;
+  a second instance in the same process (tests) no longer inherits another's recent errors and their extra reads.
 
 ## [2.333.0] - 2026-11-17
 
