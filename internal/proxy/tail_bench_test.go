@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -50,6 +52,40 @@ func BenchmarkTail_NativeForward(b *testing.B) {
 		p.forwardNativeTail(context.Background(), conn, tp, bytes.NewReader(rows.Bytes()), nil)
 		if conn.messages == 0 {
 			b.Fatal("no frames")
+		}
+	}
+}
+
+// BenchmarkTail_SyntheticPoll is one poll of the polled tail: 200 new rows
+// read from VictoriaLogs, converted to Loki frames and written to the client.
+func BenchmarkTail_SyntheticPoll(b *testing.B) {
+	var rows bytes.Buffer
+	ts := time.Now().Add(-time.Minute)
+	for i := 0; i < 200; i++ {
+		fmt.Fprintf(&rows, `{"_time":"%s","_stream":"{app=\"api\",env=\"prod\"}","app":"api","env":"prod","level":"info","_msg":"request %d done in 12ms"}`+"\n",
+			ts.Add(time.Duration(i)*time.Millisecond).UTC().Format(time.RFC3339Nano), i)
+	}
+	body := rows.Bytes()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+	c := cache.New(time.Minute, 100)
+	defer c.Close()
+	p, err := New(Config{BackendURL: srv.URL, Cache: c, LogLevel: "error"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	tp := p.newTailPipeline(`{app="api"}`, false)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		conn := &countingTailConn{}
+		start := ts.Add(-time.Second)
+		if err := p.writeSyntheticTailBatch(context.Background(), conn, `{app="api"}`, tp, &start, newSyntheticTailSeen(maxSyntheticTailSeenEntries)); err != nil || conn.messages == 0 {
+			b.Fatalf("poll: %v, %d frames", err, conn.messages)
 		}
 	}
 }
