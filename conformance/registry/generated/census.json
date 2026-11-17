@@ -363,6 +363,9 @@
     "semantics/comments-signed-compound-offsets | compare:observed",
     "semantics/comments-signed-compound-offsets | gap:fixed",
     "semantics/comments-signed-compound-offsets | query",
+    "semantics/count-over-stdvar-answers-variance | compare:observed",
+    "semantics/count-over-stdvar-answers-variance | gap:fixed",
+    "semantics/count-over-stdvar-answers-variance | query",
     "semantics/count-values-unsupported | compare:observed",
     "semantics/count-values-unsupported | gap:fixed",
     "semantics/count-values-unsupported | query",
@@ -2187,6 +2190,7 @@
     "internal/proxy/unwrap_convert_test.go | loki_api_v1_query",
     "internal/proxy/unwrap_convert_test.go | loki_api_v1_query_range",
     "internal/proxy/unwrap_convert_test.go | semantics/unwrap-duration-seconds",
+    "internal/proxy/unwrap_count_variance_test.go | semantics/count-over-stdvar-answers-variance",
     "internal/proxy/unwrap_deviation_buckets_test.go | semantics/aggregation-over-range-by-not-applied",
     "internal/proxy/unwrap_deviation_buckets_test.go | semantics/stddev-stdvar-over-time-range-window",
     "internal/proxy/unwrap_dynamic_identity_binary_test.go | semantics/unwrap-per-series-identity-raw-rows",
@@ -2304,6 +2308,7 @@
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/exotic_names_oracle_test.go | semantics/translator-writes-exotic-field-names-bare",
     "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/count-over-stdvar-answers-variance",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-bare-range-exposes-parsed-labels",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-conversion-error-names-another-line",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-extraction-list-series-identity",
@@ -2401,10 +2406,12 @@
     "internal/querycorpus/shadow_rejected_loki_test.go | semantics/parse-error-text-parity",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/aggregation-over-range-by-not-applied",
+    "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/count-over-stdvar-answers-variance",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/stddev-stdvar-over-time-range-window",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/stddev-stdvar-over-time-step-bucket",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/stdvar-grouped-binary-marker",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/stdvar-grouped-pooled-variance",
+    "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/unwrap-over-time-range-windows-residual-forms",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/typed_pair_blank_test.go | semantics/blank-before-call-parenthesis-read-unlike-loki",
     "internal/querycorpus/typed_pair_blank_test.go | semantics/translator-reads-only-space-between-tokens",
@@ -2467,6 +2474,7 @@
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
     "internal/queryplan/lower/unwrap_blank_test.go | semantics/translator-reads-only-space-between-tokens",
+    "internal/queryplan/lower/unwrap_count_variance_test.go | semantics/count-over-stdvar-answers-variance",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-per-series-identity-raw-rows",
@@ -3082,12 +3090,12 @@
       "any": 35,
       "api": 114,
       "drilldown": 53,
-      "explore": 200,
+      "explore": 201,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 716,
+      "go": 718,
       "playwright": 2
     },
     "page_kinds": {
@@ -3107,7 +3115,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 94,
-    "wired_items": 423
+    "wired_items": 424
   },
   "gates": [
     "A/B shape selection",
