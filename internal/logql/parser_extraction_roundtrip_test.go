@@ -107,6 +107,13 @@ func TestRawAndEscapedStringValuesPreserveDecodedBytes(t *testing.T) {
 	for _, value := range []string{"carriage\rreturn", "separator\u2028paragraph\u2029", "bell\aform\fvertical\v", "nul\x00", "Łódź 日本語"} {
 		for _, literal := range []string{"`" + value + "`", strconv.Quote(value)} {
 			query := "{app=" + literal + "} |= " + literal
+			if strings.IndexByte(literal, 0) >= 0 {
+				// A raw NUL byte is Loki's lexer error, in a string too (TestNULByteMatchesLoki): only its escape is a value.
+				if _, err := ParseLogQuery(query); err == nil || !strings.Contains(err.Error(), "invalid character NUL") {
+					t.Fatalf("query=%q err=%v, want Loki's invalid character NUL", query, err)
+				}
+				continue
+			}
 			expr, err := ParseLogQuery(query)
 			if err != nil {
 				t.Fatalf("query=%q err=%v", query, err)

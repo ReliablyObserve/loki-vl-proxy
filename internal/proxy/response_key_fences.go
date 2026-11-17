@@ -86,6 +86,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	if streamLevel || levelChainReadIn(query) {
 		b.add(streamLevelSeriesResponseVersion)
 	}
+	b.add(unwrapBlankSpellingResponseKeyVersion(query))
 	b.add(emptyWithoutOperandResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceFence(r, query, other))
@@ -170,7 +171,8 @@ const streamLevelSeriesResponseVersion = "@stream-level-series-v4:"
 // returns at once): k for topk and bottomk, w for without and unwrap, and the name before each ( for sort, sort_desc
 // and label_replace. The parser reads keywords in any case and any Unicode blank before a parenthesis (TOPK, sum
 // WITHOUT, sort\v(), so the screen does too: it also jumps to K and W, compares the words case-folded, and reads a
-// Kelvin sign as the k of topk and bottomk (the one letter outside ASCII that lower cases into these words).
+// Kelvin sign as the k of topk and bottomk and U+0130 as the i of without (the letters outside ASCII that lower case
+// into these words).
 func streamLevelSeriesResponseKeyVersion(query string) string {
 	if levelChainReadIn(query) {
 		return streamLevelSeriesResponseVersion
@@ -228,7 +230,7 @@ func streamLevelSeriesScan(query string) (fires, ranked bool) {
 	}
 	for _, c := range [...]byte{'w', 'W'} {
 		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
-			if i+7 <= len(s) && strings.EqualFold(s[i:i+7], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
+			if hasFoldPrefix(s[i:], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
 				return true, false
 			}
 			s = s[i+1:]

@@ -31,6 +31,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operand's own request applied the call and the handlers applied it again over the ranking's answer; the same held
   for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
   (registry `semantics/rank-binary-operand-label-replace-once`).
+- A keyword written with the Kelvin sign for a k or with U+0130 for an i (`topK(`, `bottomK(`, `| Keep`,
+  `avg_over_tİme(`, `sum wİthout (a)`, `| x = İp("1.2.3.4")`) is now the lower case query, as in Loki. Before,
+  `topK(1, rate({app="a"}[1m]))` was sent to VictoriaLogs as a phrase search and answered as a log query, and
+  `wİthout` and `İp(` in a label filter were syntax errors. Such a query now gets the requests, the answer and the
+  cache entry of its lower case spelling. U+017F (ſ) stays a name letter, as in Loki. A syntax error after a duration
+  argument (`rate(0y`) is reported at Loki's column when a line break or a non-ASCII letter comes before it.
+- A NUL byte inside a quoted or backquoted string, or inside a comment, is now Loki's 400 `invalid character NUL`, at
+  Loki's line and column, on every route and before any VictoriaLogs request. The proxy used to read the byte as part of
+  the string, and dropped a comment holding it. When such a string also has a bad escape, a line break or no closing
+  quote, the first of these errors in the text is the one reported, as in Loki.
+- An unwrap written with a tab, a line feed, a carriage return or more than one space around `| unwrap`, or with no
+  space after the pipe (`max_over_time({app="a"} | unwrap<tab>n [1m])`, `|unwrap n`), is now answered like the
+  spelling with single spaces, also under
+  topk, bottomk, sort, label_replace, a binary operation, an aggregation and offset. It used to fail with a 500, and
+  `rate({app="a"} |<tab>unwrap n [5m])` counted the lines instead of reading the unwrapped value. Such a query gets a
+  new response cache key, so an answer cached before is not served; it may miss the cache once after the upgrade, and
+  queries written with `| unwrap ` keep their keys.
 
 ### Performance
 

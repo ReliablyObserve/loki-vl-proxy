@@ -1,0 +1,44 @@
+id: semantics/approx-topk-errors-differ
+title: approx_topk followed by a character Loki does not skip, or with a grouping, is rejected with another text than Loki's (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Recorded with the Loki oracle (check command):
+
+    approx_topk<VT>(1, rate({app="a"}[1m]))       parse error at line 1, col 12: syntax error: unexpected IDENTIFIER, expecting ( or by or without
+    approx_topk<US>(1, rate({app="a"}[1m]))       parse error at line 1, col 1: syntax error: unexpected IDENTIFIER
+    approx_topk by (a) (1, rate({app="a"}[1m]))   parse error : grouping not allowed for approx_topk aggregation
+
+  The proxy answers `unexpected IDENTIFIER, expecting (` at col 12 for the
+  first two and `unexpected by, expecting (` for the third: it reads
+  approx_topk as an opaque call, not as Loki's vector operation with its own
+  grouping rule. Found by the keyword blank sweep
+  (internal/logql TestKeywordBlankMatchesLoki pins the rows). Not changed here.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'approx_topk by (a) (1, rate({app="a"}[1m]))'
+    start: 'now-15m'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, errorType, error]
+  expect: |
+    400, Loki's `parse error : grouping not allowed for approx_topk aggregation`.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/logql parser.go (approx_topk is parsed as an opaque call)'
+  loki: 'approx_topk is a vector operation: a token that is no parenthesis after it expects ( or by or without, and a grouping is rejected with its own text'
+  proxy: 'the opaque call''s texts'
+  planned_test: 'TestKeywordBlankMatchesLoki (internal/logql, recorded Loki answers: the rows pinned as approx_topk''s known difference)'
+  visual: none
+  visual_reason: 'an error answer for a function no Grafana panel writes'
+  clusters: []

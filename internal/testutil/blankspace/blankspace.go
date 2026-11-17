@@ -90,3 +90,34 @@ func Templates() []string {
 		`label_replace(rate({A="0"}[1m]),` + m + `"a", "b", "c", "d")`,
 	}
 }
+
+// UnwrapSpaced is Collapse(q) with a space written between a pipe and an unwrap right after it (`|unwrap n` is
+// `| unwrap n`): the spelling the string translator, which looks for `| unwrap `, reads as Loki does. The query plan
+// serves both (semantics/translator-reads-only-space-between-tokens).
+func UnwrapSpaced(q string) string {
+	q = Collapse(q)
+	if !strings.Contains(q, "|unwrap") {
+		return q
+	}
+	var out strings.Builder
+	for i := 0; i < len(q); i++ {
+		switch c := q[i]; {
+		case c == '"' || c == '`':
+			j := i + 1
+			for j < len(q) && q[j] != c {
+				if c == '"' && q[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			j = min(j, len(q)-1)
+			out.WriteString(q[i : j+1])
+			i = j
+		case c == '|' && strings.HasPrefix(q[i+1:], "unwrap"):
+			out.WriteString("| ")
+		default:
+			out.WriteByte(c)
+		}
+	}
+	return out.String()
+}

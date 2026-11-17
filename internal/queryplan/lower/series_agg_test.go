@@ -121,7 +121,7 @@ func TestPlanDelegatesStddevShapes(t *testing.T) {
 		`stddev(label_replace(stdvar(` + rate + `), "a", "b", "c", "d"))`:                    "LabelReplace operand VectorAgg",
 		`sort by (app) (stddev(` + rate + `))`:                                               "Rank grouping",
 		`stddev(sort_desc by (app) (` + rate + `))`:                                          "Rank grouping",
-		`stddev(sum_over_time({app="a"} | json |unwrap x [5m]))`:                             "RangeAgg unwrap spelling",
+		`stddev(sum_over_time({app="a"} |= "| unwrap m" | json | unwrap x [5m]))`:            "RangeAgg unwrap spelling",
 		`stddev(absent_over_time({app="a"}[5m]))`:                                            "",
 		`stddev by (app) (sum(count_over_time({app="a"} | json | unwrap x [5m])))`:           "VectorAgg nested unwrap",
 	} {

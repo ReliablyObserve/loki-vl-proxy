@@ -30,8 +30,28 @@ implementation:
   - internal/proxy/middleware.go
   - internal/proxy/proxy.go
   - internal/proxy/query_range_windowing.go
+  - internal/proxy/unwrap_blank_fence.go
 
 decisions:
+  - id: unwrap-blank-spelling-fence
+    chosen: 'A text fence (@unwrap-blank-spelling-v1) on a query with an unwrap, in any case, outside quoted strings and comments, that is not written `| unwrap ` with one space on each side; the folded keyword spellings (U+212A, U+0130) get no fence of their own'
+    over:
+      - 'no fence (an unwrap written `|<TAB>unwrap n` under rate, count_over_time or another function that needs no unwrap was answered 200 by the string translator, which read no unwrap, and that answer would be served from every cache tier after the plan began serving the spelling)'
+      - 'bumping the stream-level-series or unwrap-dynamic-identity fences for the fold rune spellings (every lower case query those fences key would miss the cache once, for spellings no client sends)'
+    why: |
+      The plan now serves an unwrap written with other blanks with the spaced
+      spelling's answer. Where the string translator failed such a query the
+      old answer was Loki's 500 and never cached, but where it read no unwrap
+      it answered 200 with another query's data. The fence keys every such
+      spelling apart from what an older binary cached; a query whose every
+      unwrap is written `| unwrap ` keeps its key. A keyword written with the
+      Kelvin sign or U+0130 needs no fence: the request path now writes it in
+      lower case before the key is built, so it reads the lower case spelling's
+      entry, and no key holds the folded text any more.
+    evidence: 'internal/proxy (2026-11-16): TestUnwrapBlankSpellingFence (16 spellings, the compat key carries the fence exactly for the ones spelled otherwise); TestResponseKeyFencesKeepTheirOldKeys and FuzzResponseKeyFencesMatchParsedTree (90 s) with the fence in the screens table, justified by the printed tree''s unwrap stages; TestKeywordFoldRunesShareTheLowerCaseCacheEntry (the folded spelling after the lower case one: 0 VictoriaLogs requests, the same answer)'
+    code: [internal/proxy/unwrap_blank_fence.go, internal/proxy/response_key_fences.go, internal/logql/canonical.go]
+    tests: [TestUnwrapBlankSpellingFence, TestResponseKeyFencesKeepTheirOldKeys, FuzzResponseKeyFencesMatchParsedTree, TestKeywordFoldRunesShareTheLowerCaseCacheEntry]
+    quality: 'An answer cached for an unwrap spelled with other blanks before the plan served it is never served after; every other key is unchanged.'
   - id: one-response-key-fence-builder
     chosen: 'One function builds every key site''s fence chain, with the site explicit (compat query, compat query_range, inner query_range, log window shape); keys byte-identical to before'
     over: [three copies of the chain in the key builders, unifying the sites' orders and logfmt rule (would change keys and cold-start every cache tier fleet-wide)]
