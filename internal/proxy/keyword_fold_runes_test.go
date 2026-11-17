@@ -200,6 +200,13 @@ func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
 	rejector := newCompatTestProxy(t, vl.URL)
 	served, rejected, known := 0, 0, 0
 	knownCases := map[string]int{}
+	// The 665 accepted spellings share 71 spaced references: each reference is asked once per endpoint (every
+	// request runs on a fresh proxy and VictoriaLogs stand-in, so the answer does not depend on the order).
+	type spaced struct {
+		vl   []string
+		body string
+	}
+	refs := map[[2]string]spaced{}
 	for _, a := range readLexerEdgeAnswerFile(t, "../logql/testdata/keyword-blank-loki.jsonl.gz") {
 		endpoints := []string{"query_range", "query"}
 		if strings.HasPrefix(a.Q, "{") {
@@ -222,7 +229,12 @@ func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
 				rejected++
 				continue
 			}
-			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, a.Ref)
+			want, ok := refs[[2]string{endpoint, a.Ref}]
+			if !ok {
+				want.vl, want.body = blankAfterKeywordRequests(t, endpoint, a.Ref)
+				refs[[2]string{endpoint, a.Ref}] = want
+			}
+			wantVL, wantBody := want.vl, want.body
 			gotVL, gotBody := blankAfterKeywordRequests(t, endpoint, a.Q)
 			racy := requestSetVaries(a.Ref)
 			same := (racy || slices.Equal(gotVL, wantVL)) && gotBody == wantBody
