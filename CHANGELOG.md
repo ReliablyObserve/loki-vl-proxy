@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.320.0] - 2026-11-17
+
 ### Performance
 
 - `max` over `max_over_time` and `min` over `min_over_time` (by labels or none) of a label unwrapped after a json or
