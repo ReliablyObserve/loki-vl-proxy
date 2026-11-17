@@ -31,6 +31,10 @@ import (
 //     in the answer, a folded row counting two series);
 //   - the same read with its bounds 17 s off the minute (the subquery's grid offset from the minute): the same;
 //   - a six-minute read holding both lines of x, five minutes apart: x keeps its hash and partials, y is folded.
+//
+// Two more series pin the subquery's bucket test at an edge of the grid: z has a line on the last nanosecond of the
+// first minute's bucket and one on the first nanosecond of the next (it spans, so it keeps its hash on the minute's
+// grid and folds on the grid 17 s off it), and v two lines 10 µs apart inside a bucket (folded on every grid).
 
 const seriesFoldScopePath = "testdata/series-fold-scope.json"
 
@@ -70,7 +74,7 @@ func seriesFoldScopeQuery(t *testing.T, start time.Time) string {
 	read, ok := lower.SeriesFold{Outer: logql.VectorSum, By: []string{"__lvp_sid"}, Columns: []string{"__lvp_sum", "__sample_count"},
 		Stats: []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: "__lvp_v"}, Alias: "__lvp_sum"}, {Func: logsql.Count{}, Alias: "__sample_count"}},
 		Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Singletons: lower.SingletonsKept,
-		Field: field, Bucket: "60s", Offset: "-" + strconv.FormatInt(shift, 10) + "ns"}.Pipes(ungated)
+		Field: field, Bucket: "60s", Offset: "-" + strconv.FormatInt(shift, 10) + "ns", From: start.UnixNano()}.Pipes(ungated)
 	if !ok {
 		t.Fatal("no fold")
 	}
@@ -126,10 +130,8 @@ func TestSeriesFoldSubqueryScopedToRead(t *testing.T) {
 					}
 				}
 			}
-			wantKept, wantFolded := 0, 2.0
-			if read.name == "both lines" {
-				wantKept, wantFolded = 1, 1
-			}
+			wantKept, wantFolded := map[string]int{"inside": 1, "inside off the grid": 0, "both lines": 2}[read.name],
+				map[string]float64{"inside": 3, "inside off the grid": 4, "both lines": 2}[read.name]
 			if len(kept) != wantKept || folded != wantFolded {
 				t.Errorf("%s %s: %d hashes kept and %g series folded, want %d and %g: %.400s", prof.version, read.name, len(kept), folded, wantKept, wantFolded, body)
 			}
@@ -144,7 +146,9 @@ func recordSeriesFoldScope(t *testing.T) {
 	for _, l := range []struct {
 		at   time.Duration
 		line string
-	}{{30*time.Second + 500*time.Millisecond, `{"n":1,"k":"x"}`}, {40*time.Second + 500*time.Millisecond, `{"n":5,"k":"y"}`}, {330*time.Second + 500*time.Millisecond, `{"n":2,"k":"x"}`}} {
+	}{{30*time.Second + 500*time.Millisecond, `{"n":1,"k":"x"}`}, {40*time.Second + 500*time.Millisecond, `{"n":5,"k":"y"}`}, {330*time.Second + 500*time.Millisecond, `{"n":2,"k":"x"}`},
+		{time.Minute, `{"n":3,"k":"z"}`}, {time.Minute + time.Nanosecond, `{"n":4,"k":"z"}`},
+		{90 * time.Second, `{"n":6,"k":"v"}`}, {90*time.Second + 10*time.Microsecond, `{"n":7,"k":"v"}`}} {
 		rows = append(rows, oraclerun.ServeRow{TS: seriesFoldScopeStart.Add(l.at).UnixNano(), Stream: [][2]string{{"app", "scope"}},
 			Fields: [][2]string{{"_msg", l.line}}})
 	}

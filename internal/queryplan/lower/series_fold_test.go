@@ -41,11 +41,14 @@ func TestSeriesFoldPipes(t *testing.T) {
 	const identity = `app:="a" | unpack_json | filter n:* | unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | pack_json fields (__lvp_p_*, level, detected_level, _stream) as __lvp_sid | hash(__lvp_sid) as __lvp_sid`
 	avg := SeriesFold{Outer: logql.VectorSum, By: []string{"app", "__lvp_sid"}, Stats: avgStats, Columns: []string{"__lvp_sum", "__sample_count"},
 		Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Singletons: SingletonsKept,
-		Field: "n", Bucket: "20s", Offset: "-17000000001ns"}
+		Field: "n", Bucket: "20s", Offset: "-17000000001ns", From: 1767225617000000000}
 	got, ok := seriesFoldText(t, avg, identity)
-	sub := identity + ` | stats by (__lvp_sid, _time:20s offset -17000000001ns) count() as __lvp_n, count() if (n:~"(?i)(nan|inf)") as __lvp_odd` +
-		` | stats by (__lvp_sid) count() as __lvp_nb, sum(__lvp_n) as __lvp_n, sum(__lvp_odd) as __lvp_odd | filter __lvp_n:>1 or __lvp_odd:>0` +
-		` | format if (__lvp_nb:>1 or __lvp_odd:>0) "s<__lvp_sid>" as __lvp_k | format if (__lvp_nb:<=1 __lvp_odd:<=0) "m<__lvp_sid>" as __lvp_k | fields __lvp_k`
+	// The bucket edge at or before the read's start (00:00:17) on the grid shifted by the offset is 23:59:40 plus 17 s
+	// and 1 ns: x is that edge less the offset.
+	sub := identity + ` | stats by (__lvp_sid) count() as __lvp_n, min(_time) as __lvp_t0, max(_time) as __lvp_t1, count() if (n:~"(?i)(nan|inf)") as __lvp_odd` +
+		` | filter __lvp_n:>1 or __lvp_odd:>0` +
+		` | math floor((__lvp_t1 - 1767225597000000001 + 4096) / 20000000000) - floor((__lvp_t0 - 1767225597000000001 - 4096) / 20000000000) as __lvp_nb` +
+		` | format if (-__lvp_nb:<=0 or __lvp_odd:>0) "s<__lvp_sid>" as __lvp_k | format if (__lvp_nb:<=0 __lvp_odd:<=0) "m<__lvp_sid>" as __lvp_k | fields __lvp_k`
 	want := ` | format "s<__lvp_sid>" as __lvp_ks | format "m<__lvp_sid>" as __lvp_km | format if (__lvp_ks:in(` + sub + `)) "s" as __lvp_c` +
 		` | format if (__lvp_km:in(` + sub + `)) "m" as __lvp_c | format if (-__lvp_c:*) "" as __lvp_sid` +
 		` | stats by (app, __lvp_sid, __lvp_c) sum(__lvp_v) as __lvp_sum, count() as __sample_count` +

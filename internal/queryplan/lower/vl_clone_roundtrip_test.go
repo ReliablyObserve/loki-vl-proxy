@@ -183,7 +183,7 @@ func seriesFoldCloneTexts(text string) []string {
 			read, ok := SeriesFold{Outer: outer, By: strings.Split(by, ", "), Columns: []string{"__lvp_sum", "__sample_count"},
 				Stats: []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: "__lvp_v"}, Alias: "__lvp_sum"}, {Func: logsql.Count{}, Alias: "__sample_count"}},
 				Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Singletons: SingletonsKept,
-				Field: field, Bucket: grid[0], Offset: grid[1]}.Pipes(ungated)
+				Field: field, Bucket: grid[0], Offset: grid[1], From: 1767225617000000000}.Pipes(ungated)
 			if !ok {
 				continue
 			}

@@ -133,7 +133,7 @@ func (s *seriesFoldRead) query(baseQuery string, groupBy []string, statsAggFunc 
 	}
 	bucket, offset := slidingStatsGrid(start, hitStep)
 	read, ok := lower.SeriesFold{Outer: s.outer, By: groupBy, Stats: s.stats, Columns: s.columns, Value: s.value, ValueColumn: s.valueColumn,
-		CountColumn: s.countColumnIn(), Singletons: s.singletons, Field: s.field, Bucket: bucket, Offset: offset}.Pipes(s.identity)
+		CountColumn: s.countColumnIn(), Singletons: s.singletons, Field: s.field, Bucket: bucket, Offset: offset, From: start.UnixNano()}.Pipes(s.identity)
 	if !ok {
 		return "", false
 	}
@@ -256,12 +256,8 @@ func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentPar
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
-		body, err := readBodyLimited(resp.Body, maxStatsBucketResponseBytes)
-		if err != nil {
-			return nil, err
-		}
-		resp.Body, resp.ContentLength = io.NopCloser(bytes.NewReader(body)), int64(len(body))
+		// The coalescer reads the body once, up to the stats body bound.
+		resp.Body = &seriesFoldBody{ReadCloser: resp.Body, left: maxStatsBucketResponseBytes}
 		return resp, nil
 	})
 	if errors.Is(err, mw.ErrGuardRejected) {
@@ -276,4 +272,25 @@ func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentPar
 		header = http.Header{}
 	}
 	return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(bytes.NewReader(body)), ContentLength: int64(len(body))}, nil
+}
+
+// seriesFoldBody is a folded answer's body as the coalescer reads it: past limit bytes the read fails with
+// errBodyTooLarge, so the shared call holds at most the stats body bound.
+type seriesFoldBody struct {
+	io.ReadCloser
+	left int64
+}
+
+func (b *seriesFoldBody) Read(p []byte) (int, error) {
+	if b.left < 0 {
+		return 0, errBodyTooLarge
+	}
+	if int64(len(p)) > b.left+1 {
+		p = p[:b.left+1]
+	}
+	n, err := b.ReadCloser.Read(p)
+	if b.left -= int64(n); b.left < 0 {
+		return n, errBodyTooLarge
+	}
+	return n, err
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"io"
 	"net/http"
@@ -2078,13 +2079,14 @@ func (p *Proxy) unwrapStripResponse(resp *http.Response, strip func([]byte) ([]b
 		return nil
 	}
 	limit := p.decodedBodyLimit()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	// Read in one allocation when the length is known (a folded answer, or one VictoriaLogs sends with its length).
+	body, err := readBodyKnownSize(resp.Body, resp.ContentLength, limit)
 	_ = resp.Body.Close()
+	if errors.Is(err, errBodyTooLarge) {
+		return newBackendBodyTooLarge(limit)
+	}
 	if err != nil {
 		return err
-	}
-	if int64(len(body)) > limit {
-		return newBackendBodyTooLarge(limit)
 	}
 	out, err := strip(body)
 	if err != nil {
