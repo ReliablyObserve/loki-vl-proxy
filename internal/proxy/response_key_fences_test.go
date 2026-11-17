@@ -37,7 +37,7 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 }
 
 func oldCompatQueryRangeFences(r *http.Request, query string) string {
-	return oldCompatQueryFences(r, query) + logfmtPresenceResponseKeyVersion(r, query) + rankOverBinaryFence(query)
+	return oldCompatQueryFences(r, query) + listedWindowsResponseKeyVersion(r, query) + logfmtPresenceResponseKeyVersion(r, query) + rankOverBinaryFence(query)
 }
 
 // rankOverBinaryLabelReplaceFence is the instant compat site's fence before the rune fence
@@ -70,6 +70,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(streamLevelSeriesResponseKeyVersion(query))
 	key.WriteString(rankOverBinaryFence(query))
 	key.WriteString(emptyWithoutOperandResponseKeyVersion(query))
+	key.WriteString(listedWindowsResponseKeyVersion(r, query))
 	key.WriteString(countVarianceResponseKeyVersion(query))
 	return key.String()
 }
