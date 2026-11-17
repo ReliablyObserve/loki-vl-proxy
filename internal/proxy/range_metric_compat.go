@@ -1614,12 +1614,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// same groups (rowBucketPick).
 	statsQuery := baseQuery + by + statsAggFunc + rowBucketPick(statsAggFunc, by)
 	// A parser's series identity folds the series that lie in one bucket (series_fold_read.go).
-	fold := seriesFoldFrom(ctx)
-	if folded, ok := fold.query(baseQuery, groupBy, statsAggFunc, start, hitStep); ok {
-		statsQuery = folded
-	} else {
-		fold = nil
-	}
+	statsQuery, fold := seriesFoldFrom(ctx).foldedQuery(statsQuery, baseQuery, groupBy, statsAggFunc, start, hitStep)
 
 	params := url.Values{}
 	params.Set("query", statsQuery)
@@ -1634,12 +1629,9 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
 	// Block until a slot is free or the request is cancelled. A folded read takes
 	// it in the call its identical reads share (seriesFoldPost).
-	release := func() {}
-	if fold == nil {
-		var err error
-		if release, err = p.takeStatsQueryRangeSlot(ctx); err != nil {
-			return nil, nil, err
-		}
+	release, err := p.statsReadSlot(ctx, fold)
+	if err != nil {
+		return nil, nil, err
 	}
 	defer release()
 
@@ -2889,7 +2881,7 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 	sort.Strings(keys)
 	// The folded rows of a parser's series identity join each group after its series one by one: a mean over the
 	// series is NaN when a finite series follows an infinite one, and the folded series are finite.
-	sort.SliceStable(keys, func(i, j int) bool { return !series[keys[i]].Folded && series[keys[j]].Folded })
+	keys, foldedKeys := splitFoldedKeys(keys, series)
 
 	startNS, endNS, stepNS := start.UnixNano(), end.UnixNano(), step.Nanoseconds()
 	expectedBuckets := min(int(end.Sub(start)/step)+1, 32768) // pre-size cap; appends grow beyond it
@@ -2899,18 +2891,8 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 	if sink == nil {
 		results = make([]map[string]interface{}, 0, len(keys))
 	}
-	var weights []float64
 	for _, key := range keys {
 		seriesEntry := series[key]
-		if seriesEntry.Folded {
-			if sink == nil {
-				return nil, &statsBucketsUnreadableError{"a folded series row without a fold"}
-			}
-			folded, weights = foldedWindows(seriesEntry, sink.acc.level.merge, startNS, endNS, stepNS, windowNS, folded[:0], weights[:0])
-			sink.addPartial(seriesEntry.Metric, folded, weights)
-			folded = folded[:0]
-			continue
-		}
 		samples := sortedHitsSamples(seriesEntry.Samples)
 		var prefix []float64
 		if !mergedUnwrap {
@@ -3004,6 +2986,9 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 				"values": json.RawMessage(append(points, ']')),
 			})
 		}
+	}
+	if err := addFoldedSeries(sink, series, foldedKeys, startNS, endNS, stepNS, windowNS); err != nil {
+		return nil, err
 	}
 	return results, nil
 }

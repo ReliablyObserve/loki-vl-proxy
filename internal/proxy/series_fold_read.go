@@ -147,6 +147,56 @@ func (s *seriesFoldRead) query(baseQuery string, groupBy []string, statsAggFunc 
 	return b.String(), true
 }
 
+// foldedQuery is statsQuery, or the folded query when s folds the read, and the fold it applies (nil when it reads
+// every series).
+func (s *seriesFoldRead) foldedQuery(statsQuery, baseQuery string, groupBy []string, statsAggFunc string, start time.Time, hitStep time.Duration) (string, *seriesFoldRead) {
+	if folded, ok := s.query(baseQuery, groupBy, statsAggFunc, start, hitStep); ok {
+		return folded, s
+	}
+	return statsQuery, nil
+}
+
+// statsReadSlot takes a stats_query_range slot for a bucket read: a folded read takes it in the call its identical
+// reads share (seriesFoldPost), so it takes none here.
+func (p *Proxy) statsReadSlot(ctx context.Context, fold *seriesFoldRead) (func(), error) {
+	if fold != nil {
+		return func() {}, nil
+	}
+	return p.takeStatsQueryRangeSlot(ctx)
+}
+
+// splitFoldedKeys parts keys (sorted) into the series read one by one and the folded rows, each in their order.
+func splitFoldedKeys(keys []string, series map[string]manualSeriesSamples) (kept, folded []string) {
+	kept = keys[:0:0]
+	for _, key := range keys {
+		if series[key].Folded {
+			folded = append(folded, key)
+		} else {
+			kept = append(kept, key)
+		}
+	}
+	return kept, folded
+}
+
+// addFoldedSeries adds the windows of the folded rows keys (foldedWindows) to the matrix fold sink, after the series
+// read one by one.
+func addFoldedSeries(sink *matrixFoldSink, series map[string]manualSeriesSamples, keys []string, startNS, endNS, stepNS, windowNS int64) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	if sink == nil {
+		return &statsBucketsUnreadableError{"a folded series row without a fold"}
+	}
+	var points []typedPoint
+	var weights []float64
+	for _, key := range keys {
+		entry := series[key]
+		points, weights = foldedWindows(entry, sink.acc.level.merge, startNS, endNS, stepNS, windowNS, points[:0], weights[:0])
+		sink.addPartial(entry.Metric, points, weights)
+	}
+	return nil
+}
+
 // errSeriesFoldTooLong is a folded read whose query, as it would be sent, passes VictoriaLogs' default query length
 // (-search.maxQueryLen): the read is sent again reading every series (collectRangeMetricHitsAux).
 var errSeriesFoldTooLong = errors.New("folded series read longer than VictoriaLogs' query length")
