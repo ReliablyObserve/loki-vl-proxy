@@ -1,0 +1,10 @@
+id: json-metric-unparsed-line-lookup-once
+state: partial
+pending: true
+reason: |
+  Unit-proven against a fake VictoriaLogs (internal/proxy/
+  ordered_json_unparsed_row_test.go). The stack check is the per-case
+  verifier over the `| json | keep` metric cases on the shared stack, with the
+  request log compared between repeats.
+owner_decision: null
+waiver: null
