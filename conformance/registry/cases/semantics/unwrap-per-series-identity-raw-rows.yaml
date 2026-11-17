@@ -98,7 +98,7 @@ why: |
   each with the range before it, and folded chunk by chunk (decision
   metric-series-identity/extraction-list-window-chunks):
   TestListedWindowChunksMatchLoki holds six hours at steps of 15 s and 7 s to
-  Loki's answers, read whole and in 38-39 chunks.
+  Loki's answers, read whole and in 37-38 chunks.
 
   Still open: after a parser of every key, a range longer than the step
   (step < range) keeps the stream's series: the window evaluator merges the
