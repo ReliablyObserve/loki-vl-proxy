@@ -58,7 +58,7 @@ func Parse(input string) (Expr, error) {
 // text/template parse of a template no query sent before (tens of allocations), which a reader of the text does not
 // need. Every other node is Parse's.
 func ParseUntypedTemplates(input string) (Expr, error) {
-	expr, unknown, _, err := parseExpressionOpts(input, true)
+	expr, unknown, _, err := parseExpressionOpts(input, true, false)
 	if err == nil && unknown != nil {
 		return nil, unknown
 	}
@@ -74,11 +74,18 @@ func ParseUntypedTemplates(input string) (Expr, error) {
 // otherwise. Parse accepts such a log query (Grafana's metric builder sends `| unwrap [1s]` stubs, which the handlers
 // drop before they validate), and the validation answers it ahead of every other check, as Loki's parser does.
 func parseExpression(input string) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
-	return parseExpressionOpts(input, false)
+	return parseExpressionOpts(input, false, false)
 }
 
-// parseExpressionOpts is parseExpression; untypedTemplates leaves the line_format templates untyped.
-func parseExpressionOpts(input string, untypedTemplates bool) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
+// parseExpressionTree is parseExpression that keeps the errors of Loki's checks over the parsed tree the parser met
+// (a vector operation's parameter) on their nodes, for the semantic pass to report in the order of its walk.
+func parseExpressionTree(input string) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
+	return parseExpressionOpts(input, false, true)
+}
+
+// parseExpressionOpts is parseExpression; untypedTemplates leaves the line_format templates untyped, and keepTree
+// keeps the tree check errors on their nodes (parseExpressionTree).
+func parseExpressionOpts(input string, untypedTemplates, keepTree bool) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
 	querycorpus.Record(querycorpus.LogQL, input)
 	// Loki rejects a query this long before lexing it; doing the same bounds how deep a query can nest, and so
 	// the recursion of every parse, for whatever query length the handlers accept.
@@ -90,6 +97,18 @@ func parseExpressionOpts(input string, untypedTemplates bool) (expr Expr, unknow
 	expr, err = p.parseExpr()
 	if err == nil && p.cur.Typ != TokEOF {
 		err = p.syntaxErrorAt("")
+	}
+	if err != nil || p.sc.lexErrCount() > 0 {
+		// An action Loki runs while it parses (a regex or parser stage it cannot build) stops its parse: it answers
+		// ahead of a later syntax error and of every lexer error the parse went on after. Past an unwrap stage
+		// outside a range aggregation Loki reads nothing, so only the actions before it count.
+		msg := p.plainUnwrapErr
+		if p.plainUnwrapAt == 0 {
+			msg = p.actionErrorSoFar()
+		}
+		if msg != "" {
+			return nil, nil, nil, &ParseError{Msg: msg}
+		}
 	}
 	if p.sc.lexErrCount() > 0 {
 		// Loki's lexer reports its own error ahead of the parse error it may cause, and for a query that parses.
@@ -108,6 +127,9 @@ func parseExpressionOpts(input string, untypedTemplates bool) (expr Expr, unknow
 	}
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if p.treeErr != "" && !keepTree {
+		return nil, nil, nil, &ParseError{Msg: p.treeErr}
 	}
 	if at := p.unknownName(); at >= 0 {
 		r, _ := utf8.DecodeRuneInString(input[at:])
@@ -281,6 +303,21 @@ type parser struct {
 	checkedLogQueryCount  int
 	// untypedTemplates leaves line_format templates untyped (ParseUntypedTemplates).
 	untypedTemplates bool
+	// treeErr is the first error of a check Loki makes over the parsed tree that the parser met (a vector
+	// operation's parameter, deferTreeError): Parse answers it once the query has parsed; the validation reads it
+	// from its node in the order of its walk.
+	treeErr string
+}
+
+// deferTreeError notes msg as the error of the check Loki makes over the parsed tree at node va: it answers after
+// every syntax and lexer error and after the actions, at the node's place in the walk (validateSemantics).
+func (p *parser) deferTreeError(va *VectorAggregation, msg string) {
+	if va.treeErr == nil {
+		va.treeErr = &msg
+	}
+	if p.treeErr == "" {
+		p.treeErr = msg
+	}
 }
 
 // keep marks as read over the characters that start no token between offset start and the current token: the tokens
@@ -432,34 +469,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 		if name != "approx_topk" && !p.keywordAhead(false) {
 			return nil, p.syntaxErrorAt("")
 		}
-		// Capture the full raw text and return it as-is so VictoriaLogs
-		// receives the original expression unchanged.
-		// The name's own span: a name written with the Kelvin sign (approx_topK) is longer than its lower case value.
-		startPos := p.pos()
-		p.advance()
-		if p.cur.Typ == TokLParen {
-			p.advance() // consume '('
-			argStart := p.pos()
-			endPos, ok := p.consumeBalancedParens()
-			if !ok || endPos < startPos {
-				return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
-			}
-			if p.canon != nil {
-				// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
-				// metric expression, written in the plain form like any other.
-				argEnd := argStart + FirstArgumentLen(p.sc.src[argStart:endPos])
-				if arg := p.sc.src[argStart:argEnd]; CanonicalizeLogRanges(arg) != arg {
-					p.addRewrite(argStart, argEnd, CanonicalizeLogRanges(arg))
-				}
-			}
-			raw := strings.TrimSpace(p.sc.src[startPos:endPos])
-			o := &OpaqueMetricExpr{Raw: raw, Func: name}
-			if p.canon == nil {
-				typeOpaqueCall(o)
-			}
-			return o, nil
-		}
-		return nil, p.syntaxErrorAt("(")
+		return p.parseOpaqueCall(name)
 	}
 
 	// Parenthesised expression
@@ -485,6 +495,52 @@ func (p *parser) parsePrimary() (Expr, error) {
 	}
 
 	return nil, p.syntaxErrorAt("")
+}
+
+// parseOpaqueCall reads a metric call kept as text (label_replace, vector, approx_topk) from its name: its raw text,
+// and its typed parts where typeOpaqueCall can read them.
+func (p *parser) parseOpaqueCall(name string) (Expr, error) {
+	// Capture the full raw text and return it as-is so VictoriaLogs
+	// receives the original expression unchanged.
+	// The name's own span: a name written with the Kelvin sign (approx_topK) is longer than its lower case value.
+	startPos := p.pos()
+	p.advance()
+	var treeErr *string
+	if name == "approx_topk" && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
+		// Loki's grammar reads a grouping before approx_topk's arguments and refuses it over the parsed tree.
+		if _, err := p.parseGrouping(); err != nil {
+			return nil, err
+		}
+		msg := "parse error : grouping not allowed for approx_topk aggregation"
+		treeErr = &msg
+		if p.treeErr == "" {
+			p.treeErr = msg
+		}
+	}
+	if p.cur.Typ == TokLParen {
+		p.advance() // consume '('
+		argStart := p.pos()
+		endPos, ok := p.consumeBalancedParens()
+		if !ok || endPos < startPos {
+			return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
+		}
+		if p.canon != nil {
+			// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
+			// metric expression, written in the plain form like any other.
+			argEnd := argStart + FirstArgumentLen(p.sc.src[argStart:endPos])
+			if arg := p.sc.src[argStart:argEnd]; CanonicalizeLogRanges(arg) != arg {
+				p.addRewrite(argStart, argEnd, CanonicalizeLogRanges(arg))
+			}
+		}
+		raw := strings.TrimSpace(p.sc.src[startPos:endPos])
+		o := &OpaqueMetricExpr{Raw: raw, Func: name, treeErr: treeErr}
+		if p.canon == nil {
+			typeOpaqueCall(o)
+			p.noteOpaqueCall(o.Inner)
+		}
+		return o, nil
+	}
+	return nil, p.syntaxErrorAt("(")
 }
 
 // parseNumberLiteral parses a number, or a minus and a number.
@@ -658,24 +714,21 @@ func (p *parser) parseLogQuery() (*LogQuery, error) {
 	start := p.pos()
 	p.afterUnwrap = false
 	mem := new(logQueryMem)
+	lq := &mem.lq
+	lq.Selector = &mem.sel
+	if prev := p.curLogQuery; prev != nil {
+		p.noteChecked(prev)
+	}
+	// The log query is the one read from its selector on: a matcher Loki builds as it reads it fails ahead of a
+	// later syntax error in the same selector (actionErrorSoFar).
+	p.curLogQuery = lq
 	if err := p.parseStreamSelector(&mem.sel, mem.matcher[:0]); err != nil {
 		return nil, err
 	}
 
-	lq := &mem.lq
-	lq.Selector = &mem.sel
 	if n := stagesAhead(p.sc.src[p.pos():]); n > 0 {
 		lq.Pipeline = make([]Stage, 0, n)
 	}
-	if prev := p.curLogQuery; prev != nil && mayFailWhileParsed(prev.Pipeline) {
-		if p.checkedLogQueryCount < len(p.checkedLogQueries) {
-			p.checkedLogQueries[p.checkedLogQueryCount] = prev
-		} else {
-			p.moreCheckedLogQueries = append(p.moreCheckedLogQueries, prev)
-		}
-		p.checkedLogQueryCount++
-	}
-	p.curLogQuery = lq
 
 	for {
 		stage, err := p.parsePipelineStage()
@@ -1118,28 +1171,99 @@ func (p *parser) unwrapStageError(expecting string) error {
 	return p.syntaxErrorAt(expecting)
 }
 
-// stageErrorSoFar is the first error of the stages read so far that Loki raises while it parses (a regexp or
-// pattern parser it cannot build, a label filter, drop or keep regex that does not parse; see
-// parseTimeStageError), or "". Loki builds each stage as its grammar rule completes, ahead of a syntax error in a
-// later token.
-func (p *parser) stageErrorSoFar() string {
+// noteChecked keeps a log query read before the current one when it has a matcher or stage Loki builds while it
+// parses (mayFailWhileParsed), in the order of the text: the first ones in an array, which keeps the parser off the
+// heap, the others in moreCheckedLogQueries.
+func (p *parser) noteChecked(lq *LogQuery) {
+	if !mayFailWhileParsed(lq) {
+		return
+	}
+	if p.checkedLogQueryCount < len(p.checkedLogQueries) {
+		p.checkedLogQueries[p.checkedLogQueryCount] = lq
+	} else {
+		p.moreCheckedLogQueries = append(p.moreCheckedLogQueries, lq)
+	}
+	p.checkedLogQueryCount++
+}
+
+// noteOpaqueCall keeps the log queries of a call kept as text (label_replace's sample expression, read by
+// typeOpaqueCall's own parser) after the ones read before it, so that their actions answer ahead of a later syntax
+// error as the others do.
+func (p *parser) noteOpaqueCall(inner Expr) {
+	if inner == nil {
+		return
+	}
+	if p.curLogQuery != nil {
+		p.noteChecked(p.curLogQuery)
+		p.curLogQuery = nil
+	}
+	walkLogQueries(inner, p.noteChecked)
+}
+
+// walkLogQueries calls f for every log query of expr, in the order of the text.
+func walkLogQueries(expr Expr, f func(*LogQuery)) {
+	switch x := expr.(type) {
+	case *LogQuery:
+		f(x)
+	case *RangeAggregation:
+		walkLogQueries(x.Inner, f)
+	case *VectorAggregation:
+		walkLogQueries(x.Inner, f)
+	case *BinOpExpr:
+		walkLogQueries(x.Left, f)
+		walkLogQueries(x.Right, f)
+	case *OpaqueMetricExpr:
+		walkLogQueries(x.Inner, f)
+	}
+}
+
+// stageErrorSoFar is the first error Loki raises while it parses (an action, actionErrorSoFar) among the log
+// queries read so far, or "". Loki builds each matcher and stage as its grammar rule completes, ahead of a syntax
+// error in a later token.
+func (p *parser) stageErrorSoFar() string { return p.actionErrorSoFar() }
+
+// actionErrorSoFar is the first error, in the order of the text, of the matchers and stages read so far that Loki
+// raises while it parses: a selector regex that does not parse, a regexp or pattern parser it cannot build, a label
+// filter, drop or keep regex that does not parse (logQueryActionError). It wins over a syntax error after it and
+// over a lexer error the parse went on after; a syntax error or an invalid string before it ends the parse first.
+func (p *parser) actionErrorSoFar() string {
 	for _, lq := range p.checkedLogQueries[:min(p.checkedLogQueryCount, len(p.checkedLogQueries))] {
-		if msg := parseTimeStageError(lq.Pipeline); msg != "" {
+		if msg := logQueryActionError(lq); msg != "" {
 			return msg
 		}
 	}
 	for _, lq := range p.moreCheckedLogQueries {
-		if msg := parseTimeStageError(lq.Pipeline); msg != "" {
+		if msg := logQueryActionError(lq); msg != "" {
 			return msg
 		}
 	}
-	return parseTimeStageError(p.curLogQuery.Pipeline) // a stage is read inside a log query
+	if p.curLogQuery == nil {
+		return ""
+	}
+	return logQueryActionError(p.curLogQuery)
 }
 
-// mayFailWhileParsed reports a pipeline with a stage parseTimeStageError checks: a regexp or pattern parser, a label
-// filter, a drop or keep with matchers.
-func mayFailWhileParsed(stages []Stage) bool {
-	for _, s := range stages {
+// logQueryActionError is the first action error of a log query, read in its order: its selector's regexes, then its
+// stages (parseTimeStageError).
+func logQueryActionError(lq *LogQuery) string {
+	if msg := selectorRegexError(lq.Selector); msg != "" {
+		return msg
+	}
+	return parseTimeStageError(lq.Pipeline)
+}
+
+// mayFailWhileParsed reports a log query with a matcher or stage Loki builds while it parses: a regex matcher in its
+// selector, or a stage parseTimeStageError checks (a regexp or pattern parser, a label filter, a drop or keep with
+// matchers).
+func mayFailWhileParsed(lq *LogQuery) bool {
+	if lq.Selector != nil {
+		for _, m := range lq.Selector.Matchers {
+			if m.Op == MatchRe || m.Op == MatchNotRe {
+				return true
+			}
+		}
+	}
+	for _, s := range lq.Pipeline {
 		switch st := s.(type) {
 		case *ParserStage:
 			if st.Type == ParserRegexp || st.Type == ParserPattern {
@@ -1896,8 +2020,7 @@ func tokenRaw(tok Token) string {
 	return tok.Val
 }
 
-// parseQuantileParam parses the optional phi parameter for quantile_over_time,
-// which may be positive (0.95) or negative (-0.5), followed by a comma.
+// parseQuantileParam parses the optional phi parameter for quantile_over_time: a number followed by a comma.
 func (p *parser) parseQuantileParam(ra *RangeAggregation) error {
 	switch p.cur.Typ {
 	case TokNumber:
@@ -1913,21 +2036,9 @@ func (p *parser) parseQuantileParam(ra *RangeAggregation) error {
 		}
 		p.advance()
 		return nil
-	case TokMinus:
-		p.advance()
-		if p.cur.Typ != TokNumber {
-			return fmt.Errorf("logql: expected number after '-' in quantile_over_time")
-		}
-		phi, err := strconv.ParseFloat(p.cur.Val, 64)
-		if err != nil {
-			return fmt.Errorf("logql: invalid phi: %w", err)
-		}
-		p.advance()
-		ra.Param = -phi
-		ra.HasParam = true
-		_, err = p.expect(TokComma)
-		return err
 	}
+	// Loki reads the parameter as a NUMBER token: a sign before it is the start of no argument, the syntax error
+	// checkRangeAggregationArgument reports at it.
 	return nil
 }
 
@@ -2153,7 +2264,8 @@ func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 	switch probe.cur.Typ {
 	case TokEOF:
 		return p.errorMsgAt(len(p.sc.src), msg, false)
-	case TokIdent, TokNumber:
+	case TokIdent, TokNumber, TokMinus, TokPlus, TokString, TokRawString, TokRParen:
+		// Loki names the token's position (`quantile_over_time(-1, …)`, `quantile_over_time("x", …)`, `rate()`).
 		return p.errorMsgAt(probe.pos(), msg, false)
 	case TokDurationLit, TokBytes:
 		// On line 0, at the literal's column on its own line, counted in characters.
@@ -2188,34 +2300,50 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 	// topk/bottomk carry a numeric parameter before the inner expression.
 	if op == VectorTopK || op == VectorBottomK {
 		if p.cur.Typ != TokNumber {
-			if p.cur.Typ == TokLBrace || p.cur.Typ == TokIdent && isLexerFunctionName(p.cur.Val) {
-				return nil, newParseError(0, 0, "parameter required for operation "+string(op))
-			}
-			return nil, p.syntaxErrorAt("")
+			first, err := p.parseExpr()
+			return nil, p.vectorParamError(op, first, err)
 		}
 		kTok := p.advance()
-		if p.cur.Typ == TokRParen {
-			return nil, newParseError(0, 0, "parameter required for operation "+string(op))
-		}
 		if p.cur.Typ != TokComma {
-			return nil, p.syntaxErrorAt("")
+			// Loki reads a number not followed by a comma as the start of the expression it aggregates
+			// (`topk(1 + 2, …)` fails at the comma, `topk(1)` for its missing parameter).
+			first, err := p.parseBinaryRHS(&LiteralExpr{}, 1)
+			return nil, p.vectorParamError(op, first, err)
 		}
-		// Loki (syntax.mustNewVectorAggregationExpr) requires an integer k > 0.
+		// Loki requires an integer k > 0, a check over the parsed tree: a later syntax or lexer error answers first.
 		k, err := strconv.Atoi(kTok.Val)
-		if err != nil {
-			return nil, newParseError(0, 0, fmt.Sprintf("invalid parameter %s(%s,", op, kTok.Val))
-		}
-		if k <= 0 {
-			return nil, newParseError(0, 0, fmt.Sprintf("invalid parameter (must be greater than 0) %s(%s", op, kTok.Val))
+		switch {
+		case err != nil:
+			p.deferTreeError(va, newParseError(0, 0, fmt.Sprintf("invalid parameter %s(%s,", op, kTok.Val)).Msg)
+		case k <= 0:
+			p.deferTreeError(va, newParseError(0, 0, fmt.Sprintf("invalid parameter (must be greater than 0) %s(%s", op, kTok.Val)).Msg)
 		}
 		va.Param = float64(k)
 		va.HasParam = true
 		p.advance()
 	}
 
-	inner, err := p.parseExpr()
-	if err != nil {
-		return nil, err
+	var inner Expr
+	if op != VectorTopK && op != VectorBottomK && p.cur.Typ == TokNumber {
+		// Loki's grammar reads `op ( NUMBER , expr )` for every vector operation, and refuses the parameter of one
+		// that takes none over the parsed tree; a number not followed by a comma starts the expression.
+		numTok := p.cur
+		lit, err := p.parseNumberLiteral()
+		if err != nil {
+			return nil, err
+		}
+		if p.cur.Typ == TokComma {
+			p.deferTreeError(va, newParseError(0, 0, fmt.Sprintf("unsupported parameter for operation %s(%s,", op, numTok.Val)).Msg)
+			p.advance()
+		} else if inner, err = p.parseBinaryRHS(lit, 1); err != nil {
+			return nil, err
+		}
+	}
+	if inner == nil {
+		var err error
+		if inner, err = p.parseExpr(); err != nil {
+			return nil, err
+		}
 	}
 	va.Inner = inner
 
@@ -2246,6 +2374,25 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 	}
 
 	return va, nil
+}
+
+// vectorParamError is Loki's answer to a topk or bottomk whose first argument is not a number followed by a comma.
+// Loki's grammar reads that argument as the expression the operation aggregates (first, or the error parsing it
+// gave): a comma after it is the unexpected token (`topk(-1, …)` fails at the comma, as `topk(1 + 2, …)` and
+// `topk(rate(…), 2)` do); a closing parenthesis after a metric expression leaves the operation without its parameter
+// (`topk(-1)`, `topk(rate(…))`), and one after a log query is the unexpected token, as inside any vector aggregation.
+func (p *parser) vectorParamError(op VectorOp, first Expr, err error) error {
+	if err != nil {
+		return err
+	}
+	if p.cur.Typ == TokRParen {
+		switch first.(type) {
+		case *LogQuery, *StreamSelector:
+			return p.syntaxErrorAt("")
+		}
+		return newParseError(0, 0, "parameter required for operation "+string(op))
+	}
+	return p.syntaxErrorAt("")
 }
 
 // parseGrouping parses `by (label1, label2)` or `without (label1)`.

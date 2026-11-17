@@ -23,7 +23,8 @@ import (
 //
 // One logfmt stream and one json stream per app, a line every 11 seconds cycling through the forms; each form is a
 // series of its own (its `form` label), and every query reads one form through a label filter between the parser and
-// the unwrap. The answers are recorded (dynamicValueFormsAnswersPath; LVP_RUN_ORACLES=1 records them
+// the unwrap, after a parser of every key or an extraction list of the line's keys (`| logfmt u, form`), whose
+// series identity groups by the listed labels with no second unpack. The answers are recorded (dynamicValueFormsAnswersPath; LVP_RUN_ORACLES=1 records them
 // again). Every run must match Loki or be listed in dynamicValueFormsKnown with the registry case that holds it open.
 
 const dynamicValueFormsAnswersPath = "testdata/unwrap-dynamic-value-forms-loki-diff.jsonl.gz"
@@ -62,6 +63,10 @@ var dynamicValueFormsPipelines = []string{
 	`{job="vf"} | logfmt | form="tiny" | unwrap u`,
 	`{job="vj"} | json | form="exp308" | unwrap u`,
 	`{job="vj"} | json | form="inf" | unwrap u`,
+	// An extraction list of the line's keys: the same series, grouped by the listed labels (no series hash).
+	`{job="vf"} | logfmt u, form | form="exp308" | unwrap u`,
+	`{job="vf"} | logfmt u, form | form="inf" | unwrap u`,
+	`{job="vj"} | json u, form | form="exp308" | unwrap u`,
 }
 
 // dynamicValueFormsFuncs are the functions taken per series that the outer aggregations fold.
@@ -84,8 +89,10 @@ var dynamicValueFormsKnown = func() map[string]map[string]string {
 	known := map[string]map[string]string{}
 	for _, fn := range dynamicValueFormsFuncs {
 		for _, shape := range dynamicValueFormsShapes {
-			for _, pipe := range dynamicValueFormsPipelines {
-				q := fmt.Sprintf(shape, keepIdentityHead(fn), pipe)
+			for _, listed := range dynamicValueFormsPipelines {
+				q := fmt.Sprintf(shape, keepIdentityHead(fn), listed)
+				// An extraction list of every key of the line reads as the bare parser does.
+				pipe := strings.NewReplacer("| logfmt u, form |", "| logfmt |", "| json u, form |", "| json |").Replace(listed)
 				infinity := strings.Contains(pipe, `"inf"`) || strings.Contains(pipe, `"neginf"`)
 				deviation := fn == "stddev_over_time" || fn == "stdvar_over_time"
 				var kinds []string

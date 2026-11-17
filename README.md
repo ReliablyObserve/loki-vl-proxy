@@ -19,7 +19,7 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-54750%20passed-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-58049%20passed-brightgreen)](#tests)
 [![Coverage](https://img.shields.io/badge/coverage-92.2%25-brightgreen)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
@@ -82,7 +82,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 - Drilldown and Explore pages: **85 of 118** faster (72%); median first request **0.13 s** against Loki's **0.38 s**.
 - Metric queries: **239 of 366** faster (65%); median first request **0.10 s** against **0.27 s**.
 - Label and label-value calls: median repeat **0.01 s** against Loki's **0.05 s**, over 36 pairs (36 of them answered by Loki's results cache).
-- Share of rows below Loki, first request: **64.0%** (365 of 570 rows); repeat: **24.4%** (187 of 765). The target is most queries below Loki (above 50%).
+- Share of rows below Loki, first request: **64.3%** (365 of 568 rows); repeat: **24.4%** (187 of 765). The target is most queries below Loki (above 50%).
 
 **🟡 Where it is on par**
 
@@ -100,9 +100,10 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 **🔴 Where it is worse**
 
 - First request: **22 of 570** pairs are slower (4%): log queries **1 of 79**, Drilldown and Explore pages **8 of 118**, metric queries **10 of 366**.
-- Between 1× and 2× Loki: **14** rows on the first request, **4** on a repeat; above 2× Loki: **8** on the first request and **6** on a repeat (the 2026-11-16 distribution).
-- **4 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **4** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 110 covered registry items are locked at the 2× bound.
-- Largest gaps on that list in the run shown, first request: `DP2 patterns of an environment` over 1h, **1.62 s** against **0.27 s**; `LS8 json count by level_extracted, collision` over 6h, **0.56 s** against **0.17 s**; `DP1 patterns of a plain-text service` over 1h, **0.33 s** against **0.02 s**.
+- Between 1× and 2× Loki: **14** rows on the first request, **4** on a repeat; above 2× Loki: **6** on the first request and **6** on a repeat (the 2026-11-16 distribution).
+- **2 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **2** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 110 covered registry items are locked at the 2× bound.
+- **2** listed first requests are first asks (`DP1 patterns of a plain-text service` over 1h, `DP2 patterns of an environment` over 1h): the first request for a selector whose pattern state the proxy has not built yet, which Loki answers from the state its pattern ingester built at push time. They are held to an absolute bound instead of Loki's time (0.6 s, 1.6 s), and leave the list on the next weekly run; their repeats keep the 2× bound.
+- Largest gaps on that list in the run shown, first request: `LS8 json count by level_extracted, collision` over 6h, **0.56 s** against **0.17 s**; `E7 json count by level_extracted` over 1h, **0.14 s** against **0.06 s**.
 - Answers: **51 of 785** pairs return a different result from Loki, and **15** could not be compared.
 
 **Distribution versus Loki in the run shown, both Loki profiles**
@@ -111,7 +112,7 @@ Rows compared: both sides answered 200 and, on a first request, Loki's results c
 
 | Loki profile | Request | Rows compared | 🟢 Below Loki | 🟡 Close to Loki | 🟠 1–2× Loki | 🔴 Above 2× Loki | Not judged: Loki not 200 / proxy not 200 / first request from Loki's cache |
 |---|---|---:|---:|---:|---:|---:|---|
-| `loki-defaults` | first | 570 | 365 (64.0%) | 183 (32.1%) | 14 (2.5%) | **8 (1.4%)** | 20 / 0 / 195 |
+| `loki-defaults` | first | 568 | 365 (64.3%) | 183 (32.2%) | 14 (2.5%) | **6 (1.1%)** | 20 / 0 / 195 |
 | `loki-defaults` | repeat | 765 | 187 (24.4%) | 568 (74.2%) | 4 (0.5%) | **6 (0.8%)** | 20 / 0 / — |
 | `aligned` | first | 447 | 312 (69.8%) | 120 (26.8%) | 13 (2.9%) | **2 (0.4%)** | 19 / 0 / 82 |
 | `aligned` | repeat | 529 | 22 (4.2%) | 500 (94.5%) | 2 (0.4%) | **5 (0.9%)** | 19 / 0 / — |
@@ -190,9 +191,9 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints with tests that compare the proxy against Loki | **19 of 27** (70%) |
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
-| Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **156**: 131 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **75 of 131**: 60 Explore, 14 Logs Drilldown, 1 Grafana datasource; 19 API only, 37 edge cases |
+| Behaviour and feature items | 10 proven, 22 partial, 3 gaps |
+| Known differences from Loki (ranked) | **162**: 137 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **77 of 137**: 62 Explore, 14 Logs Drilldown, 1 Grafana datasource; 19 API only, 41 edge cases |
 
 **Readiness by client**
 
@@ -200,7 +201,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 
 | Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |
 |---|---:|---:|---:|---:|---:|
-| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 60 |
+| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 62 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 14 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
 | Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 19 |

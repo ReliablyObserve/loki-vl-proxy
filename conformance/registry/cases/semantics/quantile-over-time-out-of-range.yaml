@@ -1,5 +1,5 @@
 id: semantics/quantile-over-time-out-of-range
-title: quantile_over_time with a quantile above 1 or below 0 answers a sample value; Loki answers +Inf or -Inf (open)
+title: quantile_over_time with a quantile above 1 answers a sample value; Loki answers +Inf (open)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -7,7 +7,11 @@ proves:
 consumer: api
 evidence: needs recording
 why: |
-  Loki answers +Inf for a quantile above 1 and -Inf below 0.
+  Loki answers +Inf for a quantile above 1 (not recorded yet). A quantile below 0 is no query to Loki: its parser
+  reads the parameter as a number token, so `quantile_over_time(-1, …)` answers `parse error at line 1, col 20:
+  syntax error: unexpected -, expecting NUMBER or { or (` (recorded with the Loki oracle,
+  internal/logql/testdata/error-order-loki.jsonl.gz, the parameter-quantile_over_time rows), and the proxy answers
+  the same (semantics/loki-error-phase-order).
 
   The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
   VictoriaLogs v1.53.0): `quantile_over_time(2.0, {app="api-gateway"} | json
@@ -31,7 +35,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/translator quantile_over_time (quantile outside [0, 1])'
-  loki: 'quantile_over_time with q > 1 is +Inf and with q < 0 is -Inf'
+  loki: 'quantile_over_time with q > 1 is +Inf; q < 0 is a parse error'
   proxy: 'a sample value'
   planned_test: 'TestQuantileOverTimeOutOfRange (internal/proxy) and TestCompat_QuantileOutOfRange (test/e2e-compat, group semantics)'
   clusters:

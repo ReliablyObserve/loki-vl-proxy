@@ -831,7 +831,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 			// Write back with the same window-scaled TTL the handler compares the
 			// remaining TTL against; the base TTL would make every later hit look
 			// stale and schedule another full-range refresh.
-			p.mergeLabelsIntoCache("labels", cacheKey, labels, metadataWindowTTL(start, end, p.cacheTTLLabels))
+			p.storeLabelsCache("labels", cacheKey, labels, metadataWindowTTL(start, end, p.cacheTTLLabels))
 			return nil, nil
 		})
 		if err != nil {
@@ -1234,12 +1234,9 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		if scaleTTLByWindow {
 			entryTTL = metadataWindowTTL(w.startStr, w.endStr, ttl)
 		}
-		p.mergeLabelsIntoCache("labels", w.cacheKey, labels, entryTTL)
-		if len(labels) > 0 {
-			// Stored above (an empty list is not), so the record never runs
-			// ahead of the answer.
-			p.recordMetadataEdgeRead(w.cacheKey, readStarted)
-		}
+		p.storeLabelsCache("labels", w.cacheKey, labels, entryTTL)
+		// Stored above, so the record never runs ahead of the answer.
+		p.recordMetadataEdgeRead(w.cacheKey, readStarted)
 		p.log.Debug("label cache warmed from VL", "window", w.window)
 	}
 }
@@ -1374,40 +1371,31 @@ func jsonSafeLabel(l string) string {
 	return string([]rune(l))
 }
 
-// mergeLabelsIntoCache unions newLabels with the current cached label set for
-// cacheKey and writes the result back with a fresh TTL. This ensures that new
-// labels discovered by user queries or background refreshes are additive:
-// labels never disappear from the cache within a TTL window. An empty label set
-// is ignored here, so it never replaces a known label set; handleLabels caches
-// an empty answer separately with the short negative TTL.
-func (p *Proxy) mergeLabelsIntoCache(endpoint, cacheKey string, newLabels []string, ttl time.Duration) {
-	if len(newLabels) == 0 {
-		return
-	}
-	merged := make(map[string]struct{}, len(newLabels))
-	for _, l := range newLabels {
+// storeLabelsCache writes the label names of one listing of the whole
+// requested window as the cached answer for cacheKey, replacing what the key
+// held: Loki lists the labels of the streams with data in the requested
+// window only, so a label whose last stream left the window is dropped at the
+// next listing instead of being kept by a union with older answers
+// (quality/label-cache-aged-labels-kept). Every caller lists the whole window
+// (handleLabels, its background refresh, the keep-warm loop), and the
+// metadata inventory under them is exact per window. An empty listing is
+// stored too, with the negative TTL like handleLabels' empty answer, so it
+// replaces a list that no longer holds.
+func (p *Proxy) storeLabelsCache(endpoint, cacheKey string, labels []string, ttl time.Duration) {
+	set := make(map[string]struct{}, len(labels))
+	for _, l := range labels {
 		// The cached answer is JSON, which writes each invalid UTF-8 byte as
 		// U+FFFD. A raw label and the replaced form of the same label must be one
 		// entry, and the order must be the order of what is written, so labels
 		// are normalised the way the encoder would write them before they are
 		// deduplicated and sorted. (Loki's labels are protobuf strings, always
 		// valid UTF-8, and it returns them in sort.Strings byte order.)
-		merged[jsonSafeLabel(l)] = struct{}{}
+		set[jsonSafeLabel(l)] = struct{}{}
 	}
-	if cached, _, _, ok := p.endpointReadCacheEntry(noFlowCtx, endpoint, cacheKey); ok {
-		var existing struct {
-			Data []string `json:"data"`
-		}
-		if json.Unmarshal(cached, &existing) == nil {
-			for _, l := range existing.Data {
-				merged[l] = struct{}{}
-			}
-		}
-	}
-	all := make([]string, 0, len(merged))
-	for l := range merged {
+	all := make([]string, 0, len(set))
+	for l := range set {
 		all = append(all, l)
 	}
 	sort.Strings(all)
-	p.setEndpointReadCacheWithTTL(endpoint, cacheKey, lokiLabelsResponse(all), ttl)
+	p.setMetadataListCache(endpoint, cacheKey, lokiLabelsResponse(all), len(all), ttl)
 }

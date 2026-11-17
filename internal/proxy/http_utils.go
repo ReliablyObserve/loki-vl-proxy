@@ -109,8 +109,14 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
-	if err := validateLogQLSyntax(query); err != "" {
-		p.writeError(w, http.StatusBadRequest, truncateQueryError(err))
+	if v := cachedQueryValidation(query); v.msg != "" {
+		if endpoint == "query" && v.buildLogQuery {
+			// Loki refuses a log query on the instant route before it builds the query's pipeline.
+			p.writeErr(w, context.Background(), lokierr.InstantLogQuery())
+			p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+			return "", false
+		}
+		p.writeError(w, http.StatusBadRequest, truncateQueryError(v.msg))
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
@@ -150,14 +156,17 @@ func validateLogQLSyntax(query string) string {
 
 // queryValidation is the validationCache entry of a raw query: Loki's error
 // for it, or "" and whether it is a metric (sample) expression, which
-// stepAlignMiddleware reads before the handler validates the same string, and
+// alignToStepMiddleware reads before the handler validates the same string, and
 // the offsets and ranges of its range selectors (requestTimeBounds).
 type queryValidation struct {
 	msg string
 	// tree is set when msg is a rejection of the typed tree's checks (queryplan.Validate), made after the
 	// parser and its semantic pass accepted the query.
-	tree   bool
-	sample bool
+	tree bool
+	// buildLogQuery is set when msg is the error of a pipeline stage Loki refuses to build in a log query: Loki
+	// answers an instant log query with its query type error ahead of it.
+	buildLogQuery bool
+	sample        bool
 	// answer says whether Loki answers the metric query without reading data: with no series whatever the data
 	// (emptyWhateverTheData), or with 1 at every step (an absent_over_time over a zero range, absentEveryStep).
 	answer dataFreeAnswer
@@ -178,8 +187,12 @@ func cachedQueryValidation(query string) queryValidation {
 			}
 		}
 	}
-	expr, msg, tree := validateQueryTree(query)
-	result := queryValidation{msg: msg, tree: tree, sample: msg == "" && isSampleExpr(expr)}
+	expr, msg, phase := validateQueryPhases(query)
+	result := queryValidation{msg: msg, tree: phase == phaseTree, sample: msg == "" && isSampleExpr(expr)}
+	if phase == phaseBuild {
+		_, result.buildLogQuery = expr.(*logql.LogQuery)
+		expr = nil
+	}
 	if msg == "" && expr != nil {
 		result.shift = queryShiftOf(expr)
 		if result.sample {
@@ -1040,6 +1053,12 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 	if isHeavyQueryQueueFull(err) {
 		return false
 	}
+	// A proxy-side bound on what one request reads (an answer above the bytes the proxy buffers, a series or row
+	// budget, a group guard) is that request's outcome: VictoriaLogs answered. Counting it would open the breaker for
+	// every other query on the proxy.
+	if isProxySideLimit(err) {
+		return false
+	}
 	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.
 	var hsc httpStatusCoder
 	if errors.As(err, &hsc) {
@@ -1053,6 +1072,27 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 		return false
 	}
 	return true
+}
+
+// isProxySideLimit reports an error the proxy raised on its own bound for one request, bare or wrapped: a body above
+// what it buffers, a series or row budget, a group guard, or any Loki-shaped error other than a failed backend or an
+// internal error.
+//
+// It walks the error's chain by type, without errors.As, so a transport failure (the path it must not slow) is
+// classified with no allocation.
+func isProxySideLimit(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		switch x := e.(type) {
+		case *lokierr.Error:
+			return x.Kind() != lokierr.KindBackendFailed && x.Kind() != lokierr.KindInternal
+		case *seriesLimitError, *backendBodyTooLargeError:
+			return true
+		}
+		if e == errBodyTooLarge || e == errSeriesCountExceeded || e == errStatsGroupGuard {
+			return true
+		}
+	}
+	return false
 }
 
 // extractVLErrorMsg parses a VictoriaLogs JSON error body and returns the "error"

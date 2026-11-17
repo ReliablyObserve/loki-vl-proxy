@@ -299,6 +299,17 @@ type lineFieldExposure struct {
 	// labelFormats are the label_format entries, each with what the stages
 	// before it expose (fixLabelFormats).
 	labelFormats []labelFormatTarget
+	// placeholderLine is set with -json-line-fields-as-line-keys: a row whose
+	// _msg is the placeholder defaultMsg is classified against the line rebuilt
+	// from its fields (leaving out placeholderLineFields), as a JSON line
+	// VictoriaLogs kept (json_line_keys.go).
+	placeholderLine       bool
+	defaultMsg            string
+	placeholderLineFields map[string]bool
+	// logfmtOnly are the names only a logfmt extraction list writes: on a
+	// placeholder row the stored field of that name is the JSON line's key,
+	// which Loki's logfmt parser does not read (placeholderLogfmtOnly).
+	logfmtOnly map[string]bool
 	// filters are the pipeline's label filters on a single label, each with
 	// what the stages before it expose (see dropsRow).
 	filters []lineFieldFilter
@@ -350,6 +361,7 @@ func (p *Proxy) lineFieldExposure(query string) *lineFieldExposure {
 		return nil
 	}
 	exposure := pipelineAddsLabels(lq.Pipeline)
+	p.withPlaceholderLine(&exposure, lq.Pipeline)
 	return &exposure
 }
 
@@ -793,6 +805,9 @@ type lineRow struct {
 	keys   map[string]bool
 	stream map[string]string
 	labels map[string]bool // the JSON line's labels, walked once when a name needs it
+	// placeholder: the line was rebuilt from a placeholder row's fields
+	// (readsPlaceholderAsLine).
+	placeholder bool
 }
 
 // hiddenBefore reports whether name is a key of the row's line (a JSON key,
@@ -836,6 +851,9 @@ func (r *lineRow) hiddenBefore(e, before *lineFieldExposure, name string) bool {
 // an array of the JSON line is left out where | json would expose it
 // (hidesJSONArray).
 func classifyRowField(e *lineFieldExposure, r *lineRow, key, value string, lineMissing, classifyAsParsed bool) (parsed, hidden bool) {
+	if r.placeholder && e != nil && e.logfmtOnly[key] && r.keys != nil && isJSONLineField(key, r.keys) && !e.exposesJSONLine(r.keys) {
+		return false, true
+	}
 	parsed, hidden = classifyLineField(e, key, r.keys, r.line, lineMissing, classifyAsParsed)
 	if e != nil && parsed && !hidden && !lineMissing && r.hidesJSONArray(key, value) {
 		return false, true

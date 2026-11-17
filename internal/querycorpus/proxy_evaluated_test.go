@@ -188,11 +188,11 @@ func checkProxyEvaluated(q string, prof planProfile, got physical.Op) string {
 }
 
 // checkBinaryRoute holds the lowering of a binary operation to the proxy's binary route
-// (proxy.BinaryOperandsPhysical): the same operators (physical.Equal), each operand's request byte for byte, and the
-// lowering must not write the translator's text for the whole query, which is not the route's reading. It returns ""
-// or what differs.
+// (proxy.BinaryOperandLeaves): the same operators (physical.Equal), each query operand's request byte for byte at any
+// depth of a chain, and the lowering must not write the translator's text for the whole query, which is not the
+// route's reading. It returns "" or what differs.
 func checkBinaryRoute(q string, prof planProfile, got physical.Binary) string {
-	want, operands, routed, err := proxy.BinaryOperandsPhysical(routedQuery(q), prof.operandTranslate)
+	want, leaves, routed, err := proxy.BinaryOperandLeaves(routedQuery(q), prof.operandTranslate)
 	switch {
 	case err != nil:
 		return fmt.Sprintf("%s: %q: lowered, the proxy's binary route fails: %v", prof.name, q, err)
@@ -201,13 +201,48 @@ func checkBinaryRoute(q string, prof planProfile, got physical.Binary) string {
 	case !physical.Equal(want, got):
 		return fmt.Sprintf("%s: %q:\n lowered %s %#v\n   proxy %#v", prof.name, q, translator.EncodePhysical(got), got, want)
 	}
-	for i, x := range [2]physical.Op{got.L, got.R} {
-		if operands[i] != "" && physical.Encode(x) != operands[i] {
-			return fmt.Sprintf("%s: %q: operand %d:\n lowered text %s\n   proxy text %s", prof.name, q, i, physical.Encode(x), operands[i])
+	gotLeaves := binaryLeaves(got, nil)
+	if len(gotLeaves) != len(leaves) {
+		return fmt.Sprintf("%s: %q: %d operands lowered, the route has %d", prof.name, q, len(gotLeaves), len(leaves))
+	}
+	for i, x := range gotLeaves {
+		if leaves[i] != "" && physical.Encode(x) != leaves[i] {
+			return fmt.Sprintf("%s: %q: operand %d:\n lowered text %s\n   proxy text %s", prof.name, q, i, physical.Encode(x), leaves[i])
 		}
 	}
-	if legacy, ok := prof.translate(q); ok && physical.Encode(got) == legacy {
-		return fmt.Sprintf("%s: %q: lowered to the translator's text for the whole query, which the route does not read", prof.name, q)
+	// The text has no spelling for a bool modifier (the route reads it from the query), so a comparison with bool
+	// encodes like the translator's text, which drops it. Otherwise the translator's text for the whole query is not
+	// the route's reading, unless it decodes to the route's operators (a sum `without ()` against a number: the route
+	// sends the operand alone, which the translator happens to write).
+	if legacy, ok := prof.translate(q); ok && physical.Encode(got) == legacy && !holdsBool(got) {
+		if lw, err := translator.DecodePhysical(legacy); err != nil || !physical.Equal(lw, want) {
+			return fmt.Sprintf("%s: %q: lowered to the translator's text for the whole query, which the route does not read", prof.name, q)
+		}
 	}
 	return ""
+}
+
+// holdsBool reports a binary operation with a bool modifier at any depth of b.
+func holdsBool(b physical.Binary) bool {
+	if b.Bool {
+		return true
+	}
+	for _, x := range [2]physical.Op{b.L, b.R} {
+		if nested, ok := x.(physical.Binary); ok && holdsBool(nested) {
+			return true
+		}
+	}
+	return false
+}
+
+// binaryLeaves appends the operands of b that are no binary operation, left first, at any depth.
+func binaryLeaves(b physical.Binary, out []physical.Op) []physical.Op {
+	for _, x := range [2]physical.Op{b.L, b.R} {
+		if nested, ok := x.(physical.Binary); ok {
+			out = binaryLeaves(nested, out)
+			continue
+		}
+		out = append(out, x)
+	}
+	return out
 }

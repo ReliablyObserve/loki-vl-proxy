@@ -170,6 +170,12 @@ func FuzzMetricFlipGate(f *testing.F) {
 		"sum w\u0130thout (pod) (rate({app=\"a\"}[5m]))", "max_over_time({A=\"0\"} |unwrap A [5m])", "rate({A=\"0\"} |unwrap\tA [5m])",
 		// A log query in parentheses (found by this target): the log flip's, held by FuzzLogFlipGate.
 		"({A=\"0\"} |A0> + 00)",
+		// A bool modifier, a set operator and a chain, which the plan holds to the binary route, with a keep before an
+		// unwrap in an operand.
+		`sum by (app) (rate({app="a"}[5m])) > bool 1`, `sum(rate({app="a"}[5m])) and sum(rate({app="b"}[5m]))`,
+		`sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m])) * 100`,
+		`sum by (x) (sum_over_time({a="b"} | json | keep x | unwrap n [5m])) > bool 1`,
+		`sum by (x) (sum_over_time({a="b"} | json | keep x | unwrap n [5m])) unless on (x) sum by (x) (rate({a="c"}[5m]))`,
 	} {
 		f.Add(q)
 	}

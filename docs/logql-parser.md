@@ -231,11 +231,22 @@ After parsing, `validateSemantics` walks the AST and enforces constraints:
 | `\| unwrap` outside a range aggregation | `parse error at line 1, col N: syntax error: unexpected unwrap`, at the unwrap, ahead of every other check of the query (the parser keeps such a log query, so the handlers can drop Grafana's `\| unwrap [1s]` stubs first) |
 | A stage after `\| unwrap` that is no label filter | `parse error at line 1, col N: syntax error: unexpected drop, expecting IDENTIFIER or (` (a line filter: `unexpected \|=, expecting RANGE or \|`, line 0), raised by the parser; the error of a stage before it that Loki builds while it parses (a regexp or pattern parser, a regex) comes first |
 | `rate()` / `bytes_rate()` referencing `__error__` | `parse error : __error__ and __error_details__ are not allowed inside rate() range vectors` |
-| `quantile_over_time` phi < 0 | `parse error at line 1, col 1: invalid parameter for quantile_over_time: …` |
+| `quantile_over_time` with a sign or a string before the parameter | `parse error at line 1, col N: syntax error: unexpected -, expecting NUMBER or { or (` at the parameter, as Loki reads the parameter as a number token |
+| A vector operation other than topk and bottomk with a number before its expression | `parse error : unsupported parameter for operation sum(1,`, a check over the parsed tree |
 | `\| line_format` with unclosed `{{ }}` | `parse error : stage '…' : invalid line template: …` |
 | Binary op with log stream on either side | `parse error at line 1, col 1: unexpected expression for binary operation` |
+| `topk`/`bottomk` whose first argument is not a number followed by a comma | The argument is read as the expression the operation aggregates, as Loki does: a comma after it is `syntax error: unexpected ,` at the comma (`topk(-1, …)`, `topk(1 + 2, …)`, `topk(rate(…), 2)`), a `)` after a metric expression is `parse error : parameter required for operation topk` (`topk(-1)`), a `)` after a log query is `syntax error: unexpected )` |
 
 All error strings are formatted to match Loki 3.x responses so Grafana datasource clients receive the error shape they expect.
+
+### Order of the checks
+
+A query with more than one error answers the error Loki answers. Loki runs its checks in phases, and the first phase that fails answers (recorded with the Loki oracle over a grid of 1628 queries, `internal/logql/testdata/error-order-loki.jsonl.gz`):
+
+1. **Actions while parsing.** A pattern or regexp parser that does not build, and a regex in a selector, label filter, drop or keep that does not parse. The parser keeps the matchers and stages it has read (`actionErrorSoFar`). The first failing one answers ahead of a later syntax error and of a lexer error the parse goes on after, also inside label_replace. A syntax error or an invalid string before it ends the parse first.
+2. **Lexer errors, then the syntax error.**
+3. **Checks over the parsed tree,** in the order Loki's walk meets them, a node before its operands and the left operand first: a vector operation's parameter (`topk(0`, `sum(1,`), approx_topk with a grouping, a range aggregation's grouping and unwrap, a log query or a literal as a binary operand, label_replace's regex, the empty-compatible selector, then the query plan's checks (sort with a grouping, quantile_over_time without a parameter).
+4. **The pipeline build** (`semanticPass` with build): line filter regexes and patterns, templates, json and logfmt expressions, `ip()`. On query and query_range it comes after the request's limits. On the instant route, a log query answers its query type error first.
 
 ### ip() filter validation
 

@@ -115,6 +115,20 @@
       "sizing": "2: one replica can lose its disk, restart or stop without its keys being computed again (an owner that lost its disk reads them from its backup, one peer round trip per key; other replicas reach the backup within -peer-timeout while the owner is down). Each replica holds a full copy, so the fleet keeps memory and disk times the factor per key (measured with 4 KiB values: 8.2 KiB of memory and 14.6 KiB of disk per key at 2, 4.1 and 8.5 at 1) and, with a fixed -cache-max-bytes, the fleet's distinct keys divide by the factor (a two-replica fleet at 2 holds every key on both). Every write-through write pushes factor minus one copies (4,096 bytes on the wire per 4 KiB write at 2). A lookup on a key no replica holds asks up to factor minus one peers before computing it, each bounded by -peer-timeout. 1 keeps one copy on the owner (the behaviour before this flag); 3 survives two losses at a third more memory and disk."
     },
     {
+      "flag": "peer-read-hedge-max-delay",
+      "helm_value": "extraArgs.peer-read-hedge-max-delay",
+      "type": "Duration",
+      "default": "200ms",
+      "unit": "duration",
+      "bounds": "how long a peer-cache read waits on one replica's response headers: a lookup that misses memory and disk asks the key's replicas in ring order, and when the replica asked last has not answered within the hedge delay it also asks the next replica and takes the first answer, or, with no replica left, goes on as a miss (the request reads VictoriaLogs or computes the entry). The call it stopped waiting for finishes in the background, where -peer-timeout still suspends a paused or hung peer for the breaker cooldown, and until it ends reads skip that peer, so one read per proxy pays the delay. The delay is twice the p99 of the peer header latencies this proxy measured (a decaying histogram), at least 5 ms and at most this value and half of -peer-timeout; until 64 latencies are measured it is the maximum. The /patterns owner presence check is bounded the same way",
+      "error": "none; a hedged read is a peer read like any other, and one that goes on as a miss is answered from VictoriaLogs as before peers existed",
+      "metric": "loki_vl_proxy_peer_cache_read_hedges_total{action=\"next_replica\"|\"gave_up\"}; loki_vl_proxy_peer_cache_read_hedge_delay_seconds; loki_vl_proxy_peer_cache_fetch_duration_seconds; peer error reason peer_slow",
+      "alert": "none",
+      "loki_parity": "",
+      "per_tenant": false,
+      "sizing": "200ms: on a healthy fleet the measured delay sits far below it (twice a header p99 of a few milliseconds), so about one read in a hundred asks a second replica and the fleet's peer reads grow by about 1%; the maximum only applies before the latencies are measured and when the fleet is slow, where it bounds what a paused replica costs one request (200 ms instead of the 2 s peer timeout, then nothing while the peer is suspended). Lower it (50ms) to bound that cost tighter at the price of more VictoriaLogs reads when every replica is slow; raise it towards half of -peer-timeout when peers sit far away (cross-region) and VictoriaLogs is expensive. 0 turns hedging off: a read waits up to -peer-timeout on each replica, as before this flag."
+    },
+    {
       "flag": "peer-push-buffer-max-entries",
       "helm_value": "extraArgs.peer-push-buffer-max-entries",
       "type": "Int",
@@ -624,8 +638,8 @@
       "type": "Bool",
       "default": "true",
       "unit": "switch",
-      "bounds": "which translator writes the VictoriaLogs query of a log query with a stream selector, line filters, pattern filters and label filters and no parser stage, and of a range function over an unwrapped label (alone or under one vector aggregation) whose series a keep before the unwrap decides, which the lowering groups by the labels the keep leaves as Loki does, and of sum, max, min or avg over a range function taken per series of an unwrapped label after a json or logfmt parser with no keep, which the lowering groups by the stream and a hash of each line's parsed labels as Loki's series: true (the default) the typed query-plan lowering, false the string translator; every other query is always translated by the string translator, and a query the lowering cannot translate falls back to it. Nothing grows with the setting: the lowering is bounded by the query parser's own input limits and runs once per translation cache miss",
-      "error": "none; the translated query is the same text under either setting, except a keep before an unwrap and a function taken per series after a parser with no keep, whose series follow Loki only with the lowering on. A lowering that panics is recovered, counted as `panic` and answered by the string translator",
+      "bounds": "which translator writes the VictoriaLogs query of a log query with a stream selector, line filters, pattern filters and label filters and no parser stage, and of a range function over an unwrapped label (alone or under one vector aggregation) whose series a keep before the unwrap decides, which the lowering groups by the labels the keep leaves as Loki does, and of sum, max, min or avg over a range function taken per series of an unwrapped label after a json or logfmt parser with no keep, which the lowering groups by the stream and a hash of each line's parsed labels as Loki's series (after an extraction list of plain keys such as `| logfmt amount, route`, by the stream, its stored level fields and the listed labels, with no second read of the line): true (the default) the typed query-plan lowering, false the string translator; every other query is always translated by the string translator, and a query the lowering cannot translate falls back to it. Nothing grows with the setting: the lowering is bounded by the query parser's own input limits and runs once per translation cache miss",
+      "error": "none; the translated query is the same text under either setting, except a keep before an unwrap and a function taken per series after a parser with no keep or after an extraction list, whose series follow Loki only with the lowering on. A lowering that panics is recovered, counted as `panic` and answered by the string translator",
       "metric": "loki_vl_proxy_lowering_shadow_total{result=\"flipped\",construct=\"LogSelect\"}, and the same counter with construct UnwrapKeepIdentity for a keep before an unwrap and UnwrapDynamicIdentity for a function taken per series after a parser",
       "alert": "none",
       "loki_parity": "",
@@ -673,6 +687,20 @@
       "loki_parity": "data.stats.summary.totalLinesProcessed of Loki's log queries",
       "per_tenant": false,
       "sizing": "Off by default: the count reads only the timestamps of the selector's streams over the pieces read (about a volume query's VictoriaLogs time; 24h of every stream on the test stack: 0.09 s), but it is one more VictoriaLogs request for every log query cache miss on every replica, which a fleet multiplies by its replicas and clients. Turn it on where exact lines processed in Grafana's inspector are worth that load; repeats are cache hits and send none."
+    },
+    {
+      "flag": "json-line-fields-as-line-keys",
+      "helm_value": "extraArgs.json-line-fields-as-line-keys",
+      "type": "Bool",
+      "default": "false",
+      "unit": "switch",
+      "bounds": "how a row whose _msg is VictoriaLogs' missing-message placeholder (its -defaultMsgValue, or -backend-default-msg-value) is read: a JSON line pushed to VictoriaLogs' Loki push route without disable_message_parsing=1, which VictoriaLogs stores as one field per key. false (the default) reports every stored field of such a row as structured metadata (parsed labels after | json or | logfmt); true reads every one as a key of the row's JSON line, as Loki holds the pushed line: no label until | json or a json extraction list reads it, none from | logfmt (an extraction list's names empty), and a query whose every log selector reads a label no stage can give such a line (an unwrap, or a label filter an empty value fails, after | logfmt or without a parser) leaves those rows out with one extra_filters filter on the rows' stored _msg, which VictoriaLogs evaluates before the query's pipes. Nothing grows with the setting: the reading is per row, from the fields VictoriaLogs already returns",
+      "error": "none; with true, structured metadata pushed beside such a line is hidden, because VictoriaLogs stores it among the line's keys and cannot tell them apart, and so are the fields of every other row VictoriaLogs stored without a message (jsonline rows and OpenTelemetry map bodies without one, attributes included). It acts in the Loki-compatible profile only (-label-style=underscores, -metadata-field-mode=translated, the defaults)",
+      "metric": "none",
+      "alert": "none",
+      "loki_parity": "the labels and samples Loki's pipeline takes from a pushed JSON line (profiles/json-line-stored-without-line)",
+      "per_tenant": false,
+      "sizing": "Off by default: the supported setup is to push JSON lines with disable_message_parsing=1 (or start VictoriaLogs with -loki.disableMessageParsing), which keeps the line and needs no flag. Turn it on only where JSON lines already reach VictoriaLogs' Loki push route with message parsing on and carry no structured metadata, for example Promtail or Alloy pushes of JSON logs, and no jsonline or OpenTelemetry rows without a message carry fields that must stay visible. VictoriaLogs must keep a non-empty -defaultMsgValue (its default), and a customized one is named with -backend-default-msg-value. Its VictoriaLogs cost is one exact match on _msg for the queries it restricts, measured in the pull request that added it; with the flag off the proxy sends exactly what it sent before. Line filters (|= and |~), label filters an empty value passes before any parser, and | logfmt grouping keys still read what VictoriaLogs stored (docs/KNOWN_ISSUES.md)."
     },
     {
       "flag": "max-lines",

@@ -1,0 +1,64 @@
+id: severity/recorded-level-table
+title: detected_level of a returned row equals Loki's recorded answer for 1551 generated inputs
+pending: true
+proves:
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The read path derives the detected_level Loki sets at ingest. Its rules are
+  held to answers recorded from a real Loki 3.7.9 (discover_log_levels on,
+  default log_level_fields, log_level_from_json_max_depth 2): 1551 generated
+  inputs (recorded twice, the second run adding 70 probes of how the line is
+  read; the 1481 rows of the first run answered the same) pushed one stream each (structured metadata keys and values, field
+  pairs, severity_number values, stream labels, JSON lines to depth 5 with
+  value types and broken shapes, logfmt variants, plain lines by letter case,
+  position, boundary byte and near-miss word, long lines, OTLP records),
+  read back in both response encodings. The table
+  (internal/proxy/testdata/detected_level_golden.json) and the evidence of the
+  run (testdata/detected_level_golden_loki.json: Loki's build, limits, every
+  row's push status and labels) are committed.
+
+  What the answers show, and the proxy follows: a stored detected_level wins;
+  then the stream's first level label in log_level_fields order; then the
+  row's first level field in that order, a known spelling normalised and any
+  other value kept as stored; structured metadata named log.level is not a
+  level (Loki stores it as log_level); then severity_number by the OTel
+  ranges (0 and above 24 unknown, below 1 trace, a non-integer info); then
+  the line. A line with braces first and last (after spaces, tabs, CRs and
+  LFs) is JSON: the first level key holding a string, in document order two
+  objects deep, arrays not entered, keys decoded and values read raw, empty
+  included, up to the first syntax error (numbers read leniently); such a line
+  never goes to logfmt. Any other line is logfmt: the level key earliest in
+  log_level_fields with names compared case-insensitively, a bare or empty
+  value included, up to the first syntax error (a quote or equals sign in a
+  key or unquoted value, an unterminated or badly escaped quoted value). A line
+  value counts only as a known spelling; anything else falls to the keyword
+  scan: the first of trace, debug, info, warn,
+  warning, error, err, critical, fatal in any letter case (U+0130 reads as
+  i) after start, blank, newline, [ ( { " or = and before end, blank,
+  newline, [ ] ( ) { } " : = , or !.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{cr_golden="<run>"}'
+    window: 5m
+  headers:
+    X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "rows written by TestCompat_DetectedLevelGoldenMatchesLoki (test/e2e-compat, core group), one stream per row under a per-run cr_golden label"
+compare:
+  mode: exact
+  fields: [detected_level]
+  expect: |
+    The recorded detected_level for every row of the table: unit
+    TestDetectedLevelGoldenTable and TestDetectedLevelReferenceMatchesRecordedLoki
+    (internal/proxy), live TestCompat_DetectedLevelGoldenMatchesLoki (about 200
+    rows over every category; LVP_DETECTED_LEVEL_GOLDEN_FULL=1 all of them,
+    LVP_RECORD_DETECTED_LEVEL_GOLDEN=1 records them again), fuzz
+    FuzzDetectedLevelMatchesReference.
+applies_to:
+  loki: ">=3.7.9"
+  victorialogs: ">=v1.49.0"

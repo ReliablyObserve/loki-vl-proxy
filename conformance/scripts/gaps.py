@@ -185,7 +185,7 @@ def main():
                   f"{len(constructs) - len(missing)}/{len(constructs)} constructs are referenced in "
                   "proxy code. Not referenced anywhere:", ""]
         for construct in missing:
-            lines.append(f"- `{construct['literal']}` ({construct['kind']}, {construct['constant']})")
+            lines.append(f"- `{construct['literal']}` ({construct['kind']}, {construct['name']})")
     links_path = f"{ROOT}/generated/ast-links.json"
     if os.path.exists(links_path):
         links = load_json(links_path)

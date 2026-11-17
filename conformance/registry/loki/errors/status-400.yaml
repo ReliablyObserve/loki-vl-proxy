@@ -2,8 +2,8 @@ id: status-400
 status: 400
 error_type: bad_data
 generated:   # rewritten by conformance/scripts/error_registry.py
-  proxy_call_sites: 25
-  dynamic_sites: 18
+  proxy_call_sites: 24
+  dynamic_sites: 17
   literal_messages:
     - "both start and end parameters required for delete"
     - "delete requires X-Delete-Confirmation: true header for safety"
@@ -22,9 +22,9 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   "msg-step-duration", "msg-step-not-positive", "msg-step-overflow", "msg-step-too-many-points",
   "msg-tail-not-websocket", "msg-url-escape", "msg-url-semicolon", "unmapped-delete-query-not-set",
   "unmapped-index-shards-target-bytes", "unmapped-push-snappy-corrupt", "unmapped-ruler-local-store"]
-  recorded_rows: 160
-  comparable_rows: 145
-  matching_rows: 139
+  recorded_rows: 172
+  comparable_rows: 157
+  matching_rows: 152
 
 loki_behaviour: |
   Loki v3.7.7 answers 400 as `text/plain` with the error's own message for a

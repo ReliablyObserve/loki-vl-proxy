@@ -3,96 +3,76 @@ package proxy
 import (
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
-	fj "github.com/valyala/fastjson"
-
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	fj "github.com/valyala/fastjson"
 )
 
-// Unwrap sample validity (Loki v3.7.7; registry semantics/unwrap-sample-validity): a line whose unwrapped label is absent
-// or empty makes no sample, and a value the conversion rejects is not a sample
-// either (it carries __error__="SampleExtractionErr", which `| __error__=""`
-// drops). VictoriaLogs' stats functions parse leniently instead (a unit such as
-// "86282s" or "1KiB" becomes a number, max and min compare strings, a group
-// without a value answers "" or NaN), so a stats pipe over an unwrapped label
-// reads only the rows the translator selected and converted in Loki's syntax
-// (translator.UnwrapGateFor, plain, duration() and bytes()). The raw evaluators
-// (quantile, rate_counter, first, last, the bare-parser rows) convert with Go's
-// own parsing (convertUnwrap).
+// Unwrapped range functions read from VictoriaLogs stats. A step's sample is a function of the window
+// (t-range, t] (LogQL docs, "Range Vector aggregation"); for a range up to the step VictoriaLogs' own step buckets
+// hold it, and a longer range is merged from buckets of gcd(step, range) that each keep a partial aggregate:
+//
+//   - sum and the rate of an unwrapped label: the sum of the bucket (the rate divides the window's sum by its
+//     seconds);
+//   - max and min: the extreme of the bucket;
+//   - avg: the sum and the sample count of the bucket;
+//   - stddev and stdvar: the mean, the sample count and the population standard deviation of the bucket, combined
+//     through their squared deviations;
+//   - first and last: the value of the earliest or the latest row of the bucket.
+//
+// The raw evaluators read rows whole and convert the value themselves, so they take the query without the gate.
 
-// withoutUnwrapGate returns spec with the unwrap gate off its base query: the
-// raw evaluators read the rows whole and convert the value themselves.
+// withoutUnwrapGate is spec with the unwrap gate taken off its base query: the query the raw evaluators read.
 func withoutUnwrapGate(spec statsCompatSpec) statsCompatSpec {
 	spec.BaseQuery = spec.ungated()
 	spec.Gate, spec.UnwrapField = "", ""
 	return spec
 }
 
-// unwrapManualSpecs splits the spec of a manual range metric into the one the
-// stats buckets read and the one the raw evaluator reads. The raw evaluator
-// reads rows whole and converts the value itself, so it never sees the unwrap
-// gate. The stats of an unwrap rate and of sum, avg, max and min over time keep
-// it: their windows merge from buckets of a partial aggregate with the sample
-// count as presence (unwrapBucketAgg, mergeUnwrapBuckets), as do stddev and
-// stdvar over time. Every other metric reads the ungated spec on both routes.
+// unwrapManualSpecs splits spec for the evaluator of manualFunc: the stats spec and the stats function that reads
+// a bucket's partial aggregate (unwrapBucketAgg) when the function merges from buckets and the query holds the
+// gate, and the spec the raw evaluator reads. A function that does not merge from buckets reads raw rows only.
 func unwrapManualSpecs(spec statsCompatSpec, manualFunc string) (stats, raw statsCompatSpec, statsAggFunc string) {
 	raw = withoutUnwrapGate(spec)
-	if agg := unwrapBucketAgg(manualFunc); agg != "" && spec.BaseQuery != raw.BaseQuery {
+	if !spec.gated() {
+		return raw, raw, ""
+	}
+	if agg := unwrapBucketAgg(manualFunc); agg != "" {
 		return spec, raw, agg
 	}
 	return raw, raw, ""
 }
 
-// avgBucketSum is the bucket stats of avg over time: the sum and the sample
-// count, which the collector keeps as values (Counts) to divide by.
-const avgBucketSum = "sum(" + translator.UnwrapValueAlias + ") as __lvp_sum, count() as __sample_count"
-
-// deviationBucketStats is the bucket stats of stddev and stdvar over time: the
-// mean, the sample count and the population standard deviation of the
-// bucket's samples, which the collector keeps as values, counts and
-// deviations. VictoriaLogs has each as a stats function (v1.49 and later), so
-// the bucket needs no pipe of its own; the window's deviation is merged from
-// them (mergeDeviationBuckets).
-const deviationBucketStats = "avg(" + translator.UnwrapValueAlias + ") as __lvp_avg, count() as __sample_count, " +
-	"stddev(" + translator.UnwrapValueAlias + ") as " + deviationBucketName
-
-// deviationBucketName is the stats result of deviationBucketStats the
-// collector keeps as a series' deviations.
-const deviationBucketName = "__lvp_sd"
-
-// firstBucketStats and lastBucketStats are the bucket stats of first and last
-// over time: the row of the earliest (row_min) or the latest (row_max) time of
-// each series in the bucket, the stats the translation writes for them (VictoriaLogs
-// has no first or last function). VictoriaLogs answers a row as a label, so the
-// collector unpacks the row's value and takes it per group and bucket again
-// (rowBucketPick), as the stats result c.
-var (
-	firstBucketStats = logsql.RowMin{By: "_time", Fields: []string{translator.UnwrapValueAlias}}.String() + " as " + rowBucketInner
-	lastBucketStats  = logsql.RowMax{By: "_time", Fields: []string{translator.UnwrapValueAlias}}.String() + " as " + rowBucketInner
+// The stats a bucket keeps for the functions that merge from buckets. The value is the gate's converted field.
+const (
+	// avgBucketSum is the sum and the sample count of a bucket: avg over time divides the window's sum by its count.
+	avgBucketSum = "sum(" + translator.UnwrapValueAlias + ") as __lvp_sum, count() as __sample_count"
+	// deviationBucketName names the population standard deviation of a bucket.
+	deviationBucketName = "__lvp_sd"
+	// deviationMeanName names the mean of a bucket.
+	deviationMeanName = "__lvp_avg"
+	// deviationBucketStats is the mean, the sample count and the population standard deviation of a bucket.
+	deviationBucketStats = "avg(" + translator.UnwrapValueAlias + ") as " + deviationMeanName + ", count() as __sample_count, stddev(" + translator.UnwrapValueAlias + ") as " + deviationBucketName
+	// rowBucketInner names the row a first or last bucket picks (VictoriaLogs' row_min and row_max answer the row
+	// as a JSON object of the fields asked for).
+	rowBucketInner = "__lvp_inner"
+	// firstBucketStats and lastBucketStats pick the earliest and the latest row of a bucket.
+	firstBucketStats = "row_min(_time, " + translator.UnwrapValueAlias + ") as " + rowBucketInner
+	lastBucketStats  = "row_max(_time, " + translator.UnwrapValueAlias + ") as " + rowBucketInner
+	// rowBucketUnpack reads the value out of the picked row, and rowBucketValue takes it again per group: the
+	// groups of a bucket hold one row each.
+	rowBucketUnpack = "| unpack_json from " + rowBucketInner + " fields (" + translator.UnwrapValueAlias + ") | math " + translator.UnwrapValueAlias + " as " + rowBucketInner
+	rowBucketValue  = "max(" + rowBucketInner + ") as c"
 )
 
-// rowBucketInner is the stats result that holds the row of firstBucketStats and
-// lastBucketStats.
-const rowBucketInner = "__lvp_inner"
-
-// rowBucketUnpack reads the converted value out of a bucket's row, and
-// rowBucketValue is the second stats' function over it: one row per group and
-// bucket, so its maximum is the row's value.
-var (
-	rowBucketUnpack = logsql.PipeUnpackJSON{From: rowBucketInner, Fields: []string{translator.UnwrapValueAlias}}.String() + " " +
-		logsql.PipeMath{Expr: translator.UnwrapValueAlias, Alias: rowBucketInner}.String()
-	rowBucketValue = logsql.Max{Field: rowBucketInner}.String() + " as c"
-)
-
-// rowBucketPick returns the pipes that follow the stats of a bucket query to
-// read its value: for firstBucketStats and lastBucketStats, the unpack of the
-// row and the second stats, grouped by the same clause (by, the text of the
-// first stats pipe's grouping); "" for every other stats.
+// rowBucketPick is what follows statsAggFunc in a bucket query: for first and last, the pick of the row's value
+// grouped like the stats (by is the stats pipe up to its function, " | stats by (...) "); nothing otherwise.
 func rowBucketPick(statsAggFunc, by string) string {
 	if statsAggFunc != firstBucketStats && statsAggFunc != lastBucketStats {
 		return ""
@@ -100,138 +80,130 @@ func rowBucketPick(statsAggFunc, by string) string {
 	return " " + rowBucketUnpack + by + rowBucketValue
 }
 
-// unwrapBucketAgg is the stats of one bucket of an unwrap range function whose
-// windows merge from buckets: its partial aggregate (the sum for rate, sum and
-// avg over time, the extreme for max and min over time). VictoriaLogs answers a
-// bucket only when it holds a row, so the aggregate's point is the presence of
-// sum, max and min over time; an average also takes the sample count to divide
-// by, and rate keeps it as presence; stddev and stdvar take the mean, the count
-// and the deviation (deviationBucketStats); first and last the value of the
-// bucket's earliest or latest row (firstBucketStats, lastBucketStats). "" for
-// every other function.
+// unwrapBucketAgg is the stats function of a bucket for the window evaluator's function manualFunc, "" for one
+// that does not merge from buckets.
 func unwrapBucketAgg(manualFunc string) string {
 	switch manualFunc {
-	case "first":
-		return firstBucketStats
-	case "last":
-		return lastBucketStats
-	case "unwrap_rate":
-		return "sum(" + translator.UnwrapValueAlias + ") as c, count() as __sample_count"
 	case "sum", "max", "min":
 		return manualFunc + "(" + translator.UnwrapValueAlias + ") as c"
 	case "avg":
 		return avgBucketSum
 	case "stddev", "stdvar":
 		return deviationBucketStats
+	case "first":
+		return firstBucketStats
+	case "last":
+		return lastBucketStats
+	case "unwrap_rate":
+		return "sum(" + translator.UnwrapValueAlias + ") as c, count() as __sample_count"
 	}
 	return ""
 }
 
-// mergeUnwrapBuckets merges the partial aggregates of the buckets of one window
-// into Loki's value over the window: the sum (of a rate too,
-// before its division), the sum over the window's sample count, or the
-// extreme, where a NaN gives way as in Loki; stddev and stdvar merge the
-// buckets' deviations (mergeDeviationBuckets). first and last take the earliest
-// or the latest bucket's value: Loki's is the window's first or last sample, and
-// the buckets are disjoint and in time order, so it is in the earliest or the
-// latest bucket that holds one.
-// Every bucket holds a sample.
+// mergeUnwrapBuckets is the value of one window of manualFunc from the partial aggregates of the buckets it holds
+// (ascending; counts and devs where the function keeps them). The rate's division by the window is the caller's.
 func mergeUnwrapBuckets(manualFunc string, buckets, counts, devs []rangeMetricSample) float64 {
 	switch manualFunc {
 	case "first":
 		return buckets[0].value
 	case "last":
 		return buckets[len(buckets)-1].value
-	}
-	if manualFunc == "stddev" || manualFunc == "stdvar" {
-		variance := mergeDeviationBuckets(buckets, counts, devs)
-		if manualFunc == "stddev" {
-			return math.Sqrt(variance)
-		}
-		return variance
-	}
-	value := buckets[0].value
-	for _, b := range buckets[1:] {
-		switch manualFunc {
-		case "max":
-			if b.value > value || math.IsNaN(value) {
-				value = b.value
+	case "max":
+		v := buckets[0].value
+		for _, b := range buckets[1:] {
+			if b.value > v || math.IsNaN(v) {
+				v = b.value
 			}
-		case "min":
-			if b.value < value || math.IsNaN(value) {
-				value = b.value
-			}
-		default:
-			value += b.value
 		}
-	}
-	if manualFunc == "avg" {
-		var n float64
+		return v
+	case "min":
+		v := buckets[0].value
+		for _, b := range buckets[1:] {
+			if b.value < v || math.IsNaN(v) {
+				v = b.value
+			}
+		}
+		return v
+	case "avg":
+		var sum, n float64
+		for _, b := range buckets {
+			sum += b.value
+		}
 		for _, c := range counts {
 			n += c.value
 		}
-		value /= n
+		return sum / n
+	case "stdvar":
+		return mergeDeviationBuckets(buckets, counts, devs)
+	case "stddev":
+		return math.Sqrt(mergeDeviationBuckets(buckets, counts, devs))
 	}
-	return value
+	var sum float64
+	for _, b := range buckets {
+		sum += b.value
+	}
+	return sum
 }
 
-// mergeDeviationBuckets is the population variance of the samples of a window
-// from its buckets' means, sample counts and population standard deviations
-// (deviationBucketStats), one of each per bucket, in the same order. The
-// buckets combine as partial sums of squared deviations: a bucket of n samples
-// with mean m and deviation d holds n*d^2 about its own mean, and n*(m-M)^2
-// more about the window's mean M. That stays exact where the sum of squares
-// minus the squared sum cancels (a large mean, a small spread). A window with a
-// NaN or an infinite sample is NaN, and one whose partials do not line up
-// (VictoriaLogs answers the three for every bucket it holds) is NaN too.
+// mergeDeviationBuckets is the population variance of a window from the mean, the sample count and the population
+// standard deviation of each of its buckets: the window's sum of squared deviations is the buckets' own plus each
+// bucket's count times the squared distance of its mean from the window's mean (two passes over the buckets, so no
+// sum of squares is subtracted from another). Partials that do not line up, no bucket, or a value that is not
+// finite (an infinite or NaN sample makes the deviation NaN) are NaN.
 func mergeDeviationBuckets(means, counts, devs []rangeMetricSample) float64 {
-	if len(means) == 0 || len(counts) != len(means) || len(devs) != len(means) {
+	if len(means) == 0 || len(means) != len(counts) || len(means) != len(devs) {
 		return math.NaN()
 	}
-	var n, sum float64
-	for i, m := range means {
-		n += counts[i].value
-		sum += counts[i].value * m.value
+	// x*0 is 0 for a finite x and NaN for an infinity or NaN: one sum tells a non-finite mean or deviation.
+	var n, sum, nonFinite float64
+	for i := range means {
+		c, m := counts[i].value, means[i].value
+		nonFinite += m*0 + devs[i].value*0
+		n += c
+		sum += c * m
 	}
-	if n <= 0 {
+	if nonFinite != 0 {
 		return math.NaN()
 	}
 	mean := sum / n
 	var m2 float64
-	for i, m := range means {
-		c, d, delta := counts[i].value, devs[i].value, m.value-mean
-		m2 += c*d*d + c*delta*delta
+	for i := range means {
+		d := means[i].value - mean
+		m2 += counts[i].value * (devs[i].value*devs[i].value + d*d)
 	}
 	return m2 / n
 }
 
-// deviationPartials pairs the bucket stats of stddev and stdvar over time
-// (deviationBucketStats). VictoriaLogs answers each of the three as a result of
-// its own per group, and several groups can make one Loki series (the unwrap
-// gate groups the values by their kind: numbers, NaN, infinities), so the
-// mean, the count and the deviation of a bucket are paired by group and time,
-// and the groups of a series are combined per bucket (combineDeviation).
+// finite reports a number that is neither infinite nor NaN.
+func finite(v float64) bool { return !math.IsInf(v, 0) && !math.IsNaN(v) }
+
+// deviationPartials gathers the three stats results of the deviation buckets (deviationBucketStats) per series
+// and per VictoriaLogs group, and folds them into the series' samples, counts and deviations.
 type deviationPartials struct {
-	groups map[string]*deviationGroup
+	series map[string]*deviationSeries
 	order  []string
 }
 
-// deviationGroup is the bucket stats of one VictoriaLogs group of a series.
+// deviationSeries is one series' VictoriaLogs groups, in the order they came.
+type deviationSeries struct {
+	metric map[string]string
+	groups map[string]*deviationGroup
+	order  []*deviationGroup
+}
+
+// deviationGroup is one VictoriaLogs group of a series: its mean, count and deviation per bucket.
 type deviationGroup struct {
-	seriesKey           string
-	metric              map[string]string
 	means, counts, devs []rangeMetricSample
 }
 
-// deviationPoint is the partial of one bucket: its sample count, its mean and
-// the sum of its samples' squared deviations from the mean.
+// deviationPoint is a bucket's partial: the sample count, the mean and the sum of squared deviations.
 type deviationPoint struct {
 	ts          int64
 	n, mean, m2 float64
 }
 
-// newDeviationPartials is the pairing of the bucket stats statsAggFunc, nil
-// for every stats but deviationBucketStats.
+// newDeviationPartials returns the gatherer for the stats statsAggFunc, nil for stats that are not the deviation
+// buckets.
 func newDeviationPartials(statsAggFunc string) *deviationPartials {
 	if statsAggFunc != deviationBucketStats {
 		return nil
@@ -239,8 +211,7 @@ func newDeviationPartials(statsAggFunc string) *deviationPartials {
 	return &deviationPartials{}
 }
 
-// deviationResults is the stats results per series that statsAggFunc adds to
-// the value and the presence count: the deviation of deviationBucketStats.
+// deviationResults is the number of stats results per series the deviation buckets add to the mean and the count.
 func deviationResults(statsAggFunc string) int {
 	if statsAggFunc == deviationBucketStats {
 		return 1
@@ -248,334 +219,302 @@ func deviationResults(statsAggFunc string) int {
 	return 0
 }
 
-// add reads one stats result of a group of the series seriesKey.
+// add reads one stats result (name, its points) of the group group of the series seriesKey.
 func (d *deviationPartials) add(seriesKey, group string, metric map[string]string, name string, values []byte, start time.Time, step time.Duration) {
-	key := seriesKey + "\x00" + group
-	g := d.groups[key]
-	if g == nil {
-		if d.groups == nil {
-			d.groups = map[string]*deviationGroup{}
-		}
-		g = &deviationGroup{seriesKey: seriesKey, metric: metric}
-		d.groups[key] = g
-		d.order = append(d.order, key)
+	if d.series == nil {
+		d.series = map[string]*deviationSeries{}
+	}
+	s, ok := d.series[seriesKey]
+	if !ok {
+		s = &deviationSeries{metric: metric, groups: map[string]*deviationGroup{}}
+		d.series[seriesKey] = s
+		d.order = append(d.order, seriesKey)
+	}
+	g, ok := s.groups[group]
+	if !ok {
+		g = &deviationGroup{}
+		s.groups[group] = g
+		s.order = append(s.order, g)
 	}
 	switch name {
+	case deviationMeanName:
+		g.means = appendBucketSamples(g.means, values, start, step)
 	case "__sample_count":
 		g.counts = appendBucketSamples(g.counts, values, start, step)
 	case deviationBucketName:
 		g.devs = appendBucketSamples(g.devs, values, start, step)
-	default:
-		g.means = appendBucketSamples(g.means, values, start, step)
 	}
 }
 
-// fold writes the series into series: per bucket holding a sample, its mean
-// (Samples), its sample count (Counts and PresentBuckets) and its population
-// standard deviation (Deviations), the groups of a series combined.
+// fold writes every series' buckets into series: per bucket the groups of a series combine into one mean, count
+// and deviation. A nil gatherer folds nothing.
 func (d *deviationPartials) fold(series map[string]manualSeriesSamples) {
 	if d == nil {
 		return
 	}
-	sort.Strings(d.order)
-	bySeries := make(map[string][]deviationPoint, len(d.order))
-	metrics := make(map[string]map[string]string, len(d.order))
+	var points []deviationPoint
 	for _, key := range d.order {
-		g := d.groups[key]
-		metrics[g.seriesKey] = g.metric
-		bySeries[g.seriesKey] = g.appendPoints(bySeries[g.seriesKey])
-	}
-	for seriesKey, points := range bySeries {
-		sort.SliceStable(points, func(i, j int) bool { return points[i].ts < points[j].ts })
-		entry := manualSeriesSamples{Metric: metrics[seriesKey], PresentBuckets: make([]int64, 0, len(points))}
-		entry.Samples = make([]rangeMetricSample, 0, len(points))
-		entry.Counts = make([]rangeMetricSample, 0, len(points))
-		entry.Deviations = make([]rangeMetricSample, 0, len(points))
-		for i := 0; i < len(points); {
-			p := points[i]
-			for i++; i < len(points) && points[i].ts == p.ts; i++ {
-				p = combineDeviation(p, points[i])
-			}
-			entry.Samples = append(entry.Samples, rangeMetricSample{ts: p.ts, value: p.mean})
-			entry.Counts = append(entry.Counts, rangeMetricSample{ts: p.ts, value: p.n})
-			entry.Deviations = append(entry.Deviations, rangeMetricSample{ts: p.ts, value: math.Sqrt(p.m2 / p.n)})
-			entry.PresentBuckets = append(entry.PresentBuckets, p.ts)
+		s := d.series[key]
+		points = points[:0]
+		for _, g := range s.order {
+			points = g.appendPoints(points)
 		}
-		series[seriesKey] = entry
+		if len(s.order) > 1 {
+			sort.SliceStable(points, func(i, j int) bool { return points[i].ts < points[j].ts })
+		}
+		buckets := 0
+		for i := range points {
+			if i == 0 || points[i].ts != points[i-1].ts {
+				buckets++
+			}
+		}
+		entry := series[key]
+		if entry.Metric == nil {
+			entry.Metric = s.metric
+		}
+		entry.Samples = slices.Grow(entry.Samples, buckets)
+		entry.Counts = slices.Grow(entry.Counts, buckets)
+		entry.Deviations = slices.Grow(entry.Deviations, buckets)
+		if entry.PresentBuckets == nil {
+			entry.PresentBuckets = make([]int64, 0, buckets)
+		}
+		for i := 0; i < len(points); {
+			acc := points[i]
+			j := i + 1
+			for ; j < len(points) && points[j].ts == acc.ts; j++ {
+				acc = combineDeviation(acc, points[j])
+			}
+			i = j
+			dev := math.NaN()
+			if acc.n > 0 {
+				dev = math.Sqrt(acc.m2 / acc.n)
+			}
+			entry.Samples = append(entry.Samples, rangeMetricSample{ts: acc.ts, value: acc.mean})
+			entry.Counts = append(entry.Counts, rangeMetricSample{ts: acc.ts, value: acc.n})
+			entry.Deviations = append(entry.Deviations, rangeMetricSample{ts: acc.ts, value: dev})
+			entry.PresentBuckets = append(entry.PresentBuckets, acc.ts)
+		}
+		series[key] = entry
 	}
 }
 
-// appendPoints appends the group's buckets that hold a sample, its mean and
-// deviation paired by time; a bucket whose mean or deviation is missing is
-// NaN, never read as a bucket without samples.
+// appendPoints appends the group's buckets that hold samples (a count above zero): the mean and the deviation of
+// the same bucket, NaN where VictoriaLogs answered none.
 func (g *deviationGroup) appendPoints(dst []deviationPoint) []deviationPoint {
-	means, devs := sortedHitsSamples(g.means), sortedHitsSamples(g.devs)
-	mi, di := 0, 0
-	for _, c := range sortedHitsSamples(g.counts) {
-		if !(c.value > 0) {
+	at := func(samples []rangeMetricSample, ts int64) float64 {
+		i := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= ts })
+		if i < len(samples) && samples[i].ts == ts {
+			return samples[i].value
+		}
+		return math.NaN()
+	}
+	dst = slices.Grow(dst, len(g.counts))
+	for _, c := range g.counts {
+		if math.IsNaN(c.value) || c.value <= 0 {
 			continue
 		}
-		p := deviationPoint{ts: c.ts, n: c.value, mean: math.NaN(), m2: math.NaN()}
-		for mi < len(means) && means[mi].ts < c.ts {
-			mi++
-		}
-		if mi < len(means) && means[mi].ts == c.ts {
-			p.mean = means[mi].value
-		}
-		for di < len(devs) && devs[di].ts < c.ts {
-			di++
-		}
-		if di < len(devs) && devs[di].ts == c.ts {
-			p.m2 = c.value * devs[di].value * devs[di].value
-		}
-		dst = append(dst, p)
+		mean, dev := at(g.means, c.ts), at(g.devs, c.ts)
+		dst = append(dst, deviationPoint{ts: c.ts, n: c.value, mean: mean, m2: dev * dev * c.value})
 	}
 	return dst
 }
 
 // combineDeviation is the partial of the samples of a and b together.
 func combineDeviation(a, b deviationPoint) deviationPoint {
+	if a.n == 0 {
+		return deviationPoint{ts: b.ts, n: b.n, mean: b.mean, m2: b.m2}
+	}
+	if b.n == 0 {
+		return a
+	}
 	n := a.n + b.n
 	delta := b.mean - a.mean
-	return deviationPoint{ts: a.ts, n: n, mean: a.mean + delta*(b.n/n), m2: a.m2 + b.m2 + delta*delta*(a.n*b.n/n)}
+	return deviationPoint{ts: a.ts, n: n, mean: a.mean + delta*b.n/n, m2: a.m2 + b.m2 + delta*delta*a.n*b.n/n}
 }
 
-// statsGroupID is a VictoriaLogs stats result's group: its fields but the
-// stats result's name, in the order VictoriaLogs writes them.
+// statsGroupID names the VictoriaLogs group of a stats result: every field of its metric but the result's name,
+// sorted, so the results of one group pair up whatever order VictoriaLogs writes them in.
 func statsGroupID(metric *fj.Object) string {
-	var b strings.Builder
+	if metric == nil {
+		return ""
+	}
+	var parts []string
 	metric.Visit(func(key []byte, v *fj.Value) {
 		if string(key) == "__name__" {
 			return
 		}
-		b.Write(key)
-		b.WriteByte(0)
-		b.Write(v.GetStringBytes())
-		b.WriteByte(0)
+		parts = append(parts, string(key)+"="+string(v.GetStringBytes()))
 	})
-	return b.String()
+	sort.Strings(parts)
+	return strings.Join(parts, "\xff")
 }
 
-// unwrapWindowRoute reports whether the window evaluator answers the request
-// from merged buckets (unwrapWindowBuckets). When an outer aggregation folds
-// the series the buckets hold afterwards (foldUngroupedSum,
-// foldVectorAggregations), Loki counts its series limit on the folded answer:
-// the reads are bounded by the raw-row budget, as for a `without`
-// (withWithoutFold records it itself).
-//
-// grouped reports that the returned spec groups the buckets by the outer
-// labels (unwrapGroupPushdown): the evaluator answers the outer aggregation
-// itself and nothing folds afterwards.
+// unwrapWindowRoute decides how the window evaluator reads spec: windows merged from buckets (ok), and among them
+// the ones VictoriaLogs groups by the outer labels (grouped, routed is that spec). Otherwise routed is spec and the
+// step buckets answer.
 func (p *Proxy) unwrapWindowRoute(r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, hasOrigSpec bool, manualFunc, originalLogql string, step time.Duration) (routed statsCompatSpec, grouped, ok bool) {
-	query := r.FormValue("query")
 	if !hasOrigSpec {
 		return spec, false, false
 	}
-	if pushed, ok := p.unwrapGroupPushdown(spec, manualFunc, query); ok && !unwrapGroupPushdownOff && unwrapWindowBuckets(pushed, origSpec, manualFunc, originalLogql, query, step) {
-		return pushed, true, true
-	}
+	query := r.FormValue("query")
 	if !unwrapWindowBuckets(spec, origSpec, manualFunc, originalLogql, query, step) {
 		return spec, false, false
 	}
-	if _, chain := seriesAggregationChain(query); chain {
-		p.recordFoldBudget(r.Context())
-	} else if _, ungrouped := ungroupedSumRange(query); ungrouped && !isSumAllLogRange(query) {
+	if manualFunc == "sum" && unwrapSumOfSums(query) {
+		// The sum of the series' sums over time is the sum of the lines: one ungrouped bucket series.
+		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = nil, nil, true
+		return spec, true, true
+	}
+	if pushed, ok := p.unwrapGroupPushdown(spec, manualFunc, query); ok {
+		return pushed, true, true
+	}
+	if slices.Contains(spec.GroupBy, "_msg") || queryUsesParserStages(spec.ungated()) && slices.Contains(spec.GroupBy, "_stream") {
+		// A parser names a series by its stream and the labels it extracts: the window evaluator folds no aggregation
+		// over such series from buckets (semantics/unwrap-over-time-range-windows-residual-forms).
+		return spec, false, false
+	}
+	if unwrapFoldsSeries(query) {
+		// The vector aggregations fold the series after their windows, and Loki counts the folded series against
+		// max_query_series: the series read per stream before the fold are bounded by the raw-row budget, as a
+		// without's are (the fold's answer keeps the limit).
 		p.recordFoldBudget(r.Context())
 	}
 	return spec, false, true
 }
 
-// unwrapGroupPushdownOff turns unwrapGroupPushdown off, so tests can compare
-// its answers with the per-stream fold's.
+// unwrapFoldsSeries reports a query whose root (an outer label_replace aside) is a vector aggregation.
+func unwrapFoldsSeries(query string) bool {
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
+		return false
+	}
+	_, ok = expr.(*logqlpkg.VectorAggregation)
+	return ok
+}
+
+// unwrapSumOfSums reports a sum by no labels directly over sum_over_time.
+func unwrapSumOfSums(query string) bool {
+	expr, ok := sharedLogQLExpr(strings.TrimSpace(query))
+	if !ok {
+		return false
+	}
+	va, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok || va.Op != logqlpkg.VectorSum || va.Grouping != nil && (va.Grouping.Without || len(va.Grouping.Labels) > 0) {
+		return false
+	}
+	ra, ok := va.Inner.(*logqlpkg.RangeAggregation)
+	return ok && ra.Op == logqlpkg.RangeSumOverTime && ra.Grouping == nil
+}
+
+// unwrapGroupPushdownOff turns the outer-label grouping off (tests compare it with the per-series fold).
 var unwrapGroupPushdownOff bool
 
-// unwrapGroupPushdown returns spec grouped by L for `max by (L)
-// (max_over_time(...))` and `min by (L) (min_over_time(...))`, L possibly
-// empty, under an optional label_replace. Loki
-// takes the extreme per series over the window and then per group of L
-// (a NaN giving way in both), which is the extreme of the group's samples in the window: VictoriaLogs takes
-// it per bucket and group of L, the proxy over the window's buckets, and no
-// series per stream (or per line, for a parser query) is read or folded. Loki
-// counts max_query_series on the groups (registry limits/series-limit-error). The translated grouping must be L and the series
-// identity (_stream, _msg, level); anything else is not pushed down.
+// unwrapGroupPushdown groups the buckets of spec by the outer labels of query in VictoriaLogs: a max of
+// max_over_time or a min of min_over_time (decomposableUnwrapAggregation) takes the extreme of the group's lines,
+// which is the extreme of its series' extremes, so no series is read. A level label (derived per series) or a
+// label the stats would not keep as the clause names it keeps the per-series read.
 func (p *Proxy) unwrapGroupPushdown(spec statsCompatSpec, manualFunc, query string) (statsCompatSpec, bool) {
-	agg, ok := decomposableUnwrapAggregation(query, manualFunc)
+	if unwrapGroupPushdownOff || (manualFunc != "max" && manualFunc != "min") {
+		return spec, false
+	}
+	va, ok := decomposableUnwrapAggregation(query, manualFunc)
 	if !ok {
 		return spec, false
 	}
 	var labels []string
-	if agg.Grouping != nil {
-		labels = agg.Grouping.Labels
+	if va.Grouping != nil {
+		labels = va.Grouping.Labels
 	}
-	for _, label := range labels {
-		if label == "detected_level" || label == "level" {
-			// The level a stream's series is labelled by (unknown when it has
-			// none) comes from the per-stream read (buildMetricSeriesEntry).
-			return spec, false
-		}
-	}
-	vlLabels := make(map[string]bool, len(labels))
-	for _, label := range labels {
-		vlLabels[label] = true
-		if p.labelTranslator != nil {
-			vlLabels[p.labelTranslator.ToVL(label)] = true
-		}
-	}
-	var kept []string
-	for _, g := range spec.GroupBy {
-		// The series identity the translation adds after the outer labels: the
-		// stream, the line, and the stored or derived level a stream's series
-		// is labelled by. The outer max/min discards these inner labels.
-		if g == "_stream" || g == "_msg" || (g == "level" && !vlLabels[g]) ||
-			(g == "detected_level" && !vlLabels[g]) {
-			continue
-		}
-		kept = append(kept, g)
-	}
-	if len(kept) != len(labels) {
+	if slices.ContainsFunc(labels, func(name string) bool { return name == "level" || name == translate.DetectedLevelLabel }) {
 		return spec, false
 	}
-	// The Loki name of each kept field, in the translation's order, which the
-	// collector pairs by position (collectRangeMetricHitsAux vlToLoki).
-	names := make([]string, len(kept))
-	for i, g := range kept {
-		for _, label := range labels {
-			if label == g || (p.labelTranslator != nil && p.labelTranslator.ToVL(label) == g) {
-				names[i] = label
-			}
-		}
-		if names[i] == "" {
-			return spec, false
-		}
+	var label translate.LabelTranslateFunc
+	if p.labelTranslator != nil {
+		label = p.labelTranslator.ToVL
 	}
-	spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = kept, names, len(labels) == 0
+	kept := translate.AppendNormalizedLabels(nil, labels, label)
+	if len(kept) != len(labels) || slices.ContainsFunc(kept, func(name string) bool { return name == "_stream" || name == "_msg" }) {
+		return spec, false
+	}
+	spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = kept, slices.Clone(labels), len(kept) == 0
 	return spec, true
 }
 
-// decomposableUnwrapAggregation returns the outer max or min of `max by (L)
-// (max_over_time(...))` or `min by (L) (min_over_time(...))` (by or none, not
-// without), under an optional label_replace. A ranking around it is applied
-// to the answer by its caller (handleRangeMetricPostAggregation).
+// decomposableUnwrapAggregation returns the vector aggregation at the root of query when it is the extreme
+// manualFunc ("max" or "min") by labels or none, and reports whether it is directly over a range aggregation with
+// no grouping of its own. Anything else is nil.
 func decomposableUnwrapAggregation(query, manualFunc string) (*logqlpkg.VectorAggregation, bool) {
-	if manualFunc != "max" && manualFunc != "min" {
+	expr, ok := sharedLogQLExpr(strings.TrimSpace(query))
+	if !ok {
 		return nil, false
 	}
-	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
-	if err != nil {
+	va, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok || string(va.Op) != manualFunc || (manualFunc != "max" && manualFunc != "min") || va.Grouping != nil && va.Grouping.Without {
 		return nil, false
 	}
-	agg, ok := expr.(*logqlpkg.VectorAggregation)
-	if !ok || string(agg.Op) != manualFunc || (agg.Grouping != nil && agg.Grouping.Without) {
-		return nil, false
-	}
-	ra, ok := agg.Inner.(*logqlpkg.RangeAggregation)
-	return agg, ok && ra.Grouping == nil
+	ra, ok := va.Inner.(*logqlpkg.RangeAggregation)
+	return va, ok && ra.Grouping == nil
 }
 
-// unwrapWindowBuckets reports whether the window evaluator answers sum, avg,
-// max, min, stddev, stdvar, first or last over time with unwrap from anchored
-// buckets of their partial aggregates (unwrapBucketAgg): a range longer than the step, whose windows
-// overlap, so one step bucket per point holds only the newest step of Loki's
-// window (t-range, t] (registry semantics/unwrap-over-time-range-windows). A range up to the
-// step stays on the native step buckets, which hold exactly one window each
-// (the window phase filter keeps a shorter range's lines). The query is gated
-// and its series are a stats grouping the evaluator reads from buckets
-// (collectStatsFastPathHits): an ungrouped sum of sum over time, which
-// VictoriaLogs sums, labels it groups by, or the streams of a query without
-// parser stages. The streams of a parser query, and its lines (_msg), are no
-// bounded grouping and keep the native step buckets, as do the aggregations
-// the evaluator does not apply after the window (unwrapWindowForm).
+// unwrapWindowBuckets reports a query whose windows the evaluator merges from buckets: an unwrap function that
+// keeps a partial aggregate per bucket (unwrapBucketAgg), a range longer than the step, a gated stats query, and a
+// form the evaluator applies after the window (unwrapWindowForm).
 func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, originalLogql, query string, step time.Duration) bool {
-	switch manualFunc {
-	case "sum", "avg", "max", "min", "stddev", "stdvar", "first", "last":
-	default:
+	if !origSpec.HasUnwrap || origSpec.Window <= step || unwrapBucketAgg(manualFunc) == "" || !spec.gated() {
 		return false
 	}
-	if !origSpec.HasUnwrap || step <= 0 || origSpec.Window <= step {
-		return false
-	}
-	form, rangeBy := unwrapWindowForm(originalLogql)
-	if !form {
-		return false
-	}
-	if (manualFunc == "stddev" || manualFunc == "stdvar" || manualFunc == "first" || manualFunc == "last") && rangeBy {
-		// The evaluator folds no aggregation over a range aggregation's own by
-		// (seriesAggregationChain): such a query keeps the step buckets it had.
-		return false
-	}
-	if !spec.gated() {
-		return false
-	}
-	if isSumAllLogRange(query) {
-		return true
-	}
-	if len(spec.GroupBy) == 0 && !spec.ByExplicit && !queryOuterUngrouped(originalLogql) {
-		return false
-	}
-	parser := queryUsesParserStages(spec.BaseQuery)
-	for _, g := range spec.GroupBy {
-		if g == "_msg" || (g == "_stream" && parser) {
-			return false
-		}
-	}
-	return true
+	form, rangeBy := unwrapWindowForm(query)
+	// The deviation buckets and the rows first and last pick fold no aggregation over a range aggregation grouped by
+	// its own labels: those keep the step buckets (registered as semantics/aggregation-over-range-by-not-applied).
+	rowOrDeviation := manualFunc == "stddev" || manualFunc == "stdvar" || manualFunc == "first" || manualFunc == "last"
+	return form && (!rangeBy || !rowOrDeviation)
 }
 
-// unwrapWindowForm reports whether the aggregations around the range
-// aggregation are ones the window evaluator applies after the window: none, one
-// sum (by, none or a labelled without, folded by withWithoutFold), one count,
-// min, max or avg (by, none or a labelled without), or a chain of them without
-// a `without` that foldVectorAggregations folds (seriesAggregationChain), under
-// an optional topk or bottomk by labels and label_replace. A nested `without`,
-// an empty `without ()` and a ranking `without` are answered as before.
-// rangeBy reports a range aggregation with a by or without of its own under
-// those aggregations, which the folds do not take (seriesAggregationChain).
+// unwrapWindowForm reads query (an outer label_replace aside): form is a range aggregation alone, under topk or
+// bottomk, under one of sum, avg, min, max and count, or under a count, min, max or avg of such an aggregation that
+// is not a without (each optionally under topk or bottomk); rangeBy is a range aggregation with a grouping of its own
+// under one of those aggregations.
 func unwrapWindowForm(query string) (form, rangeBy bool) {
-	// The shared parse of the query, read only.
 	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
 	if !ok {
 		return false, false
 	}
-	if agg, ok := expr.(*logqlpkg.VectorAggregation); ok && (agg.Op == logqlpkg.VectorTopK || agg.Op == logqlpkg.VectorBottomK) {
-		if agg.Grouping != nil && agg.Grouping.Without {
+	if va, ok := expr.(*logqlpkg.VectorAggregation); ok && (va.Op == logqlpkg.VectorTopK || va.Op == logqlpkg.VectorBottomK) {
+		if va.Grouping != nil && va.Grouping.Without {
 			return false, false
 		}
-		expr = agg.Inner
+		expr = va.Inner
 	}
 	var chain []*logqlpkg.VectorAggregation
 	for {
-		agg, ok := expr.(*logqlpkg.VectorAggregation)
+		va, ok := expr.(*logqlpkg.VectorAggregation)
 		if !ok {
 			break
 		}
-		switch agg.Op {
-		case logqlpkg.VectorSum, logqlpkg.VectorCount, logqlpkg.VectorMin, logqlpkg.VectorMax, logqlpkg.VectorAvg:
+		switch va.Op {
+		case logqlpkg.VectorSum, logqlpkg.VectorAvg, logqlpkg.VectorMin, logqlpkg.VectorMax, logqlpkg.VectorCount:
 		default:
 			return false, false
 		}
-		if agg.Grouping != nil && agg.Grouping.Without && (len(agg.Grouping.Labels) == 0 || len(chain) > 0 || !isRangeAggregation(agg.Inner)) {
+		if va.Grouping != nil && va.Grouping.Without && len(va.Grouping.Labels) == 0 {
+			// A without of no label keeps every label: the translator writes it per series.
 			return false, false
 		}
-		chain = append(chain, agg)
-		expr = agg.Inner
+		chain = append(chain, va)
+		expr = va.Inner
 	}
 	ra, ok := expr.(*logqlpkg.RangeAggregation)
 	if !ok {
 		return false, false
 	}
 	rangeBy = len(chain) > 0 && ra.Grouping != nil
-	if len(chain) <= 1 {
+	switch len(chain) {
+	case 0, 1:
 		return true, rangeBy
+	case 2:
+		outer, inner := chain[0], chain[1]
+		seriesLevel := outer.Op != logqlpkg.VectorSum
+		return seriesLevel && (inner.Grouping == nil || !inner.Grouping.Without), rangeBy
 	}
-	for _, agg := range chain {
-		if agg.Op != logqlpkg.VectorSum {
-			return true, rangeBy // a series-level chain (seriesAggregationChain)
-		}
-	}
-	return false, rangeBy // sums over sums: the evaluator reads the innermost only
-}
-
-func isRangeAggregation(expr logqlpkg.Expr) bool {
-	_, ok := expr.(*logqlpkg.RangeAggregation)
-	return ok
+	return false, rangeBy
 }

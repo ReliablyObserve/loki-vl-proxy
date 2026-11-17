@@ -7,8 +7,10 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -128,15 +130,15 @@ func TestLabelCache_ZeroTTLUsesDefault(t *testing.T) {
 }
 
 // =============================================================================
-// mergeLabelsIntoCache — union semantics
+// storeLabelsCache — each listing of the whole window replaces the answer
 // =============================================================================
 
-func TestMergeLabelsIntoCache_EmptyExisting(t *testing.T) {
+func TestStoreLabelsCache_EmptyExisting(t *testing.T) {
 	srv, _ := fieldNamesServer(t, []string{"app"})
 	p, _ := newBehaviorProxy(t, srv.URL, 0)
 
-	const key = "test-merge-empty"
-	p.mergeLabelsIntoCache("labels", key, []string{"app", "env"}, 5*time.Minute)
+	const key = "test-store-empty"
+	p.storeLabelsCache("labels", key, []string{"app", "env"}, 5*time.Minute)
 
 	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
@@ -149,34 +151,38 @@ func TestMergeLabelsIntoCache_EmptyExisting(t *testing.T) {
 	}
 }
 
-func TestMergeLabelsIntoCache_UnionsWithExisting(t *testing.T) {
+// Loki lists the labels of the streams with data in the requested window: a
+// later listing of the window replaces the cached one, so labels whose last
+// stream left the window are dropped instead of kept by a union.
+//
+// conformance: quality/label-cache-aged-labels-kept
+func TestStoreLabelsCache_ReplacesExisting(t *testing.T) {
 	srv, _ := fieldNamesServer(t, []string{"app"})
 	p, _ := newBehaviorProxy(t, srv.URL, 0)
 
-	const key = "test-merge-union"
-	// Seed with initial labels.
-	p.mergeLabelsIntoCache("labels", key, []string{"app", "env"}, 5*time.Minute)
-	// Merge in a new label "namespace" — existing ones must survive.
-	p.mergeLabelsIntoCache("labels", key, []string{"namespace"}, 5*time.Minute)
+	const key = "test-store-replace"
+	p.storeLabelsCache("labels", key, []string{"app", "env"}, 5*time.Minute)
+	// The next listing of the window no longer holds app and env.
+	p.storeLabelsCache("labels", key, []string{"namespace"}, 5*time.Minute)
 
 	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
-		t.Fatal("expected cache entry after second merge")
+		t.Fatal("expected cache entry after second listing")
 	}
 	var resp struct{ Data []string }
 	json.Unmarshal(cached, &resp)
-	if !containsAll(resp.Data, []string{"app", "env", "namespace"}) {
-		t.Errorf("expected app+env+namespace, got %v", resp.Data)
+	if !slices.Equal(resp.Data, []string{"namespace"}) {
+		t.Errorf("cached %v, want only the newest listing [namespace]", resp.Data)
 	}
 }
 
-func TestMergeLabelsIntoCache_DeduplicatesLabels(t *testing.T) {
+func TestStoreLabelsCache_DeduplicatesLabels(t *testing.T) {
 	srv, _ := fieldNamesServer(t, []string{"app"})
 	p, _ := newBehaviorProxy(t, srv.URL, 0)
 
-	const key = "test-merge-dedup"
-	p.mergeLabelsIntoCache("labels", key, []string{"app", "env"}, 5*time.Minute)
-	p.mergeLabelsIntoCache("labels", key, []string{"app", "env", "app"}, 5*time.Minute)
+	const key = "test-store-dedup"
+	p.storeLabelsCache("labels", key, []string{"app", "env"}, 5*time.Minute)
+	p.storeLabelsCache("labels", key, []string{"app", "env", "app"}, 5*time.Minute)
 
 	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
@@ -195,13 +201,13 @@ func TestMergeLabelsIntoCache_DeduplicatesLabels(t *testing.T) {
 	}
 }
 
-func TestMergeLabelsIntoCache_ResultIsSorted(t *testing.T) {
+func TestStoreLabelsCache_ResultIsSorted(t *testing.T) {
 	srv, _ := fieldNamesServer(t, []string{"app"})
 	p, _ := newBehaviorProxy(t, srv.URL, 0)
 
-	const key = "test-merge-sorted"
+	const key = "test-store-sorted"
 	// Insert in reverse alphabetical order.
-	p.mergeLabelsIntoCache("labels", key, []string{"zoo", "mid", "aaa"}, 5*time.Minute)
+	p.storeLabelsCache("labels", key, []string{"zoo", "mid", "aaa"}, 5*time.Minute)
 
 	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
@@ -214,82 +220,94 @@ func TestMergeLabelsIntoCache_ResultIsSorted(t *testing.T) {
 	}
 }
 
-func TestMergeLabelsIntoCache_RefreshesTTL(t *testing.T) {
+func TestStoreLabelsCache_RefreshesTTL(t *testing.T) {
 	srv, _ := fieldNamesServer(t, []string{"app"})
 	p, _ := newBehaviorProxy(t, srv.URL, 0)
 
-	const key = "test-merge-ttl"
+	const key = "test-store-ttl"
 	// Write with a short TTL.
-	p.mergeLabelsIntoCache("labels", key, []string{"app"}, 200*time.Millisecond)
-	// Immediately merge with a longer TTL — entry should still be present.
+	p.storeLabelsCache("labels", key, []string{"app"}, 200*time.Millisecond)
+	// Immediately store again with a longer TTL — entry should still be present.
 	time.Sleep(50 * time.Millisecond)
-	p.mergeLabelsIntoCache("labels", key, []string{"env"}, 5*time.Minute)
+	p.storeLabelsCache("labels", key, []string{"env"}, 5*time.Minute)
 
 	time.Sleep(300 * time.Millisecond)
-	_, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
-		t.Error("expected entry to survive after TTL refresh")
+		t.Fatal("expected entry to survive after TTL refresh")
+	}
+	var resp struct{ Data []string }
+	json.Unmarshal(cached, &resp)
+	if !slices.Equal(resp.Data, []string{"env"}) {
+		t.Errorf("cached %v, want [env]", resp.Data)
 	}
 }
 
 // =============================================================================
-// handleLabels — user request merges into existing cache
+// handleLabels and its refresh replace the cached answer
 // =============================================================================
 
-func TestHandleLabels_UserQueryMergesIntoCache(t *testing.T) {
-	// VL backend returns different label sets on each call so we can detect union.
-	callN := 0
+// A background refresh of a cached /labels answer lists the window again and
+// replaces the answer: a label VictoriaLogs no longer lists for the window
+// (its last stream left it) is gone, as in Loki.
+//
+// conformance: quality/label-cache-aged-labels-kept
+func TestHandleLabels_RefreshReplacesCachedAnswer(t *testing.T) {
+	var left atomic.Bool // the streams with app and env left the window
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		callN++
-		switch callN {
-		case 1:
+		if !left.Load() {
 			writeVLFieldNames(w, []fieldHit{{"app", 1}, {"env", 1}})
-		default:
-			writeVLFieldNames(w, []fieldHit{{"namespace", 1}})
+			return
 		}
+		writeVLFieldNames(w, []fieldHit{{"namespace", 1}})
 	}))
 	t.Cleanup(srv.Close)
 
-	// The fake answers by call order, so the listing must be one call: the
-	// time-bucketed inventory is off here.
+	// One listing call per answer: the time-bucketed inventory is off here.
 	c := cache.New(60*time.Second, 10000)
-	first0, err := New(Config{BackendURL: srv.URL, Cache: c, LogLevel: "error", LabelCacheTTL: 5 * time.Minute, MetadataInventoryParallelism: -1})
+	p, err := New(Config{BackendURL: srv.URL, Cache: c, LogLevel: "error", LabelCacheTTL: 5 * time.Minute, MetadataInventoryParallelism: -1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = first0.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	mux := http.NewServeMux()
-	first0.RegisterRoutes(mux)
+	p.RegisterRoutes(mux)
 
-	// First request — populates cache with app+env.
-	first := getLabels(t, mux, time.Hour)
-	if !containsAll(first, []string{"app", "env"}) {
-		t.Fatalf("first response missing app or env: %v", first)
+	end := time.Now().Add(-2 * time.Hour)
+	start := end.Add(-time.Hour)
+	params := url.Values{"start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "query": {"*"}}
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	var first struct{ Data []string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &first)
+	if !containsAll(first.Data, []string{"app", "env"}) {
+		t.Fatalf("first response %v, want app and env", first.Data)
 	}
-
-	// Bust the cache key by using a slightly different window so we get a new key
-	// but the merge helper reads from the old entry.
-	// (Simulated: use exact same key to confirm merge path.)
-	// Re-seed the cache with a new entry that has "namespace" only.
-	p, _ := newBehaviorProxy(t, srv.URL, 5*time.Minute)
-	const key = "test-user-merge"
-	// Seed.
-	p.mergeLabelsIntoCache("labels", key, []string{"app", "env"}, 5*time.Minute)
-	// Merge new request result.
-	p.mergeLabelsIntoCache("labels", key, []string{"namespace"}, 5*time.Minute)
-
-	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
-	if !ok {
-		t.Fatal("expected merged entry")
+	key := p.canonicalReadCacheKey("labels", "", req)
+	if _, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key); !ok {
+		t.Fatal("the first answer was not cached")
 	}
-	var resp struct{ Data []string }
-	json.Unmarshal(cached, &resp)
-	if !containsAll(resp.Data, []string{"app", "env", "namespace"}) {
-		t.Errorf("expected union of app+env+namespace, got %v", resp.Data)
+	left.Store(true)
+	p.refreshLabelsCacheAsync("", key, "*", params.Get("start"), params.Get("end"), "", nil)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
+		var got struct{ Data []string }
+		if ok && json.Unmarshal(cached, &got) == nil && slices.Contains(got.Data, "namespace") {
+			if slices.Contains(got.Data, "app") || slices.Contains(got.Data, "env") {
+				t.Fatalf("refreshed answer %v still lists labels the window no longer holds", got.Data)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the refresh did not store its listing")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -409,7 +427,7 @@ func TestHandleLabels_SecondRequestIsCacheHit(t *testing.T) {
 // labels changes nothing. (Loki's labels are valid UTF-8 and returned in
 // sort.Strings byte order.)
 // conformance: loki_api_v1_labels
-func TestMergeLabelsIntoCache_InvalidUTF8IsDedupedAndByteSorted(t *testing.T) {
+func TestStoreLabelsCache_InvalidUTF8IsDedupedAndByteSorted(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		labels []string
@@ -424,7 +442,7 @@ func TestMergeLabelsIntoCache_InvalidUTF8IsDedupedAndByteSorted(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p, _ := newBehaviorProxy(t, "http://127.0.0.1:1", 0)
 			for pass := 0; pass < 2; pass++ { // a second merge of the same labels is a no-op
-				p.mergeLabelsIntoCache("labels", "key", tc.labels, 5*time.Minute)
+				p.storeLabelsCache("labels", "key", tc.labels, 5*time.Minute)
 				cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", "key")
 				if !ok {
 					t.Fatal("nothing cached")
@@ -442,10 +460,10 @@ func TestMergeLabelsIntoCache_InvalidUTF8IsDedupedAndByteSorted(t *testing.T) {
 }
 
 // =============================================================================
-// Fuzz: mergeLabelsIntoCache is safe for arbitrary label inputs
+// Fuzz: storeLabelsCache is safe for arbitrary label inputs
 // =============================================================================
 
-func FuzzMergeLabelsIntoCache(f *testing.F) {
+func FuzzStoreLabelsCache(f *testing.F) {
 	f.Add("app", "env", "namespace")
 	f.Add("", "a", "b")
 	f.Add("_internal", "normal-label", "dot.ted")
@@ -467,8 +485,8 @@ func FuzzMergeLabelsIntoCache(f *testing.F) {
 		const key = "fuzz-key"
 
 		// Must not panic.
-		p.mergeLabelsIntoCache("labels", key, labels, 5*time.Minute)
-		p.mergeLabelsIntoCache("labels", key, labels, 5*time.Minute)
+		p.storeLabelsCache("labels", key, labels, 5*time.Minute)
+		p.storeLabelsCache("labels", key, labels, 5*time.Minute)
 
 		cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 		if !ok {
@@ -485,10 +503,10 @@ func FuzzMergeLabelsIntoCache(f *testing.F) {
 }
 
 // =============================================================================
-// Fuzz: mergeLabelsIntoCache with random large label sets
+// Fuzz: storeLabelsCache with random large label sets
 // =============================================================================
 
-func TestMergeLabelsIntoCache_LargeRandomSets(t *testing.T) {
+func TestStoreLabelsCache_LargeRandomSets(t *testing.T) {
 	srv, _ := fieldNamesServer(t, nil)
 	p, _ := newBehaviorProxy(t, srv.URL, 0)
 
@@ -504,17 +522,17 @@ func TestMergeLabelsIntoCache_LargeRandomSets(t *testing.T) {
 		return b.String()
 	}
 
-	const key = "large-random-merge"
-	allExpected := make(map[string]bool)
+	const key = "large-random-store"
+	var allExpected map[string]bool
 
-	for round := range 10 {
+	for range 10 {
 		batch := make([]string, rng.IntN(50)+1)
+		allExpected = make(map[string]bool, len(batch))
 		for i := range batch {
 			batch[i] = randLabel()
 			allExpected[batch[i]] = true
 		}
-		p.mergeLabelsIntoCache("labels", key, batch, 5*time.Minute)
-		_ = round
+		p.storeLabelsCache("labels", key, batch, 5*time.Minute)
 	}
 
 	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
@@ -528,14 +546,17 @@ func TestMergeLabelsIntoCache_LargeRandomSets(t *testing.T) {
 	if !sort.StringsAreSorted(resp.Data) {
 		t.Error("merged result not sorted")
 	}
-	// Every label written in any batch must appear in the result.
+	// The cached answer is exactly the last listing, deduplicated.
 	gotSet := make(map[string]bool, len(resp.Data))
 	for _, l := range resp.Data {
 		gotSet[l] = true
 	}
+	if len(gotSet) != len(resp.Data) || len(gotSet) != len(allExpected) {
+		t.Fatalf("cached %d labels (%d distinct), want the last listing's %d", len(resp.Data), len(gotSet), len(allExpected))
+	}
 	for l := range allExpected {
 		if !gotSet[l] {
-			t.Errorf("label %q missing from merged cache after multiple rounds", l)
+			t.Errorf("label %q of the last listing missing from the cache", l)
 		}
 	}
 }
@@ -544,12 +565,12 @@ func TestMergeLabelsIntoCache_LargeRandomSets(t *testing.T) {
 // Edge case: single-label and zero-label inputs
 // =============================================================================
 
-func TestMergeLabelsIntoCache_SingleLabel(t *testing.T) {
+func TestStoreLabelsCache_SingleLabel(t *testing.T) {
 	srv, _ := fieldNamesServer(t, nil)
 	p, _ := newBehaviorProxy(t, srv.URL, 0)
 
 	const key = "single-label"
-	p.mergeLabelsIntoCache("labels", key, []string{"only"}, 5*time.Minute)
+	p.storeLabelsCache("labels", key, []string{"only"}, 5*time.Minute)
 
 	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
@@ -562,24 +583,28 @@ func TestMergeLabelsIntoCache_SingleLabel(t *testing.T) {
 	}
 }
 
-func TestMergeLabelsIntoCache_ZeroLabels(t *testing.T) {
+func TestStoreLabelsCache_ZeroLabels(t *testing.T) {
 	srv, _ := fieldNamesServer(t, nil)
 	p, _ := newBehaviorProxy(t, srv.URL, 0)
 
 	const key = "zero-labels"
 	// Seed with data.
-	p.mergeLabelsIntoCache("labels", key, []string{"app"}, 5*time.Minute)
-	// Merge empty slice — existing labels must survive.
-	p.mergeLabelsIntoCache("labels", key, []string{}, 5*time.Minute)
+	p.storeLabelsCache("labels", key, []string{"app"}, 5*time.Minute)
+	// The window's next listing is empty: it replaces the list, with the
+	// short negative TTL of an empty answer.
+	p.storeLabelsCache("labels", key, []string{}, 5*time.Minute)
 
-	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
+	cached, remaining, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected cache entry")
 	}
 	var resp struct{ Data []string }
 	json.Unmarshal(cached, &resp)
-	if !containsAll(resp.Data, []string{"app"}) {
-		t.Errorf("existing label 'app' lost after merging empty set: %v", resp.Data)
+	if len(resp.Data) != 0 {
+		t.Errorf("cached %v after an empty listing, want an empty list", resp.Data)
+	}
+	if remaining > p.metadataNegativeTTL() {
+		t.Errorf("empty answer kept for %s, want at most the negative TTL %s", remaining, p.metadataNegativeTTL())
 	}
 }
 

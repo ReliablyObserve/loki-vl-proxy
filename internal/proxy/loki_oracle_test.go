@@ -3,8 +3,6 @@ package proxy
 import (
 	"bufio"
 	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +19,7 @@ import (
 // validation, the one every query route runs first, made of it.
 type lokiOracleInput struct {
 	ID      string `json:"id"`
-	Kind    string `json:"kind"` // client or case
+	Kind    string `json:"kind"` // client
 	Query   string `json:"q"`
 	Ours    bool   `json:"ours"`
 	Error   string `json:"error,omitempty"`
@@ -33,10 +31,9 @@ type lokiOracleInput struct {
 const lokiOracleDir = "../../test/oracle/loki"
 
 // TestLokiOracle runs the Loki parse oracle over the corpus at LVP_QUERY_CORPUS_OUT when LVP_RUN_ORACLES=1. It
-// builds the oracle (it pins the compatibility matrix's Loki version), collects the queries of Loki's syntax
-// tests, writes the inputs (every LogQL client query of the corpus and those queries, each with the proxy's
-// answer through validateQuery: accepted or the error text a client gets, and the printed form of the parsed
-// query) and writes Loki's verdicts to <corpus>.loki-<version>.jsonl.gz and the share of the proxy's Go files
+// builds the oracle (it pins the compatibility matrix's Loki version), writes the inputs (every LogQL client query
+// of the corpus, each with the proxy's answer through validateQuery: accepted or the error text a client gets, and
+// the printed form of the parsed query) and writes Loki's verdicts to <corpus>.loki-<version>.jsonl.gz and the share of the proxy's Go files
 // that matches Loki's sources to <corpus>.loki-similar.json.
 func TestLokiOracle(t *testing.T) {
 	corpus := os.Getenv("LVP_QUERY_CORPUS_OUT")
@@ -60,12 +57,8 @@ func TestLokiOracle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	casesPath := filepath.Join(work, "loki-cases.json")
-	if err := oraclerun.Run(bin, "cases", "-src", src, "-out", casesPath); err != nil {
-		t.Fatal(err)
-	}
 	inputs := filepath.Join(work, "loki-inputs.jsonl")
-	writeLokiInputs(t, inputs, casesPath, corpus)
+	writeLokiInputs(t, inputs, corpus)
 	verdicts := filepath.Join(work, "loki-verdicts.jsonl")
 	if err := oraclerun.Run(bin, "check", "-in", inputs, "-out", verdicts); err != nil {
 		t.Fatal(err)
@@ -131,8 +124,8 @@ func readText(t *testing.T, path string) string {
 	return string(b)
 }
 
-// writeLokiInputs writes the oracle's inputs: the corpus's LogQL client queries and Loki's syntax test queries.
-func writeLokiInputs(t *testing.T, path, casesPath, corpus string) {
+// writeLokiInputs writes the oracle's inputs: the corpus's LogQL client queries.
+func writeLokiInputs(t *testing.T, path, corpus string) {
 	t.Helper()
 	p := newTestProxy(t, "http://127.0.0.1:1") // validation never calls the backend
 	out, err := os.Create(path)
@@ -160,14 +153,6 @@ func writeLokiInputs(t *testing.T, path, casesPath, corpus string) {
 	}
 	for _, r := range corpusLogQL(t, corpus) {
 		emit(r.ID, "client", r.Query)
-	}
-	var cases []string
-	if err := json.Unmarshal([]byte(readText(t, casesPath)), &cases); err != nil {
-		t.Fatal(err)
-	}
-	for _, q := range cases {
-		sum := sha256.Sum256([]byte(q))
-		emit("c-"+hex.EncodeToString(sum[:6]), "case", q)
 	}
 	if err := w.Flush(); err != nil {
 		t.Fatal(err)

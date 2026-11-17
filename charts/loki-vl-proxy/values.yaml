@@ -385,6 +385,7 @@ extraArgs:
   # backend-version-strict: "false"             # when true, /health failure, non-2xx, or missing/sub-min backend semver fails startup (default false: warn only); overrides --backend-allow-unsupported-version
   # backend-tls-skip-verify: "false"
   # backend-default-msg-value: ""               # VictoriaLogs -defaultMsgValue when customized; rows whose _msg is empty or that placeholder get a line rebuilt from their fields
+  # json-line-fields-as-line-keys: "false"      # read a placeholder row's stored fields as its JSON line's keys (Loki pushes without disable_message_parsing=1); hides structured metadata pushed beside such a line
   # deployment-environment: ""                  # OTel deployment.environment.name
   # otel-service-name: "loki-vl-proxy"
   # otel-service-namespace: ""
@@ -432,6 +433,7 @@ extraArgs:
   # peer-auth-token: ""                         # DO NOT SET HERE — chart manages this flag from a Secret when peerCache.enabled=true; setting it here renders a duplicate -peer-auth-token CLI arg and the Go flag package will fatal at startup. Use peerCache.authToken or peerCache.existingSecret instead (see below). Rendering will fail with a clear error if this entry is uncommented while peerCache.enabled=true.
   # peer-insecure-ip-allowlist: "false"          # when true, allows legacy IP-only peer auth on /_cache/* (NOT recommended; default false requires --peer-auth-token)
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
+  # peer-read-hedge-max-delay: "200ms"         # longest a read waits on one replica's headers before asking the next replica or reading VictoriaLogs; 0 = off
   # peer-replication-factor: "2"               # replicas per peer-cache key (owner + backups); a replica that lost its disk or whose owner is down reads the key from the next replica
   # peer-write-through: "true"                  # push eligible writes to the key's replicas
   # peer-push-buffer-max-entries: "8192"       # pushes kept (all peers) while a peer's breaker is open or it restarts, replayed when it answers; 0 = off

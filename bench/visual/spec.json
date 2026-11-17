@@ -2180,6 +2180,19 @@
    "fixes": [
     "semantics/keep-leaves-labels-loki-drops"
    ]
+  },
+  {
+   "id": "explore-topk-over-binary",
+   "kind": "explore",
+   "query": "topk(2, sum by (service_name) (rate({env=\"production\"}[$__auto])) / sum by (service_name) (rate({env=\"production\"} |= \"error\" [$__auto])))",
+   "ranges": ["1h"],
+   "covers": [
+    "semantics/rank-over-binary-operation",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/rank-over-binary-operation"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

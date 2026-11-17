@@ -366,6 +366,7 @@ func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tu
 	if params == nil {
 		params = buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	}
+	params = p.levelLessFirstRead(r.Context(), "/select/logsql/stats_query_range", params)
 
 	// Use vlPost directly (not coalesced) so readBodyLimited can bound the response
 	// before the full body is allocated. The coalescer's 256 MB cap is too generous
@@ -561,7 +562,7 @@ func isGrafanaSourcedRequest(r *http.Request) bool {
 // suppressed on every metric path; the caller is responsible for confirming the
 // query is a metric (matrix) query so a log query is never blanked. A real metric
 // query never spans < one step except as this residual — Grafana aligns standalone
-// ranges to the step. See [[grafana-loki-querysplitting-24h]].
+// ranges to the step (registry case semantics/query-range-step-alignment).
 func isQuerySplitResidual(r *http.Request) bool {
 	if !isGrafanaDrilldownRequest(r) { // before r.URL.Query(), which allocates
 		return false
@@ -1772,6 +1773,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats ph
 	// Coalesce concurrent identical requests to avoid thundering herd when the
 	// compat cache expires under high concurrency. All 50 concurrent clients
 	// asking for the same instant metric query share one VL round-trip.
+	params = p.levelLessFirstRead(r.Context(), "/select/logsql/stats_query", params)
 	key := "stats_query:" + getOrgID(r.Context()) + ":" + params.Encode()
 	status, body, err := p.vlPostCoalesced(r.Context(), key, "/select/logsql/stats_query", params)
 	if err != nil {
@@ -2442,7 +2444,7 @@ func applyOp(a, b float64, op string) float64 {
 	switch op {
 	case "/":
 		if b == 0 {
-			return math.NaN() // Loki: a zero divisor is NaN (syntax.MergeBinOp)
+			return math.NaN() // Loki: a zero divisor is NaN (recorded answers: binary_operator_values)
 		}
 		return a / b
 	case "*":

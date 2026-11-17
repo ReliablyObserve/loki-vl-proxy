@@ -1163,7 +1163,9 @@ type patternMinerKey struct {
 
 type patternMiner struct {
 	tokenizer *patternLineTokenizer
-	miners    map[patternMinerKey]*patternClusterer
+	// scratch holds the tokens of the line being mined (patternLineTokensScratch).
+	scratch tokenizerBuf
+	miners  map[patternMinerKey]*patternClusterer
 	// order is the miners in the order they first read a line.
 	order []*patternClusterer
 	// fillStep, when above 0, is the step in seconds the samples of each cluster are zero-filled at, between the
@@ -1204,7 +1206,7 @@ func (m *patternMiner) observeStreamLine(stream, level, line string, bucket int6
 	if m.oneStream {
 		stream = ""
 	}
-	tokens, spacesAfter, format, ok := m.patternLineTokens(line)
+	tokens, spacesAfter, format, ok := m.patternLineTokensScratch(line)
 	if !ok {
 		return nil
 	}
@@ -1365,10 +1367,32 @@ func newPatternLineTokenizer() *patternLineTokenizer {
 }
 
 func (p *patternLineTokenizer) Tokenize(line string) ([]string, []int, bool) {
+	buf := tokenizerBufPool.Get().(*tokenizerBuf)
+	tokens, spacesAfter, ok := buf.tokenize(line)
+	if !ok {
+		tokenizerBufPool.Put(buf)
+		return nil, nil, false
+	}
+	// Copy results to fresh slices before returning the pool buffer.
+	// The caller holds the returned slices across multiple Tokenize calls.
+	outTokens := make([]string, len(tokens))
+	copy(outTokens, tokens)
+	outSpaces := make([]int, len(spacesAfter))
+	copy(outSpaces, spacesAfter)
+	tokenizerBufPool.Put(buf)
+	return outTokens, outSpaces, true
+}
+
+// tokenize is Tokenize into the buffer's own slices, which the next call overwrites: a caller that keeps the
+// tokens copies them (patternClusterer.train does, for a line that starts a cluster).
+func (buf *tokenizerBuf) tokenize(line string) ([]string, []int, bool) {
 	if len(line) == 0 || len(line) > patternMaxLineLength {
 		return nil, nil, false
 	}
-	buf := tokenizerBufPool.Get().(*tokenizerBuf)
+	if buf.spacesAfter == nil {
+		// Never nil, so the spaces of a line without any are an empty list, as a copy of them is.
+		buf.spacesAfter = make([]int, 0, 64)
+	}
 	tokens := buf.tokens[:0]
 	spacesAfter := buf.spacesAfter[:0]
 
@@ -1401,23 +1425,12 @@ func (p *patternLineTokenizer) Tokenize(line string) ([]string, []int, bool) {
 	if from < len(line) {
 		tokens = append(tokens, line[from:])
 	}
-
-	if len(tokens) < patternMinTokens || len(tokens) > patternMaxTokens {
-		buf.tokens = tokens
-		buf.spacesAfter = spacesAfter
-		tokenizerBufPool.Put(buf)
-		return nil, nil, false
-	}
-	// Copy results to fresh slices before returning the pool buffer.
-	// The caller holds the returned slices across multiple Tokenize calls.
-	outTokens := make([]string, len(tokens))
-	copy(outTokens, tokens)
-	outSpaces := make([]int, len(spacesAfter))
-	copy(outSpaces, spacesAfter)
 	buf.tokens = tokens
 	buf.spacesAfter = spacesAfter
-	tokenizerBufPool.Put(buf)
-	return outTokens, outSpaces, true
+	if len(tokens) < patternMinTokens || len(tokens) > patternMaxTokens {
+		return nil, nil, false
+	}
+	return tokens, spacesAfter, true
 }
 
 func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {

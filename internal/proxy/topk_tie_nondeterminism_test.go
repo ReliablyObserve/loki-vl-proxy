@@ -4,23 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/url"
 	"sort"
 	"strconv"
 	"testing"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
-// Loki keeps the series it meets first when several tie across the k-th place
-// (its heap replaces the root only on a strictly better value), and the inner `sum by` hands the series over in
-// Go map order. Which of the tied series ranks therefore changes from one
-// evaluation to the next, while the ranked values never do. The proxy breaks the
-// tie on the label key, so it answers the same series every time. These two
-// steps are the ones the visual stack's seeded data holds at 5s resolution
-// (pricing-svc: error 5, warn 5, info 20; batch-etl: warn 25, error 1, info 1).
+// When several series tie across the k-th place, which of them Loki keeps changes
+// from one evaluation to the next, while the ranked values never do: Loki's
+// engine, asked the same query over the same data many times (recorded with
+// test/oracle/loki engine; LVP_RUN_ORACLES=1 records them again), keeps
+// different tied series. The proxy breaks the tie on the label key, so it
+// answers the same series every time. These two steps are the ones the visual
+// stack's seeded data holds at 5s resolution (pricing-svc: error 5, warn 5,
+// info 20; batch-etl: warn 25, error 1, info 1).
 //
 // conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings, loki_api_v1_query_range
-func TestTopKTieAtKthPlaceLokiPicksByInsertionOrderProxyByLabelKey(t *testing.T) {
+func TestTopKTieAtKthPlaceLokiVariesProxyByLabelKey(t *testing.T) {
 	steps := []struct {
 		service string
 		levels  map[string]float64
@@ -35,7 +38,6 @@ func TestTopKTieAtKthPlaceLokiPicksByInsertionOrderProxyByLabelKey(t *testing.T)
 				vec = append(vec, topKSeries{app: st.service, env: level, value: v})
 			}
 			sort.Slice(vec, func(i, j int) bool { return vec[i].env < vec[j].env })
-			group := func(s topKSeries) string { return s.app }
 			pick := func(in []topKSeries) (string, string) {
 				var names []string
 				var values []float64
@@ -48,23 +50,21 @@ func TestTopKTieAtKthPlaceLokiPicksByInsertionOrderProxyByLabelKey(t *testing.T)
 				return fmt.Sprint(names), fmt.Sprint(values)
 			}
 
-			// Loki: every insertion order of the vector, as the map iteration yields them.
+			// Loki: the same query evaluated again and again.
 			winners, values := map[string]bool{}, map[string]bool{}
-			rng := rand.New(rand.NewSource(1))
-			for i := 0; i < 200; i++ {
-				shuffled := append([]topKSeries(nil), vec...)
-				rng.Shuffle(len(shuffled), func(a, b int) { shuffled[a], shuffled[b] = shuffled[b], shuffled[a] })
-				w, v := pick(lokiTopK(shuffled, 2, true, group))
+			for _, got := range topKTieLokiAnswers(t, st.service, vec) {
+				w, v := pick(got)
 				winners[w], values[v] = true, true
 			}
 			if len(winners) < 2 {
-				t.Fatalf("Loki's heap picked %v in every order, want the tie to change the winner", winners)
+				t.Fatalf("Loki picked %v in every evaluation, want the tie to change the winner", winners)
 			}
 			if len(values) != 1 {
-				t.Fatalf("Loki's ranked values differ between orders: %v", values)
+				t.Fatalf("Loki's ranked values differ between evaluations: %v", values)
 			}
 
 			// The proxy: the same answer whatever order the series arrive in.
+			rng := rand.New(rand.NewSource(1))
 			var result []map[string]any
 			for _, s := range vec {
 				result = append(result, map[string]any{
@@ -120,5 +120,41 @@ func tieKeys(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// topKTieEvaluations is how many times Loki evaluates each tied vector.
+const topKTieEvaluations = 40
+
+// topKTieLokiAnswers are Loki's recorded answers to topk by (app) (2, ...) over vec, evaluated
+// topKTieEvaluations times, each as the series it kept.
+func topKTieLokiAnswers(t *testing.T, name string, vec []topKSeries) [][]topKSeries {
+	t.Helper()
+	const at = 1700000100
+	set := oraclerun.EngineDataSet{}
+	for _, s := range vec {
+		set.Streams = append(set.Streams, oraclerun.EngineStream{Labels: map[string]string{"app": s.app, "env": s.env}, Entries: []oraclerun.EngineEntry{{TS: (at - 30) * 1e9, Line: "v=" + strconv.FormatFloat(s.value, 'f', -1, 64)}}})
+	}
+	query := `topk by (app) (2, sum by (app, env) (last_over_time({app=~".+"} | logfmt | unwrap v [1m])))`
+	for i := 0; i < topKTieEvaluations; i++ {
+		set.Requests = append(set.Requests, oraclerun.EngineRequest{ID: name + "/" + strconv.Itoa(i), Instant: true, Form: url.Values{"query": {query}, "time": {strconv.Itoa(at)}}.Encode()})
+	}
+	answers := lokiEngineAnswers(t, "topk_tie_"+name, []oraclerun.EngineDataSet{set})
+	var out [][]topKSeries
+	for i := 0; i < topKTieEvaluations; i++ {
+		a := answers[name+"/"+strconv.Itoa(i)]
+		s, err := decodeLokiSeries(a.Body)
+		if a.Status != 200 || err != nil {
+			t.Fatalf("Loki answered %d %s %v", a.Status, a.Error, err)
+		}
+		var kept []topKSeries
+		for key, points := range s.Points {
+			for _, text := range points {
+				v, _ := strconv.ParseFloat(text, 64)
+				kept = append(kept, topKSeries{app: s.Labels[key]["app"], env: s.Labels[key]["env"], value: v})
+			}
+		}
+		out = append(out, kept)
+	}
 	return out
 }

@@ -62,11 +62,14 @@ func Templates() []string {
 		`{A="0"} | json | line_format` + m + `"x"`, `{A="0"} | json | drop` + m + `a`, `{A="0"} | json | drop a,` + m + `b`,
 		`{A="0"} | json | keep` + m + `a`, `{A="0"} | decolorize` + m + `| json`, `{A="0"} |` + m + `json`, `{A="0"}` + m + `| json`,
 		`{A="0"} | json | a` + m + `="b"`, `{A="0"} | json | a=` + m + `"b"`, `{A="0"} |=` + m + `"x"`,
+		// A parser after a pipe with no blank around it, a double-quoted regexp and capture names with a leading digit
+		// (Loki accepts `(?<0>0)`; found by the log flip gate's fuzz target, FuzzLogFlipGate).
+		"{A=\"0\"}|regexp" + m + "`(?<0>0)`", `{A="0"}|pattern` + m + `"<a> x"`, `{A="0"} | regexp` + m + `"(?P<0a>x)(?P<b>y)"`,
 		// Metric queries: the same parsers, stages and unwrap.
 		`count_over_time({A="0"} | json` + m + `A0 [1m])`, `count_over_time({A="0"} | json` + m + `a="b" [1m])`,
 		`count_over_time({A="0"} | logfmt` + m + `a [1m])`, `count_over_time({A="0"} | logfmt` + m + `--strict [1m])`,
 		`count_over_time({A="0"} | regexp` + m + "`(?P<a>x)` [1m])", `count_over_time({A="0"} | pattern` + m + `"<a> x" [1m])`,
-		`count_over_time({A="0"} | unpack` + m + `[1m])`, `count_over_time({A="0"} | json | label_format` + m + `a=b [1m])`,
+		"count_over_time({A=\"0\"}|regexp" + m + "`(?<0>0)` [1m])", `count_over_time({A="0"} | unpack` + m + `[1m])`, `count_over_time({A="0"} | json | label_format` + m + `a=b [1m])`,
 		`count_over_time({A="0"} | json | line_format` + m + `"x" [1m])`, `count_over_time({A="0"} | json | drop` + m + `a [1m])`,
 		`count_over_time({A="0"} | json | keep` + m + `a [1m])`, `count_over_time({A="0"} | json |` + m + `a="b" [1m])`,
 		`count_over_time({A="0"} | json | a` + m + `="b" [1m])`, `count_over_time({A="0"} |=` + m + `"x" [1m])`,

@@ -21,6 +21,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
@@ -336,7 +338,7 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	if len(levels) > 0 {
 		// The proxy's reference for a ranking is the operand request it sends (the whole query is never translated).
 		translate := func(s string) (string, error) {
-			out, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(s), identity, nil, caps)
+			out, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(spelledAsTranslatorReads(s)), identity, nil, caps)
 			if err == nil && strings.HasPrefix(strings.TrimSpace(out), "|") {
 				out = "* " + strings.TrimSpace(out)
 			}
@@ -354,8 +356,8 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		return guardedPair(vq.Text, ref)
 	}
 	// The string translator gets the text the handlers translate: the request rewrite removes comments and
-	// canonicalizes the ranges first.
-	built, err = translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(logql.StripComments(q)), identity, nil, caps)
+	// canonicalizes the ranges first. It is held to the spelling it reads as Loki does (spelledAsTranslatorReads).
+	built, err = translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(spelledAsTranslatorReads(logql.StripComments(q))), identity, nil, caps)
 	if err != nil {
 		return "", "", false
 	}
@@ -363,6 +365,19 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	// pair is the plan's text and the translator's made right.
 	built = lower.QuoteKeywordFieldText(built)
 	return guardedPair(vq.Text, built)
+}
+
+// spelledAsTranslatorReads is q in the spelling the string translator reads as Loki does: each run of the blanks Loki's
+// lexer skips (a space, a tab, a line feed, a carriage return) outside quoted strings written as one space, and a `by`
+// clause of only blanks as `by()`. Loki's tree holds the same query for every spelling (TestBlankAfterKeywordMatchesLoki,
+// recorded Loki answers); the translator reads only the space and copies a tab or a line break after a parser keyword or
+// a stage name into a pipe VictoriaLogs rejects (`| json<CR>A0`: unexpected pipe name "json";
+// semantics/translator-reads-only-space-between-tokens, semantics/translator-reads-blank-grouping-as-none). The plan
+// keeps the query as the client sent it, so the pair still holds the plan's text of every blank spelling to the
+// translator's text of the spaced one, as the metric and log flip gates do (internal/proxy spelledAsTranslatorReads).
+// The text must have no comment left: a comment runs to the end of its line.
+func spelledAsTranslatorReads(q string) string {
+	return blankgrouping.Cut(blankspace.Collapse(q))
 }
 
 // guardedPair is the two texts as the proxy sends them: every query it sends to VictoriaLogs passes the outbound
@@ -576,7 +591,9 @@ func summarizeOracle(v string, verdicts map[string]map[string]oracleVerdict) Ora
 	return s
 }
 
-// OracleRegressions are, on one version, the queries on both the base and the PR that the oracle now judges worse.
+// OracleRegressions are, on one version, the queries on both the base and the PR that the oracle now judges worse,
+// and the PR's typed filters that differ from the string translator's (with or without a base: a nil base finds only
+// those).
 type OracleRegressions struct {
 	Version string `json:"version"`
 	// GoldensRejected: VictoriaLogs accepted the base's golden and rejects the PR's.
@@ -586,7 +603,8 @@ type OracleRegressions struct {
 	// CasesLost: an accepted VictoriaLogs test case our parser read with the same meaning on the base and does not now.
 	CasesLost []string `json:"cases_lost"`
 	// TypedSelectorsDiffer: bare stream selectors whose typed filter VictoriaLogs does not read as the string
-	// translator's, on the PR whatever the base was: the typed translation must always mean the same.
+	// translator's, on the PR whatever the base was, and with no base corpus at all: the typed translation must always
+	// mean the same.
 	TypedSelectorsDiffer []string `json:"typed_selectors_differ"`
 	// TypedSelectorsKnown: typed filters that differ from the string translator's because the translator is wrong,
 	// each listed in testdata/known-typed-divergences.json with its registry case. Reported, not failed.
