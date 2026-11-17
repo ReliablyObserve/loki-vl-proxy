@@ -240,7 +240,9 @@ var extractionListKnown = func() map[string]map[string]string {
 //   - semantics/unwrap-rate-counter-window-extrapolation: rate_counter's sixth digit;
 //   - semantics/unwrap-extraction-list-conversion-error: a value the unwrap cannot convert after an extraction list;
 //   - semantics/unwrap-conversion-error-names-another-line: the error over such a value after a parser of every key
-//     names another failing line than Loki's.
+//     names another failing line than Loki's. Which line Loki names varies from one recording to the next (the same
+//     engine and data named the line r6-353 in one recording and r6-346 in another at the instant), so the kinds
+//     listed are the recording's.
 var extractionListKnownRuns = []struct {
 	id, q string
 	kinds []string
@@ -316,7 +318,7 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-extraction-list-conversion-error", `sum by (ns) (max_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-conversion-error", `max_over_time({app="ub"} | logfmt amount | __error__="" | unwrap amount [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-conversion-error", `min by (ns) (min_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-conversion-error-names-another-line", `max(max_over_time({app="ub"} | logfmt | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
+	{"semantics/unwrap-conversion-error-names-another-line", `max(max_over_time({app="ub"} | logfmt | unwrap amount [5m]))`, []string{"instant", "step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (stdvar_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (stdvar_over_time({app="uj"} | json amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum(stdvar_over_time({app="uj"} | json a="amount", route | unwrap a [5m]))`, []string{"instant", "step=range", "step>range"}},
