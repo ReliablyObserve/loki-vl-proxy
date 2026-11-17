@@ -146,14 +146,14 @@ why: |
   TestSeriesFoldSpanningChunks, TestSeriesFoldMemoryBound,
   TestDynamicIdentityWindowsFoldBeyondSeriesLimit,
   TestDynamicIdentityWindowCacheReuse (repeat = 0 VictoriaLogs calls) and
-  TestFirstLastWindowCoalesced (identical cold requests make one call). An
-  infinite value under avg is left to the open difference below: Loki's mean of
-  the series is NaN unless the infinite series is the last in its order, which
-  the series hash does not keep.
+  TestFirstLastWindowCoalesced (identical cold requests make one call).
 
   Still open: rate_counter and quantile_over_time
   (semantics/unwrap-quantile-sum-by-group-quantile) keep their previous series;
-  first and last over a
+  an infinite value under avg by: Loki's mean of the group is NaN or the
+  infinity by the order it visits the series in, which differed between two
+  recordings of the same data and which the series hash does not keep (the
+  differential leaves the infinity out of its data); first and last over a
   range longer than the step (semantics/unwrap-first-last-range-longer-than-step);
   rate_counter's extrapolated value (semantics/unwrap-rate-counter-window-extrapolation);
   an identity under a ranking or a label_replace over a range longer than the
