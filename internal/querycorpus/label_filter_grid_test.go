@@ -284,6 +284,11 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence "+knownDynamicIdentity]++
 				continue
 			}
+			if lower.WritesCountVarianceSeries(plan) && !sameAsTranslator(got, legacy) {
+				// A count by labels over stdvar_over_time counts the series: held to Loki (TestStddevStdvarMatchLoki).
+				delegated["known divergence "+knownCountVariance]++
+				continue
+			}
 			if routed, divergence := routedRoot(plan); routed {
 				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
 					problems = append(problems, msg)

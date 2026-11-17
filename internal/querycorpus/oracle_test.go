@@ -313,11 +313,12 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		// VictoriaLogs answers to both are recorded in internal/queryplan/lower).
 		return "", "", false
 	}
-	if lower.WritesKeepUnwrapIdentity(plan) || lower.WritesDynamicUnwrapIdentity(plan) {
+	if lower.WritesKeepUnwrapIdentity(plan) || lower.WritesDynamicUnwrapIdentity(plan) || lower.WritesCountVarianceSeries(plan) {
 		// A keep before the unwrap, or a parser's labels, decide the series: the plan groups by the labels the keep
 		// leaves, or by the stream and a hash of the parsed labels, the translator by the stream
 		// (semantics/keep-before-unwrap-series-identity, semantics/unwrap-per-series-identity-raw-rows; held to Loki
-		// by TestKeepUnwrapIdentityMatchLoki).
+		// by TestKeepUnwrapIdentityMatchLoki); a count by labels over stdvar_over_time counts the series where the
+		// translator answers a variance (semantics/count-over-stdvar-answers-variance).
 		return "", "", false
 	}
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))

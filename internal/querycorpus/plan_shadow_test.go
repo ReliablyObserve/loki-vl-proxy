@@ -109,6 +109,7 @@ func proxyServed(t *testing.T) servedText {
 var servedDivergences = map[string]string{
 	knownKeepIdentity:    "TestKeepUnwrapIdentityMatchLoki (internal/querycorpus)",
 	knownDynamicIdentity: "TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus)",
+	knownCountVariance:   "TestStddevStdvarMatchLoki, TestExtractionListIdentityMatchLoki (internal/querycorpus)",
 	"semantics/translator-writes-reserved-field-names": "TestReservedFieldLabelsMatchLoki (internal/queryplan/lower)",
 }
 
@@ -239,6 +240,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				// (lowerDynamicIdentity).
 				caseID, ok = knownDynamicIdentity, true
 			}
+			if !ok && lower.WritesCountVarianceSeries(plan) && !sameAsTranslator(got, legacy) {
+				// A count by labels over stdvar_over_time: the plan counts the series, the translator answers the
+				// variance of the group's pooled samples, and the proxy serves the plan's text (lowerMetric).
+				caseID, ok = knownCountVariance, true
+			}
 			if !ok && lower.WritesNumericEquality(plan) {
 				// A numeric, duration or bytes equality after a json or logfmt parser: the plan compares the value as
 				// a number as Loki does, the translator writes the exact text of the literal.
@@ -319,6 +325,10 @@ const knownKeepIdentity = "semantics/keep-before-unwrap-series-identity"
 // (the stream and every parsed label), which the proxy serves from the lowering where it differs from the string
 // translator's.
 const knownDynamicIdentity = "semantics/unwrap-per-series-identity-raw-rows"
+
+// knownCountVariance is the registry case of a count by labels over stdvar_over_time, which the proxy serves from the
+// lowering (the count of the series) where the string translator writes the group's variance.
+const knownCountVariance = "semantics/count-over-stdvar-answers-variance"
 
 // sameAsTranslator reports a lowering that writes the string translator's operators and text: a keep whose
 // identity the translator happens to write too (an outer by that holds every kept label) is native.
@@ -503,7 +513,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		// A row whose series a keep before the unwrap, or a parser's labels, decide is held to Loki
 		// (TestKeepUnwrapIdentityMatchLoki), not to the translator: a lowering that differs there is that divergence,
 		// not a mismatch.
-		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity] {
+		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance] {
 			t.Fatalf("a lowering that answers `*` for everything: %+v", bad)
 		}
 	})
@@ -515,7 +525,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
 	}
 	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity] {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance] {
 			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
 		}
 	})

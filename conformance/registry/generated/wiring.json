@@ -1293,6 +1293,12 @@
       "internal/proxy/unknown_logql_names_test.go",
       "test/e2e-compat/comments_offsets_test.go"
     ],
+    "semantics/count-over-stdvar-answers-variance": [
+      "internal/proxy/unwrap_count_variance_test.go",
+      "internal/querycorpus/extraction_list_identity_loki_diff_test.go",
+      "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_count_variance_test.go"
+    ],
     "semantics/count-values-unsupported": [
       "internal/logql/count_values_test.go",
       "internal/proxy/count_values_test.go",
@@ -2368,7 +2374,8 @@
       "test/e2e-compat/unwrap_over_time_window_test.go"
     ],
     "semantics/unwrap-over-time-range-windows-residual-forms": [
-      "internal/proxy/unwrap_over_time_window_test.go"
+      "internal/proxy/unwrap_over_time_window_test.go",
+      "internal/querycorpus/stddev_stdvar_loki_diff_test.go"
     ],
     "semantics/unwrap-per-series-identity-raw-rows": [
       "internal/proxy/unwrap_dynamic_identity_binary_test.go",
@@ -2741,7 +2748,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 617,
+  "registry_items": 618,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4500,6 +4507,9 @@
       "loki_api_v1_query_range",
       "semantics/unwrap-duration-seconds"
     ],
+    "internal/proxy/unwrap_count_variance_test.go": [
+      "semantics/count-over-stdvar-answers-variance"
+    ],
     "internal/proxy/unwrap_deviation_buckets_test.go": [
       "semantics/aggregation-over-range-by-not-applied",
       "semantics/stddev-stdvar-over-time-range-window"
@@ -4704,6 +4714,7 @@
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go": [
+      "semantics/count-over-stdvar-answers-variance",
       "semantics/unwrap-bare-range-exposes-parsed-labels",
       "semantics/unwrap-conversion-error-names-another-line",
       "semantics/unwrap-extraction-list-series-identity"
@@ -4879,10 +4890,12 @@
     ],
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go": [
       "semantics/aggregation-over-range-by-not-applied",
+      "semantics/count-over-stdvar-answers-variance",
       "semantics/stddev-stdvar-over-time-range-window",
       "semantics/stddev-stdvar-over-time-step-bucket",
       "semantics/stdvar-grouped-binary-marker",
       "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-over-time-range-windows-residual-forms",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/querycorpus/typed_pair_blank_test.go": [
@@ -5039,6 +5052,9 @@
     ],
     "internal/queryplan/lower/unwrap_blank_test.go": [
       "semantics/translator-reads-only-space-between-tokens"
+    ],
+    "internal/queryplan/lower/unwrap_count_variance_test.go": [
+      "semantics/count-over-stdvar-answers-variance"
     ],
     "internal/queryplan/lower/unwrap_dynamic_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
@@ -6074,7 +6090,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 718,
+  "tests_with_markers": 720,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6172,5 +6188,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 423
+  "wired_items": 424
 }
