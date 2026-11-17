@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `count by (...)` over `stdvar_over_time` of an unwrapped label now answers the number of series of each group, as
+  Loki does, where the proxy answered the variance of the group's pooled samples (for example 20336.51 where Loki
+  answers 2). The proxy counts the series of the deviation, as it does for `stddev_over_time`, on an instant query and
+  on every query_range step, with and without a parser; answers cached before the fix are not served again. After an
+  extraction list of more keys than the unwrapped one (`| logfmt amount, route`) the count is of the stream's series,
+  not Loki's (registry `semantics/unwrap-extraction-list-series-identity`). VictoriaLogs runs the query it runs for
+  `count by (...)` over `stddev_over_time`, one stats request as before. After a parser it costs about what the
+  variance did (-4% to +5% measured); without a parser the series include each line's detected_level, which the query
+  derives as count over `stddev_over_time` does (29 to 257 ms on 600,000 rows).
+
 - `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
   `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where

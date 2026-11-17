@@ -336,6 +336,7 @@ func fenceWants(query string) map[string]bool {
 	if plan, err := queryplan.Build(expr, queryplan.Inputs{}); err == nil {
 		queryplan.Resolve(plan)
 		want["unwrap-dynamic-identity"] = lower.WritesDynamicUnwrapIdentity(plan)
+		want["count-stdvar-series"] = lower.WritesCountVarianceSeries(plan)
 	}
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
@@ -653,6 +654,7 @@ func fenceFires(name, query string) bool {
 		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
 		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
+		"count-stdvar-series":      func() string { return countVarianceResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -762,6 +764,17 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"binary-empty-without", `count without () (count_over_time({a="b"}[5m])) / 2`, false},
 		{"binary-empty-without", `sum without (pod) (count_over_time({a="b"}[5m])) / 2`, false},
 		{"binary-empty-without", `sum by (a) (sum without () (count_over_time({a="b"}[5m]))) / 2`, false},
+		{"count-stdvar-series", `count by (x) (stdvar_over_time({a="b"} | unwrap n [5m]))`, true},
+		{"count-stdvar-series", `COUNT BY (x) (STDVAR_OVER_TIME({a="b"} | LOGFMT | UNWRAP n [5m]))`, true},
+		{"count-stdvar-series", "count by (x) (stdvar_over_t\u0130me({a=\"b\"} | json | unwrap n [5m]))", true},
+		{"count-stdvar-series", "Count By (x) (Stdvar_Over_Time({a=\"b\"} |#c\n unwrap n [5m]))", true},
+		{"count-stdvar-series", `count by (x) (stdvar_over_time({a="b"} | unwrap n [5m])) / 2`, true},
+		{"count-stdvar-series", `topk(1, count by (x) (stdvar_over_time({a="b"} | unwrap n [5m])))`, true},
+		{"count-stdvar-series", `count by (x) (stddev_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"count-stdvar-series", `sum by (x) (stdvar_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"count-stdvar-series", `count(stdvar_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"count-stdvar-series", `count without (x) (stdvar_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"count-stdvar-series", `count by (x) (count_over_time({a="b"} |= "stdvar_over_time unwrap" [5m]))`, false},
 		// Longer than the plan memo holds: the plan is built for the fence, uncached.
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} |= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `" | JSON | UNWRAP n [5m]))`, true},
 	} {

@@ -24,7 +24,7 @@ import (
 //     ten-minute stretch without lines on the web streams (absent points, windows of one sample).
 //   - Requests (metricRequests): an instant query, and query_range with the step equal to the range, a fifth of it
 //     and three times it, both bounds on the step's grid.
-//   - Shapes: each function by a label of the range aggregation, bare, with no parser, under sum, max, avg, topk
+//   - Shapes: each function by a label of the range aggregation, bare, with no parser, under sum, max, avg, count, topk
 //     and sort_desc, an aggregation over a range by, a binary operation with a number and with the other function,
 //     label_replace, an offset, a one-minute range, and the outer sum with and without keep.
 //
@@ -55,6 +55,10 @@ var stddevShapes = []string{
 	`avg by (app) (%s({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`,
 	`sum by (app) (%s({job="json"} | json | unwrap duration_ms [5m]) by (app, pod))`,
 	`max(%s({job="json"} | json | unwrap duration_ms [5m]) by (pod))`,
+	// count by labels reads the number of series of each group (semantics/count-over-stdvar-answers-variance).
+	`count by (app) (%s({job="json"} | json | unwrap duration_ms [5m]))`,
+	`count by (app) (%s({job="json"} | unwrap duration_ms [5m]))`,
+	`count by (app, pod) (%s({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`,
 }
 
 // stddevExtraQueries are queries of both functions.
@@ -83,6 +87,12 @@ var stddevKnown = func() map[string]map[string]string {
 	add(`avg by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, sliding...)
 	add(`sum(stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, sliding...)
 	add(`sum(stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, sliding...)
+	// count by over a parser query on a range longer than the step: the stats group by the stream and the window
+	// evaluator does not merge them after a parser, so every point is the step bucket's, and a window whose last step
+	// holds no line of a series misses that series (semantics/unwrap-over-time-range-windows-residual-forms).
+	const residual = "semantics/unwrap-over-time-range-windows-residual-forms"
+	add(`count by (app) (stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, residual, sliding...)
+	add(`count by (app) (stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, residual, sliding...)
 	// An aggregation over a range aggregation with a by of its own: not applied (the series of the range by), or on
 	// a sliding window applied over the step buckets.
 	const rangeBy = "semantics/aggregation-over-range-by-not-applied"
@@ -160,7 +170,7 @@ func stddevFixture() metricFixture {
 // TestStddevStdvarMatchLoki replays the recorded answers through the handlers and holds every run to Loki's answer,
 // or to its listed difference.
 //
-// conformance: semantics/stddev-stdvar-over-time-range-window, semantics/stddev-stdvar-over-time-step-bucket, semantics/stdvar-grouped-binary-marker, semantics/stdvar-grouped-pooled-variance, semantics/unwrap-per-series-identity-raw-rows, semantics/aggregation-over-range-by-not-applied
+// conformance: semantics/stddev-stdvar-over-time-range-window, semantics/count-over-stdvar-answers-variance, semantics/unwrap-over-time-range-windows-residual-forms, semantics/stddev-stdvar-over-time-step-bucket, semantics/stdvar-grouped-binary-marker, semantics/stdvar-grouped-pooled-variance, semantics/unwrap-per-series-identity-raw-rows, semantics/aggregation-over-range-by-not-applied
 func TestStddevStdvarMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")
