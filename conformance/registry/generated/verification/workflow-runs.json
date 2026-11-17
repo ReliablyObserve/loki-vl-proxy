@@ -1,63 +1,98 @@
 {
- "fetched": "2026-11-16T08:32:40Z",
+ "fetched": "2026-11-17T08:19:49Z",
  "workflows": {
   "auto-release.yaml": {
    "main": {
-    "conclusion": "cancelled",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:11:40Z",
+    "conclusion": "success",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:02Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43829287081"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043308129"
    }
   },
   "cancel-conflicted-pr-runs.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:13Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:04:16Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912683"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043608263"
    }
   },
   "ci.yaml": {
    "main": {
-    "conclusion": "success",
+    "conclusion": "failure",
     "date": "2026-11-16",
-    "at": "2026-11-16T07:29:46Z",
+    "at": "2026-11-16T23:59:43Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43824260471",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43983942338",
     "jobs": {
-     "bench": "skipped",
+     "bench": "success",
      "conformance": "skipped",
-     "docker": "skipped",
+     "docker": "success",
      "e2e-compat": "success",
-     "e2e-compat (${{ matrix.group.name }})": "skipped",
-     "e2e-fleet": "skipped",
-     "e2e-ui (${{ matrix.shard.name }})": "skipped",
+     "e2e-compat (core)": "success",
+     "e2e-compat (drilldown)": "success",
+     "e2e-compat (otel-edge)": "success",
+     "e2e-compat (semantics)": "success",
+     "e2e-compat (tail-multitenancy)": "success",
+     "e2e-fleet": "success",
+     "e2e-ui (comprehensive-drilldown-mt)": "success",
+     "e2e-ui (drilldown-core-tail)": "success",
+     "e2e-ui (explore-core)": "success",
+     "e2e-ui (ops-mt)": "success",
+     "e2e-ui (regression-datasource)": "success",
      "fuzz-smoke": "success",
-     "fuzz-smoke-shard (${{ matrix.shard }})": "skipped",
+     "fuzz-smoke-shard (1)": "success",
+     "fuzz-smoke-shard (2)": "success",
+     "fuzz-smoke-shard (3)": "success",
+     "fuzz-smoke-shard (4)": "success",
      "helm": "success",
-     "image": "skipped",
+     "image": "success",
      "lint": "success",
-     "memory-leak-tests": "skipped",
+     "memory-leak-tests": "success",
      "race-stress": "success",
-     "race-stress-shard (${{ matrix.shard }})": "skipped",
+     "race-stress-shard (1)": "success",
+     "race-stress-shard (2)": "success",
+     "race-stress-shard (3)": "success",
+     "race-stress-shard (4)": "success",
+     "race-stress-shard (5)": "success",
+     "race-stress-shard (6)": "success",
+     "race-stress-shard (7)": "success",
+     "race-stress-shard (8)": "success",
+     "race-stress-shard (other)": "success",
      "scope / scope": "success",
-     "stress-tests": "skipped",
-     "test": "skipped",
-     "test-shard (${{ matrix.shard }})": "skipped",
-     "tuple-contract": "skipped",
-     "tuple-smoke": "skipped"
+     "stress-tests": "success",
+     "test": "failure",
+     "test-shard (1)": "success",
+     "test-shard (10)": "success",
+     "test-shard (11)": "success",
+     "test-shard (12)": "success",
+     "test-shard (13)": "success",
+     "test-shard (14)": "failure",
+     "test-shard (15)": "success",
+     "test-shard (16)": "success",
+     "test-shard (2)": "success",
+     "test-shard (3)": "success",
+     "test-shard (4)": "success",
+     "test-shard (5)": "success",
+     "test-shard (6)": "success",
+     "test-shard (7)": "success",
+     "test-shard (8)": "success",
+     "test-shard (9)": "success",
+     "test-shard (rest)": "success",
+     "tuple-contract": "success",
+     "tuple-smoke": "success"
     }
    }
   },
   "codeql.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:12Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:33Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912556"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043373835"
    },
    "scheduled": {
     "conclusion": "success",
@@ -70,10 +105,10 @@
   "compat-drilldown.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:13Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:33Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912993"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043374128"
    },
    "scheduled": {
     "conclusion": "success",
@@ -86,10 +121,10 @@
   "compat-loki.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:13Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:33Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912817"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043374052"
    },
    "scheduled": {
     "conclusion": "success",
@@ -102,10 +137,10 @@
   "compat-vl.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:12Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:33Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912586"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043374014"
    },
    "scheduled": {
     "conclusion": "success",
@@ -118,60 +153,69 @@
   "daily-report.yaml": {
    "main": {
     "conclusion": "failure",
-    "date": "2026-11-15",
-    "at": "2026-11-15T08:16:44Z",
+    "date": "2026-11-16",
+    "at": "2026-11-16T08:31:54Z",
     "event": "schedule",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43693747116"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43831971566"
    },
    "scheduled": {
     "conclusion": "failure",
-    "date": "2026-11-15",
-    "at": "2026-11-15T08:16:44Z",
+    "date": "2026-11-16",
+    "at": "2026-11-16T08:31:54Z",
     "event": "schedule",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43693747116"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43831971566"
    }
   },
   "docs-site.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:11:40Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:04:16Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43829287110"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043608320"
    }
   },
   "e2e-pipeline.yml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:13Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:33Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912842"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043374260"
+   }
+  },
+  "error-answers-record.yaml": {
+   "main": {
+    "conclusion": "success",
+    "date": "2026-11-16",
+    "at": "2026-11-16T10:21:08Z",
+    "event": "workflow_dispatch",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43848052685"
    }
   },
   "ghcr-badges.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:12Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:04:16Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912592"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043608367"
    },
    "scheduled": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T04:25:03Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T04:20:44Z",
     "event": "schedule",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43803967844"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44016527052"
    }
   },
   "loc-badges.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:13Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:33Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912800"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043373900"
    }
   },
   "parity-refresh.yaml": {
@@ -209,26 +253,26 @@
   "pr-evidence-summary.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:32:00Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:17:53Z",
     "event": "workflow_run",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43831984613"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44045524311"
    }
   },
   "query-corpus.yaml": {
    "main": {
     "conclusion": "cancelled",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:11:40Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:33Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43829287153"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043373944"
    },
    "scheduled": {
-    "conclusion": "failure",
-    "date": "2026-11-16",
-    "at": "2026-11-16T02:29:24Z",
+    "conclusion": "success",
+    "date": "2026-11-17",
+    "at": "2026-11-17T02:28:18Z",
     "event": "schedule",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43792469393"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44003216483"
    }
   },
   "release.yaml": {
@@ -243,10 +287,10 @@
   "scorecard.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:24:13Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:04:16Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43830912840"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043608308"
    },
    "scheduled": {
     "conclusion": "success",
@@ -259,26 +303,26 @@
   "security-heavy.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T06:05:48Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T04:04:52Z",
     "event": "schedule",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43814455475"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44014637628"
    },
    "scheduled": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T06:05:48Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T04:04:52Z",
     "event": "schedule",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43814455475"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44014637628"
    }
   },
   "security-pr.yaml": {
    "main": {
     "conclusion": "success",
-    "date": "2026-11-16",
-    "at": "2026-11-16T08:08:24Z",
+    "date": "2026-11-17",
+    "at": "2026-11-17T08:02:33Z",
     "event": "push",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43828858791"
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44043374013"
    }
   },
   "visual-smoke-cleanup.yaml": {
