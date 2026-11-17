@@ -202,8 +202,8 @@ U+0130), `#` comments between tokens (a quote in a comment opens no string), and
 - The key, the fences and every handler read the request rewrite's text (`lowercaseQueryKeywords`,
   `requestQueryText`): keywords in lower case, no comments or logfmt flags, and for a query the validation accepts the
   metric calls and parentheses in one spelling (`logql.CanonicalSpelling`). A new test or harness that models what a
-  handler reads takes `proxy.RequestQueryText(q)` (the corpus shadow, route parity and predicate parity do) rather
-  than a copy of the rewrite.
+  handler reads takes `proxy.RequestQueryText(q)` (the corpus shadow, route parity, predicate parity and grammar
+  sweep do) rather than a copy of the rewrite.
 
 ## Cache semantic layers
 
