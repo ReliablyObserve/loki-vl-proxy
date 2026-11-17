@@ -123,7 +123,8 @@ def main():
                      f"{differential} | {'; '.join(missing)} |")
     lines += ["", "## Optional deletion management", "",
               "Outside the read API score and ranking: the opt-in `/loki/api/v1/delete` handler",
-              "does not implement VictoriaLogs deletion. It is not a proven working delete API.", "",
+              "runs Loki's create and cancel as VictoriaLogs delete tasks with Loki's answers; the list and",
+              "queries a VictoriaLogs filter cannot select answer Loki's 500 (semantics/delete-api-via-victorialogs).", "",
               "## Error surface", "",
               "Every place the proxy writes an error to a client (`conformance/scripts/sync_errors.py`). A literal",
               "message is text the proxy wrote; an error passed through the error layer (`lokiClientError`) reaches",

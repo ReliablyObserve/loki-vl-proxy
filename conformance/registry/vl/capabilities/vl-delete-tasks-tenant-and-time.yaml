@@ -1,0 +1,25 @@
+id: vl-delete-tasks-tenant-and-time
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  VictoriaLogs deletes logs with asynchronous delete tasks (-delete.enable; v1.53 adds an optional -deleteAuthKey):
+  POST /delete/run_task with a `filter` (a LogsQL filter, no pipe) starts a task for the tenant of the request's
+  AccountID and ProjectID headers and answers {"task_id":"<nanoseconds>"}; /delete/active_tasks lists the running and
+  pending tasks of every tenant, each with its tenant_ids and its filter as VictoriaLogs prints it; /delete/stop_task
+  with a task_id stops that task whatever its tenant, and answers {"status":"ok"} for an id it does not hold too.
+  The filter alone bounds what is deleted: there is no start, end or extra_stream_filters argument. Read from the
+  VictoriaLogs source (app/vlselect/main.go deleteHandler, lib/logstorage/delete_task.go) of v1.49.0 and v1.53.0.
+proxy_usage: |
+  The delete API (internal/proxy/delete_api.go) writes the request's time range into the filter
+  (`_time:[start, end] (...)`), sends the tenant's headers, refuses a tenant tenant-label routing confines with its label, serving one mapped to its own account (the label tenant would have to be a
+  filter conjunct, unchecked by a live gate yet), and checks a task's tenant_ids in /delete/active_tasks before it
+  stops it, since /delete/stop_task checks no tenant.
+fallback: |
+  None: a VictoriaLogs that refuses the call (no -delete.enable, a -deleteAuthKey the proxy does not send) answers
+  Loki's 500, its text in the log line only. The live gate (tenant headers scope run_task, the time filter bounds it,
+  stop_task ignores the tenant) is pending on a stack with -delete.enable on v1.49 and v1.53.
+proves:
+  - loki_api_v1_delete

@@ -285,7 +285,7 @@ extraArgs:
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
-  # delete-api-enabled: "false"   # register /loki/api/v1/delete and forward it to VictoriaLogs (opt-in); off answers 404 like Loki with deletion disabled.
+  # delete-api-enabled: "false"   # register /loki/api/v1/delete and run Loki's deletes as VictoriaLogs delete tasks (opt-in; VictoriaLogs needs -delete.enable); off answers 404 like Loki with deletion disabled.
   #                               # Requires the delete API's own token (deleteAuth.existingSecret): every delete request must carry it in X-Delete-Token or
   #                               # Authorization: Bearer; rendering fails without one. The admin token and the admin listener are unaffected.
   # delete-api-auth-token: ""     # the delete API's token; prefer deleteAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)

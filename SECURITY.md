@@ -36,7 +36,7 @@ Do NOT open a public issue for security vulnerabilities.
 ## Built-In Controls
 
 - **Read-only by default**: `/loki/api/v1/push` blocked with 405
-- **Delete not supported**: request safeguards (confirmation header, tenant scoping, 30-day time range limit, audit logging) run before the backend call, but the backend rejects the target path; see [Security hardening migration](docs/security-hardening-migration.md#remaining-delete-api-gap)
+- **Delete behind its own token**: with `-delete-api-enabled`, every delete request must carry `-delete-api-auth-token`; the proxy then answers Loki's checks and runs the request as a VictoriaLogs delete task scoped to the request's tenant and time range, with audit log lines. Loki has no guard beyond the tenant, and neither does the proxy after the token: a token holder can delete any of a tenant's streams (`{}`) over any range. See [Security hardening migration](docs/security-hardening-migration.md#remaining-delete-api-gap)
 - **Rate limiting**: Per-client token bucket using `RemoteAddr` (not spoofable `X-Forwarded-For`)
 - **Query length limit**: 64KB max to prevent abuse
 - **Security headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cache-Control: no-store`

@@ -153,7 +153,7 @@ type tenantLabelRecorder struct {
 
 func (rec *tenantLabelRecorder) handler(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	if strings.HasPrefix(r.URL.Path, "/select/logsql/") {
+	if strings.HasPrefix(r.URL.Path, "/select/logsql/") || strings.HasPrefix(r.URL.Path, "/delete/") {
 		rec.mu.Lock()
 		rec.seen = append(rec.seen, r.Form)
 		rec.acct = append(rec.acct, r.Header.Get("AccountID"))
@@ -258,12 +258,19 @@ func TestTenantLabelRouting_DefaultAliasesNeedAllowGlobalOrMapping(t *testing.T)
 							header.Set("X-Scope-OrgID", org)
 						}
 
+						_, inMap := map[string]bool{"0": true, "fake": true, "default": true, "*": true}[org]
+						deleteServed := mapped && inMap
+						noBackend := rt.noBackend || (rt.name == "delete" && !deleteServed)
 						wantStatus := http.StatusOK
 						switch {
 						case refused:
 							wantStatus = http.StatusForbidden
 						case rt.name == "tail":
 							wantStatus = http.StatusSwitchingProtocols
+						case rt.name == "delete" && !deleteServed:
+							// A delete task takes no tenant stream filter: only a tenant mapped to its own
+							// AccountID/ProjectID is deleted from, anything else is Loki's 500 with no backend call.
+							wantStatus = http.StatusInternalServerError
 						case rt.name == "delete":
 							wantStatus = http.StatusNoContent
 						}
@@ -298,7 +305,7 @@ func TestTenantLabelRouting_DefaultAliasesNeedAllowGlobalOrMapping(t *testing.T)
 							t.Fatalf("status %d, want %d", status, wantStatus)
 						}
 
-						if !refused && !rt.noBackend {
+						if !refused && !noBackend {
 							rec.wait(3 * time.Second)
 						}
 						rec.mu.Lock()
@@ -306,8 +313,11 @@ func TestTenantLabelRouting_DefaultAliasesNeedAllowGlobalOrMapping(t *testing.T)
 						if refused && len(rec.seen) != 0 {
 							t.Fatalf("a refused request reached the backend: %v", rec.seen)
 						}
-						if !refused && !rt.noBackend && len(rec.seen) == 0 {
+						if !refused && !noBackend && len(rec.seen) == 0 {
 							t.Fatal("no backend request recorded")
+						}
+						if rt.name == "delete" && !deleteServed && len(rec.seen) != 0 {
+							t.Fatalf("a delete the proxy does not serve reached the backend: %v", rec.seen)
 						}
 						for i, form := range rec.seen {
 							got := form.Get("extra_stream_filters")
