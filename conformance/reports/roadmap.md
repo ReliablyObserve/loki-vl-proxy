@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **10 proven**, 23 partial, 3 gaps, 0 waived, 9 with no state recorded
+- Behaviour and feature items: **10 proven**, 23 partial, 3 gaps, 0 waived, 10 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -82,5 +82,6 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 6 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
 | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 5 | — |
+| `tail-reads-settled-rows` — A live tail reads only rows VictoriaLogs has made searchable, so no line of a stream is skipped | — | 0 / 0 | 3 | — |
 
 Tests counts the test files that declare the item or one of its cases (`// conformance:` in Go, `@cov:` in Playwright); a case is written when its file exists under `conformance/registry/cases/`.

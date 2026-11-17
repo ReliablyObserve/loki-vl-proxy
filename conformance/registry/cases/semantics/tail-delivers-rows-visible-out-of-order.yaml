@@ -1,0 +1,55 @@
+id: semantics/tail-delivers-rows-visible-out-of-order
+title: A live tail delivers every line of a stream, also when VictoriaLogs makes them searchable out of order (fixed)
+pending: true
+proves:
+  - loki_api_v1_tail
+consumer: explore
+why: |
+  Loki's tail delivers every line pushed after it started. VictoriaLogs makes
+  an ingested row searchable only when its rows-buffer shard flushes (shards
+  filled round-robin, each flushed a second after its first row), so rows of
+  one stream pushed in separate requests a few hundred milliseconds apart can
+  become searchable out of order. Its live tail skips every row of a stream at
+  or below the newest one of that stream it already sent. The proxy asked for
+  offset=0s (read up to now), so a later row searchable first made the earlier
+  ones unreachable: TestFeature_Tail_PipelineParity saw the native tail deliver
+  rows 1, 5, 6 and 7 of seven, 150 ms apart, while Loki delivered all seven.
+  The polled tail moved its cursor past its newest row and lost such rows the
+  same way.
+  The native tail now reads a settle delay behind now (5 s, VictoriaLogs' own
+  default offset), so every row of a read is already searchable; the polled
+  tail reads the last 5 s again on every poll and drops the rows it sent.
+  Lines reach a native tail about 5 s later than Loki's.
+request:
+  method: GET
+  path: /loki/api/v1/tail
+  params:
+    query: '{app="api"}'
+  headers:
+    X-Scope-OrgID: "0"
+  setup: |
+    TestTailSettle_* (internal/proxy): a VictoriaLogs live tail emulator
+    (window, 5 s overlap, per-stream skip, rows searchable out of order) for
+    the native, auto and polled tails and a reopened stream.
+    TestFeature_Tail_PipelineParity (test/e2e-compat, group tail-multitenancy)
+    pushes seven lines 150 ms apart to Loki and VictoriaLogs and compares the
+    entries both tails deliver.
+  verify:
+    blocked_by: fixture
+    reason: "needs a live tail with lines pushed to Loki and VictoriaLogs while it runs"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Every line pushed after the tail went live arrives once, as on Loki.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: none
+  visual_reason: 'Lines missing from a Grafana live tail; the visual harness has no live view. The unit emulator and the e2e assert the lines a client receives.'
+  effort: S
+  area: 'internal/proxy/tail.go openNativeTailStreamFrom, writeSyntheticTailBatch'
+  loki: 'the tail delivers every line pushed after it started'
+  proxy: 'native tail reads tailSettleDelay behind now; the polled tail re-reads that span and drops the rows it sent'
+  planned_test: 'TestTailSettle_RowsVisibleOutOfOrderAllArrive (internal/proxy) and TestFeature_Tail_PipelineParity (test/e2e-compat, group tail-multitenancy)'

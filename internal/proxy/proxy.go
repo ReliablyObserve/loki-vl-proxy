@@ -479,6 +479,10 @@ type Config struct {
 	// Zero (the library default; the flag defaults to 30s) closes the tail
 	// with Loki's 1011 on the first failed call.
 	TailBackendRetryWindow time.Duration
+	// TailSettleDelay (-tail.settle-delay) is how far behind now a live tail
+	// reads (tailSettleDelay); 0 selects the default (5s), a negative value
+	// reads up to now.
+	TailSettleDelay time.Duration
 	// BackendRetryAttempts (-backend-retry-attempts) is how many times a
 	// VictoriaLogs read that failed for a reason a retry can fix (a refused or
 	// reset connection, a 429, 502, 503 or 504 answer) is sent again before
@@ -823,6 +827,7 @@ type Proxy struct {
 	tailBackendRetryWindow                time.Duration // -tail.backend-retry-window; 0 = no retry
 	tailRetryInitialBackoff               time.Duration // first wait between retries (tests shorten it)
 	tailRetryMaxBackoff                   time.Duration // longest wait between retries
+	tailSettle                            time.Duration // -tail.settle-delay: how far behind now the tail reads (tailSettleDelay)
 	metricsTrustProxyHeaders              bool
 	tenantLimitsAllowPublish              []string
 	tenantDefaultLimits                   map[string]any
@@ -1519,6 +1524,7 @@ func New(cfg Config) (*Proxy, error) {
 		tailBackendRetryWindow:                max(cfg.TailBackendRetryWindow, 0),
 		tailRetryInitialBackoff:               tailRetryInitialBackoff,
 		tailRetryMaxBackoff:                   tailRetryMaxBackoff,
+		tailSettle:                            parseRiskProbeDuration(cfg.TailSettleDelay, tailSettleDelay),
 		metricsTrustProxyHeaders:              cfg.MetricsTrustProxyHeaders,
 		tenantLimitsAllowPublish:              tenantLimitsAllowPublish,
 		tenantDefaultLimits:                   tenantDefaultLimits,

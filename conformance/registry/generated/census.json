@@ -887,6 +887,9 @@
     "semantics/sub-second-step-grid | gap:fixed",
     "semantics/sub-second-step-grid | perf",
     "semantics/sub-second-step-grid | query",
+    "semantics/tail-delivers-rows-visible-out-of-order | compare:observed",
+    "semantics/tail-delivers-rows-visible-out-of-order | gap:fixed",
+    "semantics/tail-delivers-rows-visible-out-of-order | query",
     "semantics/tail-history-limit-above-max-entries | compare:observed",
     "semantics/tail-history-limit-above-max-entries | query",
     "semantics/tail-history-start-limit | compare:observed",
@@ -1194,6 +1197,7 @@
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
     "cmd/proxy/main_test.go | operator-configurable-limits",
     "cmd/proxy/main_test.go | semantics/query-range-step-alignment",
+    "cmd/proxy/main_test.go | tail-reads-settled-rows",
     "cmd/proxy/peer_config_test.go | peer-cache-push-replay",
     "cmd/proxy/peer_config_test.go | peer-cache-read-hedge",
     "cmd/proxy/tenant_routing_test.go | limits/max-query-length-default",
@@ -2119,6 +2123,10 @@
     "internal/proxy/tail_history_test.go | loki_api_v1_tail",
     "internal/proxy/tail_history_test.go | semantics/tail-history-start-limit",
     "internal/proxy/tail_pipeline_test.go | loki_api_v1_tail",
+    "internal/proxy/tail_settle_test.go | loki_api_v1_tail",
+    "internal/proxy/tail_settle_test.go | semantics/tail-delivers-rows-visible-out-of-order",
+    "internal/proxy/tail_settle_test.go | semantics/tail-survives-backend-outage",
+    "internal/proxy/tail_settle_test.go | tail-reads-settled-rows",
     "internal/proxy/tenant_auth_parity_test.go | semantics/tenant-header-loki-answers",
     "internal/proxy/tenant_auth_parity_test.go | tenant-auth-follows-loki",
     "internal/proxy/tenant_auth_parity_test.go | tenant-numeric-routing",
@@ -2997,6 +3005,8 @@
     "test/e2e-compat/tail_history_test.go | loki_api_v1_tail",
     "test/e2e-compat/tail_history_test.go | semantics/tail-history-start-limit",
     "test/e2e-compat/tail_pipeline_test.go | loki_api_v1_tail",
+    "test/e2e-compat/tail_pipeline_test.go | semantics/tail-delivers-rows-visible-out-of-order",
+    "test/e2e-compat/tail_pipeline_test.go | tail-reads-settled-rows",
     "test/e2e-compat/tenant_auth_loki_test.go | tenant-auth-follows-loki",
     "test/e2e-compat/tenant_label_isolation_test.go | prometheus_api_v1_alerts",
     "test/e2e-compat/tenant_label_isolation_test.go | prometheus_api_v1_rules",
@@ -3111,12 +3121,12 @@
       "any": 35,
       "api": 115,
       "drilldown": 53,
-      "explore": 201,
+      "explore": 202,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 725,
+      "go": 726,
       "playwright": 2
     },
     "page_kinds": {
@@ -3136,7 +3146,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 93,
-    "wired_items": 428
+    "wired_items": 430
   },
   "gates": [
     "A/B shape selection",

@@ -171,6 +171,7 @@ type proxyRuntimeConfig struct {
 	tailAllowedOrigins                  string
 	tailMode                            string
 	tailBackendRetryWindow              time.Duration
+	tailSettleDelay                     time.Duration
 	backendRetryAttempts                int
 	backendRetryMaxWait                 time.Duration
 	backendRetryBudgetRatio             float64
@@ -708,6 +709,7 @@ func run(
 	tailAllowedOrigins := fs.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
 	tailMode := fs.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
 	tailBackendRetryWindow := fs.Duration("tail.backend-retry-window", 30*time.Second, "How long a live tail keeps its websocket open while VictoriaLogs fails for a reason a retry can fix (connection refused or reset, a timeout, a stream that ends or breaks, a 429 or 5xx answer): the proxy reopens the stream, or polls again, with a jittered backoff from 250 ms up to 5 s, and resumes from the last line sent without repeating or skipping one. Past the window, and at once for a failure no retry fixes (a malformed or oversize row, a 4xx VictoriaLogs answer), the tail closes with 1011 and Loki's text. 0 closes on the first failure.")
+	tailSettleDelay := fs.Duration("tail.settle-delay", 5*time.Second, "How far behind now a live tail reads, so a line VictoriaLogs makes searchable out of order is still delivered: the native and auto tails send it as VictoriaLogs' tail offset (lines arrive about this long after they are written), and the polled tail reads this span again on every poll and drops the lines it already sent. VictoriaLogs makes a row searchable when its rows-buffer shard flushes (about 1 s on a single node) and its live tail skips a row older than the newest of its stream already sent, so a shorter delay can lose lines: 1-2 s covers one single-node buffer flush, not client batching or a cluster vlinsert hop. 0 reads up to now.")
 	backendRetryAttempts := fs.Int("backend-retry-attempts", proxy.DefaultBackendRetryAttempts, "How many times a VictoriaLogs read that fails for a reason a retry can fix is sent again before the client gets an error: a connection refused or reset, or closed before any answer, and a 429, 502, 503 or 504 answer (a full select queue, a node restarting, a proxy in front that lost its backend). The wait doubles from 200 ms to 2 s with jitter and honours Retry-After; nothing is repeated once an answer body was read, after a timeout, a client cancel, with the circuit breaker not closed, or past the request deadline. The error a client gets after the last try is the one it gets without retries. 0 sends every read once")
 	backendRetryMaxWait := fs.Duration("backend-retry-max-wait", proxy.DefaultBackendRetryMaxWait, "The longest one VictoriaLogs call waits, in total, between its tries (-backend-retry-attempts); a try that would not fit, or a Retry-After beyond it, ends the retries and returns the last answer. 0 disables retries")
 	backendRetryBudgetRatio := fs.Float64("backend-retry-budget-ratio", proxy.DefaultBackendRetryBudgetRatio, "Retries a replica earns per VictoriaLogs call, so a sustained failure is retried for at most that fraction of the calls (plus a burst of 20 for a quiet replica) and retries cannot multiply the load on an overloaded VictoriaLogs. Must be between 0 and 1; 0 leaves only the burst")
@@ -1022,6 +1024,7 @@ func run(
 			tailAllowedOrigins:                  *tailAllowedOrigins,
 			tailMode:                            *tailMode,
 			tailBackendRetryWindow:              *tailBackendRetryWindow,
+			tailSettleDelay:                     *tailSettleDelay,
 			backendRetryAttempts:                *backendRetryAttempts,
 			backendRetryMaxWait:                 *backendRetryMaxWait,
 			backendRetryBudgetRatio:             *backendRetryBudgetRatio,
@@ -2224,6 +2227,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if cfg.tailBackendRetryWindow < 0 {
 		return proxy.Config{}, fmt.Errorf("invalid -tail.backend-retry-window: %s (must be >= 0; 0 closes a tail on the first failed VictoriaLogs call)", cfg.tailBackendRetryWindow)
 	}
+	if cfg.tailSettleDelay < 0 {
+		return proxy.Config{}, fmt.Errorf("invalid -tail.settle-delay: %s (must be >= 0; 0 reads up to now)", cfg.tailSettleDelay)
+	}
 	if cfg.backendRetryAttempts < 0 {
 		return proxy.Config{}, fmt.Errorf("invalid -backend-retry-attempts: %d (must be >= 0; 0 sends every VictoriaLogs read once)", cfg.backendRetryAttempts)
 	}
@@ -2376,6 +2382,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		TailAllowedOrigins:                 parseCSV(cfg.tailAllowedOrigins),
 		TailMode:                           tailMode,
 		TailBackendRetryWindow:             cfg.tailBackendRetryWindow,
+		TailSettleDelay:                    explicitDuration(cfg.tailSettleDelay),
 		BackendRetryAttempts:               cfg.backendRetryAttempts,
 		BackendRetryMaxWait:                cfg.backendRetryMaxWait,
 		BackendRetryBudgetRatio:            cfg.backendRetryBudgetRatio,
