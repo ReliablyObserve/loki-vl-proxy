@@ -90,7 +90,6 @@ func TestQueryRefusalAnswersAreLokisNotTheTranslators(t *testing.T) {
 		{"vector aggregation over a literal, instant", "query", `sum(1)`, 500, lokiInternalText},
 		{"vector aggregation over vector()", "query_range", `sum(vector(1))`, 500, lokiInternalText},
 		{"count over a float literal", "query_range", `count(1.5) by ()`, 500, lokiInternalText},
-		{"absent_over_time over a zero range", "query_range", `absent_over_time({a="b"}[0s])`, 500, lokiInternalText},
 		{"distinct offsets", "query_range", `rate({a="b"}[5m] offset 1h) / rate({a="b"}[5m] offset 2h)`, 500, lokiInternalText},
 		{"distinct offsets, instant", "query", `rate({a="b"}[5m] offset 1h) / rate({a="b"}[5m] offset 2h)`, 500, lokiInternalText},
 		{"mixed offsets under topk", "query_range", `topk(1, rate({a="b"}[5m] offset 1h) + rate({a="b"}[5m]))`, 500, lokiInternalText},

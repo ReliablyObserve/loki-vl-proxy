@@ -16,20 +16,19 @@ import (
 )
 
 // A `| json` metric whose range is shorter than the step (a `[1m]` panel at
-// Grafana's 120 s step over 48 hours) is answered from VictoriaLogs stats over
-// the lines inside the windows, as Loki evaluates it: each step reads
+// Grafana's 120 s step over 48 hours) is answered from VictoriaLogs stats
+// over the lines inside the windows, as Loki evaluates it: each step reads
 // (t-range, t] and the lines between two windows are never read, so a line
-// Loki's JSON parser rejects there does not fail the strict count
-// (pkg/logql/range_vector.go batchRangeVectorIterator.load, evaluator.go
-// RangeVectorEvaluator.Next). The shapes are the strict detected_level count
-// (Logs Drilldown and the DLV3 A/B shape), its rate and byte forms, the
-// `__error__!=""` and `__error__=""` splits and the `drop __error__` pushdown,
-// over steps equal to, longer than and not a multiple of the range, with a
-// start on the step grid and an unaligned millisecond start (which the
-// stack's align_queries_with_step and the proxy's -align-queries-with-step
-// both move onto the grid; the unaligned evaluation of Loki's defaults is the
-// unit differential's). The in-process proxy must answer from
-// stats_query_range with no raw scan of the selected lines.
+// Loki's JSON parser rejects there does not fail the strict count. The shapes
+// are the strict detected_level count (Logs Drilldown and the DLV3 A/B
+// shape), its rate and byte forms, the `__error__!=""` and `__error__=""`
+// splits and the `drop __error__` pushdown, over steps equal to, longer than
+// and not a multiple of the range, with a start on the step grid and an
+// unaligned millisecond start (which the stack's align_queries_with_step and
+// the proxy's -align-queries-with-step both move onto the grid; the unaligned
+// evaluation of Loki's defaults is the unit differential's). The in-process
+// proxy must answer from stats_query_range with no raw scan of the selected
+// lines.
 // conformance: semantics/json-metric-step-wider-than-range, semantics/json-detected-level-error-split
 func TestRangeMetricCompatibilityJSONStepWiderThanRange(t *testing.T) {
 	now := time.Now()

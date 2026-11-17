@@ -4,6 +4,7 @@ proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
 consumer: explore
+evidence: needs recording
 why: |
   Loki's json parser adds `__error__=JSONParserErr` and
   `__error_details__=<parser message>` to a line it cannot parse (a logfmt or
@@ -34,7 +35,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy log-row assembly (stage-field exposure) + translator parse-error predicate'
-  loki: 'pkg/logql/log/parser.go:97 addErrLabel(errJSON, err) -> :777-787 SetErr/SetErrorDetails; pkg/logql/log/error.go:5 errJSON'
+  loki: 'a line the json or logfmt parser rejects carries __error__ (JSONParserErr, LogfmtParserErr) and __error_details__'
   proxy: 'no __error__ / __error_details__ on log rows'
   planned_test: 'TestCompat_ParseErrorLabelsOnLogLines (test/e2e-compat, group semantics)'
   note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'

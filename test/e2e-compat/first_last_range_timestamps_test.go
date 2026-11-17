@@ -7,14 +7,14 @@ import (
 	"time"
 )
 
-// TestCompat_UnwrapFirstLastRangeTimestamps: on query_range with a range equal
-// to the step (Grafana's $__auto) or shorter than it, an aggregation over
-// first_over_time or last_over_time answers Loki's points: the same series,
-// evaluation timestamps and values. Loki stamps the sample of the window
-// (t-range, t] at t (pkg/logql/range_vector.go:102-113, 150-160, 189); the
-// proxy reads VictoriaLogs step buckets, labelled by their start, and relabels
-// them onto Loki's times. Before, every point came one step early and a line on
-// a step edge landed in the next step.
+// TestCompat_UnwrapFirstLastRangeTimestamps: on query_range with a range
+// equal to the step (Grafana's $__auto) or shorter than it, an aggregation
+// over first_over_time or last_over_time answers Loki's points: the same
+// series, evaluation timestamps and values. Loki stamps the sample of the
+// window (t-range, t] at t; the proxy reads VictoriaLogs step buckets,
+// labelled by their start, and relabels them onto Loki's times. Before, every
+// point came one step early and a line on a step edge landed in the next
+// step.
 // conformance: semantics/unwrap-first-last-range-timestamps, loki_api_v1_query_range
 func TestCompat_UnwrapFirstLastRangeTimestamps(t *testing.T) {
 	fx := ensureFirstLastFixtures(t)

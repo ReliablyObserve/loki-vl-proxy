@@ -39,8 +39,7 @@ func drilldownJSONPathRows(rng *rand.Rand, s0 time.Time, n int) []pushdownRow {
 // breakdown `sum by (service_name_extracted) (count_over_time({...}
 // [| detected_level="error"] | json service_name_extracted="[\"service\"][\"name\"]"
 // | drop __error__, __error_details__ | service_name_extracted!="" [1m]))`:
-// the json expression parser reads the nested key into the label
-// (pkg/logql/log/parser.go:671 JSONExpressionParser.Process), detected_level
+// the json expression parser reads the nested key into the label, detected_level
 // is the line's level key (Loki's ingest), a line without the key has an
 // empty label and the filter drops it.
 func lokiDrilldownJSONPathReference(rows []pushdownRow, pill bool, start, end time.Time, step time.Duration) map[string]map[int64]string {

@@ -16,8 +16,7 @@ import (
 
 // Loki's stddev and stdvar are vector aggregations: each step they take the
 // population standard deviation or variance of the VALUES of the series of a
-// group (pkg/logql/evaluator.go VectorAggEvaluator.Next, Welford's update, 0 for
-// a group of one series), the group being what `by` keeps or `without` leaves.
+// group (0 for a group of one series), the group being what `by` keeps or `without` leaves.
 // They are not stddev_over_time, which works over the samples inside a window.
 // The proxy answered the total line count of the group for `by` and no
 // resultType for some instant `without` forms

@@ -5,11 +5,10 @@ proves:
   - loki_api_v1_query_range
 consumer: drilldown
 why: |
-  Loki stores detected_level at ingest (v3.7.9 pkg/distributor/
-  field_detection.go extractLogLevel:96-127): a level stream label first,
+  Loki stores detected_level at ingest: a level stream label first,
   then structured metadata, then the OTLP severity number, then the line's
   JSON or logfmt level key, then its first bounded level keyword
-  (detectLevelFromLogLine:388-403), else `unknown`. A filter on it selects
+  else `unknown`. A filter on it selects
   every line of that level.
 
   The proxy rendered a `| detected_level <op> "v"` stage before any parser as
@@ -58,7 +57,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/translator/translator.go detectedLevelStageFilter, internal/translator/detected_level_logsql.go BuildDetectedLevelFilter'
-  loki: 'pkg/distributor/field_detection.go extractLogLevel (v3.7.9) stores detected_level as structured metadata; the filter reads it'
+  loki: 'detected_level is derived at ingest and stored as structured metadata; the filter reads it (test/e2e-compat detected_level_filter_test.go)'
   proxy: 'the filter compares the chain-derived detected_level, the value the response derivation shows'
   planned_test: 'TestCompat_DetectedLevelFilterJSONLevel (test/e2e-compat, group core); TestDetectedLevelFilterAnswersLikeLoki, TestDetectedLevelFilterDifferential, FuzzDetectedLevelFilterLikeLoki, TestDetectedLevelFilterThroughHandlersLikeLoki (internal/proxy)'
   clusters: []

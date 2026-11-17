@@ -84,9 +84,8 @@ func newIndexStatsTestProxy(t *testing.T, backend string) *Proxy {
 // lokiIndexStatsReference is Loki's index/stats for rows held in chunks that lie
 // wholly inside the window and are counted once (the case where Loki's chunk
 // estimate is exact): the window is Loki's range window
-// (pkg/loghttp/params.go:91-120 determineBounds, :163-186 parseTimestamp,
-// default since 1h at :23), streams are the streams with an entry in it and
-// entries its lines; tenants are summed (pkg/querier/multi_tenant_querier.go:208-230).
+// (default since 1h), streams are the streams with an entry in it and entries
+// its lines; tenants are summed.
 // Written from Loki's rules, independently of the proxy's helpers.
 func lokiIndexStatsReference(rows []indexStatsRow, tenants []string, startRaw, endRaw, sinceRaw string, now time.Time) (streams, entries int, ok bool) {
 	start, end, ok := lokiIndexStatsWindow(startRaw, endRaw, sinceRaw, now)
@@ -178,11 +177,11 @@ func getIndexStats(t *testing.T, p *Proxy, params url.Values, orgID string) inde
 // TestIndexStats_WindowLikeLoki: index/stats counts the streams and lines of
 // Loki's range window. A request without start (or end) read all of
 // VictoriaLogs' retention; Loki reads the last hour before end (or now), the
-// `since` before it when given, and never the future part of an end after now
-// (pkg/loghttp/params.go:91-120). Explicit windows in every encoding Loki and
+// `since` before it when given, and never the future part of an end after now.
+// Explicit windows in every encoding Loki and
 // the proxy read alike (seconds, nanoseconds, float seconds, RFC3339) pass
 // through, and tenants of a multi-tenant request are summed like Loki's
-// MultiTenantQuerier.IndexStats.
+// Loki's multi-tenant index stats.
 //
 // conformance: loki_api_v1_index_stats, quality/index-stats-default-window
 func TestIndexStats_WindowLikeLoki(t *testing.T) {

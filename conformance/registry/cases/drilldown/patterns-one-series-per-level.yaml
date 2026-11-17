@@ -5,9 +5,8 @@ proves:
   - loki_api_v1_patterns
 consumer: drilldown
 why: |
-  Loki answers one series per level and pattern (pkg/pattern/iter ReadBatch
-  keys series by level, then pattern; the merge iterator sums samples of the
-  same timestamp, pattern and level). The proxy's miner can keep two clusters
+  Loki answers one series per level and pattern; samples of the same
+  timestamp, pattern and level are summed. The proxy's miner can keep two clusters
   apart that join to the same text, such as two that differ only in the kind
   of a value shown as <_>, and answered both: Logs Drilldown listed the same
   row twice. Over 40 mixed corpora, 603 of 58,738 entries were duplicates.
@@ -35,7 +34,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/postprocess.go patternEntriesByLevelAndPattern'
-  loki: 'pkg/pattern/iter/batch.go ReadBatch, pkg/pattern/iter/merge.go'
+  loki: 'one series per level and pattern, samples of the same timestamp summed (TestDrilldown_Patterns_CountEveryLineAtLokisStep)'
   proxy: 'one entry per level and pattern'
   planned_test: 'TestDrilldown_Patterns_CountEveryLineAtLokisStep (test/e2e-compat, group drilldown); TestPatternsFromCountsCountEveryLine, TestPatternMinerKeepsTheRecordedPatterns (internal/proxy)'
   clusters: []

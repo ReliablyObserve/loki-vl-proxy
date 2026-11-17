@@ -12,14 +12,13 @@ import (
 )
 
 // Loki answers every metric instant query with `resultType: vector` and a
-// scalar literal with `scalar` (pkg/logql/engine.go evalSample, evalLiteral;
-// pkg/querier/queryrange/marshal.go ResultToResponse), and its own decoder
-// fails on a missing or unknown type (pkg/loghttp/query.go UnmarshalJSON). The
-// Grafana Loki datasource parses the answer by that type. The proxy answered
-// `stdvar without (...)` and a `label_replace` around a binary expression with
-// a 200 and no resultType: the failure of the post-processed query was sent
-// with its status dropped, and the translator's binary marker was sent to
-// VictoriaLogs as a query (semantics/instant-result-type-missing).
+// scalar literal with `scalar`, and its own decoder fails on a missing or
+// unknown type. The Grafana Loki datasource parses the answer by that type.
+// The proxy answered `stdvar without (...)` and a `label_replace` around a
+// binary expression with a 200 and no resultType: the failure of the
+// post-processed query was sent with its status dropped, and the translator's
+// binary marker was sent to VictoriaLogs as a query
+// (semantics/instant-result-type-missing).
 //
 // Each shape is asked of Loki and of the proxy. Both must answer, and answer
 // the same status and the same resultType; the series of the answers are
@@ -136,7 +135,7 @@ func TestCompat_InstantResultTypeAlwaysSet(t *testing.T) {
 		}
 	})
 
-	// A vector sample is stamped in seconds (pkg/util/marshal NewVector), not
+	// A vector sample is stamped in seconds not
 	// in the nanoseconds of the request.
 	t.Run("sample time is seconds", func(t *testing.T) {
 		at := time.Now()
@@ -158,8 +157,7 @@ func TestCompat_InstantResultTypeAlwaysSet(t *testing.T) {
 
 	// A scalar is stamped in integer milliseconds, a vector in seconds: Loki's
 	// query frontend hands the millisecond timestamp of a scalar to
-	// model.TimeFromUnix, which reads seconds (pkg/querier/queryrange
-	// /prometheus.go marshalScalar; marshalVector keeps model.Time(ms)). The
+	// model.TimeFromUnix, which reads seconds. The
 	// same evaluation time must give the same sample time and value on both
 	// sides, to the millisecond, for every constant shape. `1 / 0` is left out:
 	// Loki fails to ship a folded NaN or Inf to its querier and answers 500.

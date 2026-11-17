@@ -135,7 +135,7 @@ func groupingOf(kind string, labels ...string) *logqlpkg.Grouping {
 }
 
 // The edge cases of the fold, on instant and range answers: the groups, labels
-// and values Loki's VectorAggEvaluator makes (pkg/logql/evaluator.go).
+// and values Loki's vector aggregation makes.
 //
 // conformance: semantics/stddev-stdvar-grouped-values
 func TestStddevStdvarFoldEdgeCases(t *testing.T) {
@@ -487,7 +487,7 @@ func TestStddevStdvarParenthesizedOuterQuery(t *testing.T) {
 }
 
 // Loki counts max_query_series on the answer of the aggregation
-// (pkg/logql/engine.go), so 600 streams in 3 apps are 3 series, while 600 groups
+// so 600 streams in 3 apps are 3 series, while 600 groups
 // are over the limit. The operand's own series are not what the limit counts.
 //
 // conformance: semantics/stddev-stdvar-grouped-values

@@ -8,10 +8,9 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
-// Loki's batchRangeVectorIterator.load (pkg/logql/range_vector.go:148-189, v3.7.7)
-// skips `sample.Timestamp <= start` for every range aggregation — the comment
-// in that loop reads "the lower bound of the range is not inclusive", and the
-// iterator is shared by unwrapped ranges too. An unwrapped `sum_over_time`,
+// Loki (v3.7.7) skips a sample at or before the window start for every range
+// aggregation (the lower bound of the range is not inclusive), unwrapped
+// ranges included. An unwrapped `sum_over_time`,
 // `avg_over_time`, `min_over_time`, `max_over_time` or `quantile_over_time`
 // must therefore drop a sample sitting exactly on windowStart, the same way
 // count_over_time does.
@@ -48,7 +47,7 @@ func TestLowerBoundIsExclusiveForEveryRangeFunction(t *testing.T) {
 // lower edge in it would count a reset (50), with the line at t out only 10,
 // with both (the old bounds) 20.
 // The value is this evaluator's increase over the window; Loki extrapolates it
-// to the window edges (pkg/logql/range_vector.go:275-346), which is not covered.
+// to the window edges, which is not covered.
 //
 // conformance: semantics/lower-bound-exclusive, window-bounds-and-step-alignment
 func TestRateCounterReadsLokiWindow(t *testing.T) {

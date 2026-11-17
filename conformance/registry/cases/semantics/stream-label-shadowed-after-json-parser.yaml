@@ -36,7 +36,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy/ordered_json_metric.go (plans that build their own LogsQL); internal/translator/plain_stream_labels.go svCopyPipes (log queries)'
-  loki: 'pkg/logql/log/parser.go duplicateSuffix; pkg/logql/log/labels.go LabelsBuilder'
+  loki: 'a parsed key named like a stream label is name_extracted and the stream label keeps its value (https://grafana.com/docs/loki/latest/query/log_queries/)'
   proxy: 'the stored field, the line value'
   planned_test: 'TestStreamLabelShadowedAfterJSONParser (internal/proxy) and TestCompat_StreamLabelShadowedAfterJSONParser (test/e2e-compat, group core)'
   clusters:

@@ -31,13 +31,12 @@ func CanonicalizeLogRanges(query string) string {
 }
 
 // LowercaseKeywords writes in lower case the words Loki's lexer reads without
-// regard to case (pkg/logql/syntax/lex.go lower-cases a word before it looks it
-// up): SUM, TOPK(3, ...), RATE(...), BY, OFFSET, UNWRAP and the like, and the
-// two letters outside ASCII that lower case into an ASCII one, the Kelvin sign
-// U+212A (topK, read as topk) and U+0130 (avg_over_tİme, read as
-// avg_over_time). Names, strings and label names that are not keywords keep
-// their spelling. The translator and the handlers match the lower-case
-// spelling.
+// regard to case (it lower-cases a word before it looks it up): SUM,
+// TOPK(3, ...), RATE(...), BY, OFFSET, UNWRAP and the like, and the two letters
+// outside ASCII that lower case into an ASCII one, the Kelvin sign U+212A (topK,
+// read as topk) and U+0130 (avg_over_tİme, read as avg_over_time). Names,
+// strings and label names that are not keywords keep their spelling. The
+// translator and the handlers match the lower-case spelling.
 func LowercaseKeywords(query string) string {
 	if !foldsToKeyword(query) {
 		return query

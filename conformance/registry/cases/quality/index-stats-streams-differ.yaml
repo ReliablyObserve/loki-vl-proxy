@@ -5,19 +5,13 @@ proves:
 consumer: drilldown
 why: |
   Loki counts a stream in /index/stats when one of its chunks overlaps the
-  window: from the index, when the chunk's pro-rated entries are above zero
-  (pkg/storage/stores/shipper/indexshipper/tsdb/single_file_index.go:340-376,
-  tsdb/index/chunk.go:262-267), from an ingester, when an unflushed chunk
-  overlaps (pkg/ingester/instance.go:788-826). The answers of the store, the
-  ingesters and the 24h splits are summed, not deduplicated
-  (pkg/storage/stores/index/stats/stats.go:17-28, pkg/storage/async_store.go:167-171,
-  pkg/querier/queryrange/roundtrip.go:36), and the index-stats results cache,
-  on by default (roundtrip.go:66) for answers whose end is 10m old
-  (pkg/validation/limits.go:413), serves a window inside a cached one with the
-  cached stream count (pkg/querier/queryrange/index_stats_cache.go:34-48). A
-  single-binary Loki reads only its store (pkg/querier/querier.go:529-557, no
-  AsyncStore for target all: pkg/loki/modules.go:1078-1101), so unflushed
-  lines are not counted at all. The recorded run (Loki 7104 streams for both
+  window: from the index, when the chunk's pro-rated entries are above zero,
+  from an ingester, when an unflushed chunk overlaps. The answers of the
+  store, the ingesters and the 24h splits are summed, not deduplicated, and
+  the index-stats results cache, on by default for answers whose end is 10m
+  old (max_stats_cache_freshness), serves a window inside a cached one with
+  the cached stream count. A single-binary Loki reads only its store, so
+  unflushed lines are not counted at all. The recorded run (Loki 7104 streams for both
   the last hour and the last 15 minutes of `{env="production"}`, the proxy
   13510 and 3365) shows the cached count reused for a shorter window.
 
@@ -48,7 +42,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'none (Loki index estimate); bench/visual/docker-compose.visual.yml (Loki results cache off)'
-  loki: 'pkg/storage/stores/shipper/indexshipper/tsdb/single_file_index.go:340-376 streams from chunk overlap; pkg/storage/stores/index/stats/stats.go:17-28 summed; pkg/querier/queryrange/index_stats_cache.go:34-48 cached count reused'
+  loki: 'streams counted from chunk overlap, answers summed, cached stream count reused for a shorter window (recorded run in this case; TestDrilldown_IndexStatsLikeLoki)'
   proxy: 'streams with a line in the window (exact)'
   planned_test: 'TestDrilldown_IndexStatsLikeLoki (test/e2e-compat, group drilldown); bench/visual/tests/test_compare.py test_index_stats_bodies_name_both_sides_numbers'
   clusters:

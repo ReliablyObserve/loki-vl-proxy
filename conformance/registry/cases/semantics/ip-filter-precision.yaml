@@ -55,7 +55,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/proxy/postprocess.go:84 ip filtering'
-  loki: 'pkg/logql/log/ip.go'
+  loki: 'the ip() filter scans the line for an address and matches it exactly (test/e2e-compat ip_line_filter_test.go)'
   proxy: 'regexp approximation'
   planned_test: 'TestCompat_IPFilterForms (test/e2e-compat, group semantics)'
   clusters: []

@@ -775,6 +775,57 @@
      }
     }
    }
+  },
+  {
+   "commits": [
+    "5b5c7965fc"
+   ],
+   "date": "2026-11-16",
+   "measured_at": "2026-11-16T03:31:15Z",
+   "profiles": {
+    "aligned": {
+     "cold": {
+      "above": 2,
+      "below": 312,
+      "between": 13,
+      "close": 120,
+      "rows": 447,
+      "share_below": 69.8,
+      "share_green": 96.6
+     },
+     "sets": 36,
+     "warm": {
+      "above": 5,
+      "below": 22,
+      "between": 2,
+      "close": 500,
+      "rows": 529,
+      "share_below": 4.2,
+      "share_green": 98.7
+     }
+    },
+    "loki-defaults": {
+     "cold": {
+      "above": 8,
+      "below": 365,
+      "between": 14,
+      "close": 183,
+      "rows": 570,
+      "share_below": 64.0,
+      "share_green": 96.1
+     },
+     "sets": 39,
+     "warm": {
+      "above": 6,
+      "below": 187,
+      "between": 4,
+      "close": 568,
+      "rows": 765,
+      "share_below": 24.4,
+      "share_green": 98.7
+     }
+    }
+   }
   }
  ],
  "targets": {

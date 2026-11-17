@@ -6,6 +6,7 @@ proves:
   - loki_api_v1_labels
   - loki_api_v1_label_name_values
 consumer: explore
+evidence: needs recording
 why: |
   A 7-day /labels or /label/<name>/values is a scan of every row in the range
   in VictoriaLogs (0.8 GiB and 9-35 s per 7-day stream_field_names call on the
@@ -60,7 +61,9 @@ compare:
     log_contains:
       - limit_flag=-backend-max-concurrent-metadata-scans
 loki_parity: |
-  pkg/queue/queue.go ErrTooManyRequests, returned as 429 by the query frontend.
+  Loki's query frontend returns 429 when a tenant's outstanding requests pass
+  its queue limit (max_outstanding_requests_per_tenant,
+  https://grafana.com/docs/loki/latest/configure/).
   Loki never needs this limiter for /labels because its index answers the
   range without a scan; the message and status are its own.
 perf:
