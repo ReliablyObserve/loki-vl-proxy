@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A live tail no longer loses lines of a stream that VictoriaLogs makes searchable out of order. VictoriaLogs makes an
+  ingested row searchable when its in-memory buffer shard flushes (shards are filled in turn and each flushes a second
+  after its first row), and its live tail skips every row of a stream older than the newest one of that stream it already
+  sent. The native tail asked for `offset=0s` (read up to now), so a line written a few hundred milliseconds after
+  another could become searchable first and the earlier lines never arrived (rows 2 to 4 of 7 lines written 150 ms apart
+  in the e2e tail parity test, while Loki delivered all 7). The native tail now reads with VictoriaLogs' own default
+  offset of 5 s, so lines reach a native or `auto` tail about 5 s after they are written (Loki shows them within a
+  second). The polled tail lost such lines the same way; it now reads the last 5 s again on every poll and drops the
+  lines it already sent, so its latency does not change. The delay is the new flag `-tail.settle-delay` (Helm
+  `extraArgs.tail.settle-delay`, default `5s`): 1-2 s covers one single-node VictoriaLogs buffer flush, but not
+  clients that batch their pushes or a cluster `vlinsert` hop, and `0` reads up to now as before (and loses such
+  lines).
+
+## [2.331.0] - 2026-11-17
+
 ### Changed
 
 - The route parity test now also gates the VictoriaLogs requests every plan-corpus query sends under each request
@@ -33,18 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`semantics/unwrap-per-series-identity-label-filter`). A range longer than the step keeps the stream's series, as
   without the filter. Answers cached before are not served again. A `max` over `max_over_time` and a `min` over
   `min_over_time` with the filter read the rows of each group, as they do without it.
-- A live tail no longer loses lines of a stream that VictoriaLogs makes searchable out of order. VictoriaLogs makes an
-  ingested row searchable when its in-memory buffer shard flushes (shards are filled in turn and each flushes a second
-  after its first row), and its live tail skips every row of a stream older than the newest one of that stream it already
-  sent. The native tail asked for `offset=0s` (read up to now), so a line written a few hundred milliseconds after
-  another could become searchable first and the earlier lines never arrived (rows 2 to 4 of 7 lines written 150 ms apart
-  in the e2e tail parity test, while Loki delivered all 7). The native tail now reads with VictoriaLogs' own default
-  offset of 5 s, so lines reach a native or `auto` tail about 5 s after they are written (Loki shows them within a
-  second). The polled tail lost such lines the same way; it now reads the last 5 s again on every poll and drops the
-  lines it already sent, so its latency does not change. The delay is the new flag `-tail.settle-delay` (Helm
-  `extraArgs.tail.settle-delay`, default `5s`): 1-2 s covers one single-node VictoriaLogs buffer flush, but not
-  clients that batch their pushes or a cluster `vlinsert` hop, and `0` reads up to now as before (and loses such
-  lines).
 
 ## [2.330.0] - 2026-11-17
 
