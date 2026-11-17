@@ -11,7 +11,7 @@ mdx:
 ## API implementation and evidence
 
 <!-- api-status:start -->
-The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler runs Loki's create and cancel as VictoriaLogs delete tasks, and answers Loki's 500 for the list and for queries a VictoriaLogs filter cannot select. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 | Read API signal | Registry evidence |
 |---|---|
@@ -190,27 +190,24 @@ rules above.
 
 | Endpoint | Method | VL Backend |
 |---|---|---|
-| `/loki/api/v1/delete` | POST, PUT (Loki's create) | `/select/logsql/delete` |
+| `/loki/api/v1/delete` | POST, PUT (Loki's create) | `/delete/run_task` |
+| `/loki/api/v1/delete` | DELETE (Loki's cancel) | `/delete/active_tasks`, then `/delete/stop_task` |
+| `/loki/api/v1/delete` | GET (Loki's list) | not served (Loki's `500`) |
 
-The delete endpoint is the only write route, and it is registered only with `-delete-api-enabled=true`; by default every method on the path answers `404` (`404 page not found`), as Loki does with deletion disabled. When enabled it is **not functional against current VictoriaLogs**: the handler forwards to `/select/logsql/delete`, which VictoriaLogs rejects as an unsupported path (observed on v1.52.0; VictoriaLogs deletion uses the asynchronous `/delete/run_task` API), and the proxy answers it as Loki answers a failed call (`500`, never the backend's status). GET (list) and DELETE (cancel), which Loki also serves on this path, are not implemented and answer a bodyless `405` (an open gap). Do not rely on it for deletion; see [Security hardening migration](security-hardening-migration.md#remaining-delete-api-gap).
+The delete endpoint is the only write route, and it is registered only with `-delete-api-enabled=true`; by default every method on the path answers `404` (`404 page not found`), as Loki does with deletion disabled. When enabled, every answer after the token is Loki's (recorded from a Loki that serves the API):
 
-Requests are still validated before forwarding:
-
-- **Delete token**: `-delete-api-enabled=true` requires `-delete-api-auth-token`, and every request must carry it in `X-Delete-Token` or `Authorization: Bearer`; without it the answer is `401 delete authentication required`, before any other check (Loki itself has no authentication on this route). It is the delete API's own credential: the admin token does not open the route, and enabling deletes leaves the admin listener as it is
+- **Delete token**: `-delete-api-enabled=true` requires `-delete-api-auth-token`, and every request must carry it in `X-Delete-Token` or `Authorization: Bearer`; without it the answer is Loki's `401 no org id`, before any other check (Loki itself has no authentication on this route). It is the delete API's own credential: the admin token does not open the route, and enabling deletes leaves the admin listener as it is
 - **Tenant**: checked as Loki checks it (see [Tenant header](#tenant-header-x-scope-orgid))
-- **Confirmation header**: Requires `X-Delete-Confirmation: true`
-- **Query required**: Must target specific streams (no wildcards `{}` or `*`)
-- **Time range required**: Both `start` and `end` parameters mandatory
-- **Time range limit**: Maximum 30 days per delete operation
-- **Tenant scoping**: Deletes scoped to the requesting tenant's data
-- **Audit logging**: All delete operations logged at WARN level with tenant, query, time range, client IP
+- **Create** (`POST`/`PUT`): Loki's checks in Loki's order: `query` (`query not set`, `invalid query expression` for anything but a log query), `start` (`start time not set`; ten digits of unix seconds or RFC3339, else `invalid start time: require unix seconds or RFC3339 format`), `end` (now when not set; the same rule), `start time can't be greater than or equal to end time`, `deletes in the future are not allowed`, and for a query with a line or label filter `max_interval` (hours, minutes, seconds, at most the range). It answers `204` once VictoriaLogs has started the task, with a filter of the range (both ends included) and the rows the same log query reads, scoped by the tenant's `AccountID`/`ProjectID`
+- **Cancel** (`DELETE`): `204` without `request_id`; with one, the tenant's running task of that id is stopped (`204`), and any other id answers `404 could not find delete request with given id`
+- **Not served** (Loki's `500`): the list (`GET`), a query whose rows a VictoriaLogs filter cannot select (a parser such as `| json`, a filter on a parsed label, a formatting stage), a tenant tenant-label routing confines with its label (one mapped to its own account is served), the unmapped global tenant `*`, and a start of ten digits past 2262 (Loki reads it as 1702 and deletes back to then) or before 1678
+- **Audit logging**: every create and cancel is logged at WARN level with tenant, query, time range, client and the VictoriaLogs task id
 
 ### Example
 
 ```bash
 curl -X POST 'http://proxy:3100/loki/api/v1/delete' \
   -H "X-Delete-Token: $DELETE_API_AUTH_TOKEN" \
-  -H 'X-Delete-Confirmation: true' \
   -H 'X-Scope-OrgID: team-alpha' \
   -d 'query={app="nginx",env="staging"}&start=1704067200&end=1704153600'
 ```
@@ -306,7 +303,7 @@ Where Loki itself writes another shape, the proxy does the same:
 | `/prometheus/api/v1/alerts` | the same JSON, with `Content-Type: application/json`, which the alerts handler sets before it asks the ruler |
 | `/loki/api/v1/alerts`, `/api/prom/alerts` | proxy aliases of the alerts API, answered in the alerts shape above (they are not Loki routes) |
 | `/loki/api/v1/rules`, `/api/prom/rules` and their namespace and group forms | Go's `http.Error`: `text/plain; charset=utf-8`, `nosniff`, the message and a newline; a group that does not exist is `404` `group does not exist`; a path that cannot be parsed is `500` in the ruler's JSON |
-| `/loki/api/v1/delete` (with `-delete-api-enabled`) | the same `http.Error` shape; PUT and POST are the create request; GET (list) and DELETE (cancel) are not implemented and answer a bodyless `405` (open gap) |
+| `/loki/api/v1/delete` (with `-delete-api-enabled`) | the same `http.Error` shape; PUT and POST are the create request, DELETE the cancel; GET (the list) answers Loki's `500`; any other method is a bodyless `405` |
 | `/loki/api/v1/tail` after the upgrade | a close frame `1011` with the message, as Loki's tail endpoint does: for a failed VictoriaLogs call, a native stream that ends or breaks, a polled query that fails or answers something that is not JSON, and a stream line above 1 MiB. The message is the error layer's text cut to the 123 bytes a close frame holds. A VictoriaLogs call that fails for a reason a retry can fix (refused, reset, timed out, a stream that ends, a 429 or 5xx answer) does not close the tail until `-tail.backend-retry-window` (30s) has passed: the proxy reopens the stream, or polls again, from the last line sent without repeating or skipping one; a row that is not JSON, a line above 1 MiB and a 4xx answer other than 429 close it at once. A client that disconnects gets nothing, and its VictoriaLogs stream is dropped. A first probe that exceeds `-backend-timeout` is answered before the upgrade with `504` and the full deadline text |
 
 The status codes below follow Loki's Prometheus-style API handler and are the statuses of the message above; there is no `errorType` field on the wire:

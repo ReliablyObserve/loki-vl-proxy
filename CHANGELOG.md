@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
+
+### Fixed
+
+- A live tail no longer loses lines of a stream that VictoriaLogs makes searchable out of order. VictoriaLogs makes an
+  ingested row searchable when its in-memory buffer shard flushes (shards are filled in turn and each flushes a second
+  after its first row), and its live tail skips every row of a stream older than the newest one of that stream it already
+  sent. The native tail asked for `offset=0s` (read up to now), so a line written a few hundred milliseconds after
+  another could become searchable first and the earlier lines never arrived (rows 2 to 4 of 7 lines written 150 ms apart
+  in the e2e tail parity test, while Loki delivered all 7). The native tail now reads with VictoriaLogs' own default
+  offset of 5 s, so lines reach a native or `auto` tail about 5 s after they are written (Loki shows them within a
+  second). The polled tail lost such lines the same way; it now reads the last 5 s again on every poll and drops the
+  lines it already sent, so its latency does not change. The delay is the new flag `-tail.settle-delay` (Helm
+  `extraArgs.tail.settle-delay`, default `5s`): 1-2 s covers one single-node VictoriaLogs buffer flush, but not
+  clients that batch their pushes or a cluster `vlinsert` hop, and `0` reads up to now as before (and loses such
+  lines).
+
+## [2.326.0] - 2026-11-17
+
+### Fixed
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
+  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
+  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
+  answers are unchanged.
+
+## [2.325.0] - 2026-11-17
+
 ### Fixed
 
 - After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
@@ -24,32 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
   Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
   the body). A request that fits one chunk reads exactly as before.
-- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
-  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
-  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
-  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
-  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
-  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
-  answers are unchanged.
-- A live tail no longer loses lines of a stream that VictoriaLogs makes searchable out of order. VictoriaLogs makes an
-  ingested row searchable when its in-memory buffer shard flushes (shards are filled in turn and each flushes a second
-  after its first row), and its live tail skips every row of a stream older than the newest one of that stream it already
-  sent. The native tail asked for `offset=0s` (read up to now), so a line written a few hundred milliseconds after
-  another could become searchable first and the earlier lines never arrived (rows 2 to 4 of 7 lines written 150 ms apart
-  in the e2e tail parity test, while Loki delivered all 7). The native tail now reads with VictoriaLogs' own default
-  offset of 5 s, so lines reach a native or `auto` tail about 5 s after they are written (Loki shows them within a
-  second). The polled tail lost such lines the same way; it now reads the last 5 s again on every poll and drops the
-  lines it already sent, so its latency does not change. The delay is the new flag `-tail.settle-delay` (Helm
-  `extraArgs.tail.settle-delay`, default `5s`): 1-2 s covers one single-node VictoriaLogs buffer flush, but not
-  clients that batch their pushes or a cluster `vlinsert` hop, and `0` reads up to now as before (and loses such
-  lines).
-
-### Changed
-
-- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
-  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
-  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
-  translator. No answer, request or cache key changes.
 
 ## [2.324.0] - 2026-11-17
 

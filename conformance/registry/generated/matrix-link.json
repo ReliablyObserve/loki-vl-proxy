@@ -1,6 +1,6 @@
 {
   "registry": {
-    "cases_defined": 411,
+    "cases_defined": 412,
     "live_cases_blocked": 1,
     "live_cases_gap": 0,
     "live_cases_hold": 0,
@@ -9,7 +9,7 @@
     "scores": {
       "coverage": 0.7037,
       "implementation": 0.9259,
-      "native_share_of_implemented": 0.24
+      "native_share_of_implemented": 0.56
     }
   },
   "tracks": [

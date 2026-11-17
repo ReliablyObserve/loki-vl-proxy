@@ -193,22 +193,6 @@ func TestCritical_BinaryMetricQuery_Modulo(t *testing.T) {
 // CRITICAL: Delete API endpoint — safeguards
 // =============================================================================
 
-func TestCritical_DeleteEndpoint_RequiresConfirmationHeader(t *testing.T) {
-	p := newGapTestProxy(t, "http://unused")
-	enableDeleteAPIForTest(p)
-	mux := http.NewServeMux()
-	p.RegisterRoutes(mux)
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/loki/api/v1/delete?query={app=\"nginx\"}&start=1234567890&end=1234567900", nil)
-	// No X-Delete-Confirmation header
-	serveWithDeleteToken(mux, w, r)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 without confirmation header, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
 func TestCritical_DeleteEndpoint_RequiresQuery(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
 	enableDeleteAPIForTest(p)
@@ -238,42 +222,6 @@ func TestCritical_DeleteEndpoint_RequiresTimeRange(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 without time range, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestCritical_DeleteEndpoint_RejectsWildcardQuery(t *testing.T) {
-	p := newGapTestProxy(t, "http://unused")
-	enableDeleteAPIForTest(p)
-	mux := http.NewServeMux()
-	p.RegisterRoutes(mux)
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", `/loki/api/v1/delete?query={}&start=1234567890&end=1234567900`, nil)
-	r.Header.Set("X-Delete-Confirmation", "true")
-	serveWithDeleteToken(mux, w, r)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for wildcard query, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestCritical_DeleteEndpoint_RejectsTooWideTimeRange(t *testing.T) {
-	p := newGapTestProxy(t, "http://unused")
-	enableDeleteAPIForTest(p)
-	mux := http.NewServeMux()
-	p.RegisterRoutes(mux)
-
-	w := httptest.NewRecorder()
-	// 31 days — exceeds 30-day safety limit
-	start := time.Now().Add(-31 * 24 * time.Hour).Unix()
-	end := time.Now().Unix()
-	r := httptest.NewRequest("POST",
-		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%d&end=%d`, start, end), nil)
-	r.Header.Set("X-Delete-Confirmation", "true")
-	serveWithDeleteToken(mux, w, r)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for >30 day range, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -318,11 +266,11 @@ func TestCritical_DeleteEndpoint_ScopesToTenant(t *testing.T) {
 }
 
 func TestCritical_DeleteEndpoint_SuccessfulDelete(t *testing.T) {
-	var receivedQuery string
+	var receivedPath, receivedFilter string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
-		receivedQuery = r.FormValue("query")
-		w.WriteHeader(http.StatusNoContent)
+		receivedPath, receivedFilter = r.URL.Path, r.FormValue("filter")
+		_, _ = w.Write([]byte(`{"task_id":"1"}`))
 	}))
 	defer vlBackend.Close()
 
@@ -343,8 +291,8 @@ func TestCritical_DeleteEndpoint_SuccessfulDelete(t *testing.T) {
 		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
 	}
 
-	if receivedQuery == "" {
-		t.Error("expected translated query to be forwarded to VL")
+	if receivedPath != "/delete/run_task" || !strings.Contains(receivedFilter, `app:="nginx"`) && !strings.Contains(receivedFilter, `{app="nginx"}`) {
+		t.Errorf("VictoriaLogs got %s filter=%q, want a delete task of the query's rows", receivedPath, receivedFilter)
 	}
 }
 
@@ -501,23 +449,6 @@ func TestStatusCapture_WriteHeader(t *testing.T) {
 // =============================================================================
 // Delete endpoint: only POST method allowed
 // =============================================================================
-
-func TestCritical_DeleteEndpoint_OnlyPOST(t *testing.T) {
-	p := newGapTestProxy(t, "http://unused")
-	enableDeleteAPIForTest(p)
-	mux := http.NewServeMux()
-	p.RegisterRoutes(mux)
-
-	// GET should be rejected
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", `/loki/api/v1/delete?query={app="nginx"}&start=1&end=2`, nil)
-	r.Header.Set("X-Delete-Confirmation", "true")
-	serveWithDeleteToken(mux, w, r)
-
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405 for GET on delete, got %d", w.Code)
-	}
-}
 
 // =============================================================================
 // Write endpoint still blocked (regression test)
