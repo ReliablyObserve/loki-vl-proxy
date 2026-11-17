@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.320.1] - 2026-11-17
+
+### Changed
+
+- The query plan no longer describes a `vector(n)` inside a chain of binary operations as a constant when it is
+  spelled with a blank before its parenthesis (`vector (2) > on(x) (rate(...) * 2)`, `(vector (2) + sum(...)) * 2`):
+  the proxy's binary route reads each operation of a chain on its own and sends that spelling on as a query, so the
+  plan leaves such a chain to the translator, as it already did for a `vector (n)` next to a query (registry
+  `semantics/vector-call-blank-before-parenthesis-as-query`, still open). No answer, request or cache key changes.
+
 ## [2.320.0] - 2026-11-17
 
 ### Performance
