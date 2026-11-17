@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
+  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
+  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
+  answers are unchanged.
+
+## [2.324.0] - 2026-11-17
+
 ### Changed
 
 - The default `-max-stats-query-series`, the proxy's `max_query_series`, rises from 500 to 1000. The proxy answers
@@ -19,16 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-tenant-limits` or `-tenant-default-limits`. Sizing: `-backend-max-buffered-response-bytes` (64 MiB by default)
   holds about 1,500 dense series over 1,000 steps, so a full 1000-series result over 1,000 steps (about 40 MB) fits,
   and over about 1,600 steps the byte budget has to be raised with the cap.
-
-### Fixed
-
-- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
-  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
-  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
-  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
-  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
-  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
-  answers are unchanged.
 
 ## [2.323.0] - 2026-11-17
 
