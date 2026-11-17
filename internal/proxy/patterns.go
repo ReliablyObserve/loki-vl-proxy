@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"gopkg.in/yaml.v3"
 )
 
@@ -244,7 +244,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logsqlQuery, err := p.translatePatternQuery(r.Context(), query)
-	var parseErr *translator.ParseError
+	var parseErr *translate.ParseError
 	if errors.As(err, &parseErr) {
 		status := p.fail(w, r, queryRefusal(err))
 		p.metrics.RecordRequest("patterns", status, time.Since(start))

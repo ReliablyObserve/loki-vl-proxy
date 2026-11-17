@@ -11,7 +11,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 type binaryEvaluationKey struct{}
@@ -371,7 +371,7 @@ func alignBinaryRangeRequest(r *http.Request) *http.Request {
 	return aligned
 }
 
-func validateBinaryVectorCardinality(ctx context.Context, left, right []byte, op string, vm *translator.VectorMatchInfo, leftScalar, rightScalar bool) (float64, error) {
+func validateBinaryVectorCardinality(ctx context.Context, left, right []byte, op string, vm *physical.Matching, leftScalar, rightScalar bool) (float64, error) {
 	if leftScalar || rightScalar || op == "and" || op == "or" || op == "unless" {
 		return 0, nil
 	}

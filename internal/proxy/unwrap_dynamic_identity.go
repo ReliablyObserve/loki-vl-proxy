@@ -12,7 +12,6 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // The handlers' side of the dynamic identity of a parser (lower.DynamicUnwrapIdentity): sum, max, min or avg over a
@@ -63,7 +62,7 @@ func (p *Proxy) lowersDynamicIdentity(query string) bool {
 	p.configMu.RLock()
 	streamFields := p.streamFieldsMap
 	p.configMu.RUnlock()
-	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
+	prof := loweringProfile(translate.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
 	_, err := lower.PlanQuery(logqlpkg.CanonicalizeLogRanges(query), plan, prof)
 	return err == nil
 }
