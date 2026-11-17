@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "label": "GHCR pulls",
-  "message": "22.9K",
+  "message": "23K",
   "color": "blue",
   "namedLogo": "docker"
 }
