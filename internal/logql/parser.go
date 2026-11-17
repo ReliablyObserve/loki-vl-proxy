@@ -279,6 +279,8 @@ type parser struct {
 	pipePos int
 	// canon is set by CanonicalizeLogRanges only.
 	canon *canonState
+	// spell is set by CanonicalSpelling only.
+	spell *spellState
 	// flagSpans collects the spans of the logfmt flags read, when not nil (StripParserFlags).
 	flagSpans *[][2]int
 	// rangeDepth is above 0 inside the argument of a range aggregation, where an unwrap stage may stand. plainUnwrapAt
@@ -476,6 +478,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 	if p.cur.Typ == TokLParen {
 		open := p.pos()
 		p.advance()
+		first := p.pos()
 		inner, err := p.parseExpr()
 		if err != nil {
 			return nil, err
@@ -485,6 +488,9 @@ func (p *parser) parsePrimary() (Expr, error) {
 		}
 		if _, ok := inner.(*LogQuery); ok && p.canon != nil {
 			p.addRewrite(open, p.pos()+1, strings.TrimSpace(p.sc.src[p.canon.queryStart:p.canon.queryEnd]))
+		}
+		if p.spell != nil {
+			p.spellParens(open, first, inner)
 		}
 		p.advance()
 		return inner, nil
@@ -505,6 +511,9 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 	// The name's own span: a name written with the Kelvin sign (approx_topK) is longer than its lower case value.
 	startPos := p.pos()
 	p.advance()
+	if p.spell != nil && p.cur.Typ == TokLParen {
+		p.spellGap(p.prevEnd, p.pos()) // `vector (1)`
+	}
 	var treeErr *string
 	if name == "approx_topk" && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
 		// Loki's grammar reads a grouping before approx_topk's arguments and refuses it over the parsed tree.
@@ -520,9 +529,15 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 	if p.cur.Typ == TokLParen {
 		p.advance() // consume '('
 		argStart := p.pos()
+		if p.spell != nil {
+			p.spellGap(p.prevEnd, argStart)
+		}
 		endPos, ok := p.consumeBalancedParens()
 		if !ok || endPos < startPos {
 			return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
+		}
+		if p.spell != nil {
+			p.spellOpaqueCall(name, startPos, argStart, endPos)
 		}
 		if p.canon != nil {
 			// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
@@ -534,7 +549,7 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 		}
 		raw := strings.TrimSpace(p.sc.src[startPos:endPos])
 		o := &OpaqueMetricExpr{Raw: raw, Func: name, treeErr: treeErr}
-		if p.canon == nil {
+		if p.canon == nil && p.spell == nil {
 			typeOpaqueCall(o)
 			p.noteOpaqueCall(o.Inner)
 		}
@@ -1812,6 +1827,9 @@ func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
 			depth--
 			if depth == 0 {
 				endPos = p.sc.pos // right after the closing ')'
+				if p.spell != nil {
+					p.spellGap(p.prevEnd, p.pos())
+				}
 			}
 		}
 		p.advance()
@@ -2056,7 +2074,13 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 	if p.cur.Typ != TokLParen {
 		return nil, p.syntaxErrorAt("(")
 	}
+	if p.spell != nil {
+		p.spellGap(p.prevEnd, p.pos()) // `rate ({...}[5m])`
+	}
 	p.advance()
+	if p.spell != nil {
+		p.spellCallOpen()
+	}
 
 	ra := &RangeAggregation{Op: op}
 	p.rangeDepth++
@@ -2078,6 +2102,9 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 	}
 	if p.cur.Typ != TokRParen {
 		return nil, p.syntaxErrorAt(")")
+	}
+	if p.spell != nil {
+		p.spellGap(p.prevEnd, p.pos())
 	}
 	if form.alt && p.canon != nil {
 		// op(param, selector pipeline trailing-pipeline [range] offset): the
@@ -2276,6 +2303,7 @@ func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 
 // parseVectorAggregation parses `sum by (...) (inner)`.
 func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error) {
+	nameEnd := p.sc.pos
 	p.advance() // consume function name
 
 	va := &VectorAggregation{Op: op}
@@ -2296,6 +2324,12 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 		return nil, p.syntaxErrorAt("(")
 	}
 	p.advance()
+	if p.spell != nil {
+		if va.Grouping == nil {
+			p.spellGap(nameEnd, p.prevEnd-1) // `sum (rate(...))`
+		}
+		p.spellCallOpen()
+	}
 
 	// topk/bottomk carry a numeric parameter before the inner expression.
 	if op == VectorTopK || op == VectorBottomK {
@@ -2361,6 +2395,10 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 
 	if p.cur.Typ != TokRParen {
 		return nil, p.syntaxErrorAt("")
+	}
+	if p.spell != nil {
+		p.spellGap(p.prevEnd, p.pos())
+		p.spellArgumentParens(inner) // `sum((rate(...) + 1))`
 	}
 	p.advance()
 

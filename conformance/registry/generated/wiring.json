@@ -569,6 +569,7 @@
       "internal/proxy/binary_ignoring_matching_test.go",
       "internal/proxy/binary_matching_differential_test.go",
       "internal/proxy/binary_outer_sum_ignoring_test.go",
+      "internal/proxy/canonical_spelling_loki_test.go",
       "internal/proxy/chunked_range_windows_loki_test.go",
       "internal/proxy/detected_level_filter_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
@@ -2216,7 +2217,10 @@
       "internal/queryplan/lower/unspaced_parser_test.go"
     ],
     "semantics/translator-reads-blank-before-range-call-as-text": [
+      "internal/logql/canonical_spelling_test.go",
+      "internal/proxy/canonical_spelling_loki_test.go",
       "internal/proxy/keyword_fold_runes_test.go",
+      "internal/querycorpus/canonical_spelling_loki_test.go",
       "internal/querycorpus/grammar_sweep_test.go",
       "internal/querycorpus/vector_agg_blank_grid_test.go",
       "internal/queryplan/lower/range_agg_test.go"
@@ -2244,6 +2248,9 @@
       "internal/queryplan/lower/unwrap_blank_test.go"
     ],
     "semantics/translator-reads-parenthesized-metric-as-text": [
+      "internal/logql/canonical_spelling_test.go",
+      "internal/proxy/canonical_spelling_loki_test.go",
+      "internal/querycorpus/canonical_spelling_loki_test.go",
       "internal/querycorpus/grammar_sweep_test.go",
       "internal/querycorpus/known_divergence_test.go"
     ],
@@ -2512,7 +2519,10 @@
       "internal/querycorpus/grammar_sweep_test.go"
     ],
     "semantics/vector-call-blank-before-parenthesis-as-query": [
+      "internal/logql/canonical_spelling_test.go",
+      "internal/proxy/canonical_spelling_loki_test.go",
       "internal/proxy/keyword_fold_runes_test.go",
+      "internal/querycorpus/canonical_spelling_loki_test.go",
       "internal/queryplan/lower/binop_vector_test.go"
     ],
     "semantics/vl-refusal-is-plan-defect": [
@@ -2874,6 +2884,11 @@
       "semantics/parser-reads-unicode-blank-as-white-space",
       "semantics/translator-reads-only-space-between-tokens"
     ],
+    "internal/logql/canonical_spelling_test.go": [
+      "semantics/translator-reads-blank-before-range-call-as-text",
+      "semantics/translator-reads-parenthesized-metric-as-text",
+      "semantics/vector-call-blank-before-parenthesis-as-query"
+    ],
     "internal/logql/comments_offsets_test.go": [
       "semantics/comments-signed-compound-offsets",
       "semantics/proxy-rejects-valid-logql"
@@ -3228,6 +3243,12 @@
     ],
     "internal/proxy/build_phase_window_loki_test.go": [
       "semantics/loki-build-phase-window"
+    ],
+    "internal/proxy/canonical_spelling_loki_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/translator-reads-blank-before-range-call-as-text",
+      "semantics/translator-reads-parenthesized-metric-as-text",
+      "semantics/vector-call-blank-before-parenthesis-as-query"
     ],
     "internal/proxy/capture_error_replay_test.go": [
       "limits/series-limit-error",
@@ -4800,6 +4821,11 @@
     "internal/querycorpus/binop_without_empty_test.go": [
       "semantics/binary-operand-without-empty-collapses"
     ],
+    "internal/querycorpus/canonical_spelling_loki_test.go": [
+      "semantics/translator-reads-blank-before-range-call-as-text",
+      "semantics/translator-reads-parenthesized-metric-as-text",
+      "semantics/vector-call-blank-before-parenthesis-as-query"
+    ],
     "internal/querycorpus/detected_level_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -6218,7 +6244,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 734,
+  "tests_with_markers": 737,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

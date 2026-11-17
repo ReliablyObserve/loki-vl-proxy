@@ -70,16 +70,39 @@ var (
 // it (the handlers answer `| logfmt --strict` as `| logfmt`). Loki's lexer
 // is case-insensitive for keywords (SUM BY, TOPK(...), RATE(...), OFFSET) and
 // skips comments; the translator and the handlers match the lower-case spelling
-// and read the query text without comments.
-func lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
+// and read the query text without comments. A query Loki accepts then gets its
+// metric calls and parentheses in one spelling (logql.CanonicalSpelling): the
+// handlers, the translation and the response key read `rate ({a="x"}[5m])`,
+// `(rate({a="x"}[5m]))` and `vector (1)` as `rate({a="x"}[5m])` and `vector(1)`,
+// as Loki does. A query Loki rejects keeps its spelling, so the validation answers
+// Loki's error for the text as sent.
+func (p *Proxy) lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if query := r.FormValue("query"); query != "" {
-			if lower := logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(query))); lower != query {
-				setRequestQuery(r, lower)
+			if text := requestQueryText(query, p.limits().QueryLengthBytes); text != query {
+				setRequestQuery(r, text)
 			}
 		}
 		next(w, r)
 	}
+}
+
+// RequestQueryText is the query text the handlers read for a query sent as it is, under the default query length
+// limit (lowercaseQueryKeywords): the corpus shadows hold the lowering to what the proxy serves for it.
+func RequestQueryText(query string) string {
+	return requestQueryText(query, defaultExecutionLimits().QueryLengthBytes)
+}
+
+// requestQueryText is the query as lowercaseQueryKeywords leaves it for the handlers, under the query length limit
+// maxQueryBytes: a query over it keeps its spelling for the limit's error.
+func requestQueryText(query string, maxQueryBytes int) string {
+	lower := logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(query)))
+	// The pre-check costs one scan of the bytes; only a query it names is validated (memoised, as the validation
+	// that follows reads it) and parsed for its spelling.
+	if logql.CanonicalSpellingCandidate(lower) && queryLengthLimit(query, maxQueryBytes) == nil && cachedQueryValidation(lower).msg == "" {
+		return logql.CanonicalSpellingOfValid(lower)
+	}
+	return lower
 }
 
 // setRequestQuery replaces the query parameter of a parsed request wherever a
