@@ -40,12 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loki_vl_proxy_request_coalesced_success_total`, `loki_vl_proxy_request_flight_saved_total`,
   `loki_vl_proxy_error_cache_entries` and `loki_vl_proxy_error_cache_bytes`. Helm: the same flags under
   `extraArgs`.
-- A metric read as raw rows (a function the ordered JSON evaluator does not own, such as `sort(rate(... | json [2m]))`
-  or `topk(...)`) spends less time per row. The check that makes a JSON parser error fail such a metric as Loki does now
-  reads the row's time, stream, level and the check's mark in one pass over the row's keys, wherever VictoriaLogs places
-  the mark, instead of a lookup of its own, and a read polls its request's cancellation once per row without walking the
-  request's context chain (the check adds one layer to it instead of two). Answers, statuses and the requests sent to
-  VictoriaLogs do not change.
 
 ### Fixed
 
@@ -56,6 +50,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failed answer held while the configuration was reloaded (tenant map, field mappings) is never served after the
   reload, even when its request was still running during the reload: held answers are keyed by a configuration
   epoch that every reload changes.
+
+## [2.334.0] - 2026-11-17
+
+### Changed
+
+- A metric read as raw rows (a function the ordered JSON evaluator does not own, such as `sort(rate(... | json [2m]))`
+  or `topk(...)`) spends less time per row. The check that makes a JSON parser error fail such a metric as Loki does now
+  reads the row's time, stream, level and the check's mark in one pass over the row's keys, wherever VictoriaLogs places
+  the mark, instead of a lookup of its own, and a read polls its request's cancellation once per row without walking the
+  request's context chain (the check adds one layer to it instead of two). Answers, statuses and the requests sent to
+  VictoriaLogs do not change.
+
+### Fixed
 - `query_range` with a range longer than the step (sliding windows, the `$__auto` steps Grafana sends under a `[5m]`
   range) now reads Loki's series for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`,
   `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream

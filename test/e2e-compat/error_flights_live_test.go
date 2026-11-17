@@ -229,6 +229,26 @@ func efSeriesLimit(app, start, end string) url.Values {
 	return url.Values{"query": {fmt.Sprintf(`sum by (level) (count_over_time({app=%q}[1m]))`, app)}, "start": {start}, "end": {end}, "step": {"60"}}
 }
 
+// efWaitSeriesLimit waits until VictoriaLogs' stats see app's series, so the
+// metric answers Loki's series limit; each try uses another step from
+// firstStep, so no answer of an earlier try is reused.
+func efWaitSeriesLimit(t *testing.T, app, start, end string, firstStep int) efAnswer {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for step := firstStep; ; step++ {
+		p := efSeriesLimit(app, start, end)
+		p.Set("step", strconv.Itoa(step))
+		a := efGet(t, p)
+		if a.code == http.StatusBadRequest && strings.Contains(string(a.body), "maximum number of series (1) reached for a single query") {
+			return a
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("want Loki's series limit, got %d %.300s", a.code, a.body)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // Fifty identical requests over the series limit send the calls of one; every
 // answer is the same Loki series-limit error byte for byte; a repeat is the
 // held answer with no call until the data TTL (5 s) passes.
@@ -243,12 +263,7 @@ func TestErrorFlightsLive_SeriesLimitHeldForDataTTL(t *testing.T) {
 	efWaitLines(t, efLogParams(app, start, end), 15)
 	params := efSeriesLimit(app, start, end)
 
-	other := efSeriesLimit(app, start, end)
-	other.Set("step", "120")
-	one := efGet(t, other)
-	if one.code != http.StatusBadRequest || !strings.Contains(string(one.body), "maximum number of series (1) reached for a single query") {
-		t.Fatalf("want Loki's series limit, got %d %.300s", one.code, one.body)
-	}
+	one := efWaitSeriesLimit(t, app, start, end, 117)
 	before := efBackendCalls(t)
 	answers := efBurst(50, func(int) efAnswer { return efGet(t, params) })
 	calls := efBackendCalls(t) - before
@@ -284,6 +299,7 @@ func TestErrorFlightsLive_HeldFailureIsolation(t *testing.T) {
 	efIngest(t, app, at, []string{"info", "warn"}, 5)
 	start, end := efWindow(at)
 	efWaitLines(t, efLogParams(app, start, end), 10)
+	efWaitSeriesLimit(t, app, start, end, 217)
 	base := efSeriesLimit(app, start, end)
 	base.Set("limit", "100")
 	base.Set("direction", "backward")
@@ -380,6 +396,11 @@ func TestErrorFlightsLive_ZOutageHeldAndRecovers(t *testing.T) {
 		if a.err != nil || a.code < 500 || !bytes.Equal(a.body, burst[0].body) {
 			t.Fatalf("outage answer %d %q, want one failure for all", a.code, a.body)
 		}
+	}
+	// The stack's main proxy, in front of the same stopped VictoriaLogs,
+	// answers the same failure.
+	if main := efDo(t, context.Background(), proxyURL, http.MethodGet, "/loki/api/v1/query_range", params, "0"); main.code != burst[0].code || !bytes.Equal(main.body, burst[0].body) {
+		t.Fatalf("the main proxy answers the outage with %d %q, the flight with %d %q", main.code, main.body, burst[0].code, burst[0].body)
 	}
 	burstHeader := 0
 	for _, a := range burst {

@@ -739,6 +739,7 @@ type Proxy struct {
 	errorFlights                          *cache.ErrorFlights
 	errorFlightCounters                   errorFlightCounters
 	windowFreeHeldUntil                   atomic.Int64 // latest expiry of a failure held for every window
+	windowFreeSeenUntil                   atomic.Int64 // until when requests join a window-free probe
 	errorCacheDisabled                    bool
 	errorCacheTransientTTL                time.Duration
 	errorCacheDataTTL                     time.Duration
