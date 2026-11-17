@@ -42,10 +42,6 @@ const (
 	DetectedLevelFilterStored = translate.DetectedLevelFilterStored
 )
 
-// LevelWitnessField is the field the proxy sets on a row holding a level field or body key a narrowed chain does
-// not read.
-const LevelWitnessField = translate.LevelWitnessField
-
 const (
 	groupChainDelete = translate.GroupChainDelete
 	levelChainEnd    = translate.LevelChainEnd

@@ -10,7 +10,6 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	fj "github.com/valyala/fastjson"
 )
 
@@ -52,22 +51,22 @@ func unwrapManualSpecs(spec statsCompatSpec, manualFunc string) (stats, raw stat
 // The stats a bucket keeps for the functions that merge from buckets. The value is the gate's converted field.
 const (
 	// avgBucketSum is the sum and the sample count of a bucket: avg over time divides the window's sum by its count.
-	avgBucketSum = "sum(" + translator.UnwrapValueAlias + ") as __lvp_sum, count() as __sample_count"
+	avgBucketSum = "sum(" + translate.UnwrapValueAlias + ") as __lvp_sum, count() as __sample_count"
 	// deviationBucketName names the population standard deviation of a bucket.
 	deviationBucketName = "__lvp_sd"
 	// deviationMeanName names the mean of a bucket.
 	deviationMeanName = "__lvp_avg"
 	// deviationBucketStats is the mean, the sample count and the population standard deviation of a bucket.
-	deviationBucketStats = "avg(" + translator.UnwrapValueAlias + ") as " + deviationMeanName + ", count() as __sample_count, stddev(" + translator.UnwrapValueAlias + ") as " + deviationBucketName
+	deviationBucketStats = "avg(" + translate.UnwrapValueAlias + ") as " + deviationMeanName + ", count() as __sample_count, stddev(" + translate.UnwrapValueAlias + ") as " + deviationBucketName
 	// rowBucketInner names the row a first or last bucket picks (VictoriaLogs' row_min and row_max answer the row
 	// as a JSON object of the fields asked for).
 	rowBucketInner = "__lvp_inner"
 	// firstBucketStats and lastBucketStats pick the earliest and the latest row of a bucket.
-	firstBucketStats = "row_min(_time, " + translator.UnwrapValueAlias + ") as " + rowBucketInner
-	lastBucketStats  = "row_max(_time, " + translator.UnwrapValueAlias + ") as " + rowBucketInner
+	firstBucketStats = "row_min(_time, " + translate.UnwrapValueAlias + ") as " + rowBucketInner
+	lastBucketStats  = "row_max(_time, " + translate.UnwrapValueAlias + ") as " + rowBucketInner
 	// rowBucketUnpack reads the value out of the picked row, and rowBucketValue takes it again per group: the
 	// groups of a bucket hold one row each.
-	rowBucketUnpack = "| unpack_json from " + rowBucketInner + " fields (" + translator.UnwrapValueAlias + ") | math " + translator.UnwrapValueAlias + " as " + rowBucketInner
+	rowBucketUnpack = "| unpack_json from " + rowBucketInner + " fields (" + translate.UnwrapValueAlias + ") | math " + translate.UnwrapValueAlias + " as " + rowBucketInner
 	rowBucketValue  = "max(" + rowBucketInner + ") as c"
 )
 
@@ -85,7 +84,7 @@ func rowBucketPick(statsAggFunc, by string) string {
 func unwrapBucketAgg(manualFunc string) string {
 	switch manualFunc {
 	case "sum", "max", "min":
-		return manualFunc + "(" + translator.UnwrapValueAlias + ") as c"
+		return manualFunc + "(" + translate.UnwrapValueAlias + ") as c"
 	case "avg":
 		return avgBucketSum
 	case "stddev", "stdvar":
@@ -95,7 +94,7 @@ func unwrapBucketAgg(manualFunc string) string {
 	case "last":
 		return lastBucketStats
 	case "unwrap_rate":
-		return "sum(" + translator.UnwrapValueAlias + ") as c, count() as __sample_count"
+		return "sum(" + translate.UnwrapValueAlias + ") as c, count() as __sample_count"
 	}
 	return ""
 }

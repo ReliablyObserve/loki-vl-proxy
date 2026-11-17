@@ -11,7 +11,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // The constructs served from the typed query-plan lowering instead of the string translator. A log query whose
@@ -45,7 +45,7 @@ var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser", "JSON"
 
 // loweringProfile is the lowering's view of the options the string translator is given: the one place the
 // translator's options become a lower.Profile, shared by the flip and the live shadow.
-func loweringProfile(label translator.LabelTranslateFunc, streamFields map[string]bool, caps logsql.Capabilities, keepLine bool) lower.Profile {
+func loweringProfile(label translate.LabelTranslateFunc, streamFields map[string]bool, caps logsql.Capabilities, keepLine bool) lower.Profile {
 	return lower.Profile{Caps: caps, Label: label, StreamFields: streamFields, KeepLine: keepLine}
 }
 
