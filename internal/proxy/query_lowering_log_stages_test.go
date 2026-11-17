@@ -250,6 +250,10 @@ func FuzzLogFlipGate(f *testing.F) {
 		`{app="a"} | json | label_format x="{{.a}}", y=z`, `{app="a"} | json | line_format "{{.a}} {{.b}}"`,
 		`{app="a"} | pattern "<_> <m> <_>" | m="GET"`, "{app=\"a\"} | regexp `(?P<m>[A-Z]+) ` | m=\"GET\"",
 		`{app="a"} | logfmt | line_format "{{.msg}}" | json | level="error"`, `{app="a"} | json | _time="x"`,
+		// A blank Loki skips where the translator reads only a space (found by this target on main).
+		"{A=\"0\"}|keep\rA", "{A=\"0\"}|drop\tA", "{A=\"0\"} |\tjson\nA", "{A=\"0\"}|logfmt\r\na", "{A=\"0\"} | json |\tline_format\t\"x\"",
+		"{A=\"0\"}  |  label_format  a=b", "{A=\"0\"}|regexp\t`(?P<a>x)`", "{A=\"0\"}|pattern\r\"<a> x\"", "{A=\"0\"}|\ta=\"b\"",
+		"({A=\"0\"} |A0> + 00)", "({A=\"0\"} | json |\tkeep\ta)",
 		// A blank Loki skips other than a space before a parser's expression (the translator copies the parser as written,
 		// semantics/translator-reads-only-space-between-tokens), capture names with a leading digit, and the characters
 		// Loki rejects there.
@@ -267,7 +271,8 @@ func FuzzLogFlipGate(f *testing.F) {
 	withFlippedLogStages(on, logStageFlipCandidates...)
 	off.flippedLogStages = 0
 	f.Fuzz(func(t *testing.T, q string) {
-		if len(q) > 512 || !strings.HasPrefix(strings.TrimSpace(q), "{") {
+		// A log query, written in parentheses too (`({A="0"} |A0> + 00)`, which the metric gate leaves here).
+		if len(q) > 512 || !strings.HasPrefix(logqlpkg.CanonicalizeLogRanges(strings.TrimSpace(q)), "{") {
 			return
 		}
 		// The query as the handlers and the translation read it (lowercaseQueryKeywords), and only one the request's

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("sum WİTHOUT()(rAte(0y")

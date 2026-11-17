@@ -92,3 +92,52 @@ func screenVectorOperands(query string, n *queryplan.BinOp) error {
 	}
 	return nil
 }
+
+// screenChainVectors turns away a chain (a binary operation with an operand that is itself one) that holds a vector(n)
+// written in a spelling the proxy's route sends on as a query. The route evaluates each operation of a chain on its
+// own and reads each vector(n) operand from its printed text, which keeps the call as written (`vector (1)` stays a
+// query to it, semantics/vector-call-blank-before-parenthesis-as-query), while the plan holds the number only. The
+// chain is not split here: every word vector outside quoted text must be written `vector(` (VectorLiteral), or the
+// chain is left to the translator (BinOp operand spelling), so the lowering never describes a constant the route
+// does not answer.
+func screenChainVectors(query string, n *queryplan.BinOp) error {
+	if !chainOperand(n) || !holdsVectorLit(n) {
+		return nil
+	}
+	for i := 0; i < len(query); i++ {
+		switch c := query[i]; {
+		case c == '"' || c == '`':
+			i = skipQuoted(query, i)
+		case c|0x20 == 'v' && (i == 0 || !isNameByte(query[i-1])) && len(query)-i >= 6 && strings.EqualFold(query[i:i+6], "vector") &&
+			(len(query)-i == 6 || !isNameByte(query[i+6])):
+			if !strings.HasPrefix(query[i:], "vector(") {
+				return errBinOperandSpelling
+			}
+			i += 5
+		}
+	}
+	return nil
+}
+
+// chainOperand reports a binary operation with an operand that is itself one, as the route reads it (its sum, avg,
+// min and max levels with an empty without clause off).
+func chainOperand(n *queryplan.BinOp) bool {
+	_, l := EmptyWithoutLevelsOff(n.L).(*queryplan.BinOp)
+	_, r := EmptyWithoutLevelsOff(n.R).(*queryplan.BinOp)
+	return l || r
+}
+
+// holdsVectorLit reports a vector(n) operand anywhere in the binary operations of n.
+func holdsVectorLit(n *queryplan.BinOp) bool {
+	for _, x := range [2]queryplan.Node{EmptyWithoutLevelsOff(n.L), EmptyWithoutLevelsOff(n.R)} {
+		switch v := x.(type) {
+		case *queryplan.VectorLit:
+			return true
+		case *queryplan.BinOp:
+			if holdsVectorLit(v) {
+				return true
+			}
+		}
+	}
+	return false
+}

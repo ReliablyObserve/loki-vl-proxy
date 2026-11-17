@@ -103,7 +103,7 @@ class ToolPinTests(unittest.TestCase):
             return tuple(int(part) for part in found.group(1).split("."))
 
         self.assertGreaterEqual(version("mcp"), (1, 30, 0))
-        self.assertGreaterEqual(version("opentelemetry-api"), (1, 45, 1))
+        self.assertGreaterEqual(version("opentelemetry-api"), (1, 45, 2))
         self.assertIn("--override requirements-semgrep.overrides", text.split("\n", 2)[1])
         workflow = (REPO / ".github" / "workflows" / "security-heavy.yaml").read_text()
         self.assertIn("pip install --no-deps --require-hashes -r security/requirements-semgrep.txt", workflow)

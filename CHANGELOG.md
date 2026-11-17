@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shutting the proxy down closes the peer cache's connections to its peers: idle ones are closed, and a dial that
+  finishes after the shutdown is closed instead of kept open for its 30 s idle timeout.
+- `/labels` no longer keeps label names whose last stream left the requested window. Each listing of a window now
+  replaces the cached answer instead of being merged into it, so a refreshed or re-read answer lists the labels of the
+  streams with data in the window, as Loki does; an empty listing replaces it too (kept for the short negative TTL).
+  Storing a listing is also cheaper (40 labels: 4.4 µs and 16 allocations instead of 11.9 µs and 64).
+- Rows written with old timestamps into an hour or day the label inventory already cached with data are listed by the
+  next `/labels` or `/label/{name}/values` request, as Loki lists them as soon as they are ingested. Within
+  `-max-metadata-cache-freshness` every bucket whose row count is known (empty buckets, and hours and days that ended
+  more than an hour ago) is confirmed
+  by one row count per contiguous run, compared with the rows the buckets held; a run that grew is halved to find the
+  buckets that received rows, and only those are rescanned. Before, only empty buckets were confirmed this way and a
+  bucket with data showed backfilled rows only after its revalidation delay. A run count taken within
+  `-recent-tail-refresh-max-staleness` is reused, so a repeat inside it sends no count; non-empty 5-minute and
+  1-minute buckets (no row count), hours with rows from the last hour (where shippers' late rows land, revalidated
+  every labels TTL) and listings that cannot be counted keep their revalidation schedule.
+- A keyword written with the Kelvin sign for a k or with U+0130 for an i (`topK(`, `bottomK(`, `| Keep`,
+  `avg_over_tİme(`, `sum wİthout (a)`, `| x = İp("1.2.3.4")`) is now the lower case query, as in Loki. Before,
+  `topK(1, rate({app="a"}[1m]))` was sent to VictoriaLogs as a phrase search and answered as a log query, and
+  `wİthout` and `İp(` in a label filter were syntax errors. Such a query now gets the requests, the answer and the
+  cache entry of its lower case spelling. U+017F (ſ) stays a name letter, as in Loki. A syntax error after a duration
+  argument (`rate(0y`) is reported at Loki's column when a line break or a non-ASCII letter comes before it.
+- A NUL byte inside a quoted or backquoted string, or inside a comment, is now Loki's 400 `invalid character NUL`, at
+  Loki's line and column, on every route and before any VictoriaLogs request. The proxy used to read the byte as part of
+  the string, and dropped a comment holding it. When such a string also has a bad escape, a line break or no closing
+  quote, the first of these errors in the text is the one reported, as in Loki.
+- An unwrap written with a tab, a line feed, a carriage return or more than one space around `| unwrap`, or with no
+  space after the pipe (`max_over_time({app="a"} | unwrap<tab>n [1m])`, `|unwrap n`), is now answered like the
+  spelling with single spaces, also under
+  topk, bottomk, sort, label_replace, a binary operation, an aggregation and offset. It used to fail with a 500, and
+  `rate({app="a"} |<tab>unwrap n [5m])` counted the lines instead of reading the unwrapped value. Such a query gets a
+  new response cache key, so an answer cached before is not served; it may miss the cache once after the upgrade, and
+  queries written with `| unwrap ` keep their keys.
 - After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
   (by labels or none) over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` or
   `stdvar_over_time` now answer Loki's values on a query_range whose range is longer than the step. For example
@@ -17,6 +50,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the series the list names (the stream, its level fields and the listed labels), and the proxy merges each series'
   buckets into its window, then applies the aggregation. Answers cached before the fix are not served again; a parser
   of every key keeps the stream's series on such a range (registry `semantics/unwrap-per-series-identity-raw-rows`).
+
+### Performance
+
+- Every `query` and `query_range` request skips the SHA-256 digest of its query that the debug log lines carry
+  unless debug logging is on (4 to 9 fewer allocations per request), and the binary route prints each operand's LogQL
+  once and reads a `vector(n)` operand without a regular expression (about 20 fewer allocations per cold ranking over
+  a binary operation). Answers, requests and cache keys are unchanged.
+
+## [2.321.0] - 2026-11-17
+
+### Fixed
+
+- A `label_replace` inside the binary operand of `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` or `stdvar` is now
+  applied once, as Loki does, on `query` and `query_range`:
+  `topk(1, label_replace(count_over_time({...}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)` answered `pod="x-x-p1"`. The
+  operand's own request applied the call and the handlers applied it again over the ranking's answer; the same held
+  for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
+  (registry `semantics/rank-binary-operand-label-replace-once`).
+
+## [2.320.1] - 2026-11-17
+
+### Changed
+
+- The query plan no longer describes a `vector(n)` inside a chain of binary operations as a constant when it is
+  spelled with a blank before its parenthesis (`vector (2) > on(x) (rate(...) * 2)`, `(vector (2) + sum(...)) * 2`):
+  the proxy's binary route reads each operation of a chain on its own and sends that spelling on as a query, so the
+  plan leaves such a chain to the translator, as it already did for a `vector (n)` next to a query (registry
+  `semantics/vector-call-blank-before-parenthesis-as-query`, still open). No answer, request or cache key changes.
+
+## [2.320.0] - 2026-11-17
+
+### Performance
+
+- `max` over `max_over_time` and `min` over `min_over_time` (by labels or none) of a label unwrapped after a json or
+  logfmt parser (of every key, or an extraction list such as `| logfmt amount, route`) send VictoriaLogs one stats
+  pipe over the rows of each group. The maximum of the series' maxima is the maximum of the group's rows, so no series
+  identity is written: no second unpack and hash after a parser of every key, and no per-series stats after an
+  extraction list, whose logfmt unpack then reads the unwrapped key and the clause labels the list names only (a
+  stream label of the clause is not read from the line). Answers are unchanged (held
+  to recorded Loki answers on instant, step = range, step < range and step > range, VictoriaLogs v1.49.0 and
+  v1.53.0). VictoriaLogs time per query, measured with its own handlers on 600,000 logfmt rows (p50, both versions):
+  36-37% lower for an extraction list (`max(max_over_time(... | logfmt amount, route ...))` 197 to 126 ms), 5-7% lower
+  for a list of the unwrapped key alone, and 80% lower after a parser of every key (`max by (ns)
+  (max_over_time(... | logfmt | unwrap amount [5m]))` 718 to 140 ms); 44-71% lower than before the extraction list's
+  series identity. A range longer than the step was already answered from the group's rows and is unchanged.
+
+### Changed
+
+- The query plan no longer describes a `vector(n)` inside a chain of binary operations as a constant when it is
+  spelled with a blank before its parenthesis (`vector (2) > on(x) (rate(...) * 2)`, `(vector (2) + sum(...)) * 2`):
+  the proxy's binary route reads each operation of a chain on its own and sends that spelling on as a query, so the
+  plan leaves such a chain to the translator, as it already did for a `vector (n)` next to a query (registry
+  `semantics/vector-call-blank-before-parenthesis-as-query`, still open). No answer, request or cache key changes.
+
+## [2.319.0] - 2026-11-17
+
+### Fixed
+- `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer Loki's matrix on
+  `query_range`, for example `topk(2, sum by (app) (rate({...}[1m])) / sum by (app) (rate({...} |= "error" [1m])))`.
+  The range handler sent the whole operation to VictoriaLogs as one query, so a ranking over a division, a vector
+  matching (`on`, `ignoring`, `group_left`), a `bool` comparison, `and`, `or`, `unless` or a chain of operations
+  answered other values, extra or missing series, or a 500, and a many-to-one match answered `Internal Server Error`
+  instead of Loki's `multiple matches for labels` text. Each side of the operation is now its own query (and is reused
+  from the cache like any other), the operation is joined as at the top of a query, and the ranking is applied to its
+  answer. Instant queries already answered this way. A binary operation under an aggregation or a `label_replace`
+  inside the ranking (`topk(2, sum by (app) (a * b))`, `sort(label_replace(a / b, ...))`) answered a 500 or missing
+  series on `query` and `query_range` alike; it is now evaluated as a query of its own. Range answers cached before
+  the fix are not served again (semantics/rank-over-binary-operation).
+
+## [2.318.0] - 2026-11-16
+
+### Fixed
 
 - `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
@@ -29,6 +134,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
   first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
   read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+- `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer Loki's matrix on
+  `query_range`, for example `topk(2, sum by (app) (rate({...}[1m])) / sum by (app) (rate({...} |= "error" [1m])))`.
+  The range handler sent the whole operation to VictoriaLogs as one query, so a ranking over a division, a vector
+  matching (`on`, `ignoring`, `group_left`), a `bool` comparison, `and`, `or`, `unless` or a chain of operations
+  answered other values, extra or missing series, or a 500, and a many-to-one match answered `Internal Server Error`
+  instead of Loki's `multiple matches for labels` text. Each side of the operation is now its own query (and is reused
+  from the cache like any other), the operation is joined as at the top of a query, and the ranking is applied to its
+  answer. Instant queries already answered this way. A binary operation under an aggregation or a `label_replace`
+  inside the ranking (`topk(2, sum by (app) (a * b))`, `sort(label_replace(a / b, ...))`) answered a 500 or missing
+  series on `query` and `query_range` alike; it is now evaluated as a query of its own. Range answers cached before
+  the fix are not served again (semantics/rank-over-binary-operation).
 
 ## [2.317.0] - 2026-11-16
 

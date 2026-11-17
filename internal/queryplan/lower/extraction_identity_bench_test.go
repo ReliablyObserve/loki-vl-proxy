@@ -17,6 +17,10 @@ func BenchmarkExtractionListIdentityLowering(b *testing.B) {
 		`count by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
 		// A parser of every key (the series hash), unchanged.
 		`sum by (ns) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
+		// The maximum of maxima and the minimum of minima: one stats pipe over the rows.
+		`max by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
+		`min(min_over_time({app="uj"} | json amount, route | unwrap amount [5m]))`,
+		`max by (ns) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
 	} {
 		p := rangeAggPlan(q)
 		b.Run(q, func(b *testing.B) {

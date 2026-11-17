@@ -82,13 +82,25 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		b.add(keepUnwrapIdentityResponseVersion)
 	}
 	b.add(dynamicUnwrapIdentityResponseKeyVersion(query))
-	b.add(streamLevelSeriesResponseKeyVersion(query))
+	streamLevel, ranked := streamLevelSeriesScan(query)
+	if streamLevel || levelChainReadIn(query) {
+		b.add(streamLevelSeriesResponseVersion)
+	}
+	b.add(unwrapBlankSpellingResponseKeyVersion(query))
 	b.add(emptyWithoutOperandResponseKeyVersion(query))
 	if site != responseKeyCompatQuery {
 		b.add(listedWindowsResponseKeyVersion(r, query))
 	}
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceFence(r, query, other))
+	}
+	if site == responseKeyCompatQueryRange || site == responseKeyInnerQueryRange {
+		// Only the range handler's answers of a ranking over a binary operation changed.
+		b.add(rankOverBinaryResponseKeyVersion(query, ranked || words.stddev))
+	}
+	if site == responseKeyCompatQuery {
+		// An instant ranking over a binary operand that holds a label_replace applies it once now.
+		b.add(rankOverBinaryLabelReplaceResponseKeyVersion(query, ranked || words.stddev))
 	}
 	if site == responseKeyCompatQuery || site == responseKeyCompatQueryRange {
 		// The compat edge looks its cache up before the handler validates the query.
@@ -162,46 +174,72 @@ const streamLevelSeriesResponseVersion = "@stream-level-series-v4:"
 // returns at once): k for topk and bottomk, w for without and unwrap, and the name before each ( for sort, sort_desc
 // and label_replace. The parser reads keywords in any case and any Unicode blank before a parenthesis (TOPK, sum
 // WITHOUT, sort\v(), so the screen does too: it also jumps to K and W, compares the words case-folded, and reads a
-// Kelvin sign as the k of topk and bottomk (the one letter outside ASCII that lower cases into these words).
+// Kelvin sign as the k of topk and bottomk and U+0130 as the i of without (the letters outside ASCII that lower case
+// into these words).
 func streamLevelSeriesResponseKeyVersion(query string) string {
 	if levelChainReadIn(query) {
 		return streamLevelSeriesResponseVersion
 	}
+	if fires, _ := streamLevelSeriesScan(query); fires {
+		return streamLevelSeriesResponseVersion
+	}
+	return ""
+}
+
+// streamLevelSeriesScan is the scan of streamLevelSeriesResponseKeyVersion: fires is the fence, and ranked reports a
+// topk, bottomk, sort or sort_desc word, which the ranking over a binary operation fence reads
+// (rankOverBinaryResponseKeyVersion), so neither fence scans the query again. It reads the words only: a caller fences
+// a query levelChainReadIn reports too.
+func streamLevelSeriesScan(query string) (fires, ranked bool) {
 	if strings.IndexByte(query, '(') < 0 {
-		return ""
+		return false, false
 	}
 	for _, c := range [...]byte{'k', 'K'} {
 		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
 			if i >= 3 && strings.EqualFold(s[i-3:i+1], "topk") || i >= 6 && strings.EqualFold(s[i-6:i+1], "bottomk") {
-				return streamLevelSeriesResponseVersion
+				return true, true
 			}
 			s = s[i+1:]
 		}
 	}
 	// The Kelvin sign (U+212A) lower cases to k, so the parser reads topK and bottomK as topk and bottomk.
 	if strings.Contains(query, "\u212a") && (containsFold(query, "topk") || containsFold(query, "bottomk")) {
-		return streamLevelSeriesResponseVersion
+		return true, true
+	}
+	labelReplace := false
+	for s, i := query, strings.IndexByte(query, '('); i >= 0; i = strings.IndexByte(s, '(') {
+		name := trimRightBlanks(s[:i])
+		s = s[i+1:]
+		if name == "" {
+			continue
+		}
+		// Each name ends in an ASCII letter of its word in any case: the last byte picks the one check that can match.
+		switch name[len(name)-1] | 0x20 {
+		case 't', 'c':
+			if hasSuffixFold(name, "sort") || hasSuffixFold(name, "sort_desc") {
+				return true, true
+			}
+		case 'y':
+			// sort and sort_desc also take a grouping before their parenthesis (sort by (app) (…)).
+			if ranked := groupedRankingName(name); hasSuffixFold(ranked, "sort") || hasSuffixFold(ranked, "sort_desc") {
+				return true, true
+			}
+		case 'e':
+			labelReplace = labelReplace || hasSuffixFold(name, "label_replace")
+		}
+	}
+	if labelReplace {
+		return true, false
 	}
 	for _, c := range [...]byte{'w', 'W'} {
 		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
-			if i+7 <= len(s) && strings.EqualFold(s[i:i+7], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
-				return streamLevelSeriesResponseVersion
+			if hasFoldPrefix(s[i:], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
+				return true, false
 			}
 			s = s[i+1:]
 		}
 	}
-	for s, i := query, strings.IndexByte(query, '('); i >= 0; i = strings.IndexByte(s, '(') {
-		name := trimRightBlanks(s[:i])
-		if hasSuffixFold(name, "sort") || hasSuffixFold(name, "sort_desc") || hasSuffixFold(name, "label_replace") {
-			return streamLevelSeriesResponseVersion
-		}
-		// sort and sort_desc also take a grouping before their parenthesis (sort by (app) (…)).
-		if ranked := groupedRankingName(name); hasSuffixFold(ranked, "sort") || hasSuffixFold(ranked, "sort_desc") {
-			return streamLevelSeriesResponseVersion
-		}
-		s = s[i+1:]
-	}
-	return ""
+	return false, false
 }
 
 // levelChainReadIn reports a query whose VictoriaLogs read may carry the detected_level chain: a [ outside quoted

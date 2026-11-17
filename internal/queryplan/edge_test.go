@@ -3,6 +3,7 @@ package queryplan
 import (
 	"bytes"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -276,8 +277,12 @@ func TestKeyCraftedValues(t *testing.T) {
 		"\x01", "\x00\x01", "\x05\x00", "\x01\x01\x01\x01", "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x01", "\xff\xff\xff\xff",
 		string([]byte{tagLogSelect, 0, 0}), string([]byte{tagInputs, 0, 0, 0, 0, 0}), strings.Repeat("\x7f", 300),
 	)
-	// Raw strings take any byte but a backquote.
+	// Raw strings take any byte but a backquote and a NUL, which Loki's lexer rejects anywhere in a query: a value
+	// with a NUL is written with its escape, which decodes to the same bytes.
 	quote := func(s string) (string, bool) {
+		if strings.IndexByte(s, 0) >= 0 {
+			return strconv.Quote(s), true
+		}
 		if strings.ContainsRune(s, '`') {
 			return "", false
 		}

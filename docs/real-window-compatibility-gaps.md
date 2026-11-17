@@ -18,15 +18,15 @@ mdx:
 
 <!-- verified-numbers:start -->
 
-Verified 2026-11-16 on `23ea2aa56ee5` (Loki 3.7.9, VictoriaLogs v1.49.0 and v1.53.0), 43 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
+Verified 2026-11-17 on `5948c5394054` (Loki 3.7.9, VictoriaLogs v1.49.0 and v1.53.0), 49 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
 
-- Registry: 131 open, 145 fixed, 15 documented, 7 owner-kept, 3 upstream; open by impact: 60 explore-visible, 14 drilldown-visible, 1 grafana-datasource, 19 api-only, 37 edge.
-- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 160 match, 98 differ on equal data, 33 not comparable on that day's data, 56 blocked; v1.53.0: 159 match, 97 differ on equal data, 33 not comparable on that day's data, 58 blocked.
-- Errors: 223 of 231 recorded Loki answers match, 8 known differences, 0 known leaks; 334 of 335 rows answered as recorded by the live Loki.
-- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-16 (cancelled): 393 VictoriaLogs rejects the translator text, 124 error text differs, 32 accepted, translation fails, 32 proxy accepts, Loki rejects, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 10 proxy rejects, Loki accepts, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
+- Registry: 135 open, 151 fixed, 15 documented, 7 owner-kept, 3 upstream; open by impact: 63 explore-visible, 14 drilldown-visible, 1 grafana-datasource, 19 api-only, 38 edge.
+- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 165 match, 102 differ on equal data, 26 not comparable on that day's data, 68 blocked; v1.53.0: 167 match, 100 differ on equal data, 26 not comparable on that day's data, 68 blocked.
+- Errors: 241 of 248 recorded Loki answers match, 7 known differences, 0 known leaks; 0 of 0 rows answered as recorded by the live Loki.
+- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-17 (cancelled): 393 VictoriaLogs rejects the translator text, 32 accepted, translation fails, 32 proxy accepts, Loki rejects, 24 error text differs, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 10 proxy rejects, Loki accepts, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
 - Performance, weekly full run verified 2026-11-16 (Loki 3.7.9): 525 comparable shape x range pairs, 353 faster, 153 on par, 19 slower; 6 rows above 2x Loki.
-- Performance, daily smoke verified 2026-11-16: 217 rows, 5 above 2x Loki, 5 weekly ratchet rows lost.
-- Cache reuse, verified 2026-11-16: registry cases on v1.49.0: 236 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); registry cases on v1.53.0: 236 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); perf smoke: 12 of 217 rows repeat without calling VictoriaLogs.
+- Performance, daily smoke verified 2026-11-17: 217 rows, 0 above 2x Loki, 5 weekly ratchet rows lost.
+- Cache reuse, verified 2026-11-17: registry cases on v1.49.0: 237 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); registry cases on v1.53.0: 237 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); perf smoke: 8 of 217 rows repeat without calling VictoriaLogs.
 
 <!-- verified-numbers:end -->
 
@@ -154,8 +154,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 10 proven, 22 partial, 3 gaps |
-| Known differences from Loki (ranked) | **159**: 134 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **77 of 134**: 62 Explore, 14 Logs Drilldown, 1 Grafana datasource; 19 API only, 38 edge cases |
+| Known differences from Loki (ranked) | **163**: 138 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **78 of 138**: 63 Explore, 14 Logs Drilldown, 1 Grafana datasource; 19 API only, 41 edge cases |
 
 **Readiness by client**
 
@@ -163,7 +163,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 
 | Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |
 |---|---:|---:|---:|---:|---:|
-| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 62 |
+| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 63 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 14 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
 | Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 19 |
