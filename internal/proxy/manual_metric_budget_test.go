@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -103,6 +104,18 @@ func TestBoundedBareParserMetricOutput(t *testing.T) {
 	}
 	if err := checkManualMetricRead(t.Context(), &io.LimitedReader{N: 0}); err == nil {
 		t.Fatal("exhausted input byte budget accepted")
+	}
+	// The per-row form polls the channel taken once and gives the same answers.
+	live, stop := context.WithCancel(context.WithValue(t.Context(), unwrapCheckKey{}, (*unwrapCheck)(nil)))
+	if err := checkManualMetricReadDone(live, live.Done(), &io.LimitedReader{N: 1}); err != nil {
+		t.Fatalf("live context with budget refused: %v", err)
+	}
+	if err := checkManualMetricReadDone(live, live.Done(), &io.LimitedReader{N: 0}); err == nil {
+		t.Fatal("exhausted input byte budget accepted by the per-row check")
+	}
+	stop()
+	if err := checkManualMetricReadDone(live, live.Done(), &io.LimitedReader{N: 1}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled context: %v", err)
 	}
 }
 
