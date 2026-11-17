@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,8 +18,10 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,11 +36,16 @@ import (
 // Route parity: the real query handlers run every plan-corpus row (the curated rows and the capture sample) under
 // each request profile (instant; range with step equal to, under and over the query's range; a 24h chunk) against
 // a stub VictoriaLogs answering each endpoint with data or empty (so each probe is seen both ways). A run records
-// its status, its VictoriaLogs requests (endpoint and parameters) and its route: the operations, cache reads and
-// LogQL rewrites of the request's trace. The route a physical plan predicts must equal the recorded one; until a
-// construct's lowering lands it is delegated. The route_parity section of query-plan.json holds the counts and one
-// digest per profile and construct of every run's status and route decisions (gated), so a change that moves a
-// route or a status fails here until LVP_QUERY_PLAN_UPDATE=1 records it (and the PR says why).
+// its status, its VictoriaLogs requests (endpoint and parameters), how many calls it started
+// (X-Loki-VL-Backend-Calls) and how many the exact repeat of the request on the same proxy starts, and its route:
+// the operations, cache reads and LogQL rewrites of the request's trace. Requests are marked with
+// deterministicProbes, so the concurrent probes (the json and logfmt parse-risk probes, the checks beside an
+// ordered-JSON stats attempt) all reach the stub on every run. The route a physical plan predicts must equal the
+// recorded one; until a construct's lowering lands it is delegated. The route_parity section of query-plan.json
+// holds the counts, one digest per profile and construct of every run's status and route decisions (routes), one
+// of every run's VictoriaLogs calls (calls), and the calls per profile and construct, cold and on the exact repeat
+// (vl_calls), all gated: a change that moves a route, a status or a VictoriaLogs call fails here until
+// LVP_QUERY_PLAN_UPDATE=1 records it (and the PR says why), and one that adds calls fails until it is recorded.
 
 // routeEnd is the pinned end of every request window: in the past, so no freshness or recent-tail rule applies.
 var routeEnd = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -68,9 +76,11 @@ func routeProfiles() []routeProfile {
 // body), empty answers with none.
 type routeStub struct {
 	data bool
-	mu   sync.Mutex
-	on   bool
-	got  []string
+	// jitter delays every answer by up to 3ms, so concurrent calls finish in any order (the determinism check).
+	jitter bool
+	mu     sync.Mutex
+	on     bool
+	got    []string
 }
 
 func (s *routeStub) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -92,6 +102,9 @@ func (s *routeStub) RoundTrip(r *http.Request) (*http.Response, error) {
 		s.got = append(s.got, r.URL.Path+"?"+form.Encode())
 	}
 	s.mu.Unlock()
+	if s.jitter {
+		time.Sleep(time.Duration(rand.IntN(3000)) * time.Microsecond)
+	}
 	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
 		Body: io.NopCloser(strings.NewReader(s.body(r.URL.Path, form.Get("query")))), Request: r}, nil
 }
@@ -167,6 +180,10 @@ type routeRecord struct {
 	// Steps are the set of the route's operations and rewrites, sorted; Cache the set of its cache reads.
 	Steps []string
 	Cache []string
+	// Started is the VictoriaLogs calls the request started (X-Loki-VL-Backend-Calls; in a prediction, the calls
+	// the route sends), Sent the requests the stub answered for it: a request sent twice counts twice in both, and
+	// the header counts a streamed answer's calls only up to its headers.
+	Started, Sent int
 	// queryShape marks a prediction whose calls hold each request's route shape (routeCallShape), not its whole
 	// query: equal compares the recorded calls' shapes with them.
 	queryShape bool
@@ -183,8 +200,15 @@ func (r routeRecord) gated() string {
 	return fmt.Sprintf("status %d\n steps %s", r.Status, strings.Join(r.Steps, ", "))
 }
 
+// gatedCalls is what the calls digests hold: the calls the request started and the set of its VictoriaLogs
+// requests, each whole. With deterministicProbes every probe the request starts reaches VictoriaLogs, so the set is
+// the same on every run (TestPlanRouteParityCallsAreDeterministic).
+func (r routeRecord) gatedCalls() string {
+	return fmt.Sprintf("started %d\n calls %s", r.Started, strings.Join(r.Calls, "\n       "))
+}
+
 func (r routeRecord) String() string {
-	return fmt.Sprintf("status %d\n calls %s\n steps %s\n cache %s", r.Status, strings.Join(r.Calls, "\n       "), strings.Join(r.Steps, ", "), strings.Join(r.Cache, ", "))
+	return fmt.Sprintf("status %d\n calls %s\n steps %s\n cache %s\n vl started %d sent %d", r.Status, strings.Join(r.Calls, "\n       "), strings.Join(r.Steps, ", "), strings.Join(r.Cache, ", "), r.Started, r.Sent)
 }
 
 func (r routeRecord) equal(o routeRecord) bool {
@@ -192,27 +216,33 @@ func (r routeRecord) equal(o routeRecord) bool {
 	if r.queryShape && !o.queryShape {
 		calls = routeCallShapes(o.Calls)
 	}
-	return r.Status == o.Status && strings.Join(r.Calls, "\n") == strings.Join(calls, "\n") && strings.Join(r.Steps, "\n") == strings.Join(o.Steps, "\n")
+	return r.Status == o.Status && r.Started == o.Started && strings.Join(r.Calls, "\n") == strings.Join(calls, "\n") && strings.Join(r.Steps, "\n") == strings.Join(o.Steps, "\n")
 }
 
-// runRoute serves one request on a fresh proxy (every cache cold) and records it.
-func runRoute(t *testing.T, q string, rangeDur time.Duration, rp routeProfile, data bool) routeRecord {
+// newRouteProxy is a proxy whose VictoriaLogs is stub, behind the counter of the calls each request starts
+// (X-Loki-VL-Backend-Calls). compat adds the compatibility-edge response cache the proxy binary has on by default
+// (-compat-cache-enabled), for the exact repeat; the route runs keep the proxy without it, as their digests were
+// recorded.
+func newRouteProxy(t *testing.T, stub *routeStub, compat bool) (*Proxy, *http.ServeMux) {
 	t.Helper()
-	p, err := New(Config{BackendURL: "http://vl.invalid", Cache: cache.New(time.Minute, 1000), LogLevel: "error"})
+	cfg := Config{BackendURL: "http://vl.invalid", Cache: cache.New(time.Minute, 1000), LogLevel: "error", DebugVLCallsHeader: true}
+	if compat {
+		cfg.CompatCache = cache.New(time.Minute, 1000)
+	}
+	p, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = p.Shutdown(context.Background()) }()
-	stub := &routeStub{data: data}
-	p.client.Transport = stub
-	// Locked: a call that lost a race may still log after the request.
-	var logs lockedBuffer
-	p.log = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	// Every request is slow, so its trace is kept and logged.
-	p.slowQueryThreshold, p.slowQueryLogRawQueries = time.Nanosecond, true
+	p.client.Transport = &vlCallCounter{inner: stub, host: p.backend.Host}
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
+	return p, mux
+}
 
+// serveRoute serves q under the profile, marked with deterministicProbes, and returns the answer and the calls it
+// started.
+func serveRoute(t *testing.T, mux *http.ServeMux, q string, rangeDur time.Duration, rp routeProfile) (*httptest.ResponseRecorder, int) {
+	t.Helper()
 	form := url.Values{"query": {q}}
 	path := "/loki/api/v1/query"
 	if rp.instant {
@@ -225,17 +255,41 @@ func runRoute(t *testing.T, q string, rangeDur time.Duration, rp routeProfile, d
 	}
 	req := httptest.NewRequest(http.MethodGet, path+"?"+form.Encode(), nil)
 	req.Header.Set("X-Scope-OrgID", "0")
+	req = req.WithContext(context.WithValue(req.Context(), deterministicProbesKey{}, true))
 	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	started, err := strconv.Atoi(rec.Header().Get(vlBackendCallsHeader))
+	if err != nil {
+		t.Fatalf("%q: no %s header: %v", q, vlBackendCallsHeader, err)
+	}
+	return rec, started
+}
+
+// runRoute serves one request on a fresh proxy (every cache cold) and records it.
+func runRoute(t *testing.T, q string, rangeDur time.Duration, rp routeProfile, data bool) routeRecord {
+	return runRouteOn(t, q, rangeDur, rp, &routeStub{data: data})
+}
+
+func runRouteOn(t *testing.T, q string, rangeDur time.Duration, rp routeProfile, stub *routeStub) routeRecord {
+	t.Helper()
+	p, mux := newRouteProxy(t, stub, false)
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	// Locked: a call that lost a race may still log after the request.
+	var logs lockedBuffer
+	p.log = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// Every request is slow, so its trace is kept and logged.
+	p.slowQueryThreshold, p.slowQueryLogRawQueries = time.Nanosecond, true
+
 	stub.mu.Lock()
 	stub.on = true
 	stub.mu.Unlock()
-	mux.ServeHTTP(rec, req)
+	rec, started := serveRoute(t, mux, q, rangeDur, rp)
 	stub.mu.Lock()
 	stub.on = false
-	calls := uniqueSorted(stub.got)
+	calls, sent := uniqueSorted(stub.got), len(stub.got)
 	stub.mu.Unlock()
 
-	out := routeRecord{Status: rec.Code, Calls: calls}
+	out := routeRecord{Status: rec.Code, Calls: calls, Started: started, Sent: sent}
 
 	for _, line := range logs.lines() {
 		var m map[string]any
@@ -257,6 +311,17 @@ func runRoute(t *testing.T, q string, rangeDur time.Duration, rp routeProfile, d
 	}
 	out.Steps, out.Cache = uniqueSorted(out.Steps), uniqueSorted(out.Cache)
 	return out
+}
+
+// runRouteVLCalls serves one request on a fresh proxy with the response caches the proxy binary has by default,
+// then its exact repeat, and returns the VictoriaLogs calls each started.
+func runRouteVLCalls(t *testing.T, q string, rangeDur time.Duration, rp routeProfile, data bool) (cold, repeat int) {
+	t.Helper()
+	p, mux := newRouteProxy(t, &routeStub{data: data}, true)
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	_, cold = serveRoute(t, mux, q, rangeDur, rp)
+	_, repeat = serveRoute(t, mux, q, rangeDur, rp)
+	return cold, repeat
 }
 
 // uniqueSorted is the set of lines, sorted: parallel paths repeat a call or a cache read a varying number of times.
@@ -334,6 +399,21 @@ type routeSection struct {
 	Statuses map[string]int `json:"statuses"`
 	// Routes holds, per "profile/construct", a digest of every recorded run in corpus order.
 	Routes map[string]string `json:"routes"`
+	// Calls holds, per "profile/construct", a digest of every run's VictoriaLogs calls in corpus order: the number
+	// the request started and each request whole (gatedCalls).
+	Calls map[string]string `json:"calls"`
+	// VLCalls counts, per "profile/construct", the VictoriaLogs calls of the runs, cold and on the exact repeat.
+	VLCalls map[string]routeVLCalls `json:"vl_calls"`
+}
+
+// routeVLCalls is the VictoriaLogs calls of a group of runs, counted from X-Loki-VL-Backend-Calls: Cold on a fresh
+// proxy, Repeat on the exact repeat of the request on the same proxy (a reused answer starts none), RepeatRuns the
+// runs whose repeat started any.
+type routeVLCalls struct {
+	Runs       int `json:"runs"`
+	Cold       int `json:"cold"`
+	Repeat     int `json:"repeat"`
+	RepeatRuns int `json:"repeat_runs"`
 }
 
 type routeRow struct {
@@ -372,13 +452,20 @@ func routeRows(t *testing.T, root string, limit int) []routeRow {
 // stub answer.
 func runRouteParity(t *testing.T, rows []routeRow, predict routePrediction) (routeSection, []string) {
 	t.Helper()
+	return runRouteParityCounting(t, rows, predict, false)
+}
+
+// runRouteParityCounting is runRouteParity that, when vlCalls is set, also counts every run's VictoriaLogs calls
+// cold and on the exact repeat with the default response caches (runRouteVLCalls) into the section's VLCalls.
+func runRouteParityCounting(t *testing.T, rows []routeRow, predict routePrediction, vlCalls bool) (routeSection, []string) {
+	t.Helper()
 	profiles := routeProfiles()
-	sec := routeSection{Rows: len(rows), DelegatedByConstruct: map[string]int{}, Statuses: map[string]int{}, Routes: map[string]string{}}
+	sec := routeSection{Rows: len(rows), DelegatedByConstruct: map[string]int{}, Statuses: map[string]int{}, Routes: map[string]string{}, Calls: map[string]string{}, VLCalls: map[string]routeVLCalls{}}
 	for _, rp := range profiles {
 		sec.Profiles = append(sec.Profiles, rp.name)
 	}
-	digests := map[string]io.Writer{}
-	sums := map[string]interface{ Sum([]byte) []byte }{}
+	digests, callDigests := map[string]io.Writer{}, map[string]io.Writer{}
+	sums, callSums := map[string]interface{ Sum([]byte) []byte }{}, map[string]interface{ Sum([]byte) []byte }{}
 	var problems []string
 	var dump *os.File
 	if f := os.Getenv("LVP_ROUTE_DUMP"); f != "" {
@@ -393,37 +480,62 @@ func runRouteParity(t *testing.T, rows []routeRow, predict routePrediction) (rou
 				sec.Statuses[strconv.Itoa(got.Status)]++
 				key := rp.name + "/" + row.construct
 				if digests[key] == nil {
-					h := sha256.New()
+					h, c := sha256.New(), sha256.New()
 					digests[key], sums[key] = h, h
+					callDigests[key], callSums[key] = c, c
 				}
 				fmt.Fprintf(digests[key], "%s\x00%v\x00%s\x01", row.q, data, got.gated())
-				if dump != nil {
-					fmt.Fprintf(dump, "%s %v %q\n%s\n", rp.name, data, row.q, got)
+				fmt.Fprintf(callDigests[key], "%s\x00%v\x00%s\x01", row.q, data, got.gatedCalls())
+				cold, repeat := 0, 0
+				if vlCalls {
+					cold, repeat = runRouteVLCalls(t, row.q, row.rangeDur, rp, data)
+					vc := sec.VLCalls[key]
+					vc.Runs, vc.Cold, vc.Repeat = vc.Runs+1, vc.Cold+cold, vc.Repeat+repeat
+					if repeat > 0 {
+						vc.RepeatRuns++
+					}
+					sec.VLCalls[key] = vc
 				}
 
 				want, err := predict(row.q, row.plan, rp, data, got)
 				var nl *lower.NotLoweredError
+				class := "native"
 				switch {
 				case errors.As(err, &nl):
-					sec.DelegatedByConstruct[nl.Construct]++
+					class = nl.Construct
 				case errors.Is(err, lower.ErrNotLowered):
-					sec.DelegatedByConstruct["unnamed"]++
+					class = "unnamed"
 				case errors.Is(err, errRouteRulePending):
-					sec.DelegatedByConstruct[row.construct+" (route rule)"]++
+					class = row.construct + " (route rule)"
 				case err != nil:
+					class = "mismatch"
 					sec.Mismatches++
 					problems = append(problems, fmt.Sprintf("%s data=%v: %q: %v", rp.name, data, row.q, err))
 				case !want.equal(got):
+					class = "mismatch"
 					sec.Mismatches++
 					problems = append(problems, fmt.Sprintf("%s data=%v: %q:\n predicted %s\n recorded  %s", rp.name, data, row.q, want, got))
 				default:
 					sec.Native++
+				}
+				if class != "native" && class != "mismatch" {
+					sec.DelegatedByConstruct[class]++
+				}
+				if dump != nil {
+					fmt.Fprintf(dump, "%s %v %q\n%s\n route %s\n", rp.name, data, row.q, got, class)
+					if class == "mismatch" && err == nil {
+						fmt.Fprintf(dump, " predicted started %d calls %d\n", want.Started, len(want.Calls))
+					}
+					if vlCalls {
+						fmt.Fprintf(dump, " vl default caches cold %d repeat %d\n", cold, repeat)
+					}
 				}
 			}
 		}
 	}
 	for key, h := range sums {
 		sec.Routes[key] = hex.EncodeToString(h.Sum(nil))[:16]
+		sec.Calls[key] = hex.EncodeToString(callSums[key].Sum(nil))[:16]
 	}
 	return sec, problems
 }
@@ -445,7 +557,7 @@ func TestPlanRouteParity(t *testing.T) {
 		}
 		return
 	}
-	got, problems := runRouteParity(t, routeRows(t, root, 0), nativeRoute)
+	got, problems := runRouteParityCounting(t, routeRows(t, root, 0), nativeRoute, true)
 
 	path := filepath.Join(root, plancorpus.PlanPath)
 	file := map[string]json.RawMessage{}
@@ -493,6 +605,16 @@ func TestPlanRouteParity(t *testing.T) {
 			if got.Routes[k] != want.Routes[k] {
 				t.Errorf("the handlers' routes changed (digest %s, recorded %s): a route decision or a status moved (LVP_ROUTE_DUMP=<file> writes every run; compare it with main's); if intended, run LVP_QUERY_PLAN_UPDATE=1 and say why in the PR", got.Routes[k], want.Routes[k])
 			}
+			if got.Calls[k] != want.Calls[k] {
+				t.Errorf("the handlers' VictoriaLogs calls changed (digest %s, recorded %s): a request sent to VictoriaLogs moved (LVP_ROUTE_DUMP=<file> writes every run; compare it with main's); if intended, run LVP_QUERY_PLAN_UPDATE=1 and say why in the PR", got.Calls[k], want.Calls[k])
+			}
+			g, w := got.VLCalls[k], want.VLCalls[k]
+			switch {
+			case g.Cold > w.Cold || g.Repeat > w.Repeat:
+				t.Errorf("more VictoriaLogs calls: cold %d (recorded %d), exact repeat %d (recorded %d) over %d runs", g.Cold, w.Cold, g.Repeat, w.Repeat, g.Runs)
+			case g != w:
+				t.Errorf("VictoriaLogs calls moved to %+v (recorded %+v): run LVP_QUERY_PLAN_UPDATE=1 to record it", g, w)
+			}
 		})
 	}
 	if got.Native > want.Native {
@@ -500,10 +622,46 @@ func TestPlanRouteParity(t *testing.T) {
 	}
 }
 
-// The gate fails a wrong prediction and passes a right one, and a row's run records the same route twice.
+// routeProbeQueries are queries whose runs send the probes that race in the handlers: the json and logfmt
+// parse-risk probes (a `| limit 1` existence check each), the checks beside an ordered-JSON stats attempt, the
+// detected_level presence probe and the working-parser probe.
+var routeProbeQueries = []string{
+	`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | drop __error__ [1m]))`,
+	`sum by (service_name) (count_over_time({env="production"} | json | __error__="" [5m]))`,
+	`sum by (detected_level) (count_over_time({app="json-level-probe"} | json | drop __error__ [1m]))`,
+	`sum(count_over_time({env="production"} | detected_level="info" | json | logfmt | drop __error__, __error_details__ [1h]))`,
+}
+
+func routeProbeRows(t *testing.T) []routeRow {
+	t.Helper()
+	rows := make([]routeRow, len(routeProbeQueries))
+	for i, q := range routeProbeQueries {
+		rows[i] = routeRowOf(t, q)
+	}
+	return rows
+}
+
+// routeProbeCall reports whether a recorded VictoriaLogs request is a probe: a `| limit 1` existence check (the
+// parse-risk and level probes), the detected_level presence probe (one count per level field) or the working-parser
+// probe (the 25 newest lines).
+func routeProbeCall(call string) bool {
+	path, raw, _ := strings.Cut(call, "?")
+	form, err := url.ParseQuery(raw)
+	if err != nil || path != "/select/logsql/query" {
+		return false
+	}
+	q := form.Get("query")
+	return strings.HasSuffix(q, "| limit 1") || strings.Contains(q, " as p0,") || form.Get("limit") == "25"
+}
+
+// The gate fails a wrong prediction and passes a right one, on the probe routes too, and a row's run records the
+// same route and the same VictoriaLogs calls twice.
+//
+// conformance: architecture-syntax-package-layering
 func TestPlanRouteParityCatchesAWrongRoute(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
-	rows := routeRows(t, filepath.Join("..", ".."), 40)
+	probes := routeProbeRows(t)
+	rows := append(routeRows(t, filepath.Join("..", ".."), 40), probes...)
 	echo := func(_ string, _ *queryplan.Plan, _ routeProfile, _ bool, got routeRecord) (routeRecord, error) {
 		return got, nil
 	}
@@ -535,12 +693,127 @@ func TestPlanRouteParityCatchesAWrongRoute(t *testing.T) {
 			t.Fatalf("step: %+v", bad)
 		}
 	})
-	t.Run("a run records the same route twice", func(t *testing.T) {
+	// A probe route is native when its prediction holds every probe the handlers sent, and only then.
+	probeRuns := 0
+	probeSec, _ := runRouteParity(t, probes, func(q string, p *queryplan.Plan, rp routeProfile, data bool, got routeRecord) (routeRecord, error) {
+		if slices.ContainsFunc(got.Calls, routeProbeCall) {
+			probeRuns++
+		}
+		return got, nil
+	})
+	t.Run("a probe route is native", func(t *testing.T) {
+		if probeRuns == 0 || probeSec.Native != probeSec.Runs {
+			t.Fatalf("%d runs with a probe: %+v", probeRuns, probeSec)
+		}
+	})
+	t.Run("a dropped probe is a mismatch", func(t *testing.T) {
+		drop := func(q string, p *queryplan.Plan, rp routeProfile, data bool, got routeRecord) (routeRecord, error) {
+			if i := slices.IndexFunc(got.Calls, routeProbeCall); i >= 0 {
+				got.Calls = slices.Delete(slices.Clone(got.Calls), i, i+1)
+				got.Started--
+			}
+			return got, nil
+		}
+		if bad, _ := runRouteParity(t, probes, drop); bad.Mismatches != probeRuns || bad.Native != bad.Runs-probeRuns {
+			t.Fatalf("drop a probe from %d runs: %+v", probeRuns, bad)
+		}
+	})
+	t.Run("a probe sent once more is a mismatch", func(t *testing.T) {
+		again := func(q string, p *queryplan.Plan, rp routeProfile, data bool, got routeRecord) (routeRecord, error) {
+			if slices.ContainsFunc(got.Calls, routeProbeCall) {
+				got.Started++
+			}
+			return got, nil
+		}
+		if bad, _ := runRouteParity(t, probes, again); bad.Mismatches != probeRuns || bad.Native != bad.Runs-probeRuns {
+			t.Fatalf("one more probe on %d runs: %+v", probeRuns, bad)
+		}
+	})
+	t.Run("a run records the same route and calls twice", func(t *testing.T) {
 		again, _ := runRouteParity(t, rows, echo)
 		for k, d := range sec.Routes {
-			if again.Routes[k] != d {
-				t.Fatalf("%s: digest %s then %s", k, d, again.Routes[k])
+			if again.Routes[k] != d || again.Calls[k] != sec.Calls[k] {
+				t.Fatalf("%s: digests %s, %s then %s, %s", k, d, sec.Calls[k], again.Routes[k], again.Calls[k])
 			}
+		}
+	})
+}
+
+// Marked with deterministicProbes, a run sends the same VictoriaLogs requests, as many times, and takes the same
+// route whatever order the stub's answers come back in: every probe of a race reaches VictoriaLogs, and the verdicts
+// are read in the probes' order. The stub delays each answer by up to 3ms, so the probes finish in a different order
+// on every repeat.
+//
+// conformance: architecture-syntax-package-layering
+func TestPlanRouteParityCallsAreDeterministic(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for _, row := range routeProbeRows(t) {
+		for _, rp := range routeProfiles() {
+			for _, data := range []bool{true, false} {
+				var first routeRecord
+				for i := range 3 {
+					got := runRouteOn(t, row.q, row.rangeDur, rp, &routeStub{data: data, jitter: true})
+					if i == 0 {
+						first = got
+						continue
+					}
+					if got.gated() != first.gated() || got.gatedCalls() != first.gatedCalls() {
+						t.Fatalf("%s data=%v %q: run %d differs:\n first %s\n then  %s", rp.name, data, row.q, i, first, got)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Marked with deterministicProbes, anyRisk runs every probe and reads the verdicts in the probes' order; unmarked,
+// the first risky verdict cancels the probes still running.
+//
+// conformance: architecture-syntax-package-layering
+func TestAnyRiskDeterministicProbes(t *testing.T) {
+	errSlow := errors.New("slow probe")
+	t.Run("unmarked: the first risky verdict cancels the rest", func(t *testing.T) {
+		cancelled := make(chan bool, 1)
+		risky, err := anyRisk(context.Background(), []func(context.Context) (bool, error){
+			func(ctx context.Context) (bool, error) {
+				select {
+				case <-ctx.Done():
+					cancelled <- true
+					return false, ctx.Err()
+				case <-time.After(time.Minute):
+					cancelled <- false
+					return false, errSlow
+				}
+			},
+			func(context.Context) (bool, error) { return true, nil },
+		})
+		if !risky || err != nil || !<-cancelled {
+			t.Fatalf("risky %v, err %v: want the fast risky verdict and the slow probe cancelled", risky, err)
+		}
+	})
+	t.Run("marked: every probe runs, read in order", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), deterministicProbesKey{}, true)
+		var ran atomic.Int32
+		risky, err := anyRisk(ctx, []func(context.Context) (bool, error){
+			func(ctx context.Context) (bool, error) { return false, nil },
+			func(ctx context.Context) (bool, error) {
+				time.Sleep(20 * time.Millisecond)
+				ran.Add(1)
+				if ctx.Err() != nil {
+					return false, ctx.Err()
+				}
+				return false, errSlow
+			},
+			func(context.Context) (bool, error) { ran.Add(1); return true, nil },
+		})
+		if !errors.Is(err, errSlow) || risky || ran.Load() != 2 {
+			t.Fatalf("risky %v, err %v, %d probes ran: want the slow probe's error, read before the fast risky verdict", risky, err, ran.Load())
+		}
+		if risky, err := anyRisk(ctx, []func(context.Context) (bool, error){
+			func(context.Context) (bool, error) { return false, nil },
+			func(context.Context) (bool, error) { return false, nil },
+		}); risky || err != nil {
+			t.Fatalf("no risky probe: risky %v, err %v", risky, err)
 		}
 	})
 }
