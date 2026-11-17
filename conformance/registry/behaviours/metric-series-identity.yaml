@@ -121,3 +121,39 @@ decisions:
       tracked: ['TestListedWindowChunksVictoriaLogsCost (LVP_XLIST_CHUNKS_VLCOST=1): status, VictoriaLogs time and calls per shape, one read vs chunks', 'TestListedIdentityWindowsVictoriaLogsCost (LVP_XLIST_WINDOWS_VLCOST=1)', 'BenchmarkListedWindowsRequest, base vs head']
       bound: 'a request that fits one chunk: one stats_query_range as before, proxy cost within noise; a chunked request: one stats_query_range per chunk read one after another, each reading the range before its chunk again'
     pending: true
+  - id: parser-identity-sliding-windows-bucket-merge
+    chosen: 'A parser''s series identity over a range longer than the step (sum, avg, max or min over avg, max, min, stddev or stdvar over time after a json or logfmt parser of every key) reads one stats_query_range call per time chunk (listed_window_chunks.go): the function''s partials per series hash and per anchored bucket (the hash written before the unwrap gate, lower.Profile IdentityAhead), with the series that lie wholly in one bucket of the read folded in VictoriaLogs (lower.SeriesFold): the hash of a row is blanked unless a subquery over the same read lists the series as spanning buckets (grouped by the hash alone, its first and last line''s times moved 4 µs outward before their buckets are compared) or holding a line whose value may read as NaN, or a value that is not finite, and a second stats pipe adds up per bucket and group the blanked series'' values and their count. The window evaluator merges each kept series'' buckets into Loki''s windows and adds a folded row to every window holding its bucket, weighted by its count (foldAccumulator.addPartial). The reads bypass the stats extent cache; identical reads in flight share one call (seriesFoldPost).'
+    over:
+      - 'the stream''s series on sliding windows (origin/main): the group''s pooled samples, not Loki''s values (9.0e5 where Loki answers 5.4e9 on six hours of a request id per line)'
+      - 'the partials of every series per bucket, chunked by a row count of the selection: exact, but 4 s, 19 calls, 154 MB of VictoriaLogs answers and 243 MB of proxy RSS for six hours of a request id per line (rejected by the owner, 2026-11-17)'
+      - 'total_stats by the hash between two stats pipes: VictoriaLogs v1.53 answers 422 on stats_query_range (only pipes that keep _time may stand before the last stats)'
+      - 'blanking only the series of one line (a subquery of the hashes with more than one line) before the bucket stats: 1.4-2.6 MB answers on mixed data, the repeated series kept per bucket'
+      - 'reading the raw rows of the window (proportional to data volume, refused by the metric rules)'
+      - 'a subquery grouped by the hash and the bucket, then by the hash (two stats levels): the same classes, about 8% more VictoriaLogs time on a day of a request id per line (a group per series and bucket, then per series)'
+    why: |
+      Loki takes the function per series over (t-range, t] and the vector
+      aggregation over the series; the series is the stream and the parsed
+      labels, which only a per-row hash names in VictoriaLogs. A series whose
+      lines in a read lie in one bucket has, in every window of that read,
+      either all of those lines or none (a window is a run of whole buckets and
+      lies in the read that answers it), so its value in every window holding
+      it is its value in that bucket: the outer sum, avg, max or min needs only
+      each bucket's sum or extreme of those values and their count. VictoriaLogs
+      computes that in the same call (two stats levels, which stats_query_range
+      allows, both bucketed), so the answer holds a row per bucket and group for
+      the folded series and the partials of the spanning ones, not a row per
+      line. The subquery runs over the read's own time range and extra filters
+      (VictoriaLogs adds them to every subquery, v1.49.0 and v1.53.0), so a
+      series spanning two time chunks folds in each, which is exact since each
+      chunk's windows lie in its read. Bucket values depend on the read's window,
+      so the extent cache does not keep them; identical concurrent reads share
+      one call instead. A series that may hold a NaN keeps its partials (Loki's
+      NaN rules are per series), and so does one whose value is not finite.
+    evidence: 'internal/querycorpus (2026-11-17, Loki engine oracle, VictoriaLogs v1.53.0 and v1.49.0 serve): TestSeriesFoldMatchLoki, 16 queries (sum, avg, max by, min over avg, max, min, stddev, stdvar over time) over a request id per line, a mixed set (repeated health-check series, ids logged twice 2 s and 70 s apart, a NaN, a stream without a level) and a set where every series spans buckets, at steps of 60 s, 20 s, 7 s, 120 s and off the grid: every run matches Loki in one folded call, and the spanning set read in time chunks (a budget of 600 series) answers the one read''s answer byte for byte; TestSeriesFoldSubqueryScopedToRead: the subquery runs over the read''s time range on both versions; TestPlanTextsSurviveVictoriaLogsClone: 368 folded texts print and re-parse on both versions. At volume (VictoriaLogs v1.53.0 handlers in process, 6h and 24h, 246K and 954K api-gateway lines, main 019b6c700 vs head, interleaved, host load 8-13): VictoriaLogs time of the query each build sends, head / main, 2.0-3.2x (A sum by of avg 2.7x at 6h, 3.0-3.2x at 24h; B sum of stddev 2.5-3.1x; C 20 series 2.0x); answers 15-342 KB against 3-60 KB (the former per-hash route 154 MB at 6h); one call per request; proxy peak RSS 34-40 MB against 34-36 MB, flat with the lines; A over 6h in 0.9-1.0 s end to end against Loki''s 2.7 s cold (playground)'
+    code: [internal/queryplan/lower/series_fold.go, internal/queryplan/lower/unwrap_dynamic.go, internal/queryplan/lower/unwrap.go, internal/proxy/series_fold_read.go, internal/proxy/unwrap_dynamic_identity.go, internal/proxy/listed_window_chunks.go, internal/proxy/range_metric_compat.go, internal/proxy/typed_fold.go, internal/proxy/backend.go, internal/logsql/ast.go]
+    tests: [TestSeriesFoldMatchLoki, TestSeriesFoldSubqueryScopedToRead, TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki, TestUnwrapDynamicValueFormsMatchLoki, TestDynamicIdentityWindowsMatchLokiReference, FuzzSeriesFold, TestSeriesFoldSpanningChunks, TestSeriesFoldMemoryBound, TestDynamicIdentityWindowsFoldBeyondSeriesLimit, TestDynamicIdentityWindowCacheReuse, TestFirstLastWindowCoalesced, TestSeriesFoldPipes, TestPlanTextsSurviveVictoriaLogsClone, TestDynamicUnwrapIdentityAhead, FuzzDynamicUnwrapIdentity, FuzzDynamicIdentityWindowsMark, TestCompat_UnwrapPerSeriesIdentity]
+    quality: 'Loki''s series and values at every step for every range and step; one VictoriaLogs call per time chunk, one chunk for most requests; no raw rows; proxy memory bounded by one chunk''s answer, which does not grow with the lines when series lie in one bucket; the hash never reaches a client.'
+    performance:
+      tracked: ['the at-volume table of the pull request (VictoriaLogs v1.53.0 handlers in process, 6h and 24h, a series per line and mixed data, main vs head, interleaved)', 'BenchmarkDynamicIdentityWindows, base vs head']
+      bound: 'faster than Loki cold, at most about 3x the VictoriaLogs time of main (owner, 2026-11-17), proxy memory flat in the lines'
+    pending: true

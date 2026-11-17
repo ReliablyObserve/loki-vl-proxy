@@ -111,7 +111,8 @@ func TestStatsExtentLookupWaitsForTheReadBeingParsed(t *testing.T) {
 	_ = shimSrv
 	// The form the window evaluator sends through the extent cache, from another proxy.
 	end := s0.Add(3 * time.Hour)
-	queryStepsGet(t, newExtentTestProxy(t, srv.URL, true, 256<<20), `sum by (app) (max_over_time({env="production"} | logfmt | unwrap amount [5m]))`, extentWindow{end.Add(-90 * time.Minute), end, 10 * time.Second})
+	// A max of max_over_time folds the rows of its groups: no series hash, whose folded reads the cache does not keep.
+	queryStepsGet(t, newExtentTestProxy(t, srv.URL, true, 256<<20), `max by (app) (max_over_time({env="production"} | logfmt | unwrap amount [5m]))`, extentWindow{end.Add(-90 * time.Minute), end, 10 * time.Second})
 	mu.Lock()
 	if len(forms) == 0 {
 		mu.Unlock()

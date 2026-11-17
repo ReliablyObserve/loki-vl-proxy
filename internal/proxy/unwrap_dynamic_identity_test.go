@@ -75,9 +75,11 @@ func TestDynamicIdentityServedFromPlan(t *testing.T) {
 	}
 }
 
-// The handlers read the identity only where the lowering serves the query, and only with the lowering on, and a
-// range longer than the step keeps the stream's series: the request is marked before it is translated, at its root
-// or under a ranking or a label_replace. A binary operation is not marked: each operand decides in its own request.
+// The handlers read the identity only where the lowering serves the query, and only with the lowering on. A range
+// longer than the step is marked before it is translated: at its root it reads the series hash before the unwrap
+// gate (identityAheadKey), except a max of max_over_time or a min of min_over_time, which keeps the stream's series as
+// a ranking or a label_replace over the identity does (streamIdentityKey). A binary operation is not marked: each
+// operand decides in its own request.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows
 func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
@@ -91,34 +93,41 @@ func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		q, step string
-		marked  bool
+		q, step       string
+		marked, ahead bool
 	}{
-		{q, "60", true},
-		{q, "300", false},
-		{q, "900", false},
-		{q, "", false},
-		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`, "60", true},
+		{q, "60", false, true},
+		{`sum by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [2m]))`, "60", false, true},
+		{`max by (app) (max_over_time({app="a"} | json | unwrap n [5m]))`, "60", true, false},
+		{`min(min_over_time({app="a"} | json | unwrap n [5m]))`, "60", true, false},
+		{`max by (app) (min_over_time({app="a"} | json | unwrap n [5m]))`, "60", false, true},
+		// An unwrapped label named like a reserved field in another case: its gate is written in the outbound guard's
+		// form, which the window evaluator cannot read with the hash ahead.
+		{`sum(max_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, "60", true, false},
+		{q, "300", false, false},
+		{q, "900", false, false},
+		{q, "", false, false},
+		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`, "60", true, false},
 		// A binary operation is not marked: each operand is a request of its own, which decides on its own range.
-		{`sum(avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, "60", false},
-		{`sum(avg_over_time({app="a"} | json | unwrap n [1m])) - sum(count_over_time({app="a"}[5m]))`, "60", false},
-		{`sum(sum(avg_over_time({app="a"} | json | unwrap n [5m])) - sum(max_over_time({app="a"} | json | unwrap n [5m])))`, "60", false},
-		{`label_replace(sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])), "x", "$1", "app", "(.*)")`, "60", true},
-		{`label_replace(sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])), "x", "$1", "app", "(.*)")`, "300", false},
-		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`, "300", false},
-		{`sum(sum_over_time({app="a"} | json | unwrap n [5m]))`, "60", false},
-		{`sum by (app) (quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`, "60", false},
+		{`sum(avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, "60", false, false},
+		{`sum(avg_over_time({app="a"} | json | unwrap n [1m])) - sum(count_over_time({app="a"}[5m]))`, "60", false, false},
+		{`sum(sum(avg_over_time({app="a"} | json | unwrap n [5m])) - sum(max_over_time({app="a"} | json | unwrap n [5m])))`, "60", false, false},
+		{`label_replace(sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])), "x", "$1", "app", "(.*)")`, "60", true, false},
+		{`label_replace(sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])), "x", "$1", "app", "(.*)")`, "300", false, false},
+		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`, "300", false, false},
+		{`sum(sum_over_time({app="a"} | json | unwrap n [5m]))`, "60", false, false},
+		{`sum by (app) (quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`, "60", false, false},
 		// An extraction list's series are fields of the row: the window evaluator merges them, the identity stays.
-		{`sum(stdvar_over_time({app="a"} | logfmt n | unwrap n [5m]))`, "60", false},
-		{`sum by (app) (max_over_time({app="a"} | json n, m | unwrap n [5m]))`, "60", false},
-		{`topk(1, sum by (app) (avg_over_time({app="a"} | logfmt n, m | unwrap n [5m])))`, "60", true},
+		{`sum(stdvar_over_time({app="a"} | logfmt n | unwrap n [5m]))`, "60", false, false},
+		{`sum by (app) (max_over_time({app="a"} | json n, m | unwrap n [5m]))`, "60", false, false},
+		{`topk(1, sum by (app) (avg_over_time({app="a"} | logfmt n, m | unwrap n [5m])))`, "60", true, false},
 		// A clause by a level label reads the line's level from raw rows: the stream's series stay.
-		{`sum by (level) (max_over_time({app="a"} | logfmt n | unwrap n [5m]))`, "60", true},
+		{`sum by (level) (max_over_time({app="a"} | logfmt n | unwrap n [5m]))`, "60", true, false},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?step="+tc.step, nil)
 		out := p.dynamicIdentityWindows(r, tc.q)
-		if streamIdentityOnly(out.Context()) != tc.marked {
-			t.Errorf("%s step %q: marked %v, want %v", tc.q, tc.step, !tc.marked, tc.marked)
+		if streamIdentityOnly(out.Context()) != tc.marked || identityAhead(out.Context()) != tc.ahead {
+			t.Errorf("%s step %q: stream identity %v, hash ahead %v; want %v, %v", tc.q, tc.step, streamIdentityOnly(out.Context()), identityAhead(out.Context()), tc.marked, tc.ahead)
 		}
 		if tc.marked && p.dynamicIdentityFor(out.Context(), q) {
 			t.Errorf("%s: a marked request reads the identity", tc.q)

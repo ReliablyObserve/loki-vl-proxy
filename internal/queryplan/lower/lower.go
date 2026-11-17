@@ -34,6 +34,11 @@ type Profile struct {
 	// (WritesDynamicUnwrapIdentity): for a caller that serves the plan's text for a query the identity does not reach,
 	// where the text must be the translator's.
 	StreamIdentity bool
+	// IdentityAhead writes the dynamic identity's series hash before the unwrap gate instead of after it, so the gate
+	// ends the pipes before the first stats pipe: the text the window evaluator reads for a range longer than the
+	// step, which takes the function per series and per anchored bucket and merges the windows (the proxy's
+	// dynamicIdentityWindows). The instant and step-bucket texts keep the hash after the gate.
+	IdentityAhead bool
 	// metric says the log query is the one of a metric row (metricLogQuery).
 	metric bool
 }

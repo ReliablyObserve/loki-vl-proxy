@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"io"
 	"net/http"
 	"net/url"
@@ -408,6 +410,31 @@ func unwrapSplitPipes(text string) ([]string, bool) {
 }
 
 // unwrapClosingQuote is the index of the quote that closes the one at text[open], or -1.
+// topLevelStatsIndex is the index of the first " | stats " of query outside parentheses and quotes (not a
+// subquery's), -1 when there is none.
+func topLevelStatsIndex(query string) int {
+	depth := 0
+	for i := 0; i < len(query); i++ {
+		switch c := query[i]; c {
+		case '"', '`', '\'':
+			end := unwrapClosingQuote(query, i)
+			if end < 0 {
+				return -1
+			}
+			i = end
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ' ':
+			if depth == 0 && strings.HasPrefix(query[i:], " | stats ") {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 func unwrapClosingQuote(text string, open int) int {
 	q := text[open]
 	for i := open + 1; i < len(text); i++ {
@@ -616,15 +643,20 @@ type unwrapNaN struct {
 // unwrapPoisonFuncs are the stats functions whose result is NaN when a value is.
 var unwrapPoisonFuncs = map[string]bool{"sum": true, "avg": true, "stddev": true, "stdvar": true}
 
-// unwrapNaNFor reads how the nan groups of the stats query apply.
+// unwrapNaNFor reads how the nan groups of the stats query apply: the stats pipes from the first one of the query
+// itself (not one of a subquery, lower.SeriesFold's), up to the value of a folded read (lower.SeriesFoldField),
+// whose second stats pipe passes the series that keep their hash as they are.
 func unwrapNaNFor(query string) *unwrapNaN {
 	n := &unwrapNaN{counts: map[string]bool{"__sample_count": true}}
-	pipes, ok := unwrapSplitPipes(query[max(strings.Index(query, " | stats "), 0):])
+	pipes, ok := unwrapSplitPipes(query[max(topLevelStatsIndex(query), 0):])
 	if !ok {
 		return n
 	}
 	poison, last := true, false
 	for _, pipe := range pipes {
+		if strings.HasSuffix(pipe, " as "+lower.SeriesFoldField) {
+			break
+		}
 		if !strings.HasPrefix(pipe, "stats ") {
 			continue
 		}
@@ -1180,16 +1212,14 @@ func (c *unwrapCheck) recentKey(ctx context.Context, p *Proxy, h unwrapHit) stri
 	return p.contextScopeFingerprint(ctx) + "\x00" + c.query + "\x00" + h.field + "\x00" + h.conv
 }
 
-// unwrapRecentErrors remembers the queries that met a conversion error lately, per tenant.
-var unwrapRecentErrors = &unwrapRecent{at: map[string]time.Time{}}
-
 // How long, and how many, recent conversion errors are remembered.
 const (
 	unwrapRecentTTL = 10 * time.Minute
 	unwrapRecentMax = 1024
 )
 
-// unwrapRecent is a bounded set of keys with the time each was marked.
+// unwrapRecent is a bounded set of keys with the time each was marked. A Proxy holds its own (the queries that met a
+// conversion error lately, per tenant); the zero value is ready to use.
 type unwrapRecent struct {
 	mu sync.Mutex
 	at map[string]time.Time
@@ -1211,6 +1241,9 @@ func (r *unwrapRecent) seen(key string) bool {
 func (r *unwrapRecent) mark(key string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.at == nil {
+		r.at = map[string]time.Time{}
+	}
 	now := time.Now()
 	if _, ok := r.at[key]; !ok && len(r.at) >= unwrapRecentMax {
 		oldest, oldestAt := "", now
@@ -1842,7 +1875,7 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 	if isRange && check.firstMinSpan > 0 {
 		probe := check.probes[0]
 		h := unwrapHit{field: check.fieldNames(probe)[0], conv: probe.conv}
-		if check.end.Sub(check.start)+probe.window >= check.firstMinSpan && unwrapRecentErrors.seen(check.recentKey(ctx, p, h)) {
+		if check.end.Sub(check.start)+probe.window >= check.firstMinSpan && p.unwrapRecentErrors.seen(check.recentKey(ctx, p, h)) {
 			if base, ok := p.unwrapFirstWindowBase(ctx, logql, h.field, h.conv); ok {
 				h.base = base
 				check.startFirstWindow(h, true)
@@ -1930,7 +1963,7 @@ func (l *unwrapLookupWriter) decide() {
 		// Only a conversion error starts a later request's early first-window lookup (a JSON parser error is not
 		// what that lookup finds).
 		if key := l.recentHitKey(); unwrapFailed && key != "" {
-			unwrapRecentErrors.mark(key)
+			l.p.unwrapRecentErrors.mark(key)
 		}
 		// Written with the client's context; the request's own reads (a later operand's) stop: the answer is sent.
 		l.p.writeErr(l.out, l.parent, l.err)
@@ -2115,13 +2148,14 @@ func (p *Proxy) unwrapStripResponse(resp *http.Response, strip func([]byte) ([]b
 		return nil
 	}
 	limit := p.decodedBodyLimit()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	// Read in one allocation when the length is known (a folded answer, or one VictoriaLogs sends with its length).
+	body, err := readBodyKnownSize(resp.Body, resp.ContentLength, limit)
 	_ = resp.Body.Close()
+	if errors.Is(err, errBodyTooLarge) {
+		return newBackendBodyTooLarge(limit)
+	}
 	if err != nil {
 		return err
-	}
-	if int64(len(body)) > limit {
-		return newBackendBodyTooLarge(limit)
 	}
 	out, err := strip(body)
 	if err != nil {

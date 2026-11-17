@@ -828,6 +828,7 @@ type Proxy struct {
 	selectCallsInFlight                   atomic.Int64       // VictoriaLogs select calls this replica has in flight
 	execLimits                            executionLimits
 	backendHeavyQueryMinRange             time.Duration
+	unwrapRecentErrors                    unwrapRecent  // queries that met an unwrap conversion error lately
 	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
 	drilldownCoalescer                    *DrilldownBurstCoalescer
 	tailAllowedOrigins                    map[string]struct{}

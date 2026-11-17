@@ -167,3 +167,17 @@ func TestPipeFirstLastTopString(t *testing.T) {
 		})
 	}
 }
+
+// InQuery writes a field's in() over a subquery as given, and its negation with LogsQL's "-".
+func TestInQueryString(t *testing.T) {
+	q := logsql.InQuery{Field: "__lvp_sid", Query: `app:=a | stats by (__lvp_sid) count() as n | fields __lvp_sid`}
+	if got, want := q.String(), `__lvp_sid:in(app:=a | stats by (__lvp_sid) count() as n | fields __lvp_sid)`; got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+	if got := (logsql.Exclude{Expr: q}).String(); !strings.HasPrefix(got, "-__lvp_sid:in(") {
+		t.Errorf("negated: %s", got)
+	}
+	if got := (logsql.InQuery{Query: "x"}).String(); got != "in(x)" {
+		t.Errorf("no field: %s", got)
+	}
+}
