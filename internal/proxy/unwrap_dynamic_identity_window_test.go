@@ -871,3 +871,13 @@ func TestDynamicIdentityWindowsChunkedSeriesLimit(t *testing.T) {
 		}
 	}
 }
+
+// streamLabel is the value of label in a stream's text, `{pod="a",app="b"}`.
+func streamLabel(stream, label string) string {
+	for _, part := range strings.Split(strings.Trim(stream, "{}"), ",") {
+		if k, v, ok := strings.Cut(part, "="); ok && k == label {
+			return strings.Trim(v, `"`)
+		}
+	}
+	return ""
+}

@@ -25,13 +25,13 @@ type diffRow struct {
 }
 
 // diffPostFilter is a label filter after the unwrap in the reference's own
-// model: Loki's StringLabelFilter.
+// model: Loki's string label filter.
 type diffPostFilter struct {
 	text, name, op, value string
 }
 
 // referenceParse is an independent model of Loki v3.7.7's parsers
-// (pkg/logql/log/parser.go) for the fixture's lines, written apart from the
+// for the fixture's lines, written apart from the
 // proxy's: `| json` keeps strings, numbers and booleans and flattens objects
 // with `_`, skipping arrays and null; `| logfmt` follows referenceLogfmt;
 // `| unpack` keeps the strings of a line holding _entry, the last value of a
@@ -250,7 +250,7 @@ func referenceUnquote(s string) (string, bool) {
 	return b.String(), true
 }
 
-// orderedJSONSanitizeForReference is Loki's sanitizeLabelKey, written again.
+// orderedJSONSanitizeForReference is Loki's label key sanitizing, written again.
 func orderedJSONSanitizeForReference(k string) string {
 	k = strings.TrimSpace(k)
 	if k == "" {

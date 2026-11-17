@@ -6,8 +6,15 @@ name: Error answers re-record
 # replay and the generated error compatibility matrix compare against, so a Loki bump
 # that changes one of its messages shows here before it shows as a surprise elsewhere.
 #
+# The recorded Loki holds data, as a Loki in use does: the recorder writes a fixture to it
+# first and waits until its range metric path serves it and every module runs, and every
+# re-recorded row carries the state it was recorded in ("state": "serving"). Each row asks
+# the window it asked when it was written, moved to now (as the end-to-end comparison moves
+# it): over a window older than what it holds, /patterns answers a query that is not a
+# stream selector with its empty success instead of Loki's 400.
+#
 # The recorder (test/errorrecord) sends every comparable row over HTTP and rewrites only
-# the answers; it adds and removes no row. A scheduled or manual run that finds a changed
+# the answers and states; it adds and removes no row. A scheduled or manual run that finds a changed
 # answer uploads the rewritten files as an artifact and ends red, which is the notification:
 # commit the files, run conformance/scripts/error_registry.py and
 # `LVP_LOKI_ERROR_ANSWERS_UPDATE=1 go test ./internal/proxy -run TestLokiErrorAnswersReplay`
@@ -66,6 +73,9 @@ jobs:
           echo "Loki did not become ready" >&2
           docker compose logs loki | tail -50 >&2
           exit 1
+
+      - name: Write a fixture to Loki and wait until it serves it
+        run: go run ./test/errorrecord -loki http://localhost:13101 -ingest
 
       - name: Ask Loki the recorded requests
         id: record

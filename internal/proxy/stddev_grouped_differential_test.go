@@ -19,12 +19,12 @@ import (
 )
 
 // This file pins the answer of stddev and stdvar over a range aggregation to
-// Loki's, over generated rows and generated windows, with a reference evaluator
-// written apart from the proxy: Loki v3.7.7 pkg/logql/evaluator.go
-// VectorAggEvaluator.Next (each series of the input falls into the group the
-// grouping names, and the group takes the population standard deviation or
-// variance of the series' VALUES by Welford's update, 0 for a group of one
-// series), over count_over_time's per-series counts in the window (t-range, t].
+// Loki's, over generated rows and generated windows, with stddevReference (held
+// to Loki's recorded answers by TestStddevReferenceMatchesRecordedLoki): each
+// series of the input falls into the group the grouping names, and the group
+// takes the population standard deviation or variance of the series' values,
+// 0 for a group of one series, over the per-series values of the range function
+// in the window (t-range, t].
 // stddev_over_time and stdvar_over_time, which work over the samples inside one
 // window, are a different function and not tested here.
 //
@@ -53,27 +53,6 @@ func (g stdGrouping) wrap(op, inner string) string {
 	}
 }
 
-// groupLabels returns the labels of the group a series with these labels falls into.
-func (g stdGrouping) groupLabels(series map[string]string) map[string]string {
-	out := map[string]string{}
-	switch g.kind {
-	case "by":
-		for _, l := range g.labels {
-			if v, ok := series[l]; ok {
-				out[l] = v
-			}
-		}
-	case "without":
-		for k, v := range series {
-			out[k] = v
-		}
-		for _, l := range g.labels {
-			delete(out, l)
-		}
-	}
-	return out
-}
-
 func canonicalLabels(m map[string]string) string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -93,75 +72,8 @@ var stdStreams = []map[string]string{
 	{"app": "c", "pod": "p4"}, {"app": "c", "pod": "p5"},
 }
 
-// lokiSeriesLabels are the labels of a series in Loki: the stream's, and the
-// service_name Loki derives from the app label at ingest (discover_service_name).
-func lokiSeriesLabels(stream map[string]string) map[string]string {
-	return map[string]string{"app": stream["app"], "pod": stream["pod"], "service_name": stream["app"]}
-}
-
 func stdStreamText(labels map[string]string) string {
 	return fmt.Sprintf(`{app=%q,pod=%q}`, labels["app"], labels["pod"])
-}
-
-// lokiGroupedStd is the reference: for every evaluation time, the value of the
-// range function fn (count_over_time, rate, bytes_over_time or bytes_rate) of
-// each series' lines in (t-window, t], folded per group by VectorAggEvaluator.
-// Result: group -> time -> value.
-func lokiGroupedStd(rows []vlemu.Row, window int64, times []int64, fn, op string, g stdGrouping) map[string]map[int64]float64 {
-	// A row's series: its stream and, when a parser extracted it, its route.
-	out := map[string]map[int64]float64{}
-	for _, t := range times {
-		counts := map[string]float64{}
-		series := map[string]map[string]string{}
-		bytes := map[string]float64{}
-		for _, row := range rows {
-			if row.TS <= t-window || row.TS > t {
-				continue
-			}
-			for _, s := range stdStreams {
-				if stdStreamText(s) == row.Stream {
-					key := row.Stream + row.Labels["route"]
-					counts[key]++
-					bytes[key] += float64(len(row.Msg))
-					series[key] = lokiSeriesLabels(s)
-					if route := row.Labels["route"]; route != "" {
-						series[key]["route"] = route
-					}
-				}
-			}
-		}
-		type acc struct{ mean, m2, n float64 }
-		groups := map[string]*acc{}
-		for stream, count := range counts {
-			value := map[string]float64{
-				"count_over_time": count,
-				"rate":            count / (float64(window) / 1e9),
-				"bytes_over_time": bytes[stream],
-				"bytes_rate":      bytes[stream] / (float64(window) / 1e9),
-			}[fn]
-			key := canonicalLabels(g.groupLabels(series[stream]))
-			a := groups[key]
-			if a == nil {
-				groups[key] = &acc{mean: value, n: 1}
-				continue
-			}
-			a.n++
-			delta := value - a.mean
-			a.mean += delta / a.n
-			a.m2 += delta * (value - a.mean)
-		}
-		for key, a := range groups {
-			v := a.m2 / a.n
-			if op == "stddev" {
-				v = math.Sqrt(v)
-			}
-			if out[key] == nil {
-				out[key] = map[int64]float64{}
-			}
-			out[key][t] = v
-		}
-	}
-	return out
 }
 
 type stdScenario struct {
@@ -375,7 +287,7 @@ func TestStddevStdvarGroupedDifferential(t *testing.T) {
 						for i := 0; i < 8; i++ {
 							s := generateStdScenario(rnd, op, g, mode == "instant", mode == "tumbling", version != "v1.40.0", false)
 							got := runStdScenario(t, s, version)
-							want := lokiGroupedStd(s.rows, int64(s.window), s.times(), s.function(), op, g)
+							want := stddevReference(s.rows, int64(s.window), s.times(), s.function(), op, g)
 							compareStd(t, fmt.Sprintf("%s #%d", name, i), s, got, want)
 						}
 					})
@@ -413,7 +325,7 @@ func TestStddevStdvarGroupedByParsedLabelDifferential(t *testing.T) {
 								s := generateStdScenario(rnd, op, g, mode == "instant", mode == "tumbling", version != "v1.40.0", true)
 								s.fn = fn
 								got := runStdScenario(t, s, version)
-								want := lokiGroupedStd(s.rows, int64(s.window), s.times(), s.function(), op, g)
+								want := stddevReference(s.rows, int64(s.window), s.times(), s.function(), op, g)
 								compareStd(t, fmt.Sprintf("%s #%d", name, i), s, got, want)
 							}
 						})

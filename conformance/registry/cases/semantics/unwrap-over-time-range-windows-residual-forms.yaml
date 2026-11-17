@@ -1,16 +1,14 @@
 id: semantics/unwrap-over-time-range-windows-residual-forms
-title: some outer aggregations of sum, avg, max and min over time with unwrap answer the step bucket, not the window, when the range is longer than the step (open)
+title: some outer aggregations of sum, avg, max and min over time with unwrap answer the step bucket, not the window, when the range is longer than the step (open, partly fixed - after an extraction list)
 proves:
   - window-bounds-and-step-alignment
   - metric-series-identity
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki takes these functions per series over the window (t-range, t]
-  (pkg/logql/range_vector.go:102-189, range_vector.go:371-420), a series being
-  the stream plus the labels a parser extracted less the unwrapped one
-  (pkg/logql/log/metrics_extraction.go), and applies the outer aggregations per
-  step (pkg/logql/evaluator.go VectorAggEvaluator.Next).
+  Loki takes these functions per series over the window (t-range, t], a series being
+  the stream plus the labels a parser extracted less the unwrapped one, and applies the outer aggregations per
+  step.
 
   The window merge of semantics/unwrap-over-time-range-windows reads per-series
   buckets of partial aggregates and applies the outer aggregation after the
@@ -31,11 +29,14 @@ why: |
   then the partial aggregates merge per window like the other forms. That is
   done for avg, max and min over time (and stddev, stdvar) under sum, max, min
   or avg after a json or logfmt parser with no keep, such as
-  `sum(avg_over_time({..} | json | unwrap x [5m]))`: the buckets group by the
-  series hash of semantics/unwrap-per-series-identity-raw-rows and the window
-  merge folds the series (TestDynamicIdentityWindowsMatchLokiReference). The
-  additive functions under another aggregation (`max by (pod) (sum_over_time(..
-  | json ..))`), the `without` folds and the nested forms stay as above. Found with
+  `sum(avg_over_time({..} | json | unwrap x [5m]))`: after an extraction list of
+  plain keys the buckets group by its fields (listedIdentityWindows, held to
+  recorded Loki answers by TestExtractionListIdentityMatchLoki and
+  TestUnwrapDynamicValueFormsMatchLoki), after a parser of every key by the
+  series hash of semantics/unwrap-per-series-identity-raw-rows, and the window
+  merge folds the series. The additive functions under another aggregation
+  (`max by (pod) (sum_over_time(.. | json ..))`), the `without` folds and the
+  nested forms stay as above. Found with
   an emulated VictoriaLogs while fixing semantics/unwrap-over-time-range-windows
   (not measured on a stack).
 request:
@@ -58,7 +59,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/proxy unwrap_samples.go unwrapWindowBuckets and unwrapWindowForm (these forms keep native step buckets); the translator''s per-series grouping of parser queries'
-  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator; range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime; pkg/logql/evaluator.go VectorAggEvaluator.Next'
+  loki: 'sum, avg, max and min over unwrap are taken per series over (t-range, t], then the outer aggregations per step (TestCompat_UnwrapOverTimeRangeWindows)'
   proxy: 'native step buckets: the step-sized bucket, not the window'
   planned_test: 'TestUnwrapOverTimeResidualShapesKeepStatsBuckets pins the route today (internal/proxy), and the window merge of the parser identity forms (TestDynamicIdentityWindowsMatchLokiReference); the remaining forms join TestUnwrapOverTimeWindowsDifferential and TestCompat_UnwrapOverTimeRangeWindows once fixed'
   note: 'Residual of semantics/unwrap-over-time-range-windows; depends on the parsed series identity rows.'

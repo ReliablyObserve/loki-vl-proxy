@@ -16,10 +16,10 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
-// patternCountsMinStep is the resolution Loki keeps pattern samples at (pkg/pattern/drain TimeResolution): a
+// patternCountsMinStep is the resolution Loki keeps pattern samples at (registry drilldown/patterns-counts-tier-step-buckets): a
 // smaller step is answered at it.
 const patternCountsMinStep = 10 * time.Second
 
@@ -226,12 +226,13 @@ func (p *Proxy) patternScope(query, startParam, endParam, stepParam string) (pat
 		return patternQueryScope{}, false
 	}
 	p.configMu.RLock()
-	opts := translator.ASTTranslateOptions{StreamFields: p.streamFieldsMap}
+	streamFields := p.streamFieldsMap
+	var labelFn translate.LabelTranslateFunc
 	if p.labelTranslator != nil {
-		opts.LabelFn = p.labelTranslator.ToVL
+		labelFn = p.labelTranslator.ToVL
 	}
 	p.configMu.RUnlock()
-	filter, err := translator.ASTSelectorFilter(lq.Selector, opts)
+	filter, err := translate.StreamSelectorFilter(lq.Selector.Matchers, labelFn, streamFields)
 	if err != nil {
 		return patternQueryScope{}, false
 	}
@@ -252,11 +253,20 @@ func (p *Proxy) patternsFromCounts(r *http.Request, query, startParam, endParam,
 	if !ok {
 		return nil, false
 	}
-	windows := patternCountsWindows(scope.startNs, scope.endNs)
+	readStart, readEnd := scope.startNs, scope.endNs
+	if step := int64(scope.step); step > 0 && step%int64(lokiPatternSampleInterval) == 0 {
+		// With a step of whole 10 s samples, VictoriaLogs' step buckets are Loki's samples counted into steps, so
+		// the samples starting inside the range are counted whole, as Loki counts them, by reading from the first
+		// one's start to the last one's end.
+		if from, to := patternSamplesEndNs(scope.startNs), patternSamplesEndNs(scope.endNs); from < to {
+			readStart, readEnd = from, to
+		}
+	}
+	windows := patternCountsWindows(readStart, readEnd)
 	inputs := make([]patternWindowInputs, len(windows))
 	oks := make([]bool, len(windows))
 	if len(windows) == 1 {
-		inputs[0], oks[0] = p.readPatternWindowInputs(r.Context(), scope.filter, scope.step, scope.startNs, scope.endNs)
+		inputs[0], oks[0] = p.readPatternWindowInputs(r.Context(), scope.filter, scope.step, readStart, readEnd)
 	} else {
 		sem := make(chan struct{}, patternCountsParallel)
 		var wg sync.WaitGroup
@@ -422,6 +432,11 @@ func (e errPatternCounts) Error() string { return "patterns counts: " + e.reason
 // readPatternCountRows runs a counts query over [startNs, endNs] and hands each row to read, which returns false
 // for a row it cannot use. More than maxRows rows, a row read rejects or a failed request is an error.
 func (p *Proxy) readPatternCountRows(ctx context.Context, q *logsql.Query, startNs, endNs int64, maxRows int, read func(*fj.Value) bool) error {
+	return p.readPatternAnswer(ctx, q, startNs, endNs, func(body io.Reader) error { return scanPatternRows(body, maxRows, read) })
+}
+
+// readPatternAnswer runs a query of the patterns flow over [startNs, endNs] and hands its answer to scan.
+func (p *Proxy) readPatternAnswer(ctx context.Context, q *logsql.Query, startNs, endNs int64, scan func(io.Reader) error) error {
 	params := url.Values{}
 	params.Set("query", q.String())
 	params.Set("start", strconv.FormatInt(startNs, 10))
@@ -434,7 +449,7 @@ func (p *Proxy) readPatternCountRows(ctx context.Context, q *logsql.Query, start
 	if resp.StatusCode != http.StatusOK {
 		return errPatternCounts{"status " + strconv.Itoa(resp.StatusCode)}
 	}
-	return scanPatternRows(resp.Body, maxRows, read)
+	return scan(resp.Body)
 }
 
 // scanPatternRows hands each JSON row of r to read, one at a time: the row is valid until read returns, and no

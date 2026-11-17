@@ -340,7 +340,7 @@ func parseUnwrapExpression(expr string) (field, conv string) {
 
 	switch {
 	case strings.HasPrefix(expr, "duration_seconds(") && strings.HasSuffix(expr, ")"):
-		// Loki converts it as duration() (syntax/extractor.go:63-71).
+		// Loki converts it as duration() (registry semantics/unwrap-duration-seconds).
 		field = strings.TrimSpace(expr[len("duration_seconds(") : len(expr)-1])
 		conv = "duration"
 	case strings.HasPrefix(expr, "duration(") && strings.HasSuffix(expr, ")"):
@@ -799,6 +799,12 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 		return true
 	}
+	// An extraction list's series identity on a range longer than the step: the windows are evaluated in time chunks,
+	// each read under the per-chunk bound and folded as it is read (listed_window_chunks.go).
+	if p.listedWindowChunksRoute(w, r, listedChunkReads{bucketsOK: bucketsOK, counter: counterProof != nil, quantile: quantileCounts, rawRows: &forceRawLevelRows},
+		spec, origSpec, manualFunc, statsAggFunc, startTS, endTS, step, bucket, sampleShift) {
+		return true
+	}
 	if !bucketsOK || (bucket > 0 && (endTS.Sub(startTS)+origSpec.Window)/bucket > heavyQueryBucketThreshold) {
 		// No bucket grid, or more buckets than Loki's 11,000-point limit:
 		// VictoriaLogs would build every point in memory. The raw evaluator is
@@ -824,21 +830,12 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// parsed fields and counts every line, as the raw evaluator does.
 	streamBuckets := origSpec.Window != step
 	statsAggFunc = p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
-	for route, collect := range []func() (map[string]manualSeriesSamples, bool, error){
-		func() (map[string]manualSeriesSamples, bool, error) {
-			return p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, false)
-		},
-		func() (map[string]manualSeriesSamples, bool, error) {
-			return p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket)
-		},
-		func() (map[string]manualSeriesSamples, bool, error) {
-			return p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, true)
-		},
-	} {
+	routes := p.statsBucketRoutes(spec, statsAggFunc, bucket, streamBuckets)
+	for route, collect := range routes {
 		if forceRawLevelRows {
 			break
 		}
-		series, ok, err := collect()
+		series, ok, err := collect(r.Context(), fetchStart, endTS)
 		if err != nil {
 			p.writeErr(w, r.Context(), err)
 			return true
@@ -892,6 +889,11 @@ func (p *Proxy) writeCoalescedManualMetric(w http.ResponseWriter, r *http.Reques
 	// Keep the parser in the regular stats query until fused parsed-field counts
 	// can be proved equivalent to Loki for every selected row.
 	if strings.Contains(spec.BaseQuery, "| unpack_logfmt") {
+		return false
+	}
+	// A placeholder exclusion is the request's own (its guard is the field it
+	// counts): the fused query of several fields cannot carry each one.
+	if placeholderExclusionFrom(r.Context()) != "" {
 		return false
 	}
 	base, field, ok := extractCommonBase(spec.BaseQuery)
@@ -1048,8 +1050,7 @@ func (p *Proxy) writeHitsRangeMetricMatrixFolded(w http.ResponseWriter, manualFu
 
 // ungroupedSumRange returns the range aggregation under a bare `sum(...)`, one
 // with no by() or without() (`sum by ()` included): Loki folds every series the
-// range aggregation yields into one series per step
-// (pkg/logql/evaluator.go newVectorAggEvaluator, VectorAggEvaluator.Next).
+// range aggregation yields into one series per step.
 func ungroupedSumRange(query string) (*logqlpkg.RangeAggregation, bool) {
 	// The shared parse of the query: the range aggregation is read, never changed.
 	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
@@ -1079,8 +1080,7 @@ func hasUnwrapStage(lq *logqlpkg.LogQuery) bool {
 // series identity is, so the evaluator may sum the lines (or the unwrapped
 // values) of all the streams before windowing and read one series from
 // VictoriaLogs: the count and byte functions, and rate and sum_over_time over an
-// unwrapped label, whose value is the sum of the values (pkg/logql/range_vector.go
-// rateLogs with computeValues, sumOverTime). avg, max, min, quantile and the
+// unwrapped label, whose value is the sum of the values. avg, max, min, quantile and the
 // other functions take a value per series, so their series stay apart until the
 // outer sum (foldUngroupedSum).
 func isSumAllLogRange(query string) bool {
@@ -1630,6 +1630,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	params := url.Values{}
 	params.Set("query", statsQuery)
 	setSlidingStatsRangeParams(params, start, end, hitStep)
+	params = p.levelLessFirstRead(ctx, "/select/logsql/stats_query_range", params)
 
 	// The detected_level chain is narrowed (a probe request) before a slot is
 	// taken, not while holding one.
@@ -1638,17 +1639,15 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// Acquire concurrency slot. The Drilldown Fields page fires ~30 of these
 	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
 	// Block until a slot is free or the request is cancelled.
-	if sem := p.statsQueryRangeSem; sem != nil {
-		select {
-		case <-sem:
-			defer func() { sem <- struct{}{} }()
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		}
+	release, err := p.takeStatsQueryRangeSlot(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
+	defer release()
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
+		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
@@ -1662,7 +1661,16 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
 	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc))
 	if err != nil {
+		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
+	}
+	// A stream without a level label is one series per level its lines carry.
+	// The slot is free again first: the second read and its presence probe do
+	// not hold it.
+	release()
+	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
+		noteStatsReadOverflow(ctx, err)
+		return nil, nil, p.levelLessErr("stats_query_range backend", err)
 	}
 	addIdentityReadBytes(ctx, len(body))
 
@@ -1723,11 +1731,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		metricObj := mv.GetObject()
 		var metric map[string]string
 		if streamGrouped {
-			var derived *string
-			if streamGroupedByDetectedLevel {
-				value := strings.TrimSpace(string(metricObj.Get("detected_level").GetStringBytes()))
-				derived = &value
-			}
+			derived := statsGroupDerivedLevel(metricObj, streamGroupedByDetectedLevel)
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), derived, groupBy, byExplicit, origGroupBy).translated
 			if keepsParsedGroupLabels(ctx) {
 				metric = p.withParsedGroupLabels(metric, metricObj, groupBy, vlToLoki)
@@ -1763,6 +1767,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	}
 	devs.fold(seriesMap)
 	series, err := capHitSeries(ctx, seriesMap, limit, aux)
+	noteStatsRead(ctx, len(body), len(seriesMap), err)
 	return series, auxEdges, err
 }
 
@@ -2055,7 +2060,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		}
 
 		hideLevel := false
-		if exposure != nil && levelStr != "" && exposure.hidesStoredLevel(v.GetStringBytes("_msg")) {
+		if exposure != nil && levelStr != "" && exposure.hidesStoredLevelOf(v.GetStringBytes("_msg")) {
 			_, streamLevel := parseStreamLabels(streamStr)["level"]
 			hideLevel = !streamLevel
 		}
@@ -2152,15 +2157,85 @@ func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry
 // every row of it (deriveRowLevel's stream rule): the first non-empty field
 // named in levelFieldNames, normalised, else unknown.
 func streamDetectedLevel(stream map[string]string) string {
-	for _, name := range levelFieldNames {
-		if v := stream[name]; v != "" {
-			if c := canonicalLevel([]byte(v)); c != "" {
-				return c
-			}
-			return v
-		}
+	if v, ok := streamLevel(stream); ok {
+		return v
 	}
 	return levelUnknown
+}
+
+// streamLevel is the stream rule of streamDetectedLevel; ok is false when the
+// stream holds none of the level fields. level, the first name and the common
+// one, is looked up directly; otherwise the stream's labels are walked once and
+// the non-empty one earliest in levelFieldNames (levelFieldSlot) is kept, the
+// names screened by first byte and length before the switch.
+func streamLevel(stream map[string]string) (string, bool) {
+	if v := stream["level"]; v != "" {
+		return normalizedLevel(v), true
+	}
+	best, value := levelSlotSeverityNumber, ""
+	for k, v := range stream {
+		if v == "" || len(k) < 3 {
+			continue
+		}
+		switch k[0] {
+		case 'l', 'L', 's', 'S':
+		default:
+			continue
+		}
+		switch len(k) {
+		case 3, 5, 8, 9, 12, 13: // the lengths of levelFieldNames
+		default:
+			continue
+		}
+		if slot := levelFieldSlot([]byte(k)); slot >= levelSlotFirstName && slot < best {
+			best, value = slot, v
+		}
+	}
+	if best == levelSlotSeverityNumber {
+		return "", false
+	}
+	return normalizedLevel(value), true
+}
+
+// normalizedLevel is a level value as Loki writes it into detected_level: a
+// known spelling normalised (ERROR is error, Warning warn), any other word kept.
+func normalizedLevel(v string) string {
+	if c := canonicalLevel([]byte(v)); c != "" {
+		return c
+	}
+	return v
+}
+
+// ensureStreamDetectedLevel fills detected_level on the labels of a series
+// built from one stream, with the rule of streamDetectedLevel: the stream's
+// first level field, else the row's level field (labels["level"]), normalised.
+// A detected_level already present stays. With neither field the label stays
+// absent: the line bodies decide it in Loki, which one series per stream
+// cannot split. The level label itself keeps its stored value, as in Loki.
+func ensureStreamDetectedLevel(labels, stream map[string]string) {
+	if labels == nil || strings.TrimSpace(labels["detected_level"]) != "" {
+		return
+	}
+	if v, ok := streamLevel(stream); ok {
+		labels["detected_level"] = v
+		return
+	}
+	if v := strings.TrimSpace(labels["level"]); v != "" {
+		labels["detected_level"] = normalizedLevel(v)
+	}
+}
+
+// statsGroupDerivedLevel is the detected_level VictoriaLogs computed for a
+// stream-grouped stats series: when the read grouped by it, or when it read a
+// stream without a level label again with the chain (withLevelLessStreams).
+// nil when it computed none.
+func statsGroupDerivedLevel(metric *fj.Object, grouped bool) *string {
+	dl := metric.Get(detectedLevelLabel)
+	if !grouped && dl == nil {
+		return nil
+	}
+	value := strings.TrimSpace(string(dl.GetStringBytes()))
+	return &value
 }
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given
@@ -2176,18 +2251,28 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *stri
 	}
 	if levelStr != "" {
 		streamLabels["level"] = levelStr
-		streamLabels["detected_level"] = levelStr
 	}
 	switch {
 	case derived != nil && *derived != "":
 		streamLabels["detected_level"] = *derived
 	case derived != nil:
 		delete(streamLabels, "detected_level")
-	case strings.TrimSpace(streamLabels["detected_level"]) == "":
-		// A row of a group read by stream alone (stats by (_stream)) carries
-		// no level column: the stream's level field decides it for every row
-		// of the stream, as Loki's ingest does (rule 2), else unknown.
-		streamLabels["detected_level"] = streamDetectedLevel(rawStreamLabels)
+	case levelStr == "" && strings.TrimSpace(streamLabels["detected_level"]) != "":
+		// A detected_level stream label stays as it was.
+	default:
+		// Without VictoriaLogs' derivation the stream's level fields decide
+		// for every row of the stream, as Loki's ingest does (rule 2): a raw
+		// row holds them as fields too, so its level field is the stream's
+		// level="ERROR" (error) rather than a value of the row. Then the row's
+		// level field (rule 3), normalised, then unknown. A group read by
+		// stream alone (stats by (_stream)) carries no level column.
+		if v, ok := streamLevel(rawStreamLabels); ok {
+			streamLabels["detected_level"] = v
+		} else if levelStr != "" {
+			streamLabels["detected_level"] = normalizedLevel(levelStr)
+		} else {
+			streamLabels["detected_level"] = levelUnknown
+		}
 	}
 	ensureSyntheticServiceName(streamLabels)
 
@@ -2581,8 +2666,8 @@ func parseFloatValue(raw interface{}) (float64, bool) {
 }
 
 // resolvedMaxStatsQuerySeries returns the request tenant's max_query_series:
-// -tenant-limits, -tenant-default-limits, -max-stats-query-series, or Loki's
-// default of 500 (see queryLimitsFor).
+// -tenant-limits, -tenant-default-limits, -max-stats-query-series, or the
+// proxy's default of 1000 (see queryLimitsFor).
 func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
 	limit := p.requestQueryLimits(ctx).MaxQuerySeries
 	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
@@ -2600,9 +2685,10 @@ func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
 	return limit
 }
 
-// defaultStatsQuerySeries is Loki's stock max_query_series, the default of
-// -max-stats-query-series.
-const defaultStatsQuerySeries = 500
+// defaultStatsQuerySeries is the proxy's default max_query_series, the default
+// of -max-stats-query-series. It is above Loki's stock 500: the proxy answers
+// faster than Loki, so it can afford more series per query by default.
+const defaultStatsQuerySeries = 1000
 
 // capSeriesByTotalCount keeps the maxSeries series with the highest total
 // sample value. VictoriaLogs returns stats results in label order, so a plain
@@ -2760,6 +2846,20 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 	if end.Before(start) || step <= 0 {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{}), nil
 	}
+	sink := newMatrixFoldSink(fold) // nil without a fold
+	results, err := hitsRangeMetricSeries(manualFunc, series, start, end, step, window, maxBytes, sink)
+	if err != nil {
+		return nil, err
+	}
+	if sink != nil {
+		return sink.finish(fold, maxBytes)
+	}
+	return marshalManualMetricResponse("matrix", results), nil
+}
+
+// hitsRangeMetricSeries evaluates the windows of series at the steps of [start, end]: into sink when there is one
+// (nothing is returned then), or as the matrix's series.
+func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxBytes int, sink *matrixFoldSink) ([]map[string]interface{}, error) {
 	encodedBytes := 0
 	windowNS := window.Nanoseconds()
 	windowSec := window.Seconds()
@@ -2779,9 +2879,11 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 	startNS, endNS, stepNS := start.UnixNano(), end.UnixNano(), step.Nanoseconds()
 	expectedBuckets := min(int(end.Sub(start)/step)+1, 32768) // pre-size cap; appends grow beyond it
 
-	sink := newMatrixFoldSink(fold) // nil without a fold
 	var folded []typedPoint
-	results := make([]map[string]interface{}, 0, len(keys))
+	var results []map[string]interface{}
+	if sink == nil {
+		results = make([]map[string]interface{}, 0, len(keys))
+	}
 	for _, key := range keys {
 		seriesEntry := series[key]
 		samples := sortedHitsSamples(seriesEntry.Samples)
@@ -2878,10 +2980,7 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 			})
 		}
 	}
-	if sink != nil {
-		return sink.finish(fold, maxBytes)
-	}
-	return marshalManualMetricResponse("matrix", results), nil
+	return results, nil
 }
 
 // sortedHitsSamples returns samples in time order. Coalesced results are shared
@@ -3254,9 +3353,9 @@ func aggregateManualWindow(functionName string, quantile float64, samples []rang
 		lastVal  float64
 		hasFirst bool
 	)
-	// A LogQL range vector is (start, end] for EVERY function: Loki's
-	// batchRangeVectorIterator.load skips `sample.Timestamp <= start` and the
-	// iterator is shared by unwrapped ranges too (pkg/logql/range_vector.go).
+	// A LogQL range vector is (start, end] for EVERY function: Loki skips
+	// `sample.Timestamp <= start`, for unwrapped ranges too (registry
+	// semantics/stddev-stdvar-over-time-range-window).
 	const excludeStart = true
 	for _, sample := range samples {
 		if sample.ts < windowStart || sample.ts > windowEnd || (excludeStart && sample.ts == windowStart) {
@@ -3384,8 +3483,7 @@ func (p *Proxy) manualSeriesLimit(ctx context.Context) int {
 // foldUngroupedSum runs a manual range metric evaluator and, for an ungrouped
 // `sum(...)` over a function whose series do not add up before the window
 // (isSumAllLogRange), sums the series it returns per step: Loki's vector
-// aggregation folds every series of its input into one
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next, groupingKey of no labels).
+// aggregation folds every series of its input into one.
 func foldUngroupedSum(w http.ResponseWriter, r *http.Request, query string, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	if _, ok := ungroupedSumRange(query); !ok || isSumAllLogRange(query) {
 		return serve(w, r)

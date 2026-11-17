@@ -114,7 +114,7 @@ extraArgs:
   # query-range-background-warm: "true"                # continue warming failed windows in background
   # query-range-background-warm-max-windows: "24"      # cap background warm fanout
   # default-max-query-length: "721h"                   # max query time range for all tenants: Loki's max_query_length default (0 = unlimited; per-tenant limits override)
-  # max-stats-query-series: "500"                       # max series a metric query may return (count_over_time, rate, bytes_rate); 0 = built-in default of 500, Loki's own max_query_series default; above it the query fails with Loki's HTTP 400 "maximum number of series (N) reached for a single query" (Logs Drilldown gets a partial result with a warning)
+  # max-stats-query-series: "1000"                      # max series a metric query may return (count_over_time, rate, bytes_rate); 0 = built-in default of 1000 (Loki's own max_query_series default is 500; set 500 to match it); above it the query fails with Loki's HTTP 400 "maximum number of series (N) reached for a single query" (Logs Drilldown gets a partial result with a warning)
   # stats-query-range-concurrency: "4"                  # max concurrent stats_query_range calls to VL; higher = more VL CPU pressure; 0 = built-in default of 4
   # drilldown-burst-window-ms: "50"
   # drilldown-burst-max-fields: "30"
@@ -214,7 +214,7 @@ extraArgs:
   # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize
   # label-values-max-response-bytes: "67108864"         # 64 MiB read from one VictoriaLogs label values response; HTTP 500 ResourceExhausted (Loki's text) above it
-  # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 400 (the log line names the flag; no truncated results)
+  # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 400 (the log line names the flag; no truncated results). On extraction-list windows it bounds one time chunk's read: the request is read in more chunks instead
   # label-filter-refill-max-pages: "8"   # more pages (of limit rows) a log query reads when a Loki label filter dropped rows VictoriaLogs matched; 0 reads none
   # ordered-json-metric-max-bytes: "1073741824"  # safety cap on raw rows bytes read by the ordered JSON metric evaluator (0 = 1 GiB default, no upper bound); exceeding it returns HTTP 500 (the log line names the flag; no truncated results)
 
@@ -385,6 +385,7 @@ extraArgs:
   # backend-version-strict: "false"             # when true, /health failure, non-2xx, or missing/sub-min backend semver fails startup (default false: warn only); overrides --backend-allow-unsupported-version
   # backend-tls-skip-verify: "false"
   # backend-default-msg-value: ""               # VictoriaLogs -defaultMsgValue when customized; rows whose _msg is empty or that placeholder get a line rebuilt from their fields
+  # json-line-fields-as-line-keys: "false"      # read a placeholder row's stored fields as its JSON line's keys (Loki pushes without disable_message_parsing=1); hides structured metadata pushed beside such a line
   # deployment-environment: ""                  # OTel deployment.environment.name
   # otel-service-name: "loki-vl-proxy"
   # otel-service-namespace: ""
@@ -432,6 +433,7 @@ extraArgs:
   # peer-auth-token: ""                         # DO NOT SET HERE — chart manages this flag from a Secret when peerCache.enabled=true; setting it here renders a duplicate -peer-auth-token CLI arg and the Go flag package will fatal at startup. Use peerCache.authToken or peerCache.existingSecret instead (see below). Rendering will fail with a clear error if this entry is uncommented while peerCache.enabled=true.
   # peer-insecure-ip-allowlist: "false"          # when true, allows legacy IP-only peer auth on /_cache/* (NOT recommended; default false requires --peer-auth-token)
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
+  # peer-read-hedge-max-delay: "200ms"         # longest a read waits on one replica's headers before asking the next replica or reading VictoriaLogs; 0 = off
   # peer-replication-factor: "2"               # replicas per peer-cache key (owner + backups); a replica that lost its disk or whose owner is down reads the key from the next replica
   # peer-write-through: "true"                  # push eligible writes to the key's replicas
   # peer-push-buffer-max-entries: "8192"       # pushes kept (all peers) while a peer's breaker is open or it restarts, replayed when it answers; 0 = off

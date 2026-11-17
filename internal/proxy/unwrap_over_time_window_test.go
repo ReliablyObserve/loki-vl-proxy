@@ -23,123 +23,12 @@ import (
 
 // This file pins sum, avg, max and min over time with unwrap to Loki's window
 // (t-range, t] at every step, whatever the range and the step are, and on
-// instant queries (pkg/logql/range_vector.go:102-189 batchRangeVectorIterator
-// Next and load: the lower bound is exclusive, the evaluation time inclusive;
-// range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime),
-// with the outer aggregation applied per step (pkg/logql/evaluator.go
-// VectorAggEvaluator.Next). The reference below is written apart from the
-// proxy. The proxy under test is the real handler over the emulated
+// instant queries (the lower bound is exclusive, the evaluation time
+// inclusive), with the outer aggregation applied per step, with overTimeReference (held to Loki's recorded
+// answers by TestOverTimeReferenceMatchesRecordedLoki). The proxy under test is the real handler over the emulated
 // VictoriaLogs (vlemu.Emulator), and the answer must come from stats: raw rows
 // only where the bucket grid would pass Loki's 11,000 points
 // (heavyQueryBucketThreshold), which TestUnwrapOverTimeRawWindowBounds forces.
-
-// lokiOverTimeValue is Loki's range function over one series' window values,
-// in order.
-func lokiOverTimeValue(fn string, values []float64) float64 {
-	switch fn {
-	case "sum_over_time":
-		var sum float64
-		for _, v := range values {
-			sum += v
-		}
-		return sum
-	case "avg_over_time":
-		var mean, count float64
-		for _, v := range values {
-			count++
-			if math.IsInf(mean, 0) {
-				if math.IsInf(v, 0) && (mean > 0) == (v > 0) {
-					continue
-				}
-				if !math.IsInf(v, 0) && !math.IsNaN(v) {
-					continue
-				}
-			}
-			mean += v/count - mean/count
-		}
-		return mean
-	case "max_over_time":
-		out := values[0]
-		for _, v := range values {
-			if v > out || math.IsNaN(out) {
-				out = v
-			}
-		}
-		return out
-	case "min_over_time":
-		out := values[0]
-		for _, v := range values {
-			if v < out || math.IsNaN(out) {
-				out = v
-			}
-		}
-		return out
-	}
-	panic("reference: " + fn)
-}
-
-// lokiOverTimeGroups is the reference: at every evaluation time t, the window
-// (t-offset-window, t-offset] of every series (stream plus parsed labels), the
-// range function per series, and the outer aggregation (sum, max, min, avg or
-// count; "" is sum) of the series per group key (group returns it from the
-// series' stream). A group whose series have no sample at t has no point there.
-func lokiOverTimeGroups(rows []vlemu.Row, fn, outer string, window, offset int64, times []int64, group func(stream string) string) map[string]map[int64]float64 {
-	sorted := append([]vlemu.Row(nil), rows...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].TS < sorted[j].TS })
-	out := map[string]map[int64]float64{}
-	for _, t := range times {
-		end := t - offset
-		perSeries := map[string][]float64{}
-		groupOf := map[string]string{}
-		for _, row := range sorted {
-			if row.TS <= end-window || row.TS > end {
-				continue
-			}
-			labels := make([]string, 0, len(row.Labels))
-			for k, v := range row.Labels {
-				labels = append(labels, k+"="+v)
-			}
-			sort.Strings(labels)
-			key := row.Stream + "|" + strings.Join(labels, ",")
-			perSeries[key] = append(perSeries[key], row.Value)
-			groupOf[key] = group(row.Stream)
-		}
-		members := map[string][]float64{}
-		for key, values := range perSeries {
-			members[groupOf[key]] = append(members[groupOf[key]], lokiOverTimeValue(fn, values))
-		}
-		for g, values := range members {
-			if out[g] == nil {
-				out[g] = map[int64]float64{}
-			}
-			var v float64
-			switch outer {
-			case "", "sum":
-				for _, x := range values {
-					v += x
-				}
-			case "count":
-				v = float64(len(values))
-			case "avg":
-				for _, x := range values {
-					v += x
-				}
-				v /= float64(len(values))
-			case "max", "min":
-				v = values[0]
-				for _, x := range values[1:] {
-					if (outer == "max" && x > v) || (outer == "min" && x < v) {
-						v = x
-					}
-				}
-			default:
-				panic("reference outer: " + outer)
-			}
-			out[g][t] = v
-		}
-	}
-	return out
-}
 
 // owShape is one query form: the query around a range aggregation, and the
 // group key of a stream under it, as the response labels it (owSeriesKey).
@@ -330,7 +219,7 @@ func (c owCase) times() []int64 {
 
 // want returns Loki's answer, the scalar of a binary shape applied.
 func (c owCase) want() map[string]map[int64]float64 {
-	out := lokiOverTimeGroups(c.rows, c.fn, c.shape.outer, int64(c.window), int64(c.offset), c.times(), c.shape.group)
+	out := overTimeReference(c.rows, c.fn, c.shape.outer, int64(c.window), int64(c.offset), c.times(), c.shape.group)
 	if strings.HasSuffix(c.query(), " * 2") {
 		for _, points := range out {
 			for t, v := range points {
@@ -588,8 +477,7 @@ func owRawAnswer(t *testing.T, emu *vlemu.Emulator, c owCase, seriesCap int) (in
 // Loki's label order): the
 // same series, timestamps, values and sample presence over generated rows with
 // sparse and dense windows and lines on window edges, and the same 400 when the
-// groups pass max_query_series (Loki counts the limit on the groups:
-// pkg/logql/engine.go:530-590 JoinSampleVector), while VictoriaLogs reads one
+// groups pass max_query_series (Loki counts the limit on the groups), while VictoriaLogs reads one
 // row per group and bucket instead of one per stream.
 //
 // conformance: semantics/unwrap-over-time-range-windows, metric-series-identity
@@ -1004,8 +892,8 @@ func TestUnwrapOverTimeShortRangeStaysOnStepBuckets(t *testing.T) {
 
 // TestUnwrapOverTimeRangeWindowsNaN: a nan value is a sample for Loki
 // (strconv.ParseFloat reads it): sum and avg over a window that holds one are
-// NaN (pkg/logql/range_vector.go:371-404), max and min ignore it unless every
-// sample is one (range_vector.go:405-420). With a range longer than the step the
+// NaN, max and min ignore it unless every
+// sample is one. With a range longer than the step the
 // nan group of the counting gate (flag 2) reaches the merged windows: the five
 // steps whose window holds the nan bucket are NaN for sum and avg, and max
 // keeps the clean value. The fake answers the bucket queries of the window merge.

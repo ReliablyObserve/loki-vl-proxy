@@ -38,6 +38,9 @@ request:
     limit: '100'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "the selector names a label that only a JSON key of the line holds on the VictoriaLogs side (626 lines in the stack) and that no Loki stream has: the data precheck counts the two sides differently by construction, so the verifier cannot call the data equal"
 compare:
   mode: observed
   fields: [streams.values]
@@ -48,7 +51,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/translator stream selector matchers (streamMatcherToFieldFilter); internal/proxy/drilldown.go detected_labels field_values'
-  loki: 'pkg/logql/syntax stream selector: stream labels only'
+  loki: 'a stream selector matches stream labels only (visual-stack detected_labels observation, in this case)'
   proxy: 'a field filter on the stored value'
   planned_test: 'TestStreamLabelSelectorShadowedByIngestJSONKey (internal/proxy) and TestCompat_StreamLabelSelectorShadowedByIngestJSONKey (test/e2e-compat, group core)'
   clusters:

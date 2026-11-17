@@ -546,9 +546,12 @@ func (plan *orderedJSONMetricPlan) levelRestriction() string {
 
 // acceptDerivedLevel gives a row of the raw evaluator the detected_level
 // Loki's ingest set (withDerivedLevel) when the plan reads it, and reports
-// whether the filters on it before the parser let the row through.
+// whether the filters on it before the parser let the row through. A plan
+// without an aggregation keeps every label of the row in its series, so a row
+// of a stream that decides no level (its descriptor carries none) gets the
+// value its line or metadata gives, as every Loki series does.
 func (plan *orderedJSONMetricPlan) acceptDerivedLevel(base map[string]string, levels *logRowLevels, row map[string]string, desc cachedLogQueryStreamDescriptor) bool {
-	if plan.derivesLevel {
+	if plan.derivesLevel || !plan.aggregated && base[detectedLevelLabel] == "" {
 		withDerivedLevel(base, levels.stringRow(row, levels.streamLabels(row["_stream"], desc.streamLabels)), desc.streamLabels)
 	}
 	return plan.passesLevelFilters(base)
@@ -1459,8 +1462,8 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		statsCtx = withLevelSharedUnpack(statsCtx, pipes.shared)
 	}
 	// Windows shorter than the step are disjoint, and Loki never evaluates the
-	// lines between them (pkg/logql/range_vector.go batchRangeVectorIterator.load
-	// skips every sample at or before the window start): neither their counts
+	// lines between them (it skips every sample at or before the window start;
+	// registry semantics/stddev-stdvar-over-time-range-window): neither their counts
 	// nor a line its parser rejects there reach the answer. The stats, the
 	// probes and the raw rows then read only the lines inside a window
 	// (windowPhaseFilter), and a bucket per step, (t-step, t], holds exactly the
@@ -1476,6 +1479,14 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	groupBy, lokiGroupBy, bytesMetric, statsAggFunc, query := pipes.groupBy, pipes.lokiGroupBy, pipes.bytesMetric, pipes.aggFunc, pipes.query
 	if storedLevel && (p.levelNeedsChain(ctx, base) || p.levelNeedsChain(ctx, base+levelShapeSeparator+query)) {
 		return nil, false, false, errLevelNotStored
+	}
+	if plan.split == jsonSplitStrict {
+		// A line Loki's parser rejects, found in this window before, decides
+		// the answer (the row evaluator's) before any check or the stats start.
+		first, last := unparsedLineWindow(start, end, step, plan.window)
+		if _, ok := p.cachedUnparsedLineRow(ctx, unparsedLineLookup(probeBase), first, last, false); ok {
+			return nil, false, false, nil
+		}
 	}
 	// The parse-risk check and the bucket query run concurrently; the buckets
 	// are discarded when the check finds a line the parsers read differently.
@@ -1645,9 +1656,9 @@ func (p *Proxy) orderedJSONStatsPipeline(plan *orderedJSONMetricPlan, base strin
 		// the lines Loki rejects keeps the lines without a brace: they are the
 		// lines it counts (splitStatsQuery).
 		if plan.split != jsonSplitErrors {
-			query += " | filter " + jsonObjectStartFilter
+			query += " | filter " + p.placeholderJSONStartFilter()
 		}
-		query += jsonValidityPipes(bytesMetric)
+		query += jsonValidityPipes(bytesMetric) + p.placeholderValidPipe()
 		if plan.groupServiceName {
 			query += serviceNameFromStreamPipes()
 		}
@@ -2305,6 +2316,10 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 	return p.gatedRiskExists(ctx, func(gated bool) string { return orderedJSONPartialParseQuery(ctx, base, fields, stored, gated) }, start, end)
 }
 
+// orderedJSONEscapedKey matches a \uXXXX escape inside a JSON key: the escape, then no quote up to the quote and
+// colon that end the key ([^"]* written with vlNotInRun).
+var orderedJSONEscapedKey = `\\u[0-9A-Fa-f]{4}` + vlNotInRun(`"`) + `"\s*:`
+
 // orderedJSONPartialParseQuery is the probe of orderedJSONPartialParseRisk.
 // Gated, it finds the same lines with work VictoriaLogs does per line only
 // where a line can be risky (jsonKeyGate):
@@ -2325,7 +2340,8 @@ func orderedJSONPartialParseQuery(ctx context.Context, base string, fields []str
 	// Loki turns U+FFFD in string values into a space, whether it is in the
 	// text or escaped (the two spellings are separate filters: an alternation
 	// with a non-ASCII literal cost VictoriaLogs six times the scan).
-	const escapedKey, replaced, replacedEscape = `\\u[0-9A-Fa-f]{4}[^"]*"\s*:`, `\x{FFFD}`, `\\u[Ff]{3}[Dd]`
+	const replaced, replacedEscape = `\x{FFFD}`, `\\u[Ff]{3}[Dd]`
+	escapedKey := orderedJSONEscapedKey
 	gate := func(re string) string {
 		if !gated {
 			return ""
@@ -2605,6 +2621,11 @@ type queryTooLongError struct{ error }
 
 func (e *queryTooLongError) Unwrap() error { return e.error }
 
+// detectedLevelEscapedValue matches a level key whose string value holds a backslash escape: the key, then no quote
+// or backslash up to the backslash ([^"\\]* written with vlNotInRun). The probe runs it behind _msg:"\\", which every
+// line it matches passes (it ends in a backslash), so VictoriaLogs runs it on the lines holding a backslash only.
+var detectedLevelEscapedValue = detectedLevelJSONKey + `\s*"` + vlNotInRun(`"\\`) + `\\`
+
 // detectedLevelKeysQuery is the probe of detectedLevelKeysRisk, with the two-keys
 // patterns behind detectedLevelTwiceGate or not.
 func detectedLevelKeysQuery(base string, gated bool) string {
@@ -2618,7 +2639,7 @@ func detectedLevelKeysQuery(base string, gated bool) string {
 	}
 	return base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
 		" (" + twoKeys +
-		" or (_msg:~" + braced + " _msg:~" + strconv.Quote(detectedLevelJSONKey+`\s*"[^"\\]*\\`) + ")" +
+		" or (_msg:~" + braced + ` _msg:"\\" _msg:~` + strconv.Quote(detectedLevelEscapedValue) + ")" +
 		" or (_msg:~" + braced + " -_msg:~" + strconv.Quote(closed) + " _msg:~" + strconv.Quote(detectedLevelLogfmtKey) + ")) | limit 1"
 }
 
@@ -2826,6 +2847,9 @@ func (p *Proxy) statsPushdownRiskExists(ctx context.Context, query string, start
 		}
 	}
 	params := url.Values{"query": {query}, "start": {start.UTC().Format(time.RFC3339Nano)}, "end": {end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}}
+	if f := p.placeholderRiskFilter(); f != "" {
+		params.Set("extra_filters", f)
+	}
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
 		return false, err
@@ -3033,7 +3057,7 @@ func lokiSeriesString(labels map[string]string) string {
 }
 
 // lokiPipelineError is Loki v3.7.7's error for a metric sample that carries
-// __error__ (logqlmodel.PipelineError.Error), with the sample's series.
+// __error__ (its pipeline error), with the sample's series.
 func lokiPipelineError(labels map[string]string) *orderedJSONPipelineError {
 	series := make(map[string]string, len(labels))
 	for name, value := range labels {
@@ -3109,26 +3133,15 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	if !plan.failsOnUnparsedLine() || step > plan.window || step <= 0 {
 		return nil, nil
 	}
-	last := start.Add(end.Sub(start) / step * step)
-	// Loki's window is left-open, right-closed; VictoriaLogs' end is exclusive.
-	params := url.Values{"query": {query + " | filter -" + jsonObjectStartFilter + " | limit 1"},
-		"start": {start.Add(-plan.window).Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}, "end": {last.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}}
-	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
-	if err != nil {
+	// The strict split's risk check may have read this row already
+	// (ordered_json_unparsed_row.go).
+	from, to := unparsedLineWindow(start, end, step, plan.window)
+	line, err := p.unparsedLineRowFor(ctx, unparsedLineLookup(query), from, to)
+	if err != nil || line == nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, p.redactedBackendStatusError("backend returned", resp.StatusCode, body)
-	}
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64<<10), 8<<20)
-	if !scanner.Scan() {
-		return nil, scanner.Err()
-	}
 	var row map[string]string
-	if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+	if err := json.Unmarshal(line, &row); err != nil {
 		return nil, fmt.Errorf("invalid backend metric row: %w", err)
 	}
 	desc := p.logQueryStreamDescriptor(row["_stream"], row["level"], map[string]map[string]string{}, map[string]cachedLogQueryStreamDescriptor{})
@@ -3142,7 +3155,7 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	if !plan.acceptDerivedLevel(base, &levels, row, desc) {
 		return nil, nil
 	}
-	labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels, row)
+	labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.translatedLabels, row)
 	if err != nil || !keep || labels["__error__"] == "" {
 		return nil, err
 	}
@@ -3550,7 +3563,7 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 		if !plan.acceptDerivedLevel(base, &reader.levels, row, desc) {
 			continue
 		}
-		labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels, row)
+		labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.translatedLabels, row)
 		if err != nil {
 			return err
 		}

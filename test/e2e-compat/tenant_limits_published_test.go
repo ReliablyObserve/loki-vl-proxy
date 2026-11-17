@@ -119,7 +119,7 @@ func TestDrilldown_TenantLimitsPublishedAsEnforced(t *testing.T) {
 
 	t.Run("default-limit proxy publishes the defaults", func(t *testing.T) {
 		drilldown, config := fetchPublishedLimits(t, proxyVmauthURL)
-		for key, want := range map[string]interface{}{"max_query_series": 500.0, "max_entries_limit_per_query": 10000.0, "max_query_length": "30d1h", "query_timeout": "2m"} {
+		for key, want := range map[string]interface{}{"max_query_series": 1000.0, "max_entries_limit_per_query": 10000.0, "max_query_length": "30d1h", "query_timeout": "2m"} {
 			if !sameLimit(drilldown[key], want) || !sameLimit(config[key], want) {
 				t.Errorf("%s: drilldown-limits %v, /config/tenant/v1/limits %v, want %v", key, drilldown[key], config[key], want)
 			}

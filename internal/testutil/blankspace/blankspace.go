@@ -62,11 +62,14 @@ func Templates() []string {
 		`{A="0"} | json | line_format` + m + `"x"`, `{A="0"} | json | drop` + m + `a`, `{A="0"} | json | drop a,` + m + `b`,
 		`{A="0"} | json | keep` + m + `a`, `{A="0"} | decolorize` + m + `| json`, `{A="0"} |` + m + `json`, `{A="0"}` + m + `| json`,
 		`{A="0"} | json | a` + m + `="b"`, `{A="0"} | json | a=` + m + `"b"`, `{A="0"} |=` + m + `"x"`,
+		// A parser after a pipe with no blank around it, a double-quoted regexp and capture names with a leading digit
+		// (Loki accepts `(?<0>0)`; found by the log flip gate's fuzz target, FuzzLogFlipGate).
+		"{A=\"0\"}|regexp" + m + "`(?<0>0)`", `{A="0"}|pattern` + m + `"<a> x"`, `{A="0"} | regexp` + m + `"(?P<0a>x)(?P<b>y)"`,
 		// Metric queries: the same parsers, stages and unwrap.
 		`count_over_time({A="0"} | json` + m + `A0 [1m])`, `count_over_time({A="0"} | json` + m + `a="b" [1m])`,
 		`count_over_time({A="0"} | logfmt` + m + `a [1m])`, `count_over_time({A="0"} | logfmt` + m + `--strict [1m])`,
 		`count_over_time({A="0"} | regexp` + m + "`(?P<a>x)` [1m])", `count_over_time({A="0"} | pattern` + m + `"<a> x" [1m])`,
-		`count_over_time({A="0"} | unpack` + m + `[1m])`, `count_over_time({A="0"} | json | label_format` + m + `a=b [1m])`,
+		"count_over_time({A=\"0\"}|regexp" + m + "`(?<0>0)` [1m])", `count_over_time({A="0"} | unpack` + m + `[1m])`, `count_over_time({A="0"} | json | label_format` + m + `a=b [1m])`,
 		`count_over_time({A="0"} | json | line_format` + m + `"x" [1m])`, `count_over_time({A="0"} | json | drop` + m + `a [1m])`,
 		`count_over_time({A="0"} | json | keep` + m + `a [1m])`, `count_over_time({A="0"} | json |` + m + `a="b" [1m])`,
 		`count_over_time({A="0"} | json | a` + m + `="b" [1m])`, `count_over_time({A="0"} |=` + m + `"x" [1m])`,
@@ -86,4 +89,35 @@ func Templates() []string {
 		`topk(1,` + m + `rate({A="0"}[1m]))`, `rate({A="0"}[1m]) +` + m + `1`,
 		`label_replace(rate({A="0"}[1m]),` + m + `"a", "b", "c", "d")`,
 	}
+}
+
+// UnwrapSpaced is Collapse(q) with a space written between a pipe and an unwrap right after it (`|unwrap n` is
+// `| unwrap n`): the spelling the string translator, which looks for `| unwrap `, reads as Loki does. The query plan
+// serves both (semantics/translator-reads-only-space-between-tokens).
+func UnwrapSpaced(q string) string {
+	q = Collapse(q)
+	if !strings.Contains(q, "|unwrap") {
+		return q
+	}
+	var out strings.Builder
+	for i := 0; i < len(q); i++ {
+		switch c := q[i]; {
+		case c == '"' || c == '`':
+			j := i + 1
+			for j < len(q) && q[j] != c {
+				if c == '"' && q[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			j = min(j, len(q)-1)
+			out.WriteString(q[i : j+1])
+			i = j
+		case c == '|' && strings.HasPrefix(q[i+1:], "unwrap"):
+			out.WriteString("| ")
+		default:
+			out.WriteByte(c)
+		}
+	}
+	return out.String()
 }

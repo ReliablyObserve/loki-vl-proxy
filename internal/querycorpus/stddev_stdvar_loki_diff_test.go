@@ -24,7 +24,7 @@ import (
 //     ten-minute stretch without lines on the web streams (absent points, windows of one sample).
 //   - Requests (metricRequests): an instant query, and query_range with the step equal to the range, a fifth of it
 //     and three times it, both bounds on the step's grid.
-//   - Shapes: each function by a label of the range aggregation, bare, with no parser, under sum, max, avg, topk
+//   - Shapes: each function by a label of the range aggregation, bare, with no parser, under sum, max, avg, count, topk
 //     and sort_desc, an aggregation over a range by, a binary operation with a number and with the other function,
 //     label_replace, an offset, a one-minute range, and the outer sum with and without keep.
 //
@@ -55,6 +55,11 @@ var stddevShapes = []string{
 	`avg by (app) (%s({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`,
 	`sum by (app) (%s({job="json"} | json | unwrap duration_ms [5m]) by (app, pod))`,
 	`max(%s({job="json"} | json | unwrap duration_ms [5m]) by (pod))`,
+	// count by labels reads the number of series of each group (semantics/count-over-stdvar-answers-variance).
+	`count by (app) (%s({job="json"} | json | unwrap duration_ms [5m]))`,
+	`count by (app) (%s({job="json"} | unwrap duration_ms [5m]))`,
+	`count by (app, pod) (%s({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`,
+	`count by (app) (%s({job="meta"} | unwrap d [5m]))`,
 }
 
 // stddevExtraQueries are queries of both functions.
@@ -73,6 +78,13 @@ var stddevKnown = func() map[string]map[string]string {
 			known[q][k] = id
 		}
 	}
+	// count by over a parser query on a range longer than the step: the stats group by the stream and the window
+	// evaluator does not merge them after a parser, so every point is the step bucket's, and a window whose last step
+	// holds no line of a series misses that series (semantics/unwrap-over-time-range-windows-residual-forms).
+	sliding := []string{"step<range"}
+	const residual = "semantics/unwrap-over-time-range-windows-residual-forms"
+	add(`count by (app) (stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, residual, sliding...)
+	add(`count by (app) (stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, residual, sliding...)
 	// An aggregation over a range aggregation with a by of its own: not applied (the series of the range by), or on
 	// a sliding window applied over the step buckets.
 	const rangeBy = "semantics/aggregation-over-range-by-not-applied"
@@ -108,7 +120,8 @@ func stddevQueries(t *testing.T) []metricQuery {
 	return out
 }
 
-// stddevFixture is the data of every query: six streams, a line of duration_ms every 23 seconds on each.
+// stddevFixture is the data of every query: nine streams, a line of duration_ms (or structured metadata d) every 23
+// seconds on each.
 func stddevFixture() metricFixture {
 	f := metricFixture{Streams: []map[string]string{
 		{"job": "json", "app": "api", "pod": "a", "service_name": "api"},
@@ -117,6 +130,10 @@ func stddevFixture() metricFixture {
 		{"job": "logfmt", "app": "api", "pod": "a", "service_name": "api"},
 		{"job": "logfmt", "app": "api", "pod": "b", "service_name": "api"},
 		{"job": "logfmt", "app": "web", "pod": "c", "service_name": "web"},
+		// The value in structured metadata, read without a parser: two series of app=api and one of app=web.
+		{"job": "meta", "app": "api", "pod": "m", "service_name": "api"},
+		{"job": "meta", "app": "api", "pod": "n", "service_name": "api"},
+		{"job": "meta", "app": "web", "pod": "o", "service_name": "web"},
 	}}
 	span := metricWindow + 20*time.Minute
 	first := metricEnd.Add(-span)
@@ -135,11 +152,14 @@ func stddevFixture() metricFixture {
 			}
 			v := strconv.FormatFloat(float64((i*7919+s*104729)%5000)+0.25*float64(i%4), 'f', -1, 64)
 			line := `{"duration_ms":` + v + `}`
-			if labels["job"] == "logfmt" {
+			metadata := map[string]string{"detected_level": metricStreamLevels[s%len(metricStreamLevels)]}
+			switch labels["job"] {
+			case "logfmt":
 				line = "duration_ms=" + v
+			case "meta":
+				line, metadata["d"] = "tick", v
 			}
-			f.Entries = append(f.Entries, metricEntry{Stream: s, TS: at.UnixNano(), Line: line,
-				Metadata: map[string]string{"detected_level": metricStreamLevels[s%len(metricStreamLevels)]}})
+			f.Entries = append(f.Entries, metricEntry{Stream: s, TS: at.UnixNano(), Line: line, Metadata: metadata})
 		}
 	}
 	sort.SliceStable(f.Entries, func(i, j int) bool { return f.Entries[i].TS < f.Entries[j].TS })
@@ -150,7 +170,7 @@ func stddevFixture() metricFixture {
 // TestStddevStdvarMatchLoki replays the recorded answers through the handlers and holds every run to Loki's answer,
 // or to its listed difference.
 //
-// conformance: semantics/stddev-stdvar-over-time-range-window, semantics/stddev-stdvar-over-time-step-bucket, semantics/stdvar-grouped-binary-marker, semantics/stdvar-grouped-pooled-variance, semantics/unwrap-per-series-identity-raw-rows, semantics/aggregation-over-range-by-not-applied
+// conformance: semantics/stddev-stdvar-over-time-range-window, semantics/count-over-stdvar-answers-variance, semantics/unwrap-over-time-range-windows-residual-forms, semantics/stddev-stdvar-over-time-step-bucket, semantics/stdvar-grouped-binary-marker, semantics/stdvar-grouped-pooled-variance, semantics/unwrap-per-series-identity-raw-rows, semantics/aggregation-over-range-by-not-applied
 func TestStddevStdvarMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")

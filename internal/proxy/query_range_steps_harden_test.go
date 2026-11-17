@@ -94,9 +94,8 @@ func qsGenerate(rnd *rand.Rand, fn, parser string, shape owShape) owCase {
 var qsSequence = []struct{ from, to int }{{0, 0}, {1, 1}, {3, 3}, {-2, -2}, {-4, 5}, {0, 0}, {-1, 6}}
 
 // TestQueryRangeStepsLokiDifferential: refresh sequences answered with the
-// settled steps on are Loki's value at every step (pkg/logql/range_vector.go:102-189
-// window (t-range, t], exclusive below; 371-420 sum, avg, max and min over
-// time; evaluator.go VectorAggEvaluator.Next for the outer fold) and the
+// settled steps on are Loki's value at every step (window (t-range, t],
+// exclusive below; sum, avg, max and min over time; the outer fold) and the
 // uncached proxy's bytes, per VictoriaLogs v1.49.0 and v1.53.0, plain, logfmt
 // and json, grouped, ungrouped and without, over random windows, steps,
 // offsets and gaps. A second tenant sending the first window is never answered
@@ -172,8 +171,7 @@ func TestQueryRangeStepsLokiDifferential(t *testing.T) {
 }
 
 // TestQueryRangeStepsRejectedValueReachedByMovedWindow: a value Loki's
-// conversion rejects (pkg/logql/log/metrics_extraction.go: a SampleExtractionErr
-// series, a 400 for the query) is met by a window moved back over steps
+// conversion rejects (a 400 for the query) is met by a window moved back over steps
 // already kept, and by one that starts on the step where the value leaves
 // the window (t-range, t]: Loki's 400 in the first, the clean answer in the
 // second, the kept steps untouched by either.

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 type binarySample struct {
@@ -61,7 +61,7 @@ func binarySamplesByTime(ctx context.Context, body []byte) (map[float64][]binary
 	return result, nil
 }
 
-func binaryMatchingLabels(labels map[string]string, vm *translator.VectorMatchInfo) map[string]string {
+func binaryMatchingLabels(labels map[string]string, vm *physical.Matching) map[string]string {
 	selected := make(map[string]string, len(labels))
 	if vm != nil && (vm.MatchOn || len(vm.On) > 0) {
 		for _, name := range vm.On {
@@ -89,7 +89,7 @@ func binaryLabelKey(labels map[string]string) string {
 	return string(b)
 }
 
-func binaryResultLabels(many, one map[string]string, vm *translator.VectorMatchInfo) map[string]string {
+func binaryResultLabels(many, one map[string]string, vm *physical.Matching) map[string]string {
 	if vm == nil {
 		return many
 	}
@@ -124,7 +124,7 @@ func binarySampleValue(a, b float64, op string, returnBool bool) (float64, bool)
 	case "*":
 		return a * b, true
 	// Loki guards a zero right operand of / and % with NaN, whatever the left
-	// operand is (syntax.MergeBinOp, pkg/logql/syntax/ast.go:1978-2005), where
+	// operand is (registry semantics/binary-division-by-zero-nan), where
 	// IEEE division gives +Inf or -Inf.
 	case "/":
 		if b == 0 {
@@ -168,11 +168,11 @@ type binaryMatchedSeries struct {
 	points [][]any
 }
 
-func matchBinaryMetricResults(left, right []byte, op, resultType string, vm *translator.VectorMatchInfo, returnBool bool) ([]byte, error) {
+func matchBinaryMetricResults(left, right []byte, op, resultType string, vm *physical.Matching, returnBool bool) ([]byte, error) {
 	return matchBinaryMetricResultsContext(context.Background(), left, right, op, resultType, vm, returnBool)
 }
 
-func matchBinaryMetricResultsContext(ctx context.Context, left, right []byte, op, resultType string, vm *translator.VectorMatchInfo, returnBool bool) ([]byte, error) {
+func matchBinaryMetricResultsContext(ctx context.Context, left, right []byte, op, resultType string, vm *physical.Matching, returnBool bool) ([]byte, error) {
 	ctx = binaryEvaluationContext(ctx)
 	for _, body := range [][]byte{left, right} {
 		if err := checkBinaryDecodeBudget(ctx, body); err != nil {
@@ -293,7 +293,7 @@ func matchBinaryScalarContext(ctx context.Context, body []byte, scalar float64, 
 	return encodeBinarySeriesContext(ctx, series, resultType, executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
 
-func matchBinaryEvaluation(ctx context.Context, lhs, rhs []binarySample, op string, vm *translator.VectorMatchInfo, returnBool bool, emit func(binarySample) error) error {
+func matchBinaryEvaluation(ctx context.Context, lhs, rhs []binarySample, op string, vm *physical.Matching, returnBool bool, emit func(binarySample) error) error {
 	if op == "and" || op == "or" || op == "unless" {
 		return matchBinarySet(ctx, lhs, rhs, op, vm, emit)
 	}
@@ -338,7 +338,7 @@ func matchBinaryEvaluation(ctx context.Context, lhs, rhs []binarySample, op stri
 	return nil
 }
 
-func matchBinarySet(ctx context.Context, lhs, rhs []binarySample, op string, vm *translator.VectorMatchInfo, emit func(binarySample) error) error {
+func matchBinarySet(ctx context.Context, lhs, rhs []binarySample, op string, vm *physical.Matching, emit func(binarySample) error) error {
 	leftKeys, rightKeys := make(map[string]bool), make(map[string]bool)
 	for _, sample := range rhs {
 		if err := ctx.Err(); err != nil {

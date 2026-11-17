@@ -13,6 +13,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -225,6 +226,16 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 		for _, prof := range planProfiles() {
 			got, lerr := lower.PlanQuery(q, plan, prof.lowerProfile())
 			legacy, ok := prof.translate(q)
+			if lerr == nil {
+				// The translator reads `| unwrap` with one space only: it rejects another blank there, or reads no
+				// unwrap. Loki and the plan read the spaced spelling, which the translator is held to
+				// (semantics/translator-reads-only-space-between-tokens).
+				if spaced := blankspace.UnwrapSpaced(q); spaced != q {
+					if respelled, rok := prof.translate(spaced); rok {
+						legacy, ok = respelled, true
+					}
+				}
+			}
 			if !ok {
 				if lerr == nil {
 					problems = append(problems, fmt.Sprintf("%s: %q: lowered, the string translator rejects it", prof.name, q))
@@ -271,6 +282,11 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 			if lower.WritesDynamicUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
 				// The series are the stream and every parsed label: held to Loki (TestKeepUnwrapIdentityMatchLoki).
 				delegated["known divergence "+knownDynamicIdentity]++
+				continue
+			}
+			if lower.WritesCountVarianceSeries(plan) && !sameAsTranslator(got, legacy) {
+				// A count by labels over stdvar_over_time counts the series: held to Loki (TestStddevStdvarMatchLoki).
+				delegated["known divergence "+knownCountVariance]++
 				continue
 			}
 			if routed, divergence := routedRoot(plan); routed {

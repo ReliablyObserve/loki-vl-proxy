@@ -327,6 +327,12 @@ var (
 // (which Loki renames `<key>_extracted`) is read differently: for those the set is not known. The stages after an
 // unwrap are not read.
 func parsedSeriesLabels(sel *queryplan.LogSelect, unwrap string) (labels []string, ok bool) {
+	return appendParsedSeriesLabels(nil, sel, unwrap)
+}
+
+// appendParsedSeriesLabels is parsedSeriesLabels appending the labels to dst, which it returns.
+func appendParsedSeriesLabels(dst []string, sel *queryplan.LogSelect, unwrap string) (labels []string, ok bool) {
+	labels, start := dst, len(dst)
 	stages := sel.Stages
 	for i, st := range stages {
 		var names []string
@@ -347,6 +353,18 @@ func parsedSeriesLabels(sel *queryplan.LogSelect, unwrap string) (labels []strin
 		case *queryplan.Unwrap:
 			return labels, true
 		case *queryplan.Parse:
+			if st.Type == logql.ParserJSON || st.Type == logql.ParserLogfmt {
+				// The names of a list are read from the stage: no slice of them is built.
+				if !fieldListKnown(st) {
+					return nil, false
+				}
+				for _, f := range st.Fields {
+					if labels, ok = addSeriesLabel(labels, start, f.Name, sel, unwrap); !ok {
+						return nil, false
+					}
+				}
+				continue
+			}
 			var known bool
 			if names, known = parserLabels(st); !known {
 				return nil, false
@@ -355,18 +373,27 @@ func parsedSeriesLabels(sel *queryplan.LogSelect, unwrap string) (labels []strin
 			return nil, false
 		}
 		for _, name := range names {
-			switch {
-			case name == "" || name == unwrap:
-			case name == "level" || name == translate.DetectedLevelLabel || name == "service_name":
+			if labels, ok = addSeriesLabel(labels, start, name, sel, unwrap); !ok {
 				return nil, false
-			case selectorHas(sel, name):
-				// A parsed key that is also a stream label becomes `<key>_extracted` on Loki: the name the
-				// grouping would give the series is not the one Loki gives it.
-				return nil, false
-			case !slices.Contains(labels, name):
-				labels = append(labels, name)
 			}
 		}
+	}
+	return labels, true
+}
+
+// addSeriesLabel appends a parsed label to the labels of appendParsedSeriesLabels (those from start on), once; ok is
+// false for a name that makes the set unknown.
+func addSeriesLabel(labels []string, start int, name string, sel *queryplan.LogSelect, unwrap string) ([]string, bool) {
+	switch {
+	case name == "" || name == unwrap:
+	case name == "level" || name == translate.DetectedLevelLabel || name == "service_name":
+		return nil, false
+	case selectorHas(sel, name):
+		// A parsed key that is also a stream label becomes `<key>_extracted` on Loki: the name the grouping would
+		// give the series is not the one Loki gives it.
+		return nil, false
+	case !slices.Contains(labels[start:], name):
+		labels = append(labels, name)
 	}
 	return labels, true
 }
@@ -380,29 +407,32 @@ func selectorHas(sel *queryplan.LogSelect, name string) bool {
 	return false
 }
 
-// parserLabels are the labels a parser stage names; known is false for a bare json or logfmt, which extracts every
-// key, for a flag, an alias the translator does not follow (a logfmt alias, a json path with an index or bracket)
-// and for an unpack.
+// fieldListKnown reports a json or logfmt stage whose list names the labels it extracts: false for a bare parser,
+// which extracts every key, for a flag, and for an alias the translator does not follow (a logfmt alias, a json path
+// with an index or bracket).
+func fieldListKnown(st *queryplan.Parse) bool {
+	if len(st.Fields) == 0 || st.Strict || st.KeepEmpty {
+		return false
+	}
+	logfmt := st.Type == logql.ParserLogfmt
+	for _, f := range st.Fields {
+		if !plainIdent(f.Name) {
+			return false
+		}
+		if logfmt && f.Expression != f.Name || logfmt && strings.Contains(st.Param, "=") {
+			return false
+		}
+		if !logfmt && f.Expression != f.Name && !jsonPlainPath.MatchString(f.Expression) {
+			return false
+		}
+	}
+	return true
+}
+
+// parserLabels are the labels a regexp or pattern parser stage names (its captures); known is false for any other
+// stage. A json or logfmt list is read from the stage itself (fieldListKnown, appendParsedSeriesLabels).
 func parserLabels(st *queryplan.Parse) (names []string, known bool) {
 	switch st.Type {
-	case logql.ParserJSON, logql.ParserLogfmt:
-		if len(st.Fields) == 0 || st.Strict || st.KeepEmpty {
-			return nil, false
-		}
-		logfmt := st.Type == logql.ParserLogfmt
-		for _, f := range st.Fields {
-			if !plainIdent(f.Name) {
-				return nil, false
-			}
-			if logfmt && f.Expression != f.Name || logfmt && strings.Contains(st.Param, "=") {
-				return nil, false
-			}
-			if !logfmt && f.Expression != f.Name && !jsonPlainPath.MatchString(f.Expression) {
-				return nil, false
-			}
-			names = append(names, f.Name)
-		}
-		return names, true
 	case logql.ParserRegexp:
 		re, err := regexp.Compile(st.Param)
 		if err != nil {

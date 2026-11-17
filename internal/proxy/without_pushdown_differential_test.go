@@ -22,8 +22,7 @@ import (
 // A `<op> without (...)` over a tumbling window is folded by VictoriaLogs
 // (translator.PushDownWithout) when every excluded label is plain; the proxy
 // folds the series rows itself otherwise. Both answer Loki's: the series fall
-// into the group the labels left name, and the group takes the operator's value
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next). This file pins the two
+// into the group the labels left name, and the group takes the operator's value. This file pins the two
 // routes to a reference written apart from them, and to each other, over
 // streams whose label sets differ: a label the stream lacks, the excluded label
 // being the only one that tells two series apart, values with quotes, commas,
@@ -117,47 +116,6 @@ func wpGenerateScenario(rnd *rand.Rand, fn string) (nvScenario, []wpStream) {
 		s.levels = append(s.levels, level)
 	}
 	return s, streams
-}
-
-// wpReference is Loki's answer: the value of the range function of every stream
-// that has a line in (t-window, t], folded by the levels, innermost first.
-func wpReference(s nvScenario, streams []wpStream) map[string]map[int64]float64 {
-	out := map[string]map[int64]float64{}
-	byText := map[string]wpStream{}
-	for _, st := range streams {
-		byText[st.text] = st
-	}
-	for _, t := range s.times() {
-		perStream := map[string]float64{}
-		for _, row := range s.rows {
-			if row.TS > t-int64(s.window) && row.TS <= t {
-				perStream[row.Stream]++
-			}
-		}
-		var vec []nvSeries
-		for text, count := range perStream {
-			value := count
-			if s.fn == "rate" {
-				value = count / s.window.Seconds()
-			}
-			labels := map[string]string{"service_name": "uw"}
-			for name, v := range byText[text].labels {
-				labels[name] = v
-			}
-			vec = append(vec, nvSeries{labels, value})
-		}
-		for _, level := range s.levels {
-			vec = nvFold(vec, level)
-		}
-		for _, series := range vec {
-			key := nvLabelsKey(series.labels)
-			if out[key] == nil {
-				out[key] = map[int64]float64{}
-			}
-			out[key][t] = series.value
-		}
-	}
-	return out
 }
 
 // wpRun sends the scenario through the real handler and returns the answer as
@@ -417,8 +375,7 @@ func TestWithoutPushdownLeavesMappedLabelsToTheProxyFold(t *testing.T) {
 // reads its buckets folded by VictoriaLogs (withSlidingWithoutCut): the
 // streams that share their labels but the excluded ones are summed per bucket
 // and the proxy merges each fold's windows. Loki's answer is the sum per step
-// of every stream's window count (pkg/logql/range_vector.go:102-189,
-// pkg/logql/evaluator.go VectorAggEvaluator.Next): over streams that tell
+// of every stream's window count: over streams that tell
 // apart only by the excluded label, lack it or hold a value that looks like a
 // pair, the folded route, the per-stream route and the reference agree, and
 // names the cut does not take keep the per-stream route.

@@ -18,10 +18,12 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// The pipes that derive detected_level (translator.BuildDetectedLevelChain)
+// The pipes that derive detected_level (translate.BuildDetectedLevelChain)
 // each pass every block of a window, so the full chain, which knows 16 stored
 // level fields and 14 body keys, costs far more than a window that holds one
 // field and one key needs. One VictoriaLogs stats query tells which of them
@@ -54,8 +56,8 @@ var levelPresenceUndecided = []string{"severity", "severity_text", "severity_num
 // levelPresenceLayout is the order of the mask: the stored fields, the body
 // keys, and the escape flag.
 var (
-	levelPresenceStored = translator.DetectedLevelFieldNames
-	levelPresenceBody   = translator.DetectedLevelBodyKeys()
+	levelPresenceStored = translate.DetectedLevelFieldNames
+	levelPresenceBody   = translate.DetectedLevelBodyKeys()
 )
 
 func levelPresenceMaskLen() int { return len(levelPresenceStored) + len(levelPresenceBody) + 1 }
@@ -160,8 +162,8 @@ func orMasks(a, b string) string {
 }
 
 // levelPresenceFromMask turns a mask into the chain's presence set.
-func levelPresenceFromMask(mask string) *translator.DetectedLevelPresence {
-	present := &translator.DetectedLevelPresence{}
+func levelPresenceFromMask(mask string) *translate.DetectedLevelPresence {
+	present := &translate.DetectedLevelPresence{}
 	escaped := mask[len(mask)-1] == '1'
 	for i, name := range levelPresenceStored {
 		if mask[i] == '1' {
@@ -179,25 +181,25 @@ func levelPresenceFromMask(mask string) *translator.DetectedLevelPresence {
 // fullLevelChain is the chain every route puts into a query that groups by or
 // filters on detected_level; vlPostHTTP narrows it (pruneLevelChain).
 var fullLevelChain = sync.OnceValue(func() string {
-	return translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil)
+	return translate.BuildDetectedLevelChain(translate.DetectedLevelFieldNames, translate.DetectedLevelChainGrouping, nil)
 })
 
 type levelSharedUnpackKey struct{}
 
 // withLevelSharedUnpack tells pruneLevelChain that the chain of the requests
-// under ctx also unpacks the labels of shared (see translator.SharedUnpack):
+// under ctx also unpacks the labels of shared (see translate.SharedUnpack):
 // it finds that chain by its text and builds the narrowed one with the same
 // labels, which no presence mask may drop.
-func withLevelSharedUnpack(ctx context.Context, shared *translator.SharedUnpack) context.Context {
+func withLevelSharedUnpack(ctx context.Context, shared *translate.SharedUnpack) context.Context {
 	return context.WithValue(ctx, levelSharedUnpackKey{}, shared)
 }
 
 // levelChains returns the full chain of a request and the unpack it shares
 // with its plan, if any: the chain that holds the plan's labels when the query
 // carries it, otherwise the plain full chain.
-func levelChains(ctx context.Context, query string) (chain string, shared *translator.SharedUnpack) {
-	if shared, _ = ctx.Value(levelSharedUnpackKey{}).(*translator.SharedUnpack); shared != nil {
-		chain = strings.TrimSuffix(translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil, shared), levelChainDelete)
+func levelChains(ctx context.Context, query string) (chain string, shared *translate.SharedUnpack) {
+	if shared, _ = ctx.Value(levelSharedUnpackKey{}).(*translate.SharedUnpack); shared != nil {
+		chain = strings.TrimSuffix(translate.BuildDetectedLevelChainShared(translate.DetectedLevelFieldNames, translate.DetectedLevelChainGrouping, nil, shared), levelChainDelete)
 		if strings.Contains(query, chain) {
 			return chain, shared
 		}
@@ -240,9 +242,13 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	query := params.Get("query")
 	chain, shared := levelChains(ctx, query)
 	// One chain only: its base is the probe's, and a second chain (a query of
-	// several segments) may sit on a different one.
+	// several segments) may sit on a different one. The read of the streams
+	// without a level label (levelLessRead) is narrowed on the instant stats
+	// route too, and its witness rides every stats pipe.
 	at := strings.Index(query, chain)
-	if path != "/select/logsql/stats_query_range" || at < 0 || strings.Count(query, chain) != 1 {
+	levelLess := levelLessRead(ctx)
+	statsPath := path == "/select/logsql/stats_query_range" || levelLess && path == "/select/logsql/stats_query"
+	if !statsPath || at < 0 || strings.Count(query, chain) != 1 {
 		return params, nil
 	}
 	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
@@ -250,12 +256,12 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	if !okFrom || !okTo {
 		return params, nil
 	}
-	base := translator.DetectedLevelProbeBase(strings.TrimSpace(query[:at]))
+	base := translate.DetectedLevelProbeBase(strings.TrimSpace(query[:at]))
 	mask := p.detectedLevelMask(ctx, base, time.Unix(0, from), time.Unix(0, to))
 	if mask == "" {
 		return params, nil
 	}
-	pruned := translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, levelPresenceFromMask(mask), shared)
+	pruned := translate.BuildDetectedLevelChainShared(translate.DetectedLevelFieldNames, translate.DetectedLevelChainGrouping, levelPresenceFromMask(mask), shared)
 	pruned = strings.TrimSuffix(pruned, levelChainDelete)
 	// The witness precedes the chain, whose last pipe overwrites the stored
 	// detected_level field: the rows are as the probe read them.
@@ -263,10 +269,14 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	rest, deleted := strings.CutPrefix(rest, levelChainDelete)
 	witness := levelWitnessPipes(mask)
 	if witness != "" {
-		var ok bool
-		if rest, ok = withWitnessGroup(rest); !ok {
+		grouped, ok := withWitnessGroup(rest)
+		if !ok && levelLess {
+			grouped, ok = logsql.WithGroupKeyInEveryStats(rest, levelWitnessField)
+		}
+		if !ok {
 			return params, nil // a stats pipe the witness cannot ride: the full chain
 		}
+		rest = grouped
 	}
 	if deleted {
 		pruned += levelChainDelete
@@ -310,7 +320,7 @@ func (p *Proxy) pruneBeforeSlot(ctx context.Context, params url.Values) context.
 
 // levelWitnessField is the field the witness pipes set to 1 on a row holding
 // what the pruned chain no longer reads; the stats group by it.
-const levelWitnessField = translator.LevelWitnessField
+const levelWitnessField = translate.LevelWitnessField
 
 // levelWitnessPipes returns the pipes flagging a row that holds a stored field
 // or a body key the mask left out, or "" when it left out nothing.
@@ -377,7 +387,7 @@ func (p *Proxy) levelWitnessResponse(resp *http.Response) (flagged bool, err err
 // detectedLevelPresence returns the level fields and body keys the stats query
 // over [start, end] on base can read, or nil (the full chain) when they
 // cannot be told.
-func (p *Proxy) detectedLevelPresence(ctx context.Context, base string, start, end time.Time) *translator.DetectedLevelPresence {
+func (p *Proxy) detectedLevelPresence(ctx context.Context, base string, start, end time.Time) *translate.DetectedLevelPresence {
 	mask := p.detectedLevelMask(ctx, base, start, end)
 	if mask == "" {
 		return nil
@@ -505,7 +515,7 @@ func storedLevelSeries(series map[string]manualSeriesSamples, filters []translat
 		if stored == "" || entry.Metric[storedDetectedLevelField] != "" {
 			return nil, false
 		}
-		level := translator.NormalizeStoredLevel(stored)
+		level := translate.NormalizeStoredLevel(stored)
 		keep := true
 		for _, filter := range filters {
 			keep = keep && filter.Matches(level)

@@ -20,15 +20,12 @@ import (
 )
 
 // This file pins absent_over_time to Loki's answer over generated rows and
-// generated windows, with a reference evaluator written apart from the proxy:
-// Loki v3.7.7 pkg/logql/evaluator.go:647-664 (newRangeAggEvaluator) and
-// :747-778 (AbsentRangeVectorEvaluator.Next: a step whose window (t-range, t]
-// holds no sample is the one series valued 1, a step with a sample is nothing),
-// :1319-1345 (absentLabels, pinned apart in TestAbsentOverTimeLabelsEdgeTable), and
-// pkg/logql/range_vector.go:251 / :628 (the aggregation is a constant one).
-// The steps are start, start+step, ... up to end: Loki aligns queries to their
-// step only with -querier.align-querier-with-step, off by default
-// (pkg/querier/queryrange/queryrangebase/roundtrip.go:49).
+// generated windows, with absentReferenceSteps (held to Loki's recorded answers
+// by TestAbsentReferenceMatchesRecordedLoki): a step whose window (t-range, t]
+// holds no sample is the one series valued 1, a step with a sample is nothing,
+// the labels are the selector's (pinned apart in
+// TestAbsentOverTimeLabelsEdgeTable). The steps are start, start+step, ... up
+// to end, Loki's engine without a query frontend's step alignment.
 //
 // The proxy under test is the real handler. Only VictoriaLogs is simulated, by
 // vlemu.Emulator, which keeps the rows a scenario gives it: a row is a line the
@@ -82,22 +79,6 @@ func (s absentScenario) times() []int64 {
 	}
 	var out []int64
 	for t := s.start; t <= s.end; t += int64(s.step) {
-		out = append(out, t)
-	}
-	return out
-}
-
-// lokiAbsentSteps returns the evaluation times at which Loki's window
-// (t-offset-range, t-offset] holds no row.
-func lokiAbsentSteps(rows []vlemu.Row, window, offset int64, times []int64) []int64 {
-	var out []int64
-next:
-	for _, t := range times {
-		for _, row := range rows {
-			if row.TS > t-offset-window && row.TS <= t-offset {
-				continue next
-			}
-		}
 		out = append(out, t)
 	}
 	return out
@@ -308,7 +289,7 @@ func TestAbsentOverTimeDifferential(t *testing.T) {
 							if res.Code != http.StatusOK {
 								t.Fatalf("%s #%d: %d %s\n%s", name, i, res.Code, res.Body, s.describe())
 							}
-							absent := lokiAbsentSteps(s.rows, int64(s.window), int64(s.offset), s.times())
+							absent := absentReferenceSteps(s.rows, int64(s.window), int64(s.offset), s.times())
 							checkAbsent(t, fmt.Sprintf("%s #%d", name, i), s, got, absent, map[string]string{"app": "ab"}, "1")
 							if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 && version != "v1.40.0" {
 								t.Fatalf("%s #%d: the metric read raw rows: %s", name, i, raw[0])
@@ -322,8 +303,7 @@ func TestAbsentOverTimeDifferential(t *testing.T) {
 }
 
 // Under a vector aggregation the one absent series folds as Loki's vector
-// aggregation folds a single series (pkg/logql/evaluator.go:400-529
-// VectorAggEvaluator): `by` keeps the listed labels the series has, `without`
+// aggregation folds a single series: `by` keeps the listed labels the series has, `without`
 // drops them, `count` is 1, `stddev` and `stdvar` are 0, and topk keeps the
 // series whole.
 //
@@ -362,7 +342,7 @@ func TestAbsentOverTimeUnderVectorAggregation(t *testing.T) {
 					if res.Code != http.StatusOK {
 						t.Fatalf("%s: %d %s", q, res.Code, res.Body)
 					}
-					absent := lokiAbsentSteps(s.rows, int64(s.window), int64(s.offset), s.times())
+					absent := absentReferenceSteps(s.rows, int64(s.window), int64(s.offset), s.times())
 					checkAbsent(t, fmt.Sprintf("%s #%d", tc.wrap, i), s, got, absent, tc.labels, tc.value)
 				}
 			})

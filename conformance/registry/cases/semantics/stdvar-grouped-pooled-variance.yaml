@@ -40,12 +40,14 @@ why: |
   v1.49.0 on instant, step = range and step > range (TestStddevStdvarMatchLoki:
   the sum by, max by and avg by forms; TestKeepUnwrapIdentityMatchLoki and
   TestUnwrapDynamicIdentityMatchLoki, json and logfmt). A range longer than the
-  step reads the same series: VictoriaLogs takes the deviation's partial
-  aggregates per series hash and per anchored bucket, the window evaluator merges
-  each series' buckets into its windows and squares each series' deviation, and
-  the clause's aggregation folds the series (step < range in the same three
-  differentials, every sum by, max by and avg by row matches Loki;
-  TestDynamicIdentityWindowsMatchLokiReference over generated windows).
+  step reads the same series: after an extraction list the stats group by its
+  fields, after a parser of every key VictoriaLogs takes the deviation's partial
+  aggregates per series hash and per anchored bucket (a series wholly in one
+  bucket folded into its group there), the window evaluator merges each series'
+  buckets into its windows and squares each series' deviation, and the clause's
+  aggregation folds the series (step < range in the same three differentials,
+  every sum by, max by and avg by row matches Loki;
+  semantics/unwrap-per-series-identity-raw-rows, listedIdentityWindows).
 
 corpus:
   size: 2
@@ -70,7 +72,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/queryplan/lower unwrap.go (varianceVector over the series identity), unwrap_dynamic.go (the series hash)'
-  loki: 'stdvar_over_time is evaluated per series (range_vector.go); the vector aggregation then folds the series'
+  loki: 'stdvar_over_time is evaluated per series; the vector aggregation then folds the series'
   proxy: 'after a parser, the variance of each series then the aggregation by the clause (query and every range and step); otherwise the stddev of the group''s pooled samples, squared'
   planned_test: 'TestStddevStdvarMatchLoki, TestUnwrapDynamicIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentityLowering (internal/queryplan/lower); e2e: TestCompat_StdvarOverTimeGroupedAnswers200 values rows (test/e2e-compat; written, not yet run on a stack)'
   clusters: []

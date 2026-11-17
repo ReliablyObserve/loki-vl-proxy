@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Cache reuse: after a case's answers are compared, the proxy is asked the same request again. A repeat
@@ -25,9 +27,16 @@ import (
 //	cpu_seconds                     the proxy's CPU (process_cpu_seconds_total)
 //	translations                    LogQL translations the proxy ran (loki_vl_proxy_translations_total)
 //
+// The VictoriaLogs calls of a request come from the proxy's own count of that request when the answer carries it
+// (X-Loki-VL-Backend-Calls, the proxy run with -debug-vl-calls-header): the calls the request started before its
+// headers were written, so the proxy's background work (health probes, the stream field inventory's refreshes,
+// another client's request) is left out by construction. The process-wide metrics above are read for bytes, hit
+// ratios and CPU, and for the calls of an answer that carries no header (an older proxy, a recording made before
+// the header); the Source of a Reuse says which one counted. A streamed answer can start calls after its headers,
+// so the header's count is a lower bound for it.
+//
 // Not measured, for want of a metric: allocations per request (no cumulative allocation counter is exported),
-// plan and translation cache hits, reuse of proxy-evaluated operators, and attribution of each counter to one
-// request (background work of the proxy counts too).
+// plan and translation cache hits, and reuse of proxy-evaluated operators.
 
 // Snapshot is the proxy's counters at one instant.
 type Snapshot map[string]float64
@@ -41,12 +50,24 @@ type Meter interface {
 type Reuse struct {
 	Verdict string `json:"verdict"`
 	Reason  string `json:"reason,omitempty"`
-	// Background is the repeat's VictoriaLogs calls on endpoints the first ask did not use: counted by the
-	// process-wide metrics, attributed to the proxy's background work rather than the repeat.
-	Background float64  `json:"background_vl_calls,omitempty"`
-	Cold       Snapshot `json:"cold,omitempty"`
-	Repeat     Snapshot `json:"repeat,omitempty"`
+	// Source is where the repeat's VictoriaLogs calls were counted: sourceHeader (the request's own count) or
+	// sourceMetrics (the process-wide counters, attributed by endpoint).
+	Source string `json:"calls_source,omitempty"`
+	// Background is the VictoriaLogs calls the process-wide metrics counted around the repeat that were not the
+	// repeat's own: the proxy's background work. With a header, the metrics' total less the request's own count;
+	// by metrics, the calls on endpoints the first ask did not use.
+	Background float64 `json:"background_vl_calls,omitempty"`
+	// Cold and Repeat are the metric deltas of the two asks; vl_calls in each is the request's own count when
+	// the answer carried the header (Source), the metrics' count when it did not.
+	Cold   Snapshot `json:"cold,omitempty"`
+	Repeat Snapshot `json:"repeat,omitempty"`
 }
+
+// Sources of a repeat's VictoriaLogs call count.
+const (
+	sourceHeader  = "header"
+	sourceMetrics = "metrics"
+)
 
 // Reuse verdicts.
 const (
@@ -174,6 +195,12 @@ type LiveMeter struct {
 	rec    *Recorder
 }
 
+// fail says on stderr why a scrape failed (the job log shows it; the verdict file stays the same live and replayed).
+func (m *LiveMeter) fail(caseID, phase, why string) (Snapshot, bool) {
+	fmt.Fprintf(os.Stderr, "caseverify: %s: the proxy's metrics could not be read (%s): %s\n", caseID, phase, why)
+	return nil, false
+}
+
 // Measure scrapes the variant's proxy.
 func (m *LiveMeter) Measure(caseID, variant, phase string) (Snapshot, bool) {
 	base := m.Bases["proxy"]
@@ -181,15 +208,15 @@ func (m *LiveMeter) Measure(caseID, variant, phase string) (Snapshot, bool) {
 		base = m.Bases["proxy@"+variant]
 	}
 	if base == "" {
-		return nil, false
+		return m.fail(caseID, phase, "no proxy URL for variant "+variant)
 	}
 	resp, err := m.Client.Get(strings.TrimRight(base, "/") + "/metrics")
 	if err != nil {
-		return nil, false
+		return m.fail(caseID, phase, err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, false
+		return m.fail(caseID, phase, fmt.Sprintf("/metrics answered %d", resp.StatusCode))
 	}
 	s := ParseMetrics(io.LimitReader(resp.Body, 64<<20))
 	if m.rec != nil {
@@ -201,21 +228,64 @@ func (m *LiveMeter) Measure(caseID, variant, phase string) (Snapshot, bool) {
 // repeatAttempt is the attempt number a repeat is recorded under (after the two comparison attempts).
 const repeatAttempt = 9
 
+// Scrapes and asks that fail are tried again: a proxy that is busy with the request just asked (a six hour unwrap, a
+// seven day window) may answer /metrics late or drop one connection, and a verdict on a cache must not depend on that.
+// scrapeTries bounds the scrapes of one phase and askTries the asks of the repeat; the wait between tries is a variable
+// so a test does not sleep.
+const (
+	scrapeTries = 4
+	askTries    = 2
+)
+
+var retryWait = 500 * time.Millisecond
+
+// measure scrapes the proxy until it answers, up to scrapeTries times.
+func measure(meter Meter, id, variant, phase string) (Snapshot, bool) {
+	for try := 1; ; try++ {
+		if s, ok := meter.Measure(id, variant, phase); ok {
+			return s, true
+		}
+		if try == scrapeTries {
+			return nil, false
+		}
+		time.Sleep(retryWait)
+	}
+}
+
 // measureReuse asks the proxy the request again and judges the repeat against the first answer.
+//
+// The repeat is always asked once the first answer was served: its verdict comes from the request's own count of
+// VictoriaLogs calls (X-Loki-VL-Backend-Calls) and from its answer, which no scrape of /metrics can lose. The
+// metrics are the enrichment (bytes, hit ratio per layer and tier, CPU) and the count of an answer without the header;
+// when they cannot be read the verdict still stands, only the repeat's metric delta is missing. A repeat is not
+// measured only when it could not be asked, or carried no count and the metrics that would give one are unreadable.
 func measureReuse(p Probe, req Request, first Answer, firstCost Snapshot, src Source, meter Meter, facets []string, o Options) *Reuse {
 	r := &Reuse{Verdict: reuseNotMeasured, Cold: firstCost}
-	if meter == nil || firstCost == nil {
+	// Nothing counts the first ask (no scrape around it, no header on it): the proxy gives no count to hold the repeat to.
+	if meter == nil || firstCost == nil && first.VLCalls == nil {
 		r.Reason = "the proxy's metrics could not be read"
 		return r
 	}
-	before, ok1 := meter.Measure(p.ID, p.Variant, "repeat_before")
+	before, ok1 := measure(meter, p.ID, p.Variant, "repeat_before")
 	repeat := src.Ask("proxy", p.ID, repeatAttempt, req)
-	after, ok2 := meter.Measure(p.ID, p.Variant, "repeat_after")
-	if !ok1 || !ok2 || repeat.Err != "" {
-		r.Reason = "the repeat or its metrics could not be read"
+	for try := 1; repeat.Err != "" && try < askTries; try++ {
+		time.Sleep(retryWait)
+		repeat = src.Ask("proxy", p.ID, repeatAttempt, req)
+	}
+	after, ok2 := measure(meter, p.ID, p.Variant, "repeat_after")
+	if repeat.Err != "" {
+		r.Reason = "the repeat could not be asked: " + repeat.Err
 		return r
 	}
-	r.Repeat = Delta(before, after)
+	metrics := ok1 && ok2
+	if metrics {
+		r.Repeat = Delta(before, after)
+	}
+	counted := repeat.VLCalls != nil
+	if !counted && (!metrics || firstCost == nil) {
+		r.Reason = "the repeat carried no X-Loki-VL-Backend-Calls and the proxy's metrics could not be read"
+		return r
+	}
 	var why []string
 	if d := CompareWith(facets, first, repeat, o); len(d) > 0 {
 		names := make([]string, 0, len(d))
@@ -224,14 +294,29 @@ func measureReuse(p Probe, req Request, first Answer, firstCost Snapshot, src So
 		}
 		why = append(why, "the repeat answers differently ("+strings.Join(names, ", ")+")")
 	}
-	own, background := attribute(firstCost, r.Repeat)
+	var own float64
+	if counted {
+		// The request's own count: whatever else the proxy asked VictoriaLogs around it is not the repeat's.
+		own, r.Source = float64(*repeat.VLCalls), sourceHeader
+		if metrics {
+			r.Background = max(0, round6(r.Repeat["vl_calls"]-own))
+		}
+		r.Repeat = withCalls(r.Repeat, own)
+		if first.VLCalls != nil {
+			r.Cold = withCalls(r.Cold, float64(*first.VLCalls))
+		}
+	} else {
+		// Without the header the counters are process-wide: a call to an endpoint the first ask never used (a health
+		// check, the stream field inventory) is the proxy's background work, not this request's.
+		var background float64
+		own, background = attribute(firstCost, r.Repeat)
+		r.Source, r.Background = sourceMetrics, background
+		if background > 0 {
+			r.Repeat = withCalls(r.Repeat, round6(r.Repeat["vl_calls"]-background))
+		}
+	}
 	if own > 0 {
 		why = append(why, fmt.Sprintf("the repeat called VictoriaLogs %.0f time(s) on the endpoints of the first ask", own))
-	}
-	if background > 0 {
-		// Counters are process-wide: a call to an endpoint the first ask never used (a health check, the stream
-		// field inventory) is the proxy's background work, not this request's.
-		r.Background = background
 	}
 	if len(why) > 0 {
 		r.Verdict, r.Reason = reuseNotReused, strings.Join(why, "; ")
@@ -239,6 +324,21 @@ func measureReuse(p Probe, req Request, first Answer, firstCost Snapshot, src So
 	}
 	r.Verdict = reuseReused
 	return r
+}
+
+// withCalls is a copy of the snapshot with vl_calls set to the request's own count (a zero count leaves the key out,
+// as Delta does).
+func withCalls(s Snapshot, calls float64) Snapshot {
+	out := Snapshot{}
+	for k, v := range s {
+		out[k] = v
+	}
+	if calls > 0 {
+		out["vl_calls"] = calls
+	} else {
+		delete(out, "vl_calls")
+	}
+	return out
 }
 
 // attribute splits a repeat's VictoriaLogs calls into the calls on endpoints the first ask used (the
@@ -268,6 +368,10 @@ type ReuseSummary struct {
 	RepeatBytes float64            `json:"repeat_vl_bytes"`
 	RepeatHits  map[string]float64 `json:"repeat_hit_ratio"`
 	Background  float64            `json:"background_vl_calls"`
+	// CallsFromHeader and CallsFromMetrics count the repeats by where their VictoriaLogs calls were counted
+	// (Reuse.Source): the request's own header, or the process-wide metrics.
+	CallsFromHeader  int `json:"calls_from_header"`
+	CallsFromMetrics int `json:"calls_from_metrics"`
 }
 
 // SummarizeReuse totals the reuse of every case that measured one.
@@ -279,6 +383,12 @@ func SummarizeReuse(cases map[string]Result) ReuseSummary {
 			continue
 		}
 		s.Counts[r.Reuse.Verdict]++
+		switch r.Reuse.Source {
+		case sourceHeader:
+			s.CallsFromHeader++
+		case sourceMetrics:
+			s.CallsFromMetrics++
+		}
 		if r.Reuse.Verdict == reuseNotReused {
 			s.NotReused = append(s.NotReused, id)
 		}

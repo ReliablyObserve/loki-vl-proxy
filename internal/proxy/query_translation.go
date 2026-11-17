@@ -480,17 +480,9 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// A query the typed lowering covers is served from it: the same text, so the shadow has nothing to compare.
 		if p.queryPlanLowering {
 			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
-			if lowered, ok := p.lowerLogSelect(ctx, canon, prof); ok {
-				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
-			}
-			// A parser's series identity first: lowerMetric writes the translator's series for what this does not serve.
-			if !baseIdentity {
-				prof.IdentityAhead = ahead
-				if lowered, ok := p.lowerDynamicIdentity(ctx, canon, prof); ok {
-					return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
-				}
-			}
-			if lowered, ok := p.lowerMetric(ctx, canon, prof); ok {
+			// A root identity over a range longer than the step writes its series hash ahead of the gate.
+			prof.IdentityAhead = ahead
+			if lowered, ok := p.lowerTranslation(ctx, canon, prof, baseIdentity); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
 		}
@@ -674,7 +666,7 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 // aggregation over one, under any label transforms: its operands are
 // evaluated through their own handlers, each probing its own query, and the
 // binary reads them from the request, so each keeps its own parser as Loki
-// evaluates it (pkg/logql/evaluator.go:385, a step evaluator per side).
+// evaluates it (a step evaluator per side).
 // Dropping one parser from the whole query would take it from the operand
 // that needs it, and the text rewrite of a metric query (removeParserStage)
 // cuts everything after a stage that is the last before its range.
@@ -1348,7 +1340,7 @@ func hideUnlistedBareParserMetricLevel(metric map[string]string, entry map[strin
 		return
 	}
 	msg, ok := entry["_msg"].(string)
-	if ok && exposure.hidesStoredLevel([]byte(msg)) {
+	if ok && exposure.hidesStoredLevelOf([]byte(msg)) {
 		delete(metric, "level")
 	}
 }
@@ -1372,6 +1364,7 @@ func (p *Proxy) bareParserMetricExposure(originalQuery, baseQuery string) *lineF
 		return nil
 	}
 	exposure := pipelineAddsLabels(logs.Pipeline)
+	p.withPlaceholderLine(&exposure, logs.Pipeline)
 	return &exposure
 }
 
@@ -1540,6 +1533,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 	params := url.Values{}
 	params.Set("query", logsqlQuery+pre+" | stats by ("+group+") "+statsAggFunc)
 	setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
+	params = p.levelLessFirstRead(ctx, "/select/logsql/stats_query_range", params)
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
@@ -1556,6 +1550,10 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 	body, err := readBodyLimited(resp.Body, maxBytes)
 	if err != nil {
 		return nil, true, err
+	}
+	// A stream without a level label is one series per level its lines carry.
+	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
+		return nil, true, p.levelLessErr("stats_query_range", err)
 	}
 
 	v, err := fj.ParseBytes(body)
@@ -1604,7 +1602,11 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 				metric[label] = value
 			}
 		}
-		ensureDetectedLevel(metric)
+		// VictoriaLogs' derivation, for a stream without a level label (withLevelLessStreams).
+		if value := string(metricObj.Get(detectedLevelLabel).GetStringBytes()); value != "" {
+			metric[detectedLevelLabel] = value
+		}
+		ensureStreamDetectedLevel(metric, baseLabels)
 		ensureSyntheticServiceName(metric)
 
 		seriesKey := canonicalLabelsKey(metric)
@@ -2107,18 +2109,23 @@ type levelGroupingRequest struct {
 var byClauseRE = regexp.MustCompile(`\bby\s*\(([^)]*)\)`)
 
 // apply sets detected_level and level on one stats result's labels. A raw
-// stream metric (hadStream) keeps its level stream label and gains
-// detected_level. An aggregated result keeps only the level labels the query
-// grouped by: VictoriaLogs answers by (detected_level) with its level field,
+// stream metric (hadStream, stream its parsed _stream) keeps its level stream
+// label and gains detected_level by the stream rule
+// (ensureStreamDetectedLevel). An aggregated result keeps only the level
+// labels the query grouped by: VictoriaLogs answers by (detected_level) with its level field,
 // which becomes detected_level, while by (level) keeps level as Loki does.
 // Without a by() clause naming either, level becomes detected_level.
-func (req levelGroupingRequest) apply(labels, translated map[string]string, hadStream bool) {
+func (req levelGroupingRequest) apply(labels, translated, stream map[string]string, hadStream bool) {
 	hadLevel := labels["level"] != ""
 	// A detected_level key VictoriaLogs returned, even an empty one, is its
 	// derivation (the translator's chain) or a stage that removed the label: it
 	// is not filled from level.
 	_, derived := labels["detected_level"]
-	if (hadStream || !req.known || req.detectedLevel) && !derived {
+	switch {
+	case derived:
+	case hadStream:
+		ensureStreamDetectedLevel(labels, stream)
+	case !req.known || req.detectedLevel:
 		ensureDetectedLevel(labels)
 	}
 	if hadLevel && !hadStream && labels["detected_level"] != "" && (!req.known || !req.level) {
@@ -2224,6 +2231,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 			}
 			changed := false
 			hadStream := false
+			var stream map[string]string
 
 			metricVal.GetObject().Visit(func(k []byte, vv *fj.Value) {
 				key := string(k)
@@ -2233,7 +2241,8 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 					changed = true
 				case "_stream":
 					hadStream = true
-					for streamKey, streamValue := range parseStreamLabels(val) {
+					stream = parseStreamLabels(val)
+					for streamKey, streamValue := range stream {
 						lokiKey := streamKey
 						if !p.labelTranslator.IsPassthrough() {
 							lokiKey = p.labelTranslator.ToLoki(streamKey)
@@ -2269,7 +2278,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 			}
 			serviceSignal := hasServiceSignal(syntheticLabels)
 			beforeSyntheticCount := len(syntheticLabels)
-			levelGrouping.apply(syntheticLabels, translated, hadStream)
+			levelGrouping.apply(syntheticLabels, translated, stream, hadStream)
 			// Only synthesize service_name for raw stream metrics (hadStream=true).
 			// For aggregated results like "sum by (container)", the metric should only
 			// contain the by() labels — adding service_name derived from container would

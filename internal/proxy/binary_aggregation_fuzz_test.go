@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"regexp"
-	"slices"
 	"strconv"
 	"testing"
 
@@ -13,8 +12,8 @@ import (
 )
 
 // FuzzFoldBinaryAggregation: the fold of an aggregation over a binary's
-// answer (foldBinaryAggregation) against a reference of Loki's
-// VectorAggEvaluator.Next (pkg/logql/evaluator.go:435-630): series are grouped
+// answer (foldBinaryAggregation) against the reference vector aggregation
+// (aggLayer.eval, held to Loki's recorded answers): series are grouped
 // by the labels `by` keeps or `without` leaves (none without a grouping), and
 // each group is valued by sum, avg, min, max or count of its samples. Label
 // values hold `,`, `=` and quotes, so a group key that joins them as text
@@ -67,60 +66,30 @@ func FuzzFoldBinaryAggregation(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		// Loki's fold.
-		groupLabels := func(in map[string]string) map[string]string {
-			out := map[string]string{}
-			for name, value := range in {
-				switch {
-				case grouping == nil:
-				case grouping.Without:
-					if !slices.Contains(grouping.Labels, name) {
-						out[name] = value
-					}
-				default:
-					if slices.Contains(grouping.Labels, name) {
-						out[name] = value
-					}
-				}
+		// The reference fold: aggLayer.eval, LogQL's vector aggregation as documented, held to Loki's recorded
+		// answers (TestTopKOverVectorAggregationRangeDifferential, TestVectorFoldReferenceMatchesRecordedLoki).
+		layer := aggLayer{op: string(op)}
+		if grouping != nil {
+			if grouping.Without {
+				layer.hasWith, layer.without = true, grouping.Labels
+			} else {
+				layer.hasBy, layer.by = true, grouping.Labels
 			}
-			return out
 		}
+		vec := make([]topKFoldRefSample, 0, len(samples))
+		for _, s := range samples {
+			vec = append(vec, topKFoldRefSample(s))
+		}
+		reference, _ := layer.eval(vec)
 		type group struct {
 			labels map[string]string
 			vals   []float64
 		}
 		want := map[string]*group{}
-		for _, s := range samples {
-			labels := groupLabels(s.labels)
-			key := binaryLabelKey(labels)
-			if want[key] == nil {
-				want[key] = &group{labels: labels}
-			}
-			want[key].vals = append(want[key].vals, s.value)
+		for _, s := range reference {
+			want[binaryLabelKey(s.labels)] = &group{labels: s.labels, vals: []float64{s.value}}
 		}
-		wantValue := func(vals []float64) float64 {
-			switch op {
-			case logqlpkg.VectorCount:
-				return float64(len(vals))
-			case logqlpkg.VectorMin, logqlpkg.VectorMax:
-				out := vals[0]
-				for _, v := range vals[1:] {
-					if (op == logqlpkg.VectorMin) == (v < out) {
-						out = v
-					}
-				}
-				return out
-			}
-			sum := 0.0
-			for _, v := range vals {
-				sum += v
-			}
-			if op == logqlpkg.VectorAvg {
-				return sum / float64(len(vals))
-			}
-			return sum
-		}
-
+		wantValue := func(vals []float64) float64 { return vals[0] }
 		agg := &logqlpkg.VectorAggregation{Op: op, Grouping: grouping}
 		desc := string(op)
 		if grouping != nil {
@@ -164,7 +133,7 @@ var parserParamsRE = regexp.MustCompile(`^(\s+[A-Za-z_]\w*(\s*=\s*"[^"\\]*")?(\s
 // FuzzParserProbeLeavesBinaries: the parser probe (preferWorkingParser) drops
 // one of the json and logfmt stages from a query naming both, which is right
 // for one operand and wrong for a binary, whose operands each keep their own
-// parser (pkg/logql/evaluator.go:385). With fuzzed stage parameters, every
+// parser. With fuzzed stage parameters, every
 // binary and aggregation over one that parses (bare, aggregated, nested, under
 // label_replace) is left to its operands, and one operand naming both parsers
 // is still probed. Any text at all is read without a panic.

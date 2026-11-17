@@ -108,6 +108,14 @@ var translateMissShapes = []struct {
 		return `sum(rate({app="api"} |= "` + i + `" [5m])) / sum(rate({app="api"}[5m]))`
 	}},
 	{"binary vector operand", func(i string) string { return `vector(1) + sum(rate({app="api"} |= "` + i + `" [5m]))` }},
+	// Held to the binary route by the plan, translated by the string translator.
+	{"binary bool", func(i string) string { return `sum(rate({app="api"} |= "` + i + `" [5m])) > bool 1` }},
+	{"binary set operator", func(i string) string {
+		return `sum by (app) (rate({app="api"} |= "` + i + `" [5m])) and sum by (app) (rate({app="api"}[5m]))`
+	}},
+	{"binary chain", func(i string) string {
+		return `sum(rate({app="api"} |= "` + i + `" [5m])) / sum(rate({app="api"}[5m])) * 100`
+	}},
 	{"label_replace", func(i string) string {
 		return `label_replace(sum by (app) (rate({app="api"} |= "` + i + `" [5m])), "x", "$1", "app", "(.*)")`
 	}},

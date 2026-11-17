@@ -7,7 +7,7 @@ consumer: explore
 why: |
   Loki evaluates `sum_over_time`, `avg_over_time`, `max_over_time` and
   `min_over_time` over unwrap on the window (t-range, t] for every step
-  (pkg/logql/range_vector.go:102-189 batchRangeVectorIterator.Next and load: the
+  (the
   lower bound is exclusive, and a line between two windows is consumed without
   joining any sample). With a range shorter than the step the windows are
   disjoint and a step whose window holds no line has no sample.
@@ -57,7 +57,7 @@ gap:
   visual_reason: 'a fix proof is captured at the ranges Loki holds in the visual stack (up to 1.5h), where Explore''s auto step is a few seconds and any range a panel can show is longer than the step (semantics/unwrap-over-time-range-windows); range < step needs a step of minutes (7d), proven by the window comparison against Loki in the e2e'
   effort: S
   area: 'internal/proxy metric_binary.go proxyStatsQueryRange (statsRateRangeEqualsStepShift branch) and range_metric_compat.go withWindowPhaseFilter'
-  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator (window (t-range, t]); range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime'
+  loki: 'the window is (t-range, t]; with a range shorter than the step a line between two windows joins no sample (TestCompat_UnwrapOverTimeShortRange)'
   proxy: 'anchored step buckets restricted to the lines of (t-range, t] by the window filter'
   planned_test: 'TestUnwrapOverTimeShortRangeMatchesLoki (internal/proxy); TestCompat_UnwrapOverTimeShortRange (test/e2e-compat, group core)'
   clusters: []

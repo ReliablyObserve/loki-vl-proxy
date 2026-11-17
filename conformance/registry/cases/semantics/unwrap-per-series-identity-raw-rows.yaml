@@ -8,11 +8,10 @@ proves:
 consumer: explore
 why: |
   Only sum over rate, sum_over_time, count and the bytes functions is evaluated
-  on the folded samples (pkg/logql/syntax/ast.go:1612-1642 canInjectVectorGrouping).
+  on the folded samples.
   Every other function under a vector aggregation is evaluated per series, the
-  stream plus the labels a parser extracts less the unwrapped one
-  (pkg/logql/log/metrics_extraction.go:150-178), and the aggregation then folds
-  those values (pkg/logql/evaluator.go:435-529). VictoriaLogs stats cannot name
+  stream plus the labels a parser extracts less the unwrapped one, and the aggregation then folds
+  those values. VictoriaLogs stats cannot name
   the parsed labels, so the proxy approximates the series by `_stream` (the raw
   `| json` and rate_counter evaluators) or `_stream, _msg` (the stats pipeline of
   an instant logfmt query), and a `sum by (a)` over such a function groups the
@@ -79,6 +78,27 @@ why: |
   one stream, lines that are the same text, a parsed label more, a nested
   object, keys in either order, a detected_level that differs between lines,
   lines that do not parse, logfmt and json).
+
+  After an extraction list of plain keys (`| logfmt amount, route`) the
+  series are fields of the row (the stream, its stored level fields and the
+  listed labels), and on a range longer than the step VictoriaLogs groups each
+  step bucket by them; the window evaluator merges each series' buckets into
+  its window and folds the aggregation after the windows
+  (listedIdentityWindows). Recorded with Loki's engine on VictoriaLogs v1.49.0
+  and v1.53.0: TestExtractionListIdentityMatchLoki goes from 55 to 82 of 149
+  runs matching at step < range (27 queries: sum, sum by, avg and avg by over
+  avg, max, min, stddev and stdvar over time, logfmt and json lists), and
+  TestUnwrapDynamicValueFormsMatchLoki's 45 extraction-list rows at step <
+  range match. `sum(stdvar_over_time({...} | logfmt amount | unwrap amount
+  [5m]))` answered 0 at a step of one minute (each line its own series, each
+  step bucket read as the window). A clause by level or detected_level keeps
+  the stream's series (the level of a line is read from raw rows there).
+  A listed label of many values over a long range (`| logfmt amount, user_id`
+  over hours) is read in time chunks under -manual-range-metric-row-limit,
+  each with the range before it, and folded chunk by chunk (decision
+  metric-series-identity/extraction-list-window-chunks):
+  TestListedWindowChunksMatchLoki holds six hours at steps of 15 s and 7 s to
+  Loki's answers, read whole and in 37-38 chunks.
 
   A range longer than the step (step < range, sliding windows) reads the same
   series: the request is marked before it is translated (dynamicIdentityWindows,
@@ -151,8 +171,8 @@ gap:
   status: open
   impact: explore-visible
   effort: L
-  area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes, IdentityAhead), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go, unwrap_dynamic_identity.go (dynamicUnwrapIdentity, dynamicIdentityWindows, foldDynamicIdentity), range_metric_compat.go (the instant stats route, the window route of the hash); the window evaluator (unwrap_samples.go) for a range longer than the step'
-  loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next; pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + parsed labels)'
+  area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes, IdentityAhead), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go, unwrap_dynamic_identity.go (dynamicUnwrapIdentity, dynamicIdentityWindows), range_metric_compat.go (the instant stats route, the window route of the hash); the window evaluator (unwrap_samples.go, listed_window_chunks.go) for a range longer than the step'
+  loki: 'the vector aggregation folds per series values, a series being the stream plus the parsed labels (measured on Loki 3.7.7, in this case)'
   proxy: 'the value per stream and hash of the parsed labels, then the aggregation over the series'
   planned_test: 'TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan, TestDynamicIdentityBinaryOperandsReadTheHash, TestDynamicIdentityBinaryOperandContext, TestDynamicIdentityCacheKeysFenced, FuzzDynamicIdentityFenceMatchesPlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core, binary rows and the sliding, longer and non-multiple ranges included; the sliding rows written, not yet run on a stack); TestDynamicIdentityWindowsMatchLokiReference, TestDynamicIdentityWindowsKeepExtremes, TestDynamicIdentityWindowsFoldBeyondSeriesLimit, TestDynamicIdentityWindowCacheReuse (internal/proxy), TestDynamicUnwrapIdentityAhead (internal/queryplan/lower)'
   note: 'Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. VictoriaLogs stats group by named fields only: the lowering names the parsed labels by a hash of the line unpacked under a prefix.'

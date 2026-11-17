@@ -14,7 +14,8 @@ import (
 // the binary route (binaryExprForRequest, then proxyBinaryLogQL) reads the query again from the request
 // (binaryRouteQuery: incomplete unwrap stubs removed, a uniform offset stripped), and sends each operand that is not
 // a number through the query handlers as a query of its own, the operand's printed LogQL (Expr.String), which the
-// handler translates alone; it then combines the operands' answers itself. The reference is a physical.Binary of the
+// handler translates alone (an operand that is itself a binary operation takes the binary route again); it then
+// combines the operands' answers itself. The reference is a physical.Binary of the
 // operator, its bool modifier and vector matching, and each operand's translation decoded (a number as a ScalarOp,
 // a vector(n) as a VectorOp: evaluateBinaryLogQLOperand answers it from the constant and never translates it or asks
 // VictoriaLogs), with operands the texts the proxy translates the operands to, "" for a number and a vector(n). As for the rankings
@@ -27,25 +28,71 @@ func BinaryOperandsPhysical(query string, translate func(string) (string, error)
 	if !ok {
 		return nil, operands, false, nil
 	}
+	b, operands, err := binaryRoutePhysical(bin, translate, nil)
+	if err != nil {
+		return nil, operands, true, err
+	}
+	return b, operands, true, nil
+}
+
+// BinaryOperandLeaves is BinaryOperandsPhysical with the text the proxy translates every query operand to, at any depth
+// of a chain, in the order the leaves of the returned operators are read (left before right, "" for a number and a
+// vector(n)).
+func BinaryOperandLeaves(query string, translate func(string) (string, error)) (op physical.Op, leaves []string, routed bool, err error) {
+	bin, ok := binaryRouteExpr(context.Background(), binaryRouteQuery(query, "", "", "")).(*logqlpkg.BinOpExpr)
+	if !ok {
+		return nil, nil, false, nil
+	}
+	b, _, err := binaryRoutePhysical(bin, translate, &leaves)
+	if err != nil {
+		return nil, leaves, true, err
+	}
+	return b, leaves, true, nil
+}
+
+// binaryRoutePhysical is the physical.Binary of one binary operation of the route: each side a number, a vector(n), a
+// query (its translation decoded) or, for an operand that is itself a binary operation, the Binary the route evaluates
+// it by (evaluateBinaryLogQLOperand sends it through the handlers, which take the binary route again). operands are
+// the texts of this operation's own query sides; leaves, when not nil, collects every leaf's text, left first.
+func binaryRoutePhysical(bin *logqlpkg.BinOpExpr, translate func(string) (string, error), leaves *[]string) (physical.Binary, [2]string, error) {
+	var operands [2]string
 	var sides [2]physical.Op
 	for i, side := range [2]logqlpkg.Expr{bin.Left, bin.Right} {
 		if v, scalar := binaryScalarValue(side, 0); scalar {
 			sides[i] = physical.ScalarOp{V: v}
+			appendLeaf(leaves, "")
 			continue
 		}
-		text := side.String()
+		if nested, ok := side.(*logqlpkg.BinOpExpr); ok {
+			b, _, err := binaryRoutePhysical(nested, translate, leaves)
+			if err != nil {
+				return physical.Binary{}, operands, err
+			}
+			sides[i] = b
+			continue
+		}
+		text := emptyWithoutOperand(side).String()
 		if v, vector := binaryVectorLiteral(text); vector {
 			sides[i] = physical.VectorOp{V: v}
+			appendLeaf(leaves, "")
 			continue
 		}
+		var err error
 		if operands[i], err = translate(text); err != nil {
-			return nil, operands, true, err
+			return physical.Binary{}, operands, err
 		}
 		if sides[i], err = translator.DecodePhysical(operands[i]); err != nil {
-			return nil, operands, true, err
+			return physical.Binary{}, operands, err
 		}
+		appendLeaf(leaves, operands[i])
 	}
-	return physical.Binary{Op: bin.Op, Bool: bin.ReturnBool, Match: binaryRouteMatching(bin.VectorMatching), L: sides[0], R: sides[1]}, operands, true, nil
+	return physical.Binary{Op: bin.Op, Bool: bin.ReturnBool, Match: binaryRouteMatching(bin.VectorMatching), L: sides[0], R: sides[1]}, operands, nil
+}
+
+func appendLeaf(leaves *[]string, text string) {
+	if leaves != nil {
+		*leaves = append(*leaves, text)
+	}
 }
 
 // binaryVectorLiteral is the number of an operand's printed LogQL that evaluateBinaryLogQLOperand answers from a

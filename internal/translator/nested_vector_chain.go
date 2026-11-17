@@ -117,8 +117,8 @@ func carriesTranslationMarker(query string) bool {
 // more levels of sum, avg, max, min and count over a range aggregation).
 //
 // Loki folds the innermost level first and each level keeps exactly its own
-// grouping labels, the ones its input series have (pkg/logql/evaluator.go
-// VectorAggEvaluator.Next, :467-477). The innermost level translates as it
+// grouping labels, the ones its input series have (recorded Loki engine
+// answers). The innermost level translates as it
 // does alone; every level above it is a stats pipe of its own over the rows of
 // the previous one, which are the series of that level:
 //

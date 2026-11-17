@@ -203,6 +203,12 @@ func runMetricHandler(t *testing.T, prof diffProfile, mr metricRequest, front *m
 		LabelStyle:             prof.style,
 		MetadataFieldMode:      prof.mode,
 		EmitStructuredMetadata: true,
+		AlignQueriesWithStep:   mr.align,
+		RangeMetricRowLimit:    mr.rowLimit,
+		// The recorded VictoriaLogs requests were made at 500 series, the limit
+		// some of them name (a top-values `| limit 501`); they stay valid only
+		// at that limit, whatever the proxy's built-in default is.
+		MaxStatsQuerySeries: 500,
 	})
 	if err != nil {
 		t.Fatal(err)

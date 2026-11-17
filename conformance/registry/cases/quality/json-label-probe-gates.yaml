@@ -12,9 +12,7 @@ why: |
   and unpack_json read differently (semantics/json-extracted-metric-pushdown,
   quality/extracted-label-probe-cost). Loki renames a parsed key that a
   stream label or structured metadata already holds to name_extracted and
-  keeps the first value of a key it extracted
-  (pkg/logql/log/parser.go:25 duplicateSuffix and 139-158 parseLabelValue,
-  v3.7.9), so the probes of level_extracted read every line of a stream with
+  keeps the first value of a key it extracted, so the probes of level_extracted read every line of a stream with
   the level label, with that label deleted.
 
   The probes and the stats query run side by side and the answer waits for
@@ -80,7 +78,7 @@ gap:
   visual_reason: 'a latency change: the probes find the same lines, so every answer and every panel is the base''s. The pages that cover it (explore-extracted-filter-metric, explore-extracted-group-metric, lvl-explore-volume-level-extracted-stored) captured base = PR identical at 15m, 1h and 6h with the metric data equal to Loki''s, the only difference being the documented index/stats byte accounting (visual-smoke run 41795055155); the first-request time is measured by the A/B sets extracted-pushdown, extracted-suffix and level-filter-stored'
   effort: S
   area: 'internal/proxy/ordered_json_metric.go orderedJSONPartialParseQuery, orderedJSONKeySpellingQuery, orderedJSONKeyAliasGates, jsonKeyGate, gatedRiskExists'
-  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; pkg/logql/log/parser.go:139-158 parseLabelValue (sanitizeLabelKey, BaseHas -> _extracted, first value kept)'
+  loki: 'a parsed key already held by a stream label or structured metadata becomes name_extracted, the first value of a key is kept (TestCompat_JSONLabelProbeGatesLikeLoki)'
   proxy: 'quote-led key regexps over every line of the range in the parse-risk probes (X1 cold 3.6-4.1x Loki at 24h, E7 6.4-6.8x, LS8 7.4-9.1x)'
   planned_test: 'proxy TestJSONLabelProbeGatesEdgeTable, TestJSONLabelProbeGatesAreSupersets, TestJSONLabelProbeGatesDifferential, TestJSONLabelProbesRunNoKeyRegexpOnPlainLines, TestJSONLabelProbeGatesFallBackWhenTooLong, TestJSONKeySpaceNonASCIIClass, FuzzJSONLabelProbeGates; e2e TestCompat_JSONLabelProbeGatesLikeLoki (core); bench/ab sets extracted-pushdown, extracted-suffix, level-filter-stored; visual regression coverage explore-extracted-filter-metric, explore-extracted-group-metric, lvl-explore-volume-level-extracted-stored'
   clusters: []

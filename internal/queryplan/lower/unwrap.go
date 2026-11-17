@@ -226,6 +226,8 @@ type unwrapQuery struct {
 	chain, service bool
 	// squares says the pipes square the deviation themselves (a stdvar under a vector aggregation without a clause).
 	squares bool
+	// counted says the pipes count the series of a stdvar (count by labels): no deviation is left to square.
+	counted bool
 	// parser says the log query has a parser: the series are then the stream (and each line, for an unwrapped
 	// value) instead of the stream and its level.
 	parser bool
@@ -243,6 +245,18 @@ type unwrapQuery struct {
 	dynamic bool
 	// ahead are the pipes of the dynamic identity written before the unwrap gate (Profile IdentityAhead).
 	ahead string
+	// listed says kept is the identity of an extraction list (listedStored and the listed labels): the stream, its stored level fields
+	// and the listed labels, grouped as stored (the identity derives no detected_level, a clause that names it
+	// does); clause is the vector aggregation's by clause.
+	listed bool
+	clause []string
+	// rows says the vector aggregation folds the rows of each of its groups directly (foldsRows: max over
+	// max_over_time, min over min_over_time), so no series identity is written; rowsUnpack are the labels of its
+	// clause an extraction list names, the only ones the query's bare logfmt unpack then reads besides the unwrapped
+	// one, and rowsListed says the parser is such a list.
+	rows       bool
+	rowsListed bool
+	rowsUnpack []string
 	// firstBy and firstEmpty are the grouping of the first stats pipe, which reads the unwrapped value (set marks
 	// them known); the bare logfmt unpack ahead of it is narrowed to the labels it reads.
 	firstBy    []string
@@ -285,7 +299,8 @@ func (q *unwrapQuery) noteFirst(by []string, empty bool) {
 // it: a grouping by the stream and its level also groups by detected_level.
 func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias string) {
 	q.noteFirst(by, empty)
-	var keyBuf [4]logsql.GroupKey
+	// Room for a clause and a series identity (an extraction list's is the stream, two level fields and its labels).
+	var keyBuf [8]logsql.GroupKey
 	var keys []logsql.GroupKey
 	if len(by) < len(keyBuf) {
 		keys = keyBuf[:len(by):len(keyBuf)]
@@ -294,7 +309,8 @@ func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias 
 	}
 	for i, f := range by {
 		keys[i] = logsql.GroupKey{Field: f}
-		q.chain = q.chain || f == translate.DetectedLevelLabel
+		// An extraction list's identity reads detected_level as stored; a clause that names it derives it.
+		q.chain = q.chain || f == translate.DetectedLevelLabel && (!q.listed || slices.Contains(q.clause, f))
 		q.service = q.service || f == "service_name"
 	}
 	if hasField(by, "_stream") && hasField(by, "level") && !hasField(by, translate.DetectedLevelLabel) {
@@ -435,9 +451,19 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 	narrowed := false
 	if q.parser && log.bareLogfmt >= 0 && q.firstSet {
 		by, empty := q.firstBy, q.firstEmpty
-		if q.dynamic {
+		switch {
+		case q.dynamic:
 			// The series hash unpacks the line on its own: the unpack reads the labels of the clause.
 			by, empty = withoutDynamicSeries(by), true
+		case q.listed:
+			// The unpack reads the listed labels alone: the stats read the clause and the stored fields as stored.
+			by, empty = q.listedUnpack(), true
+		case q.rows && q.rowsListed:
+			// The unpack reads the listed labels of the clause alone: the others are the stream's.
+			by, empty = q.rowsUnpack, true
+		case q.rows:
+			// The unpack reads the labels of the clause, which a parser of every key may give.
+			empty = true
 		}
 		names, narrowed = narrowedFields(field, by, empty, log.resolvable)
 	}
@@ -459,7 +485,7 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 		log.pipes = narrowedUnpack(log.pipes[:log.bareLogfmt], names)
 	}
 	text := physical.VLQuery{Text: q.text(log, field, conv, keys.text, prof)}
-	if op.variance && !q.squares {
+	if op.variance && !q.squares && !q.counted {
 		return physical.Binary{Op: "^", L: text, R: squared}, nil
 	}
 	return text, nil
@@ -710,7 +736,7 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
 	q.kept, q.keptSet = keptIdentity(ra.In, prof)
 	if !prof.StreamIdentity {
-		q.withDynamicIdentity(va, ra, u.Label, prof.IdentityAhead)
+		q.withDynamicIdentity(va, ra, u.Label, labels, prof.IdentityAhead)
 	}
 	if rate {
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
@@ -815,6 +841,12 @@ func (q *unwrapQuery) vector(vop logql.VectorOp, op unwrapOp, labels []string, w
 		q.varianceVector(vop, op, labels, without)
 		return
 	}
+	if q.rows {
+		// The maximum of the series' maxima is the maximum of the group's rows (and so for the minimum): one stats
+		// pipe over the clause, whatever the series are.
+		q.stats(labels, false, op.fn, "")
+		return
+	}
 	// The aggregation of the values of the series: count counts them, sum adds them, and so on. A sum over
 	// the rows needs no inner stats, except for first and last, which read a value per series, and a function of the
 	// series a keep decides that the clause does not cover (one value per series, then their sum).
@@ -849,6 +881,19 @@ func (q *unwrapQuery) varianceVector(vop logql.VectorOp, op unwrapOp, labels []s
 		q.pipes = append(q.pipes, logsql.PipeMath{Alias: "__lvp_inner_var", Expr: "__lvp_inner*__lvp_inner"}.String())
 		q.squares = true
 		q.stats(labels, false, outerFuncOf(vop, "__lvp_inner_var"), "")
+		return
+	}
+	if len(labels) > 0 && vop == logql.VectorCount {
+		// count by labels reads the number of series of each group, not their values: the deviation of each series
+		// (the stream, its stored level, and the labels a keep leaves), then the count of those per group, as count
+		// over stddev_over_time writes it. Nothing is squared.
+		identity := seriesIdentity(q.parser)
+		if q.keptSet {
+			identity = q.kept
+		}
+		q.seriesStats(op, translate.JoinByLabels(labels, identity))
+		q.stats(labels, false, logsql.Count{}, "")
+		q.counted = true
 		return
 	}
 	if len(labels) > 0 {
@@ -892,7 +937,7 @@ func (q *unwrapQuery) seriesStats(op unwrapOp, by []string) {
 	if op.row {
 		q.pipes = append(q.pipes, firstLastUnpack)
 	}
-	if q.dynamic {
+	if q.dynamic || q.listed {
 		q.pipes = append(q.pipes, dynamicInnerNumber)
 	}
 }
@@ -941,9 +986,14 @@ func outerFuncOf(vop logql.VectorOp, field string) logsql.StatsFunc {
 
 // screenUnwrap turns away an unwrap aggregation whose spelling the string translator reads unlike the plan: it
 // finds the unwrapped label and its conversion by searching the query text for `| unwrap ` (one blank on each
-// side) and cutting the text after it at the next `|` or `[`. A query that spells the stage another way (`|unwrap
-// n`), or holds the search text in an earlier quoted string, gives it another label, another conversion or none (a
-// query the translator rejects): the lowering leaves it to the translator.
+// side) and cutting the text after it at the next `|` or `[`. A query that holds the search text in an earlier quoted
+// string gives it another label, another conversion or none: the lowering leaves it to the translator.
+//
+// The text is read with each run of the blanks Loki's lexer skips (a space, a tab, a line feed, a carriage return)
+// outside quoted strings written as one space, and with a space after the pipe (spacedBlanks): `| unwrap<CR>n`,
+// `|  unwrap n` and `|unwrap n` are the query with `| unwrap n` to Loki and to the plan, and the translator, which finds no `| unwrap ` in them, fails the query
+// with Loki's 500 (semantics/translator-reads-only-space-between-tokens). The plan serves them as it serves the
+// spaced spelling.
 func screenUnwrap(query string, p *queryplan.Plan) *NotLoweredError {
 	var ra *queryplan.RangeAgg
 	owner := "RangeAgg"
@@ -963,6 +1013,9 @@ func screenUnwrap(query string, p *queryplan.Plan) *NotLoweredError {
 		return nil
 	}
 	field, conv, ok := unwrapFromText(query)
+	if !ok {
+		field, conv, ok = unwrapFromText(spacedBlanks(query))
+	}
 	if want, known := unwrapConv(u); !ok || !known || field != u.Label || conv != want {
 		return &NotLoweredError{Construct: owner + " unwrap spelling"}
 	}
@@ -972,6 +1025,32 @@ func screenUnwrap(query string, p *queryplan.Plan) *NotLoweredError {
 		return &NotLoweredError{Construct: owner + " unwrap quantile spelling"}
 	}
 	return nil
+}
+
+// spacedBlanks is q with every run of a space, a tab, a line feed or a carriage return outside its quoted and
+// backquoted strings written as one space, and a space after a pipe that a name follows (`|unwrap n` is `| unwrap
+// n`): the spelling Loki's lexer reads the same as q, and the one the translator's search for `| unwrap ` reads.
+func spacedBlanks(q string) string {
+	var b strings.Builder
+	b.Grow(len(q) + 8)
+	for i := 0; i < len(q); i++ {
+		switch c := q[i]; {
+		case c == '"' || c == '`':
+			j := min(skipQuoted(q, i), len(q)-1)
+			b.WriteString(q[i : j+1])
+			i = j
+		case isBlank(c):
+			for i+1 < len(q) && isBlank(q[i+1]) {
+				i++
+			}
+			b.WriteByte(' ')
+		case c == '|' && i+1 < len(q) && isNameStart(q[i+1]):
+			b.WriteString("| ")
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // quantileFromText is the parameter the string translator reads out of the text of a quantile_over_time: what stands

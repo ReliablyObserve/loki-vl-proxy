@@ -329,8 +329,7 @@ func lokiServiceVolumes(rows []segRow, start, end time.Time, limit int) string {
 	if len(vols) > limit {
 		vols = vols[:limit]
 	}
-	// Loki stamps the sample at the end rounded up to the millisecond
-	// (pkg/util/conv.go RoundToMilliseconds).
+	// Loki stamps the sample at the end rounded up to the millisecond.
 	endMs := end.UnixNano() / int64(time.Millisecond)
 	if end.UnixNano()%int64(time.Millisecond) != 0 {
 		endMs++

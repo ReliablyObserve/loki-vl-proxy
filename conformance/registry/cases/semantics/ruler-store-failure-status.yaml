@@ -4,15 +4,16 @@ proves:
   - status-500
 consumer: any
 why: |
-  Loki's ListRules reads the rule groups from its rule store and answers a
-  store failure with `http.Error(err, 400)`, for example `unable to read rule
-  dir /tmp/loki/rules/fake: open ...: no such file or directory\n`
-  (pkg/ruler/base/api.go:534; the same for LoadRuleGroups at :546, and for
-  GetRuleGroup at :575). The proxy has no rule store: its rules come from a
+  Loki's ruler reads the rule groups from its rule store and answers a
+  store failure with a 400 and the error text, for example `unable to read rule
+  dir /tmp/loki/rules/fake: open ...: no such file or directory\n`. The proxy has no rule store: its rules come from a
   remote backend (vmalert), so a failed read is a failed backend call, and it
   answers Loki's failed-call `500 Internal Server Error\n`
-  (pkg/util/server/error.go:124-128 for that class). A directory-read 400 with
+  for that class. A directory-read 400 with
   a path would mislead an operator, because there is no directory.
+  Loki's answers are recorded over HTTP (internal/lokierr/testdata/loki_error_answers.jsonl r1174 /loki/api/v1/rules,
+  r1175 /rules/ns, r1176 /rules/ns/grp, r1183 /api/prom/rules; Loki 3.7.9 with a local rule store whose tenant
+  directory does not exist).
 request:
   method: GET
   path: /loki/api/v1/rules
@@ -34,7 +35,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/proxy/alerting.go writeAlertingBackendStatus and the legacy rule views'
-  loki: 'pkg/ruler/base/api.go:534, :546, :575 http.Error(err, 400)'
+  loki: 'a rule store failure is a 400 text/plain answer, for example ''unable to read rule dir ...: no such file or directory'''
   proxy: '500 Internal Server Error'
   note: |
     2026-11-02: keep 500. The rule source is a remote backend, so Loki's

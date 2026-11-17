@@ -9,7 +9,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // What a client reads when the proxy cannot answer a query it accepted.
@@ -118,13 +118,13 @@ var unplacedSyntax = lokierr.Parse(0, 0, unplacedSyntaxDetail)
 // that the translation (or the plan, or the lowering) refused. The class is
 // read from the failure's type, never from its text:
 //
-//   - translator.UnsupportedError (the translator has no LogsQL for a construct
+//   - translate.UnsupportedError (the translator has no LogsQL for a construct
 //     the parser accepts): Loki accepts what the translator refuses at its
 //     vector aggregations over scalars and at an unwrap it cannot read
 //     (conformance cases vector-aggregation-over-scalar-rejected and
 //     translator-reads-only-space-between-tokens), so a notServed answer;
 //     count_values is no LogQL function at all, so a syntax error;
-//   - every other failure (translator.ParseError, an invalid stage the parser
+//   - every other failure (translate.ParseError, an invalid stage the parser
 //     read as a label filter): a query Loki rejects with a position, an
 //     unplaced syntax error.
 func queryRefusal(err error) *lokierr.Error {
@@ -135,7 +135,7 @@ func queryRefusal(err error) *lokierr.Error {
 		// VictoriaLogs refused what the proxy wrote: the proxy's defect, never the client's syntax error.
 		return planDefectAnswer(defect)
 	}
-	if unsupported, ok := asType[*translator.UnsupportedError](err); ok && unsupported.Func != "count_values" {
+	if unsupported, ok := asType[*translate.UnsupportedError](err); ok && unsupported.Func != "count_values" {
 		return notServed(unsupported.Func, err)
 	}
 	return unplacedSyntaxError(err)

@@ -25,7 +25,7 @@ func TestDynamicUnwrapIdentityAhead(t *testing.T) {
 		{`sum by (app) (max_over_time({app="a"} | json | unwrap n [5m]))`, "by (app, __lvp_sid)"},
 		{`max by (app) (stdvar_over_time({app="a"} | json | unwrap n [5m]))`, "by (app, __lvp_sid)"},
 		{`avg(stddev_over_time({app="a"} | json | n > 5 | unwrap n [5m]))`, "by (__lvp_sid)"},
-		{`min by (route) (min_over_time({app="a"} |= "x" | json | unwrap duration(n) [1m]))`, "by (route, __lvp_sid)"},
+		{`max by (route) (min_over_time({app="a"} |= "x" | json | unwrap duration(n) [1m]))`, "by (route, __lvp_sid)"},
 		{`sum(avg_over_time({app="a"} | json | unwrap bytes(n) [2m]))`, "by (__lvp_sid)"},
 	} {
 		def := loweredText(t, tc.q, Profile{})
@@ -75,6 +75,9 @@ func TestDynamicUnwrapIdentityAhead(t *testing.T) {
 		`sum(max_over_time({app="a"} | logfmt | unwrap n [5m]))`:       true,
 		`sum(sum_over_time({app="a"} | logfmt | unwrap n [5m]))`:       false,
 		`sum(max_over_time({app="a"} | logfmt | unwrap n [5m])) * 2`:   false,
+		// A fold of rows writes no hash, and an extraction list's series are fields of the row.
+		`max(max_over_time({app="a"} | logfmt | unwrap n [5m]))`:      false,
+		`sum(max_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`: false,
 	} {
 		if got := DynamicIdentityAhead(rangeAggPlan(q)); got != want {
 			t.Errorf("%s: DynamicIdentityAhead %v, want %v", q, got, want)

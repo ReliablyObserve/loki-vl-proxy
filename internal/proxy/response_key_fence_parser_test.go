@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -39,9 +40,34 @@ type fenceFacts struct {
 	// perStreamSeries is a construct whose series the proxy reads per stream: a without fold, an unwrap, or topk,
 	// bottomk, sort, sort_desc or label_replace.
 	perStreamSeries bool
+	// rankOverBinary is a ranking, stddev or stdvar whose operand is a binary operation.
+	rankOverBinary bool
+	// rankOverBinaryLabelReplace is such an operand that holds a label_replace call.
+	rankOverBinaryLabelReplace bool
+	// levelChain is a read that may carry the detected_level chain: a range aggregation, or a stage that names
+	// detected_level (a label filter on it, keep or drop of it).
+	levelChain bool
+	// emptyWithoutOperand is a binary operation with an operand that is a sum, avg, min or max `without ()`.
+	emptyWithoutOperand bool
+}
+
+// keepsEveryOperandSeries reports a sum, avg, min or max with a `without` clause of no label, read from the tree.
+func keepsEveryOperandSeries(e logqlpkg.Expr) bool {
+	v, ok := e.(*logqlpkg.VectorAggregation)
+	if !ok || v.Grouping == nil || !v.Grouping.Without || len(v.Grouping.Labels) != 0 {
+		return false
+	}
+	switch v.Op {
+	case logqlpkg.VectorSum, logqlpkg.VectorAvg, logqlpkg.VectorMin, logqlpkg.VectorMax:
+		return true
+	}
+	return false
 }
 
 func (f *fenceFacts) name(name string, comparison bool) {
+	if name == detectedLevelLabel {
+		f.levelChain = true
+	}
 	if !comparison {
 		return
 	}
@@ -54,6 +80,9 @@ func (f *fenceFacts) name(name string, comparison bool) {
 }
 
 func (f *fenceFacts) labelName(name string) {
+	if name == detectedLevelLabel {
+		f.levelChain = true
+	}
 	// The scanner lower cases a word with strings.ToLower before it looks the word up.
 	if lower := strings.ToLower(name); (lower == "ip" && name != "ip") || (lower == "label_replace" && name != "label_replace") {
 		f.keywordSpelling = true
@@ -156,6 +185,7 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 	case *logqlpkg.LogQuery:
 		f.logQuery(e)
 	case *logqlpkg.RangeAggregation:
+		f.levelChain = true
 		f.expr(e.Inner)
 	case *logqlpkg.VectorAggregation:
 		switch e.Op {
@@ -165,8 +195,18 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 		if e.Grouping != nil && e.Grouping.Without {
 			f.perStreamSeries = true
 		}
+		if holdsBinaryOperand(e.Inner) {
+			switch e.Op {
+			case logqlpkg.VectorTopK, logqlpkg.VectorBottomK, logqlpkg.VectorSort, logqlpkg.VectorSortDesc, logqlpkg.VectorStddev, logqlpkg.VectorStdvar:
+				f.rankOverBinary = true
+				f.rankOverBinaryLabelReplace = f.rankOverBinaryLabelReplace || exprHoldsLabelReplace(e.Inner)
+			}
+		}
 		f.expr(e.Inner)
 	case *logqlpkg.BinOpExpr:
+		if keepsEveryOperandSeries(e.Left) || keepsEveryOperandSeries(e.Right) {
+			f.emptyWithoutOperand = true
+		}
 		f.expr(e.Left)
 		f.expr(e.Right)
 	case *logqlpkg.OpaqueMetricExpr:
@@ -297,7 +337,14 @@ func fenceWants(query string) map[string]bool {
 		"reserved-field-case":      f.reservedCase,
 		"reserved-field-labels":    f.reservedLabel,
 		"keyword-label-names":      f.keywordSpelling,
-		"stream-level-series":      f.perStreamSeries,
+		"stream-level-series":      f.perStreamSeries || f.levelChain,
+		"rank-over-binary":         f.rankOverBinary,
+		"rank-over-binary-lr":      f.rankOverBinaryLabelReplace,
+		"binary-empty-without":     f.emptyWithoutOperand,
+		// An unwrap stage of the tree that the text does not write `| unwrap ` (outside quotes and comments): the
+		// printed tree writes each stage so.
+		"unwrap-blank-spelling": strings.Count(textOutsideQuotes(expr.String()), "| unwrap ") >
+			strings.Count(strings.ToLower(textOutsideQuotes(query)), "| unwrap "),
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
@@ -307,6 +354,13 @@ func fenceWants(query string) map[string]bool {
 	if plan, err := queryplan.Build(expr, queryplan.Inputs{}); err == nil {
 		queryplan.Resolve(plan)
 		want["unwrap-dynamic-identity"] = lower.WritesDynamicUnwrapIdentity(plan)
+		// The request has a step of 15s: an extraction list's identity at the root over a longer range is fenced.
+		if va, ok := plan.Root.(*queryplan.VectorAgg); ok && listedWindowsPlan(plan) {
+			if ra, ok := va.In.(*queryplan.RangeAgg); ok && ra.Range > 15*time.Second {
+				want["extraction-list-windows"] = true
+			}
+		}
+		want["count-stdvar-series"] = lower.WritesCountVarianceSeries(plan)
 	}
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
@@ -340,6 +394,8 @@ func fenceMisses(query string) []string {
 }
 
 var fenceSpellingBases = []string{
+	"rate({app=\"a\"} |\tunwrap n [5m])", "sum(max_over_time({app=\"a\"} | json |\r\nunwrap  bytes(n) [5m]))",
+	`sum_over_time({app="a"} |  unwrap n [5m]) / sum_over_time({app="a"} | unwrap n [5m])`,
 	`{app="a"} | json | unwrap n | keep a`,
 	`{app="a"} | decolorize | keep a, b | json | line_format "{{.a}}"`,
 	`{app="a"} | json | _time > 5s | _msg = "x" | _stream != "y"`,
@@ -385,6 +441,13 @@ var fenceSpellingBases = []string{
 	`sum by (x) (avg_over_time({app="a"} | json | unwrap n [5m]))`,
 	`max(stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`,
 	`min by (x) (min_over_time({app="a"} | json | unwrap n [5m])) / sum(max_over_time({app="a"} | json | unwrap n [5m]))`,
+	`topk(2, sum by (x) (rate({app="a"}[1m])) / sum by (x) (rate({app="b"}[1m])))`,
+	`sort_desc(sum by (x) (count_over_time({app="a"}[1m])) > bool 3)`,
+	`sum(bottomk(1, sum by (x) (rate({app="a"}[1m])) and sum by (x) (rate({app="b"}[1m]))))`,
+	`stddev by (x) (sum by (x, y) (rate({app="a"}[1m])) * 2) + 1`,
+	`topk(2, label_replace(sum by (x) (rate({app="a"}[1m])), "y", "x-$1", "x", "(.*)") * 2)`,
+	`sum without () (count_over_time({app="a"} | json [5m])) / 2`,
+	`max without () (rate({app="a"}[5m])) > on(app) group_left sum by (app) (rate({app="a"}[5m]))`,
 }
 
 // TestResponseKeyFencesFireOnEverySpelling re-spells each base query many ways and requires every fence whose
@@ -455,6 +518,8 @@ var fenceScreens = []struct {
 	{"reserved-field-labels", refReservedLabel, reservedFieldLabelResponseKeyVersion},
 	{"keyword-label-names", refKeywordLabel, keywordLabelResponseKeyVersion},
 	{"stream-level-series", refStreamLevelSeries, streamLevelSeriesResponseKeyVersion},
+	// New with the plan serving an unwrap written with other blanks: no older screen fired it.
+	{"unwrap-blank-spelling", func(string) bool { return false }, unwrapBlankSpellingResponseKeyVersion},
 }
 
 // fenceLosses lists the fences an older binary's screen fired for that the screen now lacks: a response key it wrote
@@ -555,6 +620,9 @@ func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
 		if miss := fenceMisses(q); len(miss) > 0 {
 			t.Errorf("%q: fences %v do not fire for the construct in the tree", q, miss)
 		}
+		if emptyWithoutOverFires(q) {
+			t.Errorf("%q: the binary empty without fence fires and the parsed tree holds no such operand", q)
+		}
 	}
 	t.Logf("%d of %d corpus queries carry a fence their older screens did not fire, each justified by its parsed tree", changed, len(corpus))
 }
@@ -589,7 +657,17 @@ func FuzzResponseKeyFencesMatchParsedTree(f *testing.F) {
 		if lost := fenceLosses(query); len(lost) > 0 {
 			t.Fatalf("%+q: fences %v fired before and do not now", query, lost)
 		}
+		if emptyWithoutOverFires(query) {
+			t.Fatalf("%+q: the binary empty without fence fires and the parsed tree holds no such operand", query)
+		}
 	})
+}
+
+// emptyWithoutOverFires reports a query whose key carries the binary empty without fence while its parsed tree holds
+// no binary operation with a sum, avg, min or max `without ()` operand: the fence is new, so no older screen states
+// where it fired, and it must fire nowhere else (no other query's key changes).
+func emptyWithoutOverFires(query string) bool {
+	return emptyWithoutOperandResponseKeyVersion(query) != "" && !fenceWants(query)["binary-empty-without"]
 }
 
 // fenceFires reports whether the named fence is in the response key chain of query (a query_range request).
@@ -608,6 +686,16 @@ func fenceFires(name, query string) bool {
 		"logfmt-presence":          func() string { return logfmtPresenceResponseKeyVersion(r, query) },
 		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
+		"rank-over-binary": func() string {
+			return rankOverBinaryFence(query)
+		},
+		"rank-over-binary-lr": func() string {
+			return rankOverBinaryLabelReplaceFence(query)
+		},
+		"binary-empty-without":    func() string { return emptyWithoutOperandResponseKeyVersion(query) },
+		"unwrap-blank-spelling":   func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
+		"extraction-list-windows": func() string { return listedWindowsResponseKeyVersion(r, query) },
+		"count-stdvar-series":     func() string { return countVarianceResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -692,16 +780,78 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"stream-level-series", "top\u212a(2, count_over_time({a=\"b\"} | json [5m]))", true},
 		{"stream-level-series", "bottom\u212a(2, count_over_time({a=\"b\"} | json [5m]))", true},
 		{"stream-level-series", "Sort_Desc\t(rate({a=\"b\"} | json [1m]))", true},
-		{"stream-level-series", `sum by (pod) (rate({a="b"}[1m]))`, false},
-		{"stream-level-series", "sum by (pod) (rate({a=\"b\"} #sort\n[1m]))", false},
+		// Every range aggregation may read the detected_level chain, and so may a stage naming detected_level.
+		{"stream-level-series", `sum by (pod) (rate({a="b"}[1m]))`, true},
+		{"stream-level-series", "sum by (pod) (rate({a=\"b\"} #sort\n[1m]))", true},
+		{"stream-level-series", `{a="b"} | detected_level="error"`, true},
+		{"stream-level-series", `{a="b"} | json | keep detected_level`, true},
+		{"stream-level-series", `{a="b"} | json | level="error"`, false},
+		{"stream-level-series", `{a="b"} | regexp "(?P<n>[0-9]+)"`, false},
+		{"stream-level-series", `{a="b"} | s=` + "`a detected_level b`", false},
+		{"stream-level-series", `{a="b"} | detected_level_extracted="error"`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | unwrap n [5m]))`, true},
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} | JSON | UNWRAP n [5m]))`, true},
 		{"unwrap-dynamic-identity", "sum by (x) (avg_over_t\u0130me({a=\"b\"} | json | unwrap n [5m]))", true},
 		{"unwrap-dynamic-identity", "MAX(MAX_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", true},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | keep x | unwrap n [5m]))`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"binary-empty-without", `sum without () (count_over_time({a="b"}[5m])) / 2`, true},
+		{"binary-empty-without", `SUM WITHOUT () (count_over_time({a="b"}[5m])) / 2`, true},
+		// U+0130 lower cases to the i of without: Loki reads the word as without (recorded Loki answers,
+		// internal/logql/testdata/keyword-fold-runes-loki.jsonl.gz).
+		{"binary-empty-without", "sum w\u0130thout () (count_over_time({a=\"b\"}[5m])) / 2", true},
+		{"binary-empty-without", "2 * Avg(rate({a=\"b\"}[5m])) Without#c\n()", true},
+		{"binary-empty-without", `sum(sum without () (count_over_time({a="b"}[5m])) / 2)`, true},
+		{"binary-empty-without", `label_replace(max without () (rate({a="b"}[5m])) > 1, "x", "$1", "a", "(.*)")`, true},
+		{"binary-empty-without", `sum without () (count_over_time({a="b"}[5m]))`, false},
+		{"binary-empty-without", `count without () (count_over_time({a="b"}[5m])) / 2`, false},
+		{"binary-empty-without", `sum without (pod) (count_over_time({a="b"}[5m])) / 2`, false},
+		{"binary-empty-without", `sum by (a) (sum without () (count_over_time({a="b"}[5m]))) / 2`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [5m]))`, true},
+		{"extraction-list-windows", `SUM BY (x) (MAX_OVER_TIME({a="b"} | JSON n, m | UNWRAP n [5m]))`, true},
+		{"extraction-list-windows", "avg(avg_over_t\u0130me({a=\"b\"} | logfmt n, m | unwrap n [1m]))", true},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [10s]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt | unwrap n [5m]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | json a="n" | unwrap a [5m]))`, false},
+		{"extraction-list-windows", `count by (x) (max_over_time({a="b"} | logfmt n | unwrap n [5m]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [5m])) * 2`, false},
+		{"count-stdvar-series", `count by (x) (stdvar_over_time({a="b"} | unwrap n [5m]))`, true},
+		{"count-stdvar-series", `COUNT BY (x) (STDVAR_OVER_TIME({a="b"} | LOGFMT | UNWRAP n [5m]))`, true},
+		{"count-stdvar-series", "count by (x) (stdvar_over_t\u0130me({a=\"b\"} | json | unwrap n [5m]))", true},
+		{"count-stdvar-series", "Count By (x) (Stdvar_Over_Time({a=\"b\"} |#c\n unwrap n [5m]))", true},
+		{"count-stdvar-series", `count by (x) (stdvar_over_time({a="b"} | unwrap n [5m])) / 2`, true},
+		{"count-stdvar-series", `topk(1, count by (x) (stdvar_over_time({a="b"} | unwrap n [5m])))`, true},
+		{"count-stdvar-series", `count by (x) (stddev_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"count-stdvar-series", `sum by (x) (stdvar_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"count-stdvar-series", `count(stdvar_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"count-stdvar-series", `count without (x) (stdvar_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"count-stdvar-series", `count by (x) (count_over_time({a="b"} |= "stdvar_over_time unwrap" [5m]))`, false},
 		// Longer than the plan memo holds: the plan is built for the fence, uncached.
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} |= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `" | JSON | UNWRAP n [5m]))`, true},
+		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m])) / sum by (x) (rate({a="c"}[1m])))`, true},
+		{"rank-over-binary", `TOPK(2, SUM BY (x) (RATE({a="b"}[1m])) / SUM BY (x) (RATE({a="c"}[1m])))`, true},
+		{"rank-over-binary", "top\u212a(2, sum by (x) (rate({a=\"b\"}[1m])) > bool 1)", true},
+		{"rank-over-binary", "Sort_Desc\t(sum by (x) (rate({a=\"b\"}[1m])) and #c\n sum by (x) (rate({a=\"c\"}[1m])))", true},
+		{"rank-over-binary", `sum(bottomk(1, (sum by (x) (rate({a="b"}[1m])) - 1)))`, true},
+		{"rank-over-binary", `stdvar(sum by (x) (rate({a="b"}[1m])) * 2) / 3`, true},
+		{"rank-over-binary", `STDDEV BY (x) (SUM BY (x, y) (RATE({a="b"}[1m])) / 2)`, true},
+		{"rank-over-binary", "StdVar\t(sum by (x) (rate({a=\"b\"}[1m])) * 2)", true},
+		{"rank-over-binary", `stddev(stddev_over_time({a="b"} | unwrap n [1m]))`, false},
+		{"rank-over-binary", `label_replace(sort(sum by (x) (rate({a="b"}[1m])) unless sum by (x) (rate({a="c"}[1m]))), "y", "$1", "x", "(.*)")`, true},
+		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m]) / rate({a="c"}[1m])))`, true},
+		{"rank-over-binary", `sort(label_replace(sum by (x) (rate({a="b"}[1m])) > 1, "y", "$1", "x", "(.*)"))`, true},
+		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m]))) / sum by (x) (rate({a="c"}[1m]))`, false},
+		{"rank-over-binary", `sort(rate({a="b"}[1m]))`, false},
+		{"rank-over-binary", `sum by (x) (rate({a="b"}[1m])) / sum by (x) (rate({a="c"}[1m]))`, false},
+		{"rank-over-binary", `stddev(rate({a="b"}[1m]))`, false},
+		{"rank-over-binary", `sum(rate({a="b"}[1m]) / 2)`, false},
+		{"rank-over-binary-lr", `topk(1, label_replace(rate({a="b"}[1m]), "p", "x-$1", "p", "(.*)") * 2)`, true},
+		{"rank-over-binary-lr", `TOPK(1, LABEL_REPLACE(rate({a="b"}[1m]) * 2, "p", "x-$1", "p", "(.*)"))`, true},
+		{"rank-over-binary-lr", "StdDev\t(label_replace(rate({a=\"b\"}[1m]), \"p\", \"$1\", \"p\", \"(.*)\") / #c\n 2)", true},
+		{"rank-over-binary-lr", `sort(sum by (p) (label_replace(rate({a="b"}[1m]), "p", "$1", "p", "(.*)")) > 1)`, true},
+		{"rank-over-binary-lr", `label_replace(topk(1, rate({a="b"}[1m]) * 2), "p", "$1", "p", "(.*)")`, false},
+		{"rank-over-binary-lr", `topk(1, label_replace(rate({a="b"}[1m]), "p", "$1", "p", "(.*)"))`, false},
+		{"rank-over-binary-lr", `topk(1, rate({a="b"}[1m]) * 2)`, false},
 	} {
 		if got := fenceFires(tc.fence, tc.query); got != tc.want {
 			t.Errorf("%s: %+q fires %v, want %v", tc.fence, tc.query, got, tc.want)
@@ -737,10 +887,81 @@ func TestResponseKeyFenceScreensDoNotAllocate(t *testing.T) {
 			"case":     reservedFieldCaseResponseKeyVersion,
 			"label":    reservedFieldLabelResponseKeyVersion,
 			"keyword":  keywordLabelResponseKeyVersion,
+			"empty-without": func(q string) string {
+				if emptyWithoutClauseIn(q) {
+					return emptyWithoutOperandResponseVersion
+				}
+				return ""
+			},
 		} {
 			if allocs := testing.AllocsPerRun(50, func() { _ = screen(query) }); allocs != 0 {
 				t.Errorf("%s screen of %q allocates %v times", name, query, allocs)
 			}
 		}
 	}
+}
+
+// textOutsideQuotes is s with the content of its quoted and backquoted strings and its comments left out: the text a
+// response key fence reads as words.
+func textOutsideQuotes(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '"', '`':
+			i = skipQuoted(s, i)
+			b.WriteString(`""`)
+		case '#':
+			i = skipComment(s, i) - 1
+			b.WriteByte('\n')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// An unwrap written with other blanks than one space on each side of `| unwrap` is served from the plan with the
+// spaced spelling's answer, where the string translator failed it or read no unwrap, so its response key carries the
+// unwrap blank spelling fence; a query whose every unwrap is written `| unwrap ` keeps its key.
+//
+// conformance: cache-response-key-versions, semantics/translator-reads-only-space-between-tokens
+func TestUnwrapBlankSpellingFence(t *testing.T) {
+	for q, want := range map[string]bool{
+		"rate({app=\"a\"} |\tunwrap n [5m])":                                           true,
+		"max_over_time({A=\"0\"} | unwrap\rA [1m])":                                    true,
+		"max_over_time({A=\"0\"}| unwrap\nA [1m])":                                     true,
+		`sum_over_time({app="a"} |  unwrap n [5m])`:                                    true,
+		`sum_over_time({app="a"} |unwrap n [5m])`:                                      true,
+		"sum_over_time({app=\"a\"} | # c\n unwrap n [5m])":                             true,
+		`sum(rate({app="a"} | unwrap n [5m])) / sum(rate({app="b"} |  unwrap n [5m]))`: true,
+		`sum_over_time({app="a"} | UNWRAP n [5m])`:                                     false,
+		`sum_over_time({app="a"} | unwrap n [5m])`:                                     false,
+		`sum_over_time({app="a"} | unwrap  n [5m])`:                                    false,
+		`quantile_over_time(0.9, {app="a"} | json | unwrap duration(d) [5m]) by (a)`:   false,
+		`sum(rate({app="a"} | unwrap n [5m])) / sum(rate({app="b"} | unwrap m [5m]))`:  false,
+		`count_over_time({app="a"} |= "x\tunwrap" [5m])`:                               false,
+		"count_over_time({app=\"a\"} |= `|\tunwrap` [5m])":                             false,
+		`count_over_time({app="a", unwrapped="1"} [5m])`:                               false,
+		`rate({app="a"}[5m])`:                                                          false,
+	} {
+		if got := unwrapBlankSpellingResponseKeyVersion(q) != ""; got != want {
+			t.Errorf("%q: fence %v, want %v", q, got, want)
+		}
+		if keys := responseKeyFences(fenceShapeRequest(q), q, responseKeyCompatQueryRange); strings.Contains(keys, unwrapBlankSpellingResponseVersion) != want {
+			t.Errorf("%q: compat key fences %q", q, keys)
+		}
+	}
+}
+
+// exprHoldsLabelReplace reports a label_replace call anywhere in e.
+func exprHoldsLabelReplace(e logqlpkg.Expr) bool {
+	switch e := e.(type) {
+	case *logqlpkg.VectorAggregation:
+		return exprHoldsLabelReplace(e.Inner)
+	case *logqlpkg.BinOpExpr:
+		return exprHoldsLabelReplace(e.Left) || exprHoldsLabelReplace(e.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return e.Func == "label_replace" || e.Inner != nil && exprHoldsLabelReplace(e.Inner)
+	}
+	return false
 }

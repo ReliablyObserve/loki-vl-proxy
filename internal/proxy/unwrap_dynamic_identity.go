@@ -10,17 +10,20 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // The handlers' side of the dynamic identity of a parser (lower.DynamicUnwrapIdentity): sum, max, min or avg over a
 // range function taken per series of an unwrapped label after a json or logfmt parser with no keep, whose series are
 // the stream and every parsed label less the unwrapped one. The lowered query writes them as a hash of the stream and
-// each line's parsed labels (__lvp_sid), and VictoriaLogs answers the function per series and the aggregation over
-// them, on an instant query and on a range up to the step. On a range longer than the step the window evaluator
-// takes the function per series hash and per anchored bucket from VictoriaLogs and merges each series' windows, and
-// the outer aggregation folds the series (dynamicIdentityWindows, lower.Profile IdentityAhead).
+// each line's parsed labels (__lvp_sid), or after an extraction list as the stream, its stored level fields and the
+// listed labels, and VictoriaLogs answers the function per series and the aggregation over them, on an instant query
+// and on a range up to the step. On a range longer than the step the window evaluator takes the function per series
+// and per anchored bucket from VictoriaLogs (an extraction list's fields, or the series hash written ahead of the gate:
+// lower.Profile IdentityAhead), merges each series' windows and folds them by the outer aggregation
+// (dynamicIdentityWindows).
 
 // dynamicQuery is the text the handlers, the fence and the translation read a query as: trimmed, with the keywords in
 // lower case (logql.LowercaseKeywords, which the translation applies before it asks the lowering), so `SUM by (a)
@@ -62,7 +65,7 @@ func (p *Proxy) lowersDynamicIdentity(query string) bool {
 	p.configMu.RLock()
 	streamFields := p.streamFieldsMap
 	p.configMu.RUnlock()
-	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
+	prof := loweringProfile(translate.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
 	_, err := lower.PlanQuery(logqlpkg.CanonicalizeLogRanges(query), plan, prof)
 	return err == nil
 }
@@ -148,14 +151,15 @@ func (p *Proxy) dynamicIdentityWindows(r *http.Request, query string) (out *http
 		return r
 	}
 	if p.dynamicUnwrapIdentity(query) {
-		if !windowed {
+		if !windowed || listedIdentity(query) {
+			// An extraction list's series are fields of the row: the window evaluator merges their step buckets
+			// (listedIdentityWindows), so the lowering's identity is kept on a range longer than the step too.
 			return r
 		}
-		if extremeOfExtremes(query) || !identityAheadWritten(query) {
-			// max by (L) of max_over_time and min by (L) of min_over_time are the extreme of the group's samples in the
-			// window, whatever the series: VictoriaLogs takes it per bucket and group (unwrapGroupPushdown), with no
-			// hash to write. An unwrapped label whose gate the window evaluator cannot read with the hash ahead
-			// (lower.DynamicIdentityAhead) keeps the stream's series too.
+		if !identityAheadWritten(query) {
+			// max by (L) of max_over_time and min by (L) of min_over_time fold the rows of their groups (no hash, the
+			// stream's series give the same answer), and an unwrapped label whose gate the window evaluator cannot read
+			// with the hash ahead (lower.DynamicIdentityAhead) keeps the stream's series too.
 			return r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
 		}
 		return r.WithContext(context.WithValue(r.Context(), identityAheadKey{}, true))
@@ -311,4 +315,90 @@ func rangeLongerThan(expr logqlpkg.Expr, step time.Duration) bool {
 		return e.Inner != nil && rangeLongerThan(e.Inner, step)
 	}
 	return false
+}
+
+// listedIdentityWindowsOff turns the windows of an extraction list's series identity off (tests compare them with the
+// stream's series origin/main read).
+var listedIdentityWindowsOff bool
+
+// listedIdentity reports a query whose dynamic identity is an extraction list's (lower.ListedUnwrapIdentity): the
+// stream, its stored level fields and the listed labels, which the stats group by as fields.
+func listedIdentity(query string) bool {
+	if listedIdentityWindowsOff {
+		return false
+	}
+	return listedWindowsPlan(resolvedPlan(dynamicQuery(query)))
+}
+
+// listedWindowsPlan reports a plan whose root is an extraction list's series identity (lower.ListedUnwrapIdentity)
+// whose clause names no level label: a clause by level or detected_level reads the level of the line's raw rows on
+// a range longer than the step (extractionListNeedsRawLevelRows), which keeps the stream's series.
+func listedWindowsPlan(plan *queryplan.Plan) bool {
+	if plan == nil || !lower.ListedUnwrapIdentity(plan) {
+		return false
+	}
+	if by := plan.Root.(*queryplan.VectorAgg).By; by != nil {
+		for _, l := range by.Labels {
+			if l == "level" || l == translate.DetectedLevelLabel {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// listedIdentityWindows reports a request whose stats group by an extraction list's series identity (listedIdentity,
+// served by the lowering: dynamicIdentityFor): the window evaluator merges the step buckets of each such series on a
+// range longer than the step, then folds the vector aggregation over them.
+func (p *Proxy) listedIdentityWindows(ctx context.Context, query string) bool {
+	return p.dynamicIdentityFor(ctx, query) && listedIdentity(query)
+}
+
+// listedWindowsResponseVersion fences the answers cached before an extraction list's series identity was read on a
+// range longer than the step (listedIdentityWindows): the stream's series (and each line's), then.
+const listedWindowsResponseVersion = "@extraction-list-windows-v1:"
+
+// listedWindowsResponseKeyVersion is the fence of a query_range request whose query is an extraction list's series
+// identity at its root (listedIdentity) over a range longer than the request's step. An instant query, a step up to
+// the range and every other query keep their keys. It reads the shared plan after the dynamic identity's text screen.
+func listedWindowsResponseKeyVersion(r *http.Request, query string) string {
+	// Every such query holds an unwrap, in some case: the rest is read only for those (no allocation before).
+	if r == nil || !containsFold(query, "unwrap") {
+		return ""
+	}
+	step, ok := parsePositiveStepDuration(r.FormValue("step"))
+	if !ok {
+		return ""
+	}
+	query = dynamicQuery(query)
+	if !dynamicIdentityFenceScreen(query, strings.Contains(query, "İ")) {
+		return ""
+	}
+	plan := resolvedPlan(query)
+	if !listedWindowsPlan(plan) {
+		return ""
+	}
+	// ListedUnwrapIdentity holds a vector aggregation over a range function at the root.
+	if ra := plan.Root.(*queryplan.VectorAgg).In.(*queryplan.RangeAgg); ra.Range > step {
+		return listedWindowsResponseVersion
+	}
+	return ""
+}
+
+// listedIdentityChain is the vector aggregation at the root of a query whose series are an extraction list's identity
+// (listedIdentity: one sum, max, min or avg over the range function), as foldVectorAggregations folds it: each series
+// of the window evaluator, the stream and its listed labels, falls into the group its labels name.
+func listedIdentityChain(query string) ([]*logqlpkg.VectorAggregation, bool) {
+	expr, ok := sharedLogQLExpr(dynamicQuery(query))
+	if !ok {
+		return nil, false
+	}
+	va, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok {
+		return nil, false
+	}
+	if _, ok := va.Inner.(*logqlpkg.RangeAggregation); !ok {
+		return nil, false
+	}
+	return []*logqlpkg.VectorAggregation{va}, true
 }

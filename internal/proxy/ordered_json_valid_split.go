@@ -8,13 +8,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // A `| json | __error__=""` metric counts the lines Loki's JSON parser accepts
-// (pkg/logql/log/parser.go JSONParser.Process: jsonparser.ObjectEach over the
-// line, nested objects walked only where a required label starts with their
-// prefix, parser_hints.go ShouldExtractPrefix). VictoriaLogs attaches no parser
+// (it walks the line's objects, and nested objects only where a required label
+// starts with their prefix). VictoriaLogs attaches no parser
 // error, so the stats pushdown splits the selected lines in three:
 //
 //   - lines that do not open with a brace after JSON whitespace: ObjectEach
@@ -42,8 +41,8 @@ const (
 	jsonSplitValid
 	// jsonSplitStrict: `| json` grouped by detected_level only, with the errors
 	// kept. Loki fails the query on a line its parser rejects
-	// (RangeVectorEvaluator.Next, logqlmodel.NewPipelineErr: the label builder
-	// returns the full label set with __error__ before grouping), so a line that
+	// (the label builder returns the full label set with __error__ before
+	// grouping), so a line that
 	// does not open with a brace leaves the query to the row evaluator, which
 	// answers Loki's error (unparsedLinePipelineError), and the lines read as raw
 	// rows fail it the same way; the other lines count as with
@@ -109,7 +108,7 @@ var jsonLokiRejectHazard = func() string {
 			words = append(words, "_msg:"+string(b))
 		}
 	}
-	escapedKey := `(_msg:"\\" _msg:~` + strconv.Quote(`\\(?s:.)[^"]*"\s*:`) + `)`
+	escapedKey := `(_msg:"\\" _msg:~` + strconv.Quote(`\\(?s:.)`+vlNotInRun(`"`)+`"\s*:`) + `)`
 	nanInf := `((` + strings.Join(words, " or ") + `) _msg:~` + strconv.Quote(`:\s*(?i:nan|inf)`) + `)`
 	plus := `(_msg:"+" _msg:~` + strconv.Quote(`:\s*\+`) + `)`
 	dotE := `_msg:~` + strconv.Quote(`:\s*[.eE]`)
@@ -202,11 +201,14 @@ func (p *Proxy) jsonLokiRejectHazardRisk(ctx context.Context, base string, start
 // are remembered like the hazard probe's (coveredWindowProbe, local to the
 // replica).
 func (p *Proxy) jsonUnparsedLineRisk(ctx context.Context, base string, start, end time.Time, step, window time.Duration) (bool, error) {
-	last := start.Add(end.Sub(start) / step * step)
+	lookup := unparsedLineLookup(base)
+	first, last := unparsedLineWindow(start, end, step, window)
 	key := "json-unparsed-line:v1:" + getOrgID(ctx) + ":" + base
-	_, risky, err := p.coveredWindowProbe(ctx, key, start.Add(-window).Add(time.Nanosecond), last, func(from, to time.Time, _ string) (string, bool, error) {
-		risky, err := p.statsPushdownRiskExists(ctx, base+" | filter -"+jsonObjectStartFilter+" | limit 1", from, to)
-		return "", risky, err
+	_, risky, err := p.coveredWindowProbe(ctx, key, first, last, func(from, to time.Time, _ string) (string, bool, error) {
+		// The row is remembered, for the row evaluator and later windows
+		// (ordered_json_unparsed_row.go).
+		row, err := p.readUnparsedLineRow(ctx, lookup, from, to)
+		return "", row != nil, err
 	})
 	return risky, err
 }
@@ -451,7 +453,7 @@ func dropSeriesWithoutPoints(series map[string]manualSeriesSamples, start, end t
 // left to the row evaluator, which derives the level like Loki's ingest.
 func (p *Proxy) storedLevelForeignFieldRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
 	var has []string
-	for _, name := range translator.DetectedLevelFieldNames {
+	for _, name := range translate.DetectedLevelFieldNames {
 		if name != detectedLevelLabel && name != "level" {
 			has = append(has, quoteLogsQLIdent(name)+":*")
 		}

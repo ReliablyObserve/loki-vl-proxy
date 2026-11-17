@@ -14,8 +14,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
-// Loki's range_vector.go uses (evaluation-window, evaluation] and interpolates
-// adjacent ranked samples, here from VictoriaLogs' value counts per bucket. Distinct message/stream identities must merge before
+// Loki's quantile_over_time reads the window (evaluation-window, evaluation] and interpolates
+// adjacent ranked samples (quantileReference, held to Loki's recorded answers), here from VictoriaLogs' value counts per bucket. Distinct message/stream identities must merge before
 // the quantile is calculated when the query has an explicit range grouping.
 func TestGroupedQuantileExactWindows(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()

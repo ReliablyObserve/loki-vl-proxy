@@ -6,7 +6,7 @@ proves:
 consumer: api
 why: |
   Loki v3.7.9 reads a step as float seconds, else with the Prometheus
-  model.ParseDuration (pkg/loghttp/params.go:191-203): whole-number units from
+  model.ParseDuration: whole-number units from
   ms up to y, in descending order, no fractions and no us or ns. `1.5s` and
   `500us` are 400 `cannot parse "<step>" to a valid duration`. The proxy reads
   steps with Go's time.ParseDuration first (parsePositiveStepDuration), so it
@@ -34,7 +34,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/proxy/time_utils.go parsePositiveStepDuration (shared with window parsing)'
-  loki: 'pkg/loghttp/params.go:191-203; prometheus/common model.ParseDuration'
+  loki: 'a step is float seconds, else whole-number Prometheus duration units in descending order; 1.5s and 500us are a 400 (live case runs of 2026-11-14, in this case)'
   proxy: '400 cannot parse "<step>" to a valid duration, as Loki'
   planned_test: 'TestStepGrammarIsLokis and TestRequestParamAnswers (internal/proxy)'
   note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): step=1.5s answers 400 `cannot parse "1.5s" to a valid duration` on both sides.'

@@ -19,8 +19,7 @@ import (
 // Loki folds a vector aggregation to one series per group at every step:
 // max(count_over_time({...}[5m])) is one series, max by (pod) one per pod, and
 // the value is the extreme (count: the number of series, avg: their mean) of
-// the per-stream values (pkg/logql/evaluator.go newVectorAggEvaluator /
-// VectorAggEvaluator.Next, pkg/logql/range_vector.go for the window (t-range, t]).
+// the per-stream values over the window (t-range, t].
 // The proxy answered one series per stream on query_range for a window that is
 // not the step (semantics/non-sum-vector-aggregation-unreduced).
 

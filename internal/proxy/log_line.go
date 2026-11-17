@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	fj "github.com/valyala/fastjson"
 )
 
@@ -53,7 +53,7 @@ func isVLMissingMsgBytes(msg []byte, defaultMsgValue string) bool {
 // Conversions inside comparisons and map lookups do not allocate.
 func skipLogLineField[T string | []byte](key T, streamLabels map[string]string, pipelineFields map[string]bool) bool {
 	switch string(key) {
-	case "_time", "_msg", "_stream", "_stream_id", translator.StoredLineField:
+	case "_time", "_msg", "_stream", "_stream_id", translate.StoredLineField:
 		return true
 	}
 	if _, ok := streamLabels[string(key)]; ok {
@@ -107,6 +107,12 @@ func storedLogLineFromFJ(row *fj.Value, streamLabels map[string]string, pipeline
 	if err != nil {
 		return ""
 	}
+	return rebuildLogLineFJ(obj, streamLabels, pipelineFields)
+}
+
+// rebuildLogLineFJ is the line rebuilt from a fastjson row's fields (see
+// storedLogLineFromFJ).
+func rebuildLogLineFJ(obj *fj.Object, streamLabels map[string]string, pipelineFields map[string]bool) string {
 	fieldsPtr := logLineBytesFieldsPool.Get().(*[]logLineField[[]byte])
 	fields := (*fieldsPtr)[:0]
 	obj.Visit(func(key []byte, v *fj.Value) {

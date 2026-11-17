@@ -5,10 +5,8 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki 3.7.7 evaluates a range query at start+k*step (pkg/logql/engine.go,
-  the step evaluator from params.Start()); its query frontend moves start and
-  end down to step multiples first only with `align_queries_with_step: true`
-  (pkg/querier/queryrange/queryrangebase/step_align.go StepAlignMiddleware),
+  Loki 3.7.7 evaluates a range query at start+k*step; its query frontend moves start and
+  end down to step multiples first only with `align_queries_with_step: true`,
   which the compose stack's Loki sets (test/e2e-compat/loki-local-config.yaml)
   and a default Loki does not.
 
@@ -32,6 +30,9 @@ request:
     step: '60'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "the window is absolute and in the future (2027-01-15, unix 1800000017): neither store holds data there, and the case is its 17 second start phase on the step grid"
 compare:
   mode: observed
   fields: [values]
@@ -43,7 +44,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/proxy binary_logql.go alignBinaryRangeRequest (vector joins only)'
-  loki: 'pkg/logql/engine.go step evaluation at start+k*step; pkg/querier/queryrange/queryrangebase/step_align.go StepAlignMiddleware (align_queries_with_step)'
+  loki: 'a range query is evaluated at start+k*step; the frontend aligns start and end to step multiples only with align_queries_with_step, which defaults to false (https://grafana.com/docs/loki/latest/configure/; semantics/query-range-step-alignment)'
   proxy: 'vector joins aligned, literal binaries and single metrics at start+k*step'
   planned_test: 'TestAggregationOverBinaryDifferential with a start off the step grid for vector joins (internal/proxy; skipped there today)'
   clusters: []

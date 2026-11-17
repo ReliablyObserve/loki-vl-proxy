@@ -541,10 +541,22 @@
       "writer": "writeError"
     },
     {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "context.Background(), lokierr.InstantLogQuery()",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/http_utils.go validateQuery",
+      "writer": "writeErr"
+    },
+    {
       "dynamic": true,
       "error_text": false,
       "error_type": "bad_data",
-      "expression": "truncateQueryError(err)",
+      "expression": "truncateQueryError(v.msg)",
       "kind": "dynamic",
       "message": null,
       "status": 400,
@@ -755,6 +767,66 @@
       "status_token": "http.StatusBadRequest",
       "where": "internal/proxy/limits_enforcement.go tenantLimitsMiddleware",
       "writer": "writeError"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, p.listedStepOverflowError(meter.overBytes)",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/listed_window_chunks.go writeListedWindowChunks",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/listed_window_chunks.go writeListedWindowChunks",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/listed_window_chunks.go writeListedWindowChunks",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, seriesLimitReached(tenantSeriesLimitContext(ctx), limit)",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/listed_window_chunks.go writeListedWindowChunks",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/listed_window_chunks.go writeListedWindowChunks",
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -1079,6 +1151,18 @@
       "status_token": null,
       "where": "internal/proxy/metric_binary.go proxyStatsQuery",
       "writer": "writeBackendError"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), p.levelLessErr(\"stats_query\", err)",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyStatsQuery",
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -2605,39 +2689,15 @@
       "writer": "writeError"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "l.err.Error()",
-      "kind": "dynamic",
-      "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/unwrap_conversion_error.go finish",
-      "writer": "writeLokiTextError"
-    },
-    {
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "r.Context(), identityAheadReadError(r.Context(), err)",
+      "expression": "l.parent, l.err",
       "kind": "layer",
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/unwrap_dynamic_identity_chunks.go foldDynamicIdentityChunks",
-      "writer": "writeErr"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": null,
-      "expression": "r.Context(), fmt.Errorf(\"parser identity chunk not served\")",
-      "kind": "layer",
-      "message": null,
-      "status": null,
-      "status_token": null,
-      "where": "internal/proxy/unwrap_dynamic_identity_chunks.go foldDynamicIdentityChunks",
+      "where": "internal/proxy/unwrap_conversion_error.go decide",
       "writer": "writeErr"
     },
     {
@@ -2649,31 +2709,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/unwrap_dynamic_identity_chunks.go foldDynamicIdentityChunks",
-      "writer": "writeErr"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": null,
-      "expression": "r.Context(), err",
-      "kind": "layer",
-      "message": null,
-      "status": null,
-      "status_token": null,
-      "where": "internal/proxy/unwrap_dynamic_identity_chunks.go foldDynamicIdentityChunks",
-      "writer": "writeErr"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": null,
-      "expression": "r.Context(), err",
-      "kind": "layer",
-      "message": null,
-      "status": null,
-      "status_token": null,
-      "where": "internal/proxy/vector_agg_fold.go foldVectorChainCapped",
+      "where": "internal/proxy/vector_agg_fold.go foldVectorAggregations",
       "writer": "writeErr"
     },
     {
@@ -2704,9 +2740,9 @@
   "summary": {
     "by_status": {
       "400": {
-        "count": 25,
-        "dynamic_sites": 18,
-        "error_text_sites": 10,
+        "count": 24,
+        "dynamic_sites": 17,
+        "error_text_sites": 9,
         "error_type": "bad_data",
         "layer_sites": 0,
         "literal_sites": 7,
@@ -2802,11 +2838,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 181,
+        "count": 185,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 177,
+        "layer_sites": 181,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2814,6 +2850,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 225
+    "call_sites": 228
   }
 }

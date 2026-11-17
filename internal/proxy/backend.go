@@ -651,7 +651,7 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 // Callers must either hold a breaker.Allow() token or use DoWithGuard (which
 // enforces the guard before fn is called).
 func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
-	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params)))
+	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, params))))
 	u := backendRequestURL(p.backend, path)
 	u.RawQuery = params.Encode()
 	querycorpus.RecordBackend(path, params.Get("query"))
@@ -770,7 +770,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		return resp, err
 	}
 	params, witness := p.pruneLevelChain(ctx, path, params)
-	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params)))
+	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, params))))
 	u := backendRequestURL(p.backend, path)
 	querycorpus.RecordBackend(path, params.Get("query"))
 	body := params.Encode()

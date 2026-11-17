@@ -20,6 +20,12 @@ type Answer struct {
 	Stale bool `json:"stale,omitempty"`
 	// Partial is set when the proxy marked its answer partial (X-Loki-VL-Partial-Response).
 	Partial bool `json:"partial,omitempty"`
+	// VLCalls is the proxy's X-Loki-VL-Backend-Calls (-debug-vl-calls-header): the VictoriaLogs calls this one request
+	// started before its headers were written. Nil when the proxy sent none, which says nothing about the count:
+	// a recording made before the header, a route that does not report it, a proxy run without the flag.
+	VLCalls *int `json:"vl_calls,omitempty"`
+	// CacheResult is the proxy's X-Loki-VL-Cache-Result: hit, miss, or bypass.
+	CacheResult string `json:"cache_result,omitempty"`
 }
 
 // OK reports whether the side answered with a 2xx.

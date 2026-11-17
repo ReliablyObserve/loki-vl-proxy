@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // DefaultLabelFilterRefillMaxPages is the default of
@@ -143,11 +143,16 @@ func (p *Proxy) filterLineFieldPage(page io.Reader, seen map[string]struct{}, bo
 			vlFJParserPool.Put(parser)
 			continue
 		}
-		stored := value.GetStringBytes(translator.StoredLineField)
+		stored := value.GetStringBytes(translate.StoredLineField)
 		if stored == nil {
 			stored = value.GetStringBytes("_msg")
 		}
 		drop := false
+		if readsPlaceholderAsLine(exposure, stored) {
+			if obj, oerr := value.Object(); oerr == nil {
+				stored = []byte(rebuildLogLineFJ(obj, parseStreamLabels(string(value.GetStringBytes("_stream"))), exposure.placeholderLineFields))
+			}
+		}
 		if !isVLMissingMsgBytes(stored, p.defaultMsgValue()) {
 			stream := parseStreamLabels(string(value.GetStringBytes("_stream")))
 			if level := value.GetStringBytes("level"); levelAsLabel && len(bytes.TrimSpace(level)) > 0 {

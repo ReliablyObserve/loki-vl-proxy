@@ -17,10 +17,10 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
-// lokiStepAlignNanos is Loki's StepAlignMiddleware
-// (pkg/querier/queryrange/queryrangebase/step_align.go:20-24) applied to one
-// bound, with the step in milliseconds as the codec keeps it
-// (pkg/querier/queryrange/codec.go:436), returned in nanoseconds.
+// lokiStepAlignNanos is Loki's step alignment applied to one bound, with the
+// step in milliseconds as Loki keeps it, returned in nanoseconds (checked
+// against recorded Loki answers by TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode,
+// testdata/step_align_loki_answers.jsonl.gz).
 func lokiStepAlignNanos(t time.Time, stepMs int64) int64 {
 	return (t.UnixMilli() / stepMs) * stepMs * int64(time.Millisecond)
 }
@@ -30,7 +30,7 @@ func lokiStepAlignNanos(t time.Time, stepMs int64) int64 {
 // requests Loki aligns (metric range queries with a step that pass decoding)
 // are moved.
 // conformance: semantics/query-range-step-alignment, loki_api_v1_query_range
-func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
+func TestAlignQueryRangeToStep_LokiAlignedBounds(t *testing.T) {
 	now := time.Unix(1700003600, 123456789)
 	metric := `sum(count_over_time({app="a"}[5m]))`
 	ns := func(sec int64) string { return strconv.FormatInt(sec*int64(time.Second), 10) }
@@ -126,9 +126,8 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 			aligned: true, start: 1700000000250 * 1e6, end: 1700000001750 * 1e6, stepMs: 250,
 		},
 		{
-			// Loki rounds the fraction of a decimal bound to milliseconds
-			// (pkg/loghttp/params.go:166-171): .3 is .300, not the float's
-			// .29999..., which a 100ms grid would move down to .200; .9996 is
+			// Loki rounds the fraction of a decimal bound to milliseconds:
+			// .3 is .300, not the float's .29999..., which a 100ms grid would move down to .200; .9996 is
 			// the next whole second.
 			name:    "decimal-second bounds are rounded to milliseconds first, as Loki does",
 			params:  url.Values{"query": {metric}, "start": {"1700000000.3"}, "end": {"1700000010.9996"}, "step": {"0.1"}},
@@ -251,7 +250,7 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 // and every other endpoint, and every request with the flag off, reach the
 // handler as they came.
 // conformance: semantics/query-range-step-alignment
-func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
+func TestAlignToStepMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
 	params := url.Values{"query": {`sum(count_over_time({app="a"}[5m]))`}, "start": {"1700000000000000000"}, "end": {"1700003600000000000"}, "step": {"137"}, "time": {"1700003600000000000"}}
 	for _, tc := range []struct {
 		endpoint string
@@ -266,7 +265,7 @@ func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
 	} {
 		p := &Proxy{alignQueriesWithStep: tc.on}
 		var seen *http.Request
-		h := p.stepAlignMiddleware(tc.endpoint, func(_ http.ResponseWriter, r *http.Request) { seen = r })
+		h := p.alignToStepMiddleware(tc.endpoint, func(_ http.ResponseWriter, r *http.Request) { seen = r })
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+tc.endpoint+"?"+params.Encode(), nil)
 		h(httptest.NewRecorder(), req)
 		if moved := seen.FormValue("start") != params.Get("start"); moved != tc.moved {
@@ -281,7 +280,7 @@ func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
 // differently from Loki is moved as before, and the caller's request is not
 // written. A log query passes through unparsed.
 // conformance: semantics/query-range-step-alignment
-func TestStepAlignMiddleware_OnGridRequestsPassThrough(t *testing.T) {
+func TestAlignToStepMiddleware_OnGridRequestsPassThrough(t *testing.T) {
 	p := &Proxy{alignQueriesWithStep: true}
 	metric := `sum by (app) (count_over_time({app=~".+"}[5m]))`
 	for _, tc := range []struct {
@@ -324,7 +323,7 @@ func TestStepAlignMiddleware_OnGridRequestsPassThrough(t *testing.T) {
 				return httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
 			}
 			var seen *http.Request
-			h := p.stepAlignMiddleware("query_range", func(_ http.ResponseWriter, r *http.Request) { seen = r })
+			h := p.alignToStepMiddleware("query_range", func(_ http.ResponseWriter, r *http.Request) { seen = r })
 			req := newReq()
 			rawQuery := req.URL.RawQuery
 			h(httptest.NewRecorder(), req)

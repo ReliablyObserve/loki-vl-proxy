@@ -18,17 +18,13 @@ why: |
   21 s) and answered 500 (`manual range metric row limit exceeded`) where
   Loki answers 200 in 5.0 s.
 
-  Loki's answer, from v3.7.9's source: the grouping is detected_level alone,
-  so the parser hints require detected_level (parser_hints.go NewParserHint,
-  appendLabelHints). Loki's ingest gives every line detected_level as
+  Loki's answer: the grouping is detected_level alone,
+  so the parser hints require detected_level. Loki's ingest gives every line detected_level as
   structured metadata, so a body key of that name is renamed
-  detected_level_extracted (parser.go parseLabelValue: BaseHas or
-  HasInCategory(StructuredMetadataLabel)), the hint is never met and the
+  detected_level_extracted, the hint is never met and the
   parser reads the whole line; it never changes a line's level. A line the
-  parser rejects keeps __error__ through the grouping
-  (labels.go GroupedLabels returns the full set when HasErr), and
-  RangeVectorEvaluator.Next (evaluator.go:722-735) fails the query with
-  logqlmodel.NewPipelineErr unless __error__ was requested. So `| json` with
+  parser rejects keeps __error__ through the grouping, and
+  the evaluation fails the query with a pipeline error unless __error__ was requested. So `| json` with
   the errors kept is the stored-level count of every line when no evaluated
   line is rejected, and Loki's 400 pipeline error otherwise; `| json |
   __error__!=""` (which requests __error__) counts the rejected lines by their
@@ -88,7 +84,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/proxy ordered_json_valid_split.go (jsonSplitStrict, jsonSplitErrors, jsonUnparsedLineRisk), ordered_json_metric.go pushdownLabelFilters and the split stats query'
-  loki: 'pkg/logql/log/parser.go:74-170 JSONParser.Process/parseLabelValue; pkg/logql/log/parser_hints.go:145-215 NewParserHint/appendLabelHints; pkg/logql/log/labels.go:664-688 GroupedLabels; pkg/logql/evaluator.go:722-735 RangeVectorEvaluator.Next'
+  loki: 'a line the parser rejects keeps __error__ through the grouping and fails the query with a pipeline error unless __error__ was requested; a body key detected_level becomes detected_level_extracted (test/e2e-compat json_metric_step_wider_test.go)'
   proxy: 'every selected line read as a raw row; 500 at -manual-range-metric-row-limit on 24h'
   planned_test: 'proxy TestJSONErrorSplitPredicateDifferential, FuzzJSONErrorSplitPredicate, TestJSONDetectedLevelSplitMatchesRawEvaluator, TestJSONDetectedLevelSplitEdgeTable, TestJSONDetectedLevelSplitEligibility, TestJSONUnparsedLineRiskPerTenant, TestJSONDetectedLevelSplitRawRowsStayWithinTheRowLimit, TestJSONDetectedLevelSplitOffGridBoundsAlign'
   note: 'Bytes metrics take the split too but keep the whole-window evaluation on a moved window (settled steps hold count and rate only).'

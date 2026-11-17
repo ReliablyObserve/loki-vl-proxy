@@ -168,10 +168,10 @@ func TestCompat_ServiceNameSelectorDerivedValue(t *testing.T) {
 		}
 	})
 
-	// Loki simplifies label-filter regexps (pkg/logql/log/filter.go): a bare
-	// literal is an equality check, a literal wrapped in `.*` a substring
-	// check, and alternation legs follow the same rules; only what it cannot
-	// simplify stays an anchored match. Stream selectors stay anchored.
+	// Loki simplifies label-filter regexps: a bare literal is an equality check,
+	// a literal wrapped in `.*` a substring check, and alternation legs follow
+	// the same rules; only what it cannot simplify stays an anchored match.
+	// Stream selectors stay anchored.
 	for _, tc := range []struct {
 		matcher string
 		want    []string

@@ -271,9 +271,9 @@ func binOpMoreGrid() []string {
 // TestBinOpMoreGridShadow holds the lowering on the grid of bool and without spellings under every profile: 0
 // mismatches, the text byte for byte on the rows held to the translator, and each row with an operand that has a
 // without clause either delegated or held to the proxy's binary route (each operand's request byte for byte, and not
-// the translator's text for the whole query: checkBinaryRoute). No row with a bool modifier is lowered (BinOp bool):
-// the translator drops it, and a lowering copying that is not wanted. The test fails the day one of them lowers, or
-// the day no row with a without operand does.
+// the translator's text for the whole query: checkBinaryRoute). A row with a bool modifier is held to the route too,
+// with the modifier (the translator's text drops it, and a lowering copying that is not wanted). The test fails the
+// day such a row lowers to anything else, or the day no row with a bool modifier or a without operand is held there.
 // conformance: architecture-syntax-package-layering
 func TestBinOpMoreGridShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
@@ -288,7 +288,7 @@ func TestBinOpMoreGridShadow(t *testing.T) {
 	if len(problems) > 0 {
 		t.Fatalf("%d rows lower unlike the string translator or the proxy's route:\n%s", len(problems), joinFirst(problems, 60))
 	}
-	routed := 0
+	routed, boolRouted := 0, 0
 	for _, q := range grid {
 		if !strings.Contains(q, "bool") && !strings.Contains(q, "without") {
 			continue
@@ -310,7 +310,10 @@ func TestBinOpMoreGridShadow(t *testing.T) {
 		switch {
 		case err != nil:
 		case b.Bool:
-			t.Errorf("%q has a bool modifier and is lowered", q)
+			if bin, ok := op.(physical.Binary); !ok || !bin.Bool || !lower.RoutedBinary(b) {
+				t.Errorf("%q has a bool modifier and is lowered to %#v, not held to the route", q, op)
+			}
+			boolRouted++
 		case lower.RoutedBinary(b):
 			if _, ok := op.(physical.Binary); !ok {
 				t.Errorf("%q has an operand with a without clause and is lowered to %#v", q, op)
@@ -318,8 +321,8 @@ func TestBinOpMoreGridShadow(t *testing.T) {
 			routed++
 		}
 	}
-	if delegated["BinOp bool"] == 0 || routed == 0 {
-		t.Errorf("bool rows delegated %d, without rows held to the route %d: the grid must hold both", delegated["BinOp bool"], routed)
+	if boolRouted == 0 || routed == 0 {
+		t.Errorf("bool rows held to the route %d, without rows held to the route %d: the grid must hold both", boolRouted, routed)
 	}
 }
 

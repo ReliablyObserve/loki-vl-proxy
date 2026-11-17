@@ -100,7 +100,7 @@ not comparable to older runs that mostly measured primary-cache hits.
   operations and both quoted/backtick template literals remain supported.
 - Raw metric evaluation (v1.68.0), including bare-parser `unwrap` queries,
   rejects scans beyond `-manual-range-metric-row-limit` (default 1,000,000 rows)
-  and results beyond `-max-stats-query-series` (default 500 series), with 64 MiB
+  and results beyond `-max-stats-query-series` (default 1000 series), with 64 MiB
   input/output and one million output samples. Overflow returns an error
   (usually HTTP 502) instead of a truncated success. Native `stats_query_range`
   paths keep their existing top-series cap at the same series limit.

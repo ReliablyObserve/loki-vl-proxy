@@ -92,8 +92,13 @@ func metricKinds() []metricKind {
 type metricRequest struct {
 	kind    string
 	instant bool
-	form    url.Values
-	route   lower.RouteRequest
+	// align runs the request on a proxy that moves the bounds to the step's grid itself (-align-queries-with-step,
+	// the deployed default), for bounds off the grid.
+	align bool
+	form  url.Values
+	route lower.RouteRequest
+	// rowLimit is the proxy's -manual-range-metric-row-limit for the request (0: the default).
+	rowLimit int
 }
 
 // metricQuery is one corpus row of the differential.

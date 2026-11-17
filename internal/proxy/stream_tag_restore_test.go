@@ -27,9 +27,8 @@ import (
 // _stream keeps the label. pushdownRow models that with vl overriding stream.
 //
 // In Loki v3.7.9 a metric's labels are the stream labels, then the structured
-// metadata (pkg/logql/log/labels.go LabelsBuilder, a stream label wins), and a
-// parser renames a key that collides to name_extracted
-// (pkg/logql/log/parser.go duplicateSuffix). So
+// metadata (a stream label wins), and a parser renames a key that collides to
+// name_extracted. So
 // `sum by (version) (count_over_time({...} [5s]))` groups by the stream's
 // version whatever the line holds.
 

@@ -397,7 +397,7 @@ class FirstPassOrderTest(unittest.TestCase):
                                                  "--end", "1800000000", "--ranges", "1h", *argv]), \
                     mock.patch.object(perf_matrix.subprocess, "check_output", return_value="0"), \
                     mock.patch.object(perf_matrix, "CPUSampler", return_value=sampler), \
-                    mock.patch.object(perf_matrix, "request", fake_request), \
+                    mock.patch.object(perf_matrix, "request_full", lambda *a: (*fake_request(*a), None)), \
                     mock.patch.object(perf_matrix.stack, "logs_quiet",
                                       lambda paths, quiet, cap: events.append(("quiet", tuple(paths), cap)) or True), \
                     contextlib.redirect_stdout(io.StringIO()):

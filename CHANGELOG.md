@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
+  (by labels or none) over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` or
+  `stdvar_over_time` now answer Loki's values on a query_range whose range is longer than the step. For example
+  `sum(stdvar_over_time({...} | logfmt amount | unwrap amount [5m]))` at a step of one minute answered 0 (each line
+  was a series of its own, and each step bucket was read as the window). VictoriaLogs groups each step bucket by
+  the series the list names (the stream, its level fields and the listed labels), and the proxy merges each series'
+  buckets into its window, then applies the aggregation. Answers cached before the fix are not served again; a parser
+  of every key keeps the stream's series on such a range (registry `semantics/unwrap-per-series-identity-raw-rows`).
+  A listed label of many values over a long range (`| logfmt amount, user_id` over hours or a day) is read in time
+  chunks, each with the range before it, and folded chunk by chunk, so it answers Loki's values with the proxy holding
+  one chunk at a time. A chunk reads at most 11,000 buckets, its series before the fold stay under
+  `-manual-range-metric-row-limit` (or the tenant's `max_query_series` when larger) and its stats body under 64 MiB: a
+  chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
+  Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
+  the body). A request that fits one chunk reads exactly as before.
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
+  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
+  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
+  answers are unchanged.
 - `query_range` with a range longer than the step (sliding windows, the `$__auto` steps Grafana sends under a `[5m]`
   range) now reads Loki's series for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`,
   `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream
@@ -24,9 +46,552 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of such operands read the same series. `max by` over `max_over_time` and `min by` over `min_over_time` keep their
   per-group read, which already matched Loki. Answers cached before the fix are not served again
   (semantics/unwrap-per-series-identity-raw-rows).
+
+### Changed
+
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
+
+## [2.324.0] - 2026-11-17
+
+### Changed
+
+- The default `-max-stats-query-series`, the proxy's `max_query_series`, rises from 500 to 1000. The proxy answers
+  faster than Loki, so it can afford more series per query than Loki's own default of 500, which stays Loki's. A metric
+  query with 501 to 1000 series, which answered Loki's HTTP 400 `maximum number of series (N) reached for a single
+  query`, now answers, and Logs Drilldown's partial result (the busiest N series and Loki's warning) holds up to 1000
+  series. `/loki/api/v1/drilldown-limits` and `/config/tenant/v1/limits` publish 1000 where no flag or tenant limit sets
+  it, and the chart's commented `max-stats-query-series` example and the generated configuration and limits pages say
+  1000. Operators who want Loki's 500 set `-max-stats-query-series=500`, or `max_query_series` in
+  `-tenant-limits` or `-tenant-default-limits`. Sizing: `-backend-max-buffered-response-bytes` (64 MiB by default)
+  holds about 1,500 dense series over 1,000 steps, so a full 1000-series result over 1,000 steps (about 40 MB) fits,
+  and over about 1,600 steps the byte budget has to be raised with the cap.
+
+## [2.323.0] - 2026-11-17
+
+### Fixed
+
+- `count by (...)` over `stdvar_over_time` of an unwrapped label now answers the number of series of each group, as
+  Loki does, where the proxy answered the variance of the group's pooled samples (for example 20336.51 where Loki
+  answers 2). The proxy counts the series of the deviation, as it does for `stddev_over_time`, with and without a parser
+  (held to recorded Loki answers on instant queries and query_range); answers cached before the fix are not served
+  again. After a json or logfmt parser of every key on a range longer than the step the count is read from the step
+  buckets of the stream, as count over `stddev_over_time` is, and can miss a series where a step holds none of its
+  lines (registry `semantics/unwrap-over-time-range-windows-residual-forms`). After an
+  extraction list of more keys than the unwrapped one (`| logfmt amount, route`) the count is of the stream's series,
+  not Loki's (registry `semantics/unwrap-extraction-list-series-identity`). VictoriaLogs runs the query it runs for
+  `count by (...)` over `stddev_over_time`, one stats request as before. After a parser it costs about what the
+  variance did (-17% to +7% measured); without a parser the series include each line's detected_level, which the query
+  derives as count over `stddev_over_time` does (32 to 268 ms on 600,000 rows, the cost of count over
+  `stddev_over_time`).
+
+## [2.322.0] - 2026-11-17
+
+### Fixed
+
+- Shutting the proxy down closes the peer cache's connections to its peers: idle ones are closed, and a dial that
+  finishes after the shutdown is closed instead of kept open for its 30 s idle timeout.
+- `/labels` no longer keeps label names whose last stream left the requested window. Each listing of a window now
+  replaces the cached answer instead of being merged into it, so a refreshed or re-read answer lists the labels of the
+  streams with data in the window, as Loki does; an empty listing replaces it too (kept for the short negative TTL).
+  Storing a listing is also cheaper (40 labels: 4.4 µs and 16 allocations instead of 11.9 µs and 64).
+- Rows written with old timestamps into an hour or day the label inventory already cached with data are listed by the
+  next `/labels` or `/label/{name}/values` request, as Loki lists them as soon as they are ingested. Within
+  `-max-metadata-cache-freshness` every bucket whose row count is known (empty buckets, and hours and days that ended
+  more than an hour ago) is confirmed
+  by one row count per contiguous run, compared with the rows the buckets held; a run that grew is halved to find the
+  buckets that received rows, and only those are rescanned. Before, only empty buckets were confirmed this way and a
+  bucket with data showed backfilled rows only after its revalidation delay. A run count taken within
+  `-recent-tail-refresh-max-staleness` is reused, so a repeat inside it sends no count; non-empty 5-minute and
+  1-minute buckets (no row count), hours with rows from the last hour (where shippers' late rows land, revalidated
+  every labels TTL) and listings that cannot be counted keep their revalidation schedule.
+- A keyword written with the Kelvin sign for a k or with U+0130 for an i (`topK(`, `bottomK(`, `| Keep`,
+  `avg_over_tİme(`, `sum wİthout (a)`, `| x = İp("1.2.3.4")`) is now the lower case query, as in Loki. Before,
+  `topK(1, rate({app="a"}[1m]))` was sent to VictoriaLogs as a phrase search and answered as a log query, and
+  `wİthout` and `İp(` in a label filter were syntax errors. Such a query now gets the requests, the answer and the
+  cache entry of its lower case spelling. U+017F (ſ) stays a name letter, as in Loki. A syntax error after a duration
+  argument (`rate(0y`) is reported at Loki's column when a line break or a non-ASCII letter comes before it.
+- A NUL byte inside a quoted or backquoted string, or inside a comment, is now Loki's 400 `invalid character NUL`, at
+  Loki's line and column, on every route and before any VictoriaLogs request. The proxy used to read the byte as part of
+  the string, and dropped a comment holding it. When such a string also has a bad escape, a line break or no closing
+  quote, the first of these errors in the text is the one reported, as in Loki.
+- An unwrap written with a tab, a line feed, a carriage return or more than one space around `| unwrap`, or with no
+  space after the pipe (`max_over_time({app="a"} | unwrap<tab>n [1m])`, `|unwrap n`), is now answered like the
+  spelling with single spaces, also under
+  topk, bottomk, sort, label_replace, a binary operation, an aggregation and offset. It used to fail with a 500, and
+  `rate({app="a"} |<tab>unwrap n [5m])` counted the lines instead of reading the unwrapped value. Such a query gets a
+  new response cache key, so an answer cached before is not served; it may miss the cache once after the upgrade, and
+  queries written with `| unwrap ` keep their keys.
+
+### Performance
+
+- Every `query` and `query_range` request skips the SHA-256 digest of its query that the debug log lines carry
+  unless debug logging is on (4 to 9 fewer allocations per request), and the binary route prints each operand's LogQL
+  once and reads a `vector(n)` operand without a regular expression (about 20 fewer allocations per cold ranking over
+  a binary operation). Answers, requests and cache keys are unchanged.
+
+## [2.321.0] - 2026-11-17
+
+### Fixed
+
+- A `label_replace` inside the binary operand of `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` or `stdvar` is now
+  applied once, as Loki does, on `query` and `query_range`:
+  `topk(1, label_replace(count_over_time({...}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)` answered `pod="x-x-p1"`. The
+  operand's own request applied the call and the handlers applied it again over the ranking's answer; the same held
+  for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
+  (registry `semantics/rank-binary-operand-label-replace-once`).
+
+## [2.320.1] - 2026-11-17
+
+### Changed
+
+- The query plan no longer describes a `vector(n)` inside a chain of binary operations as a constant when it is
+  spelled with a blank before its parenthesis (`vector (2) > on(x) (rate(...) * 2)`, `(vector (2) + sum(...)) * 2`):
+  the proxy's binary route reads each operation of a chain on its own and sends that spelling on as a query, so the
+  plan leaves such a chain to the translator, as it already did for a `vector (n)` next to a query (registry
+  `semantics/vector-call-blank-before-parenthesis-as-query`, still open). No answer, request or cache key changes.
+
+## [2.320.0] - 2026-11-17
+
+### Performance
+
+- `max` over `max_over_time` and `min` over `min_over_time` (by labels or none) of a label unwrapped after a json or
+  logfmt parser (of every key, or an extraction list such as `| logfmt amount, route`) send VictoriaLogs one stats
+  pipe over the rows of each group. The maximum of the series' maxima is the maximum of the group's rows, so no series
+  identity is written: no second unpack and hash after a parser of every key, and no per-series stats after an
+  extraction list, whose logfmt unpack then reads the unwrapped key and the clause labels the list names only (a
+  stream label of the clause is not read from the line). Answers are unchanged (held
+  to recorded Loki answers on instant, step = range, step < range and step > range, VictoriaLogs v1.49.0 and
+  v1.53.0). VictoriaLogs time per query, measured with its own handlers on 600,000 logfmt rows (p50, both versions):
+  36-37% lower for an extraction list (`max(max_over_time(... | logfmt amount, route ...))` 197 to 126 ms), 5-7% lower
+  for a list of the unwrapped key alone, and 80% lower after a parser of every key (`max by (ns)
+  (max_over_time(... | logfmt | unwrap amount [5m]))` 718 to 140 ms); 44-71% lower than before the extraction list's
+  series identity. A range longer than the step was already answered from the group's rows and is unchanged.
+
+### Changed
+
+- The query plan no longer describes a `vector(n)` inside a chain of binary operations as a constant when it is
+  spelled with a blank before its parenthesis (`vector (2) > on(x) (rate(...) * 2)`, `(vector (2) + sum(...)) * 2`):
+  the proxy's binary route reads each operation of a chain on its own and sends that spelling on as a query, so the
+  plan leaves such a chain to the translator, as it already did for a `vector (n)` next to a query (registry
+  `semantics/vector-call-blank-before-parenthesis-as-query`, still open). No answer, request or cache key changes.
+
+## [2.319.0] - 2026-11-17
+
+### Fixed
+- `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer Loki's matrix on
+  `query_range`, for example `topk(2, sum by (app) (rate({...}[1m])) / sum by (app) (rate({...} |= "error" [1m])))`.
+  The range handler sent the whole operation to VictoriaLogs as one query, so a ranking over a division, a vector
+  matching (`on`, `ignoring`, `group_left`), a `bool` comparison, `and`, `or`, `unless` or a chain of operations
+  answered other values, extra or missing series, or a 500, and a many-to-one match answered `Internal Server Error`
+  instead of Loki's `multiple matches for labels` text. Each side of the operation is now its own query (and is reused
+  from the cache like any other), the operation is joined as at the top of a query, and the ranking is applied to its
+  answer. Instant queries already answered this way. A binary operation under an aggregation or a `label_replace`
+  inside the ranking (`topk(2, sum by (app) (a * b))`, `sort(label_replace(a / b, ...))`) answered a 500 or missing
+  series on `query` and `query_range` alike; it is now evaluated as a query of its own. Range answers cached before
+  the fix are not served again (semantics/rank-over-binary-operation).
+
+## [2.318.0] - 2026-11-16
+
+### Fixed
+
+- `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
+  `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
+  the proxy read each line as a series of its own. On an instant query and on a range up to the step, for example
+  `sum(max_over_time({...} | logfmt amount | unwrap amount [5m]))` adds one maximum per stream as Loki does.
+  VictoriaLogs groups the rows by the stream, its level fields and the listed labels, reading each line once.
+  Measured with VictoriaLogs' own handlers on synthetic logfmt rows (v1.49.0 and v1.53.0), most of these shapes run
+  16% to 72% faster in VictoriaLogs than before; `sum by (...)` over `max_over_time` costs up to 48% more and over
+  `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
+  first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
+  read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+- `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer Loki's matrix on
+  `query_range`, for example `topk(2, sum by (app) (rate({...}[1m])) / sum by (app) (rate({...} |= "error" [1m])))`.
+  The range handler sent the whole operation to VictoriaLogs as one query, so a ranking over a division, a vector
+  matching (`on`, `ignoring`, `group_left`), a `bool` comparison, `and`, `or`, `unless` or a chain of operations
+  answered other values, extra or missing series, or a 500, and a many-to-one match answered `Internal Server Error`
+  instead of Loki's `multiple matches for labels` text. Each side of the operation is now its own query (and is reused
+  from the cache like any other), the operation is joined as at the top of a query, and the ranking is applied to its
+  answer. Instant queries already answered this way. A binary operation under an aggregation or a `label_replace`
+  inside the ranking (`topk(2, sum by (app) (a * b))`, `sort(label_replace(a / b, ...))`) answered a 500 or missing
+  series on `query` and `query_range` alike; it is now evaluated as a query of its own. Range answers cached before
+  the fix are not served again (semantics/rank-over-binary-operation).
+
+## [2.317.0] - 2026-11-16
+
+### Performance
+
+- A cold `/patterns` request for a busy selector (the first Logs Drilldown patterns view of a service or an
+  environment) mines its lines on several cores. When the read holds at least 40,000 lines, the lines VictoriaLogs
+  answers are decoded on worker goroutines and each stream is mined by one worker, in the order it was read. The
+  miners are then merged in the order one goroutine makes them, so the patterns, samples and the pattern state's
+  snapshot stay byte for byte what they were. A worker is a decoding and a mining goroutine; the workers of all
+  requests together never exceed GOMAXPROCS (each read adds one goroutine that splits its lines). A read that finds
+  fewer than two workers free, a refresh of the pattern state, a background build and `-patterns-scope=selector`
+  mine on the request's goroutine as before. No VictoriaLogs request is added. Mining also allocates less: a line's
+  tokens are copied only when it starts a cluster, a new cluster's tree nodes are made in one allocation, and a
+  row's time and a stream's name are read without a copy. Decoding and mining an hour of 148,000 lines (the
+  environment of the Drilldown patterns benchmark): 302 ms to 95 ms with 4 cores and 312 ms to 172 ms with 2, with
+  43% fewer bytes, 67% fewer allocations and 9-16% less CPU time.
+
+### Changed
+
+- The query plan now describes binary operations with a `bool` modifier, the set operators `and`, `or` and `unless`,
+  and chains of operations (`a + b * 2`, `a / b * 100`, `a > 2 and b > 1`) as the operations the proxy evaluates: each
+  operand a query of its own, a chained operand its own binary operation, in Loki's precedence and associativity. The
+  plan's reading of these queries is held to the proxy's binary route and to Loki's own syntax tree. A new
+  differential holds the proxy's answers for 32 such shapes at the top of a query (comparisons with and without `bool`,
+  set operators with and without `on`/`ignoring`, `group_left`/`group_right`, precedence and associativity, NaN and
+  infinities, empty operands, and the many-to-many and many-to-one errors) to Loki's on query and query_range, on
+  VictoriaLogs v1.49.0 and v1.53.0: all match. No answer, request or cache key changes.
+
+## [2.316.0] - 2026-11-16
+
+### Changed
+
+- The unwrap code is rewritten from Loki's recorded answers and LogQL's documentation: the conversions of
+  `unwrap`, `duration()`, `duration_seconds()` and `bytes()`, the logfmt reading the conversion-error check and the
+  patterns miner use, the window merge of unwrap range functions from VictoriaLogs buckets, and the conversion-error
+  check (the counting gate, the lookups of a flagged bucket and the Loki error it answers). New tests hold it to
+  answers recorded with Loki's engine and pipeline for the same lines and queries: every conversion over number,
+  duration and size spellings (signs, units, overflow, NaN and infinities, blanks, logfmt and JSON lines), the
+  labels the logfmt, JSON, unpack and regexp parsers give generated lines, and the status and text of the error
+  over 39 query shapes. The VictoriaLogs requests and the answers are unchanged, except that stddev_over_time and
+  stdvar_over_time over a range longer than the step merge their buckets in two passes (a window's value can differ
+  from the previous build in its last bit, as close to the exact value as before). Two fuzz targets join
+  fuzz-smoke.
+
+### Fixed
+
+- The `SampleExtractionErr` answer of a metric whose pipeline holds a `label_format` before the unwrap
+  (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
+  Loki does (recorded with Loki's engine) for a rename and a copy of one label (`{{.label}}`); a label another
+  template writes is left out of the series, which kept the line's own value of the label before.
+- A value the unwrap conversion rejects fails a binary operation whichever operand reads it, as Loki does (recorded
+  with Loki's engine at the instant and over a range: right operand, left operand, nested operand). A rejected
+  value only in an operand after the first answered 200 before; the check now decides again on the hits each later
+  operand records, as long as nothing of the answer went out (semantics/unwrap-conversion-error-binary-operand).
+  Rows an earlier operand already looked up are not looked up again, and once the answer is Loki's error the
+  request sends no further VictoriaLogs reads.
+  The response cache asks the check before it keeps an answer, an operand's included, so a repeat of the query
+  answers the same 400 (a repeated range query whose rejected value sat in the first operand answered 200 before);
+  a checked VictoriaLogs answer over the body-size limit answers the limit error.
+
+## [2.315.0] - 2026-11-16
+
+### Changed
+
+- The `detected_level` the proxy derives for returned rows is rewritten from Loki's documented settings and from
+  answers recorded from a real Loki 3.7.9 for 1551 generated inputs, one stream each: structured metadata and stream
+  labels of every level field, field pairs, `severity_number` values, JSON lines to depth 5 with value types and
+  broken shapes, logfmt variants, plain lines by letter case, position, boundary byte and near-miss words, long
+  lines and OTLP records. The table and the evidence of the run are committed
+  (`internal/proxy/testdata/detected_level_golden.json`, `detected_level_golden_loki.json`), a live check compares
+  about 200 of its rows with the stack's Loki in the e2e core group, and a fuzz target holds the derivation to a
+  plain reference evaluator that is itself held to the recorded answers. Answers are unchanged except for the fix
+  below.
+
+### Fixed
+
+- `/loki/api/v1/patterns` on a proxy that forwards a selector to the peer holding its pattern state no longer
+  keeps the owner's empty answer. The owner answers empty while the lines have not reached VictoriaLogs yet; the
+  forwarding peer cached that answer for the patterns cache's retention, so the patterns of a new stream never
+  appeared on it. An empty forwarded answer is now asked again on the next request.
+- A stored field named `log.level` (structured metadata or an OTLP log attribute pushed under that name) no longer
+  sets `detected_level` on log responses: Loki stores such metadata as `log_level` and does not read it, so the row's
+  level comes from its other fields or its line, as in Loki (recorded answers, `severity/recorded-level-table`). A
+  JSON line whose key `log.level` VictoriaLogs unpacked into a field still gives the level, as the line does in Loki.
+  Metric grouping by `detected_level` still reads the field (`severity/stored-log-dot-level-in-metric-chain`, open).
+
+## [2.314.0] - 2026-11-16
+
+### Added
+
+- `-json-line-fields-as-line-keys` (Helm `extraArgs.json-line-fields-as-line-keys`, off by default): for JSON lines
+  pushed to VictoriaLogs' Loki push route without `disable_message_parsing=1`, which VictoriaLogs stores as one field
+  per key with its missing-message placeholder in `_msg`, the proxy reads every stored field of such a row as a key of
+  the row's JSON line, as Loki holds the pushed line. The fields are no labels until `| json` (or a json extraction
+  list) reads them, `| logfmt` reads none of them, a label filter on such a key with no parser drops the line, and a
+  query that unwraps or filters a label no stage can give such a line (after `| logfmt` or without a parser) leaves
+  those rows out in VictoriaLogs, so `max_over_time({...} | logfmt amount | unwrap amount [5m])` answers only the
+  logfmt streams. `| json` metric queries read such a row as a valid JSON object instead of answering
+  `JSONParserErr`. VictoriaLogs stores structured metadata pushed beside such a line among the line's keys, so the
+  flag hides it: leave it off when such pushes carry structured metadata. Pushing with `disable_message_parsing=1`
+  stays the supported setup and needs no flag. With the flag off nothing changes.
+
+## [2.313.0] - 2026-11-16
+
+### Fixed
+- A paused or hung peer-cache replica no longer stalls a request for `-peer-timeout` (2 s by default). A lookup that
+  misses memory and disk asks the key's replicas in ring order; when the replica asked has not sent its response headers
+  within the read hedge delay, the lookup also asks the next replica and takes the first answer, and with no replica left
+  it reads VictoriaLogs after `-peer-read-hedge-max-delay` (new flag and Helm value, default `200ms`, `0` turns it off).
+  The delay is twice the p99 of the peer header latencies the proxy measured, at least 5 ms, so a healthy fleet asks a
+  second replica for about one read in a hundred. The call left waiting runs on in the background, where its timeout
+  still suspends the peer for the breaker cooldown, and meanwhile reads ask that peer last or skip it, so one read per
+  proxy pays the delay; the half-open probe after the cooldown and the `/patterns` owner presence check are bounded the
+  same way. Before, the first lookup on a paused replica and the probe after every cooldown each waited the full peer
+  timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
+  metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
+  `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
+
+## [2.312.0] - 2026-11-16
+
+### Changed
+- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
+  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
+  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
+  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
+  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+
+### Fixed
+
+- A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
+  (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
+  now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
+  group. On query_range with the step equal to the range the operand was answered as one ungrouped series, at an
+  instant `avg` and `min` collapsed the same way, and on the other steps the series said `detected_level="unknown"`.
+  The binary route now sends the operand without that level, and an operation Loki refuses (`… + on() vector(0)`
+  over several series) answers Loki's 500 `multiple matches for labels: many-to-one matching must be explicit
+  (group_left/group_right)` where it answered 200. Held to real Loki and VictoriaLogs v1.49.0 and v1.53.0 on 20
+  shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
+  under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
+  (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
+
+## [2.311.0] - 2026-11-16
+
+### Changed
+
+- Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
+  documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
+  they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
+
+## [2.310.2] - 2026-11-16
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
+## [2.310.1] - 2026-11-16
+
+### Fixed
+
+- A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
+  passes a series or row budget, no longer counts as a backend failure. Five such requests opened the circuit breaker,
+  and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
+  only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
+  transport error, which the breaker counted.
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
+## [2.310.0] - 2026-11-16
+
+### Changed
+
+- The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
+  recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
+  only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,
+  `without`, stddev and stdvar), unwrap range functions over sliding and tumbling windows, absent_over_time,
+  first and last over time, rate_counter, quantile_over_time, keep, ip() label filters and sub-second steps. Where a
+  test needs to evaluate an expected answer itself (fuzz targets, tie detection), the evaluator is written from
+  LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
+  engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
+  (alignToStepMiddleware); behaviour is unchanged.
+
+## [2.309.0] - 2026-11-16
+
+### Performance
+
+- Metric queries over streams without a level label take VictoriaLogs less time, with the same answers: about a
+  quarter less for `rate` and `sort(rate(...))` over a parser on a first load, and 15-50% less on a refresh. Such a query, read per stream (for example `count_over_time({...} | logfmt [5m])` or
+  `max_over_time({...} | logfmt amount | unwrap amount [5m])`), reads those streams a second time to give each line
+  Loki's `detected_level`. That second read now narrows its level derivation to the level fields and keys the window
+  holds on every route, including instant queries and `rate` or `sort(rate(...))` over a parser, which sent the full
+  derivation before. Once the proxy has seen that a query holds such streams, its next reads (a refresh, a moved
+  window) read the labelled streams and the others separately, so no stream is read twice.
+
+## [2.308.0] - 2026-11-16
+
+### Fixed
+
+- A query that holds two errors now answers the one Loki answers, in Loki's order of checks, and a selector regex
+  error has Loki's text. Loki first runs the checks it makes while it reads the query: a pattern or regexp parser
+  it cannot build, and a regex in a selector, label filter, drop or keep that does not parse. Those answer ahead of
+  a later syntax error and of a lexer error the parse goes on after. The proxy answered the later syntax or lexer
+  error instead, as in `{a="b"} | pattern "<_>" | unpack a`. The checks over the parsed tree come next: a vector
+  operation's parameter, approx_topk with a grouping, a range aggregation's grouping and unwrap, binary operands,
+  the empty-compatible selector. They now answer after every syntax error and in the order Loki's walk meets them.
+  The pipeline build comes last (templates, line filter regexes and patterns, json and logfmt expressions, ip()),
+  after the query plan's checks such as sort with a grouping. Also changed:
+  - `sum(1, …)`, `avg(1.5, …)` and every vector operation with a number before its expression answer `parse error :
+    unsupported parameter for operation sum(1,`; they failed at the comma.
+  - `topk(0, …)` and `topk(1.5, …)` answer their error after a later syntax error.
+  - `quantile_over_time(-1, …)` and `quantile_over_time("x", …)` answer Loki's syntax error at the parameter.
+  - A selector regex answers `parse error : error parsing regexp: …`, without the `parse error at line 1, col 1:
+    parse error : invalid regex:` prefix, on every route.
+  - A log query with a pipeline stage that does not build, sent to `/loki/api/v1/query`, answers Loki's `log queries
+    are not supported as an instant query type` (recorded row r0043).
+
+  The status was already 400 on every one of these queries; the text, which Grafana shows, is now Loki's. Held by a
+  grid of 1628 queries recorded with the Loki oracle (semantics/loki-error-phase-order): 532 answered differently
+  before, 51 do now.
+- A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
+  Loki reads that argument as the expression the operation aggregates, so `topk(-1, sum by (level) (...))` answers
+  400 `parse error at line 1, col 8: syntax error: unexpected ,` (the comma), as do `topk(1 + 2, ...)`,
+  `topk((1), ...)`, `topk(rate(...), 2)` and `topk({...}, 2)`; `topk(-1)` answers `parse error : parameter required
+  for operation topk`. The proxy failed at the minus (`col 6: syntax error: unexpected -`) or the operator, and
+  answered "parameter required" for `topk(rate(...), 2)` and `topk({...}, 2)`. The status was already 400; the text,
+  which Grafana shows, is now Loki's on query and query_range and through every wrapper (sum, sort, max by,
+  label_replace, binary operations), held by 1462 queries recorded with the Loki oracle and 12 rows recorded over
+  HTTP (semantics/topk-first-argument-error-text). A leading plus (`topk(+1, ...)`) is still rejected at the plus
+  (semantics/unary-plus-literal-rejected).
+
+## [2.307.0] - 2026-11-16
+
+### Performance
+
+- The parse-risk probes of a `| json` metric, the `detected_level` keys probe and the JSON hazard filter cost
+  VictoriaLogs 7-24 ms of query parsing each, on every request whose window is not covered yet (a refresh that
+  moves the window). Each held a `[^"]`-style class, and Go's regexp package prints such a class in about a
+  millisecond; VictoriaLogs prints every regexp several times per query parse. The classes are now written as a run
+  of non-letters and a run of letters (`vlNotInRun`), which matches the same text. Measured with VictoriaLogs' own
+  query parser on v1.49.0 and v1.53.0:
+  - the partial-parse probe: 17-24 ms to 0.24-0.39 ms;
+  - the `detected_level` keys probe: 7.4-8.2 ms to 0.37-0.44 ms;
+  - the hazard filter: 7.4-7.9 ms to 0.07 ms.
+  The `detected_level` escaped-value regexp now runs only on lines holding a backslash. The lines every probe
+  selects and every answer are unchanged (quality/probe-regexp-parse-cost).
+
+### Fixed
+
+- A metric series of a stream with no level label now carries the level of its lines, as Loki gives. Loki gives
+  every line the level its structured metadata or its body carries (a logfmt or JSON level key, a level word of a
+  plain line), else `unknown`, so one such stream is one series per level. Queries the proxy reads per stream (for
+  example `count_over_time({...} | logfmt [5m])` and `max_over_time({...} | logfmt amount | unwrap amount [5m])` on
+  query_range, `sum without (pod) (max_over_time(... | unwrap ...))` at an instant, and `rate({...} | json [1m])`)
+  answered one series per stream with no `detected_level`, so the same query said `error` at one step and nothing at
+  another. Such a read is sent as before; only when its answer names a stream without a level label does the proxy
+  read those streams once more, restricted to them, with VictoriaLogs computing each line's level, and their series
+  are split by it. A window whose streams all carry a level label sends the same VictoriaLogs query as before and
+  nothing more. Answers cached before the fix are not served again (the response key fence moves to
+  `@stream-level-series-v4`), so each cached metric answer is read from VictoriaLogs once after the upgrade.
+
+## [2.306.0] - 2026-11-16
+
+### Fixed
+
+- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
+  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
+  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
+  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
+  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
+  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
+  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
+
+### Changed
+
+- Code comments, operator-facing limit descriptions and the generated configuration pages no longer cite Loki source
+  files or lines. They state what Loki does and name the evidence kept in this repository: a recorded Loki answer, a test
+  that compares with Loki, a registry case or Loki's public documentation. No behaviour changes.
+- Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
+  fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
+  `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
+  of the Loki it was recorded from (`"state": "serving"`); the recorder also waits until every Loki module is running.
+  Each row asks the window it asked when it was written, moved to now, as the end-to-end comparison asks it: over a
+  window older than what it holds, Loki answers `/patterns` given a query that is not a stream selector with its
+  empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
+  the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
+
+## [2.305.0] - 2026-11-16
+
+### Fixed
+
+- `/loki/api/v1/tail` now sends the entries since `start`, up to `limit`, before the live ones, as Loki does:
+  Grafana's live view shows the latest lines at once instead of staying empty until new lines arrive. Like Loki,
+  `start` defaults to one hour ago and `limit` to 100. The history is the newest `limit` entries, oldest first,
+  through the same pipeline as live entries, on every tail mode (native, polling and auto). The history entries carry `detected_level` in the stream labels, as Loki's do; a `start` further back than `max_query_length` sends no history. The native stream does
+  not repeat an entry the history sent. A label filter VictoriaLogs cannot evaluate like Loki counts only the
+  entries it keeps toward the limit. The history read replaces the probe the tail already sent before the upgrade,
+  so a tail still makes one VictoriaLogs query before it streams, and a failing backend still fails the request. The read is held to `max_entries_limit_per_query`,
+  and it is best effort: a read that takes more than two seconds is skipped, and the tail starts with its live
+  entries. `start` is now read in all of Loki's time forms; Unix seconds were read as nanoseconds before.
+
+## [2.304.0] - 2026-11-16
+
+### Fixed
+- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
+  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
+  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
+  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
+  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
+  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
+  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
+  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
+  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
+  no VictoriaLogs call.
+
+## [2.303.0] - 2026-11-16
+
+### Fixed
+
+- One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
+  `level="ERROR"`, `count_over_time({...} | logfmt [5m])`, `rate({...} | json [1m])`, `sort(rate({...} | json [1m]))`
+  and an unwrap at step 300 said `ERROR` while plain `rate` and `count_over_time` said `error`. A stream labelled
+  `severity`, `LEVEL` or `lvl` had no `detected_level` label at all on those queries. Those series are built by the
+  proxy from a per-stream or raw-row read, which copied the stored `level` value and read no other level key. They
+  now take the stream's level fields, else the row's `level` field, normalised as Loki does (`Debug` is `debug`); the
+  `level` label keeps its stored value. Plain range functions were already right for these streams: VictoriaLogs
+  v1.49.0 and v1.53.0 compute the same values with the chain the proxy sends (a stream label beside a stored level is
+  the next entry). Answers cached before the fix are not served again (the `@stream-level-series-v3` fence of the next
+  entry; semantics/detected-level-one-value-per-stream).
+- A stream's own level label now decides `detected_level` before a level stored on its lines, on every metric query
+  type and at every step, as Loki does (stream label, then structured metadata, then the line). A stream labelled
+  `severity="error"` whose lines carry structured metadata `level="debug"` said `debug` on `rate`, `count_over_time`,
+  `sum by (detected_level)` and the other queries VictoriaLogs' `detected_level` chain serves (and a
+  `| detected_level="error"` filter missed those lines); Loki answers `error`. The chain now marks the rows whose
+  stream holds a level field (one pipe, a stream filter evaluated once per block) and reads the level fields of those
+  rows from the stream only, where two or more level names are known, so a window with one level name sends the same
+  LogsQL as before; VictoriaLogs v1.49.0 and v1.53.0 answer Loki's value for every recorded stream, every text
+  survives their clone, and their CPU time for the chain stays within measurement noise. The raw-row reads
+  (`sum without (pod) (rate({...} | json amount | unwrap amount [5m]))` at an instant and step 60, `sort(rate({...} | json [1m]))` at an instant and step
+  300) answered `ERROR` and `Debug` for streams labelled `level="ERROR"` and `level="Debug"` (VictoriaLogs answers a
+  raw row with its stream fields as fields, so the row's `level` was the stream's, copied as stored); they now take
+  the stream's level fields first, then the row's `level`, normalised. VictoriaLogs calls per request do not change.
+  Answers cached before are not served again: the response key fence (`@stream-level-series-v3`) now covers every
+  metric query and every query naming `detected_level` (one cache miss per such key after the upgrade).
+- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
+  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
+  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
+  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
+  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
+  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
+  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
+  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
+  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
+  no VictoriaLogs call.
+
+## [2.302.1] - 2026-11-15
+
+### Fixed
+
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
   accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
   per-stream series took the stream's `detected_level`.
+
+### Changed
+
+- Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
+  conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
+
+## [2.302.0] - 2026-11-15
+
+### Fixed
+
 - An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
   query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
   reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
@@ -35,11 +600,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
   marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
   before keep their keys.
-
-### Changed
-
-- Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
-  conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 
 ## [2.301.0] - 2026-11-15
 
