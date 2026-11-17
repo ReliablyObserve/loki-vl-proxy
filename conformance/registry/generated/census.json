@@ -973,6 +973,9 @@
     "semantics/unwrap-conversion-error-binary-operand | query",
     "semantics/unwrap-conversion-error-label-format-series | compare:observed",
     "semantics/unwrap-conversion-error-label-format-series | query",
+    "semantics/unwrap-conversion-error-names-another-line | compare:observed",
+    "semantics/unwrap-conversion-error-names-another-line | gap:open",
+    "semantics/unwrap-conversion-error-names-another-line | query",
     "semantics/unwrap-conversion-error-parser-divergence | compare:observed",
     "semantics/unwrap-conversion-error-parser-divergence | gap:open",
     "semantics/unwrap-conversion-error-parser-divergence | query",
@@ -2268,6 +2271,7 @@
     "internal/querycorpus/exotic_names_oracle_test.go | semantics/translator-writes-exotic-field-names-bare",
     "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-bare-range-exposes-parsed-labels",
+    "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-conversion-error-names-another-line",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/last-over-time-vl149-row-max-wrong-row",
@@ -3041,7 +3045,7 @@
       "any": 35,
       "api": 109,
       "drilldown": 53,
-      "explore": 198,
+      "explore": 199,
       "grafana-datasource": 3,
       "operator": 4
     },
@@ -3066,7 +3070,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 415
+    "wired_items": 416
   },
   "gates": [
     "A/B shape selection",
