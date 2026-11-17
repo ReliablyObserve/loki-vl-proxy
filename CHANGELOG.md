@@ -18,7 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- A ranking, `stddev` or `stdvar` over a range function of lines and a number over a tumbling window on the step's grid
+- `max` over `max_over_time` and `min` over `min_over_time` (by labels or none) of a label unwrapped after a json or
+  logfmt parser (of every key, or an extraction list such as `| logfmt amount, route`) send VictoriaLogs one stats
+  pipe over the rows of each group. The maximum of the series' maxima is the maximum of the group's rows, so no series
+  identity is written: no second unpack and hash after a parser of every key, and no per-series stats after an
+  extraction list, whose logfmt unpack then reads the unwrapped key and the clause labels the list names only (a
+  stream label of the clause is not read from the line). Answers are unchanged (held
+  to recorded Loki answers on instant, step = range, step < range and step > range, VictoriaLogs v1.49.0 and
+  v1.53.0). VictoriaLogs time per query, measured with its own handlers on 600,000 logfmt rows (p50, both versions):
+  36-37% lower for an extraction list (`max(max_over_time(... | logfmt amount, route ...))` 197 to 126 ms), 5-7% lower
+  for a list of the unwrapped key alone, and 80% lower after a parser of every key (`max by (ns)
+  (max_over_time(... | logfmt | unwrap amount [5m]))` 718 to 140 ms); 44-71% lower than before the extraction list's
+  series identity. A range longer than the step was already answered from the group's rows and is unchanged.
+- A ranking, `stddev` or `stdvar` over a range function of lines and a number over a tumbling window (range = step)
   (`topk(3, count_over_time({...}[15s]) * 2)` at a 15s step) is answered from one VictoriaLogs stats request again,
   without the binary route's sub-request: the line-function, arithmetic, no-`bool`, no-matching shapes whose answer
   the stats route gives exactly (held to the binary route on 2,880 requests and to Loki's recorded answers). Every

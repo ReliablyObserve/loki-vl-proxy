@@ -246,6 +246,13 @@ type unwrapQuery struct {
 	// does); clause is the vector aggregation's by clause.
 	listed bool
 	clause []string
+	// rows says the vector aggregation folds the rows of each of its groups directly (foldsRows: max over
+	// max_over_time, min over min_over_time), so no series identity is written; rowsUnpack are the labels of its
+	// clause an extraction list names, the only ones the query's bare logfmt unpack then reads besides the unwrapped
+	// one, and rowsListed says the parser is such a list.
+	rows       bool
+	rowsListed bool
+	rowsUnpack []string
 	// firstBy and firstEmpty are the grouping of the first stats pipe, which reads the unwrapped value (set marks
 	// them known); the bare logfmt unpack ahead of it is narrowed to the labels it reads.
 	firstBy    []string
@@ -447,6 +454,12 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 		case q.listed:
 			// The unpack reads the listed labels alone: the stats read the clause and the stored fields as stored.
 			by, empty = q.listedUnpack(), true
+		case q.rows && q.rowsListed:
+			// The unpack reads the listed labels of the clause alone: the others are the stream's.
+			by, empty = q.rowsUnpack, true
+		case q.rows:
+			// The unpack reads the labels of the clause, which a parser of every key may give.
+			empty = true
 		}
 		names, narrowed = narrowedFields(field, by, empty, log.resolvable)
 	}
@@ -821,6 +834,12 @@ func (q *unwrapQuery) vector(vop logql.VectorOp, op unwrapOp, labels []string, w
 	}
 	if op.variance {
 		q.varianceVector(vop, op, labels, without)
+		return
+	}
+	if q.rows {
+		// The maximum of the series' maxima is the maximum of the group's rows (and so for the minimum): one stats
+		// pipe over the clause, whatever the series are.
+		q.stats(labels, false, op.fn, "")
 		return
 	}
 	// The aggregation of the values of the series: count counts them, sum adds them, and so on. A sum over

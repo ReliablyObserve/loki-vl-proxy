@@ -83,6 +83,20 @@ var dynamicIdentityBinaryQueries = func() []string {
 	}
 }()
 
+// dynamicIdentityRowsQueries are the maximum of the series' maxima and the minimum of their minima, which read the
+// rows of each group (lower.foldsRows) and write no series hash: over json and logfmt, ungrouped and grouped, a stream
+// whose lines carry another detected_level now and then (dm), and lines that do not parse (de).
+var dynamicIdentityRowsQueries = []string{
+	`max by (app) (max_over_time({job="dl"} | logfmt | unwrap duration_ms [5m]))`,
+	`max(max_over_time({job="dl"} | logfmt | unwrap duration_ms [5m]))`,
+	`min(min_over_time({job="dj"} | json | unwrap duration_ms [5m]))`,
+	`min by (app) (min_over_time({job="dl"} | logfmt | unwrap duration_ms [5m]))`,
+	`max by (app, pod) (max_over_time({job="dj"} | json | unwrap duration_ms [5m]))`,
+	`max(max_over_time({job="dm"} | json | unwrap duration_ms [5m]))`,
+	`min(min_over_time({job="de"} | json | unwrap duration_ms [5m]))`,
+	`max(max_over_time({job="de"} | json | __error__="" | unwrap duration_ms [5m]))`,
+}
+
 // dynamicIdentityKnown are the runs that differ from Loki, by query and request kind, with the registry case that
 // holds the difference open.
 var dynamicIdentityKnown = func() map[string]map[string]string {
@@ -165,7 +179,7 @@ func dynamicIdentityQueries(t *testing.T) []metricQuery {
 			out = append(out, metricQuery{q: q, id: queryID("logql", q), plan: p, fix: fix, reqs: metricRequests(q, firstRangeOf(p.Root))})
 		}
 	}
-	for _, q := range dynamicIdentityBinaryQueries {
+	for _, q := range append(dynamicIdentityRowsQueries[:len(dynamicIdentityRowsQueries):len(dynamicIdentityRowsQueries)], dynamicIdentityBinaryQueries...) {
 		p, err := planOfText(q)
 		if err != nil {
 			t.Fatalf("%s: %v", q, err)

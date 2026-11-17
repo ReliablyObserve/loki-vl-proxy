@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -59,9 +60,12 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 	if RoutedBinary(p.Root) {
 		// A binary operation with an operand that has a without clause, or a vector(n), is held to the proxy's binary
 		// route: each operand is what the translator writes for its printed LogQL alone (the corpus shadow holds it to
-		// proxy.BinaryOperandsPhysical), and the whole is not the translator's text for the query.
+		// proxy.BinaryOperandsPhysical), and the whole is not the translator's text for the query. A bool or set operator
+		// or a chain is routed for its evaluation, not its operands: its text can be the translator's, as the text
+		// carries no bool.
 		lowered, routed, same := routeOperands(t, q, op.(physical.Binary), prof)
-		return lowered, routed, same && physical.Encode(op) != legacy, "", true
+		routedText := translatorShape(p.Root.(*queryplan.BinOp)) != nil
+		return lowered, routed, same && (routedText || physical.Encode(op) != legacy), "", true
 	}
 	want, _ := translator.DecodePhysical(legacy)
 	lowered = physical.Encode(op)
@@ -296,6 +300,9 @@ func FuzzBinOpLowering(f *testing.F) {
 	f.Add("a", "x", "app", "$1", uint8(0), uint8(112), uint8(179), uint8(0))
 	f.Add("a", "x", "app", "$1", uint8(7), uint8(8), uint8(194), uint8(8))
 	f.Add("a", "x", "app", "$1", uint8(0), uint8(112), uint8(239), uint8(0))
+	// bool and set operators over two range functions: the route evaluates them, and their text is the translator's.
+	f.Add("a", "x", "app", "$1", uint8(15), uint8(0), uint8(0), uint8(0))
+	f.Add("a", "x", "app", "$1", uint8(12), uint8(0), uint8(0), uint8(0))
 	f.Fuzz(func(t *testing.T, sel, line, label, arg string, opSel, left, right, mod uint8) {
 		ident := func(s string) string {
 			var b strings.Builder
