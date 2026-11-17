@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The memory of queries that lately met an unwrap conversion error (it starts the next request's first-window
+  lookup early) was one process-wide map shared by every Proxy instance; it is now each Proxy's own (locked,
+  at most 1024 keys, expiring after 10 minutes, no goroutine to stop). A server runs one Proxy, so no answer changes;
+  a second instance in the same process (tests) no longer inherits another's recent errors and their extra reads.
 - A metric whose JSON parser meets a line it cannot parse now fails with Loki's `400` and its
   `pipeline error: 'JSONParserErr' for series: ...` text under every function Loki keeps the error through: `sort`,
   `sort_desc`, `topk`, `bottomk`, `label_replace`, `max`/`avg`/`count` and other aggregations, nested aggregations,

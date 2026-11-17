@@ -2259,6 +2259,7 @@
     "internal/proxy/unwrap_range_last_point_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/unwrap_range_last_point_test.go | semantics/unwrap-range-last-point",
     "internal/proxy/unwrap_range_last_point_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/unwrap_recent_errors_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/unwrap_recorded_loki_test.go | parser-error-and-label-collision",
     "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-conversion-error-label-format-series",
@@ -3151,7 +3152,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 731,
+      "go": 732,
       "playwright": 2
     },
     "page_kinds": {
