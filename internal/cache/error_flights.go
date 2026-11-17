@@ -308,6 +308,15 @@ func (e *ErrorFlights) Hold(key string, a *Answer, ttl time.Duration) time.Time 
 	return time.Time{}
 }
 
+// Drop removes the answer held for key, if any.
+func (e *ErrorFlights) Drop(key string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if el, ok := e.held[key]; ok {
+		e.removeLocked(el)
+	}
+}
+
 // Finish ends the flight f for key with the leader's outcome; build makes
 // the answer to share, and is called only when a request joined the flight or
 // a failure may be held. A failed answer is held for its class's TTL under

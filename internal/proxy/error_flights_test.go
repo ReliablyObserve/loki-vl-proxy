@@ -567,7 +567,7 @@ func TestErrorFlights_Metrics(t *testing.T) {
 		`loki_vl_proxy_error_cache_stores_total{class="transient"} 1`,
 		`loki_vl_proxy_error_coalesced_total{class="data"} 0`,
 		`loki_vl_proxy_request_flight_saved_total 1`,
-		`loki_vl_proxy_error_cache_entries 2`, // the request, and the same request for every window
+		`loki_vl_proxy_error_cache_entries 3`, // the request, the same request for every window, and its probe marker
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("metrics lack %q", want)

@@ -107,6 +107,33 @@ decisions:
       The answer is the same by construction (Loki's fixed text for the
       status). Risk accepted: a 5xx caused by one window (a broken part in one
       time range) fails the request's other windows for up to 1 s.
+  - id: window-free-probe-per-query
+    chosen: |
+      For ten transient TTLs after a query's window-free failure was held, the
+      query's requests of every window join one probe flight once the hold
+      expires; the probe's failure answers them all and is held again, its
+      success (the backend answered) ends the probing for that query only. The
+      marker is per window-free key, so other queries and successes are
+      untouched (a miss of another query costs 17 allocations more while some
+      query probes, no measurable time).
+    over: [no probe (every expiry released one leader per window and client, 20 calls at once in the e2e storm), a replica-wide probe mode (one failing query slowed every other query's successes)]
+    why: |
+      e2e on the compose stack with VictoriaLogs stopped, 20 clients
+      refreshing one query every 100 ms with end=now for 3 s: 440 requests,
+      6 attempts / 2 calls (head) where the exact-key hold alone let every
+      expiry through; first 200 with a new line 1.02 s after VictoriaLogs was
+      healthy. TestErrorFlightsEdge_WindowFreeProbeAfterHoldExpires,
+      TestErrorFlightsEdge_ProbeIsPerQuery.
+  - id: windowed-fetch-retries-budgeted
+    chosen: |
+      A windowed query_range fetch retries a window only while the circuit
+      breaker is closed and the shared retry budget allows, as every other
+      backend read does.
+    over: [the window loop's own 5 attempts per window and 3 batch retries, unbudgeted]
+    why: |
+      In an outage the unbudgeted loop multiplied each request's calls; main's
+      e2e burst of 50 identical requests made 72 attempts / 50 calls against
+      head's 3 / 1.
   - id: transient-ttl-one-second
     chosen: -error-cache-transient-ttl 1s
     over: [0 (no hold), 500ms, 2s]

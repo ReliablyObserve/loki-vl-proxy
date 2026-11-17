@@ -564,11 +564,11 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 				return
 			}
 		}
-		// Such a failure was held moments ago: the backend may still be down.
-		// Requests of every window join one probe instead of each asking
-		// VictoriaLogs when the hold expires; the probe's failure answers
-		// them all, its success lets each run on its own.
-		if p.serveWindowFreeProbe(endpoint, route, w, r, wk, start, run) {
+		// Such a failure of this very query was held moments ago: the
+		// backend may still be down. Requests of every window join one probe
+		// instead of each asking VictoriaLogs when the hold expires; the
+		// probe's failure answers them all, its success ends the probing.
+		if ef.Peek(probeMarkerKey(wk)) != nil && p.serveWindowFreeProbe(endpoint, route, w, r, wk, start, run) {
 			return
 		}
 	}
@@ -651,9 +651,14 @@ func (p *Proxy) serveWindowFreeProbe(endpoint, route string, w http.ResponseWrit
 	return false // the backend answered the probe: this request runs as usual
 }
 
-// windowFreeProbeWindow is how long after a window-free failure was held its
-// requests still join a probe when the hold has expired.
-const windowFreeProbeWindow = 10 * time.Second
+// windowFreeProbeTTLs is how many transient TTLs after a window-free failure
+// was held its query still probes: with the 1 s default, 10 s, about the
+// circuit breaker's default open time, while an outage lasts. A probe that
+// the backend answers ends it at once.
+const windowFreeProbeTTLs = 10
+
+// probeMarkerKey marks a window-free key whose query probes.
+func probeMarkerKey(wk string) string { return wk + "\x00probe" }
 
 // leadFlight runs r as the leader of f and ends f with its answer. Only a
 // leader whose own request ended (its client went away or ran out of time)
@@ -712,8 +717,10 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 	}
 	if lead.windowFreeProbe && (outcome != cache.OutcomeFailed || !windowFree) {
 		// A probe hands its waiters only a failure of every window; anything
-		// else is its own window's answer.
+		// else is its own window's answer, and the backend answered: the
+		// query stops probing.
 		outcome, build = cache.OutcomeReleased, nil
+		p.errorFlights.Drop(probeMarkerKey(lead.key.join))
 	}
 }
 
@@ -770,9 +777,11 @@ func (p *Proxy) windowFreeKey(endpoint string, r *http.Request) string {
 // holdWindowFree holds a backend failure that does not depend on the window
 // for every window of the request, for the same TTL.
 func (p *Proxy) holdWindowFree(endpoint string, r *http.Request, a *cache.Answer, ttl time.Duration) {
-	until := p.errorFlights.Hold(p.windowFreeKey(endpoint, r), a, ttl)
+	wk := p.windowFreeKey(endpoint, r)
+	until := p.errorFlights.Hold(wk, a, ttl)
+	probe := p.errorFlights.Hold(probeMarkerKey(wk), heldHint, ttl*windowFreeProbeTTLs)
 	raiseTo(&p.windowFreeHeldUntil, until.UnixNano())
-	raiseTo(&p.windowFreeSeenUntil, until.Add(windowFreeProbeWindow).UnixNano())
+	raiseTo(&p.windowFreeSeenUntil, probe.UnixNano())
 }
 
 // raiseTo sets v to at least t.

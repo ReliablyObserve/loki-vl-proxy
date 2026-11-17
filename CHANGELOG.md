@@ -27,7 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reset connection, which does not depend on the time window, is held for every window of the same query, so
   dashboards refreshing with `end=now` are absorbed too (20 clients refreshing one query every 100 ms through an
   outage: 198-394 VictoriaLogs calls/s before, 1-4/s now); a 5xx specific to one window can then fail the query's
-  other windows for up to that second. `-error-cache-data-ttl` (default `5s`) for failures read from the window's data (Loki's
+  other windows for up to that second. While such a failure of a query was held in the last ten transient TTLs (10 s
+  by default), the query's requests of every window join one probe once the hold expires, so an outage costs one
+  call per query per second however many windows refresh; the first answer from VictoriaLogs ends the probing for
+  that query. On a real VictoriaLogs stopped under 20 clients refreshing one query every 100 ms, 440 requests in
+  3 s cost 2 calls, and the first 200 came 1 s after VictoriaLogs was back.
+- A windowed `query_range` read (the per-window log fetches) now retries a failed window only under the bounds every
+  other VictoriaLogs read follows: no retry while the circuit breaker is not closed, and each retry spends from the
+  shared retry budget (`-backend-retry-budget-ratio`). Before, every request of an outage retried each window up to
+  five times and each batch up to three more; on a healthy backend a window that fails once the budget is spent now
+  fails without the extra tries. `-error-cache-data-ttl` (default `5s`) for failures read from the window's data (Loki's
   series limit, line or response size limits, a JSON parser or unwrap conversion error under a metric). The class
   comes from the type of the failure and the query plan (a query that reads no data never holds a backend
   failure). Never held: the client's own cancellation or deadline, any timeout or body VictoriaLogs aborted (a retry
