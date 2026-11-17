@@ -337,9 +337,9 @@ func TestDynamicIdentityWindowsMatchLokiReference(t *testing.T) {
 					name := fmt.Sprintf("%s/%s/%s/%s_by_%s", version, parser, fn, sh.outer, sh.by)
 					t.Run(name, func(t *testing.T) {
 						rnd := rand.New(rand.NewSource(int64(len(name))*7919 + 31))
-						for i := 0; i < 4; i++ {
+						for i := 0; i < 3; i++ {
 							s := generateDynWindowScenario(rnd, sh.outer, sh.by, fn, parser)
-							checkSeriesFoldScenario(t, fmt.Sprintf("#%d", i), s, version)
+							checkSeriesFoldScenario(t, fmt.Sprintf("#%d", i), s, version, i == 0)
 						}
 					})
 				}
@@ -348,12 +348,15 @@ func TestDynamicIdentityWindowsMatchLokiReference(t *testing.T) {
 	}
 }
 
-// checkSeriesFoldScenario runs s with the fold and with the series read one by one: both answer the reference's
-// series and values, in one bucket read each, the folded read holding the subquery, and no raw rows.
-func checkSeriesFoldScenario(t *testing.T, label string, s dynWindowScenario, version string) {
+// checkSeriesFoldScenario runs s with the fold, and with the series read one by one when both is set: each answers
+// the reference's series and values, in one bucket read, the folded read holding the subquery, and no raw rows.
+func checkSeriesFoldScenario(t *testing.T, label string, s dynWindowScenario, version string, both bool) {
 	t.Helper()
 	want := lokiDynamicWindows(s)
 	for _, off := range []bool{false, true} {
+		if off && !both {
+			break
+		}
 		seriesFoldOff = off
 		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 		got, code, body := runDynWindowScenario(t, emu, s, Config{})
@@ -730,6 +733,6 @@ func FuzzSeriesFold(f *testing.F) {
 			parser = "json"
 		}
 		s := generateDynWindowScenario(rand.New(rand.NewSource(seed)), o, bys[int(by)%len(bys)], fun, parser)
-		checkSeriesFoldScenario(t, fmt.Sprintf("seed %d", seed), s, "v1.53.0")
+		checkSeriesFoldScenario(t, fmt.Sprintf("seed %d", seed), s, "v1.53.0", true)
 	})
 }

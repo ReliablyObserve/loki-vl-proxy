@@ -47,6 +47,14 @@ var seriesFoldQueries = []string{
 	`avg by (route) (min_over_time({service_name="SVC"} | json | unwrap duration_ms [3m]))`,
 }
 
+// seriesFoldKnown are the runs that differ from Loki, by query and request kind, with the registry case that holds
+// the difference open: Loki's mean of the series is NaN when a finite series follows an infinite one in its order and
+// the infinity when it is the last, an order the series hash does not keep (the proxy adds the folded series after
+// the ones it keeps, NaN for most windows as in Loki). A listed run that matches Loki fails: the list only shrinks.
+var seriesFoldKnown = map[string]map[string]string{
+	`avg by (route) (min_over_time({service_name="mix"} | json | unwrap duration_ms [3m]))`: {"1h step=7s": "semantics/unwrap-gate-parsefloat-divergences"},
+}
+
 // seriesFoldService is the service of a fixture.
 func seriesFoldService(mixed bool) string {
 	if mixed {
@@ -160,7 +168,7 @@ func seriesFoldMetricQueries(t *testing.T) []metricQuery {
 // TestSeriesFoldMatchLoki replays the recorded answers through the handler: every run is Loki's answer, read in one
 // stats_query_range call that folds the series in one bucket.
 //
-// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity, semantics/unwrap-gate-parsefloat-divergences
 func TestSeriesFoldMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")
@@ -187,7 +195,14 @@ func TestSeriesFoldMatchLoki(t *testing.T) {
 				if missing := answerRequests(run.missing); len(missing) > 0 {
 					t.Fatalf("%s %s %s: VictoriaLogs request %s was not recorded: record them again with LVP_RUN_ORACLES=1", prof.name, mr.kind, mq.q, missing[0])
 				}
-				for c, ex := range compareMetric(loki, run).classes {
+				classes := compareMetric(loki, run).classes
+				if id := seriesFoldKnown[mq.q][mr.kind]; id != "" {
+					if len(classes) == 0 {
+						t.Errorf("%s %s %s matches Loki: take it off the known runs (%s)", prof.name, mr.kind, mq.q, id)
+					}
+					classes = nil
+				}
+				for c, ex := range classes {
 					t.Errorf("%s %s %s: %s: %s", prof.name, mr.kind, mq.q, c, ex)
 				}
 				folded := 0

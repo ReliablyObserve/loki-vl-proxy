@@ -60,6 +60,7 @@ TestWithoutSlidingSumMatchesFoldAndLoki	10.8
 TestWithoutWrappedByAnOperator	10.5
 TestTopKOverVectorAggregationRangeDifferential	10.2
 TestSlidingSumWithoutCutVersions	10.2
+TestDynamicIdentityWindowsMatchLokiReference	10.0
 TestOrderedJSONDetectedLevelFilterBeforeParserReadsStoredLevel	9.6
 TestMetricRouteVectorUnwrapEdges	9.6
 TestSumWithoutExtractionList	9.2

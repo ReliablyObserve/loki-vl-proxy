@@ -241,7 +241,8 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/patterns_counts.go"
+        "internal/proxy/patterns_counts.go",
+        "internal/proxy/series_fold_read.go"
       ]
     },
     {
@@ -471,6 +472,7 @@
         "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
+        "internal/proxy/series_fold_read.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/unwrap_conversion_error.go",
         "internal/proxy/volume.go",
