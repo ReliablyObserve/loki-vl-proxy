@@ -65,7 +65,8 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	tailCtx, tailCancel := context.WithCancel(r.Context())
 	defer tailCancel()
 
-	if err := p.preflightTailAccess(tailCtx, logsqlQuery, r.FormValue("start")); err != nil {
+	history, err := p.fetchTailHistory(tailCtx, logsqlQuery, r.FormValue("start"), r.FormValue("limit"), tp)
+	if err != nil {
 		statusCode := p.writeErr(w, tailCtx, err)
 		p.metrics.RecordRequest("tail", statusCode, time.Since(start))
 		return
@@ -107,9 +108,14 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	pingTicker := time.NewTicker(time.Second)
 	defer pingTicker.Stop()
 
+	// Loki sends the entries since start, up to limit, before the live ones.
+	if err := p.sendTailHistory(wsCtx, conn, tp, history); err != nil {
+		return
+	}
+
 	if p.tailMode == TailModeSynthetic {
 		p.log.Debug("tail connected", "logql", redactQuery(logqlQuery, p.debugLogRawQueries), "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "native", false, "fallback", "forced synthetic tail mode")
-		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, tp, r.FormValue("start"))
+		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, tp, history)
 		return
 	}
 
@@ -122,7 +128,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 			p.streamNativeTail(wsCtx, conn, tp, logsqlQuery, nil, fallbackErr, pingTicker.C)
 			return
 		}
-		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, tp, r.FormValue("start"))
+		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, tp, history)
 		return
 	}
 
@@ -257,7 +263,8 @@ func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tail
 // now loses such rows for good, while Loki's tail delivers every line pushed
 // after it started. The native tail therefore reads up to this long before
 // now (VictoriaLogs' own default tail offset), and the polled tail reads this
-// span again on every poll and drops the rows it already sent.
+// span again on every poll and drops the rows it already sent. It is the
+// default of -tail.settle-delay (Proxy.tailSettle).
 const tailSettleDelay = 5 * time.Second
 
 // errTailStreamEnded is a native tail stream that ended without an error.
@@ -303,41 +310,145 @@ func (p *Proxy) writeTailRows(ctx context.Context, conn tailConn, tp *tailPipeli
 	return nil
 }
 
-func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHint string) error {
-	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+// lokiTailDefaultLimit is how many entries from before the connection a tail
+// sends when the request has no limit: Loki's default (HTTP API reference,
+// /loki/api/v1/tail).
+const lokiTailDefaultLimit = 100
+
+// tailHistoryTimeout bounds the history read before the upgrade, so a slow
+// backend does not hold up the handshake. Loki calls the lookback best effort,
+// and a read that runs out of time sends no history.
+const tailHistoryTimeout = 2 * time.Second
+
+// tailHistory is what a tail sends before its live entries, as Loki does: the
+// newest limit entries from start to the connection, oldest first.
+type tailHistory struct {
+	rows  []byte    // VictoriaLogs rows, newest first; nil when there are none or the read was skipped
+	start time.Time // the window's start: the request's start, or an hour before end, never after end
+	end   time.Time // when the window was read
+}
+
+// tailHistoryStart is a tail's start: the request's start (Loki's time
+// forms), or an hour before now as in Loki, and never after now.
+func tailHistoryStart(raw string, now time.Time) time.Time {
+	start := now.Add(-lokiDefaultSince)
+	if raw != "" {
+		if t, err := lokiTimeParam(raw); err == nil {
+			start = t
+		}
+	}
+	if start.After(now) {
+		start = now
+	}
+	return start
+}
+
+// tailHistoryLimit is a tail's limit: the request's (validated positive
+// before the handler runs), or Loki's 100, held to max_entries_limit_per_query
+// (0 is unlimited) so the rows read stay bounded.
+func tailHistoryLimit(raw string, maxEntries int) int {
+	limit := lokiTailDefaultLimit
+	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+		limit = n
+	}
+	if maxEntries > 0 && limit > maxEntries {
+		limit = maxEntries
+	}
+	return limit
+}
+
+// fetchTailHistory reads the history of a tail before the upgrade, in the
+// single VictoriaLogs call a tail makes before it streams: the newest limit
+// rows from start to now. The read is best effort, as Loki's lookback is: one
+// that runs out of its time, or whose body cannot be read, is skipped and the
+// tail starts with its live entries. A backend that answers with an error
+// status, or that exceeded -backend-timeout inside the read's cap, fails the
+// request before the upgrade with Loki's status.
+func (p *Proxy) fetchTailHistory(parent context.Context, logsqlQuery, startRaw, limitRaw string, tp *tailPipeline) (tailHistory, error) {
+	ctx, cancel := context.WithTimeout(parent, tailHistoryTimeout)
 	defer cancel()
 
-	windowStart := time.Now().Add(-5 * time.Second)
-	if parsed, ok := parseEntryTime(startHint); ok {
-		windowStart = parsed
+	now := time.Now()
+	h := tailHistory{start: tailHistoryStart(startRaw, now), end: now}
+	limits := p.requestQueryLimits(parent)
+	limit := tailHistoryLimit(limitRaw, limits.MaxEntriesLimitPerQuery)
+	readStart := h.start
+	// Loki upgrades the tail and sends no history when the window from start
+	// is longer than max_query_length (recorded with start=1); the tail then
+	// carries live entries only. The call before the upgrade stays, with the
+	// shape of the access probe it replaced: the last five seconds, one row,
+	// discarded, so a failing backend still fails the request.
+	skipHistory := queryLengthTypedError(limits.MaxQueryLength, h.start, h.end) != nil
+	if skipHistory {
+		readStart, limit = h.end.Add(-5*time.Second), 1
 	}
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time desc)")
-	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
-	params.Set("end", formatVLTimestamp(time.Now().UTC().Format(time.RFC3339Nano)))
-	params.Set("limit", "1")
+	params.Set("start", formatVLTimestamp(readStart.UTC().Format(time.RFC3339Nano)))
+	params.Set("end", formatVLTimestamp(h.end.UTC().Format(time.RFC3339Nano)))
+	params.Set("limit", strconv.Itoa(limit))
 
 	resp, err := p.vlGet(ctx, "/select/logsql/query", params)
 	if err != nil {
-		// The probe is best effort: its own 2 s cap, or a client that went
-		// away, skips it. A backend that exceeded -backend-timeout inside that
-		// cap is a timed out call, answered before the upgrade as Loki's 504.
+		// The read is best effort: its own cap, or a client that went away,
+		// skips it. A backend that exceeded -backend-timeout inside that cap
+		// is a timed out call, answered before the upgrade as Loki's 504.
 		if parent.Err() == nil && ctx.Err() == nil && statusFromUpstreamErr(err) == http.StatusGatewayTimeout {
-			return err
+			return h, err
 		}
-		p.log.Debug("tail preflight skipped", "error", err)
-		return nil
+		p.log.Debug("tail history skipped", "error", err)
+		return h, nil
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 400 {
-		_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode >= 400 {
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return h, p.redactedBackendStatusError("", resp.StatusCode, body)
+	}
+	var rows []byte
+	if tp.exposure.filtersLineFields() && !skipHistory {
+		// The limit counts the entries a Loki label filter keeps, as in a
+		// query_range response: further pages fill it.
+		rows, err = p.refillLineFieldRows(ctx, resp.Body, params, limit, false, tp.exposure, !tp.levelAsMetadata,
+			func(ctx context.Context, next url.Values) (*http.Response, error) {
+				return p.vlGet(ctx, "/select/logsql/query", next)
+			})
+	} else {
+		rows, err = p.readBufferedBackendBody(resp.Body)
+	}
+	if err != nil {
+		p.log.Debug("tail history skipped", "error", err)
+		return h, nil
+	}
+	if !skipHistory {
+		h.rows = rows
+	}
+	return h, nil
+}
+
+// sendTailHistory writes the history frames, oldest entry first, before any
+// live entry. A tail that may stream natively notes what it sent, so the
+// native stream's first read, which covers the seconds before it opens, does
+// not send those entries again (tailResume).
+func (p *Proxy) sendTailHistory(ctx context.Context, conn tailConn, tp *tailPipeline, h tailHistory) error {
+	if len(h.rows) == 0 {
 		return nil
 	}
-
-	body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-	return p.redactedBackendStatusError("", resp.StatusCode, body)
+	if p.tailMode != TailModeSynthetic {
+		tp.resume.track = true
+	}
+	// Loki reads the history through its query path, whose entries carry
+	// detected_level in the stream labels (categorize-labels: in the entry
+	// metadata), where its live tailer sends the pushed stream as is.
+	noop := tp.noop
+	tp.noop = false
+	defer func() { tp.noop = noop }()
+	if err := p.writeTailRows(ctx, conn, tp, h.rows); err != nil {
+		return err
+	}
+	tp.resume.afterHistory()
+	return nil
 }
 
 // maxTailCloseReasonBytes is the longest reason a websocket close frame holds
@@ -362,7 +473,7 @@ func (p *Proxy) openNativeTailStreamFrom(parent context.Context, logsqlQuery str
 	// For backends that do not support the tail endpoint, VL returns a 4xx response
 	// quickly, so no timeout guard is needed here.
 	//
-	// offset is the settle delay (tailSettleDelay): VictoriaLogs reads only rows
+	// offset is the settle delay (-tail.settle-delay): VictoriaLogs reads only rows
 	// older than that, so rows of a stream that become searchable out of order
 	// are all in the read that sends them, and its per-stream skip of rows at or
 	// below the newest sent one drops none of them.
@@ -399,12 +510,9 @@ func (p *Proxy) openNativeTailStreamFrom(parent context.Context, logsqlQuery str
 	return nil, false, p.redactedBackendStatusError("backend tail unavailable", resp.StatusCode, body)
 }
 
-func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQuery string, tp *tailPipeline, startHint string) {
+func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQuery string, tp *tailPipeline, history tailHistory) {
 	lastSeen := newSyntheticTailSeen(maxSyntheticTailSeenEntries)
-	windowStart := time.Now().Add(-5 * time.Second)
-	if parsed, ok := parseEntryTime(startHint); ok {
-		windowStart = parsed
-	}
+	windowStart := syntheticTailWindowStart(history, lastSeen)
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -485,20 +593,16 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 		}
 		rows++
 
-		var vlLine map[string]interface{}
-		if err := json.Unmarshal(line, &vlLine); err != nil {
+		seenKey, entryTime, err := syntheticTailRowKey(line)
+		if err != nil {
 			// A row that is not JSON is a broken body, not a row to skip.
 			return fmt.Errorf("synthetic tail row is not JSON: %w: %w", errTailMalformedRow, err)
 		}
-		timeStr, _ := stringifyEntryValue(vlLine["_time"])
-		msgStr, _ := stringifyEntryValue(vlLine["_msg"])
-		streamStr, _ := stringifyEntryValue(vlLine["_stream"])
 		// Rows sent before count too: a poll that reads only those still
 		// moves the cursor.
-		if entryTime, ok := parseEntryTime(timeStr); ok && entryTime.After(newest) {
+		if entryTime.After(newest) {
 			newest = entryTime
 		}
-		seenKey := timeStr + "\x00" + streamStr + "\x00" + msgStr
 		if lastSeen.Contains(seenKey) {
 			continue
 		}
@@ -521,7 +625,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 		lastSeen.Add(key)
 	}
 
-	// The next poll reads the last tailSettleDelay again: a row of that span
+	// The next poll reads the last -tail.settle-delay again: a row of that span
 	// that was not searchable yet arrives then, and the rows already sent
 	// are dropped. A full poll moves on from its newest row instead, so a
 	// busy tail never reads the same page again.
@@ -533,6 +637,51 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 		*windowStart = next
 	}
 	return nil
+}
+
+// syntheticTailRowKey is the key a polled row is noted as seen by (its time,
+// stream and line) and its time, zero when it has none that parses.
+func syntheticTailRowKey(line []byte) (string, time.Time, error) {
+	var vlLine map[string]interface{}
+	if err := json.Unmarshal(line, &vlLine); err != nil {
+		return "", time.Time{}, err
+	}
+	timeStr, _ := stringifyEntryValue(vlLine["_time"])
+	msgStr, _ := stringifyEntryValue(vlLine["_msg"])
+	streamStr, _ := stringifyEntryValue(vlLine["_stream"])
+	entryTime, _ := parseEntryTime(timeStr)
+	return timeStr + "\x00" + streamStr + "\x00" + msgStr, entryTime, nil
+}
+
+// syntheticTailWindowStart is where the polling tail reads from after its
+// history: just past the newest entry the history sent, whose rows are noted
+// as seen, or, with no history, the lookback before the history was read (the
+// window from start held no row then).
+func syntheticTailWindowStart(history tailHistory, lastSeen *syntheticTailSeen) time.Time {
+	var newest time.Time
+	for _, line := range bytes.Split(history.rows, []byte{'\n'}) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		key, ts, err := syntheticTailRowKey(bytes.TrimSpace(line))
+		if err != nil {
+			continue
+		}
+		lastSeen.Add(key)
+		if ts.After(newest) {
+			newest = ts
+		}
+	}
+	if !newest.IsZero() {
+		return newest.Add(time.Nanosecond)
+	}
+	if history.end.IsZero() {
+		return time.Now().Add(-tailResumeLookback)
+	}
+	if from := history.end.Add(-tailResumeLookback); from.After(history.start) {
+		return from
+	}
+	return history.start
 }
 
 func newSyntheticTailSeen(limit int) *syntheticTailSeen {
@@ -584,7 +733,7 @@ func (p *Proxy) writeTailControl(conn tailConn, messageType int, data []byte) er
 
 // tailPipeline turns the VictoriaLogs rows of a tail query into Loki tail
 // frames. Loki's tail runs the query's whole pipeline on every entry (the
-// ingester's tailer, pkg/ingester/tailer.go processStream), so the rows go
+// ingester's tailer), so the rows go
 // through the conversion of a query_range response (vlReaderToLokiStreams)
 // and the proxy-side stages a query_range response gets: the label filters
 // VictoriaLogs cannot evaluate like Loki (lineFieldExposure), line_format,
@@ -610,7 +759,7 @@ type tailPipeline struct {
 }
 
 // maxTailFrameEntries is the most entries one tail frame holds, as Loki's
-// querier batches them (pkg/querier/tail/tail.go maxEntriesPerTailResponse).
+// querier batches them.
 const maxTailFrameEntries = 100
 
 // tailScanBufferInitial is the first size of a tail row scanner's buffer;

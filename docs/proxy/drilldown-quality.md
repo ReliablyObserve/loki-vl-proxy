@@ -20,11 +20,11 @@ series it receives; it sorts them and draws them.
 
 Loki (v3.7.7) answers these like any other metric query: every series, exact
 values on its evaluation timestamps, no sample for a step whose window holds no
-line. Above `max_query_series` (default 500) it returns a partial result with
+line. Above `max_query_series` (Loki's default is 500; the proxy's is 1000) it returns a partial result with
 the warning `maximum number of series (N) reached for a single query; returning
-partial results` for Drilldown (`JoinSampleVector` in `pkg/logql/engine.go`, the
-`seriesLimiter` in `pkg/querier/queryrange/limits.go`) and a `400` for every
-other client.
+partial results` for Drilldown and a `400` for every other client (Loki v3.7.7;
+`limits/series-limit-error` and `limits/drilldown-partial-with-warning` in the
+conformance registry record the answers).
 
 ## How The Proxy Answers
 
@@ -42,7 +42,7 @@ proxyStatsQueryRange
                  | unpack_json if (-f:*) fields (f) | filter f:!""
                  | stats by (f) count()
       limit = tenant's max_query_series
-              (-tenant-limits → -tenant-default-limits → -max-stats-query-series → 500)
+              (-tenant-limits → -tenant-default-limits → -max-stats-query-series → 1000)
       Drilldown: take a -stats-query-range-concurrency slot
       one stats_query_range call, read until limit+1 series
       under the limit: every series (Drilldown and plain clients alike)
@@ -98,7 +98,7 @@ Over the limit, Loki keeps the first series it meets while evaluating; the
 proxy keeps the busiest. For series of equal volume the kept set can differ;
 the values of every kept series match Loki's. The residual-chunk suppression
 exists for Grafana's merge of split chunks (see
-[Drilldown compatibility](../compatibility-drilldown.md#long-range-histograms-and-grafana-querysplitting)).
+[Drilldown compatibility](../compatibility-drilldown.md#long-range-histograms-loaded-in-pieces)).
 
 A breakdown counts a line whose stored `f` differs from its body key under the
 stored value, as Loki does. Other queries that filter on a parsed field, such

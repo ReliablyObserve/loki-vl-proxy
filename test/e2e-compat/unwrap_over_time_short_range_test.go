@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-// Loki reads a step's sample of sum, avg, max and min over time from the window
-// (t-range, t] only (pkg/logql/range_vector.go:102-189): with a range shorter
-// than the step, the lines between two windows belong to no sample, and a step
-// whose window holds no line has none. The fixture streams hold a line every
-// 10s, off the minute marks, so every window of these shapes holds lines and
-// the step bucket holds more lines than the window.
+// Loki reads a step's sample of sum, avg, max and min over time from the
+// window (t-range, t] only: with a range shorter than the step, the lines
+// between two windows belong to no sample, and a step whose window holds no
+// line has none. The fixture streams hold a line every 10s, off the minute
+// marks, so every window of these shapes holds lines and the step bucket
+// holds more lines than the window.
 var unwrapShortRangeShapes = []unwrapSumShape{
 	{"2m range at a 5m step", "2m", 5 * time.Minute, 5 * time.Minute, 25 * time.Minute},
 	{"1m range at a 5m step", "1m", 5 * time.Minute, 5 * time.Minute, 25 * time.Minute},

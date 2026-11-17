@@ -9,7 +9,7 @@ import (
 )
 
 // LabelFilterExpr is a parsed label filter stage (`| status>=500, (a="1" or
-// b="2")`), the grammar of Loki's labelFilter rule in pkg/logql/syntax/syntax.y:
+// b="2")`), the grammar of Loki's labelFilter rule:
 //
 //	labelFilter: matcher | ipLabelFilter | unitFilter | numberFilter
 //	           | '(' labelFilter ')'
@@ -183,6 +183,8 @@ type lfParser struct {
 	// prevStart is the start of the token before tok; before the first token it is the offset of the token
 	// before the text (negative when the text is part of a longer query).
 	prevStart int
+	// noNUL is set once no NUL byte stands after the start of a string read: no later string holds one.
+	noNUL bool
 }
 
 // maxLabelFilterDepth bounds the nesting of parentheses and the length of a
@@ -330,6 +332,17 @@ func connectorKind(word string) lfTokKind {
 // lexString reads the quoted literal that starts at start; it reports false, with the lexer error set, when the
 // literal is not terminated.
 func (p *lfParser) lexString(start int, quote byte) bool {
+	if p.lexErr == nil && !p.noNUL && strings.IndexByte(p.src[start:], 0) < 0 {
+		// No NUL from the first string on: none in a later one either, so the text is read for it once per parse.
+		p.noNUL = true
+	}
+	if p.lexErr == nil && !p.noNUL {
+		// A NUL byte in the string, or after it: Loki's scanner reports the string's errors in the order of the text
+		// (lokiStringError).
+		if msg := lokiStringError(p.src, start); msg != "" {
+			p.lexErr = &LabelFilterSyntaxError{Offset: start, Message: msg}
+		}
+	}
 	p.pos = start + 1
 	for p.pos < len(p.src) && p.src[p.pos] != quote && (quote != '"' || p.src[p.pos] != '\n') {
 		if quote == '"' && p.src[p.pos] == '\\' {
@@ -355,6 +368,10 @@ func (p *lfParser) skipSpace() (spaced bool) {
 		if p.src[p.pos] == '#' {
 			start := p.pos
 			for p.pos < len(p.src) && p.src[p.pos] != '\n' {
+				if p.src[p.pos] == 0 && p.lexErr == nil {
+					// A NUL in a comment is Loki's error at the comment, on line 0.
+					p.lexErr = &LabelFilterSyntaxError{Offset: start, Message: "invalid character NUL", ZeroLine: true}
+				}
 				p.pos++
 			}
 			if p.pos < len(p.src) {
@@ -468,20 +485,39 @@ func (p *lfParser) keywordName(start int) string {
 		return "IDENTIFIER"
 	}
 	var lower [20]byte
+	n := len(word)
 	for i := 0; i < len(word); i++ {
 		c := word[i]
 		if c >= utf8.RuneSelf {
-			return "IDENTIFIER"
+			// The word in lower case, as the lexer lower cases it: the Kelvin sign and U+0130 are k and i (`İp`).
+			if n = foldedWord(word, &lower); n < 0 {
+				return "IDENTIFIER"
+			}
+			break
 		}
 		if 'A' <= c && c <= 'Z' {
 			c += 'a' - 'A'
 		}
 		lower[i] = c
 	}
-	if name := keywordTokenName(p.src, p.pos, string(lower[:len(word)])); name != "" {
+	if name := keywordTokenName(p.src, p.pos, string(lower[:n])); name != "" {
 		return name
 	}
 	return "IDENTIFIER"
+}
+
+// foldedWord writes word in lower case into lower, rune by rune as strings.ToLower does, and returns its length, or
+// -1 for a word with a letter that does not lower case into ASCII.
+func foldedWord(word string, lower *[20]byte) int {
+	n := 0
+	for _, r := range word {
+		if r = unicode.ToLower(r); r >= utf8.RuneSelf || n == len(lower) {
+			return -1
+		}
+		lower[n] = byte(r)
+		n++
+	}
+	return n
 }
 
 // lfNameEnd is the length of the name at the start of s: letters, digits, '_' and, when dots is set, '.'.
@@ -696,7 +732,8 @@ func (p *lfParser) readSign(op string) (string, *LabelFilterSyntaxError) {
 // for the parenthesis over every character Go calls white space, so `ip` followed by one of those is the keyword
 // too, and the character after it is the unexpected token.
 func (p *lfParser) isIPCall() bool {
-	return strings.EqualFold(p.tok.text, "ip") && strings.HasPrefix(strings.TrimLeftFunc(p.src[p.tok.end:], unicode.IsSpace), "(")
+	t := p.tok.text
+	return (strings.EqualFold(t, "ip") || len(t) == 3 && lowerPrefixLen(t, "ip") == 3) && strings.HasPrefix(strings.TrimLeftFunc(p.src[p.tok.end:], unicode.IsSpace), "(")
 }
 
 // unquoteLabelFilterString is the value of a string literal the way the LogQL

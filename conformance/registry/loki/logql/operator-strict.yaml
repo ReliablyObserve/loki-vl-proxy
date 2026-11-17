@@ -1,7 +1,7 @@
 id: operator-strict
 kind: operator
 logql: "--strict"
-loki_constant: OpStrict
+source: https://grafana.com/docs/loki/v3.7.x/query/log_queries/
 generated:
   supported_by_proxy: false
   seen_in:

@@ -19,8 +19,7 @@ import (
 //
 // Loki 3.7.7 answers quantile_over_time over an unwrapped JSON field whatever
 // the volume of lines the range holds: it keeps the samples of one window per
-// series and interpolates between adjacent ranked samples
-// (pkg/logql/range_vector.go:449-487 quantileOverTime, Quantile). The proxy
+// series and interpolates between adjacent ranked samples. The proxy
 // used to read every raw row of the range into one buffered response and failed
 // with 502 "manual metric response exceeds" once the rows outgrew
 // -backend-max-buffered-response-bytes (6h of generator data at the default).

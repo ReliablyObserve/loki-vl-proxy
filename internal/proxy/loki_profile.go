@@ -270,8 +270,8 @@ func (p *Proxy) labelLimitParam(r *http.Request) string {
 // lineFieldExposure is what a log query's pipeline exposes, as Loki labels,
 // of the fields VictoriaLogs unpacked from a JSON log line at ingest. Loki has
 // no labels from the line until a stage adds them, and each stage adds only
-// its own (pkg/logql/log: JSONParser, LogfmtParser, RegexpParser,
-// PatternParser, UnpackParser, LabelsFormatter; LineFormatter adds none):
+// its own (the json, logfmt, regexp, pattern and unpack parsers and
+// label_format; line_format adds none):
 //   - | json and | logfmt without an extraction list: every key that parser
 //     reads from the line (a logfmt parse of a JSON line reads none);
 //   - | json a, b="x.y" and | logfmt a, b: only the named labels;
@@ -299,12 +299,23 @@ type lineFieldExposure struct {
 	// labelFormats are the label_format entries, each with what the stages
 	// before it expose (fixLabelFormats).
 	labelFormats []labelFormatTarget
+	// placeholderLine is set with -json-line-fields-as-line-keys: a row whose
+	// _msg is the placeholder defaultMsg is classified against the line rebuilt
+	// from its fields (leaving out placeholderLineFields), as a JSON line
+	// VictoriaLogs kept (json_line_keys.go).
+	placeholderLine       bool
+	defaultMsg            string
+	placeholderLineFields map[string]bool
+	// logfmtOnly are the names only a logfmt extraction list writes: on a
+	// placeholder row the stored field of that name is the JSON line's key,
+	// which Loki's logfmt parser does not read (placeholderLogfmtOnly).
+	logfmtOnly map[string]bool
 	// filters are the pipeline's label filters on a single label, each with
 	// what the stages before it expose (see dropsRow).
 	filters []lineFieldFilter
 	// kept is the label list of the | keep stages after the last parser
 	// (their intersection): every other label the parser added is gone from
-	// the entry (Loki pkg/logql/log/keep_labels.go:15-45), a name_extracted
+	// the entry (registry semantics/keep-leaves-labels-loki-drops), a name_extracted
 	// label included unless the stages name it. A later label_format adds
 	// only its own target.
 	kept map[string]bool
@@ -333,7 +344,7 @@ type lineFieldFilter struct {
 	name string
 	// matchesEmpty is the filter's result on a label the entry does not have:
 	// Loki evaluates a string matcher on "" and fails a numeric, duration or
-	// bytes comparison (pkg/logql/log/label_filter.go).
+	// bytes comparison.
 	matchesEmpty bool
 	before       lineFieldExposure
 }
@@ -350,6 +361,7 @@ func (p *Proxy) lineFieldExposure(query string) *lineFieldExposure {
 		return nil
 	}
 	exposure := pipelineAddsLabels(lq.Pipeline)
+	p.withPlaceholderLine(&exposure, lq.Pipeline)
 	return &exposure
 }
 
@@ -520,7 +532,7 @@ func labelFilterConditions(expr *logqlpkg.LabelFilterExpr, before lineFieldExpos
 			}
 		case logqlpkg.LabelFilterValueIP:
 			// An ip() filter drops a line without the label under = and !=
-			// (pkg/logql/log/ip.go:128-131).
+			// (registry semantics/ip-label-filter-missing-label).
 			if ipLabelFilterRE.MatchString(expr.Leaf) {
 				return []lineFieldFilter{{name: expr.Name, before: before}}
 			}
@@ -633,8 +645,8 @@ func (e *lineFieldExposure) fieldCategory(key string, lineKeys map[string]bool, 
 }
 
 // extractedSuffix is what Loki appends to the name of a parsed label or
-// structured metadata key that shares its name with a stream label
-// (pkg/logql/log/parser.go duplicateSuffix): the stream label keeps its value
+// structured metadata key that shares its name with a stream label (registry
+// semantics/extracted-suffix-collision): the stream label keeps its value
 // and the entry label is exposed as name_extracted.
 const extractedSuffix = "_extracted"
 
@@ -793,6 +805,9 @@ type lineRow struct {
 	keys   map[string]bool
 	stream map[string]string
 	labels map[string]bool // the JSON line's labels, walked once when a name needs it
+	// placeholder: the line was rebuilt from a placeholder row's fields
+	// (readsPlaceholderAsLine).
+	placeholder bool
 }
 
 // hiddenBefore reports whether name is a key of the row's line (a JSON key,
@@ -836,6 +851,9 @@ func (r *lineRow) hiddenBefore(e, before *lineFieldExposure, name string) bool {
 // an array of the JSON line is left out where | json would expose it
 // (hidesJSONArray).
 func classifyRowField(e *lineFieldExposure, r *lineRow, key, value string, lineMissing, classifyAsParsed bool) (parsed, hidden bool) {
+	if r.placeholder && e != nil && e.logfmtOnly[key] && r.keys != nil && isJSONLineField(key, r.keys) && !e.exposesJSONLine(r.keys) {
+		return false, true
+	}
 	parsed, hidden = classifyLineField(e, key, r.keys, r.line, lineMissing, classifyAsParsed)
 	if e != nil && parsed && !hidden && !lineMissing && r.hidesJSONArray(key, value) {
 		return false, true

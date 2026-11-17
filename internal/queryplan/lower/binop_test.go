@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -59,9 +60,12 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 	if RoutedBinary(p.Root) {
 		// A binary operation with an operand that has a without clause, or a vector(n), is held to the proxy's binary
 		// route: each operand is what the translator writes for its printed LogQL alone (the corpus shadow holds it to
-		// proxy.BinaryOperandsPhysical), and the whole is not the translator's text for the query.
+		// proxy.BinaryOperandsPhysical), and the whole is not the translator's text for the query. A bool or set operator
+		// or a chain is routed for its evaluation, not its operands: its text can be the translator's, as the text
+		// carries no bool.
 		lowered, routed, same := routeOperands(t, q, op.(physical.Binary), prof)
-		return lowered, routed, same && physical.Encode(op) != legacy, "", true
+		routedText := translatorShape(p.Root.(*queryplan.BinOp)) != nil
+		return lowered, routed, same && (routedText || physical.Encode(op) != legacy), "", true
 	}
 	want, _ := translator.DecodePhysical(legacy)
 	lowered = physical.Encode(op)
@@ -70,7 +74,10 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 
 // routeOperands holds the operands of a lowered binary operation to the proxy's binary route under prof: each operand
 // that is not a number or a vector(n) is the translator's text for its printed LogQL (logql.Expr.String) alone, byte
-// for byte and operator for operator. It returns both sides' texts joined by " ||| " for a failure message.
+// for byte and operator for operator, and an operand that is itself a binary operation is held to the route the same
+// way, operation by operation (the route sends it through the handlers, which take the binary route again:
+// proxy.binaryRoutePhysical), not to the translator's text for it. It returns both sides' texts joined by " ||| " for
+// a failure message.
 func routeOperands(t testing.TB, q string, op physical.Binary, prof rangeProfile) (lowered, routed string, same bool) {
 	t.Helper()
 	expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
@@ -81,6 +88,11 @@ func routeOperands(t testing.TB, q string, op physical.Binary, prof rangeProfile
 	if !ok {
 		return physical.Encode(op), "", false
 	}
+	return routeBinary(bin, op, prof)
+}
+
+// routeBinary is routeOperands of one binary operation of the route, bin, lowered to op.
+func routeBinary(bin *logql.BinOpExpr, op physical.Binary, prof rangeProfile) (lowered, routed string, same bool) {
 	same = true
 	var lt, rt []string
 	for i, side := range [2]logql.Expr{bin.Left, bin.Right} {
@@ -90,6 +102,18 @@ func routeOperands(t testing.TB, q string, op physical.Binary, prof rangeProfile
 		}
 		if _, lit := side.(*logql.LiteralExpr); lit {
 			lt, rt = append(lt, physical.Encode(got)), append(rt, side.String())
+			continue
+		}
+		if nested, chain := side.(*logql.BinOpExpr); chain {
+			b, isBinary := got.(physical.Binary)
+			if !isBinary || b.Op != nested.Op || b.Bool != nested.ReturnBool {
+				lt, rt = append(lt, physical.Encode(got)), append(rt, nested.String())
+				same = false
+				continue
+			}
+			l, r, s := routeBinary(nested, b, prof)
+			lt, rt = append(lt, "("+l+")"), append(rt, "("+r+")")
+			same = same && s
 			continue
 		}
 		if v, vector := VectorLiteral(side.String()); vector {
@@ -174,38 +198,41 @@ func TestPlanLowersBinaryOperations(t *testing.T) {
 func TestPlanDelegatesBinaryOperations(t *testing.T) {
 	rate := `rate({app="a"}[5m])`
 	for q, construct := range map[string]string{
-		rate + ` and ` + rate:                    "BinOp set operator",
-		rate + ` or ` + rate:                     "BinOp set operator",
-		rate + ` unless ` + rate:                 "BinOp set operator",
-		rate + ` > bool 1`:                       "BinOp bool",
 		`1 + 2`:                                  "BinOp scalar operands",
 		`2 * max(sum without () (` + rate + `))`: "BinOp operand without empty nest",
-		`sum without () (sum_over_time({app="a"} | unwrap n [5m])) / 2`:                "BinOp operand without empty unwrap",
+		`count without () (sum_over_time({app="a"} | unwrap n [5m])) / 2`:              "BinOp operand without empty unwrap",
 		`sum without () (` + rate + `) / sum by (app) (sum without () (` + rate + `))`: "BinOp operand without empty nest",
 		`label_replace(sum without (pod) (` + rate + `) / 2, "a", "b", "c", "d")`:      "LabelReplace operand BinOp",
-		rate + ` / (` + rate + ` + 1)`:                                                 "BinOp operand BinOp",
-		`topk(2, ` + rate + `) / 2`:                                                    "BinOp operand Rank",
-		`{app="a"} > 1`:                                                                "BinOp operand LogSelect",
-		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`:                          "BinOp operand LabelReplace",
-		`stddev(` + rate + `) / 2`:                                                     "BinOp operand VectorAgg",
-		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                                          "BinOp quoted text",
-		`rate({app="a"} |= "a  b" [5m]) / 2`:                                           "BinOp quoted text",
-		`rate({app="a"} |= "@@@" [5m]) / 2`:                                            "BinOp quoted text",
-		`sum by ( hos ) (` + rate + `)  / 2`:                                           "BinOp spelling",
-		rate + `  / 2`:                                                                 "BinOp spelling",
-		rate + ` / on(app,env) ` + rate:                                                "BinOp vector matching spelling",
-		rate + ` / on(app) group_left ` + rate:                                         "BinOp vector matching spelling",
-		rate + `/2`:                                                                    "BinOp operator spelling",
-		rate + "\n/ 2":                                                                 "BinOp operator spelling",
-		rate + ` / 1e3`:                                                                "BinOp number spelling",
-		rate + ` / 2.50`:                                                               "BinOp number spelling",
-		`(` + rate + `) / 2`:                                                           "BinOp operand spelling",
-		`sum( ` + rate + `) / 2`:                                                       "BinOp operand spelling",
-		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:                 "LabelReplace operand Rank",
-		`label_replace(vector(1), "a", "b", "c", "d")`:                                 "LabelReplace operand VectorLit",
-		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`:             "LabelReplace operand BinOp",
-		`label_replace(sum by (service_name) (` + rate + `), "a", "b", "c", "d")`:      "LabelReplace service_name grouping",
-		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                           "LabelReplace argument with NUL",
+		rate + ` and 1`:                         "BinOp set operator",
+		`vector(1) or ` + rate:                  "BinOp set operator",
+		rate + ` > bool vector(1)`:              "BinOp bool",
+		`1 > bool 2`:                            "BinOp bool",
+		rate + ` / (topk(2, ` + rate + `) + 1)`: "BinOp operand BinOp",
+		`topk(2, ` + rate + `) / 2`:             "BinOp operand Rank",
+		`{app="a"} > 1`:                         "BinOp operand LogSelect",
+
+		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`: "BinOp operand LabelReplace",
+		`stddev(` + rate + `) / 2`:                            "BinOp operand VectorAgg",
+		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                 "BinOp quoted text",
+		`rate({app="a"} |= "a  b" [5m]) / 2`:                  "BinOp quoted text",
+		`rate({app="a"} |= "@@@" [5m]) / 2`:                   "BinOp quoted text",
+		`sum by ( hos ) (` + rate + `)  / 2`:                  "BinOp spelling",
+		rate + `  / 2`:                                        "BinOp spelling",
+		rate + ` / on(app,env) ` + rate:                       "BinOp vector matching spelling",
+		rate + ` / on(app) group_left ` + rate:                "BinOp vector matching spelling",
+		rate + `/2`:                                           "BinOp operator spelling",
+		rate + "\n/ 2":                                        "BinOp operator spelling",
+		rate + ` / 1e3`:                                       "BinOp number spelling",
+		rate + ` / 2.50`:                                      "BinOp number spelling",
+		`(` + rate + `) / 2`:                                  "BinOp operand spelling",
+		`sum( ` + rate + `) / 2`:                              "BinOp operand spelling",
+
+		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:            "LabelReplace operand Rank",
+		`label_replace(vector(1), "a", "b", "c", "d")`:                            "LabelReplace operand VectorLit",
+		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`:        "LabelReplace operand BinOp",
+		`label_replace(sum by (service_name) (` + rate + `), "a", "b", "c", "d")`: "LabelReplace service_name grouping",
+		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                      "LabelReplace argument with NUL",
+
 		strings.Repeat(`label_replace(`, 17) + rate + strings.Repeat(`, "a", "b", "c", "d")`, 17): "LabelReplace nesting",
 		`label_replace (` + rate + `, "a", "b", "c", "d")`:                                        "LabelReplace spelling",
 		`label_replace((` + rate + `), "a", "b", "c", "d")`:                                       "LabelReplace operand spelling",
@@ -293,6 +320,15 @@ func FuzzBinOpLowering(f *testing.F) {
 	f.Add("a", "x", "app", "$1", uint8(0), uint8(112), uint8(179), uint8(0))
 	f.Add("a", "x", "app", "$1", uint8(7), uint8(8), uint8(194), uint8(8))
 	f.Add("a", "x", "app", "$1", uint8(0), uint8(112), uint8(239), uint8(0))
+	// bool and set operators over two range functions: the route evaluates them, and their text is the translator's.
+	f.Add("a", "x", "app", "$1", uint8(15), uint8(0), uint8(0), uint8(0))
+	f.Add("a", "x", "app", "$1", uint8(12), uint8(0), uint8(0), uint8(0))
+	// A chain whose operand holds a parenthesis in a quoted line filter: the route evaluates the operand as a binary
+	// operation of its own, so it is held to the route operation by operation, not to the translator's text for it.
+	f.Add("0", "(", "0", "0", uint8('G'), uint8('U'), uint8(0), uint8('F'))
+	// A chain with a vector(n) spelled with a blank before its parenthesis, which the route sends on as a query: left
+	// to the translator (screenChainVectors).
+	f.Add("0", "0", "0", "0", uint8(0x9a), uint8(0xc7), uint8('d'), uint8('E'))
 	f.Fuzz(func(t *testing.T, sel, line, label, arg string, opSel, left, right, mod uint8) {
 		ident := func(s string) string {
 			var b strings.Builder

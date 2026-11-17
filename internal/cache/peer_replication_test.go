@@ -286,7 +286,8 @@ func TestPeerReplication_OwnerDownOrSlowBackupServes(t *testing.T) {
 		t.Fatalf("owner down (connection refused) took %v, above the fetch timeout %v", down, timeout)
 	}
 
-	// A slow owner: the lookup waits at most the timeout for it.
+	// A slow owner: the lookup waits at most the read hedge delay for it,
+	// then asks the backup.
 	key2 := f.keyWith(backup, owner)
 	f.restart(owner, true)
 	f.nodes[backup].c.SetWithTTL(key2, []byte("v2"), 10*time.Minute)
@@ -301,14 +302,15 @@ func TestPeerReplication_OwnerDownOrSlowBackupServes(t *testing.T) {
 		}
 		slow.ServeHTTP(w, r)
 	})))
+	hedge := f.nodes[other].pc.readHedgeDelay()
 	started = time.Now()
 	v, ok = f.nodes[other].c.Get(key2)
 	took := time.Since(started)
 	if !ok || string(v) != "v2" {
 		t.Fatalf("slow owner: got %q %v", v, ok)
 	}
-	if took < timeout || took > timeout+150*time.Millisecond {
-		t.Fatalf("slow owner: %v, want the fetch timeout %v plus one backup round trip", took, timeout)
+	if took > hedge+150*time.Millisecond || took >= timeout {
+		t.Fatalf("slow owner: %v, want the read hedge delay %v plus one backup round trip, below the fetch timeout %v", took, hedge, timeout)
 	}
 	t.Logf("owner down: %v; slow owner: %v (timeout %v)", down, took, timeout)
 }
@@ -456,13 +458,17 @@ func (f *replFleet) pause(i int) (resume func()) {
 	}
 }
 
-// A paused owner costs a request of many lookups one peer timeout in all,
-// not one per lookup: the first lookup that times out suspends the owner for
-// the breaker cooldown and cancels the lookups still waiting on it, which go
-// on to the backup; later lookups skip the owner. After the cooldown one
-// lookup probes the owner while the others skip it.
+// A paused owner costs a request of many lookups at most one peer timeout in
+// all, not one per lookup, and each lookup at most the read hedge delay: a
+// lookup asks the backup once the owner has not answered within it, the first
+// owner call that times out (in the background) suspends the owner for the
+// breaker cooldown and cancels the calls still waiting on it, and later
+// lookups skip the owner. After the cooldown one lookup probes the owner
+// while the others skip it; the probing lookup itself answers from the
+// backup within the hedge delay, and its call, left running, suspends the
+// owner again.
 //
-// conformance: peer-cache-replication
+// conformance: peer-cache-replication, peer-cache-read-hedge
 func TestPeerReplication_PausedOwnerCostsOneTimeout(t *testing.T) {
 	const timeout = 200 * time.Millisecond
 	const margin = 150 * time.Millisecond
@@ -477,10 +483,15 @@ func TestPeerReplication_PausedOwnerCostsOneTimeout(t *testing.T) {
 	defer resume()
 
 	// Sequential lookups of one request.
+	hedge := f.nodes[other].pc.readHedgeDelay()
 	started := time.Now()
 	for _, key := range keys[:6] {
+		t0 := time.Now()
 		if v, ok := f.nodes[other].c.Get(key); !ok || string(v) != "v-"+key {
 			t.Fatalf("%s: %q %v", key, v, ok)
+		}
+		if took := time.Since(t0); took > hedge+margin {
+			t.Fatalf("%s took %s with the owner paused, want at most the hedge delay %s plus %s", key, took, hedge, margin)
 		}
 	}
 	sequential := time.Since(started)
@@ -511,7 +522,15 @@ func TestPeerReplication_PausedOwnerCostsOneTimeout(t *testing.T) {
 		t.Fatalf("6 concurrent lookups with the owner paused took %s, want at most one timeout (%s) plus %s", concurrent, timeout, margin)
 	}
 
-	// After the cooldown: one probe, the others skip the owner.
+	// After the cooldown: one probe, the others skip the owner. The calls of
+	// the concurrent lookups end first (their timeout suspended the owner),
+	// so the owner is neither lagging nor slow and only the probe's own call
+	// can suspend it again.
+	ownerAddr := f.addr(owner)
+	idle := func() bool {
+		return !f.nodes[other].pc.peerLagging(ownerAddr) && !f.nodes[other].pc.peerSlow(ownerAddr)
+	}
+	waitFor(t, "the owner calls to end", idle)
 	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
 	probeDone := make(chan time.Duration)
 	go func() {
@@ -527,15 +546,15 @@ func TestPeerReplication_PausedOwnerCostsOneTimeout(t *testing.T) {
 	if beside := time.Since(t0); beside > 50*time.Millisecond {
 		t.Fatalf("a lookup beside the probe waited %s on the paused owner", beside)
 	}
-	if probe := <-probeDone; probe < timeout {
-		t.Fatalf("the probe took %s, want the timeout: it did not ask the owner", probe)
+	if probe := <-probeDone; probe > hedge+margin {
+		t.Fatalf("the probing lookup took %s, want at most the hedge delay %s plus %s", probe, hedge, margin)
 	}
-	if pb.suspendedUntil.Load() <= time.Now().UnixNano() {
-		t.Fatal("the failed probe did not suspend the owner again")
-	}
+	// The probe's call to the owner runs on to the timeout and suspends it.
+	waitFor(t, "the failed probe to suspend the owner again", func() bool { return pb.suspendedUntil.Load() > time.Now().UnixNano() })
 
 	// The owner answers again: the next probe lifts the suspension.
 	resume()
+	waitFor(t, "the probe's call to end", idle)
 	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
 	if _, _, ok := f.nodes[other].pc.Get(keys[2]); !ok {
 		t.Fatal("the probe of a resumed owner missed")

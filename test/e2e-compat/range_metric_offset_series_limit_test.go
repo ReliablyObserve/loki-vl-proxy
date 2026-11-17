@@ -27,12 +27,12 @@ import (
 // result with a warning; the proxy does the same with -max-stats-query-series.
 // The stack raises both limits well above this fixture, so the limit subtests
 // run only where the proxy is configured below the fixture's cardinality (the
-// default 500) and otherwise assert plain parity with Loki.
+// default 1000) and otherwise assert plain parity with Loki.
 func TestRangeMetricCompatibilityOffsetAndSeriesLimit(t *testing.T) {
 	app := fmt.Sprintf("e2e-align-limit-%d", time.Now().UnixNano())
 	base := time.Now().UTC().Truncate(10 * time.Minute).Add(-80 * time.Minute)
 	const span = time.Hour
-	const widePods = 520
+	const widePods = 1020
 
 	type line struct {
 		ts     time.Time
@@ -107,7 +107,7 @@ func TestRangeMetricCompatibilityOffsetAndSeriesLimit(t *testing.T) {
 	})
 
 	// The series-limit subtests run against the proxy that keeps the built-in
-	// default (500), the vmauth-fronted one: every other proxy in the stack
+	// default (1000), the vmauth-fronted one: every other proxy in the stack
 	// matches its Loki, whose limit is far above this fixture.
 	limitProxyURL := envOr("PROXY_SERIES_LIMIT_URL", proxyVmauthURL)
 	start, end := base, base.Add(30*time.Minute)

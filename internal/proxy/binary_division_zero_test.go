@@ -13,61 +13,6 @@ import (
 	"testing"
 )
 
-// lokiMergeBinOp is a direct port of Loki v3.7.7 syntax.MergeBinOp
-// (pkg/logql/syntax/ast.go:1944-2125) reduced to the sample value: it returns
-// the resulting value and whether the sample is kept. left is the vector side
-// when swap is set the way the Loki evaluator passes it; here left/right are the
-// operands in query order, so a filtered comparison keeps the left value
-// (ast.go:2100-2118, retSample = left unless swap).
-func lokiMergeBinOp(op string, left, right float64, filter bool) (float64, bool) {
-	switch op {
-	case "+":
-		return left + right, true
-	case "-":
-		return left - right, true
-	case "*":
-		return left * right, true
-	case "/":
-		// guard against divide by zero (ast.go:1978-1991)
-		if right == 0 {
-			return math.NaN(), true
-		}
-		return left / right, true
-	case "%":
-		if right == 0 {
-			return math.NaN(), true
-		}
-		return math.Mod(left, right), true
-	case "^":
-		return math.Pow(left, right), true
-	}
-	var truth bool
-	switch op {
-	case "==":
-		truth = left == right
-	case "!=":
-		truth = left != right
-	case ">":
-		truth = left > right
-	case ">=":
-		truth = left >= right
-	case "<":
-		truth = left < right
-	case "<=":
-		truth = left <= right
-	default:
-		panic("unexpected operation " + op)
-	}
-	if filter {
-		// a filtered vector comparison returns the vector side's own value
-		return left, truth
-	}
-	if truth {
-		return 1, true
-	}
-	return 0, true
-}
-
 func sameFloat(a, b float64) bool {
 	if math.IsNaN(a) || math.IsNaN(b) {
 		return math.IsNaN(a) && math.IsNaN(b)
@@ -79,19 +24,19 @@ var binaryEdgeOperands = []float64{0, math.Copysign(0, -1), 1, -1, 2.5, -7, math
 
 var binaryEdgeOps = []string{"+", "-", "*", "/", "%", "^", "==", "!=", ">", ">=", "<", "<="}
 
-// Every operator against zero, NaN and infinite operands gives what Loki's
-// MergeBinOp gives, with and without bool: a zero divisor of / and % is NaN
-// (Inf/0 and -1/0 included), not +Inf or -Inf.
+// Every operator against zero, NaN and infinite operands gives Loki's recorded value, with and without bool: a
+// zero divisor of / and % is NaN (Inf/0 and -1/0 included), not +Inf or -Inf.
 // conformance: semantics/binary-division-by-zero-nan
-func TestBinarySampleValueMatchesLokiMergeBinOp(t *testing.T) {
+func TestBinarySampleValueMatchesRecordedLokiAnswers(t *testing.T) {
+	answers := readBinaryLokiAnswers(t)
 	for _, op := range binaryEdgeOps {
-		for _, a := range binaryEdgeOperands {
-			for _, b := range binaryEdgeOperands {
+		for i, a := range binaryEdgeOperands {
+			for j, b := range binaryEdgeOperands {
 				for _, returnBool := range []bool{false, true} {
-					want, wantKeep := lokiMergeBinOp(op, a, b, !returnBool && strings.ContainsAny(op, "=<>"))
+					want := answers.vector(t, op, i, j, returnBool)
 					got, keep := binarySampleValue(a, b, op, returnBool)
-					if keep != wantKeep || (keep && !sameFloat(got, want)) {
-						t.Errorf("%v %s %v (bool=%v): got %v keep=%v, Loki %v keep=%v", a, op, b, returnBool, got, keep, want, wantKeep)
+					if keep != want.kept || (keep && !sameFloat(got, want.value)) {
+						t.Errorf("%v %s %v (bool=%v): got %v keep=%v, Loki %s keep=%v", a, op, b, returnBool, got, keep, want.text, want.kept)
 					}
 				}
 			}
@@ -99,17 +44,18 @@ func TestBinarySampleValueMatchesLokiMergeBinOp(t *testing.T) {
 	}
 }
 
-// The scalar-only literal path folds like Loki's reduceBinOp
-// (ast.go:1918-1935: MergeBinOp with filter=false).
+// The scalar-only literal path folds to Loki's bool value of the operator (the arithmetic result, or 1 or 0 for a
+// comparison).
 // conformance: semantics/binary-division-by-zero-nan
-func TestBinaryScalarFoldMatchesLokiReduceBinOp(t *testing.T) {
+func TestBinaryScalarFoldMatchesRecordedLokiAnswers(t *testing.T) {
+	answers := readBinaryLokiAnswers(t)
 	for _, op := range binaryEdgeOps {
-		for _, a := range binaryEdgeOperands {
-			for _, b := range binaryEdgeOperands {
-				want, _ := lokiMergeBinOp(op, a, b, false)
+		for i, a := range binaryEdgeOperands {
+			for j, b := range binaryEdgeOperands {
+				want := answers.vector(t, op, i, j, true)
 				got, _ := binarySampleValue(a, b, op, true)
-				if !sameFloat(got, want) {
-					t.Errorf("%v %s %v: got %v, Loki %v", a, op, b, got, want)
+				if !sameFloat(got, want.value) {
+					t.Errorf("%v %s %v: got %v, Loki %s", a, op, b, got, want.text)
 				}
 			}
 		}
@@ -120,20 +66,21 @@ func TestBinaryScalarFoldMatchesLokiReduceBinOp(t *testing.T) {
 // expression has the same division rule (it returned 0).
 // conformance: semantics/binary-division-by-zero-nan
 func TestApplyOpDivisionAndModuloByZeroAreNaN(t *testing.T) {
-	for _, op := range []string{"+", "-", "*", "/", "%", "^", "==", "!=", ">", ">=", "<", "<="} {
-		for _, a := range binaryEdgeOperands {
-			for _, b := range binaryEdgeOperands {
-				want, _ := lokiMergeBinOp(op, a, b, false)
-				if got := applyOp(a, b, op); !sameFloat(got, want) {
-					t.Errorf("applyOp(%v, %v, %q) = %v, Loki %v", a, b, op, got, want)
+	answers := readBinaryLokiAnswers(t)
+	for _, op := range binaryEdgeOps {
+		for i, a := range binaryEdgeOperands {
+			for j, b := range binaryEdgeOperands {
+				want := answers.vector(t, op, i, j, true)
+				if got := applyOp(a, b, op); !sameFloat(got, want.value) {
+					t.Errorf("applyOp(%v, %v, %q) = %v, Loki %s", a, b, op, got, want.text)
 				}
 			}
 		}
 	}
 }
 
-// vector / 0 on query_range and query: every sample is NaN, as Loki's
-// LiteralStepEvaluator and vectorBinop evaluate it (evaluator.go:1020,1179).
+// vector / 0 on query_range and query: every sample is NaN, as Loki
+// evaluates it.
 // conformance: semantics/binary-division-by-zero-nan
 func TestBinaryVectorDivisionByZeroHandlers(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +168,8 @@ func TestBinaryVectorDivisionByZeroHandlers(t *testing.T) {
 // comparison returns the vector side's own value and drops a false comparison,
 // bool returns 1 or 0, and / and % by zero are NaN.
 // conformance: semantics/binary-division-by-zero-nan
-func TestBinaryMatchersMatchLokiMergeBinOp(t *testing.T) {
+func TestBinaryMatchersMatchRecordedLokiAnswers(t *testing.T) {
+	answers := readBinaryLokiAnswers(t)
 	ctx := binaryEvaluationContext(context.Background())
 	decode := func(t *testing.T, body []byte) (string, bool) {
 		t.Helper()
@@ -254,25 +202,27 @@ func TestBinaryMatchersMatchLokiMergeBinOp(t *testing.T) {
 		}
 	}
 	for _, op := range binaryEdgeOps {
-		for _, a := range binaryEdgeOperands {
-			for _, b := range binaryEdgeOperands {
+		for i, a := range binaryEdgeOperands {
+			for j, b := range binaryEdgeOperands {
 				for _, returnBool := range []bool{false, true} {
 					filter := !returnBool && strings.ContainsAny(op, "=<>")
+					join := answers.vector(t, op, i, j, returnBool)
 					vecA := binaryTestBody([]map[string]string{{"app": "x"}}, [][]any{{1700000040, strconv.FormatFloat(a, 'f', -1, 64)}})
 					vecB := binaryTestBody([]map[string]string{{"app": "x"}}, [][]any{{1700000040, strconv.FormatFloat(b, 'f', -1, 64)}})
 					what := fmt.Sprintf("%v %s %v bool=%v", a, op, b, returnBool)
 
 					// vector op scalar: the vector is the left operand.
-					want, keep := lokiMergeBinOp(op, a, b, filter)
+					want, keep := join.value, join.kept
 					body, err := matchBinaryScalarContext(ctx, vecA, b, false, op, "matrix", returnBool)
 					if err != nil {
 						t.Fatal(err)
 					}
 					check(t, "vector-scalar "+what, body, want, keep)
 
-					// scalar op vector: Loki returns the vector's value for a filtered
-					// comparison (swap=true), so the value kept is b's side here.
-					want, keep = lokiMergeBinOp(op, a, b, filter)
+					// scalar op vector: Loki keeps the vector's value for a filtered
+					// comparison (TestBinaryOperatorLiteralSidesMatchVectorJoin), so the
+					// value kept is b's side here.
+					want, keep = join.value, join.kept
 					if filter && keep {
 						want = b
 					}
@@ -283,7 +233,7 @@ func TestBinaryMatchersMatchLokiMergeBinOp(t *testing.T) {
 					check(t, "scalar-vector "+what, body, want, keep)
 
 					// vector op vector, one-to-one.
-					want, keep = lokiMergeBinOp(op, a, b, filter)
+					want, keep = join.value, join.kept
 					body, err = matchBinaryMetricResultsContext(ctx, vecA, vecB, op, "matrix", nil, returnBool)
 					if err != nil {
 						t.Fatal(err)
@@ -296,7 +246,7 @@ func TestBinaryMatchersMatchLokiMergeBinOp(t *testing.T) {
 }
 
 // A constant vector divided by zero is NaN on the instant endpoint, like Loki's
-// vectorBinop over two vector() selectors.
+// answer for two vector() selectors.
 // conformance: semantics/binary-division-by-zero-nan
 func TestBinaryConstantVectorDivisionByZeroInstant(t *testing.T) {
 	p := newGapTestProxy(t, "http://127.0.0.1:1")

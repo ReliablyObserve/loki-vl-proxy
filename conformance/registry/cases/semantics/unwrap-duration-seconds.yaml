@@ -4,8 +4,7 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki converts `duration_seconds()` with convertDuration, as `duration()`
-  (pkg/logql/syntax/extractor.go:63-71, OpConvDurationSeconds). The translator
+  Loki converts `duration_seconds()` with convertDuration, as `duration()`. The translator
   strips only `duration(` and `bytes(` off the unwrapped label, so
   `sum by (service_name) (sum_over_time({...} | logfmt | unwrap
   duration_seconds(okdur) [5m]))` over okdur=250ms answers an empty matrix on
@@ -49,7 +48,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/translator extractUnwrapField and unwrapGateField (duration_seconds conversion)'
-  loki: 'pkg/logql/syntax/extractor.go:63-71'
+  loki: 'duration_seconds() unwraps a duration as seconds (test/e2e-compat unwrap_duration_seconds_test.go)'
   proxy: 'duration_seconds() is gated and converted by VictoriaLogs as duration()'
   planned_test: 'TestCompat_UnwrapDurationSeconds (test/e2e-compat, group core: TestCompat_.*); translator TestUnwrapDurationSecondsTranslatesAsDuration, TestUnwrapGateOnTranslatedMetrics, TestExtractUnwrapField_ConversionWrappers, TestUnwrapConv; proxy TestUnwrapDurationSecondsIsConvertedAsDuration, TestUnwrapDurationSecondsRoutesLikeDuration, TestUnwrapConversionIsConvertedInTheStatsQuery, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapConversionErrorDifferential'
   note: 'The request is a rate: the sum, max, min and quantile over time of a range query take the step-sized bucket, whatever the conversion (semantics/unwrap-over-time-range-windows, open), so the e2e compares their series and the proxy answering duration_seconds() as duration(), not their values.'

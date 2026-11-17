@@ -7,8 +7,7 @@ import (
 	"strings"
 )
 
-// Unwrap sample validity (Loki v3.7.7 pkg/logql/log/metrics_extraction.go,
-// streamLabelSampleExtractor.Process): a line whose unwrapped label is absent
+// Unwrap sample validity (Loki v3.7.7; registry semantics/unwrap-sample-validity): a line whose unwrapped label is absent
 // or empty makes no sample, and a value its conversion rejects makes a sample
 // marked __error__="SampleExtractionErr". VictoriaLogs' stats functions parse
 // values leniently (a unit such as "86282s" or "1KiB" becomes a number, min and
@@ -236,8 +235,8 @@ var unwrapGateEnds = [...]struct{ conv, end string }{
 type UnwrapConversion struct{ Call, Conv string }
 
 // UnwrapConversions are the unwrap conversion functions and the conversion each
-// selects. Loki converts duration_seconds() with convertDuration, as duration()
-// (pkg/logql/syntax/extractor.go:63-71).
+// selects. Loki converts duration_seconds() as duration()
+// (registry semantics/unwrap-duration-seconds).
 var UnwrapConversions = []UnwrapConversion{
 	{Call: "duration_seconds(", Conv: "duration"},
 	{Call: "duration(", Conv: "duration"},

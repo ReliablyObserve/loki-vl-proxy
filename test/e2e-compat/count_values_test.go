@@ -13,8 +13,8 @@ import (
 )
 
 // TestCompat_CountValues pins that count_values is not LogQL: Loki v3.7.7 has
-// no such vector aggregation (pkg/logql/syntax/lex.go:114-125, syntax.y:477-490
-// and ast.go:1243-1254 list none), so its parser answers HTTP 400 "parse error at line L, col C:
+// no such vector aggregation (its documented aggregation operators list none),
+// so its parser answers HTTP 400 "parse error at line L, col C:
 // syntax error: unexpected IDENTIFIER" at the position of the name, on the
 // instant and the range endpoint, whatever the arguments or grouping and
 // wherever in an expression the name appears. The proxy must answer the same

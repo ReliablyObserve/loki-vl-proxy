@@ -38,6 +38,11 @@
       "type": "boolean"
     },
     "loki_parity": {"type": "string", "minLength": 1},
+    "evidence": {
+      "description": "Set only to 'needs recording' on a case whose Loki claim is not yet backed by a recorded Loki answer, an oracle fact, a wired test that compares with Loki, or Loki's public documentation. The recording step lists these cases and removes the key once the answer is recorded.",
+      "type": "string",
+      "enum": ["needs recording"]
+    },
     "owner_kept": {
       "description": "Owner-kept deviation cases whose difference from Loki this case's answers show (for example metric-identity/structured-metadata-splits-series). test/caseverify reports a fixed case that differs from Loki as differs_owner_kept, naming them, instead of as a regression; the difference stays listed and the case is never passed.",
       "type": "array",
@@ -73,7 +78,7 @@
         "entry": {"type": "string", "minLength": 1},
         "setup": {"type": "string", "minLength": 1},
         "verify": {
-          "description": "How test/caseverify treats a request whose precondition or setup it does not run. met_by: stack says the stack's standing data meets the precondition (evidence names where: the generator line, a compose flag); the runner then sends the request. blocked_by names what the request needs that a read-only comparison run cannot give: load, fault, volume, version, fixture, proxy_only, moved_window or write; reason says what. empty_is_answer says why two empty answers prove a case that is not open (a query the proxy once mishandled is answered like Loki, with nothing and no error). control names a second request of the case (params laid over the request's own, for example the same query with the stage that exposes the key) that must return data on both sides: where the case's own answers are both empty, the control proves the data is there, so two empty answers match; the control's answers are not compared.",
+          "description": "How test/caseverify treats a request whose precondition or setup it does not run. met_by: stack says the stack's standing data meets the precondition (evidence names where: the generator line, a compose flag); the runner then sends the request. blocked_by names what the request needs that a read-only comparison run cannot give: load, fault, volume, version, fixture, proxy_only, moved_window or write; reason says what. empty_range says why the range holds no data on purpose (the case is the answer to a range without data: the stores hold nothing in it, on both sides, and the answers' status and error are what is compared). empty_is_answer says why two empty answers prove a case that is not open (a query the proxy once mishandled is answered like Loki, with nothing and no error). control names a second request of the case (params laid over the request's own, for example the same query with the stage that exposes the key) that must return data on both sides: where the case's own answers are both empty, the control proves the data is there, so two empty answers match; the control's answers are not compared.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -82,6 +87,7 @@
             "blocked_by": {"type": "string", "enum": ["load", "fault", "volume", "version", "fixture", "proxy_only", "moved_window", "write"]},
             "reason": {"type": "string", "minLength": 1},
             "empty_is_answer": {"type": "string", "minLength": 1},
+            "empty_range": {"type": "string", "minLength": 1},
             "control": {
               "type": "object",
               "required": ["params"],

@@ -129,26 +129,30 @@ func (w *binaryOperandResponse) Write(data []byte) (int, error) {
 }
 
 func (p *Proxy) evaluateBinaryLogQLOperand(r *http.Request, expr logqlpkg.Expr, resultType string) *binaryOperandResponse {
+	if p.queryPlanLowering {
+		// A sum, avg, min or max `without ()` answers its operand's series: the operand is sent alone.
+		expr = emptyWithoutOperand(expr)
+	}
 	w := &binaryOperandResponse{header: make(http.Header), limit: p.limits().BufferedBackendBodyBytes}
 	child, err := nextBinaryEvaluation(r)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return w
 	}
-	child = cloneMetricQueryRequest(child, expr.String())
+	// The operand's printed LogQL is the child's query and the text a vector(n) is read from: printed once.
+	text := expr.String()
+	child = cloneMetricQueryRequest(child, text)
 	w.ctx = child.Context()
 	w.budget = child.Context().Value(binaryEvaluationKey{}).(binaryEvaluationState).budget
-	if matches := vectorLiteralRE.FindStringSubmatch(expr.String()); len(matches) == 2 {
-		if value, err := strconv.ParseFloat(matches[1], 64); err == nil {
-			body, err := binaryConstantVectorResponse(child, value, resultType)
-			if err != nil {
-				p.writeErr(w, child.Context(), err)
-			} else {
-				_, _ = w.Write(body)
-			}
-			p.finishBinaryOperandResponse(w)
-			return w
+	if value, ok := binaryVectorLiteral(text); ok {
+		body, err := binaryConstantVectorResponse(child, value, resultType)
+		if err != nil {
+			p.writeErr(w, child.Context(), err)
+		} else {
+			_, _ = w.Write(body)
 		}
+		p.finishBinaryOperandResponse(w)
+		return w
 	}
 	if resultType == "matrix" {
 		p.handleQueryRange(w, child)

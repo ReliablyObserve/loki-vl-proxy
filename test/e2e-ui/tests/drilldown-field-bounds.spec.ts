@@ -5,7 +5,7 @@ import { buildServiceDrilldownUrl } from "./url-state";
 type Frame = { schema?: { meta?: { notices?: Array<{ text?: string }> } } };
 type QueryResult = { error?: string; status?: number; frames?: Frame[] };
 
-// The vmauth variant deliberately retains Loki's stock 500-series limit.
+// The vmauth variant deliberately keeps the proxy's built-in 1000-series limit.
 // A query's log-line `limit` is not a metric-series limit.
 test.describe("Bounded high-cardinality Fields @drilldown-core", () => {
   for (const hours of [24, 48]) {
@@ -18,7 +18,7 @@ test.describe("Bounded high-cardinality Fields @drilldown-core", () => {
       const values: Array<[string, string]> = [];
       const rows: string[] = [];
       for (const age of [36, 12, 1]) {
-        for (let i = 0; i < 510; i++) {
+        for (let i = 0; i < 1010; i++) {
           const ts = end - age * 3_600_000 + i;
           const fields = { trace_id: `trace-${i.toString().padStart(4, "0")}`, total: 10_000 + i };
           const msg = JSON.stringify(fields);
@@ -67,10 +67,10 @@ test.describe("Bounded high-cardinality Fields @drilldown-core", () => {
         const title = page.getByText(field, { exact: true }).first();
         await expect(title).toBeVisible({ timeout: 45_000 });
         await title.scrollIntoViewIfNeeded();
-        await expect.poll(() => seen.get(field)?.frames, { timeout: 45_000 }).toBe(500);
+        await expect.poll(() => seen.get(field)?.frames, { timeout: 45_000 }).toBe(1000);
         expect(seen.get(field)!.warnings, `${field} must visibly disclose partial results`).toBeGreaterThan(0);
         const card = page.getByTestId(`data-testid Panel header ${field}`);
-        await expect(card.getByRole("button", { name: "Show all 500", exact: true })).toBeVisible();
+        await expect(card.getByRole("button", { name: "Show all 1000", exact: true })).toBeVisible();
         await expect(card.getByText("No data", { exact: true })).toHaveCount(0);
         await expect(card.locator("canvas").first()).toBeVisible();
         await card.getByRole("button", { name: "Panel status", exact: true }).click();

@@ -1,7 +1,7 @@
 id: range_function-rate-counter
 kind: range_function
 logql: "rate_counter"
-loki_constant: OpRangeTypeRateCounter
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

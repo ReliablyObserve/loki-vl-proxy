@@ -169,7 +169,9 @@ A request the runner does not run says why in `request.verify`: `met_by: stack` 
 or compose flag that meets the case's `precondition`, so the runner sends it); `blocked_by` one of `load`, `fault`,
 `volume`, `version`, `fixture`, `proxy_only`, `moved_window` or `write`, with a `reason`; or `empty_is_answer` for a
 fixed case whose point is that a query the proxy once mishandled is answered like Loki, with nothing and no error (two
-empty answers then match; never for an open case); or `control`, params laid over the request's own (the same
+empty answers then match; never for an open case); `empty_range` for a case whose point is the answer to a range that holds
+no data on purpose (Loki's 200 empty over a range without data, say): the runner then does not turn two empty counts
+into an `empty` verdict and compares the answers; or `control`, params laid over the request's own (the same
 query with the stage that exposes the key, say): when the case's answers are both empty, a control that returns data on
 both sides proves the data is there and the two empty answers match, whatever the case's state (the control's own answers
 are not compared; it is recorded as `<case>#control`). Every blocked verdict in `cases.json` and the report carries its
@@ -286,7 +288,7 @@ Loki comparisons, retained fixtures or response proofs.
 ## Refresh
 
 ```bash
-python3 conformance/scripts/sync_loki.py --version v3.7.7
+python3 conformance/scripts/sync_loki.py --version v3.7.7   # Loki API surface: the published HTTP API reference and recorded answers
 python3 conformance/scripts/sync_proxy.py --endpoints conformance/registry/generated/loki/v3.7.7/endpoints.json
 python3 conformance/scripts/sync_impl.py --coverage conformance/registry/generated/proxy/coverage.json
 python3 conformance/scripts/sync_errors.py

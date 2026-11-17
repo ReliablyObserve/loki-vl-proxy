@@ -41,7 +41,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/proxy/range_metric_compat.go proxyManualRangeMetricRange (bucket budget branch)'
-  loki: 'pkg/logql/range_vector.go:42-89'
+  loki: 'a window wider than the step is read per step over (t-range, t] (semantics/sub-second-step-grid)'
   proxy: 'bounded raw-row evaluator above heavyQueryBucketThreshold'
   planned_test: 'TestSubSecondStepGrafanaShapes asserts no raw read once the cumulative-difference route exists (internal/proxy)'
   clusters: []

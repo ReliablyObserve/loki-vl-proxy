@@ -127,7 +127,7 @@ func longrangeFieldsFetch(ctx context.Context, client *http.Client, base, query 
 }
 
 func longrangeFieldsFixture(app string, start time.Time, span time.Duration) ([]jsonVolumeStreamLine, []longrangeFieldsCase) {
-	const cardinality = 288 // below Loki's and the proxy's default 500-series cap
+	const cardinality = 288 // below Loki's default 500-series cap and the proxy's default of 1000
 	anchors := []time.Duration{0, time.Minute, 2 * time.Minute, 3 * time.Minute,
 		span / 6, span / 4, span / 3, span / 2, 2 * span / 3, 3 * span / 4,
 		span - 2*time.Minute, span - time.Minute}

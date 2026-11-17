@@ -9,85 +9,82 @@ import (
 	"unicode"
 )
 
-// Loki v3.7.7 converts the unwrapped label with pkg/logql/log/metrics_extraction.go
-// convertFloat, convertDuration (time.ParseDuration, in seconds) and
-// convertBytes (humanize.ParseBytes). None of them trims the value: a value
-// the conversion rejects makes a sample carrying __error__="SampleExtractionErr"
-// (see unwrapConversionError), and a label that is absent or empty makes no
-// sample at all. These functions are the same conversions, so every raw-sample
-// path accepts exactly the inputs Loki does.
-
-// convertUnwrap converts a raw label value with the LogQL unwrap conversion
-// function conv ("" plain number, "duration", "bytes"). The error text is the
-// one Loki puts in __error_details__.
+// convertUnwrap converts an unwrapped label value the way an unwrap expression names it (LogQL docs, "Unwrapped
+// range aggregations"): a plain unwrap reads a float (strconv.ParseFloat), duration() and duration_seconds() read
+// a Go duration and answer its seconds (time.ParseDuration), bytes() reads a human byte size (parseHumanBytes).
+// The value is read as it is, with no trimming. The error text is the one Loki writes into __error_details__ when
+// the conversion rejects the value (recorded: TestUnwrapConversionMatchesRecordedLoki).
 func convertUnwrap(value, conv string) (float64, error) {
 	switch conv {
-	case "duration":
+	case "duration", "duration_seconds":
 		d, err := time.ParseDuration(value)
 		if err != nil {
 			return 0, err
 		}
 		return d.Seconds(), nil
 	case "bytes":
-		b, err := parseHumanBytes(value)
+		n, err := parseHumanBytes(value)
 		if err != nil {
 			return 0, err
 		}
-		return float64(b), nil
-	default:
-		return strconv.ParseFloat(value, 64)
+		return float64(n), nil
 	}
+	return strconv.ParseFloat(value, 64)
 }
 
-// convertUnwrapValue reports whether value converts, for the callers that skip
-// a sample Loki would mark with an error.
+// convertUnwrapValue is convertUnwrap for the evaluators that only need to know whether the value makes a sample.
 func convertUnwrapValue(value, conv string) (float64, bool) {
-	f, err := convertUnwrap(value, conv)
-	return f, err == nil
+	v, err := convertUnwrap(value, conv)
+	return v, err == nil
 }
 
-// humanBytesTable is go-humanize's bytesSizeTable, the multipliers
-// humanize.ParseBytes accepts (case-insensitive unit names).
-var humanBytesTable = map[string]uint64{
-	"b": 1, "kib": 1 << 10, "kb": 1000, "mib": 1 << 20, "mb": 1000 * 1000,
-	"gib": 1 << 30, "gb": 1000 * 1000 * 1000, "tib": 1 << 40, "tb": 1000 * 1000 * 1000 * 1000,
-	"pib": 1 << 50, "pb": 1000 * 1000 * 1000 * 1000 * 1000,
-	"eib": 1 << 60, "eb": 1000 * 1000 * 1000 * 1000 * 1000 * 1000,
-	"": 1, "ki": 1 << 10, "k": 1000, "mi": 1 << 20, "m": 1000 * 1000,
-	"gi": 1 << 30, "g": 1000 * 1000 * 1000, "ti": 1 << 40, "t": 1000 * 1000 * 1000 * 1000,
-	"pi": 1 << 50, "p": 1000 * 1000 * 1000 * 1000 * 1000,
-	"ei": 1 << 60, "e": 1000 * 1000 * 1000 * 1000 * 1000 * 1000,
-}
+// humanBytesTable maps a lower-cased size suffix to its multiplier: SI units (k, kb, ... eb) are powers of 1000,
+// IEC units (ki, kib, ... eib) powers of 1024, and a bare number or "b" is bytes.
+var humanBytesTable = func() map[string]uint64 {
+	t := map[string]uint64{"": 1, "b": 1}
+	si, iec := uint64(1), uint64(1)
+	for _, p := range []string{"k", "m", "g", "t", "p", "e"} {
+		si *= 1000
+		iec *= 1024
+		t[p], t[p+"b"] = si, si
+		t[p+"i"], t[p+"ib"] = iec, iec
+	}
+	return t
+}()
 
-// parseHumanBytes is humanize.ParseBytes (github.com/dustin/go-humanize
-// v1.0.1, the function Loki's convertBytes calls), including its error text.
+// parseHumanBytes reads a human byte size as go-humanize v1.0.1's ParseBytes does, the version Loki 3.7 resolves
+// for bytes() (test/oracle/loki/go.mod): the leading run of digits (any Unicode decimal digit), dots and commas
+// is the number, commas removed, read with strconv.ParseFloat; the rest, trimmed and lower-cased, names the unit.
+// The size is computed in float64 and truncated, so whole numbers above 2^53 round, and a size of 2^64 or more is
+// "too large". humanize counts the number's runes and cuts the string at that many bytes; that is kept, a
+// non-ASCII digit shortens the number read. Checked on every input of
+// TestUnwrapBytesPatternAgreesWithParseBytesOnGeneratedInputs against v1.0.1 itself (lokiParseBytes).
 func parseHumanBytes(s string) (uint64, error) {
-	lastDigit := 0
-	hasComma := false
+	runes, comma := 0, false
 	for _, r := range s {
-		if !unicode.IsDigit(r) && r != '.' && r != ',' {
+		if r == ',' {
+			comma = true
+		} else if r != '.' && !unicode.IsDigit(r) {
 			break
 		}
-		if r == ',' {
-			hasComma = true
-		}
-		lastDigit++
+		runes++
 	}
-	num := s[:lastDigit]
-	if hasComma {
+	num := s[:runes]
+	if comma {
 		num = strings.ReplaceAll(num, ",", "")
 	}
 	f, err := strconv.ParseFloat(num, 64)
 	if err != nil {
 		return 0, err
 	}
-	extra := strings.ToLower(strings.TrimSpace(s[lastDigit:]))
-	if m, ok := humanBytesTable[extra]; ok {
-		f *= float64(m)
-		if f >= math.MaxUint64 {
-			return 0, fmt.Errorf("too large: %v", s)
-		}
-		return uint64(f), nil
+	unit := strings.ToLower(strings.TrimSpace(s[runes:]))
+	m, ok := humanBytesTable[unit]
+	if !ok {
+		return 0, fmt.Errorf("unhandled size name: %v", unit)
 	}
-	return 0, fmt.Errorf("unhandled size name: %v", extra)
+	f *= float64(m)
+	if f >= math.MaxUint64 {
+		return 0, fmt.Errorf("too large: %v", s)
+	}
+	return uint64(f), nil
 }

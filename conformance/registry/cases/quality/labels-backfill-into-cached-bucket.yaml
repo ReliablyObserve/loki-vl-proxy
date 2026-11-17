@@ -31,6 +31,9 @@ request:
     end: 'now-6h'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "the case is rows arriving into a window after a first read cached it empty: one seed before the run cannot be a backfill after a cached read"
 compare:
   mode: observed
   fields: [data]
@@ -42,7 +45,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy/metadata_inventory.go (bucket revalidation delay)'
-  loki: 'pkg/querier/querier.go Label (index read per request)'
+  loki: 'the index is read per request, so a backfilled stream is listed at once (CI observation in this case)'
   proxy: 'sealed bucket with data revalidated after an age-dependent delay'
   planned_test: 'TestCompat_LabelsBackfillIntoCachedBucket (test/e2e-compat, group core)'
   note: 'Related: semantics/label-inventory-exact-and-incremental, quality/label-cache-aged-labels-kept.'

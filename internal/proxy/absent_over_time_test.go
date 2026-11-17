@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// Loki's absentLabels (pkg/logql/evaluator.go:1320-1345): the labels of the
-// selector's equality matchers; a name that any other matcher also names, and a
+// Loki's absent_over_time labels: the labels of the selector's equality
+// matchers; a name that any other matcher also names, and a
 // value of "", have none.
 //
 // conformance: semantics/absent-over-time-semantics
@@ -99,7 +99,7 @@ func TestParseAbsentOverTimeCompatSpecEdgeTable(t *testing.T) {
 }
 
 // The one absent series folded by vector aggregations, as Loki's
-// VectorAggEvaluator folds a single series.
+// vector aggregation folds a single series.
 //
 // conformance: semantics/absent-over-time-semantics
 func TestAbsentOverTimeSeriesFoldEdgeTable(t *testing.T) {
@@ -401,8 +401,7 @@ func TestAbsentOverTimePresenceQueryKeepsEveryStage(t *testing.T) {
 }
 
 // `absent_over_time(...) by (...)` is not LogQL: Loki's validation rejects a
-// grouping on absent_over_time (pkg/logql/syntax/ast.go:1439-1447, wrapped as
-// a parse error at :1409), whatever is around it.
+// grouping on absent_over_time (as a parse error), whatever is around it.
 //
 // conformance: semantics/absent-over-time-semantics, status-400
 func TestAbsentOverTimeGroupingIsLokisParseError(t *testing.T) {
@@ -455,11 +454,10 @@ func TestAbsentOverTimePassesOnWarningInBody(t *testing.T) {
 }
 
 // Loki evaluates a multi-tenant absent_over_time once over the tenants' merged
-// samples (pkg/querier/multi_tenant_querier.go MultiTenantQuerier.SelectSamples
-// merges one sample iterator per tenant before AbsentRangeVectorEvaluator runs),
-// so a step is absent only when no tenant has a line there, and the series is
-// labelled by the selector alone: absentLabels (evaluator.go:1320-1345) never
-// names __tenant_id__. Tenant b is empty: it must not make the step absent.
+// samples (one sample iterator per tenant is merged before the absent
+// evaluation runs), so a step is absent only when no tenant has a line there,
+// and the series is labelled by the selector alone: its labels never name
+// __tenant_id__. Tenant b is empty: it must not make the step absent.
 //
 // conformance: semantics/absent-over-time-semantics
 func TestAbsentOverTimeMultiTenant(t *testing.T) {

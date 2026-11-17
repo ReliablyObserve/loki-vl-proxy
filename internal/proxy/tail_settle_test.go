@@ -190,11 +190,10 @@ func settleProxy(t *testing.T, vl *settleVL, mode TailMode, settle time.Duration
 	t.Helper()
 	c := cache.New(time.Minute, 100)
 	t.Cleanup(c.Close)
-	p, err := New(Config{BackendURL: vl.srv.URL, Cache: c, LogLevel: "error", BackendTimeout: 5 * time.Second, TailMode: mode, TailBackendRetryWindow: 20 * time.Second})
+	p, err := New(Config{BackendURL: vl.srv.URL, Cache: c, LogLevel: "error", BackendTimeout: 5 * time.Second, TailMode: mode, TailBackendRetryWindow: 20 * time.Second, TailSettleDelay: settle})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.tailSettle = settle
 	p.tailRetryInitialBackoff = 10 * time.Millisecond
 	p.tailRetryMaxBackoff = 40 * time.Millisecond
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
@@ -330,6 +329,36 @@ func TestTailSettle_NativeOffsetIsTheSettleDelay(t *testing.T) {
 	_ = resp.Body.Close()
 	if got := vl.tailOffsets(); len(got) != 1 || got[0] != "5000ms" {
 		t.Fatalf("tail offsets %v, want [5000ms]", got)
+	}
+}
+
+// -tail.settle-delay is the offset the native tail sends: a set value as is,
+// the 5s default for Config's zero, and no delay for a negative value (the
+// flag's 0).
+// conformance: tail-reads-settled-rows
+func TestTailSettle_FlagSetsTheNativeOffset(t *testing.T) {
+	for _, tc := range []struct {
+		settle time.Duration
+		want   string
+	}{{0, "5000ms"}, {1500 * time.Millisecond, "1500ms"}, {2 * time.Second, "2000ms"}, {-1, "0ms"}} {
+		vl := newSettleVL(t)
+		c := cache.New(time.Minute, 100)
+		t.Cleanup(c.Close)
+		p, err := New(Config{BackendURL: vl.srv.URL, Cache: c, LogLevel: "error", TailSettleDelay: tc.settle})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		resp, native, err := p.openNativeTailStream(ctx, `{app="api"}`)
+		if err != nil || !native {
+			t.Fatalf("settle %s: native tail: %v %v", tc.settle, native, err)
+		}
+		cancel()
+		_ = resp.Body.Close()
+		_ = p.Shutdown(context.Background())
+		if got := vl.tailOffsets(); len(got) != 1 || got[0] != tc.want {
+			t.Fatalf("settle %s: tail offsets %v, want [%s]", tc.settle, got, tc.want)
+		}
 	}
 }
 

@@ -380,8 +380,8 @@ test.describe("@regression Pipeline stages — exact Loki parity", () => {
 
 // Metric parity is asserted on aggregated forms with bounded cardinality. Raw
 // per-stream series (e.g. `rate({app="api-gateway"}[5m])`) are legitimately
-// capped by the proxy at `-max-stats-query-series` (default 500, matching
-// Drilldown's own cap; the e2e stack raises it to match its Loki) while Loki
+// capped by the proxy at `-max-stats-query-series` (default 1000, above Loki's
+// 500; the e2e stack raises it to match its Loki) while Loki
 // returns every stream, so an exact
 // series-count comparison on high-cardinality selectors is not a parity signal.
 // The cap itself is locked by the dedicated test below.

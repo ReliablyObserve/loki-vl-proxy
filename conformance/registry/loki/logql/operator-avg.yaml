@@ -1,7 +1,7 @@
 id: operator-avg
 kind: operator
 logql: "avg"
-loki_constant: OpTypeAvg
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

@@ -36,6 +36,9 @@ request:
     window: 5m
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "a generated corpus row (the query names the placeholder <corpus>): the corpus streams are written by the generator the case names (TestCompat_DetectedLevelCorpus in test/e2e-compat, which ci.yaml runs in an e2e group), not by a fixed stream"
 compare:
   mode: exact
   fields: [detected_level]

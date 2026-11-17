@@ -13,7 +13,7 @@ Real numbers from `bench/drilldown-vs-loki.sh` against the live `test/e2e-compat
 
 ## Workload + dataset
 
-**Workload:** 14 minutes of Grafana Logs Drilldown traffic against `namespace=prod`. **36 cold queries** at 30 m / 1 h / 2 h / 3 h / 6 h / 24 h ranges, covering the six call shapes Drilldown actually emits (`sum by pod`, `sum by trace_id`, `sum by k8s_pod_name`, `sum by service_version`, `/detected_fields`, `/labels`). Each query sent with the real Grafana headers (`X-Query-Tags: Source=grafana-lokiexplore-app`, `User-Agent: Grafana/11.5.0`) so Loki's [own partial-results carve-out](https://github.com/grafana/loki/blob/release-3.6.x/pkg/util/httpreq/tags.go) is active.
+**Workload:** 14 minutes of Grafana Logs Drilldown traffic against `namespace=prod`. **36 cold queries** at 30 m / 1 h / 2 h / 3 h / 6 h / 24 h ranges, covering the six call shapes Drilldown actually emits (`sum by pod`, `sum by trace_id`, `sum by k8s_pod_name`, `sum by service_version`, `/detected_fields`, `/labels`). Each query sent with the real Grafana headers (`X-Query-Tags: Source=grafana-lokiexplore-app`, `User-Agent: Grafana/11.5.0`) so Loki's own partial-results carve-out for Drilldown requests is active (`limits/drilldown-partial-with-warning` in the conformance registry).
 
 **Dataset:** 8 M log entries across 15 services over 7 days. `namespace=prod` carries ~5 000 active pods, ~50 000 unique `trace_id` values per hour, plus the usual app / level / app_kind / k8s.* labels. Host: Apple M5 Pro, 64 GB system RAM, Docker Desktop allocated 17.3 GiB.
 

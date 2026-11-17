@@ -18,8 +18,7 @@ func shippedChain(next http.Handler) http.Handler {
 }
 
 // errBodyView is what a client reads of an error answer from a route where
-// Loki's query frontend writes the error (pkg/util/server/error.go WriteError):
-// the Content-Type as sent and the whole body, which is the message.
+// Loki's query frontend writes the error: the Content-Type as sent and the whole body, which is the message.
 type errBodyView struct {
 	ContentType string
 	Error       string

@@ -178,9 +178,15 @@ it in this order:
    copied into or adapted in this repository, including tests and scripts.
    Loki runs only as a test comparison, from the test-only modules under
    `test/oracle/loki`. Their recorded answers may be committed as test data;
-   Loki's source may not. The similarity scan in the PR quality gate and
+   Loki's source may not, and neither may a citation of its files or lines:
+   the evidence for a Loki behaviour is a recorded answer, a test that compares
+   with Loki or Loki's public documentation. No generator, script or workflow
+   reads Loki's source: the registry's Loki surface comes from Loki's public
+   documentation, recorded answers and live probes, held to Loki by checks that
+   ask Loki itself. The similarity scan in the PR quality gate and
    `TestProductModuleHasNoOracleDependency` enforce this; see "No AGPL code in
-   the repository" in `AGENTS.md`.
+   the repository" in `AGENTS.md`, which also lists the one oracle-module
+   exception that awaits a decision.
 
 ## Performance Rules
 

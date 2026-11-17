@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sort"
 	"strings"
@@ -63,7 +65,7 @@ func goldenReconstructedLine(msg string, fields map[string]string) string {
 	return storedLogLineFromEntry(msg, entry, nil, nil, "")
 }
 
-// conformance: severity-detected-level-derivation
+// conformance: severity-detected-level-derivation, severity/recorded-level-table
 func TestDetectedLevelGoldenTable(t *testing.T) {
 	sources := map[string]int{}
 	for _, tc := range loadDetectedLevelGolden(t) {
@@ -85,7 +87,7 @@ func TestDetectedLevelGoldenTable(t *testing.T) {
 			}
 		})
 	}
-	for _, source := range []string{"loki-test", "loki-live", "loki-oracle", "victorialogs"} {
+	for _, source := range []string{"loki-live", "loki-oracle", "victorialogs"} {
 		if sources[source] == 0 {
 			t.Fatalf("golden table has no %q cases", source)
 		}
@@ -187,5 +189,24 @@ func BenchmarkDeriveDetectedLevel(b *testing.B) {
 				detectedLevelBenchSink = deriveDetectedLevel(bc.in)
 			}
 		})
+	}
+}
+
+// TestDetectedLevelCacheKeyVersion: cached log responses, patterns and their state are keyed by the derivation's
+// version, moved with the derivation (dl2: a stored log.level field is no level field), so an answer written
+// before it is never served.
+//
+// conformance: severity/recorded-level-table
+func TestDetectedLevelCacheKeyVersion(t *testing.T) {
+	scan := newDetectedLevelTestProxy(t, LabelStyleUnderscores, false)
+	stored := newDetectedLevelTestProxy(t, LabelStyleUnderscores, true)
+	if got := scan.detectedLevelCacheKey(); got != "dl2" {
+		t.Fatalf("body-scan key %q, want dl2", got)
+	}
+	if got := stored.detectedLevelCacheKey(); got != "dl2-stored" {
+		t.Fatalf("stored-only key %q, want dl2-stored", got)
+	}
+	if !strings.Contains(scan.responseProfileCacheKey(httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil)), "/dl2/") {
+		t.Fatal("the response profile key does not carry the derivation version")
 	}
 }

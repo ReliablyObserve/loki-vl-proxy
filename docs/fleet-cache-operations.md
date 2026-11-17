@@ -153,7 +153,7 @@ For rollout and restart protection:
 - Account for `-labels-cache-warm=true`: startup and periodic warming cover the 1h/6h/24h/7d label-picker presets, including scans up to seven days. Replicas that serve no interactive label pickers can use `-labels-cache-warm=false` and fill on demand.
 - Keep freshness settings aligned with acceptable late-data visibility. The default near-now bypass still reads VictoriaLogs for current data.
 
-A failed owner may cost up to `-peer-timeout` (default `2s`) before backup/fallback work. RF=2 reduces recomputation when a backup is usable; it does not eliminate failure-detection latency.
+A stopped owner refuses connections and costs nothing. A paused or hung owner costs one lookup per proxy the read hedge delay before the backup is asked (twice the measured peer header p99, at least 5 ms, at most `-peer-read-hedge-max-delay`, default `200ms`), or that maximum before VictoriaLogs is read when no other replica holds the key; it never costs a request `-peer-timeout` (default `2s`): that timeout runs in the background and suspends the owner for the breaker cooldown. `loki_vl_proxy_peer_cache_read_hedges_total{action}` counts the reads that asked the next replica (`next_replica`) or went on as a miss (`gave_up`); `loki_vl_proxy_peer_cache_read_hedge_delay_seconds` shows the current delay. RF=2 reduces recomputation when a backup is usable.
 
 Useful existing metrics include:
 

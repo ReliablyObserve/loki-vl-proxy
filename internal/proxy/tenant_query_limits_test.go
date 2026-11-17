@@ -40,8 +40,56 @@ func newTenantLimitsProxy(t *testing.T, backendURL string, cfg Config) (*Proxy, 
 	return p, mux
 }
 
+// The built-in max_query_series is 1000, above Loki's 500: the proxy answers
+// faster than Loki and affords more series per query. With no flag and no
+// tenant limit the published value and the enforced one are both 1000, and 500
+// (Loki's default) is what an operator sets to match Loki.
+//
+// conformance: tenant-query-limits, series-limits-and-partial-results, limits/published-equals-enforced, limits/series-limit-error
+func TestTenantQueryLimits_DefaultMaxQuerySeriesIs1000(t *testing.T) {
+	if defaultStatsQuerySeries != 1000 {
+		t.Fatalf("defaultStatsQuerySeries = %d, want 1000", defaultStatsQuerySeries)
+	}
+	base := time.Now().Add(-20 * time.Minute).Truncate(time.Minute).UTC()
+	start, end := base.Add(5*time.Minute), base.Add(10*time.Minute)
+	for name, tc := range map[string]struct {
+		cfg   Config
+		limit int
+	}{
+		"no flag":            {Config{}, 1000},
+		"flag 0":             {Config{MaxStatsQuerySeries: 0}, 1000},
+		"flag set to Loki's": {Config{MaxStatsQuerySeries: 500}, 500},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &seriesLimitFakeVL{t: t, lines: seriesLimitFixture(tc.limit, base.Add(6*time.Minute))}
+			srv := httptest.NewServer(fake)
+			defer srv.Close()
+			_, mux := newTenantLimitsProxy(t, srv.URL, tc.cfg)
+			if got := publishedInt(t, publishedLimits(t, mux, "tenant-a"), limitMaxQuerySeries); got != tc.limit {
+				t.Fatalf("published max_query_series = %d, want %d", got, tc.limit)
+			}
+			serve := func(query string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+tumblingRangeParams(query, start, end, time.Minute).Encode(), nil)
+				req.Header.Set("X-Scope-OrgID", "tenant-a")
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, req)
+				return rec
+			}
+			if rec := serve(`sum by (pod) (count_over_time({app="top"}[1m]))`); rec.Code != http.StatusOK {
+				t.Fatalf("%d series must pass under the default of %d, got %d %s", tc.limit, tc.limit, rec.Code, rec.Body.String())
+			}
+			fake.lines = seriesLimitFixture(tc.limit+1, base.Add(6*time.Minute))
+			rec := serve(`sum by (pod) (count_over_time({app="top"} | json [1m]))`)
+			if want := lokierr.SeriesLimit(tc.limit).Text(); rec.Code != http.StatusBadRequest || errorText(t, rec) != want {
+				t.Fatalf("%d series must fail with Loki's error for %d, got %d %s", tc.limit+1, tc.limit, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 // Every enforced Loki limit resolves -tenant-limits[tenant] ->
-// -tenant-default-limits -> the proxy flag -> Loki's default.
+// -tenant-default-limits -> the proxy flag -> the built-in default (Loki's,
+// except max_query_series: the proxy's 1000).
 //
 // conformance: tenant-query-limits, limits/effective-limit-resolution, limits/per-tenant-override
 func TestTenantQueryLimits_ResolutionOrder(t *testing.T) {
@@ -70,7 +118,7 @@ func TestTenantQueryLimits_ResolutionOrder(t *testing.T) {
 	withTenant := withDefaults
 	withTenant.TenantLimits = tenant
 	for _, tc := range []layer{
-		{"Loki defaults", Config{}, "tenant-a", queryLimits{MaxQuerySeries: 500, MaxEntriesLimitPerQuery: DefaultMaxEntriesLimitPerQuery, QueryTimeout: 120 * time.Second}},
+		{"built-in defaults", Config{}, "tenant-a", queryLimits{MaxQuerySeries: 1000, MaxEntriesLimitPerQuery: DefaultMaxEntriesLimitPerQuery, QueryTimeout: 120 * time.Second}},
 		{"flags", flags, "tenant-a", queryLimits{MaxQuerySeries: 700, MaxEntriesLimitPerQuery: 7000, MaxQueryLength: 48 * time.Hour, QueryTimeout: 90 * time.Second}},
 		{"tenant default limits", withDefaults, "tenant-a", queryLimits{MaxQuerySeries: 600, MaxEntriesLimitPerQuery: 6000, MaxQueryLength: 24 * time.Hour, MaxQueryLookback: 72 * time.Hour, MaxQueryRange: 2 * time.Hour, QueryTimeout: 80 * time.Second, QueryTimeoutOverride: true}},
 		{"per-tenant limits", withTenant, "tenant-a", queryLimits{MaxQuerySeries: 50, MaxEntriesLimitPerQuery: 0, MaxQueryLength: time.Hour, MaxQueryLookback: 12 * time.Hour, MaxQueryRange: 10 * time.Minute, QueryTimeout: 30 * time.Second, QueryTimeoutOverride: true}},

@@ -32,6 +32,9 @@ request:
   headers:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
+  verify:
+    blocked_by: fixture
+    reason: "OTLP records reach Loki and VictoriaLogs by two OTLP endpoints (TestCompat_DetectedLevelQueryRange in test/e2e-compat), and the severity each stores is the case; the seeder writes Loki push bodies only"
 compare:
   mode: observed
   fields: [detected_level]
@@ -46,7 +49,7 @@ gap:
   visual_reason: 'data stored by VictoriaLogs before v1.50 cannot be ingested on the single-version visual stack; proven per version by the compat-vl matrix'
   effort: S
   area: 'internal/proxy/detected_level.go deriveDetectedLevel (pre-1.50 `severity` field) + test/e2e-compat/detected_level_test.go'
-  loki: 'detected_level from severity_text / line keyword scan (pkg/distributor/field_detection.go, v3.7.7)'
+  loki: 'detected_level from severity_text / line keyword scan'
   proxy: 'derives the level from the pre-1.50 `severity` field like Loki; unchanged on v1.50.0+'
   planned_test: 'TestCompat_DetectedLevelQueryRange per version in the compat-vl vl-matrix job (passes on v1.47 to v1.53)'
   clusters: []
