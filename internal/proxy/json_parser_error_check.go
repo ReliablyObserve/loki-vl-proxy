@@ -17,7 +17,6 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
 // JSON parser errors under any metric function.
@@ -746,15 +745,4 @@ func (p *Proxy) jsonStripResponse(ctx context.Context, resp *http.Response, stri
 	_ = resp.Body.Close()
 	resp, err = p.vlPostHTTP(context.WithValue(ctx, jsonErrorMarkOffKey{}, true), path, sent)
 	return resp, true, err
-}
-
-// lokiFailureStatus is the status the error layer (writeFailure) writes for
-// err: a typed error's own, else Loki's for the failure kind (a cancelled
-// request 499, a deadline 504, a failed backend 500).
-func lokiFailureStatus(ctx context.Context, err error) int {
-	if e, ok := lokierr.As(err); ok && (ctx == nil || ctx.Err() == nil) {
-		return e.Status()
-	}
-	status, _, _ := lokiClientError(ctx, err)
-	return status
 }
