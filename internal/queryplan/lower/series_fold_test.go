@@ -50,7 +50,7 @@ func TestSeriesFoldPipes(t *testing.T) {
 		` | format if (__lvp_km:in(` + sub + `)) "m" as __lvp_c | format if (-__lvp_c:*) "" as __lvp_sid` +
 		` | stats by (app, __lvp_sid, __lvp_c) sum(__lvp_v) as __lvp_sum, count() as __sample_count` +
 		` | math __lvp_sum as __lvp_sum | math __sample_count as __sample_count | math __lvp_sum / __sample_count as __lvp_fold` +
-		` | format if (-__lvp_sid:="" __lvp_c:="m" __lvp_fold:<inf __lvp_fold:>-inf) "1" as __lvp_fb` +
+		` | format if (-__lvp_sid:="" -__lvp_c:="s" __lvp_fold:<inf __lvp_fold:>-inf) "1" as __lvp_fb` +
 		` | format if (__lvp_fb:="1") "<__lvp_fold>" as __lvp_sum | math __lvp_sum as __lvp_sum | format if (__lvp_fb:="1") "1" as __sample_count` +
 		` | math __sample_count as __sample_count | format if (__lvp_fb:="1") "" as __lvp_sid` +
 		` | stats by (app, __lvp_sid) sum(__lvp_sum) as __lvp_sum, sum(__sample_count) as __sample_count`

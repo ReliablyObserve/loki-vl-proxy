@@ -490,32 +490,36 @@ func TestSeriesFoldSpanningChunks(t *testing.T) {
 
 // The proxy's memory for a folded read does not grow with the lines: a series per line, four times as many lines
 // over the same window, answers Loki's values from a read of as many rows (the folded rows are one per bucket and
-// group), where the series read one by one hold a row per line.
+// group), where the series read one by one hold a row per line; for avg over time (the series of one line folded in
+// the bucket stats) and for max over time (folded after them).
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
 func TestSeriesFoldMemoryBound(t *testing.T) {
-	read := func(lines int, off bool) int {
-		s := dynChunkLines(lines)
-		var widest int
-		listedWindowChunksObserve = func(_, _ int64, m statsReadMeter) { widest = max(widest, m.series) }
-		defer func() { listedWindowChunksObserve = nil }()
-		seriesFoldOff = off
-		defer func() { seriesFoldOff = false }()
-		got, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}, s, Config{RangeMetricRowLimit: 100000})
-		if code != http.StatusOK {
-			t.Fatalf("%d lines (fold off %v): %d %.300s", lines, off, code, body)
+	for _, fn := range []string{"avg_over_time", "max_over_time"} {
+		read := func(lines int, off bool) int {
+			s := dynChunkLines(lines)
+			s.fn = fn
+			var widest int
+			listedWindowChunksObserve = func(_, _ int64, m statsReadMeter) { widest = max(widest, m.series) }
+			defer func() { listedWindowChunksObserve = nil }()
+			seriesFoldOff = off
+			defer func() { seriesFoldOff = false }()
+			got, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}, s, Config{RangeMetricRowLimit: 100000})
+			if code != http.StatusOK {
+				t.Fatalf("%s %d lines (fold off %v): %d %.300s", fn, lines, off, code, body)
+			}
+			compareDynWindows(t, fmt.Sprintf("%s %d lines", fn, lines), s, got, lokiDynamicWindows(s))
+			return widest
 		}
-		compareDynWindows(t, fmt.Sprintf("%d lines", lines), s, got, lokiDynamicWindows(s))
-		return widest
+		small, large := read(1000, false), read(4000, false)
+		if large != small {
+			t.Fatalf("%s: folded reads held %d series for 1000 lines and %d for 4000: they grow with the lines", fn, small, large)
+		}
+		if byLine := read(1000, true); byLine <= 4*small {
+			t.Fatalf("%s: read one by one 1000 lines held %d series, folded %d: the fold should hold far fewer", fn, byLine, small)
+		}
+		t.Logf("%s folded: %d series for 1000 and 4000 lines", fn, small)
 	}
-	small, large := read(1000, false), read(4000, false)
-	if large != small {
-		t.Fatalf("folded reads held %d series for 1000 lines and %d for 4000: they grow with the lines", small, large)
-	}
-	if byLine := read(1000, true); byLine <= 4*small {
-		t.Fatalf("read one by one 1000 lines held %d series, folded %d: the fold should hold far fewer", byLine, small)
-	}
-	t.Logf("folded: %d series for 1000 and 4000 lines", small)
 }
 
 // dynChunkLines is a sliding window of lines with a key of their own (a series per line), over 40 minutes at a 30 s

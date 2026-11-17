@@ -25,8 +25,8 @@ import (
 // the read's grid, or a line whose value may read as NaN or an infinity), several lines in one bucket, or neither (no
 // entry: one line). Before the bucket stats pipe each row gets its series' class, and the hash of a series of one
 // line is blanked where the bucket stats already fold it (Singletons): its value is its line's. After it, each
-// row's value is taken from its bucket partials, the hash of a series of several lines in one bucket is blanked
-// (unless its value is not finite), and a second stats pipe adds up, per bucket and group, the values of the blanked
+// row's value is taken from its bucket partials, the hash of every other series that does not span buckets is
+// blanked (unless its value is not finite), and a second stats pipe adds up, per bucket and group, the values of the blanked
 // series (or takes their extreme) into the value column and their count into the count column. A spanning series
 // keeps its hash and its partials, unchanged.
 
@@ -145,10 +145,11 @@ func (f SeriesFold) Pipes(identity string) (SeriesFoldRead, bool) {
 	}
 	after = append(after,
 		logsql.PipeMath{Expr: f.Value, Alias: SeriesFoldField},
-		// A series of several lines in one bucket, whose value is finite: blanked after the bucket stats.
+		// A series in one bucket (of several lines, or of one where the bucket stats keep it), whose value is finite:
+		// blanked after the bucket stats.
 		logsql.PipeFormat{Template: "1", ResultField: seriesFoldBlank, If: logsql.AllOf{
 			logsql.Exclude{Expr: blanked},
-			logsql.FieldFilter{Field: SeriesFoldClass, Op: logsql.FieldOpExact, Value: "m"},
+			logsql.Exclude{Expr: logsql.FieldFilter{Field: SeriesFoldClass, Op: logsql.FieldOpExact, Value: "s"}},
 			logsql.FieldFilter{Field: SeriesFoldField, Op: logsql.FieldOpLT, Value: "inf"},
 			logsql.FieldFilter{Field: SeriesFoldField, Op: logsql.FieldOpGT, Value: "-inf"},
 		}},
