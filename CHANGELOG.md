@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- `max` over `max_over_time` and `min` over `min_over_time` (by labels or none) of a label unwrapped after a json or
+  logfmt parser (of every key, or an extraction list such as `| logfmt amount, route`) send VictoriaLogs one stats
+  pipe over the rows of each group. The maximum of the series' maxima is the maximum of the group's rows, so no series
+  identity is written: no second unpack and hash after a parser of every key, and no per-series stats after an
+  extraction list, whose logfmt unpack then reads the unwrapped key and the clause labels the list names only (a
+  stream label of the clause is not read from the line). Answers are unchanged (held
+  to recorded Loki answers on instant, step = range, step < range and step > range, VictoriaLogs v1.49.0 and
+  v1.53.0). VictoriaLogs time per query, measured with its own handlers on 600,000 logfmt rows (p50, both versions):
+  36-37% lower for an extraction list (`max(max_over_time(... | logfmt amount, route ...))` 197 to 126 ms), 5-7% lower
+  for a list of the unwrapped key alone, and 80% lower after a parser of every key (`max by (ns)
+  (max_over_time(... | logfmt | unwrap amount [5m]))` 718 to 140 ms); 44-71% lower than before the extraction list's
+  series identity. A range longer than the step was already answered from the group's rows and is unchanged.
+
 ### Fixed
 
 - A keyword written with the Kelvin sign for a k or with U+0130 for an i (`topK(`, `bottomK(`, `| Keep`,
@@ -26,6 +41,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rate({app="a"} |<tab>unwrap n [5m])` counted the lines instead of reading the unwrapped value. Such a query gets a
   new response cache key, so an answer cached before is not served; it may miss the cache once after the upgrade, and
   queries written with `| unwrap ` keep their keys.
+
+## [2.319.0] - 2026-11-17
+
+### Fixed
+- `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer Loki's matrix on
+  `query_range`, for example `topk(2, sum by (app) (rate({...}[1m])) / sum by (app) (rate({...} |= "error" [1m])))`.
+  The range handler sent the whole operation to VictoriaLogs as one query, so a ranking over a division, a vector
+  matching (`on`, `ignoring`, `group_left`), a `bool` comparison, `and`, `or`, `unless` or a chain of operations
+  answered other values, extra or missing series, or a 500, and a many-to-one match answered `Internal Server Error`
+  instead of Loki's `multiple matches for labels` text. Each side of the operation is now its own query (and is reused
+  from the cache like any other), the operation is joined as at the top of a query, and the ranking is applied to its
+  answer. Instant queries already answered this way. A binary operation under an aggregation or a `label_replace`
+  inside the ranking (`topk(2, sum by (app) (a * b))`, `sort(label_replace(a / b, ...))`) answered a 500 or missing
+  series on `query` and `query_range` alike; it is now evaluated as a query of its own. Range answers cached before
+  the fix are not served again (semantics/rank-over-binary-operation).
 
 ## [2.318.0] - 2026-11-16
 

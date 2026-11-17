@@ -2279,6 +2279,9 @@
     "semantics/unwrap-conversion-error-label-format-series": [
       "internal/proxy/unwrap_recorded_loki_test.go"
     ],
+    "semantics/unwrap-conversion-error-names-another-line": [
+      "internal/querycorpus/extraction_list_identity_loki_diff_test.go"
+    ],
     "semantics/unwrap-conversion-error-postfilter-forms": [
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
@@ -2730,7 +2733,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 615,
+  "registry_items": 616,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4688,6 +4691,7 @@
     ],
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go": [
       "semantics/unwrap-bare-range-exposes-parsed-labels",
+      "semantics/unwrap-conversion-error-names-another-line",
       "semantics/unwrap-extraction-list-series-identity"
     ],
     "internal/querycorpus/first_last_loki_diff_test.go": [
@@ -6152,5 +6156,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 421
+  "wired_items": 422
 }
