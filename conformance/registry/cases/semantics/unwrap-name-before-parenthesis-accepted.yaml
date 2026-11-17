@@ -1,0 +1,45 @@
+id: semantics/unwrap-name-before-parenthesis-accepted
+title: An unwrap of a name that is no conversion followed by a parenthesis (`| unwrap x(a)`) is Loki's syntax error, and the proxy accepts it (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki reads only bytes, duration and duration_seconds as unwrap conversions; an
+  unwrap of another name followed by a parenthesis is its syntax error at the
+  parenthesis. Recorded with the Loki oracle (check command):
+
+    sum_over_time({app="a"} | unwrap x(a) [1m])      parse error at line 1, col 35: syntax error: unexpected (, expecting RANGE or |
+    sum_over_time({app="a"} | unwrap byteſ(a) [1m])  parse error at line 1, col 39: syntax error: unexpected (, expecting RANGE or |
+
+  The proxy's parser accepts both. Found by the keyword sweep of
+  semantics/keyword-fold-runes-read-as-keyword (TestKeywordFoldRunesMatchLoki
+  writes U+017F and é in the conversion names and pins these rows as a name's
+  known difference). Not changed here.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum_over_time({app="a"} | unwrap x(a) [1m])'
+    start: 'now-15m'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, errorType, error]
+  expect: |
+    400, Loki's `parse error at line 1, col 35: syntax error: unexpected (,
+    expecting RANGE or |`.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/logql parser.go (the unwrap stage reads a name followed by a parenthesis as a conversion)'
+  loki: 'only bytes, duration and duration_seconds are conversions; another name before a parenthesis is a syntax error'
+  proxy: 'accepted'
+  planned_test: 'TestKeywordFoldRunesMatchLoki (internal/logql, recorded Loki answers: the rows pinned as a name''s known difference)'
+  visual: none
+  visual_reason: 'a spelling no Grafana panel writes'
+  clusters: []

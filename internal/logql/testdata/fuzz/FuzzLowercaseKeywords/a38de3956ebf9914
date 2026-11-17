@@ -1,0 +1,2 @@
+go test fuzz v1
+string("sum BY() (Count_over_time({A0=\"0\"} | A |0KEEP 00000000")

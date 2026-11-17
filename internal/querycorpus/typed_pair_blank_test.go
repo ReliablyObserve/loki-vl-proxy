@@ -1,6 +1,11 @@
 package querycorpus_test
 
 import (
+	"compress/gzip"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,16 +79,67 @@ func planLeavesToTranslator(q, v string) bool {
 // conformance: semantics/translator-reads-only-space-between-tokens
 func TestSpelledAsTranslatorReads(t *testing.T) {
 	for in, want := range map[string]string{
-		"{A=\"0\"} | json\r\nA0":                `{A="0"} | json A0`,
-		"{A=\"0\"}\t|\tline_format\t\"{{.a}}\"": `{A="0"} | line_format "{{.a}}"`,
-		"{A=\"0\"} |= \"a\tb\"":                 "{A=\"0\"} |= \"a\tb\"",
-		"{A=\"0\"} |= `a\n\tb`":                 "{A=\"0\"} |= `a\n\tb`",
-		"sum by (\t) (rate({A=\"0\"}[1m]))":     `sum by () (rate({A="0"}[1m]))`,
-		`{A="0"} | json A0`:                     `{A="0"} | json A0`,
+		"{A=\"0\"} | json\r\nA0":                            `{A="0"} | json A0`,
+		"{A=\"0\"}\t|\tline_format\t\"{{.a}}\"":             `{A="0"} | line_format "{{.a}}"`,
+		"{A=\"0\"} |= \"a\tb\"":                             "{A=\"0\"} |= \"a\tb\"",
+		"{A=\"0\"} |= `a\n\tb`":                             "{A=\"0\"} |= `a\n\tb`",
+		"sum by (\t) (rate({A=\"0\"}[1m]))":                 `sum by () (rate({A="0"}[1m]))`,
+		`{A="0"} | json A0`:                                 `{A="0"} | json A0`,
+		"{A=\"0\"} |= ip\t(\"1.2.3.4\")":                    `{A="0"} |= ip("1.2.3.4")`,
+		"{A=\"0\"} != IP  (\"::1\") or ip\r\n(\"1.2.3.4\")": `{A="0"} != IP("::1") or ip("1.2.3.4")`,
+		`{A="0"} |= "ip (x)" |= zip ("a")`:                  `{A="0"} |= "ip (x)" |= zip ("a")`,
 	} {
 		if got := spelledAsTranslatorReads(in); got != want {
 			t.Errorf("%q: got %q, want %q", in, got, want)
 		}
+	}
+}
+
+// An ip() line filter with a blank Loki skips before its parenthesis (`|= ip<TAB>("1.2.3.4")`, `|= ip  (…)`) is
+// Loki's query without the blank (recorded Loki answers, internal/logql testdata/keyword-blank-loki.jsonl.gz), and the
+// plan serves it so. The string translator reads the call only with no blank (`|= ip ("1.2.3.4")` becomes the word
+// filter "ip" and a phrase VictoriaLogs rejects), so the pair of every such spelling the recording accepts is the pair of
+// the spelling without the blank. Found by the PR quality gate's typed-selector check on the rows
+// TestKeywordBlankRequestsEqualSpaced puts in the query corpus.
+//
+// conformance: semantics/translator-reads-only-space-between-tokens, semantics/blank-before-call-parenthesis-read-unlike-loki
+func TestTypedPairOfIPCallBlankIsTheUnspacedOnes(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	fh, err := os.Open(filepath.Join("..", "logql", "testdata", "keyword-blank-loki.jsonl.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fh.Close() }()
+	zr, err := gzip.NewReader(fh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := 0
+	for dec := json.NewDecoder(zr); ; {
+		var row struct {
+			Q, Ref string
+			Accept bool
+		}
+		if err := dec.Decode(&row); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if !row.Accept || !strings.Contains(row.Ref, "|= ip(") && !strings.Contains(row.Ref, "!= ip(") {
+			continue
+		}
+		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+			wantTyped, wantBuilt, wantOK := typedQueryPair(row.Ref, v)
+			typed, built, ok := typedQueryPair(row.Q, v)
+			if !wantOK || ok != wantOK || typed != wantTyped || built != wantBuilt {
+				t.Errorf("%s %q: pair %v\n typed %q\n built %q\nthe spelling without the blank's: pair %v\n typed %q\n built %q",
+					v, row.Q, ok, typed, built, wantOK, wantTyped, wantBuilt)
+			}
+			pairs++
+		}
+	}
+	if pairs < 14 {
+		t.Fatalf("%d ip() line filter spellings paired: the recording holds fewer than expected", pairs)
 	}
 }
 

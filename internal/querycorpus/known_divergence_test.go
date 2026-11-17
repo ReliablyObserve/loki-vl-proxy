@@ -208,14 +208,14 @@ func TestTranslatorReadsStageMarker(t *testing.T) {
 		`{app="a"} | o="\x02\x00\x02"` + ext:                           true,
 		`{app="a"} | o="\x02\x02"` + ext:                               true,
 		`{app="a"} | o="a\x02b\x02c" | json | K_extracted="x"`:         true,
-		`{app="a"} | o=` + "`\x02\x00\x02`" + ext:                      true, // a raw byte in backquotes
+		`{app="a"} | o=` + "`\x02\x01\x02`" + ext:                      true, // a raw byte in backquotes
 		`{app="a"} | o="\u0002a\U00000002"` + ext:                      true, // the same bytes spelled otherwise
 		`{app="a"} | json | K_extracted="x" | o="\x02\x00\x02"`:        true, // behind the filter that reads the name
 		`{app="a"} | logfmt | K_extracted="x" | o="\x02" and z="\x02"`: true, // one byte in each of two values
 		`{app="a"} | o="\x02" and z="\x02"` + ext:                      true,
 		`{app="a"} | o="\x02"` + ext:                                   false, // one byte
 		`{app="a"} | o_p="\x02"` + ext:                                 true,  // one byte on a name with an underscore: three spellings
-		`{app="a"} | logfmt | K_extracted="x" | o_p=` + "`\x02\x00b`":  true,
+		`{app="a"} | logfmt | K_extracted="x" | o_p=` + "`\x02\x01b`":  true,
 		`{app="a"} | o_p_extracted="\x02"` + ext:                       false, // the stage's own marker comes first
 		`{app="a"} | o="\x02" | z="\x02"` + ext:                        false, // one byte in each of two stages
 		`{app="a"} | o="\x00\x01\x00"` + ext:                           false, // the other bytes the translator uses

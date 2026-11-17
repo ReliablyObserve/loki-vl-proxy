@@ -318,6 +318,11 @@ func (s *scanner) skipWS() (spaced bool) {
 			// reaches here: the string scanners read their quotes to the end.
 			start := s.pos
 			for s.pos < len(s.src) && s.src[s.pos] != '\n' {
+				if s.hasNUL && s.src[s.pos] == 0 {
+					// Loki's lexer reads a comment as a token, character by character: a NUL in it is its error at
+					// the comment, on line 0.
+					s.addLexErr(start, "invalid character NUL", true)
+				}
 				s.pos++
 			}
 			if s.extra != nil && s.extra.comments != nil {
@@ -596,6 +601,9 @@ func (s *scanner) scanCharLiteral() Token {
 
 func (s *scanner) scanQuotedString() Token {
 	start := s.pos
+	if s.hasNUL {
+		s.stringLexErr(start)
+	}
 	s.read() // consume opening "
 	for s.pos < len(s.src) {
 		r := s.read()
@@ -638,6 +646,9 @@ func quotedSpelling(literal, value string) bool {
 }
 
 func (s *scanner) scanRawString() Token {
+	if s.hasNUL {
+		s.stringLexErr(s.pos)
+	}
 	s.read() // consume opening `
 	start := s.pos
 	for {
@@ -650,6 +661,94 @@ func (s *scanner) scanRawString() Token {
 	val := s.src[start:s.pos]
 	s.read() // consume closing `
 	return Token{Typ: TokRawString, Val: val}
+}
+
+// stringLexErr notes the error Loki's lexer meets in the string literal that opens at src[start] (lokiStringError),
+// at the string. The scanner asks for it in a text with a NUL byte only: Loki's lexer reports the errors of a string
+// as it reads it, in the order of the text, so a NUL inside the string is its error ahead of a line break or a missing
+// closing quote after it, and an escape it rejects, a line break or a missing closing quote is its error ahead of a NUL
+// later in the text. A text without a NUL keeps the string's errors where the parser reports them.
+func (s *scanner) stringLexErr(start int) {
+	if msg := lokiStringError(s.src, start); msg != "" {
+		s.addLexErr(start, msg, false)
+	}
+}
+
+// lokiStringError is the first error Loki's lexer (Go's text scanner) meets reading the double-quoted or backquoted
+// string literal that opens at src[start], or "" for a literal it reads to its closing quote: a NUL byte (invalid
+// character NUL), an escape of a double-quoted string it rejects (invalid char escape), or the end of the text, or of
+// the line in a double-quoted string, before the closing quote (literal not terminated).
+func lokiStringError(src string, start int) string {
+	quote := src[start]
+	for i := start + 1; i < len(src); {
+		switch c := src[i]; {
+		case c == 0:
+			return "invalid character NUL"
+		case c == quote:
+			return ""
+		case quote == '"' && c == '\n':
+			return "literal not terminated"
+		case quote == '"' && c == '\\':
+			n, msg := lokiEscapeError(src, i+1)
+			if msg != "" {
+				return msg
+			}
+			i += 1 + n
+		default:
+			i++
+		}
+	}
+	return "literal not terminated"
+}
+
+// lokiEscapeError reads the escape of a double-quoted string after its backslash, at src[i:], as Go's text scanner
+// does: it returns the escape's length, or the first error the scanner meets in it.
+func lokiEscapeError(src string, i int) (int, string) {
+	if i >= len(src) {
+		return 0, "invalid char escape"
+	}
+	digits, base, from := 0, 0, i+1
+	switch c := src[i]; {
+	case c == 0:
+		return 0, "invalid character NUL"
+	case strings.IndexByte(`abfnrtv\"`, c) >= 0:
+		return 1, ""
+	case c >= '0' && c <= '7':
+		digits, base, from = 3, 8, i
+	case c == 'x':
+		digits, base = 2, 16
+	case c == 'u':
+		digits, base = 4, 16
+	case c == 'U':
+		digits, base = 8, 16
+	default:
+		return 0, "invalid char escape"
+	}
+	j := from
+	for ; j < from+digits; j++ {
+		if j >= len(src) {
+			return 0, "invalid char escape"
+		}
+		d := src[j]
+		if d == 0 {
+			return 0, "invalid character NUL"
+		}
+		if v := digitValue(d); v >= base {
+			return 0, "invalid char escape"
+		}
+	}
+	return j - i, ""
+}
+
+// digitValue is the value of a hexadecimal digit, or 16 for another byte.
+func digitValue(d byte) int {
+	switch {
+	case d >= '0' && d <= '9':
+		return int(d - '0')
+	case d|0x20 >= 'a' && d|0x20 <= 'f':
+		return int(d|0x20-'a') + 10
+	}
+	return 16
 }
 
 // readsAsKeyword reports whether Loki's lexer reads the lower-cased word at the
@@ -688,12 +787,40 @@ func parenAfter(src string, end int, skip func(string, int) int) bool {
 		return true
 	}
 	for _, grouping := range [...]string{"by", "without"} {
-		if len(src)-i >= len(grouping) && strings.EqualFold(src[i:i+len(grouping)], grouping) {
-			j := skip(src, i+len(grouping))
+		if n := lowerPrefixLen(src[i:], grouping); n >= 0 {
+			j := skip(src, i+n)
 			return j < len(src) && src[j] == '('
 		}
 	}
 	return false
+}
+
+// lowerPrefixLen is the length in bytes of the text at the start of s that lower cases to word (an ASCII word in
+// lower case) the way the scanner lower cases a word (strings.ToLower): an ASCII capital, the Kelvin sign (U+212A)
+// for k and U+0130 for i read as the letter, U+017F (ſ) does not. It is -1 when s does not start so.
+func lowerPrefixLen(s, word string) int {
+	i := 0
+	for k := 0; k < len(word); k++ {
+		if i >= len(s) {
+			return -1
+		}
+		if c := s[i]; c < utf8.RuneSelf {
+			if c >= 'A' && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != word[k] {
+				return -1
+			}
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if unicode.ToLower(r) != rune(word[k]) {
+			return -1
+		}
+		i += size
+	}
+	return i
 }
 
 // skipSpaceAndComments is skipSpace that also steps over `#` comments, to the end of their line.
