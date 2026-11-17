@@ -21,8 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A ranking, `stddev` or `stdvar` over a range function of lines and a number over a tumbling window on the step's grid
   (`topk(3, count_over_time({...}[15s]) * 2)` at a 15s step) is answered from one VictoriaLogs stats request again,
   without the binary route's sub-request: the line-function, arithmetic, no-`bool`, no-matching shapes whose answer
-  the stats route gives exactly (held to the binary route on 1,440 requests and to Loki's recorded answers). Every
-  other binary operand keeps the binary route.
+  the stats route gives exactly (held to the binary route on 2,880 requests and to Loki's recorded answers). Every
+  other binary operand keeps the binary route. A first request allocates 1.1-1.4% less than through the binary route;
+  a repeated or refreshed one reads the stats extents again instead of the operand's cached answer, and allocates 38-62%
+  more (one VictoriaLogs call cold, none on a repeat, either way).
 
 ## [2.318.0] - 2026-11-16
 
