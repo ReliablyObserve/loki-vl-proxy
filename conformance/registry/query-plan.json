@@ -479,7 +479,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 7958,
+    "native": 7778,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 90,
@@ -498,6 +498,7 @@
       "BinOp route mixed offsets": 70,
       "BinOp route rewrite": 10,
       "BinOp route shared level probe": 16,
+      "BinOp route shared operand read": 180,
       "BinOp scalar operands": 20,
       "BinOp set operator": 70,
       "LabelReplace (route rule)": 1240,
@@ -603,6 +604,290 @@
       "step\u003erange/Scalar": "b01ddfee0a162681",
       "step\u003erange/VectorAgg": "c9214312ca999789",
       "step\u003erange/VectorLit": "fafe78111335aec9"
+    },
+    "calls": {
+      "24h chunk/BinOp": "587d12c9d2da4cf5",
+      "24h chunk/LabelReplace": "04de6b0abbf5ea88",
+      "24h chunk/LogSelect": "027a9591942dace1",
+      "24h chunk/RangeAgg": "371f18046d24bb47",
+      "24h chunk/Rank": "df2ad789531c5abd",
+      "24h chunk/Scalar": "2c7012c3274c662d",
+      "24h chunk/VectorAgg": "13c7271cbd4fb40c",
+      "24h chunk/VectorLit": "7aa978e4ba5a3f44",
+      "instant/BinOp": "3454cf59c1ff3f60",
+      "instant/LabelReplace": "12910a86cbedd528",
+      "instant/LogSelect": "67088c14e5dcd228",
+      "instant/RangeAgg": "ccb15e38a28749f5",
+      "instant/Rank": "07f5cc150b3e9a6e",
+      "instant/Scalar": "4989874b8a3c42dc",
+      "instant/VectorAgg": "ad0a3ea4524be17b",
+      "instant/VectorLit": "0dc325c3d1510308",
+      "step\u003crange/BinOp": "c874a29252aa6657",
+      "step\u003crange/LabelReplace": "4ec734cf410e7ec9",
+      "step\u003crange/LogSelect": "49d9cc953e8dc676",
+      "step\u003crange/RangeAgg": "71b5796221f4d8e0",
+      "step\u003crange/Rank": "4e1657ca026fd9cb",
+      "step\u003crange/Scalar": "6db69b6718a0b07a",
+      "step\u003crange/VectorAgg": "5d3315db7eaa5620",
+      "step\u003crange/VectorLit": "58ad28055f0b3615",
+      "step=range/BinOp": "48619838c5f1a0ad",
+      "step=range/LabelReplace": "e341ab3f8e26a95c",
+      "step=range/LogSelect": "49d9cc953e8dc676",
+      "step=range/RangeAgg": "21e2cd0628e0f457",
+      "step=range/Rank": "e30abf1ebdabcde8",
+      "step=range/Scalar": "6db69b6718a0b07a",
+      "step=range/VectorAgg": "e6d94ae32b212b24",
+      "step=range/VectorLit": "58ad28055f0b3615",
+      "step\u003erange/BinOp": "d592971857cc6fe4",
+      "step\u003erange/LabelReplace": "494c832a42c46ae0",
+      "step\u003erange/LogSelect": "49d9cc953e8dc676",
+      "step\u003erange/RangeAgg": "67f9b46bf1ed8520",
+      "step\u003erange/Rank": "25d4670776a3dee2",
+      "step\u003erange/Scalar": "6db69b6718a0b07a",
+      "step\u003erange/VectorAgg": "1e1a3c3a9aa809f6",
+      "step\u003erange/VectorLit": "58ad28055f0b3615"
+    },
+    "vl_calls": {
+      "24h chunk/BinOp": {
+        "runs": 626,
+        "cold": 1216,
+        "repeat": 6,
+        "repeat_runs": 3
+      },
+      "24h chunk/LabelReplace": {
+        "runs": 270,
+        "cold": 381,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "24h chunk/LogSelect": {
+        "runs": 488,
+        "cold": 498,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "24h chunk/RangeAgg": {
+        "runs": 1234,
+        "cold": 1612,
+        "repeat": 1,
+        "repeat_runs": 1
+      },
+      "24h chunk/Rank": {
+        "runs": 398,
+        "cold": 515,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "24h chunk/Scalar": {
+        "runs": 4,
+        "cold": 4,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "24h chunk/VectorAgg": {
+        "runs": 2146,
+        "cold": 3440,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "24h chunk/VectorLit": {
+        "runs": 2,
+        "cold": 2,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "instant/BinOp": {
+        "runs": 626,
+        "cold": 824,
+        "repeat": 2,
+        "repeat_runs": 2
+      },
+      "instant/LabelReplace": {
+        "runs": 270,
+        "cold": 300,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "instant/LogSelect": {
+        "runs": 488,
+        "cold": 10,
+        "repeat": 10,
+        "repeat_runs": 10
+      },
+      "instant/RangeAgg": {
+        "runs": 1234,
+        "cold": 1272,
+        "repeat": 1,
+        "repeat_runs": 1
+      },
+      "instant/Rank": {
+        "runs": 398,
+        "cold": 404,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "instant/Scalar": {
+        "runs": 4,
+        "cold": 0,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "instant/VectorAgg": {
+        "runs": 2146,
+        "cold": 2389,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "instant/VectorLit": {
+        "runs": 2,
+        "cold": 0,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003crange/BinOp": {
+        "runs": 626,
+        "cold": 1216,
+        "repeat": 6,
+        "repeat_runs": 3
+      },
+      "step\u003crange/LabelReplace": {
+        "runs": 270,
+        "cold": 381,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003crange/LogSelect": {
+        "runs": 488,
+        "cold": 498,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003crange/RangeAgg": {
+        "runs": 1234,
+        "cold": 1562,
+        "repeat": 1,
+        "repeat_runs": 1
+      },
+      "step\u003crange/Rank": {
+        "runs": 398,
+        "cold": 515,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003crange/Scalar": {
+        "runs": 4,
+        "cold": 4,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003crange/VectorAgg": {
+        "runs": 2146,
+        "cold": 3436,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003crange/VectorLit": {
+        "runs": 2,
+        "cold": 2,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step=range/BinOp": {
+        "runs": 626,
+        "cold": 1217,
+        "repeat": 6,
+        "repeat_runs": 3
+      },
+      "step=range/LabelReplace": {
+        "runs": 270,
+        "cold": 381,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step=range/LogSelect": {
+        "runs": 488,
+        "cold": 498,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step=range/RangeAgg": {
+        "runs": 1234,
+        "cold": 1516,
+        "repeat": 1,
+        "repeat_runs": 1
+      },
+      "step=range/Rank": {
+        "runs": 398,
+        "cold": 495,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step=range/Scalar": {
+        "runs": 4,
+        "cold": 4,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step=range/VectorAgg": {
+        "runs": 2146,
+        "cold": 3424,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step=range/VectorLit": {
+        "runs": 2,
+        "cold": 2,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003erange/BinOp": {
+        "runs": 626,
+        "cold": 1215,
+        "repeat": 6,
+        "repeat_runs": 3
+      },
+      "step\u003erange/LabelReplace": {
+        "runs": 270,
+        "cold": 381,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003erange/LogSelect": {
+        "runs": 488,
+        "cold": 498,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003erange/RangeAgg": {
+        "runs": 1234,
+        "cold": 1530,
+        "repeat": 1,
+        "repeat_runs": 1
+      },
+      "step\u003erange/Rank": {
+        "runs": 398,
+        "cold": 515,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003erange/Scalar": {
+        "runs": 4,
+        "cold": 4,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003erange/VectorAgg": {
+        "runs": 2146,
+        "cold": 3426,
+        "repeat": 0,
+        "repeat_runs": 0
+      },
+      "step\u003erange/VectorLit": {
+        "runs": 2,
+        "cold": 2,
+        "repeat": 0,
+        "repeat_runs": 0
+      }
     }
   },
   "shadow": {

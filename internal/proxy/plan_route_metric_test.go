@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -210,7 +211,13 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 		}
 		out.Calls, steps = append(out.Calls, calls...), append(steps, opSteps...)
 	}
+	// Each operand sends its own requests. On a range request the handlers mostly send a request two operands
+	// share once (the second reads the first's answer), which the route does not decide: delegated.
+	out.Started = len(out.Calls)
 	out.Calls, out.Steps = uniqueSorted(out.Calls), uniqueSorted(steps)
+	if route.Binary && !rp.instant && len(out.Calls) < out.Started {
+		return routeRecord{}, routeTextDelegation(p, "shared operand read")
+	}
 	return out, nil
 }
 
@@ -625,16 +632,22 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			// The unchanged rule predicts every run, so a run is mispredicted exactly when its prediction changed.
+			// The unchanged rule predicts every run, so a run is mispredicted exactly when its prediction changed. A
+			// changed route whose operands then send one request twice is delegated (shared operand read), not
+			// mispredicted; a run the unchanged rule delegates that way and the changed one predicts is.
 			changed := 0
 			for _, row := range rows {
 				for _, rp := range routeProfiles() {
 					for _, data := range []bool{true, false} {
-						want, err := predictMetricRoute(row.q, row.plan, rp, data, nil)
-						if err != nil {
-							continue
+						want, werr := predictMetricRoute(row.q, row.plan, rp, data, nil)
+						var nl *lower.NotLoweredError
+						if werr != nil && (!errors.As(werr, &nl) || !strings.HasSuffix(nl.Construct, " route shared operand read")) {
+							continue // delegated before the route is changed
 						}
-						if got, err := predictMetricRoute(row.q, row.plan, rp, data, c.mutate); err != nil || !got.equal(want) {
+						got, gerr := predictMetricRoute(row.q, row.plan, rp, data, c.mutate)
+						switch {
+						case gerr != nil && errors.As(gerr, &nl):
+						case gerr != nil || werr != nil || !got.equal(want):
 							changed++
 						}
 					}
@@ -1397,10 +1410,10 @@ func TestMetricRouteBinaryEdges(t *testing.T) {
 		{q: `count_over_time({app="bi"}[1m]) / bytes_over_time({app="bj"}[7m])`},
 		{q: `sum(rate({app="bi"}[5m])) / sum(rate({app="bj"}[5m]))`},
 		{q: `sum by (app) (rate({app="bi",env="a"}[5m])) / sum by (app) (rate({app="bi",env="b"}[5m]))`},
-		{q: `sum by (pod) (rate({app="bi"}[5m])) / sum by (pod) (rate({app="bi"}[5m]))`},
+		{q: `sum by (pod) (rate({app="bi"}[5m])) / sum by (pod) (rate({app="bi"}[5m]))`, partly: true, delegated: "BinOp route shared operand read"},
 		// the same selector, the same windows: one probe, asked twice
-		{q: `rate({app="bi"}[5m]) / bytes_rate({app="bi"}[5m])`},
-		{q: `rate({app="bi"}[5m]) - rate({app="bi"}[5m])`},
+		{q: `rate({app="bi"}[5m]) / bytes_rate({app="bi"}[5m])`, partly: true, delegated: "BinOp route shared operand read"},
+		{q: `rate({app="bi"}[5m]) - rate({app="bi"}[5m])`, partly: true, delegated: "BinOp route shared operand read"},
 		// the same selector over windows that differ shares a probe: delegated on a range request
 		{q: `sum(rate({app="bi"}[5m])) / sum(rate({app="bi"}[1m]))`, partly: true, delegated: "BinOp route shared level probe"},
 		{q: `rate({app="bi"}[5m]) / rate({app="bi"}[90s])`, partly: true, delegated: "BinOp route shared level probe"},
