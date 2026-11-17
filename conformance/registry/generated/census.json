@@ -770,9 +770,6 @@
     "semantics/query-stats-shards-empty-pieces | query",
     "semantics/range-duration-grammar-wider-than-loki | compare:observed",
     "semantics/range-duration-grammar-wider-than-loki | gap:open",
-    "semantics/rank-binary-operand-label-replace-once | compare:observed",
-    "semantics/rank-binary-operand-label-replace-once | gap:fixed",
-    "semantics/rank-binary-operand-label-replace-once | query",
     "semantics/rank-over-binary-operation | compare:observed",
     "semantics/rank-over-binary-operation | gap:fixed",
     "semantics/rank-over-binary-operation | query",
@@ -1926,9 +1923,6 @@
     "internal/proxy/ranked_topk_cached_route_test.go | semantics/label-replace-duplicates-before-ranking",
     "internal/proxy/ranked_topk_cached_route_test.go | semantics/label-replace-new-label",
     "internal/proxy/ranked_topk_cached_route_test.go | series-limits-and-partial-results",
-    "internal/proxy/ranking_binary_operand_loki_test.go | loki_api_v1_query",
-    "internal/proxy/ranking_binary_operand_loki_test.go | loki_api_v1_query_range",
-    "internal/proxy/ranking_binary_operand_loki_test.go | semantics/rank-binary-operand-label-replace-once",
     "internal/proxy/rate_counter_reference_test.go | semantics/unwrap-rate-counter-one-sample-series",
     "internal/proxy/rate_counter_singletons_test.go | metric-series-identity",
     "internal/proxy/rate_counter_singletons_test.go | semantics/unwrap-rate-counter-one-sample-series",
@@ -2400,6 +2394,7 @@
     "internal/queryplan/lower/binop_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_vector_loki_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_vector_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/binop_vector_test.go | semantics/vector-call-blank-before-parenthesis-as-query",
     "internal/queryplan/lower/binop_without_empty_test.go | semantics/binary-operand-without-empty-collapses",
     "internal/queryplan/lower/detected_level_ast_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/detected_level_test.go | architecture-syntax-package-layering",
@@ -3051,12 +3046,12 @@
       "any": 35,
       "api": 109,
       "drilldown": 53,
-      "explore": 200,
+      "explore": 199,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 713,
+      "go": 712,
       "playwright": 2
     },
     "page_kinds": {
@@ -3075,7 +3070,7 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 95,
+    "unwired_items": 94,
     "wired_items": 417
   },
   "gates": [

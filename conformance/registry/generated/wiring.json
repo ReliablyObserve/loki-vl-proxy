@@ -2427,6 +2427,9 @@
       "internal/proxy/error_refusals_test.go",
       "internal/querycorpus/grammar_sweep_test.go"
     ],
+    "semantics/vector-call-blank-before-parenthesis-as-query": [
+      "internal/queryplan/lower/binop_vector_test.go"
+    ],
     "semantics/vl-refusal-is-plan-defect": [
       "internal/proxy/multitenant_tenant_failure_test.go",
       "internal/proxy/plan_defect_test.go",
@@ -4884,7 +4887,8 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/binop_vector_test.go": [
-      "architecture-syntax-package-layering"
+      "architecture-syntax-package-layering",
+      "semantics/vector-call-blank-before-parenthesis-as-query"
     ],
     "internal/queryplan/lower/binop_without_empty_test.go": [
       "semantics/binary-operand-without-empty-collapses"
@@ -6111,7 +6115,6 @@
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",
-    "semantics/vector-call-blank-before-parenthesis-as-query",
     "semantics/without-fold-detected-level-unknown",
     "service-name-derivation",
     "severity/otlp-severity-before-vl-1.50",
