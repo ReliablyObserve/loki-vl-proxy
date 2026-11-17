@@ -48,7 +48,7 @@ import (
 // Error cache defaults, the flags' defaults in cmd/proxy.
 const (
 	// DefaultErrorCacheTransientTTL holds a backend failure (VictoriaLogs 5xx,
-	// timeout, connection failure, overload) for one second: a storm of
+	// 429, a refused or reset connection) for one second: a storm of
 	// identical requests (refresh loops, many dashboards, retries) asks
 	// VictoriaLogs once per second per request, and the first request after
 	// the backend recovers answers within a second.
@@ -188,14 +188,12 @@ func failureClassOf(ctx context.Context, err error, typed *lokierr.Error) (cache
 	if typed != nil {
 		switch typed.Msg() {
 		case lokierr.MsgBackendFailed:
+			if timedOutOrAborted(typed.Cause()) {
+				return cache.ErrorNever, 0
+			}
 			return cache.ErrorTransient, queryplan.FailBackend
 		case lokierr.MsgSeriesLimit, lokierr.MsgIndexSeriesLimit, lokierr.MsgLimitReached, lokierr.MsgResponseTooLarge:
 			return cache.ErrorData, queryplan.FailLimit
-		case lokierr.MsgDeadline:
-			// The request's own context is alive: the backend's timeout
-			// (VictoriaLogs' query duration limit, -backend-timeout), the same
-			// for every identical request.
-			return cache.ErrorTransient, queryplan.FailBackend
 		case lokierr.MsgNoOrgID:
 			return cache.ErrorNever, 0 // per-client credentials
 		}
@@ -207,8 +205,12 @@ func failureClassOf(ctx context.Context, err error, typed *lokierr.Error) (cache
 			// configured limit decide.
 			return cache.ErrorRequest, 0
 		}
-		// The proxy's own queue and load shedding, a client's cancellation or
-		// deadline, an internal failure: never shared.
+		// The proxy's own queue and load shedding, a cancellation, a timeout
+		// (the request's or the backend's: it depends on how long the query
+		// ran, and a retry may answer), an internal failure: never shared.
+		return cache.ErrorNever, 0
+	}
+	if timedOutOrAborted(err) {
 		return cache.ErrorNever, 0
 	}
 	if _, defect := asType[*planDefectError](err); defect {
@@ -226,17 +228,36 @@ func failureClassOf(ctx context.Context, err error, typed *lokierr.Error) (cache
 		}
 		return cache.ErrorTransient, queryplan.FailBackend // a 5xx, 429 or queue timeout of VictoriaLogs
 	}
-	if _, ok := asType[*vlResponseAbortedError](err); ok {
-		return cache.ErrorTransient, queryplan.FailBackend
-	}
 	if isCanceledErr(err) {
 		return cache.ErrorNever, 0
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) {
-		return cache.ErrorTransient, queryplan.FailBackend // a refused, reset or timed-out connection
+		return cache.ErrorTransient, queryplan.FailBackend // a refused or reset connection
 	}
 	return cache.ErrorNever, 0
+}
+
+// timedOutOrAborted reports a failure that depends on how long the query ran
+// or on where its body broke: a timeout (VictoriaLogs' query deadline, a 504,
+// a transport timeout, an expired deadline) or a body VictoriaLogs aborted
+// after its headers. Such a failure is never held or shared: an immediate
+// retry may answer.
+func timedOutOrAborted(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := asType[*vlResponseAbortedError](err); ok {
+		return true
+	}
+	if statusErr, ok := asType[*upstreamStatusError](err); ok {
+		return statusErr.class == vlErrorDeadline || statusErr.status == http.StatusGatewayTimeout
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // windowFreeFailure reports a backend failure whose answer does not depend on
@@ -313,7 +334,11 @@ func (l *flightLead) observe(code int, body []byte, overflowed, flushed bool) {
 	if code >= http.StatusBadRequest {
 		limit = errorFlightMaxAnswerBytes
 	}
-	if !overflowed && !flushed && !l.stored && len(body) > 0 && len(body) <= limit &&
+	if len(body) > limit {
+		l.overflowed = true // too large to share or hold
+		return
+	}
+	if !overflowed && !flushed && !l.stored && len(body) > 0 &&
 		(code >= http.StatusBadRequest || l.f.Joined() > 0) {
 		l.body = append([]byte(nil), body...)
 	}
@@ -339,6 +364,7 @@ type flightTap struct {
 func (t *flightTap) WriteHeader(code int) {
 	if t.lead.code == 0 {
 		t.lead.code = code
+		defaultAnswerHeaders(t.Header(), code)
 	}
 	t.ResponseWriter.WriteHeader(code)
 }
@@ -346,7 +372,9 @@ func (t *flightTap) WriteHeader(code int) {
 func (t *flightTap) Write(b []byte) (int, error) {
 	l := t.lead
 	if l.code == 0 {
+		// The implicit 200 of a first Write: the body is never sniffed.
 		l.code = http.StatusOK
+		defaultAnswerHeaders(t.Header(), l.code)
 	}
 	if !l.overflowed && !l.flushed && len(l.body) == 0 && l.code < http.StatusBadRequest && l.f.Joined() == 0 {
 		// Nobody waits for this success: it is not kept, and a request that
@@ -419,7 +447,7 @@ func (k *flightKey) exactKey() string {
 		if k.post {
 			tail = digestTail(k.digest)
 		}
-		k.memo = errorFlightKeyVersion + k.p.buildResponseKey(k.r.Method+":", k.endpoint, k.r, k.raw, tail)
+		k.memo = errorFlightKeyVersion + k.p.buildResponseKey(k.r.Method+":", k.endpoint, k.r, k.raw, tail, k.p.flightNamesKey)
 	}
 	return k.memo
 }
@@ -650,6 +678,18 @@ func heldFailureClass(ctx context.Context, code int, reach queryplan.Failures) (
 	return f.class, f.windowFree
 }
 
+// flightNamesKey is responseNamesCacheKey from the stream label names last
+// known, read without starting their refresh: building a flight key never
+// asks VictoriaLogs anything (a request refused from its text, a burst during
+// an outage). Every request of a flight reads the names the same way; one
+// that reads newer names gets another key and runs on its own.
+func (p *Proxy) flightNamesKey(r *http.Request, query string) string {
+	if names := p.plainStreamLabelNamesFrom(r.Context(), query, p.knownTenantStreamLabelNames); len(names) > 0 {
+		return streamLabelsCacheKey(names)
+	}
+	return ""
+}
+
 // windowParams are the parameters that place a request in time.
 var windowParams = [...]string{"start", "end", "time", "since"}
 
@@ -667,7 +707,7 @@ func (p *Proxy) windowFreeKey(endpoint string, r *http.Request) string {
 	for _, name := range windowParams {
 		v.Del(name)
 	}
-	return errorFlightKeyVersion + "nowindow:" + r.Method + ":" + p.responseKey(endpoint, r, v.Encode())
+	return errorFlightKeyVersion + "nowindow:" + p.buildResponseKey(r.Method+":", endpoint, r, v.Encode(), "", p.flightNamesKey)
 }
 
 // holdWindowFree holds a backend failure that does not depend on the window
@@ -684,6 +724,22 @@ func (p *Proxy) holdWindowFree(endpoint string, r *http.Request, a *cache.Answer
 
 func answerOf(code int, header http.Header, body []byte, class cache.ErrorClass) *cache.Answer {
 	return &cache.Answer{Status: code, Header: flightHeader(header), Body: body, Class: class}
+}
+
+// defaultAnswerHeaders gives an answer about to be written without a
+// Content-Type Loki's for its status (text/plain with nosniff for an error,
+// JSON otherwise), so no body is ever sniffed.
+func defaultAnswerHeaders(h http.Header, code int) {
+	if h.Get("Content-Type") == "" {
+		if code >= http.StatusBadRequest {
+			h.Set("Content-Type", "text/plain; charset=utf-8")
+		} else {
+			h.Set("Content-Type", "application/json")
+		}
+	}
+	if h.Get("X-Content-Type-Options") == "" {
+		h.Set("X-Content-Type-Options", "nosniff")
+	}
 }
 
 // heldHint marks a pre-key with a held failure; it is never answered.
@@ -725,8 +781,14 @@ func (p *Proxy) writeFlightAnswer(endpoint, route string, w http.ResponseWriter,
 	setCacheResult(r.Context(), "hit")
 	h := w.Header()
 	for name, values := range a.Header {
-		h[name] = values
+		if name != "Content-Type" && name != "X-Content-Type-Options" {
+			h[name] = values
+		}
 	}
+	// The body is another request's answer, the client's query text possibly
+	// echoed in it: it is written only as Loki's text/plain error (nosniff) or
+	// as JSON, never sniffed.
+	setReplayContentType(w, a.Status)
 	w.WriteHeader(a.Status)
 	if len(a.Body) > 0 {
 		_, _ = w.Write(a.Body)

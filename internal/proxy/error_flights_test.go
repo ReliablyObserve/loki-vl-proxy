@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -495,14 +496,20 @@ func TestErrorFlights_FailureClassOf(t *testing.T) {
 		{"parse", context.Background(), nil, lokierr.Parse(1, 2, "syntax error"), cache.ErrorRequest, 0},
 		{"query length", context.Background(), nil, lokierr.QueryLength(2*time.Hour, time.Hour), cache.ErrorRequest, 0},
 		{"queue full", context.Background(), nil, lokierr.QueueFull(nil), cache.ErrorNever, 0},
-		{"backend deadline, request alive", context.Background(), nil, lokierr.Deadline(nil), cache.ErrorTransient, queryplan.FailBackend},
+		{"backend deadline, request alive", context.Background(), nil, lokierr.Deadline(nil), cache.ErrorNever, 0},
+		{"backend failed by a timeout", context.Background(), nil, lokierr.BackendFailed(&url.Error{Op: "Post", URL: "x", Err: timeoutErr{}}), cache.ErrorNever, 0},
+		{"backend failed by a refused connection", context.Background(), nil, lokierr.BackendFailed(&url.Error{Op: "Post", URL: "x", Err: errors.New("connection refused")}), cache.ErrorTransient, queryplan.FailBackend},
+		{"vl query deadline", context.Background(), &upstreamStatusError{status: 503, class: vlErrorDeadline}, nil, cache.ErrorNever, 0},
+		{"vl 504", context.Background(), &upstreamStatusError{status: 504}, nil, cache.ErrorNever, 0},
+		{"expired deadline", context.Background(), fmt.Errorf("read: %w", context.DeadlineExceeded), nil, cache.ErrorNever, 0},
 		{"client deadline", cancelled, nil, lokierr.Deadline(nil), cache.ErrorNever, 0},
 		{"pipeline", context.Background(), pipeline, nil, cache.ErrorData, queryplan.FailPipeline},
 		{"vl 503", context.Background(), &upstreamStatusError{status: 503}, nil, cache.ErrorTransient, queryplan.FailBackend},
 		{"vl rejected", context.Background(), &upstreamStatusError{status: 400, class: vlErrorQueryRejected}, nil, cache.ErrorNever, 0},
 		{"plan defect", context.Background(), &planDefectError{cause: &upstreamStatusError{status: 400, class: vlErrorQueryRejected}}, nil, cache.ErrorNever, 0},
-		{"aborted body", context.Background(), &vlResponseAbortedError{}, nil, cache.ErrorTransient, queryplan.FailBackend},
-		{"transport", context.Background(), &url.Error{Op: "Get", URL: "x", Err: &timeoutErr{}}, nil, cache.ErrorTransient, queryplan.FailBackend},
+		{"aborted body", context.Background(), &vlResponseAbortedError{}, nil, cache.ErrorNever, 0},
+		{"transport timeout", context.Background(), &url.Error{Op: "Get", URL: "x", Err: &timeoutErr{}}, nil, cache.ErrorNever, 0},
+		{"refused", context.Background(), &url.Error{Op: "Get", URL: "x", Err: &net.OpError{Op: "dial", Err: errors.New("connection refused")}}, nil, cache.ErrorTransient, queryplan.FailBackend},
 		{"canceled call", context.Background(), context.Canceled, nil, cache.ErrorNever, 0},
 		{"untyped", context.Background(), io.ErrUnexpectedEOF, nil, cache.ErrorNever, 0},
 	}

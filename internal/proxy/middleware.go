@@ -497,12 +497,13 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 // as rawQuery: everything an answer depends on (tenant, credentials'
 // fingerprint, response profile, label naming, key fences).
 func (p *Proxy) responseKey(endpoint string, r *http.Request, rawQuery string) string {
-	return p.buildResponseKey("", endpoint, r, rawQuery, "")
+	return p.buildResponseKey("", endpoint, r, rawQuery, "", p.responseNamesCacheKey)
 }
 
 // buildResponseKey is responseKey with head written before it and tail right
-// after rawQuery, in one allocation of the key's final size.
-func (p *Proxy) buildResponseKey(head, endpoint string, r *http.Request, rawQuery, tail string) string {
+// after rawQuery, in one allocation of the key's final size; namesKey keys the
+// stream label names the query is translated with.
+func (p *Proxy) buildResponseKey(head, endpoint string, r *http.Request, rawQuery, tail string, namesKey func(*http.Request, string) string) string {
 	query := r.FormValue("query")
 	queryKey := endpoint == "query" || endpoint == "query_range"
 	var fences string
@@ -519,7 +520,7 @@ func (p *Proxy) buildResponseKey(head, endpoint string, r *http.Request, rawQuer
 	profile := p.responseProfileCacheKey(r)
 	var names string
 	if query != "" {
-		names = p.responseNamesCacheKey(r, query)
+		names = namesKey(r, query)
 	}
 	var b strings.Builder
 	b.Grow(len(head) + 64 + len(endpoint) + len(fences) + len(version) + len(tenant) + len(r.URL.Path) + len(rawQuery) + len(tail) + len(fp) + len(profile) + len(names))

@@ -149,7 +149,7 @@ var Limits = []Limit{
 	{
 		Flag:       "error-cache-transient-ttl",
 		Unit:       "duration",
-		Bounds:     "how long a read request's backend failure is held and answered again, byte for byte, to identical requests (same tenant, credentials, response profile and parameters) on this replica: VictoriaLogs 5xx, 429 or queue timeout, a refused, reset or timed-out connection, a body VictoriaLogs aborted, a VictoriaLogs or -backend-timeout timeout. A 5xx, 429 or refused or reset connection is also held for the same request with any start, end, time or since. Identical requests that arrive while the first one runs wait for it and share its failure whatever this TTL is. Held only when the request's query plan reads data; never pushed to peers",
+		Bounds:     "how long a read request's backend failure is held and answered again, byte for byte, to identical requests (same tenant, credentials, response profile and parameters) on this replica: VictoriaLogs 5xx, 429 or queue timeout, a refused or reset connection (a timeout or a body VictoriaLogs aborted is never held: a retry may answer). A 5xx, 429 or refused or reset connection is also held for the same request with any start, end, time or since. Identical requests that arrive while the first one runs wait for it and share its failure whatever this TTL is. Held only when the request's query plan reads data; never pushed to peers",
 		Error:      "none of its own: the held answer is Loki's answer for the failure (500 `Internal Server Error`, 504, 429 as Loki answers them)",
 		Metric:     "loki_vl_proxy_error_cache_hits_total{class=\"transient\"}, loki_vl_proxy_error_coalesced_total{class=\"transient\"}",
 		Alert:      "none",

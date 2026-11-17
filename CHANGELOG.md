@@ -21,8 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request's cancellation or timeout: it starts again as the new leader (this also holds for VictoriaLogs calls
   shared by the existing call coalescer, where a waiting call could inherit the first caller's deadline).
 - Failed answers are held per replica (never pushed to peers) for the TTL of their class:
-  `-error-cache-transient-ttl` (default `1s`) for VictoriaLogs 5xx, 429 or queue timeouts and timed-out, refused or
-  broken connections, so each replica asks VictoriaLogs at most about once per second per failing request and the
+  `-error-cache-transient-ttl` (default `1s`) for VictoriaLogs 5xx, 429 or queue timeouts and refused or reset
+  connections, so each replica asks VictoriaLogs at most about once per second per failing request and the
   first request after VictoriaLogs recovers answers within that second. A VictoriaLogs 5xx or 429 or a refused or
   reset connection, which does not depend on the time window, is held for every window of the same query, so
   dashboards refreshing with `end=now` are absorbed too (20 clients refreshing one query every 100 ms through an
@@ -30,8 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other windows for up to that second. `-error-cache-data-ttl` (default `5s`) for failures read from the window's data (Loki's
   series limit, line or response size limits, a JSON parser or unwrap conversion error under a metric). The class
   comes from the type of the failure and the query plan (a query that reads no data never holds a backend
-  failure). Never held: the client's own cancellation or deadline, the proxy's own `429` queue and load shedding,
-  missing credentials, failures it cannot classify. `-error-cache-enabled=false` holds nothing;
+  failure). Never held: the client's own cancellation or deadline, any timeout or body VictoriaLogs aborted (a retry
+  may answer), a failure after the first streamed byte, partial answers, the proxy's own `429` queue and load
+  shedding, missing credentials, failures it cannot classify. `-error-cache-enabled=false` holds nothing;
   `-coalescer-disabled` also turns the request-level join off. Held answers are bounded by
   `-error-cache-max-entries` (default `4096`) and `-error-cache-max-bytes` (default 8 MiB) and dropped on a
   configuration reload. New metrics: `loki_vl_proxy_error_cache_hits_total{class}`,

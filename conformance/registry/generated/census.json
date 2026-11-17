@@ -1527,6 +1527,14 @@
     "internal/proxy/error_body_shape_test.go | semantics/error-layer-silent-success",
     "internal/proxy/error_body_shape_test.go | status-400",
     "internal/proxy/error_body_shape_test.go | status-500",
+    "internal/proxy/error_flights_edge_test.go | profiles/dotted-name-parse-error",
+    "internal/proxy/error_flights_edge_test.go | semantics/error-cache-bounded-memory",
+    "internal/proxy/error_flights_edge_test.go | semantics/error-cache-byte-equal-answers",
+    "internal/proxy/error_flights_edge_test.go | semantics/error-cache-classes-and-ttl",
+    "internal/proxy/error_flights_edge_test.go | semantics/error-cache-operator-switches",
+    "internal/proxy/error_flights_edge_test.go | semantics/error-cache-tenant-isolation",
+    "internal/proxy/error_flights_edge_test.go | semantics/error-coalescing-no-inherited-cancel",
+    "internal/proxy/error_flights_edge_test.go | semantics/error-coalescing-request-flights",
     "internal/proxy/error_flights_test.go | semantics/error-cache-byte-equal-answers",
     "internal/proxy/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/proxy/error_flights_test.go | semantics/error-cache-operator-switches",
@@ -2767,6 +2775,11 @@
     "test/e2e-compat/error_body_like_loki_test.go | semantics/error-layer-body-shape",
     "test/e2e-compat/error_body_like_loki_test.go | status-400",
     "test/e2e-compat/error_body_like_loki_test.go | status-404",
+    "test/e2e-compat/error_flights_live_test.go | semantics/error-cache-byte-equal-answers",
+    "test/e2e-compat/error_flights_live_test.go | semantics/error-cache-classes-and-ttl",
+    "test/e2e-compat/error_flights_live_test.go | semantics/error-cache-tenant-isolation",
+    "test/e2e-compat/error_flights_live_test.go | semantics/error-coalescing-no-inherited-cancel",
+    "test/e2e-compat/error_flights_live_test.go | semantics/error-coalescing-request-flights",
     "test/e2e-compat/error_layer_like_loki_test.go | backend-deadlines-and-cancellation",
     "test/e2e-compat/error_layer_like_loki_test.go | semantics/error-layer-backend-failure-status",
     "test/e2e-compat/error_layer_like_loki_test.go | semantics/error-layer-backend-text",
@@ -3182,7 +3195,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 740,
+      "go": 742,
       "playwright": 2
     },
     "page_kinds": {
