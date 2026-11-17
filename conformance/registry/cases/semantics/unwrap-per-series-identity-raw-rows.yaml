@@ -1,5 +1,5 @@
 id: semantics/unwrap-per-series-identity-raw-rows
-title: A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series (open, partly fixed - avg to stdvar on query and on a range up to the step)
+title: A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series (open, partly fixed - avg to stdvar on query and on a range up to the step, and after an extraction list on any range)
 pending: true
 proves:
   - metric-series-identity
@@ -79,10 +79,32 @@ why: |
   object, keys in either order, a detected_level that differs between lines,
   lines that do not parse, logfmt and json).
 
-  Still open: a range longer than the step (step < range) keeps the stream's
-  series: the window evaluator merges the step buckets of streams, not of a
-  series hash, so those queries are translated by the string translator as
-  before; rate_counter and quantile_over_time
+  After an extraction list of plain keys (`| logfmt amount, route`) the
+  series are fields of the row (the stream, its stored level fields and the
+  listed labels), and on a range longer than the step VictoriaLogs groups each
+  step bucket by them; the window evaluator merges each series' buckets into
+  its window and folds the aggregation after the windows
+  (listedIdentityWindows). Recorded with Loki's engine on VictoriaLogs v1.49.0
+  and v1.53.0: TestExtractionListIdentityMatchLoki goes from 55 to 82 of 149
+  runs matching at step < range (27 queries: sum, sum by, avg and avg by over
+  avg, max, min, stddev and stdvar over time, logfmt and json lists), and
+  TestUnwrapDynamicValueFormsMatchLoki's 45 extraction-list rows at step <
+  range match. `sum(stdvar_over_time({...} | logfmt amount | unwrap amount
+  [5m]))` answered 0 at a step of one minute (each line its own series, each
+  step bucket read as the window). A clause by level or detected_level keeps
+  the stream's series (the level of a line is read from raw rows there).
+  A listed label of many values over a long range (`| logfmt amount, user_id`
+  over hours) is read in time chunks under -manual-range-metric-row-limit,
+  each with the range before it, and folded chunk by chunk (decision
+  metric-series-identity/extraction-list-window-chunks):
+  TestListedWindowChunksMatchLoki holds six hours at steps of 15 s and 7 s to
+  Loki's answers, read whole and in 37-38 chunks.
+
+  Still open: after a parser of every key, a range longer than the step
+  (step < range) keeps the stream's series: the window evaluator merges the
+  step buckets of streams, not of a series hash (one per line when lines carry
+  a key of their own), so those queries are translated by the string translator
+  as before; rate_counter and quantile_over_time
   (semantics/unwrap-quantile-sum-by-group-quantile) keep their previous series;
   a label filter between the parser and the unwrap under the Loki profile
   (semantics/unwrap-per-series-identity-label-filter); first and last over a
