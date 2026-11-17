@@ -68,8 +68,7 @@ func rankingBinaryOperandQueries(op string) []string {
 // query, whatever the operand's quoted text holds (a parenthesis, an operator, a matcher value: the string translator's
 // text for such an operand drops the operation, the binary route reads its tree), over chains, bool and vector(n)
 // operands, at a step equal to and shorter than the range, and with a label_replace inside the operand applied once
-// (the handlers applied it again over the answer: pod="x-x-p1"). The gated shapes (`topk(1, count_over_time(..[1m]) *
-// 2)` at step 60) take the scalar fast path. Loki's answers are recorded from its engine over the same lines
+// (the handlers applied it again over the answer: pod="x-x-p1"). Loki's answers are recorded from its engine over the same lines
 // (test/oracle/loki engine; LVP_RUN_ORACLES=1 records again); the Loki streams carry the service_name Loki gives them.
 // Each request runs against the emulated VictoriaLogs v1.49.0 and v1.53.0.
 //

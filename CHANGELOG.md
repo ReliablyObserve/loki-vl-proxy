@@ -21,13 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for a list of the unwrapped key alone, and 80% lower after a parser of every key (`max by (ns)
   (max_over_time(... | logfmt | unwrap amount [5m]))` 718 to 140 ms); 44-71% lower than before the extraction list's
   series identity. A range longer than the step was already answered from the group's rows and is unchanged.
-- A ranking, `stddev` or `stdvar` over a range function of lines and a number over a tumbling window (range = step)
-  (`topk(3, count_over_time({...}[15s]) * 2)` at a 15s step) is answered from one VictoriaLogs stats request again,
-  without the binary route's sub-request: the line-function, arithmetic, no-`bool`, no-matching shapes whose answer
-  the stats route gives exactly (held to the binary route on 2,880 requests and to Loki's recorded answers). Every
-  other binary operand keeps the binary route. A first request allocates 1.1-1.4% less than through the binary route;
-  a repeated or refreshed one reads the stats extents again instead of the operand's cached answer, and allocates 38-62%
-  more (one VictoriaLogs call cold, none on a repeat, either way).
 
 ### Fixed
 

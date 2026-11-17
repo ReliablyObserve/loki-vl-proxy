@@ -92,8 +92,8 @@ func BenchmarkRankedTopKRepeat(b *testing.B) { benchRankedTopK(b, "repeat") }
 func BenchmarkRankedTopKMoved(b *testing.B)  { benchRankedTopK(b, "moved") }
 
 // A ranking and a stddev over a binary operation of a count and a number: over a grouped count in a sliding window
-// (the binary route), with and without a parenthesis in a quoted line filter, and over a count in a tumbling window on
-// the step's grid (range == step), which the scalar fast path answers from one stats request (rangeRankScalarOperand).
+// (the binary route), with and without a parenthesis in a quoted line filter, and over a count in a tumbling window
+// (range == step).
 const (
 	rankedTopKBinaryBenchQuery         = `topk(3, sum by (app) (count_over_time({env="production"}[5m])) * 2)`
 	rankedTopKBinaryQuotedBenchQuery   = `topk(3, sum by (app) (count_over_time({env="production"} != "(" [5m])) * 2)`

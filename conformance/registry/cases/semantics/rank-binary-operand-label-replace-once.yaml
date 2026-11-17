@@ -19,13 +19,6 @@ why: |
   The handlers now leave the calls to the operands, and answers cached before
   are fenced (@rank-over-binary-label-replace-v1:).
 
-  The same route answers a range function of lines and a number over a
-  tumbling window, range = step (`topk(3, count_over_time({..}[15s]) * 2)`
-  at step 15s) from one stats request, as before #1541 (proxyScalarStatsBinary,
-  rangeRankScalarOperand): TestRankScalarFastPathMatchesBinaryRoute holds those
-  1440 gated requests to the binary route's answer, and every other operand
-  takes the binary route.
-
   Recorded with Loki's engine (TestRankingOverBinaryOperandMatchesRecordedLoki,
   internal/proxy, emulated VictoriaLogs v1.49.0 and v1.53.0): 16 shapes over
   five operands (three quoted texts, a matcher, a control), 1m and 5m windows,
@@ -58,10 +51,10 @@ gap:
   fixed_by: '#1614'
   impact: explore-visible
   effort: S
-  area: 'internal/proxy metric_agg.go handleRangeMetricPostAggregation and handleInstantMetricPostAggregation (label transforms of a binary operand), rank_binary_fence.go, rank_binary_scalar_fast.go'
+  area: 'internal/proxy metric_agg.go handleRangeMetricPostAggregation and handleInstantMetricPostAggregation (label transforms of a binary operand), rank_binary_fence.go'
   loki: 'a label_replace is applied once, to its own operand'
   proxy: 'the same: the operands apply their own label_replace calls and the handlers do not apply them again'
-  planned_test: 'TestRankingOverBinaryOperandMatchesRecordedLoki (internal/proxy; recorded Loki engine answers, VictoriaLogs v1.49.0 and v1.53.0), TestRankScalarFastPathGate, TestRankScalarFastPathMatchesBinaryRoute, the rank-over-binary-label-replace rows of TestResponseKeyFencesFireOnTheSpellingsTheParserReads'
+  planned_test: 'TestRankingOverBinaryOperandMatchesRecordedLoki (internal/proxy; recorded Loki engine answers, VictoriaLogs v1.49.0 and v1.53.0), the rank-over-binary-label-replace rows of TestResponseKeyFencesFireOnTheSpellingsTheParserReads'
   visual: none
   visual_reason: 'hand-written queries: Grafana and Drilldown build no ranking over a binary operation; the series labels and values are compared with recorded Loki answers'
   clusters: []

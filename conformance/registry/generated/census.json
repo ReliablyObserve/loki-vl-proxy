@@ -1918,8 +1918,6 @@
     "internal/proxy/range_metric_row_limit_error_test.go | limits/row-limit-answers-loki-limit-text",
     "internal/proxy/rank_binary_range_test.go | cache-response-key-versions",
     "internal/proxy/rank_binary_range_test.go | semantics/rank-over-binary-operation",
-    "internal/proxy/rank_binary_scalar_fast_test.go | loki_api_v1_query_range",
-    "internal/proxy/rank_binary_scalar_fast_test.go | semantics/rank-binary-operand-label-replace-once",
     "internal/proxy/ranked_topk_cached_route_test.go | limits/top-n-ranking-not-silent",
     "internal/proxy/ranked_topk_cached_route_test.go | loki_api_v1_query_range",
     "internal/proxy/ranked_topk_cached_route_test.go | quality/query-range-extent-cache",
@@ -3058,7 +3056,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 714,
+      "go": 713,
       "playwright": 2
     },
     "page_kinds": {
