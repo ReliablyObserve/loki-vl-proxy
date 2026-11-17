@@ -478,6 +478,42 @@ func newFoldAccumulator(level foldLevel, vector bool) *foldAccumulator {
 }
 
 func (a *foldAccumulator) add(metric map[string]string, points []typedPoint) {
+	group := a.group(metric, len(points))
+	for _, point := range points {
+		cell := group.cell(point.ts, a.vector)
+		cell.n++
+		cell.v = a.level.merge.combine(cell.v, point.v, cell.n)
+	}
+}
+
+// addPartial folds a row of series folded before it (a parser's series that lie in one bucket, lower.SeriesFold):
+// each point is the sum of the values of weights[i] series, or their extreme under max and min, and joins its cell
+// as those series would one by one: a sum adds it, an extreme compares it, a mean weighs it by the series it holds
+// and a count adds them.
+func (a *foldAccumulator) addPartial(metric map[string]string, points []typedPoint, weights []float64) {
+	group := a.group(metric, len(points))
+	m := a.level.merge
+	for i, point := range points {
+		cell := group.cell(point.ts, a.vector)
+		w := int(weights[i])
+		switch {
+		case m.count:
+			cell.v += float64(w)
+		case cell.n == 0 && m.avg:
+			cell.v = point.v / float64(w)
+		case cell.n == 0:
+			cell.v = point.v
+		case m.avg:
+			cell.v += (point.v - float64(w)*cell.v) / float64(cell.n+w)
+		default:
+			cell.v = m.combine(cell.v, point.v, cell.n+1)
+		}
+		cell.n += w
+	}
+}
+
+// group is the group of metric's kept labels, created with room for points cells.
+func (a *foldAccumulator) group(metric map[string]string, points int) *typedGroup {
 	a.pairs = a.pairs[:0]
 	for name, value := range metric {
 		if a.level.keeps(name) {
@@ -499,29 +535,30 @@ func (a *foldAccumulator) add(metric map[string]string, points []typedPoint) {
 	}
 	group := a.groups[a.key.String()]
 	if group == nil {
-		group = &typedGroup{key: a.key.String(), metric: make(map[string]string, len(pairs)), at: make(map[float64]int32, len(points)),
-			cells: make([]typedCell, 0, len(points))}
+		group = &typedGroup{key: a.key.String(), metric: make(map[string]string, len(pairs)), at: make(map[float64]int32, points),
+			cells: make([]typedCell, 0, points)}
 		for _, pair := range pairs {
 			group.metric[pair[0]] = pair[1]
 		}
 		a.groups[group.key] = group
 		a.order = append(a.order, group)
 	}
-	for _, point := range points {
-		ts := point.ts
-		if a.vector {
-			ts = 0 // one cell: the group's time is its first series'
-		}
-		i, ok := group.at[ts]
-		if !ok {
-			i = int32(len(group.cells))
-			group.at[ts] = i
-			group.cells = append(group.cells, typedCell{ts: point.ts})
-		}
-		cell := &group.cells[i]
-		cell.n++
-		cell.v = a.level.merge.combine(cell.v, point.v, cell.n)
+	return group
+}
+
+// cell is the group's cell at the sample time ts, created empty; a vector has one cell, at its first series' time.
+func (g *typedGroup) cell(ts float64, vector bool) *typedCell {
+	key := ts
+	if vector {
+		key = 0 // one cell: the group's time is its first series'
 	}
+	i, ok := g.at[key]
+	if !ok {
+		i = int32(len(g.cells))
+		g.at[key] = i
+		g.cells = append(g.cells, typedCell{ts: ts})
+	}
+	return &g.cells[i]
 }
 
 func (a *foldAccumulator) result() typedBody {

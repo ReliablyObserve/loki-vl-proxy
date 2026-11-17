@@ -355,6 +355,14 @@ func (p *Proxy) unwrapWindowRoute(r *http.Request, spec statsCompatSpec, origSpe
 	if !hasOrigSpec {
 		return spec, false, false
 	}
+	if identityAhead(r.Context()) {
+		// A parser's identity whose hash stands before the gate: its stats group by the series hash, and the window
+		// evaluator answers it whatever the window, in time chunks folded by the outer aggregation as they are read
+		// (listedWindowChunksRoute). Loki counts max_query_series on the folded answer, so the series read before the
+		// fold are bounded by the raw-row budget of a request that folds its series.
+		p.recordFoldBudget(r.Context())
+		return spec, false, true
+	}
 	query := r.FormValue("query")
 	if !unwrapWindowBuckets(spec, origSpec, manualFunc, originalLogql, query, step) {
 		return spec, false, false

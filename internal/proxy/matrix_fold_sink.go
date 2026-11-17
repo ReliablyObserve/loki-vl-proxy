@@ -73,6 +73,14 @@ func (s *matrixFoldSink) add(metric map[string]string, points []typedPoint) {
 	}
 }
 
+// addPartial folds a row of series folded before it: each point the sum (or extreme) of the values of weights[i]
+// series (foldAccumulator.addPartial).
+func (s *matrixFoldSink) addPartial(metric map[string]string, points []typedPoint, weights []float64) {
+	if len(points) > 0 {
+		s.acc.addPartial(metric, points, weights)
+	}
+}
+
 // finish applies the remaining levels and encodes the answer, which is held to
 // the response bound like the matrix it replaces; fold is marked done.
 func (s *matrixFoldSink) finish(fold *matrixFold, maxBytes int) ([]byte, error) {

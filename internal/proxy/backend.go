@@ -776,6 +776,27 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		}
 		return resp, err
 	}
+	if seriesFoldFrom(ctx) != nil && path == statsQueryRangePath {
+		// A folded read of a parser's series identity (series_fold_read.go): identical reads in flight share one call.
+		resp, err := p.seriesFoldPost(ctx, path, params, sentParams)
+		if err == nil && stripUnwrapCounter != nil {
+			if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
+				return nil, err
+			}
+		}
+		if err == nil && stripJSONMarks != nil {
+			resp, _, err = p.jsonStripResponse(ctx, resp, stripJSONMarks, path, sentParams)
+		}
+		return resp, err
+	}
+	return p.vlPostSend(ctx, path, params, sentParams, stripUnwrapCounter, stripJSONMarks)
+}
+
+// vlPostSend sends a POST of params (rewritten for the unwrap and JSON parser error checks already; sentParams as the
+// caller sent them) to VictoriaLogs and reads its answer through the request's stripUnwrapCounter and stripJSONMarks,
+// when it has them.
+func (p *Proxy) vlPostSend(ctx context.Context, path string, params, sentParams url.Values, stripUnwrapCounter func([]byte) ([]byte, error),
+	stripJSONMarks func([]byte) ([]byte, []jsonErrorHit, error)) (*http.Response, error) {
 	params, witness := p.pruneLevelChain(ctx, path, params)
 	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, params))))
 	u := backendRequestURL(p.backend, path)

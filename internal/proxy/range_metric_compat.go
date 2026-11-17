@@ -1209,7 +1209,7 @@ func (p *Proxy) collectStatsFastPathHits(ctx context.Context, spec statsCompatSp
 		return nil, false, err
 	}
 	if err != nil {
-		return nil, false, nil
+		return nil, false, identityAheadReadError(ctx, err)
 	}
 	return series, true, nil
 }
@@ -1411,13 +1411,9 @@ func slidingStatsBucket(step, window time.Duration) (time.Duration, bool) {
 func setSlidingStatsRangeParams(params url.Values, start, end time.Time, hitStep time.Duration) {
 	params.Set("start", start.UTC().Format(time.RFC3339Nano))
 	params.Set("end", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
-	if hitStep%time.Second == 0 {
-		params.Set("step", strconv.FormatInt(int64(hitStep/time.Second), 10)+"s")
-	} else {
-		params.Set("step", strconv.FormatInt(int64(hitStep), 10)+"ns")
-	}
-	shift := ((start.UnixNano()+1)%int64(hitStep) + int64(hitStep)) % int64(hitStep)
-	params.Set("offset", strconv.FormatInt(-shift, 10)+"ns")
+	step, offset := slidingStatsGrid(start, hitStep)
+	params.Set("step", step)
+	params.Set("offset", offset)
 }
 
 // tumblingStatsRangeParams is the stats_query_range form of a tumbling fetch:
@@ -1617,6 +1613,8 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// first and last over time read the row's value with a second stats of the
 	// same groups (rowBucketPick).
 	statsQuery := baseQuery + by + statsAggFunc + rowBucketPick(statsAggFunc, by)
+	// A parser's series identity folds the series that lie in one bucket (series_fold_read.go).
+	statsQuery, fold := seriesFoldFrom(ctx).foldedQuery(statsQuery, baseQuery, groupBy, statsAggFunc, start, hitStep)
 
 	params := url.Values{}
 	params.Set("query", statsQuery)
@@ -1629,14 +1627,20 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	// Acquire concurrency slot. The Drilldown Fields page fires ~30 of these
 	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
-	// Block until a slot is free or the request is cancelled.
-	release, err := p.takeStatsQueryRangeSlot(ctx)
+	// Block until a slot is free or the request is cancelled. A folded read takes
+	// it in the call its identical reads share (seriesFoldPost).
+	release, err := p.statsReadSlot(ctx, fold)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer release()
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
+	if errors.Is(err, errSeriesFoldTooLong) {
+		// A folded read too long for VictoriaLogs reads every series instead.
+		release()
+		return p.collectRangeMetricHitsAux(context.WithValue(ctx, seriesFoldKey{}, (*seriesFoldRead)(nil)), baseQuery, groupBy, origGroupBy, byExplicit, statsAggFunc, start, end, hitStep, aux)
+	}
 	if err != nil {
 		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
@@ -1650,7 +1654,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	limit := p.resolvedMaxStatsQuerySeries(ctx)
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
-	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc))
+	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc)+fold.extraResults())
 	if err != nil {
 		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
@@ -1730,6 +1734,9 @@ func (p *Proxy) collectRangeMetricHitsAux(
 			metric = p.statsGroupMetric(metricObj, vlToLoki)
 		}
 		seriesKey := canonicalLabelsKey(metric)
+		if fold != nil && fold.readsRow(seriesMap, seriesKey, metricObj, metric, name, values, start, hitStep) {
+			return
+		}
 		if devs != nil {
 			devs.add(seriesKey, statsGroupID(metricObj), metric, name, values, start, hitStep)
 			return
@@ -1819,7 +1826,9 @@ func (p *Proxy) statsGroupMetric(metricObj *fj.Object, vlToLoki map[string]strin
 	metric := make(map[string]string)
 	metricObj.Visit(func(k []byte, mv *fj.Value) {
 		key := string(k)
-		if key == "__name__" || strings.HasPrefix(key, "__lvp_") {
+		if key == "__name__" || strings.HasPrefix(key, "__lvp_") && key != dynamicSeriesHashLabel {
+			// The series hash of a parser's identity stays: it tells the series apart until the outer aggregation
+			// folds them (matrixFoldSink), which drops it.
 			return
 		}
 		value := string(mv.GetStringBytes())
@@ -2000,8 +2009,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 
 	rows, badRows := 0, 0
+	done := ctx.Done()
 	for scanner.Scan() {
-		if err := checkManualMetricRead(ctx, limited); err != nil {
+		if err := checkManualMetricReadDone(ctx, done, limited); err != nil {
 			return nil, err
 		}
 		line := scanner.Bytes()
@@ -2019,7 +2029,8 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			continue
 		}
 
-		rawTS := string(v.GetStringBytes("_time"))
+		timeBytes, streamBytes, levelBytes, marked := jsonCheck.rawRowHead(v)
+		rawTS := string(timeBytes)
 		if rawTS == "" {
 			continue
 		}
@@ -2034,7 +2045,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		if ts < 1e12 {
 			ts *= int64(time.Second)
 		}
-		jsonCheck.takeRawRowFJ(v, ts)
+		if marked {
+			jsonCheck.takeRawRowMark(v, ts)
+		}
 
 		sampleValue, ok := p.extractManualSampleValueFJ(v, field, unwrapConv)
 		if !ok {
@@ -2042,8 +2055,8 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			continue
 		}
 
-		streamStr := string(v.GetStringBytes("_stream"))
-		levelStr := strings.TrimSpace(string(v.GetStringBytes("level")))
+		streamStr := string(streamBytes)
+		levelStr := strings.TrimSpace(string(levelBytes))
 		var derived *string
 		derivedKey := ""
 		if streamIdentity {
@@ -2575,6 +2588,9 @@ type manualSeriesSamples struct {
 	// Deviations holds the population standard deviation of every present
 	// bucket, ascending, for stddev and stdvar over time (deviationBucketStats).
 	Deviations []rangeMetricSample
+	// Folded marks the row of the series that lie wholly in one bucket, folded by VictoriaLogs (lower.SeriesFold):
+	// Samples holds the sum (or extreme) of their values per bucket and Counts how many they are.
+	Folded bool
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -2867,6 +2883,9 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	// The folded rows of a parser's series identity join each group after its series one by one: a mean over the
+	// series is NaN when a finite series follows an infinite one, and the folded series are finite.
+	keys, foldedKeys := splitFoldedKeys(keys, series)
 
 	startNS, endNS, stepNS := start.UnixNano(), end.UnixNano(), step.Nanoseconds()
 	expectedBuckets := min(int(end.Sub(start)/step)+1, 32768) // pre-size cap; appends grow beyond it
@@ -2971,6 +2990,9 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 				"values": json.RawMessage(append(points, ']')),
 			})
 		}
+	}
+	if err := addFoldedSeries(sink, series, foldedKeys, startNS, endNS, stepNS, windowNS); err != nil {
+		return nil, err
 	}
 	return results, nil
 }

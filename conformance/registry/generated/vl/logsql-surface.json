@@ -241,7 +241,8 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/patterns_counts.go"
+        "internal/proxy/patterns_counts.go",
+        "internal/proxy/series_fold_read.go"
       ]
     },
     {
@@ -628,6 +629,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/series_fold_read.go",
         "internal/proxy/unwrap_samples.go",
         "internal/translator/translator.go"
       ]
@@ -653,6 +655,7 @@
         "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
+        "internal/proxy/series_fold_read.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/unwrap_samples.go",
         "internal/translate/range.go",
@@ -747,6 +750,7 @@
         "internal/proxy/backend_response_guard.go",
         "internal/proxy/patterns_counts.go",
         "internal/proxy/query_translation.go",
+        "internal/proxy/series_fold_read.go",
         "internal/proxy/unwrap_samples.go",
         "internal/translator/translator.go"
       ]
@@ -768,6 +772,7 @@
       "used_in": [
         "internal/proxy/patterns_counts.go",
         "internal/proxy/query_translation.go",
+        "internal/proxy/series_fold_read.go",
         "internal/translator/translator.go"
       ]
     },
@@ -836,6 +841,7 @@
       "since": "v1.49.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/series_fold_read.go",
         "internal/proxy/unwrap_samples.go",
         "internal/translator/translator.go"
       ]
@@ -851,6 +857,7 @@
         "internal/proxy/metric_agg.go",
         "internal/proxy/nested_vector_fold.go",
         "internal/proxy/query_translation.go",
+        "internal/proxy/series_fold_read.go",
         "internal/proxy/unwrap_samples.go",
         "internal/translate/range.go",
         "internal/translator/translator.go",

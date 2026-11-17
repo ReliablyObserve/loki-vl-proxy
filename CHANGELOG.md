@@ -21,10 +21,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
   text and positions do not change. A query already in that spelling costs one scan of its bytes, with no
   allocation.
+
+## [2.334.0] - 2026-11-17
+
+### Changed
+
+- A metric read as raw rows (a function the ordered JSON evaluator does not own, such as `sort(rate(... | json [2m]))`
+  or `topk(...)`) spends less time per row. The check that makes a JSON parser error fail such a metric as Loki does now
+  reads the row's time, stream, level and the check's mark in one pass over the row's keys, wherever VictoriaLogs places
+  the mark, instead of a lookup of its own, and a read polls its request's cancellation once per row without walking the
+  request's context chain (the check adds one layer to it instead of two). Answers, statuses and the requests sent to
+  VictoriaLogs do not change.
+
+### Fixed
+- `query_range` with a range longer than the step (sliding windows, the `$__auto` steps Grafana sends under a `[5m]`
+  range) now reads Loki's series for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`,
+  `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream
+  plus every parsed label except the unwrapped one, as `query` and a range up to the step already did. Those requests
+  kept one series per stream or per group, so `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms
+  [5m]))` at a 1m step answered the group's pooled mean instead of the sum of the per-series means (over six hours of
+  lines that each carry a request id, the points added up to 9.0e5 instead of 3.0e9). VictoriaLogs takes the function's partial
+  aggregates per series and per anchored bucket and, in the same stats query, folds the series that lie wholly in
+  one bucket of the read (a subquery over the read lists the series that span buckets): the answer holds a row per
+  bucket and group for those, and the partials of the spanning series, not a row per line. The proxy merges the
+  kept series' buckets into Loki's windows and adds the folded rows to the outer aggregation. One VictoriaLogs call
+  per request (more only when the series that span buckets pass the read budget, read in the time chunks of the
+  extraction list's windows); no raw rows are read; proxy memory does not grow with the lines. These reads are not
+  kept in the stats extent cache (their buckets depend on the read's window): a refresh reads its window again, and
+  identical requests in flight share one call. `max by` over `max_over_time` and `min by` over `min_over_time` keep
+  their per-group read. Answers cached before the fix are not served again
+  (semantics/unwrap-per-series-identity-raw-rows).
+
+## [2.333.1] - 2026-11-17
+
+### Fixed
+
 - The memory of queries that lately met an unwrap conversion error (it starts the next request's first-window
   lookup early) was one process-wide map shared by every Proxy instance; it is now each Proxy's own (locked,
   at most 1024 keys, expiring after 10 minutes, no goroutine to stop). A server runs one Proxy, so no answer changes;
   a second instance in the same process (tests) no longer inherits another's recent errors and their extra reads.
+
+## [2.333.0] - 2026-11-17
+
+### Fixed
+
 - A metric whose JSON parser meets a line it cannot parse now fails with Loki's `400` and its
   `pipeline error: 'JSONParserErr' for series: ...` text under every function Loki keeps the error through: `sort`,
   `sort_desc`, `topk`, `bottomk`, `label_replace`, `max`/`avg`/`count` and other aggregations, nested aggregations,

@@ -814,6 +814,18 @@ type FilterFunc struct {
 func (f FilterFunc) String() string { return fieldPrefix(f.Field) + f.Name + "(" + f.Args + ")" }
 func (f FilterFunc) filterExpr()    {}
 
+// InQuery matches the rows whose field holds one of the values a subquery answers: field:in(<query>). The subquery
+// is a whole query whose last pipe leaves one field (`| fields f`), kept as written; VictoriaLogs runs it once, with
+// the time range and the extra filters of the query that holds it (Query.AddTimeFilter and AddExtraFilters visit
+// every subquery, v1.49.0 and v1.53.0 alike).
+type InQuery struct {
+	Field string // empty is the message
+	Query string
+}
+
+func (q InQuery) String() string { return fieldPrefix(q.Field) + "in(" + q.Query + ")" }
+func (q InQuery) filterExpr()    {}
+
 // --- DeferredExpr ---
 
 // DeferredExpr holds a raw expression string for deferred/opaque nodes.

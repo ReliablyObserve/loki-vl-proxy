@@ -78,19 +78,10 @@ var stddevKnown = func() map[string]map[string]string {
 			known[q][k] = id
 		}
 	}
-	// A range longer than the step: the window evaluator merges the step buckets of streams, the group's pooled
-	// samples under sum by, max by and avg by, and each line under sum.
-	sliding := []string{"step<range"}
-	const pooled, perLine = "semantics/stdvar-grouped-pooled-variance", "semantics/unwrap-per-series-identity-raw-rows"
-	add(`sum by (app) (stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, pooled, sliding...)
-	add(`sum by (app) (stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, pooled, sliding...)
-	add(`max by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, sliding...)
-	add(`avg by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, sliding...)
-	add(`sum(stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, sliding...)
-	add(`sum(stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, sliding...)
 	// count by over a parser query on a range longer than the step: the stats group by the stream and the window
 	// evaluator does not merge them after a parser, so every point is the step bucket's, and a window whose last step
 	// holds no line of a series misses that series (semantics/unwrap-over-time-range-windows-residual-forms).
+	sliding := []string{"step<range"}
 	const residual = "semantics/unwrap-over-time-range-windows-residual-forms"
 	add(`count by (app) (stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, residual, sliding...)
 	add(`count by (app) (stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, residual, sliding...)

@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"io"
 	"net/http"
 	"net/url"
@@ -408,6 +410,31 @@ func unwrapSplitPipes(text string) ([]string, bool) {
 }
 
 // unwrapClosingQuote is the index of the quote that closes the one at text[open], or -1.
+// topLevelStatsIndex is the index of the first " | stats " of query outside parentheses and quotes (not a
+// subquery's), -1 when there is none.
+func topLevelStatsIndex(query string) int {
+	depth := 0
+	for i := 0; i < len(query); i++ {
+		switch c := query[i]; c {
+		case '"', '`', '\'':
+			end := unwrapClosingQuote(query, i)
+			if end < 0 {
+				return -1
+			}
+			i = end
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ' ':
+			if depth == 0 && strings.HasPrefix(query[i:], " | stats ") {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 func unwrapClosingQuote(text string, open int) int {
 	q := text[open]
 	for i := open + 1; i < len(text); i++ {
@@ -616,15 +643,20 @@ type unwrapNaN struct {
 // unwrapPoisonFuncs are the stats functions whose result is NaN when a value is.
 var unwrapPoisonFuncs = map[string]bool{"sum": true, "avg": true, "stddev": true, "stdvar": true}
 
-// unwrapNaNFor reads how the nan groups of the stats query apply.
+// unwrapNaNFor reads how the nan groups of the stats query apply: the stats pipes from the first one of the query
+// itself (not one of a subquery, lower.SeriesFold's), up to the value of a folded read (lower.SeriesFoldField),
+// whose second stats pipe passes the series that keep their hash as they are.
 func unwrapNaNFor(query string) *unwrapNaN {
 	n := &unwrapNaN{counts: map[string]bool{"__sample_count": true}}
-	pipes, ok := unwrapSplitPipes(query[max(strings.Index(query, " | stats "), 0):])
+	pipes, ok := unwrapSplitPipes(query[max(topLevelStatsIndex(query), 0):])
 	if !ok {
 		return n
 	}
 	poison, last := true, false
 	for _, pipe := range pipes {
+		if strings.HasSuffix(pipe, " as "+lower.SeriesFoldField) {
+			break
+		}
 		if !strings.HasPrefix(pipe, "stats ") {
 			continue
 		}
@@ -2116,13 +2148,14 @@ func (p *Proxy) unwrapStripResponse(resp *http.Response, strip func([]byte) ([]b
 		return nil
 	}
 	limit := p.decodedBodyLimit()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	// Read in one allocation when the length is known (a folded answer, or one VictoriaLogs sends with its length).
+	body, err := readBodyKnownSize(resp.Body, resp.ContentLength, limit)
 	_ = resp.Body.Close()
+	if errors.Is(err, errBodyTooLarge) {
+		return newBackendBodyTooLarge(limit)
+	}
 	if err != nil {
 		return err
-	}
-	if int64(len(body)) > limit {
-		return newBackendBodyTooLarge(limit)
 	}
 	out, err := strip(body)
 	if err != nil {
