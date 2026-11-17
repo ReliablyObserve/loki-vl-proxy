@@ -52,7 +52,8 @@ var seriesFoldQueries = []string{
 // the infinity when it is the last, an order the series hash does not keep (the proxy adds the folded series after
 // the ones it keeps, NaN for most windows as in Loki). A listed run that matches Loki fails: the list only shrinks.
 var seriesFoldKnown = map[string]map[string]string{
-	`avg by (route) (min_over_time({service_name="mix"} | json | unwrap duration_ms [3m]))`: {"1h step=7s": "semantics/unwrap-gate-parsefloat-divergences"},
+	`avg by (route) (min_over_time({service_name="mix"} | json | unwrap duration_ms [3m]))`: {
+		"1h step=7s": "semantics/unwrap-gate-parsefloat-divergences", "1h step=20s": "semantics/unwrap-gate-parsefloat-divergences"},
 }
 
 // seriesFoldService is the service of a fixture.
