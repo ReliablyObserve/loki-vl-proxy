@@ -2653,8 +2653,8 @@ func parseFloatValue(raw interface{}) (float64, bool) {
 }
 
 // resolvedMaxStatsQuerySeries returns the request tenant's max_query_series:
-// -tenant-limits, -tenant-default-limits, -max-stats-query-series, or Loki's
-// default of 500 (see queryLimitsFor).
+// -tenant-limits, -tenant-default-limits, -max-stats-query-series, or the
+// proxy's default of 1000 (see queryLimitsFor).
 func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
 	limit := p.requestQueryLimits(ctx).MaxQuerySeries
 	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
@@ -2672,9 +2672,10 @@ func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
 	return limit
 }
 
-// defaultStatsQuerySeries is Loki's stock max_query_series, the default of
-// -max-stats-query-series.
-const defaultStatsQuerySeries = 500
+// defaultStatsQuerySeries is the proxy's default max_query_series, the default
+// of -max-stats-query-series. It is above Loki's stock 500: the proxy answers
+// faster than Loki, so it can afford more series per query by default.
+const defaultStatsQuerySeries = 1000
 
 // capSeriesByTotalCount keeps the maxSeries series with the highest total
 // sample value. VictoriaLogs returns stats results in label order, so a plain

@@ -212,7 +212,7 @@ func (p *Proxy) requestQueryLimits(ctx context.Context) queryLimits {
 	return p.queryLimitsFor(getOrgID(ctx))
 }
 
-// flagMaxQuerySeries is -max-stats-query-series, or Loki's default 500.
+// flagMaxQuerySeries is -max-stats-query-series, or the proxy's default 1000.
 func (p *Proxy) flagMaxQuerySeries() int {
 	if p != nil && p.maxStatsQuerySeries > 0 {
 		return p.maxStatsQuerySeries

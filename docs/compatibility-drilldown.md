@@ -97,7 +97,7 @@ buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `
 
 - Every series up to the tenant's effective `max_query_series`
   (`-tenant-limits` → `-tenant-default-limits` → `-max-stats-query-series` →
-  Loki's default of 500), with the same values Loki returns.
+  the proxy's default of 1000, Loki's is 500), with the same values Loki returns.
 - Under the limit that is one `stats_query_range` call, for Drilldown and
   every other client alike.
 - Every other client gets Loki's `400` as soon as the response holds more
