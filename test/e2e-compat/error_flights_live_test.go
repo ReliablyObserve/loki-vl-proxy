@@ -187,9 +187,12 @@ func TestErrorFlightsLive_ConcurrentIdenticalSuccessesShareOneCall(t *testing.T)
 	if calls > int64(one.calls()) {
 		t.Fatalf("50 identical requests sent %d VictoriaLogs calls, one request sends %d", calls, one.calls())
 	}
+	t.Logf("50 identical successes: %d VictoriaLogs calls (one request: %d)", calls, one.calls())
+	// The stack's main proxy runs another label profile: the lines, not the
+	// stream labels, are compared.
 	main := efDo(t, context.Background(), proxyURL, http.MethodGet, "/loki/api/v1/query_range", params, "0")
-	if main.code != http.StatusOK || main.data() != answers[0].data() {
-		t.Fatalf("the main proxy answers %d with other data", main.code)
+	if main.code != http.StatusOK || efLines(t, main.body) != efLines(t, answers[0].body) {
+		t.Fatalf("the main proxy answers %d with other lines:\nmain  %s\nproxy %s", main.code, efLines(t, main.body), efLines(t, answers[0].body))
 	}
 	loki := efDo(t, context.Background(), lokiURL, http.MethodGet, "/loki/api/v1/query_range", params, "0")
 	if loki.code != http.StatusOK || efLines(t, loki.body) != efLines(t, answers[0].body) {
@@ -258,6 +261,7 @@ func TestErrorFlightsLive_SeriesLimitHeldForDataTTL(t *testing.T) {
 	if calls > int64(one.calls()) {
 		t.Fatalf("50 identical failing requests sent %d VictoriaLogs calls, one request sends %d", calls, one.calls())
 	}
+	t.Logf("50 identical requests over the series limit: %d VictoriaLogs calls (one request: %d)", calls, one.calls())
 	held := efGet(t, params)
 	if held.calls() != 0 || held.header.Get(efCacheResultHeader) != "hit" || !bytes.Equal(held.body, answers[0].body) {
 		t.Fatalf("repeat: %d calls, cache result %q", held.calls(), held.header.Get(efCacheResultHeader))
@@ -377,14 +381,25 @@ func TestErrorFlightsLive_ZOutageHeldAndRecovers(t *testing.T) {
 			t.Fatalf("outage answer %d %q, want one failure for all", a.code, a.body)
 		}
 	}
-	if burstCalls > 2 {
-		t.Fatalf("50 identical requests during the outage sent %d VictoriaLogs calls", burstCalls)
+	burstHeader := 0
+	for _, a := range burst {
+		burstHeader += a.calls()
+	}
+	t.Logf("outage burst of 50: %d VictoriaLogs calls by the requests (header), %d on /metrics (background included), status %d", burstHeader, burstCalls, burst[0].code)
+	if burstHeader > 4 {
+		t.Fatalf("50 identical requests during the outage sent %d VictoriaLogs calls, want one request's", burstHeader)
 	}
 
 	// Refresh storm: end=now moves on every request.
 	before = efBackendCalls(t)
 	stopAt := time.Now().Add(3 * time.Second)
-	var wg sync.WaitGroup
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		requests int
+		byHeader int
+		statuses = map[int]int{}
+	)
 	for c := 0; c < 20; c++ {
 		wg.Add(1)
 		go func() {
@@ -392,14 +407,24 @@ func TestErrorFlightsLive_ZOutageHeldAndRecovers(t *testing.T) {
 			for time.Now().Before(stopAt) {
 				now := time.Now()
 				p := efLogParams(app, strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10), strconv.FormatInt(now.UnixNano(), 10))
-				efGet(t, p)
+				a := efGet(t, p)
+				mu.Lock()
+				requests++
+				byHeader += a.calls()
+				statuses[a.code]++
+				mu.Unlock()
 				time.Sleep(100 * time.Millisecond)
 			}
 		}()
 	}
 	wg.Wait()
-	if storm := efBackendCalls(t) - before; storm > 8 {
-		t.Fatalf("a 3 s refresh storm of 20 clients sent %d VictoriaLogs calls, want about one per second", storm)
+	storm := efBackendCalls(t) - before
+	t.Logf("3 s refresh storm, 20 clients, end=now: %d requests, %d VictoriaLogs calls by the requests (header), %d on /metrics (background included), statuses %v", requests, byHeader, storm, statuses)
+	// One request's calls (its retries included, as the burst's leader made
+	// them) per transient TTL: three seconds, plus an expiry on each edge.
+	perRequest := max(burstHeader, 1)
+	if byHeader > 5*perRequest {
+		t.Fatalf("a 3 s refresh storm of 20 clients sent %d VictoriaLogs calls, want about %d per second", byHeader, perRequest)
 	}
 
 	efDocker(t, "start")

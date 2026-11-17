@@ -372,9 +372,15 @@ func (t *flightTap) WriteHeader(code int) {
 func (t *flightTap) Write(b []byte) (int, error) {
 	l := t.lead
 	if l.code == 0 {
-		// The implicit 200 of a first Write: the body is never sniffed.
+		// The implicit 200 of a first Write: Loki's JSON, never sniffed (the
+		// same defaults as compatCacheCaptureWriter.Write).
 		l.code = http.StatusOK
-		defaultAnswerHeaders(t.Header(), l.code)
+		if strings.TrimSpace(t.Header().Get("Content-Type")) == "" {
+			t.Header().Set("Content-Type", "application/json")
+		}
+		if strings.TrimSpace(t.Header().Get("X-Content-Type-Options")) == "" {
+			t.Header().Set("X-Content-Type-Options", "nosniff")
+		}
 	}
 	if !l.overflowed && !l.flushed && len(l.body) == 0 && l.code < http.StatusBadRequest && l.f.Joined() == 0 {
 		// Nobody waits for this success: it is not kept, and a request that

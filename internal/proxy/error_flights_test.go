@@ -902,6 +902,7 @@ func TestErrorFlights_WindowFreeFailureHeldForEveryWindow(t *testing.T) {
 		{"vl query deadline", &upstreamStatusError{status: 503, class: vlErrorDeadline}, false},
 		{"vl 504", &upstreamStatusError{status: 504}, false},
 		{"refused", &url.Error{Op: "Post", URL: "x", Err: &net.OpError{Op: "dial", Err: errors.New("connection refused")}}, true},
+		{"no such host (a stopped container)", &url.Error{Op: "Post", URL: "x", Err: &net.OpError{Op: "dial", Err: &net.DNSError{Err: "no such host", Name: "victorialogs", IsNotFound: true}}}, true},
 		{"timeout", &url.Error{Op: "Post", URL: "x", Err: timeoutErr{}}, false},
 		{"aborted", &vlResponseAbortedError{}, false},
 	} {
