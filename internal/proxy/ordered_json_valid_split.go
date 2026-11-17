@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // A `| json | __error__=""` metric counts the lines Loki's JSON parser accepts
@@ -450,7 +450,7 @@ func dropSeriesWithoutPoints(series map[string]manualSeriesSamples, start, end t
 // left to the row evaluator, which derives the level like Loki's ingest.
 func (p *Proxy) storedLevelForeignFieldRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
 	var has []string
-	for _, name := range translator.DetectedLevelFieldNames {
+	for _, name := range translate.DetectedLevelFieldNames {
 		if name != detectedLevelLabel && name != "level" {
 			has = append(has, quoteLogsQLIdent(name)+":*")
 		}

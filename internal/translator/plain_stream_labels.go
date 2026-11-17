@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // Loki's parsers never overwrite a label the entry already has from its stream
@@ -29,7 +31,7 @@ import (
 
 // streamLabelsProbe is the label name the proxy's translation function answers
 // with the stream label names to read as stream values (see WithStreamLabels).
-const streamLabelsProbe = "\x03"
+const streamLabelsProbe = translate.StreamLabelsProbe
 
 // svScratch prefixes the scratch field of each such name.
 const svScratch = "__lxsv_"
@@ -37,19 +39,7 @@ const svScratch = "__lxsv_"
 // WithStreamLabels wraps a label translation function so the translator learns
 // the names (Loki label names) that are stream labels of the tenant.
 func WithStreamLabels(labelFn LabelTranslateFunc, names []string) LabelTranslateFunc {
-	if len(names) == 0 {
-		return labelFn
-	}
-	joined := streamLabelsProbe + "=" + strings.Join(names, ",")
-	return func(label string) string {
-		if label == streamLabelsProbe {
-			return joined
-		}
-		if labelFn == nil {
-			return label
-		}
-		return labelFn(label)
-	}
+	return translate.WithStreamLabels(labelFn, names)
 }
 
 // plainStreamLabels returns the names WithStreamLabels carries.

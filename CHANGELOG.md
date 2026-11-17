@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-tenant-limits` or `-tenant-default-limits`. Sizing: `-backend-max-buffered-response-bytes` (64 MiB by default)
   holds about 1,500 dense series over 1,000 steps, so a full 1000-series result over 1,000 steps (about 40 MB) fits,
   and over about 1,600 steps the byte budget has to be raised with the cap.
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
 
 ## [2.323.0] - 2026-11-17
 

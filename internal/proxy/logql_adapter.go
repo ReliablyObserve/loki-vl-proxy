@@ -2,16 +2,16 @@ package proxy
 
 import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 // binOpExprToVMInfo converts a LogQL BinOpExpr's VectorMatching into the
-// translator.VectorMatchInfo that the binary metric proxy functions expect.
-func binOpExprToVMInfo(expr *logqlpkg.BinOpExpr) *translator.VectorMatchInfo {
+// physical.Matching that the binary metric proxy functions expect.
+func binOpExprToVMInfo(expr *logqlpkg.BinOpExpr) *physical.Matching {
 	if expr.VectorMatching == nil {
 		return nil
 	}
-	vm := &translator.VectorMatchInfo{}
+	vm := &physical.Matching{}
 	switch expr.VectorMatching.Card {
 	case "on":
 		vm.MatchOn = true

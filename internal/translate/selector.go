@@ -18,6 +18,14 @@ type ParseError struct {
 	Pos int // byte offset in input; -1 if unknown
 }
 
+// UnsupportedError is returned when a valid LogQL construct has no
+// equivalent in LogsQL and cannot be translated.
+// The proxy HTTP layer maps this to errorType "bad_data".
+type UnsupportedError struct {
+	Msg  string
+	Func string // the LogQL function or construct that is unsupported
+}
+
 // SelectorRegexpFilter is selectorRegexpFieldFilter as a filter node.
 func SelectorRegexpFilter(label, pattern string, negate bool) logsql.FilterExpr {
 	return WholeValueRegexpFilterExpr(label, pattern, negate, true)
@@ -579,3 +587,5 @@ const (
 )
 
 func (e *ParseError) Error() string { return e.Msg }
+
+func (e *UnsupportedError) Error() string { return e.Msg }
