@@ -12,9 +12,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// The vector matching errors, byte for byte as Loki v3.7.7 raises them in
-// pkg/logql/evaluator.go vectorBinop (:974-975 joins the two halves of the
-// duplicate-series text with ";" and no space; :998 and :1007).
+// The vector matching errors, byte for byte as Loki v3.7.7 raises them (the two
+// halves of the duplicate-series text are joined with ";" and no space).
 const (
 	lokiDuplicateRight = "found duplicate series on the right hand-side;many-to-many matching not allowed: matching labels must be unique on one side"
 	lokiDuplicateLeft  = "found duplicate series on the left hand-side;many-to-many matching not allowed: matching labels must be unique on one side"
@@ -67,9 +66,8 @@ func decodeMatchResult(t *testing.T, body []byte) map[string][][]any {
 }
 
 // Loki evaluates one step at a time and stops at the first step whose join
-// fails (pkg/logql/engine.go: Error() is read after every Next()). Within a
-// step vectorBinop rejects a duplicate on the right hand-side before it
-// looks at the left, and names the side that is the "one" side of the
+// fails. Within a step the join rejects a duplicate on the right hand-side
+// before it looks at the left, and names the side that is the "one" side of the
 // grouping.
 // conformance: semantics/binary-ignoring-matching, loki_api_v1_query_range
 func TestBinaryMatchingErrorTextAndStepOrder(t *testing.T) {
@@ -118,8 +116,9 @@ func TestBinaryMatchingErrorTextAndStepOrder(t *testing.T) {
 }
 
 // ignoring(label) over operands where the label is absent, present on one
-// side, or present on both: the join key and the labels of the result follow
-// Loki's matchingSignature and resultMetric (evaluator.go:945-953, :1096-1128).
+// side, or present on both: the join key and the labels of the result are
+// Loki's (the same joins over generated operands are held to Loki's recorded
+// answers in TestBinaryMatchingDifferential).
 // conformance: semantics/binary-ignoring-matching, loki_api_v1_query_range
 func TestBinaryIgnoringMatchingEdgeTable(t *testing.T) {
 	s := func(labels map[string]string, points [][]any) matchSeries { return matchSeries{labels, points} }

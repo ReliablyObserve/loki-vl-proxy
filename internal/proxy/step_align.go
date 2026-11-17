@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// stepAlignedKey marks a query_range request whose bounds stepAlignMiddleware
+// stepAlignedKey marks a query_range request whose bounds alignToStepMiddleware
 // moved onto the step grid; the value is the end the client sent. Loki checks
 // the resolution limit and max_query_length on the bounds the client sent,
 // before its step alignment, and never again after it; the handler does not
@@ -33,22 +33,21 @@ func stepAlignedRawEnd(r *http.Request) (string, bool) {
 	return raw, ok
 }
 
-// stepAlignMiddleware is Loki's step alignment under
+// alignToStepMiddleware is Loki's step alignment under
 // query_range.align_queries_with_step (-align-queries-with-step). Loki's
 // query frontend runs it on metric range queries only, in the metric
 // tripperware after its limits middleware and before splitting and the
-// results cache (pkg/querier/queryrange/roundtrip.go:1028-1058; the
-// tripperware serves SampleExpr and VariantsExpr range queries,
-// roundtrip.go:419-475). Log queries, instant queries, volume and the
+// results cache (registry semantics/query-range-step-alignment). Log queries,
+// instant queries, volume and the
 // metadata endpoints are not aligned. Loki's pattern tripperware aligns
-// /loki/api/v1/patterns too (roundtrip.go:263-285); the proxy does not: its
+// /loki/api/v1/patterns too; the proxy does not: its
 // pattern samples are already bucketed on the step grid, and patterns
 // autodetect warms them under the log query's bounds. The flag defaults to
 // on. Here it sits after tenantLimitsMiddleware (the
 // limits middleware) and before the response cache, so a refresh that moves a
 // window by less than a step becomes the same request and is answered from
 // the caches, as Loki's results cache answers it.
-func (p *Proxy) stepAlignMiddleware(endpoint string, next http.HandlerFunc) http.HandlerFunc {
+func (p *Proxy) alignToStepMiddleware(endpoint string, next http.HandlerFunc) http.HandlerFunc {
 	if endpoint != "query_range" || !p.alignQueriesWithStep {
 		return next
 	}
@@ -88,22 +87,21 @@ func boundsOnStepGrid(r *http.Request) bool {
 }
 
 // alignQueryRangeToStep returns r with its start and end moved down to
-// multiples of its step, Loki's StepAlignMiddleware
-// (pkg/querier/queryrange/queryrangebase/step_align.go:20-24):
+// multiples of its step, as Loki's step alignment does
+// (registry semantics/query-range-step-alignment):
 //
 //	start := (r.GetStart().UnixMilli() / r.GetStep()) * r.GetStep()
 //	end := (r.GetEnd().UnixMilli() / r.GetStep()) * r.GetStep()
 //
-// with the step in milliseconds (the codec keeps req.Step.Milliseconds(),
-// pkg/querier/queryrange/codec.go:436). Both bounds go down; the bounds are
+// with the step in milliseconds. Both bounds go down; the bounds are
 // truncated to milliseconds first. A request without start or end is aligned
-// on the bounds Loki derives for it (pkg/loghttp/params.go:91-120), which are
-// written into the request.
+// on the bounds Loki derives for it (registry semantics/request-time-bounds),
+// which are written into the request.
 //
 // It reports false, and the request goes on as it came, when Loki would not
 // align it or would reject it first:
-//   - no step: Loki aligns to its derived default step, range/250 at least 1s
-//     (params.go:140-142), and this proxy does not evaluate a step-less
+//   - no step: Loki aligns to its derived default step, range/250 at least 1s,
+//     and this proxy does not evaluate a step-less
 //     request on that step;
 //   - not a metric query (a log query has no evaluation grid), a query that
 //     does not parse, or one with Grafana's unresolved $__ tokens;
@@ -242,7 +240,7 @@ func reencodeWithBounds(rawQuery, start, end string) string {
 // the two forms Grafana and API clients send without first trying the RFC3339
 // layouts, whose failures allocate: an integer (integerBoundUnixNano), and a
 // number with a decimal point below 1e11, seconds whose fraction is rounded to
-// milliseconds (pkg/loghttp/params.go:166-171 parseTimestamp) by
+// milliseconds (as Loki parses a timestamp) by
 // lokiFloatSecondsToNanos, the one reader of that form. Everything else goes
 // through parseLokiTimeToUnixNano.
 //

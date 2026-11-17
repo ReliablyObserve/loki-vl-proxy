@@ -55,7 +55,11 @@ cut-down manual run is neither compared nor a baseline) and reports
 transitions, never the state many rows are already in: a regression (result
 same -> differs while Loki answers 200, 200 -> error, or a slowdown that held
 for two runs or that the same run's verdict against the release also shows),
-an improvement, and the ratchet. history/ratchet.json lists the rows that were
+an improvement, and the ratchet. A warm p50 is compared with an earlier line's
+at the newer run's runner speed (runner_speed: the median move of Loki's
+computed cold times between the two runs, Loki and the seeded data being the
+same from run to run), so a runner slower or faster as a whole is no
+slowdown or improvement of the proxy. history/ratchet.json lists the rows that were
 as good as Loki (same result, 200, cold no slower than Loki's computed cold);
 the generator only adds to it, an owner removes a row by hand, and a row that
 stops being as good is a ratchet loss. Cold, never warm p50: Loki's warm is its results cache.
@@ -110,6 +114,9 @@ SHAPES = os.path.join(HERE, "shapes.json")
 FULL_RUNS, FULL_MAX_RANGE = 7, "24h"
 # A day-over-day or week-over-week move is reported only beyond both.
 NOISE, MIN_DELTA = 0.25, 0.05
+# The runner's speed between two runs is read from Loki's computed cold times (runner_speed): only colds of at least
+# SPEED_MIN_S count, and a pair of runs with fewer than SPEED_MIN_ROWS such rows in common keeps the factor 1.
+SPEED_MIN_ROWS, SPEED_MIN_S = 20, 0.05
 RATCHET = "ratchet.json"
 ACCEPTANCE = "acceptance.json"
 sys.path.insert(0, HERE)
@@ -334,6 +341,48 @@ def faster(old, new):
     return old is not None and new is not None and new < old / (1 + NOISE) and old - new > MIN_DELTA
 
 
+def loki_colds(directory=HISTORY, spec=None):
+    """{(profile, run_of(line)): {(set, shape, range): Loki's cold seconds}} over every full valid line, for
+    runner_speed: only colds Loki computed (its results cache did not answer) of at least SPEED_MIN_S."""
+    spec = spec or load_spec()
+    out = {}
+    for path in sorted(glob.glob(os.path.join(directory, "*.jsonl"))):
+        for e in read(path):
+            want = full_ranges(spec, e.get("set", ""))
+            if not e.get("valid", True) or not is_full(e, want):
+                continue
+            colds = out.setdefault((profile_of(e), run_of(e)), {})
+            for key, r in rows_of(e).items():
+                v = r.get("loki_cold")
+                if (r.get("loki_status") == "200" and r.get("loki_cold_computed") is not False
+                        and isinstance(v, (int, float)) and v >= SPEED_MIN_S):
+                    colds[(e["set"], *key)] = v
+    return out
+
+
+def runner_speed(colds, profile, old, new):
+    """How much slower the runner of line new is than the runner of line old (both lines of one profile): the median
+    of new / old over the Loki cold times both runs computed. Loki's version and the seeded data are the same from
+    run to run, so a move of all of Loki's times together is the machine, which moves the proxy's times as much.
+    1.0 with fewer than SPEED_MIN_ROWS rows in common (a cut-down run, the first run of a profile)."""
+    a, b = colds.get((profile, run_of(old)), {}), colds.get((profile, run_of(new)), {})
+    ratios = sorted(b[k] / a[k] for k in a.keys() & b.keys())
+    if len(ratios) < SPEED_MIN_ROWS:
+        return 1.0
+    mid = len(ratios) // 2
+    return ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
+
+
+def at_speed(v, factor):
+    """An earlier line's seconds at the runner speed of a later line (runner_speed)."""
+    return v * factor if v is not None else None
+
+
+def speed_note(factor):
+    """The runner speed in an alert's text when it moved beyond 5%."""
+    return f"; the runner {factor:.2f}× by Loki's cold times" if abs(factor - 1) > 0.05 else ""
+
+
 def short(sha):
     return (sha or "?")[:10]
 
@@ -517,6 +566,7 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     listed, out["over_2x_problem"] = over2x.read_baseline(baseline_path)
     listed = {k: dict(v) for k, v in listed.items()}
     added, measured, looked = [], set(), set()
+    colds = loki_colds(directory, spec)
     states = profile_state(directory, spec, sets)
     for (name, profile), v in sorted(states.items()):
         if v["stale"]:
@@ -579,20 +629,27 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
                     # Not while Loki still gives that error: the proxy now answers where Loki does not.
                     out["improvements"].append(alert("status", key, f"status {old['status']} → 200", prev))
                 if old["status"] == "200" and row["status"] == "200":
+                    # An earlier p50 is compared at the newer run's runner speed (runner_speed): a runner that is
+                    # slower or faster as a whole moves every target's times together, Loki's and the release's too.
+                    speed = runner_speed(colds, profile, prev, new)
                     span = f"warm p50 {secs(old['p50'])} → {secs(row['p50'])}"
-                    if faster(old["p50"], row["p50"]):
-                        out["improvements"].append(alert("faster", key, span, prev))
-                    elif slower(old["p50"], row["p50"]) and row["verdict"] == "slower" and old["verdict"] != "slower":
+                    if faster(at_speed(old["p50"], speed), row["p50"]):
+                        out["improvements"].append(alert("faster", key, span + speed_note(speed), prev))
+                    elif (slower(at_speed(old["p50"], speed), row["p50"]) and row["verdict"] == "slower"
+                          and old["verdict"] != "slower"):
                         out["regressions"].append(alert(
-                            "slower", key, f"{span}, and slower than the release in the same run", prev))
+                            "slower", key, f"{span}, and slower than the release in the same run{speed_note(speed)}",
+                            prev))
                     # Worse than the run before both of them, in both: one run of noise is not a regression.
                     # The change happened after prev2, so that is where the range starts (and it was
                     # already reported when the first slow run itself was slower than the release).
-                    elif (old2.get("status") == "200" and slower(old2["p50"], old["p50"]) and slower(old2["p50"], row["p50"])
+                    elif (old2.get("status") == "200"
+                          and slower(at_speed(old2["p50"], runner_speed(colds, profile, prev2, prev)), old["p50"])
+                          and slower(at_speed(old2["p50"], runner_speed(colds, profile, prev2, new)), row["p50"])
                           and old["verdict"] != "slower"):
                         out["regressions"].append(alert(
                             "slower", key, f"warm p50 {secs(old2['p50'])} → {secs(old['p50'])} → {secs(row['p50'])}, "
-                            "held for two runs", prev2))
+                            f"held for two runs{speed_note(runner_speed(colds, profile, prev2, new))}", prev2))
             if out["over_2x_active"] and not out["over_2x_problem"] and (name, profile) not in stale:
                 over_2x(out, listed, profile, name, key, row, old, new, prev)
             acceptance(out, bounds, items, profile, name, key, row, old, (prev, prev2), alert)
@@ -650,7 +707,13 @@ def over_2x(out, listed, profile, name, key, row, old, new, prev):
     """One history row against the above-2× Loki list, cold and warm, symmetric: a listed row within 2× on this
     line and on the previous full line is removed, an unlisted row above 2× on this line and on the previous
     full line is added (since the previous line's date), a lower ratio tightens a listed row. A row above 2× on
-    this line only is reported as pending add, a listed row within 2× on this line only as pending removal."""
+    this line only is reported as pending add, a listed row within 2× on this line only as pending removal.
+    A listed cold row that is a first ask (over2x.first_ask_bound) is removed: it is held to its absolute bound
+    instead (smoke.py), never to Loki's time."""
+    k = (profile, name, key[0], key[1], "cold")
+    if k in listed and over2x.first_ask_bound(key[0], key[1]) is not None:
+        out["over_2x_removed"].append({**listed[k], "detail": "a first ask on a proxy without the selector's state: "
+                                       "held to its absolute bound (shapes.json first_ask_max_s), not to Loki's time"})
     for mode, pair in over2x.history_pairs(row).items():
         k, state = (profile, name, key[0], key[1], mode), over2x.judge(*pair)
         measured = over2x.ratio(*pair[:2])

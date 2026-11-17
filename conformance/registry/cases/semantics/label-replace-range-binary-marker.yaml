@@ -13,7 +13,7 @@ why: |
   400 `cannot parse query`, and the proxy answers 502 `backend returned 400: cannot parse query`).
   Loki evaluates the binary expression and replaces the label. The instant
   query strips the transform before routing (stripLabelTransforms in handleQuery) and
-  answers; handleQueryRange never calls it. Measured through the handlers against a stub backend that rejects the marker (TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker, internal/proxy); Loki's behaviour is read from its v3.7.7 source and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
+  answers; handleQueryRange never calls it. Measured through the handlers against a stub backend that rejects the marker (TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker, internal/proxy). The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
 
   Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, query_range over 10 minutes): Loki answers three series (error, info, warn, each valued 1 with `dst`); the proxy answered 200 with no series, VictoriaLogs v1.52.0 not failing on the marker the way the stub does. The registered request uses the `level` stream label of the generator data.
 
@@ -21,7 +21,7 @@ why: |
   transform before routing as handleQuery does (stripLabelTransforms), clones
   the request from its own query so each operand keeps its parser, evaluates
   the binary expression through the binary path and applies the transform to
-  its answer (pkg/logql/evaluator.go:385-388). No marker reaches VictoriaLogs.
+  its answer. No marker reaches VictoriaLogs.
   TestLabelReplaceOfABinaryExpressionRoutesByTheBinary (the test that pinned
   the old answer, converted) asserts 200 and no marker on both endpoints.
 
@@ -46,7 +46,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy handleQueryRange (stripLabelTransforms for a label transform around a binary expression)'
-  loki: 'pkg/logql/evaluator.go:1275-1310 LabelReplaceEvaluator.Next over the binary vector'
+  loki: 'label_replace applies to the vector of a binary expression (generator data on Loki 3.7.7, in this case)'
   proxy: 'the binary is routed by the expression under the transform on both endpoints; the transform is applied to its answer'
   planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics); TestLabelReplaceOfABinaryExpressionRoutesByTheBinary (internal/proxy)'
   note: 'Related: semantics/label-replace-instant-vector, semantics/label-replace-new-label.'

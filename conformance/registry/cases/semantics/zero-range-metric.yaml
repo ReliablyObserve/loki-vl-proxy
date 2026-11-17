@@ -1,5 +1,5 @@
 id: semantics/zero-range-metric
-title: "A range metric over a zero range is answered with Loki's empty result (fixed; absent_over_time open)"
+title: "A range metric over a zero range is answered with Loki's empty result, and absent_over_time over one with Loki's 1 at every step (fixed)"
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -16,8 +16,16 @@ why: |
   vector, before the cache, the plan and any VictoriaLogs call (internal/proxy/query_tree_validation.go
   emptyWhateverTheData, held by cachedQueryValidation). Loki's engine (test/oracle/loki engine) answers every one of
   them so over data with lines in every window. A bare `0` range (`[0]`, which Loki reads as `[0s]`) gets the same
-  answers (recorded with Loki's engine too). Not covered: absent_over_time over a zero range, which Loki answers
-  with 1 at every step, still answers 500, and so does an `or` with an operand that has series.
+  answers (recorded with Loki's engine too).
+
+  Fixed: absent_over_time over a zero range finds no sample in any window whatever the data, and Loki answers its
+  one series valued 1 at every step (query_range) and at the evaluation time (query), labelled with the selector's
+  equality matchers, through vector aggregations, topk/bottomk, sort/sort_desc and label_replace (Loki's engine,
+  test/oracle/loki engine, internal/proxy/testdata/absent_zero_range_loki_answers.jsonl). The proxy answered 500 on
+  both routes (with a VictoriaLogs answer behind it, query answered 200 with a `detected_level` label Loki does not
+  write). It now writes Loki's answer from the parsed query before the cache, the plan and any VictoriaLogs call
+  (internal/proxy/absent_zero_range.go, held by cachedQueryValidation), and a binary operation of it (`* 2`) gets
+  Loki's answer through its operand's request.
 request:
   scope: query-grammar
   entry: "internal/proxy handleQueryRange and handleQuery (answerEmptyResult), before any other work"
@@ -33,8 +41,8 @@ gap:
   effort: S
   area: "internal/proxy manual range metric path (a zero range)"
   loki: "200, an empty result"
-  proxy: "200, Loki's empty result, without a VictoriaLogs call (absent_over_time: 500)"
-  planned_test: 'TestZeroRangeAnswersLikeLoki (internal/proxy, Loki engine answers recorded with the oracle), TestBareZeroRangeAnswersLikeZeroSeconds, TestRangeWindowRefusal (internal/proxy)'
+  proxy: "200, Loki's empty result or (absent_over_time) Loki's 1 at every step, without a VictoriaLogs call"
+  planned_test: 'TestZeroRangeAnswersLikeLoki, TestAbsentZeroRangeAnswersLikeLoki (internal/proxy, Loki engine answers recorded with the oracle), TestBareZeroRangeAnswersLikeZeroSeconds, TestRangeWindowRefusal (internal/proxy)'
   visual: none
   visual_reason: 'a zero range is no panel a user builds'
   clusters: []

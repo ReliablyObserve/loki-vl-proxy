@@ -227,8 +227,13 @@ func RouteQuery(p *queryplan.Plan, prof Profile, req RouteRequest) (QueryRoute, 
 		out.operands[0], out.n = r, 1
 		return out, err
 	}
-	// The operation the lowering does not write keeps its delegation.
+	// The operation the lowering does not write keeps its delegation, and so does one the binary route evaluates
+	// operand by operand where the handlers read the translator's text otherwise (a bool modifier, a set operator, a
+	// chain): the rule does not model them yet.
 	if err := binOpShape(b); err != nil {
+		return out, err
+	}
+	if err := translatorShape(b); err != nil {
 		return out, err
 	}
 	// The handlers shift a query's bounds by one offset: operands with offsets that differ, or only some with one,

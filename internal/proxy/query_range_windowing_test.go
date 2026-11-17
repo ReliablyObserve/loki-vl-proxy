@@ -163,6 +163,8 @@ func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 // A window read for one range must answer a shifted range which needs more
 // rows from it: every window is read with the request's whole limit, never
 // with only the rows still missing.
+//
+// conformance: semantics/query-range-window-budget
 func TestQueryRangeWindow_ShiftedRangeDoesNotReuseTruncatedWindow(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
@@ -1818,7 +1820,7 @@ func TestQueryRangeWindow_RetryHelpers(t *testing.T) {
 		t.Fatal("expected generic validation error to be non-retryable")
 	}
 
-	// Loki answers a failed backend with 500 (pkg/util/server/error.go:124-128),
+	// Loki answers a failed backend with 500,
 	// never VictoriaLogs' own 503.
 	if got := statusFromUpstreamErr(&upstreamStatusError{status: http.StatusServiceUnavailable, msg: "down"}); got != http.StatusInternalServerError {
 		t.Fatalf("expected Loki's 500 for a failed backend, got=%d", got)

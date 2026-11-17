@@ -288,6 +288,11 @@ jobs:
               print(f"::error title=parity gate::{r.get('unclaimed', 0)} cluster(s) are claimed by no registry case "
                     f"({r.get('problems', 0)} problem(s) in all); see the pull request and conformance.txt")
               sys.exit(1)
+          if r.get("loki_surface_drift"):
+              # The registry's Loki surface (documentation, recorded answers, live probe) no longer matches the
+              # stack's Loki; the pull request carries the re-recorded live-routes.json and endpoints.json.
+              print(f"::error title=Loki surface::{r['loki_surface_drift']}")
+              sys.exit(1)
           for case in (r.get("pruned") or {}).get("undecided", [])[:10]:
               print(f"::warning title=parity prune::{case} is not fixed in the registry but no run shows its difference any more")
           PY

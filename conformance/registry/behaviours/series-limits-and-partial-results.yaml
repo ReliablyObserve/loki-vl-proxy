@@ -8,7 +8,7 @@ loki: |
   partial result plus a warning instead. Above the resolution limit Loki returns
   400 before parsing. The limit counts the series of the answer, after an
   aggregation such as `sum without (...)` has folded them
-  (pkg/logql/engine.go:536-548, :575-590).
+  (limits/series-limit-error records the answer).
 
 victorialogs: |
   VictoriaLogs truncates or returns everything depending on the pipe; it has no
@@ -20,6 +20,16 @@ proxy: |
   the flag. A `without` aggregation is read per stream and the limit applies to
   the folded answer, so a query whose answer fits the limit is not rejected
   because its streams do not.
+
+  Documented difference from Loki's default: the proxy's built-in
+  -max-stats-query-series is 1000, above Loki's max_query_series of 500,
+  because the proxy answers faster than Loki and can afford more series per
+  query. A query with 501 to 1000 series that answers Loki's 400 is answered,
+  and Drilldown's partial result holds the busiest 1000 series. The published
+  max_query_series is the enforced value. Setting 500 (the flag or the tenant
+  limit) gives Loki's default. The default is sized against
+  -backend-max-buffered-response-bytes: 1000 dense series over 1000 steps is
+  about 40 MB of the 64 MiB default (limits registry, sizing).
 
 implementation:
   - internal/proxy/metric_agg.go

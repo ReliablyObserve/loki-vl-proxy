@@ -31,7 +31,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/translator parser series identity; -exact-parser-series-identity'
-  loki: 'pkg/logql/log/parser.go label extraction into the sample labels'
+  loki: 'every extracted label joins the sample labels (series counts measured against Loki, in this case)'
   proxy: 'stream identity unless the flag is set'
   planned_test: 'differential run cluster count (bench/parity)'
   clusters:

@@ -6,8 +6,7 @@ consumer: api
 why: |
   Grouped by a key of the JSON body, Loki keeps a line whose key holds an
   empty value (`{"a":""}`, or a value its unescape rejects such as a lone
-  surrogate `"\ud800"`, which pkg/logql/log/parser.go readValue turns into
-  "") in a series `{a=""}`, apart from the lines without the key. The
+  surrogate `"\ud800"`, which Loki turns into "") in a series `{a=""}`, apart from the lines without the key. The
   proxy's row evaluator drops empty values when it builds the series
   (orderedJSONMetricPlan.groupLabels), and VictoriaLogs groups a missing and
   an empty field alike, so both land in the label-less series.
@@ -29,8 +28,8 @@ request:
   precondition: |
     The stream holds lines `{"a":""}`, `{"a":"x"}` and `{"b":1}`.
   verify:
-    blocked_by: fixture
-    reason: "a stream holding {\"a\":\"\"}, {\"a\":\"x\"} and {\"b\":1}"
+    met_by: stack
+    evidence: "test/casefixtures writes the stream {app=\"json-empty\"} (stream json-empty: the lines {\"a\":\"\"}, {\"a\":\"x\"} and {\"b\":1}) to Loki and VictoriaLogs before the verifier asks, in the daily report's seed step."
 compare:
   mode: exact
   fields: [series_labels, values]
@@ -41,7 +40,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy ordered_json_metric.go groupLabels (row evaluator); stats pushdown grouping (VictoriaLogs cannot tell an empty field from a missing one)'
-  loki: 'pkg/logql/log/parser.go:137-211 parseLabelValue/readValue; the vector aggregation keeps the empty label'
+  loki: 'an empty or rejected-unescape JSON value gives a series {a=""}, apart from lines without the key (measured, in this case)'
   proxy: 'empty-valued parsed labels dropped from the series'
   planned_test: 'a row-evaluator unit case and an e2e on a corpus with empty values'
   clusters: []

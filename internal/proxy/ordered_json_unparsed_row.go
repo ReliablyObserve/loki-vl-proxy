@@ -84,6 +84,9 @@ func (p *Proxy) cachedUnparsedLineRow(ctx context.Context, lookup string, from, 
 func (p *Proxy) readUnparsedLineRow(ctx context.Context, lookup string, from, to time.Time) ([]byte, error) {
 	// Loki's window is left-open, right-closed; VictoriaLogs' end is exclusive.
 	params := url.Values{"query": {lookup}, "start": {from.UTC().Format(time.RFC3339Nano)}, "end": {to.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}}
+	if f := p.placeholderRiskFilter(); f != "" {
+		params.Set("extra_filters", f)
+	}
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
 		return nil, err

@@ -34,7 +34,7 @@ why: |
   why the labels tab's pod panel failed in the same session although its
   answer equals Loki's (167,523 series proxy, 167,429 Loki). The stack runs
   Loki and the proxy with a 1,000,000 series cap; at Loki's default
-  max_query_series (500, the proxy's default -max-stats-query-series) both
+  max_query_series of 500 (the proxy's -max-stats-query-series set to 500) both
   answer the series-limit error instead.
 
   The proxy cannot tell a field VictoriaLogs parsed out of the line from
@@ -65,7 +65,7 @@ gap:
   impact: drilldown-visible
   effort: L
   area: 'internal/translator label filters before the first parser (field filters on stored fields); ingest: VictoriaLogs Loki push JSON message parsing'
-  loki: 'pkg/logql/log label filters before a parser read stream labels and structured metadata'
+  loki: 'a label filter before a parser reads stream labels and structured metadata only (compose stack counts in this case)'
   proxy: 'a field filter that also matches keys VictoriaLogs parsed out of the JSON line at ingest'
   planned_test: 'e2e vs Loki on a fixture pushed with and without disable_message_parsing (test/e2e-compat, group drilldown)'
   clusters: []

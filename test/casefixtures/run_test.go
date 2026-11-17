@@ -24,6 +24,25 @@ type stack struct {
 	posts  int
 }
 
+// lokiLines and vlLines read the counts under the lock: a write the client gave up on can still be in a handler.
+func (st *stack) lokiLines(sel string) int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.loki[sel]
+}
+
+func (st *stack) vlLines(filter string) int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.vl[filter]
+}
+
+func (st *stack) refuseStream(name string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.refuse = name
+}
+
 func (st *stack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -124,8 +143,8 @@ func TestSeedWritesEveryStreamAndWaitsForBothSides(t *testing.T) {
 	}
 	for _, s := range streams {
 		want := 4 * len(s.Entries)
-		if st.loki[selector(s)] != want || st.vl[vlFilter(s)] != want {
-			t.Errorf("%s: Loki %d, VictoriaLogs %d lines, want %d", s.Name, st.loki[selector(s)], st.vl[vlFilter(s)], want)
+		if st.lokiLines(selector(s)) != want || st.vlLines(vlFilter(s)) != want {
+			t.Errorf("%s: Loki %d, VictoriaLogs %d lines, want %d", s.Name, st.lokiLines(selector(s)), st.vlLines(vlFilter(s)), want)
 		}
 		if !strings.Contains(out.String(), "ready "+s.Name+": ") {
 			t.Errorf("no ready line for %s:\n%s", s.Name, out.String())
@@ -135,7 +154,7 @@ func TestSeedWritesEveryStreamAndWaitsForBothSides(t *testing.T) {
 
 func TestSeedKeepsGoingPastAStreamOneSideRefuses(t *testing.T) {
 	st, target := newStack(t)
-	st.refuse = "nginx"
+	st.refuseStream("nginx")
 	streams := Choose(Streams(), "nginx,ip-line")
 	cfg := Config{Target: target, Span: time.Minute, Every: 30 * time.Second, Wait: time.Second}
 	var out, errOut bytes.Buffer
@@ -171,11 +190,11 @@ func TestFollowWritesATickPerIntervalUntilTheContextEnds(t *testing.T) {
 	defer cancel()
 	var errOut bytes.Buffer
 	Follow(ctx, cfg, s, time.Now().Add(-time.Second), &errOut)
-	if n := st.loki[selector(s[0])]; n < 3*len(s[0].Entries) {
+	if n := st.lokiLines(selector(s[0])); n < 3*len(s[0].Entries) {
 		t.Errorf("Loki holds %d lines after the follow ran, want at least three ticks", n)
 	}
 	// A refused write is reported and does not stop the loop.
-	st.refuse = "ipprobe-t"
+	st.refuseStream("ipprobe-t")
 	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
 	defer cancel2()
 	Follow(ctx2, cfg, s, time.Now().Add(-time.Second), &errOut)
@@ -199,7 +218,7 @@ func TestRunFollowsAfterTheBacklog(t *testing.T) {
 	}
 	// Four ticks of backlog; the follow writes the next one at once when the clock is already past it, and a second
 	// one when the run starts within the last seconds of a 30 second boundary and the 3 second context spans it.
-	if n := st.loki[selector(s[0])]; n < 4*len(s[0].Entries) || n > 6*len(s[0].Entries) {
+	if n := st.lokiLines(selector(s[0])); n < 4*len(s[0].Entries) || n > 6*len(s[0].Entries) {
 		t.Errorf("the backlog holds %d lines", n)
 	}
 }

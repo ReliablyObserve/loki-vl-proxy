@@ -3,9 +3,9 @@
   "totals": {
     "deferred_raw": 9,
     "lowering_marker_reads": 11,
-    "parse_calls": 57,
-    "string_reads": 49,
-    "text_built": 212,
+    "parse_calls": 55,
+    "string_reads": 47,
+    "text_built": 210,
     "translator_string_ops": 678
   },
   "files": {
@@ -49,8 +49,7 @@
       "internal/proxy/regexp_capture_fields.go": 1,
       "internal/proxy/stream_processing.go": 1,
       "internal/proxy/tail.go": 1,
-      "internal/proxy/unwrap_conversion_error.go": 2,
-      "internal/proxy/unwrap_samples.go": 1,
+      "internal/proxy/unwrap_conversion_error.go": 1,
       "internal/queryplan/physical/canon.go": 1,
       "internal/translator/stats_codec.go": 1
     },
@@ -67,7 +66,7 @@
       "internal/proxy/query_translation.go": 5,
       "internal/proxy/range_metric_compat.go": 8,
       "internal/proxy/stats_extent_cache.go": 1,
-      "internal/proxy/unwrap_conversion_error.go": 5,
+      "internal/proxy/unwrap_conversion_error.go": 3,
       "internal/proxy/volume_segments.go": 1,
       "internal/queryplan/lower/unwrap.go": 2,
       "internal/rulesmigrate/migrate.go": 1
@@ -92,7 +91,8 @@
       "internal/proxy/sliding_window_stats.go": 2,
       "internal/proxy/stream_processing.go": 2,
       "internal/proxy/tail.go": 2,
-      "internal/proxy/unwrap_conversion_error.go": 18,
+      "internal/proxy/unwrap_conversion_error.go": 14,
+      "internal/proxy/unwrap_samples.go": 2,
       "internal/proxy/volume.go": 6,
       "internal/queryplan/lower/range_agg.go": 2,
       "internal/queryplan/lower/unwrap.go": 3

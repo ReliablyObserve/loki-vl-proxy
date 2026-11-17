@@ -23,7 +23,8 @@ import (
 //
 // One logfmt stream and one json stream per app, a line every 11 seconds cycling through the forms; each form is a
 // series of its own (its `form` label), and every query reads one form through a label filter between the parser and
-// the unwrap. The answers are recorded (dynamicValueFormsAnswersPath; LVP_RUN_ORACLES=1 records them
+// the unwrap, after a parser of every key or an extraction list of the line's keys (`| logfmt u, form`), whose
+// series identity groups by the listed labels with no second unpack. The answers are recorded (dynamicValueFormsAnswersPath; LVP_RUN_ORACLES=1 records them
 // again). Every run must match Loki or be listed in dynamicValueFormsKnown with the registry case that holds it open.
 
 const dynamicValueFormsAnswersPath = "testdata/unwrap-dynamic-value-forms-loki-diff.jsonl.gz"
@@ -62,6 +63,10 @@ var dynamicValueFormsPipelines = []string{
 	`{job="vf"} | logfmt | form="tiny" | unwrap u`,
 	`{job="vj"} | json | form="exp308" | unwrap u`,
 	`{job="vj"} | json | form="inf" | unwrap u`,
+	// An extraction list of the line's keys: the same series, grouped by the listed labels (no series hash).
+	`{job="vf"} | logfmt u, form | form="exp308" | unwrap u`,
+	`{job="vf"} | logfmt u, form | form="inf" | unwrap u`,
+	`{job="vj"} | json u, form | form="exp308" | unwrap u`,
 }
 
 // dynamicValueFormsFuncs are the functions taken per series that the outer aggregations fold.
@@ -75,15 +80,19 @@ var dynamicValueFormsFuncs = []string{"max_over_time", "min_over_time", "avg_ove
 //     min, avg or stddev: the string translator's window evaluator, the route of base, leaves out or makes NaN the
 //     windows of these values;
 //   - avg over the series of an infinity: Loki's mean of +Inf and +Inf is NaN, VictoriaLogs' is +Inf;
-//   - sum or avg over stddev or stdvar of an infinity on an instant: Loki answers NaN, VictoriaLogs' outer sum leaves
-//     the NaN series out (0).
+//   - sum, sum by or avg over stddev or stdvar of an infinity on an instant: Loki answers NaN, VictoriaLogs' outer sum
+//     leaves the NaN series out (0). For sum by (app) over a logfmt line the recording before 2026-11-16 had
+//     VictoriaLogs v1.49.0 and v1.53.0 answer NaN; recorded again on that date (origin/main and this change alike) both
+//     answer 0 (over a json line, NaN).
 var dynamicValueFormsKnown = func() map[string]map[string]string {
 	const id = "semantics/unwrap-gate-parsefloat-divergences"
 	known := map[string]map[string]string{}
 	for _, fn := range dynamicValueFormsFuncs {
 		for _, shape := range dynamicValueFormsShapes {
-			for _, pipe := range dynamicValueFormsPipelines {
-				q := fmt.Sprintf(shape, keepIdentityHead(fn), pipe)
+			for _, listed := range dynamicValueFormsPipelines {
+				q := fmt.Sprintf(shape, keepIdentityHead(fn), listed)
+				// An extraction list of every key of the line reads as the bare parser does.
+				pipe := strings.NewReplacer("| logfmt u, form |", "| logfmt |", "| json u, form |", "| json |").Replace(listed)
 				infinity := strings.Contains(pipe, `"inf"`) || strings.Contains(pipe, `"neginf"`)
 				deviation := fn == "stddev_over_time" || fn == "stdvar_over_time"
 				var kinds []string
@@ -99,7 +108,8 @@ var dynamicValueFormsKnown = func() map[string]map[string]string {
 				switch {
 				case infinity && strings.HasPrefix(shape, "avg(") && !deviation:
 					kinds = append(kinds, "instant", "step=range", "step>range")
-				case infinity && deviation && (strings.HasPrefix(shape, "avg(") || strings.HasPrefix(shape, "sum(")):
+				case infinity && deviation && (strings.HasPrefix(shape, "avg(") || strings.HasPrefix(shape, "sum(") ||
+					strings.HasPrefix(shape, "sum by") && strings.Contains(pipe, "| logfmt |")):
 					kinds = append(kinds, "instant")
 				}
 				for _, k := range kinds {

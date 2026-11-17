@@ -1,0 +1,71 @@
+id: semantics/raw-nul-in-string-literal-accepted
+title: A NUL byte inside a quoted or backquoted string, or a comment, of a query is Loki's lexer error, with Loki's text and position (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer reports `invalid character NUL` for a NUL byte anywhere in the
+  query text, strings and comments included. Recorded with the Loki oracle
+  (check command), query text with the byte itself (not the escape `\x00`,
+  which is a valid string escape):
+
+    {app="a"} |= "a<NUL>b"       parse error at line 1, col 14: invalid character NUL
+    {app="a"} |= `a<NUL>b`       parse error at line 1, col 14: invalid character NUL
+    {app="a"} | x="a<NUL>b"      parse error at line 1, col 15: invalid character NUL
+    {app="a"} # a<NUL>b          parse error at line 0, col 11: invalid character NUL
+    {app="a"} |= "\q<NUL>"       parse error at line 1, col 14: invalid char escape
+    {app="a"} |= "a\n<NUL>b"     parse error at line 1, col 14: literal not terminated
+
+  The lexer reads a string's characters in order, as Go's text scanner does: a
+  NUL inside the string is its error at the opening quote, ahead of a line
+  break or a missing closing quote after it, and an escape it rejects, or a line
+  break, before the NUL is that error instead. A NUL in a comment is its error
+  at the comment, on line 0.
+
+  The proxy parsed a NUL inside a string as part of the value
+  (`{app="a"} |= "a<NUL>b"` was accepted) and stripped a comment with the byte
+  before the validation read it. The scanner and the label filter lexer now
+  report the string's first error in the order of the text when the query holds
+  a NUL, and the comment stripping keeps the comments of such a query, so every
+  route answers Loki's 400 at its validation, before the response cache, the
+  plan or any VictoriaLogs call; the response key of a query the validation
+  rejects carries the rune fence, so an answer cached before is not served.
+  TestNULByteMatchesLoki holds 108 queries (strings in a selector, a line
+  filter, a label filter, ip(), every stage's string, escapes Go's scanner reads
+  digit by digit, comments, and the metric wrappers: range functions,
+  aggregations, rankings, sort, label_replace, binary operations, offset) to
+  Loki's recorded answers, as written and as the request path reads it.
+
+  A NUL at the very start of a query is left out: Loki answers it with the
+  position its pooled parser kept from the query it read before (the same text
+  answers `parse error : invalid character NUL` or `line 0, col 10` depending on
+  the previous query), so there is no fixed answer to hold the proxy to.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: "{app=\"a\"} |= \"a\0b\""
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, errorType, error]
+  expect: |
+    400, errorType bad_data, Loki's `parse error at line 1, col 14: invalid
+    character NUL`, and no VictoriaLogs request.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: edge
+  effort: S
+  area: 'internal/logql scanner.go (stringLexErr, lokiStringError, comments in skipWS), label_filter_expr.go (lexString, skipSpace), canonical.go (StripComments)'
+  loki: 'the lexer reports `invalid character NUL` for the byte wherever it stands, strings and comments included, in the order of the text'
+  proxy: 'rejected with Loki''s text and position at the validation of every route, before the response cache, the plan or any VictoriaLogs call'
+  planned_test: 'TestNULByteMatchesLoki and FuzzLowercaseKeywords (internal/logql, recorded Loki answers); TestRejectedQueryNeverReachesVictoriaLogs (internal/proxy: every route, zero VictoriaLogs requests)'
+  visual: none
+  visual_reason: 'a crafted byte no Grafana panel sends'
+  clusters: []

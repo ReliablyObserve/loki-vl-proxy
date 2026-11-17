@@ -64,17 +64,21 @@ type Stream struct {
 }
 
 // Request is a Loki request: Instant is a /loki/api/v1/query request, else /loki/api/v1/query_range; Form is its
-// form, URL-encoded.
+// form, URL-encoded. Unaligned runs a range request at its own bounds, as Loki's engine does without a query
+// frontend's align_queries_with_step (Loki's default), instead of the step-aligned bounds.
 type Request struct {
-	ID      string `json:"id"`
-	Instant bool   `json:"instant,omitempty"`
-	Form    string `json:"form"`
+	ID        string `json:"id"`
+	Instant   bool   `json:"instant,omitempty"`
+	Form      string `json:"form"`
+	Unaligned bool   `json:"unaligned,omitempty"`
 }
 
 // Input is one data set and the requests over it.
 type Input struct {
 	Streams  []Stream  `json:"streams"`
 	Requests []Request `json:"requests"`
+	// MaxSeries is the tenant's max_query_series for the data set's requests; 0 sets none a data set reaches.
+	MaxSeries int `json:"max_series,omitempty"`
 }
 
 // Answer is Loki's answer to one request: the HTTP status and the body (the response JSON for a 200, the error
@@ -117,8 +121,9 @@ func run(in, out string) error {
 			return err
 		}
 		q := newQuerier(input.Streams)
+		lim := limits{maxSeries: input.MaxSeries}
 		for _, r := range input.Requests {
-			if err := enc.Encode(answer(q, r)); err != nil {
+			if err := enc.Encode(answer(q, lim, r)); err != nil {
 				return err
 			}
 		}
@@ -132,10 +137,15 @@ func run(in, out string) error {
 	return dst.Close()
 }
 
-// limits are the engine's per-tenant limits: none that a test data set reaches.
-type limits struct{}
+// limits are the engine's per-tenant limits: none that a test data set reaches, unless it sets its series limit.
+type limits struct{ maxSeries int }
 
-func (limits) MaxQuerySeries(context.Context, string) int                        { return 1 << 30 }
+func (l limits) MaxQuerySeries(context.Context, string) int {
+	if l.maxSeries > 0 {
+		return l.maxSeries
+	}
+	return 1 << 30
+}
 func (limits) MaxQueryRange(context.Context, string) time.Duration               { return 0 }
 func (limits) QueryTimeout(context.Context, string) time.Duration                { return time.Hour }
 func (limits) BlockedQueries(context.Context, string) []*validation.BlockedQuery { return nil }
@@ -145,7 +155,7 @@ func (limits) DebugEngineTasks(string) bool                                     
 func (limits) DebugEngineStreams(string) bool                                    { return false }
 
 // answer runs one request. A panic of Loki's code is an error answer.
-func answer(q *querier, r Request) (a Answer) {
+func answer(q *querier, lim limits, r Request) (a Answer) {
 	a.ID = r.ID
 	defer func() {
 		if p := recover(); p != nil {
@@ -176,7 +186,7 @@ func answer(q *querier, r Request) (a Answer) {
 		start, end := rq.Start, rq.End
 		// A query frontend with align_queries_with_step moves both bounds down to a multiple of the step, in
 		// milliseconds.
-		if stepMs := rq.Step.Milliseconds(); stepMs > 0 {
+		if stepMs := rq.Step.Milliseconds(); stepMs > 0 && !r.Unaligned {
 			start = time.UnixMilli(start.UnixMilli() / stepMs * stepMs)
 			end = time.UnixMilli(end.UnixMilli() / stepMs * stepMs)
 		}
@@ -185,7 +195,7 @@ func answer(q *querier, r Request) (a Answer) {
 	if err != nil {
 		return errAnswer(a, err)
 	}
-	engine := logql.NewEngine(logql.EngineOpts{}, q, limits{}, log.NewNopLogger())
+	engine := logql.NewEngine(logql.EngineOpts{}, q, lim, log.NewNopLogger())
 	ctx := user.InjectOrgID(context.Background(), "fake")
 	res, err := engine.Query(params).Exec(ctx)
 	if err != nil {

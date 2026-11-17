@@ -1,7 +1,7 @@
 id: operator-keep-empty
 kind: operator
 logql: "--keep-empty"
-loki_constant: OpKeepEmpty
+source: https://grafana.com/docs/loki/v3.7.x/query/log_queries/
 generated:
   supported_by_proxy: false
   seen_in:

@@ -51,6 +51,16 @@ func (p *Proxy) withRequestScope(r *http.Request) *http.Request {
 }
 
 func (p *Proxy) contextScopeFingerprint(ctx context.Context) string {
+	if f := placeholderExclusionFrom(ctx); f != "" {
+		// The reads of a request with a placeholder exclusion carry it in
+		// extra_filters: their answers are kept apart (json_line_keys.go).
+		sum := sha256.Sum256([]byte(f))
+		return p.contextScopeFingerprintOf(ctx) + ":placeholder-excluded:" + hex.EncodeToString(sum[:8])
+	}
+	return p.contextScopeFingerprintOf(ctx)
+}
+
+func (p *Proxy) contextScopeFingerprintOf(ctx context.Context) string {
 	if original, ok := ctx.Value(origRequestKey).(*http.Request); ok && original != nil {
 		return p.fingerprintFromCtx(ctx, original.WithContext(ctx))
 	}
@@ -93,7 +103,13 @@ func (p *Proxy) buildRoutingNamespace(routing requestRouting) string {
 	if routing.translator != nil {
 		style, fields, otel = routing.translator.style, routing.translator.vlToLoki, routing.translator.translateOTel
 	}
-	data, _ := json.Marshal([]any{"scope-v3", backend, cold, p.backendHeaders, routing.tenants, routing.label, style, fields, otel, p.forwardTenantHeader})
+	parts := []any{"scope-v3", backend, cold, p.backendHeaders, routing.tenants, routing.label, style, fields, otel, p.forwardTenantHeader}
+	if p.jsonLineFieldsAsLineKeys {
+		// Placeholder rows read as JSON lines answer otherwise: every cache
+		// identity of such a proxy is its own (json_line_keys.go).
+		parts = append(parts, "json-line-fields-as-line-keys")
+	}
+	data, _ := json.Marshal(parts)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

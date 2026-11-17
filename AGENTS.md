@@ -16,6 +16,14 @@ generators either. Loki is used only as a test comparison.
   reference model. Write the proxy's code from the behaviour (the HTTP API,
   recorded answers, observed responses) and compare it with Loki through an
   oracle.
+- Evidence for a Loki behaviour is never a source file or line (no
+  `pkg/...go:123` in code comments, tests, registry rows or docs). Cite a
+  recorded Loki answer (`test/oracle/loki` facts, `internal/lokierr/testdata`,
+  `internal/proxy/testdata/*loki*`, the plan corpus recordings), a test that
+  compares with Loki, a registry case id, or Loki's public documentation
+  (grafana.com/docs/loki URL, flag or config reference). A registry case whose
+  claim has none of these carries `evidence: needs recording` until the answer
+  is recorded.
 - The gates:
   - `TestProductModuleHasNoOracleDependency`: the proxy's `go.mod` and `go.sum`
     never name `github.com/grafana/loki`.
@@ -27,6 +35,50 @@ generators either. Loki is used only as a test comparison.
     reviewed exceptions for API names only (such as the template function
     names a query may call), never code. Its limits are never raised to make a
     pull request pass.
+- No generator, script or workflow reads Loki's source. The registry's Loki
+  surface comes from Loki's public documentation (the HTTP API reference and
+  the LogQL pages: `conformance/scripts/sync_loki.py`, `sync_ast.py`), Loki's
+  recorded answers and live probes, and is held to Loki by checks that ask Loki
+  itself: `TestLogQLSurfaceMatchesLokiParser` (every documented construct
+  parses with Loki's parser, daily in `query-corpus.yaml`) and
+  `sync_loki.py --record-live` (every route and method against the stack's
+  Loki, weekly in `parity-refresh.yaml`). The parity corpus takes its Loki queries
+  from the published query documentation, never from Loki's test files. The one
+  exception is inside the test-only oracle module and awaits the owner's
+  decision: the similarity scan above fingerprints Loki's `pkg/` to detect
+  copies. Add no other.
+
+### Expected answers come from Loki, recorded (hard rule)
+
+A test that compares the proxy with Loki takes Loki's answer from Loki: the engine oracle (`test/oracle/loki
+engine`: Loki's query engine, request parser and encoder over an in-memory store; `unaligned` runs a range at its
+own bounds) or the pipeline oracle (`process`), recorded under `internal/proxy/testdata/loki_engine/` and replayed
+by default.
+
+- Use the helpers in `internal/proxy/loki_engine_record_test.go`: `lokiEngineAnswers` (a batch of data sets),
+  `lokiEngineAnswerOf` (one request where the test needs it), `lokiProcessAnswers` (pipeline verdicts per line),
+  `lokiPushdownMatrix`. Every answer is keyed by a digest of its data (streams in a canonical order) and request:
+  a changed generator or request finds no answer and asks to record again.
+- Record with `GOMODCACHE=<a clean module cache> LVP_RUN_ORACLES=1 go test -count=1 -run <tests> ./internal/proxy/`,
+  in full mode (not `-short`), so the inline recordings hold the keys of both modes; then replay both modes.
+- Generated test data must be deterministic: never take an order from a map (sort keys before a seeded shuffle;
+  `keepRows` once wrote JSON keys in map order and no recording could match it).
+- Recordings come from one machine. A fused multiply-add can change the last bit between architectures, so
+  compare finite values with a relative tolerance (`sameQuantile`, 1e-9 sums), NaN and the infinities exactly.
+- Where a test must evaluate an expected answer itself (a fuzz target, deciding where a ranking ties), the
+  evaluator is written from LogQL's documented meaning, never from Loki's code, and a test holds it to recorded
+  answers over the domain it is used on (`TestTopKReferenceMatchesRecordedLoki`,
+  `TestVectorFoldReferenceMatchesRecordedLoki`, `TestUnwrapWindowReferenceMatchesRecordedLoki`, ...).
+- Ingest-time values Loki adds (`service_name` from `app`, `detected_level` as structured metadata) are written
+  into the recorded data explicitly, as Loki's documented ingest gives them.
+- Loki's ingest-time `detected_level` has no oracle (the engine has no ingest): its answers are recorded from a real
+  Loki by pushing each row of `internal/proxy/testdata/detected_level_golden.json` as its own stream
+  (`TestCompat_DetectedLevelGoldenMatchesLoki`, test/e2e-compat). The rows are our own generated inputs. Record
+  them again on every Loki pin bump and whenever rows are added, on a fresh stack:
+  `LVP_RECORD_DETECTED_LEVEL_GOLDEN=1 go test -tags e2e -count=1 -run '^TestCompat_DetectedLevelGoldenMatchesLoki$' ./test/e2e-compat/`
+  (it rewrites the table and its evidence file, `detected_level_golden_loki.json`). Without the variable it checks
+  about 200 rows (every category) against the stack's Loki, about 200 streams per run;
+  `LVP_DETECTED_LEVEL_GOLDEN_FULL=1` checks every row.
 
 ## Loki difference registry and query matrix
 
@@ -83,6 +135,12 @@ Every Loki error message is a registry item, every route x error kind is a cell 
   `conformance/registry/error-coverage-spec.json` (its stage in Loki's order of checks, the route or kind it belongs
   to, or the reason and test when Loki cannot be asked), or the conformance gate fails.
 - Record new answers with `go run ./test/errorrecord` against a running Loki; add rows by hand, never edit a recorded answer.
+- A request whose answer depends on the Loki process (the same image and configuration answer differently from one
+  process to the next and keep their answer for the life of the process: DELETE and other wrong-method requests,
+  405 or 404) keeps every answer Loki was recorded giving it: `loki` is the answer the proxy gives, `loki_also` the
+  others, copied from a recording run, and `varies` names the probe run and how often each answer came. The
+  re-record and the e2e comparison accept any recorded answer, and a third answer is still a change. A row whose
+  answer moves with time or data is not one of these: move its window or record it from a Loki that serves data.
 - The translator's, the plan's and the proxy's own wording never reaches a client. A query that passed validation and
   that the translation, plan or evaluation then fails is answered through `p.fail` with a typed error built from typed
   facts (`internal/proxy/error_refusals.go`): Loki's message where Loki rejects the query and the AST or request gives
@@ -249,6 +307,12 @@ and the weekly full run measure reuse per query structure and per layer (hit rat
 bytes, proxy CPU per repeat and refresh, peer fill) and turn red when it drops, like a latency regression; the per-case
 verifier repeats each case and reports a repeat that differs or calls VictoriaLogs again.
 
+Reuse is measured per request, and as two repeats. The daily runs start the proxies with `-debug-vl-calls-header`, so a
+request's VictoriaLogs calls are its own count (`X-Loki-VL-Backend-Calls`), never the process-wide metrics' delta, which
+holds the proxy's background calls (health probes, inventory refreshes) and other clients; a report that cannot say which
+source counted a number does not publish it as an improvement. The perf smoke asks an exact repeat (the same request
+twice at a settled window, 0 calls expected) apart from the repeat that moves the window (judged by the bytes it reads).
+
 ## Fleet scale
 
 Design every change for tens of proxy replicas, a much larger VictoriaLogs
@@ -350,6 +414,25 @@ Loki's speed or better is part of the same work, not a follow-up. Measure it
 (`benchstat`, the cost on VictoriaLogs, timings against Loki for the affected
 query shapes) and keep improving it. Only when that is not possible within
 the change, show why with numbers and ask the maintainers before it ships.
+
+A cold run that is a first request for a selector whose state the proxy has not built, where Loki answers from a
+structure it built at ingest (the Drilldown patterns of a selector, from Loki's pattern ingester), is a "first ask":
+its shape carries `first_ask_max_s` in `bench/ab/shapes.json` and is held to that absolute bound instead of Loki's
+time; its repeats keep the 2× bound (`bench/ab/README.md`, "First ask, state not built"). The bound comes from
+measured stack runs, and only such a request gets one.
+
+Regexps sent to VictoriaLogs avoid character classes that are wide, hold the
+ASCII letters and are closed under case folding (`[^"]`, `[^"\\]`,
+`[^0-9.:]`). Go's regexp/syntax prints such a class in about a millisecond,
+and VictoriaLogs prints each regexp several times while it simplifies it on
+every query parse: 4-10 ms per class per query on v1.49.0 and v1.53.0. Write
+a run `[^set]*` as `vlNotInRun(set)` (`(?:[^setA-Za-z]*[A-Za-z]*)*`, for a set
+without letters). Splitting the letters out as an alternation does not help:
+the parser merges `(?:[^setA-Za-z]|[A-Za-z])` back into `[^set]`. A `^`
+between the two alternatives keeps them apart only where the class can
+never stand at the start of the text. Time a new regexp with VictoriaLogs'
+own parser (`logstorage.ParseQuery` from the `test/oracle/vl` module) on both
+versions, and its per-line match cost with a Go benchmark.
 ## Serving a construct from the query plan
 
 A construct moves from the string translator to the typed plan (`internal/queryplan/lower`, written by
@@ -357,7 +440,11 @@ A construct moves from the string translator to the typed plan (`internal/queryp
 
 - The plan must write the translator's text byte for byte, not an equal parsed query: the text is the cache key and the
   request VictoriaLogs sees. `TestPlanShadow` and the generated grids assert it for every native row under the 12
-  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`.
+  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`. Where the translator is
+  wrong against Loki, the plan writes Loki's reading as a recorded known divergence; once the proxy serves such a row
+  (`proxy.PlanServedText` answers it), the shadow holds it to that text and counts it `native_loki_held`, which needs
+  the case's Loki differential in `servedDivergences`. Corpus queries the request validation rejects are `rejected`,
+  never rows.
 - Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
   plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. A log
   query with more than line and label filters moves by stage family (`proxy.QueryPlanFlippedLogStages`): it goes

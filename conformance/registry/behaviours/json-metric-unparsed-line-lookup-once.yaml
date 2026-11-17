@@ -63,6 +63,12 @@ decisions:
       later request of the window, which also fixes their request set; the
       cold speculation stays, because sequencing the lookup first costs a
       whole-window scan on clean data.
+
+      Owner decision (2026-11-17): the clean path pays the remembered-row
+      lookup that misses (about 0.5 us per strict-split request), and the
+      lookup is not run before the stats query and the checks: the cold
+      request set against an instant backend stays unfixed rather than add a
+      full-window anchored-regex scan on clean data.
     evidence: 'internal/proxy/ordered_json_unparsed_row_test.go (2026-11-16, Go 1.27.4, darwin/arm64, -race): cold requests send the lookup once (twice before); 60 cold requests with a 20 ms fake send one set; refreshes of the window send two requests (the row evaluator's lookup and read) instead of six; with an instant fake under -race 3 sets in 60 runs (4 to 5 before), all with one answer'
     code: [internal/proxy/ordered_json_unparsed_row.go, internal/proxy/ordered_json_valid_split.go, internal/proxy/ordered_json_metric.go]
     tests: [TestOrderedJSONUnparsedLine_RowEvaluatorReusesTheRiskChecksRow, TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet, TestOrderedJSONUnparsedLine_RememberedRowOnlyDecidesItsWindow, TestCoveredWindowProbe_CancelledCheckRemembersNothing, TestJSONUnparsedLineRiskPerTenant, TestBlankAfterKeywordRequestsEqualSpaced]

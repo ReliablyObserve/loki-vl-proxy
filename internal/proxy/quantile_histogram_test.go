@@ -18,28 +18,6 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// lokiQuantile is Loki v3.7.7's Quantile (pkg/logql/range_vector.go:465-487)
-// over plain values, kept apart from the proxy's implementation.
-func lokiQuantile(q float64, values []float64) float64 {
-	if len(values) == 0 {
-		return math.NaN()
-	}
-	if q < 0 {
-		return math.Inf(-1)
-	}
-	if q > 1 {
-		return math.Inf(+1)
-	}
-	sorted := append([]float64(nil), values...)
-	sort.Float64s(sorted)
-	n := float64(len(sorted))
-	rank := q * (n - 1)
-	lowerIndex := math.Max(0, math.Floor(rank))
-	upperIndex := math.Min(n-1, lowerIndex+1)
-	weight := rank - math.Floor(rank)
-	return sorted[int(lowerIndex)]*(1-weight) + sorted[int(upperIndex)]*weight
-}
-
 // sameQuantile compares within the last bits a fused multiply-add may change.
 func sameQuantile(got, want float64) bool {
 	if math.IsNaN(want) || math.IsInf(want, 0) {
@@ -82,8 +60,8 @@ func TestQuantileOfCountsEdges(t *testing.T) {
 				}
 			}
 			got := quantileOfCounts(phi, counts)
-			if !sameQuantile(got, tc.want[i]) || !sameQuantile(got, lokiQuantile(phi, values)) {
-				t.Errorf("%s phi=%v: got %v, want %v (Loki reference %v)", tc.name, phi, got, tc.want[i], lokiQuantile(phi, values))
+			if !sameQuantile(got, tc.want[i]) || !sameQuantile(got, quantileReference(phi, values)) {
+				t.Errorf("%s phi=%v: got %v, want %v (reference %v)", tc.name, phi, got, tc.want[i], quantileReference(phi, values))
 			}
 		}
 	}
@@ -188,7 +166,7 @@ func TestQuantileHistogramDifferential(t *testing.T) {
 		}
 		out := map[string]float64{}
 		for key, vs := range values {
-			out[key] = lokiQuantile(phi, vs)
+			out[key] = quantileReference(phi, vs)
 		}
 		return out
 	}
@@ -288,7 +266,7 @@ func TestQuantileHistogramDifferential(t *testing.T) {
 // conformance: semantics/unwrap-quantile-response-limit
 //
 // Differential: a vector aggregation over quantile_over_time folds the
-// quantile of every series (stream) per step (Loki's VectorAggEvaluator), while
+// quantile of every series (stream) per step (Loki's vector aggregation), while
 // the range aggregation's own by (...) takes one quantile over the group's
 // samples. The translation groups both alike; the proxy must not: `sum by
 // (level) (quantile_over_time(...))` adds per-stream quantiles. Ungrouped sum,
@@ -376,7 +354,7 @@ func TestQuantileHistogramOuterAggregationDifferential(t *testing.T) {
 				}
 				sort.Strings(keys)
 				for _, key := range keys {
-					perGroup[groupOf[key]] = append(perGroup[groupOf[key]], lokiQuantile(0.9, perSeries[key]))
+					perGroup[groupOf[key]] = append(perGroup[groupOf[key]], quantileReference(0.9, perSeries[key]))
 				}
 				out := map[string]float64{}
 				for g, vs := range perGroup {
@@ -482,7 +460,7 @@ func TestQuantileStatsGroupByKeepsLevel(t *testing.T) {
 
 // TestQuantileSliderMatchesWindowSort: the sliding quantile answers every
 // window as the sort of its buckets' counts does (quantileOfCounts, Loki's
-// Quantile at pkg/logql/range_vector.go:465-487): bit for bit over generated
+// quantile): bit for bit over generated
 // buckets with repeated values, NaN and large counts, phi inside and outside
 // [0, 1], windows moving forward by a step, jumping, empty, and moving back.
 //

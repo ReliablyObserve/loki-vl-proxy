@@ -63,6 +63,8 @@ var OwnStreamCases = []string{
 	"semantics/logfmt-malformed-lines",
 	"semantics/stream-level-shadowed-by-ingest-json-key",
 	"semantics/unwrap-sum-without-extracted-label-collision",
+	// The case was blocked (it needs a stream no shared stream holds), not empty; its stream makes it a live case.
+	"semantics/json-empty-value-label-series",
 }
 
 // Unservable are the empty cases no seeded stream can fix, each with the reason. The window is the case, or the
