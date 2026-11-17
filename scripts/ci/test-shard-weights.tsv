@@ -14,6 +14,7 @@ TestQueryPlanLowering_RouteParity	108.6
 TestSlidingWindowStats_LongRangeIsExactWithStepSizedBuckets	93.0
 TestVectorAggregationOverRangeFunctionDifferential	80.7
 TestSubSecondStepDifferential	73.5
+TestListedWindowChunksMatchUnchunked	60.0
 TestJSONValidSplitMatchesRawEvaluator	53.7
 TestSlidingWindowStats_TopKRanksExactWindowsWithoutRawFetch	51.9
 TestDetectedLevelFilterDifferential	51.5
@@ -35,6 +36,7 @@ TestStddevStdvarGroupedDifferential	22.3
 TestShortRangeMetric_TooManySeriesFollowsLokiLimit	21.8
 TestUnwrapOverTimeShortRangeMatchesLoki	20.8
 TestWithoutPushdownMatchesFoldAndLoki	20.7
+TestListedWindowChunksMemoryBounded	20.0
 TestQueryRangeStepsLokiWindows	19.5
 TestPatternExactReadDoesNotBufferTheLines	19.4
 TestOrderedJSONStepWiderThanRangeEdgeTable	18.9

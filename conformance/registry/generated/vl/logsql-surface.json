@@ -181,6 +181,7 @@
         "internal/proxy/drilldown_burst_coalescer.go",
         "internal/proxy/metric_binary.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_unparsed_row.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
@@ -292,6 +293,7 @@
       "used_in": [
         "internal/proxy/metric_binary.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_unparsed_row.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_counts.go",
         "internal/proxy/query_translation.go",

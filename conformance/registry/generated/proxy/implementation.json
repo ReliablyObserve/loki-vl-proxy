@@ -413,7 +413,7 @@
     },
     {
       "execution": "hybrid",
-      "functions_reached": 524,
+      "functions_reached": 525,
       "handler": "handleQueryRange",
       "id": "loki_api_v1_query_range",
       "implemented": true,

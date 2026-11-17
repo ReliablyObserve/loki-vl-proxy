@@ -200,3 +200,4 @@ smoke	internal/translate	FuzzPatternCaptureNames	12s	-	the pattern placeholder s
 smoke	internal/logsql	FuzzWithGroupKeyAfterStream	12s	-	the detected_level group edit of a per-stream stats read inserts only the key
 smoke	internal/proxy	FuzzVLNotInMatchesTheNegatedClass	12s	-	probe regexps written with vlNotIn match what [^set] matches
 smoke	internal/logsql	FuzzWithGroupKeyInEveryStats	12s	-	the presence witness edit adds the key to every stats pipe and changes nothing else
+smoke	internal/proxy	FuzzListedWindowChunks	12s	-	an extraction list's windows read in time chunks under a small budget answer byte for byte what one read answers

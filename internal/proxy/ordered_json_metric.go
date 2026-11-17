@@ -1485,6 +1485,14 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	if storedLevel && (p.levelNeedsChain(ctx, base) || p.levelNeedsChain(ctx, base+levelShapeSeparator+query)) {
 		return nil, false, false, errLevelNotStored
 	}
+	if plan.split == jsonSplitStrict {
+		// A line Loki's parser rejects, found in this window before, decides
+		// the answer (the row evaluator's) before any check or the stats start.
+		first, last := unparsedLineWindow(start, end, step, plan.window)
+		if _, ok := p.cachedUnparsedLineRow(ctx, unparsedLineLookup(probeBase), first, last, false); ok {
+			return nil, false, false, nil
+		}
+	}
 	// The parse-risk check and the bucket query run concurrently; the buckets
 	// are discarded when the check finds a line the parsers read differently.
 	// Every return cancels the checks and the stats and waits for them, so no
@@ -3130,29 +3138,15 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	if !plan.failsOnUnparsedLine() || step > plan.window || step <= 0 {
 		return nil, nil
 	}
-	last := start.Add(end.Sub(start) / step * step)
-	// Loki's window is left-open, right-closed; VictoriaLogs' end is exclusive.
-	params := url.Values{"query": {query + " | filter -" + jsonObjectStartFilter + " | limit 1"},
-		"start": {start.Add(-plan.window).Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}, "end": {last.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}}
-	if f := p.placeholderRiskFilter(); f != "" {
-		params.Set("extra_filters", f)
-	}
-	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
-	if err != nil {
+	// The strict split's risk check may have read this row already
+	// (ordered_json_unparsed_row.go).
+	from, to := unparsedLineWindow(start, end, step, plan.window)
+	line, err := p.unparsedLineRowFor(ctx, unparsedLineLookup(query), from, to)
+	if err != nil || line == nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, p.redactedBackendStatusError("backend returned", resp.StatusCode, body)
-	}
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64<<10), 8<<20)
-	if !scanner.Scan() {
-		return nil, scanner.Err()
-	}
 	var row map[string]string
-	if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+	if err := json.Unmarshal(line, &row); err != nil {
 		return nil, fmt.Errorf("invalid backend metric row: %w", err)
 	}
 	desc := p.logQueryStreamDescriptor(row["_stream"], row["level"], map[string]map[string]string{}, map[string]cachedLogQueryStreamDescriptor{})
