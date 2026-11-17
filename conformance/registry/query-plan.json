@@ -270,7 +270,7 @@
       "the plan does not route it: BinOp operand VectorAgg route unwrap pipeline": 49,
       "the plan does not route it: BinOp operand VectorAgg route unwrap rate": 29,
       "the plan does not route it: BinOp operand VectorAgg without empty": 36,
-      "the plan does not route it: BinOp operand spelling": 2,
+      "the plan does not route it: BinOp operand spelling": 3,
       "the plan does not route it: BinOp route mixed offsets": 7,
       "the plan does not route it: BinOp route rewrite": 1,
       "the plan does not route it: BinOp scalar operands": 2,
