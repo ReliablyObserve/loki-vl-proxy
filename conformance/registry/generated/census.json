@@ -1663,6 +1663,8 @@
     "internal/proxy/line_fields_without_parser_test.go | profiles/parsed-fields-without-parser",
     "internal/proxy/line_format_error_test.go | profiles/tail-line-format-parse-error-status",
     "internal/proxy/line_format_error_test.go | semantics/line-format-template-error-keeps-entry",
+    "internal/proxy/listed_window_chunks_test.go | metric-series-identity",
+    "internal/proxy/listed_window_chunks_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/logfmt_risk_candidates_test.go | loki_api_v1_query_range",
     "internal/proxy/logfmt_risk_candidates_test.go | parser-logfmt",
     "internal/proxy/logfmt_risk_candidates_test.go | quality/logfmt-parse-risk-candidates",
@@ -2365,6 +2367,8 @@
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/listed_window_chunks_loki_diff_test.go | metric-series-identity",
+    "internal/querycorpus/listed_window_chunks_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/logql_surface_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
@@ -3098,7 +3102,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 718,
+      "go": 720,
       "playwright": 2
     },
     "page_kinds": {
