@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds about 1,500 dense series over 1,000 steps, so a full 1000-series result over 1,000 steps (about 40 MB) fits,
   and over about 1,600 steps the byte budget has to be raised with the cap.
 
+## [2.322.0] - 2026-11-17
+
 ### Fixed
 
 - Shutting the proxy down closes the peer cache's connections to its peers: idle ones are closed, and a dial that
