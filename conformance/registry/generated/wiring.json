@@ -229,6 +229,9 @@
     "instrumentation-reveals-no-secrets": [
       "internal/proxy/instrumentation_secrets_test.go"
     ],
+    "json-metric-unparsed-line-lookup-once": [
+      "internal/proxy/ordered_json_unparsed_row_test.go"
+    ],
     "limits/admission-limits-answer-queue-full": [
       "internal/proxy/limit_errors_test.go"
     ],
@@ -2755,7 +2758,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 618,
+  "registry_items": 619,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3844,6 +3847,9 @@
       "loki_api_v1_query_range",
       "quality/query-range-settled-steps",
       "window-bounds-and-step-alignment"
+    ],
+    "internal/proxy/ordered_json_unparsed_row_test.go": [
+      "json-metric-unparsed-line-lookup-once"
     ],
     "internal/proxy/ordered_json_valid_split_test.go": [
       "semantics/json-error-filter-metric-split-pushdown",
@@ -6108,7 +6114,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 722,
+  "tests_with_markers": 723,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6206,5 +6212,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 424
+  "wired_items": 425
 }

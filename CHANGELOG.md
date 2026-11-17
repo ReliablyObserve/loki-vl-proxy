@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
   Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
   the body). A request that fits one chunk reads exactly as before.
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
+  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
+  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
+  answers are unchanged.
 
 ## [2.324.0] - 2026-11-17
 
