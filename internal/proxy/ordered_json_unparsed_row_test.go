@@ -277,3 +277,38 @@ func BenchmarkUnparsedLineRowMiss(b *testing.B) {
 		}
 	}
 }
+
+// With -json-line-fields-as-line-keys a placeholder row holds a JSON line, so
+// the unparsed-line lookup leaves placeholder rows out (extra_filters), as the
+// parse-risk probes do; the one shared lookup of the risk check and the row
+// evaluator carries the filter.
+//
+// conformance: json-metric-unparsed-line-lookup-once
+func TestOrderedJSONUnparsedLine_LookupLeavesPlaceholderRowsOut(t *testing.T) {
+	quietProxyLog(t)
+	stub := &unparsedLineStub{}
+	p, err := New(Config{BackendURL: stub.server(t).URL, Cache: cache.New(time.Minute, 1000), LogLevel: "error",
+		LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated, JSONLineFieldsAsLineKeys: true,
+		TenantMap: map[string]TenantMapping{"team-a": {AccountID: "10", ProjectID: "0"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	if p.placeholderRiskFilter() == "" {
+		t.Fatal("the test proxy does not read placeholder rows as JSON lines")
+	}
+	_ = unparsedLineRequest(t, p, 1700000000)
+	got := stub.take()
+	lookups := 0
+	for _, r := range got {
+		if strings.Contains(r, `| filter -_msg:~"^[ \\t\\n\\r]*\\{" | limit 1`) && !strings.Contains(r, "| filter (") {
+			lookups++
+			if !strings.Contains(r, " extra_filters=") {
+				t.Errorf("a lookup without the placeholder filter: %s", r)
+			}
+		}
+	}
+	if lookups != 1 {
+		t.Fatalf("%d lookups, want 1:\n%s", lookups, strings.Join(got, "\n"))
+	}
+}
