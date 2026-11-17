@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A metric whose JSON parser meets a line it cannot parse now fails with Loki's `400` and its
+  `pipeline error: 'JSONParserErr' for series: ...` text under every function Loki keeps the error through: `sort`,
+  `sort_desc`, `topk`, `bottomk`, `label_replace`, `max`/`avg`/`count` and other aggregations, nested aggregations,
+  arithmetic and comparisons with a number, `+`, `and`, `or` and `unless` between two metrics, and offsets. Only a
+  bare range aggregation, a `sum` over it and `label_replace` around those failed before; `sort(rate({...} | json [1m]))`
+  answered `200` with every series. As in Loki, a `sum` without grouping of `rate` or `count_over_time`,
+  `absent_over_time`, a `__error__` label filter and `drop __error__` still answer. The check rides on the metric's
+  own VictoriaLogs reads, so a query whose lines all parse sends no other request; those reads cost VictoriaLogs
+  about 7% to 30% more (one literal replacement per line). Not covered yet: lines both parsers read as JSON while
+  Loki's rejects them (a value `NaN`, `.5` or `+1`) under `sort` or `topk`, `| logfmt --strict` syntax errors, a
+  JSON pipeline with a `line_format` or a second parser, and `sort` over a range aggregation whose pipeline ends in
+  `keep` (read as a log query, as before).
+- A binary operation between two metrics with a parser (`rate({...} | json [1m]) + rate({...} | json [1m])`,
+  `count_over_time({...}[1m]) or rate({...} | json [1m])`) no longer answers `500`: it was read as one metric whose
+  selector ran through the operator.
+- An unwrap conversion error under `label_replace` now fails with Loki's `400`, as it does under other functions.
+
+## [2.332.0] - 2026-11-17
+
+### Fixed
+- A live tail no longer loses lines of a stream that VictoriaLogs makes searchable out of order. VictoriaLogs makes an
+  ingested row searchable when its in-memory buffer shard flushes (shards are filled in turn and each flushes a second
+  after its first row), and its live tail skips every row of a stream older than the newest one of that stream it already
+  sent. The native tail asked for `offset=0s` (read up to now), so a line written a few hundred milliseconds after
+  another could become searchable first and the earlier lines never arrived (rows 2 to 4 of 7 lines written 150 ms apart
+  in the e2e tail parity test, while Loki delivered all 7). The native tail now reads with VictoriaLogs' own default
+  offset of 5 s, so lines reach a native or `auto` tail about 5 s after they are written (Loki shows them within a
+  second). The polled tail lost such lines the same way; it now reads the last 5 s again on every poll and drops the
+  lines it already sent, so its latency does not change. The delay is the new flag `-tail.settle-delay` (Helm
+  `extraArgs.tail.settle-delay`, default `5s`): 1-2 s covers one single-node VictoriaLogs buffer flush, but not
+  clients that batch their pushes or a cluster `vlinsert` hop, and `0` reads up to now as before (and loses such
+  lines).
+
+## [2.331.0] - 2026-11-17
+
 ### Changed
 
 - The route parity test now also gates the VictoriaLogs requests every plan-corpus query sends under each request
@@ -33,34 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`semantics/unwrap-per-series-identity-label-filter`). A range longer than the step keeps the stream's series, as
   without the filter. Answers cached before are not served again. A `max` over `max_over_time` and a `min` over
   `min_over_time` with the filter read the rows of each group, as they do without it.
-- A live tail no longer loses lines of a stream that VictoriaLogs makes searchable out of order. VictoriaLogs makes an
-  ingested row searchable when its in-memory buffer shard flushes (shards are filled in turn and each flushes a second
-  after its first row), and its live tail skips every row of a stream older than the newest one of that stream it already
-  sent. The native tail asked for `offset=0s` (read up to now), so a line written a few hundred milliseconds after
-  another could become searchable first and the earlier lines never arrived (rows 2 to 4 of 7 lines written 150 ms apart
-  in the e2e tail parity test, while Loki delivered all 7). The native tail now reads with VictoriaLogs' own default
-  offset of 5 s, so lines reach a native or `auto` tail about 5 s after they are written (Loki shows them within a
-  second). The polled tail lost such lines the same way; it now reads the last 5 s again on every poll and drops the
-  lines it already sent, so its latency does not change. The delay is the new flag `-tail.settle-delay` (Helm
-  `extraArgs.tail.settle-delay`, default `5s`): 1-2 s covers one single-node VictoriaLogs buffer flush, but not
-  clients that batch their pushes or a cluster `vlinsert` hop, and `0` reads up to now as before (and loses such
-  lines).
-- A metric whose JSON parser meets a line it cannot parse now fails with Loki's `400` and its
-  `pipeline error: 'JSONParserErr' for series: ...` text under every function Loki keeps the error through: `sort`,
-  `sort_desc`, `topk`, `bottomk`, `label_replace`, `max`/`avg`/`count` and other aggregations, nested aggregations,
-  arithmetic and comparisons with a number, `+`, `and`, `or` and `unless` between two metrics, and offsets. Only a
-  bare range aggregation, a `sum` over it and `label_replace` around those failed before; `sort(rate({...} | json [1m]))`
-  answered `200` with every series. As in Loki, a `sum` without grouping of `rate` or `count_over_time`,
-  `absent_over_time`, a `__error__` label filter and `drop __error__` still answer. The check rides on the metric's
-  own VictoriaLogs reads, so a query whose lines all parse sends no other request; those reads cost VictoriaLogs
-  about 7% to 30% more (one literal replacement per line). Not covered yet: lines both parsers read as JSON while
-  Loki's rejects them (a value `NaN`, `.5` or `+1`) under `sort` or `topk`, `| logfmt --strict` syntax errors, a
-  JSON pipeline with a `line_format` or a second parser, and `sort` over a range aggregation whose pipeline ends in
-  `keep` (read as a log query, as before).
-- A binary operation between two metrics with a parser (`rate({...} | json [1m]) + rate({...} | json [1m])`,
-  `count_over_time({...}[1m]) or rate({...} | json [1m])`) no longer answers `500`: it was read as one metric whose
-  selector ran through the operator.
-- An unwrap conversion error under `label_replace` now fails with Loki's `400`, as it does under other functions.
 
 ## [2.330.0] - 2026-11-17
 
