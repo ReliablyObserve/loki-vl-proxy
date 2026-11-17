@@ -2713,7 +2713,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		p.metrics.RecordCacheMiss()
 	}
-	p.log.Debug("query_range request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
+	if p.log.Enabled(r.Context(), slog.LevelDebug) {
+		p.log.Debug("query_range request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
+	}
 
 	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser, bare-parser
 	// paths, post-agg paths) so that the tenant context and forwarded auth headers
@@ -2890,7 +2892,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	stats, isStats := translator.DecodeStats(logsqlQuery)
 	bareMetricRefused := isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStats
-	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
+	if p.log.Enabled(r.Context(), slog.LevelDebug) {
+		p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
+	}
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
 	// A label_replace around a binary expression routes by that
@@ -3092,7 +3096,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
-	p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
+	if p.log.Enabled(r.Context(), slog.LevelDebug) {
+		p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
+	}
 
 	if body, ok := evaluateConstantInstantQuery(logqlQuery, r.FormValue("time")); ok {
 		w.Header().Set("Content-Type", "application/json")
