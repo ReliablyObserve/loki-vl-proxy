@@ -201,11 +201,14 @@ func (p *Proxy) jsonLokiRejectHazardRisk(ctx context.Context, base string, start
 // are remembered like the hazard probe's (coveredWindowProbe, local to the
 // replica).
 func (p *Proxy) jsonUnparsedLineRisk(ctx context.Context, base string, start, end time.Time, step, window time.Duration) (bool, error) {
-	last := start.Add(end.Sub(start) / step * step)
+	lookup := unparsedLineLookup(base)
+	first, last := unparsedLineWindow(start, end, step, window)
 	key := "json-unparsed-line:v1:" + getOrgID(ctx) + ":" + base
-	_, risky, err := p.coveredWindowProbe(ctx, key, start.Add(-window).Add(time.Nanosecond), last, func(from, to time.Time, _ string) (string, bool, error) {
-		risky, err := p.statsPushdownRiskExists(ctx, base+" | filter -"+jsonObjectStartFilter+" | limit 1", from, to)
-		return "", risky, err
+	_, risky, err := p.coveredWindowProbe(ctx, key, first, last, func(from, to time.Time, _ string) (string, bool, error) {
+		// The row is remembered, for the row evaluator and later windows
+		// (ordered_json_unparsed_row.go).
+		row, err := p.readUnparsedLineRow(ctx, lookup, from, to)
+		return "", row != nil, err
 	})
 	return risky, err
 }
