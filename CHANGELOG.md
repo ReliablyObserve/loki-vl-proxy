@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.318.0] - 2026-11-16
+
 ### Fixed
 
 - `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
@@ -20,24 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
   first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
   read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
-- `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer the operation on
-  `query_range` as they already did on `query`. The range route read the operand from the string translator's text,
-  which misreads several binary operations:
-  - A parenthesis in a quoted value (`topk(1, count_over_time({...} != "(" [1m]) * 2)`, a `pod!=")"` matcher) made it
-    rank the counts without the `* 2`, read from raw rows. The same misreading halved `stddev(... * 2)`, and
-    `topk(1, sum by (pod) (...) * 2)` answered 500.
-  - A chain (`... * 2 + 1`) was split at its first operator.
-  - `bool` and a `vector(n)` operand were dropped.
-  - A tumbling `sum by` operand under a number was stamped one step early.
-  - With a step shorter than the range, even `topk(1, rate({...}[1m]) * 2)` lost its first step.
-
-  A `label_replace` inside such a binary operand (`topk(1, label_replace(..., "pod", "x-$1", "pod", "(.*)") * 2)`) now
-  rewrites the label once, on `query` too: it was applied by the operand and again over the ranking's answer
-  (`x-x-p1`).
-
-  The binary operation is now evaluated from its parsed tree, operand by operand, by the binary route the instant
-  query and a binary operation at the top of a query use. The answers are held to Loki's recorded answers on
-  VictoriaLogs v1.49.0 and v1.53.0 (registry `semantics/range-ranking-binary-operand-from-tree`).
+- `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer Loki's matrix on
+  `query_range`, for example `topk(2, sum by (app) (rate({...}[1m])) / sum by (app) (rate({...} |= "error" [1m])))`.
+  The range handler sent the whole operation to VictoriaLogs as one query, so a ranking over a division, a vector
+  matching (`on`, `ignoring`, `group_left`), a `bool` comparison, `and`, `or`, `unless` or a chain of operations
+  answered other values, extra or missing series, or a 500, and a many-to-one match answered `Internal Server Error`
+  instead of Loki's `multiple matches for labels` text. Each side of the operation is now its own query (and is reused
+  from the cache like any other), the operation is joined as at the top of a query, and the ranking is applied to its
+  answer. Instant queries already answered this way. A binary operation under an aggregation or a `label_replace`
+  inside the ranking (`topk(2, sum by (app) (a * b))`, `sort(label_replace(a / b, ...))`) answered a 500 or missing
+  series on `query` and `query_range` alike; it is now evaluated as a query of its own. Range answers cached before
+  the fix are not served again (semantics/rank-over-binary-operation).
 
 ## [2.317.0] - 2026-11-16
 

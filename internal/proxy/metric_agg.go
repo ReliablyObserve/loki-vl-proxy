@@ -547,8 +547,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	innerStats, innerIsStats := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
-	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
-	if innerIsBinary {
+	if holdsBinaryOperand(parsedInner) {
 		// The operands of a binary expression fold and are limited on their own.
 		withoutLabels = nil
 	}
@@ -594,9 +593,9 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		}
 		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, left, right, binOpExprToVMInfo(binOp))
 		dispatched = true
-		// The operands apply their own label_replace calls: the markers of the translator's text for the whole
-		// operand are not applied again.
-		transforms = labelTransforms{}
+	} else {
+		// A binary operation under aggregations or a label_replace: the operand is a query of its own.
+		dispatched = p.serveWrappedBinaryOperand(sc, r, parsedInner, "vector")
 	}
 
 	if bin, isBin := binaryOfStats(innerStats, innerIsStats); !dispatched && isBin {
@@ -704,8 +703,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 
 	r = p.withRequestScope(r)
 	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
-	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
-	if innerIsBinary {
+	if holdsBinaryOperand(parsedInner) {
 		// The operands of a binary expression fold on their own.
 		withoutLabels = nil
 	}
@@ -735,17 +733,11 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	var binaryInner *logqlpkg.BinOpExpr
-	if innerIsBinary {
-		binaryInner = binaryExprForRequest(innerR)
-	}
-	if binaryInner != nil {
-		// A binary operation is evaluated from its parsed tree, operand by operand, as the instant route does: the
-		// translator's text for the whole operand is no reference (a parenthesis in a quoted value, a chain, bool, a
-		// set operator or a vector(n) make it drop or split the operation).
-		p.proxyBinaryLogQL(sc, innerR, binaryInner, "matrix")
-		// The operands apply their own label_replace calls: the markers of the translator's text are not applied again.
-		transforms = labelTransforms{}
+	if p.serveRangeBinaryOperand(sc, innerR, parsedInner) {
+		// A binary operand (or one under aggregations or a label_replace) is
+		// evaluated operand by operand: the translation of the whole operation
+		// is the marker of its operands' queries, never a query VictoriaLogs
+		// can read.
 	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.

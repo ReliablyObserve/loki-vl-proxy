@@ -241,7 +241,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/query-range-window-budget` — A shifted log range does not reuse a window truncated by an earlier request's remaining limit | #929 | 0 | 0 |
 | `semantics/query-range-window-full-limit-reads` — A moved, longer or shorter log range reuses every history window an earlier range read (fixed) | fix/query-range-window-reuse-full-limit | 0 | 0 |
 | `semantics/query-range-window-lead-window` — A windowed log query reads its first window alone and stops there when it holds the limit (fixed) | #1074 | 0 | 0 |
-| `semantics/range-ranking-binary-operand-from-tree` — topk, bottomk, sort, stddev and stdvar over a binary operation on query_range answer the operation, as on query (fixed) | #1614 | 0 | 0 |
+| `semantics/rank-over-binary-operation` — topk, bottomk, sort, sort_desc, stddev and stdvar over a binary operation answer Loki's range on query_range (fixed) | #1541 | 0 | 0 |
 | `semantics/repeated-label-filter-replaced-across-label-format` — Every filter on a label applies where it stands, even with a label_format between them (fixed) | #1250 | 0 | 0 |
 | `semantics/selector-values-are-strings` — a stream-selector matcher value that is not a string, such as ip("1.2.3.4"), answers 200 with no streams where Loki answers a 400 parse e... | #1180 | 0 | 0 |
 | `semantics/series-level-aggregation-bounded-memory` — count, min, max and avg over a range function, and a sum by over a rate/count ratio, answer wide ranges within the response bound, like Loki | #1056 | 0 | 0 |
