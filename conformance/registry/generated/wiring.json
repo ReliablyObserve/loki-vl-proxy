@@ -1362,6 +1362,34 @@
     "semantics/drop-keep-matcher-ip-value-accepted": [
       "internal/querycorpus/grammar_sweep_test.go"
     ],
+    "semantics/error-cache-bounded-memory": [
+      "internal/cache/error_flights_test.go"
+    ],
+    "semantics/error-cache-byte-equal-answers": [
+      "internal/proxy/error_flights_test.go"
+    ],
+    "semantics/error-cache-classes-and-ttl": [
+      "internal/cache/error_flights_test.go",
+      "internal/proxy/error_flights_test.go"
+    ],
+    "semantics/error-cache-operator-switches": [
+      "internal/proxy/error_flights_test.go"
+    ],
+    "semantics/error-cache-plan-policy": [
+      "internal/proxy/error_flights_test.go",
+      "internal/queryplan/failures_test.go"
+    ],
+    "semantics/error-cache-tenant-isolation": [
+      "internal/proxy/error_flights_test.go"
+    ],
+    "semantics/error-coalescing-no-inherited-cancel": [
+      "internal/middleware/coalescer_cancel_test.go",
+      "internal/proxy/error_flights_test.go"
+    ],
+    "semantics/error-coalescing-request-flights": [
+      "internal/cache/error_flights_test.go",
+      "internal/proxy/error_flights_test.go"
+    ],
     "semantics/error-layer-backend-failure-status": [
       "internal/lokierr/lokierr_test.go",
       "internal/proxy/alerting_backend_failure_test.go",
@@ -2807,7 +2835,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 637,
+  "registry_items": 646,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2834,6 +2862,11 @@
     ],
     "internal/cache/cache_test.go": [
       "shutdown-releases-background-work"
+    ],
+    "internal/cache/error_flights_test.go": [
+      "semantics/error-cache-bounded-memory",
+      "semantics/error-cache-classes-and-ttl",
+      "semantics/error-coalescing-request-flights"
     ],
     "internal/cache/peer_close_conn_test.go": [
       "shutdown-releases-background-work"
@@ -3073,7 +3106,8 @@
       "limits/label-values-response-cap"
     ],
     "internal/middleware/coalescer_cancel_test.go": [
-      "backend-deadlines-and-cancellation"
+      "backend-deadlines-and-cancellation",
+      "semantics/error-coalescing-no-inherited-cancel"
     ],
     "internal/proxy/absent_over_time_differential_test.go": [
       "metric-series-identity",
@@ -3417,6 +3451,15 @@
       "semantics/error-layer-silent-success",
       "status-400",
       "status-500"
+    ],
+    "internal/proxy/error_flights_test.go": [
+      "semantics/error-cache-byte-equal-answers",
+      "semantics/error-cache-classes-and-ttl",
+      "semantics/error-cache-operator-switches",
+      "semantics/error-cache-plan-policy",
+      "semantics/error-cache-tenant-isolation",
+      "semantics/error-coalescing-no-inherited-cancel",
+      "semantics/error-coalescing-request-flights"
     ],
     "internal/proxy/error_layer_fail_test.go": [
       "semantics/error-layer-backend-text",
@@ -5039,6 +5082,9 @@
     "internal/queryplan/alloc_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/failures_test.go": [
+      "semantics/error-cache-plan-policy"
+    ],
     "internal/queryplan/lower/binop_alloc_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -6214,7 +6260,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 733,
+  "tests_with_markers": 736,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6232,6 +6278,7 @@
     "drilldown/patterns-counts-tier-step-buckets",
     "drilldown/plugin-legend-sync-race",
     "drilldown/volume-detected-level-not-normalised",
+    "error-coalescing-and-error-cache",
     "limits/drilldown-7d-breakdown-response-limit",
     "limits/parser-metric-raw-rows-body-cap",
     "limits/series-cap-and-byte-budget-interact",
@@ -6312,5 +6359,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 434
+  "wired_items": 442
 }

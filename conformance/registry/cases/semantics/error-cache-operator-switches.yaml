@@ -1,0 +1,24 @@
+id: semantics/error-cache-operator-switches
+title: Operators can turn the join and the error cache off apart, and read their effect in metrics
+proves:
+  - error-coalescing-and-error-cache
+  - operator-configurable-limits
+consumer: any
+pending: true
+why: |
+  -coalescer-disabled turns off the join (each request runs; held failures
+  still answer repeats), -error-cache-enabled=false holds nothing (followers in
+  flight still share); metrics count held hits, stores and coalesced failures
+  by class, shared successes, requests saved, and the held entries and bytes.
+request:
+  scope: internal
+  entry: newErrorFlights, writeErrorFlightMetrics
+  setup: |
+    A stub failing every call, with each switch off in turn; /metrics after a
+    failure and a held repeat.
+compare:
+  mode: exact
+  expect: |
+    Without the join 5 concurrent requests send 5 calls and the repeat none;
+    without the error cache 5 concurrent requests send 1 call and the repeat 1;
+    the metric families carry the counts.

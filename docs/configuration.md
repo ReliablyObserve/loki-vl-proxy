@@ -813,7 +813,12 @@ All protection controls are tunable via CLI flags:
 | `-cb-fail-threshold` | — | `5` | Number of backend failures within the sliding window required to open the circuit breaker |
 | `-cb-open-duration` | — | `10s` | How long the circuit breaker stays open before entering half-open state |
 | `-cb-window-duration` | — | `30s` | Sliding window duration for failure counting; sporadic failures outside the window do not accumulate |
-| `-coalescer-disabled` | — | `false` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with `-cache-disabled` to measure raw translation overhead |
+| `-coalescer-disabled` | — | `false` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with `-cache-disabled` to measure raw translation overhead. It also turns off the request-level join (see [Identical requests and failed answers](#identical-requests-and-failed-answers)) |
+| `-error-cache-enabled` | — | `true` | Hold failed read answers for their class's TTL so identical requests answer the held failure byte for byte instead of asking VictoriaLogs again |
+| `-error-cache-transient-ttl` | — | `1s` | How long a backend failure (VictoriaLogs 5xx, 429 or queue timeout, a timed-out, refused or broken connection) is held per request. `0` holds none |
+| `-error-cache-data-ttl` | — | `5s` | How long a failure read from the window's data (series limit, line or response size limit, JSON parser or unwrap conversion error under a metric) is held per request. `0` holds none |
+| `-error-cache-max-entries` | — | `4096` | Most failed answers held per replica, oldest evicted first |
+| `-error-cache-max-bytes` | — | `8388608` | Most bytes of failed answers held per replica; one answer above 64 KiB is never held |
 | `-backend-max-concurrent-heavy-queries` | — | `2` | Maximum concurrent heavy VictoriaLogs calls per replica (see [Heavy VictoriaLogs Query Admission](#heavy-victorialogs-query-admission)). `0` disables the limiter |
 | `-backend-heavy-query-queue-wait` | — | `20s` | How long a heavy call waits for a slot before the request fails with `429` `too many outstanding requests`. `0` rejects immediately when all slots are busy |
 | `-backend-heavy-query-min-range` | — | `6h` | Time range from which `stats_query_range`, `stats_query`, `hits` and unbounded raw `query` calls count as heavy, and metadata listings count as long-range scans. Must be `> 0` |
@@ -822,6 +827,18 @@ All protection controls are tunable via CLI flags:
 | `-backend-metadata-scan-memory-headroom` | — | `0.4` | Share of the memory available to VictoriaLogs (from its `/metrics`) that long-range scans must leave free. `0` disables the memory gate |
 | `-backend-metadata-scan-latency-tolerance` | — | `1.5` | How many times its no-load duration a long-range scan that ran beside others may take before the adaptive limit shrinks. Must be `>= 1` |
 | `-metadata-inventory-parallelism` | — | `4` | Bucket listings one label or field listing may have in flight while it is assembled from the time-bucketed inventory (see [Label inventory](#label-inventory)). `0` turns the inventory off: every listing is one VictoriaLogs call over the whole range |
+
+### Identical requests and failed answers
+
+Identical read requests (same route, parameters, tenant, credentials and response profile) that arrive while one of them runs wait for it instead of running again, on GET and POST and with `-stream-response`:
+
+- a success the response cache stored is read from there by every waiting request; a complete success the cache does not keep (a POST) is handed over in memory; a streamed or oversized success lets the waiting requests run on their own as soon as it flushes or outgrows what can be kept;
+- a failure is handed over byte for byte (Loki's status, errorType and text) and held for its class's TTL, so the next identical requests answer it without running:
+  - **transient**, `-error-cache-transient-ttl` (1s): VictoriaLogs 5xx, 429 or queue timeout, a timed-out, refused or broken connection. Each replica asks VictoriaLogs about once per second per failing request, and the first request after VictoriaLogs recovers answers within that second. A failure that does not depend on the time window (a VictoriaLogs 5xx or 429, a refused or reset connection) is held for every window of the same query, so refreshes that move `end=now` answer it too; a 5xx specific to one window can fail the query's other windows for up to that second;
+  - **data**, `-error-cache-data-ttl` (5s): failures read from the data in the request's window (Loki's series limit, a line or response size limit, a JSON parser or unwrap conversion error under a metric). A later window has its own key and answers at once;
+- never held or shared: the client's own cancellation or deadline (a waiting request whose client is still there starts again as the new leader), the proxy's own `429` queue and load shedding, missing credentials, and failures the proxy cannot classify.
+
+The class comes from the type of the error the request answered, and is kept only when the request's query plan can fail that way (a `vector(1)` reads no data, so it never holds a backend failure). Held answers stay in the replica's memory (never pushed to peers), bounded by `-error-cache-max-entries` and `-error-cache-max-bytes`, and are dropped on a configuration reload. Metrics: `loki_vl_proxy_error_cache_hits_total{class}`, `loki_vl_proxy_error_cache_stores_total{class}`, `loki_vl_proxy_error_coalesced_total{class}`, `loki_vl_proxy_request_coalesced_success_total`, `loki_vl_proxy_request_flight_saved_total`, `loki_vl_proxy_error_cache_entries` and `loki_vl_proxy_error_cache_bytes`. With `-debug-vl-calls-header` a held or shared answer reports `X-Loki-VL-Cache-Result: hit` and `X-Loki-VL-Backend-Calls: 0`.
 
 Per-client rate limits identify clients by connection source IP and return `429` (`Retry-After: 1`). `-rate-limit-per-second=0` disables them; a burst of `0` with a positive rate rejects every request.
 

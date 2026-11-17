@@ -1,0 +1,118 @@
+id: error-coalescing-and-error-cache
+kind: resource_control
+title: Identical requests share one run, and failed answers are held for their class's TTL
+
+loki: |
+  Loki's query frontend answers each request on its own: its results cache
+  keeps successful extents only, and a failed query is evaluated again on the
+  next identical request. A client sees the status, errorType and text of the
+  failure; a retry after the backend recovered gets the data.
+
+victorialogs: |
+  VictoriaLogs answers each call on its own and caches nothing across calls.
+  A storm of identical failing queries (refresh loops, many dashboards, client
+  retries) reaches it in full unless something in front of it absorbs it.
+
+proxy: |
+  Read requests (every route the response cache serves: query, query_range,
+  series, labels, label values, volume, index stats, detected fields and
+  labels, patterns; GET and POST; with or without -stream-response) join a
+  flight keyed by the response key (tenant, credentials' fingerprint, response
+  profile, parameters). Followers of a leader in flight wait for it: a success
+  the response cache stored is read from there, a complete success the cache
+  does not keep (POST) is handed over in memory, a streamed or oversized
+  success releases them at its first flush or overflow to run on their own, and
+  a failure of a shareable class is handed over byte for byte. A leader that
+  was cancelled or ran out of its own time hands nothing: a live follower
+  starts again as the new leader; a leader whose failure is never shared (the
+  proxy's own queue, an untyped failure) releases its followers at once, so no
+  follower waits longer than it would have run. The VictoriaLogs-call
+  coalescer does the same for a call whose shared context (the first caller's
+  deadline) ended it; a backend timeout is shared as it is.
+
+  A failure's class comes from the type of the error the request answered
+  through the error layer, and is kept only when the request's query plan
+  (queryplan.Failures) says the request can fail in that class: transient
+  (VictoriaLogs 5xx, 429, queue timeout, a refused, reset or timed-out
+  connection, an aborted body; held -error-cache-transient-ttl, default 1s),
+  data-dependent (Loki's series limit, a line or response size limit, a JSON
+  parser or unwrap conversion error under a metric whose plan lets a pipeline
+  error reach it; held -error-cache-data-ttl, default 5s), and request-decided
+  (parse, parameter, query length; shared between requests in flight, held by
+  no TTL yet). Never held or shared: the client's own cancellation or deadline,
+  the proxy's own queue and load shedding, missing credentials, a proxy
+  defect, an untyped failure, two failures of different classes in one
+  request, and an answer whose status is not the recorded failure's. A backend
+  failure that does not depend on the time window (a VictoriaLogs 5xx or 429,
+  a refused or reset connection; not a timeout or an aborted body) is also
+  held for every window of the request (the key without start, end, time and
+  since), so refreshes that move end=now answer it too. Held answers stay in
+  this replica's memory, bounded by -error-cache-max-entries and
+  -error-cache-max-bytes, and are dropped on a configuration reload.
+
+implementation:
+  - internal/cache/error_flights.go
+  - internal/queryplan/failures.go
+  - internal/proxy/error_flights.go
+  - internal/proxy/middleware.go
+  - internal/middleware/coalescer.go
+
+cases:
+  - semantics/error-coalescing-request-flights
+  - semantics/error-cache-classes-and-ttl
+  - semantics/error-coalescing-no-inherited-cancel
+  - semantics/error-cache-tenant-isolation
+  - semantics/error-cache-bounded-memory
+  - semantics/error-cache-plan-policy
+  - semantics/error-cache-byte-equal-answers
+  - semantics/error-cache-operator-switches
+
+decisions:
+  - id: request-level-join-at-the-response-cache
+    chosen: |
+      One join of identical read requests at the response cache middleware,
+      for every route it serves, the routes it bypasses (POST,
+      -stream-response, a disabled cache) included; -coalescer-disabled turns
+      it off.
+    over: [a join per VictoriaLogs call site (about 34 call sites send their reads uncoalesced), sharing failures only (followers cannot know ahead whether the leader will fail)]
+    why: |
+      Owner 2026-11-17: error answers must not put pressure on VictoriaLogs or
+      the proxy, and N concurrent identical requests send one VictoriaLogs
+      call, success or failure. Measured on a stub VictoriaLogs with 50
+      concurrent identical requests: main sent 50 calls per failing
+      query_range (log, metric, binary) and the branch sends 1.
+  - id: error-cache-local-only
+    chosen: Held failures stay in the replica's memory; nothing is pushed to peers.
+    over: [replicating held failures through the peer tier]
+    why: |
+      Owner 2026-11-17. A peer push takes about as long as the 1 s transient
+      TTL, and each replica asks VictoriaLogs at most once per TTL per failing
+      request, so a fleet of N replicas sends at most N calls per TTL however
+      many clients ask.
+  - id: window-free-backend-failures
+    chosen: |
+      A VictoriaLogs 5xx or 429, or a refused or reset connection, is also held
+      under the request's key without start, end, time and since (tenant,
+      credentials, route, query, step and the other parameters kept), for the
+      transient TTL. Timeouts and aborted bodies, which depend on the window's
+      size, are held for their own window only.
+    over: [the exact key only (Grafana refreshes move end=now, so a refresh never matched a held failure), one hold per tenant and route whatever the query (closer to a breaker, coarser)]
+    why: |
+      Owner 2026-11-17, option (b). TestErrorCacheTTLSweep, 20 clients
+      refreshing one query every 100 ms with end=now through a 3 s outage:
+      exact key only, 197 calls/s (log query) and 393 calls/s (metric, step
+      15s) at every TTL; with the window-free hold at 1 s, 1.3 and 3.3 calls/s.
+      The answer is the same by construction (Loki's fixed text for the
+      status). Risk accepted: a 5xx caused by one window (a broken part in one
+      time range) fails the request's other windows for up to 1 s.
+  - id: transient-ttl-one-second
+    chosen: -error-cache-transient-ttl 1s
+    over: [0 (no hold), 500ms, 2s]
+    why: |
+      TestErrorCacheTTLSweep (internal/proxy, LVP_ERROR_BASELINE=1): 20
+      clients refreshing a failing /labels every 100 ms through a 3 s outage
+      sent 439 calls/s at 0, 8/s at 500ms, 4/s at 1s and 2.7/s at 2s (query_range
+      with end=now: 198, 3.7, 1.3, 1.0 calls/s); the first 200 after recovery
+      came within about 50 ms at 500ms and 1s and after about 1 s at 2s. 1 s is
+      the knee: about one request's calls per second, recovery seen within a
+      second.
