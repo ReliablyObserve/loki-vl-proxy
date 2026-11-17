@@ -33,7 +33,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/proxy JSON number rendering of unpacked values (VictoriaLogs unpack_json normalises)'
-  loki: 'pkg/logql/log/parser.go readValue (raw number bytes)'
+  loki: 'a number keeps the text of the line (5325 series on Loki against 5422 on the proxy, in this case)'
   proxy: 'normalised number text'
   planned_test: 'TestCompat_JSONNumberLabelText (test/e2e-compat, group drilldown)'
   clusters:

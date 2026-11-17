@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// lokiErrDeadlineExceeded is Loki's server.ErrDeadlineExceeded
-// (pkg/util/server/error.go, v3.7.7), answered with HTTP 504 whenever a query
+// lokiErrDeadlineExceeded is Loki's deadline-exceeded error text (registry
+// semantics/error-layer-cancel-deadline), answered with HTTP 504 whenever a query
 // runs past its deadline.
 const lokiErrDeadlineExceeded = "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed"
 

@@ -14,12 +14,11 @@ import (
 
 // TestCompat_UnwrapRateCounterOneSampleSeries: Loki rates rate_counter per
 // series of its sample extractor, the stream plus every label `| logfmt`
-// extracts less the unwrapped one (pkg/logql/log/metrics_extraction.go:160-166),
-// and a sum does not hand it its grouping (pkg/logql/syntax/ast.go:1630-1640).
+// extracts less the unwrapped one, and a sum does not hand it its grouping.
 // With a transaction id on every line each line is a series of its own, which
-// rates 0 (pkg/logql/range_vector.go:286-291): `sum` and `sum by (lvl)` answer
-// 0 at every step whose window holds a line, sliding, tumbling and shorter than
-// the step. The proxy answers the same series and points.
+// rates 0: `sum` and `sum by (lvl)` answer 0 at every step whose window holds
+// a line, sliding, tumbling and shorter than the step. The proxy answers the
+// same series and points.
 // conformance: semantics/unwrap-rate-counter-one-sample-series, semantics/unwrap-rate-ungrouped-sum-per-stream, metric-series-identity, loki_api_v1_query_range
 func TestCompat_UnwrapRateCounterOneSampleSeries(t *testing.T) {
 	now := time.Now()
@@ -124,8 +123,7 @@ func rateCounterMatrix(t *testing.T, base string, params url.Values) map[string]
 // TestCompat_UnwrapConversionErrorFirstWindowHeavyRead: a range metric reading
 // -backend-heavy-query-min-range (6h) or more whose first evaluation window
 // holds the only value its conversion rejects answers Loki's 400, text/plain,
-// naming that line (pkg/logql/evaluator.go:726-733: Loki stops at the first
-// rejected value), found by the proxy's lookup of the first window beside the
+// naming that line (Loki stops at the first rejected value), found by the proxy's lookup of the first window beside the
 // metric's stats read.
 // conformance: semantics/unwrap-conversion-error, status-400, loki_api_v1_query_range
 func TestCompat_UnwrapConversionErrorFirstWindowHeavyRead(t *testing.T) {

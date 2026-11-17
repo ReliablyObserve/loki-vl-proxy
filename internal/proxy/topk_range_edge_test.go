@@ -354,8 +354,7 @@ func TestInstantTopKByHandler(t *testing.T) {
 	}
 }
 
-// Loki's parser rejects a k below 1 (pkg/logql/syntax/ast.go mustNewVectorAggregation:
-// "invalid parameter (must be greater than 0) topk(0"), in every spelling and on
+// Loki's parser rejects a k below 1 ("invalid parameter (must be greater than 0) topk(0"), in every spelling and on
 // both endpoints, so no ranking is ever asked for zero series.
 // conformance: semantics/topk-grouped-spellings, loki_api_v1_query, loki_api_v1_query_range
 func TestTopKRejectsAKBelowOne(t *testing.T) {

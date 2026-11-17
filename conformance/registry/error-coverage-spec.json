@@ -324,7 +324,7 @@
       ]
     },
     "limit-reached": {
-      "reason": "Loki answers a query over one of its evaluation limits (logqlmodel.ErrLimit) with 400 and this fixed text, but the recorded stack has no limit that one request can reach, so no answer was recorded. The proxy uses the class for the limits it enforces that Loki has no flag for (the proxy-evaluated metric row limit, the binary evaluation budgets, the multi-tenant fanout); the flag goes to the log line only.",
+      "reason": "Loki answers a query over one of its evaluation limits with 400 and this fixed text, but the recorded stack has no limit that one request can reach, so no answer was recorded. The proxy uses the class for the limits it enforces that Loki has no flag for (the proxy-evaluated metric row limit, the binary evaluation budgets, the multi-tenant fanout); the flag goes to the log line only.",
       "tests": [
         "TestLimitAnswersAreLokisTextAndLogTheFlag",
         "TestErrorLayer_NoVictoriaLogsLeak"

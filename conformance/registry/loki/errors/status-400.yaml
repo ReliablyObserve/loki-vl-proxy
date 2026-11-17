@@ -2,8 +2,8 @@ id: status-400
 status: 400
 error_type: bad_data
 generated:   # rewritten by conformance/scripts/error_registry.py
-  proxy_call_sites: 17
-  dynamic_sites: 15
+  proxy_call_sites: 16
+  dynamic_sites: 14
   literal_messages:
     - "multi-tenant sub-request failed"
     - "not supported value %q"
@@ -17,26 +17,26 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   "msg-step-overflow", "msg-step-too-many-points", "msg-tail-not-websocket", "msg-url-escape",
   "msg-url-semicolon", "unmapped-index-shards-target-bytes", "unmapped-push-snappy-corrupt",
   "unmapped-ruler-local-store"]
-  recorded_rows: 197
-  comparable_rows: 142
-  matching_rows: 136
+  recorded_rows: 212
+  comparable_rows: 157
+  matching_rows: 152
 
 loki_behaviour: |
   Loki v3.7.7 answers 400 as `text/plain` with the error's own message for a
   LogQL parse error, a limit the query exceeds, a pipeline error (a metric
-  sample carrying `__error__`: `logqlmodel.PipelineError`, see
+  sample carrying `__error__`, see
   semantics/pipeline-error-text-parity for the exact text), a blocked query
-  and an unsupported one (`serverutil.ClientHTTPStatusAndError`). The body is
+  and an unsupported one (parse errors and limits are recorded in
+  internal/lokierr/testdata/loki_error_answers.jsonl). The body is
   the message alone, `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options:
-  nosniff`, no JSON envelope and no trailing newline (`serverutil.WriteError`,
-  pkg/util/server/error.go:46-52; reached through the query frontend,
-  pkg/lokifrontend/frontend/transport/handler.go:141). The proxy writes the
+  nosniff`, no JSON envelope and no trailing newline (also through the query
+  frontend). The proxy writes the
   same bytes on every query, metadata and tail-upgrade route
   (semantics/error-layer-body-shape) and matches the message text where a
   case proves it. Loki writes JSON only where its own handler does: the
   ruler's Prometheus rules and alerts API (`{"status","data","errorType",
-  "error"}`, pkg/ruler/base/api.go:106-123) and format_query
-  (`{"status":"invalid-query","error"}`, pkg/loki/format_query_handler.go);
+  "error"}`) and format_query
+  (`{"status":"invalid-query","error"}`);
   the compactor's delete API and the ruler's rule-group API use Go's
   http.Error (text and a newline). An unwrap conversion error
   (semantics/unwrap-conversion-error) is answered as Loki writes it,

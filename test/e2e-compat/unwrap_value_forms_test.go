@@ -106,11 +106,11 @@ func unwrapInstantSeries(t *testing.T, baseURL, query string, at time.Time) map[
 
 // TestCompat_UnwrapValueFormsParity: the values of unwrapValueForms make the
 // sample Loki makes, for sum, avg, max and min over time and a rate, in a
-// tumbling and a sliding window, grouped and not; NaN too: sum, avg, stddev and
-// rate over a window that holds a nan are NaN and max and min ignore it
-// (pkg/logql/range_vector.go). A rate is compared on query_range; the over-time
-// functions are compared on instant queries grouped by the service, because their
-// range answers still differ from Loki's for reasons that are not the value gate.
+// tumbling and a sliding window, grouped and not; NaN too: sum, avg, stddev
+// and rate over a window that holds a nan are NaN and max and min ignore it.
+// A rate is compared on query_range; the over-time functions are compared on
+// instant queries grouped by the service, because their range answers still
+// differ from Loki's for reasons that are not the value gate.
 // conformance: semantics/unwrap-gate-parsefloat-divergences, semantics/unwrap-sample-validity, loki_api_v1_query_range
 func TestCompat_UnwrapValueFormsParity(t *testing.T) {
 	now := time.Now()

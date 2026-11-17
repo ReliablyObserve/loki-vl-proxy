@@ -3,7 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
-	"hash/fnv"
+	"io"
 	"maps"
 	"net/http"
 	"sort"
@@ -203,6 +203,9 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		return nil, 0, -1, false
 	}
 	lines = -1
+	// expected is how many lines the read below holds, when this request counted them: a state built now is
+	// mined on workers when they are many.
+	expected := -1
 	if s == nil {
 		// A range inside the retention is counted with it, for the caller to answer the request without the
 		// state when the retention holds too many; a longer range costs more to count than the retention and is
@@ -214,10 +217,10 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				lines, rangeErr = p.countPatternLines(ctx, scope, scope.startNs, scope.endNs)
+				lines, rangeErr = p.countPatternLines(ctx, scope, scope.startNs, patternSamplesEndNs(scope.endNs))
 			}()
 		}
-		retained, retainedErr = p.countPatternLines(ctx, scope, retainFrom, scope.endNs)
+		retained, retainedErr = p.countPatternLines(ctx, scope, retainFrom, patternSamplesEndNs(scope.endNs))
 		wg.Wait()
 		if rangeErr != nil {
 			lines = -1
@@ -235,8 +238,10 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		}
 		s = &patternSelectorState{fromNs: retainFrom, toNs: retainFrom, streams: make(map[string]struct{}), selector: selector}
 		t.selectors[selector] = s
+		expected = retained
 	}
-	readTo := scope.endNs
+	// The range's last sample is read whole, as Loki answers it, with the lines after the range's end in it.
+	readTo := patternSamplesEndNs(scope.endNs)
 	if nowNs := now.UnixNano(); readTo > nowNs {
 		readTo = nowNs
 	}
@@ -248,7 +253,7 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		if readFrom < s.fromNs {
 			readFrom = s.fromNs
 		}
-		if err := p.readPatternStateLines(ctx, t, s, scope, readFrom, readTo, maxLines); err != nil {
+		if err := p.readPatternStateLines(ctx, t, s, scope, readFrom, readTo, maxLines, expected); err != nil {
 			delete(t.selectors, selector)
 			p.observeInternalOperation(ctx, "patterns_state", "error", time.Since(started))
 			return nil, 0, lines, false
@@ -342,7 +347,8 @@ func (p *Proxy) readPatternStateWindows(ctx context.Context, t *patternTenantSta
 			return false
 		}
 		t.mu.Lock()
-		err := p.readPatternStateLines(ctx, t, s, scope, from, to, store.maxBuildLines)
+		// A background build mines on the build's goroutine alone: it must not take the cores requests mine on.
+		err := p.readPatternStateLines(ctx, t, s, scope, from, to, store.maxBuildLines, -1)
 		dropped := false
 		if err == nil {
 			s.toNs = to
@@ -381,8 +387,9 @@ func (p *Proxy) countPatternLines(ctx context.Context, scope patternQueryScope, 
 }
 
 // readPatternStateLines reads the selector's lines in [fromNs, toNs), a stream after another and each oldest
-// first, and trains each stream's clusterers on the lines newer than the newest it read.
-func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState, s *patternSelectorState, scope patternQueryScope, fromNs, toNs int64, maxLines int) error {
+// first, and trains each stream's clusterers on the lines newer than the newest it read. lines is how many lines
+// the read holds when the caller counted them (-1 otherwise): a state built from many is mined on workers.
+func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState, s *patternSelectorState, scope patternQueryScope, fromNs, toNs int64, maxLines, lines int) error {
 	levels := p.newLogRowLevels()
 	// unread is, per stream, the lines at its newest time this read has not met again yet.
 	unread := map[string]map[uint64]int{}
@@ -393,49 +400,59 @@ func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState
 		selector = patternSelectorStream(scope.filter.String())
 		t.miner.shortWholeLine = true
 	}
-	return p.readPatternCountRows(ctx, patternExactLinesQuery(scope.filter), fromNs, toNs, maxLines, func(v *fj.Value) bool {
-		msg := v.GetStringBytes("_msg")
-		if isVLMissingMsgBytes(msg, levels.defaultMsg) {
-			return false
-		}
-		timeNs, ok := parseLokiTimeToUnixNano(string(v.GetStringBytes("_time")))
-		if !ok {
-			return false
-		}
-		stream := string(v.GetStringBytes(patternExactStreamField))
-		s.streams[stream] = struct{}{}
-		minedAs := stream
-		if selector != "" {
-			minedAs, stream = selector, selector+stream
-		}
-		newest, seen := t.newest[stream]
-		switch {
-		case seen && timeNs < newest:
-			return true // read already, or older than a line read: Loki skips it
-		case seen && timeNs == newest:
-			left := unread[stream]
-			if left == nil {
-				left = maps.Clone(t.atNewest[stream])
+	var pm *patternParallelMiner
+	if selector == "" {
+		pm = startPatternMining(t.miner, lines)
+	}
+	if pm != nil {
+		defer pm.finish()
+	}
+	mine := patternLineSink(t.miner, pm)
+	decoders := 0
+	if pm != nil {
+		decoders = len(pm.workers)
+	}
+	return p.readPatternAnswer(ctx, patternExactLinesQuery(scope.filter), fromNs, toNs, func(body io.Reader) error {
+		return scanPatternLineRows(body, maxLines, levels, decoders, func(row *patternLineRow) bool {
+			if row.missing || !row.timeOK {
+				return false
+			}
+			timeNs := row.timeNs
+			stream := row.stream
+			s.streams[stream] = struct{}{}
+			minedAs := stream
+			if selector != "" {
+				minedAs, stream = selector, selector+stream
+			}
+			newest, seen := t.newest[stream]
+			switch {
+			case seen && timeNs < newest:
+				return true // read already, or older than a line read: Loki skips it
+			case seen && timeNs == newest:
+				left := unread[stream]
 				if left == nil {
-					left = map[uint64]int{}
+					left = maps.Clone(t.atNewest[stream])
+					if left == nil {
+						left = map[uint64]int{}
+					}
+					unread[stream] = left
 				}
-				unread[stream] = left
+				h := patternLineHash(row.msg)
+				if left[h] > 0 {
+					left[h]--
+					return true // read already
+				}
+				t.atNewest[stream][h]++
+			default:
+				t.newest[stream] = timeNs
+				t.atNewest[stream] = map[uint64]int{patternLineHash(row.msg): 1}
+				unread[stream] = map[uint64]int{}
 			}
-			h := patternLineHash(msg)
-			if left[h] > 0 {
-				left[h]--
-				return true // read already
+			if row.msg != "" {
+				mine(minedAs, row.level, row.msg, patternSampleStart(timeNs), 1)
 			}
-			t.atNewest[stream][h]++
-		default:
-			t.newest[stream] = timeNs
-			t.atNewest[stream] = map[uint64]int{patternLineHash(msg): 1}
-			unread[stream] = map[uint64]int{}
-		}
-		if len(msg) > 0 {
-			t.miner.observeStreamLine(minedAs, patternLevelFromFJ(v, &levels), string(msg), patternSampleStart(timeNs), 1)
-		}
-		return true
+			return true
+		})
 	})
 }
 
@@ -798,8 +815,12 @@ func (t *patternTenantState) size() int64 {
 }
 
 // patternLineHash names a line's text among the lines of a stream at one time.
-func patternLineHash(msg []byte) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write(msg)
-	return h.Sum64()
+func patternLineHash[T string | []byte](msg T) uint64 {
+	// FNV-1a, 64 bits (hash/fnv's New64a, written out so that hashing a line allocates nothing).
+	h := uint64(14695981039346656037)
+	for i := 0; i < len(msg); i++ {
+		h ^= uint64(msg[i])
+		h *= 1099511628211
+	}
+	return h
 }

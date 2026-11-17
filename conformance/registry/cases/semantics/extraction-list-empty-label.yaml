@@ -1,0 +1,42 @@
+id: semantics/extraction-list-empty-label
+pending: true
+title: a metric series of a line without a key an extraction list names carries that label empty on Loki and not on the proxy (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `| logfmt amount, route` and `| json amount, route` give every line the labels
+  they name, empty when the line lacks the key, and Loki's metric series keep
+  that label with an empty value: `max_over_time({app="uw"} | logfmt amount,
+  route | unwrap amount [5m])` answers a series `{..., route=""}` for the lines
+  without a route, and `count_over_time({app="uw"} | logfmt route [5m])` the
+  same. The proxy answers those lines in the stream's series without the label.
+
+  Recorded with Loki's engine (TestExtractionListIdentityMatchLoki,
+  internal/querycorpus, VictoriaLogs v1.49.0 and v1.53.0): the bare range
+  functions over an extraction list naming a key some lines lack, on an instant
+  query (count_over_time, rate, bytes_over_time) and on query_range.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'count_over_time({service_name="payment-service"} | logfmt route [5m])'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    The series of the lines without the key carry it with an empty value.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy metric series labels after an extraction list (the stats answer and the raw-row evaluator drop an empty grouping value)'
+  loki: 'the listed label stays in the series with an empty value'
+  proxy: 'the label is left out'
+  planned_test: 'TestExtractionListIdentityMatchLoki (internal/querycorpus) lists the runs in extractionListKnownRuns'
+  clusters: []

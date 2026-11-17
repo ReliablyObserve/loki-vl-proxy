@@ -35,7 +35,7 @@ func TestPeerFetchEscapedKeyLegacyTTLHeader(t *testing.T) {
 	defer srv.Close()
 	pc := NewPeerCache(PeerConfig{Timeout: time.Second})
 	defer pc.Close()
-	body, ttl, _, status := pc.fetchFrom(strings.TrimPrefix(srv.URL, "http://"), key)
+	body, ttl, _, status := pc.fetchFrom(strings.TrimPrefix(srv.URL, "http://"), key, headerSink{})
 	if status != http.StatusOK || string(body) != "legacy peer" || ttl != time.Minute {
 		t.Fatalf("fetch = (%q,%s,%d)", body, ttl, status)
 	}

@@ -263,13 +263,16 @@ func TestQueryCorpusReport(t *testing.T) {
 			continue
 		}
 		rep.Oracle = append(rep.Oracle, summarizeOracle(v, head))
-		if base == "" {
-			continue
+		// The typed-selector check reads the PR's verdicts only, so it runs with or without a base corpus (a base the
+		// CI cache misses would otherwise let a difference through on one run and fail the next run of the same tree);
+		// the base-versus-PR checks find nothing without a base.
+		var prev map[string]map[string]oracleVerdict
+		if base != "" {
+			if prev = readVerdicts(t, verdictsPath(base, v)); prev != nil {
+				rep.OracleBase = append(rep.OracleBase, summarizeOracle(v, prev))
+			}
 		}
-		if prev := readVerdicts(t, verdictsPath(base, v)); prev != nil {
-			rep.OracleBase = append(rep.OracleBase, summarizeOracle(v, prev))
-			rep.OracleRegressions = append(rep.OracleRegressions, oracleRegressions(v, prev, head))
-		}
+		rep.OracleRegressions = append(rep.OracleRegressions, oracleRegressions(v, prev, head))
 	}
 	lokiVersion := lokiMatrixVersion(t)
 	if head := readLokiVerdicts(t, lokiVerdictsPath(corpus, lokiVersion)); head != nil {

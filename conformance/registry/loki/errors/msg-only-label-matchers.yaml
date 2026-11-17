@@ -22,10 +22,10 @@ check_order:
   loses_to: []
   rows: []
 recorded:
-  rows: 8
-  comparable_rows: 8
-  matching_rows: 8
-  row_ids: ["r0287", "r0288", "r0289", "r0290", "r0291", "r0294", "r0295", "r0296"]
+  rows: 11
+  comparable_rows: 11
+  matching_rows: 11
+  row_ids: ["r0287", "r0288", "r0289", "r0290", "r0291", "r0294", "r0295", "r0296", "r1600", "r1601", "r1602"]
   known_difference_ids: []
   e2e_rows: ["r0287", "r0288", "r0289", "r0290", "r0291", "r0294", "r0295", "r0296"]
 coverage:

@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// Loki v3.7.7 has no count_values (pkg/logql/syntax/lex.go:114-125 has no token
-// for it, syntax.y:477-490 and ast.go:1243-1254 no vector operation), so every form is a
+// Loki v3.7.7 has no count_values (its lexer has no token for it and its
+// grammar no vector operation), so every form is a
 // 400 parse error at the position of the name, before any storage work. The
 // proxy must answer the same message on both endpoints without a backend call;
 // it used to answer "count_values is not translatable to LogsQL" (or a bare

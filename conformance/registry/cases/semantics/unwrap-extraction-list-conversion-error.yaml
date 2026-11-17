@@ -1,0 +1,39 @@
+id: semantics/unwrap-extraction-list-conversion-error
+pending: true
+title: after an extraction list an unwrap over a value it cannot convert answers 200 where Loki answers 400 SampleExtractionErr (open)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `max_over_time({app="ub"} | logfmt amount | unwrap amount [5m])` over lines
+  whose amount is sometimes `abc`: Loki answers 400 `pipeline error:
+  'SampleExtractionErr' for series: ...`, also with `| __error__=""` before the
+  unwrap and under `sum by (ns)`; the proxy answers 200 without those samples.
+  The bare parser (`| logfmt | unwrap amount`) answers Loki's error
+  (semantics/unwrap-conversion-error).
+
+  Recorded with Loki's engine (TestExtractionListIdentityMatchLoki,
+  internal/querycorpus, VictoriaLogs v1.49.0 and v1.53.0), every request kind.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'max_over_time({service_name="payment-service"} | logfmt amount | unwrap amount [5m])'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error]
+  expect: |
+    400 with Loki's SampleExtractionErr pipeline error text.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy unwrap conversion check (unwrap_conversion_error.go) after an extraction list'
+  loki: '400 pipeline error SampleExtractionErr'
+  proxy: '200 without the samples'
+  planned_test: 'TestExtractionListIdentityMatchLoki (internal/querycorpus) lists the runs in extractionListKnownRuns'
+  clusters: []

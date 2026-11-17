@@ -53,7 +53,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/proxy/unwrap_conversion_error.go unwrapErrorProbes (opaque expressions), unwrapCountingQuery (pipes after stats), unwrapLokiLabels (pipeline stages)'
-  loki: 'pkg/logql/evaluator.go:726-733'
+  loki: 'a rejected conversion fails the query with a 400 (measured on an isolated stack, in this case)'
   proxy: '200 without the rows that do not convert'
   planned_test: 'TestCompat_UnwrapConversionErrorParity open/* asserts Loki''s 400 and skips naming this case (label_replace); TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out'
   clusters:

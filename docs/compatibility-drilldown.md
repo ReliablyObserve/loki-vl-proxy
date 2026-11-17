@@ -89,15 +89,15 @@ samples the series it receives; it sorts them. Loki answers these queries like
 any other: every series with exact values, and above `max_query_series` a
 partial result with the warning `maximum number of series (N) reached for a
 single query; returning partial results` for Drilldown and a `400` for every
-other client (`JoinSampleVector` in `pkg/logql/engine.go` and the
-`seriesLimiter` in `pkg/querier/queryrange/limits.go`, v3.7.7).
+other client (Loki v3.7.7; `limits/series-limit-error` and
+`limits/drilldown-partial-with-warning` record the answers).
 
 The proxy answers them the same way, from VictoriaLogs `stats_query_range`
 buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `(t-range, t]`):
 
 - Every series up to the tenant's effective `max_query_series`
   (`-tenant-limits` → `-tenant-default-limits` → `-max-stats-query-series` →
-  Loki's default of 500), with the same values Loki returns.
+  the proxy's default of 1000, Loki's is 500), with the same values Loki returns.
 - Under the limit that is one `stats_query_range` call, for Drilldown and
   every other client alike.
 - Every other client gets Loki's `400` as soon as the response holds more
@@ -140,78 +140,58 @@ cancellations 499, queue rejections 429, and query parse failures 400. They do
 not become empty successful matrices. Loki's distinct series-limit partial
 results still carry their warnings.
 
-## Long-Range Histograms And Grafana querySplitting
+## Long-Range Histograms Loaded In Pieces
 
-For ranges ≥ 24h, Grafana's Loki datasource splits every metric range query into
-24h chunks before sending them to the proxy. The split logic lives in
-`public/app/plugins/datasource/loki/metricTimeSplitting.ts -> splitTimeRange()` and
-fires for any client built on the Loki datasource — Drilldown, Explore, and
-dashboard panels. The proxy must produce a chunk response shape that Grafana's
-in-browser `mergeFrames + closestIdx + splice` algorithm
-(`public/app/plugins/datasource/loki/mergeResponses.ts`) can glue back into a
-coherent timeline. This section pins the contract.
+For metric ranges longer than a day, Grafana's Loki datasource loads the range
+in pieces: Explore, dashboard panels and Logs Drilldown send one
+`/api/ds/query` request per piece, each with its own `from`/`to`, and the
+browser joins the pieces' frames into one chart (observed through the stack's
+Grafana 13.3.0 by `test/e2e-ui/tests/explore-long-range-pieces.spec.ts`). The
+last piece of a range can be shorter than one step.
 
-### What Grafana sends
+### What the proxy returns per piece
 
-`splitTimeRange(start, end, step, oneDayMs)` produces:
+The joined chart equals Loki's when every piece's answer equals Loki's answer to
+the same request, whatever the pieces are and however Grafana joins them. Each
+piece is therefore answered like Loki: the same series, samples on Loki's step
+grid inside the piece's `start..end` window (with `-align-queries-with-step`,
+the default), the same values.
 
-1. `floor(range / aligned_day)` chunks of `aligned_day - step` length (aligned to step boundary).
-2. One residual chunk of `(range mod aligned_day)` length, which is often **smaller than `step`** (e.g. for an exactly-24h request the residual is 0–120 s wide when step is 120 s; for 25 h it is ~1 h).
-
-Chunks are dispatched **newest-first** because `runSplitGroupedQueries` recurses with `partition[totalRequests - 1]` first.
-
-### What the proxy must return per chunk
-
-Each chunk sub-request must produce a Loki matrix with:
-
-- Samples on Loki's evaluation timestamps inside the chunk's `start..end`
-  window, and nothing outside it.
-- The same series Loki returns for the chunk. **One-bucket series, where every
-  value lands on the same timestamp, are stacked by `mergeFrames` into a tall
-  edge spike** — the 2026-06 incident root cause.
-
-### How the proxy enforces this
-
-- The proxy returns an **empty Loki matrix** (with response header
-  `X-Proxy-Drilldown-Path: hits-leftover-suppressed`) when the request is
-  Drilldown-tagged (`X-Query-Tags: Source=grafana-lokiexplore-app`) AND
-  `end - start < step` (`isQuerySplitResidual`). The check runs at the
-  `query_range` entry for metric expressions (range/vector aggregations,
-  binary, opaque metric and literal expressions; log queries are never
-  blanked) and again at the stats entry. The residual chunk from
-  `splitTimeRange` falls into this case and the chart loses less than one step
-  of width at the edge instead of showing a spike.
-- Explore, dashboard panels and other Grafana clients are not suppressed. They
-  rely on per-chunk axis trimming, which keeps every response inside the
-  chunk's `start..end` window, so their merged frames stay spike-free without
-  an empty chunk.
-
-### Acceptable irreducible bump (25h–47h cases)
-
-For ranges like 25h the proxy cannot safely suppress the 1h leftover chunk
-because users genuinely query 1h ranges in Drilldown / Explore. The merged
-frame can therefore show a modest right-edge bump (≤ 65% of nonzero buckets
-fall into the rightmost bin) from the leftover chunk's own series.
-This is the price of preserving short-range queries; e2e thresholds reflect
-the trade-off and document it explicitly.
+One documented exception: the proxy returns an **empty Loki matrix** (with
+response header `X-Proxy-Drilldown-Path: hits-leftover-suppressed`) when the
+request is Drilldown-tagged (`X-Query-Tags: Source=grafana-lokiexplore-app`)
+and `end - start < step` (`isQuerySplitResidual`). The check runs at the
+`query_range` entry for metric expressions (range/vector aggregations, binary,
+opaque metric and literal expressions; log queries are never blanked) and again
+at the stats entry. Joined with the other pieces, that piece's one-bucket answer
+showed as a spike on one edge of Logs Drilldown's charts at 24h and longer; the
+chart now loses less than one step of width at that edge. Explore, dashboard
+panels and other clients get Loki's answer for that piece too.
 
 ### Do Not Regress
 
-The following invariants are pinned by `internal/proxy/drilldown_regression_lock_test.go`
-and `test/e2e-compat/drilldown_chunked_merge_lock_test.go`. Each is named
-`TestLock_*` / `TestE2ELock_*` and breaking any of them fails CI:
+These invariants fail CI when broken:
 
 1. Drilldown label and field breakdowns hold every series up to the tenant's
    series limit with Loki's values, from one `stats_query_range` call and no
    `/hits` call; above the limit Drilldown gets the busiest series with Loki's
    warning and other clients get Loki's `400`
    (`internal/proxy/drilldown_breakdown_exact_test.go`).
-2. Residual chunks (`end - start < step`) from Drilldown-tagged requests are
-   suppressed and the response carries `X-Proxy-Drilldown-Path: hits-leftover-suppressed`;
-   other Grafana and non-Grafana callers with the same shape are served normally.
-3. Grafana mergeFrames simulation on the live VL stack must produce a merged
-   frame whose rightmost bin holds < 65 % of nonzero timestamps for 24h, 25h,
-   2d, and 7d ranges, for both Drilldown and dashboard sources.
+2. Pieces shorter than one step (`end - start < step`) from Drilldown-tagged
+   requests are suppressed and the response carries
+   `X-Proxy-Drilldown-Path: hits-leftover-suppressed`; other Grafana and
+   non-Grafana callers with the same shape get Loki's answer
+   (`TestLock_LeftoverChunkSuppressedInHits`,
+   `TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed`).
+3. Every piece (whole ranges from 24h to 7d, day-long pieces with starts off
+   the step grid, short first and last pieces) equals Loki's answer to the
+   same request: against recorded Loki engine answers
+   (`TestChunkedRangeWindowsMatchLoki`, internal/proxy), against the stack's
+   Loki for Drilldown, Grafana and API clients
+   (`TestE2ELock_DrilldownChunkedMerge_PiecesMatchLoki`, e2e-compat drilldown
+   group), and through the stack's Grafana, where the proxy and Loki
+   datasources must get the same pieces with equal frames
+   (`explore-long-range-pieces.spec.ts`, e2e-ui explore-core shard).
 
 ## Drilldown Capability Profiles
 

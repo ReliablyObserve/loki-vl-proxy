@@ -1,7 +1,7 @@
 id: label_op-label-replace
 kind: label_op
 logql: "label_replace"
-loki_constant: OpLabelReplace
+source: https://grafana.com/docs/loki/v3.7.x/query/query_reference/
 generated:
   supported_by_proxy: true
   seen_in:

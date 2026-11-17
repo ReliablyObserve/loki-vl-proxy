@@ -17,11 +17,16 @@ smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadat
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
+smoke	internal/proxy	FuzzPlaceholderExclusion	12s	-	the placeholder exclusion of -json-line-fields-as-line-keys terminates and writes a filter VictoriaLogs parses
 smoke	internal/proxy	FuzzMayHoldDropStage	12s	-	the precheck in front of the detected_level source-drop fence regexp never hides a match
 smoke	internal/proxy	FuzzStreamLevelSeriesFenceSpelling	12s	-	the stream level fence covers every case and blank spelling the parser reads
+smoke	internal/proxy	FuzzEnsureStreamDetectedLevel	12s	-	a series built from one stream takes the stream's level field, else the row's level field, normalised; the level label and a present detected_level never change
+smoke	internal/proxy	FuzzDetectedLevelMatchesReference	12s	-	the byte-level detected_level derivation equals the reference held to recorded Loki answers on any line, stream label and stored field
 smoke	internal/proxy	FuzzScalarStatsBinaryOf	12s	-	a stats query joined to a number is read back to the same operator and number
 smoke	internal/proxy	FuzzMergeDeviationBuckets	12s	-	stddev and stdvar windows merged from bucket mean, count and deviation equal the window's variance
 smoke	internal/proxy	FuzzUnwrapWindowForm	12s	-	the unwrap window forms, and a range aggregation with its own by under a vector aggregation, are told from the query's tree
+smoke	internal/proxy	FuzzConvertUnwrap	12s	-	the unwrap conversion is ParseFloat's, ParseDuration's and humanize v1.0.1's ParseBytes', and the gate keeps every value it converts
+smoke	internal/proxy	FuzzLokiLogfmtPairs	12s	-	the logfmt reading terminates, yields valid keys and reads back the pairs it yields
 smoke	internal/proxy	FuzzResponseKeyFencesMatchParsedTree	12s	-	every response key fence fires for the construct the parsed tree holds, in any keyword case, comment and name spelling, and keeps the keys its older screen fired for
 smoke	internal/proxy	FuzzTumblingStatsRangeParams	12s	-	the tumbling stats_query_range form built once equals the form built and overwritten
 smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
@@ -41,6 +46,8 @@ smoke	internal/proxy	FuzzPatternsMatchTheirLines	12s	-	patterns every mined line
 smoke	internal/proxy	FuzzMinedPatternsAreValidLineFilters	12s	-	every mined pattern is a pattern line filter Loki accepts (|> and !>)
 smoke	internal/proxy	FuzzPatternLineTokens	12s	-	patterns lines tokenized by format
 smoke	internal/proxy	FuzzPatternCountsStep	12s	-	patterns counts step
+smoke	internal/proxy	FuzzPatternParallelMiningMinesAsSerial	12s	-	patterns mined on workers give the miner mining on one goroutine gives
+smoke	internal/proxy	FuzzPatternRowTimeReadsAsLokiTimes	12s	-	patterns row times read from bytes as parseLokiTimeToUnixNano reads them
 smoke	internal/proxy	FuzzJSONValidSplitPredicate	12s	-	json error filter split predicate
 smoke	internal/proxy	FuzzJSONErrorSplitPredicate	12s	-	json parser error count split predicate
 smoke	internal/proxy	FuzzOrderedJSONStepWiderThanRange	12s	-	json metric with a range shorter than the step against the Loki-semantics reference
@@ -92,6 +99,7 @@ smoke	internal/logql	FuzzParse	12s	-	parse
 smoke	internal/logql	FuzzPrintReparse	12s	-	print then parse again gives the same query
 smoke	internal/logql	FuzzLineTemplateCanonical	12s	-	line_format template: typed exactly when Loki accepts it, canonical form keeps the tree
 smoke	internal/logql	FuzzStripComments	12s	-	comment stripping keeps strings and the query's meaning
+smoke	internal/logql	FuzzLowercaseKeywords	12s	-	the keyword lower casing of the request path (ASCII capitals, the Kelvin sign, U+0130) never changes what the parser reads or a column
 smoke	internal/logql	FuzzLineFilterRunMatchesItsFilters	12s	-	a chain of line filters is answered from its filters alone, by segment, last invalid filter, quoting the run
 smoke	internal/logql	FuzzLabelFilterRegexFormsAgree	12s	-	a label matcher regex is rejected alike as a label filter, in a chain, drop and keep, before an earlier build error
 smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
@@ -100,7 +108,7 @@ smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
 smoke	internal/logsql	FuzzOutboundGuard	12s	-	outbound guard
 smoke	internal/logsql	FuzzQuoteFieldName	12s	-	quote field name
 smoke	internal/logsql	FuzzQueryString	12s	-	query string
-smoke	internal/proxy	FuzzMergeLabelsIntoCache	12s	-	label merge is sorted and deduplicated
+smoke	internal/proxy	FuzzStoreLabelsCache	12s	-	stored label list is sorted and deduplicated
 smoke	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	12s	-	twice gate is a superset of the key patterns
 smoke	internal/proxy	FuzzVolumeSegmentsMergeLikeOneWindow	12s	-	volume segments merge like one window
 smoke	internal/translate	FuzzKeywordGateIsASupersetOfTheRegexp	12s	-	keyword gate is a superset of the regexp
@@ -166,12 +174,14 @@ smoke	internal/querycorpus	FuzzProxyEvaluatedLowering	12s	-	topk, bottomk, sort,
 smoke	internal/queryplan/lower	FuzzNestedVectorAggLowering	12s	-	vector aggregations over vector aggregations lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzParserLabelsLowering	12s	-	grouping, unwrapped and kept labels a parser extracts, a without fold over a parser and a trailing keep lower to the query the string translator writes
 smoke	internal/logql	FuzzParseTerminates	12s	-	every logql entry point returns within 200 ms and allocates at most a mebibyte per input byte
+smoke	internal/logql	FuzzActionErrorAheadOfLaterErrors	12s	-	a parser action error answers ahead of every later syntax, lexer, tree and build error, inside its range aggregation too
 smoke	internal/logql	FuzzRangeDuration	12s	-	a range is accepted exactly in Prometheus' duration form, with one of Loki's texts otherwise
 smoke	internal/queryplan/lower	FuzzRoute	12s	-	the route rule of a metric query never panics and either routes it with a window that fits the request, a without fold that fits the window, a group pushdown and a sum of all streams that fit the function, and an offset that keeps the moved bounds between September 2001 and int64 nanoseconds, and for a binary operation one route per aggregation operand, equal to the operand's alone, that the lowering writes, or names the delegation
 smoke	internal/proxy	FuzzMeanLineWindow	12s	-	query stats metric bytes: the part of a log answer's record inside a window
 smoke	internal/proxy	FuzzRequestTimeBounds	12s	-	start, end, step and offset of query and query_range answer with 200 or a known 400, never a panic
 smoke	internal/proxy	FuzzTailResume	12s	-	tail reopen after a backend outage: the start_offset is a positive span and the dedupe keeps exactly the entries after the last delivered one
 smoke	internal/proxy	FuzzTailRows	12s	-	tail stream row split: bounded work for any body, a cut last row is flagged and never returned, the row shape check passes objects only
+smoke	internal/proxy	FuzzTailHistoryParams	12s	-	tail history window and limit: the window ends at now and starts at or before it, the limit is positive and within max_entries_limit_per_query
 smoke	internal/proxy	FuzzBackendRetryDecision	12s	-	shared VictoriaLogs retry: Retry-After is zero or a span of at most a day, only 429, 502, 503 and 504 answers are transient, never a panic
 smoke	internal/proxy	FuzzRefusalErrors	12s	-	client errors built from a raw start, end, step, time or range literal
 smoke	internal/proxy	FuzzRequestParamChecks	12s	-	request parameter checks (time, step, limit, since, window, length) against a model of the recorded Loki rules
@@ -185,4 +195,7 @@ smoke	internal/queryplan/lower	FuzzScreenLogStages	12s	-	the log stage screen an
 smoke	internal/logsql	FuzzAppendPipeMatchesString	12s	-	stats and math pipes appended in place print the text their String writes
 smoke	internal/cache	FuzzPeerPushBufferInvariants	12s	-	peer push buffer invariants
 smoke	internal/translate	FuzzPatternCaptureNames	12s	-	the pattern placeholder scanner finds the names the regexp <([A-Za-z][A-Za-z0-9_]*)> finds, in order
+smoke	internal/logsql	FuzzWithGroupKeyAfterStream	12s	-	the detected_level group edit of a per-stream stats read inserts only the key
+smoke	internal/proxy	FuzzVLNotInMatchesTheNegatedClass	12s	-	probe regexps written with vlNotIn match what [^set] matches
+smoke	internal/logsql	FuzzWithGroupKeyInEveryStats	12s	-	the presence witness edit adds the key to every stats pipe and changes nothing else
 smoke	internal/proxy	FuzzDeleteRequest	12s	-	the delete API reads a create request with Loki's typed 400 or a request whose start is before its end

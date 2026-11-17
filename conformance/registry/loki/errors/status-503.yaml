@@ -12,8 +12,8 @@ generated:   # rewritten by conformance/scripts/error_registry.py
 
 loki_behaviour: |
   Loki answers 503 only from its own readiness and ring checks, never for a
-  failed query; a full queue is 429 "too many outstanding requests"
-  (pkg/queue/queue.go:21). The error layer answers an open circuit breaker,
+  failed query; a full queue is 429 "too many outstanding requests".
+  The error layer answers an open circuit breaker,
   a guard rejection and VictoriaLogs' or a front proxy's 503 with Loki's 500,
   and a cancelled stats slot wait with 499. The -max-concurrent admission cap of
   the rate limiter answers Loki's full-queue 429 too (msg-queue-full), the flag

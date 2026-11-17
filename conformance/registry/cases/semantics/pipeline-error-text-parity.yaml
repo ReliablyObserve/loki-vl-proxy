@@ -5,7 +5,7 @@ proves:
 consumer: any
 why: |
   Loki v3.7.7 fails a range or instant metric whose sample carries
-  `__error__` with HTTP 400 and `logqlmodel.PipelineError.Error()`:
+  `__error__` with HTTP 400 and its pipeline error text:
 
       pipeline error: 'JSONParserErr' for series: '{__error__="JSONParserErr", __error_details__="Value looks like object, but can't find closing '}' symbol", app="payment-service", ..., service_name="payment-service"}'.
       Use a label filter to intentionally skip this error. (e.g | __error__!="JSONParserErr").

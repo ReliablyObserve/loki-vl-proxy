@@ -10,8 +10,8 @@ import (
 
 // selectorRegexpFieldFilter is the LogsQL filter for a stream-selector
 // matcher `label=~pattern`: a Prometheus label matcher, compiled as
-// ^(?s:pattern)$ (Loki v3.7.7
-// vendor/github.com/prometheus/prometheus/model/labels/regexp.go:76), so it
+// ^(?s:pattern)$ (Prometheus label matcher semantics, as the Loki oracle's
+// answers record), so it
 // matches the whole value and '.' matches newlines.
 func selectorRegexpFieldFilter(label, pattern string, negate bool) string {
 	return translate.SelectorRegexpFilter(label, pattern, negate).String()

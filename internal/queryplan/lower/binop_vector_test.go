@@ -65,6 +65,9 @@ func TestPlanLowersVectorLiteralOperands(t *testing.T) {
 			Match: &physical.Matching{MatchOn: true, On: []string{"app"}, GroupSide: "group_left", GroupLeft: []string{"zone"}}}},
 		{`vector(2) / ignoring(pod) group_right() ` + sum, physical.Binary{Op: "/", L: two, R: lowerQuery(sum), Tail: "@@@ignoring:pod@@@group_right:",
 			Match: &physical.Matching{Ignoring: []string{"pod"}, GroupSide: "group_right"}}},
+		// in a chain, spelled as the route reads it
+		{`vector(2) > on(x) (` + rate + ` * 2)`, physical.Binary{Op: ">", L: two, R: physical.Binary{Op: "*", L: lowerQuery(rate), R: physical.ScalarOp{V: 2, Text: "2"}},
+			Tail: "@@@on:x", Match: &physical.Matching{MatchOn: true, On: []string{"x"}}}},
 		// an operand folded by its without clause next to it is lowered alone, as without a vector
 		{`sum without (pod) (` + rate + `) + vector(1)`, physical.Binary{Op: "+", L: lowerQuery(`sum without (pod) (` + rate + `)`), R: one}},
 	} {
@@ -83,10 +86,10 @@ func TestPlanLowersVectorLiteralOperands(t *testing.T) {
 
 // What stays with the string translator, by name: the set operators and bool (the translator drops the modifier and
 // writes the left operand alone), an operand that is a binary operation, a without clause with no label, a vector(n)
-// spelled so the proxy's route does not read it as one, and a vector(n) under the kept line option, which holds log
-// queries only.
+// spelled so the proxy's route does not read it as one (at any depth of a chain), and a vector(n) under the kept line
+// option, which holds log queries only.
 //
-// conformance: architecture-syntax-package-layering
+// conformance: architecture-syntax-package-layering, semantics/vector-call-blank-before-parenthesis-as-query
 func TestPlanDelegatesVectorLiteralOperands(t *testing.T) {
 	rate := `rate({app="a"}[5m])`
 	for q, construct := range map[string]string{
@@ -96,18 +99,22 @@ func TestPlanDelegatesVectorLiteralOperands(t *testing.T) {
 		rate + ` > bool vector(1)`:          "BinOp bool",
 		`vector(1) == bool vector(2)`:       "BinOp bool",
 		rate + ` + (vector(1) * 2)`:         "BinOp operand BinOp",
-		`vector(1) + vector(2) * vector(3)`: "BinOp operand BinOp",
+		`vector(1) + vector(2) * vector(3)`: "BinOp constant operands",
 		rate + ` + vector (1)`:              "BinOp operand spelling",
 		`vector (1) + ` + rate:              "BinOp operand spelling",
-		`vector(1) + vector(2)`:             "BinOp constant operands",
-		`vector(1) > on() vector(2)`:        "BinOp constant operands",
-		`2 * vector(1)`:                     "BinOp constant operands",
-		`vector(1) - 0.5`:                   "BinOp constant operands",
-		`1 + 2`:                             "BinOp scalar operands",
-		rate + ` + vector(-1)`:              "BinOp operand Opaque",
-		rate + ` + vector(a)`:               "BinOp operand Opaque",
-		rate + `+ vector(1)`:                "BinOp operator spelling",
-		"vector(1)\n+ " + rate:              "BinOp operator spelling",
+		// in a chain too, at any depth: the route reads each vector(n) of a chain from its printed text
+		`vector (2) > on(x) (` + rate + ` * 2)`: "BinOp operand spelling",
+		`(vector (2) + ` + rate + `) * 2`:       "BinOp operand spelling",
+		`(` + rate + ` * 2) / vector (2)`:       "BinOp operand spelling",
+		`vector(1) + vector(2)`:                 "BinOp constant operands",
+		`vector(1) > on() vector(2)`:            "BinOp constant operands",
+		`2 * vector(1)`:                         "BinOp constant operands",
+		`vector(1) - 0.5`:                       "BinOp constant operands",
+		`1 + 2`:                                 "BinOp scalar operands",
+		rate + ` + vector(-1)`:                  "BinOp operand Opaque",
+		rate + ` + vector(a)`:                   "BinOp operand Opaque",
+		rate + `+ vector(1)`:                    "BinOp operator spelling",
+		"vector(1)\n+ " + rate:                  "BinOp operator spelling",
 		`label_replace(` + rate + ` + vector(1), "a", "b", "c", "d")`: "LabelReplace operand BinOp",
 		`label_replace(vector(1) + vector(2), "a", "b", "c", "d")`:    "LabelReplace operand BinOp",
 		`topk(2, ` + rate + `) + vector(1)`:                           "BinOp operand Rank",

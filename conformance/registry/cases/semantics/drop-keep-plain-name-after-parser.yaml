@@ -42,7 +42,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy stage-field exposure (drop and keep of a name a parser also reads)'
-  loki: 'pkg/logql/log/labels.go LabelsBuilder.Del / getWithCategory; pkg/logql/log/drop_labels.go, keep_labels.go'
+  loki: 'drop level removes the stream label and leaves level_extracted; keep level keeps only the stream label (TestCompat_PlainNameAfterParserReadsStreamLabel)'
   proxy: 'drop and keep act on the stored field the parser overwrote'
   planned_test: 'TestCompat_DropKeepPlainNameAfterParser (test/e2e-compat, group core)'
   note: 'Found while proving semantics/plain-name-after-parser-reads-stream-label; the filter, grouping and unwrap halves are fixed there.'

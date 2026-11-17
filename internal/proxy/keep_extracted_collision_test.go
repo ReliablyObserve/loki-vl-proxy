@@ -93,10 +93,8 @@ func keepLogLabels(t *testing.T, p *Proxy, route, query string, categorized bool
 	return types, stream
 }
 
-// Loki's keep stage keeps a label only when its exact name is listed
-// (pkg/logql/log/keep_labels.go:15-45): a parsed key renamed name_extracted
-// after a collision with a stream label (pkg/logql/log/parser.go
-// duplicateSuffix) is gone unless the keep names name_extracted. The labels
+// Loki's keep stage keeps a label only when its exact name is listed: a parsed
+// key renamed name_extracted after a collision with a stream label is gone unless the keep names name_extracted. The labels
 // of each entry equal Loki's on the buffered, streamed and windowed paths, in
 // both encodings.
 // conformance: semantics/keep-leaves-labels-loki-drops, loki_api_v1_query_range

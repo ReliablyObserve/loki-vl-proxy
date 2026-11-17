@@ -3,6 +3,7 @@ title: The detected_level pipes read level keys in a fixed order, do not decode 
 proves:
   - loki_api_v1_query_range
 consumer: explore
+evidence: needs recording
 why: |
   The native metric route (`sum by (detected_level) (count_over_time({...}
   [1m]))` over a plain selector, which Logs Drilldown sends, and Explore's
@@ -86,7 +87,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/translator detected_level_logsql.go BuildDetectedLevelChain; internal/proxy native metric route'
-  loki: 'pkg/distributor/field_detection.go getLevelUsingJSONParser (document order, depth < 2), labels.go (detected_level_extracted)'
+  loki: 'detected_level takes the first level key in document order, searches objects at depth 1, folds Unicode and keeps a stored detected_level stream label'
   proxy: 'BuildDetectedLevelChain reads keys in its list order and overwrites detected_level; the JSON pipeline route guards these lines instead'
   planned_test: 'an e2e on plain-selector probe lines once the route probes and falls back to a raw-row or keyed evaluation'
   clusters: []

@@ -20,9 +20,8 @@ import (
 
 // The tests in this file pin how a windowed log query reads its windows
 // (semantics/query-range-window-full-limit-reads). Like Loki's own interval
-// split (pkg/querier/queryrange/splitters.go: every split LokiRequest keeps
-// Limit: r.Limit; split_by_interval.go: splits are taken newest first for a
-// backward query until the limit is reached), every window is read with the
+// split (every split request keeps the request's limit; splits are taken
+// newest first for a backward query until the limit is reached), every window is read with the
 // request's whole limit. A window's cached rows then depend only on the
 // window and the limit, so a moved, longer or shorter range, and a parallel
 // or a sequential batch layout, reuse the windows an earlier request read.
@@ -327,6 +326,8 @@ const o1Query = "{env=\"production\"} | json | pipeline=`metrics/prometheus` | k
 // 1h run of the same end). With the remaining budget as the read limit, every
 // 24h run read the second-newest hour again under a limit no earlier read had
 // used (22 ms -> 170 ms warm p50 in the daily run, 2026-11-03).
+//
+// conformance: semantics/query-range-window-full-limit-reads
 func TestQueryRangeWindow_ShiftedRangesReuseHistoryWindows(t *testing.T) {
 	anchor := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Hour)
 	rows := windowReuseRows(anchor.Add(-30*time.Hour), anchor.Add(50*time.Minute), 3*time.Second, 0, 0)

@@ -825,7 +825,7 @@ func derivePatternStep(startParam, endParam string) string {
 }
 
 // patternSampleStep is the step Loki answers pattern samples at: the request's step, but no less than the
-// resolution it keeps them at (pkg/pattern/drain TimeResolution, patternCountsMinStep).
+// resolution it keeps them at (patternCountsMinStep; registry drilldown/patterns-counts-tier-step-buckets).
 func patternSampleStep(step string) string {
 	if d, ok := parsePositiveStepDuration(step); ok && d < patternCountsMinStep {
 		return strconv.FormatInt(int64(patternCountsMinStep/time.Second), 10) + "s"
@@ -1364,7 +1364,7 @@ func fillPatternSamplesAcrossRequestedRange(entries []patternResultEntry, startP
 		}
 
 		// Loki answers every step between a pattern's first and last sample, a step without lines as 0
-		// (pkg/pattern/drain Chunk.ForRange).
+		// (registry drilldown/patterns-full-range-counts).
 		filledPoints := int(((fillEndBucket - fillStartBucket) / effectiveStepSeconds) + 1)
 		filled := make([][]interface{}, 0, filledPoints)
 		for ts := fillStartBucket; ts <= fillEndBucket; ts += effectiveStepSeconds {
@@ -1558,8 +1558,7 @@ func (p *Proxy) handleTenantLimitsConfig(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	data, err := yaml.Marshal(limits)
 	if err != nil {
-		// Loki answers its encoder's error text with http.Error
-		// (pkg/loki/config_handler.go writeYAMLResponse); the proxy keeps the
+		// Loki answers its encoder's error text with http.Error; the proxy keeps the
 		// shape and answers Loki's fixed text, the error goes to the log.
 		p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, err, writeLokiHTTPError)
 		return

@@ -18,12 +18,8 @@ why: |
   `{"data":[],"fields":[],"limit":1000,"status":"success"}`.
 
   Loki v3.7.9 lists only the fields of the lines the query itself returned
-  (pkg/querier/queryrange/detected_fields.go:42-73, parseDetectedFields over
-  re.Data.Result) and sets the limit only when it lists a field or a value
-  (:86-89, "otherwise all they get is the field limit"). Its JSON omits an
-  empty list and a zero limit (pkg/logproto/logproto.pb.go
-  DetectedFieldsResponse, `json:"fields,omitempty"`, `json:"limit,omitempty"`),
-  so a query that matches no line answers `{}`. That is Loki's normal empty
+  and sets the limit only when it lists a field or a value. Its JSON omits an
+  empty list and a zero limit, so a query that matches no line answers `{}`. That is Loki's normal empty
   result, not a failure or a cancelled request.
 
   The proxy fell back, whenever the query's own scan found no field, to
@@ -69,7 +65,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/label_handlers.go handleDetectedFields (empty answer); multitenant.go, cache_keys.go'
-  loki: 'pkg/querier/queryrange/detected_fields.go:42-89; pkg/logproto/logproto.pb.go DetectedFieldsResponse'
+  loki: 'fields come from the lines the query returned only; an empty list and a zero limit are omitted, so no match answers {} (TestCompat_DetectedFieldsEmptyAnswer)'
   proxy: 'no bare-selector field lookup after a scan that answered; no limit without fields'
   planned_test: 'TestDetectedFields_EmptyAnswerLikeLoki_EdgeTable, TestDetectedFields_EmptyAnswerTokensLeaveRelaxedQuery, TestDetectedFields_EmptyAnswerCachedRepeat, TestDetectedFields_ScanDeadlineKeepsNativeFallback, TestDetectedFields_MultiTenantEmptyAnswer, TestDetectedFields_EmptyAnswerDifferentialAgainstLokiReference, FuzzDetectedFieldsEmptyAnswer (internal/proxy, CI fuzz-smoke); TestCompat_DetectedFieldsEmptyAnswer (test/e2e-compat, group core)'
   clusters: []

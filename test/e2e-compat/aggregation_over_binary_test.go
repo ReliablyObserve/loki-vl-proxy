@@ -13,10 +13,9 @@ import (
 )
 
 // Loki evaluates a vector aggregation over a binary expression by joining the
-// operands per series (pkg/logql/evaluator.go newBinOpStepEvaluator and
-// vectorBinop: matching on every label or on()/ignoring(), group_left, a
-// literal on either side, a comparison filtering or answering 0/1 with bool)
-// and aggregating the joined series per step (VectorAggEvaluator.Next). The
+// operands per series (matching on every label or on()/ignoring(),
+// group_left, a literal on either side, a comparison filtering or answering
+// 0/1 with bool) and aggregating the joined series per step. The
 // proxy kept only the first operand of the binary under the aggregation, or
 // answered 400 on an instant query (semantics/aggregation-over-binary-dropped).
 
@@ -122,8 +121,8 @@ const aggregationOverBinaryCluster = `label_replace( sum by (job) ( sum_over_tim
 // TestCompat_AggregationOverBinaryUnderLabelTransforms: a label_replace, and
 // one over another that reads its destination, around an aggregation over a
 // binary is applied to the folded answer, on every window shape and at an
-// instant. (Loki's grammar has no label_join: pkg/logql/syntax/lex.go knows
-// only label_replace, and Loki answers a parse error for it.)
+// instant. (Loki's grammar has no label_join: it knows only label_replace,
+// and Loki answers a parse error for it.)
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_AggregationOverBinaryUnderLabelTransforms(t *testing.T) {
 	fx := ensureUnwrapSumFixtures(t)

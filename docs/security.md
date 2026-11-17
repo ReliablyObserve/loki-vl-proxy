@@ -79,7 +79,7 @@ Not served, each answered with Loki's `500`: the list of requests, a query whose
 
 Excessive query work is rejected with an explicit error instead of returning partial or oversized successful responses:
 
-- raw metric evaluation: `-manual-range-metric-row-limit` rows (default 1,000,000) and `-max-stats-query-series` series (default 500), plus 64 MiB input/output and one million output samples
+- raw metric evaluation: `-manual-range-metric-row-limit` rows (default 1,000,000) and `-max-stats-query-series` series (default 1000), plus 64 MiB input/output and one million output samples
 - binary expressions: nesting depth 64, 1,024 child evaluations, 256 MiB captured child responses, two million decoded arrays, one million constructed samples, 64 MiB label work and 64 MiB per encoded result
 - `line_format`: 64 KiB per formatted line and 16 MiB per response, with bounded template depth and execution work (HTTP `400` on overflow)
 - coalesced backend bodies above 256 MiB and tail client messages above 4 KiB are rejected

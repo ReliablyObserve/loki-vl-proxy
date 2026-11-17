@@ -26,88 +26,87 @@ import (
 // the step in whole milliseconds, and its JSON writes each time as seconds with
 // a millisecond fraction.
 //
-// The reference below is written from Loki v3.7.9, apart from the proxy:
-//   - pkg/loghttp/params.go:122-129, 163-186, 191-203 (step: float seconds
-//     scaled by float64(time.Second) and truncated to a Duration, else a
-//     Prometheus duration of whole units; a timestamp with a dot is float
-//     seconds whose fraction is rounded to a millisecond, an integer of at most
-//     ten digits is seconds, else nanoseconds);
-//   - pkg/loghttp/query.go:473-515 (step <= 0 is 400, and so is a range of more
-//     than 11,000 steps, the quotient of two durations in nanoseconds);
-//   - pkg/querier/queryrange/codec.go:2265-2284 (Step is Milliseconds(), a
-//     truncation);
-//   - pkg/logql/range_vector.go:42-89, 189-204 (the times are start,
-//     start+step, ... up to and including end; the sample time is current/1e6,
-//     a truncation to milliseconds; a sample at t covers (t-range, t]);
-//   - pkg/util/marshal/query.go (the time is model.Time(ms).String(), that is
-//     FormatFloat(ms/1000, 'f', -1, 64)).
+// The reference below reads a request as Loki's HTTP API documents it (a step in
+// duration format or float seconds; a time as a Unix epoch in seconds or
+// nanoseconds, float seconds, or RFC 3339) and is held to Loki's own request
+// parser and engine by TestRequestTimeReferenceMatchesRecordedLoki:
+//   - step: float seconds scaled to a Duration (truncated), else a duration of whole units
+//     from y down to ms;
+//   - a timestamp with a dot is float seconds, kept to the millisecond; an
+//     integer of at most ten digits is seconds, else nanoseconds;
+//   - the step is kept in whole milliseconds, a truncation (Loki's query frontend passes it on in milliseconds;
+//     the live TestCompat_SubSecondStep holds it, and so `1.003` is 1002 ms: 1.003 * 1e9 is 1002999999.99);
+//   - the times are start, start+step, ... up to and including end; a sample is
+//     labelled with its time in whole milliseconds and covers (t-range, t];
+//   - the time is written as seconds with the millisecond fraction, no
+//     trailing zeros.
 
-// lokiMs is Loki's time of an evaluation at ns: whole milliseconds, truncated.
+// lokiMs is a time in nanoseconds in whole milliseconds, rounded down.
 func lokiMs(ns int64) int64 { return vlemu.FloorDiv(ns, int64(time.Millisecond)) }
 
-// lokiTimeText is the text Loki writes for a time in milliseconds.
+// lokiTimeText writes a time of ms milliseconds as seconds, the fraction without trailing zeros.
 func lokiTimeText(ms int64) string { return strconv.FormatFloat(float64(ms)/1000, 'f', -1, 64) }
 
-// lokiEvalTimes are the evaluation times (ns) of a range query: Loki keeps the
-// step in whole milliseconds and walks from start to end inclusive.
+// lokiEvalTimes are start, start+step, ... up to and including end (none for a step of zero or less).
 func lokiEvalTimes(startNs, endNs, stepNs int64) []int64 {
-	stepMs := stepNs / int64(time.Millisecond)
-	if stepMs <= 0 {
+	if stepNs <= 0 {
 		return nil
 	}
 	var out []int64
-	for t := startNs; t <= endNs; t += stepMs * int64(time.Millisecond) {
+	for t := startNs; t <= endNs; t += stepNs {
 		out = append(out, t)
 	}
 	return out
 }
 
-var promDurationRE = regexp.MustCompile(`^(?:(\d+)y)?(?:(\d+)w)?(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(?:(\d+)ms)?$`)
-
-// lokiStep is Loki's parseSecondsOrDuration (pkg/loghttp/params.go:191-203).
-// A Prometheus duration has no fractions and no unit below the millisecond.
+// lokiStep reads a step: float seconds scaled to a Duration and truncated, else a duration of whole units in descending order (promDurationRE).
 func lokiStep(text string) (time.Duration, bool) {
 	if f, err := strconv.ParseFloat(text, 64); err == nil {
-		d := f * float64(time.Second)
-		if d > float64(math.MaxInt64) || d < float64(math.MinInt64) {
-			return 0, false
-		}
-		return time.Duration(d), true
+		return time.Duration(f * float64(time.Second)), true
 	}
 	m := promDurationRE.FindStringSubmatch(text)
-	if m == nil || text == "" {
+	if text == "" || m == nil {
 		return 0, false
 	}
-	mult := []time.Duration{365 * 24 * time.Hour, 7 * 24 * time.Hour, 24 * time.Hour, time.Hour, time.Minute, time.Second, time.Millisecond}
-	var total time.Duration
-	for i, part := range m[1:] {
-		if part != "" {
-			n, _ := strconv.ParseInt(part, 10, 64)
-			total += time.Duration(n) * mult[i]
+	units := []time.Duration{365 * 24 * time.Hour, 7 * 24 * time.Hour, 24 * time.Hour, time.Hour, time.Minute, time.Second, time.Millisecond}
+	var d time.Duration
+	for i, u := range units {
+		if m[i+1] != "" {
+			n, err := strconv.ParseInt(m[i+1], 10, 64)
+			if err != nil {
+				return 0, false
+			}
+			d += time.Duration(n) * u
 		}
 	}
-	return total, true
+	return d, true
 }
 
-// lokiTimestamp is Loki's parseTimestamp (pkg/loghttp/params.go:163-186).
+// lokiTimestamp reads a time: float seconds when it holds a dot (kept to the millisecond), an integer of at most
+// ten digits as seconds and a longer one as nanoseconds, else RFC 3339.
 func lokiTimestamp(text string) (int64, bool) {
 	if strings.Contains(text, ".") {
 		if f, err := strconv.ParseFloat(text, 64); err == nil {
-			whole, ns := math.Modf(f)
-			ns = math.Round(ns*1000) / 1000
-			return int64(whole)*int64(time.Second) + int64(ns*float64(time.Second)), true
+			// The fraction is rounded to the millisecond on its own: 1793653187.0005 is the double
+			// 1793653187.00049996..., so its fraction rounds down, where f*1000 would round up.
+			sec, frac := math.Modf(f)
+			return int64(sec)*int64(time.Second) + int64(math.Round(frac*1000))*int64(time.Millisecond), true
 		}
 	}
-	n, err := strconv.ParseInt(text, 10, 64)
+	if n, err := strconv.ParseInt(text, 10, 64); err == nil {
+		if len(strings.TrimPrefix(text, "-")) <= 10 {
+			return n * int64(time.Second), true
+		}
+		return n, true
+	}
+	t, err := time.Parse(time.RFC3339Nano, text)
 	if err != nil {
-		parsed, err := time.Parse(time.RFC3339Nano, text)
-		return parsed.UnixNano(), err == nil
+		return 0, false
 	}
-	if len(text) <= 10 {
-		return n * int64(time.Second), true
-	}
-	return n, true
+	return t.UnixNano(), true
 }
+
+var promDurationRE = regexp.MustCompile(`^(?:(\d+)y)?(?:(\d+)w)?(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(?:(\d+)ms)?$`)
 
 // vlDurationNs reads a duration the way VictoriaLogs does (lib/logstorage
 // tryParseDuration, identical in v1.49.0 and v1.53.0): one or more
@@ -405,8 +404,7 @@ func (s ssScenario) beyondBucketBudget() bool {
 
 // evalBounds are the bounds a range query is evaluated between: as sent, or,
 // with alignment, each moved down to a multiple of the step in milliseconds
-// after truncating it to milliseconds (Loki's StepAlignMiddleware,
-// queryrangebase/step_align.go:20-24).
+// after truncating it to milliseconds (Loki's step alignment).
 func (s ssScenario) evalBounds() (int64, int64) {
 	start, end := s.startNs(), s.endNs()
 	if s.align && !s.instant {
@@ -798,7 +796,7 @@ func TestSubSecondStepEdgeTable(t *testing.T) {
 // one VictoriaLogs call is given (see beyondBucketBudget) and fall to the
 // bounded raw-sample evaluator, which must give Loki's answer all the same.
 //
-// conformance: semantics/sub-second-step-grid
+// conformance: semantics/sub-second-step-grid, semantics/window-wider-than-step-raw-rows
 func TestSubSecondStepGrafanaShapes(t *testing.T) {
 	for _, tc := range []struct {
 		name, step string
@@ -1112,7 +1110,7 @@ func TestRestampInstantVectorBodies(t *testing.T) {
 // so the proxy answered 8 samples where Loki answered 9. Lines sit on every
 // step time, on every window start, and a millisecond either side of both.
 //
-// conformance: semantics/sub-second-step-grid, window-bounds-and-step-alignment
+// conformance: semantics/sub-second-step-grid, window-bounds-and-step-alignment, semantics/window-edge-float64-nanoseconds
 func TestSubSecondStepLineOnTheWindowEdge(t *testing.T) {
 	const stepMs, windowMs = 999, 600
 	startMs := int64(1793671800000)

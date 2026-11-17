@@ -1,0 +1,59 @@
+id: loki-error-phases
+kind: semantics
+title: Loki's error phases and which metric queries fail on a pipeline error
+pending: true
+
+loki: |
+  Loki decides an error answer in phases, and the first phase that fails answers: the request parameters and
+  limits, then the query's parser actions (a pattern or regexp parser, a selector, label filter, drop or keep regex),
+  its lexer errors and its syntax error, then the checks over the parsed tree, then the pipeline build, then the
+  execution (a sample that still carries __error__ after the pipeline fails the metric with a 400 pipeline error,
+  ahead of a matching failure and the series limit). Which samples carry __error__ is a fact of the query (the
+  producers, the labels the aggregation above the range needs, the filters after the producer) and of the data in
+  the evaluated windows.
+
+victorialogs: |
+  Not client-visible: VictoriaLogs answers LogsQL errors in its own words, which the proxy never forwards.
+
+proxy: |
+  The proxy answers request, parse, tree and limit errors with Loki's texts through internal/lokierr. Its parser
+  answers an action error ahead of a later syntax or lexer error, keeps a vector operation's parameter check on its
+  node for the tree walk, and the validation checks the whole tree, the query plan's checks included, before it
+  builds any pipeline (semantics/loki-error-phase-order). It raises pipeline errors for JSONParserErr and
+  SampleExtractionErr only.
+
+implementation:
+  - internal/logql/validate.go
+  - internal/logql/semantic.go
+  - internal/logql/parser.go
+  - internal/proxy/query_tree_validation.go
+
+cases:
+  - semantics/loki-error-phases
+  - semantics/loki-pipeline-error-rules
+  - semantics/loki-build-phase-window
+  - semantics/loki-error-phase-order
+
+decisions:
+  - id: error-phases-loki-order
+    chosen: 'answer the first failing phase in Loki''s order: parser actions, lexer, syntax, tree checks in walk order, then the pipeline build after the request limits and the instant query type'
+    over: [reporting the first syntax error the parser meets, validating every stage while parsing]
+    why: |
+      Loki is the reference for every error text a client reads. The grid recorded with the Loki oracle shows the
+      order, and every rule is held by a test. The error text is what Grafana shows.
+    evidence: 'internal/logql/testdata/error-order-loki.jsonl.gz (1628 queries, Loki 3.7.9); internal/lokierr/testdata/loki_build_phase.jsonl; r0043'
+    code: [internal/logql/parser.go, internal/logql/semantic.go, internal/logql/validate.go, internal/proxy/query_tree_validation.go, internal/proxy/http_utils.go]
+    tests: [TestLokiErrorPhasesRecorded, TestErrorPhaseGridMatchesLoki, FuzzActionErrorAheadOfLaterErrors, TestBuildPhaseRowsReplay, TestLokiErrorAnswersReplay]
+    quality: 'grid differences 532 -> 51 and may only fall; grammar sweep error text differences 124 -> 24 (with #1558); no class added'
+  - id: build-errors-follow-loki-window
+    chosen: 'a pipeline stage Loki refuses to build answers what Loki answers for the window: 400 over a recent window, 200 empty over an old window Loki holds no line for (owner 2026-11-16; reverses the 2026-11-15 decision to keep eager validation)'
+    over: [answering the build error over any window (eager validation, the behaviour until the follow-up change)]
+    why: |
+      Owner 2026-11-16: follow Loki, with a Breaking note. Recorded from a Loki that serves data: 400 over a window
+      ending within 150 minutes whatever it holds, 200 empty over windows ending 165 minutes or more back where it
+      held no line. The answer for an old window whose store holds lines is not recorded yet; the behaviour change
+      ships once it is.
+    evidence: 'internal/lokierr/testdata/loki_build_phase.jsonl (73 rows, Loki 3.7.9, serving state)'
+    code: [internal/proxy/query_tree_validation.go]
+    tests: [TestLokiBuildPhaseWindowRecorded]
+    quality: 'build errors answer after every other check; the window rule is pending'

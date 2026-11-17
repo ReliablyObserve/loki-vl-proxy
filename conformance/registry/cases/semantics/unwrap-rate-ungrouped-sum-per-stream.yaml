@@ -9,16 +9,12 @@ why: |
   `sum(rate({app="payment-service"} | logfmt | unwrap amount [5m]))` is one
   series on Loki 3.7.7. A `sum` over rate, sum_over_time, count_over_time and
   the bytes functions hands its grouping to the range aggregation's sample
-  extractor (pkg/logql/syntax/ast.go:1612-1642 VectorAggregationExpr.Extractors
-  and canInjectVectorGrouping; pkg/logql/syntax/extractor.go:21-60), so an
-  ungrouped sum extracts every sample with no label (pkg/logql/log/metrics_extraction.go:
-  labelSampleExtractor, noLabels) and the one series it makes is the sum of the
-  values: a rate over an unwrapped label is that sum per second
-  (pkg/logql/range_vector.go:259-272 rateLogs, computeValues). Any other range
+  extractor, so an
+  ungrouped sum extracts every sample with no label and the one series it makes is the sum of the
+  values: a rate over an unwrapped label is that sum per second. Any other range
   function (avg, max, min, stddev, quantile, rate_counter, first, last) is
   evaluated per series, the stream plus the labels a parser extracts less the
-  unwrapped one, and newVectorAggEvaluator folds those values per step
-  (pkg/logql/evaluator.go:400-433, VectorAggEvaluator.Next:435-529, sum at :522).
+  unwrapped one, and the vector aggregation folds those values per step.
 
   Measured on an isolated stack (Loki 3.7.7, VictoriaLogs v1.52.0, the log
   generator's data: 28 minutes of evaluation points at `[5m]`, step 60 s, every
@@ -50,7 +46,7 @@ why: |
   whole chain to VictoriaLogs (stats_query; a sum_over_time range query stays on
   the native path of semantics/unwrap-over-time-range-windows), and foldUngroupedSum adds the series of a
   function evaluated per series (rate_counter, the raw-row quantile) per step,
-  as VectorAggEvaluator does. The raw sliding evaluator of a rate over an
+  as Loki does. The raw sliding evaluator of a rate over an
   unwrapped label now reads Loki's window (t-range, t] (isLogRangeWindowFunc
   covers unwrap_rate): it included the lower edge and left out the sample at t,
   which VictoriaLogs before v1.45 (no stats_query_range offset argument) and an
@@ -84,7 +80,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy range_metric_compat.go (isSumAllLogRange, foldUngroupedSum, handleStatsCompatInstant)'
-  loki: 'pkg/logql/syntax/ast.go:1612-1642 (Extractors, canInjectVectorGrouping); pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next; pkg/logql/range_vector.go:259-272 rateLogs'
+  loki: 'an ungrouped sum over rate, sum_over_time, count_over_time and the bytes functions makes one series; any other range function is evaluated per series and folded per step (test/e2e-compat unwrap_ungrouped_sum_test.go)'
   proxy: 'one series from VictoriaLogs stats; the per-series functions folded per step'
   planned_test: 'TestCompat_UnwrapUngroupedSum and TestCompat_UnwrapUngroupedSumPerSeriesFunctions (test/e2e-compat, group core); TestUngroupedSumUnwrapDifferential and TestUngroupedSumUnwrapPerSeriesFunctions (internal/proxy)'
   note: 'Measured on origin/main e173e40b with VictoriaLogs v1.52.0; the e2e is green on v1.52.0, v1.47.0 and v1.40.0.'

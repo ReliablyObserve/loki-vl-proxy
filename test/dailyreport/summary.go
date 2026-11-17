@@ -32,10 +32,14 @@ type Summary struct {
 	Parity       map[string]any `json:"parity,omitempty"`
 	PerfDaily    map[string]any `json:"perf_daily,omitempty"`
 	PerfWeekly   *WeeklyPerf    `json:"perf_weekly,omitempty"`
-	Missing      []string       `json:"missing,omitempty"`
+	// Coverage is how each case is proven per VictoriaLogs version (coverage.go).
+	Coverage map[string]*CoveragePart `json:"coverage,omitempty"`
+	Missing  []string                 `json:"missing,omitempty"`
 
 	// detail is the run's per-case verdicts and flags (cases.json), read by the executive summary; not serialised.
 	detail *CasesFile
+	// outcomes is each version's verdict, class and reason per case, read for the coverage; not serialised.
+	outcomes map[string]map[string]caseOutcome
 }
 
 // RegistryPart is the registry's case counts on the measured commit.
@@ -53,6 +57,9 @@ type WorkflowPart struct {
 	CheckedAt string           `json:"checked_at"`
 	Scheduled int              `json:"scheduled"`
 	Problems  []map[string]any `json:"problems"`
+	// Pending are the scheduled workflows added too recently to have run on their schedule: not problems, and not
+	// counted in Scheduled.
+	Pending []map[string]any `json:"pending,omitempty"`
 }
 
 // ErrorsPart is the error answers: the recorded figures, the live re-record against the stack's Loki and the
@@ -107,6 +114,8 @@ type Inputs struct {
 	Date, Commit, Run, LokiVersion           string
 	SweepWorkflow                            string
 	SkipRerecord, SkipReplay                 bool
+	// Wiring is the registry's wiring map (case id to the tests wired to it); empty leaves "proven by a test" out.
+	Wiring string
 }
 
 func readJSON(path string, v any) error {
@@ -162,6 +171,13 @@ type CaseReuse struct {
 	ColdVLCalls float64            `json:"cold_vl_calls"`
 	RepeatCalls float64            `json:"repeat_vl_calls"`
 	RepeatHits  map[string]float64 `json:"repeat_hit_ratio"`
+	// Background is the proxy's own VictoriaLogs calls around the repeats (health probes, inventory refreshes,
+	// other clients), counted by the process-wide metrics and left out of RepeatCalls; CallsFromHeader and
+	// CallsFromMetrics are how many repeats had their calls counted per request (X-Loki-VL-Backend-Calls) and how
+	// many by metrics.
+	Background       float64 `json:"background_vl_calls,omitempty"`
+	CallsFromHeader  int     `json:"calls_from_header,omitempty"`
+	CallsFromMetrics int     `json:"calls_from_metrics,omitempty"`
 }
 
 // Build reads every input and judges the day.
@@ -173,6 +189,9 @@ func Build(in Inputs) (Summary, map[string]any, error) {
 	}
 	merged, err := s.cases(in.CasesDir)
 	if err != nil {
+		return s, nil, err
+	}
+	if err := s.coverage(in, merged); err != nil {
 		return s, nil, err
 	}
 	steps := []func(Inputs) error{s.workflows, s.errors, s.sweep, s.parity, s.perfDaily, s.perfWeekly}
@@ -276,6 +295,16 @@ func (s *Summary) cases(dir string) (map[string]any, error) {
 				entry = map[string]any{"expected": r["expected"], "gap_status": r["gap_status"]}
 				byCase[id] = entry
 			}
+			if s.outcomes == nil {
+				s.outcomes = map[string]map[string]caseOutcome{}
+			}
+			if s.outcomes[version] == nil {
+				s.outcomes[version] = map[string]caseOutcome{}
+			}
+			verdict, _ := r["verdict"].(string)
+			class, _ := r["class"].(string)
+			reason, _ := r["reason"].(string)
+			s.outcomes[version][id] = caseOutcome{verdict: verdict, class: class, reason: reason}
 			delete(r, "expected")
 			delete(r, "gap_status")
 			entry[version] = r
@@ -437,7 +466,7 @@ func (s *Summary) perfDaily(in Inputs) error {
 	}
 	s.PerfDaily = map[string]any{}
 	for _, k := range []string{"date", "commit", "rows", "comparable", "loki_failed", "distribution", "over_2x", "ratchet_lost", "ratchet_problem",
-		"reuse", "reuse_lost"} {
+		"reuse", "reuse_lost", "first_ask", "first_ask_over"} {
 		if x, found := v[k]; found {
 			s.PerfDaily[k] = x
 		}
@@ -447,6 +476,11 @@ func (s *Summary) perfDaily(in Inputs) error {
 	}
 	if list, _ := v["ratchet_lost"].([]any); len(list) > 0 {
 		s.red("perf smoke: %d row(s) of the weekly ratchet lost", len(list))
+	}
+	if list, _ := v["first_ask_over"].([]any); len(list) > 0 {
+		// A first request for a selector whose state the proxy has not built is held to an absolute bound, not
+		// to Loki's time (bench/ab/over2x.py, first_ask_max_s in shapes.json).
+		s.red("perf smoke: %d first ask(s) above their absolute bound", len(list))
 	}
 	if list, _ := v["reuse_lost"].([]any); len(list) > 0 {
 		s.red("perf smoke: %d row(s) reuse the proxy's cache less than the day before", len(list))
@@ -545,8 +579,8 @@ func markdown(s Summary, executive string) string {
 	}
 	if p := s.PerfDaily; p != nil {
 		if r, ok := p["reuse"].(map[string]any); ok {
-			fmt.Fprintf(&b, "- Perf smoke: %v rows measured, VictoriaLogs calls %v cold and %v on the repeats, %v rows repeat without calling VictoriaLogs, %d rows lost reuse.\n",
-				r["rows"], r["cold_vl_calls"], r["repeat_vl_calls"], r["repeat_without_vl_calls"], lenOf(p["reuse_lost"]))
+			fmt.Fprintf(&b, "- Perf smoke: %v rows measured, VictoriaLogs calls %v cold and %v on the repeats, %v rows repeat without calling VictoriaLogs, %d rows lost reuse.%s\n",
+				r["rows"], r["cold_vl_calls"], r["repeat_vl_calls"], r["repeat_without_vl_calls"], lenOf(p["reuse_lost"]), exactRepeatText(r))
 		}
 	}
 	if e := s.Errors; e != nil {
@@ -577,6 +611,10 @@ func markdown(s Summary, executive string) string {
 	if p := s.PerfDaily; p != nil {
 		fmt.Fprintf(&b, "\n### Daily perf smoke\n\n%v rows, %v comparable timings, %d above 2x Loki, %d ratchet rows lost.\n", p["rows"], p["comparable"],
 			lenOf(p["over_2x"]), lenOf(p["ratchet_lost"]))
+		if n := lenOf(p["first_ask"]); n > 0 {
+			fmt.Fprintf(&b, "%d first asks (the pattern state not built yet) held to an absolute bound instead of Loki's time, %d above it.\n", n,
+				lenOf(p["first_ask_over"]))
+		}
 	}
 	if w := s.PerfWeekly; w != nil {
 		fmt.Fprintf(&b, "\n### Weekly performance (measured %s, Loki %s)\n\n%d comparable shape x range pairs: %d faster, %d on par, %d slower; %d rows on the above-2x list.\n",

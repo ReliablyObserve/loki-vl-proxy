@@ -163,7 +163,7 @@ func applyQueryLineFormat(ctx context.Context, streams []map[string]interface{},
 }
 
 // Loki's line_format on an entry its template fails on
-// (pkg/logql/log/fmt.go LineFormatter.Process): the line stays as it was
+// (registry semantics/line-format-template-error-keeps-entry): the line stays as it was
 // and the entry gets __error__="TemplateFormatErr" and __error_details__
 // with the template error, as parsed labels.
 const (
@@ -749,6 +749,18 @@ func patternSampleStart(timeNs int64) int64 {
 	return timeNs / int64(time.Second) / interval * interval
 }
 
+// patternSamplesEndNs is where the lines of a range ending at endNs end: the end of the 10 s sample endNs falls in,
+// endNs itself when it starts a sample. Loki answers each sample that starts inside the range with all of its lines,
+// so a range ending inside a sample counts that sample's lines after the end too.
+func patternSamplesEndNs(endNs int64) int64 {
+	interval := int64(lokiPatternSampleInterval)
+	r := endNs % interval
+	if r <= 0 || endNs > math.MaxInt64-interval {
+		return endNs
+	}
+	return endNs - r + interval
+}
+
 // patternBucketStart is the start, in unix seconds, of the step a line at timeNs is counted in, as Loki counts it
 // in two stages: into its sample (patternSampleStart), and the sample into the step it falls in, both truncated
 // from the epoch. A step that is not a multiple of the interval therefore differs from truncating the line's time
@@ -1102,7 +1114,7 @@ func (m *patternMiner) zeroFill(c *patternBucket) {
 }
 
 // patternEntriesByLevelAndPattern is the miner's clusters as response entries, one per level and pattern: Loki
-// answers one series per level and pattern (pkg/pattern/iter ReadBatch), so clusters the miner kept apart whose
+// answers one series per level and pattern (registry drilldown/patterns-one-series-per-level), so clusters the miner kept apart whose
 // patterns read the same, such as two that differ in the same tokens a longer pattern shows as <_>, are one entry
 // with their samples added up. A cluster that counted no line is not an entry. The miner's clusters are not
 // changed.
@@ -1151,7 +1163,9 @@ type patternMinerKey struct {
 
 type patternMiner struct {
 	tokenizer *patternLineTokenizer
-	miners    map[patternMinerKey]*patternClusterer
+	// scratch holds the tokens of the line being mined (patternLineTokensScratch).
+	scratch tokenizerBuf
+	miners  map[patternMinerKey]*patternClusterer
 	// order is the miners in the order they first read a line.
 	order []*patternClusterer
 	// fillStep, when above 0, is the step in seconds the samples of each cluster are zero-filled at, between the
@@ -1192,7 +1206,7 @@ func (m *patternMiner) observeStreamLine(stream, level, line string, bucket int6
 	if m.oneStream {
 		stream = ""
 	}
-	tokens, spacesAfter, format, ok := m.patternLineTokens(line)
+	tokens, spacesAfter, format, ok := m.patternLineTokensScratch(line)
 	if !ok {
 		return nil
 	}
@@ -1353,10 +1367,32 @@ func newPatternLineTokenizer() *patternLineTokenizer {
 }
 
 func (p *patternLineTokenizer) Tokenize(line string) ([]string, []int, bool) {
+	buf := tokenizerBufPool.Get().(*tokenizerBuf)
+	tokens, spacesAfter, ok := buf.tokenize(line)
+	if !ok {
+		tokenizerBufPool.Put(buf)
+		return nil, nil, false
+	}
+	// Copy results to fresh slices before returning the pool buffer.
+	// The caller holds the returned slices across multiple Tokenize calls.
+	outTokens := make([]string, len(tokens))
+	copy(outTokens, tokens)
+	outSpaces := make([]int, len(spacesAfter))
+	copy(outSpaces, spacesAfter)
+	tokenizerBufPool.Put(buf)
+	return outTokens, outSpaces, true
+}
+
+// tokenize is Tokenize into the buffer's own slices, which the next call overwrites: a caller that keeps the
+// tokens copies them (patternClusterer.train does, for a line that starts a cluster).
+func (buf *tokenizerBuf) tokenize(line string) ([]string, []int, bool) {
 	if len(line) == 0 || len(line) > patternMaxLineLength {
 		return nil, nil, false
 	}
-	buf := tokenizerBufPool.Get().(*tokenizerBuf)
+	if buf.spacesAfter == nil {
+		// Never nil, so the spaces of a line without any are an empty list, as a copy of them is.
+		buf.spacesAfter = make([]int, 0, 64)
+	}
 	tokens := buf.tokens[:0]
 	spacesAfter := buf.spacesAfter[:0]
 
@@ -1389,23 +1425,12 @@ func (p *patternLineTokenizer) Tokenize(line string) ([]string, []int, bool) {
 	if from < len(line) {
 		tokens = append(tokens, line[from:])
 	}
-
-	if len(tokens) < patternMinTokens || len(tokens) > patternMaxTokens {
-		buf.tokens = tokens
-		buf.spacesAfter = spacesAfter
-		tokenizerBufPool.Put(buf)
-		return nil, nil, false
-	}
-	// Copy results to fresh slices before returning the pool buffer.
-	// The caller holds the returned slices across multiple Tokenize calls.
-	outTokens := make([]string, len(tokens))
-	copy(outTokens, tokens)
-	outSpaces := make([]int, len(spacesAfter))
-	copy(outSpaces, spacesAfter)
 	buf.tokens = tokens
 	buf.spacesAfter = spacesAfter
-	tokenizerBufPool.Put(buf)
-	return outTokens, outSpaces, true
+	if len(tokens) < patternMinTokens || len(tokens) > patternMaxTokens {
+		return nil, nil, false
+	}
+	return tokens, spacesAfter, true
 }
 
 func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {

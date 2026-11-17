@@ -25,12 +25,21 @@ why: |
   operation turns this spelling away (lower.screenVectorOperands, BinOp operand
   spelling) so it never differs from the route; the same blank before a range
   function's parenthesis is semantics/translator-reads-blank-before-range-call-as-text.
+
+  In a chain (an operand that is itself a binary operation) the route evaluates
+  each operation on its own and reads each vector(n) from its printed text the
+  same way, so `vector (2) > on(x) (rate(..) * 2)` and `(vector (2) + rate(..)) * 2`
+  answer 400 on an instant request and 500 on a range request through the
+  proxy's binary route (emulated VictoriaLogs, internal/proxy, 2026-11-17). The
+  lowering turns the spelling away at any depth of a chain too
+  (lower.screenChainVectors; FuzzBinOpLowering found the miss, 2026-11-17).
 corpus:
-  size: 2
+  size: 3
   dimensions:
     shapes:
       - query: 'rate({env="production"}[5m]) + vector (1)'
       - query: 'vector ( 2 ) * sum by (app) (rate({env="production"}[5m]))'
+      - query: '(vector (2) + sum by (app) (rate({env="production"}[5m]))) * 2'
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -41,6 +50,9 @@ request:
     step: '60'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "rate(...) keeps its labels and a label-less vector(1) matches none of its series (no on()), so Loki answers empty here and so does the proxy: the request cannot show the difference on any stack; a left operand without labels (sum(rate(...)) + vector (1)) would, and changing the query is a plan corpus row change left to its own change"
 compare:
   mode: observed
   fields: [status, series labels, values]
@@ -53,7 +65,7 @@ gap:
   area: 'internal/proxy binary_logql.go evaluateBinaryLogQLOperand (reads the operand by its text, vectorLiteralRE); fixed when binary operations are served from the plan'
   loki: 'blanks between the tokens of a call do not change it'
   proxy: 'the binary route sends the operand on as a query where Loki reads a vector'
-  planned_test: 'TestPlanDelegatesVectorLiteralOperands (the screen) and TestBinaryOperandsPhysicalReadsVectorLiteralLikeTheHandler (the route); TestVectorOperandLoweringMatchesLoki records that Loki accepts the spelling; an e2e row against Loki when the plan serves binary operations'
+  planned_test: 'TestPlanDelegatesVectorLiteralOperands (the screen, chains included) and TestBinaryOperandsPhysicalReadsVectorLiteralLikeTheHandler (the route); TestVectorOperandLoweringMatchesLoki records that Loki accepts the spelling; an e2e row against Loki when the plan serves binary operations'
   visual: none
   visual_reason: 'Grafana writes no blank before a function parenthesis; hand-written queries can'
   clusters: []

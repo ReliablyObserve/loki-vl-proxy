@@ -223,7 +223,7 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 		`topk(3, rate({app="a"}[5m]))`,            // Rank: lowered to a RankStep, which the proxy evaluates: not compared
 		`sort by (app) (rate({app="a"}[5m]))`,     // Rank: not lowered (the route does not take a sort with a clause)
 		`rate({app="a"}[5m]) / 2`,                 // BinOp: lowered, a match
-		`rate({a="b"}[5m]) and rate({a="c"}[5m])`, // BinOp: not lowered (set operator)
+		`rate({a="b"}[5m]) and rate({a="c"}[5m])`, // BinOp: not compared (held to the binary route)
 		`vector(1)`,          // VectorLit
 		`{app="a"} |> "<_>"`, // pattern filter: lowered, a match
 		`{app="a"`,           // rejected by both
@@ -243,7 +243,7 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 			t.Errorf("a query both reject is counted: %q in %v", key, got)
 		}
 	}
-	for _, want := range []string{"match LogSelect", "not_lowered LogSelect line format function", "match RangeAgg", "not_lowered RangeAgg grouping", "match VectorAgg", "not_lowered VectorAgg", "not_lowered VectorAgg operand spelling", "not_lowered Rank", "not_lowered Rank grouping", "match BinOp", "not_lowered BinOp set operator", "match LabelReplace", "not_lowered LabelReplace", "not_lowered LabelReplace operand Rank"} {
+	for _, want := range []string{"match LogSelect", "not_lowered LogSelect line format function", "match RangeAgg", "not_lowered RangeAgg grouping", "match VectorAgg", "not_lowered VectorAgg", "not_lowered VectorAgg operand spelling", "not_lowered Rank", "not_lowered Rank grouping", "match BinOp", "not_lowered BinOp", "match LabelReplace", "not_lowered LabelReplace", "not_lowered LabelReplace operand Rank"} {
 		if got[want] == 0 {
 			t.Errorf("no %q in %v", want, got)
 		}

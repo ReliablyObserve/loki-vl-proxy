@@ -865,7 +865,7 @@ func uniqueSortedInt64s(values []int64) []int64 {
 	return out
 }
 
-// TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries seeds 600 unique
+// TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries seeds 1,100 unique
 // trace_ids and checks a Logs Drilldown field breakdown the way Loki answers
 // it: every series under the tenant's max_query_series, and above it the
 // limit's worth of series with Loki's partial-result warning. level, a
@@ -878,9 +878,9 @@ func TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries(t *testing.T) {
 	waitForReady(t, proxyURL+"/ready", 30*time.Second)
 
 	const (
-		numUniqueTraceIDs  = 600
+		numUniqueTraceIDs  = 1100
 		stepSeconds        = 60
-		maxDrilldownSeries = 500
+		maxDrilldownSeries = 1000
 	)
 
 	serviceName := fmt.Sprintf("drilldown-hc-trace-%d", time.Now().UnixNano())
@@ -892,7 +892,7 @@ func TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries(t *testing.T) {
 
 	t.Logf("seeding service=%s with %d unique trace_ids over %s", serviceName, numUniqueTraceIDs, rangeWindow)
 
-	// Batch-push 600 entries to VL's jsonline endpoint.
+	// Batch-push the entries to VL's jsonline endpoint.
 	// trace_id is a top-level VL column field (NOT a stream field, NOT in _msg JSON).
 	// The proxy strips |unpack_json before sending to VL, so column-indexed fields
 	// are found by | filter trace_id:!"" without needing | unpack_json.
@@ -974,8 +974,8 @@ func TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries(t *testing.T) {
 		}
 	})
 
-	// Over the limit (this proxy keeps Loki's default max_query_series of
-	// 500) Logs Drilldown gets 500 series with Loki's partial-result warning.
+	// Over the limit (this proxy keeps the proxy's default max_query_series of
+	// 1000) Logs Drilldown gets 1000 series with Loki's partial-result warning.
 	t.Run("trace_id_over_the_limit_is_partial_with_lokis_warning", func(t *testing.T) {
 		resp := getJSONWithHeaders(t, proxyVmauthURL+"/loki/api/v1/query_range?"+traceParams.Encode(), drilldownHeaders)
 		data := extractMap(resp, "data")

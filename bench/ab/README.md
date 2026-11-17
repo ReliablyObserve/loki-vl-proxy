@@ -246,10 +246,10 @@ The stack's Loki is not Loki's default Loki: see the next section.
 
 `test/e2e-compat/loki-local-config.yaml` sets `query_range.align_queries_with_step: true` and
 `limits_config.max_cache_freshness_per_query: 0s`; Loki's own defaults are off and 10m
-(`-querier.align-querier-with-step`, `pkg/querier/queryrange/queryrangebase/roundtrip.go:49`;
-`-frontend.max-cache-freshness`, `pkg/validation/limits.go:407-408`, Loki v3.7.9). A Loki with
+(`-querier.align-querier-with-step` and `-frontend.max-cache-freshness`, Loki's configuration reference,
+https://grafana.com/docs/loki/latest/configure/, Loki v3.7.9). A Loki with
 the first setting moves both bounds of a metric `query_range` request down to a multiple of
-the step (`queryrangebase/step_align.go:20-24`) and, with the second, caches results up to the
+the step (`internal/proxy/testdata/step_align_loki_answers.jsonl.gz` records Loki's answers) and, with the second, caches results up to the
 present, so it answers a refresh that moves less than a step as an exact results-cache hit (3-5
 ms). A proxy build compared with that Loki must do the same work the same way, so every pass is
 made against one of two profiles (`stack.PROFILES`) and every row, comment line, gate finding and
@@ -258,7 +258,7 @@ evidence record names its profile:
 | profile | Loki | proxy builds |
 |---|---|---|
 | `aligned` | the stack as it is: align on, freshness 0s | `-align-queries-with-step=true` |
-| `loki-defaults` | `docker-compose.ab-loki-defaults.yml`: `-querier.align-querier-with-step=false -frontend.max-cache-freshness=10m` (flags win over the config file, as in `docker-compose.ab-loki-uncached.yml`) | their defaults: the flag is removed from the build's own stack flags, and a build whose `-align-queries-with-step` defaults to on (`stack.source_align_default`, read from the build's `cmd/proxy/main.go`) runs aligned, recorded as `proxy_align: on`. That is like for like: a Loki with its defaults floors the start to the step too, in its metric splitter (`split_queries_by_interval`, 1h by default; `pkg/querier/queryrange/splitters.go:236,308-319`), and rounds the end up where the aligned proxy moves it down |
+| `loki-defaults` | `docker-compose.ab-loki-defaults.yml`: `-querier.align-querier-with-step=false -frontend.max-cache-freshness=10m` (flags win over the config file, as in `docker-compose.ab-loki-uncached.yml`) | their defaults: the flag is removed from the build's own stack flags, and a build whose `-align-queries-with-step` defaults to on (`stack.source_align_default`, read from the build's `cmd/proxy/main.go`) runs aligned, recorded as `proxy_align: on`. That is like for like: a Loki with its defaults floors the start to the step too, in its metric splitter (`split_queries_by_interval`, 1h by default, per Loki's configuration reference), and rounds the end up where the aligned proxy moves it down |
 
 - One seeded stack serves both: after the first profile `stack.set_profile` recreates only
   Loki (its results cache is in memory, so the second Loki starts cold) on the same volume,
@@ -588,12 +588,29 @@ VictoriaLogs calls, in all and per VictoriaLogs endpoint, and bytes, cache
 lookups and hits per semantic layer (`loki`, `vl`) and tier, CPU and
 translations. Summary rows carry them per target as `reuse`: the first run
 (cold), the median of the later runs (repeat: the window moved by a minute) and
-the refresh pass. The smoke keeps the candidate's reuse per row in
-`history/daily-smoke/reuse.jsonl` and is red when a row's repeat calls
-VictoriaLogs more often than the day before or a layer and tier's hit ratio fell
-by more than 0.1. Not measured yet, for want of a metric: allocations per
-request, plan and translation cache hits, the reuse of proxy-evaluated
-operators, and per-request attribution (background work counts too).
+the refresh pass.
+
+The VictoriaLogs calls of a request are the proxy's own count of that request
+when the build has it: `daily.py` starts a build that knows
+`-debug-vl-calls-header` with it (`stack.probe_calls_header_support`), and the
+answer's `X-Loki-VL-Backend-Calls` is the calls that request started, so the
+proxy's background calls (health probes, the stream field inventory's refreshes)
+are not in `vl_calls`; the counters' surplus is kept as `background_vl_calls`. A
+build without the flag (the baseline release, until it ships it) is counted by
+the counters, background work included.
+
+The smoke measures two repeats apart (`perf_matrix.py --exact-repeat`, smoke
+only). The exact repeat asks each proxy the same request twice in a row at a
+settled window (`EXACT_REPEAT_AGE`, older than the proxy's
+`-query-range-freshness`, inside the seeded data) and keeps what the second
+cost: 0 VictoriaLogs calls expected, and red when a row's calls rise above the
+day before. The repeat that moves the window by a minute legitimately reads the
+buckets it lacks, so it is judged by the bytes it reads (red when they grow past
+1.5x and 4 KiB over the day before) and by a layer and tier's hit ratio (red
+when it fell by more than 0.1); its calls are reported, not judged. The smoke
+keeps the candidate's reuse per row in `history/daily-smoke/reuse.jsonl`. Not
+measured yet, for want of a metric: allocations per request, plan and
+translation cache hits, and the reuse of proxy-evaluated operators.
 
 ```bash
 python3 bench/ab/daily.py --out /tmp/ab-smoke --smoke
@@ -654,7 +671,16 @@ or to none, or a warm p50 slower beyond 25% and 50 ms that held for two runs
 (both worse than the run before them) or that the same run's verdict against
 the release newly calls `slower`. An improvement is the reverse of the first
 two (a status that now answers 200 while Loki still gives that error is not
-one), or a warm p50 faster beyond the same margin (one run is enough). Each
+one), or a warm p50 faster beyond the same margin (one run is enough). A warm
+p50 is compared with an earlier line's at the newer run's runner speed: the
+median move of Loki's computed cold times (at least 50 ms) between the two
+runs, over every set of the profile, at least 20 rows in common (else 1).
+Loki's version and the seeded data are the same from run to run, so a hosted
+runner that is slower or faster as a whole (0.5x to 1.7x between scheduled
+runs) moves every target's times together and is no slowdown or improvement of
+the proxy; the alert names the factor when it moved beyond 5%. The ratchet and
+the bounds against Loki compare with Loki's time of the same run and need no
+factor. Each
 alert names the commit range to bisect, `<previous line's commit>..<newest
 commit>` (a slowdown that held for two runs starts at the line before it
 began). Rows where Loki did not answer 200 are listed apart as "Loki failed",
@@ -780,6 +806,24 @@ clearing in this pull request. Adding a row to the list by hand needs the
 owner's approval. `python3 bench/ab/over2x.py replay summary-<set>.json ...`
 shows what the gate says about saved summaries; `conformance/reports/performance.md`
 lists the current rows under "Above 2× Loki (must fix)".
+
+#### First ask, state not built
+
+Some cold runs are a first request for a selector on a proxy that holds no
+state for it yet, which Loki answers from a structure it built at push time:
+the Drilldown patterns of a service or an environment (`DP1`, `DP2` at 1h),
+which Loki's pattern ingester mined while the lines arrived and the proxy,
+which has no ingest path, mines from the lines it reads from VictoriaLogs.
+Such a shape carries `first_ask_max_s` in `shapes.json` (`{range: seconds}`):
+its cold run at that range is held to that absolute bound instead of Loki's
+time. `over2x.summary_pairs` and `history_pairs` leave it out of every ratio
+judgement (above 2×, bands, locks, ratchets, the pull request gate); the
+daily smoke reports it under "First asks" and is red when it takes longer
+than its bound; the weekly run takes a listed one off the above-2× list. Its
+warm and refresh runs, and its other ranges (served from the state the first
+request built), keep the 2× bound. A bound is set from measured runs of the
+shape on the stack, and only for a request whose speed rests on a structure
+Loki builds at ingest.
 
 For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
 with each row) or reuse `history/trend.md` as is. A pull request that edits

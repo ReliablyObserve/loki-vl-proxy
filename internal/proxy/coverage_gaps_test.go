@@ -1967,7 +1967,7 @@ func TestNormalizeManualMetricFunction(t *testing.T) {
 // =============================================================================
 
 func TestUnusedJSONParser_SummedRateTumblingUsesStats(t *testing.T) {
-	// sum without grouping or label predicates gives Loki NoLabels parser hints.
+	// sum without grouping or label predicates gives Loki no label hints for its parsers.
 	// JSON cannot affect the count, so preserve the native tumbling-window path.
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -39,7 +39,14 @@ why: |
     (r1765, Loki 204), which VictoriaLogs' nanosecond times cannot hold. A start before 1970 (r1766) is served.
   Loki processes a request after its cancellation period (24h by default); VictoriaLogs runs the task at once, so
   a cancel can only stop a task that is still running, and what it already deleted stays deleted (as Loki's
-  force=true leaves it).
+  force=true leaves it). Answers cached before a delete (the response cache, the extent cache and the peer tier)
+  keep serving the deleted rows until they expire; Loki moves its results cache past a delete.
+
+  Decisions (owner, 2026-11-17): (1) answers cached before a delete keep serving the deleted rows until they expire,
+  documented (docs/security-hardening-migration.md), with a per-tenant cache fence on delete as a follow-up; (2) a
+  request without the delete token answers Loki's `401 no org id` (delete-api-requires-token); (3) the list of delete
+  requests (a record held by the proxy fleet) is a follow-up; (4) a start that wraps keeps Loki's 500, the proxy does
+  not mirror Loki's destructive wrap; (5) no cancellation period: a task runs at once, documented.
 request:
   method: POST
   path: /loki/api/v1/delete

@@ -1,7 +1,7 @@
 id: conversion-duration-seconds
 kind: conversion
 logql: "duration_seconds"
-loki_constant: OpConvDurationSeconds
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

@@ -10,16 +10,15 @@ import (
 )
 
 // TestCompat_PlainNameAfterParserReadsStreamLabel: after a parser stage whose
-// key is also a stream label's name, Loki renames the parsed label name_extracted
-// and the plain name still reads the stream label (pkg/logql/log/labels.go
-// getWithCategory, parser.go duplicateSuffix), so a filter, a grouping, an
-// unwrap, label_format and line_format on the plain name see the stream value (keep and
-// drop of the plain name in a log query act on the entry's labels, a separate gap).
-// The fixture's stream has level="info" and its JSON and logfmt lines carry
-// other levels. Compared name=value with Loki for json and logfmt, the
-// filter operators, line_format and metric grouping, in the
-// default and categorize-labels encodings, over one window and a range split
-// into windows.
+// key is also a stream label's name, Loki renames the parsed label
+// name_extracted and the plain name still reads the stream label, so a
+// filter, a grouping, an unwrap, label_format and line_format on the plain
+// name see the stream value (keep and drop of the plain name in a log query
+// act on the entry's labels, a separate gap). The fixture's stream has
+// level="info" and its JSON and logfmt lines carry other levels. Compared
+// name=value with Loki for json and logfmt, the filter operators, line_format
+// and metric grouping, in the default and categorize-labels encodings, over
+// one window and a range split into windows.
 //
 // conformance: semantics/plain-name-after-parser-reads-stream-label, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_PlainNameAfterParserReadsStreamLabel(t *testing.T) {

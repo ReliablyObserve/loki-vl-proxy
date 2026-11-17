@@ -4,11 +4,12 @@ proves:
   - loki_api_v1_query
   - loki_api_v1_query_range
 consumer: explore
+evidence: needs recording
 why: |
   `sum by (svc_short) (label_replace(sum by (service_name) (rate({env="production"}[5m])),
   "svc_short", "$1", "service_name", "(.*)-.*"))` is a valid Loki query: the vector
   aggregation groups what the label_replace evaluator yields
-  (pkg/logql/evaluator.go VectorAggEvaluator over LabelReplaceEvaluator), and Loki
+  and Loki
   answers one series per `svc_short` on both endpoints. The proxy answers a 400 on
   both: the instant query with "log queries are not supported as an instant query
   type", query_range with a parse error from VictoriaLogs (the translated query
@@ -34,7 +35,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy proxy.go (handleQuery, handleQueryRange: markers are parsed once, for the outermost expression), vector_matching.go (labelTransforms)'
-  loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next over LabelReplaceEvaluator.Next'
+  loki: 'a vector aggregation groups what label_replace yields'
   proxy: '400 from the proxy (instant) or from VictoriaLogs (range): the aggregation is not evaluated over the transformed series'
   planned_test: 'TestCompat_AggregationOverLabelReplace (test/e2e-compat, group semantics)'
   clusters:

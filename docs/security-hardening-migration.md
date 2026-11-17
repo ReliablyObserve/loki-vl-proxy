@@ -100,7 +100,7 @@ not comparable to older runs that mostly measured primary-cache hits.
   operations and both quoted/backtick template literals remain supported.
 - Raw metric evaluation (v1.68.0), including bare-parser `unwrap` queries,
   rejects scans beyond `-manual-range-metric-row-limit` (default 1,000,000 rows)
-  and results beyond `-max-stats-query-series` (default 500 series), with 64 MiB
+  and results beyond `-max-stats-query-series` (default 1000 series), with 64 MiB
   input/output and one million output samples. Overflow returns an error
   (usually HTTP 502) instead of a truncated success. Native `stats_query_range`
   paths keep their existing top-series cap at the same series limit.
@@ -147,7 +147,8 @@ rows the same log query reads; a cancel (`DELETE`) stops the tenant's running ta
 What remains:
 
 - the list (`GET`) answers Loki's `500`: VictoriaLogs keeps no record of a
-  request's LogQL query and range, and forgets a task once it ends;
+  request's LogQL query and range, and forgets a task once it ends (a list
+  kept by the proxy fleet is planned follow-up work);
 - a query Loki accepts whose rows a VictoriaLogs filter cannot select exactly
   (a parser such as `| json`, a filter on a parsed or derived label, a formatting
   stage) answers Loki's `500`;
@@ -157,6 +158,10 @@ What remains:
 - Loki processes a request after its cancellation period (24h by default);
   VictoriaLogs runs the task at once, so a cancel stops only what is still running;
 - answers cached before a delete (response cache, extent cache, peer tier) keep
-  serving the deleted rows until they expire.
+  serving the deleted rows until they expire (a per-tenant cache fence on a
+  delete is planned follow-up work);
+- a start of ten digits past 2262, which Loki reads as 1702 and so deletes a
+  tenant's history back to then, answers Loki's `500` and starts no task: the
+  proxy does not mirror that wrap.
 
 See [VictoriaLogs deletion](https://docs.victoriametrics.com/victorialogs/#how-to-delete-logs).

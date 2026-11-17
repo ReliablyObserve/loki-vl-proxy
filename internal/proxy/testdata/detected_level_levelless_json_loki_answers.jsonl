@@ -1,0 +1,15 @@
+{"answer":"200 j1|error=0.033333 j1|unknown=0.033333 j1|warn=0.033333 j2|info=0.1","id":"0|instant"}
+{"answer":"200 j1|error=0.5 j1|unknown=0.5 j1|warn=0.5 j2|info=1.5","id":"0|60"}
+{"answer":"200 j1|error=0.1 j1|unknown=0.1 j1|warn=0.1 j2|info=0.3","id":"0|300"}
+{"answer":"200 j1|error=0.033333 j1|unknown=0.033333 j1|warn=0.033333 j2|info=0.1","id":"1|instant"}
+{"answer":"200 j1|error=0.5 j1|unknown=0.5 j1|warn=0.5 j2|info=1.5","id":"1|60"}
+{"answer":"200 j1|error=0.1 j1|unknown=0.1 j1|warn=0.1 j2|info=0.3","id":"1|300"}
+{"answer":"200 j1|error=10 j1|unknown=10 j1|warn=10 j2|info=30","id":"2|instant"}
+{"answer":"200 j1|error=130 j1|unknown=130 j1|warn=130 j2|info=390","id":"2|60"}
+{"answer":"200 j1|error=30 j1|unknown=30 j1|warn=30 j2|info=90","id":"2|300"}
+{"answer":"200 j1|error=0.033333 j1|unknown=0.033333 j1|warn=0.033333 j2|info=0.1","id":"3|instant"}
+{"answer":"200 j1|error=0.5 j1|unknown=0.5 j1|warn=0.5 j2|info=1.5","id":"3|60"}
+{"answer":"200 j1|error=0.1 j1|unknown=0.1 j1|warn=0.1 j2|info=0.3","id":"3|300"}
+{"answer":"200 |error=0.12 |info=0.383333 |unknown=0.13 |warn=0.133333","id":"4|instant"}
+{"answer":"200 |error=1.746667 |info=5.216667 |unknown=1.76 |warn=1.71","id":"4|60"}
+{"answer":"200 |error=0.396667 |info=1.19 |unknown=0.403333 |warn=0.39","id":"4|300"}

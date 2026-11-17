@@ -113,9 +113,10 @@ const (
 // conformance: semantics/stdvar-grouped-binary-marker
 func TestStdvarOverTimeGroupedAnswersAsScalarBinary(t *testing.T) {
 	for _, query := range []string{
-		// A named extraction: after a bare parser the series are the parsed labels' (semantics/unwrap-per-series-identity-raw-rows),
-		// whose variance VictoriaLogs squares itself.
-		`sum by (app) (stdvar_over_time({app="x"} | json n | unwrap n [5m]))`,
+		// An extraction under an alias: after a bare parser, or a list of plain keys, the series are the parsed labels'
+		// (semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-extraction-list-series-identity), whose
+		// variance VictoriaLogs squares itself (TestStdvarOverTimeSeriesIdentitySquaredByVictoriaLogs).
+		`sum by (app) (stdvar_over_time({app="x"} | json m="n" | unwrap m [5m]))`,
 		`stdvar_over_time({app="x"} | json | unwrap n [5m]) by (app)`,
 		`sum by (app) (stdvar_over_time({app="x"} | unwrap n [5m]))`,
 		`stdvar_over_time({app="x"} | unwrap n [5m]) by (app)`,
@@ -169,6 +170,42 @@ func TestStdvarOverTimeGroupedAnswersAsScalarBinary(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Under a series identity of the parsed labels (a parser of every key, or an extraction list of plain keys)
+// VictoriaLogs squares each series' deviation itself, before the clause's aggregation: the stats query carries the
+// square, and the proxy answers VictoriaLogs' value as it is, not squared a second time.
+//
+// conformance: semantics/stdvar-grouped-binary-marker, semantics/unwrap-extraction-list-series-identity
+func TestStdvarOverTimeSeriesIdentitySquaredByVictoriaLogs(t *testing.T) {
+	for _, query := range []string{
+		`sum by (app) (stdvar_over_time({app="x"} | json n | unwrap n [5m]))`,
+		`sum by (app) (stdvar_over_time({app="x"} | logfmt n, route | unwrap n [5m]))`,
+		`sum by (app) (stdvar_over_time({app="x"} | json | unwrap n [5m]))`,
+	} {
+		t.Run(query, func(t *testing.T) {
+			stub := &statsStub{rangeAns: stdvarRangeAnswer, instAns: stdvarInstantAnswer}
+			p := newStatsStubProxy(t, stub)
+			params := url.Values{"query": {query}, "time": {"1800000600"}}
+			res := doCompatProxyRequest(p, "/loki/api/v1/query?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+			if res.Code != http.StatusOK {
+				t.Fatalf("status %d, Loki answers 200: %s", res.Code, res.Body)
+			}
+			squared := false
+			for _, form := range stub.statsRequests() {
+				squared = squared || strings.Contains(form.Get("query"), "math __lvp_inner*__lvp_inner as __lvp_inner_var")
+			}
+			if !squared {
+				t.Fatalf("no stats request squares the deviation of each series: %v", stub.statsRequests())
+			}
+			want := map[string]string{"api": "3", "web": "0.5"}
+			for _, sample := range decodeStubSamples(t, res.Body.Bytes()) {
+				if got := sample.Value[1].(string); got != want[sample.Metric["app"]] {
+					t.Fatalf("app %s: %s, want VictoriaLogs' value %s as it is", sample.Metric["app"], got, want[sample.Metric["app"]])
+				}
+			}
+		})
 	}
 }
 

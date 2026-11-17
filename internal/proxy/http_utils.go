@@ -109,8 +109,14 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
-	if err := validateLogQLSyntax(query); err != "" {
-		p.writeError(w, http.StatusBadRequest, truncateQueryError(err))
+	if v := cachedQueryValidation(query); v.msg != "" {
+		if endpoint == "query" && v.buildLogQuery {
+			// Loki refuses a log query on the instant route before it builds the query's pipeline.
+			p.writeErr(w, context.Background(), lokierr.InstantLogQuery())
+			p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+			return "", false
+		}
+		p.writeError(w, http.StatusBadRequest, truncateQueryError(v.msg))
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
@@ -150,16 +156,20 @@ func validateLogQLSyntax(query string) string {
 
 // queryValidation is the validationCache entry of a raw query: Loki's error
 // for it, or "" and whether it is a metric (sample) expression, which
-// stepAlignMiddleware reads before the handler validates the same string, and
+// alignToStepMiddleware reads before the handler validates the same string, and
 // the offsets and ranges of its range selectors (requestTimeBounds).
 type queryValidation struct {
 	msg string
 	// tree is set when msg is a rejection of the typed tree's checks (queryplan.Validate), made after the
 	// parser and its semantic pass accepted the query.
-	tree   bool
-	sample bool
-	// empty is set for a metric query Loki answers with no series whatever the data (emptyWhateverTheData).
-	empty bool
+	tree bool
+	// buildLogQuery is set when msg is the error of a pipeline stage Loki refuses to build in a log query: Loki
+	// answers an instant log query with its query type error ahead of it.
+	buildLogQuery bool
+	sample        bool
+	// answer says whether Loki answers the metric query without reading data: with no series whatever the data
+	// (emptyWhateverTheData), or with 1 at every step (an absent_over_time over a zero range, absentEveryStep).
+	answer dataFreeAnswer
 	// logQuery is set for a valid log query, selector is set when it has no pipeline stage.
 	logQuery, selector bool
 	shift              queryShift
@@ -177,11 +187,17 @@ func cachedQueryValidation(query string) queryValidation {
 			}
 		}
 	}
-	expr, msg, tree := validateQueryTree(query)
-	result := queryValidation{msg: msg, tree: tree, sample: msg == "" && isSampleExpr(expr)}
+	expr, msg, phase := validateQueryPhases(query)
+	result := queryValidation{msg: msg, tree: phase == phaseTree, sample: msg == "" && isSampleExpr(expr)}
+	if phase == phaseBuild {
+		_, result.buildLogQuery = expr.(*logql.LogQuery)
+		expr = nil
+	}
 	if msg == "" && expr != nil {
 		result.shift = queryShiftOf(expr)
-		result.empty = result.sample && emptyWhateverTheData(expr)
+		if result.sample {
+			result.answer = dataFreeAnswerOf(expr)
+		}
 		if lq, ok := expr.(*logql.LogQuery); ok {
 			result.logQuery, result.selector = true, len(lq.Pipeline) == 0
 		}
@@ -493,10 +509,9 @@ func writeLokiFormatQueryError(w http.ResponseWriter, code int, msg string) {
 }
 
 // writeLokiErrorBody answers an error as Loki's query frontend does
-// (pkg/util/server/error.go WriteError, v3.7.9): the status, text/plain, nosniff
+// (recorded answers: internal/lokierr/testdata/loki_error_answers.jsonl): the status, text/plain, nosniff
 // and the message alone, with no JSON envelope, no errorType and no trailing
-// newline. Grafana's Loki datasource reads that text as it is
-// (pkg/tsdb/loki/api.go makeLokiError). The text is valid UTF-8 as Loki's is:
+// newline. Grafana's Loki datasource reads that text as it is. The text is valid UTF-8 as Loki's is:
 // every byte that is not part of a UTF-8 character (a regexp of a query that
 // holds one quotes it) is written as U+FFFD.
 func writeLokiErrorBody(w http.ResponseWriter, code int, msg string) {
@@ -554,18 +569,18 @@ func writeLokiHTTPError(w http.ResponseWriter, code int, msg string) {
 }
 
 // writeLokiRulerError answers a Prometheus-compatible rules request as Loki's
-// ruler does (pkg/ruler/base/api.go respondError, v3.7.9 :106-123): the JSON
+// ruler does (registry semantics/ruler-store-failure-status): the JSON
 // {"status","data","errorType","error"} in that order. PrometheusRules sets no
-// Content-Type (:150-285), so Go sniffs text/plain from the body. The ruler's
-// only failure classes are respondInvalidRequest (400, bad_data) and
-// respondServerError (500, server_error), so any other status is 500.
+// Content-Type, so Go sniffs text/plain from the body. The ruler's
+// only failure classes are an invalid request (400, bad_data) and
+// a server error (500, server_error), so any other status is 500.
 func writeLokiRulerError(w http.ResponseWriter, code int, msg string) {
 	writeLokiRulerJSON(w, code, msg, "text/plain; charset=utf-8")
 }
 
 // writeLokiAlertsError is writeLokiRulerError for PrometheusAlerts, which sets
-// Content-Type: application/json before it asks for the rules
-// (pkg/ruler/base/api.go:286), so a failure after that keeps it.
+// Content-Type: application/json before it asks for the rules, so a failure
+// after that keeps it.
 func writeLokiAlertsError(w http.ResponseWriter, code int, msg string) {
 	writeLokiRulerJSON(w, code, msg, "application/json")
 }
@@ -596,11 +611,9 @@ func writeLokiRulerJSON(w http.ResponseWriter, code int, msg, contentType string
 }
 
 // statusFromUpstreamErr classifies a failed backend call (or the proxy work
-// on its answer) into Loki's status set, following Loki v3.7.9
-// pkg/util/server/error.go ClientHTTPStatusAndError: a cancellation is 499
-// (:103-105), a deadline 504 (:106-107), a rejected query or a Loki limit 400
-// (:108-123), a full queue 429 (pkg/queue/queue.go:21) and every other failure
-// 500 (:124-128). Loki never answers a query with 502, 503 or 422. The status
+// on its answer) into Loki's status set: a cancellation is 499,
+// a deadline 504, a rejected query or a Loki limit 400, a full queue 429 and
+// every other failure 500. Loki never answers a query with 502, 503 or 422. The status
 // is also the one recorded in upstream metrics and logs (upstreamErrorStatus).
 //
 // A query VictoriaLogs rejects is not one of the 400s: the proxy validated it
@@ -662,11 +675,10 @@ func statusFromUpstreamErr(err error) int {
 	return http.StatusInternalServerError
 }
 
-// Loki's fixed client texts (v3.7.9).
+// Loki's fixed client texts.
 const (
-	// pkg/util/server/error.go:26
 	lokiErrClientCanceled = "the request was cancelled by the client"
-	// Loki returns a failed storage call's own error text (error.go:128) and
+	// Loki returns a failed storage call's own error text and
 	// has no fixed constant for it; the proxy never forwards the backend's
 	// text, so it answers the status line's reason phrase.
 	lokiErrInternal = "Internal Server Error"
@@ -737,7 +749,7 @@ const vlQueryDeadlinePrefix = "the request couldn't be executed in "
 
 // isUpstreamQueueFull reports a full VictoriaLogs (or front proxy) queue: a
 // 429, or VictoriaLogs' 503 for a request that never got a slot. Loki answers
-// its own full queue with 429 (pkg/queue/queue.go:21).
+// its own full queue with 429.
 func isUpstreamQueueFull(err error) bool {
 	var statusErr *upstreamStatusError
 	return errors.As(err, &statusErr) && (statusErr.status == http.StatusTooManyRequests || statusErr.class == vlErrorQueueFull)
@@ -1041,6 +1053,12 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 	if isHeavyQueryQueueFull(err) {
 		return false
 	}
+	// A proxy-side bound on what one request reads (an answer above the bytes the proxy buffers, a series or row
+	// budget, a group guard) is that request's outcome: VictoriaLogs answered. Counting it would open the breaker for
+	// every other query on the proxy.
+	if isProxySideLimit(err) {
+		return false
+	}
 	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.
 	var hsc httpStatusCoder
 	if errors.As(err, &hsc) {
@@ -1054,6 +1072,27 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 		return false
 	}
 	return true
+}
+
+// isProxySideLimit reports an error the proxy raised on its own bound for one request, bare or wrapped: a body above
+// what it buffers, a series or row budget, a group guard, or any Loki-shaped error other than a failed backend or an
+// internal error.
+//
+// It walks the error's chain by type, without errors.As, so a transport failure (the path it must not slow) is
+// classified with no allocation.
+func isProxySideLimit(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		switch x := e.(type) {
+		case *lokierr.Error:
+			return x.Kind() != lokierr.KindBackendFailed && x.Kind() != lokierr.KindInternal
+		case *seriesLimitError, *backendBodyTooLargeError:
+			return true
+		}
+		if e == errBodyTooLarge || e == errSeriesCountExceeded || e == errStatsGroupGuard {
+			return true
+		}
+	}
+	return false
 }
 
 // extractVLErrorMsg parses a VictoriaLogs JSON error body and returns the "error"
@@ -1171,8 +1210,8 @@ func (p *Proxy) redactedBackendStatusError(prefix string, status int, body []byt
 }
 
 // lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.
-// Matches the exact errorType strings from Loki's Prometheus API handler:
-// vendor/github.com/prometheus/prometheus/web/api/v1/api.go
+// Matches the exact errorType strings of Loki's Prometheus-style API answers
+// (registry semantics/error-layer-body-shape).
 func lokiErrorType(code int) string {
 	switch code {
 	case 400:

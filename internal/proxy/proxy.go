@@ -242,6 +242,12 @@ type Config struct {
 	// the built-in "missing _msg field; ..." text. Rows whose _msg is empty or
 	// this placeholder have their log line rebuilt from the row's fields.
 	BackendDefaultMsgValue string
+	// JSONLineFieldsAsLineKeys reads every stored field of a row whose _msg is
+	// VictoriaLogs' missing-message placeholder as a key of the row's JSON line
+	// (-json-line-fields-as-line-keys): a JSON line pushed to VictoriaLogs' Loki
+	// push route without disable_message_parsing=1. Off by default: it hides
+	// structured metadata pushed beside such a line.
+	JSONLineFieldsAsLineKeys bool
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
 	// Disabled by default for conservative datasource compatibility.
 	EmitStructuredMetadata bool
@@ -315,7 +321,7 @@ type Config struct {
 	ExactParserSeriesIdentity bool
 	// AlignQueriesWithStep moves the bounds of a metric query_range request
 	// down to multiples of its step, as Loki's step-align middleware does
-	// under query_range.align_queries_with_step (stepAlignMiddleware). The
+	// under query_range.align_queries_with_step (alignToStepMiddleware). The
 	// -align-queries-with-step flag defaults to true.
 	AlignQueriesWithStep bool
 	// PatternsCustom is a static list of patterns always prepended to
@@ -523,7 +529,7 @@ type Config struct {
 	DefaultMaxQueryLength time.Duration
 	// MaxStatsQuerySeries caps the number of series returned by stats_query_range
 	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
-	// max_query_series behaviour. 0 means use the built-in default (500).
+	// max_query_series behaviour. 0 means use the built-in default (1000).
 	MaxStatsQuerySeries int
 	// ExecutionLimits bounds per-request work and the bytes a request may pull
 	// out of VictoriaLogs. Zero values select the built-in defaults.
@@ -753,6 +759,7 @@ type Proxy struct {
 	streamResponse                        bool
 	emitStructuredMetadata                bool
 	backendDefaultMsgValue                string
+	jsonLineFieldsAsLineKeys              bool
 	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
@@ -797,7 +804,7 @@ type Proxy struct {
 	rangeMetricRowLimit                   int           // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
 	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
 	labelFilterRefillMaxPages             int           // extra pages read to fill a filtered log page (0=none)
-	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
+	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=1000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
 	metadataScanLimiter                   *metadataScanLimiter
@@ -856,6 +863,7 @@ type Proxy struct {
 	// which a lookup of the same key waits for (stats_extent_cache.go).
 	statsExtentPending                   statsExtentPendingStores
 	parseRiskProbeCacheTTL               time.Duration
+	levelLessBases                       levelLessMemory // per-stream reads lately seen holding a stream without a level label
 	parseRiskProbeSettle                 time.Duration
 	queryRangeWindowTimeout              time.Duration
 	queryRangePartialResponses           bool
@@ -1470,6 +1478,7 @@ func New(cfg Config) (*Proxy, error) {
 		streamResponse:                        cfg.StreamResponse,
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
 		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
+		jsonLineFieldsAsLineKeys:              cfg.JSONLineFieldsAsLineKeys,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
@@ -2091,7 +2100,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 				p.requestLogger(endpoint, route,
 					p.queryStatsLayer(endpoint, lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
-							p.stepAlignMiddleware(endpoint,
+							p.alignToStepMiddleware(endpoint,
 								p.compatCacheMiddleware(endpoint, route,
 									p.requestTimeBounds(endpoint, h)))))))), p.rejectAdmission)))))
 }
@@ -2559,8 +2568,8 @@ func exceedsLokiRangeResolution(r *http.Request, now time.Time) bool {
 }
 
 // lokiRangeBounds is the window Loki reads a range request for
-// (pkg/loghttp/params.go:83-120 determineBounds): end defaults to now, start to
-// min(end, now) minus since, and since to one hour (params.go:23); start and
+// (registry semantics/request-time-bounds): end defaults to now, start to
+// min(end, now) minus since, and since to one hour; start and
 // end are decoded as Loki decodes them (lokiBoundUnixNano). ok is false when a
 // given start, end or since does not parse.
 func lokiRangeBounds(r *http.Request, now time.Time) (start, end time.Time, ok bool) {
@@ -2618,7 +2627,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	// Loki validates the range parameters before it parses the query, on the
 	// bounds the client sent: a request moved onto the step grid was checked
-	// before it was moved (stepAlignMiddleware).
+	// before it was moved (alignToStepMiddleware).
 	if !requestStepAligned(r) && exceedsLokiRangeResolution(r, start) {
 		status := p.fail(w, r, lokierr.TooManyPoints())
 		p.metrics.RecordRequest("query_range", status, time.Since(start))
@@ -2646,10 +2655,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if p.answerEmptyResult(w, "query_range", logqlQuery, start) {
+	if p.answerEmptyResult(w, r, "query_range", logqlQuery, start) {
 		return
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
+	r = p.withPlaceholderExclusion(r, logqlQuery)
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while
@@ -2703,7 +2713,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		p.metrics.RecordCacheMiss()
 	}
-	p.log.Debug("query_range request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
+	if p.log.Enabled(r.Context(), slog.LevelDebug) {
+		p.log.Debug("query_range request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
+	}
 
 	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser, bare-parser
 	// paths, post-agg paths) so that the tenant context and forwarded auth headers
@@ -2816,7 +2828,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	orderedHandled := p.handleOrderedJSONMetric(orderedWriter, r, start, logqlQuery, true)
 	if orderedCapture != nil {
-		if orderedHandled && r.Context().Err() == nil && !unwrapLookup.failed() && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
+		if orderedHandled && r.Context().Err() == nil && !unwrapAnswerFailed(r.Context(), unwrapLookup) && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
 			if body := orderedCapture.CapturedBody(); len(body) > 0 {
 				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
 			}
@@ -2880,7 +2892,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	stats, isStats := translator.DecodeStats(logsqlQuery)
 	bareMetricRefused := isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStats
-	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
+	if p.log.Enabled(r.Context(), slog.LevelDebug) {
+		p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
+	}
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
 	// A label_replace around a binary expression routes by that
@@ -2966,7 +2980,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if unwrapLookup.failed() {
+	if unwrapAnswerFailed(r.Context(), unwrapLookup) {
 		cacheable = false // the answer sent is Loki's error, not this body
 	}
 	if capture != nil {
@@ -3054,16 +3068,16 @@ func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
 
 // detectedLevelCacheKey versions cached log responses by the detected_level
 // derivation, so entries written before it, or with the other body-scan
-// setting, are never served.
+// setting, are never served. dl2: a stored log.level field is no level field.
 func (p *Proxy) detectedLevelCacheKey() string {
 	if p.detectedLevelBodyScan {
-		return "dl1"
+		return "dl2"
 	}
-	return "dl1-stored"
+	return "dl2-stored"
 }
 
 // lokiInstantLogQueryError is Loki's rejection of a log query sent to the
-// instant query endpoint (pkg/logqlmodel/error.go ErrUnsupportedSyntaxForInstantQuery).
+// instant query endpoint.
 const lokiInstantLogQueryError = "log queries are not supported as an instant query type, please change your query to a range query type"
 
 // handleQuery translates Loki instant queries.
@@ -3077,11 +3091,14 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if p.answerEmptyResult(w, "query", logqlQuery, start) {
+	if p.answerEmptyResult(w, r, "query", logqlQuery, start) {
 		return
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)
-	p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
+	r = p.withPlaceholderExclusion(r, logqlQuery)
+	if p.log.Enabled(r.Context(), slog.LevelDebug) {
+		p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
+	}
 
 	if body, ok := evaluateConstantInstantQuery(logqlQuery, r.FormValue("time")); ok {
 		w.Header().Set("Content-Type", "application/json")

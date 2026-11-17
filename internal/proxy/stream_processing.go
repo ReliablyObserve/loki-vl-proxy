@@ -300,6 +300,7 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 	lineFields := logQueryLineFields(originalQuery)
 	classifyAsParsed := hasLabelParserStage(originalQuery)
 	exposure := p.lineFieldExposure(originalQuery)
+	rowLines := rowLineFieldsOf(exposure, lineFields)
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	levelAsMetadata := categorizedLabels && emitStructuredMetadata
@@ -328,7 +329,7 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
 		streamLabels := parseStreamLabels(asString(entry["_stream"]))
-		msg = storedLogLineFromEntry(msg, entry, streamLabels, lineFields, p.defaultMsgValue())
+		msg = storedLogLineFromEntry(msg, entry, streamLabels, forRowMsg(rowLines, msg), p.defaultMsgValue())
 
 		tsNanos, ok := formatEntryTimestamp(timeStr)
 		if !ok {
@@ -660,6 +661,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	captureFields := regexpCaptureFields(originalQuery)
 	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	lineFields := logQueryLineFields(originalQuery)
+	rowLines := rowLineFieldsOf(exposure, lineFields)
 	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
 	// without emitStructuredMetadata or categorizedLabels (see resolveLogQueryStream).
 	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0 || mergeMetadata || exposure.needsClassification()
@@ -735,7 +737,11 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		rawStream := fjVal.GetStringBytes("_stream")
 		rowStream := rowLevels.stream(rawStream)
 		detected := rowLevels.fjRow(fjVal, fjObj, rowStream)
-		msg := storedLogLineFromFJ(fjVal, rowStream.labels, lineFields, p.defaultMsgValue())
+		rowFields := lineFields
+		if rowLines.active {
+			rowFields = forRowMsg(rowLines, fjVal.GetStringBytes("_msg"))
+		}
+		msg := storedLogLineFromFJ(fjVal, rowStream.labels, rowFields, p.defaultMsgValue())
 		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure)
 
 		// Pass raw bytes to avoid string allocation on descriptor cache hits.
@@ -866,6 +872,12 @@ func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposur
 	line := row.GetStringBytes(translator.StoredLineField)
 	if len(line) == 0 {
 		line = row.GetStringBytes("_msg")
+	}
+	if readsPlaceholderAsLine(exposure, line) {
+		if exposure.hidesPlaceholderLevel() {
+			return nil
+		}
+		return level
 	}
 	if exposure.hidesStoredLevel(line) {
 		return nil
@@ -1193,9 +1205,14 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 	return desc
 }
 
+// maxPresizedStreamLabels bounds the size hint of a descriptor's label map; a
+// larger stream just grows the map once.
+const maxPresizedStreamLabels = 1 << 10
+
 // logQueryStreamDescriptorMiss is the slow path of logQueryStreamDescriptor,
 // used by the metric paths that group raw rows by stream and level: detected_level
-// there still mirrors the level label until metric grouping derives it.
+// there takes the stream rule (ensureStreamDetectedLevel) until metric grouping
+// derives it.
 func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
 	baseLabels, ok := streamLabelCache[rawStream]
 	if !ok {
@@ -1203,18 +1220,35 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 		streamLabelCache[rawStream] = baseLabels
 	}
 
-	rawLabels := cloneStringMap(baseLabels)
-	if _, stored := baseLabels["level"]; level != "" && !stored {
+	// Room for the labels added below (level, detected_level, service_name), so
+	// the map is not grown and copied once they join.
+	_, stored := baseLabels["level"]
+	extra := 1
+	if level != "" && !stored {
+		extra++
+	}
+	if _, ok := baseLabels["service_name"]; !ok {
+		extra++
+	}
+	size := len(baseLabels)
+	if size < maxPresizedStreamLabels {
+		size += extra
+	}
+	rawLabels := make(map[string]string, size)
+	for k, v := range baseLabels {
+		rawLabels[k] = v
+	}
+	if level != "" && !stored {
 		rawLabels["level"] = level // a stream label level keeps its value (see logRowStreamDescriptor)
 	}
-	ensureDetectedLevel(rawLabels)
+	ensureStreamDetectedLevel(rawLabels, baseLabels)
 	ensureSyntheticServiceName(rawLabels)
 
 	passthrough := p == nil || p.labelTranslator == nil || p.labelTranslator.IsPassthrough()
 	translatedLabels := rawLabels
 	if !passthrough {
 		translatedLabels = p.labelTranslator.TranslateLabelsMap(rawLabels)
-		ensureDetectedLevel(translatedLabels)
+		ensureStreamDetectedLevel(translatedLabels, baseLabels)
 		ensureSyntheticServiceName(translatedLabels)
 	}
 
@@ -1266,6 +1300,9 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 		}
 		if _, onStream := streamOnly[key]; onStream && exposure != nil && !rowReady {
 			msg, _ := stringifyEntryValue(entry["_msg"])
+			if readsPlaceholderAsLine(exposure, msg) {
+				msg = storedLogLineFromEntry(msg, entry, streamLabels, exposure.placeholderLineFields, exposure.defaultMsg)
+			}
 			row = lineRow{line: []byte(msg), keys: jsonLineKeys([]byte(msg)), stream: streamLabels}
 			lineMissing, rowReady = isVLMissingMsg(msg, p.defaultMsgValue()), true
 		}
@@ -1386,9 +1423,13 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 	if storedLine != nil {
 		msgRaw = storedLine
 	}
+	placeholder := readsPlaceholderAsLine(exposure, msgRaw)
+	if placeholder {
+		msgRaw = []byte(rebuildLogLineFJ(obj, streamLabels, exposure.placeholderLineFields))
+	}
 	msgKeys := jsonLineKeys(msgRaw)
 	pendingFields = exposure.resolveStreamKeyFields(pendingFields, deferred, msgKeys, msgRaw)
-	row := lineRow{line: msgRaw, keys: msgKeys, stream: streamLabels}
+	row := lineRow{line: msgRaw, keys: msgKeys, stream: streamLabels, placeholder: placeholder}
 	var lineMissing bool
 	if exposure != nil {
 		lineMissing = isVLMissingMsgBytes(msgRaw, p.defaultMsgValue())
@@ -1911,7 +1952,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 		if storedLine == "" {
 			storedLine, _ = stringifyEntryValue(entry["_msg"])
 		}
-		if !exposure.hidesStoredLevel([]byte(storedLine)) {
+		if !exposure.hidesStoredLevelOf([]byte(storedLine)) {
 			labels["level"] = value
 		}
 	}
@@ -1938,6 +1979,10 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	if exposure != nil {
 		if stored, ok := entry[translator.StoredLineField].(string); ok {
 			msg = stored // the line before a line_format VictoriaLogs ran
+		}
+		if readsPlaceholderAsLine(exposure, msg) {
+			msg = storedLogLineFromEntry(msg, entry, streamLabels, exposure.placeholderLineFields, exposure.defaultMsg)
+			lr.placeholder = true
 		}
 		lr.line = []byte(msg)
 		lr.keys = jsonLineKeys(lr.line)
