@@ -229,18 +229,14 @@ func jsonErrorCheckFrom(ctx context.Context) *jsonErrorCheck {
 
 type jsonErrorMarkOffKey struct{}
 
-// jsonErrorStartedKey marks a request whose JSON parser errors are checked:
-// the operand requests of a binary operation are read by the outer check.
-type jsonErrorStartedKey struct{}
-
 // startJSONParserErrorCheck attaches the detection of logql's JSON parser
 // errors to the request, after the ordered JSON evaluator declined it. The
 // probes join the request's unwrap conversion check when it has one (its
 // writer then decides for both); otherwise the returned writer, non-nil, holds
 // the metric's answer until the detection decided.
 func (p *Proxy) startJSONParserErrorCheck(w http.ResponseWriter, r *http.Request, logql string, isRange bool) (*http.Request, *unwrapLookupWriter) {
-	if r.Context().Value(jsonErrorStartedKey{}) != nil {
-		return r, nil
+	if c := unwrapCheckFrom(r.Context()); c != nil && c.json != nil {
+		return r, nil // an operand request of a binary operation: the outer check reads it
 	}
 	expr, ok := sharedLogQLExpr(logql)
 	if !ok {
@@ -250,16 +246,16 @@ func (p *Proxy) startJSONParserErrorCheck(w http.ResponseWriter, r *http.Request
 	if len(probes) == 0 {
 		return r, nil
 	}
-	ctx := context.WithValue(r.Context(), jsonErrorStartedKey{}, true)
+	ctx := r.Context()
 	if c := unwrapCheckFrom(ctx); c != nil {
 		c.json = &jsonErrorCheck{probes: probes}
 		if c.writer != nil {
-			return r.WithContext(ctx), nil
+			return r, nil
 		}
 		// A check that only counts the unwrap nan values has no writer yet.
-		l := &unwrapLookupWriter{p: p, ctx: ctx, parent: r.Context(), check: c, out: w, header: http.Header{}, query: logql}
+		l := &unwrapLookupWriter{p: p, ctx: ctx, parent: ctx, check: c, out: w, header: http.Header{}, query: logql}
 		c.writer = l
-		return r.WithContext(ctx), l
+		return r, l
 	}
 	start, end, step, err := orderedJSONMetricTimes(r, isRange)
 	if err != nil {
@@ -468,18 +464,62 @@ func (j *jsonErrorCheck) rawRowsQuery(base string) string {
 	return marked
 }
 
-// takeRawRowFJ drops the mark from a raw row and records the row's time when
-// it carries one.
-func (j *jsonErrorCheck) takeRawRowFJ(v *fj.Value, ts int64) {
-	if j == nil || v.Get(jsonErrorField) == nil {
-		return
+// rawRowHead reads a raw row's time, stream and level, and whether the row
+// carries the mark. A checked request reads them in one pass over the row's
+// keys, so the mark costs one key comparison per row instead of a lookup of
+// its own, wherever VictoriaLogs places the field; a request without a check
+// looks the three fields up as before. The first of a repeated key wins, as in
+// a lookup, and a field that is not a string reads as absent.
+func (j *jsonErrorCheck) rawRowHead(v *fj.Value) (rawTS, stream, level []byte, marked bool) {
+	if j == nil {
+		return v.GetStringBytes("_time"), v.GetStringBytes("_stream"), v.GetStringBytes("level"), false
 	}
+	o, err := v.Object()
+	if err != nil {
+		return nil, nil, nil, false
+	}
+	var seen uint8
+	o.Visit(func(k []byte, kv *fj.Value) {
+		switch string(k) {
+		case "_time":
+			if seen&1 == 0 {
+				seen |= 1
+				rawTS = rawRowString(kv)
+			}
+		case "_stream":
+			if seen&2 == 0 {
+				seen |= 2
+				stream = rawRowString(kv)
+			}
+		case "level":
+			if seen&4 == 0 {
+				seen |= 4
+				level = rawRowString(kv)
+			}
+		case jsonErrorField:
+			marked = true
+		}
+	})
+	return rawTS, stream, level, marked
+}
+
+func rawRowString(v *fj.Value) []byte {
+	if v.Type() != fj.TypeString {
+		return nil
+	}
+	b, _ := v.StringBytes()
+	return b
+}
+
+// takeRawRowMark drops the mark from a raw row that carries it and records the
+// row's time.
+func (j *jsonErrorCheck) takeRawRowMark(v *fj.Value, ts int64) {
 	v.Del(jsonErrorField)
 	t := time.Unix(0, ts)
 	j.addRawHit(jsonErrorHit{from: t, to: t.Add(time.Nanosecond)})
 }
 
-// takeRawRowEntry is takeRawRowFJ for a decoded row.
+// takeRawRowEntry is takeRawRowMark for a decoded row.
 func (j *jsonErrorCheck) takeRawRowEntry(entry map[string]interface{}, ts int64) {
 	if j == nil {
 		return

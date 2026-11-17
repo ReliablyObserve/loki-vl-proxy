@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A metric read as raw rows (a function the ordered JSON evaluator does not own, such as `sort(rate(... | json [2m]))`
+  or `topk(...)`) spends less time per row. The check that makes a JSON parser error fail such a metric as Loki does now
+  reads the row's time, stream, level and the check's mark in one pass over the row's keys, wherever VictoriaLogs places
+  the mark, instead of a lookup of its own, and a read polls its request's cancellation once per row without walking the
+  request's context chain (the check adds one layer to it instead of two). Answers, statuses and the requests sent to
+  VictoriaLogs do not change.
+
 ### Fixed
 
 - The memory of queries that lately met an unwrap conversion error (it starts the next request's first-window
