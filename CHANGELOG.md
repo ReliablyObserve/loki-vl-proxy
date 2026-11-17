@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `label_replace` inside the binary operand of `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` or `stdvar` is now
+  applied once, as Loki does, on `query` and `query_range`:
+  `topk(1, label_replace(count_over_time({...}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)` answered `pod="x-x-p1"`. The
+  operand's own request applied the call and the handlers applied it again over the ranking's answer; the same held
+  for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
+  (registry `semantics/rank-binary-operand-label-replace-once`).
+
 ### Performance
 
 - Every `query` and `query_range` request skips the SHA-256 digest of its query that the debug log lines carry
