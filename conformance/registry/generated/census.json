@@ -369,6 +369,9 @@
     "semantics/count-values-unsupported | compare:observed",
     "semantics/count-values-unsupported | gap:fixed",
     "semantics/count-values-unsupported | query",
+    "semantics/delete-api-via-victorialogs | compare:observed",
+    "semantics/delete-api-via-victorialogs | gap:open",
+    "semantics/delete-api-via-victorialogs | query",
     "semantics/delete-route-disabled-like-loki | applies_to",
     "semantics/delete-route-disabled-like-loki | compare:exact",
     "semantics/detected-fields-empty-answer | compare:exact",
@@ -1421,6 +1424,9 @@
     "internal/proxy/default_max_query_length_test.go | limits/max-query-length-volume-whole-seconds",
     "internal/proxy/default_max_query_length_test.go | limits/published-equals-enforced",
     "internal/proxy/default_max_query_length_test.go | tenant-query-limits",
+    "internal/proxy/delete_api_test.go | loki_api_v1_delete",
+    "internal/proxy/delete_api_test.go | semantics/delete-api-via-victorialogs",
+    "internal/proxy/delete_api_test.go | vl-delete-tasks-tenant-and-time",
     "internal/proxy/delete_route_test.go | delete-api-requires-token",
     "internal/proxy/delete_route_test.go | loki_api_v1_delete",
     "internal/proxy/delete_route_test.go | semantics/delete-route-disabled-like-loki",
@@ -2446,6 +2452,7 @@
     "internal/queryplan/lower/binop_vector_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_vector_test.go | semantics/vector-call-blank-before-parenthesis-as-query",
     "internal/queryplan/lower/binop_without_empty_test.go | semantics/binary-operand-without-empty-collapses",
+    "internal/queryplan/lower/delete_filter_test.go | semantics/delete-api-via-victorialogs",
     "internal/queryplan/lower/detected_level_ast_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/detected_level_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/exotic_field_names_test.go | semantics/translator-writes-exotic-field-names-bare",
@@ -3097,14 +3104,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 114,
+      "api": 115,
       "drilldown": 53,
       "explore": 201,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 721,
+      "go": 723,
       "playwright": 2
     },
     "page_kinds": {
@@ -3124,7 +3131,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 94,
-    "wired_items": 425
+    "wired_items": 427
   },
   "gates": [
     "A/B shape selection",

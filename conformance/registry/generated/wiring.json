@@ -405,6 +405,7 @@
       "test/e2e-compat/stack_profiles_test.go"
     ],
     "loki_api_v1_delete": [
+      "internal/proxy/delete_api_test.go",
       "internal/proxy/delete_route_test.go"
     ],
     "loki_api_v1_detected_field_name_values": [
@@ -1308,6 +1309,10 @@
       "internal/logql/count_values_test.go",
       "internal/proxy/count_values_test.go",
       "test/e2e-compat/count_values_test.go"
+    ],
+    "semantics/delete-api-via-victorialogs": [
+      "internal/proxy/delete_api_test.go",
+      "internal/queryplan/lower/delete_filter_test.go"
     ],
     "semantics/delete-route-disabled-like-loki": [
       "internal/proxy/delete_route_test.go"
@@ -2706,6 +2711,9 @@
     "versions/stats-bucket-label-v1.45": [
       "internal/proxy/ordered_json_extracted_pushdown_test.go"
     ],
+    "vl-delete-tasks-tenant-and-time": [
+      "internal/proxy/delete_api_test.go"
+    ],
     "vl-empty-in-matches-nothing": [
       "test/e2e-compat/vl_empty_in_test.go"
     ],
@@ -2758,7 +2766,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 619,
+  "registry_items": 630,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3226,6 +3234,11 @@
       "limits/max-query-length-volume-whole-seconds",
       "limits/published-equals-enforced",
       "tenant-query-limits"
+    ],
+    "internal/proxy/delete_api_test.go": [
+      "loki_api_v1_delete",
+      "semantics/delete-api-via-victorialogs",
+      "vl-delete-tasks-tenant-and-time"
     ],
     "internal/proxy/delete_route_test.go": [
       "delete-api-requires-token",
@@ -4976,6 +4989,9 @@
     "internal/queryplan/lower/binop_without_empty_test.go": [
       "semantics/binary-operand-without-empty-collapses"
     ],
+    "internal/queryplan/lower/delete_filter_test.go": [
+      "semantics/delete-api-via-victorialogs"
+    ],
     "internal/queryplan/lower/detected_level_ast_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -6114,7 +6130,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 723,
+  "tests_with_markers": 725,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6212,5 +6228,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 425
+  "wired_items": 427
 }

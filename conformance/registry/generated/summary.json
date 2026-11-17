@@ -2,9 +2,9 @@
   "endpoints": 28,
   "execution": {
     "hybrid": 4,
-    "native_vl": 7,
+    "native_vl": 14,
     "not_implemented": 2,
-    "proxy_side": 15
+    "proxy_side": 8
   },
   "implemented": 26,
   "loki_version": "v3.7.7",
@@ -12,16 +12,16 @@
     "endpoints": 1,
     "execution": {
       "hybrid": 0,
-      "native_vl": 1,
+      "native_vl": 0,
       "not_implemented": 0,
-      "proxy_side": 0
+      "proxy_side": 1
     },
     "implemented": 1,
     "proven": 0,
     "scores": {
       "coverage": 0.0,
       "implementation": 1.0,
-      "native_share_of_implemented": 1.0
+      "native_share_of_implemented": 0.0
     },
     "state": {
       "gap": 0,
@@ -37,9 +37,9 @@
     "endpoints": 27,
     "execution": {
       "hybrid": 4,
-      "native_vl": 6,
+      "native_vl": 14,
       "not_implemented": 2,
-      "proxy_side": 15
+      "proxy_side": 7
     },
     "implemented": 25,
     "proven": 12,
@@ -47,7 +47,7 @@
     "scores": {
       "coverage": 0.7037,
       "implementation": 0.9259,
-      "native_share_of_implemented": 0.24
+      "native_share_of_implemented": 0.56
     },
     "state": {
       "gap": 2,
@@ -71,7 +71,7 @@
   "scores": {
     "coverage": 0.6786,
     "implementation": 0.9286,
-    "native_share_of_implemented": 0.2692
+    "native_share_of_implemented": 0.5385
   },
   "state": {
     "gap": 2,
@@ -81,8 +81,8 @@
     "waived": 0
   },
   "vl_surface": {
-    "endpoints": 11,
-    "pipes": 23,
+    "endpoints": 12,
+    "pipes": 24,
     "stats_functions": 14,
     "version_gated": 2
   },

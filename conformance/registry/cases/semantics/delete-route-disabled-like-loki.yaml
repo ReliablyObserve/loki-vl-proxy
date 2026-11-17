@@ -12,11 +12,9 @@ why: |
   "text/plain; charset=utf-8", before any auth middleware runs. The proxy
   matches that by default by not registering the path, so Go's ServeMux gives
   the same 404 and no tenant, rate-limit or parameter check answers first.
-  Forwarding to VictoriaLogs is a proxy extension enabled with
-  -delete-api-enabled=true; with it on, the existing handler and its
-  safeguards are unchanged. The forwarded /select/logsql/delete path is not a
-  VictoriaLogs route on v1.49.0 through v1.53.0 (VictoriaLogs answers 400
-  "unsupported path requested"), so the extension does not delete anything.
+  The delete API is a proxy extension enabled with -delete-api-enabled=true,
+  behind its own token; with it on, Loki's delete requests run as
+  VictoriaLogs delete tasks (semantics/delete-api-via-victorialogs).
   The e2e Loki runs with retention enabled, so a live comparison there sees
   Loki's registered delete API, not this default; the request below is a GET,
   which only lists delete requests on such a Loki.
@@ -33,8 +31,8 @@ compare:
     404 with "404 page not found\n" and "text/plain; charset=utf-8", with or
     without X-Scope-OrgID and X-Delete-Confirmation, including in tenant-label
     and require-tenant-header modes; nothing reaches VictoriaLogs.
-    -delete-api-enabled=true: the route is registered and the existing
-    handler answers (POST only, confirmation header, selector, 30-day range).
+    -delete-api-enabled=true: the route is registered and the delete API
+    answers (semantics/delete-api-via-victorialogs).
 applies_to:
   loki: ">=3.0.0"
   victorialogs: ">=v1.49.0"

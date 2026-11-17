@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/gorilla/websocket"
 )
@@ -330,6 +331,9 @@ func (p *Proxy) deleteTokenMatches(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(p.deleteAPIAuthToken)) == 1
 }
 
+// errDeleteTokenMissing is the logged cause of a delete request without the delete token.
+var errDeleteTokenMissing = errors.New("delete request without the delete token (-delete-api-auth-token)")
+
 // errDeleteAPIWithoutToken refuses a delete API with nothing to authenticate
 // its callers.
 var errDeleteAPIWithoutToken = errors.New("-delete-api-enabled=true requires -delete-api-auth-token (Helm: deleteAuth.existingSecret): every delete request must carry the token")
@@ -352,7 +356,8 @@ func validateDeleteAPIConfig(enabled bool, deleteAPIAuthToken string) error {
 func (p *Proxy) deleteAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !p.deleteTokenMatches(r) {
-			p.writeError(w, http.StatusUnauthorized, "delete authentication required")
+			// Loki's answer to a request without the credential its route needs; the cause is logged only.
+			p.writeFailure(w, r.Context(), lokierr.NoOrgID(errDeleteTokenMissing), endpointErrorShape("delete"))
 			return
 		}
 		r.Header.Del(deleteTokenHeader)

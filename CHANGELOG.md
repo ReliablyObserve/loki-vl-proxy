@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
+- The route parity test now also gates the VictoriaLogs requests every plan-corpus query sends under each request
+  profile, and counts its VictoriaLogs calls (`X-Loki-VL-Backend-Calls`) cold and on an exact repeat, recorded per
+  profile and construct in `conformance/registry/query-plan.json`: a change that adds a call fails, and one that moves
+  a request fails until it is recorded. So that the probes the proxy races (the json and logfmt parse-risk probes, the
+  checks beside an ordered-JSON stats attempt) send the same requests on every run, a request the test marks waits for
+  every probe it started before reading the verdicts, in the probes' order. Nothing in the proxy marks a request: no
+  answer, status, request sent to VictoriaLogs or cache key changes.
+
+## [2.326.0] - 2026-11-17
+
+### Fixed
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
+  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
+  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
+  answers are unchanged.
+
+## [2.325.0] - 2026-11-17
+
 ### Fixed
 
 - After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
@@ -24,28 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
   Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
   the body). A request that fits one chunk reads exactly as before.
-- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
-  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
-  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
-  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
-  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
-  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
-  answers are unchanged.
-
-### Changed
-
-- The route parity test now also gates the VictoriaLogs requests every plan-corpus query sends under each request
-  profile, and counts its VictoriaLogs calls (`X-Loki-VL-Backend-Calls`) cold and on an exact repeat, recorded per
-  profile and construct in `conformance/registry/query-plan.json`: a change that adds a call fails, and one that moves
-  a request fails until it is recorded. So that the probes the proxy races (the json and logfmt parse-risk probes, the
-  checks beside an ordered-JSON stats attempt) send the same requests on every run, a request the test marks waits for
-  every probe it started before reading the verdicts, in the probes' order. Nothing in the proxy marks a request: no
-  answer, status, request sent to VictoriaLogs or cache key changes.
-
-- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
-  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
-  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
-  translator. No answer, request or cache key changes.
 
 ## [2.324.0] - 2026-11-17
 

@@ -17,51 +17,81 @@
       "implemented": false
     },
     {
-      "execution": "proxy_side",
-      "functions_reached": 54,
+      "execution": "native_vl",
+      "functions_reached": 72,
       "handler": "handleRules",
       "id": "api_prom_rules",
       "implemented": true,
       "proxy_side_work": {},
       "route": "rules_prom",
-      "vl_endpoints": [],
+      "vl_endpoints": [
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
+      ],
       "vl_pipes": [
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:95 handleRules"
+        "internal/proxy/alerting.go:99 handleRules"
       ]
     },
     {
-      "execution": "proxy_side",
-      "functions_reached": 54,
+      "execution": "native_vl",
+      "functions_reached": 72,
       "handler": "handleRules",
       "id": "api_prom_rules_namespace",
       "implemented": true,
       "proxy_side_work": {},
       "route": "rules_prom_nested",
-      "vl_endpoints": [],
+      "vl_endpoints": [
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
+      ],
       "vl_pipes": [
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:95 handleRules"
+        "internal/proxy/alerting.go:99 handleRules"
       ]
     },
     {
-      "execution": "proxy_side",
-      "functions_reached": 54,
+      "execution": "native_vl",
+      "functions_reached": 72,
       "handler": "handleRules",
       "id": "api_prom_rules_namespace_groupname",
       "implemented": true,
       "proxy_side_work": {},
       "route": "rules_prom_nested",
-      "vl_endpoints": [],
+      "vl_endpoints": [
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
+      ],
       "vl_pipes": [
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:95 handleRules"
+        "internal/proxy/alerting.go:99 handleRules"
       ]
     },
     {
@@ -77,31 +107,38 @@
       "implemented": false
     },
     {
-      "execution": "native_vl",
-      "functions_reached": 52,
+      "execution": "proxy_side",
+      "functions_reached": 104,
       "handler": "handleDelete",
       "id": "loki_api_v1_delete",
       "implemented": true,
       "proxy_side_work": {},
       "route": "delete",
-      "vl_endpoints": [
-        "/select/logsql/delete"
+      "vl_endpoints": [],
+      "vl_pipes": [
+        "len"
       ],
-      "vl_pipes": [],
       "where": [
-        "internal/proxy/patterns.go:1430 handleDelete"
+        "internal/proxy/delete_api.go:55 handleDelete"
       ]
     },
     {
       "execution": "native_vl",
-      "functions_reached": 114,
+      "functions_reached": 154,
       "handler": "handleDetectedFieldValues",
       "id": "loki_api_v1_detected_field_name_values",
       "implemented": true,
       "proxy_side_work": {},
       "route": "detected_field_values",
       "vl_endpoints": [
+        "/select/logsql/field_names",
         "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
         "/select/logsql/streams"
       ],
       "vl_pipes": [
@@ -110,12 +147,12 @@
         "sort"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:783 handleDetectedFieldValues"
+        "internal/proxy/label_handlers.go:827 handleDetectedFieldValues"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 100,
+      "functions_reached": 118,
       "handler": "handleDetectedFields",
       "id": "loki_api_v1_detected_fields",
       "implemented": true,
@@ -126,12 +163,12 @@
         "len"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:711 handleDetectedFields"
+        "internal/proxy/label_handlers.go:757 handleDetectedFields"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 88,
+      "functions_reached": 103,
       "handler": "handleDetectedLabels",
       "id": "loki_api_v1_detected_labels",
       "implemented": true,
@@ -142,7 +179,7 @@
         "len"
       ],
       "where": [
-        "internal/proxy/patterns.go:1367 handleDetectedLabels"
+        "internal/proxy/patterns.go:1570 handleDetectedLabels"
       ]
     },
     {
@@ -156,12 +193,12 @@
       "vl_endpoints": [],
       "vl_pipes": [],
       "where": [
-        "internal/proxy/patterns.go:1256 handleDrilldownLimits"
+        "internal/proxy/patterns.go:1457 handleDrilldownLimits"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 2,
+      "functions_reached": 33,
       "handler": "handleFormatQuery",
       "id": "loki_api_v1_format_query",
       "implemented": true,
@@ -170,7 +207,7 @@
       "vl_endpoints": [],
       "vl_pipes": [],
       "where": [
-        "internal/proxy/patterns.go:1246 handleFormatQuery"
+        "internal/proxy/patterns.go:1443 handleFormatQuery"
       ]
     },
     {
@@ -179,7 +216,7 @@
     },
     {
       "execution": "native_vl",
-      "functions_reached": 85,
+      "functions_reached": 105,
       "handler": "handleIndexStats",
       "id": "loki_api_v1_index_stats",
       "implemented": true,
@@ -193,12 +230,12 @@
         "stats"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:546 handleIndexStats"
+        "internal/proxy/label_handlers.go:551 handleIndexStats"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 40,
+      "functions_reached": 50,
       "handler": "handleVolume",
       "id": "loki_api_v1_index_volume",
       "implemented": true,
@@ -209,12 +246,12 @@
         "len"
       ],
       "where": [
-        "internal/proxy/volume.go:192 handleVolume"
+        "internal/proxy/volume.go:193 handleVolume"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 40,
+      "functions_reached": 50,
       "handler": "handleVolumeRange",
       "id": "loki_api_v1_index_volume_range",
       "implemented": true,
@@ -225,12 +262,12 @@
         "len"
       ],
       "where": [
-        "internal/proxy/volume.go:200 handleVolumeRange"
+        "internal/proxy/volume.go:201 handleVolumeRange"
       ]
     },
     {
       "execution": "native_vl",
-      "functions_reached": 121,
+      "functions_reached": 142,
       "handler": "handleLabels",
       "id": "loki_api_v1_label",
       "implemented": true,
@@ -243,19 +280,25 @@
         "len"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:24 handleLabels"
+        "internal/proxy/label_handlers.go:26 handleLabels"
       ]
     },
     {
       "execution": "native_vl",
-      "functions_reached": 151,
+      "functions_reached": 198,
       "handler": "handleLabelValues",
       "id": "loki_api_v1_label_name_values",
       "implemented": true,
       "proxy_side_work": {},
       "route": "label_values",
       "vl_endpoints": [
+        "/select/logsql/field_names",
         "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
         "/select/logsql/stream_field_values",
         "/select/logsql/streams"
       ],
@@ -266,12 +309,12 @@
         "sort"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:124 handleLabelValues"
+        "internal/proxy/label_handlers.go:122 handleLabelValues"
       ]
     },
     {
       "execution": "native_vl",
-      "functions_reached": 121,
+      "functions_reached": 142,
       "handler": "handleLabels",
       "id": "loki_api_v1_labels",
       "implemented": true,
@@ -284,12 +327,12 @@
         "len"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:24 handleLabels"
+        "internal/proxy/label_handlers.go:26 handleLabels"
       ]
     },
     {
       "execution": "hybrid",
-      "functions_reached": 192,
+      "functions_reached": 265,
       "handler": "handlePatterns",
       "id": "loki_api_v1_patterns",
       "implemented": true,
@@ -298,21 +341,27 @@
       },
       "route": "patterns",
       "vl_endpoints": [
-        "/select/logsql/delete",
         "/select/logsql/field_names",
         "/select/logsql/field_values",
+        "/select/logsql/hits",
         "/select/logsql/query",
-        "/select/logsql/streams"
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams",
+        "/select/logsql/tail"
       ],
       "vl_pipes": [
         "drop",
         "len",
         "limit",
         "sort",
-        "unpack_json"
+        "unpack_json",
+        "unpack_logfmt"
       ],
       "where": [
-        "internal/proxy/patterns.go:108 handlePatterns"
+        "internal/proxy/patterns.go:163 handlePatterns"
       ]
     },
     {
@@ -321,7 +370,7 @@
     },
     {
       "execution": "hybrid",
-      "functions_reached": 238,
+      "functions_reached": 387,
       "handler": "handleQuery",
       "id": "loki_api_v1_query",
       "implemented": true,
@@ -348,12 +397,12 @@
         "unpack_json"
       ],
       "where": [
-        "internal/proxy/proxy.go:2721 handleQuery"
+        "internal/proxy/proxy.go:3086 handleQuery"
       ]
     },
     {
       "execution": "hybrid",
-      "functions_reached": 345,
+      "functions_reached": 518,
       "handler": "handleQueryRange",
       "id": "loki_api_v1_query_range",
       "implemented": true,
@@ -367,7 +416,15 @@
       },
       "route": "query_range",
       "vl_endpoints": [
-        "/select/logsql/query"
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
       ],
       "vl_pipes": [
         "drop",
@@ -381,60 +438,90 @@
         "unpack_json"
       ],
       "where": [
-        "internal/proxy/proxy.go:2301 handleQueryRange"
+        "internal/proxy/proxy.go:2625 handleQueryRange"
       ]
     },
     {
-      "execution": "proxy_side",
-      "functions_reached": 54,
+      "execution": "native_vl",
+      "functions_reached": 72,
       "handler": "handleRules",
       "id": "loki_api_v1_rules",
       "implemented": true,
       "proxy_side_work": {},
       "route": "rules",
-      "vl_endpoints": [],
+      "vl_endpoints": [
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
+      ],
       "vl_pipes": [
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:95 handleRules"
+        "internal/proxy/alerting.go:99 handleRules"
       ]
     },
     {
-      "execution": "proxy_side",
-      "functions_reached": 54,
+      "execution": "native_vl",
+      "functions_reached": 72,
       "handler": "handleRules",
       "id": "loki_api_v1_rules_namespace",
       "implemented": true,
       "proxy_side_work": {},
       "route": "rules_nested",
-      "vl_endpoints": [],
+      "vl_endpoints": [
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
+      ],
       "vl_pipes": [
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:95 handleRules"
+        "internal/proxy/alerting.go:99 handleRules"
       ]
     },
     {
-      "execution": "proxy_side",
-      "functions_reached": 54,
+      "execution": "native_vl",
+      "functions_reached": 72,
       "handler": "handleRules",
       "id": "loki_api_v1_rules_namespace_groupname",
       "implemented": true,
       "proxy_side_work": {},
       "route": "rules_nested",
-      "vl_endpoints": [],
+      "vl_endpoints": [
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
+      ],
       "vl_pipes": [
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:95 handleRules"
+        "internal/proxy/alerting.go:99 handleRules"
       ]
     },
     {
       "execution": "hybrid",
-      "functions_reached": 87,
+      "functions_reached": 132,
       "handler": "handleSeries",
       "id": "loki_api_v1_series",
       "implemented": true,
@@ -449,7 +536,7 @@
         "len"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:426 handleSeries"
+        "internal/proxy/label_handlers.go:424 handleSeries"
       ]
     },
     {
@@ -463,57 +550,86 @@
       "vl_endpoints": [],
       "vl_pipes": [],
       "where": [
-        "internal/proxy/alerting.go:128 handleBuildInfo"
+        "internal/proxy/alerting.go:137 handleBuildInfo"
       ]
     },
     {
       "execution": "native_vl",
-      "functions_reached": 68,
+      "functions_reached": 113,
       "handler": "handleTail",
       "id": "loki_api_v1_tail",
       "implemented": true,
       "proxy_side_work": {},
       "route": "tail",
       "vl_endpoints": [
-        "/select/logsql/query"
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams",
+        "/select/logsql/tail"
       ],
       "vl_pipes": [
         "sort"
       ],
       "where": [
-        "internal/proxy/tail.go:26 handleTail"
+        "internal/proxy/tail.go:27 handleTail"
       ]
     },
     {
-      "execution": "proxy_side",
-      "functions_reached": 34,
+      "execution": "native_vl",
+      "functions_reached": 41,
       "handler": "handleAlerts",
       "id": "prometheus_api_v1_alerts",
       "implemented": true,
       "proxy_side_work": {},
       "route": "alerts_prometheus",
-      "vl_endpoints": [],
+      "vl_endpoints": [
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
+      ],
       "vl_pipes": [
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:111 handleAlerts"
+        "internal/proxy/alerting.go:120 handleAlerts"
       ]
     },
     {
-      "execution": "proxy_side",
-      "functions_reached": 54,
+      "execution": "native_vl",
+      "functions_reached": 72,
       "handler": "handleRules",
       "id": "prometheus_api_v1_rules",
       "implemented": true,
       "proxy_side_work": {},
       "route": "rules_prometheus",
-      "vl_endpoints": [],
+      "vl_endpoints": [
+        "/select/logsql/field_names",
+        "/select/logsql/field_values",
+        "/select/logsql/hits",
+        "/select/logsql/query",
+        "/select/logsql/stats_query",
+        "/select/logsql/stats_query_range",
+        "/select/logsql/stream_field_names",
+        "/select/logsql/stream_field_values",
+        "/select/logsql/streams"
+      ],
       "vl_pipes": [
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:95 handleRules"
+        "internal/proxy/alerting.go:99 handleRules"
       ]
     }
   ]
