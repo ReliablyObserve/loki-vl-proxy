@@ -1212,16 +1212,14 @@ func (c *unwrapCheck) recentKey(ctx context.Context, p *Proxy, h unwrapHit) stri
 	return p.contextScopeFingerprint(ctx) + "\x00" + c.query + "\x00" + h.field + "\x00" + h.conv
 }
 
-// unwrapRecentErrors remembers the queries that met a conversion error lately, per tenant.
-var unwrapRecentErrors = &unwrapRecent{at: map[string]time.Time{}}
-
 // How long, and how many, recent conversion errors are remembered.
 const (
 	unwrapRecentTTL = 10 * time.Minute
 	unwrapRecentMax = 1024
 )
 
-// unwrapRecent is a bounded set of keys with the time each was marked.
+// unwrapRecent is a bounded set of keys with the time each was marked. A Proxy holds its own (the queries that met a
+// conversion error lately, per tenant); the zero value is ready to use.
 type unwrapRecent struct {
 	mu sync.Mutex
 	at map[string]time.Time
@@ -1243,6 +1241,9 @@ func (r *unwrapRecent) seen(key string) bool {
 func (r *unwrapRecent) mark(key string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.at == nil {
+		r.at = map[string]time.Time{}
+	}
 	now := time.Now()
 	if _, ok := r.at[key]; !ok && len(r.at) >= unwrapRecentMax {
 		oldest, oldestAt := "", now
@@ -1874,7 +1875,7 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 	if isRange && check.firstMinSpan > 0 {
 		probe := check.probes[0]
 		h := unwrapHit{field: check.fieldNames(probe)[0], conv: probe.conv}
-		if check.end.Sub(check.start)+probe.window >= check.firstMinSpan && unwrapRecentErrors.seen(check.recentKey(ctx, p, h)) {
+		if check.end.Sub(check.start)+probe.window >= check.firstMinSpan && p.unwrapRecentErrors.seen(check.recentKey(ctx, p, h)) {
 			if base, ok := p.unwrapFirstWindowBase(ctx, logql, h.field, h.conv); ok {
 				h.base = base
 				check.startFirstWindow(h, true)
@@ -1962,7 +1963,7 @@ func (l *unwrapLookupWriter) decide() {
 		// Only a conversion error starts a later request's early first-window lookup (a JSON parser error is not
 		// what that lookup finds).
 		if key := l.recentHitKey(); unwrapFailed && key != "" {
-			unwrapRecentErrors.mark(key)
+			l.p.unwrapRecentErrors.mark(key)
 		}
 		// Written with the client's context; the request's own reads (a later operand's) stop: the answer is sent.
 		l.p.writeErr(l.out, l.parent, l.err)

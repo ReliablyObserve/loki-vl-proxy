@@ -2318,6 +2318,7 @@
       "internal/proxy/unwrap_first_window_test.go",
       "internal/proxy/unwrap_fuzz_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
+      "internal/proxy/unwrap_recent_errors_test.go",
       "internal/proxy/unwrap_recorded_loki_test.go",
       "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
@@ -4677,6 +4678,9 @@
       "semantics/unwrap-range-last-point",
       "window-bounds-and-step-alignment"
     ],
+    "internal/proxy/unwrap_recent_errors_test.go": [
+      "semantics/unwrap-conversion-error"
+    ],
     "internal/proxy/unwrap_recorded_loki_test.go": [
       "parser-error-and-label-collision",
       "semantics/unwrap-conversion-error",
@@ -6244,7 +6248,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 733,
+  "tests_with_markers": 734,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
