@@ -40,7 +40,7 @@ func rankScalarGate(t *testing.T, p *Proxy, query string, start, end int64, step
 
 // The scalar fast path of a ranking's binary operand takes exactly the shapes it answers as the binary route does: a
 // range function of lines with line filters only and a number, joined by an arithmetic operator, over a range equal to
-// the step with bounds on the step's grid. Everything else is left to the binary route.
+// the step, on or off the step's grid. Everything else is left to the binary route.
 //
 // conformance: semantics/rank-binary-operand-label-replace-once
 func TestRankScalarFastPathGate(t *testing.T) {

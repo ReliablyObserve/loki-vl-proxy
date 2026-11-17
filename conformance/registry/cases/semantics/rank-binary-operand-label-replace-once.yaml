@@ -20,7 +20,7 @@ why: |
   are fenced (@rank-over-binary-label-replace-v1:).
 
   The same route answers a range function of lines and a number over a
-  tumbling window on the step's grid (`topk(3, count_over_time({..}[15s]) * 2)`
+  tumbling window, range = step (`topk(3, count_over_time({..}[15s]) * 2)`
   at step 15s) from one stats request, as before #1541 (proxyScalarStatsBinary,
   rangeRankScalarOperand): TestRankScalarFastPathMatchesBinaryRoute holds those
   1440 gated requests to the binary route's answer, and every other operand
