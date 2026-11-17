@@ -24,6 +24,12 @@ why: |
   Loki evaluates the binary operation at every step and ranks or folds its
   samples, on query_range as on query.
 
+  On both routes a label_replace inside the binary operand was applied twice:
+  once by the operand's own request and again, from the markers of the
+  translator's text for the whole operand, over the ranking's answer
+  (`topk(1, label_replace(.., "pod", "x-$1", "pod", "(.*)") * 2)` answered
+  pod="x-x-p1"). The operands now apply their own calls only.
+
   The range route now decides from the parsed operand: a binary operation is
   evaluated by the binary route (each operand a query of its own, a chained
   operand its own binary operation), as on query. Found while triaging
@@ -31,12 +37,12 @@ why: |
   top of a query were already right, as they take the binary route.
 
   Recorded with Loki's engine (TestRankingOverBinaryOperandMatchesRecordedLoki,
-  internal/proxy, emulated VictoriaLogs v1.49.0 and v1.53.0): 13 shapes over
+  internal/proxy, emulated VictoriaLogs v1.49.0 and v1.53.0): 15 shapes over
   five operands (three quoted texts, a matcher, a control), 1m and 5m windows,
-  query and query_range at a 15s and a 60s step, 390 requests. Before the change,
-  on each version, every one of the 130 range answers at the 15s step differed
-  (the control too: the first step was missing), 116 of the 130 at the 60s step,
-  and no instant answer.
+  query and query_range at a 15s and a 60s step, 450 requests. Before the change,
+  on each version, every range answer at the 15s step differed (the control
+  too: the first step was missing), most at the 60s step, and the instant
+  answers of the two label_replace shapes.
 corpus:
   size: 5
   dimensions:
@@ -66,9 +72,9 @@ gap:
   fixed_by: '#1614'
   impact: explore-visible
   effort: S
-  area: 'internal/proxy metric_agg.go handleRangeMetricPostAggregation (the operand of a range ranking, sort, stddev or stdvar)'
+  area: 'internal/proxy metric_agg.go handleRangeMetricPostAggregation and handleInstantMetricPostAggregation (the binary operand of a ranking, sort, stddev or stdvar)'
   loki: 'the binary operation is evaluated at each step, then ranked or folded'
-  proxy: 'the same: a binary operand is evaluated from its parsed tree by the binary route, on query_range as on query'
+  proxy: 'the same: a binary operand is evaluated from its parsed tree by the binary route, on query_range as on query, and a label_replace inside it is applied once'
   planned_test: 'TestRankingOverBinaryOperandMatchesRecordedLoki (internal/proxy; recorded Loki engine answers, VictoriaLogs v1.49.0 and v1.53.0); an e2e row against Loki in test/e2e-compat (group semantics) after the stack check'
   visual: none
   visual_reason: 'hand-written queries: Grafana and Drilldown build no ranking over a binary operation; the series and values are compared with recorded Loki answers'

@@ -594,6 +594,9 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		}
 		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, left, right, binOpExprToVMInfo(binOp))
 		dispatched = true
+		// The operands apply their own label_replace calls: the markers of the translator's text for the whole
+		// operand are not applied again.
+		transforms = labelTransforms{}
 	}
 
 	if bin, isBin := binaryOfStats(innerStats, innerIsStats); !dispatched && isBin {
@@ -741,6 +744,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		// translator's text for the whole operand is no reference (a parenthesis in a quoted value, a chain, bool, a
 		// set operator or a vector(n) make it drop or split the operation).
 		p.proxyBinaryLogQL(sc, innerR, binaryInner, "matrix")
+		// The operands apply their own label_replace calls: the markers of the translator's text are not applied again.
+		transforms = labelTransforms{}
 	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.

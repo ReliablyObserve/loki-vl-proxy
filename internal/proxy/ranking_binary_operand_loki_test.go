@@ -41,7 +41,7 @@ func rankingBinaryOperandRows(at int64) []vlemu.Row {
 
 // rankingBinaryOperandQueries are the rankings, stddev, stdvar and sort over a binary operation of op, an operand
 // written with the line filter or matcher given: a parenthesis, an operator or none in a quoted value, chains, bool
-// and vector(n) operands.
+// and vector(n) operands, and a label_replace inside an operand, which rewrites a label once.
 func rankingBinaryOperandQueries(op string) []string {
 	x := op
 	return []string{
@@ -58,6 +58,8 @@ func rankingBinaryOperandQueries(op string) []string {
 		`topk(1, ` + x + ` + vector(1))`,
 		`topk(1, sum(` + x + `) + vector(1))`,
 		`sum(topk(1, ` + x + ` * 2))`,
+		`topk(1, label_replace(` + x + `, "pod", "x-$1", "pod", "(.*)") * 2)`,
+		`sort_desc(label_replace(` + x + `, "pod", "x-$1", "pod", "(.*)") * 2)`,
 	}
 }
 

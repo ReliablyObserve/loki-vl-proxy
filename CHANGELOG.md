@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A tumbling `sum by` operand under a number was stamped one step early.
   - With a step shorter than the range, even `topk(1, rate({...}[1m]) * 2)` lost its first step.
 
+  A `label_replace` inside such a binary operand (`topk(1, label_replace(..., "pod", "x-$1", "pod", "(.*)") * 2)`) now
+  rewrites the label once, on `query` too: it was applied by the operand and again over the ranking's answer
+  (`x-x-p1`).
+
   The binary operation is now evaluated from its parsed tree, operand by operand, by the binary route the instant
   query and a binary operation at the top of a query use. The answers are held to Loki's recorded answers on
   VictoriaLogs v1.49.0 and v1.53.0 (registry `semantics/range-ranking-binary-operand-from-tree`).
