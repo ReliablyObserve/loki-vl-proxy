@@ -44,7 +44,7 @@ TestJSONLabelProbeGatesDifferential	18.7
 TestTwiceGateIsASupersetOfTheKeyPatterns	17.4
 TestOptimization_NoMemoryLeak_SustainedLoad	16.8
 TestLoweringShadow_ProxyEvaluatedRootsAreHeldToTheRoute	16.5
-TestPlanRouteParityCatchesAWrongRoute	16.4
+TestPlanRouteParityCatchesAWrongRoute	20.5
 TestLoad_NoCache_ScalingProfile	15.9
 TestKeepSeriesGrouping_Differential	15.2
 TestStatsExtentCacheDifferentialStreamMetrics	15.0

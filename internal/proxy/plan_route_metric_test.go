@@ -210,8 +210,8 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 		}
 		out.Calls, steps = append(out.Calls, calls...), append(steps, opSteps...)
 	}
-	// Each operand sends its own requests. On a range request the handlers send a request two operands share
-	// once (the second reads the first's answer), which the route does not decide: delegated.
+	// Each operand sends its own requests. On a range request the handlers mostly send a request two operands
+	// share once (the second reads the first's answer), which the route does not decide: delegated.
 	out.Started = len(out.Calls)
 	out.Calls, out.Steps = uniqueSorted(out.Calls), uniqueSorted(steps)
 	if !rp.instant && len(out.Calls) < out.Started {
