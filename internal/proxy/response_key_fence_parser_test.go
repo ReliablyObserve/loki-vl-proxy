@@ -41,6 +41,8 @@ type fenceFacts struct {
 	perStreamSeries bool
 	// rankOverBinary is a ranking, stddev or stdvar whose operand is a binary operation.
 	rankOverBinary bool
+	// rankOverBinaryLabelReplace is such an operand that holds a label_replace call.
+	rankOverBinaryLabelReplace bool
 	// levelChain is a read that may carry the detected_level chain: a range aggregation, or a stage that names
 	// detected_level (a label filter on it, keep or drop of it).
 	levelChain bool
@@ -196,6 +198,7 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 			switch e.Op {
 			case logqlpkg.VectorTopK, logqlpkg.VectorBottomK, logqlpkg.VectorSort, logqlpkg.VectorSortDesc, logqlpkg.VectorStddev, logqlpkg.VectorStdvar:
 				f.rankOverBinary = true
+				f.rankOverBinaryLabelReplace = f.rankOverBinaryLabelReplace || exprHoldsLabelReplace(e.Inner)
 			}
 		}
 		f.expr(e.Inner)
@@ -335,6 +338,7 @@ func fenceWants(query string) map[string]bool {
 		"keyword-label-names":      f.keywordSpelling,
 		"stream-level-series":      f.perStreamSeries || f.levelChain,
 		"rank-over-binary":         f.rankOverBinary,
+		"rank-over-binary-lr":      f.rankOverBinaryLabelReplace,
 		"binary-empty-without":     f.emptyWithoutOperand,
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
@@ -427,6 +431,7 @@ var fenceSpellingBases = []string{
 	`sort_desc(sum by (x) (count_over_time({app="a"}[1m])) > bool 3)`,
 	`sum(bottomk(1, sum by (x) (rate({app="a"}[1m])) and sum by (x) (rate({app="b"}[1m]))))`,
 	`stddev by (x) (sum by (x, y) (rate({app="a"}[1m])) * 2) + 1`,
+	`topk(2, label_replace(sum by (x) (rate({app="a"}[1m])), "y", "x-$1", "x", "(.*)") * 2)`,
 	`sum without () (count_over_time({app="a"} | json [5m])) / 2`,
 	`max without () (rate({app="a"}[5m])) > on(app) group_left sum by (app) (rate({app="a"}[5m]))`,
 }
@@ -668,6 +673,9 @@ func fenceFires(name, query string) bool {
 		"rank-over-binary": func() string {
 			return rankOverBinaryFence(query)
 		},
+		"rank-over-binary-lr": func() string {
+			return rankOverBinaryLabelReplaceFence(query)
+		},
 		"binary-empty-without": func() string { return emptyWithoutOperandResponseKeyVersion(query) },
 	}[name]() != ""
 }
@@ -797,6 +805,13 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"rank-over-binary", `sum by (x) (rate({a="b"}[1m])) / sum by (x) (rate({a="c"}[1m]))`, false},
 		{"rank-over-binary", `stddev(rate({a="b"}[1m]))`, false},
 		{"rank-over-binary", `sum(rate({a="b"}[1m]) / 2)`, false},
+		{"rank-over-binary-lr", `topk(1, label_replace(rate({a="b"}[1m]), "p", "x-$1", "p", "(.*)") * 2)`, true},
+		{"rank-over-binary-lr", `TOPK(1, LABEL_REPLACE(rate({a="b"}[1m]) * 2, "p", "x-$1", "p", "(.*)"))`, true},
+		{"rank-over-binary-lr", "StdDev\t(label_replace(rate({a=\"b\"}[1m]), \"p\", \"$1\", \"p\", \"(.*)\") / #c\n 2)", true},
+		{"rank-over-binary-lr", `sort(sum by (p) (label_replace(rate({a="b"}[1m]), "p", "$1", "p", "(.*)")) > 1)`, true},
+		{"rank-over-binary-lr", `label_replace(topk(1, rate({a="b"}[1m]) * 2), "p", "$1", "p", "(.*)")`, false},
+		{"rank-over-binary-lr", `topk(1, label_replace(rate({a="b"}[1m]), "p", "$1", "p", "(.*)"))`, false},
+		{"rank-over-binary-lr", `topk(1, rate({a="b"}[1m]) * 2)`, false},
 	} {
 		if got := fenceFires(tc.fence, tc.query); got != tc.want {
 			t.Errorf("%s: %+q fires %v, want %v", tc.fence, tc.query, got, tc.want)
@@ -844,4 +859,17 @@ func TestResponseKeyFenceScreensDoNotAllocate(t *testing.T) {
 			}
 		}
 	}
+}
+
+// exprHoldsLabelReplace reports a label_replace call anywhere in e.
+func exprHoldsLabelReplace(e logqlpkg.Expr) bool {
+	switch e := e.(type) {
+	case *logqlpkg.VectorAggregation:
+		return exprHoldsLabelReplace(e.Inner)
+	case *logqlpkg.BinOpExpr:
+		return exprHoldsLabelReplace(e.Left) || exprHoldsLabelReplace(e.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return e.Func == "label_replace" || e.Inner != nil && exprHoldsLabelReplace(e.Inner)
+	}
+	return false
 }

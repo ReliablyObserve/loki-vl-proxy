@@ -39,6 +39,13 @@ func oldCompatQueryRangeFences(r *http.Request, query string) string {
 	return oldCompatQueryFences(r, query) + logfmtPresenceResponseKeyVersion(r, query) + rankOverBinaryFence(query)
 }
 
+// rankOverBinaryLabelReplaceFence is the instant compat site's fence before the rune fence
+// (semantics/rank-binary-operand-label-replace-once), read on its own.
+func rankOverBinaryLabelReplaceFence(query string) string {
+	_, ranked := streamLevelSeriesScan(query)
+	return rankOverBinaryLabelReplaceResponseKeyVersion(query, ranked || scanFenceWords(query).stddev)
+}
+
 // rankOverBinaryFence is the range sites' last fence (semantics/rank-over-binary-operation), read on its own.
 func rankOverBinaryFence(query string) string {
 	_, ranked := streamLevelSeriesScan(query)
@@ -203,7 +210,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			endpoint := strings.TrimSuffix(strings.TrimPrefix(shape.path, "/loki/api/v1/"), "_nostep")
 
 			// The rune fence (rune_response_fence.go) ends the compat chains and is empty for a valid query.
-			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)
+			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+rankOverBinaryLabelReplaceFence(query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)
 			if got := responseKeyFences(r, query, responseKeyCompatQuery); got != oldCompatQuery {
 				t.Errorf("compat query fences differ for %q (%s): got %q want %q", query, shape.name, got, oldCompatQuery)
 			}
@@ -219,7 +226,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			for _, f := range []string{
 				orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
-				streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion,
+				streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion,
 			} {
 				if strings.Contains(oldInner, f) {
 					fired[f] = true
@@ -251,7 +258,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 	for _, f := range []string{
 		orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 		detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
-		streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion,
+		streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion,
 	} {
 		if !fired[f] {
 			t.Errorf("no corpus query fires %s: the differential does not cover it", f)

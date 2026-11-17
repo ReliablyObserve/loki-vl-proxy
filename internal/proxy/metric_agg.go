@@ -597,6 +597,10 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		// A binary operation under aggregations or a label_replace: the operand is a query of its own.
 		dispatched = p.serveWrappedBinaryOperand(sc, r, parsedInner, "vector")
 	}
+	if dispatched {
+		// The operands apply their own label_replace calls.
+		transforms = labelTransforms{}
+	}
 
 	if bin, isBin := binaryOfStats(innerStats, innerIsStats); !dispatched && isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
@@ -737,7 +741,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		// A binary operand (or one under aggregations or a label_replace) is
 		// evaluated operand by operand: the translation of the whole operation
 		// is the marker of its operands' queries, never a query VictoriaLogs
-		// can read.
+		// can read. The operands apply their own label_replace calls.
+		transforms = labelTransforms{}
 	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.
