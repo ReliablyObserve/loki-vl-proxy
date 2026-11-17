@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
+  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
+  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
+  translator. No answer, request or cache key changes.
+
+## [2.326.0] - 2026-11-17
+
+### Fixed
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
+  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
+  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
+  answers are unchanged.
+
+## [2.325.0] - 2026-11-17
+
 ### Fixed
 
 - After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
@@ -24,51 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk over either is cut to a quarter and read again, and the next chunks are sized from what the last one held.
   Only a single step whose window passes one of these is refused (Loki's limit error, or its message-size error for
   the body). A request that fits one chunk reads exactly as before.
-- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
-  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
-  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
-  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator of the same request builds the answer
-  from it, and a later request whose window holds it is decided before the stats query and the checks start. A cold
-  request sends one VictoriaLogs call fewer and a refresh two calls instead of six, the same two on every refresh;
-  answers are unchanged.
-
-### Changed
-
-- The proxy handlers that only read aliases of the query-plan packages (`UnsupportedError`, `WithStreamLabels`, the
-  stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
-  `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
-  translator. No answer, request or cache key changes.
-- **Breaking:** the delete API (`-delete-api-enabled`, behind `-delete-api-auth-token`) now deletes, and answers as
-  Loki's delete API does. A create request (`POST`/`PUT /loki/api/v1/delete`) gets Loki's checks in Loki's order with
-  its texts (`query not set`, `invalid query expression`, `start time not set`, `invalid start time: require unix
-  seconds or RFC3339 format`, the same for the end, `start time can't be greater than or equal to end time`,
-  `deletes in the future are not allowed`, and `max_interval` for a query with a filter), recorded from a Loki that
-  serves the API, and then runs as a
-  VictoriaLogs delete task (`/delete/run_task`; VictoriaLogs needs `-delete.enable`) scoped by the tenant's
-  `AccountID`/`ProjectID` and a filter of the time range (both ends included) and the rows the same log query reads
-  on the read path. A cancel (`DELETE`) answers 204 without `request_id`, stops the tenant's running task of that id,
-  and answers Loki's `404 could not find delete request with given id` for any other id, another tenant's included.
-  Any other method is Loki's bodyless 405. The handler forwarded to `/select/logsql/delete`, which no VictoriaLogs
-  release serves, so nothing was deleted, and it answered the list and cancel with a 405. Breaking for clients of
-  the old handler: the proxy-only `X-Delete-Confirmation` header, the refusal of `{}` and the 30-day cap are gone
-  (Loki has none of them), a request without the delete token answers Loki's `401 no org id` instead of `401 delete
-  authentication required`, and start and end follow Loki's formats (ten-digit seconds or RFC3339, not milliseconds
-  or nanoseconds). Not served, each Loki's `500` with the reason in the log line: the list (VictoriaLogs keeps no
-  record of a request's query and range), a query whose rows a VictoriaLogs filter cannot select (a parser such as
-  `| json`, a filter on a parsed label, a line filter regexp that does not compile), a tenant tenant-label routing confines with its label, the
-  unmapped global tenant `*`, and a start of ten digits past 2262, which Loki reads as 1702 and so deletes a tenant's
-  history back to then (or a start before 1678). VictoriaLogs runs a task at once, where Loki waits for its cancellation period, and
-  answers cached before a delete keep serving the deleted rows until they expire (semantics/delete-api-via-victorialogs).
-
-### Security
-
-- The delete API's guard is its token alone, as Loki's is its tenant: a holder of `-delete-api-auth-token` can delete
-  every stream of a tenant (`{}`) over any range, where the old handler, which deleted nothing, also asked for a
-  confirmation header and refused `{}` and ranges above 30 days. A cancel checks the task's tenant in VictoriaLogs'
-  task list before it stops it (VictoriaLogs' stop call checks none), and a tenant-label proxy refuses deletes for a
-  tenant its label confines (a tenant mapped to its own account is served), since
-  a VictoriaLogs delete task takes no tenant stream filter. VictoriaLogs' answers to the delete calls reach the log
-  only, never a client.
 
 ## [2.324.0] - 2026-11-17
 
