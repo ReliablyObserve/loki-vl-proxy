@@ -367,7 +367,8 @@ func (p *Proxy) unwrapWindowRoute(r *http.Request, spec statsCompatSpec, origSpe
 	if pushed, ok := p.unwrapGroupPushdown(spec, manualFunc, query); ok {
 		return pushed, true, true
 	}
-	if slices.Contains(spec.GroupBy, "_msg") || queryUsesParserStages(spec.ungated()) && slices.Contains(spec.GroupBy, "_stream") {
+	if slices.Contains(spec.GroupBy, "_msg") || queryUsesParserStages(spec.ungated()) && slices.Contains(spec.GroupBy, "_stream") &&
+		!p.listedIdentityWindows(r.Context(), query) {
 		// A parser names a series by its stream and the labels it extracts: the window evaluator folds no aggregation
 		// over such series from buckets (semantics/unwrap-over-time-range-windows-residual-forms).
 		return spec, false, false

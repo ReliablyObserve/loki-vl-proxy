@@ -227,7 +227,8 @@ var extractionListKnown = func() map[string]map[string]string {
 //     over the series, first, last, quantile, rate and rate_counter under an aggregation, a json alias, a ranking,
 //     sort and a grouping by an extracted label, a count of lines;
 //   - semantics/unwrap-per-series-identity-raw-rows: a range longer than the step keeps the stream's series (and an
-//     ungrouped sum each line's);
+//     ungrouped sum each line's) for what the identity does not serve (first, last, quantile, rate_counter, a json
+//     alias); the identity's own shapes merge each series' step buckets into its window (listedIdentityWindows);
 //   - semantics/stdvar-grouped-pooled-variance: an aggregation by labels over stdvar_over_time the identity does not
 //     serve (a range longer than the step) takes the variance of the group's pooled samples (count by counts the
 //     series since semantics/count-over-stdvar-answers-variance, of the stream after a list of more keys than the
@@ -239,19 +240,15 @@ var extractionListKnown = func() map[string]map[string]string {
 //   - semantics/unwrap-rate-counter-window-extrapolation: rate_counter's sixth digit;
 //   - semantics/unwrap-extraction-list-conversion-error: a value the unwrap cannot convert after an extraction list;
 //   - semantics/unwrap-conversion-error-names-another-line: the error over such a value after a parser of every key
-//     names another failing line than Loki's.
+//     names another failing line than Loki's. Which line Loki names varies from one recording to the next (the same
+//     engine and data named the line r6-353 in one recording and r6-346 in another at the instant), so the kinds
+//     listed are the recording's.
 var extractionListKnownRuns = []struct {
 	id, q string
 	kinds []string
 }{
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(min_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(avg_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (sum_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
@@ -275,8 +272,6 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(quantile_over_time(0.9, {app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum by (ns) (quantile_over_time(0.9, {app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (quantile_over_time(0.9, {app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stddev_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stddev_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (stddev_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (rate({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum(rate_counter({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
@@ -286,8 +281,6 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(rate_counter({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum by (ns) (rate_counter({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (rate_counter({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(max_over_time({app="uj"} | json amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(max_over_time({app="uj"} | json amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (max_over_time({app="uj"} | json amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (rate({app="uj"} | json amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum(quantile_over_time(0.9, {app="uj"} | json amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
@@ -311,15 +304,6 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (rate({app="uw"} | logfmt route [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count_over_time({app="uj"} | json route [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (count_over_time({app="uj"} | json route [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (min_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (avg_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (stddev_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (stddev_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `avg by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/extraction-list-empty-label", `max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
 	{"semantics/extraction-list-empty-label", `min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
 	{"semantics/extraction-list-empty-label", `max_over_time({app="uj"} | json amount, route | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
@@ -334,20 +318,12 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-extraction-list-conversion-error", `sum by (ns) (max_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-conversion-error", `max_over_time({app="ub"} | logfmt amount | __error__="" | unwrap amount [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-conversion-error", `min by (ns) (min_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-conversion-error-names-another-line", `max(max_over_time({app="ub"} | logfmt | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/stdvar-grouped-pooled-variance", `sum by (ns) (stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/stdvar-grouped-pooled-variance", `sum by (ns) (stdvar_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
+	{"semantics/unwrap-conversion-error-names-another-line", `max(max_over_time({app="ub"} | logfmt | unwrap amount [5m]))`, []string{"instant", "step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (stdvar_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uj"} | json amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uj"} | json amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (stdvar_over_time({app="uj"} | json amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum(stdvar_over_time({app="uj"} | json a="amount", route | unwrap a [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uj"} | json a="amount", route | unwrap a [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (stdvar_over_time({app="uj"} | json a="amount", route | unwrap a [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(max_over_time({app="um"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `avg(avg_over_time({app="um"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"metric-identity/structured-metadata-splits-series", `sum(max_over_time({app="um"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"metric-identity/structured-metadata-splits-series", `avg(avg_over_time({app="um"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 }
@@ -355,7 +331,7 @@ var extractionListKnownRuns = []struct {
 // TestExtractionListIdentityMatchLoki replays the recorded answers through the handlers and holds every run to Loki's
 // answer, or to its listed difference.
 //
-// conformance: semantics/unwrap-extraction-list-series-identity, semantics/unwrap-bare-range-exposes-parsed-labels, semantics/unwrap-conversion-error-names-another-line, semantics/count-over-stdvar-answers-variance
+// conformance: semantics/unwrap-extraction-list-series-identity, semantics/unwrap-bare-range-exposes-parsed-labels, semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-over-time-range-windows-residual-forms, semantics/unwrap-conversion-error-names-another-line, semantics/count-over-stdvar-answers-variance
 func TestExtractionListIdentityMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")

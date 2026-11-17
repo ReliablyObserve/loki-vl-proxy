@@ -401,3 +401,36 @@ func TestDynamicUnwrapIdentityStreamProfile(t *testing.T) {
 		}
 	}
 }
+
+// ListedUnwrapIdentity names the parser's series identity of an extraction list of plain keys (the stream, its stored
+// level fields and the listed labels, fields of the row), which the window evaluator merges on a range longer than
+// the step; a parser of every key (the series hash) and every shape DynamicUnwrapIdentity turns away are not.
+//
+// conformance: semantics/unwrap-over-time-range-windows-residual-forms
+func TestListedUnwrapIdentity(t *testing.T) {
+	for q, want := range map[string]bool{
+		`sum(stdvar_over_time({app="a"} | logfmt n | unwrap n [5m]))`:             true,
+		`sum by (app) (max_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`:   true,
+		`avg(avg_over_time({app="a"} | json n, m | m="x" | unwrap n [1m]))`:       true,
+		`min by (m) (min_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`:     true,
+		`sum(stdvar_over_time({app="a"} | logfmt | unwrap n [5m]))`:               false,
+		`sum(stdvar_over_time({app="a"} | json a="n" | unwrap a [5m]))`:           false,
+		`count by (app) (max_over_time({app="a"} | logfmt n | unwrap n [5m]))`:    false,
+		`sum(quantile_over_time(0.5, {app="a"} | logfmt n | unwrap n [5m]))`:      false,
+		`sum(stdvar_over_time({app="a"} | logfmt n | unwrap n [5m])) * 2`:         false,
+		`stdvar_over_time({app="a"} | logfmt n | unwrap n [5m])`:                  false,
+		`sum(stdvar_over_time({app="a"} | logfmt n | keep n | unwrap n [5m]))`:    false,
+		`sum without (pod) (max_over_time({app="a"} | logfmt n | unwrap n [5m]))`: false,
+	} {
+		p := rangeAggPlan(q)
+		if p == nil {
+			t.Fatalf("%s: does not parse", q)
+		}
+		if got := ListedUnwrapIdentity(p); got != want {
+			t.Errorf("%s: ListedUnwrapIdentity %v, want %v", q, got, want)
+		}
+		if ListedUnwrapIdentity(p) && !DynamicUnwrapIdentity(p) {
+			t.Errorf("%s: a listed identity that is no dynamic identity", q)
+		}
+	}
+}

@@ -82,6 +82,11 @@ func keepsParsedGroupLabels(ctx context.Context) bool {
 // left to foldUngroupedSum.
 func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, query string, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	chain, ok := seriesAggregationChain(query)
+	if !ok && p.listedIdentityWindows(r.Context(), query) {
+		// An extraction list's series are told apart by their listed labels too: a sum folds them after their
+		// windows like the other operators (listedIdentityChain).
+		chain, ok = listedIdentityChain(query)
+	}
 	if !ok {
 		return foldUngroupedSum(w, r, query, serve)
 	}

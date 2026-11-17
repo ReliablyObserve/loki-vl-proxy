@@ -39,7 +39,10 @@ why: |
   step. Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and
   v1.49.0 on instant, step = range and step > range (TestStddevStdvarMatchLoki:
   the sum by, max by and avg by forms; TestKeepUnwrapIdentityMatchLoki and
-  TestUnwrapDynamicIdentityMatchLoki, json and logfmt). Still open: a range
+  TestUnwrapDynamicIdentityMatchLoki, json and logfmt). After an extraction
+  list a range longer than the step merges each series' deviation buckets into
+  its window too (semantics/unwrap-per-series-identity-raw-rows,
+  listedIdentityWindows). Still open: after a parser of every key, a range
   longer than the step, which the window evaluator answers over the stream's
   series.
 
