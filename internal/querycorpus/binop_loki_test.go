@@ -59,10 +59,12 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 	// lowering holds to the proxy's binary route (an operand with a without clause).
 	queries := binOpGrid()
 	for _, q := range binOpMoreGrid() {
-		if strings.Contains(q, "without") {
+		if strings.Contains(q, "without") || strings.Contains(q, "bool") {
 			queries = append(queries, q)
 		}
 	}
+	// The bool modifier, the set operators and chains, which the lowering holds to the binary route as well.
+	queries = append(queries, binOpRoutedShapes()...)
 	for _, q := range queries {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
@@ -111,7 +113,7 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 	type lokiLabelReplace struct {
 		Dst, Replacement, Src, Regex string
 	}
-	compared, binaries, rejected, folded := 0, 0, 0, 0
+	compared, binaries, rejected, folded, chained := 0, 0, 0, 0, 0
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 		var lf struct {
 			ID           string             `json:"id"`
@@ -165,7 +167,7 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 			t.Errorf("%s: the lowering writes a binary operation, Loki reads none", r.q)
 			continue
 		}
-		if bin.Op != lb.Op || bin.Bool || lb.ReturnBool {
+		if bin.Op != lb.Op || bin.Bool != lb.ReturnBool {
 			t.Errorf("%s: operator %q bool %v, Loki's %q bool %v", r.q, bin.Op, bin.Bool, lb.Op, lb.ReturnBool)
 		}
 		m := bin.Match
@@ -219,14 +221,20 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 				if kind != "*syntax.VectorExpr" {
 					t.Errorf("%s: operand %d is vector(%v), Loki's %s", r.q, side, v.V, kind)
 				}
+			case physical.Binary:
+				// A chain: Loki's operand is a binary operation too (the parenthesis and precedence read alike).
+				if kind != "*syntax.BinOpExpr" || v.Op != binOpOf(planOperand) {
+					t.Errorf("%s: operand %d is the binary operation %q, Loki's %s", r.q, side, v.Op, kind)
+				}
+				chained++
 			default:
 				t.Errorf("%s: operand %d is %T", r.q, side, o)
 			}
 		}
 	}
-	t.Logf("%d lowered rows compared with Loki's tree, %d binary operations (%d operands folded by their without clause); %d rows Loki's parser rejects", compared, binaries, folded, rejected)
-	if binaries == 0 || folded == 0 {
-		t.Fatalf("binary operations compared %d, folded operands %d", binaries, folded)
+	t.Logf("%d lowered rows compared with Loki's tree, %d binary operations (%d operands folded by their without clause, %d operands that are binary operations); %d rows Loki's parser rejects", compared, binaries, folded, chained, rejected)
+	if binaries == 0 || folded == 0 || chained == 0 {
+		t.Fatalf("binary operations compared %d, folded operands %d, chained operands %d", binaries, folded, chained)
 	}
 }
 
@@ -234,6 +242,27 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 type lokiGrouping struct {
 	Groups  []string `json:"groups"`
 	Without bool     `json:"without"`
+}
+
+// binOpOf is the operator of a binary operation node, "" for any other node.
+func binOpOf(n queryplan.Node) string {
+	if b, ok := n.(*queryplan.BinOp); ok {
+		return b.Op
+	}
+	return ""
+}
+
+// binOpRoutedShapes are binary operations with a bool modifier, a set operator or an operand that is a binary
+// operation: Loki's precedence and associativity, the modifiers on each side of a chain.
+func binOpRoutedShapes() []string {
+	a, b := `sum by (app) (rate({app="a"}[5m]))`, `sum by (app) (rate({app="b"}[5m]))`
+	return []string{
+		a + ` > bool 1`, `1 < bool ` + a, a + ` == bool on (app) ` + b, a + ` != bool ignoring (pod) ` + b,
+		a + ` and ` + b, a + ` or ` + b, a + ` unless ` + b, a + ` and on (app) ` + b, a + ` unless ignoring (pod) ` + b,
+		a + ` + ` + b + ` * 2`, a + ` - ` + b + ` - 1`, a + ` ^ ` + b + ` ^ 2`, `(` + a + ` + 1) / ` + b + ` * 100`,
+		a + ` + ` + b + ` > bool 4`, a + ` > 2 and ` + b + ` > 1`, a + ` or ` + b + ` > bool 1`,
+		a + ` / on (app) group_left ` + b + ` + 1`, `(` + a + ` > bool 1) * ` + b,
+	}
 }
 
 // planBinOp is the binary operation at the top of the plan, under its label_replace calls.

@@ -32,7 +32,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/ordered_json_metric.go (stored field provenance)'
-  loki: 'pkg/logql/log/parser.go:152 (suffix only on collision)'
+  loki: 'a parsed key gets the _extracted suffix only on a label collision (TestCompat_BareParserMetricLabels)'
   proxy: 'complete scalar body projections corrected; equal-valued all-body metadata collisions and partial projections remain ambiguous'
   planned_test: 'TestCompat_BareParserMetricLabels and TestHardeningLive_ParserErrorStructuredMetadata (test/e2e-compat); add an all-body equal-metadata fixture when provenance is available'
   clusters:

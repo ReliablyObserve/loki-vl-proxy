@@ -103,6 +103,11 @@ func recordedAnswers(t *testing.T, paths ...string) map[string]lokirecorded.Repl
 	return answers
 }
 
+// unrecordedRow marks a row added by hand that has no answer yet.
+const unrecordedRow = `"loki":{"status":0,`
+
+// copyFiles copies the committed files without the rows that have no answer
+// yet (TestRowsWithoutAnAnswerAreRecorded covers those).
 func copyFiles(t *testing.T) (answers, order string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -112,7 +117,13 @@ func copyFiles(t *testing.T) (answers, order string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(dst, raw, 0o644); err != nil {
+		var kept []string
+		for _, line := range strings.SplitAfter(string(raw), "\n") {
+			if !strings.Contains(line, unrecordedRow) {
+				kept = append(kept, line)
+			}
+		}
+		if err := os.WriteFile(dst, []byte(strings.Join(kept, "")), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -251,5 +262,47 @@ func TestOnlyAnHTTPLokiIsAccepted(t *testing.T) {
 		if _, err := run(config{loki: base, version: "1"}, io.Discard); err == nil {
 			t.Fatalf("%q was accepted", base)
 		}
+	}
+}
+
+// A request whose answer depends on the Loki process (a row with loki_also) is unchanged when Loki gives any of its
+// recorded answers, and changed when Loki gives a third one: a Loki process that answers 404 where another answered
+// 405 does not turn the re-record red, a new answer still does.
+func TestARecordedAlternativeIsNoChange(t *testing.T) {
+	answers, order := copyFiles(t)
+	f, err := lokirecorded.Read(answers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var varied []lokirecorded.Row
+	for _, r := range f.Rows {
+		if len(r.LokiAlso) > 0 && r.Comparable() {
+			varied = append(varied, r)
+		}
+	}
+	if len(varied) < 2 {
+		t.Fatalf("%d comparable rows with recorded alternatives, want at least 2", len(varied))
+	}
+	served := recordedAnswers(t, answers, order)
+	for _, r := range varied {
+		served[r.Request()] = r.LokiAlso[0]
+	}
+	before := mustRead(t, answers)
+	var out bytes.Buffer
+	changed, err := run(config{loki: fakeLoki(t, served, "3.7.9"), files: []string{answers, order}}, &out)
+	if err != nil || changed != 0 {
+		t.Fatalf("changed %d, err %v: an alternative answer counted as a change\n%s", changed, err, out.String())
+	}
+	if mustRead(t, answers) != before {
+		t.Fatal("the file changed although every answer was a recorded one")
+	}
+
+	third := varied[0].Loki
+	third.Status, third.Body = 500, "a third answer"
+	served[varied[0].Request()] = third
+	out.Reset()
+	changed, err = run(config{loki: fakeLoki(t, served, "3.7.9"), files: []string{answers}, check: true}, &out)
+	if err != nil || changed != 1 || !strings.Contains(out.String(), varied[0].ID) {
+		t.Fatalf("changed %d, err %v: a third answer must be reported\n%s", changed, err, out.String())
 	}
 }

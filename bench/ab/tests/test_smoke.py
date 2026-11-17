@@ -69,6 +69,30 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual((cold["between"], cold["below"], cold["rows"]), (1, 1, 2))  # b's cold is not comparable
         self.assertEqual(v["distribution"]["warm"]["below"], 1)
 
+    def test_a_first_ask_is_held_to_its_bound_not_to_loki(self):
+        import over2x
+        dp2 = "DP2 patterns of an environment"
+        bound = over2x.first_ask_bound(dp2, "1h")
+        self.assertIsNotNone(bound)
+        # 8x Loki on the first ask, inside the bound: not above 2x, not red; its warm run keeps the ratio.
+        v = smoke.judge([summary("2026-11-14", row(dp2, "1h", bound / 2, bound / 16), set_name="drilldown-patterns")],
+                        [], self.dir)
+        self.assertFalse(v["red"])
+        self.assertEqual(v["over_2x"], [])
+        self.assertEqual([(r["shape"], r["state"]) for r in v["first_ask"]], [(dp2, "within")])
+        self.assertNotIn("cold", v["distribution"])
+        self.assertEqual(v["distribution"]["warm"]["rows"], 1)
+        # Above the bound it is red, whatever Loki's time.
+        v = smoke.judge([summary("2026-11-14", row(dp2, "1h", bound + 0.5, bound + 1.0), set_name="drilldown-patterns")],
+                        [], self.dir)
+        self.assertTrue(v["red"])
+        self.assertEqual([r["state"] for r in v["first_ask_over"]], ["above_bound"])
+        self.assertIn("above the bound", smoke.render(v, "2026-11-14", "abcdef0123"))
+        # The same shape at a range that is no first ask keeps the Loki ratio on cold.
+        v = smoke.judge([summary("2026-11-14", row(dp2, "6h", 3.0, 1.0), set_name="drilldown-patterns")], [], self.dir)
+        self.assertEqual([(r["mode"], r["range"]) for r in v["over_2x"]], [("cold", "6h")])
+        self.assertEqual(v["first_ask"], [])
+
     def test_loki_failures_and_proxy_errors_are_counted_not_judged(self):
         v = smoke.judge([summary("2026-11-14", row("a", "1h", 9.0, 1.0, loki_status="500"),
                                  row("b", "1h", 9.0, 1.0, status="502"))], [], self.dir)

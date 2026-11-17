@@ -166,9 +166,17 @@ type jsonErrorCheck struct {
 	// sends do not depend on the order its concurrent reads finish in.
 	rawHits []jsonErrorHit
 	found   []jsonFoundError
-	decided bool
-	err     *orderedJSONPipelineError
-	errTS   int64
+	// confirmedRaw counts the raw hits already looked up: the check decides
+	// again on the hits that came later (an operand read after another one
+	// recorded its status), as the unwrap check does.
+	confirmedRaw int
+	// looked holds the answer of each lookup the request sent (by lookup text
+	// and span): a stats answer read again over the same data (a level
+	// derivation's read after the first) confirms its marks without sending
+	// the same lookup again.
+	looked map[string]jsonLookedSpan
+	err    *orderedJSONPipelineError
+	errTS  int64
 
 	// lookups counts the request's lookups against jsonMaxLookups, every stats
 	// answer and the raw rows together. failure is the first lookup
@@ -178,6 +186,12 @@ type jsonErrorCheck struct {
 	lookups atomic.Int32
 	failure error
 	unsure  bool
+}
+
+// jsonLookedSpan is the answer of one lookup: the failing row it found, if any.
+type jsonLookedSpan struct {
+	found jsonFoundError
+	ok    bool
 }
 
 // jsonFoundError is a confirmed failing row: Loki's error and the row's time.
@@ -244,7 +258,7 @@ func (p *Proxy) startJSONParserErrorCheck(w http.ResponseWriter, r *http.Request
 			return r.WithContext(ctx), nil
 		}
 		// A check that only counts the unwrap nan values has no writer yet.
-		l := &unwrapLookupWriter{p: p, ctx: ctx, check: c, out: w, header: http.Header{}}
+		l := &unwrapLookupWriter{p: p, ctx: ctx, parent: r.Context(), check: c, out: w, header: http.Header{}, query: logql}
 		c.writer = l
 		return r.WithContext(ctx), l
 	}
@@ -256,9 +270,9 @@ func (p *Proxy) startJSONParserErrorCheck(w http.ResponseWriter, r *http.Request
 		// Binary operands are evaluated on the step-aligned axis (alignBinaryRangeRequest).
 		start, end = start.Add(-time.Duration(start.UnixNano()%int64(step))), end.Add(-time.Duration(end.UnixNano()%int64(step)))
 	}
-	c := &unwrapCheck{instant: !isRange, start: start, end: end, step: step, json: &jsonErrorCheck{probes: probes}}
+	c := &unwrapCheck{instant: !isRange, start: start, end: end, step: step, query: logql, json: &jsonErrorCheck{probes: probes}}
 	ctx = context.WithValue(ctx, unwrapCheckKey{}, c)
-	l := &unwrapLookupWriter{p: p, ctx: ctx, check: c, out: w, header: http.Header{}}
+	l := &unwrapLookupWriter{p: p, ctx: ctx, parent: r.Context(), check: c, out: w, header: http.Header{}, query: logql}
 	c.writer = l
 	return r.WithContext(ctx), l
 }
@@ -479,16 +493,17 @@ func (j *jsonErrorCheck) confirmAnswer(ctx context.Context, p *Proxy, c *unwrapC
 }
 
 // confirm returns Loki's error for the request: the earliest failing row among
-// the stats answers' confirmed marks and the raw rows' marks, or nil. It is
-// decided once, when the answer is written.
+// the stats answers' confirmed marks and the raw rows' marks, or nil. It runs
+// whenever the writer decides before the answer went out, on the raw hits not
+// looked up yet; once it found an error, that error stands.
 func (j *jsonErrorCheck) confirm(ctx context.Context, p *Proxy, c *unwrapCheck) *orderedJSONPipelineError {
 	j.mu.Lock()
-	if j.decided {
+	if j.err != nil {
 		defer j.mu.Unlock()
 		return j.err
 	}
-	j.decided = true
-	raw := append([]jsonErrorHit(nil), j.rawHits...)
+	raw := append([]jsonErrorHit(nil), j.rawHits[j.confirmedRaw:]...)
+	j.confirmedRaw = len(j.rawHits)
 	j.mu.Unlock()
 	if len(raw) > 0 {
 		if f, ok := j.confirmHits(ctx, p, c, raw); ok {
@@ -531,6 +546,15 @@ func (j *jsonErrorCheck) confirmHits(ctx context.Context, p *Proxy, c *unwrapChe
 				continue
 			}
 			seen[key] = true
+			j.mu.Lock()
+			prev, done := j.looked[key]
+			j.mu.Unlock()
+			if done {
+				if prev.ok {
+					return prev.found, true
+				}
+				continue
+			}
 			if j.lookups.Add(1) > jsonMaxLookups {
 				j.setUnsure()
 				return jsonFoundError{}, false
@@ -544,6 +568,12 @@ func (j *jsonErrorCheck) confirmHits(ctx context.Context, p *Proxy, c *unwrapChe
 				j.setFailure(err)
 				return jsonFoundError{}, false
 			}
+			j.mu.Lock()
+			if j.looked == nil {
+				j.looked = map[string]jsonLookedSpan{}
+			}
+			j.looked[key] = jsonLookedSpan{found: f, ok: ok}
+			j.mu.Unlock()
 			if ok {
 				return f, true
 			}

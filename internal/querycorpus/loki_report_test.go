@@ -17,7 +17,7 @@ const lokiAllowlistPath = "../../test/oracle/loki/similarity-allowlist.json"
 // lokiVerdict is the Loki oracle's answer for one input (test/oracle/loki Verdict).
 type lokiVerdict struct {
 	ID          string `json:"id"`
-	Kind        string `json:"kind"` // client or case
+	Kind        string `json:"kind"` // client
 	Accept      bool   `json:"accept"`
 	Ours        bool   `json:"ours"`
 	SameError   *bool  `json:"same_error,omitempty"`
@@ -40,11 +40,10 @@ type LokiCounts struct {
 	LokiOnly int `json:"loki_only"`
 }
 
-// LokiSummary is the Loki oracle on the corpus's client queries and on Loki's syntax test queries.
+// LokiSummary is the Loki oracle on the corpus's client queries.
 type LokiSummary struct {
 	Version string     `json:"version"`
 	Client  LokiCounts `json:"client"`
-	Case    LokiCounts `json:"case"`
 }
 
 // LokiRegressions are the queries on both the base and the PR that the Loki oracle now judges worse.
@@ -101,10 +100,10 @@ func readLokiVerdicts(t *testing.T, path string) map[string]lokiVerdict {
 func summarizeLoki(version string, verdicts map[string]lokiVerdict) LokiSummary {
 	s := LokiSummary{Version: version}
 	for _, v := range verdicts {
-		c := &s.Client
-		if v.Kind == "case" {
-			c = &s.Case
+		if v.Kind != "client" {
+			continue // a verdict file from before the oracle stopped reading Loki's syntax tests may hold others
 		}
+		c := &s.Client
 		c.Queries++
 		switch {
 		case v.Accept && v.Ours:
@@ -239,13 +238,13 @@ func TestLokiSummaryRegressionsAndSimilarity(t *testing.T) {
 		t.Errorf("regressions = %+v", reg)
 	}
 	s := summarizeLoki("3.7.9", head)
-	if s.Client != (LokiCounts{Queries: 5, BothAccept: 1, BothReject: 2, SameError: 1, OursOnly: 1, LokiOnly: 1}) ||
-		s.Case != (LokiCounts{Queries: 1, BothReject: 1}) {
+	// The "case" verdict is one of an older oracle run (it read Loki's syntax tests): not counted.
+	if s.Client != (LokiCounts{Queries: 5, BothAccept: 1, BothReject: 2, SameError: 1, OursOnly: 1, LokiOnly: 1}) {
 		t.Errorf("summary = %+v", s)
 	}
 	got := lokiFailures(&reg, []SimilarFile{
 		{File: "internal/logql/stage_validate.go", Shared: 9, Allowed: 9},
-		{File: "internal/proxy/new.go", Shared: 3, Best: "pkg/logql/log/util.go"},
+		{File: "internal/proxy/new.go", Shared: 3, Best: "reference/util.go"},
 	})
 	if len(got) != 4 || !strings.HasPrefix(got[3], "internal/proxy/new.go shares 3 token runs") {
 		t.Errorf("failures = %q", got)

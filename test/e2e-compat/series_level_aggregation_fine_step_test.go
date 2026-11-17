@@ -9,13 +9,12 @@ import (
 )
 
 // A count, min, max or avg of a range function takes a value per Loki stream
-// at every step, and a sum by over rate / count_over_time of one selector is the
-// number of active streams over the range (pkg/logql/evaluator.go
-// newBinOpStepEvaluator, VectorAggEvaluator.Next). The proxy folded the
+// at every step, and a sum by over rate / count_over_time of one selector is
+// the number of active streams over the range. The proxy folded the
 // per-stream matrix after encoding it, so a wide range, a fine step or many
 // streams passed -backend-max-buffered-response-bytes with a 500 where Loki
-// answers 200 (semantics/series-level-aggregation-bounded-memory). The fixture
-// is the non-sum one: four streams in two zones.
+// answers 200 (semantics/series-level-aggregation-bounded-memory). The
+// fixture is the non-sum one: four streams in two zones.
 
 // seriesLevelFineSteps: a fine step over a sliding window (every stream has a
 // sample at every step: the shape that buffered most), a step that does not

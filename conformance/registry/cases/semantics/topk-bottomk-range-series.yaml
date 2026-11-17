@@ -17,16 +17,17 @@ why: |
   plain `topk(k, expr)` and `bottomk(k, expr)` already ranked every step on
   their own (the bounded per-step heap of sliding_window_stats.go encodeTopK and
   applyTopKToMatrix, in place before the row was recorded); the differential
-  test found no difference from a port of Loki's heap. The grouped spellings
+  test, now held to Loki's engine answers recorded over the same lines, finds no
+  difference beyond tied places. The grouped spellings
   that did differ are semantics/topk-grouped-spellings.
 
-  Hypothesis for the recorded difference, not verified here: ties. The log
+  Hypothesis for the recorded difference: ties. The log
   generator writes the same number of lines per service in every batch
   (LOG_BATCH lines per service every LOG_INTERVAL seconds), so the counts of the
-  services tie at the k-th place in most windows. Loki keeps its range window in
-  a Go map (pkg/logql/range_vector.go) and its heap evicts only a strictly
-  worse sample (pkg/logql/evaluator.go:551-561), so its pick among tied values
-  varies from step to step and its union grows; the proxy's pick (label order)
+  services tie at the k-th place in most windows. Loki's pick among tied values
+  varies from one evaluation to the next (its engine, asked the same tied query
+  40 times, keeps different series: TestTopKTieAtKthPlaceLokiVariesProxyByLabelKey),
+  so its union grows; the proxy's pick (label order)
   is stable. No proxy answer can reproduce that randomness, so the comparison
   is tie-tolerant: the values selected per step must match, the series only
   where no tie sits on the k-th place.
@@ -57,9 +58,9 @@ gap:
   visual_reason: 'the plain spelling ranked per step before #736 and nothing visible changed for it; the difference left is Loki choosing at random among tied counts, which no proxy answer can reproduce on the visual stack; the grouped spellings are the visual fix of semantics/topk-grouped-spellings'
   effort: M
   area: 'internal/proxy sliding_window_stats.go (encodeTopK), metric_binary.go (applyTopKToMatrix); cases limits/top-n-ranking-not-silent'
-  loki: 'pkg/logql/evaluator.go:443-494, :551-561 VectorAggEvaluator topk/bottomk per step; pkg/logql/range_vector.go window map; pkg/logql/vector.go heaps'
+  loki: 'topk and bottomk rank per step, so a series has a point only at the steps it ranks (test/e2e-compat topk_range_per_step_test.go)'
   proxy: 'k series per step over every series (bounded heap over the VictoriaLogs window stats); ties broken by label order'
-  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential and TestTopKRangeDifferentialRawEvaluator (internal/proxy)'
+  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential and TestTopKRangeDifferentialRawEvaluator against Loki''s recorded engine answers, TestTopKReferenceMatchesRecordedLoki, FuzzTopKPerStep and TestTopKTieAtKthPlaceLokiVariesProxyByLabelKey (internal/proxy)'
   note: 'Measured on origin/main cf738b80. The plain spelling already ranked per step before #736, so nothing here changed for it but the shared NaN comparison; the tie explanation of the recorded difference is verified only once TestCompat_TopkRangePerStep runs against Loki 3.7.7 and VictoriaLogs (it is written and not yet run). If Loki shows fewer ties than assumed, this row reopens.'
   clusters:
     - 8bc2e155

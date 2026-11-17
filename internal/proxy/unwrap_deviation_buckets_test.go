@@ -253,7 +253,15 @@ func FuzzMergeDeviationBuckets(f *testing.F) {
 			return
 		}
 		want := directVariance(all)
-		if math.Abs(got-want) > 1e-9*math.Max(1, want) {
+		// The merge rebuilds each bucket's squared deviations from its standard deviation and recombines the bucket
+		// means, which sit at the offset (up to 3e7): its rounding grows with one ulp of that mean, beside the relative
+		// bound of the variance itself.
+		sum := 0.0
+		for _, v := range all {
+			sum += v
+		}
+		ulp := math.Nextafter(math.Abs(sum/float64(len(all))), math.Inf(1)) - math.Abs(sum/float64(len(all)))
+		if math.Abs(got-want) > 1e-9*math.Max(1, want)+16*ulp*math.Sqrt(math.Max(1, want)) {
 			t.Fatalf("variance %v, want %v (buckets %v)", got, want, buckets)
 		}
 		if len(means) > 1 {

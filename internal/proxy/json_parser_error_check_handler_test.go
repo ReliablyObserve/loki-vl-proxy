@@ -144,7 +144,9 @@ func TestJSONParserErrorCheckHandlers(t *testing.T) {
 				t.Fatalf("%d lookups, calls %q", lookups, calls)
 			}
 			for _, c := range calls {
-				if !strings.Contains(c, jsonValidField) {
+				// Every read that unpacks the line carries the mark; the level-presence probe reads stored fields
+				// and the line's text, not its JSON.
+				if strings.Contains(c, "unpack_json") && !strings.Contains(c, jsonValidField) {
 					t.Errorf("an unmarked read: %s", c)
 				}
 			}
@@ -203,14 +205,21 @@ func TestJSONParserErrorCheckHandlers(t *testing.T) {
 			t.Fatalf("status %d: %s\nwant %s", got.Code, got.Body.String(), want.Body.String())
 		}
 		calls, lookups := fake.snapshot()
-		unmarked := 0
+		marked, unmarked := 0, 0
 		for _, c := range calls {
-			if strings.HasPrefix(c, "/select/logsql/stats_query") && !strings.Contains(c, jsonValidField) {
+			if !strings.HasPrefix(c, "/select/logsql/stats_query") {
+				continue
+			}
+			if strings.Contains(c, jsonValidField) {
+				marked++
+			} else {
 				unmarked++
 			}
 		}
-		if lookups != 1 || unmarked != 1 {
-			t.Errorf("%d lookups, %d unmarked reads, want 1 and 1: %q", lookups, unmarked, calls)
+		// Each marked stats read (the metric's, and the level derivation's read of a stream without a level label)
+		// is read again unmarked once; the lookup of their shared span is sent once.
+		if lookups != 1 || marked == 0 || unmarked != marked {
+			t.Errorf("%d lookups, %d marked and %d unmarked reads, want 1 lookup and one unmarked read per marked one: %q", lookups, marked, unmarked, calls)
 		}
 	})
 }

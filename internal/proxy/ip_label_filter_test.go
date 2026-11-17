@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
 // fakeVLIPInRange is VictoriaLogs' ipv4_range / ipv6_range on one value: a
@@ -82,25 +84,6 @@ func ipFilterRows(s0 time.Time) []pushdownRow {
 	return rows
 }
 
-// lokiIPLineKept is Loki's answer for a whole-address or absent addr
-// (pkg/logql/log/ip.go:123-145): an absent label never matches, = keeps a
-// line whose address netip parses and the pattern contains, != the others.
-func lokiIPLineKept(msg, pattern string, negate bool) bool {
-	_, after, found := strings.Cut(msg, " addr=")
-	if !found {
-		return false
-	}
-	in := false
-	if a, err := netip.ParseAddr(after); err == nil {
-		if p, perr := netip.ParsePrefix(pattern); perr == nil {
-			in = p.Contains(a)
-		} else {
-			in = netip.MustParseAddr(pattern) == a
-		}
-	}
-	return in != negate
-}
-
 // The ip() label filter answers like Loki on log and metric queries: a line
 // without the label is dropped under = and !=, a whole address in the
 // pattern is kept by = and dropped by !=, a leading-zero address holds no
@@ -114,21 +97,40 @@ func TestIPLabelFilter_LogsAndMetricsLikeLoki(t *testing.T) {
 	defer srv.Close()
 	p := newFilterPushdownProxy(t, srv.URL)
 	start, end := s0, s0.Add(10*time.Minute)
-	for _, tc := range []struct {
+	type filterCase struct {
 		pattern string
 		negate  bool
-	}{{"1.2.3.4", false}, {"1.2.3.4", true}, {"1.2.3.0/24", false}, {"1.2.3.0/24", true}, {"2001:db8::/32", false}, {"2001:db8::/32", true}} {
+	}
+	filters := []filterCase{{"1.2.3.4", false}, {"1.2.3.4", true}, {"1.2.3.0/24", false}, {"1.2.3.0/24", true}, {"2001:db8::/32", false}, {"2001:db8::/32", true}}
+	logQueryOf := func(tc filterCase) string {
+		op := "="
+		if tc.negate {
+			op = "!="
+		}
+		return fmt.Sprintf(`{service_name="payment-service"} | logfmt | addr%sip(%q)`, op, tc.pattern)
+	}
+	// What Loki's pipeline keeps of every line (test/oracle/loki process; LVP_RUN_ORACLES=1 records again).
+	var cases []oraclerun.ProcessCase
+	for _, tc := range filters {
+		for _, r := range rows {
+			cases = append(cases, oraclerun.ProcessCase{Query: logQueryOf(tc), Labels: r.stream, Line: r.msg})
+		}
+	}
+	answers := lokiProcessAnswers(t, "ip_label_filter", cases)
+	for fi, tc := range filters {
 		op := "="
 		if tc.negate {
 			op = "!="
 		}
 		want := 0
-		for _, r := range rows {
-			if lokiIPLineKept(r.msg, tc.pattern, tc.negate) {
+		for i := range rows {
+			if a := answers[fi*len(rows)+i]; a.Error != "" {
+				t.Fatalf("%s: Loki rejects it: %s", logQueryOf(tc), a.Error)
+			} else if a.Keep {
 				want++
 			}
 		}
-		logQuery := fmt.Sprintf(`{service_name="payment-service"} | logfmt | addr%sip(%q)`, op, tc.pattern)
+		logQuery := logQueryOf(tc)
 		params := url.Values{"query": {logQuery}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "limit": {"1000"}}
 		rec := httptest.NewRecorder()
 		p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))

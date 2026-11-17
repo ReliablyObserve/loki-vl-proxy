@@ -64,7 +64,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/logql parseLabelList, parseGrouping, parseDropKeepList (the label list of a grouping, a vector matching, group_left/group_right, drop and keep)'
-  loki: 'pkg/logql/syntax/expr.y labels: IDENTIFIER | labels COMMA IDENTIFIER; drop and keep lists need one item and one after each comma'
+  loki: 'drop and keep lists need one item and one after each comma'
   proxy: 'the lists are read as Loki reads them and rejected with Loki''s text at parse time, before the response cache, the plan or any VictoriaLogs call'
   planned_test: 'TestLabelListCommasMatchLoki (internal/logql, 916 recorded Loki answers); TestRejectedQueryNeverReachesVictoriaLogs and TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix (internal/proxy: zero VictoriaLogs requests on every route, no cached 200 served); TestCompat_LabelListTrailingCommaLikeLoki (test/e2e-compat, group core)'
   visual: none

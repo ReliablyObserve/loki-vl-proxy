@@ -2,11 +2,10 @@ package logql
 
 import "testing"
 
-// Loki v3.7.7 has no count_values: pkg/logql/syntax/lex.go:114-125 maps no
-// token to it and the vectorOp production (syntax.y:477-490, ast.go:1243-1254)
-// has no entry for it, so its parser rejects the name as an IDENTIFIER wherever
-// an expression starts, with the position of the identifier. The messages are
-// the output of syntax.ParseExpr on v3.7.7.
+// Loki v3.7.7 has no count_values: its lexer maps no token to it and its
+// grammar has no vector operation for it, so its parser rejects the name as an
+// IDENTIFIER wherever an expression starts, with the position of the
+// identifier. The messages are Loki v3.7.7's own parse answers.
 // conformance: semantics/count-values-unsupported
 func TestCountValuesRejectedLikeLoki(t *testing.T) {
 	const inner = `count_over_time({env="production"}[5m])`

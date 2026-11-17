@@ -16,11 +16,9 @@ import (
 
 // absent_over_time is one series, labelled by the stream selector's equality
 // matchers and valued 1, at the steps whose window (t-range, t] holds no line
-// the pipeline keeps, and nothing at the steps that do
-// (pkg/logql/evaluator.go:647-664 and :754-778 AbsentRangeVectorEvaluator,
-// :1320-1345 absentLabels; the parser stages do not change that: the extractor
-// keeps no labels, syntax/extractor.go:44-48). The proxy answered the inverse
-// with a parser stage: a series per stream where data exists, nothing where no
+// the pipeline keeps, and nothing at the steps that do (the parser stages do
+// not change that: the extractor keeps no labels). The proxy answered the
+// inverse with a parser stage: a series per stream where data exists, nothing where no
 // line matches (semantics/absent-over-time-semantics).
 //
 // The fixtures sit 20 to 22 hours back, outside the hours other tests ingest

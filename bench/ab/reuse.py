@@ -13,13 +13,22 @@ the delta on the row (`reuse`). The keys are the ones test/caseverify reads:
   translations                    LogQL translations (loki_vl_proxy_translations_total)
 
 report.py puts the first run's delta (cold), the median of the later runs' (repeat: the same shape with its window
-moved by a minute, as the A/B runs it) and the refresh pass's on each summary row. Not measured, for want of a
-metric: allocations per request, plan and translation cache hits, the reuse of proxy-evaluated operators, and a
-per-request attribution of the counters (the proxy's background work counts too).
+moved by a minute, as the A/B runs it) and the refresh pass's on each summary row.
+
+The VictoriaLogs calls of a request are the proxy's own count of that request (the X-Loki-VL-Backend-Calls header of
+a proxy run with -debug-vl-calls-header) when the answer carries it: `vl_calls` of the row's reuse is that count and
+`background_vl_calls` what the process-wide counters saw beyond it (health probes, the stream field inventory's
+refreshes, other clients). A proxy that sends no header (an older build) leaves `vl_calls` the process-wide counter's
+delta, which includes its background work. The counters still give bytes, hit ratios and CPU. Not measured, for want
+of a metric: allocations per request, plan and translation cache hits, and the reuse of proxy-evaluated operators.
 """
 import re
 import statistics
 import urllib.request
+
+# The proxy's own count of the VictoriaLogs calls one request started before its response headers were written
+# (-debug-vl-calls-header, internal/proxy vl_calls_header.go).
+CALLS_HEADER = "X-Loki-VL-Backend-Calls"
 
 LINE = re.compile(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{(.*)\})?\s+(\S+)')
 LABEL = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"')
@@ -92,3 +101,24 @@ def median(deltas):
     keys = sorted({k for d in deltas for k in d})
     out = {k: round(statistics.median(d.get(k, 0.0) for d in deltas), 6) for k in keys}
     return {k: v for k, v in out.items() if v != 0}
+
+
+def calls_of(value):
+    """The calls of a X-Loki-VL-Backend-Calls header value: a non-negative integer, else None (absent is not 0)."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 0 else None
+
+
+def with_request_calls(d, calls):
+    """A delta whose vl_calls is the request's own count; what the counters saw beyond it is background_vl_calls."""
+    out = dict(d)
+    total = out.pop("vl_calls", 0.0)
+    if calls:
+        out["vl_calls"] = float(calls)
+    background = round(max(0.0, total - calls), 6)
+    if background:
+        out["background_vl_calls"] = background
+    return out

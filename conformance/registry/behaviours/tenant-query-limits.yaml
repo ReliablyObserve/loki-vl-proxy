@@ -4,7 +4,8 @@ title: Loki's per-tenant query limits, enforced as published
 
 loki: |
   Loki's query limits are limits_config fields with a default, a global value
-  and per-tenant overrides (pkg/validation/limits.go, v3.7.7):
+  and per-tenant overrides (Loki's limits_config reference,
+  https://grafana.com/docs/loki/latest/configure/#limits_config, v3.7.7):
   max_query_series (500), max_entries_limit_per_query (5000), max_query_length
   (721h), max_query_lookback (0), max_query_range (0) and query_timeout (1m).
   /config/tenant/v1/limits (YAML) and /loki/api/v1/drilldown-limits (JSON)
@@ -29,7 +30,8 @@ proxy: |
   One resolver answers both enforcement and the published limits, per tenant:
   -tenant-limits[tenant] -> -tenant-default-limits -> the proxy flag
   (-max-stats-query-series, -max-entries-limit-per-query,
-  -default-max-query-length, -backend-timeout) -> Loki's default.
+  -default-max-query-length, -backend-timeout) -> the built-in default (Loki's,
+  except max_query_series: the proxy's 1000, above Loki's 500).
   -default-max-query-length defaults to Loki's 721h, so a proxy with no
   length configured rejects and publishes what Loki does; 0 turns it off. Every metric
   route reads max_query_series from it; the request middleware applies

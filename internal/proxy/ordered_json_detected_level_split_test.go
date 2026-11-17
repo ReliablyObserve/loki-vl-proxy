@@ -19,8 +19,7 @@ import (
 // errors is answered by the split pushdown (ordered_json_valid_split.go):
 //
 //   - `sum by (detected_level) (count_over_time({...} | json [1m]))` keeps the
-//     errors, so Loki fails it on a line its parser rejects
-//     (RangeVectorEvaluator.Next, logqlmodel.NewPipelineErr) and otherwise
+//     errors, so Loki fails it on a line its parser rejects and otherwise
 //     counts every line by the level Loki's ingest gave it (jsonSplitStrict);
 //   - `sum by (detected_level) (count_over_time({...} | json | __error__!="" [1m]))`
 //     counts the lines Loki's parser rejects (jsonSplitErrors).
@@ -178,7 +177,7 @@ func runDetectedLevelSplit(t *testing.T, rows []pushdownRow, query string, start
 	code, got, body := runSplitQuery(t, p, query, start, end, step)
 	switch {
 	case wantErr != nil:
-		// Loki's error body is the message alone (pkg/util/server/error.go WriteError).
+		// Loki's error body is the message alone.
 		status, _, text := lokiClientError(context.Background(), wantErr)
 		if code != status || body != text {
 			t.Fatalf("%s: got %d %q, want the row evaluator's %d %q", label, code, body, status, text)
@@ -530,7 +529,7 @@ func TestJSONDetectedLevelSplitOffGridBoundsAlign(t *testing.T) {
 		// Through the alignment middleware, as the server routes query_range.
 		params := url.Values{"query": {tc.query}, "start": {strconv.FormatInt(start.Add(off).UnixNano(), 10)}, "end": {strconv.FormatInt(end.Add(off).UnixNano(), 10)}, "step": {"60"}}
 		rec := httptest.NewRecorder()
-		p.stepAlignMiddleware("query_range", p.handleQueryRange)(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+		p.alignToStepMiddleware("query_range", p.handleQueryRange)(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: status %d: %s", tc.query, rec.Code, rec.Body)
 		}

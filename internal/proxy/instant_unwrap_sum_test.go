@@ -58,7 +58,7 @@ func TestInstantUnwrapSumCollapsesStreams(t *testing.T) {
 
 // Every outer operator but the additive sum reads one value per stream, and
 // folds those values into the one series without labels that Loki's bare
-// aggregation makes (pkg/logql/evaluator.go VectorAggEvaluator.Next): the number
+// aggregation makes: the number
 // of streams for count, their largest and mean value for max and avg.
 //
 // conformance: profiles/sanitized-json-key-grouping, semantics/non-sum-vector-aggregation-unreduced

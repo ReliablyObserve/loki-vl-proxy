@@ -4,7 +4,7 @@ import "testing"
 
 // The inner stats of a fold over a range aggregation whose pipeline ends in
 // a bare | keep group by the kept labels: Loki deletes every other label
-// (pkg/logql/log/keep_labels.go:15-45), so the streams that keep the same
+// (recorded Loki answers, internal/proxy TestKeepSeriesGrouping_Differential), so the streams that keep the same
 // labels are one series.
 // conformance: semantics/keep-leaves-labels-loki-drops
 func TestTrailingKeepGrouping(t *testing.T) {

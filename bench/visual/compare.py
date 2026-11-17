@@ -219,8 +219,8 @@ def same_ranked(a, b):
     """None when two topk/bottomk answers hold the same ranked values at every step, else a short reason.
 
     When several series tie across the k-th place at a step, Loki keeps the tied one its map yields
-    (pkg/logql/evaluator.go VectorAggEvaluator.Next: the heap root is replaced only by a strictly better
-    value, and the inner aggregation hands the series over in map order), so the union of series over
+    (a tied series does not replace the heap root, and the inner aggregation hands the series over in
+    map order), so the union of series over
     the range differs between runs of Loki itself, while the ranked values never do. The proxy breaks
     the tie on the label key. The series sets are therefore not compared: every step's sorted values are,
     per query ref, and so are the label names the series carry and the frame schema and meta of the series
@@ -431,15 +431,15 @@ def _detected_labels(a, b):
     if not lb or sorted(pa) != sorted(lb):
         return None
     cardinality = "" if pa == lb else ("sampled cardinality: Loki counts every stream its ingesters hold, not the requested window "
-                                      "(pkg/ingester/instance.go LabelsWithValues), the proxy the window's last 5 minutes "
+                                      "(registry drilldown/detected-labels-sampled-cardinality), the proxy the window's last 5 minutes "
                                       "(metadataMaxFieldNamesWindow); the label names match")
     order = [x.get("label") for x in (a.get("detectedLabels") or [])] != [x.get("label") for x in (b.get("detectedLabels") or [])]
     return _join(cardinality, _envelope(a, b), "Loki lists labels in no fixed order" if order else "")
 
 
 def _index_stats(a, b):
-    """Loki's bytes (uncompressed chunk KB, pkg/storage/stores/shipper/indexshipper/tsdb/store.go:159-174 and
-    pkg/logproto/extensions.go:119-123) and chunk count have no VictoriaLogs equivalent. Its streams and entries are
+    """Loki's bytes (uncompressed chunk KB, registry quality/index-stats-bytes-and-chunks) and chunk count have no
+    VictoriaLogs equivalent. Its streams and entries are
     estimates too (chunks pro-rated by time, sources summed: registry quality/index-stats-loki-chunk-accounting), but
     exact for the visual stack's flushed, uncached seed, so a difference there stays counted."""
     if {k: a.get(k) for k in ("streams", "entries")} != {k: b.get(k) for k in ("streams", "entries")}:

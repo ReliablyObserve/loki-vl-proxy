@@ -2,9 +2,9 @@
   "endpoints": 28,
   "execution": {
     "hybrid": 4,
-    "native_vl": 7,
+    "native_vl": 15,
     "not_implemented": 2,
-    "proxy_side": 15
+    "proxy_side": 7
   },
   "implemented": 26,
   "loki_version": "v3.7.7",
@@ -37,9 +37,9 @@
     "endpoints": 27,
     "execution": {
       "hybrid": 4,
-      "native_vl": 6,
+      "native_vl": 14,
       "not_implemented": 2,
-      "proxy_side": 15
+      "proxy_side": 7
     },
     "implemented": 25,
     "proven": 12,
@@ -47,7 +47,7 @@
     "scores": {
       "coverage": 0.7037,
       "implementation": 0.9259,
-      "native_share_of_implemented": 0.24
+      "native_share_of_implemented": 0.56
     },
     "state": {
       "gap": 2,
@@ -71,7 +71,7 @@
   "scores": {
     "coverage": 0.6786,
     "implementation": 0.9286,
-    "native_share_of_implemented": 0.2692
+    "native_share_of_implemented": 0.5769
   },
   "state": {
     "gap": 2,

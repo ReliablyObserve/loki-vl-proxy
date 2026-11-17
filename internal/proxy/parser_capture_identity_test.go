@@ -41,7 +41,10 @@ func TestParserCaptures_StatsBucketsKeepCaptureLabels(t *testing.T) {
 		_ = r.ParseForm()
 		switch r.URL.Path {
 		case "/select/logsql/stats_query_range":
-			statsQuery = r.FormValue("query")
+			if statsQuery == "" {
+				// The read itself; a second one reads the streams without a level label (withLevelLessStreams).
+				statsQuery = r.FormValue("query")
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"status": "success",

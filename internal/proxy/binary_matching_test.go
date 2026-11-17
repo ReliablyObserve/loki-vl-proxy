@@ -230,7 +230,7 @@ func TestBinaryScalarSubtreesAndIEEEValues(t *testing.T) {
 	p := newTestProxy(t, "http://127.0.0.1:1")
 	for _, tc := range []struct{ query, want string }{
 		{"1 + 2 * 3", "7"}, {"2 ^ 3 ^ 2", "512"}, {"1 / 0", "NaN"}, {"-1 / 0", "NaN"}, {"1 % 0", "NaN"}, {"0 / 0", "NaN"}, {"1 < bool 2", "1"}, {"1 > 2", "0"},
-		// A zero divisor of / and % is NaN in Loki (syntax.MergeBinOp), not +Inf.
+		// A zero divisor of / and % is NaN in Loki (recorded: binary_operator_values), not +Inf.
 		// Loki renders sample values with model.SampleValue.String ('f', -1):
 		// never exponent notation for large or small magnitudes.
 		{"1234 * 1000", "1234000"}, {"1 / 60000", "0.000016666666666666667"},

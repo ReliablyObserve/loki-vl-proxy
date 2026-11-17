@@ -14,15 +14,12 @@ import (
 )
 
 // Loki's /index/stats reads chunk metadata from its index: streams with a
-// chunk in the window, and the chunks' entries pro rata by time
-// (pkg/storage/stores/shipper/indexshipper/tsdb/index/chunk.go:262-267,
-// tsdb/single_file_index.go:340-376). On the single-binary stack the querier
-// reads only the store (pkg/querier/querier.go:529-557; no AsyncStore for
-// target all, pkg/loki/modules.go:1078-1101), so it counts flushed chunks only.
-// For chunks that lie wholly inside the window and are counted once, those
+// chunk in the window, and the chunks' entries pro rata by time. On the
+// single-binary stack the querier reads only the store,
+// so it counts flushed chunks only. For
+// chunks that lie wholly inside the window and are counted once, those
 // numbers are exact: the window's streams and lines. The proxy counts them
-// exactly from VictoriaLogs. A missing start is the hour before end
-// (pkg/loghttp/params.go:91-120).
+// exactly from VictoriaLogs. A missing start is the hour before end.
 
 type indexStatsFixture struct {
 	probe        string
@@ -115,10 +112,8 @@ func ensureIndexStatsFixture(t *testing.T) *indexStatsFixture {
 	// window's answer is stored in Loki's index-stats results cache, keyed by
 	// tenant, query text and the split interval of the start, with overlapping
 	// windows served from the stored extent. A metric query also asks that
-	// cache for its selector's stats (the shard resolver sends an
-	// IndexStatsRequest through the cached stats tripperware:
-	// pkg/querier/queryrange/shard_resolver.go:106-111, roundtrip.go:196-203),
-	// so a readiness probe that used the asserted selector would store the
+	// cache for its selector's stats (the query's sharding asks for
+	// the stats through the cached stats path), so a readiness probe that used the asserted selector would store the
 	// lagging answer under the very key the assertion reads. Every probe of the old window therefore
 	// uses its own selector text (a no-op pod alternative) and its own end,
 	// and the asserted selector is first asked by the assertion itself.

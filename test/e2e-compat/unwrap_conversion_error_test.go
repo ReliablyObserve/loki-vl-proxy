@@ -41,7 +41,7 @@ func unwrapErrorGet(t *testing.T, base, path string, params url.Values) unwrapEr
 }
 
 // unwrapErrorSeriesRE reads the series and the conversion's message out of
-// logqlmodel.PipelineError's text.
+// Loki's pipeline error text.
 var unwrapErrorSeriesRE = regexp.MustCompile(`^pipeline error: 'SampleExtractionErr' for series: '\{(.*)\}'\.\n`)
 
 // unwrapErrorShape is what two pipeline errors must share: Loki names the
@@ -88,7 +88,7 @@ func unwrapResultCount(t *testing.T, a unwrapErrorAnswer) int {
 // TestCompat_UnwrapConversionErrorParity: a range or instant metric whose
 // unwrap meets a value its conversion rejects (strconv.ParseFloat,
 // time.ParseDuration, humanize.ParseBytes) fails like Loki: 400, text/plain,
-// logqlmodel.PipelineError over the line's labels, unless a label filter after
+// Loki's pipeline error over the line's labels, unless a label filter after
 // the unwrap drops the error. Missing and empty labels make no sample and no
 // error, and a value outside every evaluated window does not count. The value
 // is Loki's parser's: a JSON array or null and a non-packed `| unpack` make no

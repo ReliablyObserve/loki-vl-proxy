@@ -84,7 +84,7 @@ func TestParseUntypedTemplates(t *testing.T) {
 		t.Error("the template was typed")
 	}
 	// Coverage instrumentation changes allocation counts.
-	if n := testing.AllocsPerRun(20, func() { _, _ = ParseUntypedTemplates(q) }); n > 5 && testing.CoverMode() == "" {
+	if n := parseAllocs(20, func() { _, _ = ParseUntypedTemplates(q) }); n > 5 && testing.CoverMode() == "" {
 		t.Errorf("%v allocations", n)
 	}
 }

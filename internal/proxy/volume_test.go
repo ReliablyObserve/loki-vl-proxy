@@ -161,9 +161,7 @@ func TestVolume_RangeStampsBucketEndsLikeLoki(t *testing.T) {
 }
 
 // Loki stamps the last sample at the request end rounded up to the
-// millisecond (v3.7.9 pkg/querier/queryrange/codec.go VolumeOp and
-// VolumeRangeOp, pkg/util/conv.go RoundToMilliseconds): the start is
-// truncated, the end goes to the next millisecond unless it is whole.
+// millisecond (v3.7.9): the start is truncated, the end goes to the next millisecond unless it is whole.
 // conformance: loki_api_v1_index_volume, drilldown/index_volume/end-millisecond-rounding
 func TestVolume_LastSampleIsTheEndRoundedUpToTheMillisecond(t *testing.T) {
 	for _, tc := range []struct {
@@ -204,7 +202,7 @@ func TestVolume_LastSampleIsTheEndRoundedUpToTheMillisecond(t *testing.T) {
 }
 
 // The last sample's timestamp is Loki's through: the end rounded up to the
-// millisecond (pkg/util/conv.go RoundToMilliseconds, written out here).
+// millisecond (written out here).
 // conformance: drilldown/index_volume/end-millisecond-rounding
 func FuzzVolumeEndMillisecondsLikeLoki(f *testing.F) {
 	for _, ns := range []int64{0, 1, 999_999, 1_000_000, 1_000_001, 1789451580805999999, 1789451580999999999} {

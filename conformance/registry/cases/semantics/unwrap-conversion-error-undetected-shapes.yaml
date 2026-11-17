@@ -10,6 +10,8 @@ why: |
   evaluator reads, and never scans the rows again. Shapes where neither carries
   the counter answer as before (200 without the rows that do not convert):
 
+  - `label_join(...)` around the metric: the parser keeps it opaque, so no
+    aggregation is checked;
   - a stats query whose stats pipe is followed by a pipe that could mix or drop
     the counted groups (`sort`, `limit`, `fields`), or that carries two unwrap
     gates: sent without the counter;
@@ -45,7 +47,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/proxy/unwrap_conversion_error.go unwrapCountingQuery (pipes after stats), unwrapLokiLabels (pipeline stages)'
-  loki: 'pkg/logql/evaluator.go:726-733'
+  loki: 'a rejected conversion fails the query with a 400 (measured on an isolated stack, in this case)'
   proxy: '200 without the rows that do not convert'
   planned_test: 'TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out; TestCompat_UnwrapConversionErrorParity holds the label_replace form to Loki''s 400'
   clusters:

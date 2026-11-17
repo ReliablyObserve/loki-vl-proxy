@@ -16,8 +16,9 @@ import (
 // The handlers' side of the dynamic identity of a parser (lower.DynamicUnwrapIdentity): sum, max, min or avg over a
 // range function taken per series of an unwrapped label after a json or logfmt parser with no keep, whose series are
 // the stream and every parsed label less the unwrapped one. The lowered query writes them as a hash of the stream and
-// each line's parsed labels (__lvp_sid), and VictoriaLogs answers the function per series and the aggregation over
-// them, on an instant query and on a range up to the step. A range longer than the step keeps the stream's series:
+// each line's parsed labels (__lvp_sid), or after an extraction list as the stream, its stored level fields and the
+// listed labels, and VictoriaLogs answers the function per series and the aggregation over them, on an instant query
+// and on a range up to the step. A range longer than the step keeps the stream's series:
 // the window evaluator merges the step buckets of streams, not of a series hash (dynamicIdentityWindows).
 
 // dynamicQuery is the text the handlers, the fence and the translation read a query as: trimmed, with the keywords in

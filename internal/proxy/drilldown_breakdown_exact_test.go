@@ -16,8 +16,7 @@ import (
 // neither caps nor samples the series it gets, it only sorts them). Loki
 // answers them like any other metric query: every series, exact values, and
 // above max_query_series a partial result with a warning for Drilldown and a
-// 400 for every other client (pkg/logql/engine.go JoinSampleVector and
-// pkg/querier/queryrange/limits.go seriesLimiter, v3.7.7).
+// 400 for every other client (v3.7.7).
 var drilldownBreakdownShapes = []struct {
 	name, query, field string
 	parsed             bool
