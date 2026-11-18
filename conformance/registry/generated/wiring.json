@@ -266,6 +266,7 @@
       "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/drilldown_byte_overflow_test.go",
       "internal/proxy/drilldown_series_limit_loki_test.go",
+      "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sum_without_differential_test.go",
@@ -274,6 +275,7 @@
     ],
     "limits/drilldown-series-limit-range-cut-at-trip-step": [
       "internal/proxy/drilldown_series_limit_mode_test.go",
+      "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/series_limit_loki_cut_test.go"
     ],
     "limits/drilldown-series-limit-skips-every-new-series": [
@@ -508,6 +510,7 @@
       "internal/proxy/binary_matching_test.go",
       "internal/proxy/binary_outer_sum_ignoring_test.go",
       "internal/proxy/drilldown_series_limit_loki_test.go",
+      "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/instant_result_type_test.go",
       "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/keep_series_grouping_test.go",
@@ -594,6 +597,7 @@
       "internal/proxy/drilldown_fields_json_path_test.go",
       "internal/proxy/drilldown_longrange_survival_test.go",
       "internal/proxy/drilldown_series_limit_loki_test.go",
+      "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/first_last_range_longer_than_step_test.go",
       "internal/proxy/first_last_range_timestamps_test.go",
@@ -3647,6 +3651,12 @@
       "limits/drilldown-breakdown-keeps-busiest",
       "limits/drilldown-series-limit-range-cut-at-trip-step"
     ],
+    "internal/proxy/drilldown_series_limit_rule_loki_test.go": [
+      "limits/drilldown-partial-with-warning",
+      "limits/drilldown-series-limit-range-cut-at-trip-step",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range"
+    ],
     "internal/proxy/error_body_shape_test.go": [
       "limits/row-limit-answers-loki-limit-text",
       "semantics/error-layer-body-shape",
@@ -6574,7 +6584,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 770,
+  "tests_with_markers": 771,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

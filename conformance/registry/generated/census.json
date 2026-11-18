@@ -1594,6 +1594,10 @@
     "internal/proxy/drilldown_series_limit_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/drilldown_series_limit_mode_test.go | limits/drilldown-breakdown-keeps-busiest",
     "internal/proxy/drilldown_series_limit_mode_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
+    "internal/proxy/drilldown_series_limit_rule_loki_test.go | limits/drilldown-partial-with-warning",
+    "internal/proxy/drilldown_series_limit_rule_loki_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
+    "internal/proxy/drilldown_series_limit_rule_loki_test.go | loki_api_v1_query",
+    "internal/proxy/drilldown_series_limit_rule_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/error_body_shape_test.go | limits/row-limit-answers-loki-limit-text",
     "internal/proxy/error_body_shape_test.go | semantics/error-layer-body-shape",
     "internal/proxy/error_body_shape_test.go | semantics/error-layer-cancel-deadline",
@@ -3313,7 +3317,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 767,
+      "go": 768,
       "playwright": 3
     },
     "page_kinds": {
