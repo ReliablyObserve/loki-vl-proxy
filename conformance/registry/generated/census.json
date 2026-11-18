@@ -714,6 +714,9 @@
     "semantics/nested-aggregation-query-length | compare:observed",
     "semantics/nested-aggregation-query-length | gap:open",
     "semantics/nested-aggregation-query-length | query",
+    "semantics/nested-calls-linear-work | compare:observed",
+    "semantics/nested-calls-linear-work | gap:fixed",
+    "semantics/nested-calls-linear-work | query",
     "semantics/non-sum-vector-aggregation-unreduced | compare:observed",
     "semantics/non-sum-vector-aggregation-unreduced | gap:fixed",
     "semantics/non-sum-vector-aggregation-unreduced | query",
@@ -1010,6 +1013,8 @@
     "semantics/unpack-non-string-values | compare:observed",
     "semantics/unpack-non-string-values | gap:open",
     "semantics/unpack-non-string-values | query",
+    "semantics/unwrap-avg-overflow | compare:exact",
+    "semantics/unwrap-avg-overflow | gap:open",
     "semantics/unwrap-bare-range-exposes-parsed-labels | compare:observed",
     "semantics/unwrap-bare-range-exposes-parsed-labels | gap:fixed",
     "semantics/unwrap-bare-range-exposes-parsed-labels | query",
@@ -1131,6 +1136,8 @@
     "semantics/unwrap-sample-validity | gap:fixed",
     "semantics/unwrap-sample-validity | perf",
     "semantics/unwrap-sample-validity | query",
+    "semantics/unwrap-sliding-infinity-point | compare:exact",
+    "semantics/unwrap-sliding-infinity-point | gap:open",
     "semantics/unwrap-stored-integer-field-gate | compare:observed",
     "semantics/unwrap-stored-integer-field-gate | gap:open",
     "semantics/unwrap-stored-integer-field-gate | query",
@@ -1260,6 +1267,7 @@
     "internal/config/registry_test.go | operator-configurable-limits",
     "internal/logql/blank_after_keyword_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/logql/blank_after_keyword_loki_test.go | semantics/translator-reads-only-space-between-tokens",
+    "internal/logql/canonical_nested_test.go | semantics/nested-calls-linear-work",
     "internal/logql/canonical_spelling_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/logql/canonical_spelling_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/logql/canonical_spelling_test.go | semantics/vector-call-blank-before-parenthesis-as-query",
@@ -3224,14 +3232,14 @@
   "counts": {
     "case_consumers": {
       "any": 48,
-      "api": 116,
+      "api": 119,
       "drilldown": 55,
       "explore": 204,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 747,
+      "go": 748,
       "playwright": 2
     },
     "page_kinds": {
@@ -3250,8 +3258,8 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 96,
-    "wired_items": 446
+    "unwired_items": 98,
+    "wired_items": 447
   },
   "gates": [
     "A/B shape selection",

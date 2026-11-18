@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with such a bytes literal (`| size > 18446744073709551615B`) now parses, as in Loki 3.7.10, instead of
   answering Loki 3.7.9's `400` parse error. The VictoriaLogs
   pushdown still reads sizes within float64 rounding of 2^64 bytes as too large (registered as a known difference).
+- The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
+  `{...} |= "x" [1m]` form no longer doubles its work with each level of `label_replace` (or `vector`, `approx_topk`)
+  calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
+  it stands. A request with 18 nested calls (about 550 bytes) took half a second and now takes 2.5 ms. Answers do not
+  change, and nested queries are accepted at every depth, as Loki accepts them (semantics/nested-calls-linear-work).
 
 ## [2.336.0] - 2026-11-18
 
