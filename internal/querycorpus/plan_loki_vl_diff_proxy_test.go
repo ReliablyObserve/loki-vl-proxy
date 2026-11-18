@@ -148,7 +148,7 @@ type diffHandlerRun struct {
 func runDiffHandler(t *testing.T, prof diffProfile, q string, rows []map[string]string, categorized bool) diffHandlerRun {
 	t.Helper()
 	vl := &diffVL{version: prof.version, rows: rows}
-	srv := httptest.NewServer(vl)
+	srv := newMemoryFront(vl)
 	defer srv.Close()
 	p, err := proxy.New(proxy.Config{
 		BackendURL:             srv.URL,

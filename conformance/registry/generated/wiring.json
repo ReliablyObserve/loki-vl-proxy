@@ -258,29 +258,17 @@
       "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go"
     ],
     "limits/drilldown-breakdown-keeps-busiest": [
-      "internal/proxy/compat_oversized_reply_test.go",
-      "internal/proxy/drilldown_series_limit_mode_test.go"
+      "internal/proxy/compat_oversized_reply_test.go"
     ],
     "limits/drilldown-partial-with-warning": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/drilldown_byte_overflow_test.go",
       "internal/proxy/drilldown_series_limit_loki_test.go",
-      "internal/proxy/drilldown_series_limit_mode_test.go",
-      "internal/proxy/drilldown_series_limit_ranking_test.go",
-      "internal/proxy/drilldown_series_limit_rule_loki_test.go",
-      "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
-    ],
-    "limits/drilldown-series-limit-range-cut-at-trip-step": [
-      "internal/proxy/drilldown_series_limit_mode_test.go",
-      "internal/proxy/drilldown_series_limit_ranking_test.go",
-      "internal/proxy/drilldown_series_limit_rule_loki_test.go",
-      "internal/proxy/series_limit_loki_cut_test.go",
-      "test/e2e-compat/drilldown_field_bounds_test.go"
     ],
     "limits/drilldown-series-limit-skips-every-new-series": [
       "internal/proxy/drilldown_series_limit_loki_test.go"
@@ -514,7 +502,6 @@
       "internal/proxy/binary_matching_test.go",
       "internal/proxy/binary_outer_sum_ignoring_test.go",
       "internal/proxy/drilldown_series_limit_loki_test.go",
-      "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/instant_result_type_test.go",
       "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/keep_series_grouping_test.go",
@@ -525,7 +512,6 @@
       "internal/proxy/ranking_binary_operand_loki_test.go",
       "internal/proxy/request_ends_within_test.go",
       "internal/proxy/selector_value_test.go",
-      "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/tenant_query_limits_test.go",
@@ -601,8 +587,6 @@
       "internal/proxy/drilldown_fields_json_path_test.go",
       "internal/proxy/drilldown_longrange_survival_test.go",
       "internal/proxy/drilldown_series_limit_loki_test.go",
-      "internal/proxy/drilldown_series_limit_ranking_test.go",
-      "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/first_last_range_longer_than_step_test.go",
       "internal/proxy/first_last_range_timestamps_test.go",
@@ -632,7 +616,6 @@
       "internal/proxy/ranking_binary_operand_loki_test.go",
       "internal/proxy/request_ends_within_test.go",
       "internal/proxy/selector_value_test.go",
-      "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
       "internal/proxy/stats_extent_cache_test.go",
@@ -1186,7 +1169,6 @@
       "internal/proxy/first_last_window_cache_test.go",
       "internal/proxy/manual_metric_encoding_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
-      "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/stats_extent_cache_test.go",
       "internal/proxy/stats_extent_large_answer_test.go",
       "internal/proxy/stats_extent_pending_test.go",
@@ -1240,6 +1222,16 @@
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "test/e2e-compat/unwrap_extent_cache_test.go"
+    ],
+    "query-complexity-limits": [
+      "cmd/proxy/query_complexity_flags_test.go",
+      "internal/logql/complexity_test.go",
+      "internal/metrics/query_complexity_test.go",
+      "internal/proxy/query_budget_test.go",
+      "internal/proxy/query_complexity_test.go",
+      "internal/proxy/query_plan_budget_corpus_test.go",
+      "internal/queryplan/lower/budget_test.go",
+      "internal/queryplan/validate_budget_test.go"
     ],
     "query-stats-envelope": [
       "internal/proxy/query_stats_loki_meaning_test.go",
@@ -2715,7 +2707,6 @@
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
-      "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/stats_fold_relabel_test.go",
@@ -2996,7 +2987,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 674,
+  "registry_items": 675,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3011,6 +3002,9 @@
     "cmd/proxy/peer_config_test.go": [
       "peer-cache-push-replay",
       "peer-cache-read-hedge"
+    ],
+    "cmd/proxy/query_complexity_flags_test.go": [
+      "query-complexity-limits"
     ],
     "cmd/proxy/tenant_routing_test.go": [
       "limits/max-query-length-default",
@@ -3087,6 +3081,9 @@
     "internal/logql/comments_offsets_test.go": [
       "semantics/comments-signed-compound-offsets",
       "semantics/proxy-rejects-valid-logql"
+    ],
+    "internal/logql/complexity_test.go": [
+      "query-complexity-limits"
     ],
     "internal/logql/count_values_test.go": [
       "semantics/count-values-unsupported"
@@ -3298,6 +3295,9 @@
     ],
     "internal/metrics/callertracker_test.go": [
       "observability-slow-query-log"
+    ],
+    "internal/metrics/query_complexity_test.go": [
+      "query-complexity-limits"
     ],
     "internal/metrics/request_flow_test.go": [
       "observability-query-flow"
@@ -3658,22 +3658,6 @@
     "internal/proxy/drilldown_series_limit_loki_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/drilldown-series-limit-skips-every-new-series",
-      "loki_api_v1_query",
-      "loki_api_v1_query_range"
-    ],
-    "internal/proxy/drilldown_series_limit_mode_test.go": [
-      "limits/drilldown-breakdown-keeps-busiest",
-      "limits/drilldown-partial-with-warning",
-      "limits/drilldown-series-limit-range-cut-at-trip-step"
-    ],
-    "internal/proxy/drilldown_series_limit_ranking_test.go": [
-      "limits/drilldown-partial-with-warning",
-      "limits/drilldown-series-limit-range-cut-at-trip-step",
-      "loki_api_v1_query_range"
-    ],
-    "internal/proxy/drilldown_series_limit_rule_loki_test.go": [
-      "limits/drilldown-partial-with-warning",
-      "limits/drilldown-series-limit-range-cut-at-trip-step",
       "loki_api_v1_query",
       "loki_api_v1_query_range"
     ],
@@ -4393,8 +4377,14 @@
       "quality/query-range-settled-steps",
       "semantics/unwrap-quantile-response-limit"
     ],
+    "internal/proxy/query_budget_test.go": [
+      "query-complexity-limits"
+    ],
     "internal/proxy/query_caller_test.go": [
       "observability-slow-query-log"
+    ],
+    "internal/proxy/query_complexity_test.go": [
+      "query-complexity-limits"
     ],
     "internal/proxy/query_flow_test.go": [
       "observability-query-flow",
@@ -4422,6 +4412,9 @@
       "semantics/translator-reads-marker-bytes-in-quoted-value",
       "semantics/translator-reads-quoted-text-as-syntax",
       "semantics/translator-writes-signed-number-with-blank"
+    ],
+    "internal/proxy/query_plan_budget_corpus_test.go": [
+      "query-complexity-limits"
     ],
     "internal/proxy/query_range_steps_harden_test.go": [
       "quality/query-range-settled-steps",
@@ -4579,14 +4572,6 @@
       "loki_api_v1_query_range",
       "semantics/selector-values-are-strings",
       "status-400"
-    ],
-    "internal/proxy/series_limit_loki_cut_test.go": [
-      "limits/drilldown-partial-with-warning",
-      "limits/drilldown-series-limit-range-cut-at-trip-step",
-      "loki_api_v1_query",
-      "loki_api_v1_query_range",
-      "quality/query-range-extent-cache",
-      "series-limits-and-partial-results"
     ],
     "internal/proxy/series_limit_routes_test.go": [
       "limits/drilldown-partial-with-warning",
@@ -5433,6 +5418,9 @@
     "internal/queryplan/lower/binop_without_empty_test.go": [
       "semantics/binary-operand-without-empty-collapses"
     ],
+    "internal/queryplan/lower/budget_test.go": [
+      "query-complexity-limits"
+    ],
     "internal/queryplan/lower/delete_filter_test.go": [
       "semantics/delete-api-via-victorialogs"
     ],
@@ -5586,6 +5574,9 @@
     ],
     "internal/queryplan/series_labels_test.go": [
       "semantics/keep-before-unwrap-series-identity"
+    ],
+    "internal/queryplan/validate_budget_test.go": [
+      "query-complexity-limits"
     ],
     "internal/queryplan/validate_test.go": [
       "semantics/label-replace-over-log-selector-accepted",
@@ -5904,7 +5895,6 @@
     ],
     "test/e2e-compat/drilldown_field_bounds_test.go": [
       "limits/drilldown-breakdown-exact",
-      "limits/drilldown-series-limit-range-cut-at-trip-step",
       "limits/top-n-ranking-not-silent",
       "loki_api_v1_query_range"
     ],
@@ -6620,7 +6610,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 776,
+  "tests_with_markers": 780,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6640,10 +6630,9 @@
     "drilldown/volume-detected-level-not-normalised",
     "error-coalescing-and-error-cache",
     "limits/drilldown-7d-breakdown-response-limit",
-    "limits/drilldown-series-limit-or-operand-past-trip-step",
+    "limits/drilldown-series-limit-range-cut-at-trip-step",
     "limits/parser-metric-raw-rows-body-cap",
     "limits/series-cap-and-byte-budget-interact",
-    "limits/series-limit-error-per-split",
     "loki-error-phases",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_format_query",

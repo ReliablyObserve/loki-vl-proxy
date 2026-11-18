@@ -26,17 +26,28 @@ func validateQueryTree(query string) (logqlpkg.Expr, string, bool) {
 // the query routes answer after the request's limits and the instant query type). With phaseBuild the parsed
 // expression is returned beside the error, for the routes to read its type; it is no valid query.
 func validateQueryPhases(query string) (expr logqlpkg.Expr, msg string, phase queryPhase) {
+	expr, msg, phase, _ = validateQueryPhasesWithin(query, nil)
+	return expr, msg, phase
+}
+
+// validateQueryPhasesWithin is validateQueryPhases that stops its walk of the tree when budget (nil: none) is
+// exhausted, and says so: the query is then neither accepted nor rejected. The parser and its semantic pass are not
+// interrupted.
+func validateQueryPhasesWithin(query string, budget queryplan.Budget) (expr logqlpkg.Expr, msg string, phase queryPhase, exhausted bool) {
 	expr, msg, build := logqlpkg.ValidateLogQLPhases(query)
 	if msg != "" || expr == nil {
-		return expr, msg, phaseParse
+		return expr, msg, phaseParse, false
 	}
-	if rejection := queryplan.Validate(expr); rejection != nil {
-		return nil, treeRejection(rejection).Text(), phaseTree
+	if rejection := queryplan.ValidateWithin(expr, budget); rejection != nil {
+		if rejection.Exhausted {
+			return nil, "", phaseNone, true
+		}
+		return nil, treeRejection(rejection).Text(), phaseTree, false
 	}
 	if build != "" {
-		return expr, build, phaseBuild
+		return expr, build, phaseBuild, false
 	}
-	return expr, "", phaseNone
+	return expr, "", phaseNone, false
 }
 
 // queryPhase is the phase of Loki's checks a query validation rejected a query in.

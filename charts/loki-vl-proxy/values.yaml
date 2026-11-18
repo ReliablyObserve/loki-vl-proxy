@@ -224,6 +224,9 @@ extraArgs:
   # patterns-max-counts-rows: "250000"                  # rows the /patterns counts query reads before sampling instead
   # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize
+  # max-query-ast-nodes: "0"                            # nodes (expressions, pipeline stages, selector matchers) of a parsed query; 0 = the query length limit, which no query exceeds; HTTP 400 above it
+  # max-query-nesting-depth: "0"                        # nesting depth of a parsed query; 0 = the query length limit, which no query exceeds; HTTP 400 above it
+  # max-query-plan-time: "10s"                          # the proxy's own parse, validation and lowering time per request, not waits or VictoriaLogs calls; HTTP 400 above it; 0 turns it off
   # label-values-max-response-bytes: "67108864"         # 64 MiB read from one VictoriaLogs label values response; HTTP 500 ResourceExhausted (Loki's text) above it
   # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 400 (the log line names the flag; no truncated results). On extraction-list windows it bounds one time chunk's read: the request is read in more chunks instead
   # label-filter-refill-max-pages: "8"   # more pages (of limit rows) a log query reads when a Loki label filter dropped rows VictoriaLogs matched; 0 reads none

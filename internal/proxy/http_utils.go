@@ -26,6 +26,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/klauspost/compress/zstd"
 )
@@ -79,12 +80,24 @@ var (
 func (p *Proxy) lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if query := r.FormValue("query"); query != "" {
-			if text := requestQueryText(query, p.limits().QueryLengthBytes); text != query {
+			text, err := p.requestTextUnderBudget(r, query, p.limits())
+			if err != nil {
+				p.failQueryLimit(w, r, err)
+				return
+			}
+			if text != query {
 				setRequestQuery(r, text)
 			}
 		}
 		next(w, r)
 	}
+}
+
+// failQueryLimit answers a query over one of the complexity limits: the typed 400 through the error layer, counted
+// as the route's 400.
+func (p *Proxy) failQueryLimit(w http.ResponseWriter, r *http.Request, err error) {
+	p.fail(w, r, err)
+	p.metrics.RecordRequest(requestRouteMetaFromContext(r.Context()).endpoint, http.StatusBadRequest, 0)
 }
 
 // RequestQueryText is the query text the handlers read for a query sent as it is, under the default query length
@@ -97,32 +110,46 @@ func RequestQueryText(query string) string {
 // maxQueryBytes: a query over it keeps its spelling for the limit's error. It is memoised by the query as sent
 // (requestTextCache, longQueryMemo for a long query), so a query seen before costs one lookup.
 func requestQueryText(query string, maxQueryBytes int) string {
+	text, _ := requestQueryTextWithin(query, maxQueryBytes, nil, nil, false)
+	return text
+}
+
+// requestQueryTextWithin is requestQueryText that validates the keyword-lower-cased query under the request's
+// planning budget (seg, with p its proxy) when it computes the text, and reports a trip: the text is then not
+// memoised and nothing of the validation is stored. With no budget (nil) it is requestQueryText. all validates
+// whatever the query's spelling (see handlerTextWithin).
+func requestQueryTextWithin(query string, maxQueryBytes int, p *Proxy, seg *planSegment, all bool) (string, bool) {
 	if queryLengthLimit(query, maxQueryBytes) != nil {
-		return handlerText(query, maxQueryBytes)
+		return handlerTextWithin(query, maxQueryBytes, p, seg, all)
 	}
 	if len(query) > validationCacheMaxQueryBytes {
 		if !longQuery(query) {
-			return handlerText(query, maxQueryBytes)
+			return handlerTextWithin(query, maxQueryBytes, p, seg, all)
 		}
 		if v, ok := longQueryMemo.load(longRequestTextKey(query)); ok {
-			return v.(string)
+			return v.(string), false
 		}
-		text := handlerText(query, maxQueryBytes)
-		longQueryMemo.store(longRequestTextKey(query), longMemoCost(query, longMemoTextWeight), text, false)
-		return text
+		text, tripped := handlerTextWithin(query, maxQueryBytes, p, seg, all)
+		if !tripped {
+			longQueryMemo.store(longRequestTextKey(query), longMemoCost(query, longMemoTextWeight), text, false)
+		}
+		return text, tripped
 	}
 	if v, ok := requestTextCache.Load(query); ok {
 		if text, ok := v.(string); ok {
-			return text
+			return text, false
 		}
 	}
-	text := handlerText(query, maxQueryBytes)
+	text, tripped := handlerTextWithin(query, maxQueryBytes, p, seg, all)
+	if tripped {
+		return text, true
+	}
 	if requestTextCacheSize.Load() < requestTextCacheMaxSize {
 		if _, loaded := requestTextCache.LoadOrStore(query, text); !loaded {
 			requestTextCacheSize.Add(1)
 		}
 	}
-	return text
+	return text, false
 }
 
 // requestTextCache memoises requestQueryText by the query as sent, bounded as validationCache is (a deterministic
@@ -137,16 +164,48 @@ const requestTextCacheMaxSize = 1024
 // handlerText is requestQueryText without the memo: keywords in lower case, no comments or logfmt flags, and for a
 // metric query the validation accepts its calls and parentheses in one spelling (logql.CanonicalSpelling).
 func handlerText(query string, maxQueryBytes int) string {
+	text, _ := handlerTextWithin(query, maxQueryBytes, nil, nil, false)
+	return text
+}
+
+// handlerTextWithin is handlerText that first validates the keyword-lower-cased query under the request's planning
+// budget (seg, with p its proxy), ahead of the readers that would have run that validation, so the budget covers it
+// and the cache holds exactly what they would have stored; it reports a trip. With no budget (nil) it is handlerText.
+// Only a query the rewrite would validate anyway (a call or parentheses it may respell) is validated here, unless
+// all is set (a route that reads a whole expression and has readers after this one that validate it): a selector
+// route's query is left to its validators, so the budget adds no parse and no cache entry to their routes.
+func handlerTextWithin(query string, maxQueryBytes int, p *Proxy, seg *planSegment, all bool) (string, bool) {
 	lower := logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(query)))
-	if strings.IndexByte(lower, '(') < 0 || queryLengthLimit(query, maxQueryBytes) != nil {
-		return lower // no call to respell; or Loki's length error for the text as sent
+	if queryLengthLimit(query, maxQueryBytes) != nil {
+		return lower, false // Loki's length error for the text as sent
+	}
+	var validated queryValidation
+	budgeted := false
+	// A query too long for the cache is validated here only where the rewrite validates it anyway (below), so the
+	// budget never adds a second parse of it; the route's validator counts the rest (validateQueryCtx).
+	candidate := strings.IndexByte(lower, '(') >= 0 && logql.CanonicalSpellingCandidate(lower)
+	if seg != nil && (candidate || all && len(lower) <= validationCacheMaxQueryBytes) {
+		var exhausted bool
+		if validated, exhausted = p.validateUnderBudget(lower, seg); exhausted {
+			return lower, true
+		}
+		budgeted = true
+	}
+	if strings.IndexByte(lower, '(') < 0 {
+		return lower, false // no call to respell
 	}
 	// The pre-check reads the bytes once; only a query it names is validated (memoised: the validation after the
-	// rewrite reads that entry) and parsed for its spelling.
-	if logql.CanonicalSpellingCandidate(lower) && cachedQueryValidation(lower).msg == "" {
-		return logql.CanonicalSpellingOfValid(lower)
+	// rewrite reads that entry) and parsed for its spelling. A validation made under the budget is read, not made
+	// again: a query too long for the cache would be parsed twice.
+	if logql.CanonicalSpellingCandidate(lower) {
+		if !budgeted {
+			validated = cachedQueryValidation(lower)
+		}
+		if validated.msg == "" {
+			return logql.CanonicalSpellingOfValid(lower), false
+		}
 	}
-	return lower
+	return lower, false
 }
 
 // setRequestQuery replaces the query parameter of a parsed request wherever a
@@ -166,6 +225,12 @@ func setRequestQuery(r *http.Request, query string) {
 // validateQuery checks query string length and returns a sanitized version.
 // It also rewrites queries that Loki accepts but VL would reject (e.g. phi>1).
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
+	return p.validateQueryCtx(context.Background(), w, query, endpoint)
+}
+
+// validateQueryCtx is validateQuery for a request: ctx carries its telemetry, so a validation this request has to
+// make (a query the validation cache does not hold) counts toward its planning budget.
+func (p *Proxy) validateQueryCtx(ctx context.Context, w http.ResponseWriter, query string, endpoint string) (string, bool) {
 	if err := queryLengthLimit(query, p.limits().QueryLengthBytes); err != nil {
 		p.writeErr(w, context.Background(), err)
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
@@ -176,7 +241,13 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
-	if v := cachedQueryValidation(query); v.msg != "" {
+	v, err := p.validateTimed(ctx, query)
+	if err != nil {
+		p.writeErr(w, ctx, err)
+		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+		return "", false
+	}
+	if v.msg != "" {
 		if endpoint == "query" && v.buildLogQuery {
 			// Loki refuses a log query on the instant route before it builds the query's pipeline.
 			p.writeErr(w, context.Background(), lokierr.InstantLogQuery())
@@ -247,19 +318,33 @@ type queryValidation struct {
 // the query is at most validationCacheMaxQueryBytes long, in longQueryMemo when
 // it is longer).
 func cachedQueryValidation(query string) queryValidation {
+	v, _ := cachedQueryValidationWithin(query, nil)
+	return v
+}
+
+// cachedQueryValidationWithin is cachedQueryValidation under a planning budget (nil: none). When the budget runs
+// out, in the walk of the tree or by the time the validation of an accepted query is complete, it reports exhausted
+// and stores nothing: the verdict of a budget belongs to one request and one proxy, and the next request validates again.
+// Only config-independent facts about the query enter validationCache, longQueryMemo and the plan memo.
+func cachedQueryValidationWithin(query string, budget queryplan.Budget) (queryValidation, bool) {
 	cacheable, long := len(query) <= validationCacheMaxQueryBytes, longQuery(query)
 	if cacheable {
 		if v, ok := validationCache.Load(query); ok {
 			if cached, ok := v.(queryValidation); ok {
-				return cached
+				return cached, false
 			}
 		}
 	} else if long {
 		if v, ok := longQueryMemo.load(longValidationKey(query)); ok {
-			return v.(queryValidation)
+			return v.(queryValidation), false
 		}
 	}
-	expr, msg, phase := validateQueryPhases(query)
+	expr, msg, phase, exhausted := validateQueryPhasesWithin(query, budget)
+	// A rejection Loki makes is final, whatever the clock says: the query is answered with Loki's error, from the cache
+	// as ever. The budget refuses only a query the validation accepts (or whose walk it cut short).
+	if exhausted || msg == "" && budget != nil && budget.Exhausted() {
+		return queryValidation{}, true
+	}
 	result := queryValidation{msg: msg, tree: phase == phaseTree, sample: msg == "" && isSampleExpr(expr)}
 	if phase == phaseBuild {
 		_, result.buildLogQuery = expr.(*logql.LogQuery)
@@ -285,7 +370,7 @@ func cachedQueryValidation(query string) queryValidation {
 	} else if long {
 		longQueryMemo.store(longValidationKey(query), longMemoCost(query, longMemoTextWeight), result, false)
 	}
-	return result
+	return result, false
 }
 
 // parsedLogQueryKey keys a parsed log query in validationCache, apart from its validation result.
