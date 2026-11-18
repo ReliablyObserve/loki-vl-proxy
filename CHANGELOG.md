@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The compatibility stack and CI now test against Loki 3.7.10 (was 3.7.9): the compose files, the pinned CI jobs,
+  the weekly Loki matrix (3.7.10 added) and the test-only Loki oracles. Loki 3.7.10 gives a Logs Drilldown metric
+  query over `max_query_series` exactly that many labelled series with its partial-result warning (3.7.9 added a
+  series without labels for every further new series, grafana/loki#26433); the proxy already answered that way,
+  now pinned against recorded 3.7.10 answers. Loki's recorded answers for step alignment, tenant headers and the
+  engine differentials are unchanged on 3.7.10, apart from `unwrap bytes()` below.
+
 ### Fixed
 
+- `unwrap bytes()` reads a whole size exactly up to 18446744073709551615 bytes, as Loki 3.7.10 does (its
+  go-humanize v1.1.0): such a value now makes a sample on the proxy's own evaluators instead of failing the query
+  with `SampleExtractionErr` (`too large`); a size of 2^64 bytes or more still fails as in Loki. A label filter
+  with such a bytes literal (`| size > 18446744073709551615B`) now parses, as in Loki 3.7.10, instead of
+  answering Loki 3.7.9's `400` parse error. The VictoriaLogs
+  pushdown still reads sizes within float64 rounding of 2^64 bytes as too large (registered as a known difference).
 - A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
   with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
   parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,
