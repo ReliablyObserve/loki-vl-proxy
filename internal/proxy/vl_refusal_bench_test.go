@@ -43,10 +43,10 @@ func BenchmarkVLRefusalSuccessPath(b *testing.B) {
 	p.storeBackendVersion("bench", "v1.53.0")
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
-	run := func(b *testing.B, query string, step bool) {
+	run := func(b *testing.B, query string, step bool, from int) {
 		b.ReportAllocs()
 		for i := 0; b.Loop(); i++ {
-			start := 1700000000 + i*60
+			start := from + i*60
 			target := "/loki/api/v1/query_range?query=" + url.QueryEscape(query) + "&start=" + strconv.Itoa(start) + "&end=" + strconv.Itoa(start+3600)
 			if step {
 				target += "&step=60"
@@ -62,6 +62,20 @@ func BenchmarkVLRefusalSuccessPath(b *testing.B) {
 			}
 		}
 	}
-	b.Run("log_miss", func(b *testing.B) { run(b, `{app="api"} |= "hello"`, false) })
-	b.Run("metric_miss", func(b *testing.B) { run(b, `sum by (level) (count_over_time({app="api"} | json [1m]))`, true) })
+	b.Run("log_miss", func(b *testing.B) { run(b, `{app="api"} |= "hello"`, false, 1700000000) })
+	b.Run("metric_miss", func(b *testing.B) {
+		run(b, `sum by (level) (count_over_time({app="api"}[1m]))`, true, 1700000000)
+	})
+	// Another query's refusal is held for every window: each miss also reads the held-query set.
+	holdOther(p)
+	b.Run("metric_miss_while_held", func(b *testing.B) {
+		run(b, `sum by (level) (count_over_time({app="api"}[1m]))`, true, 1600000000)
+	})
+}
+
+// holdOther marks another query's refusal as held for every window for an hour.
+func holdOther(p *Proxy) {
+	until := cache.Now().Add(time.Hour).UnixNano()
+	p.refusalQueries.add("query_range", `{app="other"}`, until, 4096)
+	raiseTo(&p.refusalSeenUntil, until)
 }
