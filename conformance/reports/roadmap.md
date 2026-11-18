@@ -65,7 +65,7 @@ Held by at least one test that declares it.
 | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 5 / 5 | 13 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
 | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | — | 1 / 1 | 5 | internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from Loki 3.7.9 with auth_enabled: true (13 read |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 1 / 1 | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |
-| `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 1 / 1 | 14 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
+| `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 1 / 1 | 15 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
 | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 12 / 12 | 7 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
 
 ## No state recorded

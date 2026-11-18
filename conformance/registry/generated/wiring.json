@@ -2827,6 +2827,7 @@
       "internal/proxy/tenant_header_fuzz_test.go",
       "internal/proxy/tenant_isolation_leak_test.go",
       "internal/proxy/tenant_routing_test.go",
+      "test/e2e-compat/tenant_fanout_scope_test.go",
       "test/e2e-compat/tenant_numeric_routing_test.go"
     ],
     "tenant-query-limits": [
@@ -6304,6 +6305,9 @@
     "test/e2e-compat/tenant_auth_loki_test.go": [
       "tenant-auth-follows-loki"
     ],
+    "test/e2e-compat/tenant_fanout_scope_test.go": [
+      "tenant-numeric-routing"
+    ],
     "test/e2e-compat/tenant_label_isolation_test.go": [
       "prometheus_api_v1_alerts",
       "prometheus_api_v1_rules",
@@ -6484,7 +6488,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 759,
+  "tests_with_markers": 760,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
