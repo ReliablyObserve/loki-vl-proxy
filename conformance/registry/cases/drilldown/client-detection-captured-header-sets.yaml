@@ -1,0 +1,53 @@
+id: drilldown/client-detection-captured-header-sets
+title: The proxy tells Logs Drilldown, Explore and other Grafana requests apart from the headers Grafana sends
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_drilldown_limits
+consumer: drilldown
+why: |
+  Behaviour and optimisations the proxy turns on for a client (Drilldown's
+  partial answers over the series limit, the Drilldown windowing of older
+  Grafana runtimes, the client metrics and gates) depend on recognising the
+  client. Loki itself only reads the Drilldown Source tag (IsLogsDrilldownRequest).
+
+  Captured on the wire (tcpdump of what Grafana sent the proxy on the compose
+  stack, 2026-11-18) for every Explore and Drilldown request kind: Explore logs,
+  metric and log volume queries, the label browser and index/stats, the
+  Drilldown landing (queries, index/volume, detected_labels, drilldown-limits),
+  a landing time-range switch, and a service's logs, labels, fields and
+  patterns pages. Header sets, credentials and page URLs removed, in
+  internal/clientprofile/testdata/captured-*.json:
+    * Grafana 13.3.1 + Drilldown 3.2.0, Grafana 13.3.0 + Drilldown 3.1.0:
+      User-Agent `Grafana/<version> (linux; arm64) loki/<Loki datasource
+      plugin version>` (13.2.5; 13.3.0 sent 13.2.2 until its preinstalled
+      update applied); X-Query-Tags `Source=grafana-lokiexplore-app` on every
+      Drilldown request, resource calls included; `Source=grafana-explore` on
+      an Explore query and `Source=logvolhist` on its log volume query; no tag
+      on Explore's resource calls, which carry the page as X-Grafana-Referer
+      with `X-Plugin-Id: loki`.
+    * Grafana 12.4.14 + Drilldown 2.6.0: User-Agent `Grafana/12.4.14` (no
+      datasource token); Drilldown tagged as above; an Explore query carries
+      no Source tag (its log volume query is logvolhist), so it reads as a
+      Grafana datasource request.
+  No header names the Drilldown app's version on any captured release.
+
+  internal/clientprofile.Detect reads them into a typed profile: a closed
+  surface (api, explore, drilldown, datasource), the Grafana and Loki
+  datasource versions normalised to major.minor.patch. The request lines and
+  the /debug/queries callers view carry it.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "0"
+    User-Agent: 'Grafana/13.3.1 (linux; arm64) loki/13.2.5'
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: observed
+  fields: [client.surface, grafana.version, grafana.datasource.version]
+  expect: |
+    surface drilldown, Grafana 13.3.1, datasource 13.2.5, no Drilldown version.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.49.0"
