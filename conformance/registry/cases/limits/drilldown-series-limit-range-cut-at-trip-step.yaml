@@ -1,5 +1,5 @@
 id: limits/drilldown-series-limit-range-cut-at-trip-step
-title: A Logs Drilldown range answer over the series limit ends at the step where the limit trips on Loki; the proxy answers the whole range (open)
+title: A Logs Drilldown range answer over the series limit ends at the step where the limit trips, as on Loki (fixed; -drilldown-series-limit-mode=busiest keeps the whole range)
 pending: true
 proves:
   - series-limits-and-partial-results
@@ -19,8 +19,13 @@ why: |
   point each. The proxy keeps the busiest series over the whole range with
   Loki's warning; every point Loki answers for a series both keep is the
   proxy's point at that time (TestDrilldownSeriesLimitMatchesLoki pins Loki's
-  cut to the trip step). Matching Loki would turn a Drilldown breakdown over
-  the limit into an almost empty chart: kept until the owner decides.
+  cut to the trip step).
+
+  Fixed (owner decision 2026-11-18): -drilldown-series-limit-mode, default
+  loki, answers as Loki does: the series met first (ranked by first line
+  where the proxy ranks in VictoriaLogs, by first point or sample
+  otherwise), every one ending at the step where the first series past the
+  limit appears. busiest keeps the busiest series over the whole range.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -38,12 +43,13 @@ compare:
   expect: |
     Every kept series ends at the trip step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: 'this change (-drilldown-series-limit-mode, default loki)'
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy series limit (Drilldown partial answers)'
   loki: 'a partial range answer ends at the step where a series past max_query_series appears (engine oracle, Loki 3.7.9 and 3.7.10)'
-  proxy: 'the busiest series over the whole range'
+  proxy: 'Loki''s cut by default; the busiest series over the whole range with -drilldown-series-limit-mode=busiest'
   planned_test: 'TestDrilldownSeriesLimitMatchesLoki (internal/proxy)'
 applies_to:
   loki: ">=3.0.0"

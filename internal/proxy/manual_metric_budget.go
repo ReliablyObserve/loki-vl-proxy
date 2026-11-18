@@ -155,14 +155,89 @@ type seriesLimitScope struct {
 	drilldown  bool
 	foldBudget int          // the raw-row budget a request that folds its series afterwards reads under, unless the tenant's limit is lower; 0 = none
 	truncated  atomic.Int64 // the limit that cut a Drilldown result; 0 = none
+	// lokiCut is -drilldown-series-limit-mode=loki for a Drilldown range request: the partial answer keeps the first
+	// series met and ends at the step where the first series past the limit appears, as Loki's does.
+	lokiCut bool
+	stepNs  int64        // the request's step, which puts a recorded cut on the answer's grid
+	cutNs   atomic.Int64 // the earliest first time (ns) of a series dropped past the limit; 0 = none
 }
 
 type seriesLimitScopeKey struct{}
 
+// Series limit modes of a Logs Drilldown answer over the limit (-drilldown-series-limit-mode).
+const (
+	// drilldownSeriesLimitLoki is Loki's answer: the first series met, the range cut at the step where the first
+	// series past the limit appears (Loki's engine; recorded in TestDrilldownSeriesLimitMatchesLoki).
+	drilldownSeriesLimitLoki = "loki"
+	// drilldownSeriesLimitBusiest keeps the busiest series over the whole range.
+	drilldownSeriesLimitBusiest = "busiest"
+)
+
 // withSeriesLimitScope attaches a series limit scope for r to its context.
-func withSeriesLimitScope(r *http.Request) (*http.Request, *seriesLimitScope) {
+func (p *Proxy) withSeriesLimitScope(r *http.Request) (*http.Request, *seriesLimitScope) {
 	scope := &seriesLimitScope{drilldown: isGrafanaDrilldownRequest(r)}
+	if scope.drilldown && p.drilldownSeriesLimitMode != drilldownSeriesLimitBusiest {
+		if step, ok := parsePositiveStepDuration(r.URL.Query().Get("step")); ok {
+			scope.lokiCut, scope.stepNs = true, int64(step)
+		}
+	}
 	return r.WithContext(context.WithValue(r.Context(), seriesLimitScopeKey{}, scope)), scope
+}
+
+func seriesLimitScopeFrom(ctx context.Context) *seriesLimitScope {
+	scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope)
+	return scope
+}
+
+// recordCut keeps the earliest first time of a series dropped past the limit (several reads of one request may
+// each drop series).
+func (s *seriesLimitScope) recordCut(ns int64) {
+	if s == nil || ns <= 0 {
+		return
+	}
+	for {
+		cur := s.cutNs.Load()
+		if cur != 0 && cur <= ns {
+			return
+		}
+		if s.cutNs.CompareAndSwap(cur, ns) {
+			return
+		}
+	}
+}
+
+// seriesKeptForLimit returns the limit keys a Drilldown partial answer keeps: the busiest (total, ties by key), or
+// in the Loki mode the first met (first time, ties by key), recording the first time of the first key it drops.
+func seriesKeptForLimit(ctx context.Context, keys []string, total func(string) float64, first func(string) int64, limit int) []string {
+	if limit <= 0 || len(keys) <= limit {
+		return keys
+	}
+	scope := seriesLimitScopeFrom(ctx)
+	lokiCut := scope != nil && scope.lokiCut
+	totals := make(map[string]float64, len(keys))
+	firsts := make(map[string]int64, len(keys))
+	for _, k := range keys {
+		if lokiCut {
+			firsts[k] = first(k)
+		} else {
+			totals[k] = total(k)
+		}
+	}
+	sorted := append([]string(nil), keys...)
+	sort.Slice(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if lokiCut && firsts[a] != firsts[b] {
+			return firsts[a] < firsts[b]
+		}
+		if !lokiCut && totals[a] != totals[b] {
+			return totals[a] > totals[b]
+		}
+		return a < b
+	})
+	if lokiCut && firsts[sorted[limit]] != math.MaxInt64 {
+		scope.recordCut(firsts[sorted[limit]])
+	}
+	return sorted[:limit]
 }
 
 // outerFoldedSeriesKey is separate from foldedSumKey: that existing scope can carry a
@@ -218,6 +293,9 @@ type metricResponseRewriter struct {
 	status int
 	shift  time.Duration
 	scope  *seriesLimitScope
+	// partial, when set, counts a Drilldown answer cut by the series limit, by mode
+	// (loki_vl_proxy_internal_operation_total{operation="drilldown_series_limit"}).
+	partial func(mode string)
 }
 
 func (m *metricResponseRewriter) WriteHeader(code int) { m.status = code }
@@ -227,6 +305,16 @@ func (m *metricResponseRewriter) Write(b []byte) (int, error) { return m.buf.Wri
 func (m *metricResponseRewriter) finish() {
 	body := m.buf.Bytes()
 	if m.status == 0 || m.status == http.StatusOK {
+		if m.scope != nil && m.scope.truncated.Load() > 0 {
+			mode := drilldownSeriesLimitBusiest
+			if m.scope.lokiCut {
+				mode = drilldownSeriesLimitLoki
+				body = cutLokiResultAfter(body, m.scope.cutNs.Load(), m.scope.stepNs)
+			}
+			if m.partial != nil {
+				m.partial(mode)
+			}
+		}
 		body = shiftLokiResultTimestamps(body, m.shift)
 		body = addSeriesLimitWarning(body, m.scope)
 	}
@@ -234,6 +322,86 @@ func (m *metricResponseRewriter) finish() {
 		m.ResponseWriter.WriteHeader(m.status)
 	}
 	_, _ = m.ResponseWriter.Write(body)
+}
+
+// cutLokiResultAfter ends a Loki matrix answer where Loki ends a Drilldown partial answer: at the first step of
+// the answer's grid at or after cutNs (the first time of the first series past the limit), every later point
+// dropped, and a series left without points dropped. A vector, a cut of 0 or an unparsable body is unchanged.
+func cutLokiResultAfter(body []byte, cutNs, stepNs int64) []byte {
+	if cutNs <= 0 || stepNs <= 0 {
+		return body
+	}
+	var resp map[string]json.RawMessage
+	if json.Unmarshal(body, &resp) != nil {
+		return body
+	}
+	var data map[string]json.RawMessage
+	if json.Unmarshal(resp["data"], &data) != nil {
+		return body
+	}
+	var resultType string
+	if json.Unmarshal(data["resultType"], &resultType) != nil || resultType != "matrix" {
+		return body
+	}
+	var result []struct {
+		Metric json.RawMessage     `json:"metric"`
+		Values [][]json.RawMessage `json:"values"`
+	}
+	if json.Unmarshal(data["result"], &result) != nil {
+		return body
+	}
+	pointNs := func(p []json.RawMessage) (int64, bool) {
+		if len(p) == 0 {
+			return 0, false
+		}
+		ts, err := strconv.ParseFloat(string(p[0]), 64)
+		return int64(math.Round(ts*1e3)) * int64(time.Millisecond), err == nil
+	}
+	// The grid: every point lies on origin + k*step; the cut moves up to the first grid time at or after it.
+	origin := int64(math.MaxInt64)
+	for _, s := range result {
+		if len(s.Values) > 0 {
+			if ns, ok := pointNs(s.Values[0]); ok && ns < origin {
+				origin = ns
+			}
+		}
+	}
+	if origin == math.MaxInt64 {
+		return body
+	}
+	end := origin
+	if cutNs > origin {
+		end = origin + (cutNs-origin+stepNs-1)/stepNs*stepNs
+	}
+	kept := result[:0]
+	for _, s := range result {
+		n := 0
+		for _, p := range s.Values {
+			if ns, ok := pointNs(p); ok && ns <= end {
+				s.Values[n] = p
+				n++
+			}
+		}
+		if n > 0 {
+			s.Values = s.Values[:n]
+			kept = append(kept, s)
+		}
+	}
+	encoded, err := json.Marshal(kept)
+	if err != nil {
+		return body
+	}
+	data["result"] = encoded
+	rewritten, err := marshalOrderedJSONObject(data, []string{"resultType", "result", "stats"})
+	if err != nil {
+		return body
+	}
+	resp["data"] = rewritten
+	out, err := marshalOrderedJSONObject(resp, []string{"status", "warnings", "data"})
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // shiftLokiResultTimestamps adds shift to the sample timestamps of a Loki
@@ -417,20 +585,61 @@ func capSeriesToLimit(ctx context.Context, body []byte, limit int) ([]byte, erro
 	if err := seriesLimitReached(ctx, limit); err != nil {
 		return nil, err
 	}
-	return limitLokiResultSeries(body, limit), nil
+	return limitLokiResultSeriesFor(ctx, body, limit), nil
 }
 
 // capSeriesForRequest is capSeriesToLimit for a result still held as series:
 // Loki's error for a plain client, the busiest limit series with Loki's
 // warning for Logs Drilldown.
 func capSeriesForRequest(ctx context.Context, series map[string]manualSeriesSamples, limit int) (map[string]manualSeriesSamples, error) {
+	return capSeriesForRequestAt(ctx, series, limit, 0)
+}
+
+// capBucketSeriesForRequest is capSeriesForRequest for series whose samples are VictoriaLogs buckets labelled by
+// their start: a bucket's lines lie after its label, so the first step that meets them is the next one.
+func capBucketSeriesForRequest(ctx context.Context, series map[string]manualSeriesSamples, limit int) (map[string]manualSeriesSamples, error) {
+	return capSeriesForRequestAt(ctx, series, limit, 1)
+}
+
+func capSeriesForRequestAt(ctx context.Context, series map[string]manualSeriesSamples, limit int, firstOffset int64) (map[string]manualSeriesSamples, error) {
 	if limit <= 0 || len(series) <= limit {
 		return series, nil
 	}
 	if err := seriesLimitReached(ctx, limit); err != nil {
 		return nil, err
 	}
-	return capSeriesByTotalCount(series, limit), nil
+	keys := make([]string, 0, len(series))
+	for k := range series {
+		keys = append(keys, k)
+	}
+	kept := seriesKeptForLimit(ctx, keys, func(k string) float64 {
+		var total float64
+		for _, smp := range series[k].Samples {
+			total += smp.value
+		}
+		return total
+	}, func(k string) int64 {
+		if first := firstSampleTime(series[k].Samples); first != math.MaxInt64 {
+			return first + firstOffset
+		}
+		return math.MaxInt64
+	}, limit)
+	out := make(map[string]manualSeriesSamples, len(kept))
+	for _, k := range kept {
+		out[k] = series[k]
+	}
+	return out, nil
+}
+
+// firstSampleTime is the earliest sample time (ns) of a series, MaxInt64 for none.
+func firstSampleTime(samples []rangeMetricSample) int64 {
+	first := int64(math.MaxInt64)
+	for _, s := range samples {
+		if s.ts < first {
+			first = s.ts
+		}
+	}
+	return first
 }
 
 // seriesLimitCollecting reports whether a collector that has seen n series

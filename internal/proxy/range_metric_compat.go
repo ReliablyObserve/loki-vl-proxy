@@ -1230,7 +1230,13 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 	// series: this ranks values and sends the limit to VictoriaLogs.
 	limit := p.requestQueryLimits(ctx).MaxQuerySeries
 	params := url.Values{}
-	params.Set("query", spec.BaseQuery+" | stats by ("+field+") count() as _c | sort by (_c desc) | limit "+strconv.Itoa(limit+1))
+	rank := " | stats by (" + field + ") count() as _c | sort by (_c desc) | limit "
+	firstMet := false
+	if scope := seriesLimitScopeFrom(ctx); scope != nil && scope.lokiCut {
+		// Loki's partial answer keeps the values met first: rank by each value's first line.
+		rank, firstMet = " | stats by ("+field+") min(_time) as _c | sort by (_c) | limit ", true
+	}
+	params.Set("query", spec.BaseQuery+rank+strconv.Itoa(limit+1))
 	params.Set("start", windowStart.UTC().Format(time.RFC3339Nano))
 	params.Set("end", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
 	params.Set("time", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
@@ -1265,6 +1271,10 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 	if err != nil {
 		return nil, err
 	}
+	if firstMet && len(values) < ranked {
+		// Loki's answer ends where the first value left out begins.
+		seriesLimitScopeFrom(ctx).recordCut(drilldownRankedFirstTime(body, spec.GroupBy[0], len(values)))
+	}
 	if len(values) < ranked {
 		// The ranking is bound by the tenant's limit, whatever the request folds.
 		if err := seriesLimitReached(tenantSeriesLimitContext(ctx), len(values)); err != nil {
@@ -1275,6 +1285,37 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 		filter = "(" + filter + " or " + field + `:"")`
 	}
 	return p.collectRangeMetricHits(ctx, spec.BaseQuery+" | filter "+filter, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+}
+
+// drilldownRankedFirstTime is the first-line time (ns) of the n-th value (0-based) of a ranking by min(_time),
+// 0 when the answer holds no such value or time.
+func drilldownRankedFirstTime(body []byte, field string, n int) int64 {
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return 0
+	}
+	i := 0
+	for _, entry := range v.GetArray("data", "result") {
+		if len(entry.GetStringBytes("metric", field)) == 0 {
+			continue // the group without the field, which drilldownTopValuesFromMatrix leaves out too
+		}
+		if i == n {
+			pair := entry.GetArray("value")
+			if len(pair) < 2 {
+				return 0
+			}
+			text := string(pair[1].GetStringBytes())
+			if ts, err := time.Parse(time.RFC3339Nano, text); err == nil {
+				return ts.UnixNano()
+			}
+			if secs, err := strconv.ParseFloat(text, 64); err == nil {
+				return int64(secs * 1e9)
+			}
+			return 0
+		}
+		i++
+	}
+	return 0
 }
 
 // requestKeepsPartialSeries reports whether the request answers a series limit
@@ -1789,7 +1830,7 @@ func capHitSeries(ctx context.Context, series map[string]manualSeriesSamples, li
 	if aux != "" || statsGroupsGuarded(ctx) {
 		return series, nil
 	}
-	return capSeriesForRequest(ctx, series, limit)
+	return capBucketSeriesForRequest(ctx, series, limit)
 }
 
 // dropZeroSeries removes the groups that counted nothing.

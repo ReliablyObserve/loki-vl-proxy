@@ -444,7 +444,7 @@ func (p *Proxy) limitMultiTenantMetricSeries(r *http.Request, endpoint string, r
 	if (endpoint != "query" && endpoint != "query_range") || !logQLProducesSamples(r.FormValue("query")) {
 		return body, nil
 	}
-	scoped, scope := withSeriesLimitScope(r)
+	scoped, scope := p.withSeriesLimitScope(r)
 	if scope.drilldown {
 		for _, rec := range recorders {
 			if limit := seriesLimitWarningLimit(rec.Body.Bytes()); limit > 0 {

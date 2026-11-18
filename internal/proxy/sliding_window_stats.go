@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -503,13 +504,36 @@ func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale 
 		if err := seriesLimitReached(ctx, maxSeries); err != nil {
 			return nil, err
 		}
-		totals := make([]float64, len(s.keys))
-		for _, rec := range s.records {
-			if rec.grid != slidingGridC {
-				totals[rec.series] += slidingWindowValue(withBytes, rec.count, rec.bytes)
+		if scope := seriesLimitScopeFrom(ctx); scope != nil && scope.lokiCut {
+			// Loki's partial answer: the series met first (their first window), ending where the first one past
+			// the limit begins.
+			firsts := make([]int32, len(s.keys))
+			for series := range s.keys {
+				firsts[series] = math.MaxInt32
+				slidingWindows(s.records[offsets[series]:offsets[series+1]], withBytes, scale, steps, s.windowGrid, func(seg slidingSegment) {
+					if seg.from < firsts[series] {
+						firsts[series] = seg.from
+					}
+				})
 			}
+			sort.SliceStable(selected, func(i, j int) bool {
+				if a, b := firsts[selected[i]], firsts[selected[j]]; a != b {
+					return a < b
+				}
+				return s.keys[selected[i]] < s.keys[selected[j]]
+			})
+			if from := firsts[selected[maxSeries]]; from != math.MaxInt32 {
+				scope.recordCut(start.Add(time.Duration(from) * step).UnixNano())
+			}
+		} else {
+			totals := make([]float64, len(s.keys))
+			for _, rec := range s.records {
+				if rec.grid != slidingGridC {
+					totals[rec.series] += slidingWindowValue(withBytes, rec.count, rec.bytes)
+				}
+			}
+			sort.SliceStable(selected, func(i, j int) bool { return totals[selected[i]] > totals[selected[j]] })
 		}
-		sort.SliceStable(selected, func(i, j int) bool { return totals[selected[i]] > totals[selected[j]] })
 		selected = selected[:maxSeries]
 	}
 	out := make([]slidingOutputSeries, 0, len(selected))

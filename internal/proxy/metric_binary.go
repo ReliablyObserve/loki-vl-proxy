@@ -172,7 +172,11 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	overLimitKey := ""
 	maxSeries := limit
 	if drilldown {
-		ranked, rankable = rankedSingleFieldQuery(logsqlQuery, limit)
+		if scope := seriesLimitScopeFrom(ctx); scope != nil && scope.lokiCut {
+			ranked, rankable = rankedSingleFieldQueryFirstMet(logsqlQuery, limit)
+		} else {
+			ranked, rankable = rankedSingleFieldQuery(logsqlQuery, limit)
+		}
 		if rankable {
 			// A breakdown seen over the limit is ranked straight away for a while.
 			// The ranked query returns the same answer under the limit, so a stale
@@ -319,7 +323,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 			p.writeErr(w, ctx, err)
 			return
 		}
-		out = limitLokiResultSeries(out, limit)
+		out = limitLokiResultSeriesFor(ctx, out, limit)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
@@ -478,12 +482,22 @@ func parsedFieldPrefilter(parser, field string, stored ...string) string {
 // VictoriaLogs still reads the lines twice (the ranking and the buckets), but
 // the response, and what the proxy buffers, stay bounded.
 func rankedSingleFieldQuery(logsqlQuery string, limit int) (string, bool) {
+	return rankedSingleFieldQueryBy(logsqlQuery, limit, "count() as __lvp_rank | sort by (__lvp_rank desc, ")
+}
+
+// rankedSingleFieldQueryFirstMet is rankedSingleFieldQuery for the Loki series-limit mode: the limit+1 values
+// whose first line is earliest, the series Loki's evaluation meets first.
+func rankedSingleFieldQueryFirstMet(logsqlQuery string, limit int) (string, bool) {
+	return rankedSingleFieldQueryBy(logsqlQuery, limit, "min(_time) as __lvp_rank | sort by (__lvp_rank, ")
+}
+
+func rankedSingleFieldQueryBy(logsqlQuery string, limit int, rank string) (string, bool) {
 	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
 	if !ok || limit <= 0 || spec.GroupBy[0] == "_stream" {
 		return "", false
 	}
 	field := spec.GroupBy[0] // as the translator wrote it, quoted where needed
-	ranking := spec.BaseQuery + " | stats by (" + field + ") count() as __lvp_rank | sort by (__lvp_rank desc, " + field + ") | limit " + strconv.Itoa(limit+1) + " | fields " + field
+	ranking := spec.BaseQuery + " | stats by (" + field + ") " + rank + field + ") | limit " + strconv.Itoa(limit+1) + " | fields " + field
 	return spec.BaseQuery + " | filter " + field + ":in(" + ranking + ")" + logsqlQuery[len(spec.BaseQuery):], true
 }
 
@@ -673,16 +687,43 @@ func buildVLInFilter(field string, values []string) string {
 // noise floor when tens of thousands of values exist.
 // Returns body unchanged if parsing fails or len(result) <= maxSeries.
 func limitLokiResultSeries(body []byte, maxSeries int) []byte {
+	out, _ := limitLokiResultSeriesBy(body, maxSeries, false)
+	return out
+}
+
+// limitLokiResultSeriesFor is limitLokiResultSeries for the request ctx belongs to: in the Loki series-limit mode
+// (-drilldown-series-limit-mode=loki) a range answer keeps the first series met, as Loki does, and records where
+// Loki ends it (seriesLimitScope.recordCut).
+func limitLokiResultSeriesFor(ctx context.Context, body []byte, maxSeries int) []byte {
+	scope := seriesLimitScopeFrom(ctx)
+	if scope == nil || !scope.lokiCut {
+		return limitLokiResultSeries(body, maxSeries)
+	}
+	out, cut := limitLokiResultSeriesBy(body, maxSeries, true)
+	if relabel, _ := ctx.Value(statsTumblingRelabelKey{}).(*statsTumblingRelabel); cut > 0 && relabel != nil && !relabel.done && relabel.relabel != nil {
+		// A range == step answer still holds VictoriaLogs' bucket starts; its caller moves them to Loki's times
+		// after this, and the cut moves with them.
+		cut = relabel.relabel(cut)
+	}
+	scope.recordCut(cut)
+	return out
+}
+
+// limitLokiResultSeriesBy keeps maxSeries series of a Loki result: the busiest (summed values, ties by labels), or
+// with firstMet the series whose first point is earliest (ties by labels), Loki's order. With firstMet it also
+// returns the time (ns) of the first point of the first series it drops, 0 for an instant answer or when it keeps
+// every series.
+func limitLokiResultSeriesBy(body []byte, maxSeries int, firstMet bool) ([]byte, int64) {
 	if maxSeries <= 0 {
-		return body
+		return body, 0
 	}
 	v, err := fj.ParseBytes(body)
 	if err != nil {
-		return body
+		return body, 0
 	}
 	result := v.GetArray("data", "result")
 	if len(result) <= maxSeries {
-		return body
+		return body, 0
 	}
 	resultType := string(v.GetStringBytes("data", "resultType"))
 	if resultType == "" {
@@ -694,6 +735,7 @@ func limitLokiResultSeries(body []byte, maxSeries int) []byte {
 	type ranked struct {
 		idx   int
 		total float64
+		first float64 // the earliest point's time, seconds
 		key   string
 	}
 	sampleValue := func(pair *fj.Value) float64 {
@@ -710,13 +752,17 @@ func limitLokiResultSeries(body []byte, maxSeries int) []byte {
 	ranks := make([]ranked, len(result))
 	for i, entry := range result {
 		var total float64
+		first := math.Inf(1)
 		for _, pair := range entry.GetArray("values") {
 			total += sampleValue(pair)
+			if arr := pair.GetArray(); len(arr) > 0 {
+				first = math.Min(first, arr[0].GetFloat64())
+			}
 		}
 		if value := entry.Get("value"); value != nil { // instant vector sample
 			total += sampleValue(value)
 		}
-		ranks[i] = ranked{idx: i, total: total}
+		ranks[i] = ranked{idx: i, total: total, first: first}
 	}
 	// Ties break on the labels, so equal-volume series (a field whose values
 	// appear once each) are kept the same way on every request.
@@ -725,12 +771,20 @@ func limitLokiResultSeries(body []byte, maxSeries int) []byte {
 			ranks[i].key = string(m.MarshalTo(nil))
 		}
 	}
+	firstMet = firstMet && resultType == "matrix"
 	sort.Slice(ranks, func(i, j int) bool {
-		if ranks[i].total != ranks[j].total {
+		if firstMet && ranks[i].first != ranks[j].first {
+			return ranks[i].first < ranks[j].first
+		}
+		if !firstMet && ranks[i].total != ranks[j].total {
 			return ranks[i].total > ranks[j].total
 		}
 		return ranks[i].key < ranks[j].key
 	})
+	var cut int64
+	if firstMet && !math.IsInf(ranks[maxSeries].first, 1) {
+		cut = int64(math.Round(ranks[maxSeries].first*1e3)) * int64(time.Millisecond)
+	}
 
 	buf := make([]byte, 0, maxSeries*256)
 	buf = append(buf, `{"status":"success","data":{"resultType":"`...)
@@ -743,7 +797,7 @@ func limitLokiResultSeries(body []byte, maxSeries int) []byte {
 		buf = result[ranks[i].idx].MarshalTo(buf)
 	}
 	buf = append(buf, `]}}`...)
-	return buf
+	return buf, cut
 }
 
 // addUnderscorefallbackByLabels augments every by() clause of a translated LogsQL

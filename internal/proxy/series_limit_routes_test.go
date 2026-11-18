@@ -375,6 +375,7 @@ func TestSeriesLimit_EveryMetricRouteFollowsLoki(t *testing.T) {
 					fake := &seriesLimitFakeVL{t: t, lines: seriesLimitFixture(pods, instants...)}
 					srv := httptest.NewServer(fake)
 					p := newSlidingTestProxy(t, srv.URL)
+					p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 					p.maxStatsQuerySeries = limit
 					p.declaredLabelFields = tc.declared
 					header := http.Header{}
@@ -462,6 +463,7 @@ func TestSeriesLimit_SlidingWindowStatsFollowsLoki(t *testing.T) {
 			emu := &vlStatsRangeEmulator{t: t, rows: rows}
 			srv := httptest.NewServer(emu)
 			p := newSlidingTestProxy(t, srv.URL)
+			p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 			p.maxStatsQuerySeries = limit
 			header := http.Header{}
 			if drilldown {
@@ -507,9 +509,10 @@ func TestSeriesLimit_SlidingWindowStatsKeepsTheStreamsOfAFoldingRequest(t *testi
 		srv := httptest.NewServer(emu)
 		defer srv.Close()
 		p := newSlidingTestProxy(t, srv.URL)
+		p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 		p.maxStatsQuerySeries = 2
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil)
-		req, _ = withSeriesLimitScope(req)
+		req, _ = newTestProxy(t, "http://127.0.0.1:1").withSeriesLimitScope(req)
 		if folding {
 			p.rangeMetricRowLimit = 1000
 			req = p.withWithoutFold(req)
@@ -556,6 +559,7 @@ func TestSeriesLimit_BinaryUnionFollowsLoki(t *testing.T) {
 			fake := &seriesLimitFakeVL{t: t, lines: lines}
 			srv := httptest.NewServer(fake)
 			p := newSlidingTestProxy(t, srv.URL)
+			p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 			p.maxStatsQuerySeries = limit
 			header := http.Header{}
 			if drilldown {
@@ -581,6 +585,7 @@ func TestSeriesLimit_BinaryOperandFromCacheKeepsWarning(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	p := newSlidingTestProxy(t, srv.URL)
+	p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 	p.maxStatsQuerySeries = 3
 	header := http.Header{"X-Query-Tags": {"Source=grafana-lokiexplore-app"}}
 	start, end := base.Add(5*time.Minute), base.Add(10*time.Minute)
@@ -614,6 +619,7 @@ func TestSeriesLimit_MultiTenantMergeFollowsLoki(t *testing.T) {
 		for _, drilldown := range []bool{false, true} {
 			srv := httptest.NewServer(&seriesLimitFakeVL{t: t, lines: lines})
 			p, _, mux := newTwoTenantProxy(t, srv.URL)
+			p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 			p.storeBackendVersion("v1.50.0", "v1.50.0")
 			p.maxStatsQuerySeries = tc.limit
 			req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)

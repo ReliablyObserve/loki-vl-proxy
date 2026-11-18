@@ -1327,7 +1327,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		if err := seriesLimitReached(ctx, limit); err != nil {
 			return nil, err
 		}
-		seriesByKey = busiestBareParserSeries(seriesByKey, limit)
+		seriesByKey = busiestBareParserSeries(ctx, seriesByKey, limit)
 	}
 
 	result := make([]bareParserMetricSeries, 0, len(seriesByKey))
@@ -1403,23 +1403,34 @@ func (p *Proxy) addBareParserMetricFields(metric map[string]string, entry map[st
 	}
 }
 
-// busiestBareParserSeries keeps the limit series with the highest summed
-// sample value, the ranking capSeriesByTotalCount applies on the other paths.
-func busiestBareParserSeries(series map[string]*bareParserMetricSeries, limit int) map[string]*bareParserMetricSeries {
-	// One sample carrying each series' total ranks it the same way.
-	totals := make(map[string]manualSeriesSamples, len(series))
-	for key, entry := range series {
+// busiestBareParserSeries keeps the limit series a Drilldown partial answer keeps (seriesKeptForLimit): the highest
+// summed sample value, the ranking capSeriesByTotalCount applies on the other paths, or in the Loki series-limit
+// mode the first met.
+func busiestBareParserSeries(ctx context.Context, series map[string]*bareParserMetricSeries, limit int) map[string]*bareParserMetricSeries {
+	keys := make([]string, 0, len(series))
+	for key := range series {
+		keys = append(keys, key)
+	}
+	kept := seriesKeptForLimit(ctx, keys, func(key string) float64 {
 		var total float64
-		for _, sample := range entry.samples {
+		for _, sample := range series[key].samples {
 			total += sample.value
 		}
-		totals[key] = manualSeriesSamples{Samples: []rangeMetricSample{{value: total}}}
+		return total
+	}, func(key string) int64 {
+		first := int64(math.MaxInt64)
+		for _, sample := range series[key].samples {
+			if sample.tsNanos < first {
+				first = sample.tsNanos
+			}
+		}
+		return first
+	}, limit)
+	out := make(map[string]*bareParserMetricSeries, len(kept))
+	for _, key := range kept {
+		out[key] = series[key]
 	}
-	kept := make(map[string]*bareParserMetricSeries, limit)
-	for key := range capSeriesByTotalCount(totals, limit) {
-		kept[key] = series[key]
-	}
-	return kept
+	return out
 }
 
 // fetchBareParserMetricSeriesViaHits is the fast path for count_over_time / rate

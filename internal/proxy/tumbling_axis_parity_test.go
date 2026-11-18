@@ -624,6 +624,7 @@ func TestShortRangeMetric_TooManySeriesFollowsLokiLimit(t *testing.T) {
 	t.Run("instant query", func(t *testing.T) {
 		srv, fake := newTumblingFakeVL(t, lines)
 		p := newSlidingTestProxy(t, srv.URL)
+		p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 		p.maxStatsQuerySeries = 150
 		query := `sum by (pod) (count_over_time({app="top"}[5m]))`
 		params := url.Values{"query": {query}, "time": {strconv.FormatInt(base.Add(10*time.Minute).Unix(), 10)}}
@@ -651,6 +652,7 @@ func TestShortRangeMetric_TooManySeriesFollowsLokiLimit(t *testing.T) {
 	t.Run("range equals step", func(t *testing.T) {
 		srv, fake := newTumblingFakeVL(t, lines)
 		p := newSlidingTestProxy(t, srv.URL)
+		p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 		p.maxStatsQuerySeries = 150
 		query := `sum by (pod) (count_over_time({app="top"}[5m]))`
 		rec := serveTumblingQuery(p, "/loki/api/v1/query_range", tumblingRangeParams(query, base.Add(5*time.Minute), base.Add(15*time.Minute), 5*time.Minute), nil)
@@ -683,7 +685,8 @@ func TestShortRangeMetric_TooManySeriesFollowsLokiLimit(t *testing.T) {
 			query := `sum by (pod) (count_over_time({app="top"}[1m]))`
 			srv, fake := newTumblingFakeVL(t, lines)
 			p := newSlidingTestProxy(t, srv.URL)
-			p.maxStatsQuerySeries = 150 // -max-stats-query-series
+			p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
+			p.maxStatsQuerySeries = 150                              // -max-stats-query-series
 			params := tumblingRangeParams(query, start, end, step)
 
 			rec := serveTumblingQuery(p, "/loki/api/v1/query_range", params, nil)

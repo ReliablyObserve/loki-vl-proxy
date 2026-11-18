@@ -537,6 +537,10 @@ type Config struct {
 	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
 	// max_query_series behaviour. 0 means use the built-in default (1000).
 	MaxStatsQuerySeries int
+	// DrilldownSeriesLimitMode is how a Logs Drilldown range answer over the series limit is cut: "loki" (the
+	// default, also for ""): the first series met, ending at the step where the first series past the limit
+	// appears, as Loki answers; "busiest": the busiest series over the whole range.
+	DrilldownSeriesLimitMode string
 	// ExecutionLimits bounds per-request work and the bytes a request may pull
 	// out of VictoriaLogs. Zero values select the built-in defaults.
 	ExecutionLimits ExecutionLimitsConfig
@@ -820,6 +824,7 @@ type Proxy struct {
 	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
 	labelFilterRefillMaxPages             int           // extra pages read to fill a filtered log page (0=none)
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=1000)
+	drilldownSeriesLimitMode              string        // -drilldown-series-limit-mode: loki (default) or busiest
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
 	metadataScanLimiter                   *metadataScanLimiter
@@ -1104,6 +1109,11 @@ func newCoalescer(disabled bool) *mw.Coalescer {
 
 //nolint:gocyclo // constructor wires many optional config knobs (URLs, levels, multi-tenant, caches, ruler/alerts, telemetry); complexity is inherent to top-level assembly.
 func New(cfg Config) (*Proxy, error) {
+	switch cfg.DrilldownSeriesLimitMode {
+	case "", drilldownSeriesLimitLoki, drilldownSeriesLimitBusiest:
+	default:
+		return nil, fmt.Errorf("invalid -drilldown-series-limit-mode: %q (must be %q or %q)", cfg.DrilldownSeriesLimitMode, drilldownSeriesLimitLoki, drilldownSeriesLimitBusiest)
+	}
 	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.DeleteAPIAuthToken); err != nil {
 		return nil, err
 	}
@@ -1477,6 +1487,7 @@ func New(cfg Config) (*Proxy, error) {
 		orderedJSONMaxBytes:                   cfg.OrderedJSONMetricMaxBytes,
 		labelFilterRefillMaxPages:             max(cfg.LabelFilterRefillMaxPages, 0),
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
+		drilldownSeriesLimitMode:              cfg.DrilldownSeriesLimitMode,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
 		labelWarmBackoff:                      newLabelWarmBackoff(),
@@ -2812,11 +2823,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	r, seriesScope := withSeriesLimitScope(r)
+	r, seriesScope := p.withSeriesLimitScope(r)
 	// Only sample responses are rewritten: buffering a log query here would
 	// defeat -stream-response.
 	if logQLProducesSamples(logqlQuery) && (rangeOffset != 0 || seriesScope.drilldown) {
-		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope}
+		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope, partial: p.drilldownPartialCounter(r.Context())}
 		w = rewriter
 		defer rewriter.finish()
 	}
@@ -3096,7 +3107,26 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 // compression varies independently.
 func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
 	profile := detectGrafanaClientProfile(r, "", r.URL.Path)
-	return strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
+	key := strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
+	if isGrafanaDrilldownRequest(r) {
+		// A Drilldown answer over the series limit depends on -drilldown-series-limit-mode: an answer cut one way
+		// is never served for the other, on this replica or on a peer.
+		key += "/sl-" + p.drilldownSeriesLimitModeOrDefault()
+	}
+	return key
+}
+
+// drilldownPartialCounter counts a Drilldown answer cut by the series limit, by the mode that cut it.
+func (p *Proxy) drilldownPartialCounter(ctx context.Context) func(string) {
+	return func(mode string) { p.observeInternalOperation(ctx, "drilldown_series_limit", mode, 0) }
+}
+
+// drilldownSeriesLimitModeOrDefault is -drilldown-series-limit-mode, "" read as the default (loki).
+func (p *Proxy) drilldownSeriesLimitModeOrDefault() string {
+	if p.drilldownSeriesLimitMode == "" {
+		return drilldownSeriesLimitLoki
+	}
+	return p.drilldownSeriesLimitMode
 }
 
 // detectedLevelCacheKey versions cached log responses by the detected_level
@@ -3197,9 +3227,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	// The series limit applies to instant queries too, so Drilldown gets its
 	// partial-result warning and every other client Loki's error.
-	r, instantScope := withSeriesLimitScope(r)
+	r, instantScope := p.withSeriesLimitScope(r)
 	if logQLProducesSamples(logqlQuery) && (instantOffset != 0 || instantScope.drilldown) {
-		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: instantOffset, scope: instantScope}
+		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: instantOffset, scope: instantScope, partial: p.drilldownPartialCounter(r.Context())}
 		w = rewriter
 		defer rewriter.finish()
 	}

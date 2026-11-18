@@ -103,16 +103,23 @@ buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `
 - Every other client gets Loki's `400` as soon as the response holds more
   series than the limit.
 - A Drilldown single-field breakdown over the limit is asked again with an
-  `in()` subquery that ranks the field's values by line count in the request's
-  time range and keeps the `limit + 1` busiest. VictoriaLogs reads the lines
-  twice for that call (the ranking and the buckets), but its response holds at
-  most `limit + 1` series however many values the field has; the proxy
-  remembers the breakdown for five minutes and ranks straight away. Drilldown
-  gets the `limit` busiest series and Loki's warning. Loki keeps the first
-  series it meets instead of the busiest, so for series of equal volume the
-  kept set can differ; each kept series is exact. A breakdown that cannot be
-  ranked this way (the underscore label style's dotted fields, which group by
-  both spellings) is read whole and capped the same way.
+  `in()` subquery that ranks the field's values in the request's time range
+  and keeps `limit + 1` of them. VictoriaLogs reads the lines twice for that
+  call (the ranking and the buckets), but its response holds at most
+  `limit + 1` series however many values the field has; the proxy remembers
+  the breakdown for five minutes and ranks straight away. Drilldown gets
+  `limit` series and Loki's warning, chosen by `-drilldown-series-limit-mode`:
+  - `loki` (the default) answers as Loki does: the values ranked by their first
+    line (the series Loki's evaluation meets first), every kept series ending at
+    the step where the first series past the limit appears. A breakdown whose
+    series all start at once shows one step, as on Loki. Loki orders the series
+    that are new in one step at random, so among those the kept set can differ;
+    every kept point is Loki's.
+  - `busiest` ranks by line count and keeps the busiest series over the whole
+    range.
+  A breakdown that cannot be ranked this way (the underscore label style's
+  dotted fields, which group by both spellings) is read whole and capped the
+  same way.
 - Drilldown breakdowns share `-stats-query-range-concurrency` slots; a slot is
   free again after `-stats-query-range-inter-query-delay-ms`, which does not
   delay the answer.
