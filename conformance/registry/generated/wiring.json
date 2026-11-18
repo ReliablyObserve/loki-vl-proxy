@@ -2926,7 +2926,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 657,
+  "registry_items": 659,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -6539,6 +6539,7 @@
     "semantics/translator-folds-binary-by-operand-without",
     "semantics/translator-reads-vector-operand-as-text",
     "semantics/two-parsers-keep-one",
+    "semantics/unwrap-avg-overflow",
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
@@ -6547,6 +6548,7 @@
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-parserless-reads-stored-field",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
+    "semantics/unwrap-sliding-infinity-point",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",
     "semantics/without-fold-detected-level-unknown",
