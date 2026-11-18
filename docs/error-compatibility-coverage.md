@@ -16,7 +16,7 @@ The answers are those of Grafana Loki 3.7.10, recorded over HTTP on 2026-11-18. 
 | Errors that match Loki | 97.2% (241/248) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 58.9% (73/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
 | Cells that match | 101/124 | cells where every comparable row matches and no known leak remains |
-| Messages recorded | 36/46 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
+| Messages recorded | 36/48 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
 141 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
 
@@ -62,7 +62,7 @@ Error kinds:
 1. **request decoding**: The URL and form body are decoded first. Messages: `post-too-large`, `url-escape`, `url-semicolon`.
 2. **parameters**: Parameters are read next, in the order end, start, limit, step and direction; an end not after the start and the 11,000-point resolution check come before the query is parsed. Messages: `aggregate-by`, `delay-for`, `delete-end-in-future`, `delete-max-interval-invalid`, `delete-max-interval-too-long`, `delete-query-invalid`, `delete-query-not-set`, `delete-start-not-before-end`, `delete-start-not-set`, `delete-time-invalid`, `direction`, `end-before-start`, `interval-negative`, `limit-not-positive`, `number`, `param-duration`, `param-number`, `step-duration`, `step-not-positive`, `step-overflow`, `step-too-many-points`.
 3. **logql syntax**: The query text is parsed; a syntax error is answered before the query-length limit on query_range, and on tail before the parameters. Messages: `parse`, `parse-input-size`.
-4. **limits**: The query-length limit follows the syntax check on query_range and comes before it on the metadata routes. Messages: `limit-lookback`, `limit-query-length`.
+4. **limits**: The query-length limit follows the syntax check on query_range and comes before it on the metadata routes. Messages: `limit-lookback`, `limit-plan-time`, `limit-query-complexity`, `limit-query-length`.
 5. **logql validation**: Checks of a query that parsed (stage compilation, matcher rules, query type) come last. Messages: `instant-log-query`, `only-label-matchers`, `only-log-selector`.
 
 The order was observed by sending 33 requests that carry two errors each to a real Loki (`internal/lokierr/testdata/loki_check_order.jsonl`) and is held in each message item.
@@ -93,6 +93,8 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-limit-index-series` | 500 | limit | 1 | - | recorded-not-comparable | - | - |
 | `msg-limit-lookback` | 400 | limit | 3 | - | recorded-not-comparable | - | - |
 | `msg-limit-not-positive` | 400 | param | 8 | 8/8 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-limit-plan-time` | 400 | limit | 0 | - | documented | TestPlanBudgetStopsValidationAndStoresNothing, TestPlanBudgetStopsTheLowering, TestPlanBudgetBeforeTheFirstBackendCall, TestPlanBudgetTripIsNotHeldAfterTheFlight | - |
+| `msg-limit-query-complexity` | 400 | limit | 0 | - | documented | TestQueryComplexityLimitsRejectOnlyWhenLowered, TestQueryComplexityDerivedDefaultsNeverTrip | - |
 | `msg-limit-query-length` | 400 | limit | 9 | 8/8 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-limit-reached` | 400 | limit | 0 | - | documented | TestLimitAnswersAreLokisTextAndLogTheFlag, TestErrorLayer_NoVictoriaLogsLeak | - |
 | `msg-limit-response-size` | 500 | limit | 0 | - | documented | TestLimitAnswersAreLokisTextAndLogTheFlag, TestErrorLayer_NoVictoriaLogsLeak | - |

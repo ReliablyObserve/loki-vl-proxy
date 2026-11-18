@@ -32,6 +32,9 @@ import (
 // A label function that names stream labels adds the pipes that restore their stream values before the first pipe
 // of the log query (streamTagRestore, printed once per set of stream labels).
 func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	ra, err := unpackRange(ra)
 	if err != nil {
 		return nil, err

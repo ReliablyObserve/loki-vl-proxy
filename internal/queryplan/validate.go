@@ -12,6 +12,9 @@ import (
 // Detail) is that answer).
 type Rejection struct {
 	Detail string
+	// Exhausted is set on the answer of ValidateWithin when the caller's budget ran out before the walk ended: the
+	// query is neither accepted nor rejected, and Detail is empty.
+	Exhausted bool
 }
 
 func (r *Rejection) Error() string { return "parse error : " + r.Detail }
@@ -34,7 +37,43 @@ func reject(detail string) *Rejection { return &Rejection{Detail: detail} }
 //     comma, which the tree does not hold, so the answer is Loki's syntax error without a position.
 //
 // Validate reads only the tree; it allocates nothing for a query Loki accepts.
-func Validate(expr logql.Expr) *Rejection {
+func Validate(expr logql.Expr) *Rejection { return validate(expr, nil) }
+
+// Budget is what ValidateWithin asks before it visits a node: Exhausted reports that the caller's time for the
+// walk is spent.
+type Budget interface{ Exhausted() bool }
+
+// budgetCheckEvery is how many nodes ValidateWithin visits between two questions to the budget: a clock read per
+// node would cost a tenth of the walk of the deepest query Loki accepts.
+const budgetCheckEvery = 256
+
+// ValidateWithin is Validate that stops when budget is exhausted: it asks the budget at its first node and then
+// every budgetCheckEvery nodes, and answers a Rejection with Exhausted set. A nil budget is Validate.
+func ValidateWithin(expr logql.Expr, budget Budget) *Rejection {
+	if budget == nil {
+		return validate(expr, nil)
+	}
+	return validate(expr, &walk{budget: budget})
+}
+
+// walk counts the nodes a ValidateWithin visited.
+type walk struct {
+	budget Budget
+	nodes  int
+}
+
+// exhausted asks the budget at the first node and then every budgetCheckEvery nodes.
+func (w *walk) exhausted() bool {
+	w.nodes++
+	return (w.nodes-1)%budgetCheckEvery == 0 && w.budget.Exhausted()
+}
+
+var exhaustedRejection = &Rejection{Exhausted: true}
+
+func validate(expr logql.Expr, w *walk) *Rejection {
+	if w != nil && w.exhausted() {
+		return exhaustedRejection
+	}
 	switch e := expr.(type) {
 	case *logql.BinOpExpr:
 		if isSetOperation(e.Op) {
@@ -45,20 +84,20 @@ func Validate(expr logql.Expr) *Rejection {
 				return setOperationLiteral("right", e.Op, v)
 			}
 		}
-		if err := Validate(e.Left); err != nil {
+		if err := validate(e.Left, w); err != nil {
 			return err
 		}
-		return Validate(e.Right)
+		return validate(e.Right, w)
 	case *logql.VectorAggregation:
 		if (e.Op == logql.VectorSort || e.Op == logql.VectorSortDesc) && e.Grouping != nil && len(e.Grouping.Labels) > 0 {
 			return reject("sort and sort_desc doesn't allow grouping by ")
 		}
-		return Validate(e.Inner)
+		return validate(e.Inner, w)
 	case *logql.RangeAggregation:
 		if e.Op == logql.RangeQuantileOverTime && !e.HasParam {
 			return reject("parameter required for operation " + string(e.Op))
 		}
-		return Validate(e.Inner)
+		return validate(e.Inner, w)
 	case *logql.OpaqueMetricExpr:
 		if e.Func == "label_replace" {
 			if _, ok := e.Inner.(*logql.LogQuery); ok {
@@ -66,7 +105,7 @@ func Validate(expr logql.Expr) *Rejection {
 			}
 		}
 		if e.Inner != nil {
-			return Validate(e.Inner)
+			return validate(e.Inner, w)
 		}
 	}
 	return nil

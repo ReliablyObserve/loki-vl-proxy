@@ -25,6 +25,9 @@ import (
 // would read back as one), and a spelling the translator reads unlike the plan (screenLabelReplace, before the
 // lowering).
 func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	return labelReplaceOver(n, prof, true)
 }
 

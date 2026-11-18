@@ -133,6 +133,7 @@ smoke	internal/translator	FuzzIPLabelFilterConditionMatchesLogsQL	12s	-	ip() lab
 smoke	internal/translate	FuzzIPv4LineRegexLikeLoki	12s	-	IPv4 ip() regexp of line and label filters keeps a line exactly when Loki's walk finds an address of the pattern
 smoke	internal/translator	FuzzResolveJSONBracketPath	12s	-	a JSON bracket path resolves to the dotted field unpack_json writes
 smoke	internal/logql	FuzzVectorAggregationOverLogExpression	12s	-	a vector aggregation over a log expression fails with Loki parse error at the closing parenthesis
+smoke	internal/logql	FuzzComplexityBoundedByLength	12s	-	nodes and depth of every query that parses are at most its length in bytes, so limits derived from the length never reject
 smoke	internal/proxy	FuzzKeepSeriesGrouping	12s	-	a range aggregation over a trailing keep regrouped by the kept labels, once
 smoke	internal/translator	FuzzNarrowUnwrapLogfmtUnpack	12s	-	narrowed logfmt unpack of an unwrap metric names every label it reads
 smoke	internal/queryplan	FuzzBuild	12s	-	logical plan build and key
