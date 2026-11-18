@@ -17,6 +17,7 @@ import {
   waitForGrafanaReady,
   installGrafanaGuards,
   drilldownLabelFilter,
+  drilldownTab,
   waitForDrilldownApp,
 } from "./helpers";
 import { buildServiceDrilldownUrl } from "./url-state";
@@ -50,7 +51,7 @@ async function openServicePage(page: Page, uid: string) {
   await limitsFetched;
   await waitForGrafanaReady(page);
   await expect(drilldownLabelFilter(page)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("tab", { name: /^Logs/i }).first()).toBeVisible({
+  await expect(drilldownTab(page, "Logs").first()).toBeVisible({
     timeout: 30_000,
   });
 }
@@ -87,7 +88,7 @@ test.describe("Logs Drilldown — patterns tab follows drilldown-limits", () => 
     ).toBe(false);
 
     await openServicePage(page, uid);
-    await expect(page.getByRole("tab", { name: /^Patterns/i })).toHaveCount(0);
+    await expect(drilldownTab(page, "Patterns")).toHaveCount(0);
     await guards.assertClean();
   });
 
@@ -102,7 +103,7 @@ test.describe("Logs Drilldown — patterns tab follows drilldown-limits", () => 
       expect(body.pattern_ingester_enabled, `${datasource}: flag`).toBe(true);
 
       await openServicePage(page, uid);
-      await expect(page.getByRole("tab", { name: /^Patterns/i }).first()).toBeVisible({
+      await expect(drilldownTab(page, "Patterns").first()).toBeVisible({
         timeout: 30_000,
       });
       await guards.assertClean();
