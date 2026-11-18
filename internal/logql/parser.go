@@ -619,17 +619,27 @@ func (p *parser) unterminatedCallError(name string, start int) error {
 }
 
 // openCallError reads the call name the parser stands at as Loki's grammar writes it, label_replace(<expr>,
-// "dst", "replacement", "src", "regex"), vector(<number>) or approx_topk(<number>, <expr>), and returns the first
-// syntax error, or nil.
+// "dst", "replacement", "src", "regex"), vector(<number>) or approx_topk [by (...)] (<number>, <expr>), and returns
+// the first syntax error, or nil.
 func (p *parser) openCallError(name string) error {
-	if p.advance(); p.cur.Typ != TokLParen {
-		return nil // approx_topk's grouping: the parser's own error
+	p.advance()
+	if name == "approx_topk" && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
+		if _, err := p.parseGrouping(); err != nil {
+			return err
+		}
+	}
+	if p.cur.Typ != TokLParen {
+		return nil
 	}
 	p.advance()
 	switch name {
 	case "label_replace":
-		if _, err := p.parseExpr(); err != nil {
+		inner, err := p.parseExpr()
+		if err != nil {
 			return err
+		}
+		if call, msg := firstUntypedCallError(inner, p.sc.src); call != nil {
+			return &ParseError{Msg: msg} // a call in the argument Loki cannot read
 		}
 		return p.labelReplaceStringsError()
 	case "vector":
@@ -639,11 +649,8 @@ func (p *parser) openCallError(name string) error {
 			if _, err := p.parseExpr(); err != nil {
 				return err
 			}
-			if p.cur.Typ == TokEOF {
-				return p.syntaxErrorAt("") // the expression could go on: Loki names nothing
-			}
 			if i > 0 || p.cur.Typ != TokComma {
-				return nil
+				return p.syntaxErrorAt("") // the expression could go on: Loki names nothing
 			}
 			p.advance()
 		}

@@ -37,8 +37,19 @@ func TestLongQueryMemoReadsOnce(t *testing.T) {
 		t.Fatal("the long query's plan is not kept")
 	}
 	_, want := logqlpkg.ParseLogQuery(q)
-	if _, err := parsedLogQuery(q); err == nil || want == nil || err.Error() != want.Error() {
-		t.Fatalf("parsedLogQuery error = %v, want logql.ParseLogQuery's %v", err, want)
+	for i := 0; i < 2; i++ {
+		if _, err := parsedLogQuery(q); err == nil || want == nil || err.Error() != want.Error() {
+			t.Fatalf("parsedLogQuery error = %v, want logql.ParseLogQuery's %v", err, want)
+		}
+	}
+	// A long log query no validation read is parsed once, then read from the memo.
+	logQuery := `{app="memo-log-query"}` + strings.Repeat(` |= "x"`, 700)
+	first, err := parsedLogQuery(logQuery)
+	if err != nil || first == nil {
+		t.Fatalf("parsedLogQuery(long log query) = %v, %v", first, err)
+	}
+	if again, _ := parsedLogQuery(logQuery); again != first {
+		t.Fatal("a long log query is parsed again")
 	}
 	text := requestQueryText(q, defaultExecutionLimits().QueryLengthBytes)
 	if again := requestQueryText(q, defaultExecutionLimits().QueryLengthBytes); again != text {
@@ -75,6 +86,12 @@ func TestTextMemoBoundedByCost(t *testing.T) {
 	}
 	if v, ok := m.load(9); !ok || v != 9 {
 		t.Fatalf("the last entry is %v, %v", v, ok)
+	}
+	if v, ok := m.load(7); !ok || v != 7 {
+		t.Fatalf("an entry of the previous generation is %v, %v", v, ok)
+	}
+	if _, ok := m.cur.Load().entries.Load(7); !ok {
+		t.Fatal("a hit in the previous generation does not move the entry to the current one")
 	}
 	// A hit in the previous generation moves the entry to the current one; a replacing store keeps one entry's cost.
 	m.store("a", 10, "x", false)

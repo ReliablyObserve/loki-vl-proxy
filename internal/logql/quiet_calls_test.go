@@ -271,7 +271,7 @@ func TestCallErrorsMatchRecordedLoki(t *testing.T) {
 			t.Errorf("%s: ValidateLogQL = %q, Loki answers %q", row.ID, got, row.Error)
 		}
 	}
-	if rows < 90 {
-		t.Fatalf("%d recorded rows, want the 91 recorded", rows)
+	if rows < 97 {
+		t.Fatalf("%d recorded rows, want the 97 recorded", rows)
 	}
 }
