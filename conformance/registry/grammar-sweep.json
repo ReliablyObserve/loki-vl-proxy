@@ -18,7 +18,7 @@
     "tree fact differs: offsets": 4,
     "tree fact differs: outermost operation": 4
   },
-  "logsql_texts_checked": 56686,
+  "logsql_texts_checked": 56678,
   "logsql_texts_unrecorded": 0,
   "victorialogs_rejections_for_queries_loki_rejects": 0,
   "case_rules": [

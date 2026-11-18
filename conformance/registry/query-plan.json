@@ -458,12 +458,12 @@
     }
   },
   "predicate_parity": {
-    "rows": 2708,
-    "validated": 2585,
+    "rows": 2710,
+    "validated": 2587,
     "attributes": {
       "offset": {
         "predicate": "extractLogQLOffset(handler query text)",
-        "compared": 2585,
+        "compared": 2587,
         "explained": []
       }
     }
