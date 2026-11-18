@@ -9,6 +9,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -225,7 +226,15 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 	if terr != nil {
 		return "", "", false, false
 	}
-	return physical.Encode(op), QuoteKeywordFieldText(legacy), false, true
+	lowered, legacy = physical.Encode(op), QuoteKeywordFieldText(legacy)
+	if c := translatorspelling.Case(q, p); lowered != legacy && c != "" {
+		// A spelling the translator reads otherwise than the plan (a quantile literal, an unwrap conversion with
+		// blanks): held to the translator's text of the respelled query, and to Loki by the case's differential.
+		if spellingHeldHere(t, q, c, op, prof) {
+			return lowered, legacy, true, true
+		}
+	}
+	return lowered, legacy, false, true
 }
 
 // FuzzUnwrapLowering holds the lowering of range and vector aggregations over an unwrapped label to the string
