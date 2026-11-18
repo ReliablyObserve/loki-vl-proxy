@@ -40,8 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused query five times each send one VictoriaLogs call. Metrics:
   `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
 
-## [2.337.0] - 2026-11-18
-
 ### Fixed
 
 - `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time`
@@ -52,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
   logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
   later). Answers cached before are not served (the identity's response key version moves to v4).
+
+## [2.337.0] - 2026-11-18
+
+### Fixed
+
 - The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
   `{...} |= "x" [1m]` form no longer doubles its work with each level of `label_replace` (or `vector`, `approx_topk`)
   calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
