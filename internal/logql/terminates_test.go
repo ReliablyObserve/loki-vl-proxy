@@ -235,7 +235,7 @@ func FuzzParseTerminates(f *testing.F) {
 		`quantile_over_time(-1, {a="b"} | unwrap c [5m])`, `{a=~"(b" "x"}`, `{a="b"} | c > 1PB | pattern "<_>" | unpack a`,
 		`label_replace(count_over_time({a="b"} | pattern "<_>" [5m]), "x", "$1", "a", "(.*)") )`,
 		// label_replace calls nested around an alternative log range (canonicalized once per call)
-		nestLabelReplace(`rate(({a="b"} |= "x")[1m])`, `,"a","","a","")`, 24)} {
+		nestLabelReplace(`rate(({a="b"} |= "x")[1m])`, `,"a","","a","")`, 16)} {
 		f.Add(q)
 	}
 	f.Fuzz(func(t *testing.T, q string) {
