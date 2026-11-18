@@ -11,14 +11,14 @@
     "accepted, translation fails": 32,
     "error text differs": 24,
     "error text differs, rejected at translation": 12,
-    "proxy accepts, Loki rejects": 32,
+    "proxy accepts, Loki rejects": 23,
     "proxy rejects, Loki accepts": 10,
     "tree fact differs: binary operation": 17,
     "tree fact differs: has a log pipeline": 3,
     "tree fact differs: offsets": 4,
     "tree fact differs: outermost operation": 4
   },
-  "logsql_texts_checked": 56678,
+  "logsql_texts_checked": 56904,
   "logsql_texts_unrecorded": 0,
   "victorialogs_rejections_for_queries_loki_rejects": 0,
   "case_rules": [
@@ -1151,44 +1151,6 @@
           "query": "{a=\"b\"} | foo |\u003e \"\"",
           "loki": "parse error at line 0, col 15: syntax error: unexpected |\u003e",
           "proxy": "translation: unknown pipeline stage \"foo\" — not a valid LogQL parser or label filter"
-        }
-      ]
-    },
-    "proxy accepts, Loki rejects | syntax error at ( | rangeagg pairing logquery {a=\"b\"} | unwrap foo(c)": {
-      "count": 2,
-      "case": "semantics/unwrap-unknown-conversion-function-accepted",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "syntax error at (",
-      "element": "rangeagg pairing logquery {a=\"b\"} | unwrap foo(c)",
-      "examples": [
-        {
-          "query": "rate({a=\"b\"} | unwrap foo(c)[5m])",
-          "loki": "parse error at line 1, col 26: syntax error: unexpected (, expecting RANGE or |",
-          "proxy": "accepted"
-        },
-        {
-          "query": "quantile_over_time(0, {a=\"b\"} | unwrap foo(c)[5m])",
-          "loki": "parse error at line 1, col 43: syntax error: unexpected (, expecting RANGE or |",
-          "proxy": "accepted"
-        }
-      ]
-    },
-    "proxy accepts, Loki rejects | syntax error at ( | rangeagg unwrap logquery {a=\"b\"} | unwrap foo(c)": {
-      "count": 7,
-      "case": "semantics/unwrap-unknown-conversion-function-accepted",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "syntax error at (",
-      "element": "rangeagg unwrap logquery {a=\"b\"} | unwrap foo(c)",
-      "examples": [
-        {
-          "query": "rate_counter({a=\"b\"} | unwrap foo(c)[5m])",
-          "loki": "parse error at line 1, col 34: syntax error: unexpected (, expecting RANGE or |",
-          "proxy": "accepted"
-        },
-        {
-          "query": "rate_counter({a=\"b\"} | unwrap foo(c)[100ms])",
-          "loki": "parse error at line 1, col 34: syntax error: unexpected (, expecting RANGE or |",
-          "proxy": "accepted"
         }
       ]
     },

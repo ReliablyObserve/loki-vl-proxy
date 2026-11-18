@@ -94,7 +94,13 @@ func planProfiles() []planProfile {
 }
 
 // translate is the LogsQL (with markers) the proxy would hold for a client query under the profile, and false when
-// the query is not translated (a parse error or an unsupported function) or, with keepLine, is not a log query.
+// the query is not translated (a parse error or an unsupported function) or, with keepLine, is not a log query. The
+// handlers translate the query as the request's rewrite and validation leave it (handlerText).
+// handlerText is the text the handlers plan and translate for a client query: the request's rewrite
+// (proxy.RequestQueryText: keywords in lower case, no comments, metric calls and parentheses in one spelling), then
+// the clamp of a quantile above 1 (proxy.RewriteQuantilePhiGT1).
+func handlerText(q string) string { return proxy.RewriteQuantilePhiGT1(proxy.RequestQueryText(q)) }
+
 func (p planProfile) translate(q string) (string, bool) {
 	q = logql.CanonicalizeLogRanges(q)
 	expr, err := logql.Parse(q)

@@ -227,8 +227,8 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 			run.result(shadowBudget)
 			return
 		}
-		// The plan holds no text: a spelling the translator reads unlike the plan is left to it.
-		if err = lower.ScreenText(in.query, plan); err == nil {
+		// The plan holds no text: a root the proxy evaluates is screened for the route's reading of the query (ScreenRoute).
+		if err = lower.ScreenRoute(in.query, plan); err == nil {
 			lowered, err = s.lower(plan, in.profile())
 		}
 		if err == nil && (physical.Evaluated(lowered) || lower.RoutedBinary(plan.Root)) {

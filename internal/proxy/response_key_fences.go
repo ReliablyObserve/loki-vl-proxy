@@ -87,6 +87,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		b.add(streamLevelSeriesResponseVersion)
 	}
 	b.add(unwrapBlankSpellingResponseKeyVersion(query))
+	b.add(unwrapConversionBlankResponseKeyVersion(query))
 	b.add(emptyWithoutOperandResponseKeyVersion(query))
 	if site != responseKeyCompatQuery {
 		b.add(listedWindowsResponseKeyVersion(r, query))

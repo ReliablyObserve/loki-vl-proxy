@@ -143,6 +143,24 @@ var translateMissShapes = []struct {
 	}},
 	{"topk", func(i string) string { return `topk(3, sum by (app) (rate({app="api"} |= "` + i + `" [5m])))` }},
 	{"vector literal", func(i string) string { return `vector(` + i + `)` }},
+	// Spellings the string translator reads otherwise than the plan, which the plan serves (no text screen turns them
+	// away to the translator any more): a quantile literal, quoted text with a parenthesis under a binary operation in a
+	// label_replace, an operator, a number and a vector matching modifier spelled another way, an unwrap conversion
+	// with a blank.
+	{"spelling quantile literal", func(i string) string {
+		return `quantile_over_time(0.50, {app="api"} |= "` + i + `" | unwrap n [5m])`
+	}},
+	{"spelling quoted parenthesis", func(i string) string {
+		return `label_replace(rate({app="api"} |= "(` + i + `" [5m]) + rate({app="b"}[5m]), "d", "$1", "app", "(.*)")`
+	}},
+	{"spelling binary operator", func(i string) string { return `sum(rate({app="api"} |= "` + i + `" [5m]))/2` }},
+	{"spelling binary number", func(i string) string { return `sum(rate({app="api"} |= "` + i + `" [5m])) * 1e3` }},
+	{"spelling vector matching", func(i string) string {
+		return `sum by (app, env) (rate({app="api"} |= "` + i + `" [5m])) / on(app,env) sum by (app, env) (rate({app="b"}[5m]))`
+	}},
+	{"spelling unwrap conversion", func(i string) string {
+		return `sum(sum_over_time({app="api"} |= "` + i + `" | unwrap bytes (n) [5m]))`
+	}},
 }
 
 // benchTranslateMissShapes runs every shape of translateMissShapes on a proxy built from cfg.

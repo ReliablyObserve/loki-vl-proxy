@@ -60,6 +60,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
   where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
   stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
+- `| unwrap x(a)`, an unwrap of a name that is no conversion followed by a parenthesis, is now Loki's `400` syntax
+  error at the parenthesis (`unexpected (, expecting RANGE or |`) before any VictoriaLogs call; the proxy accepted it
+  and answered a query. Only `bytes`, `duration` and `duration_seconds` (in any letter case) are conversions.
+- A vector aggregation over an unwrap conversion written with a blank before or inside its parenthesis
+  (`sum by (pod) (max_over_time({...} | logfmt | unwrap duration_seconds (d) [5m]))`) answers Loki's series instead
+  of none. The metric query planning no longer keeps spellings the string translator reads otherwise than the
+  parsed query on the translator: quoted text holding a parenthesis under a binary operation or `label_replace`, the
+  blanks around a binary operator, a number or vector matching modifier spelled another way, a quantile written
+  `.5`, `0.50` or `5e-1`, and an unwrap conversion with blanks are served from the query plan, which reads them as
+  Loki does (their answers are held to recorded Loki answers over VictoriaLogs v1.49 and v1.54). Answers cached for
+  an unwrap conversion spelled with a blank before this change are not served after it.
 
 ## [2.340.1] - 2026-11-18
 

@@ -65,12 +65,18 @@ func rangeAggPlan(q string) *queryplan.Plan {
 // parser. delegated is true when the lowering answers ErrNotLowered; ok is false when q is not translated.
 func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy string, same, delegated, ok bool) {
 	t.Helper()
+	q = handlerText(q)
 	p := rangeAggPlan(q)
 	if p == nil {
 		return "", "", false, false, false
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
 	legacy = guardedLegacy(p, legacy, terr)
+	if strings.HasPrefix(legacy, `"`) && logql.ValidateLogQL(q) != "" {
+		// A spelling the request's rewrite keeps because the validation rejects the query, which the translator
+		// reads as a phrase: the proxy answers Loki's error before anything is planned or translated.
+		return "", "", false, false, false
+	}
 	// A selector that keeps every row followed by pipes only is written without its `*`: the proxy puts it in
 	// front (translateQueryOpts), as the lowering does.
 	if strings.HasPrefix(legacy, "|") {
@@ -393,89 +399,54 @@ func TestPlanRangeAggregationKeepsQuotedValues(t *testing.T) {
 }
 
 // A range aggregation spelled with a blank, tab or newline between its function and the parenthesis
-// (`rate ({app="a"}[5m])`) is a phrase to the string translator: it finds the call with a regexp that does not skip
-// blanks, as it does the operand of a vector aggregation. The proxy's request rewrite leaves the blank, so the proxy
-// answers a phrase search for it today where Loki answers the range aggregation (the Loki oracle accepts every
-// spelling here and reads the same function). The plan has no text and lowers the call as Loki reads it (Plan); the
-// text screen turns the query away (PlanQuery, ScreenText: RangeAgg spelling, and the operand screens of a binary
-// operation and a label_replace call), so the lowering equals the translator wherever it answers. The difference is
-// recorded for the day metric queries flip (semantics/translator-reads-blank-before-range-call-as-text).
+// (`rate ({app="a"}[5m])`) is the same query to Loki (the Loki oracle accepts every spelling here and reads the same
+// function). The plan has no text: PlanQuery lowers each spelling, alone, as a binary operand or as the first argument of
+// a label_replace call, to the text of its canonical spelling (logql.CanonicalSpelling), the one the proxy's request
+// rewrite gives the handlers. The string translator reads the blank as text and writes a phrase search; that text is
+// no reference for these rows (semantics/translator-reads-blank-before-range-call-as-text).
 //
 // conformance: semantics/translator-reads-blank-before-range-call-as-text
 func TestPlanRangeCallBlankBeforeParenthesis(t *testing.T) {
-	for q, construct := range map[string]string{
-		`rate ({app="a"}[5m])`:                                            "RangeAgg spelling",
-		"rate\t({app=\"a\"}[5m])":                                         "RangeAgg spelling",
-		"  rate\n({app=\"a\"}[5m]) ":                                      "RangeAgg spelling",
-		`count_over_time ( {app="a"}[5m])`:                                "RangeAgg spelling",
-		`bytes_over_time  ({app="a"} |= "x" [5m] offset 1h)`:              "RangeAgg spelling",
-		`bytes_rate ({app="a"}[5m])`:                                      "RangeAgg spelling",
-		`absent_over_time ({app="a"}[5m])`:                                "RangeAgg spelling",
-		`sum_over_time ({app="a"} | json | unwrap x [5m])`:                "RangeAgg spelling",
-		`quantile_over_time (0.5, {app="a"} | json | unwrap x [5m])`:      "RangeAgg spelling",
-		`rate ({app="a"}[5m]) / 2`:                                        "BinOp operand spelling",
-		`1 + rate({app="a"}[5m])`:                                         "",
-		`1 + rate ({app="a"}[5m])`:                                        "BinOp operand spelling",
-		`rate({app="a"}[5m]) > rate ({app="b"}[5m])`:                      "BinOp operand spelling",
-		`label_replace(rate ({app="a"}[5m]), "d", "$1", "a", "(.*)")`:     "LabelReplace operand spelling",
-		`label_replace(rate({app="a"}[5m]) / 2 , "d", "$1", "a", "(.*)")`: "",
-		`label_replace(1 + rate ({app="a"}[5m]), "d", "$1", "a", "(.*)")`: "LabelReplace operand spelling",
-		// Blanks elsewhere in the call are read alike by both: the query stays lowered.
-		`rate( {app="a"}[5m])`:             "",
-		`rate({ app = "a" } [5m] )`:        "",
-		`rate({app="a"}[5m] ) `:            "",
-		"\n\trate({app=\"a\"}[5m])\n":      "",
-		`rate({app="a"} |= "rate (" [5m])`: "",
+	for _, q := range []string{
+		`rate ({app="a"}[5m])`,
+		"rate\t({app=\"a\"}[5m])",
+		"  rate\n({app=\"a\"}[5m]) ",
+		`count_over_time ( {app="a"}[5m])`,
+		`bytes_over_time  ({app="a"} |= "x" [5m] offset 1h)`,
+		`bytes_rate ({app="a"}[5m])`,
+		`absent_over_time ({app="a"}[5m])`,
+		`sum_over_time ({app="a"} | json | unwrap x [5m])`,
+		`quantile_over_time (0.5, {app="a"} | json | unwrap x [5m])`,
+		`rate ({app="a"}[5m]) / 2`,
+		`1 + rate({app="a"}[5m])`,
+		`1 + rate ({app="a"}[5m])`,
+		`rate({app="a"}[5m]) > rate ({app="b"}[5m])`,
+		`label_replace(rate ({app="a"}[5m]), "d", "$1", "a", "(.*)")`,
+		`label_replace(rate({app="a"}[5m]) / 2 , "d", "$1", "a", "(.*)")`,
+		`label_replace(1 + rate ({app="a"}[5m]), "d", "$1", "a", "(.*)")`,
+		`rate( {app="a"}[5m])`,
+		`rate({ app = "a" } [5m] )`,
+		`rate({app="a"}[5m] ) `,
+		"\n\trate({app=\"a\"}[5m])\n",
+		`rate({app="a"} |= "rate (" [5m])`,
 	} {
-		p := rangeAggPlan(q)
-		if p == nil {
-			t.Fatalf("%q: does not parse", q)
+		canon := logql.CanonicalSpelling(q)
+		p, c := rangeAggPlan(q), rangeAggPlan(canon)
+		if p == nil || c == nil {
+			t.Fatalf("%q (canonical %q): does not parse", q, canon)
 		}
-		raw, rerr := Plan(p, Profile{})
-		if construct != "" && rerr != nil {
-			t.Errorf("%q: Plan: %v", q, rerr)
-		}
-		_, err := PlanQuery(q, p, Profile{})
-		var nl *NotLoweredError
-		switch {
-		case construct == "" && err != nil:
-			t.Errorf("%q: turned away: %v", q, err)
-		case construct != "" && (!errors.As(err, &nl) || nl.Construct != construct):
-			t.Errorf("%q: PlanQuery = %v, want not lowered: %s", q, err, construct)
-		}
-		if construct == "" || rerr != nil {
+		got, err := PlanQuery(q, p, Profile{})
+		if err != nil {
+			t.Errorf("%q: PlanQuery: %v", q, err)
 			continue
 		}
-		// The defect recorded: the translator writes the text (or an operand of it) as a phrase, so what Plan
-		// writes without the screen differs from it.
-		legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), nil, nil, logsql.Capabilities{})
-		if terr != nil || physical.Encode(raw) == legacy {
-			t.Errorf("%q: the translator writes the lowering's text (%v): the difference this test records is gone", q, terr)
+		want, err := PlanQuery(canon, c, Profile{})
+		if err != nil {
+			t.Errorf("%q: PlanQuery: %v", canon, err)
+			continue
 		}
-	}
-	// What stays lowered equals the translator under every profile.
-	for _, q := range []string{`rate( {app="a"}[5m])`, `rate({ app = "a" } [5m] )`, "\n\trate({app=\"a\"}[5m])\n", `1 + rate({app="a"}[5m])`} {
-		for _, prof := range rangeProfiles() {
-			if lowered, legacy, same, construct, ok := binOpLowering(t, q, prof); !ok || construct != "" || !same {
-				t.Errorf("%s: %q: delegated %q (ok %v)\n lowered %s\n  string %s", prof.name, q, construct, ok, lowered, legacy)
-			}
-		}
-	}
-}
-
-// The text screen of a range aggregation reads the start of the query only: it allocates nothing, so a query it lets
-// through costs the lowering no more than before (TestRankLoweringAllocatesNoMoreThanTheTranslator holds the same
-// bound for the rankings).
-//
-// conformance: architecture-syntax-package-layering
-func TestRangeCallScreenAllocatesNothing(t *testing.T) {
-	if raceDetectorEnabled {
-		t.Skip("allocation counts differ under the race detector")
-	}
-	for _, q := range []string{`rate({app="a"}[5m])`, `rate ({app="a"}[5m])`, `sum_over_time({app="a"} | json | unwrap x [5m])`, `count_over_time  ( {app="a"}[5m])`} {
-		p := rangeAggPlan(q)
-		if n := testing.AllocsPerRun(20, func() { _ = ScreenText(q, p) }); n != 0 {
-			t.Errorf("%q: ScreenText allocates %.0f", q, n)
+		if physical.Encode(got) != physical.Encode(want) {
+			t.Errorf("%q lowers to\n %s\nits canonical spelling %q to\n %s", q, physical.Encode(got), canon, physical.Encode(want))
 		}
 	}
 }

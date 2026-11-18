@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -21,9 +20,8 @@ import (
 //
 // Left to the string translator under a construct name: an expression that is a ranking, vector(), a number or a
 // call the parser keeps as text, one the lowering of its construct leaves to the translator, the service_name
-// grouping, more than maxLabelReplaceNesting calls, a NUL byte in the destination, replacement or source label (the marker's separator, which the proxy
-// would read back as one), and a spelling the translator reads unlike the plan (screenLabelReplace, before the
-// lowering).
+// grouping, more than maxLabelReplaceNesting calls, and a NUL byte in the destination, replacement or source label (the marker's separator, which the
+// proxy would read back as one).
 func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) {
 	if prof.spent() {
 		return nil, ErrBudgetExhausted
@@ -94,17 +92,14 @@ func labelReplaceOver(n *queryplan.LabelReplace, prof Profile, rankOK bool) (phy
 	return physical.LabelMap{Replace: specs, In: op}, nil
 }
 
-// maxLabelReplaceNesting bounds the label_replace calls one expression is wrapped in that the lowering writes: the
-// screen reads the text of each call's first argument, so its work grows with the length of the query times the
-// depth. Queries nest a few; deeper ones are left to the translator.
+// maxLabelReplaceNesting bounds the label_replace calls one expression is wrapped in that the lowering writes. Queries
+// nest a few; deeper ones are left to the translator.
 const maxLabelReplaceNesting = 16
 
 var (
-	errLabelReplaceServiceName     = &NotLoweredError{Construct: "LabelReplace service_name grouping"}
-	errLabelReplaceNUL             = &NotLoweredError{Construct: "LabelReplace argument with NUL"}
-	errLabelReplaceNesting         = &NotLoweredError{Construct: "LabelReplace nesting"}
-	errLabelReplaceSpelling        = &NotLoweredError{Construct: "LabelReplace spelling"}
-	errLabelReplaceOperandSpelling = &NotLoweredError{Construct: "LabelReplace operand spelling"}
+	errLabelReplaceServiceName = &NotLoweredError{Construct: "LabelReplace service_name grouping"}
+	errLabelReplaceNUL         = &NotLoweredError{Construct: "LabelReplace argument with NUL"}
+	errLabelReplaceNesting     = &NotLoweredError{Construct: "LabelReplace nesting"}
 )
 
 // labelReplaceShape answers the NotLoweredError of the expression under the label_replace calls when it is not one
@@ -128,43 +123,4 @@ func derivesServiceName(op physical.Op) bool {
 		return derivesServiceName(v.L) || derivesServiceName(v.R)
 	}
 	return false
-}
-
-// screenLabelReplace turns away a label_replace call whose text the string translator does not read as one: it
-// reads a call only when the query starts with `label_replace(` (no blank before the parenthesis), and then the
-// first argument, as written, as a query of its own, which the screen of its construct reads (ScreenText).
-func screenLabelReplace(query string, n *queryplan.LabelReplace) error {
-	x, depth := n.In, 1
-	for {
-		lr, ok := x.(*queryplan.LabelReplace)
-		if !ok {
-			break
-		}
-		x, depth = lr.In, depth+1
-	}
-	if depth > maxLabelReplaceNesting || labelReplaceShape(x) != nil {
-		return nil
-	}
-	arg, ok := labelReplaceArgument(query)
-	if !ok {
-		return errLabelReplaceSpelling
-	}
-	if ScreenText(arg, &queryplan.Plan{Root: n.In}) != nil {
-		return errLabelReplaceOperandSpelling
-	}
-	return nil
-}
-
-// labelReplaceArgument is the first argument of a label_replace call the query starts with (no blank before its
-// parenthesis), as written, and false when the query is no such call.
-func labelReplaceArgument(query string) (string, bool) {
-	rest, ok := strings.CutPrefix(strings.TrimSpace(logql.CanonicalizeLogRanges(query)), "label_replace(")
-	if !ok {
-		return "", false
-	}
-	end := logql.FirstArgumentLen(rest)
-	if end == len(rest) || rest[end] != ',' {
-		return "", false
-	}
-	return strings.TrimSpace(rest[:end]), true
 }

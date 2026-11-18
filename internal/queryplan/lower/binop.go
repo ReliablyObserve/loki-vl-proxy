@@ -56,13 +56,18 @@ import (
 //     to the translator, and a `without ()` operand over an unwrapped label (BinOp operand without empty unwrap) or
 //     in a nest of vector aggregations (BinOp operand without empty nest: a fold carries one level, and the levels
 //     above an empty clause are not in it, `count without ()` turns every series into 1);
-//   - a spelling the translator reads unlike the plan (screenBinOp, before the lowering).
+//   - an operand whose client values hold the bytes of the binary text's own markers (BinOp marker text, decided from
+//     the tree): physical.Encode writes the operands between those markers, and their readers split the text at the
+//     first one, quoted or not.
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if prof.spent() {
 		return nil, ErrBudgetExhausted
 	}
 	if err := binOpShape(n); err != nil {
 		return nil, err
+	}
+	if holdsBinaryMarker(n.L) || holdsBinaryMarker(n.R) {
+		return nil, errBinMarkerText
 	}
 	l, err := binOperand(EmptyWithoutLevelsOff(n.L), prof)
 	if err != nil {
@@ -77,23 +82,110 @@ func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	return b, nil
 }
 
+// errBinMarkerText is a binary operation an operand of which holds the bytes of a marker of the binary text.
+var errBinMarkerText = &NotLoweredError{Construct: "BinOp marker text"}
+
+// holdsBinaryMarker reports an operand whose log queries hold, in a value the client wrote (a matcher, a line filter,
+// a label filter, a parser's expression, a template, a drop or keep matcher), the separator of a binary text's operands,
+// its prefix, a vector matching modifier or a label_replace marker. The lowering writes such a value into the operand's
+// query, where the readers of the binary text (translator.DecodePhysical, read by the ranking and scalar routes) would
+// split at it. Decided from the tree: the values are short, and nothing is printed.
+func holdsBinaryMarker(n queryplan.Node) bool {
+	switch v := n.(type) {
+	case *queryplan.LogSelect:
+		return logSelectHoldsMarker(v)
+	case *queryplan.RangeAgg:
+		return v.In != nil && logSelectHoldsMarker(v.In)
+	case *queryplan.VectorAgg:
+		return holdsBinaryMarker(v.In)
+	case *queryplan.Rank:
+		return holdsBinaryMarker(v.In)
+	case *queryplan.LabelReplace:
+		return holdsBinaryMarker(v.In)
+	case *queryplan.BinOp:
+		return holdsBinaryMarker(v.L) || holdsBinaryMarker(v.R)
+	}
+	return false
+}
+
+// logSelectHoldsMarker is holdsBinaryMarker of one log query's values.
+func logSelectHoldsMarker(ls *queryplan.LogSelect) bool {
+	for _, m := range ls.Matchers {
+		if markerBytes(m.Value) {
+			return true
+		}
+	}
+	for _, st := range ls.Stages {
+		switch v := st.(type) {
+		case *logql.LineFilterStage:
+			if markerBytes(v.Value) {
+				return true
+			}
+			for _, alt := range v.Or {
+				if markerBytes(alt.Value) {
+					return true
+				}
+			}
+		case *logql.ParserStage:
+			if markerBytes(v.Param) {
+				return true
+			}
+			for _, f := range v.Fields {
+				if markerBytes(f.Expression) {
+					return true
+				}
+			}
+		case *logql.LabelFilterStage:
+			if markerBytes(v.Raw) {
+				return true
+			}
+		case *logql.DropStage:
+			if dropMatchersHoldMarker(v.Matchers) {
+				return true
+			}
+		case *logql.KeepStage:
+			if dropMatchersHoldMarker(v.Matchers) {
+				return true
+			}
+		case *logql.LineFormatStage:
+			if markerBytes(v.Template) {
+				return true
+			}
+		case *logql.LabelFormatStage:
+			if markerBytes(v.Raw) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func dropMatchersHoldMarker(ms []logql.DropMatcher) bool {
+	for _, m := range ms {
+		if markerBytes(m.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+// markerBytes reports a query text that holds one of the binary text's markers.
+func markerBytes(s string) bool {
+	return strings.Contains(s, "|||") || strings.Contains(s, physical.MatchingPrefix) ||
+		strings.Contains(s, physical.BinaryPrefix) || strings.Contains(s, physical.LabelReplacePrefix)
+}
+
 var (
-	errBinSetOperator     = &NotLoweredError{Construct: "BinOp set operator"}
-	errBinBool            = &NotLoweredError{Construct: "BinOp bool"}
-	errBinScalarOperands  = &NotLoweredError{Construct: "BinOp scalar operands"}
-	errBinOperandWithout  = &NotLoweredError{Construct: "BinOp operand without empty"}
-	errBinWithoutNest     = &NotLoweredError{Construct: "BinOp operand without empty nest"}
-	errBinWithoutUnwrap   = &NotLoweredError{Construct: "BinOp operand without empty unwrap"}
-	errBinOperandRange    = &NotLoweredError{Construct: "BinOp operand RangeAgg"}
-	errBinOperandVector   = &NotLoweredError{Construct: "BinOp operand VectorAgg"}
-	errBinQuotedText      = &NotLoweredError{Construct: "BinOp quoted text"}
-	errBinSpelling        = &NotLoweredError{Construct: "BinOp spelling"}
-	errBinOperatorSpell   = &NotLoweredError{Construct: "BinOp operator spelling"}
-	errBinMatchingSpell   = &NotLoweredError{Construct: "BinOp vector matching spelling"}
-	errBinNumberSpelling  = &NotLoweredError{Construct: "BinOp number spelling"}
-	errBinOperandSpelling = &NotLoweredError{Construct: "BinOp operand spelling"}
-	errBinConstants       = &NotLoweredError{Construct: "BinOp constant operands"}
-	errBinOperandBinOp    = &NotLoweredError{Construct: "BinOp operand BinOp"}
+	errBinSetOperator    = &NotLoweredError{Construct: "BinOp set operator"}
+	errBinBool           = &NotLoweredError{Construct: "BinOp bool"}
+	errBinScalarOperands = &NotLoweredError{Construct: "BinOp scalar operands"}
+	errBinOperandWithout = &NotLoweredError{Construct: "BinOp operand without empty"}
+	errBinWithoutNest    = &NotLoweredError{Construct: "BinOp operand without empty nest"}
+	errBinWithoutUnwrap  = &NotLoweredError{Construct: "BinOp operand without empty unwrap"}
+	errBinOperandRange   = &NotLoweredError{Construct: "BinOp operand RangeAgg"}
+	errBinOperandVector  = &NotLoweredError{Construct: "BinOp operand VectorAgg"}
+	errBinConstants      = &NotLoweredError{Construct: "BinOp constant operands"}
+	errBinOperandBinOp   = &NotLoweredError{Construct: "BinOp operand BinOp"}
 )
 
 // binOpShape answers the NotLoweredError of a binary operation the lowering does not write, judged on the plan
@@ -348,189 +440,4 @@ func appendMatchingModifier(dst []byte, keyword string, labels []string) []byte 
 		dst = append(dst, l...)
 	}
 	return dst
-}
-
-// screenBinOp turns away a binary operation whose text the string translator reads unlike the plan. The
-// translator reads the whole text with regexps and scans that see no quoted strings: it removes every ` bool `
-// and every vector matching modifier (` on(...)`, ` ignoring(...)`, ` group_left(...)`, ` group_right(...)`) and
-// folds every run of two blanks, then splits at the first operator at parenthesis depth 0 that has a blank on
-// either side and sends each side, as written, to its metric translation (a number as written). So the screen
-// leaves to the translator:
-//   - a quoted string holding a parenthesis, bool, two blanks or a marker the translator writes (`|||`, `@@@`,
-//     `__binary__`, `__lvp_lr:`, `without`): BinOp quoted text;
-//   - bool, without or two blanks anywhere else: BinOp spelling;
-//   - modifiers spelled unlike the lowering's text, or a group_left or group_right without its parenthesis:
-//     BinOp vector matching spelling;
-//   - no operator, or more than one, at depth 0, or another one than the plan's: BinOp operator spelling;
-//   - a number spelled unlike binNumber: BinOp number spelling; an operand the range and vector aggregation
-//     screens turn away (ScreenText): BinOp operand spelling.
-//
-// A binary operation the lowering does not write (binOpShape) is left to it to name, and one with an operand that
-// has a without clause or is a vector(n) is not screened for the translator's reading (RoutedBinary: the proxy's
-// route does not read the query's text); a vector(n) operand's own spelling is (screenVectorOperands), at any depth of
-// a chain too (screenChainVectors).
-func screenBinOp(query string, n *queryplan.BinOp) error {
-	if binOpShape(n) != nil {
-		return nil
-	}
-	if vectorOperand(n) {
-		// The route answers a vector(n) from the constant only when it reads the operand's text as one.
-		if err := screenVectorOperands(query, n); err != nil {
-			return err
-		}
-	}
-	if err := screenChainVectors(query, n); err != nil {
-		return err
-	}
-	if withoutOperand(n) {
-		// The proxy's binary route translates each operand alone, as its printed LogQL (logql.Expr.String), which
-		// holds none of the spellings the screens read (the client's blanks, parentheses and modifier spelling,
-		// and its quoted text is never read with the whole query): nothing to screen. The corpus shadow holds the
-		// lowering to that route (proxy.BinaryOperandsPhysical).
-		return nil
-	}
-	q := strings.TrimSpace(logql.CanonicalizeLogRanges(query))
-	if quotedReadsAsSyntax(q) {
-		return errBinQuotedText
-	}
-	if strings.Contains(q, "bool") || strings.Contains(q, "without") || strings.Contains(q, "  ") {
-		return errBinSpelling
-	}
-	stripped, tail := stripMatching(q)
-	var buf [128]byte
-	if tail != string(matchingTail(buf[:0], n.Match)) {
-		return errBinMatchingSpell
-	}
-	at, tok := topLevelOperator(stripped)
-	if at < 0 || tok != translate.BinaryOperatorToken(n.Op) {
-		return errBinOperatorSpell
-	}
-	for i, x := range [2]queryplan.Node{n.L, n.R} {
-		text := strings.TrimSpace(stripped[:at])
-		if i == 1 {
-			text = strings.TrimSpace(stripped[at+len(tok):])
-		}
-		if s, ok := x.(*queryplan.Scalar); ok {
-			if text != binNumber(s.V) {
-				return errBinNumberSpelling
-			}
-			continue
-		}
-		if ScreenText(text, &queryplan.Plan{Root: x}) != nil {
-			return errBinOperandSpelling
-		}
-	}
-	return nil
-}
-
-// quotedReadsAsSyntax reports whether a quoted string of q holds text the translator's scans of the whole query
-// read as syntax.
-func quotedReadsAsSyntax(q string) bool {
-	for i := 0; i < len(q); i++ {
-		if c := q[i]; c != '"' && c != '`' {
-			continue
-		}
-		end := skipQuoted(q, i)
-		s := q[i+1 : min(end, len(q))]
-		if strings.ContainsAny(s, "()") || strings.Contains(s, "  ") {
-			return true
-		}
-		for _, w := range [...]string{"bool", "|||", physical.MatchingPrefix, physical.BinaryPrefix, physical.LabelReplacePrefix, "without"} {
-			if strings.Contains(s, w) {
-				return true
-			}
-		}
-		i = end
-	}
-	return false
-}
-
-// stripMatching removes the vector matching modifiers from q as the translator's regexp does
-// (`\s+(on|ignoring|group_left|group_right)\s*\(([^)]*)\)`, every match, left to right) and returns the text left
-// and the modifier text the translator writes for them.
-func stripMatching(q string) (stripped, tail string) {
-	var out, t strings.Builder
-	last := 0
-	for i := 0; i < len(q); i++ {
-		if !isRegexpSpace(q[i]) || (i > 0 && isRegexpSpace(q[i-1])) {
-			continue
-		}
-		j := i
-		for j < len(q) && isRegexpSpace(q[j]) {
-			j++
-		}
-		kw := matchingKeyword(q[j:])
-		if kw == "" {
-			continue
-		}
-		k := j + len(kw)
-		for k < len(q) && isRegexpSpace(q[k]) {
-			k++
-		}
-		if k >= len(q) || q[k] != '(' {
-			continue
-		}
-		closeAt := strings.IndexByte(q[k:], ')')
-		if closeAt < 0 {
-			break
-		}
-		closeAt += k
-		if out.Len() == 0 {
-			out.Grow(len(q))
-		}
-		if t.Len() == 0 {
-			t.Grow(64)
-		}
-		out.WriteString(q[last:i])
-		t.WriteString(physical.MatchingPrefix)
-		t.WriteString(kw)
-		t.WriteByte(':')
-		t.WriteString(strings.TrimSpace(q[k+1 : closeAt]))
-		last = closeAt + 1
-		i = closeAt
-	}
-	if t.Len() == 0 {
-		return q, ""
-	}
-	out.WriteString(q[last:])
-	return out.String(), t.String()
-}
-
-// matchingKeyword is the modifier keyword s starts with, "" for none.
-func matchingKeyword(s string) string {
-	for _, kw := range [...]string{"on", "ignoring", "group_left", "group_right"} {
-		if strings.HasPrefix(s, kw) {
-			return kw
-		}
-	}
-	return ""
-}
-
-// topLevelOperator is the offset and token of the one operator token (translate.BinaryOperatorTokens) at
-// parenthesis depth 0 in q, counted as the translator counts it (every parenthesis, quoted or not), or -1 when
-// there is none or more than one.
-func topLevelOperator(q string) (int, string) {
-	at, tok, depth := -1, "", 0
-	for i := 0; i < len(q); i++ {
-		switch q[i] {
-		case '(':
-			depth++
-		case ')':
-			depth--
-		case ' ':
-			if depth != 0 {
-				continue
-			}
-			for _, t := range translate.BinaryOperatorTokens {
-				if strings.HasPrefix(q[i:], t) {
-					if at >= 0 {
-						return -1, ""
-					}
-					at, tok = i, t
-					break
-				}
-			}
-		}
-	}
-	return at, tok
 }

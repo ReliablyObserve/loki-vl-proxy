@@ -1,5 +1,5 @@
 id: semantics/unwrap-unknown-conversion-function-accepted
-title: "`unwrap foo(c)`, a conversion function Loki does not have, is accepted (open)"
+title: "`unwrap foo(c)`, a conversion function Loki does not have, is accepted (fixed)"
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -7,7 +7,14 @@ consumer: api
 why: |
   Loki's unwrap takes a label or one of duration(), duration_seconds() and bytes(). The Loki oracle answers
   "parse error at line 1, col 26: syntax error: unexpected (, expecting RANGE or |" for `rate({a="b"} | unwrap foo(c)[5m])`. The proxy's validation
-  accepts it, and both the plan and the translator write a query for it.
+  accepted it, and both the plan and the translator wrote a query for it.
+
+  Fixed with semantics/unwrap-name-before-parenthesis-accepted: the parser reads
+  only those three names (in any letter case) as conversions, and any other name
+  as the label, so the parenthesis is Loki's unexpected token and the request
+  validation answers Loki's 400 and text before any VictoriaLogs call. The
+  sweep's two classes of the spelling (an unwrap of a range aggregation and of
+  its pairing) are gone.
 
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
 request:
@@ -19,13 +26,14 @@ compare:
   fields: [status, error_text]
   expect: "Loki's 400 syntax error at the opening parenthesis."
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1661"
   impact: api-only
   effort: S
   area: "internal/logql parser parseUnwrap (conversion function names)"
   loki: "only duration, duration_seconds and bytes take parentheses"
-  proxy: "any name followed by parentheses"
-  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  proxy: "Loki's syntax error at the parenthesis"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the classes that named this case are gone); TestUnwrapNameBeforeParenthesisMatchesLoki (internal/logql, recorded Loki answers)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []

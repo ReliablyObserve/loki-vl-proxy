@@ -80,7 +80,7 @@ func TestScreenMetric(t *testing.T) {
 		{`label_replace(rate({app="a"}[5m]),,,,)`, ""},
 		{`label_replace(rate({app="a"}[5m]), "d" "e", "$1", "app", "x")`, ""},
 		{`label_replace(sum by (service_name) (rate({e="p"}[5m])), "s", "$1", "service_name", "(.*)")`, ""},
-		{`label_replace(rate({a=~"x\\(y"}[5m]) + rate({b="z"}[5m]), "d", "$1", "app", "(.*)")`, ""},
+		{`label_replace(rate({a=~"x\\(y"}[5m]) + rate({b="z"}[5m]), "d", "$1", "app", "(.*)")`, "LabelReplace"},
 		{`max by (service_name) (max_over_time({e="p"} | logfmt | unwrap latency_ms | __error__="" [1m]))`, "VectorAgg"},
 		{`first_over_time({app="a"} | json duration_ms | drop pod | unwrap duration_ms [5m])`, "RangeAgg"},
 		// An existence check after the parser under a resolved label: left to the translator under a rate or before
@@ -120,15 +120,16 @@ func TestScreenMetric(t *testing.T) {
 		{`sum(count_over_time({app="x"} | o="\18" [5m]))`, ""},
 		{`sum(count_over_time({app="x"} | o="a\" [5m]))`, ""},
 		{`sum(count_over_time({app="x"} | o="\u000A" [5m]))`, "VectorAgg"},
-		// Spellings ScreenText leaves to the translator.
+		// Spellings the plan reads from the tree: the screen names their construct (the request's rewrite gives the
+		// handlers the canonical spelling of the first ones; a query wrapped whole is not read).
 		{`(rate({app="x"}[5m]))`, ""},
-		{`rate ({app="x"}[5m])`, ""},
-		{`sum( rate({app="x"}[5m]))`, ""},
-		{`sum by (zone) (max (rate({app="uw"}[30s])))`, ""},
-		{`quantile_over_time(2.0, {app="a"} | json | unwrap d [5m])`, ""},
-		{`quantile_over_time(.5, {app="a"} | json | unwrap d [5m])`, ""},
-		{`quantile_over_time(0.50, {app="a"} | json | unwrap d [5m])`, ""},
-		{`quantile_over_time(5e-1, {app="a"} | json | unwrap d [5m])`, ""},
+		{`rate ({app="x"}[5m])`, "RangeAgg"},
+		{`sum( rate({app="x"}[5m]))`, "VectorAgg"},
+		{`sum by (zone) (max (rate({app="uw"}[30s])))`, "VectorAgg"},
+		{`quantile_over_time(2.0, {app="a"} | json | unwrap d [5m])`, "RangeAgg"},
+		{`quantile_over_time(.5, {app="a"} | json | unwrap d [5m])`, "RangeAgg"},
+		{`quantile_over_time(0.50, {app="a"} | json | unwrap d [5m])`, "RangeAgg"},
+		{`quantile_over_time(5e-1, {app="a"} | json | unwrap d [5m])`, "RangeAgg"},
 		{`quantile_over_time(-0.1, {app="a"} | unwrap lat [5m])`, ""},
 		// What the screen does not read.
 		{`sum(count_over_time({app="a"}[1m])) # comment`, ""},

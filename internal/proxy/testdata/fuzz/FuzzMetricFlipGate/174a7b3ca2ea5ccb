@@ -1,0 +1,2 @@
+go test fuzz v1
+string("(sum_over_time({A=\"0\"}|keep A|unwrAp B[0y]))")
