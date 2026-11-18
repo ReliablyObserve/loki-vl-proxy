@@ -1,10 +1,10 @@
 {
-  "recorded": "2026-11-16",
+  "recorded": "2026-11-18",
   "loki_buildinfo": {
     "branch": "release-3.7.x",
     "goVersion": "",
-    "revision": "d3b4a2f7",
-    "version": "3.7.9"
+    "revision": "c792f585",
+    "version": "3.7.10"
   },
   "loki_level_limits": {
     "discover_log_levels": "true",
@@ -26964,12 +26964,12 @@
       "push_status": 204,
       "labels": {
         "detected_level": "unknown",
-        "service_name": "dlgolden1794850122729037000-otlp"
+        "service_name": "dlgolden1795002783172231000-otlp"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "unknown"
@@ -26986,12 +26986,12 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp"
+        "service_name": "dlgolden1795002783172231000-otlp"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error"
@@ -27008,13 +27008,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "trace",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "1"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "trace",
@@ -27032,13 +27032,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "trace",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "1"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "trace",
@@ -27056,13 +27056,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "debug",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "5"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "debug",
@@ -27080,13 +27080,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "debug",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "5"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "debug",
@@ -27104,13 +27104,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "info",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "9"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "info",
@@ -27128,13 +27128,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "info",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "9"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "info",
@@ -27152,13 +27152,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "info",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "10"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "info",
@@ -27176,13 +27176,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "info",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "10"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "info",
@@ -27200,13 +27200,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "13"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27224,13 +27224,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "13"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27248,13 +27248,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "17"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27272,13 +27272,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "17"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27296,13 +27296,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "21"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27320,13 +27320,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "21"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27344,13 +27344,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "24"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27368,13 +27368,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "24"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27392,13 +27392,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_text": "Warn"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27416,13 +27416,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_text": "Warn"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27440,13 +27440,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_text": "warning"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27464,13 +27464,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_text": "warning"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27488,13 +27488,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "chatty",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_text": "chatty"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "chatty",
@@ -27512,13 +27512,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "chatty",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_text": "chatty"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "chatty",
@@ -27536,14 +27536,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "notice",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "9",
         "severity_text": "notice"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "notice",
@@ -27562,14 +27562,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "notice",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "9",
         "severity_text": "notice"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "notice",
@@ -27588,14 +27588,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "13",
         "severity_text": "WARN"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27614,14 +27614,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "13",
         "severity_text": "WARN"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27640,14 +27640,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "17",
         "severity_text": "Error"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27666,14 +27666,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "17",
         "severity_text": "Error"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27692,14 +27692,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "9",
         "severity_text": "ERROR"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27718,14 +27718,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "9",
         "severity_text": "ERROR"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27744,14 +27744,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "21",
         "severity_text": "Fatal"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27770,14 +27770,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "21",
         "severity_text": "Fatal"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27796,14 +27796,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "trace",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "2",
         "severity_text": "Trace"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "trace",
@@ -27822,14 +27822,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "trace",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "2",
         "severity_text": "Trace"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "trace",
@@ -27848,13 +27848,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "unknown",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "30"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "unknown",
@@ -27872,13 +27872,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "unknown",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "30"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "unknown",
@@ -27896,14 +27896,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "30",
         "severity_text": "error"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27922,14 +27922,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794850122729037000-otlp",
+        "service_name": "dlgolden1795002783172231000-otlp",
         "severity_number": "30",
         "severity_text": "error"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794850122729037000-otlp"
+          "service_name": "dlgolden1795002783172231000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",

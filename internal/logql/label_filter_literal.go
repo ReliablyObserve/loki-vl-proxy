@@ -3,6 +3,7 @@ package logql
 import (
 	"fmt"
 	"math"
+	"math/bits"
 	"strconv"
 	"strings"
 	"time"
@@ -307,8 +308,11 @@ func bytesRunEnd(src string, i int) int {
 	return i
 }
 
-// isLokiBytes reports whether text is a bytes size the way Loki's size parser reads it: a decimal number and a
-// unit of bytesUnits in any case, with a size that fits 64 bits.
+// isLokiBytes reports whether text is a bytes size the way Loki's size parser reads it (go-humanize v1.1.0's
+// ParseBytes, Loki 3.7.10): a decimal number and a unit of bytesUnits in any case, with a size that fits 64 bits.
+// A whole number (no dot) that fits uint64 is multiplied exactly, so a size up to 18446744073709551615 bytes is
+// one; any other number is multiplied in float64 and must stay below 2^64. (Loki 3.7.9's v1.0.1 had only the
+// float64 product, which rounds a whole size near 2^64 up to it.)
 func isLokiBytes(text string) bool {
 	last := 0
 	for last < len(text) {
@@ -334,7 +338,14 @@ func isLokiBytes(text string) bool {
 	if !ok {
 		return false
 	}
-	v, err := strconv.ParseFloat(strings.ReplaceAll(text[:last], ",", ""), 64)
+	num := strings.ReplaceAll(text[:last], ",", "")
+	if strings.IndexByte(num, '.') < 0 {
+		if n, err := strconv.ParseUint(num, 10, 64); err == nil {
+			hi, _ := bits.Mul64(n, uint64(mult))
+			return hi == 0
+		}
+	}
+	v, err := strconv.ParseFloat(num, 64)
 	return err == nil && v*mult < math.MaxUint64
 }
 
