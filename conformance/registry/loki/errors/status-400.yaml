@@ -11,12 +11,12 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   "msg-delete-max-interval-too-long", "msg-delete-query-invalid", "msg-delete-query-not-set",
   "msg-delete-start-not-before-end", "msg-delete-start-not-set", "msg-delete-time-invalid", "msg-direction",
   "msg-end-before-start", "msg-instant-log-query", "msg-interval-negative", "msg-limit-lookback",
-  "msg-limit-not-positive", "msg-limit-query-length", "msg-limit-reached", "msg-limit-series", "msg-number",
-  "msg-only-label-matchers", "msg-only-log-selector", "msg-param-duration", "msg-param-number", "msg-parse",
-  "msg-parse-input-size", "msg-post-too-large", "msg-step-duration", "msg-step-not-positive",
-  "msg-step-overflow", "msg-step-too-many-points", "msg-tail-not-websocket", "msg-url-escape",
-  "msg-url-semicolon", "unmapped-index-shards-target-bytes", "unmapped-push-snappy-corrupt",
-  "unmapped-ruler-local-store"]
+  "msg-limit-not-positive", "msg-limit-plan-time", "msg-limit-query-complexity", "msg-limit-query-length",
+  "msg-limit-reached", "msg-limit-series", "msg-number", "msg-only-label-matchers", "msg-only-log-selector",
+  "msg-param-duration", "msg-param-number", "msg-parse", "msg-parse-input-size", "msg-post-too-large",
+  "msg-step-duration", "msg-step-not-positive", "msg-step-overflow", "msg-step-too-many-points",
+  "msg-tail-not-websocket", "msg-url-escape", "msg-url-semicolon", "unmapped-index-shards-target-bytes",
+  "unmapped-push-snappy-corrupt", "unmapped-ruler-local-store"]
   recorded_rows: 212
   comparable_rows: 157
   matching_rows: 152

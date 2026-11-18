@@ -486,6 +486,13 @@ A construct moves from the string translator to the typed plan (`internal/queryp
   (`proxy.PlanServedText` answers it), the shadow holds it to that text and counts it `native_loki_held`, which needs
   the case's Loki differential in `servedDivergences`. Corpus queries the request validation rejects are `rejected`,
   never rows.
+- The lowering decides from the parsed tree, never from a copy of the translator's reading of the text: no text screen
+  turns a spelling away because the translator misreads it. A spelling the translator reads otherwise than the tree is
+  named in test code (`internal/testutil/translatorspelling`, one registry case per spelling class), counted by the
+  shadows as that case's known divergence, and held to Loki by a differential (`TestPlanSpellingsMatchLoki`); a new
+  class adds its recogniser there, its rows to the differential, and a response key fence where an answer cached for
+  the spelling changes. Shadows and grids hold the lowering to the translator's text of what the handlers read
+  (`proxy.RequestQueryText` and the quantile clamp, `handlerText` in their tests).
 - Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
   plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. A log
   query with more than line and label filters moves by stage family (`proxy.QueryPlanFlippedLogStages`): it goes

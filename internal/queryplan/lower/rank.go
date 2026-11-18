@@ -46,6 +46,9 @@ import (
 //     alone does not lower under a level);
 //   - a spelling the route reads unlike the plan (screenEvaluated).
 func evaluated(n queryplan.Node, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	var buf [6]queryplan.Node
 	chain, operand := evalChain(n, buf[:0])
 	for _, layer := range chain {
@@ -249,12 +252,11 @@ func hasParserStage(x queryplan.Node) bool {
 }
 
 // screenEvaluated turns away a chain of levels the proxy's route does not read the way the plan does, which holds no
-// text. The route slices the operand out of the query as written (evaluatedOperandSpan) and translates that text: a
-// lone ranking wrapped whole in parentheses, or a sort spelled with a blank before its parenthesis, is not routed and
-// is translated whole (Rank spelling), a stddev or stdvar by a label of an operand that has a parser is rewritten
-// (VectorAgg stddev parsed label), and the operand it slices is translated by the string translator, which reads
-// blanks and parentheses around the operand's own calls unlike the plan (ScreenText on the operand, as the proxy
-// slices it). A chain wrapped whole in parentheses is routed, and lowers.
+// text. The route slices the operand out of the query as written (evaluatedOperandSpan): a lone ranking wrapped whole
+// in parentheses, or a sort spelled with a blank before its parenthesis, is not routed and is translated whole (Rank
+// spelling), and a stddev or stdvar by a label of an operand that has a parser is rewritten (VectorAgg stddev parsed
+// label). The operand it slices is translated as a query of its own, which the plan writes from its tree whatever its
+// spelling.
 func screenEvaluated(query string, n queryplan.Node) error {
 	var buf [6]queryplan.Node
 	chain, operand := evalChain(n, buf[:0])
@@ -263,16 +265,8 @@ func screenEvaluated(query string, n queryplan.Node) error {
 			return errRankGrouping
 		}
 	}
-	text, below, ok := evaluatedOperandSpan(query, chain)
+	_, below, ok := evaluatedOperandSpan(query, chain)
 	if !ok {
-		if _, ranks := chain[len(chain)-1].(*queryplan.Rank); ranks {
-			return errRankSpelling
-		}
-		return errSeriesSpelling
-	}
-	// A level below the one a lone route evaluates, behind parentheses: the route sends the translator's text for the
-	// operand, which reads the parenthesized text as a phrase and costs less than any evaluation of the chain.
-	if len(chain) > 1 && isEvaluated(chain[0]) && loneRoute(chain) && wrappedWhole(below) {
 		if _, ranks := chain[len(chain)-1].(*queryplan.Rank); ranks {
 			return errRankSpelling
 		}
@@ -286,56 +280,7 @@ func screenEvaluated(query string, n queryplan.Node) error {
 			return errSeriesParsedLabel
 		}
 	}
-	// The translator reads a blank between a range function and its parenthesis as text, which a range aggregation
-	// screened on its own does not turn away (nor one in the first argument of a label_replace).
-	if paddedRangeCall(text, operand) {
-		if _, ranks := chain[len(chain)-1].(*queryplan.Rank); ranks {
-			return errRankSpelling
-		}
-		return errSeriesSpelling
-	}
-	// A plan of the operand alone, which the screen reads and does not keep.
-	alone := queryplan.Plan{Root: operand}
-	return ScreenText(text, &alone)
-}
-
-// loneRoute reports whether the route evaluates only the first layer of the chain and translates everything below it
-// as text: no ranking sits under a layer chain it takes (parseAggregationOverRanking: a ranking below sum, avg, min,
-// max, count and rankings, none of them a stddev or stdvar).
-func loneRoute(chain []queryplan.Node) bool {
-	lastRank := -1
-	for i, layer := range chain {
-		if _, ok := layer.(*queryplan.Rank); ok {
-			lastRank = i
-		}
-	}
-	if lastRank < 1 {
-		return true
-	}
-	for _, layer := range chain[:lastRank] {
-		if va, ok := layer.(*queryplan.VectorAgg); ok && (va.Op == logql.VectorStddev || va.Op == logql.VectorStdvar) {
-			return true
-		}
-	}
-	return false
-}
-
-// paddedRangeCall reports whether the operand text x is a range aggregation (or label_replace calls around one)
-// spelled with a blank, or parentheses, before the parenthesis of the range function's call.
-func paddedRangeCall(text string, x queryplan.Node) bool {
-	for {
-		lr, ok := x.(*queryplan.LabelReplace)
-		if !ok {
-			break
-		}
-		arg, found := labelReplaceArgument(text)
-		if !found {
-			return false
-		}
-		text, x = arg, lr.In
-	}
-	_, isRange := x.(*queryplan.RangeAgg)
-	return isRange && paddedCall(text)
+	return nil
 }
 
 // evaluatedOperandSpan is the text of the operand the proxy translates for the chain of levels (evalChain), sliced
@@ -415,27 +360,6 @@ func loneRankOperand(text string, r *queryplan.Rank) (string, bool) {
 	}
 	args, ok := levelArguments(text, r)
 	return strings.TrimSpace(args), ok
-}
-
-// paddedCall reports whether the operand text is parenthesized, or has a blank between its function name and the
-// call's parenthesis: the shapes the translator reads as text.
-func paddedCall(rest string) bool {
-	j := 0
-	for j < len(rest) && isBlank(rest[j]) {
-		j++
-	}
-	if j < len(rest) && rest[j] == '(' {
-		return true
-	}
-	k := j
-	for k < len(rest) && isNameByte(rest[k]) {
-		k++
-	}
-	l := k
-	for l < len(rest) && isBlank(rest[l]) {
-		l++
-	}
-	return k > j && l > k && l < len(rest) && rest[l] == '('
 }
 
 // EvaluatedOperand is the text of the operand the proxy translates for the levels it evaluates at the top of p (a

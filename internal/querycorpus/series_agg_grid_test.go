@@ -258,7 +258,7 @@ func TestSeriesAggGridShadow(t *testing.T) {
 	if native < rows/4 {
 		t.Fatalf("only %d of %d rows lowered", native, rows)
 	}
-	for _, want := range []string{"known divergence " + knownNestedEvaluation, "VectorAgg stddev parsed label", "SeriesAgg operand BinOp", "SeriesAgg spelling"} {
+	for _, want := range []string{"known divergence " + knownNestedEvaluation, "VectorAgg stddev parsed label", "SeriesAgg operand BinOp"} {
 		if delegated[want] == 0 {
 			t.Errorf("no row delegated as %q: the grid does not reach it", want)
 		}

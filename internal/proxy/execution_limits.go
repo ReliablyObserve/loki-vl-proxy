@@ -1,6 +1,9 @@
 package proxy
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Execution limits bound the work a single request may do in the proxy and the
 // bytes it may pull out of VictoriaLogs. Every one of them is an operator flag
@@ -29,6 +32,11 @@ const (
 	// DefaultMaxQueryLengthBytes is Loki's syntax.maxInputSize: Loki parses any
 	// shorter query, so the proxy must not reject one either.
 	DefaultMaxQueryLengthBytes = 128 << 10 // -max-query-length-bytes
+	// DefaultMaxQueryPlanTime is -max-query-plan-time. The slowest planning work measured (as of 2026-11-18, commit
+	// 8e80a32b7; registry decision query-complexity-limits) is the string translator on 26,000 nested sum( calls:
+	// 3.3 s on a quiet host, 6.2 s under load, 5.0 s under -race; the slowest plan corpus row takes 0.4 ms. The default
+	// is above that and comes down once nested vector aggregations are translated by the query plan.
+	DefaultMaxQueryPlanTime = 10 * time.Second // -max-query-plan-time
 )
 
 // executionLimits carries the resolved limits of one proxy instance.
@@ -48,6 +56,12 @@ type executionLimits struct {
 	ZeroFillBuckets           int
 	QueryLengthBytes          int
 	LabelValuesResponseBytes  int
+	// QueryASTNodes and QueryNestingDepth are the operator limits on the size of a parsed query
+	// (-max-query-ast-nodes, -max-query-nesting-depth); unset they are QueryLengthBytes, which no query that passed the
+	// length limit can exceed (logql.Complexity). QueryPlanTime is -max-query-plan-time; 0 turns the budget off.
+	QueryASTNodes     int
+	QueryNestingDepth int
+	QueryPlanTime     time.Duration
 }
 
 // ExecutionLimitsConfig holds the configured values; 0 selects the default.
@@ -67,6 +81,11 @@ type ExecutionLimitsConfig struct {
 	MaxZeroFillBuckets                int
 	MaxQueryLengthBytes               int
 	LabelValuesMaxResponseBytes       int
+	// MaxQueryASTNodes and MaxQueryNestingDepth: 0 derives the limit from MaxQueryLengthBytes.
+	MaxQueryASTNodes     int
+	MaxQueryNestingDepth int
+	// MaxQueryPlanTime: 0 selects the default, a negative value turns the budget off.
+	MaxQueryPlanTime time.Duration
 }
 
 func defaultExecutionLimits() executionLimits {
@@ -86,6 +105,9 @@ func defaultExecutionLimits() executionLimits {
 		ZeroFillBuckets:           DefaultMaxZeroFillBuckets,
 		QueryLengthBytes:          DefaultMaxQueryLengthBytes,
 		LabelValuesResponseBytes:  DefaultLabelValuesMaxResponseBytes,
+		QueryASTNodes:             DefaultMaxQueryLengthBytes,
+		QueryNestingDepth:         DefaultMaxQueryLengthBytes,
+		QueryPlanTime:             DefaultMaxQueryPlanTime,
 	}
 }
 
@@ -111,6 +133,17 @@ func resolveExecutionLimits(cfg ExecutionLimitsConfig) executionLimits {
 	set(&limits.ZeroFillBuckets, cfg.MaxZeroFillBuckets)
 	set(&limits.QueryLengthBytes, cfg.MaxQueryLengthBytes)
 	set(&limits.LabelValuesResponseBytes, cfg.LabelValuesMaxResponseBytes)
+	// Unset, the node and depth limits are the query length limit in effect: a query is at most that many bytes and
+	// has at most as many nodes and levels as bytes (logql.Complexity), so the derived limits never refuse a query.
+	limits.QueryASTNodes, limits.QueryNestingDepth = limits.QueryLengthBytes, limits.QueryLengthBytes
+	set(&limits.QueryASTNodes, cfg.MaxQueryASTNodes)
+	set(&limits.QueryNestingDepth, cfg.MaxQueryNestingDepth)
+	switch {
+	case cfg.MaxQueryPlanTime > 0:
+		limits.QueryPlanTime = cfg.MaxQueryPlanTime
+	case cfg.MaxQueryPlanTime < 0:
+		limits.QueryPlanTime = 0
+	}
 	return limits
 }
 

@@ -103,11 +103,7 @@ func TestPlanDelegatesRankShapes(t *testing.T) {
 		`sort_desc(absent_over_time({app="a"} !> "<_> x" [5m]))`:                   "Rank operand pattern",
 		`sort (` + rate + `)`:                                                      "Rank spelling",
 		`sort_desc (` + rate + `)`:                                                 "Rank spelling",
-		`topk(3, rate ({app="a"}[5m]))`:                                            "Rank spelling",
-		`topk(3, (` + rate + `))`:                                                  "Rank spelling",
-		`sort((` + rate + `))`:                                                     "Rank spelling",
-		`topk(3, sum( rate({app="a"}[5m])))`:                                       "VectorAgg operand spelling",
-		`topk(3, sum_over_time({app="a"} |= "| unwrap m" | json | unwrap x [5m]))`: "RangeAgg unwrap spelling",
+		`topk(3, sum_over_time({app="a"} |= "| unwrap m" | json | unwrap x [5m]))`: "Rank operand RangeAgg",
 		`(topk(3, ` + rate + `))`:                                                  "Rank spelling",
 		`label_replace(topk(3, ` + rate + ` > 1), "a", "b", "c", "d")`:             "LabelReplace operand Rank",
 		`topk(3, ` + rate + `) + 1`:                                                "BinOp operand Rank",
@@ -123,6 +119,20 @@ func TestPlanDelegatesRankShapes(t *testing.T) {
 			t.Errorf("%s: got %v, want not lowered: %s", q, err, construct)
 		case len(construct) > 48:
 			t.Errorf("%s: the construct name %q is longer than the shadow's label allows", q, construct)
+		}
+	}
+	// Spellings the route and the plan read from the canonical spelling the request's rewrite writes: lowered as it.
+	for _, q := range []string{
+		`topk(3, rate ({app="a"}[5m]))`,
+		`topk(3, (` + rate + `))`,
+		`sort((` + rate + `))`,
+		`topk(3, sum( rate({app="a"}[5m])))`,
+	} {
+		got, err := PlanQuery(q, rangeAggPlan(q), Profile{})
+		canon := handlerText(q)
+		want, werr := PlanQuery(canon, rangeAggPlan(canon), Profile{})
+		if err != nil || werr != nil || physical.Encode(got) != physical.Encode(want) {
+			t.Errorf("%s: %v, its canonical spelling %s: %v", q, err, canon, werr)
 		}
 	}
 }

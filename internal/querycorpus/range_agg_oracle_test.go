@@ -86,10 +86,6 @@ func checkLoweredGridWithVL(t *testing.T, name string, grid []string) {
 					continue
 				}
 				queryplan.Resolve(plan)
-				// A spelling the translator reads unlike the plan (a phrase search) is left to it.
-				if lower.ScreenText(q, plan) != nil {
-					continue
-				}
 				op, err := lower.Plan(plan, prof.lowerProfile())
 				if err != nil {
 					continue

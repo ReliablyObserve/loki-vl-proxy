@@ -335,13 +335,60 @@ var keywordFoldEdges = []string{
 
 // keywordNameDifferences are the templates where a keyword written with a letter Loki reads as a name letter
 // (U+017F, or nameLetter) is a known difference of the proxy's parser with any name in its place, not one of the fold
-// runes: a stage that is a bare name alone, which the proxy passes through (docs/logql-parser.md, Not covered), and an
-// unwrap of a name followed by a parenthesis, which the proxy reads as a conversion
-// (semantics/unwrap-name-before-parenthesis-accepted).
+// runes: a stage that is a bare name alone, which the proxy passes through (docs/logql-parser.md, Not covered).
 var keywordNameDifferences = map[string]string{
-	`{app="a"} | @`:                               "bare name stage",
-	`count_over_time({app="a"} | @ [1m])`:         "bare name stage",
-	`sum_over_time({app="a"} | unwrap @(a) [1m])`: "unwrap name before parenthesis",
+	`{app="a"} | @`:                       "bare name stage",
+	`count_over_time({app="a"} | @ [1m])`: "bare name stage",
+}
+
+const unwrapNameAnswers = "testdata/unwrap-name-before-parenthesis-loki.jsonl.gz"
+
+// unwrapNameQueries are unwraps of a name followed by a parenthesis: names that are no conversion (any letters, a
+// fold rune, a conversion's name with a letter more), with blanks, a tab and a comment before the parenthesis, under a
+// range function, a vector aggregation, a grouping and a parser, and the conversions in other letter cases as
+// controls.
+var unwrapNameQueries = []string{
+	`sum_over_time({app="a"} | unwrap x(a) [1m])`,
+	"sum_over_time({app=\"a\"} | unwrap byte\u017f(a) [1m])",
+	`sum_over_time({app="a"} | unwrap X(a) [1m])`,
+	`sum_over_time({app="a"} | unwrap durations(a) [1m])`,
+	`sum_over_time({app="a"} | unwrap x (a) [1m])`,
+	"sum_over_time({app=\"a\"} | unwrap x\t(a) [1m])",
+	"sum_over_time({app=\"a\"} | unwrap x # c\n(a) [1m])",
+	`sum(sum_over_time({app="a"} | unwrap x(a) [1m]))`,
+	`sum_over_time({app="a"} | unwrap x(a) [1m]) by (b)`,
+	`sum_over_time({app="a"} | json | unwrap foo(a) | __error__="" [1m])`,
+	`sum_over_time({app="a"} | unwrap x(a [1m])`,
+	`sum_over_time({app="a"}[1m] | unwrap x(a))`,
+	`{app="a"} | unwrap x(a)`,
+	`sum_over_time({app="a"} | unwrap BYTES(a) [1m])`,
+	"sum_over_time({app=\"a\"} | unwrap durat\u0130on(a) [1m])",
+	`sum_over_time({app="a"} | unwrap duration_seconds (a) [1m])`,
+}
+
+// An unwrap of a name that is no conversion followed by a parenthesis (`| unwrap x(a)`) is Loki's syntax error at the
+// parenthesis: Loki's lexer reads only bytes, duration and duration_seconds (in any letter case) as conversions, and
+// any other name as the label. The proxy answers Loki's text at Loki's column, before any VictoriaLogs call. Loki's
+// answers are recorded with the Loki oracle (LVP_RUN_ORACLES=1 records them again).
+//
+// conformance: semantics/unwrap-name-before-parenthesis-accepted
+func TestUnwrapNameBeforeParenthesisMatchesLoki(t *testing.T) {
+	refs := make([]string, len(unwrapNameQueries))
+	if os.Getenv("LVP_RUN_ORACLES") == "1" {
+		recordLexerEdgeAnswers(t, unwrapNameAnswers, unwrapNameQueries, refs)
+	}
+	rejected := 0
+	for _, a := range readLexerEdgeAnswers(t, unwrapNameAnswers, unwrapNameQueries, refs) {
+		if msg := ValidateLogQL(a.Q); msg != a.Error {
+			t.Errorf("%q:\n proxy %q\n Loki  %q", a.Q, msg, a.Error)
+		}
+		if !a.Accept {
+			rejected++
+		}
+	}
+	if rejected == 0 || rejected == len(unwrapNameQueries) {
+		t.Fatalf("Loki rejects %d of %d: the grid must hold both", rejected, len(unwrapNameQueries))
+	}
 }
 
 // A keyword written with the Kelvin sign (U+212A) for a k or U+0130 for an i (`topK(`, `bottomK(`, `| Keep`,

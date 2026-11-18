@@ -108,11 +108,6 @@ func TestPlanDelegatesStddevShapes(t *testing.T) {
 		`stddev(vector(1))`:                                                                  "SeriesAgg operand VectorLit",
 		`stddev(sum by (app) (rate({app="a"} | detected_level="" [5m])))`:                    "VectorAgg " + levelPresenceConstruct,
 		`stdvar(sum without () (` + rate + `))`:                                              "VectorAgg without empty",
-		`stddev(sum( rate({app="a"}[5m])))`:                                                  "VectorAgg operand spelling",
-		`stddev (rate ({app="a"}[5m]))`:                                                      "SeriesAgg spelling",
-		`stddev((` + rate + `))`:                                                             "SeriesAgg spelling",
-		`topk(2, (stddev by (app) (` + rate + `)))`:                                          "SeriesAgg spelling",
-		`stddev((stdvar(` + rate + `)))`:                                                     "SeriesAgg spelling",
 		`topk(2, (sum(topk(3, ` + rate + `))))`:                                              "",
 		`stddev(` + rate + `) / 2`:                                                           "BinOp operand VectorAgg",
 		`sum(stddev(` + rate + `) / 2)`:                                                      "VectorAgg operand",
@@ -121,7 +116,7 @@ func TestPlanDelegatesStddevShapes(t *testing.T) {
 		`stddev(label_replace(stdvar(` + rate + `), "a", "b", "c", "d"))`:                    "LabelReplace operand VectorAgg",
 		`sort by (app) (stddev(` + rate + `))`:                                               "Rank grouping",
 		`stddev(sort_desc by (app) (` + rate + `))`:                                          "Rank grouping",
-		`stddev(sum_over_time({app="a"} |= "| unwrap m" | json | unwrap x [5m]))`:            "RangeAgg unwrap spelling",
+		`stddev(sum_over_time({app="a"} |= "| unwrap m" | json | unwrap x [5m]))`:            "SeriesAgg operand RangeAgg",
 		`stddev(absent_over_time({app="a"}[5m]))`:                                            "",
 		`stddev by (app) (sum(count_over_time({app="a"} | json | unwrap x [5m])))`:           "VectorAgg nested unwrap",
 	} {
@@ -148,6 +143,21 @@ func TestPlanDelegatesStddevShapes(t *testing.T) {
 	withText, err2 := PlanQuery(q, rangeAggPlan(q), Profile{})
 	if err != nil || err2 != nil || !reflect.DeepEqual(alone, withText) {
 		t.Errorf("%s: Plan %#v (%v), PlanQuery %#v (%v)", q, alone, err, withText, err2)
+	}
+	// Spellings the route and the plan read from the canonical spelling the request's rewrite writes: lowered as it.
+	for _, q := range []string{
+		`stddev(sum( rate({app="a"}[5m])))`,
+		`stddev (rate ({app="a"}[5m]))`,
+		`stddev((` + rate + `))`,
+		`topk(2, (stddev by (app) (` + rate + `)))`,
+		`stddev((stdvar(` + rate + `)))`,
+	} {
+		got, err := PlanQuery(q, rangeAggPlan(q), Profile{})
+		canon := handlerText(q)
+		want, werr := PlanQuery(canon, rangeAggPlan(canon), Profile{})
+		if err != nil || werr != nil || physical.Encode(got) != physical.Encode(want) {
+			t.Errorf("%s: %v, its canonical spelling %s: %v", q, err, canon, werr)
+		}
 	}
 }
 

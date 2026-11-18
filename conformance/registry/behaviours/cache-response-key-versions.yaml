@@ -52,6 +52,23 @@ decisions:
     code: [internal/proxy/unwrap_blank_fence.go, internal/proxy/response_key_fences.go, internal/logql/canonical.go]
     tests: [TestUnwrapBlankSpellingFence, TestResponseKeyFencesKeepTheirOldKeys, FuzzResponseKeyFencesMatchParsedTree, TestKeywordFoldRunesShareTheLowerCaseCacheEntry]
     quality: 'An answer cached for an unwrap spelled with other blanks before the plan served it is never served after; every other key is unchanged.'
+  - id: unwrap-conversion-blank-fence
+    chosen: 'A text fence (@unwrap-conversion-blank-v1) on a query with an unwrap, in any case, outside quoted strings and comments, followed by a conversion (bytes, duration, duration_seconds, in any case) written with a blank before its parenthesis, right after it or right before the one that closes it'
+    over:
+      - 'no fence (a vector aggregation over `| unwrap duration_seconds (d)` answered no series on main, and that answer would be served from every cache tier once the plan serves the spelling with Loki''s series)'
+      - 'a fence decided from the parsed tree (the tree holds no spelling; a fence on every unwrap conversion would move the key of every such query, spelled the usual way too)'
+    why: |
+      The lowering's text screens are gone, so the plan serves an unwrap
+      conversion written with a blank around its parenthesis with the answer of
+      the spelling without it. On main some of these queries were answered by
+      the string translator, which read the whole call as the label's name: a
+      vector aggregation over one answered no series (status 200, cached). The
+      fence keys every such spelling apart from what an older binary cached; a
+      query whose every conversion is written `bytes(n)` keeps its key.
+    evidence: 'internal/proxy (2026-11-18): TestUnwrapConversionBlankFence (10 spellings, the compat key carries the fence exactly for the ones spelled otherwise); TestPlanSpellingsMatchLoki (main answered `sum by (pod) (max_over_time({app="qd"} | logfmt | unwrap duration_seconds (d) [5m]))` with no series, the branch with Loki''s); the fence in the fenceScreens table (TestResponseKeyFencesKeepTheirOldKeys, FuzzResponseKeyFencesMatchParsedTree)'
+    code: [internal/proxy/unwrap_blank_fence.go, internal/proxy/response_key_fences.go]
+    tests: [TestUnwrapConversionBlankFence, TestResponseKeyFencesKeepTheirOldKeys, FuzzResponseKeyFencesMatchParsedTree, TestPlanSpellingsMatchLoki]
+    quality: 'An answer cached for an unwrap conversion spelled with a blank before the plan served it is never served after; every other key is unchanged.'
   - id: one-response-key-fence-builder
     chosen: 'One function builds every key site''s fence chain, with the site explicit (compat query, compat query_range, inner query_range, log window shape); keys byte-identical to before'
     over: [three copies of the chain in the key builders, unifying the sites' orders and logfmt rule (would change keys and cold-start every cache tier fleet-wide)]

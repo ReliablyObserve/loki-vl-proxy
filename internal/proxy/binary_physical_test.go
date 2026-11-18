@@ -223,11 +223,11 @@ func TestLoweringShadow_BinaryWithVectorOperandIsNotCompared(t *testing.T) {
 	if shadowTotal(got, "mismatch") != 0 || got["not_lowered BinOp"] != len(queries) {
 		t.Fatalf("each binary operation with a vector(n) operand is not compared: %v", got)
 	}
-	// A spelling the route does not read as a vector(n), and constants only, are left to the translator by name.
+	// Constants only are left to the translator by name. (A vector(n) spelled with blanks reaches no handler: the
+	// request's rewrite writes `vector(n)`.)
 	for q, construct := range map[string]string{
-		`rate({app="a"}[5m]) + vector (1)`: "BinOp operand spelling",
-		`vector(1) + vector(2)`:            "BinOp constant operands",
-		`2 * vector(3)`:                    "BinOp constant operands",
+		`vector(1) + vector(2)`: "BinOp constant operands",
+		`2 * vector(3)`:         "BinOp constant operands",
 	} {
 		if _, err := translateAndSettle(t, p, q); err != nil {
 			t.Fatalf("%s: %v", q, err)

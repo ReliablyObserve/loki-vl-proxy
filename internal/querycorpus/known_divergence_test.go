@@ -1,12 +1,18 @@
 package querycorpus_test
 
 import (
+	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -323,6 +329,89 @@ func TestTranslatorReadsBlankGrouping(t *testing.T) {
 	} {
 		if got := translatorReadsBlankGrouping(q, prof); got != want {
 			t.Errorf("%q: got %v, want %v", q, got, want)
+		}
+	}
+}
+
+// spellingHeld holds the lowering of a row whose spelling the string translator reads otherwise than the plan (the
+// case translatorspelling.Case names) to a reference the translator reads as Loki does, and returns "" or what
+// differs, so a wrong lowering of such a row is still a mismatch:
+//   - a quantile literal or an unwrap conversion with blanks: the translator's text of the respelled query
+//     (translatorspelling.Respell), or the proxy's route for it when the proxy evaluates the root;
+//   - quoted text or the operator, number and vector matching spellings of a binary operation: the proxy's binary
+//     route (checkBinaryRoute), which evaluates each operand from the parsed tree, for the binary operation under any
+//     label_replace calls and rankings, with the post-processing the translator's markers say and the levels of the
+//     proxy's ranking route.
+func spellingHeld(q, c string, plan *queryplan.Plan, prof planProfile, got physical.Op) string {
+	switch c {
+	case translatorspelling.QuantileLiteral, translatorspelling.UnwrapConversionBlank:
+		ref := translatorspelling.Respell(q)
+		if routed, _ := routedRoot(plan); routed {
+			return checkProxyEvaluated(ref, prof, got)
+		}
+		legacy, ok := prof.translate(ref)
+		if !ok {
+			return fmt.Sprintf("%s: %q: the translator rejects its respelling %q", prof.name, q, ref)
+		}
+		if legacy = lower.QuoteKeywordFieldText(legacy); strings.HasPrefix(legacy, "|") {
+			legacy = "* " + legacy
+		}
+		if !sameAsTranslator(got, legacy) {
+			return fmt.Sprintf("%s: %q:\n lowered %s\n respelled %s", prof.name, q, translator.EncodePhysical(got), legacy)
+		}
+		return ""
+	case translatorspelling.QuotedText, translatorspelling.BinaryText:
+		core, post := physical.Split(got)
+		levels, operand := physical.SplitEval(core)
+		b, ok := operand.(physical.Binary)
+		inner := innerBinaryText(q)
+		if !ok || inner == "" {
+			return fmt.Sprintf("%s: %q: lowered to %s, no binary operation", prof.name, q, translator.EncodePhysical(got))
+		}
+		if msg := checkBinaryRoute(inner, prof, b); msg != "" {
+			return msg
+		}
+		legacy, _ := prof.translate(q)
+		if _, want := translator.SplitPost(legacy); !reflect.DeepEqual(post, want) {
+			return fmt.Sprintf("%s: %q: post-processing %+v, the translator's markers %+v", prof.name, q, post, want)
+		}
+		if len(levels) > 0 {
+			want, _, routed, err := proxyReference(q, prof)
+			if wantCore, _ := physical.Split(want); err != nil || !routed || !reflect.DeepEqual(levelsOf(wantCore), levels) {
+				return fmt.Sprintf("%s: %q: levels %+v, the proxy's route %+v (%v)", prof.name, q, levels, want, err)
+			}
+		}
+		return ""
+	}
+	return fmt.Sprintf("%s: %q: no reference for %s", prof.name, q, c)
+}
+
+// levelsOf is the levels the proxy evaluates at the top of op.
+func levelsOf(op physical.Op) []physical.Level {
+	levels, _ := physical.SplitEval(op)
+	return levels
+}
+
+// innerBinaryText is the printed text of the binary operation at the top of q or under its label_replace calls,
+// rankings and vector aggregations, "" when q holds none there.
+func innerBinaryText(q string) string {
+	expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+	if err != nil {
+		return ""
+	}
+	for {
+		switch v := expr.(type) {
+		case *logql.BinOpExpr:
+			return v.String()
+		case *logql.OpaqueMetricExpr:
+			if v.Inner == nil {
+				return ""
+			}
+			expr = v.Inner
+		case *logql.VectorAggregation:
+			expr = v.Inner
+		default:
+			return ""
 		}
 	}
 }

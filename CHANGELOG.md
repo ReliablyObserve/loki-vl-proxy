@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Operator limits on query complexity: `-max-query-ast-nodes` and `-max-query-nesting-depth` (Helm `extraArgs`,
+  limits registry) refuse a query with more nodes (expressions, pipeline stages and stream selector matchers) or more
+  nested levels than set, with HTTP 400 `query too complex: too many nodes` or `query too complex: nesting too deep`,
+  and `-max-query-plan-time` (default 10s, 0 turns it off) refuses a request whose own parse, validation and lowering
+  work, admission waits, cache reads and VictoriaLogs calls not counted, took longer, with `query planning took longer
+  than the limit`. Loki has no such limit below its 128 KB input size limit, so the defaults never refuse a query Loki
+  accepts: the node and depth limits default to the query length limit in effect (`-max-query-length-bytes`), which no
+  query that passed it exceeds, and a query shorter than both limits is not walked at all; the budget default is
+  above the slowest planning work measured over the plan corpus and the deep shapes Loki accepts. The node and depth
+  limits are checked once a query has been parsed and ahead of the response cache, so an answer cached under other
+  limits never replaces a refusal. The client text carries no number; the flag, the value and the counts appear in the
+  request error log line only, and `loki_vl_proxy_query_complexity_rejections_total{limit}` counts the refusals. A
+  refusal leaves nothing cached and costs no VictoriaLogs call. The planning budget is checked after a query's
+  validation, in the walk of its tree (every 256 nodes) and at every node of its lowering, and before the first
+  VictoriaLogs call; the parser and the string translator are not interrupted while they run.
+
 ### Changed
 
 - `query_range` with a range longer than the step for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`,
@@ -25,6 +43,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     24 hours), so a read reaches the stats answer bound sooner and is then read in smaller time chunks.
   - A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
 
+### Fixed
+
+- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
+  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
+  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
+  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
+  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
+  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
+- `| unwrap x(a)`, an unwrap of a name that is no conversion followed by a parenthesis, is now Loki's `400` syntax
+  error at the parenthesis (`unexpected (, expecting RANGE or |`) before any VictoriaLogs call; the proxy accepted it
+  and answered a query. Only `bytes`, `duration` and `duration_seconds` (in any letter case) are conversions.
+- A vector aggregation over an unwrap conversion written with a blank before or inside its parenthesis
+  (`sum by (pod) (max_over_time({...} | logfmt | unwrap duration_seconds (d) [5m]))`) answers Loki's series instead
+  of none. The metric query planning no longer keeps spellings the string translator reads otherwise than the
+  parsed query on the translator: quoted text holding a parenthesis under a binary operation or `label_replace`, the
+  blanks around a binary operator, a number or vector matching modifier spelled another way, a quantile written
+  `.5`, `0.50` or `5e-1`, and an unwrap conversion with blanks are served from the query plan, which reads them as
+  Loki does (their answers are held to recorded Loki answers over VictoriaLogs v1.49 and v1.54). Answers cached for
+  an unwrap conversion spelled with a blank before this change are not served after it.
+
 ## [2.340.1] - 2026-11-18
 
 ### Fixed
@@ -35,12 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
   cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
   v1.67.0 to v2.338.0.
-- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
-  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
-  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
-  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
-  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
-  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
 
 ## [2.340.0] - 2026-11-18
 

@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
@@ -53,55 +51,4 @@ func TestUnwrapBlankSpellingsLowerAsSpaced(t *testing.T) {
 		t.Errorf("%q: %v, want not lowered", q, err)
 	}
 	t.Logf("%d blank spellings lowered as the spaced one", rows)
-}
-
-// spacedBlanks writes each run of the blanks Loki skips outside quoted strings as one space, a space after a pipe a
-// name follows, and keeps the strings.
-//
-// conformance: semantics/translator-reads-only-space-between-tokens
-func TestSpacedBlanks(t *testing.T) {
-	for in, want := range map[string]string{
-		"a | unwrap b":                "a | unwrap b",
-		"a |\tunwrap\r\nb":            "a | unwrap b",
-		"a  |  unwrap  b":             "a | unwrap b",
-		"a |= \"x\t\ty\" |\tunwrap b": "a |= \"x\t\ty\" | unwrap b",
-		"a |= `x\n\ny` |\nunwrap b":   "a |= `x\n\ny` | unwrap b",
-		"a |= \"x\\\"\t\" |\tb":       "a |= \"x\\\"\t\" | b",
-		"a |= \"open\t":               "a |= \"open\t",
-		"a |unwrap b |= \"|x\"":       "a | unwrap b |= \"|x\"",
-		"a |= \"x\" |json":            "a |= \"x\" | json",
-		"":                            "",
-	} {
-		if got := spacedBlanks(in); got != want {
-			t.Errorf("spacedBlanks(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-// BenchmarkUnwrapScreen measures the unwrap spelling screen and the lowering of an unwrap with no parser: the spaced
-// spelling (one search of the text, as before) and a tab after unwrap (the search, then the text read again with its
-// blanks as single spaces).
-func BenchmarkUnwrapScreen(b *testing.B) {
-	for _, q := range []struct{ name, q string }{
-		{"spaced", `max_over_time({app="a"} | unwrap n [1m])`},
-		{"tab", "max_over_time({app=\"a\"} | unwrap\tn [1m])"},
-	} {
-		expr, err := logql.Parse(q.q)
-		if err != nil {
-			b.Fatal(err)
-		}
-		p, err := queryplan.Build(expr, queryplan.Inputs{})
-		if err != nil {
-			b.Fatal(err)
-		}
-		queryplan.Resolve(p)
-		b.Run(q.name, func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				if err := ScreenText(q.q, p); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
 }

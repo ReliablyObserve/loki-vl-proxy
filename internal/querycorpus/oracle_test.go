@@ -23,6 +23,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
@@ -254,8 +255,9 @@ const rateCounterMarker = "__rate_counter__("
 // request and the operand request the proxy sends (proxy.PostAggregationPhysical), because the proxy never
 // translates the whole query on that route.
 func typedQueryPair(q, v string) (typed, built string, ok bool) {
-	// The handlers clamp a quantile_over_time phi above 1 before they translate (VictoriaLogs rejects it).
-	q = proxy.RewriteQuantilePhiGT1(q)
+	// The handlers translate the request's rewrite of the query, with a quantile_over_time phi above 1 clamped
+	// (VictoriaLogs rejects it): handlerText.
+	q = handlerText(q)
 	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
 	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) || translatorReadsStageMarker(q) || translatorCopiesUnspacedParser(q) {
 		return "", "", false
@@ -276,6 +278,12 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		}
 		agg, ok := expr.(*logql.RangeAggregation)
 		if !ok {
+			return "", "", false
+		}
+		if agg.Op == logql.RangeQuantileOverTime && !agg.HasParam {
+			// Loki rejects a quantile_over_time without its quantile (`parameter required for operation
+			// quantile_over_time`) and so does every route (TestQueryTreeValidationOnEveryRoute): no query is sent
+			// to VictoriaLogs, so there is no pair to hold.
 			return "", "", false
 		}
 		if lq, ok = agg.Inner.(*logql.LogQuery); !ok {
@@ -321,8 +329,12 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		// translator answers a variance (semantics/count-over-stdvar-answers-variance).
 		return "", "", false
 	}
+	if translatorspelling.Case(q, plan) != "" {
+		// A spelling the translator reads otherwise than the plan (translatorspelling): the two may not mean the
+		// same, and the proxy serves the plan's text, held to Loki by the spelling's differential.
+		return "", "", false
+	}
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
-	// A spelling the translator reads as a phrase (ScreenText) is left to it: nothing to hold the plan to.
 	op, err := lower.PlanQuery(q, plan, lower.Profile{Caps: caps, Label: identity})
 	if err != nil {
 		return "", "", false
