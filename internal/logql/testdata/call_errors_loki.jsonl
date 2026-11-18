@@ -95,3 +95,5 @@
 {"accept": false, "error": "parse error at line 1, col 76: syntax error: unexpected $end", "id": "open-before-regex-in-call", "q": "rate({a=~\"x\"}[1m]) + label_replace(rate({c=~\"z\"}[1m]) # c, \"a\",\"b\",\"c\",\"d\")"}
 {"accept": false, "error": "parse error at line 1, col 8: syntax error: unexpected IDENTIFIER, expecting NUMBER", "id": "open-vector-number-text", "q": "vector(x"}
 {"accept": false, "error": "parse error at line 2, col 1: syntax error: unexpected ,, expecting )", "id": "open-nested-vector", "q": "label_replace(vector(1 # c\n, \"a\",\"b\",\"c\",\"d\")"}
+{"accept": false, "error": "parse error at line 1, col 29: syntax error: unexpected IDENTIFIER, expecting NUMBER", "id": "vector-after-empty", "q": "rate({app=\"\"}[1m]) + vector(x)"}
+{"accept": false, "error": "parse error at line 1, col 48: syntax error: unexpected IDENTIFIER, expecting NUMBER", "id": "vector-after-grouping", "q": "count_over_time({app=\"a\"}[1m]) by (x) + vector(x)"}

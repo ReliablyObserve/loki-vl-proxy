@@ -173,8 +173,8 @@ func untypedCallsError(expr Expr, query string) string {
 	return msg
 }
 
-// firstUntypedCallError is the first call of expr, in the order of the text, that the parser could not type and
-// that Loki rejects, with its error.
+// firstUntypedCallError is the first label_replace or vector call of expr, in the order of the text, that the
+// parser could not type and that Loki rejects, with its error.
 func firstUntypedCallError(expr Expr, query string) (*OpaqueMetricExpr, string) {
 	switch x := expr.(type) {
 	case *RangeAggregation:
@@ -189,6 +189,9 @@ func firstUntypedCallError(expr Expr, query string) (*OpaqueMetricExpr, string) 
 	case *OpaqueMetricExpr:
 		if x.Typed {
 			return firstUntypedCallError(x.Inner, query)
+		}
+		if x.Func == "approx_topk" {
+			return nil, "" // never typed: the pass over the tree reads it, in its order
 		}
 		if _, msg := untypedCall(query, x); msg != "" {
 			return x, msg

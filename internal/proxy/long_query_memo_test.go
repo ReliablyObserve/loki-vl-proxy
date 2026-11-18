@@ -1,7 +1,11 @@
 package proxy
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -103,5 +107,41 @@ func TestTextMemoBoundedByCost(t *testing.T) {
 	m.store("a", 30, "z", true)
 	if after := m.cur.Load().cost.Load(); after != before {
 		t.Fatalf("replacing an entry changed the generation's cost from %d to %d", before, after)
+	}
+}
+
+// Malformed calls kept as text, nested or left open, answer Loki's 400 and Loki's text on query_range and query,
+// before any VictoriaLogs call (answers recorded from Loki, internal/logql/testdata/call_errors_loki.jsonl).
+//
+// conformance: semantics/nested-calls-read-once
+func TestNestedCallErrorsAnswerLokiOnQueryRoutes(t *testing.T) {
+	var backendCalls atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		backendCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}\n"))
+	}))
+	t.Cleanup(backend.Close)
+	mux := http.NewServeMux()
+	newTestProxy(t, backend.URL).RegisterRoutes(mux)
+	for _, tc := range []struct{ query, loki string }{
+		{`label_replace(label_replace(rate({app="api"}[1m]), "dst", "$1", "src"), "dst", "$1", "src", "(.*)")`,
+			"parse error at line 1, col 70: syntax error: unexpected ), expecting ,"},
+		{`label_replace(rate({app="api"}[1m]), "dst"`, "parse error at line 1, col 43: syntax error: unexpected $end, expecting ,"},
+		{`rate({app=""}[1m]) + vector(x)`, "parse error at line 1, col 29: syntax error: unexpected IDENTIFIER, expecting NUMBER"},
+	} {
+		for _, route := range []string{"/loki/api/v1/query_range", "/loki/api/v1/query"} {
+			params := url.Values{"query": {tc.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"60"}}
+			req := httptest.NewRequest(http.MethodGet, route+"?"+params.Encode(), nil)
+			req.Header.Set("X-Scope-OrgID", "0")
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest || strings.TrimSpace(rec.Body.String()) != tc.loki {
+				t.Errorf("%s %q: %d %q, Loki answers 400 %q", route, tc.query, rec.Code, rec.Body.String(), tc.loki)
+			}
+		}
+	}
+	if n := backendCalls.Load(); n != 0 {
+		t.Errorf("%d VictoriaLogs calls for queries Loki rejects", n)
 	}
 }
