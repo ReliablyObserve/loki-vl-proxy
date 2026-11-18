@@ -74,7 +74,7 @@
       "internal/proxy/tail.go:427",
       "internal/proxy/tail.go:590",
       "internal/proxy/telemetry.go:118",
-      "internal/proxy/unwrap_conversion_error.go:1421",
+      "internal/proxy/unwrap_conversion_error.go:1453",
       "internal/testutil/vlemu/tenant.go:108",
       "internal/testutil/vlemu/vlemu.go:131",
       "internal/testutil/vlemu/vlemu.go:157"
@@ -93,8 +93,8 @@
       "internal/proxy/quantile_histogram.go:657",
       "internal/proxy/range_metric_compat.go:1254",
       "internal/proxy/telemetry.go:119",
-      "internal/proxy/unwrap_conversion_error.go:1061",
-      "internal/proxy/unwrap_conversion_error.go:1089",
+      "internal/proxy/unwrap_conversion_error.go:1093",
+      "internal/proxy/unwrap_conversion_error.go:1121",
       "internal/proxy/volume.go:465",
       "internal/testutil/vlemu/tenant.go:163",
       "internal/testutil/vlemu/vlemu.go:151"
@@ -122,13 +122,13 @@
       "internal/proxy/range_metric_compat.go:1683",
       "internal/proxy/stats_extent_cache.go:66",
       "internal/proxy/telemetry.go:120",
-      "internal/proxy/unwrap_conversion_error.go:1061",
+      "internal/proxy/unwrap_conversion_error.go:1093",
       "internal/proxy/volume.go:468",
       "internal/proxy/volume_segments.go:319",
       "internal/testutil/vlemu/tenant.go:163",
       "internal/testutil/vlemu/tenant.go:176",
       "internal/testutil/vlemu/vlemu.go:151",
-      "internal/testutil/vlemu/vlemu.go:296"
+      "internal/testutil/vlemu/vlemu.go:298"
     ],
     "/select/logsql/stream_field_names": [
       "internal/capability/gates.go:231",
@@ -187,7 +187,7 @@
     "keep": 42,
     "len": 223,
     "limit": 48,
-    "math": 35,
+    "math": 36,
     "pack_json": 2,
     "replace": 18,
     "running": 1,

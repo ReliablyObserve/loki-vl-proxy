@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.340.1] - 2026-11-18
+
+### Fixed
+- Each tenant's sub-request of a multi-tenant request (`X-Scope-OrgID` naming several tenants with `|`) now uses its
+  own request scope, so its cached query_range answer is keyed by that tenant. The sub-requests kept the multi-tenant
+  request's scope until their handler set their own, and the query_range response cache key is built before that:
+  the tenants of one request shared one key, and a tenant's part of the merged answer could hold another tenant's
+  lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
+  cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
+  v1.67.0 to v2.338.0.
+- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
+  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
+  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
+  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
+  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
+  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
+
+## [2.340.0] - 2026-11-18
+
 ### Added
 
 - One capability layer decides every gate that turns an optimisation or a behaviour on or off (`internal/capability`):
@@ -78,13 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query, with what Loki expects there, or the error of a regex Loki builds before it; the proxy said
   `unterminated '('`. label_replace's regex is checked ahead of the tree inside the call, an outer call's first, as
   Loki checks it. These answers are recorded from Loki.
-- Each tenant's sub-request of a multi-tenant request (`X-Scope-OrgID` naming several tenants with `|`) now uses its
-  own request scope, so its cached query_range answer is keyed by that tenant. The sub-requests kept the multi-tenant
-  request's scope until their handler set their own, and the query_range response cache key is built before that:
-  the tenants of one request shared one key, and a tenant's part of the merged answer could hold another tenant's
-  lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
-  cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
-  v1.67.0 to v2.338.0.
 
 ### Performance
 
