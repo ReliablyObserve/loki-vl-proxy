@@ -78,11 +78,48 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 	lowered = physical.Encode(op)
 	same = lowered == legacy && physical.Equal(want, op)
 	if c := translatorspelling.Case(q, p); !same && c != "" {
-		// A spelling the translator reads otherwise than the plan, which the proxy serves from the plan: held to Loki
-		// by the case's differential (internal/proxy TestPlanSpellingsMatchLoki), not to the translator.
+		// A spelling the translator reads otherwise than the plan, which the proxy serves from the plan: held to a
+		// spelling or a route the translator reads right (spellingHeldHere), and to Loki by the case's differential
+		// (internal/proxy TestPlanSpellingsMatchLoki).
+		if !spellingHeldHere(t, q, c, op, prof) {
+			return lowered, legacy, false, "", true
+		}
 		return lowered, legacy, false, "known divergence " + c, true
 	}
 	return lowered, legacy, same, "", true
+}
+
+// spellingHeldHere holds the lowering of a spelling the translator reads otherwise than the plan to a reference it
+// reads right: the translator's text of the respelled query (a quantile literal, an unwrap conversion with blanks), or
+// the proxy's binary route for the binary operation under any label_replace calls (routeOperands).
+func spellingHeldHere(t testing.TB, q, c string, op physical.Op, prof rangeProfile) bool {
+	switch c {
+	case translatorspelling.QuantileLiteral, translatorspelling.UnwrapConversionBlank:
+		ref, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(translatorspelling.Respell(q)), prof.label, prof.stream, prof.caps)
+		return err == nil && physical.Encode(op) == ref
+	}
+	inner := q
+	if lm, ok := op.(physical.LabelMap); ok {
+		op = lm.In
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+		for err == nil {
+			o, ok := expr.(*logql.OpaqueMetricExpr)
+			if !ok || o.Inner == nil {
+				break
+			}
+			expr = o.Inner
+		}
+		if err != nil {
+			return false
+		}
+		inner = expr.String()
+	}
+	b, ok := op.(physical.Binary)
+	if !ok {
+		return false
+	}
+	_, _, held := routeOperands(t, inner, b, prof)
+	return held
 }
 
 // routeOperands holds the operands of a lowered binary operation to the proxy's binary route under prof: each operand
@@ -227,9 +264,18 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`: "BinOp operand LabelReplace",
 		`stddev(` + rate + `) / 2`:                            "BinOp operand VectorAgg",
 		// The bytes of the binary text's markers in an operand's quoted text: the readers of the text split there.
-		`rate({app="a"} |= "@@@" [5m]) / 2`:             "BinOp marker text",
-		`rate({app="a"} |= "a|||b" [5m]) / 2`:           "BinOp operand RangeAgg",
-		`2 * rate({app="a"} |= "x__binary__:/:y" [5m])`: "BinOp marker text",
+		`rate({app="a|||"}[5m]) / 2`:                                        "BinOp marker text",
+		`rate({app="a"} |= "x" or "__lvp_lr:" [5m]) / 2`:                    "BinOp marker text",
+		`sum(rate({app="a"} | json x="@@@" [5m])) / 2`:                      "BinOp marker text",
+		`rate({app="a"} | logfmt | y="a|||b" [5m]) / 2`:                     "BinOp marker text",
+		`rate({app="a"} | drop y="@@@x" [5m]) / 2`:                          "BinOp marker text",
+		`sum by (y) (rate({app="a"} | keep y="__binary__:" [5m])) / 2`:      "BinOp marker text",
+		`rate({app="a"} | line_format "{{.a}}|||" [5m]) / 2`:                "BinOp marker text",
+		`rate({app="a"} | label_format y="@@@" [5m]) / 2`:                   "BinOp marker text",
+		`2 * sum(label_replace(rate({app="@@@"}[5m]), "a", "b", "c", "d"))`: "BinOp marker text",
+		`rate({app="a"} |= "@@@" [5m]) / 2`:                                 "BinOp marker text",
+		`rate({app="a"} |= "a|||b" [5m]) / 2`:                               "BinOp marker text",
+		`2 * rate({app="a"} |= "x__binary__:/:y" [5m])`:                     "BinOp marker text",
 
 		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:            "LabelReplace operand Rank",
 		`label_replace(vector(1), "a", "b", "c", "d")`:                            "LabelReplace operand VectorLit",

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -321,6 +322,9 @@ func fenceShapeRequest(query string) *http.Request {
 	return httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+v.Encode(), nil)
 }
 
+// conversionCallRE is an unwrap conversion written with no blank around its parenthesis.
+var conversionCallRE = regexp.MustCompile(`unwrap\s+(?:bytes|duration_seconds|duration)\([^\s()]+\)`)
+
 // fenceWants is, per fence, whether the parsed tree of query holds the construct the fence guards; nil for a query
 // the parser rejects (it has no tree).
 func fenceWants(query string) map[string]bool {
@@ -345,6 +349,10 @@ func fenceWants(query string) map[string]bool {
 		// printed tree writes each stage so.
 		"unwrap-blank-spelling": strings.Count(textOutsideQuotes(expr.String()), "| unwrap ") >
 			strings.Count(strings.ToLower(textOutsideQuotes(query)), "| unwrap "),
+		// An unwrap conversion of the tree that the text does not write `<conversion>(<label>)` with no blank around its
+		// parenthesis: the printed tree writes each conversion so.
+		"unwrap-conversion-blank": len(conversionCallRE.FindAllString(strings.ToLower(textOutsideQuotes(expr.String())), -1)) >
+			len(conversionCallRE.FindAllString(strings.ToLower(textOutsideQuotes(query)), -1)),
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}

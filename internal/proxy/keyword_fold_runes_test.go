@@ -34,6 +34,16 @@ func readKeywordFoldAnswers(t *testing.T) []keywordFoldAnswer {
 // readLexerEdgeAnswerFile reads one of the Loki answer files internal/logql records for its lexer edge grids.
 func readLexerEdgeAnswerFile(t *testing.T, path string) []keywordFoldAnswer {
 	t.Helper()
+	out := readLexerEdgeAnswers(t, path)
+	if len(out) < 300 {
+		t.Fatalf("%d recorded answers: the grid is too small", len(out))
+	}
+	return out
+}
+
+// readLexerEdgeAnswers is readLexerEdgeAnswerFile for a grid of any size.
+func readLexerEdgeAnswers(t *testing.T, path string) []keywordFoldAnswer {
+	t.Helper()
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -52,9 +62,6 @@ func readLexerEdgeAnswerFile(t *testing.T, path string) []keywordFoldAnswer {
 			t.Fatal(err)
 		}
 		out = append(out, a)
-	}
-	if len(out) < 300 {
-		t.Fatalf("%d recorded answers: the grid is too small", len(out))
 	}
 	return out
 }

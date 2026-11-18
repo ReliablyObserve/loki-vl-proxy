@@ -62,6 +62,9 @@ func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err := binOpShape(n); err != nil {
 		return nil, err
 	}
+	if holdsBinaryMarker(n.L) || holdsBinaryMarker(n.R) {
+		return nil, errBinMarkerText
+	}
 	l, err := binOperand(EmptyWithoutLevelsOff(n.L), prof)
 	if err != nil {
 		return nil, err
@@ -69,9 +72,6 @@ func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	r, err := binOperand(EmptyWithoutLevelsOff(n.R), prof)
 	if err != nil {
 		return nil, err
-	}
-	if holdsBinaryMarker(l) || holdsBinaryMarker(r) {
-		return nil, errBinMarkerText
 	}
 	b := physical.Binary{Op: n.Op, Bool: n.Bool, L: l, R: r}
 	b.Match, b.Tail = binMatching(n.Match)
@@ -81,28 +81,86 @@ func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 // errBinMarkerText is a binary operation an operand of which holds the bytes of a marker of the binary text.
 var errBinMarkerText = &NotLoweredError{Construct: "BinOp marker text"}
 
-// holdsBinaryMarker reports a lowered operand whose query text holds the separator of a binary text's operands, its
-// prefix, a vector matching modifier or a label_replace marker. The lowering writes none of them inside a query, so
-// they are a client's quoted text there, which the readers of the binary text (translator.DecodePhysical, read by the
-// ranking and scalar routes) would split at. Decided from the lowered operators, not from the client's text.
-func holdsBinaryMarker(op physical.Op) bool {
-	switch v := op.(type) {
-	case physical.VLQuery:
-		return markerBytes(v.Text)
-	case physical.VLStats:
-		return markerBytes(v.Text)
-	case physical.Verbatim:
-		return markerBytes(v.Text)
-	case physical.Binary:
+// holdsBinaryMarker reports an operand whose log queries hold, in a value the client wrote (a matcher, a line filter,
+// a label filter, a parser's expression, a template, a drop or keep matcher), the separator of a binary text's operands,
+// its prefix, a vector matching modifier or a label_replace marker. The lowering writes such a value into the operand's
+// query, where the readers of the binary text (translator.DecodePhysical, read by the ranking and scalar routes) would
+// split at it. Decided from the tree: the values are short, and nothing is printed.
+func holdsBinaryMarker(n queryplan.Node) bool {
+	switch v := n.(type) {
+	case *queryplan.LogSelect:
+		return logSelectHoldsMarker(v)
+	case *queryplan.RangeAgg:
+		return v.In != nil && logSelectHoldsMarker(v.In)
+	case *queryplan.VectorAgg:
+		return holdsBinaryMarker(v.In)
+	case *queryplan.Rank:
+		return holdsBinaryMarker(v.In)
+	case *queryplan.LabelReplace:
+		return holdsBinaryMarker(v.In)
+	case *queryplan.BinOp:
 		return holdsBinaryMarker(v.L) || holdsBinaryMarker(v.R)
-	case physical.Fold:
-		return holdsBinaryMarker(v.In)
-	case physical.LabelMap:
-		return holdsBinaryMarker(v.In)
-	case physical.RankStep:
-		return holdsBinaryMarker(v.In)
-	case physical.SeriesAgg:
-		return holdsBinaryMarker(v.In)
+	}
+	return false
+}
+
+// logSelectHoldsMarker is holdsBinaryMarker of one log query's values.
+func logSelectHoldsMarker(ls *queryplan.LogSelect) bool {
+	for _, m := range ls.Matchers {
+		if markerBytes(m.Value) {
+			return true
+		}
+	}
+	for _, st := range ls.Stages {
+		switch v := st.(type) {
+		case *logql.LineFilterStage:
+			if markerBytes(v.Value) {
+				return true
+			}
+			for _, alt := range v.Or {
+				if markerBytes(alt.Value) {
+					return true
+				}
+			}
+		case *logql.ParserStage:
+			if markerBytes(v.Param) {
+				return true
+			}
+			for _, f := range v.Fields {
+				if markerBytes(f.Expression) {
+					return true
+				}
+			}
+		case *logql.LabelFilterStage:
+			if markerBytes(v.Raw) {
+				return true
+			}
+		case *logql.DropStage:
+			if dropMatchersHoldMarker(v.Matchers) {
+				return true
+			}
+		case *logql.KeepStage:
+			if dropMatchersHoldMarker(v.Matchers) {
+				return true
+			}
+		case *logql.LineFormatStage:
+			if markerBytes(v.Template) {
+				return true
+			}
+		case *logql.LabelFormatStage:
+			if markerBytes(v.Raw) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func dropMatchersHoldMarker(ms []logql.DropMatcher) bool {
+	for _, m := range ms {
+		if markerBytes(m.Value) {
+			return true
+		}
 	}
 	return false
 }

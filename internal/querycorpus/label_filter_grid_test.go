@@ -294,8 +294,13 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 			}
 			spelling := translatorspelling.Case(q, plan)
 			if routed, _ := routedRoot(plan); !routed && spelling != "" && !sameAsTranslator(got, legacy) {
-				// A spelling the translator reads otherwise than the plan, which the proxy serves: held to Loki by the
-				// case's differential (spellingDifferential).
+				// A spelling the translator reads otherwise than the plan, which the proxy serves: held to a spelling or
+				// a route the translator reads right (spellingHeld), and to Loki by the case's differential
+				// (spellingDifferential).
+				if msg := spellingHeld(q, spelling, plan, prof, got); msg != "" {
+					problems = append(problems, msg)
+					continue
+				}
 				delegated["known divergence "+spelling]++
 				continue
 			}
@@ -304,6 +309,10 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 					if spelling != "" {
 						// The operand the route sends is served from the plan too (its construct is flipped): the
 						// translator's text for it, the reference here, reads the spelling otherwise.
+						if held := spellingHeld(q, spelling, plan, prof, got); held != "" {
+							problems = append(problems, held)
+							continue
+						}
 						delegated["known divergence "+spelling]++
 						continue
 					}

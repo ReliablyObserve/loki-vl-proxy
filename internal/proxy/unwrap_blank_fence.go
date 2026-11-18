@@ -100,10 +100,15 @@ func unwrapConversionSpelledOtherwise(query string) bool {
 	return false
 }
 
-// conversionCallSpelledOtherwise reports a conversion call at query[j:] (after blanks) written with a blank before its
-// parenthesis, right after it or right before the one that closes it.
+// conversionCallSpelledOtherwise reports a conversion call at query[j:] (after blanks and comments) written otherwise
+// than `<conversion>(<label>)`: a blank or a comment before its parenthesis, or anything but the label between the
+// parentheses.
 func conversionCallSpelledOtherwise(query string, j int) bool {
-	for j < len(query) && isFenceBlank(query[j]) {
+	for j < len(query) && (isFenceBlank(query[j]) || query[j] == '#') {
+		if query[j] == '#' {
+			j = skipComment(query, j)
+			continue
+		}
 		j++
 	}
 	k := j
@@ -116,19 +121,25 @@ func conversionCallSpelledOtherwise(query string, j int) bool {
 		return false
 	}
 	l := k
-	for l < len(query) && isFenceBlank(query[l]) {
+	for l < len(query) && (isFenceBlank(query[l]) || query[l] == '#') {
+		if query[l] == '#' {
+			l = skipComment(query, l)
+			continue
+		}
 		l++
 	}
 	if l >= len(query) || query[l] != '(' {
 		return false
 	}
-	if l > k || l+1 < len(query) && isFenceBlank(query[l+1]) {
-		return true
+	if l > k {
+		return true // a blank or a comment before the parenthesis
 	}
-	if r := strings.IndexByte(query[l:], ')'); r > 0 && isFenceBlank(query[l+r-1]) {
-		return true
+	// The label right after the parenthesis and the closing parenthesis right after the label, or another spelling.
+	m := l + 1
+	for m < len(query) && (query[m] == '_' || query[m]|0x20 >= 'a' && query[m]|0x20 <= 'z' || m > l+1 && query[m] >= '0' && query[m] <= '9') {
+		m++
 	}
-	return false
+	return m == l+1 || m >= len(query) || query[m] != ')'
 }
 
 func isFenceBlank(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }

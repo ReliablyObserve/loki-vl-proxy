@@ -499,6 +499,7 @@
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/physical_sites_test.go",
+      "internal/proxy/plan_spellings_loki_test.go",
       "internal/proxy/ranking_binary_operand_loki_test.go",
       "internal/proxy/request_ends_within_test.go",
       "internal/proxy/selector_value_test.go",
@@ -2465,7 +2466,8 @@
       "test/e2e-compat/logql_whitespace_test.go"
     ],
     "semantics/unwrap-name-before-parenthesis-accepted": [
-      "internal/logql/lexer_edges_loki_test.go"
+      "internal/logql/lexer_edges_loki_test.go",
+      "internal/proxy/plan_spellings_loki_test.go"
     ],
     "semantics/unwrap-over-time-range-windows": [
       "internal/proxy/query_range_steps_harden_test.go",
@@ -2570,6 +2572,7 @@
       "internal/proxy/sum_without_label_collision_test.go"
     ],
     "semantics/unwrap-unknown-conversion-function-accepted": [
+      "internal/proxy/plan_spellings_loki_test.go",
       "internal/querycorpus/grammar_sweep_test.go"
     ],
     "semantics/vector-aggregation-over-log-selector-status": [
@@ -2882,7 +2885,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 647,
+  "registry_items": 648,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4190,11 +4193,14 @@
       "semantics/translator-writes-reserved-field-names"
     ],
     "internal/proxy/plan_spellings_loki_test.go": [
+      "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/blank-before-call-parenthesis-read-unlike-loki",
       "semantics/translator-reads-binary-operation-text",
       "semantics/translator-reads-quoted-text-as-syntax",
-      "semantics/translator-writes-leading-dot-quantile"
+      "semantics/translator-writes-leading-dot-quantile",
+      "semantics/unwrap-name-before-parenthesis-accepted",
+      "semantics/unwrap-unknown-conversion-function-accepted"
     ],
     "internal/proxy/post_aggregation_physical_test.go": [
       "architecture-syntax-package-layering"
@@ -6464,6 +6470,7 @@
     "semantics/unwrap-parserless-reads-stored-field",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
+    "semantics/unwrap-token-in-parenthesized-range-expected-list",
     "semantics/uppercase-topk-ranks-once",
     "semantics/without-fold-detected-level-unknown",
     "service-name-derivation",

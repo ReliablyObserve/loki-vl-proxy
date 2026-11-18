@@ -50,6 +50,26 @@ func Case(q string, p *queryplan.Plan) string {
 	return ""
 }
 
+// Respell is q with a quantile parameter written as the shortest form of its value and an unwrap conversion written
+// with no blank around its parenthesis: the spelling of the same query the string translator reads as the plan does,
+// which a shadow holds a QuantileLiteral or UnwrapConversionBlank row's lowering to. Other spellings are kept.
+func Respell(q string) string {
+	for _, m := range quantileCallRE.FindAllStringSubmatchIndex(q, -1) {
+		lit := q[m[2]:m[3]]
+		if v, err := strconv.ParseFloat(lit, 64); err == nil {
+			if short := strconv.FormatFloat(v, 'g', -1, 64); short != lit {
+				return Respell(q[:m[2]] + short + q[m[3]:])
+			}
+		}
+	}
+	return unwrapConversionCallRE.ReplaceAllString(q, "${1}${2}(${3})")
+}
+
+var (
+	quantileCallRE         = regexp.MustCompile(`quantile_over_time\(\s*([^,\s"]+)\s*,`)
+	unwrapConversionCallRE = regexp.MustCompile(`(unwrap\s+)((?i:bytes|duration_seconds|duration))\s*\(\s*([^()\s"]*)\s*\)`)
+)
+
 // holdsBinOp reports a binary operation at the root of a plan or under its label_replace calls, rankings and vector
 // aggregations.
 func holdsBinOp(n queryplan.Node) bool {

@@ -1132,6 +1132,8 @@
     "semantics/unwrap-sum-without-extracted-label-collision | compare:observed",
     "semantics/unwrap-sum-without-extracted-label-collision | gap:open",
     "semantics/unwrap-sum-without-extracted-label-collision | query",
+    "semantics/unwrap-token-in-parenthesized-range-expected-list | compare:observed",
+    "semantics/unwrap-token-in-parenthesized-range-expected-list | gap:open",
     "semantics/unwrap-unknown-conversion-function-accepted | compare:observed",
     "semantics/unwrap-unknown-conversion-function-accepted | gap:fixed",
     "semantics/uppercase-topk-ranks-once | compare:observed",
@@ -1952,11 +1954,14 @@
     "internal/proxy/plan_served_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_served_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/proxy/plan_served_test.go | semantics/translator-writes-reserved-field-names",
+    "internal/proxy/plan_spellings_loki_test.go | loki_api_v1_query",
     "internal/proxy/plan_spellings_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/plan_spellings_loki_test.go | semantics/blank-before-call-parenthesis-read-unlike-loki",
     "internal/proxy/plan_spellings_loki_test.go | semantics/translator-reads-binary-operation-text",
     "internal/proxy/plan_spellings_loki_test.go | semantics/translator-reads-quoted-text-as-syntax",
     "internal/proxy/plan_spellings_loki_test.go | semantics/translator-writes-leading-dot-quantile",
+    "internal/proxy/plan_spellings_loki_test.go | semantics/unwrap-name-before-parenthesis-accepted",
+    "internal/proxy/plan_spellings_loki_test.go | semantics/unwrap-unknown-conversion-function-accepted",
     "internal/proxy/post_aggregation_physical_test.go | architecture-syntax-package-layering",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/proxy_test.go | semantics/error-layer-silent-success",
@@ -3210,7 +3215,7 @@
   "counts": {
     "case_consumers": {
       "any": 47,
-      "api": 117,
+      "api": 118,
       "drilldown": 53,
       "explore": 202,
       "grafana-datasource": 3,
@@ -3236,7 +3241,7 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 94,
+    "unwired_items": 95,
     "wired_items": 444
   },
   "gates": [

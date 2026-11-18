@@ -108,9 +108,19 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 				if got != want && gotErr == nil && wantErr == nil {
 					// A spelling the translator reads otherwise than the plan, which reads the tree: the plan's text,
 					// held to Loki by TestPlanSpellingsMatchLoki.
-					if plan := resolvedPlan(dynamicQuery(q)); plan != nil && translatorspelling.Case(q, plan) != "" {
-						spelled++
-						continue
+					if plan := resolvedPlan(dynamicQuery(q)); plan != nil {
+						switch c := translatorspelling.Case(q, plan); c {
+						case translatorspelling.QuantileLiteral, translatorspelling.UnwrapConversionBlank:
+							// Held to the translator's text of the respelled query, which it reads right.
+							if ref, _ := off.translateQueryOpts(ctx, translatorspelling.Respell(q), false); ref == got {
+								spelled++
+								continue
+							}
+						case translatorspelling.QuotedText, translatorspelling.BinaryText:
+							// The binary route reads the tree; internal/querycorpus holds the lowering to it.
+							spelled++
+							continue
+						}
 					}
 				}
 				if got != want || (gotErr == nil) != (wantErr == nil) {
@@ -217,9 +227,10 @@ func FuzzMetricFlipGate(f *testing.F) {
 		if len(q) > 512 || strings.HasPrefix(strings.TrimSpace(q), "{") {
 			return
 		}
-		// The query as the handlers and the translation read it (lowercaseQueryKeywords): keywords in lower case,
-		// without comments and parser flags.
-		q = logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(q)))
+		// The query as the handlers and the translation read it (lowercaseQueryKeywords, requestQueryText): keywords in
+		// lower case, without comments and parser flags, the metric calls and parentheses in one spelling, a quantile
+		// above 1 clamped.
+		q = rewriteQuantilePhiGT1(handlerText(q, 0))
 		// A query Loki rejects is rejected by the request's validation before any translation (an empty selector, an
 		// empty pattern): neither path translates it.
 		if logqlpkg.ParseAndValidate(q) != nil {
@@ -260,6 +271,20 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// VictoriaLogs reads both as the same query.
 		if !respelled && strings.IndexFunc(q, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
 			respelled = sameLogsQL(got, want)
+		}
+		// A spelling the translator reads otherwise than the plan (translatorspelling): held to the translator's text of
+		// the respelled query for a quantile literal or an unwrap conversion; a binary operation's spellings to its
+		// route in internal/querycorpus (spellingHeld).
+		if !respelled && got != want && gotErr == nil && wantErr == nil {
+			if plan := resolvedPlan(dynamicQuery(q)); plan != nil {
+				switch translatorspelling.Case(q, plan) {
+				case translatorspelling.QuantileLiteral, translatorspelling.UnwrapConversionBlank:
+					ref, _ := off.translateQueryOpts(context.Background(), spelledAsTranslatorReads(translatorspelling.Respell(q)), false)
+					respelled = got == ref || got == lower.QuoteKeywordFieldText(ref)
+				case translatorspelling.QuotedText, translatorspelling.BinaryText:
+					respelled = true
+				}
+			}
 		}
 		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || ((gotErr == nil) != (wantErr == nil) && !delegated) {
 			t.Fatalf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)

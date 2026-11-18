@@ -263,8 +263,13 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				caseID, ok = "semantics/label-filter-numeric-equality", true
 			}
 			if c := translatorspelling.Case(q, plan); !ok && !routed && c != "" && !sameAsTranslator(got, legacy) {
-				// A spelling the translator reads otherwise than the plan, which reads the tree: the proxy serves the
-				// plan's text, held to Loki by the spelling's differential.
+				// A spelling the translator reads otherwise than the plan, which reads the tree: held to a spelling or a
+				// route the translator reads right, then served from the plan and held to Loki by the spelling's
+				// differential.
+				if msg := spellingHeld(q, c, plan, prof, got); msg != "" {
+					fail(msg)
+					continue
+				}
 				caseID, ok, differential = c, true, spellingDifferential
 			}
 			if differential == "" {
@@ -335,17 +340,6 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 		}
 	}
 	return sec, problems, slices
-}
-
-// spellingDivergences are the rows of sec delegated as a spelling the translator reads otherwise than the plan
-// (translatorspelling.Case): like a keep's series identity, a lowering that differs from the translator there is that
-// divergence, held to Loki by its differential, not a mismatch.
-func spellingDivergences(sec shadowSection) int {
-	n := 0
-	for _, c := range []string{translatorspelling.QuotedText, translatorspelling.UnwrapConversionBlank, translatorspelling.QuantileLiteral, translatorspelling.BinaryText} {
-		n += sec.DelegatedByConstruct["known divergence "+c]
-	}
-	return n
 }
 
 // knownKeepIdentity is the registry case of the plan's series identity behind a keep, which the proxy serves from
@@ -544,7 +538,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		// A row whose series a keep before the unwrap, or a parser's labels, decide is held to Loki
 		// (TestKeepUnwrapIdentityMatchLoki), not to the translator: a lowering that differs there is that divergence,
 		// not a mismatch.
-		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance]-spellingDivergences(bad) {
+		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance] {
 			t.Fatalf("a lowering that answers `*` for everything: %+v", bad)
 		}
 	})
@@ -556,7 +550,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
 	}
 	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance]-spellingDivergences(bad) {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance] {
 			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
 		}
 	})

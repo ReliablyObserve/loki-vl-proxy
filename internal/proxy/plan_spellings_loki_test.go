@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -290,5 +291,46 @@ func writePlanSpellingVLAnswers(t *testing.T, answers map[string]map[string]vlAn
 	}
 	if err := os.WriteFile(planSpellingVLAnswers, b.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// An unwrap of a name that is no conversion followed by a parenthesis (`| unwrap x(a)`) is answered with Loki's 400 and
+// Loki's text (recorded Loki answers, internal/logql TestUnwrapNameBeforeParenthesisMatchesLoki) on query_range and
+// query, before any VictoriaLogs request; the conversions in other letter cases are answered.
+//
+// conformance: semantics/unwrap-name-before-parenthesis-accepted, semantics/unwrap-unknown-conversion-function-accepted, loki_api_v1_query_range, loki_api_v1_query
+func TestUnwrapNameBeforeParenthesisAnswersLokiError(t *testing.T) {
+	var upstream atomic.Int64
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstream.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer vl.Close()
+	p := newCompatTestProxy(t, vl.URL)
+	rejected := 0
+	for _, a := range readLexerEdgeAnswers(t, "../logql/testdata/unwrap-name-before-parenthesis-loki.jsonl.gz") {
+		if a.Accept {
+			continue
+		}
+		endpoints := []string{"query_range", "query"}
+		if strings.HasPrefix(a.Q, "{") {
+			endpoints = endpoints[:1] // a log query is the instant route's own 400
+		}
+		for _, endpoint := range endpoints {
+			params := url.Values{"query": {a.Q}, "start": {"1700000000"}, "end": {"1700000600"}, "step": {"60"}, "time": {"1700000600"}}
+			before := upstream.Load()
+			rec := doCompatProxyRequest(p, "/loki/api/v1/"+endpoint+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
+			if body := rec.Body.String(); rec.Code != http.StatusBadRequest || !strings.Contains(body, a.Error) && !strings.Contains(body, jsonQuoted(a.Error)) {
+				t.Errorf("%s %q: %d %s, want Loki's 400 %q", endpoint, a.Q, rec.Code, body, a.Error)
+			}
+			if calls := upstream.Load() - before; calls != 0 {
+				t.Errorf("%s %q: %d requests reached VictoriaLogs", endpoint, a.Q, calls)
+			}
+			rejected++
+		}
+	}
+	if rejected < 10 {
+		t.Fatalf("%d rejected spellings checked", rejected)
 	}
 }

@@ -158,7 +158,11 @@ func shadowBlankGrid(t *testing.T, grid []string) (rows, native, known, respelle
 				respelled++
 			}
 			if text != legacy {
-				if translatorspelling.Case(h, plan) != "" {
+				if c := translatorspelling.Case(h, plan); c != "" {
+					if msg := spellingHeld(h, c, plan, prof, got); msg != "" {
+						t.Error(msg)
+						continue
+					}
 					known++
 					continue
 				}
