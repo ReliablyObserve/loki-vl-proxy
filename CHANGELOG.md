@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused query five times each send one VictoriaLogs call. Metrics:
   `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
 
+## [2.337.0] - 2026-11-18
+
 ### Fixed
 
 - The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
