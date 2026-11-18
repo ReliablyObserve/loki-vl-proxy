@@ -39,7 +39,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from vio import dump_json, load_json  # noqa: E402
-from visual_comment import classify  # noqa: E402
+from visual_comment import classify, loki_ui_for_gate, new_empty_panel  # noqa: E402
 
 PY = sys.executable
 
@@ -146,8 +146,23 @@ def keep_first_pass(out, again):
     run([PY, os.path.join(HERE, "montage.py"), first], log=os.path.join(out, "montage.log"), check=False)
 
 
+def needs_second_look(r):
+    """A static capture whose base-vs-PR data differed, that never settled, or whose PR side shows a "No data" panel
+    the base and Loki do not.
+
+    A side counts as settled once no request is in flight for a few seconds, so a side whose panel query was still
+    loading then (the run button's spinner, a blank panel) is captured before its panel says anything: an empty
+    answer shows "No data" only on the side that finished first, with the data every side received the same
+    (explore-unwrap-missing-label at 15m on #1639 and #1650)."""
+    if r["range"] == "live":
+        return False
+    return bool(r["main_pr_diffs"] or not r.get("settled", True)
+                or new_empty_panel(r.get("ui_main") or {}, r.get("ui_pr") or {}, loki_ui_for_gate(r)))
+
+
 def recapture(a, out, plan, end, port, meta):
-    """Load again, once and more patiently, the static captures whose base-vs-PR data differed or never settled.
+    """Load again, once and more patiently, the static captures whose base-vs-PR data differed or never settled, or
+    whose PR side shows a "No data" panel the others do not (needs_second_look).
 
     A page that requests in waves can look settled between two waves on a busy host, and a half-loaded side
     differs from a fully loaded one. A difference that survives the second look is the one reported.
@@ -160,7 +175,7 @@ def recapture(a, out, plan, end, port, meta):
     rows = load_json(os.path.join(out, "compare.json")) if os.path.exists(os.path.join(out, "compare.json")) else []
     again, n = {}, 0
     for r in rows:
-        if r["range"] != "live" and (r["main_pr_diffs"] or not r.get("settled", True)):
+        if needs_second_look(r):
             again.setdefault(r["page"], {"kind": plan["entries"][r["page"]]["kind"], "ranges": []})["ranges"].append(r["range"])
             # A difference Loki judged an improvement is expected (fix-proof captures differ by design): still
             # loaded again, not counted against the cap.
