@@ -36,6 +36,8 @@ type requestTelemetry struct {
 	internalDurationByType map[string]time.Duration
 	// flow is what the request caused (query_flow.go).
 	flow flowCounters
+	// plan is the request's planning budget, made when the request first plans (query_budget.go).
+	plan *planBudget
 	// failure is the failure the request answered through the error layer,
 	// for the error cache (error_flights.go).
 	failure flightFailure
@@ -74,6 +76,7 @@ type requestTelemetry struct {
 	start        time.Time
 	traceOn      bool
 	traceClosed  bool
+	planChecked  bool // the request's first VictoriaLogs call has been checked against its planning budget
 	trace        []slowTraceStep
 	traceDropped int
 	traceCache   int // cache steps kept, bounded by slowTraceMaxCacheSteps

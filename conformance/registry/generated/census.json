@@ -1256,6 +1256,7 @@
     "cmd/proxy/main_test.go | tail-reads-settled-rows",
     "cmd/proxy/peer_config_test.go | peer-cache-push-replay",
     "cmd/proxy/peer_config_test.go | peer-cache-read-hedge",
+    "cmd/proxy/query_complexity_flags_test.go | query-complexity-limits",
     "cmd/proxy/tenant_routing_test.go | limits/max-query-length-default",
     "cmd/proxy/tenant_routing_test.go | tenant-auth-follows-loki",
     "cmd/proxy/tenant_routing_test.go | tenant-numeric-routing",
@@ -1301,6 +1302,7 @@
     "internal/logql/canonical_spelling_test.go | semantics/vector-call-blank-before-parenthesis-as-query",
     "internal/logql/comments_offsets_test.go | semantics/comments-signed-compound-offsets",
     "internal/logql/comments_offsets_test.go | semantics/proxy-rejects-valid-logql",
+    "internal/logql/complexity_test.go | query-complexity-limits",
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
     "internal/logql/deep_call_cost_test.go | semantics/nested-calls-read-once",
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
@@ -1405,6 +1407,7 @@
     "internal/lokierr/lokierr_test.go | status-500",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/capability_test.go | vl-capability-layer",
+    "internal/metrics/query_complexity_test.go | query-complexity-limits",
     "internal/metrics/request_flow_test.go | observability-query-flow",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
@@ -2041,7 +2044,9 @@
     "internal/proxy/quantile_reference_test.go | semantics/unwrap-quantile-response-limit",
     "internal/proxy/quantile_slider_harden_test.go | quality/query-range-settled-steps",
     "internal/proxy/quantile_slider_harden_test.go | semantics/unwrap-quantile-response-limit",
+    "internal/proxy/query_budget_test.go | query-complexity-limits",
     "internal/proxy/query_caller_test.go | observability-slow-query-log",
+    "internal/proxy/query_complexity_test.go | query-complexity-limits",
     "internal/proxy/query_flow_test.go | observability-query-flow",
     "internal/proxy/query_flow_test.go | observability-slow-query-log",
     "internal/proxy/query_lowering_corpus_test.go | architecture-syntax-package-layering",
@@ -2059,6 +2064,7 @@
     "internal/proxy/query_lowering_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
     "internal/proxy/query_lowering_test.go | semantics/translator-reads-quoted-text-as-syntax",
     "internal/proxy/query_lowering_test.go | semantics/translator-writes-signed-number-with-blank",
+    "internal/proxy/query_plan_budget_corpus_test.go | query-complexity-limits",
     "internal/proxy/query_range_steps_harden_test.go | quality/query-range-settled-steps",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-over-time-range-windows",
@@ -2645,6 +2651,7 @@
     "internal/queryplan/lower/binop_vector_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_vector_test.go | semantics/vector-call-blank-before-parenthesis-as-query",
     "internal/queryplan/lower/binop_without_empty_test.go | semantics/binary-operand-without-empty-collapses",
+    "internal/queryplan/lower/budget_test.go | query-complexity-limits",
     "internal/queryplan/lower/delete_filter_test.go | semantics/delete-api-via-victorialogs",
     "internal/queryplan/lower/detected_level_ast_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/detected_level_test.go | architecture-syntax-package-layering",
@@ -2705,6 +2712,7 @@
     "internal/queryplan/lower/vl_clone_roundtrip_test.go | semantics/translator-writes-reserved-field-names",
     "internal/queryplan/physical/eval_test.go | architecture-syntax-package-layering",
     "internal/queryplan/series_labels_test.go | semantics/keep-before-unwrap-series-identity",
+    "internal/queryplan/validate_budget_test.go | query-complexity-limits",
     "internal/queryplan/validate_test.go | semantics/label-replace-over-log-selector-accepted",
     "internal/queryplan/validate_test.go | semantics/quantile-over-time-parameter-required",
     "internal/queryplan/validate_test.go | semantics/set-operation-folded-literal-operand",
@@ -3329,7 +3337,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 777,
+      "go": 785,
       "playwright": 3
     },
     "page_kinds": {
@@ -3349,7 +3357,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 465
+    "wired_items": 466
   },
   "gates": [
     "A/B shape selection",

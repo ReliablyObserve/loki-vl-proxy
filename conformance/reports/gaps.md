@@ -52,9 +52,9 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 | 405 | 3 | 3 | 0 | 0 | 0 | 0 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 188 | 1 | 184 | 2 | 1 | 1 |
+| set at run time | 192 | 1 | 188 | 2 | 1 | 1 |
 
-The registry holds one item per status (12) and one per Loki error message (53) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
+The registry holds one item per status (12) and one per Loki error message (55) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 
 The error-layer gate (`TestErrorLayer_NoVictoriaLogsLeak`, every route through every VictoriaLogs failure mode) lists 0 route × failure-mode cells that still leak (0 cell × case pairs, ceiling 0) in `conformance/registry/error-layer-known-leaks.json`; the list may only shrink. Sites outside those routes and modes are not driven by the gate.
 
@@ -98,6 +98,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `peer-cache-read-hedge` — A peer-cache read never waits on a paused or hung replica longer than the read hedge delay | 3 | 3 | partial |
 | resource_control | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | 3 | 6 | partial |
 | resource_control | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | 3 | 1 | partial |
+| semantics | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | 8 | 8 | unknown |
 | observability | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | 14 | 8 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 12 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |

@@ -269,6 +269,9 @@ type proxyRuntimeConfig struct {
 	drilldownMaxStatsBuckets            int
 	maxZeroFillBuckets                  int
 	maxQueryLengthBytes                 int
+	maxQueryASTNodes                    int
+	maxQueryNestingDepth                int
+	maxQueryPlanTime                    time.Duration
 	labelValuesMaxResponseBytes         int
 	backendHeavyQueryQueueWait          time.Duration
 	backendHeavyQueryMinRange           time.Duration
@@ -619,6 +622,9 @@ func run(
 	maxZeroFillBuckets := fs.Int("max-zero-fill-buckets", proxy.DefaultMaxZeroFillBuckets, "Maximum buckets the proxy zero-fills in a metric response. 0 uses the built-in default of 32768")
 	labelValuesMaxResponseBytes := fs.Int("label-values-max-response-bytes", proxy.DefaultLabelValuesMaxResponseBytes, "Maximum bytes of the VictoriaLogs answer to a /loki/api/v1/label/{name}/values request: one response, or the size the merged listing would have as one response when the metadata inventory lists it from time buckets. Above it the request fails like Loki's querier above grpc_server_max_send_msg_size: HTTP 500 `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)` naming this flag, and nothing is cached. Per tenant as label_values_max_response_bytes in -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 64 MiB")
 	maxQueryLengthBytes := fs.Int("max-query-length-bytes", proxy.DefaultMaxQueryLengthBytes, "Maximum LogQL query string length in bytes. The default matches Loki's syntax.maxInputSize (131072), so the proxy rejects only what Loki rejects; lower it to reject long queries earlier. 0 uses the built-in default")
+	maxQueryASTNodes := fs.Int("max-query-ast-nodes", 0, "Maximum number of nodes a parsed LogQL query may have: every expression node, pipeline stage and stream selector matcher. A longer query is refused, after it has been parsed and ahead of the response cache, with HTTP 400 `query too complex: too many nodes`; the request log line names this flag and the numbers. Loki has no such limit below its input size limit. 0 derives the limit from -max-query-length-bytes: a query never has more nodes than bytes, so the default refuses nothing the length limit accepts; set a lower value to refuse complex queries")
+	maxQueryNestingDepth := fs.Int("max-query-nesting-depth", 0, "Maximum nesting depth of a parsed LogQL query: the longest chain of nested expressions (parentheses add none). A deeper query is refused, after it has been parsed and ahead of the response cache, with HTTP 400 `query too complex: nesting too deep`; the request log line names this flag and the numbers. Loki has no such limit below its input size limit. 0 derives the limit from -max-query-length-bytes, so the default refuses nothing the length limit accepts; set a lower value to refuse deeply nested queries")
+	maxQueryPlanTime := fs.Duration("max-query-plan-time", proxy.DefaultMaxQueryPlanTime, "Budget for the proxy's own work on a request before it asks VictoriaLogs: the validation misses of its query and its translation, not admission waits, cache reads or VictoriaLogs calls. It is checked after the query's validation, in the walk of the tree checks (every 256 nodes), at every node of the lowering and before the first VictoriaLogs call; the parser and its semantic pass are not interrupted while they run. A request over it is refused with HTTP 400 `query planning took longer than the limit`; the request log line names this flag. 0 turns the budget off")
 	backendMaxConcurrentMetadataScans := fs.Int("backend-max-concurrent-metadata-scans", proxy.DefaultBackendMaxConcurrentMetadataScans, "Ceiling of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: stream_field_names, stream_field_values, field_names, field_values and streams calls spanning at least -backend-heavy-query-min-range or without a time range, and the day bucket scans of the label inventory for such listings. Selects VictoriaLogs runs for others (read from its /metrics) count against the limit; it starts at 2, grows while scans that used it stay within -backend-metadata-scan-latency-tolerance of their no-load duration, shrinks on slow scans or backend failures, and no scan starts while VictoriaLogs lacks -backend-metadata-scan-memory-headroom. Each scan waits at most -backend-heavy-query-queue-wait, then the request fails with 429; background inventory refreshes skip instead of waiting. 0 disables the limiter")
 	backendMinConcurrentMetadataScans := fs.Int("backend-min-concurrent-metadata-scans", proxy.DefaultBackendMinConcurrentMetadataScans, "Floor of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: latency and failure feedback never shrink the limit below it, and below it a replica may start a scan while others' long work uses up to a quarter of VictoriaLogs' select slots. VictoriaLogs' full select slots, memory headroom and a silent /metrics still hold scans back. Must be <= -backend-max-concurrent-metadata-scans; 0 uses the default")
 	backendMetadataScanMemoryHeadroom := fs.Float64("backend-metadata-scan-memory-headroom", proxy.DefaultBackendMetadataScanMemoryHeadroom, "Fraction of the memory available to VictoriaLogs (vm_available_memory_bytes on its /metrics) that long-range metadata scans must leave free: a scan is admitted only while the memory VictoriaLogs has in use, plus the estimated cost of in-flight scans, of the selects it runs for others and of this one, stays below 1 minus this fraction. Costs are learned per endpoint, range and tenant from the memory growth while scans ran; a listing never measured runs alone. 0 disables the memory gate (latency and failure feedback remain)")
@@ -1143,6 +1149,9 @@ func run(
 			drilldownMaxStatsBuckets:            *drilldownMaxStatsBuckets,
 			maxZeroFillBuckets:                  *maxZeroFillBuckets,
 			maxQueryLengthBytes:                 *maxQueryLengthBytes,
+			maxQueryASTNodes:                    *maxQueryASTNodes,
+			maxQueryNestingDepth:                *maxQueryNestingDepth,
+			maxQueryPlanTime:                    *maxQueryPlanTime,
 			labelValuesMaxResponseBytes:         *labelValuesMaxResponseBytes,
 			backendHeavyQueryQueueWait:          *backendHeavyQueryQueueWait,
 			backendHeavyQueryMinRange:           *backendHeavyQueryMinRange,
@@ -2493,6 +2502,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			DrilldownMaxStatsBuckets:          cfg.drilldownMaxStatsBuckets,
 			MaxZeroFillBuckets:                cfg.maxZeroFillBuckets,
 			MaxQueryLengthBytes:               cfg.maxQueryLengthBytes,
+			MaxQueryASTNodes:                  cfg.maxQueryASTNodes,
+			MaxQueryNestingDepth:              cfg.maxQueryNestingDepth,
+			MaxQueryPlanTime:                  explicitDuration(cfg.maxQueryPlanTime),
 			LabelValuesMaxResponseBytes:       cfg.labelValuesMaxResponseBytes,
 		},
 		BackendHeavyQueryQueueWait:          cfg.backendHeavyQueryQueueWait,
@@ -2564,6 +2576,8 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		{"-drilldown-max-stats-buckets", cfg.drilldownMaxStatsBuckets},
 		{"-max-zero-fill-buckets", cfg.maxZeroFillBuckets},
 		{"-max-query-length-bytes", cfg.maxQueryLengthBytes},
+		{"-max-query-ast-nodes", cfg.maxQueryASTNodes},
+		{"-max-query-nesting-depth", cfg.maxQueryNestingDepth},
 		{"-label-values-max-response-bytes", cfg.labelValuesMaxResponseBytes},
 		{"-error-cache-max-entries", cfg.errorCacheMaxEntries},
 		{"-error-cache-max-bytes", cfg.errorCacheMaxBytes},
@@ -2571,6 +2585,9 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
+	}
+	if cfg.maxQueryPlanTime < 0 {
+		return fmt.Errorf("invalid -max-query-plan-time=%s (must be >= 0; 0 turns the planning budget off)", cfg.maxQueryPlanTime)
 	}
 	if cfg.errorCacheTransientTTL < 0 || cfg.errorCacheDataTTL < 0 || cfg.errorCacheVLRefusalTTL < 0 {
 		return fmt.Errorf("invalid -error-cache-transient-ttl=%s / -error-cache-data-ttl=%s / -error-cache-vl-refusal-ttl=%s (must be >= 0; 0 holds no failure of that class)", cfg.errorCacheTransientTTL, cfg.errorCacheDataTTL, cfg.errorCacheVLRefusalTTL)

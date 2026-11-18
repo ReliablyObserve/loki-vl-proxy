@@ -504,7 +504,9 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		query string
 		err   error
 	}
+	led := false // this call ran the translation; the others waited for it
 	v, _, _ := p.translationGroup.Do(cacheKey, func() (interface{}, error) {
+		led = true
 		if p.translationCache != nil {
 			if cached, ok := p.translationCache.Get(cacheKey); ok {
 				return translationResult{query: string(cached)}, nil
@@ -525,7 +527,19 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
 			// A root identity over a range longer than the step writes its series hash ahead of the gate.
 			prof.IdentityAhead = ahead
-			if lowered, ok := p.lowerTranslation(ctx, canon, prof, baseIdentity); ok {
+			// The planning budget (query_budget.go) stops the lowering at a node; a stopped lowering must not fall back
+			// to the string translator, which would do the work again.
+			seg := p.beginPlan(ctx, p.limits())
+			prof.Budget = budgetOf(seg)
+			lowered, ok := p.lowerTranslation(ctx, canon, prof, baseIdentity)
+			stopped := !ok && seg.Exhausted()
+			if stopped {
+				err := p.planTrip(ctx, "lowering", seg)
+				seg.end(false)
+				return translationResult{err: err}, nil
+			}
+			seg.end(false)
+			if ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
 		}
@@ -552,16 +566,26 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 	})
 	res := v.(translationResult)
 	if res.err != nil {
-		if p.metrics != nil {
+		if isPlanTimeError(res.err) {
+			if !led { // the request that ran the translation counted its refusal; each waiting request counts its own
+				p.metrics.RecordQueryComplexityRejection("plan_time")
+			}
+		} else if p.metrics != nil {
 			p.metrics.RecordTranslationError()
 		}
 		p.observeInternalOperation(ctx, "translate_query", "error", time.Since(start))
+		if !led {
+			uncountPlanWait(ctx, time.Since(start))
+		}
 		return "", res.err
 	}
 	if p.metrics != nil {
 		p.metrics.RecordTranslation()
 	}
 	p.observeInternalOperation(ctx, "translate_query", "translated", time.Since(start))
+	if !led {
+		uncountPlanWait(ctx, time.Since(start))
+	}
 	return res.query, nil
 }
 

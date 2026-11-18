@@ -48,6 +48,7 @@ type Metrics struct {
 	internalOperationDurations map[string]*histogram    // "operation<sep>outcome" → duration histogram
 	loweringShadowTotal        map[string]*atomic.Int64 // "result<sep>construct" → count
 	planDefectsTotal           map[string]*atomic.Int64 // "endpoint<sep>plan_route" → count
+	queryComplexity            queryComplexityRejections
 
 	// Per-request work and phase times, and per-lookup cache times (request_flow.go)
 	flow *flowMetrics
@@ -2324,6 +2325,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 
 	m.writeErrorFlightMetrics(&sb)
 	m.writeCapabilityMetrics(&sb)
+	m.writeQueryComplexityMetrics(&sb)
 
 	sb.WriteString("# HELP loki_vl_proxy_window_cache_hit_total Query-range window cache hits.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_cache_hit_total counter\n")

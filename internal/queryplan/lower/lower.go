@@ -41,7 +41,18 @@ type Profile struct {
 	IdentityAhead bool
 	// metric says the log query is the one of a metric row (metricLogQuery).
 	metric bool
+	// Budget, when set, is asked at every node the lowering visits whether the caller's time for planning is spent;
+	// the lowering then stops with ErrBudgetExhausted. The caller must not read that error as a construct that is
+	// not lowered. It changes nothing a lowering writes.
+	Budget queryplan.Budget
 }
+
+// spent reports that the profile's budget has run out.
+func (prof Profile) spent() bool { return prof.Budget != nil && prof.Budget.Exhausted() }
+
+// ErrBudgetExhausted is the error of a lowering stopped by its Profile's Budget. It is not ErrNotLowered: the
+// string translator must not run the work the budget stopped.
+var ErrBudgetExhausted = errors.New("lower: planning budget exhausted")
 
 // ErrNotLowered is the error of a plan whose construct has no native lowering
 // yet: the proxy answers it with the string translator.
@@ -65,6 +76,9 @@ func (e *NotLoweredError) Is(target error) bool { return target == ErrNotLowered
 // under every profile (internal/querycorpus TestPlanShadow); until then Plan
 // answers ErrNotLowered naming the construct.
 func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	switch n := p.Root.(type) {
 	case *queryplan.LogSelect:
 		if keepsSpelling(n, prof) {
@@ -112,6 +126,9 @@ func logSelectText(sel *queryplan.LogSelect, prof Profile) (string, error) {
 // PlanLogText is physical.Encode(Plan(p, prof)) for a plan of a log query, written with no operator in between: the
 // text of the log query, or Plan's error. A plan that is not a log query answers NotLoweredError.
 func PlanLogText(p *queryplan.Plan, prof Profile) (string, error) {
+	if prof.spent() {
+		return "", ErrBudgetExhausted
+	}
 	sel, ok := p.Root.(*queryplan.LogSelect)
 	if !ok {
 		return "", &NotLoweredError{Construct: Construct(p.Root)}

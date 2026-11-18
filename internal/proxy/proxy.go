@@ -850,6 +850,10 @@ type Proxy struct {
 	inventoryCountGroup                   singleflight.Group // one row count per tenant, query and range at a time
 	selectCallsInFlight                   atomic.Int64       // VictoriaLogs select calls this replica has in flight
 	execLimits                            executionLimits
+	validationGroup                       singleflight.Group
+	planValidations                       atomic.Int64
+	planClock                             func() time.Time
+	planValidationHook                    func()
 	backendHeavyQueryMinRange             time.Duration
 	unwrapRecentErrors                    unwrapRecent  // queries that met an unwrap conversion error lately
 	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
@@ -2712,7 +2716,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// emits while the unwrap field picker is open. These are syntactically invalid
 	// and would return 400, leaving the field picker empty.
 	logqlQuery = stripIncompleteUnwrapStubs(logqlQuery)
-	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query_range")
+	logqlQuery, ok := p.validateQueryCtx(r.Context(), w, logqlQuery, "query_range")
 	if !ok {
 		return
 	}
@@ -3156,7 +3160,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
 	querycorpus.RecordRequest(r, logqlQuery)
-	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query")
+	logqlQuery, ok := p.validateQueryCtx(r.Context(), w, logqlQuery, "query")
 	if !ok {
 		return
 	}

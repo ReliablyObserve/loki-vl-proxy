@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Operator limits on query complexity: `-max-query-ast-nodes` and `-max-query-nesting-depth` (Helm `extraArgs`,
+  limits registry) refuse a query with more nodes (expressions, pipeline stages and stream selector matchers) or more
+  nested levels than set, with HTTP 400 `query too complex: too many nodes` or `query too complex: nesting too deep`,
+  and `-max-query-plan-time` (default 10s, 0 turns it off) refuses a request whose own parse, validation and lowering
+  work, admission waits, cache reads and VictoriaLogs calls not counted, took longer, with `query planning took longer
+  than the limit`. Loki has no such limit below its 128 KB input size limit, so the defaults never refuse a query Loki
+  accepts: the node and depth limits default to the query length limit in effect (`-max-query-length-bytes`), which no
+  query that passed it exceeds, and a query shorter than both limits is not walked at all; the budget default is
+  above the slowest planning work measured over the plan corpus and the deep shapes Loki accepts. The node and depth
+  limits are checked once a query has been parsed and ahead of the response cache, so an answer cached under other
+  limits never replaces a refusal. The client text carries no number; the flag, the value and the counts appear in the
+  request error log line only, and `loki_vl_proxy_query_complexity_rejections_total{limit}` counts the refusals. A
+  refusal leaves nothing cached and costs no VictoriaLogs call. The planning budget is checked after a query's
+  validation, in the walk of its tree (every 256 nodes) and at every node of its lowering, and before the first
+  VictoriaLogs call; the parser and the string translator are not interrupted while they run.
 - One capability layer decides every gate that turns an optimisation or a behaviour on or off (`internal/capability`):
   the VictoriaLogs release(s) behind the proxy, what feature probes observe of them and, as hooks, the Loki
   compatibility target and the client profile of a request. The gates of `logsql.Capabilities`, of the backend
@@ -19,14 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capability view over fourteen releases pins it). A gate is a capability (unknown means off), a safety guard
   (unknown or contradicted means guarded; no probe) or a behaviour (unknown means undecided: nothing is predicted
   from it). The reference of the gates is `docs/reference/capability-gates.md`, generated from the table.
-
 - The proxy follows VictoriaLogs through an upgrade or a rollback without a restart. It used to keep the first
   version it saw for the life of the process; now the lowest release seen in the last window decides (a vmauth pool
   or a rolling upgrade never enables a gate one member lacks), it is read again every
   `-backend-version-reprobe-interval` (default `5m`, jittered, one round at a time per replica; `0` disables the
   periodic round), and a release that is not seen again (for six re-probe intervals) leaves the window only when a newer observation exists, so
   an outage never empties it or flips a gate.
-
 - Feature probes (`-backend-feature-probes`, default on): one tiny read-only query per probed gate over an empty
   one-second window, at startup and on every re-probe, sent with the proxy's own backend auth and headers, bypassing
   the circuit breaker and never counted as client or upstream requests. A probe decides a gate when no release is
@@ -36,7 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line and `loki_vl_proxy_capability_mismatch_total` report it. Only an explicit refusal turns a probed gate off; a timeout,
   a 5xx, a 401 or a transport error keeps the previous verdict. Every probe is proven not to crash VictoriaLogs v1.49.0
   and the newest release on the VictoriaLogs oracle (`TestProbesCrashSafe`: v1.49.0, v1.53.0 and v1.54.0).
-
 - `GET /admin/capabilities` (protected like `/admin/cache/flush`) shows every release seen, the effective release,
   every gate with what decided it, the mismatches, the epoch and the digest. New metrics:
   `loki_vl_proxy_backend_version_info`, `loki_vl_proxy_capability_gate`, `loki_vl_proxy_capability_mismatch_total`,
@@ -45,10 +57,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the typed client profile of each request; 32 values per version label, `other` beyond). One `capability set changed`
   info line per change of the set; with `-debug-vl-calls-header` every read response carries
   `X-Loki-VL-Capabilities`. The operations dashboard has a "Versions and capabilities" row.
-
 - The held VictoriaLogs refusals, their peer sync and the request flight keys carry a content digest of the gate set
   (release, flavour, every gate's state) instead of the release string, so an entry built under another gate set is
   a miss on this replica and on a peer, and replicas of one backend agree on it.
+
+### Fixed
+
+- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
+  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
+  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
+  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
+  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
+  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
+- `-backend-version-strict=true` no longer passes startup on the version of another product. Behind `vmauth` (which
+  serves its own `/metrics`) the check used to read vmauth's version (VictoriaMetrics v1.155.0) as the VictoriaLogs
+  release and pass; it now finds no VictoriaLogs release and, in strict mode, fails startup ("backend did not expose
+  version in response headers or /metrics payload"). Keep startup working by turning strict off, by exposing
+  VictoriaLogs' own `/metrics` through `vmauth` (a route to `/metrics` of VictoriaLogs), or by letting a response
+  header that names VictoriaLogs carry the release.
 
 ### Changed
 
@@ -69,18 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would refuse (an `extra_filters` argument over its length limit) does not fire while the release is unknown, and
   a math pipe with a quoted number is no longer sent on a call VictoriaLogs clones (the guard holds for an unknown
   release, as it does without vmauth).
-
 - Every feature probe reads one fixed one-second window in the year 2000, with a row limit of one, so it never scans
   a stored row.
-
-### Fixed
-
-- `-backend-version-strict=true` no longer passes startup on the version of another product. Behind `vmauth` (which
-  serves its own `/metrics`) the check used to read vmauth's version (VictoriaMetrics v1.155.0) as the VictoriaLogs
-  release and pass; it now finds no VictoriaLogs release and, in strict mode, fails startup ("backend did not expose
-  version in response headers or /metrics payload"). Keep startup working by turning strict off, by exposing
-  VictoriaLogs' own `/metrics` through `vmauth` (a route to `/metrics` of VictoriaLogs), or by letting a response
-  header that names VictoriaLogs carry the release.
 
 ## [2.340.1] - 2026-11-18
 
@@ -92,12 +108,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
   cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
   v1.67.0 to v2.338.0.
-- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
-  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
-  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
-  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
-  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
-  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
 
 ## [2.340.0] - 2026-11-18
 

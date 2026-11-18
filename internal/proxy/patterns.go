@@ -250,6 +250,12 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("patterns", status, time.Since(start))
 		return
 	}
+	if isPlanTimeError(err) {
+		// The planning budget refused the request: answered as such, never as an empty success.
+		status := p.fail(w, r, err)
+		p.metrics.RecordRequest("patterns", status, time.Since(start))
+		return
+	}
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{
 			"status": "success",
@@ -1454,6 +1460,10 @@ func (p *Proxy) handleFormatQuery(w http.ResponseWriter, r *http.Request) {
 	query := r.FormValue("query")
 	if msg := formatQueryError(query); msg != "" {
 		p.fail(w, r, lokierr.ParserMessage(truncateQueryError(msg)))
+		return
+	}
+	if err := p.validQueryComplexityError(query); err != nil {
+		p.fail(w, r, err)
 		return
 	}
 	p.writeJSON(w, map[string]interface{}{
