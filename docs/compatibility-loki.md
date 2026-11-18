@@ -68,7 +68,8 @@ The Loki matrix is a moving window. When a new Loki minor becomes current, the m
 
 | Loki version | Coverage path | Version-specific focus |
 |---|---|---|
-| `3.7.9` | PR and main CI pinned runtime | Primary supported reference; a sharded log query returns `limit` entries when more match (3.7.7 could return fewer: its stream accumulator dropped entries while it still had room, grafana/loki#24703) |
+| `3.7.10` | PR and main CI pinned runtime | Primary supported reference; a Logs Drilldown metric query over `max_query_series` returns exactly that many labelled series with the partial-result warning (3.7.9 added a series without labels for every further new series, grafana/loki#26433) |
+| `3.7.9` | Scheduled and manual matrix | Previous pinned reference; a sharded log query returns `limit` entries when more match (3.7.7 could return fewer: its stream accumulator dropped entries while it still had room, grafana/loki#24703) |
 | `3.7.7`–`3.7.8` | Scheduled and manual matrix | Previous pinned reference (`3.7.7`); merged `detected_labels` keep the HyperLogLog `sketch` (multi-tenant `detected_labels` no longer fails with `too short binary`) |
 | `3.7.2`–`3.7.6` | Scheduled and manual matrix | Patch releases of the current family |
 | `3.7.1` | Scheduled and manual matrix | Previous pinned reference; LogQL validation error format, logfmt type inference, bare `\| unwrap` drop, metric label pollution, nested JSON field exclusion |

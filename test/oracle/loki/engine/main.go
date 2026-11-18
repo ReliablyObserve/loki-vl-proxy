@@ -65,12 +65,15 @@ type Stream struct {
 
 // Request is a Loki request: Instant is a /loki/api/v1/query request, else /loki/api/v1/query_range; Form is its
 // form, URL-encoded. Unaligned runs a range request at its own bounds, as Loki's engine does without a query
-// frontend's align_queries_with_step (Loki's default), instead of the step-aligned bounds.
+// frontend's align_queries_with_step (Loki's default), instead of the step-aligned bounds. QueryTags is the
+// X-Query-Tags header the request carries (Grafana sends Source=grafana-lokiexplore-app for Logs Drilldown), read
+// by Loki's own header parser into the query context as its HTTP middleware does.
 type Request struct {
 	ID        string `json:"id"`
 	Instant   bool   `json:"instant,omitempty"`
 	Form      string `json:"form"`
 	Unaligned bool   `json:"unaligned,omitempty"`
+	QueryTags string `json:"query_tags,omitempty"`
 }
 
 // Input is one data set and the requests over it.
@@ -81,8 +84,8 @@ type Input struct {
 	MaxSeries int `json:"max_series,omitempty"`
 }
 
-// Answer is Loki's answer to one request: the HTTP status and the body (the response JSON for a 200, the error
-// text otherwise).
+// Answer is Loki's answer to one request: the HTTP status and the body (the response JSON for a 200, with its
+// warnings when Loki gives any, the error text otherwise).
 type Answer struct {
 	ID     string          `json:"id"`
 	Status int             `json:"status"`
@@ -167,6 +170,9 @@ func answer(q *querier, lim limits, r Request) (a Answer) {
 		path = "/loki/api/v1/query"
 	}
 	httpReq := httptest.NewRequest(http.MethodGet, path+"?"+r.Form, nil)
+	if r.QueryTags != "" {
+		httpReq.Header.Set("X-Query-Tags", r.QueryTags)
+	}
 	if err := httpReq.ParseForm(); err != nil {
 		return badRequest(a, err)
 	}
@@ -197,18 +203,22 @@ func answer(q *querier, lim limits, r Request) (a Answer) {
 	}
 	engine := logql.NewEngine(logql.EngineOpts{}, q, lim, log.NewNopLogger())
 	ctx := user.InjectOrgID(context.Background(), "fake")
+	if tags := httpreq.ExtractQueryTagsFromHTTP(httpReq); tags != "" {
+		ctx = httpreq.InjectQueryTags(ctx, tags)
+	}
 	res, err := engine.Query(params).Exec(ctx)
 	if err != nil {
 		return errAnswer(a, err)
 	}
 	var b bytes.Buffer
-	if err := marshal.WriteQueryResponseJSON(res.Data, nil, stats.Result{}, &b, httpreq.EncodingFlags{}); err != nil {
+	if err := marshal.WriteQueryResponseJSON(res.Data, res.Warnings, stats.Result{}, &b, httpreq.EncodingFlags{}); err != nil {
 		return errAnswer(a, err)
 	}
-	// The answer keeps the result; the statistics of an in-memory run say nothing.
+	// The answer keeps the result and the warnings; the statistics of an in-memory run say nothing.
 	var resp struct {
-		Status string `json:"status"`
-		Data   struct {
+		Status   string   `json:"status"`
+		Warnings []string `json:"warnings,omitempty"`
+		Data     struct {
 			ResultType string          `json:"resultType"`
 			Result     json.RawMessage `json:"result"`
 		} `json:"data"`

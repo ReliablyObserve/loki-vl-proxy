@@ -20,7 +20,7 @@
       "healthcheck": {
         "disable": true
       },
-      "image": "grafana/loki:3.7.9",
+      "image": "grafana/loki:3.7.10",
       "mem_limit": "12884901888",
       "ports": [
         {
