@@ -5,9 +5,14 @@ generated:
   used_in: 0
 
 description: |
-  TODO: what the capability does in VictoriaLogs.
+  From v1.50 stream fields are read from the column index, so the log sample the
+  patterns endpoint mines can be taken in many small windows at a cost the earlier
+  releases do not afford.
 proxy_usage: |
-  TODO: native use, or the transformation used instead and why.
+  patternWindowedSamplingConfig (internal/proxy/patterns.go) takes the dense
+  window plan when the gate vl.dense_pattern_windowing is on and the request does
+  not come from a legacy Drilldown runtime (Grafana before 12), which keeps the
+  conservative plan.
 fallback: |
-  TODO: what happens on a backend older than `since`.
-proves: []  # case ids that exercise it
+  The conservative window plan (fewer, wider windows) on v1.49 and on a release not yet known.
+proves: []

@@ -37,6 +37,7 @@ The proxy also now keeps more expensive metadata paths deliberately warmer than 
 |---|---|
 | `GET /ready` | Readiness probe (checks backend `/health` and circuit-breaker state) |
 | `GET /metrics` | Prometheus text exposition. Off by default in the binary (`-server.register-instrumentation=false`); when enabled it is served on `-listen`, or on `-metrics-listen` when set. The Helm chart enables it on a dedicated `:9091` listener. Bounded by `-server.metrics-max-concurrency` |
+| `GET /admin/capabilities` | The VictoriaLogs releases the proxy has seen, the effective (lowest in the window) release, every capability gate with what decided it, probe mismatches and the gate set's epoch and digest (admin-protected like `/admin/cache/flush`; see [capability gates](reference/capability-gates.md)) |
 | `GET /debug/queries` | Query analytics endpoint (disabled by default, `-server.enable-query-analytics`) |
 | `GET /debug/pprof/` | Go pprof profiling endpoints (disabled by default, `-server.enable-pprof`) |
 
@@ -115,6 +116,8 @@ VictoriaLogs or the cache and tail internals, is described under Log Sources):
 | `request_digest` | `INFO` | a periodic summary (`requests.total`, `requests.ok`, `requests.errors`, `requests.rate_per_sec`, `latency.avg_ms`, `latency.max_ms`, `cache.hit_pct`, an error breakdown) replacing the OK `request` lines above `-log-rate-threshold` |
 | `slow_request` | `WARN` | a client request at or over `-slow-query-threshold`, whatever the sampling |
 | `slow_upstream_request` | `WARN` | one VictoriaLogs call at or over `-slow-upstream-threshold`, whatever the sampling |
+| `capability set changed` | `INFO` | once per change of the capability gate set (startup, an upgrade or a rollback of VictoriaLogs): the old and new release, the gates turned on and off, the epoch and the digest |
+| `capability mismatch` | `WARN` | a feature probe finds absent a feature the VictoriaLogs release carries (a member of the pool lacks it, or a patched build); the gate is off |
 
 #### The `request` line
 
@@ -953,6 +956,21 @@ When the peer cache is enabled, `/metrics` appends these fleet-cache families (P
 
 Cross-tier peer lookups are also visible as `loki_vl_proxy_cache_tier_*{tier="l3_peer"}`. `GET /_cache/peers` returns the current ring membership as JSON (see [Fleet Cache](fleet-cache.md)).
 
+### Capability Metrics
+
+The capability layer (see [capability gates](reference/capability-gates.md)) exposes the VictoriaLogs releases the proxy sees behind it and the state of every gate. Every label set is bounded: at most 16 releases, one series per gate, three verdicts per probe, and the client series are capped at 32 values per version label and 512 combinations (`other` beyond that).
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `loki_vl_proxy_backend_version_info` | gauge | `version`, `flavour`, `source` | `1` per VictoriaLogs release seen within the capability window; the lowest one decides the gates |
+| `loki_vl_proxy_capability_gate` | gauge | `gate`, `side`, `source` | `1` when the gate is on; `source` is what decided it (`version`, `probe`, `both`, `implied`, `default`, `mismatch`) |
+| `loki_vl_proxy_capability_mismatch_total` | counter | `gate` | times a feature probe contradicted the release for a gate |
+| `loki_vl_proxy_capability_epoch` | gauge | | changes of the gate set in this process (cache keys carry the set's digest, not this counter) |
+| `loki_vl_proxy_backend_feature_probe_total` | counter | `gate`, `verdict` | probe results (`on`, `off`, `inconclusive`); an inconclusive answer keeps the previous verdict |
+| `loki_vl_proxy_client_profile_requests_total` | counter | `surface`, `grafana_version`, `datasource_version`, `drilldown_version` | requests by client profile (`unknown` when a request carries no version) |
+
+With `-debug-vl-calls-header` every Loki read response also carries `X-Loki-VL-Capabilities` (the epoch, the digest and the gates that are on).
+
 ### Tenant and Client Metrics
 
 These are the metrics to use when you want to identify the users or tenants actually causing backend load.
@@ -965,7 +983,7 @@ These are the metrics to use when you want to identify the users or tenants actu
 | `loki_vl_proxy_tenant_vl_duration_seconds_total` | counter | `tenant` | `High (capped)` | their summed time, to the end of the body (calls in parallel add up) |
 | `loki_vl_proxy_tenant_vl_response_bytes_total` | counter | `tenant` | `High (capped)` | bytes VictoriaLogs returned for them |
 | `loki_vl_proxy_tenant_vl_rows_total` | counter | `tenant` | `High (capped)` | log rows read from VictoriaLogs for them |
-| `loki_vl_proxy_client_requests_total` | counter | `system`, `direction`, `client`, `endpoint`, `route` | `High (capped)` | request volume by client identity |
+| `loki_vl_proxy_client_profile_requests_total` | counter | `system`, `direction`, `client`, `endpoint`, `route` | `High (capped)` | request volume by client identity |
 | `loki_vl_proxy_client_response_bytes_total` | counter | `client` | `High (capped)` | response bytes by client |
 | `loki_vl_proxy_client_status_total` | counter | `system`, `direction`, `client`, `endpoint`, `route`, `status` | `High (capped)` | final status breakdown by client |
 | `loki_vl_proxy_client_inflight_requests` | gauge | `client` | `High (capped)` | current parallelism by client |
@@ -991,7 +1009,7 @@ signals without using raw datasource credentials as the end-user key.
 
 That gives you:
 
-- per-client request rate by route via `loki_vl_proxy_client_requests_total`
+- per-client request rate by route via `loki_vl_proxy_client_profile_requests_total`
 - per-client latency by route via `loki_vl_proxy_client_request_duration_seconds`
 - per-client response-volume visibility via `loki_vl_proxy_client_response_bytes_total`
 - per-client query-size outlier visibility via `loki_vl_proxy_client_query_length_chars`
@@ -1291,7 +1309,7 @@ Start with:
 
 | Dashboard | Source | Primary use |
 |---|---|---|
-| [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Prometheus metrics | Service health, SLOs, cache and endpoint latency trends |
+| [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Prometheus metrics | Service health, SLOs, cache and endpoint latency trends; the "Versions and capabilities" row shows the VictoriaLogs release, the gates and the client versions in use |
 
 #### Metrics Dashboard Setup (Scrape and OTLP Push)
 

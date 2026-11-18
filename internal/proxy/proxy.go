@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -73,9 +73,6 @@ var compatCaptureBufPool = sync.Pool{
 		return &pooledCompatCaptureBuf{data: make([]byte, 0, defaultCompatCaptureBufSize)}
 	},
 }
-
-var backendSemverPattern = regexp.MustCompile(`v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?`)
-var backendMetricsQuotedVersionPattern = regexp.MustCompile(`(?:^|[,{])(?:short_version|version)="(v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?)"`)
 
 const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v2:"
 
@@ -241,6 +238,12 @@ type Config struct {
 	BackendAllowUnsupportedVersion bool
 	// BackendVersionCheckTimeout bounds startup backend version checks.
 	BackendVersionCheckTimeout time.Duration
+	// BackendVersionReprobeInterval is how often the capability loop reads the VictoriaLogs release and probes the
+	// gates again (StartBackendCapabilityLoop); zero starts no loop. A release not yet known is retried on traffic
+	// every five minutes whatever this is.
+	BackendVersionReprobeInterval time.Duration
+	// BackendFeatureProbesDisabled turns the gates' feature probes off: the gates are decided from the release alone.
+	BackendFeatureProbesDisabled bool
 	// BackendVersionStrict, when true, promotes /health unreachability, non-2xx
 	// responses, and missing/sub-min backend semver to a hard startup error
 	// from ValidateBackendVersionCompatibility. Default false preserves the
@@ -758,7 +761,6 @@ type Proxy struct {
 	errorCachePeerSync     bool
 	vlRefusalPrediction    bool
 	buildVersion           string
-	vlReleaseSeen          atomic.Pointer[logsql.Version]
 	vlMaxQueryLen          atomic.Pointer[vlQueryLen]
 	refusalQueries         refusalQuerySet
 	refusalSeenUntil       atomic.Int64
@@ -900,84 +902,83 @@ type Proxy struct {
 	statsExtentStores *statsExtentStoreGroup
 	// statsExtentPending holds the extent stores in progress per extent key,
 	// which a lookup of the same key waits for (stats_extent_cache.go).
-	statsExtentPending                   statsExtentPendingStores
-	parseRiskProbeCacheTTL               time.Duration
-	levelLessBases                       levelLessMemory // per-stream reads lately seen holding a stream without a level label
-	parseRiskProbeSettle                 time.Duration
-	queryRangeWindowTimeout              time.Duration
-	queryRangePartialResponses           bool
-	queryRangeBackgroundWarm             bool
-	queryRangeBackgroundWarmMaxWindows   int
-	recentTailRefreshEnabled             bool
-	recentTailRefreshWindow              time.Duration
-	recentTailRefreshMaxStaleness        time.Duration
-	warmupMaxJitter                      time.Duration
-	labelsCacheWarm                      bool
-	labelRefreshGroup                    singleflight.Group
-	parserProbeGroup                     singleflight.Group
-	translationGroup                     singleflight.Group
-	streamFieldNamesCache                *cache.Cache // short-lived internal cache for stream_field_names routing decisions
-	labelValuesIndexedCache              bool
-	labelValuesHotLimit                  int
-	labelValuesIndexMaxEntries           int
-	labelValuesIndexPersistPath          string
-	labelValuesIndexPersistInterval      time.Duration
-	labelValuesIndexStartupStale         time.Duration
-	labelValuesIndexPeerWarmTimeout      time.Duration
-	patternsPersistPath                  string
-	patternsPersistInterval              time.Duration
-	patternsStartupStale                 time.Duration
-	patternsPeerWarmTimeout              time.Duration
-	patternsWarmReady                    atomic.Bool
-	patternsPersistStarted               atomic.Bool
-	patternsPersistDirty                 atomic.Bool
-	patternsPersistStop                  chan struct{}
-	patternsPersistDone                  chan struct{}
-	patternsSnapshotMu                   sync.RWMutex
-	patternsSnapshotEntries              map[string]patternSnapshotEntry
-	patternsSnapshotPatternCount         int64
-	patternsSnapshotPayloadBytes         int64
-	patternsPersistDigest                [sha256.Size]byte
-	patternsPersistDigestReady           bool
-	backendVersionMu                     sync.RWMutex
-	backendVersionRaw                    string
-	backendVersionSemver                 string
-	backendCapabilityProfile             string
-	backendSupportsStreamMetadata        bool
-	backendSupportsDensePatternWindowing bool
-	backendSupportsColumnFieldValues     bool
-	backendVersionProbedAt               atomic.Int64 // Unix ns of the last metrics version probe
-	backendVersionLogged                 bool
-	labelValuesIndexWarmReady            atomic.Bool
-	labelValuesIndexPersistStarted       atomic.Bool
-	labelValuesIndexPersistDirty         atomic.Bool
-	labelValuesIndexPersistStop          chan struct{}
-	labelValuesIndexPersistDone          chan struct{}
-	keepWarmStop                         chan struct{}
-	keepWarmWG                           sync.WaitGroup // startup warm-up and keep-warm loop; Shutdown waits for them
-	labelValuesIndexMu                   sync.RWMutex
-	labelValuesIndex                     map[string]*labelValuesIndexState
-	labelValuesIndexPersistDigest        [sha256.Size]byte
-	labelValuesIndexPersistDigestReady   bool
-	readCacheKeyMemoMu                   sync.RWMutex
-	readCacheKeyMemo                     map[canonicalReadCacheMemoKey]string
-	logSampleN                           uint64 // 0 = log all; N>1 = log 1 in N successful requests
-	logSampleCount                       atomic.Uint64
-	requestSampler                       *observability.RequestSampler
-	cacheTTLLabels                       time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
-	cacheTTLLabelValues                  time.Duration // per-instance TTL for label_values endpoint
-	metadataNegativeCacheTTL             time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
-	debugLogRawQueries                   bool          // when true, debug logs include raw LogQL/LogsQL and backend params
-	debugVLCallsHeader                   bool          // when true, read responses carry the request's VictoriaLogs calls (vl_calls_header.go)
-	slowQueryThreshold                   time.Duration
-	slowUpstreamThreshold                time.Duration
-	slowQueryLogRawQueries               bool
-	slowLogLevel                         slog.Level
-	slowLogOff                           bool
-	logUser                              logUserHeader // -log-user-header and its trusted peers
-	metadataCacheFreshness               time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
-	maxStatsCacheFreshness               time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
-	metadataDefaultLookback              time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
+	statsExtentPending                 statsExtentPendingStores
+	parseRiskProbeCacheTTL             time.Duration
+	levelLessBases                     levelLessMemory // per-stream reads lately seen holding a stream without a level label
+	parseRiskProbeSettle               time.Duration
+	queryRangeWindowTimeout            time.Duration
+	queryRangePartialResponses         bool
+	queryRangeBackgroundWarm           bool
+	queryRangeBackgroundWarmMaxWindows int
+	recentTailRefreshEnabled           bool
+	recentTailRefreshWindow            time.Duration
+	recentTailRefreshMaxStaleness      time.Duration
+	warmupMaxJitter                    time.Duration
+	labelsCacheWarm                    bool
+	labelRefreshGroup                  singleflight.Group
+	parserProbeGroup                   singleflight.Group
+	translationGroup                   singleflight.Group
+	streamFieldNamesCache              *cache.Cache // short-lived internal cache for stream_field_names routing decisions
+	labelValuesIndexedCache            bool
+	labelValuesHotLimit                int
+	labelValuesIndexMaxEntries         int
+	labelValuesIndexPersistPath        string
+	labelValuesIndexPersistInterval    time.Duration
+	labelValuesIndexStartupStale       time.Duration
+	labelValuesIndexPeerWarmTimeout    time.Duration
+	patternsPersistPath                string
+	patternsPersistInterval            time.Duration
+	patternsStartupStale               time.Duration
+	patternsPeerWarmTimeout            time.Duration
+	patternsWarmReady                  atomic.Bool
+	patternsPersistStarted             atomic.Bool
+	patternsPersistDirty               atomic.Bool
+	patternsPersistStop                chan struct{}
+	patternsPersistDone                chan struct{}
+	patternsSnapshotMu                 sync.RWMutex
+	patternsSnapshotEntries            map[string]patternSnapshotEntry
+	patternsSnapshotPatternCount       int64
+	patternsSnapshotPayloadBytes       int64
+	patternsPersistDigest              [sha256.Size]byte
+	patternsPersistDigestReady         bool
+	caps                               *capability.Layer // every gate: the VictoriaLogs release(s), probes, client profile
+	backendReprobeInterval             time.Duration
+	backendFeatureProbesDisabled       bool
+	backendVersionProbedAt             atomic.Int64 // Unix ns of the last probe round a traffic trigger started
+	capProbing                         atomic.Bool  // a probe round is running
+	capLoopStarted                     atomic.Bool
+	labelValuesIndexWarmReady          atomic.Bool
+	labelValuesIndexPersistStarted     atomic.Bool
+	labelValuesIndexPersistDirty       atomic.Bool
+	labelValuesIndexPersistStop        chan struct{}
+	labelValuesIndexPersistDone        chan struct{}
+	keepWarmStop                       chan struct{}
+	keepWarmMu                         sync.Mutex // guards keepWarmClosed against the wait group's Add (joinKeepWarm)
+	keepWarmClosed                     bool
+	keepWarmWG                         sync.WaitGroup // startup warm-up and keep-warm loop; Shutdown waits for them
+	labelValuesIndexMu                 sync.RWMutex
+	labelValuesIndex                   map[string]*labelValuesIndexState
+	labelValuesIndexPersistDigest      [sha256.Size]byte
+	labelValuesIndexPersistDigestReady bool
+	readCacheKeyMemoMu                 sync.RWMutex
+	readCacheKeyMemo                   map[canonicalReadCacheMemoKey]string
+	logSampleN                         uint64 // 0 = log all; N>1 = log 1 in N successful requests
+	logSampleCount                     atomic.Uint64
+	requestSampler                     *observability.RequestSampler
+	cacheTTLLabels                     time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
+	cacheTTLLabelValues                time.Duration // per-instance TTL for label_values endpoint
+	metadataNegativeCacheTTL           time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
+	debugLogRawQueries                 bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	debugVLCallsHeader                 bool          // when true, read responses carry the request's VictoriaLogs calls (vl_calls_header.go)
+	slowQueryThreshold                 time.Duration
+	slowUpstreamThreshold              time.Duration
+	slowQueryLogRawQueries             bool
+	slowLogLevel                       slog.Level
+	slowLogOff                         bool
+	logUser                            logUserHeader // -log-user-header and its trusted peers
+	metadataCacheFreshness             time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
+	maxStatsCacheFreshness             time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
+	metadataDefaultLookback            time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
 	// drilldownScanTimeout caps the time a single detected_fields /
 	// detected_field_values request will spend scanning logs with a parser
 	// filter. VL has no internal timeout, so without this cap a Drilldown
@@ -1627,6 +1628,9 @@ func New(cfg Config) (*Proxy, error) {
 		labelValuesIndexPersistStop:           make(chan struct{}),
 		labelValuesIndexPersistDone:           make(chan struct{}),
 		keepWarmStop:                          make(chan struct{}),
+		caps:                                  capability.New(capability.Options{}),
+		backendReprobeInterval:                max(cfg.BackendVersionReprobeInterval, 0),
+		backendFeatureProbesDisabled:          cfg.BackendFeatureProbesDisabled,
 		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
 		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
 		coldRouter:                            coldRouter,
@@ -1662,6 +1666,14 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	p.metrics.SetCoalescerStatsProvider(coalescerStats)
 	p.metrics.SetErrorFlightStatsProvider(p.errorFlightStats)
+	// A release leaves the capability window six re-probe intervals (and a probe round) after it was last seen: behind a
+	// load balancer each read reaches one random member, and a window this wide keeps the chance that an older member
+	// is missed by every read of it small. With no periodic round the layer's default window stands.
+	if p.backendReprobeInterval > 0 {
+		p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
+	}
+	p.caps.Subscribe(p.onCapabilityChange)
+	p.metrics.SetCapabilityStatsProvider(p.capabilityStats)
 	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {
 		// This coalescer's integrated call sites wrap raw VL HTTP operations;
 		// it does not represent resident Loki response-cache entries.
@@ -1812,48 +1824,42 @@ func New(cfg Config) (*Proxy, error) {
 		// fields are similarly held by pointer.  Map and channel fields are reference
 		// types in Go and are shared directly.
 		State: &State{
-			configMu:                             &p.configMu,
-			tenantMap:                            p.tenantMap,
-			labelTranslator:                      p.labelTranslator,
-			queryRangeAdaptiveMu:                 &p.queryRangeAdaptiveMu,
-			queryRangeParallelCurrent:            &p.queryRangeParallelCurrent,
-			queryRangeLatencyEWMA:                &p.queryRangeLatencyEWMA,
-			queryRangeErrorEWMA:                  &p.queryRangeErrorEWMA,
-			queryRangeAdaptiveLastAdjust:         &p.queryRangeAdaptiveLastAdjust,
-			patternsSnapshotMu:                   &p.patternsSnapshotMu,
-			patternsSnapshotEntries:              p.patternsSnapshotEntries,
-			patternsSnapshotPatternCount:         &p.patternsSnapshotPatternCount,
-			patternsSnapshotPayloadBytes:         &p.patternsSnapshotPayloadBytes,
-			patternsPersistDigest:                &p.patternsPersistDigest,
-			patternsPersistDigestReady:           &p.patternsPersistDigestReady,
-			patternsWarmReady:                    &p.patternsWarmReady,
-			patternsPersistStarted:               &p.patternsPersistStarted,
-			patternsPersistDirty:                 &p.patternsPersistDirty,
-			patternsPersistStop:                  p.patternsPersistStop,
-			patternsPersistDone:                  p.patternsPersistDone,
-			backendVersionMu:                     &p.backendVersionMu,
-			backendVersionRaw:                    &p.backendVersionRaw,
-			backendVersionSemver:                 &p.backendVersionSemver,
-			backendCapabilityProfile:             &p.backendCapabilityProfile,
-			backendSupportsStreamMetadata:        &p.backendSupportsStreamMetadata,
-			backendSupportsDensePatternWindowing: &p.backendSupportsDensePatternWindowing,
-			backendVersionLogged:                 &p.backendVersionLogged,
-			labelValuesIndexMu:                   &p.labelValuesIndexMu,
-			labelValuesIndex:                     p.labelValuesIndex,
-			labelValuesIndexPersistDigest:        &p.labelValuesIndexPersistDigest,
-			labelValuesIndexPersistDigestReady:   &p.labelValuesIndexPersistDigestReady,
-			labelValuesIndexWarmReady:            &p.labelValuesIndexWarmReady,
-			labelValuesIndexPersistStarted:       &p.labelValuesIndexPersistStarted,
-			labelValuesIndexPersistDirty:         &p.labelValuesIndexPersistDirty,
-			labelValuesIndexPersistStop:          p.labelValuesIndexPersistStop,
-			labelValuesIndexPersistDone:          p.labelValuesIndexPersistDone,
-			keepWarmStop:                         p.keepWarmStop,
-			readCacheKeyMemoMu:                   &p.readCacheKeyMemoMu,
-			readCacheKeyMemo:                     p.readCacheKeyMemo,
-			labelRefreshGroup:                    &p.labelRefreshGroup,
-			logSampleCount:                       &p.logSampleCount,
-			metricsConcurrencyLimiter:            p.metricsConcurrencyLimiter,
-			coldRouter:                           p.coldRouter,
+			configMu:                           &p.configMu,
+			tenantMap:                          p.tenantMap,
+			labelTranslator:                    p.labelTranslator,
+			queryRangeAdaptiveMu:               &p.queryRangeAdaptiveMu,
+			queryRangeParallelCurrent:          &p.queryRangeParallelCurrent,
+			queryRangeLatencyEWMA:              &p.queryRangeLatencyEWMA,
+			queryRangeErrorEWMA:                &p.queryRangeErrorEWMA,
+			queryRangeAdaptiveLastAdjust:       &p.queryRangeAdaptiveLastAdjust,
+			patternsSnapshotMu:                 &p.patternsSnapshotMu,
+			patternsSnapshotEntries:            p.patternsSnapshotEntries,
+			patternsSnapshotPatternCount:       &p.patternsSnapshotPatternCount,
+			patternsSnapshotPayloadBytes:       &p.patternsSnapshotPayloadBytes,
+			patternsPersistDigest:              &p.patternsPersistDigest,
+			patternsPersistDigestReady:         &p.patternsPersistDigestReady,
+			patternsWarmReady:                  &p.patternsWarmReady,
+			patternsPersistStarted:             &p.patternsPersistStarted,
+			patternsPersistDirty:               &p.patternsPersistDirty,
+			patternsPersistStop:                p.patternsPersistStop,
+			patternsPersistDone:                p.patternsPersistDone,
+			capabilities:                       p.caps,
+			labelValuesIndexMu:                 &p.labelValuesIndexMu,
+			labelValuesIndex:                   p.labelValuesIndex,
+			labelValuesIndexPersistDigest:      &p.labelValuesIndexPersistDigest,
+			labelValuesIndexPersistDigestReady: &p.labelValuesIndexPersistDigestReady,
+			labelValuesIndexWarmReady:          &p.labelValuesIndexWarmReady,
+			labelValuesIndexPersistStarted:     &p.labelValuesIndexPersistStarted,
+			labelValuesIndexPersistDirty:       &p.labelValuesIndexPersistDirty,
+			labelValuesIndexPersistStop:        p.labelValuesIndexPersistStop,
+			labelValuesIndexPersistDone:        p.labelValuesIndexPersistDone,
+			keepWarmStop:                       p.keepWarmStop,
+			readCacheKeyMemoMu:                 &p.readCacheKeyMemoMu,
+			readCacheKeyMemo:                   p.readCacheKeyMemo,
+			labelRefreshGroup:                  &p.labelRefreshGroup,
+			logSampleCount:                     &p.logSampleCount,
+			metricsConcurrencyLimiter:          p.metricsConcurrencyLimiter,
+			coldRouter:                         p.coldRouter,
 		},
 	}
 
@@ -2056,6 +2062,8 @@ func (p *Proxy) rejectAdmission(w http.ResponseWriter, r *http.Request, err *lok
 func (p *Proxy) Shutdown(ctx context.Context) error {
 	p.loweringShadow.close(ctx)
 	p.statsExtentStores.close()
+	p.keepWarmMu.Lock()
+	p.keepWarmClosed = true // after this no goroutine joins the wait group (joinKeepWarm)
 	if p.keepWarmStop != nil {
 		select {
 		case <-p.keepWarmStop:
@@ -2063,6 +2071,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 			close(p.keepWarmStop)
 		}
 	}
+	p.keepWarmMu.Unlock()
 	waitKeepWarm(ctx, &p.keepWarmWG)
 	p.stopStreamLabelNames()
 	p.stopMetadataEdgeRefreshes(ctx)
@@ -2291,6 +2300,8 @@ func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
 		// Useful for benchmarking (ensures each run starts cold) and debugging.
 		// Protected by the admin auth token.
 		mux.Handle("/admin/cache/flush", p.adminMiddleware(http.HandlerFunc(p.handleCacheFlush)))
+		// Capability status — GET /admin/capabilities: the VictoriaLogs releases seen, the gates and what decided them.
+		mux.Handle("/admin/capabilities", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.handleCapabilities))))
 	}
 	if p.enableQueryAnalytics {
 		mux.Handle("/debug/queries", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.queryTracker.Handler))))

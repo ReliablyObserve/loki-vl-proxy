@@ -48,9 +48,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 				}
 				t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 				if prof.version != "" {
-					p.backendVersionMu.Lock()
-					p.backendVersionSemver = prof.version
-					p.backendVersionMu.Unlock()
+					p.setReleaseForTest(prof.version)
 				}
 				return p
 			}
@@ -322,9 +320,7 @@ func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 		if prof.version != "" {
-			p.backendVersionMu.Lock()
-			p.backendVersionSemver = prof.version
-			p.backendVersionMu.Unlock()
+			p.setReleaseForTest(prof.version)
 		}
 		withFlipped(p, metricFlipCandidates...)
 		ctx := context.Background()

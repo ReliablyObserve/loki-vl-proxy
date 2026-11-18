@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/refusalcases"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
@@ -155,7 +156,7 @@ func TestVLRefusalPredictionMatchesVictoriaLogs(t *testing.T) {
 	)
 	for _, modfile := range []string{"go.v1.49.0.mod", ""} {
 		release := oracleVLRelease(t, dir, modfile)
-		v := logsql.ParseVersion(release)
+		set := capability.ForRelease(capability.ParseRelease(release))
 		t.Run(release, func(t *testing.T) {
 			srv, err := oraclerun.StartVLServe(dir, modfile, []oraclerun.ServeDataSet{rows})
 			if err != nil {
@@ -168,7 +169,7 @@ func TestVLRefusalPredictionMatchesVictoriaLogs(t *testing.T) {
 				in := c.In
 				in.MaxQueryLen = 16384 // VictoriaLogs' default -search.maxQueryLen, which serve keeps
 				got := sendToVL(t, srv.URL, in)
-				r, ok := logsql.PredictRefusal(in, v)
+				r, ok := logsql.PredictRefusal(in, set)
 				refusedByVL := got.dropped || isVLRefusalMessage(got.status, got.raw)
 				if refusedByVL {
 					refused++
@@ -248,7 +249,7 @@ func checkProxyAnswerEqual(t *testing.T, base, release, name string, in logsql.R
 		})
 		p.storeBackendVersion("oracle", release)
 		if in.MaxQueryLen > 0 {
-			p.vlMaxQueryLen.Store(&vlQueryLen{bytes: in.MaxQueryLen, release: p.vlRelease(), until: time.Now().Add(time.Hour).UnixNano()})
+			p.vlMaxQueryLen.Store(&vlQueryLen{bytes: in.MaxQueryLen, release: p.caps.Backend().Digest(), until: time.Now().Add(time.Hour).UnixNano()})
 		}
 		params := url.Values{"query": {in.Query}, "start": {"2025-10-09T00:00:00Z"}, "end": {"2025-10-10T00:00:00Z"}}
 		switch in.Path {

@@ -948,18 +948,18 @@ func (p *Proxy) clearHeldErrors() {
 }
 
 // refreshFlightPrefix builds the flight key prefix from the configuration
-// epoch and the VictoriaLogs release the proxy talks to: a held failure is
-// read only under the epoch and the release it was answered in.
+// epoch and the capability gate set (its digest) of the VictoriaLogs the proxy talks to: a held failure is
+// read only under the epoch and the gate set it was answered in.
 func (p *Proxy) refreshFlightPrefix() {
 	prefix := errorFlightKeyVersion + strconv.FormatUint(p.errorEpoch.Load(), 36) + ":"
-	if v := p.vlRelease(); v.Known {
-		prefix += v.String() + ":"
-	}
+	// The digest of the gate set (a content hash: the same on every replica of the same backend), known release or
+	// not: a probe decides gates and so predictions without one.
+	prefix += p.caps.Backend().Digest() + ":"
 	p.errorPrefix.Store(&prefix)
 }
 
 // flightPrefix is the prefix of every flight key: the key version, the
-// configuration epoch and, once known, the VictoriaLogs release.
+// configuration epoch and the digest of the capability gate set.
 func (p *Proxy) flightPrefix() string {
 	if prefix := p.errorPrefix.Load(); prefix != nil {
 		return *prefix

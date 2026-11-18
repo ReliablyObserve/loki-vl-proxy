@@ -24,6 +24,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal leaves nothing cached and costs no VictoriaLogs call. The planning budget is checked after a query's
   validation, in the walk of its tree (every 256 nodes) and at every node of its lowering, and before the first
   VictoriaLogs call; the parser and the string translator are not interrupted while they run.
+- One capability layer decides every gate that turns an optimisation or a behaviour on or off (`internal/capability`):
+  the VictoriaLogs release(s) behind the proxy, what feature probes observe of them and, as hooks, the Loki
+  compatibility target and the client profile of a request. The gates of `logsql.Capabilities`, of the backend
+  version detection and of the refusal prediction moved into its one table (pipe `coalesce`, `limit` after `stats`
+  on the instant stats endpoint, `_time` writers on `stats_query_range`, the `extra_filters` length limit, the math
+  quoted-constant crash guard, dense pattern windowing, column-indexed field values, the stream metadata
+  endpoints); every answer the proxy gave from them is unchanged (a recorded digest of every refusal prediction and
+  capability view over fourteen releases pins it). A gate is a capability (unknown means off), a safety guard
+  (unknown or contradicted means guarded; no probe) or a behaviour (unknown means undecided: nothing is predicted
+  from it). The reference of the gates is `docs/reference/capability-gates.md`, generated from the table.
+- The proxy follows VictoriaLogs through an upgrade or a rollback without a restart. It used to keep the first
+  version it saw for the life of the process; now the lowest release seen in the last window decides (a vmauth pool
+  or a rolling upgrade never enables a gate one member lacks), it is read again every
+  `-backend-version-reprobe-interval` (default `5m`, jittered, one round at a time per replica; `0` disables the
+  periodic round), and a release that is not seen again (for six re-probe intervals) leaves the window only when a newer observation exists, so
+  an outage never empties it or flips a gate.
+- Feature probes (`-backend-feature-probes`, default on): one tiny read-only query per probed gate over an empty
+  one-second window, at startup and on every re-probe, sent with the proxy's own backend auth and headers, bypassing
+  the circuit breaker and never counted as client or upstream requests. A probe decides a gate when no release is
+  readable (behind `vmauth` without a `/metrics` route) and cross-checks it when one is: a probe can only turn a
+  gate off below what the release allows (a member of the pool lacks it, or a patched build), never on above it, and
+  an absent answer holds for the whole window like a release (the lowest member decides); a `capability mismatch`
+  line and `loki_vl_proxy_capability_mismatch_total` report it. Only an explicit refusal turns a probed gate off; a timeout,
+  a 5xx, a 401 or a transport error keeps the previous verdict. Every probe is proven not to crash VictoriaLogs v1.49.0
+  and the newest release on the VictoriaLogs oracle (`TestProbesCrashSafe`: v1.49.0, v1.53.0 and v1.54.0).
+- `GET /admin/capabilities` (protected like `/admin/cache/flush`) shows every release seen, the effective release,
+  every gate with what decided it, the mismatches, the epoch and the digest. New metrics:
+  `loki_vl_proxy_backend_version_info`, `loki_vl_proxy_capability_gate`, `loki_vl_proxy_capability_mismatch_total`,
+  `loki_vl_proxy_capability_epoch`, `loki_vl_proxy_backend_feature_probe_total` and
+  `loki_vl_proxy_client_profile_requests_total` (the surface and the Grafana, Loki datasource and Logs Drilldown versions
+  of the typed client profile of each request; 32 values per version label, `other` beyond). One `capability set changed`
+  info line per change of the set; with `-debug-vl-calls-header` every read response carries
+  `X-Loki-VL-Capabilities`. The operations dashboard has a "Versions and capabilities" row.
+- The held VictoriaLogs refusals, their peer sync and the request flight keys carry a content digest of the gate set
+  (release, flavour, every gate's state) instead of the release string, so an entry built under another gate set is
+  a miss on this replica and on a peer, and replicas of one backend agree on it.
 
 ### Fixed
 
@@ -44,6 +80,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.5`, `0.50` or `5e-1`, and an unwrap conversion with blanks are served from the query plan, which reads them as
   Loki does (their answers are held to recorded Loki answers over VictoriaLogs v1.49 and v1.54). Answers cached for
   an unwrap conversion spelled with a blank before this change are not served after it.
+- `-backend-version-strict=true` no longer passes startup on the version of another product. Behind `vmauth` (which
+  serves its own `/metrics`) the check used to read vmauth's version (VictoriaMetrics v1.155.0) as the VictoriaLogs
+  release and pass; it now finds no VictoriaLogs release and, in strict mode, fails startup ("backend did not expose
+  version in response headers or /metrics payload"). Keep startup working by turning strict off, by exposing
+  VictoriaLogs' own `/metrics` through `vmauth` (a route to `/metrics` of VictoriaLogs), or by letting a response
+  header that names VictoriaLogs carry the release.
+
+### Changed
+
+- Only a version that names VictoriaLogs counts as its release: the `victoria-logs-<date>-<time>-tags-vX.Y.Z[-enterprise[-fips]]-<n>-g<hash>`
+  build string of its `/metrics` (`vm_app_version`, `victorialogs_build_info`) or a `VictoriaLogs/vX.Y.Z` style
+  header. The version of `vmauth`, `vlagent`, `vmagent` or VictoriaMetrics that answers in front of it (the stack's
+  `vmauth` is VictoriaMetrics v1.155.0) and a bare semver were read as VictoriaLogs' before and are ignored now; the
+  `-enterprise` and `-enterprise-fips` suffixes are parsed as flavours. The `backend_capability_profile` of the
+  drilldown-limits answer is `vl-probed-v1.49-plus` when only the stream endpoint probe answers (the metadata
+  substring probe, which could not tell a release apart, is gone).
+  Behind `vmauth` (which serves its own `/metrics`), where the proxy used to take vmauth's version for the
+  VictoriaLogs release and so turned every gate on by accident, the release is now unknown unless a header or a
+  VictoriaLogs `/metrics` route names it: the feature probes decide the gates they cover and, when a probe finds a
+  feature of v1.51 or later present, the capabilities of earlier releases follow (dense pattern windowing and
+  column-indexed field values for a backend that answers `coalesce`, when no probe contradicts); a backend behind
+  `vmauth` that answers no probe holds the v1.49.0 floor. Keep `-backend-feature-probes=true` (the default) behind
+  `vmauth`, or expose VictoriaLogs' `/metrics` through it. The refusal prediction of a call VictoriaLogs v1.54.0
+  would refuse (an `extra_filters` argument over its length limit) does not fire while the release is unknown, and
+  a math pipe with a quoted number is no longer sent on a call VictoriaLogs clones (the guard holds for an unknown
+  release, as it does without vmauth).
+- Every feature probe reads one fixed one-second window in the year 2000, with a row limit of one, so it never scans
+  a stored row.
 
 ## [2.340.1] - 2026-11-18
 

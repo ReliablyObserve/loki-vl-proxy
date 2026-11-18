@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 )
 
 // Row is one generated log line.
@@ -143,12 +145,19 @@ func (e *Emulator) Handler() http.Handler {
 			_, _ = w.Write([]byte("ok"))
 		case "/metrics":
 			if e.Version != "" {
-				_, _ = fmt.Fprintf(w, "vm_app_version{short_version=%q,version=%q} 1\n", e.Version, e.Version)
+				// VictoriaLogs' build string, as its /metrics reports it.
+				_, _ = fmt.Fprintf(w, "vm_app_version{short_version=%q,version=%q} 1\n", e.Version, "victoria-logs-20260101-000000-tags-"+e.Version+"-0-gabcdef0123")
 			}
 		case "/select/logsql/stats_query_range", "/select/logsql/stats_query":
+			if e.answerCapabilityProbe(w, r) {
+				return // the proxy's own feature probe: neither recorded nor counted as a query
+			}
 			e.Record(r.URL.Path, r.FormValue("query"))
 			e.ServeStats(w, r)
 		case "/select/logsql/query":
+			if e.answerCapabilityProbe(w, r) {
+				return
+			}
 			e.Record(r.URL.Path, r.FormValue("query"))
 			e.serveRaw(w, r)
 		default:
@@ -827,4 +836,33 @@ func jsonObjectInOrder(s string) (map[string]any, []string, bool) {
 		}
 	}
 	return obj, order, true
+}
+
+// answerCapabilityProbe answers the proxy's feature probes (capability.Gates) as the emulated release does: a run for a
+// gate the release carries, VictoriaLogs' refusal for one it lacks. An emulator that names no release gives no
+// verdict (503), as an unreachable backend does.
+func (e *Emulator) answerCapabilityProbe(w http.ResponseWriter, r *http.Request) bool {
+	for _, g := range capability.Gates() {
+		pr := g.Probe
+		if pr == nil || r.URL.Path != pr.Path || r.FormValue("query") != pr.Query {
+			continue
+		}
+		rel := capability.ParseRelease(e.Version)
+		if !rel.Known {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return true
+		}
+		verdict := capability.VerdictOff
+		if g.In(rel) {
+			verdict = capability.VerdictOn
+		}
+		if verdict == pr.Accepted {
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+			return true
+		}
+		w.WriteHeader(pr.RefusalStatus[0])
+		_, _ = w.Write([]byte(pr.RefusalText[0] + " (emulated refusal)"))
+		return true
+	}
+	return false
 }

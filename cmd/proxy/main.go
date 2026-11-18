@@ -96,6 +96,8 @@ type proxyRuntimeConfig struct {
 	backendAllowUnsupportedVersion      bool
 	backendVersionCheckTimeout          time.Duration
 	backendVersionStrict                bool
+	backendVersionReprobeInterval       time.Duration
+	backendFeatureProbes                bool
 	backendBasicAuth                    string
 	backendCompression                  string
 	clientResponseCompression           string
@@ -635,6 +637,8 @@ func run(
 	backendMinVersion := fs.String("backend-min-version", "v1.49.0", "Minimum VictoriaLogs version considered fully supported at startup (v1.49.0, the latest v1.4x release; every v1.5x release is supported)")
 	backendAllowUnsupportedVersion := fs.Bool("backend-allow-unsupported-version", false, "Allow startup with backend versions lower than -backend-min-version (at your own risk). Ignored when --backend-version-strict=true.")
 	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
+	backendVersionReprobeInterval := fs.Duration("backend-version-reprobe-interval", proxy.DefaultBackendVersionReprobeInterval, "How often the proxy reads the VictoriaLogs release again (/metrics) and probes the feature gates (-backend-feature-probes), jittered by 10%, one round at a time per replica, so an upgrade or a rollback of VictoriaLogs changes the gates without a proxy restart. A release leaves the lowest-release window after six intervals without being seen (behind a load balancer each read reaches one random member). 0 disables the periodic round (the release is still read at startup and, while unknown, retried on traffic every 5 minutes); a non-zero value below 10s is raised to 10s. GET /admin/capabilities shows the result")
+	backendFeatureProbes := fs.Bool("backend-feature-probes", true, "Probe VictoriaLogs for the features the proxy's gates depend on (a few tiny read-only queries over an empty one-second window at startup and every -backend-version-reprobe-interval, sent with the proxy's own backend auth and never counted as client requests). A probe decides a gate when no release is readable (behind vmauth without a /metrics route) and cross-checks it when one is: a gate the observed behaviour contradicts is turned by the behaviour and reported. false decides the gates from the release alone; an unreadable release then holds the v1.49.0 floor")
 	backendVersionStrict := fs.Bool("backend-version-strict", false, "When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set.")
 	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
 	backendCompression := fs.String("backend-compression", "auto", "Backend HTTP compression preference: auto, gzip, zstd, none")
@@ -971,6 +975,8 @@ func run(
 			backendAllowUnsupportedVersion:      *backendAllowUnsupportedVersion,
 			backendVersionCheckTimeout:          *backendVersionCheckTimeout,
 			backendVersionStrict:                *backendVersionStrict,
+			backendVersionReprobeInterval:       *backendVersionReprobeInterval,
+			backendFeatureProbes:                *backendFeatureProbes,
 			backendBasicAuth:                    *backendBasicAuth,
 			backendCompression:                  resolvedBackendCompression,
 			clientResponseCompression:           resolvedResponseCompression,
@@ -1383,6 +1389,7 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 		return nil, fmt.Errorf("backend compatibility gate: %w", err)
 	}
 	p.Init()
+	p.StartBackendCapabilityLoop() // stops with p.Shutdown
 
 	stopOTLP := startOTLPMetricsPusher(opts.otlpCfg, p.GetMetrics(), logger, newPusher)
 
@@ -2353,6 +2360,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
 		BackendVersionStrict:               cfg.backendVersionStrict,
+		BackendVersionReprobeInterval:      cfg.backendVersionReprobeInterval,
+		BackendFeatureProbesDisabled:       !cfg.backendFeatureProbes,
 		BackendBasicAuth:                   cfg.backendBasicAuth,
 		BackendCompression:                 cfg.backendCompression,
 		ClientResponseCompression:          cfg.clientResponseCompression,
@@ -2636,6 +2645,9 @@ func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
 	}
 	if cfg.backendMetadataScanMemoryHeadroom < 0 || cfg.backendMetadataScanMemoryHeadroom >= 1 {
 		return fmt.Errorf("invalid -backend-metadata-scan-memory-headroom: %g (must be >= 0 and < 1; 0 disables the memory gate)", cfg.backendMetadataScanMemoryHeadroom)
+	}
+	if cfg.backendVersionReprobeInterval < 0 {
+		return fmt.Errorf("invalid -backend-version-reprobe-interval: %s (must be >= 0; 0 disables the periodic round)", cfg.backendVersionReprobeInterval)
 	}
 	if cfg.maxStatsCacheFreshness < 0 {
 		return fmt.Errorf("invalid -max-stats-cache-freshness: %s (must be >= 0)", cfg.maxStatsCacheFreshness)

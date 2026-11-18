@@ -46,11 +46,15 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, req: r})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
 		ctx = clientprofile.With(ctx, grafanaProfile)
+		p.caps.ObserveClient(grafanaProfile.client)
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
 		if p.debugVLCallsHeader {
-			sc.beforeHeader = rt.setVLCallsHeaders
+			sc.beforeHeader = func(h http.Header) {
+				rt.setVLCallsHeaders(h)
+				p.setCapabilitiesHeader(ctx, h)
+			}
 		}
 		next.ServeHTTP(sc, reqWithTelemetry)
 
