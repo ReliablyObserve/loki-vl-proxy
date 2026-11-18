@@ -9,12 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The compatibility stack and CI now test against Loki 3.7.10 (was 3.7.9): the compose files, the pinned CI jobs,
-  the weekly Loki matrix (3.7.10 added) and the test-only Loki oracles. Loki 3.7.10 gives a Logs Drilldown metric
-  query over `max_query_series` exactly that many labelled series with its partial-result warning (3.7.9 added a
-  series without labels for every further new series, grafana/loki#26433); the proxy already answered that way,
-  now pinned against recorded 3.7.10 answers. Loki's recorded answers for step alignment, tenant headers and the
-  engine differentials are unchanged on 3.7.10, apart from `unwrap bytes()` below.
 - A VictoriaLogs call that the running VictoriaLogs release refuses before reading any data is no longer sent. The
   proxy predicts the refusal from the query it is about to send, the endpoint and the detected release, and answers
   it as it answers VictoriaLogs' own refusal: the caller's fallback route, or Loki's `500 Internal Server Error` for
@@ -30,11 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     release before v1.53.0, or one not detected yet, which VictoriaLogs v1.49.0 to v1.52.0 crash on (the published
     v1.49.0 and v1.52.0 images exit). No LogQL input makes the proxy write that shape today; the guard keeps it from
     ever reaching VictoriaLogs.
-
-  Nothing else is predicted before the release is detected. Every rule is checked against VictoriaLogs' own query
-  handlers of v1.49.0 and v1.53.0 (and v1.54.0 locally): each predicted refusal has VictoriaLogs' status and class,
-  each query predicted to run runs, and the client answer is byte-equal with 0 calls instead of 1 or more.
-  `-vl-refusal-prediction` (default `true`) turns it off; metric `loki_vl_proxy_vl_refusals_predicted_total{rule}`.
 - VictoriaLogs' refusal of the query the proxy wrote (a parse error, a refused stats shape, a query over its length
   limit, answered or predicted) is now held for `-error-cache-vl-refusal-ttl` (default `5m`) instead of not at all
   or for a second. A parse or stats shape refusal is held for every window of the query (a length or argument
@@ -45,8 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration, and never for an answer computed with forwarded credentials. Three replicas refreshing the same
   refused query five times each send one VictoriaLogs call. Metrics:
   `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
-
-## [2.337.0] - 2026-11-18
+- The compatibility stack and CI now test against Loki 3.7.10 (was 3.7.9): the compose files, the pinned CI jobs,
+  the weekly Loki matrix (3.7.10 added) and the test-only Loki oracles. Loki 3.7.10 gives a Logs Drilldown metric
+  query over `max_query_series` exactly that many labelled series with its partial-result warning (3.7.9 added a
+  series without labels for every further new series, grafana/loki#26433); the proxy already answered that way,
+  now pinned against recorded 3.7.10 answers. Loki's recorded answers for step alignment, tenant headers and the
+  engine differentials are unchanged on 3.7.10, apart from `unwrap bytes()` below.
 
 ### Fixed
 
@@ -56,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with such a bytes literal (`| size > 18446744073709551615B`) now parses, as in Loki 3.7.10, instead of
   answering Loki 3.7.9's `400` parse error. The VictoriaLogs
   pushdown still reads sizes within float64 rounding of 2^64 bytes as too large (registered as a known difference).
+
+## [2.337.0] - 2026-11-18
+
+### Fixed
+
 - The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
   `{...} |= "x" [1m]` form no longer doubles its work with each level of `label_replace` (or `vector`, `approx_topk`)
   calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
