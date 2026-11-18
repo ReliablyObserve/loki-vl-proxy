@@ -32,9 +32,10 @@ class RenderTest(unittest.TestCase):
         self.assertIn("Measured on 2026-11-18 at commit `abcdef1234`, on one machine (8 CPUs, 14 GiB, Colima)", text)
         self.assertIn("A local single-machine test, not a production figure", text)
         self.assertIn("[The Cost Case](#the-cost-case)", text)
-        self.assertIn("| Loki | 81 | 40.0 / 44.0 | 2000 / 2200 | 2 |", text)
-        self.assertIn("| Proxy + VictoriaLogs | 81 | 10.0 / 12.0 | 800 / 1000 | 2 |", text)
-        self.assertIn("Loki used **3.8×** the CPU-seconds and a peak of **2.3×** the memory", text)
+        self.assertIn("| Loki | 81 | 40.0 | 2000 (0) | 44.0 | 2200 (0) | 60 s / 60 s |", text)
+        self.assertIn("| Proxy + VictoriaLogs | 81 | 10.0 | 800 (0) | 12.0 | 1000 (0) | 60 s / 60 s |", text)
+        self.assertIn("on the first, cold run Loki used **4.0x** the CPU-seconds and peaked at **2.5x** the memory", text)
+        self.assertIn("on the repeat of the identical requests (caches warm on both sides) **3.7x** the CPU-seconds and **2.2x**", text)
         self.assertNotIn("Not a valid comparison", text)
 
     def test_the_docs_page_links_the_cost_model(self):
@@ -55,7 +56,7 @@ class RenderTest(unittest.TestCase):
     def test_a_failed_request_is_flagged(self):
         bad = copy.deepcopy(RESULTS)
         bad["sides"][0] = run("loki", 5.0, 100, {"200": 70, "500": 11})
-        self.assertIn("Not a valid comparison: Loki: 11 of 162 requests did not answer 200", rc.render(bad))
+        self.assertIn("Not a valid comparison: Loki (loki): 11 of 81 requests did not answer 200", rc.render(bad))
 
     def test_unequal_workloads_and_unmeasured_containers_are_refused(self):
         bad = copy.deepcopy(RESULTS)

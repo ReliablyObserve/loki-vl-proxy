@@ -50,21 +50,23 @@ def normalise(results):
 
 
 def runs_of(results, side):
-    """The measured runs of one side, in order; the `-again` runs of the same side follow the first."""
+    """The measured runs of one side, in order: the first run, then its `-again` repeat when there is one."""
     return [r for r in results["runs"] if r["side"] in (side, side + "-again")]
 
 
 def totals(run):
-    """CPU-seconds above the idle ingest rate, and the sum of the containers' peak memory in MiB, of one run."""
-    cpu, mem = 0.0, 0
+    """CPU-seconds above the idle ingest rate, the sum of the containers' peak memory and of their memory before the
+    workload, in MiB, of one run."""
+    cpu, mem, before = 0.0, 0, 0
     for name, c in run["containers"].items():
         if c.get("cpu_s_workload") is None or c.get("mem_peak_mib") is None:
             raise ValueError(f"{run['side']}: container {name} has no measured CPU or memory")
         cpu += c["cpu_s_workload"]
         mem += c["mem_peak_mib"]
+        before += c.get("mem_before_mib") or 0
     if cpu <= 0:
         raise ValueError(f"{run['side']}: the workload used no CPU above the idle rate; the run is not a measurement")
-    return cpu, mem
+    return cpu, mem, before
 
 
 def failed(run):
@@ -79,8 +81,9 @@ def check(results):
     for side, _ in SIDES:
         if not runs_of(results, side):
             raise ValueError(f"results hold no run of {side}")
-    first = {side: runs_of(results, side)[0]["requests"] for side, _ in SIDES}
-    if len(set(first.values())) != 1 or any(r["requests"] != next(iter(first.values())) for r in results["runs"]):
+        if len(runs_of(results, side)) > 2:
+            raise ValueError(f"results hold more than a first run and a repeat of {side}")
+    if len({r["requests"] for r in results["runs"]}) != 1:
         raise ValueError("the sides did not send the same number of requests")
 
 
@@ -89,40 +92,44 @@ def render(results, page="readme"):
         return NOT_MEASURED
     results = normalise(results)
     check(results)
-    images = results["images"]
-    host = results["host"]
-    rows, means, warn = [], {}, []
+    images, host, method = results["images"], results["host"], results.get("method", {})
+    rows, warn, totalled = [], [], {}
     for side, label in SIDES:
         runs = runs_of(results, side)
-        sums = [totals(r) for r in runs]
-        means[side] = (sum(s[0] for s in sums) / len(sums), sum(s[1] for s in sums) / len(sums))
-        bad = sum(failed(r) for r in runs)
-        if bad:
-            warn.append(f"{label}: {bad} of {sum(r['requests'] for r in runs)} requests did not answer 200 "
-                        f"({', '.join(f'{c}: {n}' for r in runs for c, n in sorted(r['statuses'].items()))})")
-        rows.append(f"| {label} | {runs[0]['requests']} | {' / '.join(f'{s[0]:.1f}' for s in sums)} "
-                    f"| {' / '.join(str(s[1]) for s in sums)} | {len(runs)} |")
-    cpu_ratio = means["loki"][0] / means["proxy+victorialogs"][0] if means["proxy+victorialogs"][0] else None
-    mem_ratio = means["loki"][1] / means["proxy+victorialogs"][1] if means["proxy+victorialogs"][1] else None
+        totalled[side] = [totals(r) for r in runs]
+        bad = [(r, failed(r)) for r in runs if failed(r)]
+        for r, n in bad:
+            warn.append(f"{label} ({r['side']}): {n} of {r['requests']} requests did not answer 200 "
+                        f"({', '.join(f'{c}: {k}' for c, k in sorted(r['statuses'].items()))})")
+        first, again = runs[0], runs[1] if len(runs) > 1 else None
+        t = totalled[side]
+        rows.append(f"| {label} | {first['requests']} | {t[0][0]:.1f} | {t[0][1]} ({t[0][2]}) | "
+                    + (f"{t[1][0]:.1f} | {t[1][1]} ({t[1][2]}) | " if again else "- | - | ")
+                    + f"{first['seconds']:.0f} s" + (f" / {again['seconds']:.0f} s" if again else "") + " |")
     out = [f"Measured on {results['date']} at commit `{results['commit']}`, on one machine ({host}): the same read "
            f"workload sent to a local Loki and then to the proxy with VictoriaLogs, the stack's own ingest running "
            f"on both. **A local single-machine test, not a production figure**: at production scale the gap can be "
            f"much larger, see {LINKS[page]}.", "",
-           "| Side | Requests per run | CPU-seconds for the workload, per run | Peak memory, MiB, sum of containers, per run | Runs |",
-           "|---|---:|---:|---:|---:|", *rows, ""]
-    if cpu_ratio and mem_ratio:
-        out.append(f"For the same requests Loki used **{cpu_ratio:.1f}×** the CPU-seconds and a peak of "
-                   f"**{mem_ratio:.1f}×** the memory of the proxy plus VictoriaLogs (mean of the runs shown).")
-        out.append("")
+           "| Side | Requests | First run (cold): CPU-seconds | Peak memory, MiB (before) | Repeat (warm): CPU-seconds | Peak memory, MiB (before) | Wall time, first / repeat |",
+           "|---|---:|---:|---:|---:|---:|---:|", *rows, ""]
+    loki, ours = totalled["loki"], totalled["proxy+victorialogs"]
+    parts = [f"on the first, cold run Loki used **{loki[0][0] / ours[0][0]:.1f}x** the CPU-seconds and peaked at "
+             f"**{loki[0][1] / ours[0][1]:.1f}x** the memory of the proxy plus VictoriaLogs"]
+    if len(loki) > 1 and len(ours) > 1:
+        parts.append(f"on the repeat of the identical requests (caches warm on both sides) **{loki[1][0] / ours[1][0]:.1f}x** "
+                     f"the CPU-seconds and **{loki[1][1] / ours[1][1]:.1f}x** the memory")
+    out += ["For the same requests " + "; ".join(parts) + ".", ""]
     if warn:
         out += [f"**Not a valid comparison: {'; '.join(warn)}.**", ""]
-    method = results.get("method", {})
-    out.append(f"Method: {method.get('workload', WORKLOAD)}. CPU-seconds are "
-               f"the containers' user plus system time during the workload minus each container's idle rate measured "
-               f"just before it ({method.get('idle_s', 30)} s), since ingest keeps running; peak memory is the "
-               f"resident set sampled every 0.5 s. A busybox sidecar in each container's PID namespace reads "
-               f"`/proc/1`, so scratch images work. Images: {', '.join(f'{k} `{v}`' for k, v in sorted(images.items()))}. "
-               f"Re-measure with `python3 bench/resources/compare.py`; the results are in `{RESULTS}`.")
+    notes = f" {method['notes']}" if method.get("notes") else ""
+    out.append(f"Method: {method.get('workload', WORKLOAD)}. CPU-seconds are the containers' user plus system time during "
+               f"the workload minus each container's idle rate measured just before it ({method.get('idle_s', 30)} s), since "
+               f"ingest keeps running; peak memory is the resident set sampled every 0.5 s, summed over the side's "
+               f"containers, with the memory before the workload in brackets (Loki's was already large after earlier "
+               f"work on the same stack). Wall time is secondary and noisy on a shared host. A busybox sidecar in each "
+               f"container's PID namespace reads `/proc/1`, so scratch images work.{notes} Images: "
+               f"{', '.join(f'{k}: {v}' for k, v in sorted(images.items()))}. Re-measure with "
+               f"`python3 bench/resources/compare.py`; the results are in `{RESULTS}`.")
     return "\n".join(out)
 
 
