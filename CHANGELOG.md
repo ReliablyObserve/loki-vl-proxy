@@ -30,6 +30,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   series without labels for every further new series, grafana/loki#26433); the proxy already answered that way,
   now pinned against recorded 3.7.10 answers. Loki's recorded answers for step alignment, tenant headers and the
   engine differentials are unchanged on 3.7.10, apart from `unwrap bytes()` below.
+
+### Fixed
+
+- `unwrap bytes()` reads a whole size exactly up to 18446744073709551615 bytes, as Loki 3.7.10 does (its
+  go-humanize v1.1.0): such a value now makes a sample on the proxy's own evaluators instead of failing the query
+  with `SampleExtractionErr` (`too large`); a size of 2^64 bytes or more still fails as in Loki. A label filter
+  with such a bytes literal (`| size > 18446744073709551615B`) now parses, as in Loki 3.7.10, instead of
+  answering Loki 3.7.9's `400` parse error. The VictoriaLogs
+  pushdown still reads sizes within float64 rounding of 2^64 bytes as too large (registered as a known difference).
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time`
+  and `stdvar_over_time` after `| json` or `| logfmt` now read one series for lines that hold the same keys in another
+  order, as Loki does. The series of such a line was named by VictoriaLogs' `pack_json` of its parsed fields, which
+  writes them in the order the line's keys come in, so `{"route":"/x","duration_ms":3,"user":"u"}` and
+  `{"user":"u","duration_ms":4,"route":"/x"}` of one stream were two series: `sum(avg_over_time({...} | json | unwrap
+  duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
+  logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
+  later). Answers cached before are not served (the identity's response key version moves to v4).
+
+## [2.338.0] - 2026-11-18
+
+### Changed
+
 - A VictoriaLogs call that the running VictoriaLogs release refuses before reading any data is no longer sent. The
   proxy predicts the refusal from the query it is about to send, the endpoint and the detected release, and answers
   it as it answers VictoriaLogs' own refusal: the caller's fallback route, or Loki's `500 Internal Server Error` for
@@ -60,23 +82,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration, and never for an answer computed with forwarded credentials. Three replicas refreshing the same
   refused query five times each send one VictoriaLogs call. Metrics:
   `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
-
-### Fixed
-
-- `unwrap bytes()` reads a whole size exactly up to 18446744073709551615 bytes, as Loki 3.7.10 does (its
-  go-humanize v1.1.0): such a value now makes a sample on the proxy's own evaluators instead of failing the query
-  with `SampleExtractionErr` (`too large`); a size of 2^64 bytes or more still fails as in Loki. A label filter
-  with such a bytes literal (`| size > 18446744073709551615B`) now parses, as in Loki 3.7.10, instead of
-  answering Loki 3.7.9's `400` parse error. The VictoriaLogs
-  pushdown still reads sizes within float64 rounding of 2^64 bytes as too large (registered as a known difference).
-- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time`
-  and `stdvar_over_time` after `| json` or `| logfmt` now read one series for lines that hold the same keys in another
-  order, as Loki does. The series of such a line was named by VictoriaLogs' `pack_json` of its parsed fields, which
-  writes them in the order the line's keys come in, so `{"route":"/x","duration_ms":3,"user":"u"}` and
-  `{"user":"u","duration_ms":4,"route":"/x"}` of one stream were two series: `sum(avg_over_time({...} | json | unwrap
-  duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
-  logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
-  later). Answers cached before are not served (the identity's response key version moves to v4).
 
 ## [2.337.0] - 2026-11-18
 
