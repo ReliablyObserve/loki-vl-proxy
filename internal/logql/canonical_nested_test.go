@@ -351,7 +351,7 @@ func TestNestedCallsMatchRecordedLoki(t *testing.T) {
 		if (msg == "") != v.Accept {
 			t.Errorf("%.120q: proxy %q, Loki accept=%v %q", q, msg, v.Accept, v.Error)
 		}
-		if !v.Accept && msg != v.Error && !nestedKnownTextDifference(q, v) {
+		if !v.Accept && msg != v.Error {
 			t.Errorf("%.120q: proxy %q, Loki %q", q, msg, v.Error)
 		}
 	}
@@ -367,14 +367,6 @@ func TestNestedCallsMatchRecordedLoki(t *testing.T) {
 			check(s.query(v.Depth), v)
 		}
 	}
-}
-
-// nestedKnownTextDifference reports the refusals whose text may differ from Loki's: a call left open by a comment (the
-// proxy named the unterminated call, Loki the end of the input) and a call with three arguments inside another call
-// (the proxy counted the column from the call, Loki from the query). Their text is not checked here, so Loki's text
-// and the earlier one both pass; accept and refuse are checked for every row.
-func nestedKnownTextDifference(q string, v nestedVerdict) bool {
-	return strings.Contains(q, "#") || v.Shape == "three-arguments-innermost"
 }
 
 // BenchmarkCanonicalizeLogRanges is the canonicalization of queries a dashboard sends (one call around an
