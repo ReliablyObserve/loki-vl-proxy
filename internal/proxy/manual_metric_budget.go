@@ -163,6 +163,9 @@ type seriesLimitScope struct {
 	// The request's start, end and step (ns), the range of its range functions when they share one (0 otherwise),
 	// and the split interval: they place a time on the answer's grid and in a split.
 	startNs, endNs, stepNs, rangeNs, splitNs int64
+	// noWarning is a Drilldown instant request Loki's query frontend splits: its answer over the limit keeps the
+	// busiest series without Loki's warning, as Loki's split instant answer does.
+	noWarning bool
 	// innerTripped is set when an answer this request combines (a binary operand's, a tenant's) was itself cut by
 	// the limit: the combined answer carries Loki's warning even where its own splits stay within the limit.
 	innerTripped atomic.Bool
@@ -183,15 +186,23 @@ const (
 func (p *Proxy) withSeriesLimitScope(r *http.Request) (*http.Request, *seriesLimitScope) {
 	scope := &seriesLimitScope{drilldown: isGrafanaDrilldownRequest(r)}
 	if scope.drilldown && p.drilldownSeriesLimitMode != drilldownSeriesLimitBusiest {
+		limits := p.queryLimitsFor(r.Header.Get("X-Scope-OrgID"))
+		window, sameWindow := allRangeWindowsEqual(r.FormValue("query"))
 		step, okStep := parsePositiveStepDuration(r.FormValue("step")) // a POST form too
 		start, okStart := parseLokiTimeToUnixNano(r.FormValue("start"))
 		end, okEnd := parseLokiTimeToUnixNano(r.FormValue("end"))
-		if okStep && okStart && okEnd && end >= start {
+		switch {
+		case okStep && okStart && okEnd && end >= start:
 			scope.lokiCut = true
-			scope.startNs, scope.endNs, scope.stepNs, scope.splitNs = start, end, int64(step), int64(p.drilldownSeriesLimitSplit)
-			if window, ok := allRangeWindowsEqual(r.FormValue("query")); ok {
+			scope.startNs, scope.endNs, scope.stepNs, scope.splitNs = start, end, int64(step), int64(limits.SplitQueriesByInterval)
+			if sameWindow {
 				scope.rangeNs = int64(window)
 			}
+		case !okStep && sameWindow && limits.SplitInstantMetricQueriesByInterval > 0 && window > limits.SplitInstantMetricQueriesByInterval:
+			// Deployed Loki's query frontend splits an instant metric query whose range is longer than
+			// split_instant_metric_queries_by_interval, and its answer over the limit carries no partial-result
+			// warning (recorded on Loki 3.7.10; why is not documented).
+			scope.noWarning = true
 		}
 	}
 	return r.WithContext(context.WithValue(r.Context(), seriesLimitScopeKey{}, scope)), scope
@@ -786,7 +797,7 @@ func marshalOrderedJSONObject(fields map[string]json.RawMessage, order []string)
 // when the request's Drilldown result was truncated.
 func addSeriesLimitWarning(body []byte, scope *seriesLimitScope) []byte {
 	limit := int64(0)
-	if scope != nil {
+	if scope != nil && !scope.noWarning {
 		limit = scope.truncated.Load()
 	}
 	if limit == 0 || len(body) == 0 || body[0] != '{' || hasTopLevelWarnings(body) {
@@ -899,17 +910,6 @@ func capSeriesForRequestAt(ctx context.Context, series map[string]manualSeriesSa
 		out[k] = series[k]
 	}
 	return out, nil
-}
-
-// firstSampleTime is the earliest sample time (ns) of a series, MaxInt64 for none.
-func firstSampleTime(samples []rangeMetricSample) int64 {
-	first := int64(math.MaxInt64)
-	for _, s := range samples {
-		if s.ts < first {
-			first = s.ts
-		}
-	}
-	return first
 }
 
 // seriesLimitCollecting reports whether a collector that has seen n series

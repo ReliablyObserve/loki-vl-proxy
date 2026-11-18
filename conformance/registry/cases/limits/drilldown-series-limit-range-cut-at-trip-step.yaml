@@ -21,11 +21,18 @@ why: |
   proxy's point at that time (TestDrilldownSeriesLimitMatchesLoki pins Loki's
   cut to the trip step).
 
-  Fixed (owner decision 2026-11-18): -drilldown-series-limit-mode, default
-  loki, answers as Loki does: the series met first (ranked by first line
-  where the proxy ranks in VictoriaLogs, by first point or sample
-  otherwise), every one ending at the step where the first series past the
-  limit appears. busiest keeps the busiest series over the whole range.
+  Deployed Loki puts its query frontend in front of the engine: it splits a
+  range request at the multiples of split_queries_by_interval (1h) inside it
+  and each split is cut on its own, so a request over several hours answers
+  one cut per hour (an isolated Loki 3.7.10 stack, limit 3, results cache
+  off: 6 series over 1h across an hour boundary, 21 over 6h).
+
+  Fixed (owner decisions 2026-11-18): -drilldown-series-limit-mode, default
+  loki, answers as deployed Loki does: per split of
+  -drilldown-series-limit-split-interval (1h), the series met first,
+  every one ending at the step where the series met so far in the split
+  pass the limit; the splits concatenated with one warning. busiest keeps
+  the busiest series over the whole range.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -50,9 +57,9 @@ gap:
   area: 'internal/proxy series limit (Drilldown partial answers)'
   loki: 'a partial range answer ends at the step where a series past max_query_series appears (engine oracle, Loki 3.7.9 and 3.7.10)'
   proxy: 'Loki''s cut by default; the busiest series over the whole range with -drilldown-series-limit-mode=busiest'
-  planned_test: 'TestDrilldownSeriesLimitMatchesLoki, TestSeriesLimit_LokiModeEveryRangeRoute (internal/proxy)'
+  planned_test: 'TestDrilldownSeriesLimitMatchesLoki, TestDrilldownSeriesLimitSplitsMatchLoki, TestSeriesLimit_LokiModeEveryRangeRoute (internal/proxy)'
   visual: none
-  visual_reason: 'the CI visual stack runs Loki and the proxies with max_query_series 1000000, so no page trips the limit there; the Fix-proof is an isolated stack with the limit at 3 on Loki and both proxies (dd-label-pod-over-series-limit, PR #1672)'
+  visual_reason: 'owner-reviewed 2026-11-18: the CI visual stack runs Loki and the proxies with max_query_series 1000000, so no page trips the limit there; the Fix-proof is an isolated stack with the limit at 3 on Loki and both proxies (dd-label-pod-over-series-limit, PR #1672)'
 applies_to:
   loki: ">=3.0.0"
   victorialogs: ">=v1.49.0"

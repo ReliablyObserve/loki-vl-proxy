@@ -213,5 +213,5 @@ smoke	internal/clientprofile	FuzzDetect	12s	-	any User-Agent, Source tag and ref
 smoke	internal/logql	FuzzCallReadsMatchReadingAgain	12s	-	nested calls kept as text read through the jumps, the shared notes, the typed-call skip and the in-place spelling read as reading each call again
 smoke	internal/logql	FuzzArgumentReaderMatchesFirstArgumentLen	12s	-	the bracket table reads every first argument as FirstArgumentLen does
 smoke	internal/proxy	FuzzStripOuterCallsMatchesRescanning	12s	-	the strip of outer label_replace calls reads a nesting through one bracket table as reading each call from its text
-smoke	internal/proxy	FuzzCutLokiResultAfter	12s	-	the Loki cut of a Drilldown partial answer terminates on any body and never adds a series
-smoke	internal/proxy	FuzzCutLokiResultAfterMatchesReference	12s	-	the in-place Loki cut keeps exactly the series and points of the plain cut over decoded JSON
+smoke	internal/proxy	FuzzCutLokiSplits	12s	-	the per-split Loki cut of a Drilldown partial answer terminates on any body, limit and split and never adds a series or a point
+smoke	internal/proxy	FuzzCutLokiSplitsMatchesReference	12s	-	the in-place per-split Loki cut keeps exactly the series and points of the plain cut over decoded JSON

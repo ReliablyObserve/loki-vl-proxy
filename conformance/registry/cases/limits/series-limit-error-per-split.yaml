@@ -1,0 +1,45 @@
+id: limits/series-limit-error-per-split
+title: 'A plain client''s range metric query is refused when its whole answer passes the series limit; deployed Loki refuses only when one split does (open)'
+pending: true
+proves:
+  - series-limits-and-partial-results
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Deployed Loki's query frontend splits a range request at the multiples of
+  split_queries_by_interval (1h) and its engine evaluates each split on its
+  own (an isolated Loki 3.7.10 stack: each split asked alone is its fragment
+  of the whole answer, and the concatenated Drilldown answer holds up to the
+  limit per split, not the limit in all). So a client other than Logs
+  Drilldown should get Loki's 400 only when one split passes
+  max_query_series; a request whose splits each stay within the limit
+  answers 200 with more series than the limit in all. The proxy counts the
+  whole answer and answers 400 as soon as it passes the limit. Not yet
+  recorded on Loki for a plain client.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="wide"}[1m]))'
+    start: "<end-6h>"
+    end: "<end>"
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    Loki's answer on a stack with a low max_query_series over hours whose
+    series each stay within the limit: 200 with every series, or 400.
+gap:
+  status: open
+  impact: api-only
+  effort: M
+  area: 'internal/proxy series limit (seriesLimitReached and the read guards count the whole answer)'
+  loki: 'not recorded yet for a plain client: each split of the query frontend is limited on its own'
+  proxy: 'Loki''s 400 when the whole answer passes the limit'
+  planned_test: 'a stack recording with a low max_query_series, then a per-split limit for plain clients behind the split interval flag'
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.49.0"

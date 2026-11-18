@@ -111,17 +111,27 @@ buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `
   `limit + 1` series however many values the field has; the proxy remembers
   the breakdown for five minutes and ranks straight away. Drilldown gets
   `limit` series and Loki's warning, chosen by `-drilldown-series-limit-mode`:
-  - `loki` (the default) answers as Loki does: the values ranked by their first
-    line (the series Loki's evaluation meets first), every kept series ending at
-    the step where the first series past the limit appears. A breakdown whose
-    series all start at once shows one step, as on Loki. Loki orders the series
-    that are new in one step at random, so among those the kept set can differ;
-    every kept point is Loki's.
+  - `loki` (the default) answers as deployed Loki does. Loki's query frontend
+    splits the request at the multiples of `split_queries_by_interval` inside it
+    (`-drilldown-series-limit-split-interval`, 1h; a step on a boundary starts
+    the later split) and each split keeps the series met first in it, every one
+    ending at the step where the series met so far in the split pass the limit.
+    The splits are concatenated, so an answer over several hours holds up to the
+    limit per hour, often only the first steps of each hour. VictoriaLogs ranks
+    the values by their first line in every split in one read (`sort ...
+    partition by (_time) limit`). Loki orders the series new in one step at
+    random, so among those the kept set can differ; every kept point is Loki's.
+    Loki's results cache can also add the cut points of earlier requests, which
+    the proxy cannot know. An instant answer keeps the busiest series and, when
+    its range is longer than `split_instant_metric_queries_by_interval`
+    (`-drilldown-series-limit-instant-split-interval`, 1h), carries no warning,
+    as deployed Loki's split instant answer does.
   - `busiest` ranks by line count and keeps the busiest series over the whole
     range.
-  Every response cache (the proxy's own, the served cache and its peers) keeps
-  the answer as sent, cut included, so a repeat is the first answer. A
-  multi-tenant answer is cut where the merged answer trips the limit.
+  Both intervals take Loki's per-tenant names in `-tenant-limits`. Every
+  response cache (the proxy's own, the served cache and its peers) keeps the
+  answer as sent, cut included, so a repeat is the first answer. A multi-tenant
+  answer is cut where the merged answer passes the limit in each split.
   A breakdown that cannot be ranked this way (the underscore label style's
   dotted fields, which group by both spellings) is read whole and capped the
   same way.

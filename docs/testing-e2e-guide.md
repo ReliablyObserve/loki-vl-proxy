@@ -53,8 +53,9 @@ identical limits. An unset variable restores the 1,000,000-series CI default.
 Below the configured limit, responses remain complete. Above it, Drilldown gets
 partial series with Loki's warning; ordinary API clients get Loki's series-limit
 error. By default (`-drilldown-series-limit-mode=loki`) the proxy keeps the
-series Loki keeps, the ones met first, ending at the step where the limit
-trips; with `busiest` it keeps the busiest series over the whole range. A warning is not proof that all values were loaded:
+series deployed Loki keeps: per split of `-drilldown-series-limit-split-interval`
+(Loki's `split_queries_by_interval`, 1h), the ones met first, ending at the step
+where the limit trips; with `busiest` it keeps the busiest series over the whole range. A warning is not proof that all values were loaded:
 filter the service, field value or time range to inspect a narrower population.
 The public query `limit` parameter limits log lines, not metric series.
 

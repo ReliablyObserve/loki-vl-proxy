@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -469,5 +470,56 @@ func TestRankedSingleFieldQueryFirstMet(t *testing.T) {
 	}
 	if got := (*seriesLimitScope)(nil).firstMetRanking("pod", "_c", false, 4, 0); got != ` | stats by (pod) min(_time) as _c | sort by (_c) | limit 4` {
 		t.Errorf("top-value ranking: %q", got)
+	}
+}
+
+// The split intervals resolve per tenant (Loki's split_queries_by_interval and
+// split_instant_metric_queries_by_interval in -tenant-limits, over the flags); a Drilldown instant request whose
+// range is longer than the instant split interval answers over the limit without Loki's warning, as deployed Loki's
+// split instant answer does, a shorter one and a proxy with the instant split off keep it; the response cache key
+// carries the intervals.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step, limits/drilldown-partial-with-warning
+func TestDrilldownSeriesLimitSplitIntervalsPerTenant(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", DrilldownSeriesLimitSplitInterval: time.Hour, DrilldownSeriesLimitInstantSplitInterval: time.Hour,
+		TenantLimits: map[string]map[string]any{"team-b": {"split_queries_by_interval": "15m", "split_instant_metric_queries_by_interval": "0s"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(Config{BackendURL: "http://127.0.0.1:1", TenantLimits: map[string]map[string]any{"x": {"split_queries_by_interval": "soon"}}}); err == nil {
+		t.Fatal("a split interval that is not a duration must be refused")
+	}
+	request := func(tenant, target string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, target, nil)
+		r.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+		r.Header.Set("X-Scope-OrgID", tenant)
+		return r
+	}
+	rangeTarget := "/loki/api/v1/query_range?query=" + url.QueryEscape(`sum by (pod) (count_over_time({app="a"}[1m]))`) + "&start=0&end=7200&step=60"
+	if _, s := p.withSeriesLimitScope(request("team-a", rangeTarget)); s.splitNs != int64(time.Hour) || s.rangeNs != int64(time.Minute) {
+		t.Errorf("flag interval: %+v", s)
+	}
+	if _, s := p.withSeriesLimitScope(request("team-b", rangeTarget)); s.splitNs != int64(15*time.Minute) {
+		t.Errorf("tenant interval: %+v", s)
+	}
+	instant := func(window string) string {
+		return "/loki/api/v1/query?query=" + url.QueryEscape(`sum by (pod) (count_over_time({app="a"}[`+window+`]))`) + "&time=7200"
+	}
+	for _, tc := range []struct {
+		tenant, window string
+		noWarning      bool
+	}{{"team-a", "61m", true}, {"team-a", "6h", true}, {"team-a", "1h", false}, {"team-a", "30m", false}, {"team-b", "6h", false}} {
+		_, s := p.withSeriesLimitScope(request(tc.tenant, instant(tc.window)))
+		if s.lokiCut || s.noWarning != tc.noWarning {
+			t.Errorf("%s [%s]: noWarning %v, want %v", tc.tenant, tc.window, s.noWarning, tc.noWarning)
+		}
+		s.truncated.Store(3)
+		body := addSeriesLimitWarning([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`), s)
+		if strings.Contains(string(body), "warnings") == tc.noWarning {
+			t.Errorf("%s [%s]: %s", tc.tenant, tc.window, body)
+		}
+	}
+	if a, b := p.responseProfileCacheKey(request("team-a", rangeTarget)), p.responseProfileCacheKey(request("team-b", rangeTarget)); a == b || !strings.Contains(a, "/sl-loki-1h0m0s-1h0m0s") {
+		t.Errorf("the cache key must carry the tenant's intervals: %q %q", a, b)
 	}
 }

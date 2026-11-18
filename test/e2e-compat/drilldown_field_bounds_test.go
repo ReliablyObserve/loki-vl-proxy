@@ -27,50 +27,7 @@ import (
 //
 // conformance: limits/drilldown-breakdown-exact, limits/top-n-ranking-not-silent, loki_api_v1_query_range
 func TestDrilldown_FieldBoundsByteOverflowMatchesLoki(t *testing.T) {
-	app := fmt.Sprintf("drilldown-field-bytes-%d", time.Now().UnixNano())
-	anchor := time.Now().UTC().Add(-12 * time.Hour).Truncate(time.Minute)
-	var lines []jsonVolumeStreamLine
-	fixtureCounts := map[string]map[string]int{}
-	values := []string{"z-quote\"eye", "z-backslash\\nose", "z-newline\near"}
-	for i := 0; i < 24; i++ {
-		values = append(values, fmt.Sprintf("a%02d-", i)+strings.Repeat("x", 1600))
-	}
-	for i, value := range values {
-		count := 1
-		if i < 3 {
-			count = 30 - i*5 // unique totals, independent of series ordering
-		}
-		for j := 0; j < count; j++ {
-			msg, err := json.Marshal(map[string]string{"val": value})
-			if err != nil {
-				t.Fatal(err)
-			}
-			ts := anchor.Add(time.Duration(j)*time.Second + time.Duration(i)*time.Millisecond)
-			lines = append(lines, jsonVolumeStreamLine{ts: ts, msg: string(msg)})
-			// A line belongs to the one-minute sample whose window is (t-1m,t].
-			// All queried ranges below contain these samples, including the
-			// line exactly on the first minute boundary.
-			sample := ts.Truncate(time.Minute)
-			if ts.After(sample) {
-				sample = sample.Add(time.Minute)
-			}
-			key := "val=" + value
-			if fixtureCounts[key] == nil {
-				fixtureCounts[key] = map[string]int{}
-			}
-			fixtureCounts[key][strconv.FormatInt(sample.Unix(), 10)]++
-		}
-	}
-	expected := map[string]map[string]string{}
-	for key, counts := range fixtureCounts {
-		expected[key] = map[string]string{}
-		for ts, count := range counts {
-			expected[key][ts] = strconv.Itoa(count)
-		}
-	}
-	sort.Slice(lines, func(i, j int) bool { return lines[i].ts.Before(lines[j].ts) })
-	ingestJSONVolumeFixture(t, map[string][]jsonVolumeStreamLine{app: lines})
-	query := fmt.Sprintf(`sum by (val) (count_over_time({app=%q} | json | drop __error__, __error_details__ | val!="" [1m]))`, app)
+	app, anchor, query, expected := fieldBoundsByteOverflowFixture(t)
 	const byteLimit = 2500
 	bounded, recorder := newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) {
 		cfg.MaxStatsQuerySeries = 2
@@ -126,6 +83,168 @@ func TestDrilldown_FieldBoundsByteOverflowMatchesLoki(t *testing.T) {
 			}
 		})
 	}
+}
+
+// In the default Loki mode the same byte overflow retries with the first-met ranking, per split of Loki's query
+// frontend (-drilldown-series-limit-split-interval, 1h here as Loki's default): a 200 with Loki's warning holding,
+// in every split, the series met first up to the step where the series met so far pass the limit, with Loki's
+// points for them (Loki's own answer over the fixture, cut by that rule). Every line falls in one minute, so one
+// split holds data: z-quote alone at the anchor (its first line is on the minute) and the 26 other values new one
+// minute later, where the limit of 2 trips and a00 (first by labels) fills it.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step, limits/top-n-ranking-not-silent, loki_api_v1_query_range
+func TestDrilldown_FieldBoundsByteOverflowLokiMode(t *testing.T) {
+	_, anchor, query, expected := fieldBoundsByteOverflowFixture(t)
+	// Three of the 1,600-byte values fit; the whole breakdown does not.
+	const byteLimit = 8000
+	bounded, recorder := newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) {
+		cfg.MaxStatsQuerySeries = 2
+		cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = byteLimit
+		cfg.DrilldownSeriesLimitSplitInterval = time.Hour
+	})
+	end := anchor.Add(11 * time.Hour).Add(2 * time.Minute)
+	for _, span := range []time.Duration{24 * time.Hour, 48 * time.Hour} {
+		t.Run(span.String(), func(t *testing.T) {
+			start, stop := end.Add(-span), end
+			loki := fieldBoundsWaitLokiRange(t, query, start, stop, expected)
+			want := fieldBoundsFirstMetPerHour(t, loki, start, stop, 2)
+			params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(stop.UnixNano(), 10)}, "step": {"60"}}
+			target := bounded + "/loki/api/v1/query_range?" + params.Encode()
+			for repeat := 0; repeat < 2; repeat++ {
+				recorder.reset()
+				status, body, envelope := doJSONGET(t, target, map[string]string{"X-Scope-OrgID": "0", "X-Query-Tags": "Source=grafana-lokiexplore-app"})
+				if status != http.StatusOK || envelope["status"] != "success" || len(extractArray(envelope, "warnings")) == 0 {
+					t.Fatalf("Drilldown must return a visibly partial 200 after byte overflow: HTTP %d %.1000s", status, body)
+				}
+				assertSlidingParity(t, query, want, fieldBoundsSeries(t, envelope))
+				ranked := false
+				for _, call := range recorder.reset() {
+					ranked = ranked || strings.Contains(call, "min(_time) as __lvp_rank | sort by (__lvp_rank, val) partition by (_time) limit 3 | fields val)")
+				}
+				if repeat == 0 && !ranked {
+					t.Fatal("byte overflow did not retry with the first-met ranking per split")
+				}
+			}
+		})
+	}
+}
+
+// fieldBoundsFirstMetPerHour cuts an answer the way the Loki mode does: per split of the hour grid inside (start,
+// end), the series by their first sample in it (ties by label), the first limit kept up to the first sample of the
+// next one, the rest dropped there.
+func fieldBoundsFirstMetPerHour(t *testing.T, all map[string]map[string]string, start, end time.Time, limit int) map[string]map[string]string {
+	t.Helper()
+	splitOf := func(ts int64) int64 {
+		first := start.Unix() - start.Unix()%3600 + 3600
+		if ts < first || first >= end.Unix() {
+			return 0
+		}
+		return min((ts-first)/3600, (end.Unix()-1-first)/3600) + 1
+	}
+	type met struct {
+		first int64
+		key   string
+	}
+	bySplit := map[int64][]met{}
+	for key, points := range all {
+		firsts := map[int64]int64{}
+		for ts := range points {
+			n, err := strconv.ParseInt(ts, 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cur, ok := firsts[splitOf(n)]; !ok || n < cur {
+				firsts[splitOf(n)] = n
+			}
+		}
+		for split, first := range firsts {
+			bySplit[split] = append(bySplit[split], met{first, key})
+		}
+	}
+	until := map[string]map[int64]int64{}
+	for split, list := range bySplit {
+		sort.Slice(list, func(i, j int) bool {
+			if list[i].first != list[j].first {
+				return list[i].first < list[j].first
+			}
+			return list[i].key < list[j].key
+		})
+		end := int64(1 << 62)
+		if len(list) > limit {
+			end, list = list[limit].first, list[:limit]
+		}
+		for _, m := range list {
+			if until[m.key] == nil {
+				until[m.key] = map[int64]int64{}
+			}
+			until[m.key][split] = end
+		}
+	}
+	out := map[string]map[string]string{}
+	for key, points := range all {
+		for ts, v := range points {
+			n, _ := strconv.ParseInt(ts, 10, 64)
+			if last, ok := until[key][splitOf(n)]; ok && n <= last {
+				if out[key] == nil {
+					out[key] = map[string]string{}
+				}
+				out[key][ts] = v
+			}
+		}
+	}
+	return out
+}
+
+// fieldBoundsByteOverflowFixture ingests the byte-overflow fixture on both backends: three short values with
+// unique counts and 24 values of 1,600 bytes, every line within the anchor's first minute. It returns the app, the
+// anchor, the breakdown query and the samples Loki must hold.
+func fieldBoundsByteOverflowFixture(t *testing.T) (string, time.Time, string, map[string]map[string]string) {
+	t.Helper()
+	app := fmt.Sprintf("drilldown-field-bytes-%d", time.Now().UnixNano())
+	anchor := time.Now().UTC().Add(-12 * time.Hour).Truncate(time.Minute)
+	var lines []jsonVolumeStreamLine
+	fixtureCounts := map[string]map[string]int{}
+	values := []string{"z-quote\"eye", "z-backslash\\nose", "z-newline\near"}
+	for i := 0; i < 24; i++ {
+		values = append(values, fmt.Sprintf("a%02d-", i)+strings.Repeat("x", 1600))
+	}
+	for i, value := range values {
+		count := 1
+		if i < 3 {
+			count = 30 - i*5 // unique totals, independent of series ordering
+		}
+		for j := 0; j < count; j++ {
+			msg, err := json.Marshal(map[string]string{"val": value})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ts := anchor.Add(time.Duration(j)*time.Second + time.Duration(i)*time.Millisecond)
+			lines = append(lines, jsonVolumeStreamLine{ts: ts, msg: string(msg)})
+			// A line belongs to the one-minute sample whose window is (t-1m,t].
+			// All queried ranges below contain these samples, including the
+			// line exactly on the first minute boundary.
+			sample := ts.Truncate(time.Minute)
+			if ts.After(sample) {
+				sample = sample.Add(time.Minute)
+			}
+			key := "val=" + value
+			if fixtureCounts[key] == nil {
+				fixtureCounts[key] = map[string]int{}
+			}
+			fixtureCounts[key][strconv.FormatInt(sample.Unix(), 10)]++
+		}
+	}
+	expected := map[string]map[string]string{}
+	for key, counts := range fixtureCounts {
+		expected[key] = map[string]string{}
+		for ts, count := range counts {
+			expected[key][ts] = strconv.Itoa(count)
+		}
+	}
+	sort.Slice(lines, func(i, j int) bool { return lines[i].ts.Before(lines[j].ts) })
+	ingestJSONVolumeFixture(t, map[string][]jsonVolumeStreamLine{app: lines})
+	query := fmt.Sprintf(`sum by (val) (count_over_time({app=%q} | json | drop __error__, __error_details__ | val!="" [1m]))`, app)
+	return app, anchor, query, expected
 }
 
 func fieldBoundsWaitLokiRange(t *testing.T, query string, start, end time.Time, expected map[string]map[string]string) map[string]map[string]string {

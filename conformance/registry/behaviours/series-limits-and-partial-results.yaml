@@ -31,24 +31,56 @@ proxy: |
   -backend-max-buffered-response-bytes: 1000 dense series over 1000 steps is
   about 40 MB of the 64 MiB default (limits registry, sizing).
 
-  A Drilldown range answer over the limit is cut as Loki cuts it
-  (-drilldown-series-limit-mode=loki, the default): the series met first,
-  every one ending at the step where the first series past the limit
-  appears; -drilldown-series-limit-mode=busiest keeps the busiest series over
-  the whole range instead. Instant answers keep the busiest series.
+  A Drilldown range answer over the limit is cut as deployed Loki cuts it
+  (-drilldown-series-limit-mode=loki, the default): Loki's query frontend
+  splits the request at the multiples of split_queries_by_interval inside it
+  (-drilldown-series-limit-split-interval, 1h) and each split keeps the series
+  met first in it, every one ending at the step where the series met so far
+  in the split pass the limit; the splits are concatenated with one warning.
+  -drilldown-series-limit-mode=busiest keeps the busiest series over the whole
+  range instead. Instant answers keep the busiest series; in the Loki mode
+  one whose range is longer than split_instant_metric_queries_by_interval
+  (-drilldown-series-limit-instant-split-interval, 1h) carries no warning.
 
 decisions:
   - id: drilldown-series-limit-mode
-    chosen: 'A flag, -drilldown-series-limit-mode=loki|busiest, default loki: Loki''s cut of a Drilldown range answer over the series limit'
-    over: [the busiest series over the whole range as the only answer (before this), Loki's cut as the only answer]
+    chosen: 'A flag, -drilldown-series-limit-mode=loki|busiest, default loki: deployed Loki''s cut of a Drilldown answer over the series limit, per split of its query frontend (-drilldown-series-limit-split-interval and -drilldown-series-limit-instant-split-interval mirror split_queries_by_interval and split_instant_metric_queries_by_interval, default 1h, per tenant under Loki''s names)'
+    over: [the busiest series over the whole range as the only answer (before this), Loki's engine cut over the whole request (one split; what Loki without its frontend answers), Loki's cut as the only answer]
     why: |
-      Owner 2026-11-18. Loki (3.7.9 and 3.7.10, recorded with the engine
-      oracle) stops a Drilldown range evaluation at the step where a series
-      past max_query_series first appears and keeps the series it met
-      first; a breakdown whose series all start at once shows one step.
-      Loki parity is the default; operators who prefer full-range charts of
-      the busiest series choose busiest. Both modes cost one ranked read
-      (limit+1 values by line count, or by first line).
+      Owner 2026-11-18. Loki's engine (3.7.9 and 3.7.10, recorded with the
+      engine oracle) stops a Drilldown range evaluation at the step where
+      the series met so far pass max_query_series and keeps the series it
+      met first: cumulative, not per step (recorded over pods that come and
+      go: one at a time it stops at minute 30 although no step holds more
+      than two). Deployed Loki puts its query frontend in front: on an
+      isolated Loki 3.7.10 stack with max_query_series 3 and the results
+      cache off, a range request is split at the hours inside it (epoch
+      aligned; a step on a boundary starts the later split; an end on a
+      boundary is no split), every split is cut on its own (each split
+      asked alone equals its fragment), the fragments are concatenated and
+      not limited again (21 series over 6h at limit 3), one warning, and
+      sharding (up to 23552 shards, or off) changes nothing. Owner: the
+      default emulates deployed Loki. Loki's results cache adds the cut
+      points of earlier requests' extents (history the proxy cannot know)
+      and Loki orders the series new at a trip step at random: both are
+      left as known differences. Instants (owner): the busiest limit series
+      (Loki keeps an arbitrary set: any limit series is a Loki answer);
+      the warning follows Loki's instant split: dropped when the range is
+      longer than split_instant_metric_queries_by_interval (recorded on the
+      stack: [61m] to [6h] no warning, [30m] and [1h] and the split off
+      warn; why Loki drops it, and whether its pieces are limited before
+      the merge, is not documented). Operators who prefer full-range charts
+      of the busiest series choose busiest. VictoriaLogs calls are the same
+      in both modes: one ranked read (limit+1 values by line count, or by
+      first line per split with sort partition by (_time) limit, a
+      VictoriaLogs v1.1.0 feature).
+
+      Split ranking corner: for a range longer than the step the ranked
+      top-value read buckets lines by split shifted by the range, so a
+      series met at a split's first step only through lines in the last
+      range before it can be left out of that split's candidates when
+      fewer than limit+1 series are met there; the ranked in() read and
+      Drilldown's range == step requests are exact.
 
       Caches: every response cache keeps the answer as sent, cut and
       warning included (the handler's own range cache is written by the
@@ -61,12 +93,12 @@ decisions:
       multi-tenant merge and a binary union are cut where their own merged
       answer trips the limit; the tenants' or operands' answers end at or
       after that step.
-    evidence: 'TestDrilldownSeriesLimitMatchesLoki: Loki 3.7.10 engine answers (testdata/loki_engine/drilldown_series_limit.jsonl.gz) at the limit and 1, 2 and 5 over, staggered and simultaneous series, three query shapes, range and instant, VictoriaLogs v1.49.0 and v1.54.0, both modes. VictoriaLogs v1.49.0, v1.53.0 and v1.54.0 (lib/logstorage via test/oracle/vl store and roundtrip, 2026-11-18): `stats by (f) min(_time) as r | sort by (r, f) | limit n` orders by time, not by the text of an RFC3339 value whose fraction varies in length; min(_time) is written as RFC3339 with trailing zeros dropped; both ranking queries survive the clone round trip (v1.49.0 and v1.53.0 through the handler steps of test/oracle/vl roundtrip; v1.54.0, whose last-N API was renamed, print and parse again before and after the limit pipe only)'
-    code: [internal/proxy/manual_metric_budget.go, internal/proxy/metric_binary.go, internal/proxy/range_metric_compat.go, internal/proxy/sliding_window_stats.go, internal/proxy/quantile_histogram.go, internal/proxy/query_translation.go, internal/proxy/multitenant.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go]
-    tests: [TestDrilldownSeriesLimitMatchesLoki, TestCutLokiResultAfter, TestSeriesKeptForLimit, TestSeriesLimit_LokiModeEveryRangeRoute, TestSeriesLimit_LokiModeSlidingWindowStats, TestOrderedJSONResultCacheRepeatsTheCutAnswer, TestSeriesLimit_LokiModeServedAndBinaryOperandRepeat, TestSeriesLimit_LokiModeExtentCacheKeepsTheCut, TestSeriesLimit_LokiModeMultiTenantMerge, TestSeriesLimit_LokiModePeerServesTheCutAnswer, TestSeriesLimit_LokiModeRankedRefresh, TestCutLokiResultAfterMatchesReference, TestLokiPointTimeNs, FuzzCutLokiResultAfterMatchesReference]
+    evidence: 'TestDrilldownSeriesLimitSplitsMatchLoki: Loki 3.7.10 engine answers per split asked alone (testdata/loki_engine/drilldown_series_limit_splits.jsonl.gz), concatenated, equal the proxy''s split answer over 3h across three hour boundaries for range == step, range > step and step 30, VictoriaLogs v1.49.0 and v1.54.0. TestDrilldownSeriesLimitRuleMatchesLoki: the cumulative rule over rotating pods (drilldown_series_limit_rotation.jsonl.gz). Stack runs 2026-11-18 (Loki 3.7.10, limit 3, results cache off): the split, sharding and instant-split answers above. TestDrilldownSeriesLimitMatchesLoki: Loki 3.7.10 engine answers (testdata/loki_engine/drilldown_series_limit.jsonl.gz) at the limit and 1, 2 and 5 over, staggered and simultaneous series, three query shapes, range and instant, VictoriaLogs v1.49.0 and v1.54.0, both modes. VictoriaLogs v1.49.0, v1.53.0 and v1.54.0 (lib/logstorage via test/oracle/vl store and roundtrip, 2026-11-18): `stats by (f) min(_time) as r | sort by (r, f) | limit n` orders by time, not by the text of an RFC3339 value whose fraction varies in length; min(_time) is written as RFC3339 with trailing zeros dropped; both ranking queries survive the clone round trip (v1.49.0 and v1.53.0 through the handler steps of test/oracle/vl roundtrip; v1.54.0, whose last-N API was renamed, print and parse again before and after the limit pipe only)'
+    code: [internal/proxy/manual_metric_budget.go, internal/proxy/limits_enforcement.go, internal/logsql/ast.go, internal/logsql/parser.go, internal/testutil/vlemu/top_value_filter.go, internal/proxy/metric_binary.go, internal/proxy/range_metric_compat.go, internal/proxy/sliding_window_stats.go, internal/proxy/quantile_histogram.go, internal/proxy/query_translation.go, internal/proxy/multitenant.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go]
+    tests: [TestDrilldownSeriesLimitMatchesLoki, TestDrilldownSeriesLimitSplitsMatchLoki, TestDrilldownSeriesLimitRuleMatchesLoki, TestDrilldownSeriesLimitSplitIntervalsPerTenant, TestSeriesLimitScopeSplits, TestCutLokiSplits, TestCutLokiSplitsMatchesReference, FuzzCutLokiSplits, FuzzCutLokiSplitsMatchesReference, TestSeriesKeptForLimit, TestSeriesLimit_LokiModeEveryRangeRoute, TestSeriesLimit_LokiModeSlidingWindowStats, TestOrderedJSONResultCacheRepeatsTheCutAnswer, TestSeriesLimit_LokiModeServedAndBinaryOperandRepeat, TestSeriesLimit_LokiModeExtentCacheKeepsTheCut, TestSeriesLimit_LokiModeMultiTenantMerge, TestSeriesLimit_LokiModePeerServesTheCutAnswer, TestSeriesLimit_LokiModeRankedRefresh, TestLokiPointTimeNs, TestDrilldown_FieldBoundsByteOverflowLokiMode]
     quality: 'loki mode: the cut step, the points and, where every series appears at a different step, the kept set equal Loki''s; busiest mode: unchanged answers'
     performance:
-      tracked: ['BenchmarkCutLokiResultAfter (only a Drilldown answer over the limit pays it; 1000 series x 60 points: 5.6 ms, 1.1 MiB, 1.2k allocs, read in place)', 'BenchmarkSeriesLimitDrilldownRangeRequest (loki vs busiest mode on one over-limit Drilldown request: allocations equal, the cut the only added work)', 'no VictoriaLogs call added: the ranking read changes its order, not its count']
+      tracked: ['BenchmarkCutLokiSplits (only a Drilldown answer over the limit pays it; 1000 series x 60 points, read in place)', 'BenchmarkSeriesLimitDrilldownRangeRequest (loki vs busiest mode on one over-limit Drilldown request: allocations equal, the cut the only added work)', 'no VictoriaLogs call added: the ranking read changes its order (and ranks per split), not its count']
 
 implementation:
   - internal/proxy/metric_agg.go
@@ -83,6 +115,7 @@ cases:
   - limits/drilldown-series-limit-skips-every-new-series
   - limits/drilldown-series-limit-range-cut-at-trip-step
   - limits/drilldown-series-limit-or-operand-past-trip-step
+  - limits/series-limit-error-per-split
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

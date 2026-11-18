@@ -553,6 +553,10 @@ type Config struct {
 	// Loki's query frontend splits a range request at the multiples of the interval and cuts each split's answer
 	// on its own. 0 cuts the request as one split.
 	DrilldownSeriesLimitSplitInterval time.Duration
+	// DrilldownSeriesLimitInstantSplitInterval mirrors Loki's split_instant_metric_queries_by_interval: a Drilldown
+	// instant answer over the limit whose range is longer than it carries no partial-result warning, as deployed
+	// Loki's split instant answer does not. 0 always warns.
+	DrilldownSeriesLimitInstantSplitInterval time.Duration
 	// ExecutionLimits bounds per-request work and the bytes a request may pull
 	// out of VictoriaLogs. Zero values select the built-in defaults.
 	ExecutionLimits ExecutionLimitsConfig
@@ -848,6 +852,7 @@ type Proxy struct {
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=1000)
 	drilldownSeriesLimitMode              string        // -drilldown-series-limit-mode: loki (default) or busiest
 	drilldownSeriesLimitSplit             time.Duration // -drilldown-series-limit-split-interval: Loki's split_queries_by_interval; 0 = one split
+	drilldownSeriesLimitInstantSplit      time.Duration // -drilldown-series-limit-instant-split-interval: Loki's split_instant_metric_queries_by_interval; 0 = always warn
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
 	metadataScanLimiter                   *metadataScanLimiter
@@ -1137,8 +1142,9 @@ func New(cfg Config) (*Proxy, error) {
 	default:
 		return nil, fmt.Errorf("invalid -drilldown-series-limit-mode: %q (must be %q or %q)", cfg.DrilldownSeriesLimitMode, drilldownSeriesLimitLoki, drilldownSeriesLimitBusiest)
 	}
-	if cfg.DrilldownSeriesLimitSplitInterval < 0 {
-		return nil, fmt.Errorf("invalid -drilldown-series-limit-split-interval: %s (must be >= 0; 0 cuts a request as one split)", cfg.DrilldownSeriesLimitSplitInterval)
+	if cfg.DrilldownSeriesLimitSplitInterval < 0 || cfg.DrilldownSeriesLimitInstantSplitInterval < 0 {
+		return nil, fmt.Errorf("invalid -drilldown-series-limit-split-interval=%s / -drilldown-series-limit-instant-split-interval=%s (must be >= 0; 0 does not split)",
+			cfg.DrilldownSeriesLimitSplitInterval, cfg.DrilldownSeriesLimitInstantSplitInterval)
 	}
 
 	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.DeleteAPIAuthToken); err != nil {
@@ -1521,6 +1527,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		drilldownSeriesLimitMode:              cfg.DrilldownSeriesLimitMode,
 		drilldownSeriesLimitSplit:             cfg.DrilldownSeriesLimitSplitInterval,
+		drilldownSeriesLimitInstantSplit:      cfg.DrilldownSeriesLimitInstantSplitInterval,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
 		labelWarmBackoff:                      newLabelWarmBackoff(),
@@ -3155,6 +3162,11 @@ func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
 		// A Drilldown answer over the series limit depends on -drilldown-series-limit-mode: an answer cut one way
 		// is never served for the other, on this replica or on a peer.
 		key += "/sl-" + p.drilldownSeriesLimitModeOrDefault()
+		if p.drilldownSeriesLimitModeOrDefault() == drilldownSeriesLimitLoki {
+			// The answer over the limit depends on the split intervals the tenant resolves to too.
+			limits := p.queryLimitsFor(r.Header.Get("X-Scope-OrgID"))
+			key += "-" + limits.SplitQueriesByInterval.String() + "-" + limits.SplitInstantMetricQueriesByInterval.String()
+		}
 	}
 	return key
 }

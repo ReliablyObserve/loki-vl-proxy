@@ -124,6 +124,8 @@ extraArgs:
   # default-max-query-length: "721h"                   # max query time range for all tenants: Loki's max_query_length default (0 = unlimited; per-tenant limits override)
   # max-stats-query-series: "1000"                      # max series a metric query may return (count_over_time, rate, bytes_rate); 0 = built-in default of 1000 (Loki's own max_query_series default is 500; set 500 to match it); above it the query fails with Loki's HTTP 400 "maximum number of series (N) reached for a single query" (Logs Drilldown gets a partial result with a warning)
   # drilldown-series-limit-mode: "loki"                # Logs Drilldown range answer over the series limit: loki (default) = Loki's (the series met first, cut at the step where the first series past the limit appears); busiest = the busiest series over the whole range
+  # drilldown-series-limit-split-interval: "1h"        # loki mode: Loki's split_queries_by_interval; each split of a Drilldown range answer over the limit is cut on its own; 0 = one split
+  # drilldown-series-limit-instant-split-interval: "1h" # loki mode: Loki's split_instant_metric_queries_by_interval; a Drilldown instant answer over the limit with a longer range carries no warning; 0 = always warn
   # stats-query-range-concurrency: "4"                  # max concurrent stats_query_range calls to VL; higher = more VL CPU pressure; 0 = built-in default of 4
   # drilldown-burst-window-ms: "50"
   # drilldown-burst-max-fields: "30"

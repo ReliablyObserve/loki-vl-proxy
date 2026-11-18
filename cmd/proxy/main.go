@@ -251,6 +251,8 @@ type proxyRuntimeConfig struct {
 	defaultMaxQueryLength               time.Duration
 	maxStatsQuerySeries                 int
 	drilldownSeriesLimitMode            string
+	drilldownSeriesLimitSplit           time.Duration
+	drilldownSeriesLimitInstantSplit    time.Duration
 	statsQueryRangeConcurrency          int
 	backendMaxConcurrentHeavyQueries    int
 	backendMaxBufferedResponseBytes     int
@@ -695,7 +697,9 @@ func run(
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 2*time.Second, "Maximum acceptable cache age for near-now (live-tail) requests before the response cache is bypassed and fresh data is fetched. Lower = fresher live tail, more backend load; raise to coalesce rapid refreshes.")
 	defaultMaxQueryLength := fs.Duration("default-max-query-length", proxy.DefaultMaxQueryLength, "Loki's max_query_length for every tenant without a per-tenant limit: a query_range, series, labels, label values, detected labels, detected fields, detected field values, index stats or volume request whose range is longer fails with Loki's 400. The default is Loki's (721h, published as 30d1h); 0 turns the limit off")
 	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). 0 = built-in default of 1000, above Loki's own max_query_series default of 500 because the proxy answers faster than Loki; set 500 to match Loki. Above it a plain client gets Loki's HTTP 400 and Logs Drilldown gets a partial result with Loki's warning (-drilldown-series-limit-mode). High-cardinality fields (trace_id, *_id, churn-heavy pod naming), where each value appears only 1-2× in the window, are what the cap bounds. Raise -backend-max-buffered-response-bytes with a higher cap. Per tenant as max_query_series in -tenant-limits and -tenant-default-limits.")
-	drilldownSeriesLimitMode := fs.String("drilldown-series-limit-mode", "loki", "How a Logs Drilldown range answer over -max-stats-query-series (or the tenant's max_query_series) is cut, with Loki's partial-result warning either way: loki (default) answers as Loki does, with the series the evaluation meets first, every one ending at the step where the first series past the limit appears (a breakdown whose series all start at once shows one step); busiest keeps the busiest series over the whole range. Instant answers keep the busiest series in both modes.")
+	drilldownSeriesLimitMode := fs.String("drilldown-series-limit-mode", "loki", "How a Logs Drilldown range answer over -max-stats-query-series (or the tenant's max_query_series) is cut, with Loki's partial-result warning either way: loki (default) answers as deployed Loki does, per split of -drilldown-series-limit-split-interval (Loki's split_queries_by_interval), with the series met first in each split, every one ending at the step where the series met so far pass the limit (a breakdown whose series all start at once shows one step per split); busiest keeps the busiest series over the whole range. Instant answers keep the busiest series in both modes.")
+	drilldownSeriesLimitSplit := fs.Duration("drilldown-series-limit-split-interval", time.Hour, "In -drilldown-series-limit-mode=loki, the split interval of Loki's query frontend (Loki's split_queries_by_interval, default 1h) a Logs Drilldown range answer over the series limit is cut by: Loki splits a range request at the multiples of the interval inside it and cuts each split's answer on its own, at the step where the series met so far in the split pass the limit. 0 cuts the request as one split. Per tenant: split_queries_by_interval in -tenant-limits")
+	drilldownSeriesLimitInstantSplit := fs.Duration("drilldown-series-limit-instant-split-interval", time.Hour, "In -drilldown-series-limit-mode=loki, Loki's split_instant_metric_queries_by_interval (default 1h): a Logs Drilldown instant answer over the series limit whose range is longer than it keeps the series without the partial-result warning, as deployed Loki's split instant answer does. 0 always warns. Per tenant: split_instant_metric_queries_by_interval in -tenant-limits")
 	statsQueryRangeConcurrency := fs.Int("stats-query-range-concurrency", 0, "Maximum concurrent stats_query_range calls to VictoriaLogs. Drilldown Fields fires ~30 in parallel; capping prevents CPU storms. 0 = built-in default of 4.")
 	drilldownBurstWindowMs := fs.Int("drilldown-burst-window-ms", 50,
 		"time window in ms for coalescing concurrent Drilldown Fields per-field count queries "+
@@ -1123,6 +1127,8 @@ func run(
 			defaultMaxQueryLength:               *defaultMaxQueryLength,
 			maxStatsQuerySeries:                 *maxStatsQuerySeries,
 			drilldownSeriesLimitMode:            *drilldownSeriesLimitMode,
+			drilldownSeriesLimitSplit:           *drilldownSeriesLimitSplit,
+			drilldownSeriesLimitInstantSplit:    *drilldownSeriesLimitInstantSplit,
 			statsQueryRangeConcurrency:          *statsQueryRangeConcurrency,
 			backendMaxConcurrentHeavyQueries:    *backendMaxConcurrentHeavyQueries,
 			backendMaxBufferedResponseBytes:     *backendMaxBufferedResponseBytes,
@@ -2467,12 +2473,14 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			ManifestRefresh: cfg.coldBackendManifestRefresh,
 			Timeout:         cfg.coldBackendTimeout,
 		},
-		DefaultMaxQueryLength:            cfg.defaultMaxQueryLength,
-		MaxEntriesLimitCap:               cfg.maxEntriesLimitPerQueryCap,
-		MaxStatsQuerySeries:              cfg.maxStatsQuerySeries,
-		DrilldownSeriesLimitMode:         cfg.drilldownSeriesLimitMode,
-		StatsQueryRangeConcurrency:       cfg.statsQueryRangeConcurrency,
-		BackendMaxConcurrentHeavyQueries: cfg.backendMaxConcurrentHeavyQueries,
+		DefaultMaxQueryLength:                    cfg.defaultMaxQueryLength,
+		MaxEntriesLimitCap:                       cfg.maxEntriesLimitPerQueryCap,
+		MaxStatsQuerySeries:                      cfg.maxStatsQuerySeries,
+		DrilldownSeriesLimitMode:                 cfg.drilldownSeriesLimitMode,
+		DrilldownSeriesLimitSplitInterval:        cfg.drilldownSeriesLimitSplit,
+		DrilldownSeriesLimitInstantSplitInterval: cfg.drilldownSeriesLimitInstantSplit,
+		StatsQueryRangeConcurrency:               cfg.statsQueryRangeConcurrency,
+		BackendMaxConcurrentHeavyQueries:         cfg.backendMaxConcurrentHeavyQueries,
 		ExecutionLimits: proxy.ExecutionLimitsConfig{
 			BackendMaxBufferedResponseBytes:   cfg.backendMaxBufferedResponseBytes,
 			BinaryMetricMaxOperandBytes:       cfg.binaryMetricMaxOperandBytes,

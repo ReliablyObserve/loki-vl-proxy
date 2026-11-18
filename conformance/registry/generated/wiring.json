@@ -266,6 +266,7 @@
       "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/drilldown_byte_overflow_test.go",
       "internal/proxy/drilldown_series_limit_loki_test.go",
+      "internal/proxy/drilldown_series_limit_mode_test.go",
       "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/series_limit_routes_test.go",
@@ -276,7 +277,8 @@
     "limits/drilldown-series-limit-range-cut-at-trip-step": [
       "internal/proxy/drilldown_series_limit_mode_test.go",
       "internal/proxy/drilldown_series_limit_rule_loki_test.go",
-      "internal/proxy/series_limit_loki_cut_test.go"
+      "internal/proxy/series_limit_loki_cut_test.go",
+      "test/e2e-compat/drilldown_field_bounds_test.go"
     ],
     "limits/drilldown-series-limit-skips-every-new-series": [
       "internal/proxy/drilldown_series_limit_loki_test.go"
@@ -2982,7 +2984,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 672,
+  "registry_items": 673,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3649,6 +3651,7 @@
     ],
     "internal/proxy/drilldown_series_limit_mode_test.go": [
       "limits/drilldown-breakdown-keeps-busiest",
+      "limits/drilldown-partial-with-warning",
       "limits/drilldown-series-limit-range-cut-at-trip-step"
     ],
     "internal/proxy/drilldown_series_limit_rule_loki_test.go": [
@@ -5872,6 +5875,7 @@
     ],
     "test/e2e-compat/drilldown_field_bounds_test.go": [
       "limits/drilldown-breakdown-exact",
+      "limits/drilldown-series-limit-range-cut-at-trip-step",
       "limits/top-n-ranking-not-silent",
       "loki_api_v1_query_range"
     ],
@@ -6607,6 +6611,7 @@
     "limits/drilldown-series-limit-or-operand-past-trip-step",
     "limits/parser-metric-raw-rows-body-cap",
     "limits/series-cap-and-byte-budget-interact",
+    "limits/series-limit-error-per-split",
     "loki-error-phases",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_format_query",

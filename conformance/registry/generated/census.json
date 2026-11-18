@@ -150,6 +150,10 @@
     "limits/series-limit-error | applies_to",
     "limits/series-limit-error | compare:structural",
     "limits/series-limit-error | query",
+    "limits/series-limit-error-per-split | applies_to",
+    "limits/series-limit-error-per-split | compare:observed",
+    "limits/series-limit-error-per-split | gap:open",
+    "limits/series-limit-error-per-split | query",
     "limits/stats-row-limit-per-grid | compare:exact",
     "limits/top-n-ranking-not-silent | compare:exact",
     "limits/top-n-ranking-not-silent | query",
@@ -1593,6 +1597,7 @@
     "internal/proxy/drilldown_series_limit_loki_test.go | loki_api_v1_query",
     "internal/proxy/drilldown_series_limit_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/drilldown_series_limit_mode_test.go | limits/drilldown-breakdown-keeps-busiest",
+    "internal/proxy/drilldown_series_limit_mode_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/drilldown_series_limit_mode_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
     "internal/proxy/drilldown_series_limit_rule_loki_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/drilldown_series_limit_rule_loki_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
@@ -2860,6 +2865,7 @@
     "test/e2e-compat/drilldown_chunked_merge_lock_test.go | drilldown/long-range-pieces-answer-like-loki",
     "test/e2e-compat/drilldown_chunked_merge_lock_test.go | loki_api_v1_query_range",
     "test/e2e-compat/drilldown_field_bounds_test.go | limits/drilldown-breakdown-exact",
+    "test/e2e-compat/drilldown_field_bounds_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
     "test/e2e-compat/drilldown_field_bounds_test.go | limits/top-n-ranking-not-silent",
     "test/e2e-compat/drilldown_field_bounds_test.go | loki_api_v1_query_range",
     "test/e2e-compat/drilldown_field_breakdown_test.go | limits/drilldown-breakdown-exact",
@@ -3310,7 +3316,7 @@
   "counts": {
     "case_consumers": {
       "any": 50,
-      "api": 120,
+      "api": 121,
       "drilldown": 57,
       "explore": 206,
       "grafana-datasource": 3,
@@ -3336,7 +3342,7 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 98,
+    "unwired_items": 99,
     "wired_items": 462
   },
   "gates": [
