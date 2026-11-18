@@ -3,8 +3,13 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -151,6 +156,152 @@ func FuzzCutLokiResultAfter(f *testing.F) {
 		if len(got.Data.Result) > len(in.Data.Result) {
 			t.Fatalf("the cut added series: %s -> %s", body, out)
 		}
+	})
+}
+
+// cutLokiResultAfterReference is the cut written plainly over decoded JSON: the grid origin is the earliest first
+// point, the end the first grid time at or after the cut, every point after the end and every series left empty go.
+// It returns the kept series (metric and points), nil when the body is not a matrix with a positive cut and step.
+func cutLokiResultAfterReference(body []byte, cutNs, stepNs int64) []any {
+	if cutNs <= 0 || stepNs <= 0 {
+		return nil
+	}
+	var resp struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]json.Number   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &resp) != nil || resp.Data.ResultType != "matrix" {
+		return nil
+	}
+	ns := func(p []json.Number) int64 {
+		sec, _ := strconv.ParseFloat(string(p[0]), 64)
+		return int64(math.Round(sec*1e3)) * int64(time.Millisecond)
+	}
+	origin := int64(math.MaxInt64)
+	for _, s := range resp.Data.Result {
+		if len(s.Values) > 0 && ns(s.Values[0]) < origin {
+			origin = ns(s.Values[0])
+		}
+	}
+	end := origin
+	if cutNs > origin {
+		end = origin + (cutNs-origin+stepNs-1)/stepNs*stepNs
+	}
+	var out []any
+	for _, s := range resp.Data.Result {
+		var kept []string
+		for _, p := range s.Values {
+			if ns(p) <= end {
+				kept = append(kept, string(p[0])+"="+string(p[1]))
+			}
+		}
+		if kept != nil {
+			out = append(out, fmt.Sprint(s.Metric, kept))
+		}
+	}
+	return out
+}
+
+// randomCutMatrix is a matrix answer of random series and steps, as the proxy writes one (whole and fractional
+// second times, ascending points, a warning first).
+func randomCutMatrix(rng *rand.Rand) ([]byte, int64, int64) {
+	step := int64(1+rng.Intn(120)) * int64(time.Second) / int64(1+rng.Intn(4))
+	step -= step % int64(time.Millisecond)
+	origin := int64(1700000000+rng.Intn(1000))*int64(time.Second) + int64(rng.Intn(4))*250*int64(time.Millisecond)
+	var sb strings.Builder
+	sb.WriteString(`{"warnings":["w"],"status":"success","data":{"resultType":"matrix","result":[`)
+	series := rng.Intn(8)
+	for s := 0; s < series; s++ {
+		if s > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(`{"metric":{"pod":"p` + strconv.Itoa(s) + `"},"values":[`)
+		k := rng.Intn(5)
+		for i, n := 0, rng.Intn(12); i < n; i++ {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			at := origin + int64(k)*step
+			sb.WriteString(`[` + strconv.FormatFloat(float64(at)/1e9, 'f', -1, 64) + `,"` + strconv.Itoa(rng.Intn(9)) + `"]`)
+			k += 1 + rng.Intn(3)
+		}
+		sb.WriteString(`]}`)
+	}
+	sb.WriteString(`],"stats":{}}}`)
+	cut := origin + rng.Int63n(20*step+1) - step
+	return []byte(sb.String()), cut, step
+}
+
+// The in-place cut keeps exactly the series and points the plain cut over decoded JSON keeps, over random answers,
+// cuts and steps, and leaves the bytes around data.result as they came.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step
+func TestCutLokiResultAfterMatchesReference(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	for i := 0; i < 5000; i++ {
+		body, cut, step := randomCutMatrix(rng)
+		checkCutMatchesReference(t, body, cut, step)
+	}
+}
+
+func checkCutMatchesReference(t *testing.T, body []byte, cut, step int64) {
+	t.Helper()
+	out := cutLokiResultAfter(body, cut, step)
+	want := cutLokiResultAfterReference(body, cut, step)
+	got := cutLokiResultAfterReference(out, math.MaxInt64/2, 1) // the output read back whole
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cut %d step %d:\n in %s\nout %s\ngot  %v\nwant %v", cut, step, body, out, got, want)
+	}
+	if !strings.HasPrefix(string(out), `{"warnings":["w"],"status":"success","data":{"resultType":"matrix","result":[`) || !strings.HasSuffix(string(out), `],"stats":{}}}`) {
+		t.Fatalf("the bytes around data.result changed: %s", out)
+	}
+}
+
+// lokiPointTimeNs reads a point's time as the float reading rounded to the millisecond does, exactly for the
+// seconds-with-up-to-three-decimals form the proxy writes and through the float for every other number; a string,
+// another value or no time is not a time.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step
+func TestLokiPointTimeNs(t *testing.T) {
+	float := func(text string) int64 {
+		sec, _ := strconv.ParseFloat(text, 64)
+		return int64(math.Round(sec*1e3)) * int64(time.Millisecond)
+	}
+	for _, text := range []string{"0", "1700000000", "1700000000.5", "1700000000.25", "1700000000.125", "1789383657.6",
+		"1700000000.1234", "1700000000.0005", "1.7e9", "-5", "17000000000000", "1700000000."} {
+		if got, ok := lokiPointTimeNs([]byte("[" + text + `,"1"]`)); !ok || got != float(text) {
+			t.Errorf("%s: %d %v, want %d", text, got, ok, float(text))
+		}
+	}
+	for _, point := range []string{`["1700000000","1"]`, `[]`, `[null,"1"]`, `1700000000`, ``, `[,"1"]`, `[1.2.3,"1"]`} {
+		if got, ok := lokiPointTimeNs([]byte(point)); ok {
+			t.Errorf("%s read as %d", point, got)
+		}
+	}
+	rng := rand.New(rand.NewSource(7))
+	for i := 0; i < 20000; i++ {
+		text := strconv.FormatInt(rng.Int63n(4e9), 10)
+		if d := rng.Intn(4); d > 0 {
+			text += "." + fmt.Sprintf("%0*d", d, rng.Intn(int(math.Pow10(d))))
+		}
+		if got, ok := lokiPointTimeNs([]byte("[ " + text + ` ,"1"]`)); !ok || got != float(text) {
+			t.Fatalf("%s: %d %v, want %d", text, got, ok, float(text))
+		}
+	}
+}
+
+// FuzzCutLokiResultAfterMatchesReference is TestCutLokiResultAfterMatchesReference over fuzzed answers.
+func FuzzCutLokiResultAfterMatchesReference(f *testing.F) {
+	f.Add(int64(1))
+	f.Add(int64(42))
+	f.Fuzz(func(t *testing.T, seed int64) {
+		body, cut, step := randomCutMatrix(rand.New(rand.NewSource(seed)))
+		checkCutMatchesReference(t, body, cut, step)
 	})
 }
 

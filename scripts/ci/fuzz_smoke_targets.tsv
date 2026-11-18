@@ -209,3 +209,4 @@ smoke	internal/logsql	FuzzWithGroupKeyInEveryStats	12s	-	the presence witness ed
 smoke	internal/proxy	FuzzListedWindowChunks	12s	-	an extraction list's windows read in time chunks under a small budget answer byte for byte what one read answers
 smoke	internal/proxy	FuzzDeleteRequest	12s	-	the delete API reads a create request with Loki's typed 400 or a request whose start is before its end
 smoke	internal/proxy	FuzzCutLokiResultAfter	12s	-	the Loki cut of a Drilldown partial answer terminates on any body and never adds a series
+smoke	internal/proxy	FuzzCutLokiResultAfterMatchesReference	12s	-	the in-place Loki cut keeps exactly the series and points of the plain cut over decoded JSON

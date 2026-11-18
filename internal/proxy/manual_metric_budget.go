@@ -18,6 +18,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
 )
 
@@ -343,81 +344,158 @@ func (m *metricResponseRewriter) finish() {
 // cutLokiResultAfter ends a Loki matrix answer where Loki ends a Drilldown partial answer: at the first step of
 // the answer's grid at or after cutNs (the first time of the first series past the limit), every later point
 // dropped, and a series left without points dropped. A vector, a cut of 0 or an unparsable body is unchanged.
+//
+// It reads the answer in place and copies its bytes: everything outside data.result, every series it keeps whole
+// and every point it keeps are written as they came, so only the output buffer is allocated.
 func cutLokiResultAfter(body []byte, cutNs, stepNs int64) []byte {
 	if cutNs <= 0 || stepNs <= 0 {
 		return body
 	}
-	var resp map[string]json.RawMessage
-	if json.Unmarshal(body, &resp) != nil {
+	if resultType, err := jsonparser.GetString(body, "data", "resultType"); err != nil || resultType != "matrix" {
 		return body
 	}
-	var data map[string]json.RawMessage
-	if json.Unmarshal(resp["data"], &data) != nil {
+	result, typ, resultEnd, err := jsonparser.Get(body, "data", "result")
+	if err != nil || typ != jsonparser.Array {
 		return body
 	}
-	var resultType string
-	if json.Unmarshal(data["resultType"], &resultType) != nil || resultType != "matrix" {
-		return body
+	resultStart := resultEnd - len(result)
+	// One read of the series: each one's bytes and its values array, and the grid origin from their first points.
+	type seriesBytes struct {
+		raw                    []byte
+		valuesStart, valuesEnd int
 	}
-	var result []struct {
-		Metric json.RawMessage     `json:"metric"`
-		Values [][]json.RawMessage `json:"values"`
-	}
-	if json.Unmarshal(data["result"], &result) != nil {
-		return body
-	}
-	pointNs := func(p []json.RawMessage) (int64, bool) {
-		if len(p) == 0 {
-			return 0, false
-		}
-		ts, err := strconv.ParseFloat(string(p[0]), 64)
-		return int64(math.Round(ts*1e3)) * int64(time.Millisecond), err == nil
-	}
-	// The grid: every point lies on origin + k*step; the cut moves up to the first grid time at or after it.
+	var all []seriesBytes
 	origin := int64(math.MaxInt64)
-	for _, s := range result {
-		if len(s.Values) > 0 {
-			if ns, ok := pointNs(s.Values[0]); ok && ns < origin {
+	malformed := false
+	if _, err := jsonparser.ArrayEach(result, func(series []byte, _ jsonparser.ValueType, _ int, _ error) {
+		values, typ, valuesEnd, err := jsonparser.Get(series, "values")
+		if err != nil || typ != jsonparser.Array {
+			malformed = true
+			return
+		}
+		all = append(all, seriesBytes{raw: series, valuesStart: valuesEnd - len(values), valuesEnd: valuesEnd})
+		if first, _, _, err := jsonparser.Get(values, "[0]"); err == nil {
+			if ns, ok := lokiPointTimeNs(first); ok && ns < origin {
 				origin = ns
 			}
 		}
-	}
-	if origin == math.MaxInt64 {
+	}); err != nil || malformed || origin == math.MaxInt64 {
 		return body
 	}
+	// The grid: every point lies on origin + k*step; the cut moves up to the first grid time at or after it.
 	end := origin
 	if cutNs > origin {
 		end = origin + (cutNs-origin+stepNs-1)/stepNs*stepNs
 	}
-	kept := result[:0]
-	for _, s := range result {
-		n := 0
-		for _, p := range s.Values {
-			if ns, ok := pointNs(p); ok && ns <= end {
-				s.Values[n] = p
-				n++
+	out := make([]byte, 0, len(body))
+	out = append(out, body[:resultStart]...)
+	out = append(out, '[')
+	kept := 0
+	for _, s := range all {
+		series, values := s.raw, s.raw[s.valuesStart:s.valuesEnd]
+		// The series is written with the points it keeps, and taken back when it keeps none, or written again as
+		// it came when it keeps every one.
+		mark := len(out)
+		if kept > 0 {
+			out = append(out, ',')
+		}
+		out = append(out, series[:s.valuesStart]...)
+		out = append(out, '[')
+		points, whole := 0, true
+		if _, err := jsonparser.ArrayEach(values, func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
+			if ns, ok := lokiPointTimeNs(point); ok && ns <= end {
+				if points > 0 {
+					out = append(out, ',')
+				}
+				out = append(out, point...)
+				points++
+			} else {
+				whole = false
 			}
+		}); err != nil {
+			return body
 		}
-		if n > 0 {
-			s.Values = s.Values[:n]
-			kept = append(kept, s)
+		switch {
+		case points == 0:
+			out = out[:mark]
+			continue
+		case whole:
+			out = out[:mark]
+			if kept > 0 {
+				out = append(out, ',')
+			}
+			out = append(out, series...)
+		default:
+			out = append(out, ']')
+			out = append(out, series[s.valuesEnd:]...)
+		}
+		kept++
+	}
+	out = append(out, ']')
+	return append(out, body[resultEnd:]...)
+}
+
+// lokiPointTimeNs is the time of a Loki matrix point ([<seconds>, "<value>"]) in ns, rounded to the millisecond
+// as Loki's times are. A number of whole seconds with at most three decimals is read exactly without a float; any
+// other number goes through ParseFloat.
+func lokiPointTimeNs(point []byte) (int64, bool) {
+	num := lokiPointTimeText(point)
+	if ns, ok := wholeMillisecondSecondsNs(num); ok {
+		return ns, true
+	}
+	if len(num) == 0 || (num[0] != '-' && (num[0] < '0' || num[0] > '9')) {
+		return 0, false // a string or another JSON value
+	}
+	sec, err := jsonparser.ParseFloat(num)
+	if err != nil || math.IsNaN(sec) || math.IsInf(sec, 0) {
+		return 0, false
+	}
+	return int64(math.Round(sec*1e3)) * int64(time.Millisecond), true
+}
+
+// lokiPointTimeText is the text of a point's first element, nil when the point is not an array.
+func lokiPointTimeText(point []byte) []byte {
+	if len(point) == 0 || point[0] != '[' {
+		return nil
+	}
+	space := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
+	i := 1
+	for i < len(point) && space(point[i]) {
+		i++
+	}
+	j := i
+	for j < len(point) && point[j] != ',' && point[j] != ']' && !space(point[j]) {
+		j++
+	}
+	return point[i:j]
+}
+
+// wholeMillisecondSecondsNs reads seconds with at most three decimals (up to 10 digits of seconds, so the
+// nanoseconds fit an int64) exactly, without a float.
+func wholeMillisecondSecondsNs(num []byte) (int64, bool) {
+	var sec, ms int64
+	digits, frac := 0, -1
+	for _, c := range num {
+		switch {
+		case c >= '0' && c <= '9' && frac < 0:
+			sec = sec*10 + int64(c-'0')
+			digits++
+		case c >= '0' && c <= '9' && frac < 3:
+			ms = ms*10 + int64(c-'0')
+			frac++
+		case c == '.' && frac < 0 && digits > 0:
+			frac = 0
+		default:
+			return 0, false
 		}
 	}
-	encoded, err := json.Marshal(kept)
-	if err != nil {
-		return body
+	if digits == 0 || digits > 10 || frac == 0 {
+		return 0, false
 	}
-	data["result"] = encoded
-	rewritten, err := marshalOrderedJSONObject(data, []string{"resultType", "result", "stats"})
-	if err != nil {
-		return body
+	for k := max(frac, 0); k < 3; k++ {
+		ms *= 10
 	}
-	resp["data"] = rewritten
-	out, err := marshalOrderedJSONObject(resp, []string{"status", "warnings", "data"})
-	if err != nil {
-		return body
-	}
-	return out
+	return sec*int64(time.Second) + ms*int64(time.Millisecond), true
 }
 
 // shiftLokiResultTimestamps adds shift to the sample timestamps of a Loki
