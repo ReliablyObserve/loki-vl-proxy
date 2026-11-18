@@ -743,6 +743,8 @@ type Proxy struct {
 	errorCacheDisabled                    bool
 	errorCacheTransientTTL                time.Duration
 	errorCacheDataTTL                     time.Duration
+	errorEpoch                            atomic.Uint64
+	errorPrefix                           atomic.Pointer[string]
 	limiter                               *mw.RateLimiter
 	admissionLog                          logGate // paces the log line of a request the limiter rejects
 	breaker                               *mw.CircuitBreaker
