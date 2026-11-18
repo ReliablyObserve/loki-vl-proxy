@@ -240,7 +240,7 @@ Result: **49% memory reduction** and **9.6% faster** parsing vs original impleme
 
 ### Request Coalescing
 
-When multiple clients send identical queries simultaneously, only 1 request reaches VL. Others wait for the shared result. Keys include tenant ID to prevent cross-tenant data sharing.
+When multiple clients send identical queries simultaneously, only 1 request reaches VL. Others wait for the shared result, on every cached read route and for failures as well as successes; a failed answer is held for a second or a few (`-error-cache-transient-ttl`, `-error-cache-data-ttl`) so refreshing dashboards do not ask a failing VL on every refresh. Keys include tenant ID to prevent cross-tenant data sharing.
 
 ### Cache Topology
 

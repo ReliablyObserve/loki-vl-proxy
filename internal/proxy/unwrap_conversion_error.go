@@ -390,7 +390,8 @@ func unwrapNaNMark(funcs string) string {
 
 // unwrapRowPipes are the pipes that compute fields of each row and keep every row and its fields: the flag reaches
 // the stats after them.
-var unwrapRowPipes = []string{"math ", "unpack_json ", "unpack_logfmt ", "delete ", "pack_json ", "hash(", "format ", "copy ", "replace_regexp ", "extract_regexp "}
+var unwrapRowPipes = []string{"math ", "unpack_json ", "unpack_logfmt ", "delete ", "pack_json ", "set_stream_fields ", "rename ", "hash(", "format ", "copy ",
+	"replace_regexp ", "extract_regexp "}
 
 // unwrapRowPipe reports a pipe the flag passes: a row-wise pipe, or a filter on the proxy's own fields (the window
 // phase, the rate's presence), which flagged rows pass like any other.

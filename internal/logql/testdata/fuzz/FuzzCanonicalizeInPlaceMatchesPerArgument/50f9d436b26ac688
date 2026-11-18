@@ -1,0 +1,2 @@
+go test fuzz v1
+string("lABel_replACe(lABel_replACe(rAte(({})[0y])]),)")

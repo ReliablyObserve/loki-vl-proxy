@@ -1,0 +1,67 @@
+id: semantics/unwrap-identity-key-order
+title: "A parser's series identity splits one series whose lines hold the same keys in another order (fixed)"
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki's series of a range function over an unwrapped label after `| json` or `| logfmt` are label
+  sets: the order of the keys in a line does not matter. Lines `{"route":"/x","duration_ms":3,"user":"u"}`
+  and `{"user":"u","duration_ms":4,"route":"/x"}` of one stream are one series.
+
+  The proxy named a line's series (lower.DynamicUnwrapIdentity) with
+  `pack_json fields (__lvp_p_*, level, detected_level, _stream)` and a hash of it. pack_json writes the
+  fields in the order of the block's columns, and VictoriaLogs' unpack_json and unpack_logfmt start a
+  block for each sequence of keys, so the same keys in another order hashed as another series.
+  Recorded with Loki's engine (Loki 3.7.9) and VictoriaLogs v1.49.0 and v1.53.0 over one hour, step 60 s
+  and 20 s (TestUnwrapIdentityKeyOrderMatchLoki, internal/querycorpus):
+    * `sum(avg_over_time({service_name="ko"} | json | unwrap duration_ms [5m]))`: proxy 14, Loki 7
+      (the sliding windows, the series folded in VictoriaLogs), and the same with `[1m]` (range up to the
+      step, the stats in VictoriaLogs);
+    * `avg by (pod) (max_over_time({service_name="ko"} | json | unwrap duration_ms [5m]))`: 3.5, Loki 4;
+    * `sum(stddev_over_time({service_name="ko"} | json | unwrap duration_ms [5m]))`: 0, Loki 1;
+    * nested objects (`{"a":{"x":"1","y":"2"},...}` and `{"a":{"y":"2","x":"1"},...}`) and logfmt lines
+      (`route=/x duration_ms=3 user=u` and `user=u duration_ms=4 route=/x`, 7 against Loki's 3.5) alike.
+
+  Fixed: the identity writes the series' canonical value with set_stream_fields (VictoriaLogs v1.49.0 and
+  later): the fields sorted by name, each written name="quoted value", the empty ones left out, so lines
+  that hold the same keys in any order are one series. It writes the value into _stream (and blanks
+  _stream_id), which `rename _stream as __lvp_sid` moves to the series field; no pipe after the
+  identity reads either (TestDynamicIdentityLeavesNoStreamReader), and the hash pipe ends the identity
+  as before (the fold's subquery and the window evaluator read the same text). Cost against pack_json
+  (decision parser-identity-canonical-key-order of metric-series-identity): about 0-8% more
+  VictoriaLogs time on lines of one key order, up to 16% on a range up to the step with mixed key
+  orders (accepted by the owner).
+
+  Known limit: set_stream_fields writes a field name unquoted. A JSON or logfmt key that holds the
+  proxy's own prefix and `="` (`a="x",__lvp_p_b`) can write the same value as two other keys
+  (`a` and `b`), and so merge two series Loki keeps apart (Loki's parsers rewrite such a key). Such a key
+  names the proxy's reserved `__lvp_` fields, which no client data is expected to hold.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(avg_over_time({service_name="ko"} | json | unwrap duration_ms [5m]))'
+    start: now-1h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: "One series per stream whatever the key order of its lines: 7 at every step, as Loki."
+gap:
+  status: fixed
+  fixed_by: "#1652"
+  impact: edge
+  effort: S
+  area: "internal/queryplan/lower (unwrap_dynamic.go: the series identity's canonical value)"
+  loki: "one series per label set, whatever the key order"
+  proxy: "one series per label set, whatever the key order"
+  planned_test: "TestUnwrapIdentityKeyOrderMatchLoki (internal/querycorpus), TestDynamicIdentityWindowsMatchLokiReference (internal/proxy, lines in rotated key orders), TestSeriesHashKeyOrder (internal/testutil/vlemu), TestDynamicIdentityLeavesNoStreamReader (internal/queryplan/lower)"
+  visual: none
+  visual_reason: 'generator data writes every line of a service in one key order; the difference shows only on mixed key orders, proven by the recorded differential'
+  clusters: []
