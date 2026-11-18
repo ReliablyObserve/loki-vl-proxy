@@ -166,14 +166,16 @@ type Config struct {
 	Cache             *cache.Cache
 	CompatCache       *cache.Cache
 	LogLevel          string
-	MaxConcurrent     int                      // max concurrent backend queries (0=unlimited)
-	RatePerSecond     float64                  // per-client rate limit (0=unlimited)
-	RateBurst         int                      // per-client burst size
-	CBFailThreshold   int                      // circuit breaker: failures within window before opening
-	CBOpenDuration    time.Duration            // circuit breaker: how long to stay open before probing
-	CBWindowDuration  time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
-	CoalescerDisabled bool                     // disable singleflight coalescing; every request makes its own backend call
-	TenantMap         map[string]TenantMapping // string org ID → VL account/project
+	MaxConcurrent     int           // max concurrent backend queries (0=unlimited)
+	RatePerSecond     float64       // per-client rate limit (0=unlimited)
+	RateBurst         int           // per-client burst size
+	CBFailThreshold   int           // circuit breaker: failures within window before opening
+	CBOpenDuration    time.Duration // circuit breaker: how long to stay open before probing
+	CBWindowDuration  time.Duration // circuit breaker: sliding window for failure counting (default 30s)
+	CoalescerDisabled bool          // disable singleflight coalescing; every request makes its own backend call
+	// ErrorCache configures request flights and the error cache (error_flights.go).
+	ErrorCache ErrorCacheConfig
+	TenantMap  map[string]TenantMapping // string org ID → VL account/project
 	// TenantMapFile is the -tenant-map-file path. A configured file keeps the
 	// proxy routing on X-Scope-OrgID even while the file holds no entry (see
 	// tenantHeaderIgnored).
@@ -734,6 +736,13 @@ type Proxy struct {
 	metrics                               *metrics.Metrics
 	queryTracker                          *metrics.QueryTracker
 	coalescer                             *mw.Coalescer
+	errorFlights                          *cache.ErrorFlights
+	errorFlightCounters                   errorFlightCounters
+	windowFreeHeldUntil                   atomic.Int64 // latest expiry of a failure held for every window
+	windowFreeSeenUntil                   atomic.Int64 // until when requests join a window-free probe
+	errorCacheDisabled                    bool
+	errorCacheTransientTTL                time.Duration
+	errorCacheDataTTL                     time.Duration
 	limiter                               *mw.RateLimiter
 	admissionLog                          logGate // paces the log line of a request the limiter rejects
 	breaker                               *mw.CircuitBreaker
@@ -1447,6 +1456,10 @@ func New(cfg Config) (*Proxy, error) {
 		metrics:                               proxyMetrics,
 		queryTracker:                          metrics.NewQueryTracker(10000),
 		coalescer:                             newCoalescer(cfg.CoalescerDisabled),
+		errorFlights:                          newErrorFlights(cfg),
+		errorCacheDisabled:                    cfg.ErrorCache.Disabled,
+		errorCacheTransientTTL:                max(cfg.ErrorCache.TransientTTL, 0),
+		errorCacheDataTTL:                     max(cfg.ErrorCache.DataTTL, 0),
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
 		backendBudget:                         newBackendBudget(maxConcurrent),
 		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen, cbWindow),
@@ -1619,6 +1632,7 @@ func New(cfg Config) (*Proxy, error) {
 		}
 	}
 	p.metrics.SetCoalescerStatsProvider(coalescerStats)
+	p.metrics.SetErrorFlightStatsProvider(p.errorFlightStats)
 	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {
 		// This coalescer's integrated call sites wrap raw VL HTTP operations;
 		// it does not represent resident Loki response-cache entries.
@@ -2063,6 +2077,7 @@ func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 	if p.compatCache != nil {
 		p.compatCache.InvalidatePrefix("")
 	}
+	p.clearHeldErrors()
 	p.configMu.Unlock()
 	p.labelValuesIndexMu.Lock()
 	p.labelValuesIndex = make(map[string]*labelValuesIndexState)
@@ -2083,6 +2098,7 @@ func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
 	if p.compatCache != nil {
 		p.compatCache.InvalidatePrefix("")
 	}
+	p.clearHeldErrors()
 	p.configMu.Unlock()
 	p.labelValuesIndexMu.Lock()
 	p.labelValuesIndex = make(map[string]*labelValuesIndexState)
@@ -2105,7 +2121,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 		p.tenantMiddleware(
 			p.limiter.Middleware(
 				p.requestLogger(endpoint, route,
-					p.queryStatsLayer(endpoint, lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
+					p.queryStatsLayer(endpoint, p.lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
 							p.alignToStepMiddleware(endpoint,
 								p.compatCacheMiddleware(endpoint, route,

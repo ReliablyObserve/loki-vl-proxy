@@ -1,0 +1,23 @@
+id: semantics/error-cache-classes-and-ttl
+title: A failed answer is held for its class's TTL and the first request after the TTL answers fresh
+proves:
+  - error-coalescing-and-error-cache
+consumer: any
+pending: true
+why: |
+  A held failure must absorb a storm without hiding a recovery: a backend
+  failure is held about a second, a failure read from the window's data a few
+  seconds, and a repeat inside the TTL sends no VictoriaLogs call.
+request:
+  scope: internal
+  entry: serveFlight, failureClassOf
+  setup: |
+    A stub VictoriaLogs answering 500, then recovering; a metric query over
+    -max-stats-query-series series (Loki's series limit); the cache clock moved
+    past each TTL.
+compare:
+  mode: exact
+  expect: |
+    The repeat inside the TTL answers the held failure with no call; after the
+    transient TTL the next request answers 200; the series limit is still held
+    after the transient TTL and answered again after the data TTL.

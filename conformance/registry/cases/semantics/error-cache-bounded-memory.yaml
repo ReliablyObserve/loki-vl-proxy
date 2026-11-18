@@ -1,0 +1,21 @@
+id: semantics/error-cache-bounded-memory
+title: Held failures stay within the entry and byte caps
+proves:
+  - error-coalescing-and-error-cache
+consumer: any
+pending: true
+why: |
+  A client sending many distinct failing queries must not grow the proxy's
+  memory or evict cached successes: the error cache is its own store, bounded
+  by entries and bytes, oldest first, with no background goroutine.
+request:
+  scope: internal
+  entry: cache.ErrorFlights
+  setup: |
+    Ten failures held under a cap of four entries; fifty 100-byte failures
+    under a 600-byte cap; one answer above the per-answer cap.
+compare:
+  mode: exact
+  expect: |
+    Four entries (the newest), at most 600 bytes, the oversized answer neither
+    held nor shared.

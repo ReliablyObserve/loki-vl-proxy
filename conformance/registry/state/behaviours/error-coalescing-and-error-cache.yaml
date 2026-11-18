@@ -1,0 +1,16 @@
+id: error-coalescing-and-error-cache
+state: proven
+reason: |
+  Unit and race tests drive real requests through the proxy's routes against a
+  stub VictoriaLogs: TestErrorFlights_ConcurrentFailuresShareOneCall (20
+  identical failing requests, one call, byte-equal answers),
+  TestErrorFlights_TransientHeldThenRecovers, TestErrorFlights_DataFailureHeldForDataTTL,
+  TestErrorFlights_CancelledLeaderFollowersRetry, TestErrorFlights_TenantIsolationAndReload,
+  TestErrorFlights_ConcurrentSuccessesShareOneCall, TestErrorFlights_PostQueries,
+  TestErrorFlights_StreamResponse, TestErrorFlights_Switches; the store's
+  bounds and TTLs in internal/cache TestErrorFlights*; the plan's classes in
+  internal/queryplan TestPlanFailures; the coalescer's inherited deadline in
+  internal/middleware TestCoalescerFollowerRetriesAfterLeaderDeadline.
+owner_decision: |
+  "Q1 yes, one request-level join at compatCacheMiddleware for every route; Q2 local only; cover POST queries and -stream-response; a follower whose own context is alive must never receive the leader's DeadlineExceeded/cancel" (owner 2026-11-17)
+waiver: null

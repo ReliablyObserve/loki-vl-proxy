@@ -1,0 +1,23 @@
+id: semantics/error-cache-tenant-isolation
+title: A held failure is never answered to another tenant or after a configuration reload
+proves:
+  - error-coalescing-and-error-cache
+  - tenant-label-isolation
+consumer: any
+pending: true
+why: |
+  The flight key is the response key, which carries the tenant and the
+  credentials' fingerprint, so one tenant's failure can never answer another;
+  a reload of tenant or field mappings may change the answer, so held failures
+  are dropped.
+request:
+  scope: internal
+  entry: serveFlight, ReloadTenantMap, ReloadFieldMappings
+  setup: |
+    Two tenants mapped to different VictoriaLogs accounts; a stub failing every
+    call.
+compare:
+  mode: exact
+  expect: |
+    team-a's repeat is held (1 call); team-b sends its own call; after each
+    reload team-a sends a new call.

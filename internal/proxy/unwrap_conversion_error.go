@@ -2152,8 +2152,15 @@ func (p *Proxy) unwrapStripResponse(resp *http.Response, strip func([]byte) ([]b
 		return nil
 	}
 	limit := p.decodedBodyLimit()
-	// Read in one allocation when the length is known (a folded answer, or one VictoriaLogs sends with its length).
-	body, err := readBodyKnownSize(resp.Body, resp.ContentLength, limit)
+	// Read in one allocation when the length is known (a folded answer, or one VictoriaLogs sends with its length);
+	// a body of unknown length (a chunked answer) grows from a small buffer, not readBodyLimited's 128 KiB.
+	var body []byte
+	var err error
+	if n := resp.ContentLength; n >= 0 && n <= limit {
+		body, err = readBodyKnownSize(resp.Body, n, limit)
+	} else if body, err = io.ReadAll(io.LimitReader(resp.Body, limit+1)); err == nil && int64(len(body)) > limit {
+		err = errBodyTooLarge
+	}
 	_ = resp.Body.Close()
 	if errors.Is(err, errBodyTooLarge) {
 		return newBackendBodyTooLarge(limit)

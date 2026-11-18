@@ -13,13 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_over_time`, `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` (no
   `| keep`) costs VictoriaLogs about 40% less time and answers about a third faster. An example is
   `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms [5m]))` under Grafana's `$__auto` step. Answers
-  and statuses are the same on every measured request, and each request still makes one VictoriaLogs call. Three
-  edge cases change:
-  - A series holding a NaN in a bucket now always answers NaN in the windows that hold it. VictoriaLogs' `sum`
-    could turn that NaN into 0.
-  - A series of several lines whose sum overflows to an infinity is read as a series of its own, as an infinite
-    series always was, instead of being added into the bucket's other series.
-  - A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
+  and statuses are the same on every measured request, and each request still makes one VictoriaLogs call.
   - VictoriaLogs scans the lines once instead of twice: the subquery that listed the series spanning buckets is gone.
   - Each line is unpacked once instead of twice, and its series hash is computed once.
   - The read now groups by the series and then by its buckets in one query, so it is sent to `/select/logsql/query`
@@ -28,6 +22,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     before.
   - Over 24 hours of lines that each carry a request id, the VictoriaLogs time of such a request went from about 2.8×
     to about 1.8× the time of the per-stream read it replaced; over six hours, from 2.8× to 1.6–1.8×.
+  - Three edge cases change. A series holding a NaN in a bucket now always answers NaN in the windows that hold it
+    (VictoriaLogs' `sum` could turn that NaN into 0). A series of several lines whose sum overflows to an infinity is
+    read as a series of its own, as an infinite series always was, instead of being added into the bucket's other
+    series. A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
+- Identical read requests no longer each ask VictoriaLogs while one of them runs, and a failed answer is held for a
+  second or a few instead of being asked again by every refresh. Requests with the same route, parameters, tenant,
+  credentials and response profile that arrive while the first one runs wait for it, on every cached read route
+  (query, query_range, series, labels, label values, volume, index stats, detected fields and labels, patterns), GET
+  and POST, with or without `-stream-response`: a success the response cache stored is read from there, a complete
+  POST answer is handed over in memory, a streamed answer lets the waiting requests run on their own at its first
+  flush, and a failure is handed over byte for byte with Loki's status and text. Measured against a stub
+  VictoriaLogs, 50 concurrent identical `query_range` requests whose VictoriaLogs call failed sent 50 calls before
+  and send 1 now; 50 identical successes also send 1. A request whose client is still there never receives another
+  request's cancellation or timeout: it starts again as the new leader (this also holds for VictoriaLogs calls
+  shared by the existing call coalescer, where a waiting call could inherit the first caller's deadline).
+- Failed answers are held per replica (never pushed to peers) for the TTL of their class:
+  `-error-cache-transient-ttl` (default `1s`) for VictoriaLogs 5xx, 429 or queue timeouts and refused or reset
+  connections, so each replica asks VictoriaLogs at most about once per second per failing request and the
+  first request after VictoriaLogs recovers answers within that second. A VictoriaLogs 5xx or 429 or a refused or
+  reset connection, which does not depend on the time window, is held for every window of the same query, so
+  dashboards refreshing with `end=now` are absorbed too (20 clients refreshing one query every 100 ms through an
+  outage: 198-394 VictoriaLogs calls/s before, 1-4/s now); a 5xx specific to one window can then fail the query's
+  other windows for up to that second. While such a failure of a query was held in the last ten transient TTLs (10 s
+  by default), the query's requests of every window join one probe once the hold expires, so an outage costs one
+  call per query per second however many windows refresh; the first answer from VictoriaLogs ends the probing for
+  that query. On a real VictoriaLogs stopped under 20 clients refreshing one query every 100 ms, 440 requests in
+  3 s cost 2 calls, and the first 200 came 1 s after VictoriaLogs was back.
+- A windowed `query_range` read (the per-window log fetches) now retries a failed window only under the bounds every
+  other VictoriaLogs read follows: no retry while the circuit breaker is not closed, and each retry spends from the
+  shared retry budget (`-backend-retry-budget-ratio`). Before, every request of an outage retried each window up to
+  five times and each batch up to three more; on a healthy backend a window that fails once the budget is spent now
+  fails without the extra tries. `-error-cache-data-ttl` (default `5s`) for failures read from the window's data (Loki's
+  series limit, line or response size limits, a JSON parser or unwrap conversion error under a metric). The class
+  comes from the type of the failure and the query plan (a query that reads no data never holds a backend
+  failure). Never held: the client's own cancellation or deadline, any timeout or body VictoriaLogs aborted (a retry
+  may answer), a failure after the first streamed byte, partial answers, the proxy's own `429` queue and load
+  shedding, missing credentials, failures it cannot classify. `-error-cache-enabled=false` holds nothing;
+  `-coalescer-disabled` also turns the request-level join off. Held answers are bounded by
+  `-error-cache-max-entries` (default `4096`) and `-error-cache-max-bytes` (default 8 MiB) and dropped on a
+  configuration reload. New metrics: `loki_vl_proxy_error_cache_hits_total{class}`,
+  `loki_vl_proxy_error_cache_stores_total{class}`, `loki_vl_proxy_error_coalesced_total{class}`,
+  `loki_vl_proxy_request_coalesced_success_total`, `loki_vl_proxy_request_flight_saved_total`,
+  `loki_vl_proxy_error_cache_entries` and `loki_vl_proxy_error_cache_bytes`. Helm: the same flags under
+  `extraArgs`.
+
+### Fixed
+
+- A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
+  with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
+  parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,
+  `vector( 2 ) * ...`). The proxy answered these with a phrase search for the query text (no series), a `400` on the
+  instant route or a `500`. The request rewrite that writes keywords in lower case and drops comments now also writes
+  the metric calls and parentheses of a query Loki accepts in one spelling before any handler reads it: no blank
+  between a metric call's name and its parenthesis or right inside it, and no parentheses around a call or around a
+  binary operation no operator reads (parentheses an operator reads are kept). So `sum (rate(...))`,
+  `topk (5, ...)`, `label_replace( ..., "a", "$1", "b", "(.*)" )` and their spelling without the blanks share one
+  response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
+  text and positions do not change. The rewrite is memoised by the query as sent (up to 1,024 queries of up to
+  4 KiB), so a repeated query costs one lookup, less than the keyword rewrite alone cost before.
+- A metric checked for unwrap conversion errors or for JSON parser errors reads a VictoriaLogs answer that arrives
+  without a length (a chunked answer) from a small buffer that grows, as in 2.333.1 (the folded reads of a parser's
+  series identity, below, had moved every checked read to a 128 KiB starting buffer). An answer with its length (a
+  folded read's shared answer) is still read in one allocation of that length. `max by (pod) (max_over_time({...} | json |
+  unwrap n [5m]))` over an hour at a 1m step allocates 142 KiB per request, as in 2.333.1, instead of 258 KiB.
 
 ## [2.334.0] - 2026-11-17
 
