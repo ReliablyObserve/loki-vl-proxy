@@ -1,6 +1,9 @@
 ---
 sidebar_label: Benchmarks
 description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs VL native. CPU, RSS, P50/P90/P99 latency, and throughput across metadata, heavy, long-range, and compute workloads."
+# CommonMark supports the generated HTML comment markers.
+mdx:
+  format: md
 ---
 
 # Benchmarks
@@ -8,6 +11,20 @@ description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs
 :::caution Historical measurements
 The warm-cache, cold-cache and Drilldown comparison tables on this page (the workload throughput, latency, CPU and memory tables) were recorded between 2026-05-01 and 2026-06-05 on the stack named below (Loki 3.6.x, VictoriaLogs v1.50.0, the proxy of that time) and have not been replaced by a new run of this harness. They are not the current position against Loki. The current comparison, including the shapes where the proxy is slower, is the weekly A/B in [Performance: current position versus Loki](performance.md#current-position-versus-loki). The harness commands and methodology below stay valid.
 :::
+
+## Local resource comparison
+
+The one section of this page that is re-measured: the same read workload sent to a local Loki and to the proxy with VictoriaLogs on the project's e2e-compat stack, rendered from `bench/resources/results/latest.json`. It sits before the historical tables because it is the current measurement; the tables after it are not.
+
+<!-- resource-comparison:start -->
+
+Not measured yet: `bench/resources/compare.py` measures the local resource comparison and writes `bench/resources/results/latest.json`, which this section is rendered from (`conformance/scripts/resource_comparison.py`).
+
+<!-- resource-comparison:end -->
+
+## Historical benchmarks, May–June 2026: setup
+
+The hardware, stack and flags of the historical tables below.
 
 **Hardware:** Apple M5 Pro, 18 cores, 64 GB RAM, macOS 26.4.1, Go 1.26.4 darwin/arm64, Docker Desktop 29.4.0 (17.3 GiB allocated to Docker).
 
@@ -17,7 +34,7 @@ The warm-cache, cold-cache and Drilldown comparison tables on this page (the wor
 
 **Loki flags:** `querier.max_concurrent=16`, `max_query_parallelism=64`, result + chunk caching enabled.
 
-## Label Metadata Performance
+## Label Metadata Performance (historical, May–June 2026)
 
 Label endpoints (`/loki/api/v1/labels`, `/loki/api/v1/label/{name}/values`) are the first calls Grafana makes when opening Explore or a dashboard. Their latency determines perceived "snappiness" and the completeness of the label picker.
 
@@ -113,7 +130,7 @@ loki-bench \
 
 ---
 
-## Warm cache — production steady state
+## Warm cache — production steady state (historical, May–June 2026)
 
 Proxy cache is pre-warmed at the same concurrency as the measurement. Repeated queries are served from L1 memory without touching VictoriaLogs. This is the operating mode for Grafana dashboards auto-refreshing every 30 s.
 
@@ -227,7 +244,7 @@ Long-range memory parity (c=50, c=100) reflects the GOMEMLIMIT=2 GiB fix applied
 
 ---
 
-## Cold cache, unique queries — honest worst case
+## Cold cache, unique queries — honest worst case (historical, May–June 2026)
 
 Every worker gets a distinct non-overlapping time window. This defeats both the singleflight coalescer and the response cache. What remains is raw proxy overhead: LogQL→LogsQL translation (2.7–7.2 µs depending on complexity) + HTTP proxying + response shaping.
 
@@ -296,7 +313,7 @@ Every worker gets a distinct non-overlapping time window. This defeats both the 
 
 ---
 
-## Cold overhead by workload type
+## Cold overhead by workload type (historical, May–June 2026)
 
 What determines proxy performance when cache and coalescer provide no help:
 
@@ -312,7 +329,7 @@ What determines proxy performance when cache and coalescer provide no help:
 
 ---
 
-## Drilldown / Explore — real Grafana queries vs Loki direct
+## Drilldown / Explore — real Grafana queries vs Loki direct (historical, 2026-06-05)
 
 The numbers above came from synthetic benchmark workloads. This section replays the exact queries Grafana Drilldown and Explore emit (`sum by (pod) (count_over_time({namespace="prod",pod!=""}[2m]))`, `trace_id` variants, `service_version`, `detected_fields`) at the time ranges that exercise the chunked-merge path (1 h / 6 h / 24 h / 2 d / 7 d), measured against the live e2e-compat compose stack: Loki 3.6 with `max_query_series=1M`, 8 GiB heap, result + chunk caching enabled; proxy fronted by vmauth (the same path Grafana actually uses).
 
