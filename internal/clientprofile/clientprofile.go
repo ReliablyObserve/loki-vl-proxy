@@ -103,6 +103,24 @@ func (v Version) Label() string {
 	return string(b)
 }
 
+// IsLabel reports whether s is exactly v's label (major.minor.patch without leading zeros or suffix), so a caller
+// holding that text can use it instead of building the label.
+func (v Version) IsLabel(s string) bool {
+	if !v.Known || len(s) > 14 {
+		return false
+	}
+	return ParseVersion(s) == v && len(s) == digits(v.Major)+digits(v.Minor)+digits(v.Patch)+2
+}
+
+func digits(n uint16) int {
+	d := 1
+	for n >= 10 {
+		n /= 10
+		d++
+	}
+	return d
+}
+
 // AtLeast reports whether v is known and at least major.minor.patch.
 func (v Version) AtLeast(major, minor, patch uint16) bool {
 	if !v.Known {
@@ -131,13 +149,30 @@ type Profile struct {
 
 type contextKey struct{}
 
-// With returns ctx carrying p.
-func With(ctx context.Context, p Profile) context.Context {
-	return context.WithValue(ctx, contextKey{}, p)
+// Carrier is a value that holds a request's profile, so a caller that already keeps its own per-request value in
+// the context can carry the profile in it (one context value, one allocation) instead of adding another.
+type Carrier interface {
+	ClientProfile() Profile
+}
+
+// ClientProfile makes a Profile its own carrier.
+func (p Profile) ClientProfile() Profile { return p }
+
+// With returns ctx carrying c (a Profile, or a value that holds one).
+func With(ctx context.Context, c Carrier) context.Context {
+	return context.WithValue(ctx, contextKey{}, c)
+}
+
+// CarrierFrom returns the carrier ctx holds, nil when it holds none.
+func CarrierFrom(ctx context.Context) Carrier {
+	c, _ := ctx.Value(contextKey{}).(Carrier)
+	return c
 }
 
 // From returns the profile ctx carries, the zero (unknown) profile when it carries none.
 func From(ctx context.Context) Profile {
-	p, _ := ctx.Value(contextKey{}).(Profile)
-	return p
+	if c := CarrierFrom(ctx); c != nil {
+		return c.ClientProfile()
+	}
+	return Profile{}
 }

@@ -99,3 +99,38 @@ func FuzzParseVersion(f *testing.F) {
 		}
 	})
 }
+
+func TestVersionIsLabel(t *testing.T) {
+	v := ParseVersion("13.3.1")
+	for s, want := range map[string]bool{"13.3.1": true, "13.03.1": false, "13.3.1-x": false, "v13.3.1": false, "13.3.2": false, "": false, "13.3.10": false} {
+		if got := v.IsLabel(s); got != want {
+			t.Errorf("IsLabel(%q) = %v, want %v", s, got, want)
+		}
+	}
+	if (Version{}).IsLabel("0.0.0") {
+		t.Error("an unknown version has no label text")
+	}
+	for _, s := range []string{"0.0.0", "9999.9999.9999", "10.0.100"} {
+		if !ParseVersion(s).IsLabel(s) {
+			t.Errorf("%s is its own label", s)
+		}
+	}
+}
+
+type carrier struct{ p Profile }
+
+func (c carrier) ClientProfile() Profile { return c.p }
+
+func TestProfileCarrier(t *testing.T) {
+	p := Profile{Surface: SurfaceExplore, Grafana: ParseVersion("12.4.14")}
+	ctx := With(context.Background(), carrier{p})
+	if got := From(ctx); got != p {
+		t.Fatalf("From a carrier: %+v", got)
+	}
+	if _, ok := CarrierFrom(ctx).(carrier); !ok {
+		t.Fatal("CarrierFrom returns the carrier")
+	}
+	if CarrierFrom(context.Background()) != nil {
+		t.Fatal("no carrier in an empty context")
+	}
+}

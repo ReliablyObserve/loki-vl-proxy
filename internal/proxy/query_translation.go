@@ -45,8 +45,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx := context.WithValue(r.Context(), requestTelemetryKey, rt)
 		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, req: r})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
-		ctx = context.WithValue(ctx, requestGrafanaClientKey, grafanaProfile)
-		ctx = clientprofile.With(ctx, grafanaProfile.client)
+		ctx = clientprofile.With(ctx, grafanaProfile)
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
@@ -252,11 +251,33 @@ func detectGrafanaClientProfile(r *http.Request, endpoint, route string) grafana
 	profile.client = client
 	// The Grafana family keeps its earlier reading of the User-Agent; the version that leaves the proxy (log lines,
 	// the VictoriaLogs request headers, drilldown-limits) is the normalised one, or none.
-	profile.version = ""
+	profile.version, profile.datasourceVersion = "", ""
 	if client.Grafana.Known {
-		profile.version = client.Grafana.Label()
+		// The User-Agent's own text when it is the label already (the usual case), so no string is built.
+		if profile.version = parseGrafanaVersionFromUserAgent(r.Header.Get("User-Agent")); !client.Grafana.IsLabel(profile.version) {
+			profile.version = client.Grafana.Label()
+		}
+	}
+	if client.Datasource.Known {
+		if profile.datasourceVersion = userAgentToken(r.Header.Get("User-Agent"), " loki/"); !client.Datasource.IsLabel(profile.datasourceVersion) {
+			profile.datasourceVersion = client.Datasource.Label()
+		}
 	}
 	return profile
+}
+
+// userAgentToken is the text after token in ua, up to the first character that is not a digit or a dot.
+func userAgentToken(ua, token string) string {
+	i := strings.Index(ua, token)
+	if i < 0 {
+		return ""
+	}
+	rest := ua[i+len(token):]
+	end := 0
+	for end < len(rest) && (rest[end] == '.' || rest[end] >= '0' && rest[end] <= '9') {
+		end++
+	}
+	return rest[:end]
 }
 
 // grafanaRuntimeProfile is the string profile the response cache key and the Drilldown windowing read (surface,

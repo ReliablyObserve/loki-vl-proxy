@@ -49,16 +49,25 @@ The e2e-ui helper `runQuery` copes with it without weakening any assertion: it c
 
 ## Client Detection Signals
 
-Runtime detection is signal-based, not guess-based:
+Runtime detection is signal-based, not guess-based. The signals below were captured on the wire for every Explore
+and Logs Drilldown request kind with Grafana 13.3.1 + Drilldown 3.2.0, 13.3.0 + 3.1.0 and 12.4.14 + 2.6.0 (scrubbed
+header sets in `internal/clientprofile/testdata`), and `internal/clientprofile` reads them into the request's typed
+client profile:
 
-- Grafana runtime version: parsed from `User-Agent` (`Grafana/<version>`)
-- Drilldown caller surface: `X-Query-Tags: Source=grafana-lokiexplore-app`
-- Loki datasource caller surface: inferred from Grafana runtime request shape when no Drilldown source tag is present
+| Signal | Grafana 13.3.x | Grafana 12.4.x | Profile field |
+|---|---|---|---|
+| `User-Agent` | `Grafana/13.3.1 (linux; arm64) loki/13.2.5` | `Grafana/12.4.14` | Grafana version; Loki datasource plugin version (13.x only) |
+| `X-Query-Tags: Source=grafana-lokiexplore-app` | every Drilldown request, its resource calls included | the same | surface `drilldown` |
+| `X-Query-Tags: Source=grafana-explore` | an Explore query | absent | surface `explore` |
+| `X-Query-Tags: Source=logvolhist` | Explore's log volume query | the same | surface `explore` |
+| `X-Grafana-Referer` (path class only) | on resource calls (labels, index/stats, detected_*, patterns, volume) | the same | surface of an untagged resource call |
 
-On-wire limitation:
-
-- Built-in Loki datasource plugin exact semver is not emitted on requests by default.
-- Proxy can reliably detect runtime family and client surface, but not the datasource plugin build number.
+- A Grafana request with none of these is `datasource` (dashboards, alerting); a request with no Grafana header is
+  `api`. Grafana 12's Explore query carries no Source tag, so it reads as `datasource`.
+- No request names the Logs Drilldown app's version on any captured release; its profile field stays unknown.
+- The request log lines (`client.surface`, `grafana.version`, `grafana.datasource.version`) and `/debug/queries`
+  show the profile; see [observability](observability.md). Only closed values and normalised versions leave the
+  proxy, never header text; the referer's URL is never kept.
 
 ## Version Handling Policy
 
