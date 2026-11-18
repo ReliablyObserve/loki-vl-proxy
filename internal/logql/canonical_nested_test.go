@@ -2,11 +2,15 @@ package logql
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
 // nestLabelReplace wraps q in depth label_replace calls, each with tail as its four string arguments.
@@ -230,10 +234,100 @@ type nestedVerdict struct {
 // cost is.
 const nestedValidationMaxDepth = 64
 
-// The proxy accepts and refuses nested calls as Loki does, with Loki's error text, at every recorded depth.
+// recordNestedCallsLokiVerdicts runs Loki's parser (the oracle's check command) over the nested rows and the depth
+// sweep and writes its verdicts (LVP_RUN_ORACLES=1).
+func recordNestedCallsLokiVerdicts(t *testing.T) {
+	t.Helper()
+	work := t.TempDir()
+	bin, err := oraclerun.Build(filepath.Join("..", "..", "test", "oracle", "loki"), "", work, "loki")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, out := filepath.Join(work, "in.jsonl"), filepath.Join(work, "out.jsonl")
+	f, err := os.Create(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc := json.NewEncoder(f)
+	var inputs []nestedVerdict
+	for _, q := range nestedCanonicalRows() {
+		inputs = append(inputs, nestedVerdict{Query: q})
+	}
+	for _, s := range nestedDepthShapes {
+		for _, d := range nestedDepthSweep(s) {
+			inputs = append(inputs, nestedVerdict{Shape: s.name, Depth: d})
+		}
+	}
+	shapes := map[string]nestedDepthShape{}
+	for _, s := range nestedDepthShapes {
+		shapes[s.name] = s
+	}
+	for i, v := range inputs {
+		q := v.Query
+		if v.Shape != "" {
+			q = shapes[v.Shape].query(v.Depth)
+		}
+		if err := enc.Encode(map[string]any{"id": fmt.Sprint(i), "kind": "metric", "q": q}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := oraclerun.Run(bin, "check", "-in", in, "-out", out); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec struct {
+		Loki   string          `json:"loki"`
+		Rows   []nestedVerdict `json:"rows"`
+		Shapes []nestedVerdict `json:"shapes"`
+	}
+	rec.Loki = nestedCallsLokiVersion
+	for i, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var v struct {
+			Accept bool   `json:"accept"`
+			Error  string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(line), &v); err != nil {
+			t.Fatal(err)
+		}
+		in := inputs[i]
+		in.Accept, in.Error = v.Accept, v.Error
+		if in.Shape == "" {
+			rec.Rows = append(rec.Rows, in)
+		} else {
+			rec.Shapes = append(rec.Shapes, in)
+		}
+	}
+	sort.Slice(rec.Rows, func(i, j int) bool { return rec.Rows[i].Query < rec.Rows[j].Query })
+	sort.Slice(rec.Shapes, func(i, j int) bool {
+		a, b := rec.Shapes[i], rec.Shapes[j]
+		return a.Shape < b.Shape || a.Shape == b.Shape && a.Depth < b.Depth
+	})
+	data, err := json.MarshalIndent(rec, "", " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.FromSlash(nestedCallsLokiVerdicts), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// nestedCallsLokiVersion names the Loki the verdicts were recorded with (test/oracle/loki's pin).
+const nestedCallsLokiVersion = "v3.7.9 parser, test/oracle/loki check"
+
+// The proxy accepts and refuses nested calls as Loki does, with Loki's error text, at every recorded depth. Loki's
+// verdicts are recorded with the Loki oracle (LVP_RUN_ORACLES=1 records them again).
 //
 // conformance: semantics/nested-calls-linear-work
 func TestNestedCallsMatchRecordedLoki(t *testing.T) {
+	if os.Getenv("LVP_RUN_ORACLES") == "1" {
+		recordNestedCallsLokiVerdicts(t)
+	}
 	b, err := os.ReadFile(filepath.FromSlash(nestedCallsLokiVerdicts))
 	if err != nil {
 		t.Fatal(err)
@@ -334,6 +428,50 @@ func FuzzCanonicalizeInPlaceMatchesPerArgument(f *testing.F) {
 // conformance: semantics/nested-calls-linear-work
 func TestCanonicalizeInPlaceMatchesPerArgument(t *testing.T) {
 	for _, q := range append(nestedCanonicalRows(), terminationSeeds()...) {
+		if got, want := CanonicalizeLogRanges(q), canonicalizeLogRanges(q, true); got != want {
+			t.Errorf("CanonicalizeLogRanges(%q)\n in place     %q\n per argument %q", q, got, want)
+		}
+	}
+}
+
+// plainArgumentText is true only for text whose strings and brackets FirstArgumentLen reads as the parser does.
+//
+// conformance: semantics/nested-calls-linear-work
+func TestPlainArgumentText(t *testing.T) {
+	for _, c := range []struct {
+		q     string
+		plain bool
+	}{
+		{`label_replace(rate({a="b"}[1m]), "a", "", "a", "")`, true},
+		{"rate({a=\"b\"}[1m])\n# a comment", true},
+		{"rate({a=\"b\"}[1m])\n# a (comment", false},
+		{"rate({a=\"b\"}[1m])\n# a comment, \"quoted\"", false},
+		{`rate({a="b"}[1m]) + vector('a')`, true},
+		{`rate({a="b"}[1m]) + vector('(')`, false},
+		{`rate({a="b"}[1m]) + vector('a)`, false},
+		{"rate({a=\"b\"}[1m]) + vector('a\n')", false},
+		{"rate({a=\"b\nc\"}[1m])", false},
+		{"rate({a=`b\nc`}[1m])", true},
+		{`rate({a="b\"("}[1m])`, true},
+		{`rate({a="b"}[1m]])`, false},
+		{`rate({a="b")[1m]}`, false},
+		{`rate({a="b"}[1m]`, false},
+		{`rate({a="b`, false},
+	} {
+		if got := plainArgumentText(c.q); got != c.plain {
+			t.Errorf("plainArgumentText(%q) = %v, want %v", c.q, got, c.plain)
+		}
+	}
+}
+
+// A query whose text Loki's lexer refuses is canonicalized the way before (each argument on its own).
+//
+// conformance: semantics/nested-calls-linear-work
+func TestCanonicalizeLexerErrorReadsArgumentsOnTheirOwn(t *testing.T) {
+	for _, q := range []string{
+		"label_replace(rate(({a=\"b\"} |= \"x\x00\")[1m]), \"a\", \"\", \"a\", \"\")",
+		"label_replace(rate(({a=\"b\"} |= \"x\")[1m]), \"a\", \"\", \"a\", \"\") > 1e",
+	} {
 		if got, want := CanonicalizeLogRanges(q), canonicalizeLogRanges(q, true); got != want {
 			t.Errorf("CanonicalizeLogRanges(%q)\n in place     %q\n per argument %q", q, got, want)
 		}
