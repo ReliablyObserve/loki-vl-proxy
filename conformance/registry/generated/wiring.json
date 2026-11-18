@@ -1920,6 +1920,9 @@
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/parser_error_matrix_test.go"
     ],
+    "semantics/nested-calls-linear-work": [
+      "internal/logql/canonical_nested_test.go"
+    ],
     "semantics/non-sum-vector-aggregation-unreduced": [
       "internal/proxy/instant_unwrap_sum_test.go",
       "internal/proxy/matrix_fold_sink_test.go",
@@ -2877,7 +2880,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 647,
+  "registry_items": 650,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2947,6 +2950,9 @@
     "internal/logql/blank_after_keyword_loki_test.go": [
       "semantics/parser-reads-unicode-blank-as-white-space",
       "semantics/translator-reads-only-space-between-tokens"
+    ],
+    "internal/logql/canonical_nested_test.go": [
+      "semantics/nested-calls-linear-work"
     ],
     "internal/logql/canonical_spelling_test.go": [
       "semantics/translator-reads-blank-before-range-call-as-text",
@@ -6364,7 +6370,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 748,
+  "tests_with_markers": 749,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6445,6 +6451,7 @@
     "semantics/translator-folds-binary-by-operand-without",
     "semantics/translator-reads-vector-operand-as-text",
     "semantics/two-parsers-keep-one",
+    "semantics/unwrap-avg-overflow",
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
@@ -6453,6 +6460,7 @@
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-parserless-reads-stored-field",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
+    "semantics/unwrap-sliding-infinity-point",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",
     "semantics/without-fold-detected-level-unknown",
@@ -6462,5 +6470,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 444
+  "wired_items": 445
 }
