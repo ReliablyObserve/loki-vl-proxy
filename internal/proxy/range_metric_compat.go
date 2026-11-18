@@ -1319,12 +1319,13 @@ func (p *Proxy) collectFirstMetRangeMetricHits(ctx context.Context, scope *serie
 	// VictoriaLogs aligns a stats_query_range read's start down to its bucket grid, a bucket before windowStart
 	// here, and the subquery reads the same aligned range: its lines before the request's reads would rank first in
 	// the first bucket, so the subquery keeps only the lines the steps read, (windowStart, end].
-	read := logsql.PipeFilter{Expr: logsql.TimeFilter{Range: "[" + windowStart.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano) + ", " + end.UTC().Format(time.RFC3339Nano) + "]"}}
-	ranking := spec.BaseQuery + " " + read.String() + scope.firstMetRanking(field, "__lvp_rank", true, limit+1, lookback, logsql.PipeFields{Labels: []string{field}})
+	lines := logsql.PipeFilter{Expr: logsql.TimeFilter{Range: "[" + windowStart.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano) + ", " + end.UTC().Format(time.RFC3339Nano) + "]"}}
+	ranking := spec.BaseQuery + " " + lines.String() + scope.firstMetRanking(field, "__lvp_rank", true, limit+1, lookback, logsql.PipeFields{Labels: []string{field}})
 	if err := seriesLimitReached(tenantSeriesLimitContext(ctx), limit); err != nil {
 		return nil, err
 	}
-	return p.collectRangeMetricHits(ctx, spec.BaseQuery+" | filter "+field+":in("+ranking+")", spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	read := logsql.PipeFilter{Expr: logsql.InQuery{Field: field, Query: ranking}}
+	return p.collectRangeMetricHits(ctx, spec.BaseQuery+" "+read.String(), spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
 }
 
 // requestKeepsPartialSeries reports whether the request answers a series limit
