@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Better performance for deeply nested queries. A query that nests `label_replace` calls hundreds or thousands of
+  levels deep (Loki accepts them up to its 128 KB input size limit) is parsed, validated and respelled in time that
+  grows with its length: about 1 µs and 2 allocations per level to parse at 2,048 levels. Before, the parse grew with
+  the square of the depth and the validation and the request rewrite with its cube. At 200 levels (8.6 KB) the
+  validation took 1 s and one `query_range` 3.1 s of CPU; they now take about 0.6 ms and 10 ms. The string translator
+  still reads each level again on the `query_range` path (about 1 s at 128 KB) until the switch to the query plan. The
+  parser types each nested call once, jumping over the parentheses an outer call's parser already read. The validation
+  does not read a typed call again, and the request rewrite reads `label_replace`'s first argument where it stands.
+  The strip of outer `label_replace` calls the handlers read goes through one table of the text's brackets. A query
+  longer than the 4 KiB the short memos keep is validated, respelled and parsed once per request, in a memo bounded at
+  4 MiB per generation (two generations).
+
+### Fixed
+
+- A `label_replace` call Loki cannot read is answered with Loki's error text, line and column. Three or five
+  strings, a number for a string and an invalid escape now count the column from the start of the query, not from
+  the call (Loki's `col 70` where the proxy said `col 56`), and use the line Loki gives. Such an error, and a
+  `vector` argument that is no number, answers ahead of the checks over the tree, as in Loki. A `label_replace`,
+  `vector` or `approx_topk` call a `#` comment leaves open is Loki's `syntax error: unexpected $end` at the end of the
+  query, with what Loki expects there, or the error of a regex Loki builds before it; the proxy said
+  `unterminated '('`. label_replace's regex is checked ahead of the tree inside the call, an outer call's first, as
+  Loki checks it. These answers are recorded from Loki.
+
 ### Changed
 
 - A VictoriaLogs call that the running VictoriaLogs release refuses before reading any data is no longer sent. The
@@ -40,19 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused query five times each send one VictoriaLogs call. Metrics:
   `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
 
-### Performance
-
-- Better performance for deeply nested queries. A query that nests `label_replace` calls hundreds or thousands of
-  levels deep (Loki accepts them up to its 128 KB input size limit) is parsed, validated and respelled in time that
-  grows with its length: about 1 µs and 2 allocations per level to parse at 2,048 levels. Before, the parse grew with
-  the square of the depth and the validation and the request rewrite with its cube. At 200 levels (8.6 KB) the
-  validation took 1 s and one `query_range` 3.1 s of CPU; they now take about 0.6 ms and 10 ms. The string translator
-  still reads each level again on the `query_range` path (about 1 s at 128 KB) until the switch to the query plan. The
-  parser types each nested call once, jumping over the parentheses an outer call's parser already read. The validation
-  does not read a typed call again, and the request rewrite reads `label_replace`'s first argument where it stands.
-  The strip of outer `label_replace` calls the handlers read goes through one table of the text's brackets. A query
-  longer than the 4 KiB the short memos keep is validated, respelled and parsed once per request, in a memo bounded at
-  4 MiB per generation (two generations).
+## [2.337.0] - 2026-11-18
 
 ### Fixed
 
@@ -61,14 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
   it stands. A request with 18 nested calls (about 550 bytes) took half a second and now takes 2.5 ms. Answers do not
   change, and nested queries are accepted at every depth, as Loki accepts them (semantics/nested-calls-linear-work).
-- A `label_replace` call Loki cannot read is answered with Loki's error text, line and column. Three or five
-  strings, a number for a string and an invalid escape now count the column from the start of the query, not from
-  the call (Loki's `col 70` where the proxy said `col 56`), and use the line Loki gives. Such an error, and a
-  `vector` argument that is no number, answers ahead of the checks over the tree, as in Loki. A `label_replace`,
-  `vector` or `approx_topk` call a `#` comment leaves open is Loki's `syntax error: unexpected $end` at the end of the
-  query, with what Loki expects there, or the error of a regex Loki builds before it; the proxy said
-  `unterminated '('`. label_replace's regex is checked ahead of the tree inside the call, an outer call's first, as
-  Loki checks it. These answers are recorded from Loki.
 
 ## [2.336.0] - 2026-11-18
 
