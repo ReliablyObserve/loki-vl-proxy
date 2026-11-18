@@ -167,6 +167,7 @@
         "internal/proxy/metric_binary.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_exact.go",
+        "internal/proxy/range_metric_compat.go",
         "internal/translate/parser.go",
         "internal/translator/translator.go"
       ]
