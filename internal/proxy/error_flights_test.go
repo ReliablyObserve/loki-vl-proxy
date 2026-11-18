@@ -1011,3 +1011,59 @@ func TestErrorFlights_PreKeyNeverSharesAcrossExactKeys(t *testing.T) {
 		t.Fatal("the held failure must answer its own exact request")
 	}
 }
+
+// Identical failing requests arriving over the leader's run and its end (a
+// burst whose requests do not all arrive at once) make one VictoriaLogs call
+// while the failure is held, GET (joined on the response key) and POST (joined
+// on a pre-key) alike: a request arriving as the leader ends waits on it or
+// reads the held failure, never leads a second call.
+//
+// conformance: semantics/error-coalescing-request-flights
+func TestErrorFlights_StaggeredBurstOneCall(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			stub := newFlightStub(t, func(n int64, w http.ResponseWriter, r *http.Request) {
+				time.Sleep(time.Millisecond)
+				answer500(n, w, r)
+			})
+			_, h := newFlightProxy(t, stub.srv.URL, func(c *Config) {
+				c.ErrorCache.TransientTTL = time.Minute
+			})
+			const trials, n = 20, 50
+			for trial := 0; trial < trials; trial++ {
+				// Each burst its own request (a failure of every window is held for
+				// all windows of one request, so the bursts differ in limit).
+				params := url.Values{"query": {`{app="api"}`}, "start": {"1700000000"}, "end": {"1700003600"}, "limit": {strconv.Itoa(100 + trial)}}
+				send := func() *httptest.ResponseRecorder {
+					var req *http.Request
+					if method == http.MethodGet {
+						req = httptest.NewRequest(method, "/loki/api/v1/query_range?"+params.Encode(), nil)
+					} else {
+						req = httptest.NewRequest(method, "/loki/api/v1/query_range", strings.NewReader(params.Encode()))
+						req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					}
+					req.Header.Set("X-Scope-OrgID", "team-a")
+					rec := httptest.NewRecorder()
+					h.ServeHTTP(rec, req)
+					return rec
+				}
+				var wg sync.WaitGroup
+				for i := 0; i < n; i++ {
+					wg.Add(1)
+					go func(i int) {
+						defer wg.Done()
+						// Arrivals spread over about twice the backend's time.
+						time.Sleep(time.Duration(i) * 40 * time.Microsecond)
+						if a := send(); a.Code != http.StatusInternalServerError {
+							t.Errorf("answer %d %q", a.Code, a.Body.String())
+						}
+					}(i)
+				}
+				wg.Wait()
+			}
+			if got := stub.calls.Load(); got != trials {
+				t.Fatalf("%s: %d VictoriaLogs calls for %d bursts of %d identical failing requests, want one per burst", method, got, trials, n)
+			}
+		})
+	}
+}

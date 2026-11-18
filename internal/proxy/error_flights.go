@@ -545,7 +545,11 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 		return
 	}
 	key := k.join
-	if k.r != nil && ef.Peek(heldHintKey(key)) != nil {
+	var hint string
+	if k.r != nil {
+		hint = heldHintKey(key)
+	}
+	if hint != "" && ef.Peek(hint) != nil {
 		// A failure of this pre-key is held: read it under the exact key.
 		if held := ef.Peek(k.exactKey()); held != nil {
 			p.errorFlightCounters.held[held.Class].Add(1)
@@ -581,6 +585,18 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 			return
 		}
 		if leads {
+			if hint != "" && ef.Peek(hint) != nil {
+				// A leader of this pre-key ended after the check above, its
+				// failure held under its exact key: when that is this
+				// request's, answer it; the flight just started hands nothing,
+				// so a request that joined it starts again and reads it too.
+				if held := ef.Peek(k.exactKey()); held != nil {
+					ef.Finish(key, f, cache.OutcomeUnshared, nil, cache.Policy{})
+					p.errorFlightCounters.held[held.Class].Add(1)
+					p.writeFlightAnswer(endpoint, route, w, r, held, start)
+					return
+				}
+			}
 			lead.f = f
 			p.leadFlight(endpoint, w, r, lead, run)
 			return
@@ -677,12 +693,9 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 		// A panic in the handler ends the flight too: its followers run on their own.
 		answer, ttl := p.errorFlights.Finish(key, f, outcome, build, pol)
 		if ttl > 0 {
+			// Finish holds the failure, and for a pre-key the hint that
+			// requests with it read it under their exact key.
 			p.errorFlightCounters.stored[answer.Class].Add(1)
-			if lead.key.r != nil {
-				// Requests with this pre-key look for the held failure under
-				// their exact key while it is held.
-				p.errorFlights.Hold(heldHintKey(key), heldHint, ttl)
-			}
 			if windowFree {
 				p.holdWindowFree(endpoint, r, answer, ttl)
 			}
@@ -814,10 +827,11 @@ func defaultAnswerHeaders(h http.Header, code int) {
 	}
 }
 
-// heldHint marks a pre-key with a held failure; it is never answered.
-var heldHint = &cache.Answer{}
+// heldHint marks a pre-key with a held failure, or a probing window-free key;
+// it is never answered.
+var heldHint = cache.HeldHint
 
-func heldHintKey(join string) string { return join + "\x00held" }
+func heldHintKey(join string) string { return cache.HeldHintKey(join) }
 
 // flightPerRequestHeaders are the response headers each request writes for
 // itself (framing, encoding, the client's rate limit, the debug counters): a
