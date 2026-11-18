@@ -1,6 +1,6 @@
 # Loki started for TestRecordTenantAuthLokiAnswers (internal/proxy): auth on,
 # multi-tenant queries on, compactor retention on so the delete API is
-# registered. The answers were recorded with the Loki 3.7.9 release binary:
+# registered. The answers were recorded with the Loki 3.7.10 release binary:
 #   loki -config.file=internal/proxy/testdata/tenant_auth_loki_config.yaml
 # then two lines pushed, one per tenant:
 #   for t in team-a team-b; do curl -H "X-Scope-OrgID: $t" -H 'Content-Type: application/json' \

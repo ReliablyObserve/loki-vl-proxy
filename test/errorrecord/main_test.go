@@ -144,7 +144,7 @@ func mustRead(t *testing.T, path string) string {
 func TestRecordingTheRecordedAnswersChangesNothing(t *testing.T) {
 	answers, order := copyFiles(t)
 	before := mustRead(t, answers) + mustRead(t, order)
-	base := fakeLoki(t, recordedAnswers(t, answers, order), "3.7.9")
+	base := fakeLoki(t, recordedAnswers(t, answers, order), "3.7.10")
 	var out bytes.Buffer
 	changed, err := run(config{loki: base, files: []string{answers, order}}, &out)
 	if err != nil {
@@ -218,7 +218,7 @@ func TestCheckWritesNothingAndReportsTheChange(t *testing.T) {
 	reply := f.Rows[0].Loki
 	reply.Status = 500
 	served[f.Rows[0].Request()] = reply
-	base := fakeLoki(t, served, "3.7.9")
+	base := fakeLoki(t, served, "3.7.10")
 	before := mustRead(t, answers)
 	var out bytes.Buffer
 	changed, err := run(config{loki: base, files: []string{answers}, check: true}, &out)
@@ -240,7 +240,7 @@ func TestRowsNotComparableKeepTheirRecordedAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A Loki that answers nothing recorded: every row it is asked changes, none of the others is asked.
-	base := fakeLoki(t, map[string]lokirecorded.Reply{}, "3.7.9")
+	base := fakeLoki(t, map[string]lokirecorded.Reply{}, "3.7.10")
 	comparable := 0
 	for _, r := range f.Rows {
 		if r.Comparable() {
@@ -289,7 +289,7 @@ func TestARecordedAlternativeIsNoChange(t *testing.T) {
 	}
 	before := mustRead(t, answers)
 	var out bytes.Buffer
-	changed, err := run(config{loki: fakeLoki(t, served, "3.7.9"), files: []string{answers, order}}, &out)
+	changed, err := run(config{loki: fakeLoki(t, served, "3.7.10"), files: []string{answers, order}}, &out)
 	if err != nil || changed != 0 {
 		t.Fatalf("changed %d, err %v: an alternative answer counted as a change\n%s", changed, err, out.String())
 	}
@@ -301,7 +301,7 @@ func TestARecordedAlternativeIsNoChange(t *testing.T) {
 	third.Status, third.Body = 500, "a third answer"
 	served[varied[0].Request()] = third
 	out.Reset()
-	changed, err = run(config{loki: fakeLoki(t, served, "3.7.9"), files: []string{answers}, check: true}, &out)
+	changed, err = run(config{loki: fakeLoki(t, served, "3.7.10"), files: []string{answers}, check: true}, &out)
 	if err != nil || changed != 1 || !strings.Contains(out.String(), varied[0].ID) {
 		t.Fatalf("changed %d, err %v: a third answer must be reported\n%s", changed, err, out.String())
 	}
