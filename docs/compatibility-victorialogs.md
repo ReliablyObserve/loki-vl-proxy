@@ -18,14 +18,14 @@ This track measures whether the proxy keeps VictoriaLogs behavior usable and sta
 
 - Workflow: `compat-vl.yaml`
 - Score test: `TestVLTrackScore`
-- Runtime matrix: real VictoriaLogs images of two versions, the latest `v1.4x` release and the newest `v1.5x` release (`v1.49.0`, `v1.53.0`). Each version runs the score test, the version-sensitive checks and the range-metric table compared with Loki (`TestCompat_Unwrap*`, `TestRangeMetric*`, `TestGrafanaClickout_*`)
+- Runtime matrix: real VictoriaLogs images of two versions, the latest `v1.4x` release and the newest `v1.5x` release (`v1.49.0`, `v1.54.0`). Each version runs the score test, the version-sensitive checks and the range-metric table compared with Loki (`TestCompat_Unwrap*`, `TestRangeMetric*`, `TestGrafanaClickout_*`)
 
 ## Support Policy
 
 Supported and tested versions are also listed in the [README](https://github.com/ReliablyObserve/Loki-VL-proxy#supported-versions). The rules:
 
 - **Fully supported:** `v1.49.0`, the latest `v1.4x` release, and every `v1.5x` release. `v1.48.x` and older are not supported.
-- **Tested:** two versions, the latest `v1.4x` release (`v1.49.0`) and the newest `v1.5x` release (`v1.53.0`). A new `v1.5x` release with a published Docker image replaces the newest; the `v1.5x` releases in between are supported but not tested. The pull-request CI image is pinned to `v1.53.0`, the newest tested release.
+- **Tested:** two versions, the latest `v1.4x` release (`v1.49.0`) and the newest `v1.5x` release (`v1.54.0`). A new `v1.5x` release with a published Docker image replaces the newest; the `v1.5x` releases in between are supported but not tested. The pull-request CI image is pinned to `v1.54.0`, the newest tested release.
 - **Floor:** `-backend-min-version` defaults to `v1.49.0`. Startup fails when the detected backend is older, with an error naming the flag. With an explicit older `-backend-min-version` (for example a Helm value still carrying `v1.30.0`) or `-backend-allow-unsupported-version=true` the proxy starts, logs a warning on every start (`backend version is below the supported VictoriaLogs lines`, whatever the flag says), and the version is unsupported and untested: the proxy keeps no fallbacks for features older than `v1.49.0`, for example the `stats_query_range` `offset` argument (`v1.45`). A backend whose version cannot be read only warns unless `-backend-version-strict=true`, and then behaves as `v1.49.0`. See [Configuration](configuration.md).
 - **Moving the floor or adding a version:** a new `v1.5x` release replaces the newest in `matrix_versions`; when support for the oldest supported minor ends, the floor moves. In one change: update `matrix_versions`, `support_window` and the capability profiles in `test/e2e-compat/compatibility-matrix.json`, the supported-versions table in the README, the `-backend-min-version` default (flag, Go fallback, Helm value), `logsql.MinSupportedMinor`, and the pinned image. `TestVictoriaLogsSupportPolicy` fails until these agree: the floor is the lowest matrix version and the only `v1.4x` entry, every `v1.5x` minor from `v1.50` up is present once, and the pin is a tested version.
 
@@ -33,8 +33,9 @@ Supported and tested versions are also listed in the [README](https://github.com
 
 | VictoriaLogs version | Coverage path | Version-specific focus |
 |---|---|---|
-| `v1.53.0` | PR and main CI pinned runtime; scheduled and manual matrix (tested) | Current pinned backend, the newest tested release. `/internal/force_merge`, `/internal/force_flush`, `/internal/log_new_streams` and `/internal/partition/*` require `POST` (the proxy does not call them) |
-| `v1.52.0` | Supported, not tested | Previous pin. Distroless image (no shell): compose health probes must exec the binary. `json_array_concat` pipe. Bare filter pipes starting with a non-word token or `not` are accepted again. Parse errors echo the query before the reason |
+| `v1.54.0` | PR and main CI pinned runtime; scheduled and manual matrix (tested) | Current pinned backend, the newest tested release. `extra_filters` and `extra_stream_filters` count against `-search.maxQueryLen` (default 16384 bytes); `/select/logsql/query` takes `sort_direction`; the newest/oldest-N read with `limit` returns every row of a shared timestamp once; a live tail matching too many new rows per second ends with an error; `-healthcheck` flag |
+| `v1.53.0` | Supported, not tested | Previous pin. `/internal/force_merge`, `/internal/force_flush`, `/internal/log_new_streams` and `/internal/partition/*` require `POST` (the proxy does not call them) |
+| `v1.52.0` | Supported, not tested | The line's only open-source image: the `v1.52.1` and `v1.52.2` patch releases (the long-term support line) have no open-source Docker image, `v1.52.2` is published as `-enterprise` only; both are supported as `v1.5x` releases. Distroless image (no shell): compose health probes must exec the binary. `json_array_concat` pipe. Bare filter pipes starting with a non-word token or `not` are accepted again. Parse errors echo the query before the reason |
 | `v1.51.1` | Supported, not tested | Cluster upgrade bridge: `vlstorage` v1.51.1 accepts `vlselect` v1.38.0 through v1.51.0; same LogsQL surface as v1.51.0 |
 | `v1.50.0` | Supported, not tested | Stream fields in the column index (`field_values` fast path), dense pattern windowing |
 | `v1.49.0` | Scheduled and manual matrix (tested); supported floor | Structured metadata shaping, volume endpoints |
@@ -65,17 +66,18 @@ Current code gates:
 
 As new LogSQL backend features land, this table and the capability derivation in proxy code should be updated together, with explicit tests per profile.
 
-## Feature Capability Matrix (v1.49.0 To v1.53.0)
+## Feature Capability Matrix (v1.49.0 To v1.54.0)
 
-The table below tracks changelog-relevant LogSQL and metadata behavior between `v1.49.0` and `v1.53.0`, and how the proxy should treat each band.
+The table below tracks changelog-relevant LogSQL and metadata behavior between `v1.49.0` and `v1.54.0`, and how the proxy should treat each band.
 
 | Version band | Backend capability signals | Limitations / risks to account for | Proxy handling policy |
 |---|---|---|---|
 | `v1.49.x` | `filter=substring` support for `field_names` / `field_values` and stream metadata browse endpoints; `stats_query_range` `offset` argument (since `v1.45`) | none on the supported floor | `q` + `filter=substring` is always forwarded and stats buckets are always anchored with `offset`; the proxy-side search window also serves the browse index and offset/limit paging |
 | `v1.50.x` | parser/query fixes and latest metadata/query behavior | none specific beyond normal backend saturation limits | enable `vl-v1.50-plus` profile, including dense patterns windowing and newest metadata behavior |
 | `v1.51.x` | `coalesce` pipe; `limit`/`offset` after `stats` on `stats_query`; `unpack_json` accepts JSON with leading spaces; `stats_query`/`stats_query_range` answer 502 when a storage node is unavailable | a filter pipe without the `filter` prefix is rejected unless it starts with `field_name:` | the translator emits `| filter` for every filter that follows a non-filter pipe |
-| `v1.52.x` | distroless image; `json_array_concat` pipe; filters starting with a non-word token or `not` are accepted without the prefix again; `-search.maxQueueDuration` is honoured for queued requests; current pinned target | no shell in the image; parse errors echo the query before the reason (`cannot parse query arg [<query>]: <reason>`) | same `vl-v1.50-plus` profile; compose health probes exec `/victoria-logs-prod -version`; the upstream error classifier reads both parse-error layouts, so invalid queries stay Loki `400 bad_data` |
-| `v1.53.x` | `/internal/force_merge`, `/internal/force_flush`, `/internal/log_new_streams` and `/internal/partition/*` require `POST`; `/delete/run_task` is `POST` only; Unix socket listener | none for the proxy: it uses only the select endpoints | same `vl-v1.50-plus` profile; newest tested version, not yet the PR CI pin |
+| `v1.52.x` | distroless image; `json_array_concat` pipe; filters starting with a non-word token or `not` are accepted without the prefix again; `-search.maxQueueDuration` is honoured for queued requests | no shell in the image; parse errors echo the query before the reason (`cannot parse query arg [<query>]: <reason>`) | same `vl-v1.50-plus` profile; compose health probes exec `/victoria-logs-prod -version`; the upstream error classifier reads both parse-error layouts, so invalid queries stay Loki `400 bad_data` |
+| `v1.53.x` | `/internal/force_merge`, `/internal/force_flush`, `/internal/log_new_streams` and `/internal/partition/*` require `POST`; `/delete/run_task` is `POST` only; Unix socket listener | none for the proxy: it uses only the select endpoints | same `vl-v1.50-plus` profile |
+| `v1.54.x` | `sort_direction=asc` with `limit` on `/select/logsql/query` (the oldest N rows); `-search.maxQueryLen` applies to `extra_filters` and `extra_stream_filters` (a longer arg answers 400); the newest-N read with `limit` no longer drops or repeats rows of a shared timestamp; subqueries in a `limit` read or a live tail see the request's whole time range; a live tail matching too many new rows per second ends with an error; `vlselect` returns a storage node's error instead of a partial answer when partial responses are on; `hidden_fields_filters` in the request body no longer overrides the query-string one; `-healthcheck` flag; current pinned target | the proxy's own `extra_filters` must stay under `-search.maxQueryLen` | same `vl-v1.50-plus` profile; no proxy request depends on a `v1.54` feature yet, so a rollback to an older `v1.5x` keeps every answer |
 | `< v1.49.0` | not supported | outside the supported versions; modern drilldown/explore contracts are not tested there, and the proxy keeps no fallbacks for them (for example `v1.44` and older ignore the `stats_query_range` `offset` argument) | block startup by default (`backend-min-version`), allow override with `backend-allow-unsupported-version=true` |
 
 ### Capability Profile Guidance

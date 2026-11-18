@@ -96,7 +96,7 @@ var qsSequence = []struct{ from, to int }{{0, 0}, {1, 1}, {3, 3}, {-2, -2}, {-4,
 // TestQueryRangeStepsLokiDifferential: refresh sequences answered with the
 // settled steps on are Loki's value at every step (window (t-range, t],
 // exclusive below; sum, avg, max and min over time; the outer fold) and the
-// uncached proxy's bytes, per VictoriaLogs v1.49.0 and v1.53.0, plain, logfmt
+// uncached proxy's bytes, per VictoriaLogs v1.49.0 and v1.54.0, plain, logfmt
 // and json, grouped, ungrouped and without, over random windows, steps,
 // offsets and gaps. A second tenant sending the first window is never answered
 // from the first tenant's steps.
@@ -106,7 +106,7 @@ func TestQueryRangeStepsLokiDifferential(t *testing.T) {
 	var served, requests, withData int
 	tenant := func(id string) http.Header { return http.Header{"X-Scope-Orgid": {id}} }
 	shapes := []owShape{owShapes[0], owShapes[1], owShapes[4], owShapes[3]}
-	for vi, version := range []string{"v1.49.0", "v1.53.0"} {
+	for vi, version := range []string{"v1.49.0", "v1.54.0"} {
 		for pi, parser := range []string{"", "logfmt", "json"} {
 			for fi, fn := range []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
 				for _, shape := range []owShape{shapes[(vi+pi+fi)%4], shapes[(vi+pi+fi+1)%4]} { // two of the four forms
@@ -181,7 +181,7 @@ func TestQueryRangeStepsRejectedValueReachedByMovedWindow(t *testing.T) {
 	const window = 2 * time.Minute
 	t0 := qsBase - qsBase%int64(time.Hour)
 	at := func(d time.Duration) int64 { return t0 + int64(d) }
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, parser := range []string{"logfmt", "json"} {
 			t.Run(version+"/"+parser, func(t *testing.T) {
 				var rows []vlemu.Row

@@ -368,7 +368,7 @@ func levelSweepRun(t *testing.T, loki map[string]levelSweepAnswer, backend, vers
 // (the engine oracle over the lines with the detected_level live Loki gave them, LVP_RUN_ORACLES=1 records them
 // again): the status and an error's text, which queries answer series, and the detected_level of every series. The proxy runs over
 // the emulator, whose rows hold the stream fields as VictoriaLogs answers them and whose detected_level chain is
-// VictoriaLogs' (TestVLChainDetectedLevelMatchesVictoriaLogs), on v1.49.0 and v1.53.0; with LVP_RUN_ORACLES=1
+// VictoriaLogs' (TestVLChainDetectedLevelMatchesVictoriaLogs), on v1.49.0 and v1.54.0; with LVP_RUN_ORACLES=1
 // it also runs over VictoriaLogs itself (test/oracle/vl serve, both versions). Every row equals Loki's but the
 // listed ones (levelSweepKnown): no series carries another detected_level than Loki's, against VictoriaLogs.
 //
@@ -383,7 +383,7 @@ func TestDetectedLevelSweepMatchesLoki(t *testing.T) {
 	var unexplained []string
 	used := make([]int, len(levelSweepKnown))
 	ran := map[string]bool{"emulator": true}
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		var servers []*httptest.Server
 		same, known, diff := levelSweepRun(t, loki, "emulator", version, used, func(ci int) string {
 			var emuRows []vlemu.Row
@@ -403,7 +403,7 @@ func TestDetectedLevelSweepMatchesLoki(t *testing.T) {
 	}
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
 		ran["vl"] = true
-		for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.53.0", ""}} {
+		for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.54.0", ""}} {
 			var set oraclerun.ServeDataSet
 			for ci, c := range levelSweepCases {
 				var stream [][2]string

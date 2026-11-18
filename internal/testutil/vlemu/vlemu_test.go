@@ -136,8 +136,8 @@ func TestEmulatorEndpoints(t *testing.T) {
 	if rec := serve(h, "/metrics", nil); rec.Body.Len() != 0 {
 		t.Errorf("/metrics without a version = %q", rec.Body)
 	}
-	e.Version = "v1.53.0"
-	if rec := serve(h, "/metrics", nil); rec.Body.String() != `vm_app_version{short_version="v1.53.0",version="victoria-logs-20260101-000000-tags-v1.53.0-0-gabcdef0123"} 1`+"\n" {
+	e.Version = "v1.54.0"
+	if rec := serve(h, "/metrics", nil); rec.Body.String() != `vm_app_version{short_version="v1.54.0",version="victoria-logs-20260101-000000-tags-v1.54.0-0-gabcdef0123"} 1`+"\n" {
 		t.Errorf("/metrics = %q", rec.Body)
 	}
 	if rec := serve(h, "/select/logsql/field_names", nil); rec.Body.String() != `{"values":[]}` {

@@ -70,7 +70,7 @@ func holdEvaluatedLevelsToLoki(t *testing.T, grid []string, isRoot func(querypla
 	}
 	w := bufio.NewWriter(f)
 	identity := func(s string) string { return s }
-	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.53.0"), Label: identity}
+	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.54.0"), Label: identity}
 	nested := 0
 	for _, q := range grid {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))

@@ -37,7 +37,7 @@ func TestUnwrapGateReadFromTheDecodedSpec(t *testing.T) {
 	underscores := func(s string) string { return strings.ReplaceAll(s, ".", "_") }
 	start := time.Unix(1767225600, 0)
 	ctx := context.Background()
-	for _, v := range []string{"1.53.0", "1.49.0"} {
+	for _, v := range []string{"1.54.0", "1.49.0"} {
 		for name, labelFn := range map[string]translator.LabelTranslateFunc{"identity": nil, "underscores": underscores} {
 			t.Run(v+" "+name, func(t *testing.T) {
 				gated := 0

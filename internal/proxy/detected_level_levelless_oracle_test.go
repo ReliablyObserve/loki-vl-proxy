@@ -26,7 +26,7 @@ import (
 // The oracle checks of the reads of streams without a level label (detected_level_levelless.go) and of an unwrap
 // over an extraction list (`| logfmt amount | unwrap amount`): Loki's answers come from the engine oracle (test/oracle/loki
 // engine) and are recorded in testdata; the proxy runs over VictoriaLogs itself (test/oracle/vl serve, v1.49.0 and
-// v1.53.0). Both legs run with LVP_RUN_ORACLES=1, which also records Loki's answers again.
+// v1.54.0). Both legs run with LVP_RUN_ORACLES=1, which also records Loki's answers again.
 
 // oracleLine is one line of a stream of these checks: its body, its structured metadata and the detected_level
 // Loki's ingest gives it (the engine has no ingest, so it reads the value as structured metadata).
@@ -183,7 +183,7 @@ func oracleProxyAnswer(t *testing.T, backend, q, mode string, reduce func(status
 
 // runLevelOracle records Loki's answers to queries (S replaced with selector) over streams at every mode into
 // answersPath, reduced by reduce to the dimension the check holds the proxy to, then runs the proxy over
-// VictoriaLogs v1.49.0 and v1.53.0 and reports every request whose reduced answer differs from Loki's.
+// VictoriaLogs v1.49.0 and v1.54.0 and reports every request whose reduced answer differs from Loki's.
 func runLevelOracle(t *testing.T, streams []oracleStream, selector string, queries []string, answersPath string, reduce oracleReducer) {
 	t.Helper()
 	if os.Getenv("LVP_RUN_ORACLES") != "1" {
@@ -243,7 +243,7 @@ func runLevelOracle(t *testing.T, streams []oracleStream, selector string, queri
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.53.0", ""}} {
+	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.54.0", ""}} {
 		srv, err := oraclerun.StartVLServe(filepath.Join("..", "..", "test", "oracle", "vl"), v.modfile, []oraclerun.ServeDataSet{rows})
 		if err != nil {
 			t.Fatal(err)
@@ -389,7 +389,7 @@ func TestUnwrapExtractionListAnswersTheStreamsLokiAnswers(t *testing.T) {
 }
 
 // TestLevelLessStreamFilterOnVictoriaLogs: the restriction of the second read (levelLessStreamFilter, sent as
-// extra_filters) keeps, on VictoriaLogs v1.49.0 and v1.53.0, exactly the streams streamDecidesLevel says decide no
+// extra_filters) keeps, on VictoriaLogs v1.49.0 and v1.54.0, exactly the streams streamDecidesLevel says decide no
 // level: a missing and an empty label alike, every level name of the list, detected_level; and the restriction of a
 // first read known to hold such streams (labelledStreamFilter) keeps exactly the others.
 //
@@ -431,7 +431,7 @@ func TestLevelLessStreamFilterOnVictoriaLogs(t *testing.T) {
 		}
 	}
 	sort.Strings(labelled)
-	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.53.0", ""}} {
+	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.54.0", ""}} {
 		srv, err := oraclerun.StartVLServe(filepath.Join("..", "..", "test", "oracle", "vl"), v.modfile, []oraclerun.ServeDataSet{rows})
 		if err != nil {
 			t.Fatal(err)
