@@ -1,0 +1,32 @@
+id: semantics/translator-reads-detected-level-in-a-longer-name
+title: "The string translator reads a label filter whose name holds detected_level as Loki's detected_level (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Before a parser, the string translator adds `| unpack_logfmt` in front of any label filter whose stage text contains
+  `detected_level`, so `{A="0"} | Adetected_level="" | json` becomes `A:="0" | unpack_logfmt | filter Adetected_level:="" | unpack_json`.
+  `Adetected_level` is another label: Loki compares it as written (a label the line does not have is empty). The query
+  plan filters the label the query names (`A:="0" Adetected_level:="" | unpack_json`), and the proxy serves log stages
+  from the plan, so a client gets the plan's request. Found by the log flip gate's fuzz target (FuzzLogFlipGate); the
+  gate holds the plan to the translator's text with that unpack left out.
+request:
+  scope: query-grammar
+  entry: "FuzzLogFlipGate (internal/proxy): seed a1d5e7c0detectedlevelsuffix"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now): {app=\"x\"} | Adetected_level=\"\" | json"
+compare:
+  mode: observed
+  fields: [status, lines]
+  expect: "Loki's lines: every line of the selector, the label filter matching the absent label as empty."
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: "internal/translator (frozen): closes when the translator is deleted; the served path is the plan's"
+  loki: "a label filter compares the label it names"
+  proxy: "the plan serves the label it names; the frozen translator reads any name holding detected_level as detected_level"
+  planned_test: 'FuzzLogFlipGate (internal/proxy)'
+  visual: none
+  visual_reason: 'a label name no Grafana panel sends, found by fuzzing'
+  clusters: []
