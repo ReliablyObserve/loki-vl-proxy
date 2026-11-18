@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -210,13 +211,28 @@ func newKeepFakeVL(t *testing.T, rows []pushdownRow) (*httptest.Server, *pushdow
 			emu.ServeStats(w, r)
 		case "/select/logsql/query":
 			counts.raw.Add(1)
-			rest.ServeHTTP(w, r)
+			forwardWithBufferedBody(rest, w, r)
 		default:
-			rest.ServeHTTP(w, r)
+			forwardWithBufferedBody(rest, w, r)
 		}
 	}))
 	t.Cleanup(srv.Close)
 	return srv, fake, counts
+}
+
+// forwardWithBufferedBody hands r to next with its body read into memory first. Go's HTTP/1 server closes a
+// request body once its handler starts the response, and the transport reads a forwarded body once more after
+// its last byte (its EOF check). Under load that read can come after the backend behind next has answered: it
+// fails, the transport closes the backend connection mid-answer, the reverse proxy aborts and the proxy under
+// test reads a cut body (a 500 the test did not cause).
+func forwardWithBufferedBody(next http.Handler, w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	r.Body, r.ContentLength = io.NopCloser(bytes.NewReader(body)), int64(len(body))
+	next.ServeHTTP(w, r)
 }
 
 // fakeVLRequestRange is the start and end of a VictoriaLogs request.
