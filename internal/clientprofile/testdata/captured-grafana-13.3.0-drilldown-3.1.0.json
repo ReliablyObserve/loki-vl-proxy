@@ -1,0 +1,377 @@
+{
+ "captured": "2026-11-18, e2e-compat compose stack (Grafana --profile ui), tcpdump of the requests Grafana sent to the proxy",
+ "drilldown": "3.1.0",
+ "grafana": "13.3.0",
+ "requests": [
+  {
+   "flow": "dd-landing",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/a/grafana-lokiexplore-app/explore",
+    "X-Plugin-Id": "loki",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/index/volume",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "dd-landing",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/a/grafana-lokiexplore-app/explore",
+    "X-Plugin-Id": "loki",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/drilldown-limits",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "dd-landing",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "dd-landing",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/a/grafana-lokiexplore-app/explore",
+    "X-Plugin-Id": "loki",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/detected_labels",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "dd-service-logs",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/a/grafana-lokiexplore-app/explore",
+    "X-Plugin-Id": "loki",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/patterns",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "dd-service-logs",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "dd-service-logs",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/a/grafana-lokiexplore-app/explore",
+    "X-Plugin-Id": "loki",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/detected_fields",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "dd-service-logs",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "dd-service-logs",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/a/grafana-lokiexplore-app/explore",
+    "X-Plugin-Id": "loki",
+    "X-Query-Tags": "Source=grafana-lokiexplore-app",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/detected_labels",
+   "surface": "drilldown"
+  },
+  {
+   "flow": "explore-logs",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.2",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/explore",
+    "X-Plugin-Id": "loki",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/labels",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-logs",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.2",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/explore",
+    "X-Plugin-Id": "loki",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/index/stats",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-logs",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.2",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=grafana-explore",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-logs",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.2",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=logvolhist",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-logs-run",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=logvolhist",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-logs-run",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=grafana-explore",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-metric",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/explore",
+    "X-Plugin-Id": "loki",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/labels",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-metric",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/explore",
+    "X-Plugin-Id": "loki",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/index/stats",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-metric",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=grafana-explore",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-metric",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=logvolhist",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-logs",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/explore",
+    "X-Plugin-Id": "loki",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/labels",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-logs",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/explore",
+    "X-Plugin-Id": "loki",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/index/stats",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-cancel",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/explore",
+    "X-Plugin-Id": "loki",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/index/stats",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-cancel",
+   "headers": {
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Grafana-Referer": "http://grafana.example/explore",
+    "X-Plugin-Id": "loki",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/labels",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-cancel",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=grafana-explore",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "explore"
+  },
+  {
+   "flow": "explore-cancel",
+   "headers": {
+    "User-Agent": "Grafana/13.3.0 (linux; arm64) loki/13.2.5",
+    "X-Datasource-Uid": "PROXYDATASOURCE",
+    "X-Grafana-Org-Id": "1",
+    "X-Loki-Response-Encoding-Flags": "categorize-labels",
+    "X-Query-Tags": "Source=logvolhist",
+    "X-Scope-Orgid": "0"
+   },
+   "method": "GET",
+   "path": "/loki/api/v1/query_range",
+   "surface": "explore"
+  }
+ ]
+}
