@@ -24,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Loki's per-tenant names in `-tenant-limits`. VictoriaLogs still answers a breakdown over the limit in one ranked
   read (`sort ... partition by (_time) limit`: limit+1 values per bucket of a grid with an edge at every split's first
   step, which holds every split's first-met series wherever the request starts); an answer too large for one read
-  ranks in one call instead of two. A multi-tenant answer is cut where the
+  ranks in one call instead of two, and a step that does not divide the split interval (7s against 1h) reads the
+  whole answer instead of ranking per step. A multi-tenant answer is cut where the
   merged answer passes the limit in each split, and every response cache keeps the answer as sent, so a repeat is the
   first answer byte for byte. Answers cached before the change are not served (the mode and the intervals are part
   of a Drilldown request's cache key). The new
