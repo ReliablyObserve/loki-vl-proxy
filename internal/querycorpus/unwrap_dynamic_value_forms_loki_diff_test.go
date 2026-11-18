@@ -77,20 +77,14 @@ var dynamicValueFormsFuncs = []string{"max_over_time", "min_over_time", "avg_ove
 // than Loki):
 //
 //   - avg over the series of an infinity: Loki's mean of +Inf and +Inf is NaN, VictoriaLogs' is +Inf;
-//   - sum, sum by or avg over stddev or stdvar of an infinity on an instant: Loki answers NaN, VictoriaLogs' outer sum
-//     leaves the NaN series out (0). Under sum by (app) whether it does depends on how VictoriaLogs' blocks hold the
-//     column (its sum skips NaN in a float column), so those runs are listed as layout-dependent (dynamicValueFormsLayout:
-//     either answer is accepted): the recording before 2026-11-16 had VictoriaLogs v1.49.0 and v1.53.0 answer NaN over a
-//     logfmt line, the one of that date 0 (over a json line, NaN), and the one of 2026-11-18 (the series hash written
-//     with set_stream_fields) 0 for an infinity over a json line and -Infinity over a logfmt line, NaN for the others.
+//   - sum, sum by or avg over stddev or stdvar of an infinity on an instant after an extraction list: Loki answers NaN,
+//     VictoriaLogs' outer sum leaves the NaN series out (0), as it keeps NaN as its empty value. After a parser of every
+//     key the series hash's rows of a NaN value are flagged as nan rows before the outer sum (unwrapNaNMark), so those
+//     runs match Loki (semantics/unwrap-identity-nan-partials).
 //
 // A range longer than the step matches Loki on every row: the window evaluator merges each series' buckets (an
 // extraction list's fields, or the series hash of a parser of every key) and the proxy folds the series, reading every
 // value as a number.
-// dynamicValueFormsLayout marks a known run whose answer depends on VictoriaLogs' block layout: Loki's answer or the
-// known difference, both accepted.
-const dynamicValueFormsLayout = "layout-dependent: "
-
 var dynamicValueFormsKnown = func() map[string]map[string]string {
 	const id = "semantics/unwrap-gate-parsefloat-divergences"
 	known := map[string]map[string]string{}
@@ -106,13 +100,9 @@ var dynamicValueFormsKnown = func() map[string]map[string]string {
 				switch {
 				case infinity && strings.HasPrefix(shape, "avg(") && !deviation:
 					kinds = append(kinds, "instant", "step=range", "step>range")
-				case infinity && deviation && (strings.HasPrefix(shape, "avg(") || strings.HasPrefix(shape, "sum(")):
+				case infinity && deviation && strings.Contains(listed, " u, form |") && (strings.HasPrefix(shape, "avg(") ||
+					strings.HasPrefix(shape, "sum(") || strings.HasPrefix(shape, "sum by") && strings.Contains(pipe, "| logfmt |")):
 					kinds = append(kinds, "instant")
-				case infinity && deviation && strings.HasPrefix(shape, "sum by"):
-					if known[q] == nil {
-						known[q] = map[string]string{}
-					}
-					known[q]["instant"] = dynamicValueFormsLayout + id
 				}
 				for _, k := range kinds {
 					if known[q] == nil {
@@ -234,10 +224,6 @@ func TestUnwrapDynamicValueFormsMatchLoki(t *testing.T) {
 						}
 						sort.Strings(cs)
 						t.Logf("DIFF %s | %s | %s", mr.kind, mq.q, strings.Join(cs, "; "))
-					}
-				case strings.HasPrefix(known, dynamicValueFormsLayout):
-					if len(d.classes) == 0 {
-						table[key].match++
 					}
 				case len(d.classes) == 0 && known != "":
 					t.Errorf("%s %s %s matches Loki: remove it from dynamicValueFormsKnown (%s)", prof.name, mr.kind, mq.q, known)
