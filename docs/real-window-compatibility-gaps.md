@@ -154,8 +154,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 14 of 25 |
 | Behaviour and feature items | 11 proven, 23 partial, 3 gaps |
-| Known differences from Loki (ranked) | **168**: 143 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **78 of 143**: 62 Explore, 15 Logs Drilldown, 1 Grafana datasource; 20 API only, 45 edge cases |
+| Known differences from Loki (ranked) | **169**: 144 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **79 of 144**: 63 Explore, 15 Logs Drilldown, 1 Grafana datasource; 20 API only, 45 edge cases |
 
 **Readiness by client**
 
@@ -163,7 +163,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 
 | Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |
 |---|---:|---:|---:|---:|---:|
-| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 62 |
+| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 63 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 15 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
 | Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 20 |
@@ -190,7 +190,7 @@ The exhaustive helper sent millisecond integers to Loki, which interprets intege
 
 A fresh Compose project with Loki 3.7.7, VictoriaLogs 1.50.0 and a pre-release build of these corrections, without the UI generator, produced **283/284 query checks** and **64/70 error checks**. The query failure was implicit many-to-one matching. The six error failures were four invalid IP cases and a duplicated parser-error case.
 
-The default `test/e2e-compat/docker-compose.yml` pins Loki 3.7.9 and VictoriaLogs v1.53.0, the same Loki release as the `docker-compose.review.yml` override; `LOKI_IMAGE` selects another Loki release.
+The default `test/e2e-compat/docker-compose.yml` pins Loki 3.7.9 and VictoriaLogs v1.54.0, the same Loki release as the `docker-compose.review.yml` override; `LOKI_IMAGE` selects another Loki release.
 
 The earlier 255/284 query result came from a long-running UI generator stack with repeated ingestion. Its reference timeouts and empty-result findings were not isolated reproductions. A later deterministic test reproduced the regexp capture/filter failure after the stored-field inventory was warmed: a query-created `http_method` capture was incorrectly rewritten to a stored `http.method` field. Query-local capture names now remain independent of that inventory.
 

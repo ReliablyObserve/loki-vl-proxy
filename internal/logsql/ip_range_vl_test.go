@@ -12,7 +12,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
-// ipRangeVerdicts are VictoriaLogs' own verdicts (its parser, lib/logstorage ParseQuery, on v1.49.0 and v1.53.0) on
+// ipRangeVerdicts are VictoriaLogs' own verdicts (its parser, lib/logstorage ParseQuery, on v1.49.0 and v1.54.0) on
 // the IP address spellings an ipv4_range or ipv6_range filter is written with: compressed and expanded IPv6, upper
 // case, IPv4-mapped and IPv4-embedded forms (::ffff:a.b.c.d, ::a.b.c.d, 64:ff9b::a.b.c.d), zone ids, IPv4 written
 // to ipv6_range and IPv6 written to ipv4_range, leading zeros and CIDR masks, each as the one argument (an address
@@ -23,7 +23,7 @@ const ipRangeVerdicts = "testdata/ip-range-vl.jsonl"
 type ipRangeVerdict struct {
 	Query string `json:"q"`
 	V149  bool   `json:"v1.49.0"`
-	V153  bool   `json:"v1.53.0"`
+	V154  bool   `json:"v1.54.0"`
 }
 
 // ipRangeAddresses are the spellings of the grid.
@@ -117,14 +117,14 @@ func TestParseIPRangeMatchesVictoriaLogs(t *testing.T) {
 		if r.Query != want[i] {
 			t.Fatalf("verdict %d is for %s, the grid has %s: record them again", i, r.Query, want[i])
 		}
-		if r.V149 != r.V153 {
-			t.Errorf("%s: VictoriaLogs v1.49.0 accepts=%v, v1.53.0 accepts=%v: the grid is for one reading", r.Query, r.V149, r.V153)
+		if r.V149 != r.V154 {
+			t.Errorf("%s: VictoriaLogs v1.49.0 accepts=%v, v1.54.0 accepts=%v: the grid is for one reading", r.Query, r.V149, r.V154)
 		}
-		if r.V153 {
+		if r.V154 {
 			accepted++
 		}
-		if _, err := Parse(r.Query); (err == nil) != r.V153 {
-			t.Errorf("%s: VictoriaLogs accepts=%v, the proxy's parser: %v", r.Query, r.V153, err)
+		if _, err := Parse(r.Query); (err == nil) != r.V154 {
+			t.Errorf("%s: VictoriaLogs accepts=%v, the proxy's parser: %v", r.Query, r.V154, err)
 		}
 	}
 	if accepted < 200 || accepted > len(rows)-200 {
@@ -154,9 +154,9 @@ func TestRecordIPRangeVerdicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	accept := map[string][]bool{}
-	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		modfile := "go." + v + ".mod"
-		if v == "v1.53.0" {
+		if v == "v1.54.0" {
 			modfile = ""
 		}
 		bin, err := oraclerun.Build(dir, modfile, work, "vl-"+v)
@@ -186,7 +186,7 @@ func TestRecordIPRangeVerdicts(t *testing.T) {
 	}
 	var out strings.Builder
 	for i, q := range queries {
-		line, _ := json.Marshal(ipRangeVerdict{Query: q, V149: accept["v1.49.0"][i], V153: accept["v1.53.0"][i]})
+		line, _ := json.Marshal(ipRangeVerdict{Query: q, V149: accept["v1.49.0"][i], V154: accept["v1.54.0"][i]})
 		out.Write(line)
 		out.WriteByte('\n')
 	}

@@ -20,7 +20,7 @@ import (
 )
 
 // TestListedIdentityWindowsVictoriaLogsCost measures what reading an extraction list's series identity on a range
-// longer than the step costs VictoriaLogs (v1.53.0 and v1.49.0, its own query handlers through the serve oracle): a
+// longer than the step costs VictoriaLogs (v1.54.0 and v1.49.0, its own query handlers through the serve oracle): a
 // query_range of an hour at a step of a minute over a range of five, through the real handler on a fresh proxy (every
 // cache cold), with the windows of the identity (head) and without them (listedIdentityWindowsOff: the stream's
 // series and each line's step bucket, as origin/main reads them), interleaved runs in turn. It reports the median and
@@ -68,7 +68,7 @@ func TestListedIdentityWindowsVictoriaLogsCost(t *testing.T) {
 	form := func(q string) string {
 		return url.Values{"query": {q}, "start": {end.Add(-time.Hour).Format(time.RFC3339)}, "end": {end.Format(time.RFC3339)}, "step": {step}}.Encode()
 	}
-	for _, v := range []struct{ version, modfile string }{{"v1.53.0", ""}, {"v1.49.0", "go.v1.49.0.mod"}} {
+	for _, v := range []struct{ version, modfile string }{{"v1.54.0", ""}, {"v1.49.0", "go.v1.49.0.mod"}} {
 		srv, err := oraclerun.StartVLServe(filepath.Join("..", "..", "test", "oracle", "vl"), v.modfile, []oraclerun.ServeDataSet{set})
 		if err != nil {
 			t.Fatal(err)
@@ -140,7 +140,7 @@ func TestListedIdentityWindowsVictoriaLogsCost(t *testing.T) {
 }
 
 // TestListedWindowChunksVictoriaLogsCost measures the time chunks of an extraction list's windows against VictoriaLogs
-// (v1.53.0 and v1.49.0, its own query handlers through the serve oracle): a query_range of six hours over a range of
+// (v1.54.0 and v1.49.0, its own query handlers through the serve oracle): a query_range of six hours over a range of
 // five minutes, after a list naming a label of 2,000 values (user) and one of a value per line (id: one series per
 // line), through the real handler on a fresh proxy per request (every cache cold), read in one read
 // (listedWindowChunksOff: the status, the VictoriaLogs time and calls one read takes) and in chunks under the default
@@ -180,7 +180,7 @@ func TestListedWindowChunksVictoriaLogsCost(t *testing.T) {
 	if only := os.Getenv("LVP_XLIST_CHUNKS_STEP"); only != "" {
 		steps = []string{only}
 	}
-	for _, v := range []struct{ version, modfile string }{{"v1.53.0", ""}, {"v1.49.0", "go.v1.49.0.mod"}} {
+	for _, v := range []struct{ version, modfile string }{{"v1.54.0", ""}, {"v1.49.0", "go.v1.49.0.mod"}} {
 		srv, err := oraclerun.StartVLServe(filepath.Join("..", "..", "test", "oracle", "vl"), v.modfile, []oraclerun.ServeDataSet{set})
 		if err != nil {
 			t.Fatal(err)

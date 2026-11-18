@@ -109,7 +109,7 @@ func lokiTimestamp(text string) (int64, bool) {
 var promDurationRE = regexp.MustCompile(`^(?:(\d+)y)?(?:(\d+)w)?(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(?:(\d+)ms)?$`)
 
 // vlDurationNs reads a duration the way VictoriaLogs does (lib/logstorage
-// tryParseDuration, identical in v1.49.0 and v1.53.0): one or more
+// tryParseDuration, identical in v1.49.0 and v1.54.0): one or more
 // <float><unit> parts, every part truncated to whole nanoseconds on its own.
 // A bare number has no unit and is refused.
 func vlDurationNs(s string) (int64, bool) {
@@ -153,7 +153,7 @@ func vlDurationNs(s string) (int64, bool) {
 }
 
 // vlTimestampNs reads a start or end as VictoriaLogs does (VictoriaMetrics
-// lib/timeutil ParseTimeAt, v1.49.0 and v1.53.0): RFC 3339, or a unix
+// lib/timeutil ParseTimeAt, v1.49.0 and v1.54.0): RFC 3339, or a unix
 // timestamp of decimal digits whose unit follows from its magnitude (seconds
 // below 2^31, then milliseconds, microseconds, nanoseconds), a fraction
 // counting as more digits, exactly.
@@ -696,7 +696,7 @@ func ssGenerate(rnd *rand.Rand, kind ssKind, instant, align bool) ssScenario {
 
 // conformance: semantics/sub-second-step-grid
 func TestSubSecondStepDifferential(t *testing.T) {
-	for _, version := range []string{"", "v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"", "v1.49.0", "v1.54.0"} {
 		for _, instant := range []bool{false, true} {
 			for _, align := range []bool{false, true} {
 				if instant && align {
@@ -739,12 +739,12 @@ func ssEdgeRows(s ssScenario, from, to int64) []vlemu.Row {
 // a range shorter than the step (none: one point), equal to it (two points) and
 // longer without being a multiple; a window shorter than, equal to and longer
 // than the step; a start on the step grid and off it, with the proxy's
-// -align-queries-with-step off and on (the default); every shape, on v1.49.0 and v1.53.0.
+// -align-queries-with-step off and on (the default); every shape, on v1.49.0 and v1.54.0.
 //
 // conformance: semantics/sub-second-step-grid, window-bounds-and-step-alignment
 func TestSubSecondStepEdgeTable(t *testing.T) {
 	steps := []struct{ text string }{{"0.001"}, {"0.1"}, {"0.2"}, {"250ms"}, {"1.5"}, {"0.999"}, {"1"}}
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, step := range steps {
 			stepDur, _ := lokiStep(step.text)
 			stepNs := stepDur.Milliseconds() * int64(time.Millisecond)
@@ -819,7 +819,7 @@ func TestSubSecondStepGrafanaShapes(t *testing.T) {
 			if s.beyondBucketBudget() != tc.raw {
 				t.Fatalf("beyondBucketBudget = %v, want %v", s.beyondBucketBudget(), tc.raw)
 			}
-			res := s.check(t, "v1.53.0")
+			res := s.check(t, "v1.54.0")
 			t.Logf("%s: %d series, raw-row reads: %d", tc.name, len(res.series), len(res.strict.emu.EndpointCalls("/select/logsql/query")))
 		})
 	}
@@ -1114,7 +1114,7 @@ func TestRestampInstantVectorBodies(t *testing.T) {
 func TestSubSecondStepLineOnTheWindowEdge(t *testing.T) {
 	const stepMs, windowMs = 999, 600
 	startMs := int64(1793671800000)
-	for _, version := range []string{"", "v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"", "v1.49.0", "v1.54.0"} {
 		for _, shiftMs := range []int64{0, 1, 3, 111, 998} { // the grid moves with the hour of the fixture
 			for _, kind := range ssKinds {
 				s := ssScenario{kind: kind, step: "0.999", window: windowMs * time.Millisecond, align: true}

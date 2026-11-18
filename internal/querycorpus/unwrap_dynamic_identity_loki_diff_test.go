@@ -14,7 +14,7 @@ import (
 
 // The Loki differential of the series a range function over an unwrapped label reads after a json or logfmt parser
 // with no keep: real Loki (the engine oracle, test/oracle/loki) and real VictoriaLogs (the serve oracle,
-// test/oracle/vl, v1.53.0 and v1.49.0) over the same data, through the proxy's real query and query_range handlers,
+// test/oracle/vl, v1.54.0 and v1.49.0) over the same data, through the proxy's real query and query_range handlers,
 // as the metric differential runs them (plan_loki_vl_metric_diff_test.go).
 //
 // A Loki series is the stream and every label the parser extracts, less the unwrapped one: the samples of the lines

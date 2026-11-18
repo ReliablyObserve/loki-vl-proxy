@@ -32,7 +32,7 @@ import (
 //     an accepted query) are recorded in testdata/grammar-sweep-loki.jsonl.gz, under the hash of the query set.
 //   - VictoriaLogs' answers (the VictoriaLogs oracle, test/oracle/vl: roundtrip) are recorded in
 //     testdata/grammar-sweep-vl.jsonl.gz for every LogsQL text the proxy writes for those queries (the string
-//     translator's, and the query plan's), on v1.49.0 and v1.53.0, under the text.
+//     translator's, and the query plan's), on v1.49.0 and v1.54.0, under the text.
 //   - The proxy's answers are computed: the handlers' validation (sweepValidate: the request rewrite, Loki's dotted-name
 //     error, logql.ValidateLogQLExpr), the query plan's tree, and the LogsQL of the plan and of the translator.
 //
@@ -59,7 +59,7 @@ const (
 	sweepUnrecorded = 0.05
 )
 
-var sweepVersions = []string{"v1.49.0", "v1.53.0"}
+var sweepVersions = []string{"v1.49.0", "v1.54.0"}
 
 // ---- the answers ----
 

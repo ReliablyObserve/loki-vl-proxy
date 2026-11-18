@@ -136,9 +136,9 @@
     "victorialogs": {
       "matrix": [
         "v1.49.0",
-        "v1.53.0"
+        "v1.54.0"
       ],
-      "pinned": "v1.53.0"
+      "pinned": "v1.54.0"
     }
   }
 }

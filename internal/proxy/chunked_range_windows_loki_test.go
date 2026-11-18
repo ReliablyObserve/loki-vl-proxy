@@ -104,7 +104,7 @@ func TestChunkedRangeWindowsMatchLoki(t *testing.T) {
 	}
 	loki := lokiEngineAnswers(t, "chunked_range_windows", []oraclerun.EngineDataSet{set})
 
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, client := range []struct {
 			name    string
 			headers map[string]string
