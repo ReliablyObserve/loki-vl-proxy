@@ -1864,6 +1864,7 @@
     "internal/proxy/metadata_scan_sim_scenarios_test.go | backend-admission-and-heavy-query-queueing",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/metadata-scan-adaptive-limit",
+    "internal/proxy/multitenant_subrequest_scope_test.go | tenant-numeric-routing",
     "internal/proxy/multitenant_tenant_failure_test.go | semantics/vl-refusal-is-plan-defect",
     "internal/proxy/multitenant_tenant_label_test.go | semantics/tenant-label-default-aliases",
     "internal/proxy/multitenant_tenant_label_test.go | tenant-label-isolation",
@@ -3182,6 +3183,7 @@
     "test/e2e-compat/tail_pipeline_test.go | semantics/tail-delivers-rows-visible-out-of-order",
     "test/e2e-compat/tail_pipeline_test.go | tail-reads-settled-rows",
     "test/e2e-compat/tenant_auth_loki_test.go | tenant-auth-follows-loki",
+    "test/e2e-compat/tenant_fanout_scope_test.go | tenant-numeric-routing",
     "test/e2e-compat/tenant_label_isolation_test.go | prometheus_api_v1_alerts",
     "test/e2e-compat/tenant_label_isolation_test.go | prometheus_api_v1_rules",
     "test/e2e-compat/tenant_label_isolation_test.go | semantics/tenant-label-default-aliases",
@@ -3309,7 +3311,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 767,
+      "go": 769,
       "playwright": 3
     },
     "page_kinds": {

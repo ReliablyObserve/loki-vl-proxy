@@ -95,6 +95,10 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 			subReq := filteredReq.Clone(filteredReq.Context())
 			subReq.Header = filteredReq.Header.Clone()
 			subReq.Header.Set("X-Scope-OrgID", tenantID)
+			// The tenant's own scope (org ID, auth fingerprint, original request) before the handler runs: a key the
+			// handler builds before its own withRequestScope (the response cache key) is the tenant's, never the
+			// multi-tenant request's, which every tenant would share.
+			subReq = p.withRequestScope(subReq)
 			rec := httptest.NewRecorder()
 			p.serveEndpoint(endpoint, rec, subReq)
 			results[i] = tenantResult{tenantID: tenantID, rec: rec, failureStatus: multiTenantSubRequestFailure(rec)}
