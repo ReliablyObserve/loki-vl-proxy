@@ -1,9 +1,11 @@
 package logql
 
 import (
+	"errors"
 	"math/bits"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 // CanonicalSpelling writes the metric calls and parentheses of a query in one spelling, the one its parsed tree
@@ -170,9 +172,8 @@ func (p *parser) spellRemove(from, to int) rewrite {
 
 // spellOpaqueCall handles a metric call the parser keeps as text, src[start:end], whose arguments start at arg. A call
 // whose parts the parser does not read keeps its spelling, and so does the query: approx_topk, a vector call that is
-// not one number, a label_replace call that is not a query and four strings. label_replace's first argument is
-// respelled as a query of its own (once per call: a nested call's argument is read by its own call, not typed again
-// as the parser's typeOpaqueCall does).
+// not one number, a label_replace call that is not a query and four strings. label_replace's first argument is read
+// where it stands (spellLabelReplace); with spellPerArgument (tests only) it is respelled here as a query of its own.
 func (p *parser) spellOpaqueCall(name string, start, arg, end int) {
 	switch name {
 	case "vector":
@@ -195,6 +196,10 @@ func (p *parser) spellOpaqueCall(name string, start, arg, end int) {
 	}
 }
 
+// spellPerArgument respells label_replace's first argument as a query of its own, read apart (tests compare it with
+// the reading in place, spellLabelReplace).
+var spellPerArgument atomic.Bool
+
 // labelReplaceStrings reports whether rest, the text after label_replace's first argument, is its four strings and
 // its closing parenthesis: `, "dst", "replacement", "src", "regex")`.
 func labelReplaceStrings(rest string) bool {
@@ -208,6 +213,37 @@ func labelReplaceStrings(rest string) bool {
 		}
 	}
 	return sc.next().Typ == TokRParen && sc.next().Typ == TokEOF
+}
+
+// errSpellKept stops CanonicalSpelling's parse of a query whose spelling it keeps.
+var errSpellKept = errors.New("logql: spelling kept")
+
+// spellLabelReplace reads the arguments of a label_replace call whose name starts at offset start, the parser past
+// its opening parenthesis: its first argument is respelled as the whole argument of a call, where it stands (read
+// apart, the argument of each call nested in it would be read again at every level of the nesting), its four
+// strings keep their spelling, and so does the query when they are not four strings and a closing parenthesis.
+func (p *parser) spellLabelReplace(start int, treeErr *string) (Expr, error) {
+	inner, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	p.spellArgumentParens(inner) // `label_replace((a + b), ...)`
+	for i := 0; i < 4; i++ {
+		if p.cur.Typ != TokComma {
+			return nil, errSpellKept
+		}
+		if p.advance(); p.cur.Typ != TokString && p.cur.Typ != TokRawString {
+			return nil, errSpellKept
+		}
+		p.advance()
+	}
+	if p.cur.Typ != TokRParen {
+		return nil, errSpellKept
+	}
+	p.spellGap(p.prevEnd, p.pos())
+	end := p.sc.pos
+	p.advance()
+	return &OpaqueMetricExpr{Raw: strings.TrimSpace(p.sc.src[start:end]), Func: "label_replace", treeErr: treeErr}, nil
 }
 
 // hasComment reports a `#` outside the strings of q.

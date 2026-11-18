@@ -165,11 +165,6 @@
       "cmd/proxy/delete_api_validation_test.go",
       "internal/proxy/delete_route_test.go"
     ],
-    "drilldown/client-detection-captured-header-sets": [
-      "internal/clientprofile/detect_test.go",
-      "internal/proxy/client_profile_capture_test.go",
-      "test/e2e-ui/tests/client-detection.spec.ts"
-    ],
     "drilldown/fields-pill-json-path-extracted-empty": [
       "internal/proxy/drilldown_fields_json_path_test.go",
       "internal/translator/json_bracket_path_test.go",
@@ -820,7 +815,6 @@
     ],
     "observability-slow-query-log": [
       "internal/metrics/callertracker_test.go",
-      "internal/proxy/client_profile_capture_test.go",
       "internal/proxy/query_caller_test.go",
       "internal/proxy/query_flow_test.go",
       "internal/proxy/slow_query_log_test.go"
@@ -1944,6 +1938,13 @@
     "semantics/nested-calls-linear-work": [
       "internal/logql/canonical_nested_test.go"
     ],
+    "semantics/nested-calls-read-once": [
+      "internal/logql/argument_reader_test.go",
+      "internal/logql/deep_call_cost_test.go",
+      "internal/logql/quiet_calls_test.go",
+      "internal/proxy/long_query_memo_test.go",
+      "internal/proxy/strip_outer_calls_test.go"
+    ],
     "semantics/non-sum-vector-aggregation-unreduced": [
       "internal/proxy/instant_unwrap_sum_test.go",
       "internal/proxy/matrix_fold_sink_test.go",
@@ -3016,15 +3017,15 @@
     "internal/cache/peer_test.go": [
       "peer-cache-patterns"
     ],
-    "internal/clientprofile/detect_test.go": [
-      "drilldown/client-detection-captured-header-sets"
-    ],
     "internal/config/generate_edge_test.go": [
       "operator-configurable-limits"
     ],
     "internal/config/registry_test.go": [
       "limits/every-cap-is-a-flag",
       "operator-configurable-limits"
+    ],
+    "internal/logql/argument_reader_test.go": [
+      "semantics/nested-calls-read-once"
     ],
     "internal/logql/blank_after_keyword_loki_test.go": [
       "semantics/parser-reads-unicode-blank-as-white-space",
@@ -3044,6 +3045,9 @@
     ],
     "internal/logql/count_values_test.go": [
       "semantics/count-values-unsupported"
+    ],
+    "internal/logql/deep_call_cost_test.go": [
+      "semantics/nested-calls-read-once"
     ],
     "internal/logql/dotted_names_test.go": [
       "profiles/dotted-name-parse-error"
@@ -3135,6 +3139,9 @@
     "internal/logql/print_reparse_test.go": [
       "semantics/binary-operand-literals-reprint",
       "semantics/label-filter-expression-syntax"
+    ],
+    "internal/logql/quiet_calls_test.go": [
+      "semantics/nested-calls-read-once"
     ],
     "internal/logql/range_rules_test.go": [
       "semantics/proxy-accepts-invalid-logql"
@@ -3427,10 +3434,6 @@
     "internal/proxy/chunked_range_windows_loki_test.go": [
       "drilldown/long-range-pieces-answer-like-loki",
       "loki_api_v1_query_range"
-    ],
-    "internal/proxy/client_profile_capture_test.go": [
-      "drilldown/client-detection-captured-header-sets",
-      "observability-slow-query-log"
     ],
     "internal/proxy/cold_bad_row_test.go": [
       "semantics/error-layer-silent-success"
@@ -3971,6 +3974,9 @@
       "profiles/label-browse-params-ignored",
       "profiles/parsed-fields-without-parser",
       "profiles/structured-metadata-keys-per-profile"
+    ],
+    "internal/proxy/long_query_memo_test.go": [
+      "semantics/nested-calls-read-once"
     ],
     "internal/proxy/lowering_shadow_evaluated_test.go": [
       "architecture-syntax-package-layering"
@@ -4639,6 +4645,9 @@
       "loki_api_v1_query_range",
       "semantics/stream-label-shadowed-by-ingest-json-key",
       "severity/detected-level-filter-json-level"
+    ],
+    "internal/proxy/strip_outer_calls_test.go": [
+      "semantics/nested-calls-read-once"
     ],
     "internal/proxy/sub_second_step_precision_test.go": [
       "semantics/sub-second-step-grid"
@@ -6504,9 +6513,6 @@
       "semantics/error-cache-vl-refusal-peer-sync",
       "vl-query-too-long"
     ],
-    "test/e2e-ui/tests/client-detection.spec.ts": [
-      "drilldown/client-detection-captured-header-sets"
-    ],
     "test/e2e-ui/tests/datasource.spec.ts": [
       "profiles/dotted-name-parse-error",
       "profiles/grafana-shows-loki-error-text",
@@ -6516,7 +6522,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 762,
+  "tests_with_markers": 764,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

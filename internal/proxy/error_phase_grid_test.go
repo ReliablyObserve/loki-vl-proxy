@@ -22,7 +22,7 @@ type errorPhaseGridRow struct {
 
 // knownErrorPhaseGridDifferences is the number of grid queries the proxy's query validation still answers otherwise
 // than Loki. It may only fall.
-const knownErrorPhaseGridDifferences = 51
+const knownErrorPhaseGridDifferences = 45
 
 func readErrorPhaseGrid(t testing.TB) []errorPhaseGridRow {
 	t.Helper()
