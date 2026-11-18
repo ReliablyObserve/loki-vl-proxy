@@ -16,8 +16,9 @@ import (
 // is a series of its own, and lines that differ only in the unwrapped value are one.
 //
 // VictoriaLogs groups by named fields only, so the lowering names the identity: it unpacks the line a second time
-// under a prefix of its own, deletes the unwrapped key (every spelling the parser can give the label), packs the
-// prefixed fields, the stored level fields and the stream into one value and hashes it. The stats then group by that hash, as they group by
+// under a prefix of its own, deletes the unwrapped key (every spelling the parser can give the label), writes the
+// prefixed fields, the stored level fields and the stream as one canonical value (sorted by name, the empty ones left
+// out: set_stream_fields, so lines that hold the same keys in another order are one series, as in Loki) and hashes it. The stats then group by that hash, as they group by
 // the labels a keep leaves (keptIdentity): a value per series, then the vector aggregation over the series. The
 // string translator groups these by the stream and each line instead, so the proxy serves them from the lowering
 // (DynamicUnwrapIdentity).
@@ -163,7 +164,7 @@ func dynamicIdentityPipes(parser *queryplan.Parse, label string) string {
 }
 
 // dynamicHashPipes are dynamicIdentityPipes up to the hash: the second unpack, the deletion of every spelling of the
-// unwrapped label, the pack and the hash.
+// unwrapped label, the canonical value of the series and the hash.
 func dynamicHashPipes(parser *queryplan.Parse, label string) string {
 	unpack := dynamicUnpackJSON
 	if parser.Type == logql.ParserLogfmt {
@@ -177,14 +178,21 @@ func dynamicHashPipes(parser *queryplan.Parse, label string) string {
 	return unpack + " " + logsql.PipeDelete{Labels: deleted}.String() + dynamicPackHash
 }
 
-// The fixed pipes of dynamicIdentityPipes: the second unpack of each parser, the pack and hash, and the unwrapped
-// value read again as a number. After the unpack VictoriaLogs holds the value math wrote as text, and its stats read
+// The fixed pipes of dynamicIdentityPipes: the second unpack of each parser, the canonical value and its hash, and
+// the unwrapped value read again as a number. The canonical value is set_stream_fields' (VictoriaLogs v1.49 and
+// later): the fields sorted by name, each name="quoted value", the empty ones left out. pack_json wrote the fields in
+// the order of the block's columns, which is the order the line's keys come in (unpack_json and unpack_logfmt start a
+// block for each sequence of keys), so lines that hold the same keys in another order hashed as two series.
+// set_stream_fields writes the value into _stream (and blanks _stream_id), which the rename moves to the series
+// field: no pipe after the identity reads _stream or _stream_id (TestDynamicIdentityLeavesNoStreamReader). Keeping
+// them in copies and putting them back cost VictoriaLogs 3-19% more per row; this form costs no more than pack_json. After the unpack VictoriaLogs holds the value math wrote as text, and its stats read
 // such text with a parser that refuses an infinity and any number longer than 27 characters (1e25, 1e-30, 1e308):
 // avg, sum and stddev then answer NaN. The math pipe gives the stats a number again.
 var (
 	dynamicUnpackJSON   = logsql.PipeUnpackJSON{From: "_msg", ResultPrefix: dynamicPrefix}.String()
 	dynamicUnpackLogfmt = logsql.PipeUnpackLogfmt{From: "_msg", ResultPrefix: dynamicPrefix}.String()
-	dynamicPackHash     = " " + logsql.PipePackJSON{Fields: dynamicPacked, ResultField: dynamicSeriesField}.String() + " " +
+	dynamicPackHash     = " " + logsql.PipeSetStreamFields{Fields: dynamicPacked}.String() + " " +
+		logsql.PipeRename{Pairs: [][2]string{{"_stream", dynamicSeriesField}}}.String() + " " +
 		logsql.PipeHash{Fields: []string{dynamicSeriesField}, Result: dynamicSeriesField}.String()
 	dynamicRenumber = " " + logsql.PipeMath{Expr: translate.UnwrapValueAlias, Alias: translate.UnwrapValueAlias}.String()
 )
