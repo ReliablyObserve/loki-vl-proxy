@@ -30,8 +30,9 @@ why: |
   part in matching, unlike the number a ScalarOp is) and the shadows hold the
   root to the binary route (proxy.BinaryOperandsPhysical, which describes the
   handler: no translation for a vector(n)), not to the translator's text, which
-  internal/querycorpus checkBinaryRoute rejects as a lowering. A spelling the
-  route does not read as a vector(n) (`vector (1)`) stays with the translator
+  internal/querycorpus checkBinaryRoute rejects as a lowering. A vector(n)
+  spelled with blanks (`vector (1)`) reaches the route as vector(1): the
+  request rewrite respells it first
   (semantics/vector-call-blank-before-parenthesis-as-query). A binary
   operation of constants only (`2 * vector(3)`, `vector(1) + vector(2)`) stays
   with the translator by name (BinOp constant operands): an instant query of
