@@ -55,7 +55,7 @@ compare:
   expect: "One series per stream whatever the key order of its lines: 7 at every step, as Loki."
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1652"
   impact: edge
   effort: S
   area: "internal/queryplan/lower (unwrap_dynamic.go: the series identity's canonical value)"
