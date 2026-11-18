@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
+  `{...} |= "x" [1m]` form no longer doubles its work with each level of `label_replace` (or `vector`, `approx_topk`)
+  calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
+  it stands. A request with 18 nested calls (about 550 bytes) took half a second and now takes 2.5 ms. Answers do not
+  change, and nested queries are accepted at every depth, as Loki accepts them (semantics/nested-calls-linear-work).
 - A `label_replace` call Loki cannot read is answered with Loki's error text, line and column. Three or five
   strings, a number for a string and an invalid escape now count the column from the start of the query, not from
   the call (Loki's `col 70` where the proxy said `col 56`), and use the line Loki gives. Such an error, and a

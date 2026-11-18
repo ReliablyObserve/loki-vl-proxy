@@ -324,6 +324,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/logql-unicode-runes` — LogQL reads the characters of every Unicode category as Loki's lexer does: only an ASCII digit starts a number, and the parser returns on... | this change | 0 | 0 |
 | `semantics/loki-error-phase-order` — A query with two errors answers the one Loki answers, in Loki's order of checks (fixed; residuals open) | #1580 | 0 | 0 |
 | `semantics/metadata-routes-validate-before-selector-rule` — Metadata routes report Loki's validation error of a query before `only label matchers` or `only log selector` (fixed for the tree checks) | TBD-PR | 0 | 0 |
+| `semantics/nested-calls-linear-work` — The rewrite of alternative log ranges no longer doubles its work per level of nested label_replace calls, and nested calls are accepted a... | this change | 0 | 0 |
 | `semantics/nested-calls-read-once` — Queries that nest label_replace calls deeply are parsed, validated and respelled once per request in time that grows with their length, a... | this change | 0 | 0 |
 | `semantics/quantile-over-time-parameter-required` — quantile_over_time without its quantile is rejected with Loki's parse error at validation (fixed) | TBD-PR | 0 | 0 |
 | `semantics/query-stats-shards-empty-pieces` — A repeated log query reports as shards only the 1h pieces that hold a returned entry, like Loki; the first answer of a query text reports... | fix/query-stats-shards-pieces-with-data | 0 | 0 |

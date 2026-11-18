@@ -70,7 +70,7 @@ full ruler parity) is planned work, not shipped.
 |---|---|
 | Write path | Out of scope by design: the proxy is read-only, so `POST /loki/api/v1/push` stays blocked. Ingest goes to VictoriaLogs directly, through its own ingestion paths. |
 | Delete path | By default `/loki/api/v1/delete` is not registered and answers `404`, as Loki does with deletion disabled. With `-delete-api-enabled=true` (which requires `-delete-api-auth-token`; every delete request must carry the token) a create request runs as a VictoriaLogs delete task and a cancel stops the tenant's running task, with Loki's answers. Not served: the list of requests (GET) and a query whose rows a VictoriaLogs filter cannot select (a parser such as `| json`, a filter on a parsed label) answer Loki's `500`, deletion starts at once instead of after Loki's cancellation period, and answers cached before a delete keep serving the deleted rows until they expire. See [Security hardening migration](security-hardening-migration.md#remaining-delete-api-gap). |
-| Rules and alerts lifecycle | Read compatibility is exposed through Loki YAML and Prometheus-style JSON views when `-ruler-backend` / `-alerts-backend` is configured. Rule writes and alert lifecycle changes remain outside the proxy. In `-tenant-label` mode an org sees only the rules and alerts labeled `<tenant-label>=<org>`. |
+| Rules and alerts lifecycle | Read compatibility is exposed through Loki YAML and Prometheus-style JSON views when `-ruler-backend` / `-alerts-backend` is configured. Rule writes and alert lifecycle changes remain outside the proxy, and alerting is not production-ready: Loki-style alerting and recording rules are the next big area, started once the query path is 100% ready ([roadmap](roadmap.md)). In `-tenant-label` mode an org sees only the rules and alerts labeled `<tenant-label>=<org>`. |
 | Browser-origin tailing | `/loki/api/v1/tail` rejects browser `Origin` headers unless allowlisted with `-tail.allowed-origins`. |
 | Multi-tenant tailing | Tail remains intentionally single-tenant. Loki-style multi-tenant tail fanout is not supported there. |
 
@@ -186,7 +186,7 @@ These are not current open issues in this codebase:
 - route-aware proxy, cache, and upstream request telemetry
 - prefixed app metrics under `loki_vl_proxy_*` with CI guard coverage
 - `max`, `min`, `count` and `avg` over a range function on `query_range` — one series per group, as in Loki, where the proxy returned one series per stream when the window is not the step (#734)
-- Default-disabled delete routing — answers `404` like Loki with deletion disabled and is registered only with `-delete-api-enabled` (#855). This fixes the route exposure boundary; actual VictoriaLogs deletion remains unsupported, as described above.
+- Default-disabled delete routing — answers `404` like Loki with deletion disabled and is registered only with `-delete-api-enabled` (#855). This fixes the route exposure boundary; since 2.330.0 an enabled delete API runs create and cancel as VictoriaLogs delete tasks, and what it does not serve is listed in the Delete path row above.
 - `label_replace()` — fully implemented in translator with proxy-side post-processing (v1.21.0)
 - `label_join()` and `group()` — not in Loki 3.7.7's LogQL; both are a 400 parse error like Loki's (they were proxy-only extensions from v1.21.0)
 - bare label matcher malformed VL output — queries like `app="value"` (missing braces) now return a descriptive HTTP 400 instead of silently producing double-quoted VL syntax (v1.20.0)
