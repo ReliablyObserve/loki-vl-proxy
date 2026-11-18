@@ -1,0 +1,18 @@
+id: vl-last-n-subquery-ties
+kind: version_gated_capability
+since: v1.54
+generated:
+  used_in: 0
+
+description: |
+  Not a refusal: queries returning the newest N logs (the limit arg of
+  /select/logsql/query, `| sort by (_time desc) limit N`, live tailing) with
+  subqueries, or with many logs on the same timestamp, could miss or repeat
+  logs before v1.54.0 (#1850, #1882; the v1.52.2 LTS notes name the fix,
+  v1.53.x lacks it).
+proxy_usage: |
+  Recorded for the capability layer; no proxy route avoids the shape yet
+  (follow-up).
+fallback: |
+  None yet.
+proves: []
