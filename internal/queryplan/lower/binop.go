@@ -56,8 +56,9 @@ import (
 //     to the translator, and a `without ()` operand over an unwrapped label (BinOp operand without empty unwrap) or
 //     in a nest of vector aggregations (BinOp operand without empty nest: a fold carries one level, and the levels
 //     above an empty clause are not in it, `count without ()` turns every series into 1);
-//   - an operand whose text holds the bytes of the binary text's own markers (BinOp marker text): physical.Encode
-//     writes the operands between those markers, and their readers split the text at the first one, quoted or not.
+//   - an operand whose client values hold the bytes of the binary text's own markers (BinOp marker text, decided from
+//     the tree): physical.Encode writes the operands between those markers, and their readers split the text at the
+//     first one, quoted or not.
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err := binOpShape(n); err != nil {
 		return nil, err

@@ -557,7 +557,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 }
 
 func joinFirst(lines []string, n int) string {
-	if os.Getenv("ZZALL") == "" && len(lines) > n {
+	if len(lines) > n {
 		lines = append(lines[:n:n], fmt.Sprintf("... and %d more", len(lines)-n))
 	}
 	out := ""
