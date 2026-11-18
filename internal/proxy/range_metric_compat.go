@@ -1247,13 +1247,13 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 	// series: this ranks values and sends the limit to VictoriaLogs.
 	limit := p.requestQueryLimits(ctx).MaxQuerySeries
 	params := url.Values{}
-	rank := " | stats by (" + field + ") count() as _c | sort by (_c desc) | limit "
+	query := spec.BaseQuery + " | stats by (" + field + ") count() as _c | sort by (_c desc) | limit " + strconv.Itoa(limit+1)
 	firstMet := false
 	if scope := seriesLimitScopeFrom(ctx); scope != nil && scope.lokiCut {
 		// Loki's partial answer keeps the values met first: rank by each value's first line.
-		rank, firstMet = " | stats by ("+field+") min(_time) as _c | sort by (_c) | limit ", true
+		query, firstMet = spec.BaseQuery+firstMetRanking(field, "_c", false, limit+1), true
 	}
-	params.Set("query", spec.BaseQuery+rank+strconv.Itoa(limit+1))
+	params.Set("query", query)
 	params.Set("start", windowStart.UTC().Format(time.RFC3339Nano))
 	params.Set("end", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
 	params.Set("time", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))

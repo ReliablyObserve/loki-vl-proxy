@@ -20,6 +20,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -482,23 +483,50 @@ func parsedFieldPrefilter(parser, field string, stored ...string) string {
 // VictoriaLogs still reads the lines twice (the ranking and the buckets), but
 // the response, and what the proxy buffers, stay bounded.
 func rankedSingleFieldQuery(logsqlQuery string, limit int) (string, bool) {
-	return rankedSingleFieldQueryBy(logsqlQuery, limit, "count() as __lvp_rank | sort by (__lvp_rank desc, ")
+	return rankedSingleFieldQueryBy(logsqlQuery, limit, func(field string, n int) string {
+		return " | stats by (" + field + ") count() as __lvp_rank | sort by (__lvp_rank desc, " + field + ") | limit " + strconv.Itoa(n) + " | fields " + field
+	})
 }
 
 // rankedSingleFieldQueryFirstMet is rankedSingleFieldQuery for the Loki series-limit mode: the limit+1 values
 // whose first line is earliest, the series Loki's evaluation meets first.
 func rankedSingleFieldQueryFirstMet(logsqlQuery string, limit int) (string, bool) {
-	return rankedSingleFieldQueryBy(logsqlQuery, limit, "min(_time) as __lvp_rank | sort by (__lvp_rank, ")
+	return rankedSingleFieldQueryBy(logsqlQuery, limit, func(field string, n int) string {
+		return firstMetRanking(field, "__lvp_rank", true, n, logsql.PipeFields{Labels: []string{field}})
+	})
 }
 
-func rankedSingleFieldQueryBy(logsqlQuery string, limit int, rank string) (string, bool) {
+// rankedSingleFieldQueryBy writes the in() filter of a single-field grouped count around the ranking pipes rank
+// writes for its field and n values.
+func rankedSingleFieldQueryBy(logsqlQuery string, limit int, rank func(field string, n int) string) (string, bool) {
 	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
 	if !ok || limit <= 0 || spec.GroupBy[0] == "_stream" {
 		return "", false
 	}
 	field := spec.GroupBy[0] // as the translator wrote it, quoted where needed
-	ranking := spec.BaseQuery + " | stats by (" + field + ") " + rank + field + ") | limit " + strconv.Itoa(limit+1) + " | fields " + field
+	ranking := spec.BaseQuery + rank(field, limit+1)
 	return spec.BaseQuery + " | filter " + field + ":in(" + ranking + ")" + logsqlQuery[len(spec.BaseQuery):], true
+}
+
+// firstMetRanking is the LogsQL pipes, from the LogsQL AST, that rank field's values by their first line, earliest
+// first (ties by the value when tieByField), keep n of them and then run the further pipes: the ranking of the Loki
+// series-limit mode. field is as the translator wrote it, quoted where needed.
+func firstMetRanking(field, alias string, tieByField bool, n int, then ...logsql.Pipe) string {
+	by := []logsql.SortField{{Field: alias}}
+	if tieByField {
+		by = append(by, logsql.SortField{Field: field})
+	}
+	pipes := append([]logsql.Pipe{
+		logsql.PipeStats{By: []logsql.GroupKey{{Field: field}}, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Min{Field: "_time"}, Alias: alias}}},
+		logsql.PipeSort{By: by},
+		logsql.PipeLimit{N: n},
+	}, then...)
+	var b strings.Builder
+	for _, p := range pipes {
+		b.WriteByte(' ')
+		b.WriteString(p.String())
+	}
+	return b.String()
 }
 
 // lokiResultSeriesCount returns the number of series in a Loki JSON response:

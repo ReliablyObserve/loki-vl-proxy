@@ -330,3 +330,26 @@ func BenchmarkCutLokiResultAfter(b *testing.B) {
 		_ = cutLokiResultAfter(body, (1800000000+1800)*int64(time.Second), int64(time.Minute))
 	}
 }
+
+// The Loki mode's ranking subquery, written from the LogsQL AST, is the text the VictoriaLogs oracle checked (v1.49.0,
+// v1.53.0, v1.54.0: min(_time) sorts by time and the query survives the clone round trip), for a plain, a parsed
+// and a quoted field; the top-value read ranks the same way.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step
+func TestRankedSingleFieldQueryFirstMet(t *testing.T) {
+	for _, tc := range []struct{ query, want string }{
+		{`app:="x" pod:!"" | stats by (pod) count()`,
+			`app:="x" pod:!"" | filter pod:in(app:="x" pod:!"" | stats by (pod) min(_time) as __lvp_rank | sort by (__lvp_rank, pod) | limit 11 | fields pod) | stats by (pod) count()`},
+		{`app:="x" | unpack_logfmt | filter user_id:!"" | stats by (user_id) count()`,
+			`app:="x" | unpack_logfmt | filter user_id:!"" | filter user_id:in(app:="x" | unpack_logfmt | filter user_id:!"" | stats by (user_id) min(_time) as __lvp_rank | sort by (__lvp_rank, user_id) | limit 11 | fields user_id) | stats by (user_id) count()`},
+		{`app:="x" | stats by ("service.name") count()`,
+			`app:="x" | filter "service.name":in(app:="x" | stats by ("service.name") min(_time) as __lvp_rank | sort by (__lvp_rank, "service.name") | limit 11 | fields "service.name") | stats by ("service.name") count()`},
+	} {
+		if got, ok := rankedSingleFieldQueryFirstMet(tc.query, 10); !ok || got != tc.want {
+			t.Errorf("rankedSingleFieldQueryFirstMet(%q)\n got %v %q\nwant %q", tc.query, ok, got, tc.want)
+		}
+	}
+	if got := firstMetRanking("pod", "_c", false, 4); got != ` | stats by (pod) min(_time) as _c | sort by (_c) | limit 4` {
+		t.Errorf("top-value ranking: %q", got)
+	}
+}
