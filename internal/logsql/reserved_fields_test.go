@@ -12,7 +12,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
-// reservedFieldVerdicts are VictoriaLogs' own verdicts (lib/logstorage ParseQuery, v1.49.0 and v1.53.0) on the
+// reservedFieldVerdicts are VictoriaLogs' own verdicts (lib/logstorage ParseQuery, v1.49.0 and v1.54.0) on the
 // field names it keeps for itself, _time, _stream, _stream_id and _msg, in lower case and in other cases, bare and
 // quoted, at the places a filter, a stream filter and a pipe name a field (reservedFieldGrid). They are the evidence
 // of ReservedFieldName and ReservedFieldNameOtherCase: in lower case _time, _stream and _stream_id are VictoriaLogs'
@@ -47,7 +47,7 @@ func reservedFieldGrid() []string {
 type reservedFieldVerdict struct {
 	Query string `json:"q"`
 	V149  bool   `json:"v1.49.0"`
-	V153  bool   `json:"v1.53.0"`
+	V154  bool   `json:"v1.54.0"`
 }
 
 // looserThanVLReserved are the queries the proxy's LogsQL parser reads where VictoriaLogs rejects them: a field filter
@@ -97,15 +97,15 @@ func TestParseReservedFieldNamesMatchVictoriaLogs(t *testing.T) {
 		if r.Query != grid[i] {
 			t.Fatalf("verdict %d is for %s, not %s: record them again with LVP_RUN_ORACLES=1", i, r.Query, grid[i])
 		}
-		if r.V149 != r.V153 {
-			t.Errorf("%s: VictoriaLogs v1.49.0 accepts=%v, v1.53.0 accepts=%v", r.Query, r.V149, r.V153)
+		if r.V149 != r.V154 {
+			t.Errorf("%s: VictoriaLogs v1.49.0 accepts=%v, v1.54.0 accepts=%v", r.Query, r.V149, r.V154)
 		}
-		accepted[r.Query] = r.V153
+		accepted[r.Query] = r.V154
 		_, err := Parse(r.Query)
 		switch {
-		case r.V153 && err != nil:
+		case r.V154 && err != nil:
 			t.Errorf("%s: VictoriaLogs accepts it, the proxy's parser rejects it: %v", r.Query, err)
-		case !r.V153 && err == nil && !looserThanVLReserved(r.Query):
+		case !r.V154 && err == nil && !looserThanVLReserved(r.Query):
 			t.Errorf("%s: VictoriaLogs rejects it, the proxy's parser accepts it", r.Query)
 		}
 	}
@@ -151,7 +151,7 @@ func recordReservedFieldVerdicts(t *testing.T, grid []string) {
 	for i, q := range grid {
 		verdicts[i].Query = q
 	}
-	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		modfile := ""
 		if v == "v1.49.0" {
 			modfile = "go.v1.49.0.mod"
@@ -182,7 +182,7 @@ func recordReservedFieldVerdicts(t *testing.T, grid []string) {
 			if v == "v1.49.0" {
 				verdicts[i].V149 = x.Accept
 			} else {
-				verdicts[i].V153 = x.Accept
+				verdicts[i].V154 = x.Accept
 			}
 		}
 		_ = r.Close()

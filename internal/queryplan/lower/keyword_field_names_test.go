@@ -13,7 +13,7 @@ import (
 // string translator writes it bare and VictoriaLogs rejects the query ("missing whitespace or ':' between ..." for
 // not, "the in must be put in quotes" for in). Names VictoriaLogs reads bare (range, exact, i, offset, ...) stay
 // as they were. The quoted texts are in the VictoriaLogs verdicts of internal/logsql
-// (testdata/keyword-field-names-vl.jsonl), accepted by v1.49.0 and v1.53.0, and the translator's are rejected there.
+// (testdata/keyword-field-names-vl.jsonl), accepted by v1.49.0 and v1.54.0, and the translator's are rejected there.
 //
 // conformance: semantics/translator-writes-keyword-field-names-bare
 func TestPlanQuotesKeywordFieldNames(t *testing.T) {

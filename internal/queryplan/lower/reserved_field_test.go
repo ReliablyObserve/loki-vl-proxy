@@ -69,7 +69,7 @@ const reservedFieldAnswers = "testdata/reserved-field-labels.jsonl"
 // with an __error__ label (a comparison on a value that is not a number, which VictoriaLogs' comparison drops for
 // every label alike: semantics/label-filter-numeric-error-label), and for each VictoriaLogs version the text the
 // lowering wrote and the rows VictoriaLogs returned for it. Before is the string translator's text, which the
-// proxy served before, with VictoriaLogs' (v1.53.0) answer to it: the evidence of what changed.
+// proxy served before, with VictoriaLogs' (v1.54.0) answer to it: the evidence of what changed.
 type reservedFieldAnswer struct {
 	Query     string                      `json:"q"`
 	Loki      []int                       `json:"loki"`
@@ -84,7 +84,7 @@ type reservedVLAnswer struct {
 	Error string `json:"error,omitempty"`
 }
 
-var reservedFieldVersions = []string{"v1.49.0", "v1.53.0"}
+var reservedFieldVersions = []string{"v1.49.0", "v1.54.0"}
 
 func reservedStreamLabels(i int) map[string]string {
 	l := map[string]string{"app": "r", "row": strconv.Itoa(i)}
@@ -116,7 +116,7 @@ func reservedLowered(t *testing.T, q, version string) string {
 // A label called _time, _stream, _stream_id or _msg is filtered the way VictoriaLogs keeps it, and the client gets
 // Loki's answer: for every stream of the grid, Loki's pipeline (the Loki oracle, process, with the selector's
 // matchers) keeps the stream's line exactly when VictoriaLogs (the VictoriaLogs oracle, store: the rows stored
-// as the Loki push API stores them, in v1.49.0 and v1.53.0) returns it for the lowering's text. The string
+// as the Loki push API stores them, in v1.49.0 and v1.54.0) returns it for the lowering's text. The string
 // translator's text for each is rejected by VictoriaLogs or read as its own filter (`_time:>=5s` is a time range,
 // `_msg:="x"` the line). The answers are recorded; LVP_RUN_ORACLES=1 records them again (the VictoriaLogs oracle
 // downloads VictoriaLogs; set GOMODCACHE to a fresh directory when the shared cache holds other copies).
@@ -282,11 +282,11 @@ func recordReservedFieldAnswers(t *testing.T) {
 // conformance: semantics/translator-writes-reserved-field-names
 func TestReadsReservedField(t *testing.T) {
 	for _, q := range reservedFieldQueries {
-		legacy, err := translator.TranslateLogQLWithCapabilities(q, nil, nil, logsql.CapabilitiesFor("v1.53.0"))
+		legacy, err := translator.TranslateLogQLWithCapabilities(q, nil, nil, logsql.CapabilitiesFor("v1.54.0"))
 		if err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
-		lowered := reservedLowered(t, q, "v1.53.0")
+		lowered := reservedLowered(t, q, "v1.54.0")
 		if legacy == lowered {
 			t.Errorf("%s: the translator writes the lowering's text %s", q, lowered)
 		}
@@ -322,7 +322,7 @@ func TestReservedFieldAfterAStageIsDelegated(t *testing.T) {
 		`{app="r"} | json | _time="x"`, `{app="r"} | logfmt | _stream>5`, `{app="r"} | regexp "(?P<_msg>.+)" | _msg="x"`,
 		`{app="r"} | drop app | _stream_id="x"`, `{app="r"} | keep app | _time="x"`,
 	} {
-		_, err := Plan(planOf(t, q), Profile{Caps: logsql.CapabilitiesFor("v1.53.0")})
+		_, err := Plan(planOf(t, q), Profile{Caps: logsql.CapabilitiesFor("v1.54.0")})
 		var nl *NotLoweredError
 		if !errors.As(err, &nl) || nl.Construct != reservedAfterStageConstruct {
 			t.Errorf("%s: %v, want %s", q, err, reservedAfterStageConstruct)

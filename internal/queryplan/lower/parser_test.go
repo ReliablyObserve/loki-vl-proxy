@@ -30,17 +30,17 @@ func parserProfiles() []parserProfile {
 	dots := func(s string) string { return strings.ReplaceAll(s, "_", ".") }
 	streamLabels := translator.WithStreamLabels(under, []string{"app", "namespace", "pod", "service_name"})
 	fields := map[string]bool{"app": true, "namespace": true, "env": true, "level": true}
-	v53, v49 := logsql.CapabilitiesFor("v1.53.0"), logsql.CapabilitiesFor("v1.49.0")
-	noScan := v53
+	v54, v49 := logsql.CapabilitiesFor("v1.54.0"), logsql.CapabilitiesFor("v1.49.0")
+	noScan := v54
 	noScan.NoDetectedLevelBodyScan = true
 	return []parserProfile{
-		{name: "none", caps: v53},
-		{name: "underscores", label: under, caps: v53},
+		{name: "none", caps: v54},
+		{name: "underscores", label: under, caps: v54},
 		{name: "underscores v1.49", label: under, caps: v49},
-		{name: "dots", label: dots, caps: v53},
-		{name: "keepLine", label: under, caps: v53, keep: true},
-		{name: "stream labels", label: streamLabels, caps: v53},
-		{name: "stream fields", label: under, stream: fields, caps: v53},
+		{name: "dots", label: dots, caps: v54},
+		{name: "keepLine", label: under, caps: v54, keep: true},
+		{name: "stream labels", label: streamLabels, caps: v54},
+		{name: "stream fields", label: under, stream: fields, caps: v54},
 		{name: "stream fields and labels v1.49", label: streamLabels, stream: fields, caps: v49},
 		{name: "no body scan", label: under, caps: noScan, stream: fields, keep: true},
 	}

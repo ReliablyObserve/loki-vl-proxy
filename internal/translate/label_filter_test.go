@@ -10,7 +10,7 @@ import (
 
 // conformance: semantics/label-filter-expression-syntax
 func TestLabelFilterLeaf(t *testing.T) {
-	caps := logsql.CapabilitiesFor("v1.53.0")
+	caps := logsql.CapabilitiesFor("v1.54.0")
 	for _, c := range []struct {
 		field, cmp, value string
 		want              string
@@ -54,7 +54,7 @@ func TestLabelFilterLeaf(t *testing.T) {
 // present and holds none. An address of the other family never matches.
 // conformance: semantics/ip-label-filter-embedded-address
 func TestLabelFilterLeafIP(t *testing.T) {
-	caps := logsql.CapabilitiesFor("v1.53.0")
+	caps := logsql.CapabilitiesFor("v1.54.0")
 	eq, ok := LabelFilterLeaf("addr", "=", "10.0.0.0/8", true, caps)
 	if !ok || !strings.Contains(eq.String(), "addr:ipv4_range(10.0.0.0, 10.255.255.255)") || strings.Contains(eq.String(), "addr:*") {
 		t.Errorf("= ip(10.0.0.0/8): %v, %v", eq, ok)

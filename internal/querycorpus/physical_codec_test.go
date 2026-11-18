@@ -192,7 +192,7 @@ func TestPhysicalCodecRoundTripsTranslatorOutput(t *testing.T) {
 		`{app="x"} |= "error"`,
 		`{app="x"} | json | level="error"`,
 	}
-	for _, caps := range []logsql.Capabilities{logsql.CapabilitiesFor("v1.49.0"), logsql.CapabilitiesFor("v1.53.0")} {
+	for _, caps := range []logsql.Capabilities{logsql.CapabilitiesFor("v1.49.0"), logsql.CapabilitiesFor("v1.54.0")} {
 		for _, q := range queries {
 			s, err := translator.TranslateLogQLWithCapabilities(q, nil, nil, caps)
 			if err != nil {

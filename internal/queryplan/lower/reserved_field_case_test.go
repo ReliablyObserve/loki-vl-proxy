@@ -109,7 +109,7 @@ func reservedCaseSentTexts(t *testing.T, q, version string) (plan, legacy string
 // The proxy answers a log or metric query on a label named _TIME or _Stream_ID like Loki: for every query of the
 // grid, the rows Loki's pipeline keeps (the Loki oracle, process, with the selector's matchers), or the value of the
 // metric summed over them, are what VictoriaLogs (the VictoriaLogs oracle, store: the rows stored as the Loki push
-// API stores them, v1.49.0 and v1.53.0) returns for the text the proxy sends, the translator's and the lowering's
+// API stores them, v1.49.0 and v1.54.0) returns for the text the proxy sends, the translator's and the lowering's
 // alike through the outbound guard. Without the guard these texts filter the quoted field, which VictoriaLogs
 // cannot read back from its own print (an unwrap), or name the field bare, which it reads as its own filter (a label
 // filter). The answers are recorded; LVP_RUN_ORACLES=1 records them again.
@@ -128,7 +128,7 @@ func TestReservedFieldCaseMatchesLoki(t *testing.T) {
 		if a.Query != q {
 			t.Fatalf("answer %d is for %s, not %s: record them again", i, a.Query, q)
 		}
-		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			got := a.VL[v]
 			plan, legacy := reservedCaseSentTexts(t, q, v)
 			if plan != got.Plan || legacy != got.Translator {
@@ -245,7 +245,7 @@ func recordReservedFieldCaseAnswers(t *testing.T) {
 			answers[i].Value = lokiMetricValue(q, kept)
 		}
 	}
-	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		modfile := ""
 		if v == "v1.49.0" {
 			modfile = "go.v1.49.0.mod"

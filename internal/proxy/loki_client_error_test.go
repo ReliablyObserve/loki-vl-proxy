@@ -80,12 +80,12 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		{"VictoriaLogs aborted at its deadline", context.Background(), &vlResponseAbortedError{elapsed: time.Minute, timedOut: true}, http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
 		// A full queue is 429 "too many outstanding requests".
 		{"proxy heavy-query queue", context.Background(), newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 2, queueWait: time.Second}), http.StatusTooManyRequests, lokiTooManyOutstandingRequests},
-		// VictoriaLogs v1.49.0-v1.53.0 answer a query that waited
+		// VictoriaLogs v1.49.0-v1.54.0 answer a query that waited
 		// -search.maxQueueDuration for a slot with 503 (app/vlselect/main.go:268
-		// in v1.49.0, :313-318 in v1.53.0): Loki's full queue.
+		// in v1.49.0, :313-318 in v1.54.0): Loki's full queue.
 		{"VictoriaLogs queue timeout 503", context.Background(), vl(http.StatusServiceUnavailable, "couldn't start executing the request in 10.000 seconds, since -search.maxConcurrentRequests=16 concurrent requests are executed. Possible solutions: to reduce query load; to add more compute resources to the server; to increase -search.maxQueueDuration=10s; to increase -search.maxQueryDuration=30s; to increase -search.maxConcurrentRequests; to pass bigger value to 'timeout' query arg"), http.StatusTooManyRequests, lokiTooManyOutstandingRequests},
 		// ... and a query past -search.maxQueryDuration before its headers with
-		// 503 (main.go:236 in v1.49.0, :276-278 in v1.53.0): Loki's deadline.
+		// 503 (main.go:236 in v1.49.0, :276-278 in v1.54.0): Loki's deadline.
 		{"VictoriaLogs query deadline 503", context.Background(), vl(http.StatusServiceUnavailable, "the request couldn't be executed in 30.000 seconds; possible solutions: to increase -search.maxQueryDuration=30s; to pass bigger value to 'timeout' query arg"), http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
 		{"VictoriaLogs 429", context.Background(), vl(http.StatusTooManyRequests, "couldn't start executing the request in 10.000 seconds, since -search.maxConcurrentRequests=16 concurrent requests are executed"), http.StatusTooManyRequests, lokiTooManyOutstandingRequests},
 		// The proxy validated the query as Loki does before it wrote the LogsQL, so VictoriaLogs refusing it is the

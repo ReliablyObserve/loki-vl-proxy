@@ -12,7 +12,7 @@ import (
 // The registry row's own query: an outer `sum by (cluster)` over the join of two sums with
 // `ignoring(machine)`. Loki evaluates the join first, then the outer sum, so over streams without a `machine`
 // label the answer is one series per cluster holding the sum of both operands, and over streams that carry it the
-// join's duplicate-series error. The live differential of 2026-11-14 (Loki 3.7.9, VictoriaLogs v1.53.0, build
+// join's duplicate-series error. The live differential of 2026-11-14 (Loki 3.7.9, VictoriaLogs v1.54.0, build
 // 726dfb48f) answered 2 series of 61 points on both sides, with every value equal.
 //
 // conformance: semantics/binary-ignoring-matching, loki_api_v1_query_range, loki_api_v1_query
