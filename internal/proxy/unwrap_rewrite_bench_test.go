@@ -14,7 +14,7 @@ import (
 // every gated stats read, the deviation merge per window, and the label derivation of a looked-up line.
 
 func BenchmarkUnwrapConvert(b *testing.B) {
-	for _, c := range []struct{ conv, value string }{{"", "1234.5"}, {"", "abc"}, {"duration", "1h30m15s"}, {"bytes", "1.5 KiB"}} {
+	for _, c := range []struct{ conv, value string }{{"", "1234.5"}, {"", "abc"}, {"duration", "1h30m15s"}, {"bytes", "1.5 KiB"}, {"bytes", "1048576"}, {"bytes", "512 MB"}} {
 		b.Run(c.conv+"/"+c.value, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
