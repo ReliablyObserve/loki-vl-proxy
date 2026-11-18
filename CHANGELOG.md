@@ -13,12 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   levels deep (Loki accepts them up to its 128 KB input size limit) is parsed, validated and respelled in time that
   grows with its length: about 1 µs and 2 allocations per level to parse at 2,048 levels. Before, the parse grew with
   the square of the depth and the validation and the request rewrite with its cube. At 200 levels (8.6 KB) the
-  validation took 1 s and one `query_range` 3.1 s of CPU; it now takes a few milliseconds. The parser types each nested call
-  once, jumping over the parentheses an outer call's parser already read. The validation does not read a typed call
-  again, and the request rewrite reads `label_replace`'s first argument where it stands. The strip of outer
-  `label_replace` calls the handlers read goes through one table of the text's brackets. A query longer than the 4 KiB
-  the short memos keep is validated, respelled and parsed once per request, in a memo bounded at 4 MiB per generation
-  (two generations).
+  validation took 1 s and one `query_range` 3.1 s of CPU; they now take about 0.6 ms and 10 ms. The string translator
+  still reads each level again on the `query_range` path (about 1 s at 128 KB) until the switch to the query plan. The
+  parser types each nested call once, jumping over the parentheses an outer call's parser already read. The validation
+  does not read a typed call again, and the request rewrite reads `label_replace`'s first argument where it stands.
+  The strip of outer `label_replace` calls the handlers read goes through one table of the text's brackets. A query
+  longer than the 4 KiB the short memos keep is validated, respelled and parsed once per request, in a memo bounded at
+  4 MiB per generation (two generations).
 
 ### Fixed
 

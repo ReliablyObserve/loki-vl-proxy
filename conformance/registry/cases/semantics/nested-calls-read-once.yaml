@@ -25,7 +25,10 @@ why: |
     table of the whole text (logql.ArgumentReader);
   - a query longer than the 4 KB the short memos keep is validated, respelled and parsed once per request and kept
     in a memo bounded by bytes (internal/proxy/long_query_memo.go), as the short memos keep a short query.
-  Every step is linear in the depth (about 1 µs and 2 allocations per level to parse at 2,048 levels).
+  These steps are linear in the depth (about 1 µs and 2 allocations per level to parse at 2,048 levels). The string
+  translator still reads label_replace's first argument again at each level (tryTranslateLabelReplace, and
+  SplitLabelReplace for absent_over_time), about 1 s of a query_range at 128 KB; that reading goes with the switch to
+  the query plan.
 
   Loki's errors for such calls are written where Loki writes them (recorded answers,
   internal/logql/testdata/call_errors_loki.jsonl): the column of a call with three or five strings or a number
@@ -48,8 +51,8 @@ compare:
   mode: observed
   fields: [status, data]
   expect: |
-    200 with the same matrix as Loki; the same query nested thousands of levels deep answers in time linear in its
-    length, and a nesting Loki rejects gets Loki's error text, line and column.
+    200 with the same matrix as Loki; the same query nested thousands of levels deep is parsed, validated and
+    respelled in time linear in its length, and a nesting Loki rejects gets Loki's error text, line and column.
 gap:
   status: fixed
   fixed_by: "this change"
@@ -57,8 +60,8 @@ gap:
   effort: M
   area: 'internal/logql parser (consumeBalancedParens, typeCall, quiet_calls.go, unterminatedCallError), semantic.go, validate.go, canonical_spelling.go, argument_reader.go; internal/proxy long_query_memo.go, http_utils.go, query_plan.go, range_metric_compat.go'
   loki: 'nested label_replace accepted at every depth under the input size limit; syntax errors at the end of the query'
-  proxy: 'the same verdicts and error texts; every request step reads a nested call once'
-  planned_test: 'TestCallReadsMatchReadingAgain, TestCallErrorsMatchRecordedLoki, TestDeepCallsCostGrowsLinearly, TestCanonicalSpellingDeepNesting, TestArgumentReaderMatchesFirstArgumentLen, FuzzCallReadsMatchReadingAgain, FuzzArgumentReaderMatchesFirstArgumentLen (internal/logql); TestLongQueryMemoReadsOnce, TestTextMemoBoundedByCost, TestStripOuterCallsMatchesRescanning, FuzzStripOuterCallsMatchesRescanning (internal/proxy)'
+  proxy: 'the same verdicts and error texts; the parse, the validation, the request rewrite, the strip of outer calls and the memo of long queries read a nested call once (the string translator does not yet)'
+  planned_test: 'TestCallReadsMatchReadingAgain, TestCallErrorsMatchRecordedLoki, TestDeepCallsCostGrowsLinearly, TestCanonicalSpellingDeepNesting, TestArgumentReaderMatchesFirstArgumentLen, FuzzCallReadsMatchReadingAgain, FuzzArgumentReaderMatchesFirstArgumentLen (internal/logql); TestLongQueryMemoReadsOnce, TestTextMemoBoundedByCost, TestNestedCallErrorsAnswerLokiOnQueryRoutes, TestErrorPhaseGridMatchesLoki, TestStripOuterCallsMatchesRescanning, FuzzStripOuterCallsMatchesRescanning (internal/proxy)'
   visual: none
   visual_reason: 'the answers do not change; only their cost and the text of errors for malformed calls'
   clusters: []
