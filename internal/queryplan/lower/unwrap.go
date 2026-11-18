@@ -2,7 +2,6 @@ package lower
 
 import (
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -977,119 +976,6 @@ func outerFuncOf(vop logql.VectorOp, field string) logsql.StatsFunc {
 		return logsql.Avg{Field: field}
 	}
 	return logsql.Sum{Field: field}
-}
-
-// screenUnwrap turns away an unwrap aggregation whose spelling the string translator reads unlike the plan: it
-// finds the unwrapped label and its conversion by searching the query text for `| unwrap ` (one blank on each
-// side) and cutting the text after it at the next `|` or `[`. A query that holds the search text in an earlier quoted
-// string gives it another label, another conversion or none: the lowering leaves it to the translator.
-//
-// The text is read with each run of the blanks Loki's lexer skips (a space, a tab, a line feed, a carriage return)
-// outside quoted strings written as one space, and with a space after the pipe (spacedBlanks): `| unwrap<CR>n`,
-// `|  unwrap n` and `|unwrap n` are the query with `| unwrap n` to Loki and to the plan, and the translator, which finds no `| unwrap ` in them, fails the query
-// with Loki's 500 (semantics/translator-reads-only-space-between-tokens). The plan serves them as it serves the
-// spaced spelling.
-func screenUnwrap(query string, p *queryplan.Plan) *NotLoweredError {
-	var ra *queryplan.RangeAgg
-	owner := "RangeAgg"
-	switch n := p.Root.(type) {
-	case *queryplan.RangeAgg:
-		ra = n
-	case *queryplan.VectorAgg:
-		if r, ok := n.In.(*queryplan.RangeAgg); ok {
-			ra, owner = r, "VectorAgg"
-		}
-	}
-	if ra == nil {
-		return nil
-	}
-	u := unwrapStage(ra.In)
-	if u == nil {
-		return nil
-	}
-	field, conv, ok := unwrapFromText(query)
-	if !ok {
-		field, conv, ok = unwrapFromText(spacedBlanks(query))
-	}
-	if want, known := unwrapConv(u); !ok || !known || field != u.Label || conv != want {
-		return &NotLoweredError{Construct: owner + " unwrap spelling"}
-	}
-	// The string translator copies the quantile's parameter as written, and the typed function prints the shortest
-	// form of its value: a parameter written another way (`0.50`, `5e-1`) is left to the translator.
-	if ra.Op == logql.RangeQuantileOverTime && quantileFromText(query) != strconv.FormatFloat(ra.Phi, 'g', -1, 64) {
-		return &NotLoweredError{Construct: owner + " unwrap quantile spelling"}
-	}
-	return nil
-}
-
-// spacedBlanks is q with every run of a space, a tab, a line feed or a carriage return outside its quoted and
-// backquoted strings written as one space, and a space after a pipe that a name follows (`|unwrap n` is `| unwrap
-// n`): the spelling Loki's lexer reads the same as q, and the one the translator's search for `| unwrap ` reads.
-func spacedBlanks(q string) string {
-	var b strings.Builder
-	b.Grow(len(q) + 8)
-	for i := 0; i < len(q); i++ {
-		switch c := q[i]; {
-		case c == '"' || c == '`':
-			j := min(skipQuoted(q, i), len(q)-1)
-			b.WriteString(q[i : j+1])
-			i = j
-		case isBlank(c):
-			for i+1 < len(q) && isBlank(q[i+1]) {
-				i++
-			}
-			b.WriteByte(' ')
-		case c == '|' && i+1 < len(q) && isNameStart(q[i+1]):
-			b.WriteString("| ")
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
-}
-
-// quantileFromText is the parameter the string translator reads out of the text of a quantile_over_time: what stands
-// between the opening parenthesis of the call and the first comma, without the blanks around it. It is empty for a
-// query that does not spell the call as the translator looks for it.
-func quantileFromText(query string) string {
-	const call = "quantile_over_time("
-	idx := strings.Index(query, call)
-	if idx < 0 {
-		return ""
-	}
-	rest := query[idx+len(call):]
-	comma := strings.IndexByte(rest, ',')
-	if comma < 0 {
-		return ""
-	}
-	return strings.TrimSpace(rest[:comma])
-}
-
-// unwrapFromText is the label and conversion the string translator reads from the text of a query.
-func unwrapFromText(query string) (field, conv string, ok bool) {
-	const marker = "| unwrap "
-	idx := strings.Index(query, marker)
-	if idx < 0 {
-		return "", "", false
-	}
-	rest := strings.TrimSpace(query[idx+len(marker):])
-	for _, c := range translate.UnwrapConversions {
-		if strings.HasPrefix(rest, c.Call) {
-			conv = c.Conv
-			break
-		}
-	}
-	if end := strings.IndexAny(rest, "|["); end >= 0 {
-		rest = rest[:end]
-	}
-	rest = strings.TrimSpace(rest)
-	for _, c := range translate.UnwrapConversions {
-		if strings.HasPrefix(rest, c.Call) && strings.HasSuffix(rest, ")") {
-			rest = rest[len(c.Call) : len(rest)-1]
-			break
-		}
-	}
-	return rest, conv, true
 }
 
 // plainIdent reports whether s is a label name the translator reads as a plain identifier.

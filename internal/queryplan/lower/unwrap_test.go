@@ -9,6 +9,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -97,10 +98,8 @@ func TestPlanLowersUnwrapDerivedGroupings(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 	for q, construct := range map[string]string{
-		`sum_over_time({app="a"} |= "| unwrap m" | unwrap n [5m])`:              "RangeAgg unwrap spelling",
-		`sum_over_time({app="a"} | unwrap bytes (n) [5m])`:                      "RangeAgg unwrap spelling",
-		`sum_over_time({app="a"} | unwrap bytes( n ) [5m])`:                     "RangeAgg unwrap spelling",
-		`sum_over_time({app="a"} |= "| unwrap x" | unwrap n [5m])`:              "RangeAgg unwrap spelling",
+		`sum_over_time({app="a"} |= "| unwrap m" | unwrap n [5m])`:              "RangeAgg quoted clause",
+		`sum_over_time({app="a"} |= "| unwrap x" | unwrap n [5m])`:              "RangeAgg quoted clause",
 		`sum_over_time({app="a"} |= "| json" | unwrap n [5m])`:                  "RangeAgg quoted clause",
 		`sum_over_time({app="a"} | unwrap n | s="|json" [5m])`:                  "RangeAgg quoted clause",
 		`sum_over_time({app="a"} |= "| stats by (x)" | unwrap n [5m])`:          "RangeAgg quoted clause",
@@ -118,7 +117,7 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`sum by (app) (sum_over_time({app="a"} |= "| stats " | unwrap n [5m]))`: "VectorAgg quoted clause",
 		`sum without (x) (sum_over_time({x!="  "} | unwrap n [5m]))`:            "VectorAgg quoted clause",
 		`avg(sum_over_time({app="a"} |= "| json" | unwrap n [5m]))`:             "VectorAgg quoted clause",
-		`sum(sum_over_time({app="a"} |= "| unwrap m" | unwrap n [5m]))`:         "VectorAgg unwrap spelling",
+		`sum(sum_over_time({app="a"} |= "| unwrap m" | unwrap n [5m]))`:         "VectorAgg quoted clause",
 		`sum(bytes_rate({app="a"} | unwrap n [5m]))`:                            "VectorAgg unwrap bytes_rate",
 		// the quoted text a translator regexp reads out of a rate or a count, min, max and avg (a parser in the text
 		// takes the level from their series identity, an unwrap makes a rate a sum).
@@ -145,13 +144,26 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 			t.Errorf("%s under keepLine: got %v", q, err)
 		}
 	}
+	// Spellings the route and the plan read from the canonical spelling the request's rewrite writes: lowered as it.
+	for _, q := range []string{
+		`sum_over_time({app="a"} | unwrap bytes (n) [5m])`,
+		`sum_over_time({app="a"} | unwrap bytes( n ) [5m])`,
+	} {
+		got, err := PlanQuery(q, rangeAggPlan(q), Profile{})
+		canon := handlerText(q)
+		want, werr := PlanQuery(canon, rangeAggPlan(canon), Profile{})
+		if err != nil || werr != nil || physical.Encode(got) != physical.Encode(want) {
+			t.Errorf("%s: %v, its canonical spelling %s: %v", q, err, canon, werr)
+		}
+	}
 }
 
-// A quantile is written with the parameter as the client spelled it, which the typed function prints only in the
-// shortest form of its value: another spelling (`0.50`, `5e-1`) is left to the string translator.
+// A quantile is written with the shortest form of its value, whatever the client's spelling: `0.50`, `5e-1` or `.5`
+// lower to the text of `0.5`, which VictoriaLogs reads as the same number (the string translator copied the literal,
+// and VictoriaLogs rejects `.5`: semantics/translator-writes-leading-dot-quantile).
 //
-// conformance: architecture-syntax-package-layering
-func TestPlanKeepsQuantileSpelling(t *testing.T) {
+// conformance: architecture-syntax-package-layering, semantics/translator-writes-leading-dot-quantile
+func TestPlanWritesQuantileShortest(t *testing.T) {
 	for _, phi := range []string{"0", "1", "0.5", "0.95", "0.999", "0.01"} {
 		q := `quantile_over_time(` + phi + `, {app="a"} | unwrap n [5m])`
 		got := unwrapText(t, q, Profile{})
@@ -159,31 +171,19 @@ func TestPlanKeepsQuantileSpelling(t *testing.T) {
 			t.Errorf("%s:\n got %s\nwant %s", q, got, want)
 		}
 	}
-	for _, phi := range []string{"0.50", "5e-1", "1e0", "0.0", "00.5", "1.", "0.9500"} {
+	for phi, shortest := range map[string]string{"0.50": "0.5", "5e-1": "0.5", ".5": "0.5", "1e0": "1", "0.0": "0", "00.5": "0.5", "1.": "1", "0.9500": "0.95"} {
 		q := `quantile_over_time(` + phi + `, {app="a"} | unwrap n [5m])`
-		if _, err := PlanQuery(q, rangeAggPlan(q), Profile{}); !errors.Is(err, ErrNotLowered) || !strings.Contains(err.Error(), "RangeAgg unwrap quantile spelling") {
-			t.Errorf("%s: got %v, want not lowered: RangeAgg unwrap quantile spelling", q, err)
+		got := unwrapText(t, q, Profile{})
+		if want := unwrapText(t, `quantile_over_time(`+shortest+`, {app="a"} | unwrap n [5m])`, Profile{}); got != want {
+			t.Errorf("%s:\n got %s\nwant %s", q, got, want)
 		}
 	}
 }
 
-// The unwrap stage the lowering reads is the one the string translator reads from the text.
+// The words the lowering reads in the printed text of a query as the translator's unwrap or parser.
 //
 // conformance: architecture-syntax-package-layering
-func TestUnwrapFromText(t *testing.T) {
-	for q, want := range map[string][3]string{
-		`sum_over_time({a="b"} | unwrap n [5m])`:                   {"n", "", "true"},
-		`sum_over_time({a="b"} | unwrap bytes(n) [5m])`:            {"n", "bytes", "true"},
-		`sum_over_time({a="b"} | unwrap duration_seconds(n) [5m])`: {"n", "duration", "true"},
-		`sum_over_time({a="b"} | unwrap n | __error__="" [5m])`:    {"n", "", "true"},
-		`sum_over_time({a="b"} |unwrap n [5m])`:                    {"", "", "false"},
-		`sum_over_time({a="b"} |= "| unwrap m" | unwrap n [5m])`:   {`m"`, "", "true"},
-	} {
-		field, conv, ok := unwrapFromText(q)
-		if field != want[0] || conv != want[1] || strconv.FormatBool(ok) != want[2] {
-			t.Errorf("%s: got %q %q %v, want %v", q, field, conv, ok, want)
-		}
-	}
+func TestTextHasUnwrapOrParser(t *testing.T) {
 	if !textHasUnwrapOrParser("a | json", false, true) || !textHasUnwrapOrParser("a |\tlogfmt", false, true) || textHasUnwrapOrParser("a | jsonx", false, true) ||
 		textHasUnwrapOrParser("a | json_x", false, true) || textHasUnwrapOrParser("a | unwrap n", false, true) || !textHasUnwrapOrParser("a | unwrap n", true, true) ||
 		textHasUnwrapOrParser("a | json", false, false) || !textHasUnwrapOrParser("a | unwrap n", true, false) {
@@ -226,7 +226,15 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 	if terr != nil {
 		return "", "", false, false
 	}
-	return physical.Encode(op), QuoteKeywordFieldText(legacy), false, true
+	lowered, legacy = physical.Encode(op), QuoteKeywordFieldText(legacy)
+	if c := translatorspelling.Case(q, p); lowered != legacy && c != "" {
+		// A spelling the translator reads otherwise than the plan (a quantile literal, an unwrap conversion with
+		// blanks): held to the translator's text of the respelled query, and to Loki by the case's differential.
+		if spellingHeldHere(t, q, c, op, prof) {
+			return lowered, legacy, true, true
+		}
+	}
+	return lowered, legacy, false, true
 }
 
 // FuzzUnwrapLowering holds the lowering of range and vector aggregations over an unwrapped label to the string

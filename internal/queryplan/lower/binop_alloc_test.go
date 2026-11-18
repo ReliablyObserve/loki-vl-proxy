@@ -71,9 +71,9 @@ func binOpAllocGrid() []string {
 	return qs
 }
 
-// The helpers the binary screen and the lowering share allocate as little as they can: the modifier text of a vector
+// The matching helpers of the lowering allocate as little as they can: the modifier text of a vector
 // matching is built on the caller's buffer and compared without a copy, the Matching and its text are the lowering's
-// two allocations, and stripping the modifiers from a query is one buffer for the text and one for the modifiers.
+// two allocations.
 //
 // conformance: architecture-syntax-package-layering
 func TestBinOpMatchingHelpersAllocate(t *testing.T) {
@@ -98,13 +98,5 @@ func TestBinOpMatchingHelpersAllocate(t *testing.T) {
 	var tail string
 	if n := testing.AllocsPerRun(20, func() { pm, tail = binMatching(m) }); n > 2 || tail != want || pm == nil || !pm.MatchOn || pm.GroupSide != "group_left" {
 		t.Errorf("binMatching allocates %.0f (want at most 2), tail %q", n, tail)
-	}
-	q := `sum(rate({app="a"}[5m])) / on(app, env) group_left(pod) sum(rate({app="b"}[5m]))`
-	var stripped, mods string
-	if n := testing.AllocsPerRun(20, func() { stripped, mods = stripMatching(q) }); n > 2 || mods != want || stripped != `sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m]))` {
-		t.Errorf("stripMatching allocates %.0f (want at most 2): %q, %q", n, stripped, mods)
-	}
-	if n := testing.AllocsPerRun(20, func() { stripped, mods = stripMatching(`sum(rate({app="a"}[5m])) / 2`) }); n != 0 {
-		t.Errorf("stripMatching without a modifier allocates %.0f", n)
 	}
 }

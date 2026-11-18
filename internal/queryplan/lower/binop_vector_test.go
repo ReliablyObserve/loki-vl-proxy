@@ -100,21 +100,13 @@ func TestPlanDelegatesVectorLiteralOperands(t *testing.T) {
 		`vector(1) == bool vector(2)`:       "BinOp bool",
 		rate + ` + (vector(1) * 2)`:         "BinOp operand BinOp",
 		`vector(1) + vector(2) * vector(3)`: "BinOp constant operands",
-		rate + ` + vector (1)`:              "BinOp operand spelling",
-		`vector (1) + ` + rate:              "BinOp operand spelling",
-		// in a chain too, at any depth: the route reads each vector(n) of a chain from its printed text
-		`vector (2) > on(x) (` + rate + ` * 2)`: "BinOp operand spelling",
-		`(vector (2) + ` + rate + `) * 2`:       "BinOp operand spelling",
-		`(` + rate + ` * 2) / vector (2)`:       "BinOp operand spelling",
-		`vector(1) + vector(2)`:                 "BinOp constant operands",
-		`vector(1) > on() vector(2)`:            "BinOp constant operands",
-		`2 * vector(1)`:                         "BinOp constant operands",
-		`vector(1) - 0.5`:                       "BinOp constant operands",
-		`1 + 2`:                                 "BinOp scalar operands",
-		rate + ` + vector(-1)`:                  "BinOp operand Opaque",
-		rate + ` + vector(a)`:                   "BinOp operand Opaque",
-		rate + `+ vector(1)`:                    "BinOp operator spelling",
-		"vector(1)\n+ " + rate:                  "BinOp operator spelling",
+		`vector(1) + vector(2)`:             "BinOp constant operands",
+		`vector(1) > on() vector(2)`:        "BinOp constant operands",
+		`2 * vector(1)`:                     "BinOp constant operands",
+		`vector(1) - 0.5`:                   "BinOp constant operands",
+		`1 + 2`:                             "BinOp scalar operands",
+		rate + ` + vector(-1)`:              "BinOp operand Opaque",
+		rate + ` + vector(a)`:               "BinOp operand Opaque",
 		`label_replace(` + rate + ` + vector(1), "a", "b", "c", "d")`: "LabelReplace operand BinOp",
 		`label_replace(vector(1) + vector(2), "a", "b", "c", "d")`:    "LabelReplace operand BinOp",
 		`topk(2, ` + rate + `) + vector(1)`:                           "BinOp operand Rank",
@@ -128,6 +120,20 @@ func TestPlanDelegatesVectorLiteralOperands(t *testing.T) {
 		var nl *NotLoweredError
 		if !errors.As(err, &nl) || nl.Construct != construct {
 			t.Errorf("%s: got %v, want not lowered: %s", q, err, construct)
+		}
+	}
+	// A spelling of the call or the operator the plan reads from its tree lowers as the spaced spelling: the proxy's
+	// request rewrite gives the route `vector(n)` (logql.CanonicalSpelling), and the binary route reads the tree.
+	for q, spaced := range map[string]string{
+		rate + ` + vector (1)`: rate + ` + vector(1)`,
+		`vector (1) + ` + rate: `vector(1) + ` + rate,
+		rate + `+ vector(1)`:   rate + ` + vector(1)`,
+		"vector(1)\n+ " + rate: `vector(1) + ` + rate,
+	} {
+		got, err := PlanQuery(q, rangeAggPlan(q), Profile{})
+		want, werr := PlanQuery(spaced, rangeAggPlan(spaced), Profile{})
+		if err != nil || werr != nil || physical.Encode(got) != physical.Encode(want) {
+			t.Errorf("%q: %v %v, want the text of %q", q, err, werr, spaced)
 		}
 	}
 }

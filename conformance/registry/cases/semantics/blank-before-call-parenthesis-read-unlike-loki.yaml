@@ -1,5 +1,5 @@
 id: semantics/blank-before-call-parenthesis-read-unlike-loki
-title: A tab, a line feed or a carriage return between an unwrap conversion, approx_topk or an ip() label filter and its parenthesis is answered unlike the spelling without it (open; label_replace and sort_desc spelled so are fixed)
+title: A tab, a line feed or a carriage return between approx_topk or an ip() label filter and its parenthesis is answered unlike the spelling without it (open; label_replace, sort_desc and the unwrap conversions spelled so are fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -39,10 +39,21 @@ why: |
   which the rewrite does not respell: an unwrap conversion
   (`| unwrap bytes<TAB>(a)`, 42 rows) and an ip() label filter
   (`| x = ip<TAB>("1.2.3.4")`, 7 rows); approx_topk is the other 7.
+
+  The unwrap conversions spelled so are fixed (#1661): the query plan reads the
+  conversion from the parsed tree, and the lowering no longer leaves a
+  conversion written with a blank before or inside its parenthesis to the
+  string translator (whose text screen copied the translator's reading of the
+  call as the label's name). The 42 rows answer the spaced query's requests
+  and answer (TestKeywordBlankRequestsEqualSpaced: 14 known rows left, ip() and
+  approx_topk), and a vector aggregation over one, which answered no series,
+  answers Loki's (TestPlanSpellingsMatchLoki, recorded Loki engine answers over
+  VictoriaLogs v1.49.0 and v1.54.0). Answers cached for such a spelling before
+  are not served after (@unwrap-conversion-blank-v1).
 request:
   scope: query-grammar
   entry: "TestKeywordBlankRequestsEqualSpaced (internal/proxy): the rows pinned to this case"
-  setup: "Send as the query of /loki/api/v1/query_range (start now-1h, end now, step 60s): sum_over_time({app=\"api-gateway\"} | unwrap bytes<TAB>(size) [5m]), with a tab before the parenthesis. The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+  setup: "Send as the query of /loki/api/v1/query_range (start now-1h, end now, step 60s): {app=\"api-gateway\"} | x = ip<TAB>(\"1.2.3.4\"), with a tab before the parenthesis. The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
 compare:
   mode: observed
   fields: [status, data]
@@ -52,10 +63,10 @@ gap:
   status: open
   impact: edge
   effort: S
-  area: 'internal/proxy handlers and the string translator (an unwrap conversion''s, approx_topk''s or an ip() label filter''s name and its parenthesis are matched as one text)'
+  area: 'internal/proxy handlers and the string translator (approx_topk''s or an ip() label filter''s name and its parenthesis are matched as one text)'
   loki: 'the lexer reads a call name followed by any blank it skips and a parenthesis as the call'
   proxy: 'the requests and the answer differ from the spelling without the blank'
-  planned_test: 'TestKeywordBlankRequestsEqualSpaced (internal/proxy, pinned rows); TestKeywordBlankMatchesLoki (internal/logql, recorded Loki answers); TestTypedPairOfIPCallBlankIsTheUnspacedOnes (internal/querycorpus, the ip() line filter typed-selector pair)'
+  planned_test: 'TestKeywordBlankRequestsEqualSpaced (internal/proxy, pinned rows); TestPlanSpellingsMatchLoki and TestUnwrapConversionBlankFence (internal/proxy) for the unwrap conversions; TestKeywordBlankMatchesLoki (internal/logql, recorded Loki answers); TestTypedPairOfIPCallBlankIsTheUnspacedOnes (internal/querycorpus, the ip() line filter typed-selector pair)'
   visual: none
   visual_reason: 'a spelling no Grafana panel writes'
   clusters: []

@@ -243,8 +243,8 @@ type routeOperandText struct {
 // routeOperandTexts are the queries the handlers evaluate for p: the query itself, or for a binary operation the
 // text of each aggregation operand as the handlers hand it on (the operand's own printed form). A text the
 // handlers' offset reading takes another way than the plan (a line filter shaped like a clause, brackets it counts
-// otherwise) is delegated as "route offset text", and a vector(n) operand the handlers do not read as one (the
-// lowering's own text screen) under that screen's name.
+// otherwise) is delegated as "route offset text", and a vector(n) operand the handlers do not read as one (its
+// printed text, binaryVectorLiteral) as "route vector operand text".
 func routeOperandTexts(q string, p *queryplan.Plan) ([]routeOperandText, error) {
 	b, ok := p.Root.(*queryplan.BinOp)
 	if !ok {
@@ -270,9 +270,9 @@ func routeOperandTexts(q string, p *queryplan.Plan) ([]routeOperandText, error) 
 		case *queryplan.Scalar:
 			continue
 		case *queryplan.VectorLit:
-			// The handlers answer a vector(n) from its constant only when they read its text as one.
-			if err := lower.ScreenText(q, p); err != nil {
-				return nil, err
+			// The handlers answer a vector(n) from its constant only when they read its printed text as one.
+			if _, ok := binaryVectorLiteral(text); !ok {
+				return nil, routeTextDelegation(p, "vector operand text")
 			}
 			continue
 		}

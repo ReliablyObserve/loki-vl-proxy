@@ -3,7 +3,6 @@ package querycorpus_test
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +15,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
@@ -118,14 +119,21 @@ func blankPadded(bases []string) []string {
 }
 
 // shadowBlankGrid holds the lowering to the string translator on a grid of blank-padded spellings under every
-// profile: where the text screen lets the plan answer, the text is the translator's byte for byte (0 mismatches),
-// and where it turns the query away for a construct that strict names, the unscreened lowering really differs from
-// the translator (the screen delegates no more than it must). It returns the rows, the rows lowered and the rows
-// strict turned away.
-func shadowBlankGrid(t *testing.T, grid []string, strict func(construct, query string) bool) (rows, native, screened int) {
+// profile, as the handlers read each spelling (handlerText: the request's rewrite writes the metric calls and
+// parentheses in one spelling): every spelling lowers, and the text is the translator's text of what the handlers
+// translate byte for byte (0 mismatches), or a spelling the translator reads otherwise than the plan that
+// translatorspelling names (a blank around a binary operator, which the rewrite keeps). It returns the rows, the rows
+// lowered to the translator's text, the rows of such a spelling, and the rows whose spelling as written the
+// translator reads otherwise (respelled: the plan and the rewrite read them as Loki does, the translator alone would
+// not).
+func shadowBlankGrid(t *testing.T, grid []string) (rows, native, known, respelled int) {
 	t.Helper()
 	for _, q := range grid {
-		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+		h := handlerText(q)
+		if rejectedByValidation(h) {
+			continue // Loki's parse error, answered before anything is planned or translated
+		}
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(h))
 		if err != nil {
 			continue
 		}
@@ -135,32 +143,36 @@ func shadowBlankGrid(t *testing.T, grid []string, strict func(construct, query s
 		}
 		queryplan.Resolve(plan)
 		for _, prof := range planProfiles() {
-			legacy, ok := prof.translate(q)
+			legacy, ok := prof.translate(h)
 			if !ok {
 				continue
 			}
 			rows++
-			raw, rerr := lower.Plan(plan, prof.lowerProfile())
-			got, lerr := lower.PlanQuery(q, plan, prof.lowerProfile())
-			var nl *lower.NotLoweredError
-			if errors.As(lerr, &nl) && strict(nl.Construct, q) {
-				screened++
-				if rerr == nil && physical.Encode(raw) == legacy {
-					t.Errorf("%s: %q: turned away though the texts agree (%s)", prof.name, q, nl.Construct)
+			got, err := lower.PlanQuery(h, plan, prof.lowerProfile())
+			if err != nil {
+				t.Errorf("%s: %q: not lowered: %v", prof.name, q, err)
+				continue
+			}
+			text := physical.Encode(got)
+			if raw, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.labelFn, prof.stream, prof.caps); err != nil || raw != legacy {
+				respelled++
+			}
+			if text != legacy {
+				if c := translatorspelling.Case(h, plan); c != "" {
+					if msg := spellingHeld(h, c, plan, prof, got); msg != "" {
+						t.Error(msg)
+						continue
+					}
+					known++
+					continue
 				}
-				continue
-			}
-			if lerr != nil {
-				continue
-			}
-			if text := physical.Encode(got); text != legacy {
 				t.Errorf("%s: %q:\n lowered %s\n  string %s", prof.name, q, text, legacy)
 				continue
 			}
 			native++
 		}
 	}
-	return rows, native, screened
+	return rows, native, known, respelled
 }
 
 // TestVectorAggBlankPaddingShadow holds the lowering to the string translator on the blank-padded spellings of
@@ -169,34 +181,25 @@ func shadowBlankGrid(t *testing.T, grid []string, strict func(construct, query s
 func TestVectorAggBlankPaddingShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	grid := blankPaddedVectorQueries()
-	rows, native, screened := shadowBlankGrid(t, grid, func(c, _ string) bool {
-		return c == "VectorAgg operand spelling" || c == "VectorAgg parenthesized"
-	})
-	t.Logf("%d padded queries x profiles: %d rows, %d lowered, %d turned away by the text screen", len(grid), rows, native, screened)
-	if screened == 0 || native == 0 {
-		t.Fatalf("the grid misses a side: %d lowered, %d turned away", native, screened)
+	rows, native, known, respelled := shadowBlankGrid(t, grid)
+	t.Logf("%d padded queries x profiles: %d rows, %d lowered to the translator's text, %d of a spelling it reads otherwise, %d it would read otherwise as written", len(grid), rows, native, known, respelled)
+	if respelled == 0 || native == 0 {
+		t.Fatalf("the grid misses a side: %d lowered, %d respelled", native, respelled)
 	}
 }
 
 // TestRangeCallBlankSpellingShadow is the same for a range aggregation at the top of a query, as an operand of a
-// binary operation and as the argument of a label_replace call: the text screens (RangeAgg spelling, and the operand
-// screens of the other two) leave a blank before the call's parenthesis to the translator, and the rest is the
-// translator's text byte for byte.
+// binary operation and as the argument of a label_replace call: a blank before the call's parenthesis, which the
+// translator read as a phrase, is respelled by the request's rewrite, and the lowering writes the translator's text of
+// the respelled query byte for byte.
 // conformance: semantics/translator-reads-blank-before-range-call-as-text
 func TestRangeCallBlankSpellingShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	grid := blankPaddedRangeQueries()
-	rows, native, screened := shadowBlankGrid(t, grid, func(c, q string) bool {
-		// A binary operation turns away a run of two blanks anywhere (BinOp spelling), which its operand screens
-		// and the label_replace screen report as an operand spelling: that rule is not this grid's.
-		if c == "BinOp operand spelling" || c == "LabelReplace operand spelling" {
-			return !strings.Contains(q, "  ")
-		}
-		return c == "RangeAgg spelling" || c == "RangeAgg parenthesized"
-	})
-	t.Logf("%d padded queries x profiles: %d rows, %d lowered, %d turned away by the text screen", len(grid), rows, native, screened)
-	if screened == 0 || native == 0 {
-		t.Fatalf("the grid misses a side: %d lowered, %d turned away", native, screened)
+	rows, native, known, respelled := shadowBlankGrid(t, grid)
+	t.Logf("%d padded queries x profiles: %d rows, %d lowered to the translator's text, %d of a spelling it reads otherwise, %d it would read otherwise as written", len(grid), rows, native, known, respelled)
+	if respelled == 0 || native == 0 {
+		t.Fatalf("the grid misses a side: %d lowered, %d respelled", native, respelled)
 	}
 }
 
@@ -312,24 +315,25 @@ func TestRangeCallBlankSpellingMatchesLoki(t *testing.T) {
 	t.Logf("%d spellings: Loki accepts %d and reads the same function as the plan", len(rows), accepted)
 }
 
-// The VictoriaLogs oracle's typed-selector pairs hold the plan to the translator on the rows the plan lowers: a range
-// aggregation spelled with a blank before the function's parenthesis is a phrase to the translator and is left to it
-// by the text screen, so it makes no pair (the oracle would read the plan's query and the translator's phrase as two
-// different queries).
+// The VictoriaLogs oracle's typed-selector pairs are made on the text the handlers translate: a range aggregation
+// spelled with a blank before the function's parenthesis makes the pair of its canonical spelling (the request's
+// rewrite writes that spelling before any handler reads the query).
 // conformance: semantics/translator-reads-blank-before-range-call-as-text
-func TestTypedPairLeavesBlankBeforeRangeCall(t *testing.T) {
+func TestTypedPairOfBlankBeforeRangeCallIsTheCanonicalOne(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
-	for q, want := range map[string]bool{
-		`rate({app="a"}[5m])`:                          true,
-		`count_over_time( {app="a"} |= "x" [5m])`:      true,
-		`rate ({app="a"}[5m])`:                         false,
-		"rate\t({app=\"a\"}[5m])":                      false,
-		"count_over_time\n({app=\"a\"} |= \"x\" [5m])": false,
-		`bytes_rate  ({app="a"}[5m] offset 1h)`:        false,
+	for q, canon := range map[string]string{
+		`rate({app="a"}[5m])`:                          `rate({app="a"}[5m])`,
+		`count_over_time( {app="a"} |= "x" [5m])`:      `count_over_time({app="a"} |= "x" [5m])`,
+		`rate ({app="a"}[5m])`:                         `rate({app="a"}[5m])`,
+		"rate\t({app=\"a\"}[5m])":                      `rate({app="a"}[5m])`,
+		"count_over_time\n({app=\"a\"} |= \"x\" [5m])": `count_over_time({app="a"} |= "x" [5m])`,
+		`bytes_rate  ({app="a"}[5m] offset 1h)`:        `bytes_rate({app="a"}[5m] offset 1h)`,
 	} {
 		for _, v := range []string{"v1.49.0", "v1.54.0"} {
-			if _, _, ok := typedQueryPair(q, v); ok != want {
-				t.Errorf("%s: %q: pair made %v, want %v", v, q, ok, want)
+			typed, built, ok := typedQueryPair(q, v)
+			wtyped, wbuilt, wok := typedQueryPair(canon, v)
+			if !ok || !wok || typed != wtyped || built != wbuilt {
+				t.Errorf("%s: %q: pair %v %q %q, its canonical spelling %q: %v %q %q", v, q, ok, typed, built, canon, wok, wtyped, wbuilt)
 			}
 		}
 	}
@@ -337,8 +341,9 @@ func TestTypedPairLeavesBlankBeforeRangeCall(t *testing.T) {
 
 // The oracle's typed pairs are what VictoriaLogs would receive from the proxy: the text the handlers translate (a
 // quantile_over_time phi above 1 is clamped to 1, which VictoriaLogs accepts), no pair for rate_counter (its stats
-// function is a marker the proxy answers itself), and, for a ranking the proxy evaluates, the operand's request the
-// plan lowers to against the operand request the proxy sends (the whole query is never translated on that route).
+// function is a marker the proxy answers itself), none for a quantile_over_time without its quantile (Loki's 400 on
+// every route), and, for a ranking the proxy evaluates, the operand's request the plan lowers to against the operand
+// request the proxy sends (the whole query is never translated on that route).
 // conformance: architecture-syntax-package-layering
 func TestTypedPairsAreWhatTheProxySends(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
@@ -350,6 +355,12 @@ func TestTypedPairsAreWhatTheProxySends(t *testing.T) {
 		if _, _, ok := typedQueryPair(`rate_counter({app="a"} | unwrap n [5m])`, v); ok {
 			t.Errorf("%s: rate_counter makes a pair", v)
 		}
+		// A quantile_over_time without its quantile is Loki's 400 on every route: nothing reaches VictoriaLogs.
+		for _, q := range []string{`quantile_over_time({app="a"} | unwrap c [5m])`, `quantile_over_time({a="b"} | json | unwrap c[5m])`} {
+			if _, _, ok := typedQueryPair(q, v); ok {
+				t.Errorf("%s: %q makes a pair", v, q)
+			}
+		}
 		for _, q := range []string{
 			`topk(3, rate({app="a"}[5m]))`, `bottomk(2, count_over_time({app="a"} |= "x" [1m]))`, `sort(bytes_rate({app="a"}[5m]))`,
 			`sort_desc(rate({app="a"} | json | unwrap n [5m]))`,
@@ -359,8 +370,12 @@ func TestTypedPairsAreWhatTheProxySends(t *testing.T) {
 				t.Errorf("%s: %q: ranking pair %v\n typed %q\n built %q", v, q, ok, typed, built)
 			}
 		}
-		if _, _, ok := typedQueryPair(`topk(3, rate ({app="a"}[5m]))`, v); ok {
-			t.Errorf("%s: a screened ranking makes a pair", v)
+		// A ranking spelled with a blank before its operand's call makes the pair of its canonical spelling, which the
+		// request's rewrite gives the handlers.
+		typed, built, ok = typedQueryPair(`topk(3, rate ({app="a"}[5m]))`, v)
+		wtyped, wbuilt, wok := typedQueryPair(`topk(3, rate({app="a"}[5m]))`, v)
+		if !ok || !wok || typed != wtyped || built != wbuilt {
+			t.Errorf("%s: a respelled ranking makes the pair %v %q %q, its canonical spelling %v %q %q", v, ok, typed, built, wok, wtyped, wbuilt)
 		}
 	}
 }

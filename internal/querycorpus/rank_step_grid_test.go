@@ -257,7 +257,9 @@ func TestEvaluatedOperandSpanIsTheProxysOperand(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	prof := planProfiles()[2].lowerProfile()
 	compared, routedRows, lowered, nested, stddevs := 0, 0, 0, 0, 0
-	for _, q := range append(append(append(planCorpus(t), rankGrid()...), rankStepGrid()...), seriesAggGrid()...) {
+	for _, row := range append(append(append(planCorpus(t), rankGrid()...), rankStepGrid()...), seriesAggGrid()...) {
+		// The handlers slice the operand out of the query as the request's rewrite leaves it.
+		q := handlerText(row)
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
@@ -336,7 +338,11 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 				*s = (*s)[:64]
 			}
 		}
-		q := rankFuzzQuery(sel, line, name, fn, shape, rng, rank, operandKind)
+		// The handlers read the query as the request's rewrite leaves it.
+		q := handlerText(rankFuzzQuery(sel, line, name, fn, shape, rng, rank, operandKind))
+		if rejectedByValidation(q) {
+			return // Loki's parse error, answered before anything is planned or translated
+		}
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			return

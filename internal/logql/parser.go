@@ -1285,6 +1285,12 @@ func (p *parser) parseUnwrap() (Stage, error) {
 	// A comment between a converter's name (in any case) and its parenthesis makes the name the label, to Loki's lexer
 	// (`unwrap bytes # c` and `(c)` on the next line): the parenthesis is then the unexpected token after the stage.
 	if p.cur.Typ == TokLParen && (parenNext || !isUnwrapConverter(strings.ToLower(name.Val))) {
+		if !isUnwrapConverter(strings.ToLower(name.Val)) && !strings.HasPrefix(strings.TrimLeftFunc(p.sc.src[p.sc.pos:], unicode.IsSpace), ")") {
+			// Only bytes, duration and duration_seconds (in any case) are conversions to Loki's lexer: another name is
+			// the label, and the parenthesis the unexpected token after the stage (`| unwrap x(a)`). The empty
+			// parentheses of Grafana's builder stub stay as they were.
+			return &UnwrapStage{Label: name.Val}, nil
+		}
 		// converter(label) form
 		converter := name.Val
 		p.advance() // consume '('

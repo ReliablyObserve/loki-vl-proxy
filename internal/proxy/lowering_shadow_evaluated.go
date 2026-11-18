@@ -93,7 +93,7 @@ func (p *Proxy) runProxyEvaluatedShadow(s *loweringShadow, in evaluatedShadowInp
 		return
 	}
 	var lowered physical.Op
-	if err = lower.ScreenText(in.query, plan); err == nil {
+	if err = lower.ScreenRoute(in.query, plan); err == nil {
 		lowered, err = s.lower(plan, p.evaluatedShadowProfile(in))
 	}
 	if err != nil {

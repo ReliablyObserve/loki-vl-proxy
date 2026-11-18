@@ -1,5 +1,5 @@
 id: semantics/unwrap-name-before-parenthesis-accepted
-title: An unwrap of a name that is no conversion followed by a parenthesis (`| unwrap x(a)`) is Loki's syntax error, and the proxy accepts it (open)
+title: An unwrap of a name that is no conversion followed by a parenthesis (`| unwrap x(a)`) is Loki's syntax error, and the proxy answers it (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -12,10 +12,22 @@ why: |
     sum_over_time({app="a"} | unwrap x(a) [1m])      parse error at line 1, col 35: syntax error: unexpected (, expecting RANGE or |
     sum_over_time({app="a"} | unwrap byteſ(a) [1m])  parse error at line 1, col 39: syntax error: unexpected (, expecting RANGE or |
 
-  The proxy's parser accepts both. Found by the keyword sweep of
-  semantics/keyword-fold-runes-read-as-keyword (TestKeywordFoldRunesMatchLoki
-  writes U+017F and é in the conversion names and pins these rows as a name's
-  known difference). Not changed here.
+  Found by the keyword sweep of semantics/keyword-fold-runes-read-as-keyword
+  (TestKeywordFoldRunesMatchLoki writes U+017F and é in the conversion names).
+  The proxy's parser read any name followed by a parenthesis as a conversion and
+  accepted both. It now reads only bytes, duration and duration_seconds (in any
+  letter case) as conversions, and any other name as the label, so the
+  parenthesis is the unexpected token after the stage: the request validation
+  answers Loki's 400 with Loki's text and column before any VictoriaLogs call
+  (TestUnwrapNameBeforeParenthesisMatchesLoki: 16 recorded Loki answers, other
+  names, a fold rune, blanks, a tab and a comment before the parenthesis, under a
+  vector aggregation, a grouping and a parser, and the conversions in other
+  letter cases as controls). The empty parentheses of Grafana's builder stub
+  (`| unwrap x() [1m]`) keep their earlier answer. In the parenthesized range form
+  (`sum_over_time(({app="a"} | unwrap x(a))[1m])`) the proxy answers the same
+  status, position and unexpected token, and Loki's list of expected tokens
+  holds `)` as well (`expecting RANGE or ) or |`), as it does for any token after
+  an unwrap there (`| unwrap x y`): a separate difference of that form.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -33,13 +45,14 @@ compare:
     400, Loki's `parse error at line 1, col 35: syntax error: unexpected (,
     expecting RANGE or |`.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1661"
   impact: edge
   effort: S
-  area: 'internal/logql parser.go (the unwrap stage reads a name followed by a parenthesis as a conversion)'
+  area: 'internal/logql parser.go (parseUnwrap: only a conversion is read before a parenthesis)'
   loki: 'only bytes, duration and duration_seconds are conversions; another name before a parenthesis is a syntax error'
-  proxy: 'accepted'
-  planned_test: 'TestKeywordFoldRunesMatchLoki (internal/logql, recorded Loki answers: the rows pinned as a name''s known difference)'
+  proxy: 'Loki''s syntax error at the parenthesis, before any VictoriaLogs call'
+  planned_test: 'TestUnwrapNameBeforeParenthesisMatchesLoki and TestKeywordFoldRunesMatchLoki (internal/logql, recorded Loki answers); TestGrammarSweep (internal/querycorpus: the two classes of the spelling are gone)'
   visual: none
   visual_reason: 'a spelling no Grafana panel writes'
   clusters: []

@@ -66,6 +66,21 @@ why: |
   is in the query plan path (the translator is frozen): the LogSelect flip
   keeps queries whose text holds these words on the translator until the plan
   serves them.
+  Quoted text of a log query under a binary operation (a parenthesis, a run of
+  two blanks, bool or without in a line filter or a selector value:
+  `label_replace(rate({namespace="prod"} |= `,)` [5m]) + rate({b="z"}[5m]), ...)`,
+  `topk(2, count_over_time({env="production"} != "(" [1m]) * 2)`) is served from
+  the plan: the lowering's binary and label_replace text screens, which copied
+  the translator's reading and left these queries to it, are gone. The
+  translator's text drops an operand or the binary operation there; the plan's
+  is Loki's reading, and the proxy's answers are Loki's
+  (TestPlanSpellingsMatchLoki, recorded Loki engine and VictoriaLogs answers;
+  the binary route reads the tree, so main answered them as Loki did too). The
+  bytes of the binary text's own markers in such a value (`|||`, `@@@`,
+  `__binary__:`, `__lvp_lr:`) are still left to the translator, decided from the
+  lowered operands (BinOp marker text): the readers of the binary text split
+  there. The corpus shadow counts the served rows native_loki_held; the log
+  query rows above stay open.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -88,7 +103,7 @@ gap:
   area: 'internal/translator (text heuristics over the whole query, quoted values included); fixed when the query plan serves these queries'
   loki: 'a quoted value is a string literal; only the parsed pipeline decides parsing and filtering'
   proxy: 'a value holding detected_level unpacks the line before the filter; bool, without, unwrap and parentheses inside quotes change metric translation'
-  planned_test: 'the VictoriaLogs oracle typed-selector check (internal/querycorpus, known-typed-divergences.json); an e2e row against Loki when the plan serves these queries'
+  planned_test: 'the VictoriaLogs oracle typed-selector check (internal/querycorpus, known-typed-divergences.json); an e2e row against Loki when the plan serves these queries; TestPlanSpellingsMatchLoki (internal/proxy) for the quoted text under a binary operation, which the plan serves'
   visual: none
   visual_reason: 'crafted values; no Grafana panel sends them'
   clusters: []

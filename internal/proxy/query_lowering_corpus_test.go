@@ -16,6 +16,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -58,11 +59,13 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			// No translation cache: every row is translated, not read back.
 			on.translationCache, off.translationCache = nil, nil
 			ctx := context.Background()
-			differs, keep, dynamic, countVariance := 0, 0, 0, 0
-			for _, q := range corpus {
-				if strings.HasPrefix(strings.TrimSpace(q), "{") {
+			differs, keep, dynamic, countVariance, spelled := 0, 0, 0, 0, 0
+			for _, row := range corpus {
+				if strings.HasPrefix(strings.TrimSpace(row), "{") {
 					continue
 				}
+				// The handlers translate the query as the request's rewrite and validation leave it.
+				q := rewriteQuantilePhiGT1(RequestQueryText(row))
 				got, gotErr := on.translateQueryOpts(ctx, q, false)
 				// A query with an unspaced parser is held to the translator's text of its spaced spelling (respaced), one
 				// with a `by` clause of blanks to its text of `by ()` (semantics/translator-reads-blank-grouping-as-none) and
@@ -102,12 +105,31 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					}
 					continue
 				}
+				if got != want && gotErr == nil && wantErr == nil {
+					// A spelling the translator reads otherwise than the plan, which reads the tree: the plan's text,
+					// held to Loki by TestPlanSpellingsMatchLoki.
+					if plan := resolvedPlan(dynamicQuery(q)); plan != nil {
+						switch c := translatorspelling.Case(q, plan); c {
+						case translatorspelling.QuantileLiteral, translatorspelling.UnwrapConversionBlank:
+							// Held to the translator's text of the respelled query, which it reads right.
+							if ref, _ := off.translateQueryOpts(ctx, translatorspelling.Respell(q), false); ref == got {
+								spelled++
+								continue
+							}
+						case translatorspelling.QuotedText, translatorspelling.BinaryText:
+							// The binary route reads the tree; internal/querycorpus holds the lowering to it.
+							spelled++
+							continue
+						}
+					}
+				}
 				if got != want || (gotErr == nil) != (wantErr == nil) {
 					if differs++; differs <= 10 {
 						t.Errorf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)
 					}
 				}
 			}
+			total["spellings the translator reads otherwise"] += spelled
 			if keep == 0 {
 				t.Error("no keep identity row: the case tests nothing")
 			}
@@ -205,9 +227,10 @@ func FuzzMetricFlipGate(f *testing.F) {
 		if len(q) > 512 || strings.HasPrefix(strings.TrimSpace(q), "{") {
 			return
 		}
-		// The query as the handlers and the translation read it (lowercaseQueryKeywords): keywords in lower case,
-		// without comments and parser flags.
-		q = logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(q)))
+		// The query as the handlers and the translation read it (lowercaseQueryKeywords, requestQueryText): keywords in
+		// lower case, without comments and parser flags, the metric calls and parentheses in one spelling, a quantile
+		// above 1 clamped.
+		q = rewriteQuantilePhiGT1(handlerText(q, 0))
 		// A query Loki rejects is rejected by the request's validation before any translation (an empty selector, an
 		// empty pattern): neither path translates it.
 		if logqlpkg.ParseAndValidate(q) != nil {
@@ -248,6 +271,20 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// VictoriaLogs reads both as the same query.
 		if !respelled && strings.IndexFunc(q, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
 			respelled = sameLogsQL(got, want)
+		}
+		// A spelling the translator reads otherwise than the plan (translatorspelling): held to the translator's text of
+		// the respelled query for a quantile literal or an unwrap conversion; a binary operation's spellings to its
+		// route in internal/querycorpus (spellingHeld).
+		if !respelled && got != want && gotErr == nil && wantErr == nil {
+			if plan := resolvedPlan(dynamicQuery(q)); plan != nil {
+				switch translatorspelling.Case(q, plan) {
+				case translatorspelling.QuantileLiteral, translatorspelling.UnwrapConversionBlank:
+					ref, _ := off.translateQueryOpts(context.Background(), spelledAsTranslatorReads(translatorspelling.Respell(q)), false)
+					respelled = got == ref || got == lower.QuoteKeywordFieldText(ref)
+				case translatorspelling.QuotedText, translatorspelling.BinaryText:
+					respelled = true
+				}
+			}
 		}
 		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || ((gotErr == nil) != (wantErr == nil) && !delegated) {
 			t.Fatalf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)
