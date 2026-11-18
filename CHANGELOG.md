@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with such a bytes literal (`| size > 18446744073709551615B`) now parses, as in Loki 3.7.10, instead of
   answering Loki 3.7.9's `400` parse error. The VictoriaLogs
   pushdown still reads sizes within float64 rounding of 2^64 bytes as too large (registered as a known difference).
+
+## [2.336.0] - 2026-11-18
+
+### Fixed
+
 - A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
   with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
   parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,
