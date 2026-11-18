@@ -159,15 +159,16 @@ func TestOutageChangesNothing(t *testing.T) {
 func TestUnknownReleaseProbesDecide(t *testing.T) {
 	l := newTestLayer(newClock())
 	l.ObserveProbe(PipeCoalesce, VerdictOn)
-	l.ObserveProbe(StatsLimitAfterStats, VerdictOff)
+	l.ObserveProbe(StatsLimitAfterStats, VerdictOn)
+	l.ObserveProbe(RangeTimeWritersRefused, VerdictOff)
 	l.ObserveProbe(StreamMetadataEndpoints, VerdictOn)
 	s := l.Backend()
 	if s.Release().Known || !s.On(PipeCoalesce) || !s.Decided(PipeCoalesce) || s.Why(PipeCoalesce) != ReasonProbe ||
-		s.On(StatsLimitAfterStats) || !s.Decided(StatsLimitAfterStats) {
+		s.On(RangeTimeWritersRefused) || !s.Decided(RangeTimeWritersRefused) {
 		t.Fatalf("probes decide: %s", s.HeaderValue())
 	}
-	// A coalesce answered means v1.51 or later: the capabilities of v1.50 follow (implied), the v1.52 ones do not.
-	// A Safety gate and an undecided Behaviour gate stay as they were.
+	// A coalesce answered with the v1.53 shape accepted means v1.51 or v1.52: the capabilities of v1.50 follow
+	// (implied), the v1.52 ones do not. A Safety gate and an undecided Behaviour gate stay as they were.
 	if !s.On(DensePatternWindowing) || s.Why(DensePatternWindowing) != ReasonImplied || !s.On(ColumnFieldValues) || s.On(PipeJSONArrayConcat) || s.Decided(PipeJSONArrayConcat) ||
 		s.Decided(ExtraFiltersLen) || s.On(MathQuotedConstantClone) || s.Decided(MathQuotedConstantClone) {
 		t.Fatalf("implied and undecided gates: %s", s.HeaderValue())
@@ -182,11 +183,20 @@ func TestUnknownReleaseProbesDecide(t *testing.T) {
 	if s3 := l3.Backend(); s3.On(DensePatternWindowing) || s3.Decided(DensePatternWindowing) || s3.Why(DensePatternWindowing) != ReasonDefault {
 		t.Fatalf("a refused probe implied a capability: %s", s3.HeaderValue())
 	}
+	// Contradicting answers (a pool the probes cannot tell apart: coalesce present, limit-after-stats absent) imply
+	// nothing, and the absent answer wins for its own gate.
+	l5 := newTestLayer(newClock())
+	l5.ObserveProbe(PipeCoalesce, VerdictOn)
+	l5.ObserveProbe(StatsLimitAfterStats, VerdictOff)
+	if s5 := l5.Backend(); s5.On(DensePatternWindowing) || s5.Why(DensePatternWindowing) != ReasonDefault || s5.On(StatsLimitAfterStats) {
+		t.Fatalf("contradicting answers implied a capability: %s", s5.HeaderValue())
+	}
 	// A known release is never overridden by an implication.
 	l4 := newTestLayer(newClock())
 	l4.Observe("a", rel("v1.49.0"))
-	if l4.Backend().On(DensePatternWindowing) {
-		t.Fatal("v1.49.0 has no dense windowing")
+	l4.ObserveProbe(PipeCoalesce, VerdictOn)
+	if l4.Backend().On(DensePatternWindowing) || l4.Backend().On(PipeCoalesce) {
+		t.Fatal("v1.49.0 has neither dense windowing nor coalesce")
 	}
 	// A probe cannot decide a Safety gate or a gate without a probe.
 	l.ObserveProbe(MathQuotedConstantClone, VerdictOn)
@@ -196,11 +206,11 @@ func TestUnknownReleaseProbesDecide(t *testing.T) {
 	}
 }
 
-// A release that says the gate is on and a probe that observes it refused: the observed behaviour wins, the
-// mismatch is reported and counted once.
+// A release that says the gate is on and a probe that observes it absent (a member without it, a patched build): the
+// gate is off, the mismatch is reported and counted once.
 //
 // conformance: vl-capability-layer
-func TestVersionAndProbeDisagreeObservedBehaviourWins(t *testing.T) {
+func TestProbeAbsentBelowTheReleaseTurnsTheGateOff(t *testing.T) {
 	l := newTestLayer(newClock())
 	l.Observe("vl:9428", rel("v1.54.0"))
 	var seen []Set
@@ -217,19 +227,152 @@ func TestVersionAndProbeDisagreeObservedBehaviourWins(t *testing.T) {
 	if st := l.Status(); len(st.Mismatches) != 1 || st.Mismatches[0] != "vl.pipe_coalesce" {
 		t.Fatalf("status mismatches %v", st.Mismatches)
 	}
-	// The probe that agrees gives the reason "both", with no change of digest or epoch.
+	// A present answer in the same window does not undo an absent one (the lowest member decides).
 	l.ObserveProbe(PipeCoalesce, VerdictOn)
+	if l.Backend().On(PipeCoalesce) {
+		t.Fatal("a present answer overrode an absent one inside the window")
+	}
+	// A gate both agree on is "both", with no change of digest or epoch.
 	epoch := l.Backend().Epoch()
 	l.ObserveProbe(StatsLimitAfterStats, VerdictOn)
-	if got := l.Backend(); got.Why(StatsLimitAfterStats) != ReasonBoth || got.Epoch() != epoch || got.Why(PipeCoalesce) != ReasonBoth {
+	if got := l.Backend(); got.Why(StatsLimitAfterStats) != ReasonBoth || got.Epoch() != epoch {
 		t.Fatalf("agreeing probes keep the digest: %s", got.HeaderValue())
 	}
-	// A Behaviour gate observed present by the probe on an older release flips too.
-	l2 := newTestLayer(newClock())
-	l2.Observe("vl:9428", rel("v1.52.0"))
-	l2.ObserveProbe(RangeTimeWritersRefused, VerdictOn)
-	if !l2.Backend().On(RangeTimeWritersRefused) || l2.Backend().Why(RangeTimeWritersRefused) != ReasonMismatch {
-		t.Fatal("a refused shape the release says is accepted")
+}
+
+// A probe never turns a gate on above the release: a newer member answered, or a patched build.
+//
+// conformance: vl-capability-layer
+func TestProbeNeverRaisesAboveTheRelease(t *testing.T) {
+	l := newTestLayer(newClock())
+	l.Observe("vl:9428", rel("v1.52.0"))
+	before := l.Backend()
+	l.ObserveProbe(RangeTimeWritersRefused, VerdictOn)
+	l.ObserveProbe(PipeCoalesce, VerdictOn)
+	after := l.Backend()
+	if after.On(RangeTimeWritersRefused) || after.Digest() != before.Digest() || after.Epoch() != before.Epoch() || len(after.Mismatches()) != 0 {
+		t.Fatalf("a probe raised a gate above v1.52.0: %s", after.HeaderValue())
+	}
+}
+
+// Behind a load balancer every member shares one backend key and the probes and /metrics reads reach random
+// members. The lowest member decides, whatever the order of the answers, and alternating answers do not move the
+// digest or the epoch.
+//
+// conformance: vl-capability-layer
+func TestSharedKeyMixedMembersNeverAboveTheLowest(t *testing.T) {
+	clk := newClock()
+	l := newTestLayer(clk)
+	l.Observe("lb", rel("v1.54.0"))
+	l.Observe("lb", rel("v1.50.0"))
+	s := l.Backend()
+	if s.Release().String() != "v1.50.0" || s.On(PipeCoalesce) {
+		t.Fatalf("lowest member: %s", s.HeaderValue())
+	}
+	l.ObserveProbe(PipeCoalesce, VerdictOn) // answered by the v1.54 member
+	if got := l.Backend(); got.On(PipeCoalesce) || got.Why(PipeCoalesce) == ReasonMismatch {
+		t.Fatalf("a newer member's answer raised a gate above the lowest release: %s", got.HeaderValue())
+	}
+	l.ObserveProbe(PipeCoalesce, VerdictOff) // the v1.50 member
+	epoch, digest := l.Backend().Epoch(), l.Backend().Digest()
+	for i := 0; i < 40; i++ {
+		clk.Advance(time.Second)
+		l.Observe("lb", rel("v1.54.0"))
+		l.Observe("lb", rel("v1.50.0"))
+		for _, g := range []GateID{PipeCoalesce, StatsLimitAfterStats, RangeTimeWritersRefused} {
+			if i%2 == 0 {
+				l.ObserveProbe(g, VerdictOn)
+			} else {
+				l.ObserveProbe(g, VerdictOff)
+			}
+		}
+		if got := l.Backend(); got.Epoch() > epoch+1 {
+			t.Fatalf("alternating answers moved the epoch: %d -> %d", epoch, got.Epoch())
+		}
+	}
+	got := l.Backend()
+	if got.Release().String() != "v1.50.0" || got.On(PipeCoalesce) || got.On(StatsLimitAfterStats) || got.On(RangeTimeWritersRefused) || got.On(ExtraFiltersLen) {
+		t.Fatalf("a gate is above the lowest member: %s", got.HeaderValue())
+	}
+	_ = digest
+	// Unknown release, mixed members, one absent answer: absent wins for that gate and nothing is implied.
+	u := newTestLayer(clk)
+	u.ObserveProbe(PipeCoalesce, VerdictOn)
+	u.ObserveProbe(PipeCoalesce, VerdictOff)
+	u.ObserveProbe(PipeCoalesce, VerdictOn)
+	if us := u.Backend(); us.On(PipeCoalesce) || us.On(DensePatternWindowing) {
+		t.Fatalf("an absent answer inside the window lost to a later present one: %s", us.HeaderValue())
+	}
+}
+
+// An absent answer holds for the whole window and then gives way to a newer present one; a silent backend keeps the
+// last verdict past the window.
+//
+// conformance: vl-capability-layer
+func TestProbeVerdictsAgeLikeReleases(t *testing.T) {
+	clk := newClock()
+	l := newTestLayer(clk)
+	l.Observe("a", rel("v1.54.0"))
+	l.ObserveProbe(PipeCoalesce, VerdictOff)
+	clk.Advance(l.window / 2)
+	l.ObserveProbe(PipeCoalesce, VerdictOn)
+	if l.Backend().On(PipeCoalesce) {
+		t.Fatal("the absent answer must hold inside the window")
+	}
+	clk.Advance(l.window)
+	l.ObserveProbe(PipeCoalesce, VerdictOn) // the absent answer is older than the window now
+	if !l.Backend().On(PipeCoalesce) {
+		t.Fatal("a stale absent answer outlived a newer present one")
+	}
+	// Silence: every answer older than the window, the last one stands.
+	l.ObserveProbe(StatsLimitAfterStats, VerdictOff)
+	clk.Advance(5 * l.window)
+	l.Prune()
+	if l.Backend().On(StatsLimitAfterStats) || !l.Backend().On(PipeCoalesce) {
+		t.Fatalf("silence flipped a gate: %s", l.Backend().HeaderValue())
+	}
+}
+
+// The Safety gate fails closed: a build with a suffix the layer does not recognise, a release some probe says has an
+// older member, and an unknown release are all guarded; the canonical name keeps the suffix apart.
+//
+// conformance: vl-capability-layer
+func TestSafetyGateFailsClosed(t *testing.T) {
+	for _, raw := range []string{"v1.53.0-rc1", "v1.54.0-cluster", "v1.54.0-custom-build"} {
+		r := ParseRelease(raw)
+		if !r.Known || r.Flavour != FlavourUnknown || r.Suffix == "" || ForRelease(r).On(MathQuotedConstantClone) || !ForRelease(r).Decided(MathQuotedConstantClone) {
+			t.Errorf("%s must stay guarded: %+v", raw, r)
+		}
+		if r.String() == ParseRelease(raw[:len("v1.53.0")]).String() {
+			t.Errorf("%s has the canonical name of the plain release", raw)
+		}
+		// The gates a version decides follow the version, as for any flavour.
+		if !ForRelease(r).On(PipeCoalesce) {
+			t.Errorf("%s: coalesce follows the version", raw)
+		}
+	}
+	b, ok := ParseBuild("victoria-logs-20261113-102924-tags-v1.53.0-cluster-0-gabc", SourceMetrics)
+	if !ok || b.String() != "v1.53.0-cluster" || ForRelease(b).On(MathQuotedConstantClone) {
+		t.Fatalf("cluster build: %+v", b)
+	}
+	if ForRelease(ParseRelease("v1.53.0")).Digest() == ForRelease(ParseRelease("v1.53.0-rc1")).Digest() {
+		t.Fatal("the digest must tell v1.53.0-rc1 from v1.53.0")
+	}
+	if ParseRelease("v1.53.0-rc1").Compare(ParseRelease("v1.53.0-rc2")) == 0 || !ForRelease(ParseRelease("v1.53.0")).On(MathQuotedConstantClone) {
+		t.Fatal("suffixes compare apart; the plain release is fixed")
+	}
+	// A probe that finds a feature of v1.53 or earlier absent on a release that carries the fix: some member is
+	// older than the fix.
+	for _, g := range []GateID{RangeTimeWritersRefused, PipeCoalesce, StatsLimitAfterStats} {
+		l := newTestLayer(newClock())
+		l.Observe("lb", rel("v1.54.0"))
+		if !l.Backend().On(MathQuotedConstantClone) {
+			t.Fatal("v1.54.0 carries the fix")
+		}
+		l.ObserveProbe(g, VerdictOff)
+		if l.Backend().On(MathQuotedConstantClone) {
+			t.Errorf("the clone guard stayed off after %s was found absent", g)
+		}
 	}
 }
 

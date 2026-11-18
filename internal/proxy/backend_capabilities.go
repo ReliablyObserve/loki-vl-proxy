@@ -38,6 +38,9 @@ const (
 // (a variable so a test can shorten it).
 var minCapabilityLoopInterval = 10 * time.Second
 
+// capabilityWindowIntervals is how many re-probe intervals a release stays in the capability window after it was last seen.
+const capabilityWindowIntervals = 6
+
 // backendVersionReprobeInterval spaces the metrics version probes that traffic triggers while the release is
 // unknown, whatever the periodic interval is.
 const backendVersionReprobeInterval = 5 * time.Minute
@@ -57,10 +60,9 @@ func (p *Proxy) maybeReprobeBackendVersion(now time.Time) {
 // triggers it, rate limited above); it stops with the proxy. Feature probes run at startup and in the loop only.
 func (p *Proxy) startVersionProbe() {
 	stop := p.keepWarmStop
-	if stopped(stop) {
+	if !p.joinKeepWarm() {
 		return // shut down: no new goroutine joins the wait group
 	}
-	p.keepWarmWG.Add(1)
 	go func() {
 		defer p.keepWarmWG.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), p.probeRoundTimeout())
@@ -102,11 +104,10 @@ func (p *Proxy) StartBackendCapabilityLoop() {
 		return
 	}
 	stop := p.keepWarmStop
-	if stopped(stop) {
+	if !p.joinKeepWarm() {
 		p.capLoopStarted.Store(false)
 		return
 	}
-	p.keepWarmWG.Add(1)
 	go func() {
 		defer p.keepWarmWG.Done()
 		interval := max(p.backendReprobeInterval, minCapabilityLoopInterval)
@@ -133,14 +134,16 @@ func (p *Proxy) StartBackendCapabilityLoop() {
 	}()
 }
 
-// stopped reports a closed stop channel.
-func stopped(stop chan struct{}) bool {
-	select {
-	case <-stop:
-		return true
-	default:
+// joinKeepWarm adds one goroutine to the wait group Shutdown waits for, unless Shutdown has begun: the check and the
+// Add are atomic with Shutdown's close of the stop channel, so a goroutine never joins a group that is being waited on.
+func (p *Proxy) joinKeepWarm() bool {
+	p.keepWarmMu.Lock()
+	defer p.keepWarmMu.Unlock()
+	if p.keepWarmClosed {
 		return false
 	}
+	p.keepWarmWG.Add(1)
+	return true
 }
 
 // jittered spreads the replicas' probes: d plus or minus 10%.

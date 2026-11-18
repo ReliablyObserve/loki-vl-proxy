@@ -949,6 +949,8 @@ type Proxy struct {
 	labelValuesIndexPersistStop        chan struct{}
 	labelValuesIndexPersistDone        chan struct{}
 	keepWarmStop                       chan struct{}
+	keepWarmMu                         sync.Mutex // guards keepWarmClosed against the wait group's Add (joinKeepWarm)
+	keepWarmClosed                     bool
 	keepWarmWG                         sync.WaitGroup // startup warm-up and keep-warm loop; Shutdown waits for them
 	labelValuesIndexMu                 sync.RWMutex
 	labelValuesIndex                   map[string]*labelValuesIndexState
@@ -1660,8 +1662,10 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	p.metrics.SetCoalescerStatsProvider(coalescerStats)
 	p.metrics.SetErrorFlightStatsProvider(p.errorFlightStats)
-	// A release leaves the capability window only after it was not seen for two probe intervals (and a probe round).
-	p.caps.SetWindow(2*p.backendReprobeInterval + p.probeRoundTimeout())
+	// A release leaves the capability window only after it was not seen for six probe intervals (and a probe round):
+	// behind a load balancer each read comes from a random member, and a window this wide keeps the chance that an
+	// older member is missed by every read of it small.
+	p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
 	p.caps.Subscribe(p.onCapabilityChange)
 	p.metrics.SetCapabilityStatsProvider(p.capabilityStats)
 	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {
@@ -2052,6 +2056,8 @@ func (p *Proxy) rejectAdmission(w http.ResponseWriter, r *http.Request, err *lok
 func (p *Proxy) Shutdown(ctx context.Context) error {
 	p.loweringShadow.close(ctx)
 	p.statsExtentStores.close()
+	p.keepWarmMu.Lock()
+	p.keepWarmClosed = true // after this no goroutine joins the wait group (joinKeepWarm)
 	if p.keepWarmStop != nil {
 		select {
 		case <-p.keepWarmStop:
@@ -2059,6 +2065,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 			close(p.keepWarmStop)
 		}
 	}
+	p.keepWarmMu.Unlock()
 	waitKeepWarm(ctx, &p.keepWarmWG)
 	p.stopStreamLabelNames()
 	p.stopMetadataEdgeRefreshes(ctx)

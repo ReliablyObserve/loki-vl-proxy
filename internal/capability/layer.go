@@ -50,13 +50,16 @@ type Layer struct {
 	now    func() time.Time
 
 	cur atomic.Pointer[Set]
-	// fast is the last release text observed, so a response that repeats it costs one string compare.
-	fast atomic.Pointer[fastObs]
+	// fast holds the last few release texts observed (a pool answers with a few distinct ones), so a response that
+	// repeats one costs a string compare per slot; fastNext picks the slot a new text takes.
+	fast     [fastSlots]atomic.Pointer[fastObs]
+	fastNext atomic.Uint32
 
 	mu         sync.Mutex
 	seen       []*observed
-	probes     verdicts
-	probeAt    [numGates]time.Time
+	probeOn    [numGates]time.Time // when each gate's probe last found it present
+	probeOff   [numGates]time.Time // when it last found it absent
+	probeAt    [numGates]time.Time // when it last answered at all
 	probeCount [numGates][3]uint64 // by Verdict
 	mismatch   [numGates]bool
 	mismatches [numGates]uint64
@@ -66,6 +69,9 @@ type Layer struct {
 	lokiTarget string
 	clients    clientCounts // its own lock: the request path counts clients
 }
+
+// fastSlots is how many distinct release texts the repeat path remembers.
+const fastSlots = 4
 
 type fastObs struct {
 	raw     string
@@ -116,16 +122,18 @@ func (l *Layer) SetLokiTarget(v string) {
 // ObserveRaw reads what a backend says about itself and counts it when it names VictoriaLogs. It reports whether the
 // text was a VictoriaLogs release. A text equal to the last one costs one compare: no lock, no allocation.
 func (l *Layer) ObserveRaw(backend, raw string, src Source) bool {
-	if f := l.fast.Load(); f != nil && f.raw == raw && f.src == src && f.backend == backend && !f.entry.detached.Load() {
-		f.entry.lastSeenNs.Store(l.now().UnixNano())
-		return true
+	for i := range l.fast {
+		if f := l.fast[i].Load(); f != nil && f.raw == raw && f.src == src && f.backend == backend && !f.entry.detached.Load() {
+			f.entry.lastSeenNs.Store(l.now().UnixNano())
+			return true
+		}
 	}
 	rel, ok := ParseBuild(raw, src)
 	if !ok {
 		return false
 	}
 	if e := l.observe(backend, rel); e != nil {
-		l.fast.Store(&fastObs{raw: raw, src: src, backend: backend, entry: e})
+		l.fast[l.fastNext.Add(1)%fastSlots].Store(&fastObs{raw: raw, src: src, backend: backend, entry: e})
 	}
 	return true
 }
@@ -226,17 +234,23 @@ func (l *Layer) effectiveLocked() Release {
 	return eff
 }
 
-// ObserveProbe records a feature probe's verdict for a gate. A VerdictNone keeps the previous verdict (it is
-// still counted): an outage never flips a gate.
+// ObserveProbe records a feature probe's verdict for a gate. A VerdictNone changes nothing (it is still counted): an
+// outage never flips a gate. Behind a load balancer the answers come from random members of one backend, so the
+// verdicts are read like the releases: the lowest member decides, an absent answer anywhere in the window wins over
+// a present one (verdictsLocked).
 func (l *Layer) ObserveProbe(id GateID, v Verdict) {
 	if id >= numGates || gates[id].Probe == nil || gates[id].Kind == Safety {
 		return
 	}
 	l.mu.Lock()
+	now := l.now()
 	l.probeCount[id][v]++
-	l.probeAt[id] = l.now()
-	if v != VerdictNone {
-		l.probes[id] = v
+	l.probeAt[id] = now
+	switch v {
+	case VerdictOn:
+		l.probeOn[id] = now
+	case VerdictOff:
+		l.probeOff[id] = now
 	}
 	old, nw, changed := l.recomputeLocked()
 	subs := l.subs
@@ -246,11 +260,32 @@ func (l *Layer) ObserveProbe(id GateID, v Verdict) {
 	}
 }
 
+// verdictsLocked is each gate's standing verdict: an absent answer within the window wins, then a present one; when
+// every answer is older than the window (a silent backend) the most recent one stands, so silence never flips a gate.
+func (l *Layer) verdictsLocked(now time.Time) verdicts {
+	var out verdicts
+	cutoff := now.Add(-l.window)
+	for i := range out {
+		on, off := l.probeOn[i], l.probeOff[i]
+		switch {
+		case !off.IsZero() && !off.Before(cutoff):
+			out[i] = VerdictOff
+		case !on.IsZero() && !on.Before(cutoff):
+			out[i] = VerdictOn
+		case !off.IsZero() && !off.Before(on):
+			out[i] = VerdictOff
+		case !on.IsZero():
+			out[i] = VerdictOn
+		}
+	}
+	return out
+}
+
 // recomputeLocked rebuilds the set from the releases and verdicts and publishes it. The epoch moves only when the
 // digest does, so a mixed pool under the lowest-in-window rule, or a probe that repeats its verdict, does not flap.
 func (l *Layer) recomputeLocked() (old, nw Set, changed bool) {
 	cur := *l.cur.Load()
-	nw = compute(l.effectiveLocked(), l.probes)
+	nw = compute(l.effectiveLocked(), l.verdictsLocked(l.now()))
 	for i := range gates {
 		mm := nw.meta.why[i] == ReasonMismatch
 		if mm && !l.mismatch[i] {
@@ -365,8 +400,8 @@ func (l *Layer) Status() Status {
 		id := GateID(i)
 		gv := GateView{Name: g.Name, Side: g.Side.String(), Kind: g.Kind.String(), On: cur.On(id), Decided: cur.Decided(id), Source: cur.Why(id).String(),
 			From: g.FromString(), Registry: g.Registry, LastProbe: l.probeAt[i]}
-		if l.probes[i] != VerdictNone {
-			gv.ProbeVerdict = l.probes[i].String()
+		if v := l.verdictsLocked(now)[i]; v != VerdictNone {
+			gv.ProbeVerdict = v.String()
 		}
 		st.Gates = append(st.Gates, gv)
 		if cur.Why(id) == ReasonMismatch {

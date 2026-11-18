@@ -24,17 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version it saw for the life of the process; now the lowest release seen in the last window decides (a vmauth pool
   or a rolling upgrade never enables a gate one member lacks), it is read again every
   `-backend-version-reprobe-interval` (default `5m`, jittered, one round at a time per replica; `0` disables the
-  periodic round), and a release that is not seen again leaves the window only when a newer observation exists, so
+  periodic round), and a release that is not seen again (for six re-probe intervals) leaves the window only when a newer observation exists, so
   an outage never empties it or flips a gate.
 
 - Feature probes (`-backend-feature-probes`, default on): one tiny read-only query per probed gate over an empty
   one-second window, at startup and on every re-probe, sent with the proxy's own backend auth and headers, bypassing
   the circuit breaker and never counted as client or upstream requests. A probe decides a gate when no release is
-  readable (behind `vmauth` without a `/metrics` route) and cross-checks it when one is: where the observed
-  behaviour contradicts the version it wins and a `capability mismatch` line and
-  `loki_vl_proxy_capability_mismatch_total` report it. Only an explicit refusal turns a probed gate off; a timeout,
+  readable (behind `vmauth` without a `/metrics` route) and cross-checks it when one is: a probe can only turn a
+  gate off below what the release allows (a member of the pool lacks it, or a patched build), never on above it, and
+  an absent answer holds for the whole window like a release (the lowest member decides); a `capability mismatch`
+  line and `loki_vl_proxy_capability_mismatch_total` report it. Only an explicit refusal turns a probed gate off; a timeout,
   a 5xx, a 401 or a transport error keeps the previous verdict. Every probe is proven not to crash VictoriaLogs v1.49.0
-  and the newest release on the VictoriaLogs oracle (`TestProbesCrashSafe`).
+  and the newest release on the VictoriaLogs oracle (`TestProbesCrashSafe`: v1.49.0, v1.53.0 and v1.54.0).
 
 - `GET /admin/capabilities` (protected like `/admin/cache/flush`) shows every release seen, the effective release,
   every gate with what decided it, the mismatches, the epoch and the digest. New metrics:
@@ -63,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `-backend-version-strict=true` no longer passes startup on the version of another product. Behind `vmauth` (which
+  serves its own `/metrics`) the check used to read vmauth's version (VictoriaMetrics v1.155.0) as the VictoriaLogs
+  release and pass; it now finds no VictoriaLogs release and, in strict mode, fails startup ("backend did not expose
+  version in response headers or /metrics payload"). Keep startup working by turning strict off, by exposing
+  VictoriaLogs' own `/metrics` through `vmauth` (a route to `/metrics` of VictoriaLogs), or by letting a response
+  header that names VictoriaLogs carry the release.
 - A `label_replace` call Loki cannot read is answered with Loki's error text, line and column. Three or five
   strings, a number for a string and an invalid escape now count the column from the start of the query, not from
   the call (Loki's `col 70` where the proxy said `col 56`), and use the line Loki gives. Such an error, and a
@@ -106,9 +113,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs release and so turned every gate on by accident, the release is now unknown unless a header or a
   VictoriaLogs `/metrics` route names it: the feature probes decide the gates they cover and, when a probe finds a
   feature of v1.51 or later present, the capabilities of earlier releases follow (dense pattern windowing and
-  column-indexed field values for a backend that answers `coalesce`); a backend behind `vmauth` that answers no probe
-  holds the v1.49.0 floor, and `-backend-version-strict=true` then fails startup ("backend did not expose version")
-  where the vmauth version used to satisfy it. Keep `-backend-feature-probes=true` (the default) behind `vmauth`.
+  column-indexed field values for a backend that answers `coalesce`, when no probe contradicts); a backend behind
+  `vmauth` that answers no probe holds the v1.49.0 floor. Keep `-backend-feature-probes=true` (the default) behind
+  `vmauth`, or expose VictoriaLogs' `/metrics` through it. The refusal prediction of a call VictoriaLogs v1.54.0
+  would refuse (an `extra_filters` argument over its length limit) does not fire while the release is unknown, and
+  a math pipe with a quoted number is no longer sent on a call VictoriaLogs clones (the guard holds for an unknown
+  release, as it does without vmauth).
 
 - Every feature probe reads one fixed one-second window in the year 2000, with a row limit of one, so it never scans
   a stored row.

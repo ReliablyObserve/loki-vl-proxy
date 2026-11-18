@@ -72,14 +72,20 @@ func (s Source) String() string {
 // control.
 const maxRaw = 128
 
+// maxSuffix bounds the unrecognised version suffix a release keeps.
+const maxSuffix = 32
+
 // Release is one VictoriaLogs build as observed.
 type Release struct {
 	Major, Minor, Patch int
 	Flavour             Flavour
-	Known               bool
-	Raw                 string // as reported (vm_app_version, a header), at most maxRaw bytes
-	Source              Source
-	SeenAt              time.Time
+	// Suffix is the version suffix of a build whose flavour is not recognised ("rc1", "cluster"), at most
+	// maxSuffix bytes: it keeps such a build apart from the plain release in the canonical name and the digest.
+	Suffix string
+	Known  bool
+	Raw    string // as reported (vm_app_version, a header), at most maxRaw bytes
+	Source Source
+	SeenAt time.Time
 }
 
 // Compare orders releases by version, then flavour (an unrecognised build sorts lowest, so it is the one a mixed
@@ -98,7 +104,10 @@ func (r Release) Compare(o Release) int {
 	case r.Patch != o.Patch:
 		return r.Patch - o.Patch
 	}
-	return int(r.Flavour) - int(o.Flavour)
+	if d := int(r.Flavour) - int(o.Flavour); d != 0 {
+		return d
+	}
+	return strings.Compare(r.Suffix, o.Suffix)
 }
 
 // String is the canonical name of the release, "v1.52.2-enterprise" ("v1.54.0" for an open-source build), or
@@ -113,6 +122,10 @@ func (r Release) String() string {
 		s += "-enterprise"
 	case FlavourEnterpriseFIPS:
 		s += "-enterprise-fips"
+	case FlavourUnknown:
+		if r.Suffix != "" {
+			s += "-" + r.Suffix
+		}
 	}
 	return s
 }
@@ -168,6 +181,22 @@ func parseSemverSuffix(s string, allowTwo bool) (Release, bool) {
 		return Release{}, false // "1.2.3x", "1.2.3.4": not a release version
 	}
 	r.Flavour = flavourOfSuffix(rest[1:])
+	if r.Flavour == FlavourUnknown {
+		var kept []string
+		for _, part := range strings.Split(rest[1:], "-") {
+			if part != "" && part != "dirty" && !isBuildCounter(part) {
+				kept = append(kept, part)
+			}
+		}
+		suffix := strings.Join(kept, "-")
+		if len(suffix) > maxSuffix {
+			suffix = suffix[:maxSuffix]
+		}
+		r.Suffix = sanitizeSuffix(suffix)
+		if r.Suffix == "" {
+			r.Suffix = "unrecognised"
+		}
+	}
 	return r, true
 }
 
@@ -338,4 +367,17 @@ func (r Release) AtLeast(o Release) bool {
 		return true
 	}
 	return r.Known && cmp3(r.Major, r.Minor, r.Patch, [3]int{o.Major, o.Minor, o.Patch}) >= 0
+}
+
+// sanitizeSuffix keeps the characters of a version suffix and drops the rest (the suffix reaches a metric label and
+// the canonical name).
+func sanitizeSuffix(s string) string {
+	b := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '-' || c == '.' || c == '_' {
+			b = append(b, c)
+		}
+	}
+	return string(b)
 }

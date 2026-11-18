@@ -226,20 +226,6 @@ func semverAtLeastSemver(version, minVersion string) bool {
 	return vPatch >= mPatch
 }
 
-// storeBackendVersion records a release the caller trusts to be VictoriaLogs's (an operator-named or test-named
-// version; what a backend reports goes through capability.ParseBuild). source is a label of where it came from.
-func (p *Proxy) storeBackendVersion(source, semver string) {
-	r := capability.ParseRelease(semver)
-	if !r.Known {
-		return
-	}
-	r.Raw = source
-	if strings.HasPrefix(source, "metrics:") {
-		r.Source = capability.SourceMetrics
-	}
-	p.caps.Observe(p.backendKey(), r)
-}
-
 // logsqlCapabilities returns the LogsQL capabilities of the observed backend. Before the first release is known it
 // returns the floor baseline.
 func (p *Proxy) logsqlCapabilities() logsql.Capabilities {

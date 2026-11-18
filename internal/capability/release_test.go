@@ -21,7 +21,7 @@ func TestParseBuildAcceptsOnlyVictoriaLogs(t *testing.T) {
 		{"victoria-logs v1.49.0", "v1.49.0", FlavourOSS},
 		{"VictoriaLogs/1.52.1", "v1.52.1", FlavourOSS},
 		{"victorialogs v1.53.0-enterprise", "v1.53.0-enterprise", FlavourEnterprise},
-		{"victoria-logs-20261101-000000-tags-v1.54.0-cluster-0-gabc", "v1.54.0", FlavourUnknown},
+		{"victoria-logs-20261101-000000-tags-v1.54.0-cluster-0-gabc", "v1.54.0-cluster", FlavourUnknown},
 		// Other products of the same version library are not VictoriaLogs.
 		{"vmauth-20261113-102924-tags-v1.155.0-0-g6433dae586", "", 0},
 		{"victoria-metrics-20261113-102924-tags-v1.155.0-0-g6433dae586", "", 0},

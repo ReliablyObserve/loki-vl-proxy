@@ -117,7 +117,7 @@ VictoriaLogs or the cache and tail internals, is described under Log Sources):
 | `slow_request` | `WARN` | a client request at or over `-slow-query-threshold`, whatever the sampling |
 | `slow_upstream_request` | `WARN` | one VictoriaLogs call at or over `-slow-upstream-threshold`, whatever the sampling |
 | `capability set changed` | `INFO` | once per change of the capability gate set (startup, an upgrade or a rollback of VictoriaLogs): the old and new release, the gates turned on and off, the epoch and the digest |
-| `capability mismatch` | `WARN` | a feature probe contradicts the VictoriaLogs release for a gate; the observed behaviour wins |
+| `capability mismatch` | `WARN` | a feature probe finds absent a feature the VictoriaLogs release carries (a member of the pool lacks it, or a patched build); the gate is off |
 
 #### The `request` line
 

@@ -18,9 +18,10 @@ description: |
   VictoriaLogs/vX.Y.Z headers); the version of vmauth, vlagent, vmagent or
   VictoriaMetrics (the stack's vmauth is VictoriaMetrics v1.155.0) and a bare
   semver are refused.
-  Three kinds: capability (a feature used when present; unknown means off, the
-  observed behaviour wins over the version), safety (a crash or wrong-answer
-  guard; unknown or contradicted means guarded, no probe) and behaviour (how
+  Three kinds: capability (a feature used when present; unknown means off; a probe
+  can only turn it off below what the release allows, never on above it), safety (a crash or wrong-answer
+  guard; unknown, an unrecognised flavour or suffix, or a probe that finds
+  an earlier feature absent means guarded; no probe) and behaviour (how
   VictoriaLogs answers; unknown means undecided, nothing is predicted from it).
   Only an explicit refusal turns a probed gate off; a timeout, a 5xx, a 401, a
   transport error or an open breaker gives no verdict, so an outage never flips a

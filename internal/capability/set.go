@@ -22,8 +22,7 @@ const (
 	ReasonProbe
 	// ReasonBoth: the release and the probe agree.
 	ReasonBoth
-	// ReasonMismatch: the probe contradicts the release; the observed behaviour wins (a Safety gate never reads a
-	// probe).
+	// ReasonMismatch: a probe found the feature absent that the release carries (a member lacks it); the gate is off.
 	ReasonMismatch
 	// ReasonImplied: no release is known, and a probe found a feature of a later release present, so a capability
 	// of that release or an earlier one is present too (a release never loses a feature a previous one had).
@@ -142,23 +141,16 @@ func computeDigest(r Release, on, decided uint32) string {
 type verdicts [numGates]Verdict
 
 // compute decides every gate from the effective release and the probes' verdicts.
+//
+// Evidence is read as the lowest member of the backend would give it: a probe may turn a gate off below what the
+// release allows (a member that lacks the feature answered) but never on above it (a newer member answered); with
+// no release known, a gate is on only when every probe answer of the window said so.
 func compute(r Release, probes verdicts) Set {
 	var s Set
 	meta := &setMeta{}
 	r.SeenAt = time.Time{}
 	s.release = r
-	// Without a known release, a probe that finds a feature present bounds the release from below: every capability
-	// the release's line had by then is present too (dense pattern windowing from a backend that answers coalesce).
-	var floor [3]int
-	haveFloor := false
-	if !r.Known {
-		for i := range gates {
-			g := &gates[i]
-			if g.Kind != Safety && g.Probe != nil && g.Flavours == 0 && probes[i] == VerdictOn && (!haveFloor || cmp3(g.From[0], g.From[1], g.From[2], floor) > 0) {
-				floor, haveFloor = g.From, true
-			}
-		}
-	}
+	floor, haveFloor := impliedFloor(r, probes)
 	var names []string
 	for i := range gates {
 		g := &gates[i]
@@ -172,23 +164,23 @@ func compute(r Release, probes verdicts) Set {
 		var why Reason
 		switch {
 		case g.Kind == Safety:
-			on, decided = byVersion, r.Known
+			on, decided = safetyHolds(g, r, byVersion, probes), r.Known
 			why = ReasonDefault
 			if r.Known {
 				why = ReasonVersion
 			}
-		case probe != VerdictNone:
-			on, decided = probe == VerdictOn, true
-			switch {
-			case !r.Known:
-				why = ReasonProbe
-			case on == byVersion:
-				why = ReasonBoth
-			default:
-				why = ReasonMismatch
-			}
+		case r.Known && probe == VerdictOff && byVersion:
+			// A member lacks what the release carries (an older member of the pool, a patched build): off.
+			on, decided, why = false, true, ReasonMismatch
+		case r.Known && probe == VerdictOff:
+			on, decided, why = false, true, ReasonBoth
+		case r.Known && probe == VerdictOn && byVersion:
+			on, decided, why = true, true, ReasonBoth
 		case r.Known:
+			// No verdict, or a newer member answered above the lowest release: the release decides.
 			on, decided, why = byVersion, true, ReasonVersion
+		case probe != VerdictNone:
+			on, decided, why = probe == VerdictOn, true, ReasonProbe
 		case haveFloor && g.Kind == Capability && g.Flavours == 0 && cmp3(g.From[0], g.From[1], g.From[2], floor) <= 0:
 			on, decided, why = true, true, ReasonImplied
 		default:
@@ -209,6 +201,57 @@ func compute(r Release, probes verdicts) Set {
 	return s
 }
 
+// impliedFloor is the release a probe's answers bound the backend from below when no release is known: the newest
+// feature found present, if the answers are consistent with one release.
+func impliedFloor(r Release, probes verdicts) (floor [3]int, haveFloor bool) {
+	if r.Known {
+		return floor, false
+	}
+	// Without a known release, a probe that finds a feature present bounds the release from below: every capability
+	// the release's line had by then is present too (dense pattern windowing from a backend that answers coalesce).
+	// That holds for one release only, so it is used when the verdicts are consistent with one (every feature found
+	// present is no newer than every feature found absent); any contradiction means a pool the probes cannot tell
+	// apart, and nothing is implied.
+	var minOff [3]int
+	haveOff := false
+	for i := range gates {
+		g := &gates[i]
+		if g.Kind == Safety || g.Probe == nil || g.Flavours != 0 {
+			continue
+		}
+		switch probes[i] {
+		case VerdictOn:
+			if !haveFloor || cmp3(g.From[0], g.From[1], g.From[2], floor) > 0 {
+				floor, haveFloor = g.From, true
+			}
+		case VerdictOff:
+			if !haveOff || cmp3(g.From[0], g.From[1], g.From[2], minOff) < 0 {
+				minOff, haveOff = g.From, true
+			}
+		}
+	}
+	if haveFloor && haveOff && cmp3(floor[0], floor[1], floor[2], minOff) >= 0 {
+		return [3]int{}, false
+	}
+	return floor, haveFloor
+}
+
+// safetyHolds reports whether a Safety gate is on (the release carries the fix): only for a known release of a
+// recognised flavour, and never when a probe found absent a feature of a release no newer than the gate's own (some
+// member of the backend is older than the fix).
+func safetyHolds(g *Gate, r Release, byVersion bool, probes verdicts) bool {
+	if !byVersion || !r.Known || r.Flavour == FlavourUnknown {
+		return false
+	}
+	for i := range gates {
+		o := &gates[i]
+		if o.Kind != Safety && o.Probe != nil && probes[i] == VerdictOff && cmp3(o.From[0], o.From[1], o.From[2], g.From) <= 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // ForRelease is the gate set of a release alone: no probes, no window. The translator's tests and
 // logsql.CapabilitiesFor read the gates of a named release through it.
 func ForRelease(r Release) Set { return compute(r, verdicts{}) }
@@ -216,10 +259,17 @@ func ForRelease(r Release) Set { return compute(r, verdicts{}) }
 // For returns the backend set and the client gates of the request: the profile ctx carries rides on the copy, and
 // no client gate is stored globally.
 func (l *Layer) For(ctx context.Context) Set {
-	s := *l.cur.Load()
+	s := l.Backend()
 	s.client = clientprofile.From(ctx)
 	return s
 }
 
 // Backend is the current backend set: one atomic load, no lock, no allocation.
-func (l *Layer) Backend() Set { return *l.cur.Load() }
+func (l *Layer) Backend() Set {
+	if l == nil {
+		return unknownSet // a Proxy value built without New (a test): nothing is known
+	}
+	return *l.cur.Load()
+}
+
+var unknownSet = compute(Release{}, verdicts{})

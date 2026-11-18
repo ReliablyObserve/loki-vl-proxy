@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 )
@@ -10,7 +11,7 @@ import (
 // fresh capability layer wired like the proxy's own, then the release observed. Tests call it before they serve.
 func (p *Proxy) setReleaseForTest(release string) {
 	p.caps = capability.New(capability.Options{})
-	p.caps.SetWindow(2*p.backendReprobeInterval + p.probeRoundTimeout())
+	p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
 	p.caps.Subscribe(p.onCapabilityChange)
 	p.refreshFlightPrefix()
 	if release != "" {
@@ -28,4 +29,18 @@ func isCapabilityProbe(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// storeBackendVersion records a release the caller trusts to be VictoriaLogs's (an operator-named or test-named
+// version; what a backend reports goes through capability.ParseBuild). source is a label of where it came from.
+func (p *Proxy) storeBackendVersion(source, semver string) {
+	r := capability.ParseRelease(semver)
+	if !r.Known {
+		return
+	}
+	r.Raw = source
+	if strings.HasPrefix(source, "metrics:") {
+		r.Source = capability.SourceMetrics
+	}
+	p.caps.Observe(p.backendKey(), r)
 }

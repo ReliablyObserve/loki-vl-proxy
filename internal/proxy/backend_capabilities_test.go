@@ -651,3 +651,98 @@ func TestCapabilityClientProfileMetricFromRequests(t *testing.T) {
 		t.Error("a request without a Grafana User-Agent has a profile too")
 	}
 }
+
+// Starting the loop and the version probe while the proxy shuts down never joins a wait group that is being waited
+// on (run with -race), and nothing starts once Shutdown has begun.
+//
+// conformance: vl-capability-layer
+func TestCapabilityStartVersusShutdownRace(t *testing.T) {
+	old := minCapabilityLoopInterval
+	minCapabilityLoopInterval = time.Millisecond
+	defer func() { minCapabilityLoopInterval = old }()
+	b := newCapBackend(t, buildV154)
+	for round := 0; round < 20; round++ {
+		p := newCapProxyUnmanaged(t, b, func(c *Config) { c.BackendVersionReprobeInterval = time.Millisecond })
+		var wg sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				p.StartBackendCapabilityLoop()
+				p.startVersionProbe()
+			}()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := p.Shutdown(ctx); err != nil {
+			t.Fatal(err)
+		}
+		cancel()
+		wg.Wait()
+		p.startVersionProbe()
+		p.StartBackendCapabilityLoop()
+	}
+}
+
+// The probe of the stream metadata endpoints turns the gate off only on VictoriaLogs' own refusal of an unknown path:
+// a 404 of an ingress or vmauth in front of it is no verdict.
+//
+// conformance: vl-capability-layer
+func TestCapabilityStreamProbeNeedsVictoriaLogsOwnRefusal(t *testing.T) {
+	const path = "/select/logsql/stream_field_names"
+	for _, c := range []struct {
+		name   string
+		status int
+		body   string
+		on     bool
+		decide bool
+	}{
+		{"ingress 404", 404, "404 page not found", true, false},
+		{"vmauth 400", 400, "missing route for \"/select/logsql/stream_field_names\"", true, false},
+		{"vmauth 401", 401, "unauthorized", true, false},
+		{"VictoriaLogs without the endpoint", 400, `unsupported path requested: "/select/logsql/stream_field_names"`, false, true},
+		{"VictoriaLogs with it", 200, `{"values":[]}`, true, true},
+	} {
+		b := newCapBackend(t, buildVMAuth)
+		b.mu.Lock()
+		b.override = map[string][2]any{path: {c.status, c.body}}
+		b.mu.Unlock()
+		p := newCapProxy(t, b, nil)
+		p.probeBackendFeatures(context.Background())
+		set := p.caps.Backend()
+		if set.On(capability.StreamMetadataEndpoints) != c.on || set.Decided(capability.StreamMetadataEndpoints) != c.decide {
+			t.Errorf("%s: on=%v decided=%v", c.name, set.On(capability.StreamMetadataEndpoints), set.Decided(capability.StreamMetadataEndpoints))
+		}
+	}
+}
+
+// A pattern answer, its window cache entry and the pattern state are keyed by the dense windowing gate, which can
+// flip while the proxy runs: one built under one gate set is not read under another.
+//
+// conformance: vl-capability-layer
+func TestPatternKeysCarryTheDenseWindowingGate(t *testing.T) {
+	b := newCapBackend(t, buildV154)
+	p := newCapProxy(t, b, nil)
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/patterns?query=%7Bapp%3D%22a%22%7D&start=1&end=2", nil)
+	keys := func() [4]string {
+		return [4]string{
+			p.patternsAutodetectCacheKey("t", "", `{app="a"}`, "1", "2", "15"),
+			p.patternWindowCacheKey(req, `{app="a"}`, "15", 10, 100, 1, 2),
+			p.patternStateTenantKey(req),
+			p.patternsKeyPrefix() + "t:" + p.detectedLevelCacheKey() + ":" + p.patternGateKey(),
+		}
+	}
+	p.setReleaseForTest("v1.49.0")
+	old := keys()
+	p.setReleaseForTest("v1.54.0")
+	up := keys()
+	p.setReleaseForTest("v1.49.0")
+	back := keys()
+	for i := range old {
+		if old[i] == up[i] {
+			t.Errorf("key %d is the same under v1.49.0 and v1.54.0: %q", i, old[i])
+		}
+		if old[i] != back[i] {
+			t.Errorf("key %d moved without a gate change: %q vs %q", i, old[i], back[i])
+		}
+	}
+}

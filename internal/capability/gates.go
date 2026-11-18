@@ -255,7 +255,7 @@ var gates = [numGates]Gate{
 		Name: "vl.stream_metadata_endpoints", Kind: Capability, From: [3]int{1, 30, 0}, Default: true,
 		Registry: "stream-metadata-endpoints", Citation: "VictoriaLogs v1.30.0 (stream_field_names, stream_field_values)",
 		Probe: &Probe{Path: pathStreamFieldName, Query: probes.StreamFieldNames, Accepted: VerdictOn, Refused: VerdictOff,
-			RefusalStatus: []int{404}, RefusalText: []string{""}, CrashSafe: [2]string{"v1.49.0", "v1.54.0"}},
+			RefusalStatus: []int{400, 404}, RefusalText: []string{"unsupported path requested"}, CrashSafe: [2]string{"v1.49.0", "v1.54.0"}},
 		Reads: "label and series metadata: the stream endpoints are tried first (label_metadata.go, label_handlers.go)",
 	},
 	StatsLimitAfterStats: {

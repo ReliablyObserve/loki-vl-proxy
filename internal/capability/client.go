@@ -17,7 +17,7 @@ const (
 	OtherLabel           = "other"
 )
 
-// ClientSeries is one series of loki_vl_proxy_client_requests_total.
+// ClientSeries is one series of loki_vl_proxy_client_profile_requests_total.
 type ClientSeries struct {
 	Surface, Grafana, Datasource, Drilldown string
 	Requests                                uint64
