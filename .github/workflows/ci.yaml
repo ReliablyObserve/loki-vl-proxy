@@ -1115,11 +1115,13 @@ jobs:
             exit 1
           fi
 
+      # A run takes 31 to 101 s (40 successful runs on 2026-11-17/18); a slow hosted runner once spent the whole 5 minutes
+      # loading packages with the same caches restored, so the bound leaves room for such a runner.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9
         with:
           version: v2.14.0
-          args: --timeout=5m
+          args: --timeout=15m
 
       # The checks below verify the infra itself. They run on every pull
       # request, so a pull request that skips the product jobs is still checked.
