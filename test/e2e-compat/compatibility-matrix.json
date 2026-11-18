@@ -208,7 +208,7 @@
       ],
       "notes": [
         "13.3.1 is the pinned runtime (six security fixes over 13.3.0; it bundles the Loki datasource plugin 13.2.5 and names it in its User-Agent: Grafana/13.3.1 (linux; arm64) loki/13.2.5). 13.3.0 Explore leaves the auto-run from the URL on Cancel (loading) although every request answered, also on Loki direct; the e2e-ui runQuery helper clears it once and requires the explicit run to send and answer a new query. 13.3.0 bundles the Loki datasource plugin 13.2.5 (loki/module.js?_cache=13.2.5).",
-        "Datasource plugin exact semver is not emitted on request headers by default.",
+        "Grafana 13.x names its Loki datasource plugin version in the User-Agent (Grafana/13.3.1 (linux; arm64) loki/13.2.5); Grafana 12.x sends only Grafana/<version>. The proxy reads both into its client profile (internal/clientprofile).",
         "Proxy runtime sensing uses Grafana User-Agent version family and endpoint/source-tag request shape."
       ]
     },
