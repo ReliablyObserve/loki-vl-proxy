@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
+  `{...} |= "x" [1m]` form no longer doubles its work with each level of `label_replace` (or `vector`, `approx_topk`)
+  calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
+  it stands. A request with 18 nested calls (about 550 bytes) took half a second and now takes 2.5 ms. Answers do not
+  change, and nested queries are accepted at every depth, as Loki accepts them (semantics/nested-calls-linear-work).
+- `| unwrap x(a)`, an unwrap of a name that is no conversion followed by a parenthesis, is now Loki's `400` syntax
+  error at the parenthesis (`unexpected (, expecting RANGE or |`) before any VictoriaLogs call; the proxy accepted it
+  and answered a query. Only `bytes`, `duration` and `duration_seconds` (in any letter case) are conversions.
+- A vector aggregation over an unwrap conversion written with a blank before or inside its parenthesis
+  (`sum by (pod) (max_over_time({...} | logfmt | unwrap duration_seconds (d) [5m]))`) answers Loki's series instead
+  of none. The metric query planning no longer keeps spellings the string translator reads otherwise than the
+  parsed query on the translator: quoted text holding a parenthesis under a binary operation or `label_replace`, the
+  blanks around a binary operator, a number or vector matching modifier spelled another way, a quantile written
+  `.5`, `0.50` or `5e-1`, and an unwrap conversion with blanks are served from the query plan, which reads them as
+  Loki does (their answers are held to recorded Loki answers over VictoriaLogs v1.49 and v1.53). Answers cached for
+  an unwrap conversion spelled with a blank before this change are not served after it.
+
+## [2.336.0] - 2026-11-18
+
+### Fixed
+
+- A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
+  with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
+  parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,
+  `vector( 2 ) * ...`). The proxy answered these with a phrase search for the query text (no series), a `400` on the
+  instant route or a `500`. The request rewrite that writes keywords in lower case and drops comments now also writes
+  the metric calls and parentheses of a query Loki accepts in one spelling before any handler reads it: no blank
+  between a metric call's name and its parenthesis or right inside it, and no parentheses around a call or around a
+  binary operation no operator reads (parentheses an operator reads are kept). So `sum (rate(...))`,
+  `topk (5, ...)`, `label_replace( ..., "a", "$1", "b", "(.*)" )` and their spelling without the blanks share one
+  response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
+  text and positions do not change. The rewrite is memoised by the query as sent (up to 1,024 queries of up to
+  4 KiB), so a repeated query costs one lookup, less than the keyword rewrite alone cost before.
+- A metric checked for unwrap conversion errors or for JSON parser errors reads a VictoriaLogs answer that arrives
+  without a length (a chunked answer) from a small buffer that grows, as in 2.333.1 (the folded reads of a parser's
+  series identity, below, had moved every checked read to a 128 KiB starting buffer). An answer with its length (a
+  folded read's shared answer) is still read in one allocation of that length. `max by (pod) (max_over_time({...} | json |
+  unwrap n [5m]))` over an hour at a 1m step allocates 142 KiB per request, as in 2.333.1, instead of 258 KiB.
+- A tail request whose websocket handshake fails (no upgrade, another protocol, a missing version or key) is
+  answered before the tail reads its history from VictoriaLogs, as Loki's router answers it before any query work:
+  such requests no longer cost a VictoriaLogs call. Every request Loki refuses with a 4xx from the request alone is
+  now refused before any VictoriaLogs call (pinned against Loki's recorded answers).
+- A failed answer held while the configuration was reloaded (tenant map, field mappings) is never served after the
+  reload, even when its request was still running during the reload: held answers are keyed by a configuration
+  epoch that every reload changes.
+
+## [2.335.0] - 2026-11-18
+
 ### Changed
 
 - Identical read requests no longer each ask VictoriaLogs while one of them runs, and a failed answer is held for a
@@ -49,37 +99,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loki_vl_proxy_request_coalesced_success_total`, `loki_vl_proxy_request_flight_saved_total`,
   `loki_vl_proxy_error_cache_entries` and `loki_vl_proxy_error_cache_bytes`. Helm: the same flags under
   `extraArgs`.
-
-### Fixed
-
-- A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
-  with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
-  parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,
-  `vector( 2 ) * ...`). The proxy answered these with a phrase search for the query text (no series), a `400` on the
-  instant route or a `500`. The request rewrite that writes keywords in lower case and drops comments now also writes
-  the metric calls and parentheses of a query Loki accepts in one spelling before any handler reads it: no blank
-  between a metric call's name and its parenthesis or right inside it, and no parentheses around a call or around a
-  binary operation no operator reads (parentheses an operator reads are kept). So `sum (rate(...))`,
-  `topk (5, ...)`, `label_replace( ..., "a", "$1", "b", "(.*)" )` and their spelling without the blanks share one
-  response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
-  text and positions do not change. The rewrite is memoised by the query as sent (up to 1,024 queries of up to
-  4 KiB), so a repeated query costs one lookup, less than the keyword rewrite alone cost before.
-- `| unwrap x(a)`, an unwrap of a name that is no conversion followed by a parenthesis, is now Loki's `400` syntax
-  error at the parenthesis (`unexpected (, expecting RANGE or |`) before any VictoriaLogs call; the proxy accepted it
-  and answered a query. Only `bytes`, `duration` and `duration_seconds` (in any letter case) are conversions.
-- A vector aggregation over an unwrap conversion written with a blank before or inside its parenthesis
-  (`sum by (pod) (max_over_time({...} | logfmt | unwrap duration_seconds (d) [5m]))`) answers Loki's series instead
-  of none. The metric query planning no longer keeps spellings the string translator reads otherwise than the
-  parsed query on the translator: quoted text holding a parenthesis under a binary operation or `label_replace`, the
-  blanks around a binary operator, a number or vector matching modifier spelled another way, a quantile written
-  `.5`, `0.50` or `5e-1`, and an unwrap conversion with blanks are served from the query plan, which reads them as
-  Loki does (their answers are held to recorded Loki answers over VictoriaLogs v1.49 and v1.53). Answers cached for
-  an unwrap conversion spelled with a blank before this change are not served after it.
-- A metric checked for unwrap conversion errors or for JSON parser errors reads a VictoriaLogs answer that arrives
-  without a length (a chunked answer) from a small buffer that grows, as in 2.333.1 (the folded reads of a parser's
-  series identity, below, had moved every checked read to a 128 KiB starting buffer). An answer with its length (a
-  folded read's shared answer) is still read in one allocation of that length. `max by (pod) (max_over_time({...} | json |
-  unwrap n [5m]))` over an hour at a 1m step allocates 142 KiB per request, as in 2.333.1, instead of 258 KiB.
 
 ## [2.334.0] - 2026-11-17
 

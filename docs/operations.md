@@ -240,7 +240,9 @@ The per-endpoint TTLs above are built in; `-labels-cache-ttl` is the only per-en
 -http-max-body-bytes=10485760    # 10MB default
 ```
 
-The proxy uses singleflight to coalesce identical concurrent queries. N identical requests → 1 backend request.
+Identical read requests share one run. Requests with the same route, parameters, tenant, credentials and response profile that arrive while the first one runs wait for it, on every cached read route (query, query_range, series, labels, label values, volume, index stats, detected fields and labels, patterns), GET and POST: N identical requests make 1 VictoriaLogs call, whether they succeed or fail. A client that is still waiting never receives another request's cancellation or timeout; it starts again as the new leader.
+
+A failed answer is then held per replica for the time of its class, so a dashboard refreshing against a failing VictoriaLogs asks it about once per second per query instead of on every refresh: `-error-cache-transient-ttl` (default `1s`) for VictoriaLogs 5xx, 429, queue timeouts and refused or reset connections, `-error-cache-data-ttl` (default `5s`) for failures read from the window's data (series or size limits, a JSON parser or unwrap conversion error under a metric). The client's own cancellation, any timeout, partial answers and the proxy's own `429` are never held. Held answers are never pushed to peers, are bounded by `-error-cache-max-entries` and `-error-cache-max-bytes`, and are dropped on a configuration reload. Watch `loki_vl_proxy_error_cache_hits_total{class}` and `loki_vl_proxy_request_flight_saved_total`; the flags are in the [configuration reference](configuration.md).
 
 ### Built-In Traffic Guards
 
@@ -344,7 +346,7 @@ For exact proxy-only overhead on translated paths, use structured request logs w
 - Set `-response-compression-min-bytes` around `1024` to avoid wasting CPU on small metadata/control responses
 - Increase cache TTLs
 - Check VL backend latency via metrics
-- Rely on built-in singleflight coalescing for identical concurrent reads
+- Rely on the built-in sharing of identical concurrent reads and on held failures (see above)
 
 ### 500 / 429 Errors On Large Queries
 

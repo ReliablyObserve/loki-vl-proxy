@@ -11,14 +11,25 @@ import (
 // Every other query is returned unchanged, without parsing it. It also writes
 // the keywords in lower case (LowercaseKeywords).
 func CanonicalizeLogRanges(query string) string {
+	return canonicalizeLogRanges(query, false)
+}
+
+// canonicalizeLogRanges is CanonicalizeLogRanges; perArgument canonicalizes the first argument of every call kept
+// as text on its own (the way before it was read in place), for the tests that compare the two.
+func canonicalizeLogRanges(query string, perArgument bool) string {
 	query = LowercaseKeywords(query)
 	if !hasAlternativeLogRange(query) || InputSizeError(query) != "" {
 		return query
 	}
-	p := &parser{sc: newScanner(query), canon: &canonState{}}
+	p := &parser{sc: newScanner(query), canon: &canonState{perArgument: perArgument}}
 	p.advance()
 	if _, err := p.parseExpr(); err != nil || p.cur.Typ != TokEOF || len(p.canon.rewrites) == 0 {
 		return query
+	}
+	if !perArgument && p.sc.lexErrCount() > 0 {
+		// A string or a literal Loki's lexer refuses may end where the text does not: the calls' arguments are
+		// read on their own instead (Loki refuses the query; no request reaches here with it).
+		return canonicalizeLogRanges(query, true)
 	}
 	out := make([]byte, 0, len(query))
 	last := 0
@@ -164,6 +175,65 @@ func skipSpace(q string, i int) int {
 func FirstArgument(s string) (string, bool) {
 	n := FirstArgumentLen(s)
 	return s[:n], n < len(s) && s[n] == ','
+}
+
+// plainArgumentText reports whether FirstArgumentLen and the parser read q's strings and brackets alike: no
+// comment or character literal outside a string that holds a bracket, a comma or a quote (FirstArgumentLen reads
+// their text, the scanner skips it or reads one token), no line break inside a double-quoted string (where the
+// scanner ends the string and FirstArgumentLen does not), and every bracket closed by its own kind in order (the
+// text kept for a call counts parentheses only).
+func plainArgumentText(q string) bool {
+	var room [64]byte
+	open := room[:0]
+	var quote byte
+	for i := 0; i < len(q); i++ {
+		c := q[i]
+		switch {
+		case quote == '"':
+			switch c {
+			case '\\':
+				i++
+			case '"':
+				quote = 0
+			case '\n', '\r':
+				return false
+			}
+		case quote == '`':
+			if c == '`' {
+				quote = 0
+			}
+		case c == '"' || c == '`':
+			quote = c
+		case c == '#' || c == '\'':
+			// A comment runs to the end of its line, a character literal to its closing quote.
+			end := byte('\n')
+			if c == '\'' {
+				end = '\''
+			}
+			j := i + 1
+			for ; j < len(q) && q[j] != end && q[j] != '\n'; j++ {
+				if strings.IndexByte("()[]{},\"`'", q[j]) >= 0 {
+					return false
+				}
+			}
+			if c == '\'' && (j == len(q) || q[j] != '\'') {
+				return false // not terminated: Loki's lexer refuses it
+			}
+			i = j
+		case c == '(':
+			open = append(open, ')')
+		case c == '[':
+			open = append(open, ']')
+		case c == '{':
+			open = append(open, '}')
+		case c == ')' || c == ']' || c == '}':
+			if len(open) == 0 || open[len(open)-1] != c {
+				return false
+			}
+			open = open[:len(open)-1]
+		}
+	}
+	return quote == 0 && len(open) == 0
 }
 
 // FirstArgumentLen is the length of the first argument of a call, given the

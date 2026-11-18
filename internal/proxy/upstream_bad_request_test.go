@@ -137,8 +137,12 @@ func TestUpstreamBadRequest_MapsToLokiBadData(t *testing.T) {
 			badRequestURL("/loki/api/v1/detected_field/level/values", map[string]string{"query": sel}), nil},
 		{"patterns", func(p *Proxy) http.HandlerFunc { return p.handlePatterns },
 			badRequestURL("/loki/api/v1/patterns", map[string]string{"query": sel, "step": "60"}), nil},
+		// A complete websocket handshake: a request that cannot upgrade is Loki's 400 before any query work
+		// (TestLokiRefusalsSendNoVictoriaLogsCall), so only a valid one reaches the history preflight.
 		{"tail_preflight", func(p *Proxy) http.HandlerFunc { return p.handleTail },
-			"/loki/api/v1/tail?query=" + url.QueryEscape(sel), nil},
+			"/loki/api/v1/tail?query=" + url.QueryEscape(sel), map[string]string{
+				"Connection": "Upgrade", "Upgrade": "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+			}},
 		{"multi_tenant_labels", func(p *Proxy) http.HandlerFunc { return p.handleLabels },
 			badRequestURL("/loki/api/v1/labels", map[string]string{"query": sel}), map[string]string{"X-Scope-OrgID": "tenant-a|tenant-b"}},
 		{"multi_tenant_detected_fields", func(p *Proxy) http.HandlerFunc { return p.handleDetectedFields },
