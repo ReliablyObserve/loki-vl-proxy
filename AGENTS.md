@@ -250,6 +250,21 @@ different contract from VL API responses and backend-result fragments.
 See [Architecture](docs/architecture.md#cache-semantic-layers-and-storage-tiers)
 for the distinction between semantic layers and physical storage tiers.
 
+### Failed answers: one join, held by class
+
+Identical read requests in flight share one run (the request flights in
+`internal/proxy/error_flights.go`, at the response cache middleware); a failed
+answer is held only for its class's TTL (`cache.Policy`). Keep it that way:
+
+- A new failure type is classified in `failureClassOf` by its Go type or its
+  `lokierr` message, never by its text; an unclassified failure is never held.
+- The query plan says which classes a request can fail in
+  (`queryplan.Plan.Failures`); a new construct whose evaluation can fail on the
+  data (a parser error, a conversion) extends it.
+- Never hold or share the client's own cancellation or deadline, the proxy's
+  own queue or load shedding, credentials failures or a proxy defect, and never
+  hand a follower its leader's cancellation: a live follower starts again.
+
 ## Cache change evidence in pull requests
 
 Every PR that changes cache behavior must put a readable **main versus PR**

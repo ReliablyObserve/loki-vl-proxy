@@ -1,0 +1,124 @@
+package metrics
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+)
+
+// ErrorFlightStats are the request flight and error cache counters: requests
+// answered from a held failure, followers handed the leader's failure, and
+// failures held, by error class; followers that read the leader's success;
+// and the held answers' entries and bytes.
+type ErrorFlightStats struct {
+	Classes   [3]string
+	Held      [3]int64
+	Coalesced [3]int64
+	Stored    [3]int64
+	Succeeded int64
+	Entries   int64
+	Bytes     int64
+}
+
+// Saved is the requests answered without running: each would have run the
+// request and its backend calls again.
+func (s ErrorFlightStats) Saved() int64 {
+	n := s.Succeeded
+	for i := range s.Classes {
+		n += s.Held[i] + s.Coalesced[i]
+	}
+	return n
+}
+
+type errorFlightProvider struct {
+	mu sync.RWMutex
+	fn func() ErrorFlightStats
+}
+
+// SetErrorFlightStatsProvider sets the source of the error flight metrics.
+func (m *Metrics) SetErrorFlightStatsProvider(fn func() ErrorFlightStats) {
+	if m == nil {
+		return
+	}
+	m.errorFlights.mu.Lock()
+	m.errorFlights.fn = fn
+	m.errorFlights.mu.Unlock()
+}
+
+func (m *Metrics) errorFlightStats() (ErrorFlightStats, bool) {
+	if m == nil {
+		return ErrorFlightStats{}, false
+	}
+	m.errorFlights.mu.RLock()
+	fn := m.errorFlights.fn
+	m.errorFlights.mu.RUnlock()
+	if fn == nil {
+		return ErrorFlightStats{}, false
+	}
+	return fn(), true
+}
+
+// errorFlightFamily is one metric family of the error flights.
+type errorFlightFamily struct {
+	name, help string
+	gauge      bool
+	byClass    func(ErrorFlightStats, int) int64
+	total      func(ErrorFlightStats) int64
+}
+
+var errorFlightFamilies = []errorFlightFamily{
+	{name: "loki_vl_proxy_error_cache_hits_total", help: "Requests answered from a held failed answer, by error class.", byClass: func(s ErrorFlightStats, i int) int64 { return s.Held[i] }},
+	{name: "loki_vl_proxy_error_cache_stores_total", help: "Failed answers held by the error cache, by error class.", byClass: func(s ErrorFlightStats, i int) int64 { return s.Stored[i] }},
+	{name: "loki_vl_proxy_error_coalesced_total", help: "Requests handed the failed answer of an identical request in flight instead of running, by error class.", byClass: func(s ErrorFlightStats, i int) int64 { return s.Coalesced[i] }},
+	{name: "loki_vl_proxy_request_coalesced_success_total", help: "Requests that read the successful answer of an identical request in flight instead of running.", total: func(s ErrorFlightStats) int64 { return s.Succeeded }},
+	{name: "loki_vl_proxy_request_flight_saved_total", help: "Requests answered without running (held failures, coalesced failures and successes); each saved its own backend calls.", total: ErrorFlightStats.Saved},
+	{name: "loki_vl_proxy_error_cache_entries", help: "Failed answers held by the error cache.", gauge: true, total: func(s ErrorFlightStats) int64 { return s.Entries }},
+	{name: "loki_vl_proxy_error_cache_bytes", help: "Bytes of the failed answers held by the error cache.", gauge: true, total: func(s ErrorFlightStats) int64 { return s.Bytes }},
+}
+
+func (m *Metrics) writeErrorFlightMetrics(sb *strings.Builder) {
+	s, ok := m.errorFlightStats()
+	if !ok {
+		return
+	}
+	for _, f := range errorFlightFamilies {
+		kind := "counter"
+		if f.gauge {
+			kind = "gauge"
+		}
+		fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s %s\n", f.name, f.help, f.name, kind)
+		if f.byClass != nil {
+			for i, class := range s.Classes {
+				fmt.Fprintf(sb, "%s{class=%q} %d\n", f.name, class, f.byClass(s, i))
+			}
+			continue
+		}
+		fmt.Fprintf(sb, "%s %d\n", f.name, f.total(s))
+	}
+}
+
+func (p *OTLPPusher) errorFlightMetrics(now int64) []map[string]interface{} {
+	s, ok := p.metrics.errorFlightStats()
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]interface{}, 0, len(errorFlightFamilies))
+	for _, f := range errorFlightFamilies {
+		var points []map[string]interface{}
+		if f.byClass != nil {
+			for i, class := range s.Classes {
+				points = append(points, p.counterDP(f.name, f.byClass(s, i), now, attr("class", class)))
+			}
+		} else if f.gauge {
+			points = append(points, p.gaugeDP(f.name, float64(f.total(s)), now))
+		} else {
+			points = append(points, p.counterDP(f.name, f.total(s), now))
+		}
+		if f.gauge {
+			out = append(out, p.gaugeMetric(f.name, f.help, "", points...))
+		} else {
+			out = append(out, p.sumMetric(f.name, f.help, "", points...))
+		}
+	}
+	return out
+}

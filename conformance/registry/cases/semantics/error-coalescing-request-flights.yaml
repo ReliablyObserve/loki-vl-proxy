@@ -1,0 +1,24 @@
+id: semantics/error-coalescing-request-flights
+title: Identical read requests in flight share one run, failing or succeeding, on GET, POST and streamed routes
+proves:
+  - error-coalescing-and-error-cache
+consumer: any
+pending: true
+why: |
+  Main ran every identical concurrent request on its own: 50 concurrent
+  identical query_range requests whose VictoriaLogs call failed sent 50 calls.
+  A refresh storm or many dashboards on one query multiplied VictoriaLogs load
+  exactly when it was failing.
+request:
+  scope: internal
+  entry: compatCacheMiddleware, serveFlight
+  setup: |
+    A stub VictoriaLogs that holds every select call until 20 identical
+    requests wait, then answers 500 (or a log line); the same with POST
+    form-encoded requests and with -stream-response.
+compare:
+  mode: exact
+  expect: |
+    One VictoriaLogs call; every request gets the same status and body; the
+    followers report X-Loki-VL-Backend-Calls 0. A streamed success releases
+    the followers to run on their own.
