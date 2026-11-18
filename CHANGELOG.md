@@ -64,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
   text and positions do not change. The rewrite is memoised by the query as sent (up to 1,024 queries of up to
   4 KiB), so a repeated query costs one lookup, less than the keyword rewrite alone cost before.
+- A metric checked for unwrap conversion errors or for JSON parser errors reads a VictoriaLogs answer that arrives
+  without a length (a chunked answer) from a small buffer that grows, as in 2.333.1 (the folded reads of a parser's
+  series identity, below, had moved every checked read to a 128 KiB starting buffer). An answer with its length (a
+  folded read's shared answer) is still read in one allocation of that length. `max by (pod) (max_over_time({...} | json |
+  unwrap n [5m]))` over an hour at a 1m step allocates 142 KiB per request, as in 2.333.1, instead of 258 KiB.
 
 ## [2.334.0] - 2026-11-17
 

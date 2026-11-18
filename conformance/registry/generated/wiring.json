@@ -2359,6 +2359,7 @@
       "internal/querycorpus/extraction_list_identity_loki_diff_test.go"
     ],
     "semantics/unwrap-conversion-error": [
+      "internal/proxy/backend_read_bounds_test.go",
       "internal/proxy/label_filter_readers_differential_test.go",
       "internal/proxy/query_range_steps_harden_test.go",
       "internal/proxy/query_range_steps_test.go",
@@ -3203,7 +3204,8 @@
     ],
     "internal/proxy/backend_read_bounds_test.go": [
       "operator-configurable-limits",
-      "semantics/backend-aborted-response"
+      "semantics/backend-aborted-response",
+      "semantics/unwrap-conversion-error"
     ],
     "internal/proxy/backend_response_guard_review_test.go": [
       "limits/label-values-response-cap",
