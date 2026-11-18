@@ -42,7 +42,6 @@ func TestCanonicalSpelling(t *testing.T) {
 		{`topk(2, (rate({app="x"}[5m]) * 2))`, `topk(2, rate({app="x"}[5m]) * 2)`},
 		{`(vector (2) + sum(rate({app="x"}[5m]))) * 2`, `(vector(2) + sum(rate({app="x"}[5m]))) * 2`},
 		{`rate({app="x"}[5m]) > bool (vector(1))`, `rate({app="x"}[5m]) > bool vector(1)`},
-		{`rate({app="x"}[5m]) / on (app) (sum by (app) (rate({app="x"}[5m])))`, `rate({app="x"}[5m]) / on (app) sum by (app) (rate({app="x"}[5m]))`},
 		{`rate({app="x"}[5m]) and(rate({app="y"}[5m]))`, `rate({app="x"}[5m]) and rate({app="y"}[5m])`},
 		{`rate({app="x"}[5m]) and((rate({app="y"}[5m])))`, `rate({app="x"}[5m]) and rate({app="y"}[5m])`},
 		{`rate({app="x"}[5m]) > bool((vector(1)))`, `rate({app="x"}[5m]) > bool vector(1)`},
@@ -67,6 +66,9 @@ func TestCanonicalSpelling(t *testing.T) {
 		`sum by(a)(rate({app="x"}[5m]))`,
 		`sum(rate({app="x"}[5m])) by (a)`,
 		`rate({app="x"}[5m]) / on(app) group_left(pod) sum by (app) (rate({app="x"}[5m]))`,
+		// Parentheses right after a matching clause.
+		`rate({app="x"}[5m]) / on (app) (sum by (app) (rate({app="x"}[5m])))`,
+		`rate({app="x"}[5m]) / ignoring(pod) group_left (sum(rate({app="x"}[5m])))`,
 		// Parentheses an operator reads, around a number, around a log query (CanonicalizeLogRanges' part).
 		`(rate({app="x"}[5m]) + 1) * 2`,
 		`2 * (rate({app="x"}[5m]) + 1)`,

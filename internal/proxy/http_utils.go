@@ -94,12 +94,45 @@ func RequestQueryText(query string) string {
 }
 
 // requestQueryText is the query as lowercaseQueryKeywords leaves it for the handlers, under the query length limit
-// maxQueryBytes: a query over it keeps its spelling for the limit's error.
+// maxQueryBytes: a query over it keeps its spelling for the limit's error. It is memoised by the query as sent
+// (requestTextCache), so a query seen before costs one lookup.
 func requestQueryText(query string, maxQueryBytes int) string {
+	if len(query) > validationCacheMaxQueryBytes || queryLengthLimit(query, maxQueryBytes) != nil {
+		return handlerText(query, maxQueryBytes)
+	}
+	if v, ok := requestTextCache.Load(query); ok {
+		if text, ok := v.(string); ok {
+			return text
+		}
+	}
+	text := handlerText(query, maxQueryBytes)
+	if requestTextCacheSize.Load() < requestTextCacheMaxSize {
+		if _, loaded := requestTextCache.LoadOrStore(query, text); !loaded {
+			requestTextCacheSize.Add(1)
+		}
+	}
+	return text
+}
+
+// requestTextCache memoises requestQueryText by the query as sent, bounded as validationCache is (a deterministic
+// function of a query no longer than validationCacheMaxQueryBytes and within the length limit).
+var (
+	requestTextCache     sync.Map
+	requestTextCacheSize atomic.Int32
+)
+
+const requestTextCacheMaxSize = 1024
+
+// handlerText is requestQueryText without the memo: keywords in lower case, no comments or logfmt flags, and for a
+// metric query the validation accepts its calls and parentheses in one spelling (logql.CanonicalSpelling).
+func handlerText(query string, maxQueryBytes int) string {
 	lower := logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(query)))
-	// The pre-check costs one scan of the bytes; only a query it names is validated (memoised, as the validation
-	// that follows reads it) and parsed for its spelling.
-	if logql.CanonicalSpellingCandidate(lower) && queryLengthLimit(query, maxQueryBytes) == nil && cachedQueryValidation(lower).msg == "" {
+	if strings.IndexByte(lower, '(') < 0 || queryLengthLimit(query, maxQueryBytes) != nil {
+		return lower // no call to respell; or Loki's length error for the text as sent
+	}
+	// The pre-check reads the bytes once; only a query it names is validated (memoised: the validation after the
+	// rewrite reads that entry) and parsed for its spelling.
+	if logql.CanonicalSpellingCandidate(lower) && cachedQueryValidation(lower).msg == "" {
 		return logql.CanonicalSpellingOfValid(lower)
 	}
 	return lower

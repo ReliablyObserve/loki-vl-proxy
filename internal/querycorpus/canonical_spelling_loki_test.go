@@ -70,7 +70,6 @@ func canonicalSpellingGrid() []string {
 		`topk(2, «sum by (a) (rate({app="x"}[5m])) / 2»)`,
 		`«sum(rate({app="x"}[5m]))» / «sum(rate({app="y"}[5m]))»`,
 		`rate({app="x"}[5m]) > bool «vector(1)»`,
-		`rate({app="x"}[5m]) / on (app) «sum by (app) (rate({app="x"}[5m]))»`,
 		`rate({app="x"}[5m]) and«rate({app="y"}[5m])»`,
 		`label_replace(«rate({app="x"}[5m])», "a", "$1", "b", "(.*)")`,
 		`«vector (2) + sum by (a) (rate({app="x"}[5m]))» * 2`,

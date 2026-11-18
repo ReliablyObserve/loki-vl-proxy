@@ -19,8 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binary operation no operator reads (parentheses an operator reads are kept). So `sum (rate(...))`,
   `topk (5, ...)`, `label_replace( ..., "a", "$1", "b", "(.*)" )` and their spelling without the blanks share one
   response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
-  text and positions do not change. A query already in that spelling costs one scan of its bytes, with no
-  allocation.
+  text and positions do not change. The rewrite is memoised by the query as sent (up to 1,024 queries of up to
+  4 KiB), so a repeated query costs one lookup, less than the keyword rewrite alone cost before.
 
 ## [2.334.0] - 2026-11-17
 

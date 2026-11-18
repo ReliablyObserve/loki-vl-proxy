@@ -18,7 +18,8 @@ func BenchmarkRequestChain_MetricQueryRange_Hit(b *testing.B) {
 }
 
 // BenchmarkRequestQueryText times the request rewrite's text (lowercaseQueryKeywords) for queries it keeps, in the
-// spellings Grafana and Logs Drilldown send, and for one it respells.
+// spellings Grafana and Logs Drilldown send, and for one it respells: memoised (a query seen before) and without the
+// memo (handlerText).
 func BenchmarkRequestQueryText(b *testing.B) {
 	for _, c := range []struct{ name, q string }{
 		{"metric", `sum by (level) (count_over_time({service_name="api"} | json | level=~"error|warn" [$__auto]))`},
@@ -30,6 +31,13 @@ func BenchmarkRequestQueryText(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				_ = requestQueryText(c.q, 0)
+			}
+		})
+		// Without the memo: a query seen for the first time, or once the memo is full.
+		b.Run("uncached/"+c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = handlerText(c.q, 0)
 			}
 		})
 	}

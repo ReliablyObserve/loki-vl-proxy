@@ -178,3 +178,29 @@ func TestCanonicalSpelling_SameVictoriaLogsRequests(t *testing.T) {
 		}
 	}
 }
+
+// The memo of the request rewrite answers what the rewrite computes, the first time and every time after, for
+// respelled, kept and rejected queries; a query over the length limit is not memoised and keeps its spelling.
+//
+// conformance: semantics/translator-reads-blank-before-range-call-as-text, semantics/vector-call-blank-before-parenthesis-as-query
+func TestRequestQueryTextMemoIsTheRewrite(t *testing.T) {
+	queries := []string{`SUM (rate({app="x"}[5m]))`, `sum(rate({app="x"}[5m])) # c`, `rate ({app="x"}[5m]`, `{app="x"} |= "a (b)"`, `topk(0, rate ({app="x"}[5m]))`}
+	for _, tc := range canonicalSpellingCases {
+		queries = append(queries, tc.spelled, tc.canonical)
+	}
+	for _, q := range queries {
+		want := handlerText(q, 0)
+		for i := 0; i < 3; i++ {
+			if got := requestQueryText(q, 0); got != want {
+				t.Errorf("%q: request %d reads %q, the rewrite writes %q", q, i, got, want)
+			}
+		}
+	}
+	long := `rate ({app="x"}[5m])`
+	if got := requestQueryText(long, len(long)-1); got != long {
+		t.Errorf("%q over the length limit is respelled to %q", long, got)
+	}
+	if got := requestQueryText(`SUM (rate({app="x"}[5m]))`, 0); got != `sum(rate({app="x"}[5m]))` {
+		t.Errorf("an upper case respelled query reads %q", got)
+	}
+}

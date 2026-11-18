@@ -639,6 +639,10 @@ func (p *parser) parseBinaryRHS(lhs Expr, minPrecedence int) (Expr, error) {
 			}
 		}
 
+		if vm != nil && p.spell != nil && p.cur.Typ == TokLParen {
+			// Parentheses right after a matching clause keep their spelling (respellable does not track the clauses).
+			p.spell.keepOpen = p.pos()
+		}
 		rhs, err := p.parsePrimary()
 		if err != nil {
 			return nil, err

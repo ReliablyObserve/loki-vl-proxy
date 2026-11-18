@@ -48,7 +48,7 @@ why: |
   binary operation no operator reads. Every handler, the translation and the
   response key then read the query Loki reads. Loki's parser reads each
   respelled query as the query (the Loki oracle, TestCanonicalSpellingMatchesLoki:
-  the 58 plan-corpus rows the rewrite changes and a grid of 186 spellings), and
+  the 58 plan-corpus rows the rewrite changes and a grid of 181 spellings), and
   the proxy's answers through the routes are Loki's engine answers for the
   query as sent, with the requests and the cached answer of the spelling
   without the blank (TestCanonicalSpelling_AnswersMatchLokiEngine,

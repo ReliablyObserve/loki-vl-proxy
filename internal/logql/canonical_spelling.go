@@ -1,6 +1,7 @@
 package logql
 
 import (
+	"math/bits"
 	"sort"
 	"strings"
 )
@@ -79,6 +80,9 @@ type spellState struct {
 	}
 	// bad is set when a span to remove holds anything but blanks (a comment).
 	bad bool
+	// keepOpen is the offset of a parenthesis right after a vector matching clause, which keeps its spelling; -1 for
+	// none.
+	keepOpen int
 }
 
 // spellEdits parses q for CanonicalSpelling and returns its edits, sorted, and false when q is not respelled.
@@ -86,7 +90,7 @@ func spellEdits(q string) ([]rewrite, bool) {
 	if hasComment(q) {
 		return nil, false
 	}
-	p := &parser{sc: newScanner(q), spell: &spellState{}}
+	p := &parser{sc: newScanner(q), spell: &spellState{keepOpen: -1}}
 	p.advance()
 	expr, err := p.parseExpr()
 	if err != nil || p.cur.Typ != TokEOF || p.sc.lexErrCount() > 0 || p.treeErr != "" || p.plainUnwrapAt > 0 || p.spell.bad {
@@ -129,6 +133,9 @@ func (p *parser) spellParens(open, first int, inner Expr) {
 		return
 	}
 	st := p.spell
+	if open == st.keepOpen {
+		return
+	}
 	edits := [2]rewrite{p.spellRemove(open, first), p.spellRemove(p.prevEnd, p.pos()+1)}
 	if _, ok := inner.(*BinOpExpr); !ok {
 		st.edits = append(st.edits, edits[:]...)
@@ -247,51 +254,122 @@ func metricCall(name string) bool {
 	return false
 }
 
-// respellable is CanonicalSpelling's pre-check: it reports whether q, outside its strings, holds a spelling the
-// function rewrites, and false for a query with a `#` comment. It jumps from one parenthesis, quote or `#` to the next
-// and allocates nothing. It finds
-//   - a `(` with a blank after it, or a `)` with a blank before it;
-//   - a blank between a metric call's name and a `(`;
-//   - a `(` that does not open a call or a label list: at the start of the query, after `(`, `,`, an operator, and,
-//     or, unless or bool, or after the label list of on, ignoring, group_left or group_right;
+// respellable is CanonicalSpelling's pre-check: whether q, outside its strings, holds a spelling CanonicalSpelling may
+// rewrite:
+//   - a `(` with a blank or a `(` right after it, or a `)` with a blank before it;
+//   - a `(` after a blank that follows a metric call's name, and, or, unless or bool;
+//   - a `(` right after the start of the query, `(`, `,` or an operator, or right after and, or, unless or bool;
 //   - a `(` after a word with a capital or a byte outside ASCII, which the parser may read as a keyword.
 //
-// It may report a query CanonicalSpelling then leaves as it is (a label filter in parentheses after and), never
-// the other way round (FuzzCanonicalSpelling).
+// It is false for a query with a `#` comment (not respelled). A `(` right after a `)` opens a call after its grouping
+// or an operand after a matching clause, whose parentheses CanonicalSpelling keeps. It may report a query
+// CanonicalSpelling then leaves as it is (a label filter in parentheses after and), never the other way round
+// (FuzzCanonicalSpelling). It reads eight bytes at a time, stops only at the parentheses, quotes and `#`, and allocates
+// nothing.
 func respellable(q string) bool {
-	// matching marks, one bit per open parenthesis (up to 64 levels), the label lists of on, ignoring, group_left and
-	// group_right; closedMatching is set when the last `)` closed one.
-	var matching uint64
-	depth := 0
-	closedMatching := false
-	for i := nextSpecial(q, 0); i < len(q); i = nextSpecial(q, i+1) {
-		switch q[i] {
+	i := 0
+	for i+8 <= len(q) {
+		m := specialBytes(load8(q, i))
+		if m == 0 {
+			i += 8
+			continue
+		}
+		// The first parenthesis, quote or `#` of the word; the scan goes on right after it.
+		j := i + bits.TrailingZeros64(m)>>3
+		switch q[j] {
+		case '"', '`':
+			i = quoteEnd(q, j) + 1
+			continue
 		case '#':
 			return false
+		default:
+			if spellAt(q, j) {
+				return !hasComment(q[j:])
+			}
+		}
+		i = j + 1
+	}
+	for ; i < len(q); i++ {
+		switch q[i] {
 		case '"', '`':
 			i = quoteEnd(q, i)
-		case '(':
-			word, respell := openRespells(q, i, closedMatching)
-			if respell {
-				return true
+		case '#':
+			return false
+		case '(', ')':
+			if spellAt(q, i) {
+				return !hasComment(q[i:])
 			}
-			if depth < 64 {
-				if word == "on" || word == "ignoring" || word == "group_left" || word == "group_right" {
-					matching |= 1 << depth
-				} else {
-					matching &^= 1 << depth
-				}
-			}
-			depth++
-		case ')':
-			if i > 0 && isBlankByte(q[i-1]) {
-				return true
-			}
-			if depth > 0 {
-				depth--
-			}
-			closedMatching = depth < 64 && matching&(1<<depth) != 0
 		}
+	}
+	return false
+}
+
+// load8 is the eight bytes at q[i], the first in the low byte.
+func load8(q string, i int) uint64 {
+	return uint64(q[i]) | uint64(q[i+1])<<8 | uint64(q[i+2])<<16 | uint64(q[i+3])<<24 |
+		uint64(q[i+4])<<32 | uint64(q[i+5])<<40 | uint64(q[i+6])<<48 | uint64(q[i+7])<<56
+}
+
+// specialBytes marks with its high bit each byte of w that is `"`, `#`, `(`, `)` or a backquote.
+func specialBytes(w uint64) uint64 {
+	const ones, pairs = 0x0101010101010101, 0xFEFEFEFEFEFEFEFE
+	return zeroBytes((w^(ones*0x22))&pairs) | zeroBytes((w^(ones*0x28))&pairs) | zeroBytes(w^(ones*0x60))
+}
+
+// spellAt reports whether CanonicalSpelling may respell around the parenthesis at q[j].
+func spellAt(q string, j int) bool {
+	if q[j] == ')' {
+		return j > 0 && isBlankByte(q[j-1])
+	}
+	if j == 0 || j+1 < len(q) && (isBlankByte(q[j+1]) || q[j+1] == '(') {
+		return true
+	}
+	b := q[j-1]
+	switch {
+	case b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '_':
+		// A name right before its parenthesis: a call, unless it is and, or, unless or bool (the last two letters of
+		// none of the call names but vector and duration).
+		if j < 2 {
+			return false
+		}
+		switch q[j-2 : j] {
+		case "nd", "or", "ss", "ol":
+			return keywordBefore(q, j)
+		}
+		return false
+	case isBlankByte(b):
+		k := j - 2
+		for k >= 0 && isBlankByte(q[k]) {
+			k--
+		}
+		if k < 0 {
+			return true // the start of the query
+		}
+		if !wordish(q[k]) {
+			return q[k] != ')' && strings.IndexByte("(,+-*/%^<>=", q[k]) >= 0
+		}
+		start := k
+		for start > 0 && wordish(q[start-1]) {
+			start--
+		}
+		word := q[start : k+1]
+		return !lowerASCII(word) || metricCall(word) || word == "and" || word == "or" || word == "unless" || word == "bool"
+	case b == ')':
+		return false
+	}
+	// An operator, a comma or a `(` before it, or a word in another case.
+	return true
+}
+
+// keywordBefore reports and, or, unless or bool right before q[j].
+func keywordBefore(q string, j int) bool {
+	start := j
+	for start > 0 && wordish(q[start-1]) {
+		start--
+	}
+	switch q[start:j] {
+	case "and", "or", "unless", "bool":
+		return true
 	}
 	return false
 }
@@ -315,61 +393,10 @@ func quoteEnd(q string, i int) int {
 	return len(q)
 }
 
-// spellSpecial marks the bytes respellable stops at: parentheses, quotes and `#`.
-var spellSpecial = [256]bool{'(': true, ')': true, '"': true, '`': true, '#': true}
-
-// nextSpecial is the index of the first byte of q[i:] that respellable stops at, or len(q). It reads eight bytes at a
-// time and skips a word that holds none of them: `"` and `#` (0x22, 0x23), the parentheses (0x28, 0x29) and the
-// backquote (0x60).
-func nextSpecial(q string, i int) int {
-	const ones, highs, pairs = 0x0101010101010101, 0x8080808080808080, 0xFEFEFEFEFEFEFEFE
-	zero := func(v uint64) bool { return (v-ones)&^v&highs != 0 }
-	for ; i+8 <= len(q); i += 8 {
-		w := uint64(q[i]) | uint64(q[i+1])<<8 | uint64(q[i+2])<<16 | uint64(q[i+3])<<24 |
-			uint64(q[i+4])<<32 | uint64(q[i+5])<<40 | uint64(q[i+6])<<48 | uint64(q[i+7])<<56
-		if zero((w^(ones*0x22))&pairs) || zero((w^(ones*0x28))&pairs) || zero(w^(ones*0x60)) {
-			break
-		}
-	}
-	for ; i < len(q); i++ {
-		if spellSpecial[q[i]] {
-			return i
-		}
-	}
-	return len(q)
-}
-
-// openRespells reads the `(` at q[i]: whether CanonicalSpelling may respell around it, and the word right before it
-// ("" for none). closedMatching is set when the last `)` closed the label list of on, ignoring, group_left or
-// group_right.
-func openRespells(q string, i int, closedMatching bool) (string, bool) {
-	if i+1 < len(q) && isBlankByte(q[i+1]) || nextSignificant(q, i+1) == '(' {
-		return "", true
-	}
-	k := i - 1
-	for k >= 0 && isBlankByte(q[k]) {
-		k--
-	}
-	if k < 0 {
-		return "", true // the start of the query
-	}
-	c := q[k]
-	if !wordish(c) {
-		return "", strings.IndexByte("(,+-*/%^<>=", c) >= 0 || c == ')' && closedMatching
-	}
-	start := k
-	for start > 0 && wordish(q[start-1]) {
-		start--
-	}
-	word := q[start : k+1]
-	switch {
-	case !lowerASCII(word):
-		// A keyword in another case (SUM, topK with the Kelvin sign): the parser reads it.
-		return word, true
-	case metricCall(word):
-		return word, k < i-1
-	}
-	return word, word == "and" || word == "or" || word == "unless" || word == "bool"
+// zeroBytes marks with its high bit each zero byte of v, exactly.
+func zeroBytes(v uint64) uint64 {
+	const lows = 0x7F7F7F7F7F7F7F7F
+	return ^((v&lows + lows) | v | lows)
 }
 
 func isBlankByte(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
