@@ -112,3 +112,10 @@ jobs:
           # reports it (the full recordings are not committed).
           go test ./internal/querycorpus -run '^TestGrammarSweep$' -count=1 -v
           LVP_GRAMMAR_SWEEP_SIZE=full go test ./internal/querycorpus -run '^TestGrammarSweep$' -count=1 -v
+
+      # The VictoriaLogs refusals the proxy predicts, against VictoriaLogs' own query handlers and clone (v1.49.0 and
+      # the newest release): a new VictoriaLogs release that answers otherwise fails main.
+      - name: Hold the predicted VictoriaLogs refusals to VictoriaLogs
+        env:
+          LVP_RUN_ORACLES: "1"
+        run: go test ./internal/proxy -run '^TestVLRefusalPredictionMatchesVictoriaLogs$' -count=1 -v
