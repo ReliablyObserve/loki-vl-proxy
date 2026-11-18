@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.336.0] - 2026-11-18
+
 ### Fixed
 
 - A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
