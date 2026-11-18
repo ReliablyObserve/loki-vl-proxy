@@ -719,6 +719,9 @@
     "semantics/nested-calls-linear-work | compare:observed",
     "semantics/nested-calls-linear-work | gap:fixed",
     "semantics/nested-calls-linear-work | query",
+    "semantics/nested-calls-read-once | compare:observed",
+    "semantics/nested-calls-read-once | gap:fixed",
+    "semantics/nested-calls-read-once | query",
     "semantics/non-sum-vector-aggregation-unreduced | compare:observed",
     "semantics/non-sum-vector-aggregation-unreduced | gap:fixed",
     "semantics/non-sum-vector-aggregation-unreduced | query",
@@ -1274,6 +1277,7 @@
     "internal/config/generate_edge_test.go | operator-configurable-limits",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
     "internal/config/registry_test.go | operator-configurable-limits",
+    "internal/logql/argument_reader_test.go | semantics/nested-calls-read-once",
     "internal/logql/blank_after_keyword_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/logql/blank_after_keyword_loki_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/logql/canonical_nested_test.go | semantics/nested-calls-linear-work",
@@ -1283,6 +1287,7 @@
     "internal/logql/comments_offsets_test.go | semantics/comments-signed-compound-offsets",
     "internal/logql/comments_offsets_test.go | semantics/proxy-rejects-valid-logql",
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
+    "internal/logql/deep_call_cost_test.go | semantics/nested-calls-read-once",
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
     "internal/logql/error_order_loki_test.go | semantics/loki-error-phases",
     "internal/logql/error_phase_calls_test.go | semantics/loki-error-phase-order",
@@ -1322,6 +1327,7 @@
     "internal/logql/pattern_line_filter_loki_test.go | semantics/pattern-line-filter-invalid-captures",
     "internal/logql/print_reparse_test.go | semantics/binary-operand-literals-reprint",
     "internal/logql/print_reparse_test.go | semantics/label-filter-expression-syntax",
+    "internal/logql/quiet_calls_test.go | semantics/nested-calls-read-once",
     "internal/logql/range_rules_test.go | semantics/proxy-accepts-invalid-logql",
     "internal/logql/range_unwrap_grammar_loki_test.go | semantics/binary-on-without-label-list-accepted",
     "internal/logql/range_unwrap_grammar_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
@@ -1812,6 +1818,7 @@
     "internal/proxy/loki_profile_test.go | profiles/label-browse-params-ignored",
     "internal/proxy/loki_profile_test.go | profiles/parsed-fields-without-parser",
     "internal/proxy/loki_profile_test.go | profiles/structured-metadata-keys-per-profile",
+    "internal/proxy/long_query_memo_test.go | semantics/nested-calls-read-once",
     "internal/proxy/lowering_shadow_evaluated_test.go | architecture-syntax-package-layering",
     "internal/proxy/lowering_shadow_test.go | architecture-syntax-package-layering",
     "internal/proxy/malformed_backend_body_test.go | semantics/error-layer-silent-success",
@@ -2196,6 +2203,7 @@
     "internal/proxy/stream_tag_restore_test.go | loki_api_v1_query_range",
     "internal/proxy/stream_tag_restore_test.go | semantics/stream-label-shadowed-by-ingest-json-key",
     "internal/proxy/stream_tag_restore_test.go | severity/detected-level-filter-json-level",
+    "internal/proxy/strip_outer_calls_test.go | semantics/nested-calls-read-once",
     "internal/proxy/sub_second_step_precision_test.go | semantics/sub-second-step-grid",
     "internal/proxy/sub_second_step_test.go | semantics/sub-second-step-grid",
     "internal/proxy/sub_second_step_test.go | semantics/window-edge-float64-nanoseconds",
@@ -3280,14 +3288,14 @@
   "counts": {
     "case_consumers": {
       "any": 50,
-      "api": 119,
+      "api": 120,
       "drilldown": 55,
       "explore": 206,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 758,
+      "go": 763,
       "playwright": 2
     },
     "page_kinds": {
@@ -3307,7 +3315,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 459
+    "wired_items": 460
   },
   "gates": [
     "A/B shape selection",
