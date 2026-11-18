@@ -121,6 +121,10 @@ func (p *Proxy) errorPolicy(endpoint string, r *http.Request) (cache.Policy, que
 	if p.errorCacheDisabled {
 		transient, data = 0, 0
 	}
+	// A failure the request alone decides is shared with requests in flight
+	// and held by no TTL: Loki's parse and parameter errors are answered
+	// before the response cache, from the memoised validation, in about 14 µs
+	// and with no VictoriaLogs call (TestLokiRefusalsSendNoVictoriaLogsCall).
 	pol := cache.NewPolicy(transient, data, 0).Only(func(c cache.ErrorClass) bool {
 		switch c {
 		case cache.ErrorTransient:
@@ -306,7 +310,10 @@ type flightLead struct {
 // was joined on a pre-key.
 func (l *flightLead) BuildAnswer() *cache.Answer {
 	a := answerOf(l.answerCode, l.answerHeader, l.body, l.answerClass)
-	if l.key.r != nil {
+	// A failure the request alone decides answers every request with the same
+	// pre-key whatever its credentials or profile: it is held under the pre-key
+	// and builds no exact key.
+	if l.key.r != nil && l.answerClass != cache.ErrorRequest {
 		a.Key = l.key.exactKey()
 	}
 	return a
@@ -433,6 +440,9 @@ func (p *Proxy) uncachedShareLimit() int { return uncachedFlightShareBytes }
 // answer is taken only by a request whose exact key is the leader's.
 type flightKey struct {
 	join string
+	// prefix is the key version and configuration epoch the request arrived
+	// in: every key of its flight is built with it.
+	prefix string
 	// Set for a pre-key: what the exact key is built from.
 	p        *Proxy
 	r        *http.Request
@@ -455,7 +465,7 @@ func (k *flightKey) exactKey() string {
 		if k.post {
 			tail = digestTail(k.digest)
 		}
-		k.memo = errorFlightKeyVersion + k.p.buildResponseKey(k.r.Method+":", k.endpoint, k.r, k.raw, tail, k.p.flightNamesKey)
+		k.memo = k.prefix + k.p.buildResponseKey(k.r.Method+":", k.endpoint, k.r, k.raw, tail, k.p.flightNamesKey)
 	}
 	return k.memo
 }
@@ -483,8 +493,9 @@ func (p *Proxy) uncachedFlightKey(endpoint string, r *http.Request) flightKey {
 	}
 	raw, tenant := r.URL.RawQuery, r.Header.Get("X-Scope-OrgID")
 	var b strings.Builder
-	b.Grow(len(errorFlightKeyVersion) + len(r.Method) + len(endpoint) + len(r.URL.Path) + len(raw) + len(tenant) + 32)
-	b.WriteString(errorFlightKeyVersion)
+	prefix := p.flightPrefix()
+	b.Grow(len(prefix) + len(r.Method) + len(endpoint) + len(r.URL.Path) + len(raw) + len(tenant) + 32)
+	b.WriteString(prefix)
 	b.WriteString(r.Method)
 	b.WriteByte(':')
 	b.WriteString(endpoint)
@@ -498,7 +509,7 @@ func (p *Proxy) uncachedFlightKey(endpoint string, r *http.Request) flightKey {
 	}
 	b.WriteByte('@')
 	b.WriteString(tenant)
-	return flightKey{join: b.String(), p: p, r: r, endpoint: endpoint, raw: raw, digest: digest, post: post}
+	return flightKey{join: b.String(), prefix: prefix, p: p, r: r, endpoint: endpoint, raw: raw, digest: digest, post: post}
 }
 
 // formSeed keys formDigest: random per process, so no client can aim two
@@ -560,7 +571,7 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 	if now := cache.Now().UnixNano(); p.windowFreeSeenUntil.Load() > now {
 		// A backend failure that does not depend on the window is held for
 		// the request whatever its window (a refresh moves end=now).
-		wk := p.windowFreeKey(endpoint, r)
+		wk := p.windowFreeKey(k.prefix, endpoint, r)
 		if p.windowFreeHeldUntil.Load() > now {
 			if held := ef.Peek(wk); held != nil {
 				p.errorFlightCounters.held[held.Class].Add(1)
@@ -572,7 +583,7 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 		// backend may still be down. Requests of every window join one probe
 		// instead of each asking VictoriaLogs when the hold expires; the
 		// probe's failure answers them all, its success ends the probing.
-		if ef.Peek(probeMarkerKey(wk)) != nil && p.serveWindowFreeProbe(endpoint, route, w, r, wk, start, run) {
+		if ef.Peek(probeMarkerKey(wk)) != nil && p.serveWindowFreeProbe(endpoint, route, w, r, k.prefix, wk, start, run) {
 			return
 		}
 	}
@@ -640,8 +651,8 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 // serveWindowFreeProbe runs r through the probe flight of its window-free key
 // wk; it reports whether r was answered (as the probe, or by the probe's
 // window-free failure).
-func (p *Proxy) serveWindowFreeProbe(endpoint, route string, w http.ResponseWriter, r *http.Request, wk string, start time.Time, run func(http.ResponseWriter, *http.Request, *flightLead)) bool {
-	probe := &flightLead{key: flightKey{join: wk}, windowFreeProbe: true}
+func (p *Proxy) serveWindowFreeProbe(endpoint, route string, w http.ResponseWriter, r *http.Request, prefix, wk string, start time.Time, run func(http.ResponseWriter, *http.Request, *flightLead)) bool {
+	probe := &flightLead{key: flightKey{join: wk, prefix: prefix}, windowFreeProbe: true}
 	held, f, leads := p.errorFlights.Join(wk, &probe.fl)
 	if held != nil {
 		p.errorFlightCounters.held[held.Class].Add(1)
@@ -697,7 +708,7 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 			// requests with it read it under their exact key.
 			p.errorFlightCounters.stored[answer.Class].Add(1)
 			if windowFree {
-				p.holdWindowFree(endpoint, r, answer, ttl)
+				p.holdWindowFree(lead.key.prefix, endpoint, r, answer, ttl)
 			}
 		}
 	}()
@@ -771,7 +782,7 @@ func (p *Proxy) flightNamesKey(r *http.Request, query string) string {
 var windowParams = [...]string{"start", "end", "time", "since"}
 
 // windowFreeKey is the flight key of r without its time window.
-func (p *Proxy) windowFreeKey(endpoint string, r *http.Request) string {
+func (p *Proxy) windowFreeKey(prefix, endpoint string, r *http.Request) string {
 	var v url.Values
 	if r.Method == http.MethodPost && r.Form != nil {
 		v = make(url.Values, len(r.Form))
@@ -784,13 +795,13 @@ func (p *Proxy) windowFreeKey(endpoint string, r *http.Request) string {
 	for _, name := range windowParams {
 		v.Del(name)
 	}
-	return errorFlightKeyVersion + "nowindow:" + p.buildResponseKey(r.Method+":", endpoint, r, v.Encode(), "", p.flightNamesKey)
+	return prefix + "nowindow:" + p.buildResponseKey(r.Method+":", endpoint, r, v.Encode(), "", p.flightNamesKey)
 }
 
 // holdWindowFree holds a backend failure that does not depend on the window
 // for every window of the request, for the same TTL.
-func (p *Proxy) holdWindowFree(endpoint string, r *http.Request, a *cache.Answer, ttl time.Duration) {
-	wk := p.windowFreeKey(endpoint, r)
+func (p *Proxy) holdWindowFree(prefix, endpoint string, r *http.Request, a *cache.Answer, ttl time.Duration) {
+	wk := p.windowFreeKey(prefix, endpoint, r)
 	until := p.errorFlights.Hold(wk, a, ttl)
 	probe := p.errorFlights.Hold(probeMarkerKey(wk), heldHint, ttl*windowFreeProbeTTLs)
 	raiseTo(&p.windowFreeHeldUntil, until.UnixNano())
@@ -896,12 +907,26 @@ func (p *Proxy) writeFlightAnswer(endpoint, route string, w http.ResponseWriter,
 	}
 }
 
-// clearHeldErrors drops every held failure: a configuration change may answer
-// the same request differently.
+// clearHeldErrors drops every held failure and starts a new configuration
+// epoch: a configuration change may answer the same request differently, and a
+// flight that started before it ends under the old epoch's keys, which no
+// later request reads.
 func (p *Proxy) clearHeldErrors() {
+	epoch := p.errorEpoch.Add(1)
+	prefix := errorFlightKeyVersion + strconv.FormatUint(epoch, 36) + ":"
+	p.errorPrefix.Store(&prefix)
 	if p.errorFlights != nil {
 		p.errorFlights.Clear()
 	}
+}
+
+// flightPrefix is the prefix of every flight key: the key version and the
+// configuration epoch.
+func (p *Proxy) flightPrefix() string {
+	if prefix := p.errorPrefix.Load(); prefix != nil {
+		return *prefix
+	}
+	return errorFlightKeyVersion + "0:"
 }
 
 // errorFlightStats are the flight counters and the held answers' size.

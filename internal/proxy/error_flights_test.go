@@ -681,10 +681,10 @@ func TestErrorFlights_ReachAndBypassKey(t *testing.T) {
 	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	_ = post.ParseForm()
 	pk, gk := p.uncachedFlightKey("labels", post), p.uncachedFlightKey("labels", get)
-	if pk.join == "" || gk.join == "" || pk.join == gk.join || !strings.HasPrefix(pk.join, errorFlightKeyVersion+"POST:") {
+	if pk.join == "" || gk.join == "" || pk.join == gk.join || !strings.HasPrefix(pk.join, p.flightPrefix()+"POST:") {
 		t.Fatalf("pre-keys %q %q", pk.join, gk.join)
 	}
-	if pe, ge := pk.exactKey(), gk.exactKey(); pe == ge || !strings.HasPrefix(pe, errorFlightKeyVersion+"POST:compat:v2:labels:") || pe != pk.exactKey() {
+	if pe, ge := pk.exactKey(), gk.exactKey(); pe == ge || !strings.HasPrefix(pe, p.flightPrefix()+"POST:compat:v2:labels:") || pe != pk.exactKey() {
 		t.Fatalf("exact keys %q %q", pe, ge)
 	}
 	if exact := (&flightKey{join: "j"}); exact.exactKey() != "j" {

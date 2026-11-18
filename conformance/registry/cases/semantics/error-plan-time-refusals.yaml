@@ -1,0 +1,28 @@
+id: semantics/error-plan-time-refusals
+title: Every request Loki refuses with a 4xx from the request alone is refused before any VictoriaLogs call
+proves:
+  - error-coalescing-and-error-cache
+consumer: any
+pending: true
+why: |
+  Loki decides parse, parameter, limit, pipeline-build and router errors from
+  the request; the proxy must too, from the request and its query plan, so a
+  storm of refused requests costs VictoriaLogs nothing and repeats cost only
+  the memoised validation (about 14 microseconds, no cache layer). Replaying
+  every recorded Loki 4xx row (error answers, pipeline build phase, check
+  order) against the proxy with a counting VictoriaLogs found two rows answered
+  only after a VictoriaLogs call: a tail request whose websocket handshake
+  fails (r0298, r1449, and r1451 whose 426 is a listed known difference) read
+  the tail's history first. They are now answered before it.
+request:
+  scope: internal
+  entry: handleTail, TestLokiRefusalsSendNoVictoriaLogsCall
+  setup: |
+    The recorded Loki rows of internal/lokierr/testdata (loki_error_answers,
+    loki_build_phase, loki_check_order) replayed over HTTP against a proxy as
+    shipped, in front of a VictoriaLogs stand-in that counts select calls.
+compare:
+  mode: exact
+  expect: |
+    0 VictoriaLogs calls for every comparable row Loki answers with a 4xx;
+    the answers stay as TestLokiErrorAnswersReplay holds them.

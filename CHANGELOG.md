@@ -69,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   series identity, below, had moved every checked read to a 128 KiB starting buffer). An answer with its length (a
   folded read's shared answer) is still read in one allocation of that length. `max by (pod) (max_over_time({...} | json |
   unwrap n [5m]))` over an hour at a 1m step allocates 142 KiB per request, as in 2.333.1, instead of 258 KiB.
+- A tail request whose websocket handshake fails (no upgrade, another protocol, a missing version or key) is
+  answered before the tail reads its history from VictoriaLogs, as Loki's router answers it before any query work:
+  such requests no longer cost a VictoriaLogs call. Every request Loki refuses with a 4xx from the request alone is
+  now refused before any VictoriaLogs call (pinned against Loki's recorded answers).
+- A failed answer held while the configuration was reloaded (tenant map, field mappings) is never served after the
+  reload, even when its request was still running during the reload: held answers are keyed by a configuration
+  epoch that every reload changes.
 
 ## [2.334.0] - 2026-11-17
 

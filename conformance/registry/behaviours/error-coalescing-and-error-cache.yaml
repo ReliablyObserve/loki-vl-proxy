@@ -68,6 +68,7 @@ cases:
   - semantics/error-cache-plan-policy
   - semantics/error-cache-byte-equal-answers
   - semantics/error-cache-operator-switches
+  - semantics/error-plan-time-refusals
 
 decisions:
   - id: request-level-join-at-the-response-cache
