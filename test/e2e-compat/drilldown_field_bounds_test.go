@@ -75,6 +75,9 @@ func TestDrilldown_FieldBoundsByteOverflowMatchesLoki(t *testing.T) {
 	bounded, recorder := newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) {
 		cfg.MaxStatsQuerySeries = 2
 		cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = byteLimit
+		// These checks hold the busiest-series mode's whole-range ranking (count desc); the default Loki mode ranks
+		// by first line and is held to Loki in internal/proxy (TestDrilldownSeriesLimitMatchesLoki).
+		cfg.DrilldownSeriesLimitMode = "busiest"
 	})
 	full, _ := newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) { cfg.MaxStatsQuerySeries = 100 })
 	end := anchor.Add(11 * time.Hour).Add(2 * time.Minute)
