@@ -4429,6 +4429,32 @@
       "state": "matches",
       "status": 400
     },
+    "limit-plan-time": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-limit-plan-time",
+      "kind": "limit",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "limits",
+      "state": "documented",
+      "status": 400
+    },
+    "limit-query-complexity": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-limit-query-complexity",
+      "kind": "limit",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "limits",
+      "state": "documented",
+      "status": 400
+    },
     "limit-query-length": {
       "comparable_rows": 8,
       "e2e_rows": [
@@ -5384,8 +5410,8 @@
     "e2e_rows": 142,
     "match_ratio": 0.9718,
     "matching_rows": 241,
-    "messages": 46,
-    "messages_documented": 10,
+    "messages": 48,
+    "messages_documented": 12,
     "messages_recorded": 36,
     "not_comparable_rows": 141,
     "recorded_loki": "3.7.10",
