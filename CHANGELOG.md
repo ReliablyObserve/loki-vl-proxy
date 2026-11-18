@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
   v1.67.0 to v2.338.0.
 
+### Added
+
+- Operator limits on query complexity: `-max-query-ast-nodes` and `-max-query-nesting-depth` (Helm `extraArgs`,
+  limits registry) refuse a query with more nodes (expressions, pipeline stages and stream selector matchers) or more
+  nested levels than set, with HTTP 400 `query too complex: too many nodes` or `query too complex: nesting too deep`,
+  and `-max-query-plan-time` (default 10s, 0 turns it off) refuses a request whose own parse, validation and lowering
+  work, admission waits, cache reads and VictoriaLogs calls not counted, took longer, with `query planning took longer
+  than the limit`. Loki has no such limit below its 128 KB input size limit, so the defaults never refuse a query Loki
+  accepts: the node and depth limits default to the query length limit in effect (`-max-query-length-bytes`), which no
+  query that passed it exceeds, and a query shorter than both limits is not walked at all; the budget default is
+  above the slowest planning work measured over the plan corpus and the deep shapes Loki accepts. The node and depth
+  limits are checked once a query has been parsed and ahead of the response cache, so an answer cached under other
+  limits never replaces a refusal. The client text carries no number; the flag, the value and the counts appear in the
+  request error log line only, and `loki_vl_proxy_query_complexity_rejections_total{limit}` counts the refusals. A
+  refusal leaves nothing cached and costs no VictoriaLogs call. The planning budget is checked after a query's
+  validation, in the walk of its tree (every 256 nodes) and at every node of its lowering, and before the first
+  VictoriaLogs call; the parser and the string translator are not interrupted while they run.
+
 ## [2.340.0] - 2026-11-18
 
 ### Added
@@ -33,21 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   13.3.1, 13.3.0 and 12.4.14 with Logs Drilldown 3.2.0, 3.1.0 and 2.6.0 send for every Explore and Drilldown
   request kind; Grafana 12's untagged Explore query reads as `datasource`. Responses and cache keys do not
   change.
-- Operator limits on query complexity: `-max-query-ast-nodes` and `-max-query-nesting-depth` (Helm `extraArgs`,
-  limits registry) refuse a query with more nodes (expressions, pipeline stages and stream selector matchers) or more
-  nested levels than set, with HTTP 400 `query too complex: too many nodes` or `query too complex: nesting too deep`,
-  and `-max-query-plan-time` (default 10s, 0 turns it off) refuses a request whose own parse, validation and lowering
-  work, admission waits, cache reads and VictoriaLogs calls not counted, took longer, with `query planning took longer
-  than the limit`. Loki has no such limit below its 128 KB input size limit, so the defaults never refuse a query Loki
-  accepts: the node and depth limits default to the query length limit in effect (`-max-query-length-bytes`), which no
-  query that passed it exceeds, and a query shorter than both limits is not walked at all; the budget default is
-  above the slowest planning work measured over the plan corpus and the deep shapes Loki accepts. The node and depth
-  limits are checked once a query has been parsed and ahead of the response cache, so an answer cached under other
-  limits never replaces a refusal. The client text carries no number; the flag, the value and the counts appear in the
-  request error log line only, and `loki_vl_proxy_query_complexity_rejections_total{limit}` counts the refusals. A
-  refusal leaves nothing cached and costs no VictoriaLogs call. The planning budget is checked after a query's
-  validation, in the walk of its tree (every 256 nodes) and at every node of its lowering, and before the first
-  VictoriaLogs call; the parser and the string translator are not interrupted while they run.
 
 ### Fixed
 
