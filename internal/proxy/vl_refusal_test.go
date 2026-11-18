@@ -430,3 +430,24 @@ func TestVLRefusal_FleetExactRefusal(t *testing.T) {
 		t.Fatalf("another window must ask: %d calls", f.calls())
 	}
 }
+
+// A predicted answer reached no VictoriaLogs: the circuit breaker records neither a success nor a failure.
+//
+// conformance: vl-math-quoted-constant-clone-crash
+func TestVLRefusal_PredictionLeavesTheBreakerAlone(t *testing.T) {
+	stub := newFlightStub(t, answerLogs)
+	p, _ := refusalProxy(t, stub.srv.URL, "v1.49.0", func(cfg *Config) { cfg.CBFailThreshold = 1 })
+	for i := 0; i < 3; i++ {
+		if _, err := p.vlPost(context.Background(), logsql.PathQuery, url.Values{"query": {`* | math "2025-01-01T00:00:00Z" as x`}, "limit": {"5"}}); err == nil {
+			t.Fatal("a predicted crash must fail")
+		}
+	}
+	resp, err := p.vlPost(context.Background(), logsql.PathStatsQueryRange, url.Values{"query": {`* | sort by (a) | stats count()`}, "step": {"1m"}})
+	if err != nil || resp.StatusCode != http.StatusUnprocessableEntity || !predictedVLAnswer(resp, nil) {
+		t.Fatalf("predicted refusal: %v %v", resp, err)
+	}
+	_ = resp.Body.Close()
+	if !p.breaker.Allow() || stub.calls.Load() != 0 {
+		t.Fatalf("breaker open after predictions, or %d calls", stub.calls.Load())
+	}
+}

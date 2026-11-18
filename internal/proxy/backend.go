@@ -879,6 +879,9 @@ func (p *Proxy) vlPostSend(ctx context.Context, path string, params, sentParams 
 // Callers must either hold a breaker.Allow() token or use DoWithGuard.
 func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	resp, err := p.vlPostHTTP(ctx, path, params)
+	if predictedVLAnswer(resp, err) {
+		return resp, err // no call reached VictoriaLogs: the breaker learns nothing (vl_refusal.go)
+	}
 	if err != nil {
 		if shouldRecordBreakerFailure(ctx, err) {
 			p.breaker.RecordFailure()

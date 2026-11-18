@@ -305,7 +305,7 @@ func (p *Proxy) predictVLRefusal(ctx context.Context, method, path string, param
 	}
 	recordVLRefusalCall(ctx, path, query)
 	body := refusal.Message
-	header := http.Header{"Content-Type": {"text/plain; charset=utf-8"}}
+	header := http.Header{"Content-Type": {"text/plain; charset=utf-8"}, predictedRefusalHeader: {refusal.Rule}}
 	if refusal.Status == http.StatusUnprocessableEntity {
 		// The stats endpoints answer Prometheus' error shape.
 		b, _ := json.Marshal(map[string]string{"status": "error", "errorType": "422", "error": refusal.Message})
@@ -322,6 +322,20 @@ func (p *Proxy) predictVLRefusal(ctx context.Context, method, path string, param
 		Body:          io.NopCloser(strings.NewReader(body)),
 		ContentLength: int64(len(body)),
 	}, nil, true
+}
+
+// predictedRefusalHeader marks a predicted answer inside the proxy (never
+// written to a client: callers read VictoriaLogs answers' status and body).
+const predictedRefusalHeader = "X-Loki-Vl-Predicted-Refusal"
+
+// predictedVLAnswer reports a predicted refusal or crash: no call reached
+// VictoriaLogs, so the circuit breaker records neither a success nor a failure.
+func predictedVLAnswer(resp *http.Response, err error) bool {
+	if err != nil {
+		_, ok := asType[*vlPredictedCrashError](err)
+		return ok
+	}
+	return resp != nil && resp.Header.Get(predictedRefusalHeader) != ""
 }
 
 // countPredictedRefusal counts a predicted refusal by its rule.
