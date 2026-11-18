@@ -47,8 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer than the 4 KiB the short memos keep is validated, respelled and parsed once per request, in a memo bounded at
   4 MiB per generation (two generations).
 
-## [2.339.0] - 2026-11-18
-
 ### Changed
 
 - VictoriaLogs v1.54.0 replaces v1.53.0 as the newest tested release and the pull-request CI pin: the tested versions
@@ -65,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against VictoriaLogs' `-search.maxQueryLen`; the proxy's own filters stay far below it (`vl-extra-filters-max-query-len`).
   The root and example compose files check VictoriaLogs with its new `-healthcheck` flag; the matrix stacks keep
   `-version`, which v1.49.0 also has.
+
+## [2.339.0] - 2026-11-18
+
+### Changed
+
 - The compatibility stack and CI now run Grafana 13.3.1 (was 13.3.0) with Logs Drilldown
   (grafana-lokiexplore-app) 3.2.0 (was 3.1.0): the compose files and their `GF_PLUGINS_PREINSTALL`, the pinned
   and current-family CI runtime profiles and the docs that name them. 13.3.0 and Drilldown 3.1.0 stay in the
