@@ -107,6 +107,9 @@ REPORTS = (
     ("perf_evidence.py", "website/src/data/quality-vs-loki.json", "--site-data"),
     # The README's translation overhead table, rendered from the weekly run's committed results.
     ("translation_overhead.py", "README.md", "--readme"),
+    # The local resource comparison, rendered from bench/resources/results/latest.json.
+    ("resource_comparison.py", "README.md", "--readme"),
+    ("resource_comparison.py", "docs/benchmarks.md", "--docs"),
 )
 
 
