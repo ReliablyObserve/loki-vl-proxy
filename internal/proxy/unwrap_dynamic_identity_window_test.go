@@ -491,6 +491,79 @@ func TestSeriesFoldSpanningChunks(t *testing.T) {
 	t.Logf("%d chunk reads, the widest %d series", chunks, widest)
 }
 
+// A folded read's answer (rows of every kept series and bucket) is larger than the stats_query_range answer of the
+// same partials, so it reaches the stats body bound sooner: a read over the bound is cut into smaller time chunks
+// (listed_window_chunks.go), each a folded read, and the request answers the one read's values, not an error.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
+func TestSeriesFoldBodyBoundChunks(t *testing.T) {
+	s := dynSpanScenario(4000)
+	want := lokiDynamicWindows(s)
+	one, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}, s, Config{})
+	if code != http.StatusOK {
+		t.Fatalf("one read: %d %.300s", code, body)
+	}
+	// The bound set at a third of the one read's folded answer.
+	bound := foldAnswerBytes(t, s) / 3
+	old := maxStatsBucketResponseBytes
+	maxStatsBucketResponseBytes = bound
+	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}
+	var chunks, over int
+	listedWindowChunksObserve = func(_, _ int64, m statsReadMeter) {
+		chunks++
+		if m.overBytes {
+			over++
+		}
+	}
+	t.Cleanup(func() { listedWindowChunksObserve = nil })
+	got, code, body := runDynWindowScenario(t, emu, s, Config{})
+	if code != http.StatusOK {
+		t.Fatalf("over the body bound: %d %.300s", code, body)
+	}
+	compareDynWindows(t, "chunked vs Loki", s, got, want)
+	compareDynWindows(t, "chunked vs one read", s, got, one)
+	if over == 0 || chunks < 3 || len(emu.SeriesFoldCalls()) < 3 {
+		t.Fatalf("%d chunk reads (%d over the bound), %d folded reads: want the read cut into folded chunks", chunks, over, len(emu.SeriesFoldCalls()))
+	}
+	t.Logf("%d chunk reads, %d over the bound, %d folded reads", chunks, over, len(emu.SeriesFoldCalls()))
+}
+
+// foldAnswerBytes is the size of the folded answer of the scenario's one read.
+func foldAnswerBytes(t *testing.T, s dynWindowScenario) int64 {
+	t.Helper()
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}
+	var size int64
+	inner := emu.Handler()
+	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := httptest.NewRecorder()
+		inner.ServeHTTP(rec, r)
+		if r.URL.Path == "/select/logsql/query" {
+			size = max(size, int64(rec.Body.Len()))
+		}
+		for k, v := range rec.Header() {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+	})
+	srv := httptest.NewServer(backend)
+	defer srv.Close()
+	c := cache.New(60*time.Second, 1000)
+	defer c.Close()
+	p, err := New(Config{BackendURL: srv.URL, Cache: c, LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestProxy(p)
+	params := url.Values{"query": {s.query()}, "start": {strconv.FormatInt(s.start/1e9, 10)}, "end": {strconv.FormatInt(s.end/1e9, 10)},
+		"step": {strconv.FormatInt(int64(s.step/time.Second), 10)}}
+	if res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"}); res.Code != http.StatusOK || size == 0 {
+		t.Fatalf("one read: %d, folded answer of %d bytes", res.Code, size)
+	}
+	return size
+}
+
 // The proxy's memory for a folded read does not grow with the lines: a series per line, four times as many lines
 // over the same window, answers Loki's values from a read of as many rows (the folded rows are one per bucket and
 // group), where the series read one by one hold a row per line; for avg over time (the series of one line folded in
