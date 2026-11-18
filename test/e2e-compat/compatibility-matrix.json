@@ -93,14 +93,14 @@
     },
     "grafana": {
       "image_repo": "grafana/grafana",
-      "pinned_version": "13.3.0",
+      "pinned_version": "13.3.1",
       "role": "runtime hosting the Loki datasource and bundled Drilldown app",
       "plugins": {
         "victoriametrics-logs-datasource": {
           "pinned_version": "0.33.1"
         },
         "grafana-lokiexplore-app": {
-          "pinned_version": "3.1.0",
+          "pinned_version": "3.2.0",
           "note": "the Logs Drilldown the default stack preinstalls; it must equal logs_drilldown_contract.pinned_version"
         }
       },
@@ -113,12 +113,12 @@
       },
       "runtime_profiles": [
         {
-          "version": "13.3.0",
+          "version": "13.3.1",
           "profile": "full",
           "test_regex": "^(TestDrilldownTrackScore|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "13.3.0",
+          "version": "13.3.1",
           "profile": "current_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
@@ -168,6 +168,7 @@
         "previous_family": "12.x"
       },
       "matrix_versions": [
+        "13.3.1",
         "13.3.0",
         "13.2.5",
         "13.2.3",
@@ -206,15 +207,15 @@
         }
       ],
       "notes": [
-        "13.3.0 is the pinned runtime. Its Explore leaves the auto-run from the URL on Cancel (loading) although every request answered, also on Loki direct; the e2e-ui runQuery helper clears it once and requires the explicit run to send and answer a new query. 13.3.0 bundles the Loki datasource plugin 13.2.5 (loki/module.js?_cache=13.2.5).",
+        "13.3.1 is the pinned runtime (six security fixes over 13.3.0; it bundles the Loki datasource plugin 13.2.5 and names it in its User-Agent: Grafana/13.3.1 (linux; arm64) loki/13.2.5). 13.3.0 Explore leaves the auto-run from the URL on Cancel (loading) although every request answered, also on Loki direct; the e2e-ui runQuery helper clears it once and requires the explicit run to send and answer a new query. 13.3.0 bundles the Loki datasource plugin 13.2.5 (loki/module.js?_cache=13.2.5).",
         "Datasource plugin exact semver is not emitted on request headers by default.",
         "Proxy runtime sensing uses Grafana User-Agent version family and endpoint/source-tag request shape."
       ]
     },
     "logs_drilldown_contract": {
       "repo": "https://github.com/grafana/logs-drilldown",
-      "pinned_version": "3.1.0",
-      "pinned_commit": "3b8466c7e48ea4e9128e10015bf8fd5cc35d49cb",
+      "pinned_version": "3.2.0",
+      "pinned_commit": "4f8907ee7bce52d232a4c54e11a6ae34e0a0e703",
       "support_window": {
         "policy": "current_family_plus_previous_family",
         "description": "Support the current Logs Drilldown release family and one family behind. The contract matrix moves forward as upstream releases advance; we do not keep an open-ended history of older families.",
@@ -225,6 +226,7 @@
         ]
       },
       "matrix_versions": [
+        "3.2.0",
         "3.1.0",
         "3.0.0",
         "2.6.0",
@@ -410,12 +412,14 @@
         {
           "versions": [
             "3.0.0",
-            "3.1.0"
+            "3.1.0",
+            "3.2.0"
           ],
           "focus": [
             "same Loki HTTP calls as 2.6.0 (labels, detected_labels, detected_fields, patterns, index/volume, drilldown-limits, query_range)",
             "Grafana floor moves to >= 13.1.0 (3.0.0) and >= 13.2.0 (3.1.0), so the previous-family Grafana profile keeps Drilldown 2.6.0 (drilldown_plugin_version)",
             "3.1.0 logs footer reads frame meta.stats ('Summary: total bytes processed') from the query_range stats object",
+            "3.2.0 sends the landing-page volume request with a fixed requestId, so Grafana cancels the previous one when the data source or time range changes (grafana/logs-drilldown#2177); filter toggles carry aria-pressed instead of aria-selected (#2182); Grafana floor unchanged (>= 13.2.0)",
             "patterns tab initialization (same behaviour as 2.0.4)"
           ]
         }

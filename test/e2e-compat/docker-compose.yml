@@ -1164,7 +1164,7 @@ services:
 
   # Grafana with 3 datasources for manual side-by-side comparison
   grafana:
-    image: ${GRAFANA_IMAGE:-grafana/grafana:13.3.0}
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.3.1}
     container_name: e2e-grafana
     ports:
       - "3002:3000"
@@ -1181,7 +1181,7 @@ services:
       # CI sets GRAFANA_PLUGINS_PREINSTALL from stack.grafana.plugins of the compatibility matrix; the default is that
       # same pin (checked by scripts/ci/matrix_pins.py). Drilldown 3.x needs Grafana >= 13.2; the previous-family
       # Grafana profile (12.x) overrides the whole value with the Drilldown version of its matrix profile.
-      - GF_PLUGINS_PREINSTALL=${GRAFANA_PLUGINS_PREINSTALL:-victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0}
+      - GF_PLUGINS_PREINSTALL=${GRAFANA_PLUGINS_PREINSTALL:-victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.2.0}
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-lokiexplore-app
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
