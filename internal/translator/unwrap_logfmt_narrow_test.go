@@ -17,7 +17,7 @@ var (
 
 func translateNarrowed(t testing.TB, logql string) string {
 	t.Helper()
-	out, err := TranslateLogQLWithCapabilities(logql, nil, nil, logsql.CapabilitiesFor("v1.53.0"))
+	out, err := TranslateLogQLWithCapabilities(logql, nil, nil, logsql.CapabilitiesFor("v1.54.0"))
 	if err != nil {
 		t.Fatalf("%s: %v", logql, err)
 	}

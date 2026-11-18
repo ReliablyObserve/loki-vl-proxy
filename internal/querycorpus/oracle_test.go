@@ -739,13 +739,13 @@ func TestOracleSummaryAndRegressions(t *testing.T) {
 			"t2": {Accept: true, Ours: true, SameMeaning: boolp(false)}, // new, and still a failure
 		},
 	}
-	got := oracleRegressions("v1.53.0", base, head)
+	got := oracleRegressions("v1.54.0", base, head)
 	if strings.Join(got.GoldensRejected, ",") != "g2" || strings.Join(got.GoldensMeaningLost, ",") != "g3" ||
 		strings.Join(got.CasesLost, ",") != "c1" || strings.Join(got.TypedSelectorsDiffer, ",") != "t2" || !got.any() {
 		t.Errorf("regressions = %+v", got)
 	}
-	s := summarizeOracle("v1.53.0", head)
-	want := OracleSummary{Version: "v1.53.0", Goldens: 4, GoldensRejected: 2, GoldensRead: 2, GoldensSameMeaning: 1,
+	s := summarizeOracle("v1.54.0", head)
+	want := OracleSummary{Version: "v1.54.0", Goldens: 4, GoldensRejected: 2, GoldensRead: 2, GoldensSameMeaning: 1,
 		Sent: 1, SentRejected: 1, CasesAccepted: 1, CasesRejected: 1, CasesWronglyAccepted: 1,
 		TypedSelectors: 2, TypedSelectorsSameMeaning: 1}
 	if s != want {
@@ -892,17 +892,17 @@ func TestKnownTypedDivergences(t *testing.T) {
 	}
 	verdict := func(same bool) oracleVerdict { return oracleVerdict{Accept: true, SameMeaning: boolp(same)} }
 	head := map[string]map[string]oracleVerdict{"typed-selector": {listed: verdict(false), "q-new": verdict(false)}}
-	got := oracleRegressions("v1.53.0", nil, head)
+	got := oracleRegressions("v1.54.0", nil, head)
 	if strings.Join(got.TypedSelectorsKnown, ",") != listed || strings.Join(got.TypedSelectorsDiffer, ",") != "q-new" {
 		t.Fatalf("known %v, differ %v", got.TypedSelectorsKnown, got.TypedSelectorsDiffer)
 	}
 	head["typed-selector"] = map[string]oracleVerdict{listed: verdict(true)}
-	got = oracleRegressions("v1.53.0", nil, head)
+	got = oracleRegressions("v1.54.0", nil, head)
 	if strings.Join(got.TypedDivergencesStale, ",") != listed || !got.any() {
 		t.Fatalf("a listed divergence that now reads alike is not stale: %+v", got)
 	}
 	head["typed-selector"] = map[string]oracleVerdict{listed: verdict(false)}
-	if got = oracleRegressions("v1.53.0", nil, head); got.any() {
+	if got = oracleRegressions("v1.54.0", nil, head); got.any() {
 		t.Fatalf("a listed divergence fails the gate: %+v", got)
 	}
 }
@@ -922,7 +922,7 @@ func TestTypedPairOfAnEvaluatedRootIsTheOperandRequest(t *testing.T) {
 		`stddev(topk(3, ` + rate + `))`:                                 false,
 		`label_replace(stddev(` + rate + `), "d", "$1", "app", "(.*)")`: false,
 	} {
-		typed, built, ok := typedQueryPair(q, "v1.53.0")
+		typed, built, ok := typedQueryPair(q, "v1.54.0")
 		if ok != want {
 			t.Errorf("%s: paired %v, want %v", q, ok, want)
 		}

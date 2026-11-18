@@ -317,7 +317,7 @@ func compareDynWindows(t *testing.T, label string, s dynWindowScenario, got, wan
 // TestDynamicIdentityWindowsMatchLokiReference: over generated rows and sliding windows (a range twice or five times
 // the step, and one the step does not divide, so the buckets are finer than the step), sum, avg, max and min, with no
 // clause, by the stream's pod or by a parsed label, over avg, max, min, stddev and stdvar over time after a json or a
-// logfmt parser, answer Loki's series and values at every step, on VictoriaLogs v1.49.0 and v1.53.0. VictoriaLogs
+// logfmt parser, answer Loki's series and values at every step, on VictoriaLogs v1.49.0 and v1.54.0. VictoriaLogs
 // answers one stats query, the series that lie in one bucket folded in it (lower.SeriesFold); the answer equals the
 // one of the series read one by one (seriesFoldOff); no raw rows are read, and the hash never reaches a client.
 //
@@ -326,7 +326,7 @@ func TestDynamicIdentityWindowsMatchLokiReference(t *testing.T) {
 	type shape struct{ outer, by string }
 	shapes := []shape{{"sum", ""}, {"sum", "pod"}, {"avg", ""}, {"max", "pod"}, {"min", "route"}, {"sum", "pod, route"}}
 	fns := []string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"}
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, parser := range []string{"json", "logfmt"} {
 			for _, fn := range fns {
 				for _, sh := range shapes {
@@ -387,7 +387,7 @@ func TestDynamicIdentityWindowsKeepExtremes(t *testing.T) {
 		rnd := rand.New(rand.NewSource(int64(len(tc.fn)) * 104729))
 		for i := 0; i < 6; i++ {
 			s := generateDynWindowScenario(rnd, tc.outer, "pod", tc.fn, "logfmt")
-			emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+			emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}
 			got, code, body := runDynWindowScenario(t, emu, s, Config{})
 			if code != http.StatusOK {
 				t.Fatalf("%s: %d %s", s.query(), code, body)
@@ -421,7 +421,7 @@ func TestDynamicIdentityWindowsFoldBeyondSeriesLimit(t *testing.T) {
 	t.Cleanup(func() { seriesFoldOff = false })
 	for _, off := range []bool{false, true} {
 		seriesFoldOff = off
-		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}
 		got, code, body := runDynWindowScenario(t, emu, s, Config{RangeMetricRowLimit: 600, MaxStatsQuerySeries: 500})
 		if code != http.StatusOK || len(got) != 2 {
 			t.Fatalf("fold off %v: %d, %d series %.300s; want the two pods", off, code, len(got), body)
@@ -459,7 +459,7 @@ func dynSpanScenario(lines int) dynWindowScenario {
 func TestSeriesFoldSpanningChunks(t *testing.T) {
 	s := dynSpanScenario(4000)
 	want := lokiDynamicWindows(s)
-	one, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}, s, Config{})
+	one, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}, s, Config{})
 	if code != http.StatusOK {
 		t.Fatalf("one read: %d %.300s", code, body)
 	}
@@ -472,7 +472,7 @@ func TestSeriesFoldSpanningChunks(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { listedWindowChunksObserve = nil })
-	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}
 	got, code, body := runDynWindowScenario(t, emu, s, Config{RangeMetricRowLimit: 300, MaxStatsQuerySeries: 200})
 	if code != http.StatusOK {
 		t.Fatalf("chunked: %d %.300s", code, body)
@@ -504,7 +504,7 @@ func TestSeriesFoldMemoryBound(t *testing.T) {
 			defer func() { listedWindowChunksObserve = nil }()
 			seriesFoldOff = off
 			defer func() { seriesFoldOff = false }()
-			got, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}, s, Config{RangeMetricRowLimit: 100000})
+			got, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}, s, Config{RangeMetricRowLimit: 100000})
 			if code != http.StatusOK {
 				t.Fatalf("%s %d lines (fold off %v): %d %.300s", fn, lines, off, code, body)
 			}
@@ -737,7 +737,7 @@ func FuzzSeriesFold(f *testing.F) {
 			parser = "json"
 		}
 		s := generateDynWindowScenario(rand.New(rand.NewSource(seed)), o, bys[int(by)%len(bys)], fun, parser)
-		checkSeriesFoldScenario(t, fmt.Sprintf("seed %d", seed), s, "v1.53.0", true)
+		checkSeriesFoldScenario(t, fmt.Sprintf("seed %d", seed), s, "v1.54.0", true)
 	})
 }
 
@@ -751,13 +751,13 @@ func TestSeriesFoldTooLongReadsEverySeries(t *testing.T) {
 	// The same query with a short line filter is folded.
 	short := s
 	short.parser = `json != "nope"`
-	shortEmu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	shortEmu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}
 	if _, code, body := runDynWindowScenario(t, shortEmu, short, Config{}); code != http.StatusOK || len(identityStatsCalls(shortEmu)) != 1 ||
 		!strings.Contains(identityStatsCalls(shortEmu)[0], "__lvp_ks:in(") {
 		t.Fatalf("a short filter: %d, reads %v: %.200s", code, identityStatsCalls(shortEmu), body)
 	}
 	long := strings.Repeat("x", 5000)
-	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}
 	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	c := cache.New(time.Minute, 100)

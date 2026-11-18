@@ -1,0 +1,31 @@
+id: vl-live-tail-row-rate-limit
+kind: version_gated_capability
+since: v1.54
+generated:
+  used_in: 0
+
+description: |
+  From VictoriaLogs v1.54.0 (#1837) a live tail (/select/logsql/tail) whose
+  query matches more than 10,000 new rows in one refresh ends with an error
+  (maxRowsPerTailQuery in app/vlselect/logsql ProcessLiveTailRequest): before
+  its first rows the answer is a 400 with the text "the query matches too many
+  logs (10000+)", after them the same text is a line in the NDJSON stream. Up to
+  v1.53.x such a tail kept streaming (and could exhaust VictoriaLogs' memory).
+  Loki has no such limit: its tail keeps streaming a busy query.
+proxy_usage: |
+  The native tail reads VictoriaLogs' stream (internal/proxy/tail.go). A tail
+  refused at its start in the default auto mode is served by the polling tail
+  (bounded pages of syntheticTailPollLimit rows), so it stays open as in Loki; a
+  native-mode tail refused at its start, and any tail whose stream ends with
+  the text after its rows, closes with Loki's internal error (1011, the error
+  layer's text) after the rows it sent: the text line is not a JSON row
+  (errTailMalformedRow), a failure no retry fixes. No VictoriaLogs text reaches
+  the client. TestTail_VLRowRateLimitClosesWithLokiText pins both endings.
+fallback: |
+  Follow-up: a tail VictoriaLogs ends for its row rate should continue on the
+  polling tail from its last delivered row, as a tail refused at its start
+  already does, instead of closing where Loki keeps streaming. That needs the
+  failure told apart from a broken stream without reading VictoriaLogs' text
+  (the proxy never decides by error text): from the version (a tail on v1.54.0
+  or later that ends with a non-JSON line after rows) or a typed signal.
+proves: []

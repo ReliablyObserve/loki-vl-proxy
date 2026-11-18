@@ -69,7 +69,7 @@ services:
 
   # VictoriaLogs backend
   victorialogs:
-    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.53.0}
+    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.54.0}
     container_name: e2e-victorialogs
     ports:
       - "19428:9428"
@@ -151,7 +151,9 @@ services:
     healthcheck:
       # VictoriaLogs images are scratch-based from v1.52.0 (no shell, no wget),
       # so an HTTP probe cannot run inside the container. The binary's -version
-      # exit path is the only in-container probe that works on every version.
+      # exit path is the only in-container probe that works on every version: the
+      # -healthcheck listener check exists from v1.54.0 only, and an unknown flag
+      # fails on the v1.49.0 leg of the version matrix (VICTORIALOGS_IMAGE).
       # Readiness of the HTTP listener is covered by scripts/ci/wait_e2e_stack.sh
       # (host-side poll of /health on the published port) and by the proxies'
       # own health checks, which fail until VictoriaLogs answers.

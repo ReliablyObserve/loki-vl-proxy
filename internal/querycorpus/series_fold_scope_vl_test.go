@@ -25,7 +25,7 @@ import (
 // The proxy's time chunks read each chunk with its own range (a series may span two chunks and lie in one bucket of
 // each), and a subquery over a wider range would only keep more hashes, never a wrong answer: this pins the cost.
 //
-// The answers of real VictoriaLogs (the serve oracle, test/oracle/vl, v1.53.0 and v1.49.0) to three reads of the
+// The answers of real VictoriaLogs (the serve oracle, test/oracle/vl, v1.54.0 and v1.49.0) to three reads of the
 // same data are recorded in seriesFoldScopePath (LVP_RUN_ORACLES=1 records them again):
 //   - a two-minute read holding one of the two lines of series x and the one line of series y: both folded (no hash
 //     in the answer, a folded row counting two series);

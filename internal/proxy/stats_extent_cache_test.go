@@ -23,7 +23,7 @@ import (
 // extentShim makes a fake VictoriaLogs answer stats_query_range the way
 // VictoriaLogs does in the two respects the extent cache relies on, written
 // apart from the cache: start and end widen to the bucket edges k*step-offset
-// (alignStartEndToStep, app/vlselect/logsql/logsql.go, v1.49.0-v1.53.0), and
+// (alignStartEndToStep, app/vlselect/logsql/logsql.go, v1.49.0-v1.54.0), and
 // series come in VictoriaLogs' order, by metric column (the order of the
 // results of the last stats pipe), then by the non-empty labels as JSON
 // (ProcessStatsQueryRangeRequest). It records the bucket range of every call.

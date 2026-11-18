@@ -99,7 +99,7 @@ func TestPlanKeepsWordFieldNamesBare(t *testing.T) {
 		if _, err := logql.Parse(q); err != nil {
 			continue
 		}
-		op, err := PlanQuery(q, planOf(t, q), Profile{Caps: logsql.CapabilitiesFor("v1.53.0")})
+		op, err := PlanQuery(q, planOf(t, q), Profile{Caps: logsql.CapabilitiesFor("v1.54.0")})
 		if err != nil {
 			t.Errorf("%s: %v", q, err)
 			continue
@@ -154,7 +154,7 @@ func TestQuoteKeywordFieldTextExoticNames(t *testing.T) {
 //
 // conformance: semantics/translator-writes-reserved-field-names
 func TestPlanLeavesReservedNamesInStagesToTheTranslator(t *testing.T) {
-	prof := Profile{Caps: logsql.CapabilitiesFor("v1.53.0")}
+	prof := Profile{Caps: logsql.CapabilitiesFor("v1.54.0")}
 	for _, name := range []string{"_time", "_stream", "_stream_id", "_msg"} {
 		for _, form := range []struct{ q, construct string }{
 			{`sum_over_time({app="a"} | json | unwrap N [1m])`, "RangeAgg " + reservedStageConstruct},

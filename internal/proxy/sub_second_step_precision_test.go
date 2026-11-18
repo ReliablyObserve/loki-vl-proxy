@@ -11,7 +11,7 @@ import (
 // vlStepReadWithinFloat64 reports whether read, the nanoseconds VictoriaLogs
 // makes of a step it was sent, is the step the proxy meant. VictoriaLogs scales
 // the number in a duration by its unit as a float64 and truncates
-// (lib/logstorage tryParseDuration, v1.49.0 and v1.53.0), so it holds a count
+// (lib/logstorage tryParseDuration, v1.49.0 and v1.54.0), so it holds a count
 // exactly up to 2^53 ns (about 104 days) and, beyond that, the nearest float64
 // (1024 ns apart near 7e18). No spelling of such a step reads back exactly; it
 // is a step far longer than any range, one sample at the start.

@@ -740,6 +740,7 @@
       "internal/proxy/tail_history_test.go",
       "internal/proxy/tail_pipeline_test.go",
       "internal/proxy/tail_settle_test.go",
+      "internal/proxy/tail_vl_row_rate_test.go",
       "test/e2e-compat/tail_backend_outage_test.go",
       "test/e2e-compat/tail_history_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
@@ -1473,6 +1474,7 @@
       "internal/proxy/stream_response_broken_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
+      "internal/proxy/tail_vl_row_rate_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-proxy-limit-status": [
@@ -2830,6 +2832,9 @@
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
+    "vl-live-tail-row-rate-limit": [
+      "internal/proxy/tail_vl_row_rate_test.go"
+    ],
     "vl-phrase-filter-quoted-names": [
       "test/e2e-compat/vl_pattern_lines_test.go"
     ],
@@ -2877,7 +2882,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 647,
+  "registry_items": 650,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4584,6 +4589,11 @@
       "semantics/tail-delivers-rows-visible-out-of-order",
       "semantics/tail-survives-backend-outage",
       "tail-reads-settled-rows"
+    ],
+    "internal/proxy/tail_vl_row_rate_test.go": [
+      "loki_api_v1_tail",
+      "semantics/error-layer-internal-go-text",
+      "vl-live-tail-row-rate-limit"
     ],
     "internal/proxy/tenant_auth_parity_test.go": [
       "semantics/tenant-header-loki-answers",
@@ -6364,7 +6374,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 748,
+  "tests_with_markers": 749,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6462,5 +6472,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 444
+  "wired_items": 445
 }

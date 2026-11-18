@@ -9,7 +9,7 @@ import (
 )
 
 // keywordFieldVerdicts are VictoriaLogs' own verdicts (its parser, lib/logstorage ParseQuery, on v1.49.0 and
-// v1.53.0) on the field names that are keywords or filter functions of LogsQL, bare and quoted, at every place a
+// v1.54.0) on the field names that are keywords or filter functions of LogsQL, bare and quoted, at every place a
 // filter or a pipe names a field. The grid is the evidence of KeywordFieldName: a bare not, in, contains_all,
 // contains_any, contains_common_case or equals_common_case is rejected wherever a filter names a field; and and or
 // are rejected right after another filter, where they are the operators; options is rejected as the first filter;
@@ -21,7 +21,7 @@ const keywordFieldVerdicts = "testdata/keyword-field-names-vl.jsonl"
 type keywordFieldVerdict struct {
 	Query string `json:"q"`
 	V149  bool   `json:"v1.49.0"`
-	V153  bool   `json:"v1.53.0"`
+	V154  bool   `json:"v1.54.0"`
 }
 
 func readKeywordFieldVerdicts(t *testing.T) []keywordFieldVerdict {
@@ -63,14 +63,14 @@ func TestParseKeywordFieldNamesMatchVictoriaLogs(t *testing.T) {
 		t.Fatalf("%d recorded verdicts", len(rows))
 	}
 	for _, r := range rows {
-		if r.V149 != r.V153 {
-			t.Errorf("%s: VictoriaLogs v1.49.0 accepts=%v, v1.53.0 accepts=%v: the grid is for one reading", r.Query, r.V149, r.V153)
+		if r.V149 != r.V154 {
+			t.Errorf("%s: VictoriaLogs v1.49.0 accepts=%v, v1.54.0 accepts=%v: the grid is for one reading", r.Query, r.V149, r.V154)
 		}
 		_, err := Parse(r.Query)
 		switch {
-		case r.V153 && err != nil:
+		case r.V154 && err != nil:
 			t.Errorf("%s: VictoriaLogs accepts it, the proxy's parser rejects it: %v", r.Query, err)
-		case !r.V153 && err == nil && !looserThanVL.MatchString(r.Query):
+		case !r.V154 && err == nil && !looserThanVL.MatchString(r.Query):
 			t.Errorf("%s: VictoriaLogs rejects it, the proxy's parser accepts it", r.Query)
 		}
 	}

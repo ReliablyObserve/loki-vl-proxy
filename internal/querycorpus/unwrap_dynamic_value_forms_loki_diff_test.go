@@ -13,7 +13,7 @@ import (
 
 // The Loki differential of the values a parser's series identity carries (lower.DynamicUnwrapIdentity): numbers
 // whose text VictoriaLogs' stats cannot read once the series hash has unpacked the line again, against real Loki (the
-// engine oracle) and real VictoriaLogs (the serve oracle, v1.53.0 and v1.49.0), through the proxy's real handlers.
+// engine oracle) and real VictoriaLogs (the serve oracle, v1.54.0 and v1.49.0), through the proxy's real handlers.
 //
 // VictoriaLogs' math writes a number as fixed-point text: 1e308 is 309 digits, 1e-30 is 32 characters and an infinity
 // is "+Inf". Its stats read text with a parser that refuses an infinity and anything longer than 27 characters, so a
@@ -79,7 +79,7 @@ var dynamicValueFormsFuncs = []string{"max_over_time", "min_over_time", "avg_ove
 //   - avg over the series of an infinity: Loki's mean of +Inf and +Inf is NaN, VictoriaLogs' is +Inf;
 //   - sum, sum by or avg over stddev or stdvar of an infinity on an instant: Loki answers NaN, VictoriaLogs' outer sum
 //     leaves the NaN series out (0). For sum by (app) over a logfmt line the recording before 2026-11-16 had
-//     VictoriaLogs v1.49.0 and v1.53.0 answer NaN; recorded again on that date (origin/main and this change alike) both
+//     VictoriaLogs v1.49.0 and v1.54.0 answer NaN; recorded again on that date (origin/main and this change alike) both
 //     answer 0 (over a json line, NaN).
 //
 // A range longer than the step matches Loki on every row: the window evaluator merges each series' buckets (an

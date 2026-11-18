@@ -30,7 +30,7 @@ import (
 func TestTypedPairOfBlankSpellingIsTheSpacedOnes(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	pairs := 0
-	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		for _, tpl := range blankspace.Templates() {
 			ref := strings.ReplaceAll(tpl, blankspace.Mark, " ")
 			wantTyped, wantBuilt, wantOK := typedQueryPair(ref, v)
@@ -128,7 +128,7 @@ func TestTypedPairOfIPCallBlankIsTheUnspacedOnes(t *testing.T) {
 		if !row.Accept || !strings.Contains(row.Ref, "|= ip(") && !strings.Contains(row.Ref, "!= ip(") {
 			continue
 		}
-		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			wantTyped, wantBuilt, wantOK := typedQueryPair(row.Ref, v)
 			typed, built, ok := typedQueryPair(row.Q, v)
 			if !wantOK || ok != wantOK || typed != wantTyped || built != wantBuilt {
@@ -155,7 +155,7 @@ func TestOracleRegressionsWithoutBase(t *testing.T) {
 		"case-accept":    {"c1": {Accept: true}},
 		"typed-selector": {"t1": {Accept: true, Ours: true, SameMeaning: boolp(true)}, "t2": {Accept: false, Ours: true}},
 	}
-	got := oracleRegressions("v1.53.0", nil, head)
+	got := oracleRegressions("v1.54.0", nil, head)
 	if strings.Join(got.TypedSelectorsDiffer, ",") != "t2" || len(got.GoldensRejected)+len(got.GoldensMeaningLost)+len(got.CasesLost) != 0 || !got.any() {
 		t.Errorf("regressions without a base = %+v", got)
 	}

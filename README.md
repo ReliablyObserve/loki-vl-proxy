@@ -316,8 +316,8 @@ Full cost worksheet, scaling projections, and EC2/GCP sizing tables: [Cost Model
 | VictoriaLogs | Version |
 |---|---|
 | Supported | `v1.49.0` (the latest v1.4x release) and every v1.5x release |
-| Tested in CI | `v1.49.0` (the latest v1.4x release) and `v1.53.0` (the newest v1.5x release) |
-| Pull-request CI pin | `v1.53.0` |
+| Tested in CI | `v1.49.0` (the latest v1.4x release) and `v1.54.0` (the newest v1.5x release) |
+| Pull-request CI pin | `v1.54.0` |
 | Startup floor (`-backend-min-version`) | `v1.49.0` |
 <!-- vl-support:end -->
 

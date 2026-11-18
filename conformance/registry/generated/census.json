@@ -2183,6 +2183,9 @@
     "internal/proxy/tail_settle_test.go | semantics/tail-delivers-rows-visible-out-of-order",
     "internal/proxy/tail_settle_test.go | semantics/tail-survives-backend-outage",
     "internal/proxy/tail_settle_test.go | tail-reads-settled-rows",
+    "internal/proxy/tail_vl_row_rate_test.go | loki_api_v1_tail",
+    "internal/proxy/tail_vl_row_rate_test.go | semantics/error-layer-internal-go-text",
+    "internal/proxy/tail_vl_row_rate_test.go | vl-live-tail-row-rate-limit",
     "internal/proxy/tenant_auth_parity_test.go | semantics/tenant-header-loki-answers",
     "internal/proxy/tenant_auth_parity_test.go | tenant-auth-follows-loki",
     "internal/proxy/tenant_auth_parity_test.go | tenant-numeric-routing",
@@ -3210,7 +3213,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 746,
+      "go": 747,
       "playwright": 2
     },
     "page_kinds": {
@@ -3230,7 +3233,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 94,
-    "wired_items": 444
+    "wired_items": 445
   },
   "gates": [
     "A/B shape selection",
