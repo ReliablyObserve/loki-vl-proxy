@@ -1312,6 +1312,10 @@ func (p *Proxy) collectFirstMetRangeMetricHits(ctx context.Context, scope *serie
 	if scope.rangeNs > 0 {
 		lookback = max(scope.rangeNs, scope.stepNs)
 	}
+	if scope.rankingFallsBack(lookback) {
+		// No ranking per step: the whole answer passed the byte bounds, so this is their limit error.
+		return nil, newManualMetricResponseTooLarge(int64(p.limits().BufferedBackendBodyBytes))
+	}
 	// VictoriaLogs aligns a stats_query_range read's start down to its bucket grid, a bucket before windowStart
 	// here, and the subquery reads the same aligned range: its lines before the request's reads would rank first in
 	// the first bucket, so the subquery keeps only the lines the steps read, (windowStart, end].

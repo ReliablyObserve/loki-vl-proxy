@@ -560,5 +560,59 @@ func TestRankingGrid(t *testing.T) {
 		if split%step == 0 && int64(buckets) > int64(s.splitOf(end))+1+lookback/split+1 {
 			t.Fatalf("step %d split %d lookback %d: %d buckets over %d splits", step, split, lookback, buckets, s.splitOf(end)+1)
 		}
+		splits := int64(s.splitOf(end) + 1)
+		if falls := s.rankingFallsBack(lookback); falls != (split%step != 0 && step < split && int64(buckets) > 2*(splits+1)) {
+			t.Fatalf("step %d split %d: falls back %v with %d buckets over %d splits", step, split, falls, buckets, splits)
+		}
 	}
+}
+
+// A step that does not divide the split interval and is shorter (7 s against 1h) would rank per step, far more
+// buckets than splits: the range == step answer reads its whole answer instead, with the same Loki cut (no ranked
+// call), and a top-value read answers the byte bound's limit error; a Grafana $__auto step (60 s) and a step longer
+// than the split stay on the ranked read.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step
+func TestDrilldownSeriesLimitRankingFallsBackOnOddSteps(t *testing.T) {
+	rng := rand.New(rand.NewSource(3))
+	for _, tc := range []struct {
+		step   int64
+		ranked bool
+	}{{7, false}, {60, true}, {5400, true}} {
+		c := randomRankingCase(rng, 0, false)
+		c.step, c.rangeS = tc.step, tc.step
+		c.start, c.end = rankingEnd-4*3600+1199, rankingEnd-600
+		if tc.step == 5400 {
+			c.start = rankingEnd - 4*3600 - 3*5400
+		}
+		emu := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: "v1.54.0", AlignStatsRange: true}
+		b := &rankingBackend{name: "emulator"}
+		srv := httptest.NewServer(b.record(emu.Handler()))
+		t.Cleanup(srv.Close)
+		b.url = func(rankingCase) string { return srv.URL }
+		res, sent := askRanked(t, b, c)
+		if res.Code != http.StatusOK || sentRanked(sent) != tc.ranked {
+			t.Fatalf("step %ds: %d, ranked %v, want %v: %v", tc.step, res.Code, sentRanked(sent), tc.ranked, sent)
+		}
+		scope := &seriesLimitScope{startNs: c.start * 1e9, endNs: c.end * 1e9, stepNs: c.step * 1e9, splitNs: int64(time.Hour), rangeNs: c.rangeS * 1e9}
+		if !strings.Contains(res.Body.String(), "warnings") {
+			t.Fatalf("step %ds: the data does not pass the limit", tc.step)
+		}
+		if msg := lokiRuleViolations(c.rows, scope, drilldownSeriesLimit, res.Body.Bytes()); msg != "" {
+			t.Errorf("step %ds: %s", tc.step, msg)
+		}
+	}
+	// The top-value read of a 7 s step: Loki's limit error naming the byte bound.
+	c := randomRankingCase(rand.New(rand.NewSource(4)), 0, true)
+	c.step, c.rangeS, c.bodyBound = 7, 35, 2000
+	emu := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: "v1.54.0", AlignStatsRange: true}
+	b := &rankingBackend{name: "emulator"}
+	srv := httptest.NewServer(b.record(emu.Handler()))
+	t.Cleanup(srv.Close)
+	b.url = func(rankingCase) string { return srv.URL }
+	res, sent := askRanked(t, b, c)
+	if sentRanked(sent) || res.Code == http.StatusOK {
+		t.Fatalf("a 7 s top-value read: %d, ranked %v: %.300s", res.Code, sentRanked(sent), res.Body.String())
+	}
+	t.Logf("a 7 s top-value read past the byte bound: %d %.200s", res.Code, res.Body.String())
 }

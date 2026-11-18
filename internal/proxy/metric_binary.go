@@ -495,6 +495,9 @@ func rankedSingleFieldQueryFirstMet(logsqlQuery string, limit int, scope *series
 	rangeNs := int64(0) // a range == step answer: a line is read by the step at or after it only
 	if scope != nil {
 		rangeNs = scope.stepNs
+		if scope.rankingFallsBack(rangeNs) {
+			return "", false
+		}
 	}
 	return rankedSingleFieldQueryBy(logsqlQuery, limit, func(field string, n int) string {
 		return scope.firstMetRanking(field, "__lvp_rank", true, n, rangeNs, logsql.PipeFields{Labels: []string{field}})

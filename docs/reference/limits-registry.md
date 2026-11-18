@@ -157,7 +157,7 @@ The default is loki, Loki parity: a Drilldown panel over the limit shows what de
 
 ### `-drilldown-series-limit-split-interval`
 
-Set it to the Loki the proxy stands in for (1h is Loki's default; larger tenants often run 15m-30m). The same value for every replica and peer: the cache key carries it. A Drilldown answer over the limit over N splits holds up to N times the limit series; VictoriaLogs still answers in one ranked read (sort ... partition by (_time) limit), returning at most limit+1 values per split.
+Set it to the Loki the proxy stands in for (1h is Loki's default; larger tenants often run 15m-30m). The same value for every replica and peer: the cache key carries it. A Drilldown answer over the limit over N splits holds up to N times the limit series; VictoriaLogs still answers in one ranked read (sort ... partition by (_time) limit), returning at most limit+1 values per bucket of a grid with an edge at every split's first step (one bucket per split when the interval is a multiple of the step). A step shorter than the interval that does not divide it (a 7s step against 1h; no Grafana $__auto step) would need a bucket per step: when that is more than 2x(splits+1) buckets the request is not ranked, a range == step answer reads its whole answer (Loki's message size error past -backend-max-buffered-response-bytes) and an answer too large for one read answers that error.
 
 ### `-drilldown-series-limit-instant-split-interval`
 

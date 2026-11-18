@@ -310,6 +310,16 @@ func (s *seriesLimitScope) rankingGrid(lookback int64) (width, offset int64, buc
 	return width, offset, int(index(s.endNs)-index(s.startNs-lookback+1)) + 1, true
 }
 
+// rankingFallsBack reports a request whose ranking grid has far more buckets than splits: the split interval is not
+// a multiple of a shorter step (a 7 s step against 1h; no Grafana $__auto step), so the grid has a bucket per step,
+// more than 2x(splits+1) of them. Such a request is not ranked: the range == step answer reads its whole answer (an
+// answer past the byte bounds is Loki's limit error naming the flag), and a top-value read, which only runs once the
+// whole answer passed those bounds, answers that error.
+func (s *seriesLimitScope) rankingFallsBack(lookback int64) bool {
+	width, _, buckets, ok := s.rankingGrid(lookback)
+	return ok && width < s.splitNs && int64(buckets) > 2*int64(s.splitOf(s.endNs)+2)
+}
+
 // rankedBound is the most series a VictoriaLogs ranking of limit+1 values returns for the request: limit+1, or in
 // the Loki mode limit+1 per bucket of its ranking grid (rankingGrid, the reads beginning a step before each step:
 // the ranked in() read of a range == step answer).
