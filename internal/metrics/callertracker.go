@@ -69,10 +69,16 @@ type CallerRequest struct {
 	User          string `json:"user"`
 	UserSource    string `json:"user_source"`
 	GrafanaSource string `json:"grafana_source,omitempty"`
-	Endpoint      string `json:"endpoint"`
-	Route         string `json:"route"`
-	Status        int    `json:"status"`
-	Query         string `json:"query,omitempty"`
+	// Surface and the versions are the request's typed client profile (internal/clientprofile): a closed surface
+	// name (api, explore, drilldown, datasource, unknown) and normalised major.minor.patch versions.
+	Surface           string `json:"surface,omitempty"`
+	GrafanaVersion    string `json:"grafana_version,omitempty"`
+	DatasourceVersion string `json:"datasource_version,omitempty"`
+	DrilldownVersion  string `json:"drilldown_version,omitempty"`
+	Endpoint          string `json:"endpoint"`
+	Route             string `json:"route"`
+	Status            int    `json:"status"`
+	Query             string `json:"query,omitempty"`
 	CallerCost
 }
 

@@ -1,5 +1,7 @@
 {
   "cases": [
+    "drilldown/client-detection-captured-header-sets | applies_to",
+    "drilldown/client-detection-captured-header-sets | compare:observed",
     "drilldown/detected-field-values | compare:observed",
     "drilldown/detected-field-values | gap:open",
     "drilldown/detected-field-values | query",
@@ -1090,9 +1092,6 @@
     "semantics/unwrap-identity-key-order | compare:observed",
     "semantics/unwrap-identity-key-order | gap:fixed",
     "semantics/unwrap-identity-key-order | query",
-    "semantics/unwrap-identity-nan-partials | compare:observed",
-    "semantics/unwrap-identity-nan-partials | gap:fixed",
-    "semantics/unwrap-identity-nan-partials | query",
     "semantics/unwrap-in-log-query | compare:observed",
     "semantics/unwrap-in-log-query | gap:fixed",
     "semantics/unwrap-in-log-query | query",
@@ -1274,6 +1273,7 @@
     "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
+    "internal/clientprofile/detect_test.go | drilldown/client-detection-captured-header-sets",
     "internal/config/generate_edge_test.go | operator-configurable-limits",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
     "internal/config/registry_test.go | operator-configurable-limits",
@@ -1486,6 +1486,8 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
     "internal/proxy/chunked_range_windows_loki_test.go | drilldown/long-range-pieces-answer-like-loki",
     "internal/proxy/chunked_range_windows_loki_test.go | loki_api_v1_query_range",
+    "internal/proxy/client_profile_capture_test.go | drilldown/client-detection-captured-header-sets",
+    "internal/proxy/client_profile_capture_test.go | observability-slow-query-log",
     "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
     "internal/proxy/comment_before_call_test.go | semantics/comment-between-function-and-parenthesis-accepted",
     "internal/proxy/comment_forms_test.go | semantics/comment-between-function-and-parenthesis-accepted",
@@ -2343,8 +2345,6 @@
     "internal/proxy/unwrap_fuzz_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/unwrap_fuzz_test.go | semantics/unwrap-sample-validity",
     "internal/proxy/unwrap_gate_spec_test.go | architecture-syntax-package-layering",
-    "internal/proxy/unwrap_nan_mark_test.go | semantics/unwrap-gate-parsefloat-divergences",
-    "internal/proxy/unwrap_nan_mark_test.go | semantics/unwrap-identity-nan-partials",
     "internal/proxy/unwrap_over_time_reference_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/unwrap_over_time_reference_test.go | window-bounds-and-step-alignment",
     "internal/proxy/unwrap_over_time_window_test.go | metric-series-identity",
@@ -2593,9 +2593,6 @@
     "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go | metric-series-identity",
     "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go | semantics/unwrap-identity-key-order",
     "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
-    "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go | metric-series-identity",
-    "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go | semantics/unwrap-identity-nan-partials",
-    "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
@@ -3281,6 +3278,7 @@
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "test/e2e-fleet/vl_refusal_test.go | semantics/error-cache-vl-refusal-peer-sync",
     "test/e2e-fleet/vl_refusal_test.go | vl-query-too-long",
+    "test/e2e-ui/tests/client-detection.spec.ts | drilldown/client-detection-captured-header-sets",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
@@ -3290,14 +3288,14 @@
     "case_consumers": {
       "any": 50,
       "api": 120,
-      "drilldown": 55,
-      "explore": 206,
+      "drilldown": 56,
+      "explore": 205,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
       "go": 764,
-      "playwright": 2
+      "playwright": 3
     },
     "page_kinds": {
       "drilldown": 18,
@@ -3495,6 +3493,10 @@
     "tail-json-filter"
   ],
   "playwright_cells": [
+    "client-detection.spec.ts | Explore requests are Explore, never Drilldown @explore-core @cov:drilldown/client-detection-captured-header-sets",
+    "client-detection.spec.ts | every Logs Drilldown request is recognised as Drilldown @drilldown-core @cov:drilldown/client-detection-captured-header-sets",
+    "client-detection.spec.ts | shard:drilldown-core-tail",
+    "client-detection.spec.ts | shard:explore-core",
     "datasource.spec.ts | a dotted name is Loki's parse error on the Explore and Drilldown datasources @cov:profiles/dotted-name-parse-error @cov:profiles/grafana-shows-loki-error-text",
     "datasource.spec.ts | datasource health check succeeds",
     "datasource.spec.ts | shard:regression-datasource",
