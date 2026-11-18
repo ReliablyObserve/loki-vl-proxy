@@ -111,6 +111,28 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	return b.String()
 }
 
+// fenceVariablesResolved is query with its Grafana range variables (`[$__interval]`, `[$__auto]`, `[$__range]`,
+// `${__rate_interval}`) resolved, as the handlers read it, for the fences that read the query's plan. The parser keeps a
+// label_replace call whose first argument holds a variable as text it cannot type, and the handlers resolve the
+// variable before they answer (resolveGrafanaRangeTemplateTokens), so the call is a typed one there, with whatever
+// the call wraps (a binary operation, an aggregation of an unwrap, a `without ()` operand); the plan of the
+// unresolved text holds an opaque node and hides all of it. What the tree holds does not depend on the length a
+// variable resolves to, so the request's window and step are not read. A query with no variable (a `$1`
+// replacement reference is none) is returned as it is, without a read of its text beyond one scan.
+func fenceVariablesResolved(query string) string {
+	for i := 0; i < len(query); i++ {
+		j := strings.IndexByte(query[i:], '$')
+		if j < 0 {
+			return query
+		}
+		i += j
+		if i+1 < len(query) && (query[i+1] == '_' || query[i+1] == '{') {
+			return resolveGrafanaRangeTemplateTokens(query, "", "", "")
+		}
+	}
+	return query
+}
+
 // fenceChain concatenates the fences that fire; one fence (or none) is
 // returned as its constant, without building a string.
 type fenceChain struct {
@@ -310,7 +332,8 @@ func dynamicUnwrapIdentityResponseKeyVersion(query string) string {
 	if !dynamicIdentityFenceScreen(query, strings.Contains(query, "\u0130")) {
 		return ""
 	}
-	if plan := resolvedPlan(query); plan != nil && lower.WritesDynamicUnwrapIdentity(plan) {
+	// The variables are resolved after the screen: it reads words a variable does not hold.
+	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && lower.WritesDynamicUnwrapIdentity(plan) {
 		return dynamicUnwrapIdentityResponseVersion
 	}
 	return ""
