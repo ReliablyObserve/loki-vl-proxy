@@ -55,7 +55,7 @@ compare:
   expect: "NaN at every step whose windows hold a series of NaN, as Loki."
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1667"
   impact: edge
   effort: S
   area: "internal/proxy (unwrap_conversion_error.go: the counting gate's rewrite of a parser's series identity)"
