@@ -61,7 +61,7 @@ func emptyWithoutOperandResponseKeyVersion(query string) string {
 	if v := cachedQueryValidation(query); v.msg != "" && !v.tree {
 		return ""
 	}
-	if plan := resolvedPlan(dynamicQuery(query)); plan != nil && holdsEmptyWithoutOperand(plan.Root) {
+	if plan := resolvedPlan(dynamicQuery(fenceVariablesResolved(query))); plan != nil && holdsEmptyWithoutOperand(plan.Root) {
 		return emptyWithoutOperandResponseVersion
 	}
 	return ""
