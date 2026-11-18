@@ -788,6 +788,7 @@
       "internal/querycorpus/listed_window_chunks_loki_diff_test.go",
       "internal/querycorpus/series_fold_loki_diff_test.go",
       "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go",
+      "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go",
       "internal/translator/nested_vector_chain_test.go",
       "internal/translator/series_aggregation_test.go",
       "internal/translator/unwrap_logfmt_narrow_test.go",
@@ -2486,6 +2487,7 @@
       "internal/proxy/unwrap_bytes_gate_property_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
+      "internal/proxy/unwrap_nan_mark_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
       "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
       "internal/translate/unwrap_gate_syntax_test.go",
@@ -2497,6 +2499,10 @@
       "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go",
       "internal/queryplan/lower/unwrap_dynamic_test.go",
       "internal/testutil/vlemu/series_fold_test.go"
+    ],
+    "semantics/unwrap-identity-nan-partials": [
+      "internal/proxy/unwrap_nan_mark_test.go",
+      "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go"
     ],
     "semantics/unwrap-in-log-query": [
       "internal/logql/range_unwrap_grammar_loki_test.go",
@@ -2544,6 +2550,7 @@
       "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
       "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go",
+      "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go",
       "internal/queryplan/lower/parser_label_filters_test.go",
       "internal/queryplan/lower/series_fold_test.go",
       "internal/queryplan/lower/unwrap_dynamic_split_test.go",
@@ -2970,7 +2977,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 671,
+  "registry_items": 672,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4908,6 +4915,10 @@
     "internal/proxy/unwrap_gate_spec_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/proxy/unwrap_nan_mark_test.go": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-identity-nan-partials"
+    ],
     "internal/proxy/unwrap_over_time_reference_test.go": [
       "semantics/unwrap-over-time-range-windows",
       "window-bounds-and-step-alignment"
@@ -5330,6 +5341,11 @@
     "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go": [
       "metric-series-identity",
       "semantics/unwrap-identity-key-order",
+      "semantics/unwrap-per-series-identity-raw-rows"
+    ],
+    "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go": [
+      "metric-series-identity",
+      "semantics/unwrap-identity-nan-partials",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/querycorpus/vector_agg_blank_grid_test.go": [
@@ -6560,7 +6576,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 770,
+  "tests_with_markers": 772,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6662,5 +6678,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 461
+  "wired_items": 462
 }
