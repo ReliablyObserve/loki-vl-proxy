@@ -1395,6 +1395,14 @@
       "internal/proxy/error_flights_test.go",
       "test/e2e-compat/error_flights_live_test.go"
     ],
+    "semantics/error-cache-vl-refusal-held": [
+      "internal/proxy/vl_refusal_test.go"
+    ],
+    "semantics/error-cache-vl-refusal-peer-sync": [
+      "internal/cache/peer_everywhere_test.go",
+      "internal/proxy/vl_refusal_test.go",
+      "test/e2e-fleet/vl_refusal_test.go"
+    ],
     "semantics/error-coalescing-no-inherited-cancel": [
       "internal/middleware/coalescer_cancel_test.go",
       "internal/proxy/error_flights_edge_test.go",
@@ -2830,14 +2838,55 @@
     "vl-empty-in-matches-nothing": [
       "test/e2e-compat/vl_empty_in_test.go"
     ],
+    "vl-extra-filters-too-long": [
+      "internal/logsql/refusal_test.go",
+      "internal/proxy/vl_refusal_oracle_test.go"
+    ],
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
+    ],
+    "vl-math-quoted-constant-clone-crash": [
+      "internal/logsql/refusal_table_test.go",
+      "internal/logsql/refusal_test.go",
+      "internal/proxy/vl_refusal_oracle_test.go",
+      "internal/proxy/vl_refusal_test.go"
     ],
     "vl-phrase-filter-quoted-names": [
       "test/e2e-compat/vl_pattern_lines_test.go"
     ],
+    "vl-pipe-before-release": [
+      "internal/logsql/refusal_table_test.go",
+      "internal/proxy/vl_refusal_oracle_test.go",
+      "test/e2e-compat/vl_refusal_prediction_test.go"
+    ],
+    "vl-query-too-long": [
+      "internal/logsql/refusal_table_test.go",
+      "internal/logsql/refusal_test.go",
+      "internal/proxy/vl_refusal_oracle_test.go",
+      "internal/proxy/vl_refusal_test.go",
+      "test/e2e-compat/vl_refusal_prediction_test.go",
+      "test/e2e-fleet/vl_refusal_test.go"
+    ],
     "vl-sort-ties-by-text": [
       "test/e2e-compat/vl_pattern_lines_test.go"
+    ],
+    "vl-stats-missing-stats-pipe": [
+      "internal/logsql/refusal_table_test.go",
+      "internal/proxy/vl_refusal_oracle_test.go",
+      "test/e2e-compat/vl_refusal_prediction_test.go"
+    ],
+    "vl-stats-pipe-after-stats": [
+      "internal/logsql/refusal_table_test.go",
+      "internal/logsql/refusal_test.go",
+      "internal/proxy/vl_refusal_oracle_test.go",
+      "test/e2e-compat/vl_refusal_prediction_test.go"
+    ],
+    "vl-stats-range-pipe-before-stats": [
+      "internal/logsql/refusal_table_test.go",
+      "internal/logsql/refusal_test.go",
+      "internal/proxy/vl_refusal_oracle_test.go",
+      "internal/proxy/vl_refusal_test.go",
+      "test/e2e-compat/vl_refusal_prediction_test.go"
     ],
     "vl-zstd-response-window": [
       "test/e2e-compat/vl_zstd_response_window_test.go"
@@ -2880,7 +2929,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 650,
+  "registry_items": 660,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2915,6 +2964,9 @@
     ],
     "internal/cache/peer_close_conn_test.go": [
       "shutdown-releases-background-work"
+    ],
+    "internal/cache/peer_everywhere_test.go": [
+      "semantics/error-cache-vl-refusal-peer-sync"
     ],
     "internal/cache/peer_hedge_test.go": [
       "peer-cache-patterns",
@@ -3127,6 +3179,21 @@
     ],
     "internal/logsql/pipe_math_as_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/logsql/refusal_table_test.go": [
+      "vl-math-quoted-constant-clone-crash",
+      "vl-pipe-before-release",
+      "vl-query-too-long",
+      "vl-stats-missing-stats-pipe",
+      "vl-stats-pipe-after-stats",
+      "vl-stats-range-pipe-before-stats"
+    ],
+    "internal/logsql/refusal_test.go": [
+      "vl-extra-filters-too-long",
+      "vl-math-quoted-constant-clone-crash",
+      "vl-query-too-long",
+      "vl-stats-pipe-after-stats",
+      "vl-stats-range-pipe-before-stats"
     ],
     "internal/logsql/reserved_fields_test.go": [
       "semantics/translator-writes-reserved-field-names"
@@ -4841,6 +4908,22 @@
     "internal/proxy/vl_calls_header_test.go": [
       "quality/edge-cache-oversized-reply"
     ],
+    "internal/proxy/vl_refusal_oracle_test.go": [
+      "vl-extra-filters-too-long",
+      "vl-math-quoted-constant-clone-crash",
+      "vl-pipe-before-release",
+      "vl-query-too-long",
+      "vl-stats-missing-stats-pipe",
+      "vl-stats-pipe-after-stats",
+      "vl-stats-range-pipe-before-stats"
+    ],
+    "internal/proxy/vl_refusal_test.go": [
+      "semantics/error-cache-vl-refusal-held",
+      "semantics/error-cache-vl-refusal-peer-sync",
+      "vl-math-quoted-constant-clone-crash",
+      "vl-query-too-long",
+      "vl-stats-range-pipe-before-stats"
+    ],
     "internal/proxy/vl_regexp_class_oracle_test.go": [
       "quality/probe-regexp-parse-cost"
     ],
@@ -6329,6 +6412,13 @@
       "vl-phrase-filter-quoted-names",
       "vl-sort-ties-by-text"
     ],
+    "test/e2e-compat/vl_refusal_prediction_test.go": [
+      "vl-pipe-before-release",
+      "vl-query-too-long",
+      "vl-stats-missing-stats-pipe",
+      "vl-stats-pipe-after-stats",
+      "vl-stats-range-pipe-before-stats"
+    ],
     "test/e2e-compat/vl_zstd_response_window_test.go": [
       "vl-zstd-response-window"
     ],
@@ -6361,6 +6451,10 @@
       "quality/query-range-extent-cache",
       "quality/query-range-extent-cache-large-answer"
     ],
+    "test/e2e-fleet/vl_refusal_test.go": [
+      "semantics/error-cache-vl-refusal-peer-sync",
+      "vl-query-too-long"
+    ],
     "test/e2e-ui/tests/datasource.spec.ts": [
       "profiles/dotted-name-parse-error",
       "profiles/grafana-shows-loki-error-text",
@@ -6370,7 +6464,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 749,
+  "tests_with_markers": 756,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6470,5 +6564,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 445
+  "wired_items": 454
 }

@@ -38,6 +38,9 @@ type requestTelemetry struct {
 	// failure is the failure the request answered through the error layer,
 	// for the error cache (error_flights.go).
 	failure flightFailure
+	// predictedRefusal: a call of the request was answered by a predicted
+	// VictoriaLogs refusal instead of being sent (vl_refusal.go).
+	predictedRefusal bool
 	// callerAttrs are the caller's log fields, resolved by the first line that names the caller and shared by the
 	// request's later lines (query_caller.go); callerResolved is set with them.
 	callerAttrs    []any
