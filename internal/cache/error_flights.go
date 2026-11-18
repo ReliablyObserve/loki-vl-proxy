@@ -308,6 +308,13 @@ func (e *ErrorFlights) Hold(key string, a *Answer, ttl time.Duration) time.Time 
 	return time.Time{}
 }
 
+// HeldHint marks a key: it is never answered.
+var HeldHint = &Answer{}
+
+// HeldHintKey is where Finish marks a flight key whose failure is held under
+// the leader's exact key (Answer.Key).
+func HeldHintKey(join string) string { return join + "\x00held" }
+
 // Drop removes the answer held for key, if any.
 func (e *ErrorFlights) Drop(key string) {
 	e.mu.Lock()
@@ -328,38 +335,45 @@ type AnswerBuilder interface {
 }
 
 func (e *ErrorFlights) Finish(key string, f *Flight, o Outcome, build AnswerBuilder, pol Policy) (*Answer, time.Duration) {
-	e.mu.Lock()
-	if e.flights[key] == f {
-		delete(e.flights, key) // no request joins after this
-	}
-	e.mu.Unlock()
 	var a *Answer
-	switch o {
-	case OutcomeFailed:
+	var ttl time.Duration
+	if o == OutcomeFailed {
+		// The failure is built while the flight still takes joins, and held in
+		// the same step that removes the flight: a request arriving at any
+		// moment waits on the flight or reads the held failure, never leads a
+		// second one.
 		if build != nil {
 			a = build.BuildAnswer()
 		}
 		if a == nil || len(a.Body) > e.maxAnswerBytes || !pol.Shares(a.Class) {
 			o, a = OutcomeUnshared, nil
+		} else {
+			ttl = pol.TTL(a.Class)
 		}
-	case OutcomeSucceeded:
+	}
+	e.mu.Lock()
+	if e.flights[key] == f {
+		delete(e.flights, key) // no request joins after this
+	}
+	if ttl > 0 {
+		held := key
+		if a.Key != "" {
+			held = a.Key
+		}
+		e.holdLocked(held, a, ttl)
+		if held != key {
+			// Requests joining on the coarser key look for the held failure
+			// under their exact key while it is held.
+			e.holdLocked(HeldHintKey(key), HeldHint, ttl)
+		}
+	}
+	e.mu.Unlock()
+	if o == OutcomeSucceeded {
 		if f.joined.Load() > 0 && build != nil {
 			a = build.BuildAnswer()
 		}
 		if a == nil {
 			o = OutcomeReleased
-		}
-	}
-	var ttl time.Duration
-	if o == OutcomeFailed {
-		if ttl = pol.TTL(a.Class); ttl > 0 {
-			held := key
-			if a.Key != "" {
-				held = a.Key
-			}
-			e.mu.Lock()
-			e.holdLocked(held, a, ttl)
-			e.mu.Unlock()
 		}
 	}
 	f.end(o, a)

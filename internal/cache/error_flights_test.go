@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -281,5 +282,113 @@ func TestErrorFlightsSuccessAndSecondKey(t *testing.T) {
 	defer restore()
 	if e.Peek("w") != nil {
 		t.Fatal("expired")
+	}
+}
+
+// joinProbe is an answer builder that, while the leader builds its failed
+// answer (after it stopped running), sends one more identical request: that
+// request must wait on the flight or read the held failure, never lead.
+type joinProbe struct {
+	e    *ErrorFlights
+	key  string
+	a    *Answer
+	lead bool
+	f    *Flight
+}
+
+func (b *joinProbe) BuildAnswer() *Answer {
+	_, b.f, b.lead = b.e.Join(b.key, nil)
+	return b.a
+}
+
+// A request arriving while the leader's failure is being ended joins the
+// flight or reads the held failure: there is no moment where the flight is
+// gone and its failure not yet held.
+//
+// conformance: semantics/error-coalescing-request-flights
+func TestErrorFlightsFailureHeldBeforeFlightEnds(t *testing.T) {
+	e := NewErrorFlights(16, 1<<20, 1<<10, true)
+	_, f, lead := e.Lookup("k")
+	if !lead {
+		t.Fatal("first request must lead")
+	}
+	ans := failed(ErrorData, "maximum of series (500) reached for a single query")
+	probe := &joinProbe{e: e, key: "k", a: ans}
+	if _, ttl := e.Finish("k", f, OutcomeFailed, probe, testPolicy); ttl != 5*time.Second {
+		t.Fatalf("held for %v, want 5s", ttl)
+	}
+	if probe.lead {
+		t.Fatal("a request arriving while the failure is ended led a second flight")
+	}
+	if probe.f != f {
+		t.Fatal("a request arriving before the failure is held waits on the leader's flight")
+	}
+	if o, a, ok := probe.f.Wait(context.Background()); !ok || o != OutcomeFailed || a != ans {
+		t.Fatalf("the late follower got %v %v", o, a)
+	}
+	if held, _, lead := e.Lookup("k"); held != ans || lead {
+		t.Fatal("after the flight ends its failure is held")
+	}
+
+	// A flight joined on a coarser key holds the failure under the leader's
+	// exact key and marks the coarser key in the same step.
+	_, f, _ = e.Lookup("pre")
+	exact := failed(ErrorData, "x")
+	exact.Key = "exact"
+	probe = &joinProbe{e: e, key: "pre", a: exact}
+	e.Finish("pre", f, OutcomeFailed, probe, testPolicy)
+	if probe.lead || probe.f != f {
+		t.Fatal("a request arriving while a pre-key failure is ended waits on the flight")
+	}
+	if e.Peek("exact") != exact || e.Peek(HeldHintKey("pre")) != HeldHint || e.Peek("pre") != nil {
+		t.Fatal("the failure is held under the exact key, the hint under the pre-key")
+	}
+}
+
+// slowBuilder builds its answer after a pause, widening the moment between
+// the leader's end and its failure being held.
+type slowBuilder struct{ a *Answer }
+
+func (b slowBuilder) BuildAnswer() *Answer { time.Sleep(200 * time.Microsecond); return b.a }
+
+// Identical requests racing a failing leader send one request in total: every
+// other one waits on the flight or reads the held failure (run with -race and
+// a high -count).
+//
+// conformance: semantics/error-coalescing-request-flights
+func TestErrorFlightsBurstLeadsOnce(t *testing.T) {
+	e := NewErrorFlights(16, 1<<20, 1<<10, true)
+	long := NewPolicy(time.Minute, time.Minute, time.Minute) // outlives any stall of the run
+	ans := failed(ErrorData, "maximum of series (500) reached for a single query")
+	var leads atomic.Int64
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for j := 0; j < 50; j++ {
+				held, f, lead := e.Lookup("k")
+				switch {
+				case held != nil:
+					if held != ans {
+						t.Error("held answer differs")
+					}
+				case lead:
+					leads.Add(1)
+					e.Finish("k", f, OutcomeFailed, slowBuilder{ans}, long)
+				default:
+					if o, a, _ := f.Wait(context.Background()); o != OutcomeFailed || a != ans {
+						t.Errorf("follower got %v %v", o, a)
+					}
+				}
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if n := leads.Load(); n != 1 {
+		t.Fatalf("%d leaders for one failing request held for a minute, want 1", n)
 	}
 }
