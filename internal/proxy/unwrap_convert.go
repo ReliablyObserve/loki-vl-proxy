@@ -63,12 +63,16 @@ var humanBytesTable = func() map[string]uint64 {
 // bytes; that is kept, a non-ASCII digit shortens the number read. Checked on every input of
 // TestUnwrapBytesPatternAgreesWithParseBytesOnGeneratedInputs against ParseBytes itself.
 func parseHumanBytes(s string) (uint64, error) {
-	runes, comma := 0, false
+	runes, comma, dot := 0, false, false
+scan:
 	for _, r := range s {
-		if r == ',' {
+		switch {
+		case r == ',':
 			comma = true
-		} else if r != '.' && !unicode.IsDigit(r) {
-			break
+		case r == '.':
+			dot = true
+		case !unicode.IsDigit(r):
+			break scan
 		}
 		runes++
 	}
@@ -76,22 +80,29 @@ func parseHumanBytes(s string) (uint64, error) {
 	if comma {
 		num = strings.ReplaceAll(num, ",", "")
 	}
-	f, err := strconv.ParseFloat(num, 64)
-	if err != nil {
-		return 0, err
+	// A whole number uint64 holds is read exactly (and is also one ParseFloat reads, so the error order is
+	// humanize's); any other number goes through ParseFloat.
+	whole, wholeErr := uint64(0), error(nil)
+	if !dot {
+		whole, wholeErr = strconv.ParseUint(num, 10, 64)
+	}
+	var f float64
+	if dot || wholeErr != nil {
+		var err error
+		if f, err = strconv.ParseFloat(num, 64); err != nil {
+			return 0, err
+		}
 	}
 	unit := strings.ToLower(strings.TrimSpace(s[runes:]))
 	m, ok := humanBytesTable[unit]
 	if !ok {
 		return 0, fmt.Errorf("unhandled size name: %v", unit)
 	}
-	if !strings.ContainsRune(num, '.') {
-		if v, perr := strconv.ParseUint(num, 10, 64); perr == nil {
-			if hi, lo := bits.Mul64(v, m); hi == 0 {
-				return lo, nil
-			}
-			return 0, fmt.Errorf("too large: %v", s)
+	if !dot && wholeErr == nil {
+		if hi, lo := bits.Mul64(whole, m); hi == 0 {
+			return lo, nil
 		}
+		return 0, fmt.Errorf("too large: %v", s)
 	}
 	f *= float64(m)
 	if f >= math.MaxUint64 {

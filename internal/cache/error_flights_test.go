@@ -73,6 +73,7 @@ func TestErrorPolicyClasses(t *testing.T) {
 		{ErrorTransient, time.Second, true},
 		{ErrorData, 0, false},
 		{ErrorRequest, 0, true},
+		{ErrorRefusal, 0, true},
 	}
 	for _, c := range cases {
 		if got := pol.TTL(c.class); got != c.ttl {
@@ -90,8 +91,11 @@ func TestErrorPolicyClasses(t *testing.T) {
 	if o, _, _ := f.Wait(context.Background()); o != OutcomeUnshared {
 		t.Fatalf("a class the policy excludes must not be shared, got %v", o)
 	}
-	if got := ErrorClasses(); len(got) != 3 || got[0].String() != "transient" || got[1].String() != "data" || got[2].String() != "request" {
+	if got := ErrorClasses(); len(got) != 4 || got[0].String() != "transient" || got[1].String() != "data" || got[2].String() != "request" || got[3].String() != "vl_refusal" {
 		t.Fatalf("classes %v", got)
+	}
+	if got := NewPolicy(0, 0, 0).WithRefusal(time.Minute).TTL(ErrorRefusal); got != time.Minute {
+		t.Fatalf("refusal TTL %v, want 1m", got)
 	}
 	if ErrorClass(9).String() != "never" || NewPolicy(-time.Second, 0, 0).TTL(ErrorTransient) != 0 {
 		t.Fatal("unknown class or negative TTL must hold nothing")

@@ -1,6 +1,6 @@
 {
   "registry": {
-    "cases_defined": 428,
+    "cases_defined": 436,
     "live_cases_blocked": 1,
     "live_cases_gap": 0,
     "live_cases_hold": 0,
@@ -41,7 +41,7 @@
   "versions": {
     "grafana": {
       "matrix": [],
-      "pinned": "13.3.0"
+      "pinned": "13.3.1"
     },
     "grafana_client_detection": {
       "matrix": [],
@@ -49,6 +49,7 @@
     },
     "grafana_loki_datasource_contract": {
       "matrix": [
+        "13.3.1",
         "13.3.0",
         "13.2.5",
         "13.2.3",
@@ -64,6 +65,7 @@
     },
     "logs_drilldown_contract": {
       "matrix": [
+        "3.2.0",
         "3.1.0",
         "3.0.0",
         "2.6.0",
@@ -93,7 +95,7 @@
         "1.0.35",
         "1.0.34"
       ],
-      "pinned": "3.1.0"
+      "pinned": "3.2.0"
     },
     "loki": {
       "matrix": [

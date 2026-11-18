@@ -239,6 +239,9 @@ type proxyRuntimeConfig struct {
 	errorCacheDataTTL                   time.Duration
 	errorCacheMaxEntries                int
 	errorCacheMaxBytes                  int
+	errorCacheVLRefusalTTL              time.Duration
+	errorCachePeerSync                  bool
+	vlRefusalPrediction                 bool
 	coldBackendURL                      string
 	coldBackendBoundary                 time.Duration
 	coldBackendOverlap                  time.Duration
@@ -518,11 +521,14 @@ func run(
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
 	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead. It also turns off the request-level join: identical read requests in flight then run each on their own (held failures are still answered, see -error-cache-enabled)")
-	errorCacheEnabled := fs.Bool("error-cache-enabled", true, "Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held. Identical requests in flight share one run either way (see -coalescer-disabled)")
+	errorCacheEnabled := fs.Bool("error-cache-enabled", true, "Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held, except VictoriaLogs' refusal of the query the proxy wrote, which the same release always gives (see -error-cache-vl-refusal-ttl). Identical requests in flight share one run either way (see -coalescer-disabled)")
 	errorCacheTransientTTL := fs.Duration("error-cache-transient-ttl", proxy.DefaultErrorCacheTransientTTL, "How long a backend failure (VictoriaLogs 5xx, 429 or queue timeout, a refused or reset connection) is held per request; 0 holds none. A timeout or an aborted body is never held. Each replica asks VictoriaLogs at most once per this TTL per failing request, and the first request after VictoriaLogs recovers answers within it")
 	errorCacheDataTTL := fs.Duration("error-cache-data-ttl", proxy.DefaultErrorCacheDataTTL, "How long a failure read from the data in the request's window (Loki's series limit, a line or response size limit, a JSON parser or unwrap conversion error under a metric) is held per request; 0 holds none. The same window fails the same way until new lines arrive")
 	errorCacheMaxEntries := fs.Int("error-cache-max-entries", proxy.DefaultErrorCacheMaxEntries, "Most failed answers held per replica (oldest evicted first); 0 uses the default")
 	errorCacheMaxBytes := fs.Int("error-cache-max-bytes", proxy.DefaultErrorCacheMaxBytes, "Most bytes of failed answers held per replica (oldest evicted first; a single answer above 64 KiB is never held); 0 uses the default")
+	errorCacheVLRefusalTTL := fs.Duration("error-cache-vl-refusal-ttl", proxy.DefaultErrorCacheVLRefusalTTL, "How long a VictoriaLogs refusal of the query the proxy wrote (a parse error, a stats shape VictoriaLogs does not run, a query over its -search.maxQueryLen) is held per request, a parse or stats shape refusal for every window of the query; keyed by the VictoriaLogs release and the configuration, so a release change or a reload asks again. 0 holds none. At 30s or more a refusal VictoriaLogs answered is pushed to every peer (see -error-cache-peer-sync)")
+	errorCachePeerSync := fs.Bool("error-cache-peer-sync", true, "Push a VictoriaLogs refusal held for 30s or more to every peer of the peer cache, so the fleet asks VictoriaLogs about once per hold; a peer holds it only when it runs the same build against the same VictoriaLogs release with the same routing configuration, and an answer computed with forwarded credentials stays on its replica")
+	vlRefusalPrediction := fs.Bool("vl-refusal-prediction", true, "Answer a VictoriaLogs call that the detected VictoriaLogs release refuses before reading data (a pipe it lacks, a stats shape it refuses, a query over the -search.maxQueryLen its last refusal named, a query its handler would crash on) without sending it, as VictoriaLogs' refusal would be answered; nothing is predicted before the release is detected")
 	compatCacheEnabled := fs.Bool("compat-cache-enabled", true, "Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints")
 	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1. One entry holds at most a tenth of this budget: a larger query, query_range or series answer is kept in primary L1 memory instead (up to a tenth of -cache-max-bytes), where it shares L1 with the other cached answers; such an answer stays on the replica that computed it (not on disk, not pushed to peers)")
 
@@ -1105,6 +1111,9 @@ func run(
 			errorCacheDataTTL:                   *errorCacheDataTTL,
 			errorCacheMaxEntries:                *errorCacheMaxEntries,
 			errorCacheMaxBytes:                  *errorCacheMaxBytes,
+			errorCacheVLRefusalTTL:              *errorCacheVLRefusalTTL,
+			errorCachePeerSync:                  *errorCachePeerSync,
+			vlRefusalPrediction:                 *vlRefusalPrediction,
 			coldBackendURL:                      *coldBackendURL,
 			coldBackendBoundary:                 *coldBackendBoundary,
 			coldBackendOverlap:                  *coldBackendOverlap,
@@ -2328,7 +2337,12 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			DataTTL:      cfg.errorCacheDataTTL,
 			MaxEntries:   cfg.errorCacheMaxEntries,
 			MaxBytes:     cfg.errorCacheMaxBytes,
+			RefusalTTL:   cfg.errorCacheVLRefusalTTL,
+			// A refusal synced to peers needs the peer cache to reach them.
+			PeerSyncDisabled: !cfg.errorCachePeerSync,
 		},
+		VLRefusalPredictionDisabled:        !cfg.vlRefusalPrediction,
+		BuildVersion:                       version + "+" + revision,
 		BackendMinVersion:                  cfg.backendMinVersion,
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
@@ -2553,8 +2567,8 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
 	}
-	if cfg.errorCacheTransientTTL < 0 || cfg.errorCacheDataTTL < 0 {
-		return fmt.Errorf("invalid -error-cache-transient-ttl=%s / -error-cache-data-ttl=%s (must be >= 0; 0 holds no failure of that class)", cfg.errorCacheTransientTTL, cfg.errorCacheDataTTL)
+	if cfg.errorCacheTransientTTL < 0 || cfg.errorCacheDataTTL < 0 || cfg.errorCacheVLRefusalTTL < 0 {
+		return fmt.Errorf("invalid -error-cache-transient-ttl=%s / -error-cache-data-ttl=%s / -error-cache-vl-refusal-ttl=%s (must be >= 0; 0 holds no failure of that class)", cfg.errorCacheTransientTTL, cfg.errorCacheDataTTL, cfg.errorCacheVLRefusalTTL)
 	}
 	if cfg.peerReadHedgeMaxDelay < 0 {
 		return fmt.Errorf("invalid -peer-read-hedge-max-delay=%s (must be >= 0; 0 turns hedged peer reads off)", cfg.peerReadHedgeMaxDelay)

@@ -31,10 +31,15 @@ const (
 	// ErrorRequest is a failure the request alone decides (a query or a
 	// parameter the proxy refuses as Loki does, whatever the data).
 	ErrorRequest
+	// ErrorRefusal is VictoriaLogs refusing the query the proxy wrote before
+	// reading any data (a parse error, a stats shape it does not run, a query
+	// over its length limit): the same text on the same VictoriaLogs release
+	// always gets it, so it is held long, keyed by that release.
+	ErrorRefusal
 	errorClassCount
 )
 
-var errorClassNames = [errorClassCount]string{"never", "transient", "data", "request"}
+var errorClassNames = [errorClassCount]string{"never", "transient", "data", "request", "vl_refusal"}
 
 // String is the class's name, for metrics and logs.
 func (c ErrorClass) String() string {
@@ -45,7 +50,9 @@ func (c ErrorClass) String() string {
 }
 
 // ErrorClasses lists the classes that can be held, for metrics.
-func ErrorClasses() []ErrorClass { return []ErrorClass{ErrorTransient, ErrorData, ErrorRequest} }
+func ErrorClasses() []ErrorClass {
+	return []ErrorClass{ErrorTransient, ErrorData, ErrorRequest, ErrorRefusal}
+}
 
 // Policy is how long a failed answer of one request may be held, per class.
 // It is built from the request's plan (which classes the request can fail in)
@@ -60,6 +67,12 @@ type Policy struct {
 func NewPolicy(transient, data, request time.Duration) Policy {
 	var p Policy
 	p.ttl[ErrorTransient], p.ttl[ErrorData], p.ttl[ErrorRequest] = transient, data, request
+	return p
+}
+
+// WithRefusal is p holding VictoriaLogs' refusals (ErrorRefusal) for ttl.
+func (p Policy) WithRefusal(ttl time.Duration) Policy {
+	p.ttl[ErrorRefusal] = ttl
 	return p
 }
 

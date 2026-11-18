@@ -1,0 +1,35 @@
+id: semantics/unwrap-sliding-infinity-point
+title: "A sliding window over lines of inf and -inf misses the point Loki answers +Inf, by VictoriaLogs' block layout (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  `sum(avg_over_time({service_name="nan1"} | regexp <the duration_ms value as d> | unwrap d [1m]))`
+  at a 20 s step over one series of `2` and `inf` in one bucket, then `NaN` and `3`, then `inf` and `-inf`:
+  Loki answers `+Inf` at 1767223840 (the window that holds `2` and `inf`); the proxy has no point there in
+  20 of 20 live runs on VictoriaLogs v1.53.0 and v1.49.0, while a recording of the same data and query
+  in another layout matched Loki (2026-11-18, Loki engine 3.7.9). The step of 60 s and `[5m]`
+  windows match. VictoriaLogs' `sum` keeps NaN as its empty value and skips it in a float column, so
+  the bucket partials of infinities depend on the block layout; the window evaluator then reads no
+  value for the bucket.
+
+  Fix to make: the bucket partials of infinities read the same whatever the layout (as the nan rows
+  are flagged apart), held to recorded Loki answers in several layouts.
+request:
+  scope: query-grammar
+  entry: "the reproduction above (data and query), Loki engine oracle and VictoriaLogs serve oracle"
+  setup: "Send as the query of /loki/api/v1/query_range, step 20 s, over one series of lines 2 and inf in one second: the query above."
+compare:
+  mode: exact
+  fields: [series, values]
+  expect: "Loki's +Inf at the steps whose window holds the infinity."
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy (window evaluator over bucket partials of infinities)'
+  loki: '+Inf at the window holding inf'
+  proxy: 'no point there, by layout'
+  planned_test: 'a recorded Loki differential of infinities read in several block layouts'
+  clusters: []
