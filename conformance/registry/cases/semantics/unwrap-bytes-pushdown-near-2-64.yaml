@@ -19,7 +19,7 @@ request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'sum_over_time({app="x"} | logfmt | unwrap bytes(v) [1m])'
+    query: 'sum by (service_name) (sum_over_time({service_name="cache-redis"} | logfmt | unwrap bytes(size_bytes) [5m]))'
     start: "<t-5m>"
     end: "<t>"
     step: "60"

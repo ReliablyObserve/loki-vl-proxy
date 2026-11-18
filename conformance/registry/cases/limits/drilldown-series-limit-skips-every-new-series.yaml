@@ -35,7 +35,7 @@ request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'sum by (pod) (count_over_time({app="sl"}[1m]))'
+    query: 'sum by (pod) (count_over_time({app="wide"}[1m]))'
     start: "<end-1h>"
     end: "<end>"
     step: "60"
