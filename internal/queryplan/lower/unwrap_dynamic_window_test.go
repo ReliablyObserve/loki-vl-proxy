@@ -11,7 +11,7 @@ import (
 
 // dynamicHashAhead is the identity pipes of a json parser over the unwrapped label n written before the unwrap gate
 // (Profile IdentityAhead): no math pipe reads the value again, the gate writes it last.
-const dynamicHashAhead = `| unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | pack_json fields (__lvp_p_*, level, detected_level, _stream) as __lvp_sid | hash(__lvp_sid) as __lvp_sid | filter "n":~`
+const dynamicHashAhead = `| unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | set_stream_fields __lvp_p_*, level, detected_level, _stream | rename _stream as __lvp_sid | hash(__lvp_sid) as __lvp_sid | filter "n":~`
 
 // With IdentityAhead the series hash stands before the unwrap gate, so the gate ends the pipes before the first stats
 // pipe (translate.SplitUnwrapGate reads it there) and that pipe groups by the clause's labels and the hash: the text
