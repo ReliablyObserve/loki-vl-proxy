@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientprofile"
 )
 
 type ctxKey int
@@ -96,6 +98,10 @@ type requestRouteMeta struct {
 }
 
 type grafanaClientProfile struct {
+	// client is the typed profile (clientprofile.Detect): surface, Grafana and Loki datasource versions, each a
+	// closed set or a normalised version. The fields below are the earlier string profile the response cache key
+	// and the Drilldown windowing read; version is client.Grafana's label ("" when unknown).
+	client            clientprofile.Profile
 	surface           string
 	sourceTag         string
 	version           string

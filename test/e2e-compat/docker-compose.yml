@@ -578,6 +578,9 @@ services:
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
+      # /debug/queries (admin token): the e2e-ui client-detection checks read the surface and versions it reports
+      # for each Grafana request (tests/client-detection.spec.ts).
+      - "-server.enable-query-analytics=true"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -705,6 +708,9 @@ services:
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
+      # /debug/queries (admin token): the e2e-ui client-detection checks read the surface and versions it reports
+      # for each Grafana request (tests/client-detection.spec.ts).
+      - "-server.enable-query-analytics=true"
     depends_on:
       victorialogs:
         condition: service_healthy

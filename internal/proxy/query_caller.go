@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientprofile"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
@@ -32,6 +33,7 @@ type requestCaller struct {
 	queryTags  string // Grafana's X-Query-Tags, as sent
 	sourceTag  string // the Source tag of X-Query-Tags (Explore, Drilldown, a dashboard's datasource)
 	surface    string // grafana_drilldown, grafana_loki_datasource, or "" when unknown
+	client     clientprofile.Profile
 }
 
 // newRequestCaller sanitizes what the request log, the slow lines and /debug/queries read about the caller.
@@ -41,6 +43,7 @@ func newRequestCaller(r *http.Request, tenant, user, userSource string, profile 
 		userSource: userSource,
 		tenant:     sanitizeCallerValue(tenant, callerIdentityMaxBytes),
 		sourceTag:  sanitizeCallerValue(profile.sourceTag, callerIdentityMaxBytes),
+		client:     profile.client,
 	}
 	if tags := r.Header.Values("X-Query-Tags"); len(tags) > 0 {
 		c.queryTags = sanitizeCallerValue(strings.Join(tags, ","), callerTagsMaxBytes)
@@ -229,6 +232,8 @@ func (p *Proxy) recordCallerCost(ctx context.Context, metricTenant, query string
 	}
 	req := metrics.CallerRequest{
 		Tenant: c.tenant, User: c.user, UserSource: c.userSource, GrafanaSource: c.sourceTag,
+		Surface: c.client.Surface.Label(), GrafanaVersion: versionLabel(c.client.Grafana),
+		DatasourceVersion: versionLabel(c.client.Datasource), DrilldownVersion: versionLabel(c.client.Drilldown),
 		Endpoint: endpoint, Route: route, Status: status, Query: query,
 		CallerCost: metrics.CallerCost{
 			DurationMs: elapsed.Milliseconds(), VLCalls: int64(vl.calls), VLMs: vl.dur.Milliseconds(),
@@ -242,6 +247,14 @@ func (p *Proxy) recordCallerCost(ctx context.Context, metricTenant, query string
 		req.Slow = 1
 	}
 	p.queryTracker.RecordRequest(req)
+}
+
+// versionLabel is a known version's label, "" for an unknown one (the callers view leaves it out).
+func versionLabel(v clientprofile.Version) string {
+	if !v.Known {
+		return ""
+	}
+	return v.Label()
 }
 
 // callerAttrCount is the length appendCallerAttrs gives c, so the shared slice is allocated at its size.
@@ -260,6 +273,15 @@ func callerAttrCount(c requestCaller) int {
 		n += 2
 	}
 	if c.queryTags != "" && !queryTagsAreSource(c.queryTags, c.sourceTag) {
+		n += 2
+	}
+	if c.client.Surface != clientprofile.SurfaceUnknown {
+		n += 2
+	}
+	if c.client.Datasource.Known {
+		n += 2
+	}
+	if c.client.Drilldown.Known {
 		n += 2
 	}
 	return n
@@ -283,6 +305,16 @@ func appendCallerAttrs(attrs []any, c requestCaller) []any {
 	}
 	if c.queryTags != "" && !queryTagsAreSource(c.queryTags, c.sourceTag) {
 		attrs = append(attrs, "grafana.query_tags", c.queryTags)
+	}
+	// The typed client profile: a closed surface name and normalised versions, never header text.
+	if c.client.Surface != clientprofile.SurfaceUnknown {
+		attrs = append(attrs, "client.surface", c.client.Surface.Label())
+	}
+	if c.client.Datasource.Known {
+		attrs = append(attrs, "grafana.datasource.version", c.client.Datasource.Label())
+	}
+	if c.client.Drilldown.Known {
+		attrs = append(attrs, "grafana.drilldown.version", c.client.Drilldown.Label())
 	}
 	return attrs
 }

@@ -19,6 +19,7 @@ import (
 
 	fj "github.com/valyala/fastjson"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientprofile"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
@@ -45,6 +46,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, req: r})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
 		ctx = context.WithValue(ctx, requestGrafanaClientKey, grafanaProfile)
+		ctx = clientprofile.With(ctx, grafanaProfile.client)
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
@@ -245,6 +247,22 @@ func truncateQuery(q string, maxLen int) string {
 }
 
 func detectGrafanaClientProfile(r *http.Request, endpoint, route string) grafanaClientProfile {
+	client := clientprofile.Detect(r.Header)
+	profile := grafanaRuntimeProfile(r, endpoint, route)
+	profile.client = client
+	// The Grafana family keeps its earlier reading of the User-Agent; the version that leaves the proxy (log lines,
+	// the VictoriaLogs request headers, drilldown-limits) is the normalised one, or none.
+	profile.version = ""
+	if client.Grafana.Known {
+		profile.version = client.Grafana.Label()
+	}
+	return profile
+}
+
+// grafanaRuntimeProfile is the string profile the response cache key and the Drilldown windowing read (surface,
+// runtime family, Drilldown and datasource profiles), without the typed client profile: the cache key computes it
+// on every lookup and needs nothing more.
+func grafanaRuntimeProfile(r *http.Request, endpoint, route string) grafanaClientProfile {
 	version := parseGrafanaVersionFromUserAgent(r.Header.Get("User-Agent"))
 	sourceTag := parseGrafanaSourceTag(r.Header.Values("X-Query-Tags"))
 	surface := "unknown"
