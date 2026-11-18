@@ -358,6 +358,7 @@ func (b slowBuilder) BuildAnswer() *Answer { time.Sleep(200 * time.Microsecond);
 // conformance: semantics/error-coalescing-request-flights
 func TestErrorFlightsBurstLeadsOnce(t *testing.T) {
 	e := NewErrorFlights(16, 1<<20, 1<<10, true)
+	long := NewPolicy(time.Minute, time.Minute, time.Minute) // outlives any stall of the run
 	ans := failed(ErrorData, "maximum of series (500) reached for a single query")
 	var leads atomic.Int64
 	var wg sync.WaitGroup
@@ -376,7 +377,7 @@ func TestErrorFlightsBurstLeadsOnce(t *testing.T) {
 					}
 				case lead:
 					leads.Add(1)
-					e.Finish("k", f, OutcomeFailed, slowBuilder{ans}, testPolicy)
+					e.Finish("k", f, OutcomeFailed, slowBuilder{ans}, long)
 				default:
 					if o, a, _ := f.Wait(context.Background()); o != OutcomeFailed || a != ans {
 						t.Errorf("follower got %v %v", o, a)
@@ -388,6 +389,6 @@ func TestErrorFlightsBurstLeadsOnce(t *testing.T) {
 	close(start)
 	wg.Wait()
 	if n := leads.Load(); n != 1 {
-		t.Fatalf("%d leaders for one failing request held for 5s, want 1", n)
+		t.Fatalf("%d leaders for one failing request held for a minute, want 1", n)
 	}
 }
