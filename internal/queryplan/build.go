@@ -172,7 +172,7 @@ func (b *builder) build(expr logql.Expr) (Node, error) {
 			b.seal(&n.p, start)
 			return n, nil
 		}
-		n := &Opaque{Raw: x.Raw}
+		n := &Opaque{Raw: x.Raw, Func: x.Func}
 		start := len(b.e.b)
 		b.e.tag(tagOpaque)
 		b.e.str(x.Raw)

@@ -63,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The response key fences of a ranking, `stddev` or `stdvar` over a binary operation now read a `label_replace` call
+  that holds a Grafana range variable (`[$__interval]`, `[$__auto]`, `[$__range]`, `${__rate_interval}`) as the
+  handlers read it. The parser keeps such a call as text and the handlers resolve the variable before they answer, so
+  the fences of `topk(1, label_replace(rate({...}[$__interval]), "pod", "x-$1", "pod", "(.*)") * 2)` and of
+  `sort(label_replace(rate({...}[$__range]) * 2, ...))` did not fire: an answer cached before the ranking over a
+  binary operation (semantics/rank-over-binary-operation) or the `label_replace` applied once
+  (semantics/rank-binary-operand-label-replace-once) fixes could be served again under the same key for these
+  spellings, for up to the history cache TTL (24h). Their keys now carry the fences, as the `[1m]` spellings' do.
 - `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
   `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
   `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
