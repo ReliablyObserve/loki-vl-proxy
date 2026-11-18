@@ -1538,9 +1538,20 @@ func normalizeBackendCompression(mode string) string {
 
 // decodedBackendBodyFloor is the least a decoded backend response may hold: the
 // request coalescer's own ceiling for a shared body, so the transport never
-// rejects a body the consumers behind it accept. A variable so tests can use a
-// small one.
-var decodedBackendBodyFloor int64 = 256 << 20
+// rejects a body the consumers behind it accept. Tests use a small one through
+// decodedBackendBodyFloorOverride.
+const defaultDecodedBackendBodyFloor int64 = 256 << 20
+
+// decodedBackendBodyFloorOverride replaces the floor when above zero. Atomic: tests set it while the goroutines of an
+// earlier test (a request still reading its body) may read it.
+var decodedBackendBodyFloorOverride atomic.Int64
+
+func decodedBackendBodyFloor() int64 {
+	if v := decodedBackendBodyFloorOverride.Load(); v > 0 {
+		return v
+	}
+	return defaultDecodedBackendBodyFloor
+}
 
 // backendZstdMaxWindow bounds the history a zstd response may declare in its
 // frame header; the decoder allocates it before decoding a byte. The encoders
@@ -1548,9 +1559,9 @@ var decodedBackendBodyFloor int64 = 256 << 20
 const backendZstdMaxWindow = 16 << 20
 
 // decodedBodyLimit is the decoded size a backend response may reach: the larger
-// of decodedBackendBodyFloor and -backend-max-buffered-response-bytes.
+// of decodedBackendBodyFloor() and -backend-max-buffered-response-bytes.
 func (p *Proxy) decodedBodyLimit() int64 {
-	return max(decodedBackendBodyFloor, int64(p.limits().BufferedBackendBodyBytes))
+	return max(decodedBackendBodyFloor(), int64(p.limits().BufferedBackendBodyBytes))
 }
 
 // decodeCompressedHTTPResponse replaces a gzip or zstd body with its decoded

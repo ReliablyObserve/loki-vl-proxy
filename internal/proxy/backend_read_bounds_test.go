@@ -440,9 +440,8 @@ func TestDecodeCompressedHTTPResponse_RejectsAnOversizedZstdWindow(t *testing.T)
 // POST answers with the same error.
 // conformance: semantics/backend-aborted-response
 func TestVLRequests_DecompressionBombFailsWithTheSizeError(t *testing.T) {
-	old := decodedBackendBodyFloor
-	decodedBackendBodyFloor = 1 << 20
-	t.Cleanup(func() { decodedBackendBodyFloor = old })
+	decodedBackendBodyFloorOverride.Store(1 << 20)
+	t.Cleanup(func() { decodedBackendBodyFloorOverride.Store(0) })
 
 	for _, encoding := range []string{"gzip", "zstd"} {
 		frame := gzipBomb(t, boundsTestBody)
@@ -499,9 +498,8 @@ func TestBackendBodyTooLargeError_Message(t *testing.T) {
 // -backend-max-buffered-response-bytes.
 // conformance: operator-configurable-limits, semantics/unwrap-conversion-error
 func TestUnwrapStripResponseReadsEitherLength(t *testing.T) {
-	old := decodedBackendBodyFloor
-	decodedBackendBodyFloor = 1 << 10
-	t.Cleanup(func() { decodedBackendBodyFloor = old })
+	decodedBackendBodyFloorOverride.Store(1 << 10)
+	t.Cleanup(func() { decodedBackendBodyFloorOverride.Store(0) })
 	p := newBoundsProxy(t, Config{BackendURL: "http://127.0.0.1:1"})
 	upper := func(b []byte) ([]byte, error) { return bytes.ToUpper(b), nil }
 	small := []byte(`{"status":"success"}`)
