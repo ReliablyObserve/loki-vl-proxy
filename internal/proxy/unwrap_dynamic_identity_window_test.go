@@ -63,18 +63,20 @@ func dynWindowRow(ts int64, pod, parser string, labels map[string]string, v floa
 	sort.Strings(keys)
 	amount := strconv.FormatFloat(v, 'f', -1, 64)
 	var line string
+	// The keys in an order of the line's own (rotated by its time): one series holds lines with its keys in any order.
+	turn := int(ts % int64(len(keys)+1))
 	if parser == "json" {
 		fields := []string{`"amount":` + amount}
 		for _, k := range keys {
 			fields = append(fields, strconv.Quote(k)+":"+strconv.Quote(labels[k]))
 		}
-		line = "{" + strings.Join(fields, ",") + "}"
+		line = "{" + strings.Join(append(fields[turn:], fields[:turn]...), ",") + "}"
 	} else {
 		fields := []string{"amount=" + amount}
 		for _, k := range keys {
 			fields = append(fields, k+"="+labels[k])
 		}
-		line = strings.Join(fields, " ")
+		line = strings.Join(append(fields[turn:], fields[:turn]...), " ")
 	}
 	return vlemu.Row{TS: ts, Stream: `{app="dw",pod="` + pod + `"}`, Labels: labels, Value: v, Msg: line}
 }
@@ -605,9 +607,9 @@ func shimReadsFold(s *extentShim) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, c := range s.calls {
+		// The gate's first pipe (a copy of the unwrapped label) comes after the hash.
 		hash := strings.Index(c.query, "| hash(__lvp_sid) as __lvp_sid |")
-		gate := strings.Index(c.query, "| copy ")
-		if hash < 0 || gate < hash || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") || !strings.Contains(c.query, "__lvp_ks:in(") {
+		if hash < 0 || !strings.Contains(c.query[hash:], "| copy ") || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") || !strings.Contains(c.query, "__lvp_ks:in(") {
 			return false
 		}
 	}

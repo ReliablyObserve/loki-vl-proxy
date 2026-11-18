@@ -23,6 +23,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against VictoriaLogs' `-search.maxQueryLen`; the proxy's own filters stay far below it (`vl-extra-filters-max-query-len`).
   The root and example compose files check VictoriaLogs with its new `-healthcheck` flag; the matrix stacks keep
   `-version`, which v1.49.0 also has.
+- A VictoriaLogs call that the running VictoriaLogs release refuses before reading any data is no longer sent. The
+  proxy predicts the refusal from the query it is about to send, the endpoint and the detected release, and answers
+  it as it answers VictoriaLogs' own refusal: the caller's fallback route, or Loki's `500 Internal Server Error` for
+  a refused plan. The rules:
+  - a pipe the release lacks (`coalesce` before v1.51.0);
+  - `stats_query_range` shapes VictoriaLogs refuses: `total_stats`, `sort`, `fields` without `_time` or a copy into
+    `_time` ahead of the last `stats` pipe, and from v1.53.0 also `math`, `replace`, `unpack_*`, `unroll` and
+    `extract` writing `_time`; `limit` or `offset` after it;
+  - `stats_query` pipes after the last `stats` pipe VictoriaLogs refuses (`limit`/`offset` before v1.51.0);
+  - a query, or from v1.54.0 an `extra_filters` or `extra_stream_filters` arg, longer than the `-search.maxQueryLen`
+    a refusal of the same release named;
+  - a `math` pipe holding a quoted time constant in a call VictoriaLogs clones (the `limit` arg, live tailing) on a
+    release before v1.53.0, or one not detected yet, which VictoriaLogs v1.49.0 to v1.52.0 crash on (the published
+    v1.49.0 and v1.52.0 images exit). No LogQL input makes the proxy write that shape today; the guard keeps it from
+    ever reaching VictoriaLogs.
+
+  Nothing else is predicted before the release is detected. Every rule is checked against VictoriaLogs' own query
+  handlers of v1.49.0 and v1.53.0 (and v1.54.0 locally): each predicted refusal has VictoriaLogs' status and class,
+  each query predicted to run runs, and the client answer is byte-equal with 0 calls instead of 1 or more.
+  `-vl-refusal-prediction` (default `true`) turns it off; metric `loki_vl_proxy_vl_refusals_predicted_total{rule}`.
+- VictoriaLogs' refusal of the query the proxy wrote (a parse error, a refused stats shape, a query over its length
+  limit, answered or predicted) is now held for `-error-cache-vl-refusal-ttl` (default `5m`) instead of not at all
+  or for a second. A parse or stats shape refusal is held for every window of the query (a length or argument
+  refusal for the exact request only), keyed by tenant, credentials, response profile, configuration epoch and
+  VictoriaLogs release, so a reload or a new release asks again. A refusal VictoriaLogs
+  answered and held for 30 s or more is pushed to every peer (`-error-cache-peer-sync`, default `true`). A peer
+  holds it only when it runs the same proxy build against the same VictoriaLogs release with the same routing
+  configuration, and never for an answer computed with forwarded credentials. Three replicas refreshing the same
+  refused query five times each send one VictoriaLogs call. Metrics:
+  `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
+
+### Fixed
+
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time`
+  and `stdvar_over_time` after `| json` or `| logfmt` now read one series for lines that hold the same keys in another
+  order, as Loki does. The series of such a line was named by VictoriaLogs' `pack_json` of its parsed fields, which
+  writes them in the order the line's keys come in, so `{"route":"/x","duration_ms":3,"user":"u"}` and
+  `{"user":"u","duration_ms":4,"route":"/x"}` of one stream were two series: `sum(avg_over_time({...} | json | unwrap
+  duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
+  logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
+  later). Answers cached before are not served (the identity's response key version moves to v4).
+
+## [2.337.0] - 2026-11-18
 
 ### Fixed
 
