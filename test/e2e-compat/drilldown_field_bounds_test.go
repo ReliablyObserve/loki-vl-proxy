@@ -90,7 +90,9 @@ func TestDrilldown_FieldBoundsByteOverflowMatchesLoki(t *testing.T) {
 // in every split, the series met first up to the step where the series met so far pass the limit, with Loki's
 // points for them (Loki's own answer over the fixture, cut by that rule). Every line falls in one minute, so one
 // split holds data: z-quote alone at the anchor (its first line is on the minute) and the 26 other values new one
-// minute later, where the limit of 2 trips and a00 (first by labels) fills it.
+// minute later, where the limit of 2 trips and one of them fills it: Loki's order among series new at one step is
+// not fixed, so any one is Loki's answer (the ranked read keeps those with the earliest lines, z-backslash here). A
+// repeat is the first answer.
 //
 // conformance: limits/drilldown-series-limit-range-cut-at-trip-step, limits/top-n-ranking-not-silent, loki_api_v1_query_range
 func TestDrilldown_FieldBoundsByteOverflowLokiMode(t *testing.T) {
@@ -107,16 +109,22 @@ func TestDrilldown_FieldBoundsByteOverflowLokiMode(t *testing.T) {
 		t.Run(span.String(), func(t *testing.T) {
 			start, stop := end.Add(-span), end
 			loki := fieldBoundsWaitLokiRange(t, query, start, stop, expected)
-			want := fieldBoundsFirstMetPerHour(t, loki, start, stop, 2)
 			params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(stop.UnixNano(), 10)}, "step": {"60"}}
 			target := bounded + "/loki/api/v1/query_range?" + params.Encode()
+			var first map[string]map[string]string
 			for repeat := 0; repeat < 2; repeat++ {
 				recorder.reset()
 				status, body, envelope := doJSONGET(t, target, map[string]string{"X-Scope-OrgID": "0", "X-Query-Tags": "Source=grafana-lokiexplore-app"})
 				if status != http.StatusOK || envelope["status"] != "success" || len(extractArray(envelope, "warnings")) == 0 {
 					t.Fatalf("Drilldown must return a visibly partial 200 after byte overflow: HTTP %d %.1000s", status, body)
 				}
-				assertSlidingParity(t, query, want, fieldBoundsSeries(t, envelope))
+				got := fieldBoundsSeries(t, envelope)
+				assertFirstMetPerHour(t, query, loki, got, start, stop, 2)
+				if repeat == 0 {
+					first = got
+				} else {
+					assertSlidingParity(t, query+" (repeat)", first, got)
+				}
 				ranked := false
 				for _, call := range recorder.reset() {
 					ranked = ranked || strings.Contains(call, "min(_time) as __lvp_rank | sort by (__lvp_rank, val) partition by (_time) limit 3 | fields val)")
@@ -129,10 +137,12 @@ func TestDrilldown_FieldBoundsByteOverflowLokiMode(t *testing.T) {
 	}
 }
 
-// fieldBoundsFirstMetPerHour cuts an answer the way the Loki mode does: per split of the hour grid inside (start,
-// end), the series by their first sample in it (ties by label), the first limit kept up to the first sample of the
-// next one, the rest dropped there.
-func fieldBoundsFirstMetPerHour(t *testing.T, all map[string]map[string]string, start, end time.Time, limit int) map[string]map[string]string {
+// assertFirstMetPerHour checks got is what Loki keeps of its whole answer all over the limit: per split of the hour
+// grid inside (start, end), the series by their first sample in it, cut at the step where the series met so far pass
+// the limit. Every series met before that step is kept with Loki's points up to it and none after; of the series new
+// at that step, as many as fill the limit are kept, any of them (Loki's order among them is not fixed); no series met
+// after it is kept.
+func assertFirstMetPerHour(t *testing.T, query string, all, got map[string]map[string]string, start, end time.Time, limit int) {
 	t.Helper()
 	splitOf := func(ts int64) int64 {
 		first := start.Unix() - start.Unix()%3600 + 3600
@@ -141,58 +151,72 @@ func fieldBoundsFirstMetPerHour(t *testing.T, all map[string]map[string]string, 
 		}
 		return min((ts-first)/3600, (end.Unix()-1-first)/3600) + 1
 	}
-	type met struct {
-		first int64
-		key   string
+	seconds := func(ts string) int64 {
+		n, err := strconv.ParseInt(ts, 10, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
 	}
-	bySplit := map[int64][]met{}
+	firsts := map[int64]map[string]int64{} // split -> series -> first sample
 	for key, points := range all {
-		firsts := map[int64]int64{}
 		for ts := range points {
-			n, err := strconv.ParseInt(ts, 10, 64)
-			if err != nil {
-				t.Fatal(err)
+			n, split := seconds(ts), splitOf(seconds(ts))
+			if firsts[split] == nil {
+				firsts[split] = map[string]int64{}
 			}
-			if cur, ok := firsts[splitOf(n)]; !ok || n < cur {
-				firsts[splitOf(n)] = n
+			if cur, ok := firsts[split][key]; !ok || n < cur {
+				firsts[split][key] = n
 			}
-		}
-		for split, first := range firsts {
-			bySplit[split] = append(bySplit[split], met{first, key})
 		}
 	}
-	until := map[string]map[int64]int64{}
-	for split, list := range bySplit {
-		sort.Slice(list, func(i, j int) bool {
-			if list[i].first != list[j].first {
-				return list[i].first < list[j].first
-			}
-			return list[i].key < list[j].key
-		})
-		end := int64(1 << 62)
-		if len(list) > limit {
-			end, list = list[limit].first, list[:limit]
-		}
-		for _, m := range list {
-			if until[m.key] == nil {
-				until[m.key] = map[int64]int64{}
-			}
-			until[m.key][split] = end
+	for key := range got {
+		if all[key] == nil {
+			t.Fatalf("%s: proxy series %s is not in Loki's answer", query, key)
 		}
 	}
-	out := map[string]map[string]string{}
-	for key, points := range all {
-		for ts, v := range points {
-			n, _ := strconv.ParseInt(ts, 10, 64)
-			if last, ok := until[key][splitOf(n)]; ok && n <= last {
-				if out[key] == nil {
-					out[key] = map[string]string{}
+	for split, met := range firsts {
+		times := make([]int64, 0, len(met))
+		for _, first := range met {
+			times = append(times, first)
+		}
+		sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
+		trip := int64(1 << 62)
+		if len(times) > limit {
+			trip = times[limit]
+		}
+		kept := 0
+		for key, first := range met {
+			inSplit := false
+			for ts := range got[key] {
+				if splitOf(seconds(ts)) == split {
+					inSplit = true
 				}
-				out[key][ts] = v
+			}
+			switch {
+			case first < trip && !inSplit:
+				t.Fatalf("%s: split %d: Loki keeps %s (first at %d, the trip at %d), the proxy does not", query, split, key, first, trip)
+			case first > trip && inSplit:
+				t.Fatalf("%s: split %d: %s is first met at %d, after the trip at %d, yet kept", query, split, key, first, trip)
+			case !inSplit:
+				continue
+			}
+			kept++
+			for ts, v := range all[key] {
+				if n := seconds(ts); splitOf(n) == split && n <= trip && got[key][ts] != v {
+					t.Fatalf("%s: split %d: %s at %s: proxy %q, Loki %q", query, split, key, ts, got[key][ts], v)
+				}
+			}
+			for ts := range got[key] {
+				if n := seconds(ts); splitOf(n) == split && (n > trip || all[key][ts] == "") {
+					t.Fatalf("%s: split %d: %s has a point at %s, past the trip at %d or where Loki has none", query, split, key, ts, trip)
+				}
 			}
 		}
+		if len(times) > limit && kept != limit {
+			t.Fatalf("%s: split %d: the proxy keeps %d series, Loki the limit %d", query, split, kept, limit)
+		}
 	}
-	return out
 }
 
 // fieldBoundsByteOverflowFixture ingests the byte-overflow fixture on both backends: three short values with
