@@ -126,7 +126,7 @@ why: |
   row to every window that holds its bucket, weighted by its count, in the outer
   sum, max, min or avg (foldAccumulator.addPartial), which drops the hash. The
   bounds sent are the ones stats_query_range reads, bucket for bucket
-  (TestSeriesFoldBoundsMatchStatsQueryRange on v1.49.0 and v1.53.0), and a
+  (TestSeriesFoldBoundsMatchStatsQueryRange on v1.49.0 and v1.54.0), and a
   window lies in the read that answers it, so a series spanning two chunks folds
   in each, exactly. The proxy reads the folded rows and the spanning series'
   partials, never raw rows: a key of its own on every line costs about what the

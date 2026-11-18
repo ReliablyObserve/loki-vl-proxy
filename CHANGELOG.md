@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `query_range` with a range longer than the step for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`,
   `max_over_time`, `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` (no
-  `| keep`) costs VictoriaLogs about 40% less time and answers about a third faster. An example is
+  `| keep`) costs VictoriaLogs about 40% less time and answers about 40% faster. An example is
   `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms [5m]))` under Grafana's `$__auto` step. Answers
   and statuses are the same on every measured request, and each request still makes one VictoriaLogs call.
   - VictoriaLogs scans the lines once instead of twice: the subquery that listed the series spanning buckets is gone.
@@ -20,12 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     with the bounds `stats_query_range` would read. The proxy reads the rows back into the same buckets.
   - A read whose text would pass VictoriaLogs' query length still reads every series through `stats_query_range`, as
     before.
-  - Over 24 hours of lines that each carry a request id, the VictoriaLogs time of such a request went from about 2.8×
-    to about 1.8× the time of the per-stream read it replaced; over six hours, from 2.8× to 1.6–1.8×.
-  - Three edge cases change. A series holding a NaN in a bucket now always answers NaN in the windows that hold it
-    (VictoriaLogs' `sum` could turn that NaN into 0). A series of several lines whose sum overflows to an infinity is
-    read as a series of its own, as an infinite series always was, instead of being added into the bucket's other
-    series. A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
+  - Over 6 and 24 hours of lines that each carry a request id, VictoriaLogs takes 0.51-0.69x the time it took before
+    on v1.54.0 and v1.49.0, and the whole request 0.53-0.63x. The read's answer is 1.3-5x larger (up to 0.6 MB for
+    24 hours), so a read reaches the stats answer bound sooner and is then read in smaller time chunks.
+  - A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
 
 ## [2.340.1] - 2026-11-18
 
