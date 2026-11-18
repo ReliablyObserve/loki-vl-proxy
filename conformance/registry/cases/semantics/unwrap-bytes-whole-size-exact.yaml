@@ -21,7 +21,12 @@ why: |
   `18446744073709551616` and `16EiB` stay "too large". The proxy's raw
   conversion (unwrap_convert.go parseHumanBytes) follows v1.1.0: checked
   against go-humanize v1.1.0's ParseBytes on every generated input and held
-  to Loki's recorded answers. The VictoriaLogs pushdown converts a size in
+  to Loki's recorded answers. Loki's lexer reads a label filter's bytes
+  literal with the same function: `| size > 18446744073709551615B` parses on
+  3.7.10 (3.7.9: "syntax error: unexpected $end"), `18446744073709551616B` and
+  `18014398509481984KiB` still do not; the proxy's literal reader
+  (internal/logql isLokiBytes) follows, held to the Loki parse oracle's answers
+  (label_filter_number_literals_loki.jsonl.gz). The VictoriaLogs pushdown converts a size in
   float64 and cannot tell such a size from 2^64 (open:
   semantics/unwrap-bytes-pushdown-near-2-64).
 request:
