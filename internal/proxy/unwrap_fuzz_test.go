@@ -11,17 +11,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/dustin/go-humanize"
 )
 
 // FuzzConvertUnwrap holds the unwrap conversion to the functions whose behaviour Loki's answers are recorded for
 // (TestUnwrapConversionMatchesRecordedLoki): a plain value is strconv.ParseFloat's, a duration time.ParseDuration's
-// in seconds, a size go-humanize v1.0.1's ParseBytes (lokiParseBytes); and every value a conversion accepts or
+// in seconds, a size go-humanize v1.1.0's ParseBytes (Loki 3.7.10's); and every value a conversion accepts or
 // overflows on is one the VictoriaLogs gate keeps, so the conversion-error check never reports a value Loki converts.
 //
 // conformance: semantics/unwrap-conversion-error, semantics/unwrap-sample-validity
 func FuzzConvertUnwrap(f *testing.F) {
 	for _, seed := range []string{"0", "-1.5e3", "0x1p-3", "1_000", "nan", "+Inf", "infinity", "1e309", " 2", "1h30m", "-2562048h",
-		"100µs", ".5s", "5.s", "42", "1,024 KiB", "16EiB", "18446744073709551616", "1.5B", "1KB", "٣KB", "", "\xff"} {
+		"100µs", ".5s", "5.s", "42", "1,024 KiB", "16EiB", "18446744073709551615", "18446744073709551616", "1.5B", "1KB", "٣KB", "", "\xff"} {
 		f.Add(seed, uint8(0))
 		f.Add(seed, uint8(1))
 		f.Add(seed, uint8(2))
@@ -49,7 +50,7 @@ func FuzzConvertUnwrap(f *testing.F) {
 			want = d.Seconds()
 		case "bytes":
 			var n uint64
-			n, wantErr = lokiParseBytes(value)
+			n, wantErr = humanize.ParseBytes(value)
 			want = float64(n)
 		}
 		if (err == nil) != (wantErr == nil) || err != nil && err.Error() != wantErr.Error() {

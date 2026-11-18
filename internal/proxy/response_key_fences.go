@@ -290,8 +290,10 @@ func groupedRankingName(name string) string {
 // __error__=""`) are served from the lowering too; v1 keys of those were answered with the stream's series. v3: a root
 // identity over a range longer than the step reads the series hash too (the window evaluator merges each series'
 // buckets, the series that lie in one bucket folded in VictoriaLogs), so its answers cached under v2 with the stream's
-// series are not served.
-const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v3:"
+// series are not served. v4: lines that hold the same keys in another order are one series (the hash reads the
+// fields sorted by name, set_stream_fields, where pack_json followed the line's key order), so answers cached under v3
+// with such a series split in two are not served.
+const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v4:"
 
 // dynamicUnwrapIdentityResponseKeyVersion is the fence of a query whose plan has that identity at any depth
 // (lower.WritesDynamicUnwrapIdentity): at its root, and in an operand of a binary operation, a ranking or a

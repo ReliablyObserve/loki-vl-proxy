@@ -1,6 +1,7 @@
 package lower
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 )
 
 // dynamicHash is the identity pipes of a json parser over the unwrapped label n, as the lowering writes them.
-const dynamicHash = `| unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | pack_json fields (__lvp_p_*, level, detected_level, _stream) as __lvp_sid | hash(__lvp_sid) as __lvp_sid | math __lvp_v as __lvp_v`
+const dynamicHash = `| unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | set_stream_fields __lvp_p_*, level, detected_level, _stream | rename _stream as __lvp_sid | hash(__lvp_sid) as __lvp_sid | math __lvp_v as __lvp_v`
 
 // The plan's series of a range function over an unwrapped label after a json or logfmt parser with no keep: the
 // stream and every parsed label less the unwrapped one (and the stored level), whatever the clause of the outer
@@ -167,7 +168,7 @@ func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 				t.Errorf("extraction list %s: %s holds no %s", q, got, part)
 			}
 		}
-		for _, part := range []string{"__lvp_sid", "__lvp_p_", "| pack_json", "math __lvp_v as"} {
+		for _, part := range []string{"__lvp_sid", "__lvp_p_", "| set_stream_fields", "math __lvp_v as"} {
 			if strings.Contains(got, part) {
 				t.Errorf("extraction list %s: %s holds %s", q, got, part)
 			}
@@ -248,7 +249,7 @@ func TestFoldsRowsLowering(t *testing.T) {
 		if !strings.HasSuffix(got, want.stats[2:]) || strings.Count(got, "| stats ") != 1 {
 			t.Errorf("%s: %s does not end in its one stats pipe %s", q, got, want.stats[2:])
 		}
-		for _, part := range []string{"__lvp_sid", "__lvp_p_", "| pack_json", "__lvp_inner", "math __lvp_v as"} {
+		for _, part := range []string{"__lvp_sid", "__lvp_p_", "| set_stream_fields", "__lvp_inner", "math __lvp_v as"} {
 			if strings.Contains(got, part) {
 				t.Errorf("%s: %s holds %s", q, got, part)
 			}
@@ -451,5 +452,52 @@ func TestListedUnwrapIdentity(t *testing.T) {
 		if ListedUnwrapIdentity(p) && !DynamicUnwrapIdentity(p) {
 			t.Errorf("%s: a listed identity that is no dynamic identity", q)
 		}
+	}
+}
+
+// streamWord is the stream field or its id as a word of a LogsQL text.
+var streamWord = regexp.MustCompile(`(^|[^\w.])_stream(_id)?([^\w.]|$)`)
+
+// set_stream_fields writes the series' canonical value into _stream and blanks _stream_id, and the rename moves it to
+// the series field: no pipe after the identity may read either. Every grouping a client sends (none, a stream label,
+// a parsed label, level, detected_level, service_name), with a label filter, json and logfmt, with the hash written
+// after the gate and before it (Profile IdentityAhead), holds neither word after the hash.
+//
+// conformance: semantics/unwrap-identity-key-order
+func TestDynamicIdentityLeavesNoStreamReader(t *testing.T) {
+	const hash = "| hash(__lvp_sid) as __lvp_sid"
+	n := 0
+	for _, parser := range []string{"json", "logfmt"} {
+		for _, by := range []string{"", "by (app) ", "by (pod) ", "by (route) ", "by (level) ", "by (detected_level) ", "by (service_name) ", "by (app, route) "} {
+			for _, outer := range []string{"sum", "avg", "max", "min"} {
+				for _, fn := range []string{"avg_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
+					for _, filter := range []string{"", ` | route="/x"`} {
+						q := outer + " " + by + "(" + fn + `({app="a"} | ` + parser + filter + " | unwrap n [5m]))"
+						for _, prof := range []Profile{{}, {IdentityAhead: true}} {
+							p := rangeAggPlan(q)
+							if p == nil || !DynamicUnwrapIdentity(p) {
+								continue
+							}
+							op, err := PlanQuery(q, p, prof)
+							if err != nil {
+								continue
+							}
+							text := physical.Encode(op)
+							at := strings.Index(text, hash)
+							if at < 0 {
+								continue
+							}
+							n++
+							if m := streamWord.FindString(text[at:]); m != "" {
+								t.Errorf("%s (ahead %v): %q after the identity: %s", q, prof.IdentityAhead, m, text[at:])
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if n < 200 {
+		t.Fatalf("only %d identity texts checked", n)
 	}
 }
