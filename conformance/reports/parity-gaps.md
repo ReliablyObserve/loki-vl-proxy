@@ -347,5 +347,6 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/raw-nul-in-string-literal-accepted` — A NUL byte inside a quoted or backquoted string, or a comment, of a query is Loki's lexer error, with Loki's text and position (fixed) | this change | 0 | 0 |
 | `semantics/reserved-field-name-case-outbound` — A label named _time, _stream or _stream_id in another letter case (_TIME, _Stream_ID) is filtered as the field it is, through a copy into... | this change | 0 | 0 |
 | `semantics/set-operation-folded-literal-operand` — A set operation with a literal operand that is an arithmetic expression (`and 1 + 2`) is rejected with Loki's folded literal (fixed) | TBD-PR | 0 | 0 |
+| `semantics/unwrap-identity-key-order` — A parser's series identity splits one series whose lines hold the same keys in another order (fixed) | TBD-PR | 0 | 0 |
 | `semantics/zero-range-metric` — A range metric over a zero range is answered with Loki's empty result, and absent_over_time over one with Loki's 1 at every step (fixed) | TBD-PR | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |

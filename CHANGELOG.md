@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time`
+  and `stdvar_over_time` after `| json` or `| logfmt` now read one series for lines that hold the same keys in another
+  order, as Loki does. The series of such a line was named by VictoriaLogs' `pack_json` of its parsed fields, which
+  writes them in the order the line's keys come in, so `{"route":"/x","duration_ms":3,"user":"u"}` and
+  `{"user":"u","duration_ms":4,"route":"/x"}` of one stream were two series: `sum(avg_over_time({...} | json | unwrap
+  duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
+  logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
+  later). Answers cached before are not served (the identity's response key version moves to v4).
+
 ## [2.334.0] - 2026-11-17
 
 ### Changed
