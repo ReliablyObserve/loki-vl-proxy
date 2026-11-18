@@ -58,11 +58,15 @@ func blankAfterKeywordRequestsLowering(t *testing.T, lowering bool, endpoint, qu
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"_stream":"{app=\"a\"}","level":"info"},"values":[[1700000000,"1"]]},{"metric":{"_stream":"{app=\"b\"}","level":"info"},"values":[[1700000000,"3"]]}]}}`))
 	}))
-	defer vl.Close()
 	p := newCompatTestProxy(t, vl.URL)
 	p.queryPlanLowering = lowering
 	params := url.Values{"query": {query}, "start": {"1700000000"}, "end": {"1700000600"}, "step": {"60"}, "time": {"1700000600"}}
 	rec := doCompatProxyRequest(p, "/loki/api/v1/"+endpoint+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
+	// A call the proxy cancelled once it had its answer (the strict JSON split's) can still be in the handler: Close
+	// waits for it and refuses later ones, so seen is read after its last write.
+	vl.Close()
+	mu.Lock()
+	defer mu.Unlock()
 	var answer any
 	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
 		slices.Sort(seen)
@@ -95,8 +99,8 @@ func TestBlankAfterKeywordRequestsEqualSpaced(t *testing.T) {
 			// A keep under a range function is answered by the strict JSON split, which starts its stats query and parse
 			// checks beside the unparsed-line lookup and cancels them once the lookup finds a line Loki's parser rejects
 			// (this fake's lines); with a fake that answers at once, whether a cancelled call reached it first is a race
-			// (3 sets in 60 runs under -race). Its answer is compared, its requests are not; with a round trip of latency
-			// the set is fixed (TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet).
+			// (3 sets in 60 runs under -race). Its answer is compared, its requests are not; with a fake that answers the
+			// lookup once the others arrived the set is fixed (TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet).
 			racy := !strings.HasPrefix(tpl, "{") && strings.Contains(tpl, "| keep")
 			ref := strings.ReplaceAll(tpl, blankspace.Mark, " ")
 			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, ref)
