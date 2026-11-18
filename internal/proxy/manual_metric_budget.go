@@ -177,7 +177,7 @@ const (
 func (p *Proxy) withSeriesLimitScope(r *http.Request) (*http.Request, *seriesLimitScope) {
 	scope := &seriesLimitScope{drilldown: isGrafanaDrilldownRequest(r)}
 	if scope.drilldown && p.drilldownSeriesLimitMode != drilldownSeriesLimitBusiest {
-		if step, ok := parsePositiveStepDuration(r.URL.Query().Get("step")); ok {
+		if step, ok := parsePositiveStepDuration(r.FormValue("step")); ok { // a POST form too
 			scope.lokiCut, scope.stepNs = true, int64(step)
 		}
 	}
