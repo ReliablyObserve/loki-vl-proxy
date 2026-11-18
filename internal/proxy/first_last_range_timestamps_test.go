@@ -99,7 +99,7 @@ func alignedConfig(align bool) func(*Config) {
 // and one nanosecond either side, a range equal to and shorter than the step,
 // a start that is not a multiple of the step, both alignment profiles, every
 // aggregation the translation answers over first and last, grouped and not,
-// with and without a parser, on VictoriaLogs v1.49.0 and v1.53.0. Every point
+// with and without a parser, on VictoriaLogs v1.49.0 and v1.54.0. Every point
 // carries Loki's timestamp and value, and none is missing or extra.
 //
 // conformance: semantics/unwrap-first-last-range-timestamps, semantics/unwrap-first-last-under-aggregation, loki_api_v1_query_range
@@ -123,7 +123,7 @@ func TestFirstLastOverTimeRangeTimestampsLikeLoki(t *testing.T) {
 		{"no line in the request", 5 * time.Second, 5 * time.Second, 0, []int64{500 * sec}},
 	}
 	answered := 0
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, align := range []bool{true, false} {
 			for _, c := range cases {
 				for _, parser := range []string{"", "logfmt"} {

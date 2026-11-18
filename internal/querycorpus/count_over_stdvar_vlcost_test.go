@@ -23,7 +23,7 @@ import (
 )
 
 // TestCountOverStdvarVictoriaLogsCost measures what counting the series of a count by labels over stdvar_over_time
-// costs VictoriaLogs (v1.53.0 and v1.49.0, its own query handlers through the serve oracle): the stats query the
+// costs VictoriaLogs (v1.54.0 and v1.49.0, its own query handlers through the serve oracle): the stats query the
 // string translator writes (the deviation of each group's pooled samples, which origin/main squares) against the one
 // the lowering writes (the deviation of each series, then their count per group), over logfmt rows of eight streams,
 // interleaved runs in turn, the median and the 90th percentile of each and the answer's size. It records nothing;

@@ -23,7 +23,7 @@ import (
 // one without `_entry`, an empty or numeric `_entry`, values that are not strings, a line that is not an object, an
 // empty line): Loki's pipeline (the Loki oracle, process) says which lines the stages keep and what each kept line
 // is, and VictoriaLogs (the VictoriaLogs oracle, store: the lines stored as the Loki push API stores them, in
-// v1.49.0 and v1.53.0) runs the translator's text. The lowering writes a family natively only when the two keep the
+// v1.49.0 and v1.54.0) runs the translator's text. The lowering writes a family natively only when the two keep the
 // same lines; a family where they differ, or where the line is read, is delegated under the name of what it reads.
 // The answers are recorded; LVP_RUN_ORACLES=1 records them again (the VictoriaLogs oracle downloads VictoriaLogs;
 // set GOMODCACHE to a fresh directory when the shared cache holds other copies).
@@ -34,7 +34,7 @@ const unpackAnswers = "testdata/unpack-oracles.json"
 var unpackRowLabel = regexp.MustCompile(`row="(\d+)"`)
 
 var (
-	unpackVersions = []string{"v1.49.0", "v1.53.0"}
+	unpackVersions = []string{"v1.49.0", "v1.54.0"}
 	// unpackLines are the lines of the grid, one stream each (app="s").
 	unpackLines = []string{
 		`{"a":"1","b":"x","_entry":"hello world"}`,
@@ -135,7 +135,7 @@ func recordUnpackAnswers(t *testing.T) {
 	}
 	answers := make([]unpackAnswer, len(unpackFamilies))
 	for i, f := range unpackFamilies {
-		a := unpackAnswer{Query: f.query, Text: unpackTranslatorText(t, f.query, "v1.53.0"), VL: map[string][]bool{}}
+		a := unpackAnswer{Query: f.query, Text: unpackTranslatorText(t, f.query, "v1.54.0"), VL: map[string][]bool{}}
 		for j := range unpackLines {
 			l := loki[i*len(unpackLines)+j]
 			if l.Error != "" {
@@ -219,7 +219,7 @@ func TestUnpackFamiliesMatchLoki(t *testing.T) {
 		if a.Query != f.query || len(a.Loki) != len(unpackLines) {
 			t.Fatalf("answer %d is for %s: LVP_RUN_ORACLES=1 records them again", i, a.Query)
 		}
-		if got := unpackTranslatorText(t, f.query, "v1.53.0"); got != a.Text {
+		if got := unpackTranslatorText(t, f.query, "v1.54.0"); got != a.Text {
 			t.Errorf("%s: the translator writes %s, recorded for %s", f.query, got, a.Text)
 		}
 		rows, line := 0, 0
@@ -252,7 +252,7 @@ func TestUnpackFamiliesMatchLoki(t *testing.T) {
 		differing += line
 		// The lowering follows the recorded verdict: a count over the family is lowered exactly when the translator's
 		// text keeps Loki's lines and reads neither the labels nor the line, and else is delegated under the name.
-		_, err := unpackPlan(t, `count_over_time(`+f.query+` [5m])`, Profile{Caps: logsql.CapabilitiesFor("v1.53.0")})
+		_, err := unpackPlan(t, `count_over_time(`+f.query+` [5m])`, Profile{Caps: logsql.CapabilitiesFor("v1.54.0")})
 		var nl *NotLoweredError
 		switch {
 		case f.construct == "" && err != nil:
@@ -270,7 +270,7 @@ func TestUnpackFamiliesMatchLoki(t *testing.T) {
 	}
 }
 
-// unpackPlan lowers q under the plain profile of VictoriaLogs v1.53.0.
+// unpackPlan lowers q under the plain profile of VictoriaLogs v1.54.0.
 func unpackPlan(t *testing.T, q string, prof Profile) (physical.Op, error) {
 	t.Helper()
 	expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
@@ -291,7 +291,7 @@ func unpackPlan(t *testing.T, q string, prof Profile) (physical.Op, error) {
 //
 // conformance: semantics/translator-writes-unpack-as-unpack-json
 func TestUnpackLowering(t *testing.T) {
-	v53 := Profile{Caps: logsql.CapabilitiesFor("v1.53.0")}
+	v54 := Profile{Caps: logsql.CapabilitiesFor("v1.54.0")}
 	// lowered: the translator's text, with its unpack_json.
 	for _, q := range []string{
 		`count_over_time({app="x"} | unpack [5m])`,
@@ -309,13 +309,13 @@ func TestUnpackLowering(t *testing.T) {
 		`rate({app="x"} | unpack [5m])`,
 		`rate({app="x"} | unpack | drop a [5m])`,
 	} {
-		op, err := unpackPlan(t, q, v53)
+		op, err := unpackPlan(t, q, v54)
 		if err != nil {
 			t.Errorf("%s: not lowered: %v", q, err)
 			continue
 		}
 		text := op.(physical.VLQuery).Text
-		legacy, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), nil, nil, v53.Caps)
+		legacy, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), nil, nil, v54.Caps)
 		if err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
@@ -351,7 +351,7 @@ func TestUnpackLowering(t *testing.T) {
 		`sum(max_over_time({app="x"} | unpack | unwrap x [5m]))`:          "VectorAgg " + unpackParserConstruct,
 		`sum(bytes_over_time({app="x"} | unpack [5m]))`:                   "VectorAgg " + unpackParserConstruct,
 	} {
-		_, err := unpackPlan(t, q, v53)
+		_, err := unpackPlan(t, q, v54)
 		var nl *NotLoweredError
 		if !errors.As(err, &nl) {
 			t.Errorf("%s: want not lowered: %s, got %v", q, construct, err)
@@ -405,7 +405,7 @@ func FuzzUnpackLowering(f *testing.F) {
 			fn := []string{"count_over_time", "rate", "absent_over_time", "bytes_over_time", "bytes_rate"}[fn%5]
 			q = fn + `({app="a"}` + stages + ` [5m])`
 		}
-		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			prof := Profile{Caps: logsql.CapabilitiesFor(v)}
 			op, err := unpackPlan(t, q, prof)
 			if err != nil {

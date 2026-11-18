@@ -28,7 +28,7 @@ import (
 // a Loki push of a JSON line to VictoriaLogs' Loki push route without disable_message_parsing=1 stores every key of
 // the line as a field and VictoriaLogs' -defaultMsgValue placeholder in _msg. Real Loki (the engine oracle for metric
 // queries, the process oracle for each line of a log query, test/oracle/loki) holds the pushed lines; real
-// VictoriaLogs (the serve oracle, test/oracle/vl, v1.53.0 and v1.49.0) holds the rows as that push stores them; the
+// VictoriaLogs (the serve oracle, test/oracle/vl, v1.54.0 and v1.49.0) holds the rows as that push stores them; the
 // proxy's real query and query_range handlers answer in front of it.
 //
 //   - Data (jlFixture): two streams of JSON lines pushed without structured metadata (stored as fields with the

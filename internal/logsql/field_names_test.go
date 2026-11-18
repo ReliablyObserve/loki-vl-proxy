@@ -100,7 +100,7 @@ func FuzzQuoteFieldName(f *testing.F) {
 	})
 }
 
-// exoticFieldNameVerdicts are VictoriaLogs' own verdicts (its parser, v1.49.0 and v1.53.0) on names its lexer does not
+// exoticFieldNameVerdicts are VictoriaLogs' own verdicts (its parser, v1.49.0 and v1.54.0) on names its lexer does not
 // join into a word, bare and quoted, at the places a filter or a pipe names a field: every bare spelling is
 // rejected, every quoted one read. Recorded with the VictoriaLogs oracle (go test ./internal/querycorpus -run
 // TestRecordExoticFieldNameVerdicts with LVP_RUN_ORACLES=1 records them again).
@@ -124,12 +124,12 @@ func TestParseFieldNamesMatchVictoriaLogs(t *testing.T) {
 			t.Fatal(err)
 		}
 		rows++
-		if r.V149 != r.V153 {
-			t.Errorf("%s: VictoriaLogs v1.49.0 accepts=%v, v1.53.0 accepts=%v: the grid is for one reading", r.Query, r.V149, r.V153)
+		if r.V149 != r.V154 {
+			t.Errorf("%s: VictoriaLogs v1.49.0 accepts=%v, v1.54.0 accepts=%v: the grid is for one reading", r.Query, r.V149, r.V154)
 		}
 		// The parser's looseness on a bare keyword is registered (looserThanVL), and the lowering quotes those names.
-		if _, err := Parse(r.Query); (err == nil) != r.V153 && (err != nil || !looserThanVL.MatchString(r.Query)) {
-			t.Errorf("%s: VictoriaLogs accepts=%v, the proxy's parser error is %v", r.Query, r.V153, err)
+		if _, err := Parse(r.Query); (err == nil) != r.V154 && (err != nil || !looserThanVL.MatchString(r.Query)) {
+			t.Errorf("%s: VictoriaLogs accepts=%v, the proxy's parser error is %v", r.Query, r.V154, err)
 		}
 	}
 	if err := sc.Err(); err != nil {

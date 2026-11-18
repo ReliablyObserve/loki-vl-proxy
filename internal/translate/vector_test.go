@@ -11,7 +11,7 @@ import (
 // The service_name derivation is a coalesce on VictoriaLogs v1.51+ and format pipes before it.
 // conformance: architecture-syntax-package-layering
 func TestServiceNameGroupingPipes(t *testing.T) {
-	coalesce := ServiceNameGroupingPipes(logsql.CapabilitiesFor("v1.53.0"))
+	coalesce := ServiceNameGroupingPipes(logsql.CapabilitiesFor("v1.54.0"))
 	if !strings.HasPrefix(coalesce, "| coalesce(service_name, \"service.name\", service,") || !strings.HasSuffix(coalesce, `default "unknown_service" as service_name`) {
 		t.Errorf("coalesce form: %s", coalesce)
 	}

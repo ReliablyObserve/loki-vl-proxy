@@ -54,7 +54,7 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 	}
 	w := bufio.NewWriter(f)
 	identity := func(s string) string { return s }
-	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.53.0"), Label: identity}
+	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.54.0"), Label: identity}
 	// The grid of the binary operations held to the translator, and the rows of the bool and without grid the
 	// lowering holds to the proxy's binary route (an operand with a without clause).
 	queries := binOpGrid()

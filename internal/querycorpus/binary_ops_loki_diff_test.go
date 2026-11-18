@@ -16,7 +16,7 @@ import (
 // operators and, or and unless (with and without on and ignoring), vector matching with group_left and group_right,
 // chains of operations read with Loki's precedence and associativity, NaN and infinities, empty operands, and the
 // errors Loki answers for invalid matchings. Real Loki (the engine oracle) and real VictoriaLogs (the serve oracle,
-// v1.53.0 and v1.49.0) over the same data, through the proxy's real handlers, as the metric differential runs them.
+// v1.54.0 and v1.49.0) over the same data, through the proxy's real handlers, as the metric differential runs them.
 //
 //   - Data: rankBinaryFixture (five streams of job=rb, two levels on pods a and b and one on pod c).
 //   - Requests: metricRequests (an instant query and query_range at, under and over the range).
