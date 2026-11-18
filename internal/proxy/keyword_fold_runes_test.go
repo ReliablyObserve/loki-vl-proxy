@@ -180,10 +180,12 @@ func TestKeywordFoldRunesShareTheLowerCaseCacheEntry(t *testing.T) {
 // A tab, a line feed, a carriage return or a run of them after any keyword, before a call's parenthesis, or between a
 // pipe and its stage keyword or label filter (`{A="0"}|keep<CR>A`, found by FuzzLogFlipGate) is the spaced query to Loki (recorded Loki answers, internal/logql TestKeywordBlankMatchesLoki): the proxy sends
 // VictoriaLogs the requests of the spaced spelling and answers the same, on query_range and on query for a metric
-// query. A character Loki does not skip there is Loki's 400 with Loki's text before any VictoriaLogs request. The
-// spellings the string translator still reads unlike Loki are known differences of their own, pinned here so a
-// change shows: a blank before the parenthesis of a range function or of vector()
+// query. A character Loki does not skip there is Loki's 400 with Loki's text before any VictoriaLogs request. A blank
+// before the parenthesis of a metric call (a range function, vector(), label_replace, sort_desc) is written away by
+// the request rewrite (logql.CanonicalSpelling), so those spellings must answer as the spaced query
 // (semantics/translator-reads-blank-before-range-call-as-text, semantics/vector-call-blank-before-parenthesis-as-query).
+// The spellings still read unlike Loki are a known difference of their own, pinned here so a change shows: a blank
+// before the parenthesis of an unwrap conversion, of an ip() label filter or of approx_topk.
 //
 // conformance: semantics/translator-reads-only-space-between-tokens, semantics/parser-reads-unicode-blank-as-white-space, semantics/blank-before-call-parenthesis-read-unlike-loki, semantics/translator-reads-blank-before-range-call-as-text, semantics/vector-call-blank-before-parenthesis-as-query
 func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
@@ -256,19 +258,19 @@ func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
 }
 
 // blankKnownDifference names the registry case of a blank spelling the proxy still answers unlike the spaced one, or
-// "": a tab, a line feed, a carriage return or a run of spaces between a call's name and its parenthesis.
+// "": a tab, a line feed, a carriage return or a run of spaces between an unwrap conversion's, an ip() label filter's
+// or approx_topk's name and its parenthesis. Any other metric call spelled so is respelled by the request rewrite and
+// has none.
 func blankKnownDifference(q string) string {
 	m := blankBeforeCall.FindStringSubmatch(q)
 	if m == nil {
 		return ""
 	}
-	switch name := strings.ToLower(m[1]); {
-	case name == "vector":
-		return "semantics/vector-call-blank-before-parenthesis-as-query"
-	case strings.HasSuffix(name, "_over_time") || strings.HasPrefix(name, "rate") || name == "bytes_rate":
-		return "semantics/translator-reads-blank-before-range-call-as-text"
+	switch strings.ToLower(m[1]) {
+	case "ip", "bytes", "duration", "duration_seconds", "approx_topk":
+		return "semantics/blank-before-call-parenthesis-read-unlike-loki"
 	}
-	return "semantics/blank-before-call-parenthesis-read-unlike-loki"
+	return ""
 }
 
 // blankBeforeCall finds a name followed by blanks that are not a single space (a tab, a line feed, a carriage return,

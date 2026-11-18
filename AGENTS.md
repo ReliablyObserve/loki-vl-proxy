@@ -199,6 +199,11 @@ U+0130), `#` comments between tokens (a quote in a comment opens no string), and
   frozen reference of its first form in `response_key_fence_reference_test.go`.
   `FuzzResponseKeyFencesMatchParsedTree` (fuzz-smoke) then checks the screen against the parsed tree and the keys its
   older form wrote; an unchecked fence is unfinished.
+- The key, the fences and every handler read the request rewrite's text (`lowercaseQueryKeywords`,
+  `requestQueryText`): keywords in lower case, no comments or logfmt flags, and for a query the validation accepts the
+  metric calls and parentheses in one spelling (`logql.CanonicalSpelling`). A new test or harness that models what a
+  handler reads takes `proxy.RequestQueryText(q)` (the corpus shadow, route parity, predicate parity and grammar
+  sweep do) rather than a copy of the rewrite.
 
 ## Cache semantic layers
 
@@ -244,6 +249,21 @@ different contract from VL API responses and backend-result fragments.
 
 See [Architecture](docs/architecture.md#cache-semantic-layers-and-storage-tiers)
 for the distinction between semantic layers and physical storage tiers.
+
+### Failed answers: one join, held by class
+
+Identical read requests in flight share one run (the request flights in
+`internal/proxy/error_flights.go`, at the response cache middleware); a failed
+answer is held only for its class's TTL (`cache.Policy`). Keep it that way:
+
+- A new failure type is classified in `failureClassOf` by its Go type or its
+  `lokierr` message, never by its text; an unclassified failure is never held.
+- The query plan says which classes a request can fail in
+  (`queryplan.Plan.Failures`); a new construct whose evaluation can fail on the
+  data (a parser error, a conversion) extends it.
+- Never hold or share the client's own cancellation or deadline, the proxy's
+  own queue or load shedding, credentials failures or a proxy defect, and never
+  hand a follower its leader's cancellation: a live follower starts again.
 
 ## Cache change evidence in pull requests
 

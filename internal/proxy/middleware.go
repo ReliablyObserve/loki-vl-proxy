@@ -490,35 +490,75 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 			}
 		}
 	}
-	prefix := "compat:v2:" + endpoint + ":"
-	if endpoint == "query" || endpoint == "query_range" {
-		// Align final-response cache invalidation with the exact and windowed
-		// log-query keys after an output-semantic change.
-		prefix += logLineCacheKeyVersion + ":"
+	return p.responseKey(endpoint, r, rawQuery), true
+}
+
+// responseKey is the response cache key of r on endpoint with its parameters
+// as rawQuery: everything an answer depends on (tenant, credentials'
+// fingerprint, response profile, label naming, key fences).
+func (p *Proxy) responseKey(endpoint string, r *http.Request, rawQuery string) string {
+	return p.buildResponseKey("", endpoint, r, rawQuery, "", p.responseNamesCacheKey)
+}
+
+// buildResponseKey is responseKey with head written before it and tail right
+// after rawQuery, in one allocation of the key's final size; namesKey keys the
+// stream label names the query is translated with.
+func (p *Proxy) buildResponseKey(head, endpoint string, r *http.Request, rawQuery, tail string, namesKey func(*http.Request, string) string) string {
+	query := r.FormValue("query")
+	queryKey := endpoint == "query" || endpoint == "query_range"
+	var fences string
+	if queryKey {
 		site := responseKeyCompatQuery
 		if endpoint == "query_range" {
 			site = responseKeyCompatQueryRange
 		}
-		prefix += responseKeyFences(r, r.FormValue("query"), site)
+		fences = responseKeyFences(r, query, site)
 	}
-	if version := readCacheKeyVersion(endpoint); version != "" {
-		prefix += version + ":"
+	version := readCacheKeyVersion(endpoint)
+	tenant := r.Header.Get("X-Scope-OrgID")
+	fp := p.fingerprintFromCtx(r.Context(), r)
+	profile := p.responseProfileCacheKey(r)
+	var names string
+	if query != "" {
+		names = namesKey(r, query)
 	}
-	key := prefix + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + rawQuery
-	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
-		key += ":auth:" + fp
+	var b strings.Builder
+	b.Grow(len(head) + 64 + len(endpoint) + len(fences) + len(version) + len(tenant) + len(r.URL.Path) + len(rawQuery) + len(tail) + len(fp) + len(profile) + len(names))
+	b.WriteString(head)
+	b.WriteString("compat:v2:")
+	b.WriteString(endpoint)
+	b.WriteByte(':')
+	if queryKey {
+		// Align final-response cache invalidation with the exact and windowed
+		// log-query keys after an output-semantic change.
+		b.WriteString(logLineCacheKeyVersion)
+		b.WriteByte(':')
+		b.WriteString(fences)
 	}
+	if version != "" {
+		b.WriteString(version)
+		b.WriteByte(':')
+	}
+	b.WriteString(tenant)
+	b.WriteByte(':')
+	b.WriteString(r.URL.Path)
+	b.WriteByte('?')
+	b.WriteString(rawQuery)
+	b.WriteString(tail)
+	if fp != "" {
+		b.WriteString(":auth:")
+		b.WriteString(fp)
+	}
+	b.WriteString(":profile:")
+	b.WriteString(profile)
 	// queryStatsCompatFence: query and query_range values carry the
 	// entry-count trailer (query_stats_cache.go).
-	fence := ""
-	if endpoint == "query" || endpoint == "query_range" {
-		fence = ":" + queryStatsCompatFence
+	if queryKey {
+		b.WriteByte(':')
+		b.WriteString(queryStatsCompatFence)
 	}
-	key += ":profile:" + p.responseProfileCacheKey(r) + fence
-	if q := r.FormValue("query"); q != "" {
-		key += p.responseNamesCacheKey(r, q)
-	}
-	return key, true
+	b.WriteString(names)
+	return b.String()
 }
 
 func compatCacheVariantKey(baseKey, encoding string) string {
@@ -571,6 +611,10 @@ type compatCacheCaptureWriter struct {
 	flushed    bool
 	limit      int
 	overflowed bool
+	// onUnshareable, when set, is called once a successful answer can no
+	// longer be kept (it is flushed or outgrows the limit): the requests
+	// waiting on this one then run on their own.
+	onUnshareable func()
 }
 
 func newCompatCacheCaptureWriter(w http.ResponseWriter, limit int) *compatCacheCaptureWriter {
@@ -582,6 +626,7 @@ func newCompatCacheCaptureWriter(w http.ResponseWriter, limit int) *compatCacheC
 	cw.overflowed = false
 	cw.body = nil
 	cw.bufHolder = nil
+	cw.onUnshareable = nil
 	if limit <= 0 {
 		// limit=0 means the cache is disabled or has no capacity — mark overflowed
 		// immediately so capture() is a no-op and no memory is allocated.
@@ -617,6 +662,7 @@ func (w *compatCacheCaptureWriter) Write(b []byte) (int, error) {
 
 func (w *compatCacheCaptureWriter) Flush() {
 	w.flushed = true
+	w.unshareable()
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -638,9 +684,18 @@ func (w *compatCacheCaptureWriter) overflow() {
 		return
 	}
 	w.overflowed = true
+	w.unshareable()
 	releaseCompatCaptureBuf(w.body, w.bufHolder)
 	w.body = nil
 	w.bufHolder = nil
+}
+
+// unshareable tells the waiting requests that a successful answer will not be
+// kept; a failed answer is decided when the handler returns.
+func (w *compatCacheCaptureWriter) unshareable() {
+	if w.onUnshareable != nil && (w.code == 0 || w.code == http.StatusOK) {
+		w.onUnshareable()
+	}
 }
 
 func (w *compatCacheCaptureWriter) CapturedBody() []byte {
@@ -655,6 +710,7 @@ func (w *compatCacheCaptureWriter) Release() {
 	w.body = nil
 	w.bufHolder = nil
 	w.ResponseWriter = nil // avoid retaining reference to the underlying writer
+	w.onUnshareable = nil
 	compatCacheCapturePool.Put(w)
 }
 
@@ -805,11 +861,6 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		cacheKey, cacheable := p.compatCacheKey(endpoint, r)
-		if !cacheable {
-			setCacheResult(r.Context(), "bypass")
-			next(w, r)
-			return
-		}
 		ttl := CacheTTLs[endpoint]
 		// For query_range (and query), use a fixed 5-minute TTL so the cache entry
 		// outlives the bucket used to generate the key (max(5min, step)) while keeping
@@ -818,89 +869,125 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		if endpoint == "query_range" || endpoint == "query" {
 			ttl = 5 * time.Minute
 		}
-		if ttl <= 0 {
+		if !cacheable || ttl <= 0 {
 			setCacheResult(r.Context(), "bypass")
-			next(w, r)
-			return
-		}
-		cached, remainingTTL, sharedKey, ok := p.compatCacheLookup(endpoint, r, cacheKey, ttl)
-		if ok {
-			setCacheResult(r.Context(), "hit")
-			// A query answer gets this request's stats (query_stats_cache.go).
-			if !p.serveCompatHitWithStats(w, r, cacheKey, cached, remainingTTL) {
-				w.Header().Set("Content-Type", "application/json")
-				cached = compatHitBody(endpoint, cached)
-				body := cached
-				if encoding, minBytes := p.compatCacheResponseEncoding(r); encoding != "" {
-					if encodedBody, encodedAs, ok := p.compatCacheEncodedVariant(r.Context(), cacheKey, cached, remainingTTL, encoding, minBytes); ok && encodedAs != "" {
-						w.Header().Set("Content-Encoding", encodedAs)
-						w.Header().Set("Vary", "Accept-Encoding")
-						body = encodedBody
-					}
-				}
-				_, _ = w.Write(body)
-			}
-			elapsed := time.Since(start)
-			p.metrics.RecordRequestWithRoute(endpoint, route, http.StatusOK, elapsed)
-			p.metrics.RecordCacheHit()
-			if endpoint == "query" || endpoint == "query_range" {
-				p.queryTracker.Record(endpoint, r.FormValue("query"), elapsed, false)
-			}
-			return
-		}
-
-		setCacheResult(r.Context(), "miss")
-		var (
-			capture            *compatCacheCaptureWriter
-			captureAllowed     bool
-			capturePatternsNil bool
-			captureBodyLen     int
-		)
-		if encoding, _ := p.compatCacheResponseEncoding(r); encoding != "" && !queryStatsActive(r.Context()) {
-			_ = mw.RegisterEncodedResponseCapture(w, encoding, func(encodedAs string, encoded []byte) {
-				if !captureAllowed || capturePatternsNil || captureBodyLen == 0 {
-					return
-				}
-				if len(encoded) == 0 || len(encoded) >= captureBodyLen {
-					return
-				}
-				p.compatCache.SetWithTTL(compatCacheVariantKey(cacheKey, encodedAs), encoded, ttl)
+			// No response cache: identical requests in flight still share one
+			// run, and a failure is held for its class (error_flights.go).
+			p.serveFlight(endpoint, route, w, r, p.uncachedFlightKey(endpoint, r), start, func(w http.ResponseWriter, r *http.Request, lead *flightLead) {
+				next(lead.tap(w, p.uncachedShareLimit()), r)
 			})
+			return
 		}
-		var storedBody []byte // the body this miss stored, for the gzip stats sidecar
-		p.captureGzipStatsSidecar(w, r, cacheKey, func() ([]byte, time.Duration) { return storedBody, ttl })
-		capture = newCompatCacheCaptureWriter(w, p.compatCaptureLimit(sharedKey))
-		// A miss that passed validation and limits: the exact bytes of a
-		// metric query are read next to it (query_stats_loki.go).
-		p.startExactMetricBytesFor(w, r)
-		rWithFlag := r.WithContext(context.WithValue(r.Context(), compatCacheActiveCtxKey{}, true))
-		next(capture, rWithFlag)
-		p.deriveQueryStatsTotalsFromCapture(r, endpoint, capture)
-		if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
-			body := capture.CapturedBody()
-			captureBodyLen = len(body)
-			captureAllowed = captureBodyLen > 0
-			if endpoint == "patterns" && captureAllowed {
-				capturePatternsNil = patternsPayloadEmpty(body)
-				if capturePatternsNil {
-					capture.Release()
+		served, sharedKey := p.serveCompatHit(endpoint, route, w, r, cacheKey, ttl, start)
+		if served {
+			return
+		}
+		setCacheResult(r.Context(), "miss")
+		prefix := p.flightPrefix()
+		p.serveFlight(endpoint, route, w, r, flightKey{join: prefix + cacheKey, prefix: prefix}, start, func(w http.ResponseWriter, r *http.Request, lead *flightLead) {
+			if lead == nil {
+				// A follower of a leader whose answer the cache now holds,
+				// or one that runs on its own.
+				if served, _ := p.serveCompatHit(endpoint, route, w, r, cacheKey, ttl, start); served {
 					return
 				}
 			}
-			// Empty label lists get the same short negative TTL as the endpoint
-			// cache, so labels that appear later are not hidden for the full TTL.
-			if captureAllowed && (endpoint == "labels" || endpoint == "label_values") && metadataListPayloadEmpty(body) {
-				ttl = p.metadataNegativeTTL()
-			}
-			if captureAllowed {
-				value := p.compatCacheValue(w, r, cacheKey, body)
-				p.compatCache.SetWithTTL(cacheKey, value, ttl)
-				p.storeCompatSharedReply(sharedKey, value, ttl)
-				p.storeCompatOversizedReply(sharedKey, cacheKey, value, ttl)
-				recordFlowCacheStore(r.Context(), cacheKey, len(value))
-				storedBody = body
+			p.compatCacheMiss(endpoint, w, r, cacheKey, sharedKey, ttl, lead, next)
+		})
+	}
+}
+
+// serveCompatHit answers r from the edge cache or the routing-scoped shared
+// cache; it returns the shared key a miss stores under.
+func (p *Proxy) serveCompatHit(endpoint, route string, w http.ResponseWriter, r *http.Request, cacheKey string, ttl time.Duration, start time.Time) (bool, string) {
+	cached, remainingTTL, sharedKey, ok := p.compatCacheLookup(endpoint, r, cacheKey, ttl)
+	if !ok {
+		return false, sharedKey
+	}
+	setCacheResult(r.Context(), "hit")
+	// A query answer gets this request's stats (query_stats_cache.go).
+	if !p.serveCompatHitWithStats(w, r, cacheKey, cached, remainingTTL) {
+		w.Header().Set("Content-Type", "application/json")
+		cached = compatHitBody(endpoint, cached)
+		body := cached
+		if encoding, minBytes := p.compatCacheResponseEncoding(r); encoding != "" {
+			if encodedBody, encodedAs, ok := p.compatCacheEncodedVariant(r.Context(), cacheKey, cached, remainingTTL, encoding, minBytes); ok && encodedAs != "" {
+				w.Header().Set("Content-Encoding", encodedAs)
+				w.Header().Set("Vary", "Accept-Encoding")
+				body = encodedBody
 			}
 		}
-		capture.Release()
+		_, _ = w.Write(body)
 	}
+	elapsed := time.Since(start)
+	p.metrics.RecordRequestWithRoute(endpoint, route, http.StatusOK, elapsed)
+	p.metrics.RecordCacheHit()
+	if endpoint == "query" || endpoint == "query_range" {
+		p.queryTracker.Record(endpoint, r.FormValue("query"), elapsed, false)
+	}
+	return true, sharedKey
+}
+
+// compatCacheMiss runs the handler for a compat cache miss and stores a
+// complete answer. lead, when set, is the flight this request leads: it learns
+// the answer's status, an error body, and whether the answer was stored.
+func (p *Proxy) compatCacheMiss(endpoint string, w http.ResponseWriter, r *http.Request, cacheKey, sharedKey string, ttl time.Duration, lead *flightLead, next http.HandlerFunc) {
+	var (
+		capture            *compatCacheCaptureWriter
+		captureAllowed     bool
+		capturePatternsNil bool
+		captureBodyLen     int
+	)
+	if encoding, _ := p.compatCacheResponseEncoding(r); encoding != "" && !queryStatsActive(r.Context()) {
+		_ = mw.RegisterEncodedResponseCapture(w, encoding, func(encodedAs string, encoded []byte) {
+			if !captureAllowed || capturePatternsNil || captureBodyLen == 0 {
+				return
+			}
+			if len(encoded) == 0 || len(encoded) >= captureBodyLen {
+				return
+			}
+			p.compatCache.SetWithTTL(compatCacheVariantKey(cacheKey, encodedAs), encoded, ttl)
+		})
+	}
+	var storedBody []byte // the body this miss stored, for the gzip stats sidecar
+	p.captureGzipStatsSidecar(w, r, cacheKey, func() ([]byte, time.Duration) { return storedBody, ttl })
+	capture = newCompatCacheCaptureWriter(w, p.compatCaptureLimit(sharedKey))
+	if lead != nil {
+		capture.onUnshareable = lead.release
+	}
+	// A miss that passed validation and limits: the exact bytes of a
+	// metric query are read next to it (query_stats_loki.go).
+	p.startExactMetricBytesFor(w, r)
+	rWithFlag := r.WithContext(context.WithValue(r.Context(), compatCacheActiveCtxKey{}, true))
+	next(capture, rWithFlag)
+	p.deriveQueryStatsTotalsFromCapture(r, endpoint, capture)
+	if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
+		body := capture.CapturedBody()
+		captureBodyLen = len(body)
+		captureAllowed = captureBodyLen > 0
+		if endpoint == "patterns" && captureAllowed {
+			capturePatternsNil = patternsPayloadEmpty(body)
+			if capturePatternsNil {
+				lead.observe(capture.code, body, capture.overflowed, capture.flushed)
+				capture.Release()
+				return
+			}
+		}
+		// Empty label lists get the same short negative TTL as the endpoint
+		// cache, so labels that appear later are not hidden for the full TTL.
+		if captureAllowed && (endpoint == "labels" || endpoint == "label_values") && metadataListPayloadEmpty(body) {
+			ttl = p.metadataNegativeTTL()
+		}
+		if captureAllowed {
+			value := p.compatCacheValue(w, r, cacheKey, body)
+			p.compatCache.SetWithTTL(cacheKey, value, ttl)
+			p.storeCompatSharedReply(sharedKey, value, ttl)
+			p.storeCompatOversizedReply(sharedKey, cacheKey, value, ttl)
+			recordFlowCacheStore(r.Context(), cacheKey, len(value))
+			storedBody = body
+			lead.markStored()
+		}
+	}
+	lead.observe(capture.code, capture.CapturedBody(), capture.overflowed, capture.flushed)
+	capture.Release()
 }

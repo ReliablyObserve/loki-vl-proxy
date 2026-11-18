@@ -75,7 +75,12 @@ extraArgs:
   # memory limit below after GOMEMLIMIT headroom. Lower if pods are memory-constrained.
   cache-max: "50000"
   # cache-disabled: "false"                  # disable in-memory cache entirely (testing/benchmarking)
-  # coalescer-disabled: "false"              # disable singleflight request coalescing
+  # coalescer-disabled: "false"              # disable singleflight request coalescing, and the request-level join of identical requests in flight
+  # error-cache-enabled: "true"               # hold failed read answers per request for their class's TTL (local to the replica, never pushed to peers); client cancellations/deadlines, the proxy's own 429s, auth failures and proxy defects are never held
+  # error-cache-transient-ttl: "1s"           # backend failures (VictoriaLogs 5xx/429/queue timeout, refused or reset connections; timeouts are never held): one VictoriaLogs call per TTL per failing request per replica; 0 holds none
+  # error-cache-data-ttl: "5s"                # failures read from the window's data (series limit, response/line limits, JSON parser or unwrap conversion errors under a metric); 0 holds none
+  # error-cache-max-entries: "4096"           # most failed answers held per replica (oldest evicted first)
+  # error-cache-max-bytes: "8388608"          # most bytes of failed answers held per replica; one answer above 64 KiB is never held
 
   # --- query_range window cache ---
   # Loki-aligned split/fanout defaults:

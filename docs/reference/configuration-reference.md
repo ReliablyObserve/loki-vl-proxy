@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (268), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (273), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -27,6 +27,11 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-disk-cache-max-index-bytes` | int64 | `16777216` | `extraArgs.disk-cache-max-index-bytes` | Maximum estimated L2 recency-index bytes (128 plus key length per entry) |
 | `-disk-cache-min-ttl` | duration | `30s` | `extraArgs.disk-cache-min-ttl` | Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies |
 | `-disk-cache-path` | string | (empty) | `persistence.* (chart-managed)` | Path to L2 disk cache (bbolt). Empty disables. |
+| `-error-cache-data-ttl` | duration | `5s` | `extraArgs.error-cache-data-ttl` | How long a failure read from the data in the request's window (Loki's series limit, a line or response size limit, a JSON parser or unwrap conversion error under a metric) is held per request; 0 holds none. The same window fails the same way until new lines arrive |
+| `-error-cache-enabled` | bool | `true` | `extraArgs.error-cache-enabled` | Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held. Identical requests in flight share one run either way (see -coalescer-disabled) |
+| `-error-cache-max-bytes` | int | `8388608` | `extraArgs.error-cache-max-bytes` | Most bytes of failed answers held per replica (oldest evicted first; a single answer above 64 KiB is never held); 0 uses the default |
+| `-error-cache-max-entries` | int | `4096` | `extraArgs.error-cache-max-entries` | Most failed answers held per replica (oldest evicted first); 0 uses the default |
+| `-error-cache-transient-ttl` | duration | `1s` | `extraArgs.error-cache-transient-ttl` | How long a backend failure (VictoriaLogs 5xx, 429 or queue timeout, a refused or reset connection) is held per request; 0 holds none. A timeout or an aborted body is never held. Each replica asks VictoriaLogs at most once per this TTL per failing request, and the first request after VictoriaLogs recovers answers within it |
 | `-label-values-hot-limit` | int | `200` | `extraArgs.label-values-hot-limit` | Default number of label values returned for empty-query browse requests when indexed cache is enabled |
 | `-label-values-index-max-entries` | int | `200000` | `extraArgs.label-values-index-max-entries` | Maximum indexed values retained per tenant+label when indexed label-values cache is enabled |
 | `-label-values-index-persist-interval` | duration | `30s` | `extraArgs.label-values-index-persist-interval` | How often to persist the in-memory label-values index snapshot to disk |
@@ -252,7 +257,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-cb-fail-threshold` | int | `5` | `extraArgs.cb-fail-threshold` | Circuit breaker: failures within -cb-window-duration before opening |
 | `-cb-open-duration` | duration | `10s` | `extraArgs.cb-open-duration` | Circuit breaker: how long to stay open before allowing probe requests |
 | `-cb-window-duration` | duration | `30s` | `extraArgs.cb-window-duration` | Circuit breaker: sliding window for failure counting; failures older than this are discarded |
-| `-coalescer-disabled` | bool | `false` | `extraArgs.coalescer-disabled` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead |
+| `-coalescer-disabled` | bool | `false` | `extraArgs.coalescer-disabled` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead. It also turns off the request-level join: identical read requests in flight then run each on their own (held failures are still answered, see -error-cache-enabled) |
 | `-debug-log-raw-queries` | bool | `false` | `extraArgs.debug-log-raw-queries` | When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len). |
 | `-delete-api-auth-token` | string | (empty) | `extraArgs.delete-api-auth-token` | Token every /loki/api/v1/delete request must carry, in X-Delete-Token or Authorization: Bearer (constant-time compare); required by -delete-api-enabled. It is the delete API's own credential: the admin token and the admin listener are unaffected. Prefer the Helm value deleteAuth.existingSecret, which keeps it out of the pod spec |
 | `-delete-api-enabled` | bool | `false` | `extraArgs.delete-api-enabled` | Register /loki/api/v1/delete and run Loki's delete requests as VictoriaLogs delete tasks (VictoriaLogs needs -delete.enable). Requires -delete-api-auth-token: every delete request must carry it in X-Delete-Token or Authorization: Bearer, and the proxy refuses to start without one. When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off) |

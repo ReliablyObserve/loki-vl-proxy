@@ -3,12 +3,14 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 )
 
 func answer(body string) (*http.Response, error) {
@@ -150,4 +152,87 @@ func TestCoalescerSharedCallKeepsLeaderValues(t *testing.T) {
 	if err != nil || got != "tenant-a" {
 		t.Fatalf("value = %v, err = %v; want tenant-a", got, err)
 	}
+}
+
+// The shared call carries the deadline of the caller that started it. A
+// follower whose own context is alive when that deadline ends the call never
+// answers with the leader's timeout: it starts the call again as the new
+// leader and gets the backend's answer.
+//
+// conformance: backend-deadlines-and-cancellation, semantics/error-coalescing-no-inherited-cancel
+func TestCoalescerFollowerRetriesAfterLeaderDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := NewCoalescer()
+		started := make(chan struct{}, 2)
+		var calls atomic.Int64
+		fn := func(ctx context.Context) (*http.Response, error) {
+			n := calls.Add(1)
+			started <- struct{}{}
+			if n == 1 {
+				<-ctx.Done() // the first call outlives the leader's deadline
+				return nil, ctx.Err()
+			}
+			return answer("fresh")
+		}
+		leaderCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		leaderDone := make(chan error, 1)
+		go func() {
+			_, _, _, err := c.DoWithGuardCtx(leaderCtx, "key", allow, fn)
+			leaderDone <- err
+		}()
+		<-started
+		followerDone := make(chan []byte, 1)
+		go func() {
+			_, _, body, err := c.DoWithGuardCtx(context.Background(), "key", allow, fn)
+			if err != nil {
+				t.Errorf("follower inherited the leader's failure: %v", err)
+			}
+			followerDone <- body
+		}()
+		synctest.Wait()
+		if err := <-leaderDone; !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("leader: want its own deadline, got %v", err)
+		}
+		if body := <-followerDone; string(body) != "fresh" {
+			t.Fatalf("follower body = %q, want the new call's answer", body)
+		}
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("backend calls = %d, want 2 (the timed-out call and the follower's own)", got)
+		}
+	})
+}
+
+// A backend timeout (an error that wraps DeadlineExceeded while the shared
+// call's context is alive) is the backend's failure, shared as it is: the
+// follower does not send the heavy call again.
+//
+// conformance: semantics/error-coalescing-no-inherited-cancel
+func TestCoalescerBackendTimeoutIsNotRetried(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := NewCoalescer()
+		release := make(chan struct{})
+		started := make(chan struct{}, 2)
+		var calls atomic.Int64
+		fn := func(ctx context.Context) (*http.Response, error) {
+			calls.Add(1)
+			started <- struct{}{}
+			<-release
+			return nil, fmt.Errorf("backend read: %w", context.DeadlineExceeded)
+		}
+		errs := make(chan error, 2)
+		go func() { _, _, _, err := c.DoWithGuardCtx(context.Background(), "key", allow, fn); errs <- err }()
+		<-started
+		go func() { _, _, _, err := c.DoWithGuardCtx(context.Background(), "key", allow, fn); errs <- err }()
+		synctest.Wait()
+		close(release)
+		for i := 0; i < 2; i++ {
+			if err := <-errs; !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("caller %d: %v", i, err)
+			}
+		}
+		if got := calls.Load(); got != 1 {
+			t.Fatalf("backend calls = %d, want 1", got)
+		}
+	})
 }

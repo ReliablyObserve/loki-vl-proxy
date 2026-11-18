@@ -717,6 +717,53 @@ services:
       retries: 10
       start_period: 5s
 
+  # Loki-VL-proxy for the request flight and error cache tests
+  # (error_flights_live_test.go): its own replica, so the VictoriaLogs calls it
+  # counts are its own; the debug calls header for per-request counts; a series
+  # limit of 1 for Loki's data-dependent series-limit error; a 3 s backend
+  # timeout for the timeout cases; shipped error cache defaults.
+  loki-vl-proxy-errflight:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-errflight
+    ports:
+      - "13120:3100"
+    environment:
+      - GOMEMLIMIT=1GiB
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-max-stats-query-series=1"
+      # query_timeout may not exceed -backend-timeout: both 3 s.
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"3s","retention_period":"3d"}'
+      - "-tenant.numeric-passthrough=true"
+      - "-backend-timeout=3s"
+      - "-log-level=info"
+      - "-debug-vl-calls-header"
+      # No label warm-up: only the parity proxies warm, and its background
+      # reads would mix with the calls the tests count.
+      - "-labels-cache-warm=false"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=translated"
+      - "-emit-structured-metadata=true"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
+      - "-metadata-default-lookback=1h"
+      - "-server.register-instrumentation=true"
+      - "-server.admin-auth-token=e2e-test-token"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
   # Loki-VL-proxy with underscore labels but native metadata field mode
   loki-vl-proxy-native-metadata:
     image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
