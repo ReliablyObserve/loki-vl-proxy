@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
@@ -327,9 +328,14 @@ func (p *Proxy) capabilityStats() metrics.CapabilityStats {
 	return out
 }
 
-// handleCapabilities is GET /admin/capabilities (registered for GET, so the mux answers any other method with 405): every release seen, the effective one, every gate with what decided
+// handleCapabilities is GET /admin/capabilities (any other method is answered 405): every release seen, the effective one, every gate with what decided
 // it, the mismatches and the epoch. It is a proxy-own route, protected like the other admin routes.
 func (p *Proxy) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		p.fail(w, r, lokierr.MethodNotAllowed())
+		return
+	}
 	st := p.caps.Status()
 	st.Probing = !p.backendFeatureProbesDisabled
 	w.Header().Set("Content-Type", "application/json")

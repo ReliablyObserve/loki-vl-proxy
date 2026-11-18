@@ -2288,7 +2288,7 @@ func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
 		// Protected by the admin auth token.
 		mux.Handle("/admin/cache/flush", p.adminMiddleware(http.HandlerFunc(p.handleCacheFlush)))
 		// Capability status — GET /admin/capabilities: the VictoriaLogs releases seen, the gates and what decided them.
-		mux.Handle("GET /admin/capabilities", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.handleCapabilities))))
+		mux.Handle("/admin/capabilities", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.handleCapabilities))))
 	}
 	if p.enableQueryAnalytics {
 		mux.Handle("/debug/queries", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.queryTracker.Handler))))
