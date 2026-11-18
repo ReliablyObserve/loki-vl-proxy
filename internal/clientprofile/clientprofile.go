@@ -1,10 +1,10 @@
-// Package clientprofile is the leaf type of what a request says about the client behind it: the surface it comes
-// from (Grafana's Explore, Logs Drilldown, the Loki datasource, a plain API caller) and the versions it announces.
-// The capability layer reads it per request (capability.Layer.For); nothing here decides anything, and the package
-// imports only the standard library so every layer may depend on it.
+// Package clientprofile is the typed profile of the client behind one request: which surface sent it (Grafana
+// Explore, Logs Drilldown, another Grafana Loki datasource user such as a dashboard, or a plain API client) and the
+// Grafana and Logs Drilldown versions the request names. It is read once per request from the request's headers and
+// carried in its context; behaviour that depends on the client reads it from there.
 //
-// Detection (reading the headers into a Profile) is not part of this package yet: a request carries a Profile only
-// where something has attached one with With.
+// Every value is bounded: a version is major.minor.patch numbers or unknown, a surface one of a closed set, so a
+// profile can label a metric or a log line without carrying any text a client sent.
 package clientprofile
 
 import (
@@ -12,17 +12,21 @@ import (
 	"strconv"
 )
 
-// Surface is the client surface a request comes from. The set is closed: Label never returns anything else, so a
-// metric label built from it stays bounded.
+// Surface is the client surface of a request.
 type Surface uint8
 
-// The surfaces.
 const (
-	Unknown Surface = iota
-	API
-	Explore
-	Drilldown
-	Datasource
+	// SurfaceUnknown is a request whose client the profile cannot tell.
+	SurfaceUnknown Surface = iota
+	// SurfaceAPI is a request from a client that is not Grafana (no Grafana User-Agent or header).
+	SurfaceAPI
+	// SurfaceExplore is a request of Grafana's Loki datasource from Explore.
+	SurfaceExplore
+	// SurfaceDrilldown is a request of the Logs Drilldown app (grafana-lokiexplore-app).
+	SurfaceDrilldown
+	// SurfaceDatasource is any other request of Grafana's Loki datasource: dashboards, alerting, the datasource
+	// health check and its resource calls.
+	SurfaceDatasource
 )
 
 var surfaceLabels = [...]string{"unknown", "api", "explore", "drilldown", "datasource"}
@@ -32,71 +36,143 @@ func (s Surface) Label() string {
 	if int(s) < len(surfaceLabels) {
 		return surfaceLabels[s]
 	}
-	return surfaceLabels[Unknown]
+	return surfaceLabels[SurfaceUnknown]
 }
 
-// Version is a client version as major.minor.patch.
+// Grafana reports whether the surface is one of Grafana's.
+func (s Surface) Grafana() bool {
+	return s == SurfaceExplore || s == SurfaceDrilldown || s == SurfaceDatasource
+}
+
+// Version is a client release as major.minor.patch; the zero value is unknown.
 type Version struct {
 	Major, Minor, Patch uint16
 	Known               bool
 }
 
-// maxVersionPart bounds each part to four digits, so a crafted header cannot name an unbounded set of versions.
+// maxVersionPart bounds every number of a version: a part with more digits is no version.
 const maxVersionPart = 9999
 
-// ParseVersion reads the leading major.minor.patch of s ("13.3.1", "13.3.1 (commit)", "3.2.0-rc1"). Anything that
-// does not start with three dot-separated numbers of one to four digits is not a version.
+// ParseVersion reads the release at the start of s: three dot-separated runs of 1 to 4 ASCII digits, each at most
+// 9999, followed by the end of s or by a character that is not a digit or a dot (a pre-release or build suffix such
+// as -beta1 or +security-01 is dropped). A leading v is accepted. Anything else is unknown.
 func ParseVersion(s string) Version {
+	if len(s) > 0 && (s[0] == 'v' || s[0] == 'V') {
+		s = s[1:]
+	}
 	var parts [3]uint16
 	i := 0
-	for n := 0; n < 3; n++ {
+	for p := 0; p < 3; p++ {
 		start := i
-		for i < len(s) && s[i] >= '0' && s[i] <= '9' && i-start < 5 {
+		n := 0
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			if i-start == 4 {
+				return Version{}
+			}
+			n = n*10 + int(s[i]-'0')
 			i++
 		}
-		if i == start || i-start > 4 {
+		if i == start || n > maxVersionPart {
 			return Version{}
 		}
-		v, err := strconv.Atoi(s[start:i])
-		if err != nil || v > maxVersionPart {
-			return Version{}
-		}
-		parts[n] = uint16(v)
-		if n < 2 {
+		parts[p] = uint16(n)
+		if p < 2 {
 			if i >= len(s) || s[i] != '.' {
 				return Version{}
 			}
 			i++
 		}
 	}
+	if i < len(s) && (s[i] == '.' || (s[i] >= '0' && s[i] <= '9')) {
+		return Version{} // a fourth part or a longer number
+	}
 	return Version{Major: parts[0], Minor: parts[1], Patch: parts[2], Known: true}
 }
 
-// Label is "M.m.p", or "unknown" for a version that was not read.
+// Label is the version as major.minor.patch, or "unknown".
 func (v Version) Label() string {
 	if !v.Known {
 		return "unknown"
 	}
-	return strconv.Itoa(int(v.Major)) + "." + strconv.Itoa(int(v.Minor)) + "." + strconv.Itoa(int(v.Patch))
+	b := make([]byte, 0, 14)
+	b = strconv.AppendUint(b, uint64(v.Major), 10)
+	b = append(b, '.')
+	b = strconv.AppendUint(b, uint64(v.Minor), 10)
+	b = append(b, '.')
+	b = strconv.AppendUint(b, uint64(v.Patch), 10)
+	return string(b)
 }
 
-// Profile is what a request says about its client.
+// IsLabel reports whether s is exactly v's label (major.minor.patch without leading zeros or suffix), so a caller
+// holding that text can use it instead of building the label.
+func (v Version) IsLabel(s string) bool {
+	if !v.Known || len(s) > 14 {
+		return false
+	}
+	return ParseVersion(s) == v && len(s) == digits(v.Major)+digits(v.Minor)+digits(v.Patch)+2
+}
+
+func digits(n uint16) int {
+	d := 1
+	for n >= 10 {
+		n /= 10
+		d++
+	}
+	return d
+}
+
+// AtLeast reports whether v is known and at least major.minor.patch.
+func (v Version) AtLeast(major, minor, patch uint16) bool {
+	if !v.Known {
+		return false
+	}
+	if v.Major != major {
+		return v.Major > major
+	}
+	if v.Minor != minor {
+		return v.Minor > minor
+	}
+	return v.Patch >= patch
+}
+
+// Profile is the client of one request.
 type Profile struct {
-	Surface    Surface
-	Grafana    Version // the Grafana runtime
-	Datasource Version // the bundled Loki datasource (Grafana's User-Agent carries it)
-	Drilldown  Version // the Logs Drilldown plugin, when a request carries it
+	Surface Surface
+	// Grafana is the Grafana release that sent the request (its User-Agent), unknown for another client.
+	Grafana Version
+	// Datasource is the release of Grafana's Loki datasource plugin that sent the request (the loki/ token of the
+	// User-Agent; Grafana bundles it, and a release can update it on its own).
+	Datasource Version
+	// Drilldown is the Logs Drilldown app release when the request names it; unknown otherwise.
+	Drilldown Version
 }
 
-type ctxKey struct{}
+type contextKey struct{}
 
-// With returns ctx carrying p.
-func With(ctx context.Context, p Profile) context.Context {
-	return context.WithValue(ctx, ctxKey{}, p)
+// Carrier is a value that holds a request's profile, so a caller that already keeps its own per-request value in
+// the context can carry the profile in it (one context value, one allocation) instead of adding another.
+type Carrier interface {
+	ClientProfile() Profile
 }
 
-// From is the profile ctx carries, or the zero Profile (Unknown surface, no versions).
+// ClientProfile makes a Profile its own carrier.
+func (p Profile) ClientProfile() Profile { return p }
+
+// With returns ctx carrying c (a Profile, or a value that holds one).
+func With(ctx context.Context, c Carrier) context.Context {
+	return context.WithValue(ctx, contextKey{}, c)
+}
+
+// CarrierFrom returns the carrier ctx holds, nil when it holds none.
+func CarrierFrom(ctx context.Context) Carrier {
+	c, _ := ctx.Value(contextKey{}).(Carrier)
+	return c
+}
+
+// From returns the profile ctx carries, the zero (unknown) profile when it carries none.
 func From(ctx context.Context) Profile {
-	p, _ := ctx.Value(ctxKey{}).(Profile)
-	return p
+	if c := CarrierFrom(ctx); c != nil {
+		return c.ClientProfile()
+	}
+	return Profile{}
 }

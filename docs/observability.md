@@ -171,6 +171,8 @@ VictoriaLogs or the cache and tail internals, is described under Log Sources):
   "user_agent.original": "Grafana/12.2.0",
   "grafana.version": "12.2.0",
   "grafana.client.surface": "grafana_loki_datasource",
+  "client.surface": "explore",
+  "grafana.datasource.version": "13.2.5",
   "enduser.name": "grafana-user@example.com"
 }
 ```
@@ -185,7 +187,8 @@ VictoriaLogs or the cache and tail internals, is described under Log Sources):
 | `loki.query` | the LogQL, cut at 200 bytes |
 | `enduser.id`, `enduser.source`, `enduser.name`, `auth.source` | who sent the request and how the proxy knows: the user named by `-log-user-header` or the trusted headers of `-metrics.trust-proxy-headers`, otherwise the tenant (`enduser.source` `tenant`) or the client address; capped at 128 bytes, control characters escaped. `auth.source` is only the mechanism (for example `basic_auth`), never the credential. See [Who is loading the proxy or VictoriaLogs](#who-is-loading-the-proxy-or-victorialogs) |
 | `client.address`, `network.peer.address`, `user_agent.original` | the forwarded client address, the connection peer and the user agent |
-| `grafana.*` | the Grafana version, surface (Explore, Drilldown), source tag and profiles read from the user agent and `X-Query-Tags`, and `grafana.query_tags`, the `X-Query-Tags` header as sent (capped at 256 bytes) when it holds more than the Source tag |
+| `grafana.*` | the Grafana version, surface (Explore, Drilldown), source tag and profiles read from the user agent and `X-Query-Tags`, and `grafana.query_tags`, the `X-Query-Tags` header as sent (capped at 256 bytes) when it holds more than the Source tag. `grafana.version` is normalised to `major.minor.patch` (left out when the user agent names none) |
+| `client.surface`, `grafana.datasource.version`, `grafana.drilldown.version` | the request's typed client profile (`internal/clientprofile`): the surface, one of `api` (no Grafana header), `explore` (the Explore Source tags `grafana-explore` and `logvolhist`, or a resource call from the Explore page), `drilldown` (the Logs Drilldown Source tag `grafana-lokiexplore-app`, or a resource call from its pages) and `datasource` (any other Grafana request: dashboards, alerting, Grafana 12's untagged Explore query); the Loki datasource plugin version Grafana 13 names in its user agent (`loki/13.2.5`); the Drilldown app version only when a request names it, which no captured Grafana or Drilldown release does. Closed values and normalised versions only: no header text. Only the path class of `X-Grafana-Referer` is read, never kept |
 | `cache.result` | the answer-cache outcome of the request: `hit`, `miss` or `bypass` (cache not used) |
 | `proxy.overhead_ms` | the request's duration minus `upstream.duration_ms` (never below 0) |
 | `upstream.calls`, `upstream.duration_ms`, `upstream.status_code`, `upstream.error` | the requests sent to VictoriaLogs and Loki-compatible backends for this request: how many, their summed time to the response headers, the last status and whether any failed |
@@ -572,7 +575,8 @@ adds a `callers` object next to the top queries:
   "top_by_vl_bytes": ["..."],
   "recent_requests": [
     {"time": 1794000912000, "tenant": "team-a", "user": "alice@example.com", "user_source": "grafana_user",
-     "grafana_source": "grafana-lokiexplore-app", "endpoint": "query_range", "route": "/loki/api/v1/query_range",
+     "grafana_source": "grafana-lokiexplore-app", "surface": "drilldown", "grafana_version": "13.3.1",
+     "datasource_version": "13.2.5", "endpoint": "query_range", "route": "/loki/api/v1/query_range",
      "status": 200, "query": "sum by (level) (count_over_time({service_name=\"api\"} | json [5m]))",
      "requests": 1, "errors": 0, "slow": 1, "duration_ms": 4210, "vl_calls": 2, "vl_ms": 4180,
      "vl_bytes": 912340, "vl_rows": 0}
@@ -585,7 +589,9 @@ adds a `callers` object next to the top queries:
   requests, errors (status 400 and above), slow requests, time and VictoriaLogs
   calls, time, bytes and rows.
 - `recent_requests`: the 256 most recent client requests, newest first, each
-  with its caller, route, status, query (first 512 bytes) and cost.
+  with its caller, its client profile (`surface`, `grafana_version`,
+  `datasource_version`, `drilldown_version`; see the request line fields),
+  route, status, query (first 512 bytes) and cost.
 - `?tenant=team-a` and `?user=alice@example.com` keep the callers and requests
   of that tenant or user (exact match; both may be given). The top-query lists
   above them are not filtered.

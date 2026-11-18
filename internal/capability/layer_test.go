@@ -311,7 +311,7 @@ func TestForIsAllocationFreeAndCarriesTheClientProfile(t *testing.T) {
 	l := newTestLayer(newClock())
 	l.Observe("a", rel("v1.54.0"))
 	plain := context.Background()
-	prof := clientprofile.Profile{Surface: clientprofile.Drilldown, Grafana: clientprofile.ParseVersion("13.3.1")}
+	prof := clientprofile.Profile{Surface: clientprofile.SurfaceDrilldown, Grafana: clientprofile.ParseVersion("13.3.1")}
 	withProfile := clientprofile.With(plain, prof)
 	for name, ctx := range map[string]context.Context{"no profile": plain, "profile": withProfile} {
 		ctx := ctx
@@ -433,7 +433,7 @@ func TestClientSeriesCardinalityIsCapped(t *testing.T) {
 
 func TestObserveClientIsAllocationFreeOnTheRepeat(t *testing.T) {
 	l := newTestLayer(newClock())
-	p := clientprofile.Profile{Surface: clientprofile.Datasource, Grafana: clientprofile.ParseVersion("13.3.1"), Datasource: clientprofile.ParseVersion("13.2.5")}
+	p := clientprofile.Profile{Surface: clientprofile.SurfaceDatasource, Grafana: clientprofile.ParseVersion("13.3.1"), Datasource: clientprofile.ParseVersion("13.2.5")}
 	l.ObserveClient(p)
 	if n := testing.AllocsPerRun(200, func() { l.ObserveClient(p) }); n != 0 {
 		t.Fatalf("a profile seen before allocates %v", n)
@@ -446,7 +446,7 @@ func TestObserveClientIsAllocationFreeOnTheRepeat(t *testing.T) {
 func BenchmarkLayerFor(b *testing.B) {
 	l := newTestLayer(newClock())
 	l.Observe("a", rel("v1.54.0"))
-	ctx := clientprofile.With(context.Background(), clientprofile.Profile{Surface: clientprofile.Explore})
+	ctx := clientprofile.With(context.Background(), clientprofile.Profile{Surface: clientprofile.SurfaceExplore})
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if !l.For(ctx).On(PipeCoalesce) {

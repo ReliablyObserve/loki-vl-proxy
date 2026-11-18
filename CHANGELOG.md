@@ -37,13 +37,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every gate with what decided it, the mismatches, the epoch and the digest. New metrics:
   `loki_vl_proxy_backend_version_info`, `loki_vl_proxy_capability_gate`, `loki_vl_proxy_capability_mismatch_total`,
   `loki_vl_proxy_capability_epoch`, `loki_vl_proxy_backend_feature_probe_total` and
-  `loki_vl_proxy_client_profile_requests_total` (bounded: 32 values per version label, `other` beyond; no request
-  carries a client profile yet, so it stays empty until client detection attaches one). One `capability set changed`
+  `loki_vl_proxy_client_profile_requests_total` (the surface and the Grafana, Loki datasource and Logs Drilldown versions
+  of the typed client profile of each request; 32 values per version label, `other` beyond). One `capability set changed`
   info line per change of the set; with `-debug-vl-calls-header` every read response carries
   `X-Loki-VL-Capabilities`. The operations dashboard has a "Versions and capabilities" row.
 - The held VictoriaLogs refusals, their peer sync and the request flight keys carry a content digest of the gate set
   (release, flavour, every gate's state) instead of the release string, so an entry built under another gate set is
   a miss on this replica and on a peer, and replicas of one backend agree on it.
+- The proxy reads a typed client profile from each request's headers: the surface (`explore`, `drilldown`,
+  `datasource` for other Grafana requests such as dashboards and alerting, `api` for clients that are not
+  Grafana) and the Grafana, Loki datasource plugin and Logs Drilldown versions, as closed values and normalised
+  `major.minor.patch` versions only. The request, upstream and slow log lines carry `client.surface`,
+  `grafana.datasource.version` (Grafana 13 names its Loki datasource plugin in its User-Agent, for example
+  `loki/13.2.5`) and `grafana.drilldown.version` (only when a request names it, which no current Grafana or
+  Drilldown release does), and `/debug/queries` lists them for each recent request. `grafana.version` in the log
+  lines and the VictoriaLogs request header is now normalised to `major.minor.patch` (a pre-release or build
+  suffix is dropped; a User-Agent with no such version sends none). The rules come from the requests Grafana
+  13.3.1, 13.3.0 and 12.4.14 with Logs Drilldown 3.2.0, 3.1.0 and 2.6.0 send for every Explore and Drilldown
+  request kind; Grafana 12's untagged Explore query reads as `datasource`. Responses and cache keys do not
+  change.
 
 ### Changed
 

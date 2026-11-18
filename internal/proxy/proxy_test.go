@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientprofile"
 	"github.com/gorilla/websocket"
 	"gopkg.in/yaml.v3"
 )
@@ -2257,7 +2258,7 @@ func TestContract_Patterns_DenseShortRangeAvoidsFortyMinuteSamplingGaps(t *testi
 		"/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=2026-04-04T10:00:00Z&end=2026-04-04T13:00:00Z&step=90s&limit=1",
 		nil,
 	)
-	req = req.WithContext(context.WithValue(req.Context(), requestGrafanaClientKey, grafanaClientProfile{
+	req = req.WithContext(clientprofile.With(req.Context(), grafanaClientProfile{
 		surface:      "grafana_drilldown",
 		runtimeMajor: 12,
 	}))
@@ -2761,7 +2762,7 @@ func TestContract_SupportsDensePatternWindowingForRequest_GrafanaRuntimeAware(t 
 
 	baseReq := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22api%22%7D", nil)
 
-	legacyCtx := context.WithValue(baseReq.Context(), requestGrafanaClientKey, grafanaClientProfile{
+	legacyCtx := clientprofile.With(baseReq.Context(), grafanaClientProfile{
 		surface:      "grafana_drilldown",
 		runtimeMajor: 11,
 	})
@@ -2769,7 +2770,7 @@ func TestContract_SupportsDensePatternWindowingForRequest_GrafanaRuntimeAware(t 
 		t.Fatal("expected dense windowing disabled for legacy drilldown runtime family")
 	}
 
-	modernCtx := context.WithValue(baseReq.Context(), requestGrafanaClientKey, grafanaClientProfile{
+	modernCtx := clientprofile.With(baseReq.Context(), grafanaClientProfile{
 		surface:      "grafana_drilldown",
 		runtimeMajor: 12,
 	})

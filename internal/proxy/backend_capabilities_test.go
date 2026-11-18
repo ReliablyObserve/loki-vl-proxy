@@ -580,7 +580,7 @@ func TestCapabilityClientMetricCardinalityCap(t *testing.T) {
 	b := newCapBackend(t, buildV154)
 	p := newCapProxy(t, b, nil)
 	for i := 0; i < 3000; i++ {
-		p.caps.ObserveClient(clientprofile.Profile{Surface: clientprofile.Explore, Grafana: clientprofile.Version{Major: uint16(i), Known: true}, Datasource: clientprofile.Version{Minor: uint16(i), Known: true}})
+		p.caps.ObserveClient(clientprofile.Profile{Surface: clientprofile.SurfaceExplore, Grafana: clientprofile.Version{Major: uint16(i), Known: true}, Datasource: clientprofile.Version{Minor: uint16(i), Known: true}})
 	}
 	rec := httptest.NewRecorder()
 	p.metrics.Handler(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -619,4 +619,35 @@ func upstreamRequests(p *Proxy) (n int) {
 		}
 	}
 	return n
+}
+
+// A request counts under its typed client profile (surface, Grafana, Loki datasource and Drilldown versions) in the
+// capability layer's client metric, apart from the client-identity metric of the same family prefix.
+//
+// conformance: vl-capability-layer
+func TestCapabilityClientProfileMetricFromRequests(t *testing.T) {
+	b := newCapBackend(t, buildV154)
+	p := newCapProxy(t, b, nil)
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil)
+		req.Header.Set("User-Agent", "Grafana/13.3.1 (linux; amd64) loki/13.2.5")
+		req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+		mux.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil))
+	rec := httptest.NewRecorder()
+	p.metrics.Handler(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		`loki_vl_proxy_client_profile_requests_total{surface="drilldown",grafana_version="13.3.1",datasource_version="13.2.5",drilldown_version="unknown"} 3`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %s in\n%s", want, body)
+		}
+	}
+	if !strings.Contains(body, `loki_vl_proxy_client_profile_requests_total{surface="api"`) && !strings.Contains(body, `loki_vl_proxy_client_profile_requests_total{surface="unknown"`) {
+		t.Error("a request without a Grafana User-Agent has a profile too")
+	}
 }

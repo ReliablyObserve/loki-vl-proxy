@@ -3122,7 +3122,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 // derivation and the Grafana profile used by query dispatch. Content
 // compression varies independently.
 func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
-	profile := detectGrafanaClientProfile(r, "", r.URL.Path)
+	profile := grafanaRuntimeProfile(r, "", r.URL.Path)
 	return strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
 }
 
