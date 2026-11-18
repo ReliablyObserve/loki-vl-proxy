@@ -1,0 +1,43 @@
+id: semantics/unwrap-bytes-pushdown-near-2-64
+title: A whole bytes() size within float64 rounding of 2^64 fails on the VictoriaLogs pushdown; Loki 3.7.10 makes its sample (open)
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki 3.7.10 reads a whole `unwrap bytes()` size exactly in uint64 (go-humanize
+  v1.1.0): 18446744073709551615 bytes makes a sample, 18446744073709551616
+  fails with "too large" (semantics/unwrap-bytes-whole-size-exact). The
+  VictoriaLogs pushdown converts the size with the math pipe in float64 and
+  keeps a value below 2^64 (translate.UnwrapInRange); every whole size from
+  about 2^64-1024 up rounds to 2^64 there, so the proxy fails the query with
+  SampleExtractionErr where Loki 3.7.10 answers the sample. Only sizes within
+  float64's rounding of 2^64 bytes (16 EiB) are affected; the proxy's raw
+  evaluators already read them as Loki does.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (sum_over_time({service_name="cache-redis"} | logfmt | unwrap bytes(size_bytes) [5m]))'
+    start: "<t-5m>"
+    end: "<t>"
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 with the sample 1.8446744073709552e+19 for v=18446744073709551615.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translate unwrap gate (UnwrapInRange for bytes)'
+  loki: 'a whole size up to 2^64-1 converts exactly (go-humanize v1.1.0, Loki 3.7.10, engine oracle recording unwrap_conversion)'
+  proxy: 'the pushdown drops or flags sizes that round to 2^64 in float64'
+  planned_test: 'TestUnwrapConversionMatchesRecordedLoki (raw evaluator) and a VictoriaLogs oracle check of the pushdown range filter'
+applies_to:
+  loki: ">=3.7.10"
+  victorialogs: ">=v1.49.0"
