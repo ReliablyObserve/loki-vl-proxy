@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
   later). Answers cached before are not served (the identity's response key version moves to v4).
 
+### Security
+
+- The stack's Grafana moves to 13.3.1, which fixes CVE-2026-102589, CVE-2026-107509, CVE-2026-110992,
+  CVE-2026-111024, CVE-2026-13721 and CVE-2026-14242 (Grafana's security release). The proxy itself is unchanged;
+  the pin is what the compose files, the examples and CI run.
+
 ## [2.337.0] - 2026-11-18
 
 ### Fixed
@@ -68,12 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
   it stands. A request with 18 nested calls (about 550 bytes) took half a second and now takes 2.5 ms. Answers do not
   change, and nested queries are accepted at every depth, as Loki accepts them (semantics/nested-calls-linear-work).
-
-### Security
-
-- The stack's Grafana moves to 13.3.1, which fixes CVE-2026-102589, CVE-2026-107509, CVE-2026-110992,
-  CVE-2026-111024, CVE-2026-13721 and CVE-2026-14242 (Grafana's security release). The proxy itself is unchanged;
-  the pin is what the compose files, the examples and CI run.
 
 ## [2.336.0] - 2026-11-18
 
