@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query, with what Loki expects there, or the error of a regex Loki builds before it; the proxy said
   `unterminated '('`. label_replace's regex is checked ahead of the tree inside the call, an outer call's first, as
   Loki checks it. These answers are recorded from Loki.
+- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
+  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
+  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
+  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
+  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
+  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
 
 ### Performance
 
@@ -69,12 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
-  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
-  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
-  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
-  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
-  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
 - `unwrap bytes()` reads a whole size exactly up to 18446744073709551615 bytes, as Loki 3.7.10 does (its
   go-humanize v1.1.0): such a value now makes a sample on the proxy's own evaluators instead of failing the query
   with `SampleExtractionErr` (`too large`); a size of 2^64 bytes or more still fails as in Loki. A label filter
