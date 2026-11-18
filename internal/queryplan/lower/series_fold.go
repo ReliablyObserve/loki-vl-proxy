@@ -171,11 +171,18 @@ func hasSeriesField(by []string) bool {
 // fold the finite buckets of a series with a NaN line), the finiteness mark that reads the flag, and the unroll of the
 // bucket rows.
 func SeriesFoldKeepsFlag(pipe string) bool {
-	if strings.HasSuffix(pipe, ") as "+SeriesFoldRows) && strings.Contains(pipe, "json_values(") {
+	if strings.HasSuffix(pipe, seriesFoldRowsSuffix) && strings.Contains(pipe, "json_values(") {
 		return true
 	}
-	return pipe == seriesFoldFinitePipe.String()[2:] || pipe == seriesFoldUnroll.String()[2:]
+	return pipe == seriesFoldFiniteText || pipe == seriesFoldUnrollText
 }
+
+// The texts SeriesFoldKeepsFlag compares a pipe with (without the leading "| "), written once.
+var (
+	seriesFoldRowsSuffix = ") as " + SeriesFoldRows
+	seriesFoldFiniteText = seriesFoldFinitePipe.String()[2:]
+	seriesFoldUnrollText = seriesFoldUnroll.String()[2:]
+)
 
 // SeriesFoldBase is the base query of a folded read over base, a read's query up to the bucket stats with the series
 // hash ahead (Profile IdentityAhead): the parser's unpack writes its keys under the identity's prefix and copies them

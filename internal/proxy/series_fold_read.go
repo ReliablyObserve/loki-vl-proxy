@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -21,6 +23,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
+	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
 )
 
@@ -304,12 +307,17 @@ func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentPar
 		if resp.StatusCode != http.StatusOK {
 			return resp, nil
 		}
-		raw, err := io.ReadAll(resp.Body)
+		buf := seriesFoldBufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		_, err = buf.ReadFrom(resp.Body)
 		_ = resp.Body.Close()
 		if err != nil {
+			putSeriesFoldBuf(buf)
 			return nil, err
 		}
-		matrix, err := fold.matrix(raw)
+		// The matrix copies what it keeps of the rows: the buffer goes back to the pool.
+		matrix, err := fold.matrix(buf.Bytes())
+		putSeriesFoldBuf(buf)
 		if err != nil {
 			return nil, err
 		}
@@ -330,6 +338,18 @@ func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentPar
 		header = http.Header{}
 	}
 	return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(bytes.NewReader(body)), ContentLength: int64(len(body))}, nil
+}
+
+// seriesFoldBufPool holds the buffers folded answers are read into; putSeriesFoldBuf keeps none larger than
+// seriesFoldBufKeep, so a large answer's buffer is not held after its read.
+var seriesFoldBufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+const seriesFoldBufKeep = 4 << 20
+
+func putSeriesFoldBuf(buf *bytes.Buffer) {
+	if buf.Cap() <= seriesFoldBufKeep {
+		seriesFoldBufPool.Put(buf)
+	}
 }
 
 // seriesFoldQueryPath is the endpoint a folded read is sent to: its stats pipes group by the bucket themselves.
@@ -402,65 +422,91 @@ func parseVLTimeNanos(raw string) (int64, bool) {
 	return parseFlexibleUnixNanos(raw)
 }
 
-// seriesFoldPoint is one bucket's value of one result of a folded answer.
+// seriesFoldPoint is one bucket's value of one result of a folded answer: its time and its value as the answer
+// writes it (a JSON string's content, escaped).
 type seriesFoldPoint struct {
 	ts    int64
-	value string
+	value []byte
 }
 
 // seriesFoldSeries is one result of a folded answer read back into stats_query_range's shape: its column, name and
-// labels (the last stats pipe's grouping less the bucket), and its points.
+// label values (the last stats pipe's grouping less the bucket, as the answer writes them), and its points.
 type seriesFoldSeries struct {
 	column int
 	name   string
-	labels []string
+	labels [][]byte
 	points []seriesFoldPoint
+	sort   string
 }
+
+// seriesFoldField is one field of a folded answer's row: its name and its value as the row writes them.
+type seriesFoldField struct{ key, value []byte }
 
 // matrix reads a folded read's answer (rows of /select/logsql/query, one per bucket and group of the query's last
 // stats pipe) back into the answer stats_query_range gives for a stats query of these groups: a result per column and
 // group, its labels the grouping less the bucket and its points the buckets, ordered as VictoriaLogs orders them. A
 // folded group (an empty series hash) answers its merged value and series count in the value and count columns; a
 // group that keeps its hash answers the bucket stats' results (and a count of one when the fold adds the count
-// column). A row that is not an object with a bucket time fails the read.
+// column). A row that is not an object of strings with a bucket time fails the read. The values are copied from the
+// answer as it writes them, never decoded.
 func (s *seriesFoldRead) matrix(raw []byte) ([]byte, error) {
 	if s == nil {
 		return nil, &statsBucketsUnreadableError{"folded read without its grouping"}
 	}
-	labels := make([]string, 0, len(s.by)+1)
+	labels := make([][]byte, 0, len(s.by)+1)
 	for _, b := range s.by {
 		if name, err := strconv.Unquote(b); err == nil {
 			b = name
 		}
-		labels = append(labels, b)
+		labels = append(labels, []byte(b))
 	}
-	sid := slices.Index(labels, dynamicSeriesHashLabel)
+	sid := slices.IndexFunc(labels, func(l []byte) bool { return string(l) == dynamicSeriesHashLabel })
 	if sid < 0 {
 		return nil, &statsBucketsUnreadableError{"folded read without its series hash"}
 	}
 	// The unwrap check's counting form groups by its flag too: every row then names it.
 	if bytes.Contains(raw, seriesFoldFlagKey) {
-		labels = append(labels, unwrapBadField)
+		labels = append(labels, []byte(unwrapBadField))
 	}
-	var parser fj.Parser
-	byKey := map[string]*seriesFoldSeries{}
-	var order []*seriesFoldSeries
-	values := make([]string, len(labels))
-	var key []byte
-	add := func(column int, name string, ts int64, value string) {
+	columns := make([][]byte, len(s.columns))
+	for i, c := range s.columns {
+		columns[i] = []byte(c)
+	}
+	valueColumn, countColumn, countIndex := slices.Index(s.columns, s.valueColumn), s.countColumn, s.countIndex()
+	var (
+		series  []*seriesFoldSeries
+		byKey   = map[string]int{}
+		times   = map[string]int64{}
+		fields  []seriesFoldField
+		values  = make([][]byte, len(labels))
+		flat    []seriesFoldFlatPoint
+		key     []byte
+		rowKey  []byte
+		scratch = make([]byte, 0, 64)
+	)
+	field := func(name []byte) []byte {
+		for _, f := range fields {
+			if bytes.Equal(f.key, name) {
+				return f.value
+			}
+		}
+		return nil
+	}
+	// add files a point under its column, name and the row's label values (rowKey, built once per row).
+	add := func(column int, name string, ts int64, value []byte) {
 		key = append(key[:0], byte(column>>24), byte(column>>16), byte(column>>8), byte(column))
-		key = append(key, name...)
-		for _, v := range values {
-			key = append(append(key, 0), v...)
+		key = append(append(key, name...), rowKey...)
+		i, ok := byKey[string(key)]
+		if !ok {
+			i = len(series)
+			byKey[string(key)] = i
+			series = append(series, &seriesFoldSeries{column: column, name: name, labels: slices.Clone(values)})
 		}
-		ss := byKey[string(key)]
-		if ss == nil {
-			ss = &seriesFoldSeries{column: column, name: name, labels: slices.Clone(values)}
-			byKey[string(key)] = ss
-			order = append(order, ss)
-		}
-		ss.points = append(ss.points, seriesFoldPoint{ts: ts, value: value})
+		flat = append(flat, seriesFoldFlatPoint{series: i, point: seriesFoldPoint{ts: ts, value: value}})
 	}
+	unreadable := &statsBucketsUnreadableError{"folded read: a row that is not an object of strings with its bucket"}
+	// A row gives a point per column (and the added count), a folded row two: the points fit one slice.
+	flat = make([]seriesFoldFlatPoint, 0, (bytes.Count(raw, []byte{'\n'})+1)*(len(s.columns)+1))
 	for len(raw) > 0 {
 		line := raw
 		if i := bytes.IndexByte(raw, '\n'); i >= 0 {
@@ -468,36 +514,81 @@ func (s *seriesFoldRead) matrix(raw []byte) ([]byte, error) {
 		} else {
 			raw = nil
 		}
-		if len(bytes.TrimSpace(line)) == 0 {
+		if line = bytes.TrimSpace(line); len(line) == 0 {
 			continue
 		}
-		row, err := parser.ParseBytes(line)
-		if err != nil || row.Type() != fj.TypeObject {
-			return nil, &statsBucketsUnreadableError{"folded read: a row that is not a JSON object"}
+		if line[0] != '{' || !json.Valid(line) {
+			return nil, unreadable
 		}
-		ts, ok := parseVLTimeNanos(string(row.GetStringBytes("_time")))
+		fields = fields[:0]
+		allStrings := true
+		if err := jsonparser.ObjectEach(line, func(k, v []byte, t jsonparser.ValueType, _ int) error {
+			allStrings = allStrings && t == jsonparser.String
+			fields = append(fields, seriesFoldField{k, v})
+			return nil
+		}); err != nil || !allStrings {
+			return nil, unreadable
+		}
+		at := field(seriesFoldTimeKey)
+		ts, ok := times[string(at)]
 		if !ok {
-			return nil, &statsBucketsUnreadableError{"folded read: a row without its bucket"}
+			if ts, ok = parseVLTimeNanos(string(at)); !ok {
+				return nil, unreadable
+			}
+			times[string(at)] = ts
 		}
+		rowKey = rowKey[:0]
 		for i, l := range labels {
-			values[i] = string(row.GetStringBytes(l))
+			values[i] = field(l)
+			rowKey = appendSeriesFoldKeyValue(append(rowKey, 0), values[i], &scratch)
 		}
-		if values[sid] == "" {
-			add(slices.Index(s.columns, s.valueColumn), s.valueColumn, ts, string(row.GetStringBytes(lower.SeriesFoldField)))
-			if s.countColumn != "" {
-				add(s.countIndex(), s.countColumn, ts, string(row.GetStringBytes(lower.SeriesFoldSeriesCount)))
+		if len(values[sid]) == 0 {
+			add(valueColumn, s.valueColumn, ts, field(seriesFoldValueKey))
+			if countColumn != "" {
+				add(countIndex, countColumn, ts, field(seriesFoldCountKey))
 			}
 			continue
 		}
-		for i, c := range s.columns {
-			add(i, c, ts, string(row.GetStringBytes(c)))
+		for i, c := range columns {
+			add(i, s.columns[i], ts, field(c))
 		}
 		if s.added {
-			add(len(s.columns), lower.SeriesFoldCount, ts, "1")
+			add(len(s.columns), lower.SeriesFoldCount, ts, seriesFoldOne)
 		}
 	}
-	return s.writeMatrix(order, labels)
+	// Each result's points, in the order the rows gave them, in one slice.
+	offsets := make([]int, len(series)+1)
+	for _, p := range flat {
+		offsets[p.series+1]++
+	}
+	for i := 1; i < len(offsets); i++ {
+		offsets[i] += offsets[i-1]
+	}
+	points := make([]seriesFoldPoint, len(flat))
+	next := slices.Clone(offsets[:len(series)])
+	for _, p := range flat {
+		points[next[p.series]] = p.point
+		next[p.series]++
+	}
+	for i, ss := range series {
+		ss.points = points[offsets[i]:offsets[i+1]:offsets[i+1]]
+	}
+	return writeSeriesFoldMatrix(series, labels)
 }
+
+// seriesFoldFlatPoint is a point of a folded answer filed under its result (an index of the reader's results).
+type seriesFoldFlatPoint struct {
+	series int
+	point  seriesFoldPoint
+}
+
+// The keys of a folded answer's rows the reader takes, and a count of one.
+var (
+	seriesFoldTimeKey  = []byte("_time")
+	seriesFoldValueKey = []byte(lower.SeriesFoldField)
+	seriesFoldCountKey = []byte(lower.SeriesFoldSeriesCount)
+	seriesFoldOne      = []byte("1")
+)
 
 // countIndex is the column of the count a folded group answers.
 func (s *seriesFoldRead) countIndex() int {
@@ -507,35 +598,72 @@ func (s *seriesFoldRead) countIndex() int {
 	return len(s.columns)
 }
 
-// writeMatrix writes the results of a folded answer as stats_query_range writes them: ordered by column, name and
-// labels, each one's points by time, a time in seconds as float64(ns)/1e9 writes.
-func (s *seriesFoldRead) writeMatrix(results []*seriesFoldSeries, labels []string) ([]byte, error) {
-	sortKey := func(ss *seriesFoldSeries) string {
+// appendSeriesFoldKeyValue appends a label value's text: the value as the answer wrote it, decoded when it holds an
+// escape, so two spellings of one value are one group. scratch is a buffer the decoding may use.
+func appendSeriesFoldKeyValue(dst, v []byte, scratch *[]byte) []byte {
+	if bytes.IndexByte(v, '\\') >= 0 {
+		if text, err := jsonparser.Unescape(v, (*scratch)[:cap(*scratch)]); err == nil {
+			if cap(text) > cap(*scratch) {
+				*scratch = text
+			}
+			return append(dst, text...)
+		}
+	}
+	return append(dst, v...)
+}
+
+// appendSeriesFoldSortValue appends a label value as the answer wrote it (a JSON string's content) in the spelling
+// appendJSONString gives its decoded text, so results sort by their values whatever escapes VictoriaLogs chose: a
+// value holding an escape or a byte appendJSONString escapes is decoded and written again, any other is that spelling
+// already.
+func appendSeriesFoldSortValue(dst, v []byte) []byte {
+	for _, c := range v {
+		if c < 0x20 || c == '\\' || c == '"' || c == '<' || c == '>' || c == '&' {
+			if text, err := jsonparser.ParseString(v); err == nil {
+				return appendJSONString(dst, text)
+			}
+			break
+		}
+	}
+	return append(append(append(dst, '"'), v...), '"')
+}
+
+// writeSeriesFoldMatrix writes the results of a folded answer as stats_query_range writes them: ordered by column,
+// name and labels (the non-empty ones, as VictoriaLogs keys a result), each one's points by time, a time in seconds as
+// float64(ns)/1e9 writes, the values as the answer wrote them.
+func writeSeriesFoldMatrix(results []*seriesFoldSeries, labels [][]byte) ([]byte, error) {
+	quoted := make([][]byte, len(labels))
+	for i, l := range labels {
+		quoted[i] = appendJSONString(nil, string(l))
+	}
+	size := 64
+	for _, ss := range results {
 		b := []byte{byte(ss.column >> 24), byte(ss.column >> 16), byte(ss.column >> 8), byte(ss.column)}
 		b = append(b, ss.name...)
 		b = append(b, '{')
 		first := true
 		for i, v := range ss.labels {
-			if v == "" {
+			if len(v) == 0 {
 				continue
 			}
 			if !first {
 				b = append(b, ',')
 			}
 			first = false
-			b = appendJSONString(b, labels[i])
-			b = append(b, ':')
-			b = appendJSONString(b, v)
+			b = appendSeriesFoldSortValue(append(append(b, quoted[i]...), ':'), v)
 		}
-		return string(append(b, '}'))
-	}
-	keys := make(map[*seriesFoldSeries]string, len(results))
-	for _, ss := range results {
-		keys[ss] = sortKey(ss)
+		ss.sort = string(append(b, '}'))
 		slices.SortStableFunc(ss.points, func(a, b seriesFoldPoint) int { return cmp.Compare(a.ts, b.ts) })
+		size += 64 + len(ss.name) + len(ss.sort) + 32*len(ss.points)
+		for _, pt := range ss.points {
+			size += len(pt.value)
+		}
 	}
-	slices.SortStableFunc(results, func(a, b *seriesFoldSeries) int { return strings.Compare(keys[a], keys[b]) })
-	out := make([]byte, 0, 4096)
+	slices.SortStableFunc(results, func(a, b *seriesFoldSeries) int { return strings.Compare(a.sort, b.sort) })
+	if int64(size) > 2*maxStatsBucketResponseBytes {
+		return nil, errBodyTooLarge
+	}
+	out := make([]byte, 0, size)
 	out = append(out, `{"status":"success","data":{"resultType":"matrix","result":[`...)
 	for i, ss := range results {
 		if i > 0 {
@@ -543,11 +671,8 @@ func (s *seriesFoldRead) writeMatrix(results []*seriesFoldSeries, labels []strin
 		}
 		out = append(out, `{"metric":{"__name__":`...)
 		out = appendJSONString(out, ss.name)
-		for j, l := range labels {
-			out = append(out, ',')
-			out = appendJSONString(out, l)
-			out = append(out, ':')
-			out = appendJSONString(out, ss.labels[j])
+		for j := range labels {
+			out = append(append(append(append(append(out, ','), quoted[j]...), ':', '"'), ss.labels[j]...), '"')
 		}
 		out = append(out, `},"values":[`...)
 		for j, pt := range ss.points {
@@ -556,9 +681,7 @@ func (s *seriesFoldRead) writeMatrix(results []*seriesFoldSeries, labels []strin
 			}
 			out = append(out, '[')
 			out = strconv.AppendFloat(out, float64(pt.ts)/1e9, 'f', -1, 64)
-			out = append(out, ',')
-			out = appendJSONString(out, pt.value)
-			out = append(out, ']')
+			out = append(append(append(out, ',', '"'), pt.value...), '"', ']')
 		}
 		out = append(out, "]}"...)
 		if int64(len(out)) > maxStatsBucketResponseBytes {

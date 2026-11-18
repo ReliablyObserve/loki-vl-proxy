@@ -3,10 +3,12 @@ package proxy
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -205,6 +207,7 @@ func FuzzSeriesFoldMatrix(f *testing.F) {
 		`{"_time":`,
 		`{"app":"a"}`,
 		`{"_time":"2026-01-01T00:00:00Z","app":{"x":1},"__lvp_sid":"\u0000","__lvp_sum":"\"<>&"}`,
+		seriesFoldEscapesAnswer,
 	} {
 		f.Add([]byte(seed), "app")
 	}
@@ -224,10 +227,73 @@ func FuzzSeriesFoldMatrix(f *testing.F) {
 			if !json.Valid(body) || int64(len(body)) > maxStatsBucketResponseBytes+3 {
 				t.Fatalf("%d bytes, valid %v", len(body), json.Valid(body))
 			}
+			// The answer, decoded, is the reference reader's: the same results in the same order.
+			if want, rerr := read.matrixReference(raw); rerr == nil {
+				if msg := sameFoldAnswer(body, want); msg != "" {
+					t.Fatalf("%s\n%s", msg, raw)
+				}
+			} else if !errors.Is(rerr, errBodyTooLarge) {
+				t.Fatalf("the reference reader refuses what the reader reads: %v\n%s", rerr, raw)
+			}
 		case !errors.As(err, &unreadable) && !errors.Is(err, errBodyTooLarge):
 			t.Fatalf("an error that is neither unreadable nor too large: %v", err)
 		}
 	})
+}
+
+// seriesFoldEscapesAnswer is a folded answer whose label values VictoriaLogs could spell with escapes: quotes,
+// backslashes, an escaped and a raw non-ASCII letter, a control character, the bytes appendJSONString escapes, and
+// values that sort apart only once decoded.
+const seriesFoldEscapesAnswer = `{"_time":"2026-01-01T00:00:00Z","app":"a\"b","__lvp_sid":"1","__lvp_sum":"1","__sample_count":"1"}
+{"_time":"2026-01-01T00:00:00Z","app":"a#b","__lvp_sid":"2","__lvp_sum":"2","__sample_count":"1"}
+{"_time":"2026-01-01T00:00:00Z","app":"\u00e9","__lvp_sid":"3","__lvp_sum":"3","__sample_count":"1"}
+{"_time":"2026-01-01T00:00:00Z","app":"é!","__lvp_sid":"4","__lvp_sum":"4","__sample_count":"1"}
+{"_time":"2026-01-01T00:01:00Z","app":"\u003cx","__lvp_sid":"5","__lvp_sum":"5","__sample_count":"1"}
+{"_time":"2026-01-01T00:01:00Z","app":"<y","__lvp_sid":"6","__lvp_sum":"6","__sample_count":"1"}
+{"_time":"2026-01-01T00:01:00Z","app":"Z","__lvp_sid":"7","__lvp_sum":"7","__sample_count":"1"}
+{"_time":"2026-01-01T00:01:00Z","app":"a\\b","__lvp_sid":"8","__lvp_sum":"8","__sample_count":"1"}
+{"_time":"2026-01-01T00:01:00Z","app":"a\nb\u0001","__lvp_sid":"9","__lvp_sum":"9","__sample_count":"1"}
+{"_time":"2026-01-01T00:02:00Z","app":"&","__lvp_sid":"","__lvp_fold":"10","__lvp_fc":"2"}
+{"_time":"2026-01-01T00:02:00Z","app":"\u0026","__lvp_sid":"","__lvp_fold":"11","__lvp_fc":"3"}`
+
+// sameFoldAnswer compares two folded answers decoded: "" when they hold the same results in the same order.
+func sameFoldAnswer(got, want []byte) string {
+	var g, w any
+	if err := json.Unmarshal(got, &g); err != nil {
+		return "the answer does not decode: " + err.Error()
+	}
+	if err := json.Unmarshal(want, &w); err != nil {
+		return "the reference does not decode: " + err.Error()
+	}
+	if !reflect.DeepEqual(g, w) {
+		return fmt.Sprintf("the answer differs from the reference reader's:\n got %s\nwant %s", got, want)
+	}
+	return ""
+}
+
+// The reader copies the values as VictoriaLogs writes them and decodes none; its answer, decoded, is the reference
+// reader's (each row decoded, every value written again): the same series, points and order, whatever escapes the
+// label values were written with.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestSeriesFoldMatrixMatchesReference(t *testing.T) {
+	read := &seriesFoldRead{outer: logql.VectorSum, columns: []string{"__lvp_sum", "__sample_count"}, valueColumn: "__lvp_sum",
+		countColumn: "__sample_count", by: []string{"app", dynamicSeriesHashLabel}}
+	got, err := read.matrix([]byte(seriesFoldEscapesAnswer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := read.matrixReference([]byte(seriesFoldEscapesAnswer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg := sameFoldAnswer(got, want); msg != "" {
+		t.Fatal(msg)
+	}
+	// The two spellings of "&" are one folded group.
+	if n := strings.Count(string(got), `"__name__"`); n != 20 {
+		t.Errorf("%d results, want 20: %s", n, got)
+	}
 }
 
 // A folded read VictoriaLogs fails (its timeout: a 503 with its own text) answers through the error layer, never with
