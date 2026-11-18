@@ -262,7 +262,8 @@ func capQuantileSeries(ctx context.Context, series map[string]quantileSeries, li
 		return rows
 	}, func(key string) int64 {
 		if samples := series[key].Samples; len(samples) > 0 {
-			return samples[0].ts // ascending
+			// Ascending, labelled by the bucket's start: its lines are first met at the step after it.
+			return samples[0].ts + 1
 		}
 		return math.MaxInt64
 	}, limit)

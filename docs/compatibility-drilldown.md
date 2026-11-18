@@ -119,6 +119,9 @@ buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `
     every kept point is Loki's.
   - `busiest` ranks by line count and keeps the busiest series over the whole
     range.
+  Every response cache (the proxy's own, the served cache and its peers) keeps
+  the answer as sent, cut included, so a repeat is the first answer. A
+  multi-tenant answer is cut where the merged answer trips the limit.
   A breakdown that cannot be ranked this way (the underscore label style's
   dotted fields, which group by both spellings) is read whole and capped the
   same way.

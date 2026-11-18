@@ -75,7 +75,7 @@
     "limits/drilldown-partial-with-warning | query",
     "limits/drilldown-series-limit-range-cut-at-trip-step | applies_to",
     "limits/drilldown-series-limit-range-cut-at-trip-step | compare:observed",
-    "limits/drilldown-series-limit-range-cut-at-trip-step | gap:open",
+    "limits/drilldown-series-limit-range-cut-at-trip-step | gap:fixed",
     "limits/drilldown-series-limit-range-cut-at-trip-step | query",
     "limits/drilldown-series-limit-skips-every-new-series | applies_to",
     "limits/drilldown-series-limit-skips-every-new-series | compare:structural",
@@ -1574,6 +1574,8 @@
     "internal/proxy/drilldown_series_limit_loki_test.go | limits/drilldown-series-limit-skips-every-new-series",
     "internal/proxy/drilldown_series_limit_loki_test.go | loki_api_v1_query",
     "internal/proxy/drilldown_series_limit_loki_test.go | loki_api_v1_query_range",
+    "internal/proxy/drilldown_series_limit_mode_test.go | limits/drilldown-breakdown-keeps-busiest",
+    "internal/proxy/drilldown_series_limit_mode_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
     "internal/proxy/error_body_shape_test.go | limits/row-limit-answers-loki-limit-text",
     "internal/proxy/error_body_shape_test.go | semantics/error-layer-body-shape",
     "internal/proxy/error_body_shape_test.go | semantics/error-layer-cancel-deadline",
@@ -2111,6 +2113,12 @@
     "internal/proxy/selector_value_test.go | loki_api_v1_query_range",
     "internal/proxy/selector_value_test.go | semantics/selector-values-are-strings",
     "internal/proxy/selector_value_test.go | status-400",
+    "internal/proxy/series_limit_loki_cut_test.go | limits/drilldown-partial-with-warning",
+    "internal/proxy/series_limit_loki_cut_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
+    "internal/proxy/series_limit_loki_cut_test.go | loki_api_v1_query",
+    "internal/proxy/series_limit_loki_cut_test.go | loki_api_v1_query_range",
+    "internal/proxy/series_limit_loki_cut_test.go | quality/query-range-extent-cache",
+    "internal/proxy/series_limit_loki_cut_test.go | series-limits-and-partial-results",
     "internal/proxy/series_limit_routes_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/series_limit_routes_test.go | limits/series-limit-error",
     "internal/proxy/series_limit_routes_test.go | loki_api_v1_query",
@@ -3280,11 +3288,11 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 757,
+      "go": 759,
       "playwright": 2
     },
     "page_kinds": {
-      "drilldown": 18,
+      "drilldown": 19,
       "explore": 132,
       "label-browser": 1,
       "log-context": 1,
@@ -3299,8 +3307,8 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 98,
-    "wired_items": 457
+    "unwired_items": 97,
+    "wired_items": 458
   },
   "gates": [
     "A/B shape selection",
@@ -3326,6 +3334,7 @@
     "dd-field-pipeline",
     "dd-field-service_version",
     "dd-fields",
+    "dd-label-pod-over-series-limit",
     "dd-labels",
     "dd-labels-namespace",
     "dd-landing",

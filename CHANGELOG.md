@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only its first steps, and a single step when every series starts at once (a breakdown of busy streams). The new
   flag `-drilldown-series-limit-mode` (Helm `drilldown-series-limit-mode`) chooses: `loki` (the default) or
   `busiest` for the earlier full-range answer: set `-drilldown-series-limit-mode=busiest` to restore the earlier
-  behaviour. Instant answers keep the busiest series in both modes. Answers cached
-  before the change are not served (the mode is part of a Drilldown request's cache key). The new
+  behaviour. Instant answers keep the busiest series in both modes. A multi-tenant answer is cut where the merged
+  answer trips the limit, and every response cache keeps the answer as sent, so a repeat is the first answer byte
+  for byte. Answers cached before the change are not served (the mode is part of a Drilldown request's cache key). The new
   `loki_vl_proxy_internal_operation_total{operation="drilldown_series_limit",outcome="loki"|"busiest"}` counts the
   Drilldown answers the limit cut. Checked against Loki 3.7.10's recorded answers (Loki's engine) at the limit and
   1, 2 and 5 over, for series starting together or apart, range and instant, both modes.

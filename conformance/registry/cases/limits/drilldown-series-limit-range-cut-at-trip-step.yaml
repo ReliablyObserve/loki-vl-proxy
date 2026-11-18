@@ -50,7 +50,7 @@ gap:
   area: 'internal/proxy series limit (Drilldown partial answers)'
   loki: 'a partial range answer ends at the step where a series past max_query_series appears (engine oracle, Loki 3.7.9 and 3.7.10)'
   proxy: 'Loki''s cut by default; the busiest series over the whole range with -drilldown-series-limit-mode=busiest'
-  planned_test: 'TestDrilldownSeriesLimitMatchesLoki (internal/proxy)'
+  planned_test: 'TestDrilldownSeriesLimitMatchesLoki, TestSeriesLimit_LokiModeEveryRangeRoute (internal/proxy)'
 applies_to:
   loki: ">=3.0.0"
   victorialogs: ">=v1.49.0"

@@ -438,8 +438,10 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 // multi-tenant metric answer, as Loki applies it to the one result its engine
 // builds across the tenants: every tenant can be within the limit while their
 // union is not. A plain client gets Loki's error; Logs Drilldown keeps the
-// busiest series and Loki's warning, also when a tenant's own answer was
-// already cut (its warning is otherwise lost in the merge).
+// series the -drilldown-series-limit-mode ranks first (in the Loki mode cut at
+// the step where the merged answer trips the limit) and Loki's warning, also
+// when a tenant's own answer was already cut (its warning is otherwise lost in
+// the merge).
 func (p *Proxy) limitMultiTenantMetricSeries(r *http.Request, endpoint string, recorders []*httptest.ResponseRecorder, body []byte) ([]byte, error) {
 	if (endpoint != "query" && endpoint != "query_range") || !logQLProducesSamples(r.FormValue("query")) {
 		return body, nil
@@ -457,6 +459,11 @@ func (p *Proxy) limitMultiTenantMetricSeries(r *http.Request, endpoint string, r
 	capped, err := capSeriesToLimit(scoped.Context(), body, p.queryLimitsFor(r.Header.Get("X-Scope-OrgID")).MaxQuerySeries)
 	if err != nil {
 		return nil, err
+	}
+	// The merged answer is cut where Loki's one evaluation across the tenants trips the limit: the tenants' own
+	// answers end at their trip steps, which lie at or after it.
+	if scope.lokiCut && scope.truncated.Load() > 0 {
+		capped = cutLokiResultAfter(capped, scope.cutNs.Load(), scope.stepNs)
 	}
 	return addSeriesLimitWarning(capped, scope), nil
 }

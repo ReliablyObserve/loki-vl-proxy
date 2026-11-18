@@ -296,6 +296,19 @@ type metricResponseRewriter struct {
 	// partial, when set, counts a Drilldown answer cut by the series limit, by mode
 	// (loki_vl_proxy_internal_operation_total{operation="drilldown_series_limit"}).
 	partial func(mode string)
+	// store, when set, keeps the answer finish sends (a 200): a response cache written from the body below the
+	// rewriter would keep it before the Loki cut, so a repeat served from it would differ from the cold answer.
+	store func(body []byte)
+}
+
+// storeAnswer keeps body under the request's response cache: through the rewriter (the answer it sends, after the
+// Loki cut) when there is one, otherwise with Loki's warning added as the rewriter would.
+func (m *metricResponseRewriter) storeAnswer(body []byte, scope *seriesLimitScope, set func([]byte)) {
+	if m != nil {
+		m.store = set
+		return
+	}
+	set(addSeriesLimitWarning(append([]byte(nil), body...), scope))
 }
 
 func (m *metricResponseRewriter) WriteHeader(code int) { m.status = code }
@@ -317,6 +330,9 @@ func (m *metricResponseRewriter) finish() {
 		}
 		body = shiftLokiResultTimestamps(body, m.shift)
 		body = addSeriesLimitWarning(body, m.scope)
+		if m.store != nil {
+			m.store(append([]byte(nil), body...))
+		}
 	}
 	if m.status != 0 {
 		m.ResponseWriter.WriteHeader(m.status)

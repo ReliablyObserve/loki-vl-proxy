@@ -1513,8 +1513,9 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 		series[key] = entry
 	}
 	// Loki's error above the series limit, or the busiest series with Loki's
-	// warning for Logs Drilldown, as the stats bucket path does.
-	series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx))
+	// warning for Logs Drilldown, as the stats bucket path does. The samples are
+	// still labelled by their bucket's start.
+	series, err = capBucketSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx))
 	return series, true, err
 }
 
@@ -1668,7 +1669,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 		}
 		seriesMap[seriesKey] = entry
 	}
-	seriesMap, err = capSeriesForRequest(ctx, seriesMap, limit)
+	seriesMap, err = capBucketSeriesForRequest(ctx, seriesMap, limit) // samples labelled by their bucket's start
 	return seriesMap, true, err
 }
 

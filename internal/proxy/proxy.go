@@ -2851,10 +2851,18 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	r, seriesScope := p.withSeriesLimitScope(r)
 	// Only sample responses are rewritten: buffering a log query here would
 	// defeat -stream-response.
+	var rangeRewriter *metricResponseRewriter
 	if logQLProducesSamples(logqlQuery) && (rangeOffset != 0 || seriesScope.drilldown) {
-		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope, partial: p.drilldownPartialCounter(r.Context())}
-		w = rewriter
-		defer rewriter.finish()
+		rangeRewriter = &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope, partial: p.drilldownPartialCounter(r.Context())}
+		w = rangeRewriter
+		defer rangeRewriter.finish()
+	}
+	// The response cache keeps the answer as sent (the rewriter's, after the Loki cut), so a repeat is the cold
+	// answer byte for byte.
+	storeRangeAnswer := func(body []byte) {
+		rangeRewriter.storeAnswer(body, seriesScope, func(answer []byte) {
+			p.setLocalReadCacheWithTTL(cacheKey, answer, queryRangeResponseCacheTTL)
+		})
 	}
 
 	// Enforce max query length AFTER offset is applied (start/end reflect shifted range).
@@ -2891,7 +2899,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if orderedCapture != nil {
 		if orderedHandled && r.Context().Err() == nil && !unwrapAnswerFailed(r.Context(), unwrapLookup) && !unwrapAnswerUncertain(r.Context(), unwrapLookup) && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
 			if body := orderedCapture.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
+				storeRangeAnswer(body)
 			}
 		}
 		orderedCapture.Release()
@@ -3085,12 +3093,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cacheOut)
 		}
 		if cacheable && sc.code == http.StatusOK {
-			p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), cacheOut...), seriesScope), queryRangeResponseCacheTTL)
+			storeRangeAnswer(cacheOut)
 		}
 	} else if cacheTap != nil {
 		if cacheable && sc.code == http.StatusOK {
 			if body := cacheTap.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
+				storeRangeAnswer(body)
 			}
 		}
 		cacheTap.Release()
