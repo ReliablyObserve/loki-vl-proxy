@@ -22,12 +22,14 @@ type EngineStream struct {
 }
 
 // EngineRequest is a Loki query (Instant) or query_range request, its form URL-encoded. Unaligned runs a range
-// request at its own bounds (Loki's engine without a query frontend's step alignment).
+// request at its own bounds (Loki's engine without a query frontend's step alignment). QueryTags is the request's
+// X-Query-Tags header (Source=grafana-lokiexplore-app marks a Logs Drilldown request), empty for none.
 type EngineRequest struct {
 	ID        string `json:"id"`
 	Instant   bool   `json:"instant,omitempty"`
 	Form      string `json:"form"`
 	Unaligned bool   `json:"unaligned,omitempty"`
+	QueryTags string `json:"query_tags,omitempty"`
 }
 
 // EngineDataSet is a data set and the requests over it.
@@ -39,7 +41,7 @@ type EngineDataSet struct {
 }
 
 // EngineAnswer is Loki's answer to one request (test/oracle/loki engine): the HTTP status, and the body Loki's HTTP
-// layer writes (status and data, without the statistics) or the error text.
+// layer writes (status, warnings when there are any, and data, without the statistics) or the error text.
 type EngineAnswer struct {
 	ID     string          `json:"id"`
 	Status int             `json:"status"`
