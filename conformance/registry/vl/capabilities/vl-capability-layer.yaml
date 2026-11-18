@@ -37,6 +37,12 @@ proxy_usage: |
   loki_vl_proxy_capability_epoch, loki_vl_proxy_backend_feature_probe_total and
   loki_vl_proxy_client_profile_requests_total metrics. logsql.PredictRefusal and
   logsql.CapabilitiesOf read gates from the set; nothing else compares release strings.
+  /loki/api/v1/drilldown-limits reports the layer's view: direct to VictoriaLogs it
+  carries backend_version_semver (the effective release), backend_version_source and
+  backend_capability_profile; behind vmauth (which answers /metrics with its own
+  VictoriaMetrics build) the release is unknown, so it carries only a probed profile
+  (vl-probed-v1.49-plus) and no backend_version_semver
+  (TestProxyCompatibilitySurface/vmauth_proxy_drilldown_limits_backend_detection).
 fallback: |
   An unreadable release with probes off holds the v1.49.0 floor (every post-floor
   gate off, the crash guard guarding). -backend-feature-probes=false decides the gates
