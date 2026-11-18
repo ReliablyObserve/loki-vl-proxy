@@ -568,12 +568,24 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/http_utils.go failQueryLimit",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "context.Background(), err",
       "kind": "layer",
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/http_utils.go validateQuery",
+      "where": "internal/proxy/http_utils.go validateQueryCtx",
       "writer": "writeErr"
     },
     {
@@ -585,8 +597,20 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go validateQuery",
+      "where": "internal/proxy/http_utils.go validateQueryCtx",
       "writer": "writeError"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/http_utils.go validateQueryCtx",
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -597,7 +621,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/http_utils.go validateQuery",
+      "where": "internal/proxy/http_utils.go validateQueryCtx",
       "writer": "writeErr"
     },
     {
@@ -609,7 +633,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go validateQuery",
+      "where": "internal/proxy/http_utils.go validateQueryCtx",
       "writer": "writeError"
     },
     {
@@ -1576,6 +1600,18 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/patterns.go handlePatterns",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r.Context(), diag.badRequest",
       "kind": "layer",
       "message": null,
@@ -1601,6 +1637,18 @@
       "error_text": false,
       "error_type": null,
       "expression": "r, lokierr.ParserMessage(truncateQueryError(msg))",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/patterns.go handleFormatQuery",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, err",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -2733,11 +2781,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 187,
+        "count": 191,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 183,
+        "layer_sites": 187,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2745,6 +2793,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 220
+    "call_sites": 224
   }
 }

@@ -69,6 +69,11 @@ const (
 	MsgIndexSeriesLimit
 	// MsgLimitReached: a query over a limit of its own evaluation (a 400).
 	MsgLimitReached
+	// MsgQueryComplexity: a query over an operator limit on its size
+	// ("query too complex: too many nodes" or "query too complex: nesting too deep"); Loki has no such limit.
+	MsgQueryComplexity
+	// MsgPlanTime: a query whose planning took longer than the operator's budget; Loki has no such limit.
+	MsgPlanTime
 	// MsgResponseTooLarge: a response above the message size a component
 	// accepts (a 500).
 	MsgResponseTooLarge
@@ -153,6 +158,8 @@ var messages = [msgCount]message{
 	MsgSeriesLimit:       {"limit-series", KindLimit, http.StatusBadRequest, ShapeRoute},
 	MsgIndexSeriesLimit:  {"limit-index-series", KindLimit, http.StatusInternalServerError, ShapeRoute},
 	MsgLimitReached:      {"limit-reached", KindLimit, http.StatusBadRequest, ShapeRoute},
+	MsgQueryComplexity:   {"limit-query-complexity", KindLimit, http.StatusBadRequest, ShapeRoute},
+	MsgPlanTime:          {"limit-plan-time", KindLimit, http.StatusBadRequest, ShapeRoute},
 	MsgResponseTooLarge:  {"limit-response-size", KindLimit, http.StatusInternalServerError, ShapeRoute},
 	MsgNotFound:          {"not-found", KindRoute, http.StatusNotFound, ShapeHTTPError},
 	MsgMethodNotAllowed:  {"method-not-allowed", KindRoute, http.StatusMethodNotAllowed, ShapeBodyless},
@@ -204,6 +211,7 @@ const (
 	textAggregateBy   = "invalid aggregation option"
 	textSemicolon     = "invalid semicolon separator in query"
 	textPostTooLarge  = "http: POST too large"
+	textPlanTime      = "query planning took longer than the limit"
 	textLimitReached  = "limit reached while evaluating the query"
 	textSeriesLimit   = "reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()"
 )
@@ -358,6 +366,28 @@ func IndexSeriesLimit(limit int) *Error {
 func LimitReached(flag string, value int64, cause error) *Error {
 	e := newError(MsgLimitReached, textLimitReached, cause)
 	e.limitFlag, e.limitValue = flag, value
+	return e
+}
+
+// QueryTooComplex is a query whose size is over an operator limit: nesting says the measure is the nesting depth, not
+// the node count. Loki has no such limit, so the text is the proxy's own and neutral: it carries no number. limit and
+// flag (the proxy flag that sets the limit) and cause (which says how large the query is) are for the log line only.
+func QueryTooComplex(nesting bool, limit int, flag string, cause error) *Error {
+	text := "query too complex: too many nodes"
+	if nesting {
+		text = "query too complex: nesting too deep"
+	}
+	e := newError(MsgQueryComplexity, text, cause)
+	e.limitFlag, e.limitValue = flag, int64(limit)
+	return e
+}
+
+// PlanTimeExceeded is a query whose planning (parse, validation and lowering) took longer than the operator's
+// budget. Loki has no such limit, so the text is the proxy's own; flag and limit (nanoseconds) are for the log line
+// only, cause says which step noticed it.
+func PlanTimeExceeded(flag string, limit int64, cause error) *Error {
+	e := newError(MsgPlanTime, textPlanTime, cause)
+	e.limitFlag, e.limitValue = flag, limit
 	return e
 }
 

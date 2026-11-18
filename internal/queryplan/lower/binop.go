@@ -60,6 +60,9 @@ import (
 //     the tree): physical.Encode writes the operands between those markers, and their readers split the text at the
 //     first one, quoted or not.
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	if err := binOpShape(n); err != nil {
 		return nil, err
 	}

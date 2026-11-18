@@ -1148,9 +1148,23 @@ func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc)
 				p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 				return
 			}
+			// The operator's limits on a query's size come after the checks Loki makes: a query it rejects is
+			// answered by its error, never by a limit.
+			if err := p.queryParamComplexityError(rule, r); err != nil {
+				p.failQueryLimit(w, r, err)
+				return
+			}
 		}
 		if queryFirst {
 			if r, ok = p.requestParamValidation(w, r, endpoint, checks); !ok {
+				return
+			}
+		}
+		if !hasRule && (endpoint == "query" || endpoint == "query_range") {
+			// The expression routes answer the operator's size limits here, ahead of the response cache, as the
+			// selector routes do: an answer cached under other limits never replaces the refusal.
+			if err := p.validQueryComplexityError(r.FormValue("query")); err != nil {
+				p.failQueryLimit(w, r, err)
 				return
 			}
 		}

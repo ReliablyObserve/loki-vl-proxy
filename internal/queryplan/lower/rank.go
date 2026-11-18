@@ -46,6 +46,9 @@ import (
 //     alone does not lower under a level);
 //   - a spelling the route reads unlike the plan (screenEvaluated).
 func evaluated(n queryplan.Node, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	var buf [6]queryplan.Node
 	chain, operand := evalChain(n, buf[:0])
 	for _, layer := range chain {

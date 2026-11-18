@@ -314,6 +314,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	metrics = append(metrics, p.internalOperationMetrics(now)...)
 	metrics = append(metrics, p.loweringShadowMetrics(now)...)
 	metrics = append(metrics, p.planDefectMetrics(now)...)
+	metrics = append(metrics, p.queryComplexityMetrics(now)...)
 	metrics = append(metrics, p.clientMetrics(now)...)
 	p.metrics.mu.RUnlock()
 

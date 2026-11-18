@@ -23,6 +23,9 @@ import (
 // grouping, more than maxLabelReplaceNesting calls, and a NUL byte in the destination, replacement or source label (the marker's separator, which the
 // proxy would read back as one).
 func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	return labelReplaceOver(n, prof, true)
 }
 

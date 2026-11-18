@@ -420,6 +420,9 @@ type inventoryScanKey struct{}
 // whose earlier call was rejected fails fast, so fallbacks after a rejected
 // fast path do not queue a second time.
 func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url.Values) (*backendAdmission, error) {
+	if err := p.planBudgetBeforeBackend(ctx); err != nil {
+		return nil, err
+	}
 	var (
 		limiter   *heavyQueryLimiter
 		operation string

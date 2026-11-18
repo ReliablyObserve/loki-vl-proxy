@@ -231,6 +231,9 @@ func (p *Proxy) createDelete(r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := p.validQueryComplexityError(r.Form.Get("query")); err != nil {
+		return err
+	}
 	r = p.withRequestScope(r)
 	if err := p.deleteTenantServed(r); err != nil {
 		return err
