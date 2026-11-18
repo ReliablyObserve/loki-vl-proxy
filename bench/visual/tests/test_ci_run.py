@@ -1,4 +1,5 @@
 """ci_run.py helpers: the Loki metric wait and the first-pass difference list."""
+import argparse
 import http.server
 import json
 import os
@@ -103,6 +104,48 @@ class CiRunTest(unittest.TestCase):
         second = [{**r, "main_pr_diffs": r["main_pr_diffs"] if r["page"] == "persistent" else []} for r in first]
         self.assertEqual(ci_run.recapture_flips(first, second),
                          (["mixed 1h", "value 1h"], ["late 1h"]))
+
+    # explore-unwrap-missing-label at 15m on #1639: the query answers no series on every side; the base and Loki were
+    # captured while their query was still loading (run button spinner, blank panel), the PR once it said "No data".
+    LOADING_ROW = {"page": "explore-unwrap-missing-label", "range": "15m", "main_pr_diffs": [], "settled": True,
+                   "loki_compared": True, "ui_main": {"noData": 0}, "ui_pr": {"noData": 1}, "ui_loki": {"noData": 0}}
+
+    def test_a_no_data_panel_only_on_the_pr_with_the_same_data_gets_a_second_look(self):
+        row = self.LOADING_ROW
+        self.assertTrue(ci_run.needs_second_look(row))
+        # Every side settled with the same "No data" panel, or Loki shows it too: nothing to load again.
+        self.assertFalse(ci_run.needs_second_look({**row, "ui_main": {"noData": 1}}))
+        self.assertFalse(ci_run.needs_second_look({**row, "ui_loki": {"noData": 1}}))
+        # Beyond the history Loki holds its "No data" may only mean missing history: the base decides alone.
+        self.assertTrue(ci_run.needs_second_look({**row, "loki_compared": False, "ui_loki": {"noData": 1}}))
+        self.assertFalse(ci_run.needs_second_look({**row, "ui_pr": {"noData": 0}}))
+        self.assertFalse(ci_run.needs_second_look({**row, "range": "live"}))
+        # The earlier reasons stay.
+        self.assertTrue(ci_run.needs_second_look({**row, "ui_pr": {}, "main_pr_diffs": ["x"]}))
+        self.assertTrue(ci_run.needs_second_look({**row, "ui_pr": {}, "settled": False}))
+
+    def test_a_no_data_panel_only_on_the_pr_is_loaded_again_more_patiently(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as out:
+            with open(os.path.join(out, "compare.json"), "w", encoding="utf-8") as f:
+                json.dump([self.LOADING_ROW, {**self.LOADING_ROW, "page": "same", "ui_pr": {"noData": 0}}], f)
+            plan = {"entries": {"explore-unwrap-missing-label": {"kind": "explore", "ranges": ["15m"]},
+                                "same": {"kind": "explore", "ranges": ["15m"]}}}
+            a = argparse.Namespace(max_recapture=6, shard=None, workers=1)
+            meta = {}
+            saved = ci_run.run
+            try:
+                ci_run.run = lambda cmd, **kw: calls.append((cmd, kw.get("env", {})))
+                self.assertTrue(ci_run.recapture(a, out, plan, 1, 1, meta))
+            finally:
+                ci_run.run = saved
+            with open(os.path.join(out, "plan-recapture.json"), encoding="utf-8") as f:
+                self.assertEqual(json.load(f), {"entries": {"explore-unwrap-missing-label": {"kind": "explore", "ranges": ["15m"]}}})
+        self.assertEqual(meta["recaptured"], ["explore-unwrap-missing-label 15m"])
+        self.assertEqual(meta["recapture_candidates"], 1)
+        (cmd, env), = calls
+        self.assertEqual(cmd, ["npx", "playwright", "test"])
+        self.assertEqual((env["VP_QUIET_MS"], env["VP_SETTLE_MS"]), ("10000", "150000"))
 
     def test_the_recapture_runs_before_the_live_tail_pass_and_one_compare_sees_both(self):
         # The live generator writes into the streams the static windows read, and Loki's index/stats is an estimate from
