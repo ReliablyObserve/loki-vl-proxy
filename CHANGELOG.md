@@ -9,37 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The compatibility stack and CI now run Grafana 13.3.1 (was 13.3.0) with Logs Drilldown
+  (grafana-lokiexplore-app) 3.2.0 (was 3.1.0): the compose files and their `GF_PLUGINS_PREINSTALL`, the pinned
+  and current-family CI runtime profiles and the docs that name them. 13.3.0 and Drilldown 3.1.0 stay in the
+  contract matrices; the previous-family profile keeps Grafana 12.4.14 with Drilldown 2.6.0 (Drilldown 3.x needs
+  Grafana 13.2 or later). Drilldown 3.2.0 makes the same Loki calls as 3.1.0; its landing-page volume request now
+  carries a fixed request id, so Grafana cancels the previous one when the data source or time range changes. Every
+  e2e-ui shard passes on the new pins. The e2e-ui Drilldown checks find the service page tabs and the landing
+  services by Drilldown 3.2.0's stable test ids (role and name stay as the fallback).
 - The compatibility stack and CI now test against Loki 3.7.10 (was 3.7.9): the compose files, the pinned CI jobs,
   the weekly Loki matrix (3.7.10 added) and the test-only Loki oracles. Loki 3.7.10 gives a Logs Drilldown metric
   query over `max_query_series` exactly that many labelled series with its partial-result warning (3.7.9 added a
   series without labels for every further new series, grafana/loki#26433); the proxy already answered that way,
   now pinned against recorded 3.7.10 answers. Loki's recorded answers for step alignment, tenant headers and the
   engine differentials are unchanged on 3.7.10, apart from `unwrap bytes()` below.
-- A VictoriaLogs call that the running VictoriaLogs release refuses before reading any data is no longer sent. The
-  proxy predicts the refusal from the query it is about to send, the endpoint and the detected release, and answers
-  it as it answers VictoriaLogs' own refusal: the caller's fallback route, or Loki's `500 Internal Server Error` for
-  a refused plan. The rules:
-  - a pipe the release lacks (`coalesce` before v1.51.0);
-  - `stats_query_range` shapes VictoriaLogs refuses: `total_stats`, `sort`, `fields` without `_time` or a copy into
-    `_time` ahead of the last `stats` pipe, and from v1.53.0 also `math`, `replace`, `unpack_*`, `unroll` and
-    `extract` writing `_time`; `limit` or `offset` after it;
-  - `stats_query` pipes after the last `stats` pipe VictoriaLogs refuses (`limit`/`offset` before v1.51.0);
-  - a query, or from v1.54.0 an `extra_filters` or `extra_stream_filters` arg, longer than the `-search.maxQueryLen`
-    a refusal of the same release named;
-  - a `math` pipe holding a quoted time constant in a call VictoriaLogs clones (the `limit` arg, live tailing) on a
-    release before v1.53.0, or one not detected yet, which VictoriaLogs v1.49.0 to v1.52.0 crash on (the published
-    v1.49.0 and v1.52.0 images exit). No LogQL input makes the proxy write that shape today; the guard keeps it from
-    ever reaching VictoriaLogs.
-- VictoriaLogs' refusal of the query the proxy wrote (a parse error, a refused stats shape, a query over its length
-  limit, answered or predicted) is now held for `-error-cache-vl-refusal-ttl` (default `5m`) instead of not at all
-  or for a second. A parse or stats shape refusal is held for every window of the query (a length or argument
-  refusal for the exact request only), keyed by tenant, credentials, response profile, configuration epoch and
-  VictoriaLogs release, so a reload or a new release asks again. A refusal VictoriaLogs
-  answered and held for 30 s or more is pushed to every peer (`-error-cache-peer-sync`, default `true`). A peer
-  holds it only when it runs the same proxy build against the same VictoriaLogs release with the same routing
-  configuration, and never for an answer computed with forwarded credentials. Three replicas refreshing the same
-  refused query five times each send one VictoriaLogs call. Metrics:
-  `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
 
 ### Fixed
 
@@ -66,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unterminated '('`. label_replace's regex is checked ahead of the tree inside the call, an outer call's first, as
   Loki checks it. These answers are recorded from Loki.
 
+### Security
+
+- The stack's Grafana moves to 13.3.1, which fixes CVE-2026-102589, CVE-2026-107509, CVE-2026-110992,
+  CVE-2026-111024, CVE-2026-13721 and CVE-2026-14242 (Grafana's security release). The proxy itself is unchanged;
+  the pin is what the compose files, the examples and CI run.
+
 ### Performance
 
 - Better performance for deeply nested queries. A query that nests `label_replace` calls hundreds or thousands of
@@ -79,6 +68,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The strip of outer `label_replace` calls the handlers read goes through one table of the text's brackets. A query
   longer than the 4 KiB the short memos keep is validated, respelled and parsed once per request, in a memo bounded at
   4 MiB per generation (two generations).
+
+## [2.338.0] - 2026-11-18
+
+### Changed
+
+- A VictoriaLogs call that the running VictoriaLogs release refuses before reading any data is no longer sent. The
+  proxy predicts the refusal from the query it is about to send, the endpoint and the detected release, and answers
+  it as it answers VictoriaLogs' own refusal: the caller's fallback route, or Loki's `500 Internal Server Error` for
+  a refused plan. The rules:
+  - a pipe the release lacks (`coalesce` before v1.51.0);
+  - `stats_query_range` shapes VictoriaLogs refuses: `total_stats`, `sort`, `fields` without `_time` or a copy into
+    `_time` ahead of the last `stats` pipe, and from v1.53.0 also `math`, `replace`, `unpack_*`, `unroll` and
+    `extract` writing `_time`; `limit` or `offset` after it;
+  - `stats_query` pipes after the last `stats` pipe VictoriaLogs refuses (`limit`/`offset` before v1.51.0);
+  - a query, or from v1.54.0 an `extra_filters` or `extra_stream_filters` arg, longer than the `-search.maxQueryLen`
+    a refusal of the same release named;
+  - a `math` pipe holding a quoted time constant in a call VictoriaLogs clones (the `limit` arg, live tailing) on a
+    release before v1.53.0, or one not detected yet, which VictoriaLogs v1.49.0 to v1.52.0 crash on (the published
+    v1.49.0 and v1.52.0 images exit). No LogQL input makes the proxy write that shape today; the guard keeps it from
+    ever reaching VictoriaLogs.
+
+  Nothing else is predicted before the release is detected. Every rule is checked against VictoriaLogs' own query
+  handlers of v1.49.0 and v1.53.0 (and v1.54.0 locally): each predicted refusal has VictoriaLogs' status and class,
+  each query predicted to run runs, and the client answer is byte-equal with 0 calls instead of 1 or more.
+  `-vl-refusal-prediction` (default `true`) turns it off; metric `loki_vl_proxy_vl_refusals_predicted_total{rule}`.
+- VictoriaLogs' refusal of the query the proxy wrote (a parse error, a refused stats shape, a query over its length
+  limit, answered or predicted) is now held for `-error-cache-vl-refusal-ttl` (default `5m`) instead of not at all
+  or for a second. A parse or stats shape refusal is held for every window of the query (a length or argument
+  refusal for the exact request only), keyed by tenant, credentials, response profile, configuration epoch and
+  VictoriaLogs release, so a reload or a new release asks again. A refusal VictoriaLogs
+  answered and held for 30 s or more is pushed to every peer (`-error-cache-peer-sync`, default `true`). A peer
+  holds it only when it runs the same proxy build against the same VictoriaLogs release with the same routing
+  configuration, and never for an answer computed with forwarded credentials. Three replicas refreshing the same
+  refused query five times each send one VictoriaLogs call. Metrics:
+  `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
 
 ## [2.337.0] - 2026-11-18
 
