@@ -27,7 +27,7 @@ compare:
   expect: "Loki's 400 syntax error at the opening parenthesis."
 gap:
   status: fixed
-  fixed_by: "#PRNUM"
+  fixed_by: "#1661"
   impact: api-only
   effort: S
   area: "internal/logql parser parseUnwrap (conversion function names)"

@@ -336,7 +336,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/step-nonpositive-or-unparsable-is-400` — query_range with a step of 0, a negative step or an unparsable step answers 400 as Loki does, not an empty 200 (fixed) | #1419 | 0 | 0 |
 | `semantics/topk-first-argument-error-text` — A topk or bottomk whose first argument is not a number followed by a comma is answered with Loki's parse error (fixed) | #1558 | 0 | 0 |
 | `semantics/unwrap-in-log-query` — A log query with an unwrap stage is accepted where Loki answers a syntax error (fixed) | TBD-PR | 0 | 0 |
-| `semantics/unwrap-unknown-conversion-function-accepted` — `unwrap foo(c)`, a conversion function Loki does not have, is accepted (fixed) | #PRNUM | 0 | 0 |
+| `semantics/unwrap-unknown-conversion-function-accepted` — `unwrap foo(c)`, a conversion function Loki does not have, is accepted (fixed) | #1661 | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-dot-run` — An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed) | #1273 | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-hex-colon` — An IPv4 ip() filter finds an address after hex digits and colons where Loki's scan finds it (fixed) | #1491 | 0 | 0 |
 | `semantics/keep-drop-blank-name-prints-back` — A keep or drop that lists only a blank Loki reads as a name (`\| keep\\v`, `\| drop\\u00a0`) prints as `\| keep \\v`, and a range aggrega... | TBD-PR | 0 | 0 |
@@ -347,10 +347,10 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/raw-nul-in-string-literal-accepted` — A NUL byte inside a quoted or backquoted string, or a comment, of a query is Loki's lexer error, with Loki's text and position (fixed) | this change | 0 | 0 |
 | `semantics/reserved-field-name-case-outbound` — A label named _time, _stream or _stream_id in another letter case (_TIME, _Stream_ID) is filtered as the field it is, through a copy into... | this change | 0 | 0 |
 | `semantics/set-operation-folded-literal-operand` — A set operation with a literal operand that is an arithmetic expression (`and 1 + 2`) is rejected with Loki's folded literal (fixed) | TBD-PR | 0 | 0 |
-| `semantics/translator-reads-binary-operation-text` — The string translator reads a binary operation's operator, numbers and vector matching from its text; the proxy serves the plan's text, w... | #PRNUM | 0 | 0 |
+| `semantics/translator-reads-binary-operation-text` — The string translator reads a binary operation's operator, numbers and vector matching from its text; the proxy serves the plan's text, w... | #1661 | 0 | 0 |
 | `semantics/translator-reads-blank-before-range-call-as-text` — A range function spelled with a blank before its parenthesis is answered as Loki reads it (fixed: the request rewrite writes the call wit... | #1644 | 0 | 0 |
 | `semantics/translator-reads-parenthesized-metric-as-text` — A metric query wrapped whole in parentheses is answered as Loki reads it (fixed: the request rewrite removes the parentheses, which the s... | #1644 | 0 | 0 |
-| `semantics/unwrap-name-before-parenthesis-accepted` — An unwrap of a name that is no conversion followed by a parenthesis (`\| unwrap x(a)`) is Loki's syntax error, and the proxy answers it (... | #PRNUM | 0 | 0 |
+| `semantics/unwrap-name-before-parenthesis-accepted` — An unwrap of a name that is no conversion followed by a parenthesis (`\| unwrap x(a)`) is Loki's syntax error, and the proxy answers it (... | #1661 | 0 | 0 |
 | `semantics/vector-call-blank-before-parenthesis-as-query` — A vector(n) operand spelled with blanks around its parenthesis is answered from the constant, as Loki reads it (fixed: the request rewrit... | #1644 | 0 | 0 |
 | `semantics/zero-range-metric` — A range metric over a zero range is answered with Loki's empty result, and absent_over_time over one with Loki's 1 at every step (fixed) | TBD-PR | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |

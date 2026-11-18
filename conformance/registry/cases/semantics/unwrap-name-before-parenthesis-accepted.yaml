@@ -46,7 +46,7 @@ compare:
     expecting RANGE or |`.
 gap:
   status: fixed
-  fixed_by: "#PRNUM"
+  fixed_by: "#1661"
   impact: edge
   effort: S
   area: 'internal/logql parser.go (parseUnwrap: only a conversion is read before a parenthesis)'

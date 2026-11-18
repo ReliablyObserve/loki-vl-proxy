@@ -45,7 +45,7 @@ compare:
     The answer of the spaced spelling (`sum by (pod) (count_over_time({app="api"}[1m])) / 2`).
 gap:
   status: fixed
-  fixed_by: "#PRNUM"
+  fixed_by: "#1661"
   impact: edge
   effort: S
   area: 'internal/queryplan/lower (the binary text screen copied the translator''s reading; deleted)'

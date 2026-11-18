@@ -40,7 +40,7 @@ why: |
   (`| unwrap bytes<TAB>(a)`, 42 rows) and an ip() label filter
   (`| x = ip<TAB>("1.2.3.4")`, 7 rows); approx_topk is the other 7.
 
-  The unwrap conversions spelled so are fixed (#PRNUM): the query plan reads the
+  The unwrap conversions spelled so are fixed (#1661): the query plan reads the
   conversion from the parsed tree, and the lowering no longer leaves a
   conversion written with a blank before or inside its parenthesis to the
   string translator (whose text screen copied the translator's reading of the
