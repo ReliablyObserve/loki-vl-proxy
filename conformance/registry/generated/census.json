@@ -1006,6 +1006,8 @@
     "semantics/unpack-non-string-values | compare:observed",
     "semantics/unpack-non-string-values | gap:open",
     "semantics/unpack-non-string-values | query",
+    "semantics/unwrap-avg-overflow | compare:exact",
+    "semantics/unwrap-avg-overflow | gap:open",
     "semantics/unwrap-bare-range-exposes-parsed-labels | compare:observed",
     "semantics/unwrap-bare-range-exposes-parsed-labels | gap:fixed",
     "semantics/unwrap-bare-range-exposes-parsed-labels | query",
@@ -1120,6 +1122,8 @@
     "semantics/unwrap-sample-validity | gap:fixed",
     "semantics/unwrap-sample-validity | perf",
     "semantics/unwrap-sample-validity | query",
+    "semantics/unwrap-sliding-infinity-point | compare:exact",
+    "semantics/unwrap-sliding-infinity-point | gap:open",
     "semantics/unwrap-stored-integer-field-gate | compare:observed",
     "semantics/unwrap-stored-integer-field-gate | gap:open",
     "semantics/unwrap-stored-integer-field-gate | query",
@@ -3207,7 +3211,7 @@
   "counts": {
     "case_consumers": {
       "any": 48,
-      "api": 117,
+      "api": 119,
       "drilldown": 53,
       "explore": 202,
       "grafana-datasource": 3,
@@ -3233,7 +3237,7 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 94,
+    "unwired_items": 96,
     "wired_items": 445
   },
   "gates": [
