@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
+  `{...} |= "x" [1m]` form no longer doubles its work with each level of `label_replace` (or `vector`, `approx_topk`)
+  calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
+  it stands. A request with 18 nested calls (about 550 bytes) took half a second and now takes 2.5 ms. Answers do not
+  change, and nested queries are accepted at every depth, as Loki accepts them (semantics/nested-calls-linear-work).
+
+## [2.336.0] - 2026-11-18
+
+### Fixed
+
 - A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
   with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
   parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,

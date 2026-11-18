@@ -264,7 +264,7 @@ flowchart TD
 | Tenant validation | Enforce Loki-style tenant header policy and mapping rules before backend access | Enabled on tenant-scoped routes |
 | Per-client rate limiter | Prevent individual client abuse | `-rate-limit-per-second=50`, `-rate-limit-burst=100` |
 | Global concurrent limit | Cap in-flight requests and backend operations (including fanout, until response bodies are consumed) | `-max-concurrent=100` (Helm chart default `64`) |
-| Request coalescing | Deduplicate identical queries | Automatic (singleflight) |
+| Request coalescing | Identical read requests share one run; failed answers are held per class | Automatic (`-coalescer-disabled`, `-error-cache-*`) |
 | Query normalization | Improve cache hit rate | Sort matchers, collapse whitespace |
 | Tier0 response cache | Short-circuit repeated safe GET reads after tenant validation | Enabled, 10% of L1 memory budget, safe GET read endpoints only |
 | Tiered cache | Reduce backend calls with local, disk, and peer reuse | L1 memory, optional L2 disk, optional L3 peer cache |
@@ -295,7 +295,7 @@ flowchart LR
     R --> CN
 ```
 
-Only **1** request reaches VictoriaLogs. All clients get the same response. Coalescing and cache keys include a scope fingerprint derived from the resolved tenant routing, backend identity, field mappings and forwarded identity, so requests from different tenants or authorization scopes never share a backend response.
+Only **1** request reaches VictoriaLogs. All clients get the same response. This holds on every cached read route, for a failure as well as a success: a failure is handed over byte for byte with Loki's status and text, and a failed answer is then held per replica for the time of its class (`-error-cache-transient-ttl`, `-error-cache-data-ttl`; never pushed to peers), so refreshes of a failing query ask VictoriaLogs about once per second. Coalescing and cache keys include a scope fingerprint derived from the resolved tenant routing, backend identity, field mappings and forwarded identity, so requests from different tenants or authorization scopes never share a backend response.
 
 Metadata read keys include the effective POST form parameters, with body values
 taking precedence over URL values as they do in the handlers. Normalization uses
