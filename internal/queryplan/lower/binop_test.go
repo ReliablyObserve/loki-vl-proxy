@@ -10,6 +10,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -18,12 +19,18 @@ import (
 // construct it names); ok is false when q does not parse or the translator rejects it.
 func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy string, same bool, construct string, ok bool) {
 	t.Helper()
+	q = handlerText(q)
 	p := rangeAggPlan(q)
 	if p == nil {
 		return "", "", false, "", false
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
 	legacy = guardedLegacy(p, legacy, terr)
+	if strings.HasPrefix(legacy, `"`) && logql.ValidateLogQL(q) != "" {
+		// A spelling the request's rewrite keeps because the validation rejects the query, which the translator
+		// reads as a phrase: the proxy answers Loki's error before anything is planned or translated.
+		return "", "", false, "", false
+	}
 	op, lerr := PlanQuery(q, p, prof.lowerProfile())
 	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
 	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
@@ -69,7 +76,50 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 	}
 	want, _ := translator.DecodePhysical(legacy)
 	lowered = physical.Encode(op)
-	return lowered, legacy, lowered == legacy && physical.Equal(want, op), "", true
+	same = lowered == legacy && physical.Equal(want, op)
+	if c := translatorspelling.Case(q, p); !same && c != "" {
+		// A spelling the translator reads otherwise than the plan, which the proxy serves from the plan: held to a
+		// spelling or a route the translator reads right (spellingHeldHere), and to Loki by the case's differential
+		// (internal/proxy TestPlanSpellingsMatchLoki).
+		if !spellingHeldHere(t, q, c, op, prof) {
+			return lowered, legacy, false, "", true
+		}
+		return lowered, legacy, false, "known divergence " + c, true
+	}
+	return lowered, legacy, same, "", true
+}
+
+// spellingHeldHere holds the lowering of a spelling the translator reads otherwise than the plan to a reference it
+// reads right: the translator's text of the respelled query (a quantile literal, an unwrap conversion with blanks), or
+// the proxy's binary route for the binary operation under any label_replace calls (routeOperands).
+func spellingHeldHere(t testing.TB, q, c string, op physical.Op, prof rangeProfile) bool {
+	switch c {
+	case translatorspelling.QuantileLiteral, translatorspelling.UnwrapConversionBlank:
+		ref, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(translatorspelling.Respell(q)), prof.label, prof.stream, prof.caps)
+		return err == nil && physical.Encode(op) == ref
+	}
+	inner := q
+	if lm, ok := op.(physical.LabelMap); ok {
+		op = lm.In
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+		for err == nil {
+			o, ok := expr.(*logql.OpaqueMetricExpr)
+			if !ok || o.Inner == nil {
+				break
+			}
+			expr = o.Inner
+		}
+		if err != nil {
+			return false
+		}
+		inner = expr.String()
+	}
+	b, ok := op.(physical.Binary)
+	if !ok {
+		return false
+	}
+	_, _, held := routeOperands(t, inner, b, prof)
+	return held
 }
 
 // routeOperands holds the operands of a lowered binary operation to the proxy's binary route under prof: each operand
@@ -213,19 +263,19 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 
 		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`: "BinOp operand LabelReplace",
 		`stddev(` + rate + `) / 2`:                            "BinOp operand VectorAgg",
-		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                 "BinOp quoted text",
-		`rate({app="a"} |= "a  b" [5m]) / 2`:                  "BinOp quoted text",
-		`rate({app="a"} |= "@@@" [5m]) / 2`:                   "BinOp quoted text",
-		`sum by ( hos ) (` + rate + `)  / 2`:                  "BinOp spelling",
-		rate + `  / 2`:                                        "BinOp spelling",
-		rate + ` / on(app,env) ` + rate:                       "BinOp vector matching spelling",
-		rate + ` / on(app) group_left ` + rate:                "BinOp vector matching spelling",
-		rate + `/2`:                                           "BinOp operator spelling",
-		rate + "\n/ 2":                                        "BinOp operator spelling",
-		rate + ` / 1e3`:                                       "BinOp number spelling",
-		rate + ` / 2.50`:                                      "BinOp number spelling",
-		`(` + rate + `) / 2`:                                  "BinOp operand spelling",
-		`sum( ` + rate + `) / 2`:                              "BinOp operand spelling",
+		// The bytes of the binary text's markers in an operand's quoted text: the readers of the text split there.
+		`rate({app="a|||"}[5m]) / 2`:                                        "BinOp marker text",
+		`rate({app="a"} |= "x" or "__lvp_lr:" [5m]) / 2`:                    "BinOp marker text",
+		`sum(rate({app="a"} | json x="@@@" [5m])) / 2`:                      "BinOp marker text",
+		`rate({app="a"} | logfmt | y="a|||b" [5m]) / 2`:                     "BinOp marker text",
+		`rate({app="a"} | drop y="@@@x" [5m]) / 2`:                          "BinOp marker text",
+		`sum by (y) (rate({app="a"} | keep y="__binary__:" [5m])) / 2`:      "BinOp marker text",
+		`rate({app="a"} | line_format "{{.a}}|||" [5m]) / 2`:                "BinOp marker text",
+		`rate({app="a"} | label_format y="@@@" [5m]) / 2`:                   "BinOp marker text",
+		`2 * sum(label_replace(rate({app="@@@"}[5m]), "a", "b", "c", "d"))`: "BinOp marker text",
+		`rate({app="a"} |= "@@@" [5m]) / 2`:                                 "BinOp marker text",
+		`rate({app="a"} |= "a|||b" [5m]) / 2`:                               "BinOp marker text",
+		`2 * rate({app="a"} |= "x__binary__:/:y" [5m])`:                     "BinOp marker text",
 
 		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:            "LabelReplace operand Rank",
 		`label_replace(vector(1), "a", "b", "c", "d")`:                            "LabelReplace operand VectorLit",
@@ -234,8 +284,6 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                      "LabelReplace argument with NUL",
 
 		strings.Repeat(`label_replace(`, 17) + rate + strings.Repeat(`, "a", "b", "c", "d")`, 17): "LabelReplace nesting",
-		`label_replace (` + rate + `, "a", "b", "c", "d")`:                                        "LabelReplace spelling",
-		`label_replace((` + rate + `), "a", "b", "c", "d")`:                                       "LabelReplace operand spelling",
 	} {
 		p := rangeAggPlan(q)
 		if p == nil {
@@ -248,6 +296,37 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		}
 		if len(construct) > 48 {
 			t.Errorf("%s: the construct name %q is longer than the shadow's label allows", q, construct)
+		}
+	}
+	// The spellings the string translator reads otherwise than the tree (quoted text, blanks, operator, number and
+	// vector matching spellings, parentheses around an operand or the call) are lowered from the tree as the spaced
+	// spelling: the proxy serves the plan's text for them (translatorspelling names each case).
+	for q, spaced := range map[string]string{
+		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:               ``,
+		`rate({app="a"} |= "a  b" [5m]) / 2`:                ``,
+		`sum by ( hos ) (` + rate + `)  / 2`:                `sum by (hos) (` + rate + `) / 2`,
+		rate + `  / 2`:                                      rate + ` / 2`,
+		rate + ` / on(app,env) ` + rate:                     rate + ` / on(app, env) ` + rate,
+		rate + ` / on(app) group_left ` + rate:              rate + ` / on(app) group_left() ` + rate,
+		rate + `/2`:                                         rate + ` / 2`,
+		rate + "\n/ 2":                                      rate + ` / 2`,
+		rate + ` / 1e3`:                                     rate + ` / 1000`,
+		rate + ` / 2.50`:                                    rate + ` / 2.5`,
+		`(` + rate + `) / 2`:                                rate + ` / 2`,
+		`sum( ` + rate + `) / 2`:                            `sum(` + rate + `) / 2`,
+		`label_replace (` + rate + `, "a", "b", "c", "d")`:  `label_replace(` + rate + `, "a", "b", "c", "d")`,
+		`label_replace((` + rate + `), "a", "b", "c", "d")`: `label_replace(` + rate + `, "a", "b", "c", "d")`,
+	} {
+		got, err := PlanQuery(q, rangeAggPlan(q), Profile{})
+		if err != nil {
+			t.Errorf("%s: %v, want it lowered", q, err)
+			continue
+		}
+		if spaced == "" {
+			continue
+		}
+		if want, err := PlanQuery(spaced, rangeAggPlan(spaced), Profile{}); err != nil || physical.Encode(got) != physical.Encode(want) {
+			t.Errorf("%s: lowers to %s, %s to %v (%v)", q, physical.Encode(got), spaced, want, err)
 		}
 	}
 }

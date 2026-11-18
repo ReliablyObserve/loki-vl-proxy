@@ -1,0 +1,57 @@
+id: semantics/translator-reads-binary-operation-text
+title: "The string translator reads a binary operation's operator, numbers and vector matching from its text; the proxy serves the plan's text, which reads the tree (fixed)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  The string translator writes a binary operation from its text: it splits the
+  text at the first operator that has one space on each side and copies each
+  side and each number as written. An operator written without a space on each
+  side (`sum(rate({app="a"}[5m]))/2`, `rate({app="a"}[5m]) -2`), a tab, a line
+  feed or a run of blanks around it, a number written otherwise than its
+  shortest form or in parentheses (`* 1e3`, `/ 2.50`, `/ (2)`) and a vector
+  matching modifier spelled otherwise than `on(a, b)` (`on(app,env)`,
+  `group_left` with no list) make it write another text than the one it writes
+  for the spaced spelling: it drops an operand or keeps a modifier's text in the
+  query. Loki reads the same tree for every spelling (the Loki oracle accepts
+  them all and reads one expression).
+
+  The lowering writes the binary operation from the parsed tree, so its text is
+  the same for every spelling. Until this change a text screen in the lowering
+  (lower.ScreenText's binary screen) copied the translator's reading and left
+  these spellings to the translator. The screen is gone: the proxy serves the
+  plan's text for them, and the corpus and grid shadows record the translator's
+  text as this known divergence (internal/testutil/translatorspelling names the
+  spelling). The binary route evaluates each operand from the parsed tree, so
+  the proxy's answers were Loki's on main as well: TestPlanSpellingsMatchLoki
+  (recorded Loki engine answers, VictoriaLogs v1.49.0 and v1.54.0 recorded
+  through their own query handlers) holds them on the operator, number and
+  modifier spellings, alone and under a ranking, on main and with this change.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="api"}[1m]))/2'
+    start: 'now-15m'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    The answer of the spaced spelling (`sum by (pod) (count_over_time({app="api"}[1m])) / 2`).
+gap:
+  status: fixed
+  fixed_by: "#1661"
+  impact: edge
+  effort: S
+  area: 'internal/queryplan/lower (the binary text screen copied the translator''s reading; deleted)'
+  loki: 'blanks, number spellings and modifier spellings do not change a binary operation'
+  proxy: 'the plan''s text for every spelling; the binary route reads the tree'
+  planned_test: 'TestPlanSpellingsMatchLoki (internal/proxy, recorded Loki engine and VictoriaLogs answers); TestPlanDelegatesBinaryOperations and FuzzBinOpLowering (internal/queryplan/lower); TestBinOpGridShadow and TestPlanShadow (internal/querycorpus); TestCase (internal/testutil/translatorspelling)'
+  visual: none
+  visual_reason: 'Grafana writes a binary operation with one space on each side of the operator'
+  clusters: []

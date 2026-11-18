@@ -33,8 +33,7 @@ import (
 //     (ReadsReservedField);
 //   - a quoted string with detected_level or service_name in it, a byte from \x00 to \x02, or an escape that could
 //     write one (the values the string translator reads as syntax);
-//   - the spellings ScreenText leaves to the translator: a whole query in parentheses, a blank before an operand or a
-//     range function's parenthesis; and a comment, or text it does not read.
+//   - a comment, or text it does not read.
 //
 // The screen only turns queries away: the typed gate on the plan and the lowering still decide every query it
 // passes, so one it passes in error costs a plan and is translated as before. The proxy's corpus test holds it to the
@@ -43,7 +42,7 @@ func ScreenMetric(query string) string {
 	query = strings.TrimSpace(query)
 	var s metricScan
 	if !s.scan(query) || s.ranges == 0 || s.needsUnwrap && !s.unwrap || s.keep && s.unwrap ||
-		s.nestedVector && s.unwrap || s.lrBinary && s.quotedParen ||
+		s.nestedVector && s.unwrap ||
 		s.exists && s.candidate && (s.rate || s.existsThen) || s.extractedFilter && s.candidate || s.jsonPath {
 		return ""
 	}
@@ -61,12 +60,9 @@ func ScreenMetric(query string) string {
 		}
 		return "LabelReplace"
 	case "sum", "avg", "min", "max", "count":
-		if paddedOperand(query) {
-			return ""
-		}
 		return "VectorAgg"
 	}
-	if rangeFunctionWord(s.first) && !paddedCall(query) {
+	if rangeFunctionWord(s.first) {
 		return "RangeAgg"
 	}
 	return ""
@@ -148,8 +144,6 @@ type metricScan struct {
 	pending byte
 	// pendingVector is a vector aggregation's name read, until its operand's parenthesis.
 	pendingVector bool
-	// quantileArg is set by quantile_over_time until its first number: the parameter the translator copies as written.
-	quantileArg bool
 	// rangeAt, clauseAt and labelReplaceAt are the depths of the parentheses of the range function, the by or without
 	// clause and the top label_replace call being read (0 outside one); afterRange is set when a range function's
 	// parenthesis closes, until the next name.
@@ -159,9 +153,8 @@ type metricScan struct {
 	// nestedVector is a vector aggregation inside another.
 	vectorAt     [8]int
 	nestedVector bool
-	// lrBinary is a binary operation as the operand of label_replace; quotedParen a quoted parenthesis before it;
-	// argString the string of the label_replace argument being read.
-	lrBinary, quotedParen, argString bool
+	// argString is the string of the label_replace argument being read.
+	argString bool
 	// ranges, vectors and labelReplaces count those calls; labelReplaceCommas the commas between the arguments of the
 	// top label_replace.
 	ranges, vectors, labelReplaces, labelReplaceCommas int
@@ -209,7 +202,7 @@ const (
 
 // scan reads q and reports false at the first thing ScreenMetric turns away.
 func (s *metricScan) scan(q string) bool {
-	if q == "" || q[0] == '(' && wrappedWhole(q) {
+	if q == "" {
 		return false
 	}
 	for i := 0; i < len(q); i++ {
@@ -296,9 +289,6 @@ func (s *metricScan) quoted(q string, i int) (int, bool) {
 	if s.jsonArgs && oddJSONPath(q[i+1:j]) {
 		s.jsonPath = true
 	}
-	if s.labelReplaceCommas == 0 && strings.ContainsAny(q[i+1:j], "()") {
-		s.quotedParen = true
-	}
 	if s.labelReplaceArg() {
 		// Each argument of label_replace after the first is one string.
 		if s.argString {
@@ -346,10 +336,9 @@ func (s *metricScan) comma() bool {
 
 // number reads the number, duration or byte size at q[i].
 func (s *metricScan) number(q string, i int) (int, bool) {
-	if s.labelReplaceArg() || s.quantileArg && !shortestNumber(q, i) {
+	if s.labelReplaceArg() {
 		return i, false
 	}
-	s.quantileArg = false
 	j := i
 	for j < len(q) && (isNameByte(q[j]) || q[j] == '.') {
 		j++
@@ -408,37 +397,6 @@ func (s *metricScan) close() bool {
 // labelReplaceArg reports a position in one of the string arguments of the top label_replace call.
 func (s *metricScan) labelReplaceArg() bool {
 	return s.labelReplaceAt > 0 && s.paren == s.labelReplaceAt && s.labelReplaceCommas > 0
-}
-
-// shortestNumber reports a number at q[i:] written as the shortest form of its value
-// (strconv.FormatFloat(v, 'g', -1, 64)): no exponent, no leading zero but the one before the point, no point without
-// a digit on each side, no trailing zero after the point, and at most 15 digits.
-func shortestNumber(q string, i int) bool {
-	j, digits, point := i, 0, -1
-	for ; j < len(q); j++ {
-		switch c := q[j]; {
-		case c >= '0' && c <= '9':
-			digits++
-		case c == '.' && point < 0:
-			point = j
-		default:
-			if isNameByte(c) || c == '.' {
-				return false // an exponent, a suffix, a second point
-			}
-			goto done
-		}
-	}
-done:
-	n := q[i:j]
-	switch {
-	case digits == 0 || digits > 15 || n[0] == '.' || n[len(n)-1] == '.':
-		return false
-	case len(n) > 1 && n[0] == '0' && n[1] != '.':
-		return false
-	case point >= 0 && n[len(n)-1] == '0':
-		return false
-	}
-	return true
 }
 
 // isNameStart reports the first byte of a name.
@@ -578,7 +536,6 @@ func (s *metricScan) call(w string) bool {
 	}
 	s.ranges++
 	s.pending = pendingRange
-	s.quantileArg = w == "quantile_over_time"
 	s.rate = s.rate || w == "rate" || w == "bytes_rate"
 	switch w {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time", "absent_over_time":
@@ -633,7 +590,6 @@ func (s *metricScan) operator(q string, i int) (int, bool) {
 		// A label filter, an offset.
 	case s.labelReplaceAt > 0 && s.paren == s.labelReplaceAt && s.labelReplaceCommas == 0:
 		// The operand of a label_replace call is a binary operation.
-		s.lrBinary = true
 	default:
 		return 0, false
 	}

@@ -1,0 +1,39 @@
+id: semantics/unwrap-token-in-parenthesized-range-expected-list
+title: "A token after an unwrap inside a parenthesized log range (`(... | unwrap x y)[1m]`) gets Loki's syntax error without `)` in the expected tokens (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  In the parenthesized range form, Loki's parser expects a range, the closing
+  parenthesis or a pipe after an unwrap. Recorded with the Loki oracle (check
+  command):
+
+    sum_over_time(({app="a"} | unwrap x y)[1m])      parse error at line 1, col 37: syntax error: unexpected IDENTIFIER, expecting RANGE or ) or |
+    sum_over_time(({app="a"} | unwrap x(a))[1m])     parse error at line 1, col 36: syntax error: unexpected (, expecting RANGE or ) or |
+
+  The proxy answers the same status, line, column and unexpected token, and lists
+  `expecting RANGE or |`, the list of the range form without parentheses. Found
+  with semantics/unwrap-name-before-parenthesis-accepted; the list is written by
+  the parser's dotted-name pass, not by the unwrap stage.
+request:
+  scope: query-grammar
+  entry: "the Loki oracle's check command (internal/logql recordLexerEdgeAnswers): the two queries above"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): sum_over_time(({app=\"a\"} | unwrap x y)[1m]) . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request when it is fixed."
+compare:
+  mode: observed
+  fields: [status, errorType, error]
+  expect: |
+    400, Loki's `parse error at line 1, col 37: syntax error: unexpected
+    IDENTIFIER, expecting RANGE or ) or |`.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/logql (the expected-token list after an unwrap in a parenthesized log range)'
+  loki: 'after an unwrap inside `(...)[range]` the expected tokens are RANGE, ) and |'
+  proxy: 'the same error with `expecting RANGE or |`'
+  planned_test: 'a recorded Loki answer row in TestUnwrapNameBeforeParenthesisMatchesLoki (internal/logql) when fixed'
+  visual: none
+  visual_reason: 'a spelling no Grafana panel writes'
+  clusters: []

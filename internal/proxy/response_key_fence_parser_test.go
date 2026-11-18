@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -321,6 +322,9 @@ func fenceShapeRequest(query string) *http.Request {
 	return httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+v.Encode(), nil)
 }
 
+// conversionCallRE is an unwrap conversion written with no blank around its parenthesis.
+var conversionCallRE = regexp.MustCompile(`unwrap\s+(?:bytes|duration_seconds|duration)\([^\s()]+\)`)
+
 // fenceWants is, per fence, whether the parsed tree of query holds the construct the fence guards; nil for a query
 // the parser rejects (it has no tree).
 func fenceWants(query string) map[string]bool {
@@ -345,6 +349,10 @@ func fenceWants(query string) map[string]bool {
 		// printed tree writes each stage so.
 		"unwrap-blank-spelling": strings.Count(textOutsideQuotes(expr.String()), "| unwrap ") >
 			strings.Count(strings.ToLower(textOutsideQuotes(query)), "| unwrap "),
+		// An unwrap conversion of the tree that the text does not write `<conversion>(<label>)` with no blank around its
+		// parenthesis: the printed tree writes each conversion so.
+		"unwrap-conversion-blank": len(conversionCallRE.FindAllString(strings.ToLower(textOutsideQuotes(expr.String())), -1)) >
+			len(conversionCallRE.FindAllString(strings.ToLower(textOutsideQuotes(query)), -1)),
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
@@ -520,6 +528,8 @@ var fenceScreens = []struct {
 	{"stream-level-series", refStreamLevelSeries, streamLevelSeriesResponseKeyVersion},
 	// New with the plan serving an unwrap written with other blanks: no older screen fired it.
 	{"unwrap-blank-spelling", func(string) bool { return false }, unwrapBlankSpellingResponseKeyVersion},
+	// New with the plan serving an unwrap conversion written with a blank around its parenthesis.
+	{"unwrap-conversion-blank", func(string) bool { return false }, unwrapConversionBlankResponseKeyVersion},
 }
 
 // fenceLosses lists the fences an older binary's screen fired for that the screen now lacks: a response key it wrote
@@ -694,6 +704,7 @@ func fenceFires(name, query string) bool {
 		},
 		"binary-empty-without":    func() string { return emptyWithoutOperandResponseKeyVersion(query) },
 		"unwrap-blank-spelling":   func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
+		"unwrap-conversion-blank": func() string { return unwrapConversionBlankResponseKeyVersion(query) },
 		"extraction-list-windows": func() string { return listedWindowsResponseKeyVersion(r, query) },
 		"count-stdvar-series":     func() string { return countVarianceResponseKeyVersion(query) },
 	}[name]() != ""
@@ -794,6 +805,13 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"unwrap-dynamic-identity", "sum by (x) (avg_over_t\u0130me({a=\"b\"} | json | unwrap n [5m]))", true},
 		{"unwrap-dynamic-identity", "MAX(MAX_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", true},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | keep x | unwrap n [5m]))`, false},
+		{"unwrap-conversion-blank", `sum by (x) (max_over_time({a="b"} | unwrap bytes (n) [5m]))`, true},
+		{"unwrap-conversion-blank", `sum by (x) (max_over_time({a="b"} | unwrap bytes( n ) [5m]))`, true},
+		{"unwrap-conversion-blank", "sum by (x) (max_over_time({a=\"b\"} | unwrap # c\nbytes (n) [5m]))", true},
+		{"unwrap-conversion-blank", "max_over_time({a=\"b\"} | unwrap DURATION_SECONDS\t(n) [5m])", true},
+		{"unwrap-conversion-blank", `max_over_time({a="b"} | UNWRAP Duration (n) [5m])`, true},
+		{"unwrap-conversion-blank", `max_over_time({a="b"} | unwrap BYTES(n) [5m])`, false},
+		{"unwrap-conversion-blank", `max_over_time({a="b"} | unwrap n [5m])`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | unwrap n [5m]))`, false},
 		{"binary-empty-without", `sum without () (count_over_time({a="b"}[5m])) / 2`, true},
 		{"binary-empty-without", `SUM WITHOUT () (count_over_time({a="b"}[5m])) / 2`, true},
@@ -948,6 +966,33 @@ func TestUnwrapBlankSpellingFence(t *testing.T) {
 			t.Errorf("%q: fence %v, want %v", q, got, want)
 		}
 		if keys := responseKeyFences(fenceShapeRequest(q), q, responseKeyCompatQueryRange); strings.Contains(keys, unwrapBlankSpellingResponseVersion) != want {
+			t.Errorf("%q: compat key fences %q", q, keys)
+		}
+	}
+}
+
+// An unwrap conversion written with a blank before or inside its parenthesis is served from the plan, which reads the
+// conversion from the tree, where the string translator read the call as the label's name: its response key carries
+// the unwrap conversion blank fence; a query whose every conversion is written `bytes(n)` keeps its key.
+//
+// conformance: cache-response-key-versions, semantics/blank-before-call-parenthesis-read-unlike-loki
+func TestUnwrapConversionBlankFence(t *testing.T) {
+	for q, want := range map[string]bool{
+		`sum_over_time({app="a"} | unwrap bytes (n) [5m])`:                                     true,
+		`sum_over_time({app="a"} | unwrap bytes( n ) [5m])`:                                    true,
+		`sum_over_time({app="a"} | unwrap bytes(n ) [5m])`:                                     true,
+		"sum by (p) (max_over_time({app=\"a\"} | logfmt | unwrap duration_seconds\t(d) [5m]))": true,
+		`sum_over_time({app="a"} | unwrap DURATION (n) [5m])`:                                  true,
+		`sum_over_time({app="a"} | unwrap bytes(n) [5m])`:                                      false,
+		`sum_over_time({app="a"} | unwrap duration_seconds(n) [5m])`:                           false,
+		`sum_over_time({app="a"} | unwrap n [5m])`:                                             false,
+		`sum_over_time({app="a"} |= "unwrap bytes (n)" | unwrap n [5m])`:                       false,
+		`rate({app="a"}[5m])`: false,
+	} {
+		if got := unwrapConversionBlankResponseKeyVersion(q) != ""; got != want {
+			t.Errorf("%q: fence %v, want %v", q, got, want)
+		}
+		if keys := responseKeyFences(fenceShapeRequest(q), q, responseKeyCompatQueryRange); strings.Contains(keys, unwrapConversionBlankResponseVersion) != want {
 			t.Errorf("%q: compat key fences %q", q, keys)
 		}
 	}

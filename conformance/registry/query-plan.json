@@ -255,32 +255,28 @@
     }
   },
   "loki_metric_differential": {
-    "queries": 805,
-    "entries": 31560,
+    "queries": 813,
+    "entries": 31844,
     "excluded": {
       "the plan does not route it: BinOp bool": 9,
       "the plan does not route it: BinOp constant operands": 9,
-      "the plan does not route it: BinOp operand BinOp": 13,
+      "the plan does not route it: BinOp operand BinOp": 14,
       "the plan does not route it: BinOp operand LabelReplace": 5,
       "the plan does not route it: BinOp operand RangeAgg": 2,
       "the plan does not route it: BinOp operand RangeAgg route unwrap pipeline": 1,
       "the plan does not route it: BinOp operand Rank": 1,
-      "the plan does not route it: BinOp operand VectorAgg": 2,
+      "the plan does not route it: BinOp operand VectorAgg": 3,
       "the plan does not route it: BinOp operand VectorAgg route pipeline": 3,
       "the plan does not route it: BinOp operand VectorAgg route unwrap pipeline": 49,
       "the plan does not route it: BinOp operand VectorAgg route unwrap rate": 29,
       "the plan does not route it: BinOp operand VectorAgg without empty": 36,
-      "the plan does not route it: BinOp operand spelling": 3,
-      "the plan does not route it: BinOp quoted text": 1,
       "the plan does not route it: BinOp route mixed offsets": 7,
       "the plan does not route it: BinOp route rewrite": 1,
       "the plan does not route it: BinOp scalar operands": 2,
       "the plan does not route it: BinOp set operator": 7,
-      "the plan does not route it: BinOp spelling": 1,
       "the plan does not route it: LabelReplace operand BinOp": 2,
-      "the plan does not route it: LabelReplace operand VectorAgg": 3,
-      "the plan does not route it: LabelReplace operand spelling": 5,
-      "the plan does not route it: LabelReplace route operand": 124,
+      "the plan does not route it: LabelReplace operand VectorAgg": 6,
+      "the plan does not route it: LabelReplace route operand": 126,
       "the plan does not route it: LabelReplace service_name grouping": 4,
       "the plan does not route it: RangeAgg LogSelect level filter after stage": 1,
       "the plan does not route it: RangeAgg LogSelect line format function": 1,
@@ -295,13 +291,11 @@
       "the plan does not route it: RangeAgg route unwrap absent": 9,
       "the plan does not route it: RangeAgg route unwrap grouping": 3,
       "the plan does not route it: RangeAgg route unwrap pipeline": 167,
-      "the plan does not route it: RangeAgg route unwrap quantile": 65,
+      "the plan does not route it: RangeAgg route unwrap quantile": 66,
       "the plan does not route it: RangeAgg route unwrap rate": 2,
       "the plan does not route it: RangeAgg route unwrap rate_counter": 7,
       "the plan does not route it: RangeAgg route unwrap stdvar": 5,
-      "the plan does not route it: RangeAgg unwrap quantile spelling": 1,
-      "the plan does not route it: RangeAgg unwrap spelling": 1,
-      "the plan does not route it: Rank operand BinOp": 7,
+      "the plan does not route it: Rank operand BinOp": 8,
       "the plan does not route it: Rank route operand": 188,
       "the plan does not route it: Rank route rewrite": 2,
       "the plan does not route it: SeriesAgg operand BinOp": 1,
@@ -311,14 +305,13 @@
       "the plan does not route it: VectorAgg grouping": 3,
       "the plan does not route it: VectorAgg nested unwrap": 4,
       "the plan does not route it: VectorAgg operand": 22,
-      "the plan does not route it: VectorAgg operand spelling": 8,
       "the plan does not route it: VectorAgg parser extracted label": 2,
       "the plan does not route it: VectorAgg parser label filter": 1,
       "the plan does not route it: VectorAgg route absent operand": 8,
       "the plan does not route it: VectorAgg route evaluated level": 173,
       "the plan does not route it: VectorAgg route level filter": 12,
       "the plan does not route it: VectorAgg route operand": 8,
-      "the plan does not route it: VectorAgg route pipeline": 202,
+      "the plan does not route it: VectorAgg route pipeline": 205,
       "the plan does not route it: VectorAgg route rewrite": 1,
       "the plan does not route it: VectorAgg route unwrap pipeline": 116,
       "the plan does not route it: VectorAgg route unwrap quantile": 8,
@@ -331,22 +324,22 @@
     "profiles": {
       "v1.49 loki profile": {
         "instant": {
-          "runs": 805,
-          "plan_runs": 805,
-          "plan_matches_loki": 805,
-          "plan_matches_loki_empty": 398,
-          "translator_matches_loki": 805,
+          "runs": 813,
+          "plan_runs": 813,
+          "plan_matches_loki": 813,
+          "plan_matches_loki_empty": 399,
+          "translator_matches_loki": 813,
           "float_tolerance": 1
         },
         "step\u003crange": {
-          "runs": 805,
-          "plan_runs": 766,
+          "runs": 813,
+          "plan_runs": 774,
           "not_plan": {
             "the route rule delegates the request": 39
           },
-          "plan_matches_loki": 758,
-          "plan_matches_loki_empty": 247,
-          "translator_matches_loki": 797,
+          "plan_matches_loki": 766,
+          "plan_matches_loki_empty": 248,
+          "translator_matches_loki": 805,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -360,25 +353,25 @@
           }
         },
         "step=range": {
-          "runs": 805,
-          "plan_runs": 803,
+          "runs": 813,
+          "plan_runs": 811,
           "not_plan": {
             "the route rule delegates the request": 2
           },
-          "plan_matches_loki": 803,
-          "plan_matches_loki_empty": 268,
-          "translator_matches_loki": 805,
+          "plan_matches_loki": 811,
+          "plan_matches_loki_empty": 269,
+          "translator_matches_loki": 813,
           "float_tolerance": 3
         },
         "step\u003erange": {
-          "runs": 805,
-          "plan_runs": 788,
+          "runs": 813,
+          "plan_runs": 796,
           "not_plan": {
             "the route rule delegates the request": 17
           },
-          "plan_matches_loki": 780,
-          "plan_matches_loki_empty": 259,
-          "translator_matches_loki": 797,
+          "plan_matches_loki": 788,
+          "plan_matches_loki_empty": 260,
+          "translator_matches_loki": 805,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -394,22 +387,22 @@
       },
       "v1.54 loki profile": {
         "instant": {
-          "runs": 805,
-          "plan_runs": 805,
-          "plan_matches_loki": 805,
-          "plan_matches_loki_empty": 398,
-          "translator_matches_loki": 805,
+          "runs": 813,
+          "plan_runs": 813,
+          "plan_matches_loki": 813,
+          "plan_matches_loki_empty": 399,
+          "translator_matches_loki": 813,
           "float_tolerance": 1
         },
         "step\u003crange": {
-          "runs": 805,
-          "plan_runs": 766,
+          "runs": 813,
+          "plan_runs": 774,
           "not_plan": {
             "the route rule delegates the request": 39
           },
-          "plan_matches_loki": 758,
-          "plan_matches_loki_empty": 247,
-          "translator_matches_loki": 797,
+          "plan_matches_loki": 766,
+          "plan_matches_loki_empty": 248,
+          "translator_matches_loki": 805,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -423,25 +416,25 @@
           }
         },
         "step=range": {
-          "runs": 805,
-          "plan_runs": 803,
+          "runs": 813,
+          "plan_runs": 811,
           "not_plan": {
             "the route rule delegates the request": 2
           },
-          "plan_matches_loki": 803,
-          "plan_matches_loki_empty": 268,
-          "translator_matches_loki": 805,
+          "plan_matches_loki": 811,
+          "plan_matches_loki_empty": 269,
+          "translator_matches_loki": 813,
           "float_tolerance": 3
         },
         "step\u003erange": {
-          "runs": 805,
-          "plan_runs": 788,
+          "runs": 813,
+          "plan_runs": 796,
           "not_plan": {
             "the route rule delegates the request": 17
           },
-          "plan_matches_loki": 780,
-          "plan_matches_loki_empty": 259,
-          "translator_matches_loki": 797,
+          "plan_matches_loki": 788,
+          "plan_matches_loki_empty": 260,
+          "translator_matches_loki": 805,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -458,12 +451,12 @@
     }
   },
   "predicate_parity": {
-    "rows": 2708,
-    "validated": 2585,
+    "rows": 2713,
+    "validated": 2589,
     "attributes": {
       "offset": {
         "predicate": "extractLogQLOffset(handler query text)",
-        "compared": 2585,
+        "compared": 2589,
         "explained": []
       }
     }
@@ -478,7 +471,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 7838,
+    "native": 7848,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 90,
@@ -524,7 +517,6 @@
       "RangeAgg route unwrap rate": 20,
       "RangeAgg route unwrap rate_counter": 70,
       "RangeAgg route unwrap stdvar": 50,
-      "RangeAgg unwrap conversion": 10,
       "Rank (route rule)": 1900,
       "Rank operand BinOp": 80,
       "Scalar": 20,
@@ -558,84 +550,84 @@
       "500": 25
     },
     "routes": {
-      "24h chunk/BinOp": "99ef77417c0511e2",
+      "24h chunk/BinOp": "e644dfccd5106fb0",
       "24h chunk/LabelReplace": "a772281968951067",
       "24h chunk/LogSelect": "abd6ac46240528b4",
-      "24h chunk/RangeAgg": "5a87e7acaaf02610",
+      "24h chunk/RangeAgg": "fd6b7b252361eae5",
       "24h chunk/Rank": "0e8b644afe1f6c99",
       "24h chunk/Scalar": "b01ddfee0a162681",
       "24h chunk/VectorAgg": "d57e4479b1916275",
       "24h chunk/VectorLit": "fafe78111335aec9",
-      "instant/BinOp": "4e29924f0edd29d1",
+      "instant/BinOp": "394d7ccba3f358b1",
       "instant/LabelReplace": "b6a3f8b8b1d05d2b",
       "instant/LogSelect": "616d57d92ae8e14f",
-      "instant/RangeAgg": "1187d94b75c2b5a3",
+      "instant/RangeAgg": "6d94b48225b28165",
       "instant/Rank": "9ec7fa8848911d26",
       "instant/Scalar": "058ee94c303a0c46",
       "instant/VectorAgg": "7ae10a61b9fe0398",
       "instant/VectorLit": "29ac61516bcfbcbb",
-      "step\u003crange/BinOp": "fa2b49e94c9bb6e1",
+      "step\u003crange/BinOp": "38e8284141f2f931",
       "step\u003crange/LabelReplace": "417b1ad3249b9e49",
       "step\u003crange/LogSelect": "abd6ac46240528b4",
-      "step\u003crange/RangeAgg": "8c014d6f75d3bd67",
+      "step\u003crange/RangeAgg": "ccea2e2c98caa4dd",
       "step\u003crange/Rank": "a1c0762e7e661c35",
       "step\u003crange/Scalar": "b01ddfee0a162681",
       "step\u003crange/VectorAgg": "f85b6edc38c4db64",
       "step\u003crange/VectorLit": "fafe78111335aec9",
-      "step=range/BinOp": "ede88306279c0f16",
+      "step=range/BinOp": "ad9dd1c2dcfd5d00",
       "step=range/LabelReplace": "86c5dc63ad57574e",
       "step=range/LogSelect": "abd6ac46240528b4",
-      "step=range/RangeAgg": "cb2f200eea1502d9",
+      "step=range/RangeAgg": "e12f95e23c669b5f",
       "step=range/Rank": "f25449313fc95180",
       "step=range/Scalar": "b01ddfee0a162681",
       "step=range/VectorAgg": "3367d82d196347d7",
       "step=range/VectorLit": "fafe78111335aec9",
-      "step\u003erange/BinOp": "e4c89ae03564028f",
+      "step\u003erange/BinOp": "33814d75a16bcaef",
       "step\u003erange/LabelReplace": "a91db5d5b16ef731",
       "step\u003erange/LogSelect": "abd6ac46240528b4",
-      "step\u003erange/RangeAgg": "dde0d6a9134faa29",
+      "step\u003erange/RangeAgg": "8a89897af7edad16",
       "step\u003erange/Rank": "f300d12c6c6c74f1",
       "step\u003erange/Scalar": "b01ddfee0a162681",
       "step\u003erange/VectorAgg": "700acdb00d4697c7",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     },
     "calls": {
-      "24h chunk/BinOp": "89cac65c8166382f",
+      "24h chunk/BinOp": "a564ffe494b53ac1",
       "24h chunk/LabelReplace": "0ce902c0c8a1708e",
       "24h chunk/LogSelect": "53009fb2325e656e",
-      "24h chunk/RangeAgg": "9d69a1e2522f0815",
+      "24h chunk/RangeAgg": "d73ae2b82f859832",
       "24h chunk/Rank": "a0ace3440f8bb583",
       "24h chunk/Scalar": "2c7012c3274c662d",
       "24h chunk/VectorAgg": "487da526876e73be",
       "24h chunk/VectorLit": "7aa978e4ba5a3f44",
-      "instant/BinOp": "1a544e8b4e152e3b",
+      "instant/BinOp": "7718cffe9df1b1cf",
       "instant/LabelReplace": "e0c34484eeae2741",
       "instant/LogSelect": "d24b4175dd2ef0d1",
-      "instant/RangeAgg": "c71f498b9f592c10",
+      "instant/RangeAgg": "87a34967fd9cfc41",
       "instant/Rank": "956352363933e9d4",
       "instant/Scalar": "4989874b8a3c42dc",
       "instant/VectorAgg": "6fb33d26c8d38884",
       "instant/VectorLit": "0dc325c3d1510308",
-      "step\u003crange/BinOp": "6f65afe85128e0da",
+      "step\u003crange/BinOp": "71cb85239e73afd1",
       "step\u003crange/LabelReplace": "220b572776344233",
       "step\u003crange/LogSelect": "20901f6b70bbb04a",
-      "step\u003crange/RangeAgg": "c6f0aabfac3338fd",
+      "step\u003crange/RangeAgg": "5814d547d2351fc0",
       "step\u003crange/Rank": "2425b8df850ec84f",
       "step\u003crange/Scalar": "6db69b6718a0b07a",
       "step\u003crange/VectorAgg": "b013b75a5371e537",
       "step\u003crange/VectorLit": "58ad28055f0b3615",
-      "step=range/BinOp": "69ad1cdd3305bb0c",
+      "step=range/BinOp": "aeec93da0c8f5b14",
       "step=range/LabelReplace": "19282eca994ae617",
       "step=range/LogSelect": "20901f6b70bbb04a",
-      "step=range/RangeAgg": "cc53d1680b7871a1",
+      "step=range/RangeAgg": "a07c43451611560f",
       "step=range/Rank": "e71949f80974d972",
       "step=range/Scalar": "6db69b6718a0b07a",
       "step=range/VectorAgg": "4e5660d172e59291",
       "step=range/VectorLit": "58ad28055f0b3615",
-      "step\u003erange/BinOp": "b1590116ac9f0a08",
+      "step\u003erange/BinOp": "637b7bc201d9ae29",
       "step\u003erange/LabelReplace": "595d59c400c48fbe",
       "step\u003erange/LogSelect": "20901f6b70bbb04a",
-      "step\u003erange/RangeAgg": "376f422eac0df4a8",
+      "step\u003erange/RangeAgg": "85ac85c961cfd776",
       "step\u003erange/Rank": "8fadb619732d9949",
       "step\u003erange/Scalar": "6db69b6718a0b07a",
       "step\u003erange/VectorAgg": "eb51cad039242bb0",
@@ -643,8 +635,8 @@
     },
     "vl_calls": {
       "24h chunk/BinOp": {
-        "runs": 626,
-        "cold": 1212,
+        "runs": 628,
+        "cold": 1214,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -661,8 +653,8 @@
         "repeat_runs": 0
       },
       "24h chunk/RangeAgg": {
-        "runs": 1234,
-        "cold": 1616,
+        "runs": 1232,
+        "cold": 1612,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -691,8 +683,8 @@
         "repeat_runs": 0
       },
       "instant/BinOp": {
-        "runs": 626,
-        "cold": 830,
+        "runs": 628,
+        "cold": 832,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -709,8 +701,8 @@
         "repeat_runs": 10
       },
       "instant/RangeAgg": {
-        "runs": 1234,
-        "cold": 1276,
+        "runs": 1232,
+        "cold": 1274,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -739,8 +731,8 @@
         "repeat_runs": 0
       },
       "step\u003crange/BinOp": {
-        "runs": 626,
-        "cold": 1212,
+        "runs": 628,
+        "cold": 1214,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -757,8 +749,8 @@
         "repeat_runs": 0
       },
       "step\u003crange/RangeAgg": {
-        "runs": 1234,
-        "cold": 1566,
+        "runs": 1232,
+        "cold": 1562,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -787,8 +779,8 @@
         "repeat_runs": 0
       },
       "step=range/BinOp": {
-        "runs": 626,
-        "cold": 1213,
+        "runs": 628,
+        "cold": 1215,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -805,8 +797,8 @@
         "repeat_runs": 0
       },
       "step=range/RangeAgg": {
-        "runs": 1234,
-        "cold": 1520,
+        "runs": 1232,
+        "cold": 1516,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -835,8 +827,8 @@
         "repeat_runs": 0
       },
       "step\u003erange/BinOp": {
-        "runs": 626,
-        "cold": 1211,
+        "runs": 628,
+        "cold": 1213,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -853,8 +845,8 @@
         "repeat_runs": 0
       },
       "step\u003erange/RangeAgg": {
-        "runs": 1234,
-        "cold": 1534,
+        "runs": 1232,
+        "cold": 1530,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -887,9 +879,9 @@
   "shadow": {
     "rows": 24036,
     "profiles": 12,
-    "native": 22209,
+    "native": 22245,
     "native_proxy_evaluated": 4464,
-    "native_loki_held": 552,
+    "native_loki_held": 579,
     "mismatches": 0,
     "rejected": 345,
     "delegated_by_construct": {
@@ -899,14 +891,11 @@
       "BinOp operand LabelReplace": 45,
       "BinOp operand RangeAgg": 18,
       "BinOp operand Rank": 9,
-      "BinOp operand VectorAgg": 18,
-      "BinOp quoted text": 9,
+      "BinOp operand VectorAgg": 27,
       "BinOp scalar operands": 18,
       "BinOp set operator": 18,
-      "BinOp spelling": 9,
       "LabelReplace operand BinOp": 18,
       "LabelReplace operand VectorAgg": 54,
-      "LabelReplace operand spelling": 18,
       "LabelReplace service_name grouping": 36,
       "LogSelect keep order": 12,
       "LogSelect level filter after stage": 24,
@@ -917,9 +906,7 @@
       "RangeAgg LogSelect unpack label read": 225,
       "RangeAgg LogSelect unpack line read": 18,
       "RangeAgg LogSelect unpack parser order": 9,
-      "RangeAgg unwrap quantile spelling": 9,
-      "RangeAgg unwrap spelling": 9,
-      "Rank operand BinOp": 63,
+      "Rank operand BinOp": 72,
       "Scalar": 18,
       "SeriesAgg operand BinOp": 9,
       "VectorAgg LogSelect json extraction": 18,
