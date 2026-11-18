@@ -25,14 +25,15 @@ func TestOrderedJSONSettledStepsReuse(t *testing.T) {
 		t.Run(shape.name, func(t *testing.T) {
 			backend, fixture := newDLVBaselineBackend(t, shape, base)
 			var mu sync.Mutex
-			var spans []time.Duration
+			type span struct{ from, to time.Time }
+			var spans []span
 			observed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_ = r.ParseForm()
 				from, e1 := time.Parse(time.RFC3339Nano, r.Form.Get("start"))
 				to, e2 := time.Parse(time.RFC3339Nano, r.Form.Get("end"))
 				if e1 == nil && e2 == nil {
 					mu.Lock()
-					spans = append(spans, to.Sub(from))
+					spans = append(spans, span{from, to})
 					mu.Unlock()
 				}
 				backend.Config.Handler.ServeHTTP(w, r)
@@ -50,9 +51,13 @@ func TestOrderedJSONSettledStepsReuse(t *testing.T) {
 				}
 				p.statsExtentStores.wait()
 				mu.Lock()
-				for _, span := range spans {
-					if i > 0 && span > 2*time.Minute+time.Nanosecond {
-						t.Errorf("moved window reread settled history: span=%s", span)
+				for _, s := range spans {
+					// A read of this window lies within its range, the minute before from (the [1m] range) to
+					// end; a call the strict split cancelled in the window before can still arrive now, reading
+					// that window (consecutive windows differ by a minute or two at both ends).
+					ofThisWindow := !s.from.Before(from.Add(-time.Minute)) && !s.to.After(to.Add(time.Nanosecond))
+					if i > 0 && ofThisWindow && s.to.Sub(s.from) > 2*time.Minute+time.Nanosecond {
+						t.Errorf("moved window reread settled history: %s to %s", s.from.Sub(base), s.to.Sub(base))
 					}
 				}
 				spans = nil
