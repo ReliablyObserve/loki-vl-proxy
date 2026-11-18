@@ -474,6 +474,7 @@
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/unwrap_conversion_error.go",
+        "internal/proxy/vl_refusal.go",
         "internal/proxy/volume.go",
         "internal/proxy/volume_segments.go",
         "internal/translator/stats_codec.go",

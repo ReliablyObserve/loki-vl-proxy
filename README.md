@@ -19,8 +19,8 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-59075%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-92.2%25-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-59210%20passed-brightgreen)](#tests)
+[![Coverage](https://img.shields.io/badge/coverage-92.3%25-brightgreen)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -38,7 +38,7 @@
 
 LogQL queries arrive → parsed into a typed AST (`internal/logql`) → translated into LogsQL via a typed builder (`internal/logsql`) → sent to VictoriaLogs.
 
-Both parsers are hand-written recursive descent. The LogQL side handles the full Loki grammar. The LogsQL side uses a builder API that produces typed, syntactically valid LogsQL at construction time. Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters), and typed AST construction for complex paths (stats aggregations, binary metric expressions, `PipeMath`/`PipeStats`/`PipeFilter` nodes).
+Both parsers are hand-written recursive descent. The LogQL side handles the full Loki grammar. The LogsQL side uses a builder API that produces typed, syntactically valid LogsQL at construction time. A query is translated by one of two paths that write the same LogsQL: the typed query plan (the Loki-semantics logical plan lowered to LogsQL AST nodes), which serves a growing set of log and metric shapes, and the older string translator for the rest. `-query-plan-lowering` switches the plan path; [LogQL parser](docs/logql-parser.md#query-plan-lowering-which-translator-answers) lists which shapes each path serves.
 
 **Label metadata and cache reuse:** `/labels` and `/label/{name}/values` cover the requested range, using metadata inventories and cached time buckets rather than only a recent slice. Settled buckets can be reused from memory, disk and peers; recent edges and buckets due for revalidation still read VictoriaLogs. Near-now freshness, empty answers, stale-on-error responses and optional indexed browse limits follow the configured rules in [Metadata caching](docs/configuration.md#metadata-vs-live-query-freshness). A cache hit is not a guarantee of immediate visibility after retention or deletion; distributed deletion-generation metadata is not implemented.
 
@@ -51,8 +51,34 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 **Keep your entire Loki stack — Grafana Explore, Drilldown, dashboards, API tooling — and run it on VictoriaLogs.**
 
 - **Drop-in Loki API.** Point your existing Grafana Loki datasource at the proxy. Zero plugin changes and no query rewrites for supported LogQL; measured gaps are listed in [compatibility gaps](docs/real-window-compatibility-gaps.md) and [Known Issues](docs/KNOWN_ISSUES.md).
-- **Measured resource difference.** At 310 GiB/day ingest: VL + proxy runs on **1.4 cores and 6.1 GiB RAM**. Loki's published minimum for that ingest class: 38 cores, 59 GiB. That gap is real — not a benchmark artifact.
+- **Measured resource difference.** At 310 GiB/day ingest: VL + proxy runs on **1.4 cores and 6.1 GiB RAM**. Loki's published minimum for that ingest class: 38 cores, 59 GiB. That gap is real — not a benchmark artifact. A [local single-machine comparison](#local-resource-comparison) is generated from a committed harness.
 - **Proxy intelligence built in.** Disk-backed label cache with keep-warm loop, full-range metadata on the first response, time-bucketed keys, adaptive parallelism, circuit breaker, rate limits, tenant isolation. Fleet restart safety: jitter + peer-first warmup keeps rolling restarts from thundering VL. One ~14 MB static binary.
+
+## Production readiness
+
+The aim is a production workhorse for the whole query path: Grafana Explore, Logs Drilldown, dashboards and Loki API clients, with Loki's tenancy and auth behaviour, Loki's default limits and Loki's error answers, on one proxy or a fleet of them in front of VictoriaLogs. "Production-ready" means one thing here: a team points Grafana at the proxy instead of Loki and notices nothing except that it is faster and cheaper, and runs it as a fleet without risk to VictoriaLogs.
+
+**Where it stands.** The query path is in production use and close to fully production-ready; it is not finished. The tables generated below are the evidence and the authority: [Readiness by client](#quality-and-performance-vs-loki-current) (Explore, Logs Drilldown, the Loki datasource and API clients), the open differences and their impact on Grafana, and the speed distribution against Loki. This text does not repeat their numbers; what they still show open is the remaining work.
+
+**What is in place** (all on `main`, see the [CHANGELOG](CHANGELOG.md)):
+
+- Loki's answers at the boundary: a query Loki rejects from the request alone is refused before any VictoriaLogs call, with Loki's status and text, and so is a tail handshake that fails; one spelling of a query is read whatever blanks, comments or parentheses surround it; `sum`, `max`, `min` and `avg` over the unwrap range functions after `| json` or `| logfmt` read Loki's series on `query_range` with a range longer than the step (two related sliding-window differences are open in the registry).
+- Loki's tenancy and auth: tenancy is off by default as in Loki with `auth_enabled: false`, and Loki's answers for a missing, unknown or multiple org ID when it is on ([Tenancy and authentication](docs/tenancy-and-auth.md)); the delete API is behind its own token and runs Loki's delete requests as VictoriaLogs delete tasks.
+- Loki's default limits: `max_query_length` (`721h`) and `limit` (100 entries on a range log query that sends none); the query length can also be set per tenant.
+- VictoriaLogs stays protected: identical read requests share one run, a failed answer is held for its class (a second or a few, never pushed to peers) so a refreshing dashboard does not ask a failing VictoriaLogs again on every refresh, the circuit breaker and retry budget bound retries, a label named like `_TIME` no longer restarts VictoriaLogs, and a query with certain non-ASCII characters is rejected with Loki's 400 instead of stalling the parser.
+- Who is asking: per-tenant, per-user and per-Grafana-app attribution in the request logs, per-tenant VictoriaLogs cost metrics and `/debug/queries` for the heaviest callers ([Operations](docs/operations.md)).
+
+**Remaining steps for the query path** (each is tracked in a generated report, so the list shrinks as the reports do):
+
+1. Close the open differences Grafana shows: the Explore-visible and Logs Drilldown-visible ones first, ranked in the [parity gaps](conformance/reports/parity-gaps.md).
+2. Prove the behaviours still unproven or partly proven: the [compatibility roadmap](conformance/reports/roadmap.md) lists them in client order.
+3. Bring every shape and range to at least Loki's speed, and no row above 2x Loki: the rows above 2x are listed in the performance summary below and are defects until they leave it.
+4. Match Loki's remaining error answers (the known error differences in the quality summary below).
+5. Keep proving all of it on the two tested VictoriaLogs versions and on a multi-replica fleet.
+
+**Alerting is not ready.** The proxy does not evaluate alerting or recording rules and does not implement Loki's ruler API; only a read bridge shows vmalert's rules and alerts to Grafana ([Rules and alerts migration](docs/rules-alerts-migration.md)). Loki-style alerting and recording rules are the next big area, started once the query path is 100% ready. Until then run `vmalert` against VictoriaLogs and do not plan on the proxy for rule evaluation.
+
+**In progress** (open pull requests, not shipped; as of 2026-11-18): [#1647](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1647) folding a parser's series identity in one scan, [#1652](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1652) one series per parser identity whatever the key order of its lines, [#1649](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1649) and [#1651](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1651) linear-time handling of deeply nested queries, [#1650](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1650) predicting VictoriaLogs refusals before the call and holding them, [#1653](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1653) testing against Loki 3.7.10, [#1655](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1655) pinning Grafana 13.3.1 and Logs Drilldown 3.2.0, and the VictoriaLogs v1.54 bump (no pull request yet); see [Supported versions](#supported-versions).
 
 ## Quality and performance vs Loki (current)
 
@@ -310,6 +336,25 @@ Full cost worksheet, scaling projections, and EC2/GCP sizing tables: [Cost Model
 
 ---
 
+## Local resource comparison
+
+<!-- resource-comparison:start -->
+
+Measured on 2026-11-18 at commit `87a871476`, on one machine (Apple M5 Pro (18 cores), 64 GiB, Colima VM, 8 vCPU, 14 GiB, docker (aarch64)): the same read workload sent to a local Loki and then to the proxy with VictoriaLogs, the stack's own ingest running on both. **A local single-machine test, not a production figure**: at production scale the gap can be much larger, see [The Cost Case](#the-cost-case).
+
+| Side | Requests | First run (cold): CPU-seconds | Peak memory, MiB (before) | Repeat (warm): CPU-seconds | Peak memory, MiB (before) | Wall time, first / repeat |
+|---|---:|---:|---:|---:|---:|---:|
+| Loki | 81 | 265.3 | 7363 (2993) | 130.5 | 7478 (7359) | 86 s / 39 s |
+| Proxy + VictoriaLogs | 81 | 67.1 | 674 (307) | 23.9 | 580 (447) | 22 s / 6 s |
+
+For the same requests on the first, cold run Loki used **4.0x** the CPU-seconds and peaked at **10.9x** the memory of the proxy plus VictoriaLogs; on the repeat of the identical requests (caches warm on both sides) **5.5x** the CPU-seconds and **12.9x** the memory.
+
+Method: 81 cold query_range requests: 9 shapes (grouped/ungrouped count, rate, bytes, topk, | json metric, | json unwrap avg, two log queries) x 15m/30m/1h x 3 rounds, distinct steps, 8 concurrent workers; each side measured alone, then each side repeated (identical requests: caches warm). CPU-seconds are the containers' user plus system time during the workload minus each container's idle rate measured just before it (30 s), since ingest keeps running; peak memory is the resident set sampled every 0.5 s, summed over the side's containers, with the memory before the workload in brackets (Loki's was already large after earlier work on the same stack). Wall time is secondary and noisy on a shared host. A busybox sidecar in each container's PID namespace reads `/proc/1`, so scratch images work. Host shared with other work, load average 31-43 during the run; CPU-seconds net of each container's idle ingest rate; peak memory = process RSS sampled every 0.5 s. UI log generator ingesting into both Loki and VictoriaLogs throughout. Images: loki: grafana/loki:3.7.9, proxy: loki-vl-proxy built from 87a871476 (main 8e80a32b7 + the Grafana 13.3.1 / Drilldown 3.2.0 pin commit; no proxy code change), victorialogs: victoriametrics/victoria-logs:v1.53.0. Re-measure with `python3 bench/resources/compare.py`; the results are in `bench/resources/results/latest.json`.
+
+<!-- resource-comparison:end -->
+
+---
+
 ## Supported versions
 
 <!-- vl-support:start -->
@@ -321,7 +366,7 @@ Full cost worksheet, scaling projections, and EC2/GCP sizing tables: [Cost Model
 | Startup floor (`-backend-min-version`) | `v1.49.0` |
 <!-- vl-support:end -->
 
-The proxy refuses to start against a VictoriaLogs older than the floor unless `-backend-allow-unsupported-version=true` is set; such a version is unsupported and untested. CI tests two versions, the latest v1.4x release and the newest v1.5x release; a new v1.5x release replaces the newest. The weekly matrix run includes the range-metric table compared with Loki. Loki, Grafana, Logs Drilldown and the Loki datasource plugin versions are listed in the [compatibility matrix](docs/compatibility-matrix.md); the VictoriaLogs policy and capability bands are in [VictoriaLogs compatibility](docs/compatibility-victorialogs.md).
+The proxy refuses to start against a VictoriaLogs older than the floor unless `-backend-allow-unsupported-version=true` is set; such a version is unsupported and untested. CI tests two versions, the latest v1.4x release and the newest v1.5x release; a new v1.5x release replaces the newest. The weekly matrix run includes the range-metric table compared with Loki. What `main` is tested against today: VictoriaLogs `v1.49.0` and `v1.53.0` in the CI comparisons, Loki `3.7.9` (the pinned reference), Grafana `13.3.0` and Logs Drilldown `3.1.0` (the pinned runtime). Bumps to VictoriaLogs `v1.54`, Loki `3.7.10` ([#1653](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1653)), Grafana `13.3.1` and Logs Drilldown `3.2.0` ([#1655](https://github.com/ReliablyObserve/loki-vl-proxy/pull/1655)) are in progress (see [In progress](#production-readiness) above) and not yet tested on `main`. Loki, Grafana, Logs Drilldown and the Loki datasource plugin version families are listed in the [compatibility matrix](docs/compatibility-matrix.md); the VictoriaLogs policy and capability bands are in [VictoriaLogs compatibility](docs/compatibility-victorialogs.md).
 
 ---
 
@@ -331,11 +376,11 @@ The proxy refuses to start against a VictoriaLogs older than the floor unless `-
 
 ```bash
 docker run -p 3100:3100 \
-  ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0 \
+  ghcr.io/reliablyobserve/loki-vl-proxy:<release> \
   -backend=http://victorialogs:9428
 ```
 
-Release images are signed; see [Verifying releases](SECURITY.md#verifying-releases) to check the signature and provenance before running one. Pin an explicit version tag, as above, rather than `latest`.
+Release images are signed; see [Verifying releases](SECURITY.md#verifying-releases) to check the signature and provenance before running one. Replace `<release>` with a version from the [releases page](https://github.com/ReliablyObserve/Loki-VL-proxy/releases) and pin it, rather than using `latest`.
 
 ### Helm
 
@@ -393,7 +438,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 
 **Adaptive parallelism.** Parallel window fetches use EWMA-based backpressure — ramps up when VictoriaLogs is fast, backs off automatically before it becomes a problem.
 
-**Request coalescing.** Concurrent identical queries collapse into one upstream request.
+**Identical-request sharing.** Identical read requests (same route, parameters, tenant, credentials and response profile) that arrive while the first one runs wait for it on every cached read route, GET and POST, instead of each asking VictoriaLogs; a failure is handed over with Loki's status and text. Failed answers are then held per replica for the time of their class (`-error-cache-transient-ttl`, `-error-cache-data-ttl`), so a refreshing dashboard does not ask a failing VictoriaLogs on every refresh. See [Operations](docs/operations.md) and the [configuration reference](docs/configuration.md).
 
 **Lock-free hot paths.** Circuit breaker, metrics histograms, and rate limiter use atomic operations instead of mutexes. Structured logging uses an async buffered handler. At 100+ concurrent requests, these eliminate the contention that dominates proxy-added latency.
 
@@ -406,7 +451,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 - Dashboards — supported Loki log and metric queries
 - Multi-tenant — `X-Scope-OrgID` isolation once enabled (off by default, as Loki with `auth_enabled: false`), including Loki-style `a|b` multi-tenant reads
 - Live tail — native WebSocket tail or synthetic polling fallback
-- Rules and alerts — read bridge to vmalert (no write lifecycle)
+- Rules and alerts — read bridge to vmalert (no write lifecycle); Loki-style alerting is **not ready**, see [Production readiness](#production-readiness)
 - LogQL — stream selectors, filters, parsers, metric queries, range functions and vector operators, with measured compatibility and documented limitations
 - OTel labels — dotted structured metadata exposed correctly in detected fields, underscore-safe in stream labels
 
@@ -423,9 +468,10 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 - **Operator dashboard** — packaged Grafana dashboard covering Client → Proxy → VictoriaLogs, cache behavior, fanout, and resource utilization
 - **Runbook-backed alerts** — 15 alert rules, each with a linked runbook
 - **100+ Prometheus metrics** — all under `loki_vl_proxy_*` prefix
-- **Read-only by default** — `/push` returns `405`; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, and is not functional against current VictoriaLogs either way ([details](docs/security-hardening-migration.md#remaining-delete-api-gap)); debug/admin disabled unless explicitly enabled
+- **Read-only by default** — `/push` returns `405`; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, which needs its own token and runs Loki's create and cancel as VictoriaLogs delete tasks (what is not served is listed in [details](docs/security-hardening-migration.md#remaining-delete-api-gap)); debug/admin disabled unless explicitly enabled
 - **Cold storage routing** — time-boundary split to Victoria Lakehouse for long-range queries
-- **Query-length enforcement** — `query_range` time-range limit: global default via `-default-max-query-length`, per-tenant override via `max_query_length` in `-tenant-limits` / `-tenant-default-limits`
+- **Loki's default limits** — `query_range` time-range limit as Loki's `max_query_length` (`-default-max-query-length`, default `721h`, per-tenant override via `max_query_length` in `-tenant-limits` / `-tenant-default-limits`); a range log query that sends no `limit` returns Loki's default of 100 entries
+- **Who ran what** — request logs carry the tenant, the end user (with `-log-user-header`) and the Grafana app; `loki_vl_proxy_tenant_vl_calls_total` and related metrics count the VictoriaLogs work per tenant; `/debug/queries` (with `-server.enable-query-analytics`, on the admin listener) lists the heaviest callers
 
 ---
 
@@ -506,7 +552,7 @@ See [Observability](docs/observability.md) and [Alert Runbooks Index](docs/runbo
 
 ## Security
 
-- Read-only API surface by default: `/push` blocked, debug/admin disabled; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, and is not functional against current VictoriaLogs ([details](docs/security-hardening-migration.md#remaining-delete-api-gap))
+- Read-only API surface by default: `/push` blocked, debug/admin disabled; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, which needs its own token and runs Loki's delete requests as VictoriaLogs delete tasks ([what is not served](docs/security-hardening-migration.md#remaining-delete-api-gap))
 - Non-root runtime image, read-only root filesystem, restricted Helm security contexts
 - Hardening headers on all HTTP responses including 404s and disabled routes
 - CI security gates: `gitleaks`, `gosec`, Trivy, `actionlint`, `hadolint`, OpenSSF Scorecard, OWASP ZAP, curated Nuclei
