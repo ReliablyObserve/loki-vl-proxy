@@ -40,6 +40,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused query five times each send one VictoriaLogs call. Metrics:
   `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
 
+### Fixed
+
+- A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
+  with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
+  parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,
+  `vector( 2 ) * ...`). The proxy answered these with a phrase search for the query text (no series), a `400` on the
+  instant route or a `500`. The request rewrite that writes keywords in lower case and drops comments now also writes
+  the metric calls and parentheses of a query Loki accepts in one spelling before any handler reads it: no blank
+  between a metric call's name and its parenthesis or right inside it, and no parentheses around a call or around a
+  binary operation no operator reads (parentheses an operator reads are kept). So `sum (rate(...))`,
+  `topk (5, ...)`, `label_replace( ..., "a", "$1", "b", "(.*)" )` and their spelling without the blanks share one
+  response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
+  text and positions do not change. The rewrite is memoised by the query as sent (up to 1,024 queries of up to
+  4 KiB), so a repeated query costs one lookup, less than the keyword rewrite alone cost before.
+- A metric checked for unwrap conversion errors or for JSON parser errors reads a VictoriaLogs answer that arrives
+  without a length (a chunked answer) from a small buffer that grows, as in 2.333.1 (the folded reads of a parser's
+  series identity, below, had moved every checked read to a 128 KiB starting buffer). An answer with its length (a
+  folded read's shared answer) is still read in one allocation of that length. `max by (pod) (max_over_time({...} | json |
+  unwrap n [5m]))` over an hour at a 1m step allocates 142 KiB per request, as in 2.333.1, instead of 258 KiB.
+- A tail request whose websocket handshake fails (no upgrade, another protocol, a missing version or key) is
+  answered before the tail reads its history from VictoriaLogs, as Loki's router answers it before any query work:
+  such requests no longer cost a VictoriaLogs call. Every request Loki refuses with a 4xx from the request alone is
+  now refused before any VictoriaLogs call (pinned against Loki's recorded answers).
+- A failed answer held while the configuration was reloaded (tenant map, field mappings) is never served after the
+  reload, even when its request was still running during the reload: held answers are keyed by a configuration
+  epoch that every reload changes.
+
+## [2.335.0] - 2026-11-18
+
+### Changed
+
 - Identical read requests no longer each ask VictoriaLogs while one of them runs, and a failed answer is held for a
   second or a few instead of being asked again by every refresh. Requests with the same route, parameters, tenant,
   credentials and response profile that arrive while the first one runs wait for it, on every cached read route
@@ -80,33 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loki_vl_proxy_request_coalesced_success_total`, `loki_vl_proxy_request_flight_saved_total`,
   `loki_vl_proxy_error_cache_entries` and `loki_vl_proxy_error_cache_bytes`. Helm: the same flags under
   `extraArgs`.
-
-### Fixed
-
-- A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
-  with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
-  parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,
-  `vector( 2 ) * ...`). The proxy answered these with a phrase search for the query text (no series), a `400` on the
-  instant route or a `500`. The request rewrite that writes keywords in lower case and drops comments now also writes
-  the metric calls and parentheses of a query Loki accepts in one spelling before any handler reads it: no blank
-  between a metric call's name and its parenthesis or right inside it, and no parentheses around a call or around a
-  binary operation no operator reads (parentheses an operator reads are kept). So `sum (rate(...))`,
-  `topk (5, ...)`, `label_replace( ..., "a", "$1", "b", "(.*)" )` and their spelling without the blanks share one
-  response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
-  text and positions do not change. The rewrite is memoised by the query as sent (up to 1,024 queries of up to
-  4 KiB), so a repeated query costs one lookup, less than the keyword rewrite alone cost before.
-- A metric checked for unwrap conversion errors or for JSON parser errors reads a VictoriaLogs answer that arrives
-  without a length (a chunked answer) from a small buffer that grows, as in 2.333.1 (the folded reads of a parser's
-  series identity, below, had moved every checked read to a 128 KiB starting buffer). An answer with its length (a
-  folded read's shared answer) is still read in one allocation of that length. `max by (pod) (max_over_time({...} | json |
-  unwrap n [5m]))` over an hour at a 1m step allocates 142 KiB per request, as in 2.333.1, instead of 258 KiB.
-- A tail request whose websocket handshake fails (no upgrade, another protocol, a missing version or key) is
-  answered before the tail reads its history from VictoriaLogs, as Loki's router answers it before any query work:
-  such requests no longer cost a VictoriaLogs call. Every request Loki refuses with a 4xx from the request alone is
-  now refused before any VictoriaLogs call (pinned against Loki's recorded answers).
-- A failed answer held while the configuration was reloaded (tenant map, field mappings) is never served after the
-  reload, even when its request was still running during the reload: held answers are keyed by a configuration
-  epoch that every reload changes.
 
 ## [2.334.0] - 2026-11-17
 
