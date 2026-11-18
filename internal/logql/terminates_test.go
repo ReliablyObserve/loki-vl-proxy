@@ -233,7 +233,9 @@ func FuzzParseTerminates(f *testing.F) {
 		`topk(-1, rate({a="b"}[5m]))`, `bottomk(1 + 2, rate({a="b"}[5m]))`, `topk(rate({a="b"}[5m]), 2)`, `topk({a="b"}, 2)`, `topk(-1)`, `topk(((((-1`, `sort(topk(- -1, rate({a="b"}[5m])))`,
 		`sum(1, rate({a="b"}[5m])) )`, `sort_desc(0x1, sum(1, topk(0, rate({a="b"}[5m]))))`, `approx_topk by (a) (2, rate({a="b"}[5m]))`,
 		`quantile_over_time(-1, {a="b"} | unwrap c [5m])`, `{a=~"(b" "x"}`, `{a="b"} | c > 1PB | pattern "<_>" | unpack a`,
-		`label_replace(count_over_time({a="b"} | pattern "<_>" [5m]), "x", "$1", "a", "(.*)") )`} {
+		`label_replace(count_over_time({a="b"} | pattern "<_>" [5m]), "x", "$1", "a", "(.*)") )`,
+		// label_replace calls nested around an alternative log range (canonicalized once per call)
+		nestLabelReplace(`rate(({a="b"} |= "x")[1m])`, `,"a","","a","")`, 24)} {
 		f.Add(q)
 	}
 	f.Fuzz(func(t *testing.T, q string) {

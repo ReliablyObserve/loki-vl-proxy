@@ -377,6 +377,23 @@ type canonState struct {
 	rewrites []rewrite
 	// queryStart and queryEnd delimit the log query parseLogQuery returned last.
 	queryStart, queryEnd int
+	// plain is 1 when the text reads alike to FirstArgumentLen and to the parser (plainArgumentText), -1 when not,
+	// and 0 before the first call kept as text asks.
+	plain int8
+	// perArgument canonicalizes each call's first argument on its own instead of in place (tests only).
+	perArgument bool
+}
+
+// plainArguments reports whether the end of a call's first argument read by the parser is the one FirstArgumentLen
+// finds in src, the text being canonicalized: read once, at the first call kept as text.
+func (c *canonState) plainArguments(src string) bool {
+	if c.plain == 0 {
+		c.plain = -1
+		if plainArgumentText(src) {
+			c.plain = 1
+		}
+	}
+	return c.plain > 0
 }
 
 // rewrite replaces input[start:end] with text.
@@ -520,16 +537,26 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 	if p.cur.Typ == TokLParen {
 		p.advance() // consume '('
 		argStart := p.pos()
+		kept, inPlaceEnd := 0, -1
+		if p.canon != nil {
+			kept = len(p.canon.rewrites)
+			if !p.canon.perArgument {
+				inPlaceEnd = p.canonFirstArgumentInPlace()
+			}
+		}
 		endPos, ok := p.consumeBalancedParens()
 		if !ok || endPos < startPos {
 			return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
 		}
-		if p.canon != nil {
+		if p.canon != nil && (inPlaceEnd < 0 || !p.canon.plainArguments(p.sc.src) && inPlaceEnd != argStart+FirstArgumentLen(p.sc.src[argStart:endPos])) {
 			// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
-			// metric expression, written in the plain form like any other.
+			// metric expression, written in the plain form like any other. An argument the parser could not read
+			// in place is canonicalized on its own, once.
+			p.canon.rewrites = p.canon.rewrites[:kept]
 			argEnd := argStart + FirstArgumentLen(p.sc.src[argStart:endPos])
-			if arg := p.sc.src[argStart:argEnd]; CanonicalizeLogRanges(arg) != arg {
-				p.addRewrite(argStart, argEnd, CanonicalizeLogRanges(arg))
+			arg := p.sc.src[argStart:argEnd]
+			if canon := canonicalizeLogRanges(arg, p.canon.perArgument); canon != arg {
+				p.addRewrite(argStart, argEnd, canon)
 			}
 		}
 		raw := strings.TrimSpace(p.sc.src[startPos:endPos])
@@ -541,6 +568,23 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 		return o, nil
 	}
 	return nil, p.syntaxErrorAt("(")
+}
+
+// canonFirstArgumentInPlace reads the first argument of a call kept as text where it stands, with a parser of its
+// own on the same text, so that the plain forms of the ranges in it are recorded like any other and no call nested in
+// it is read again: canonicalizing each call's argument on its own read every level of a nested query once more per
+// level. It returns the offset where the argument ends (at the comma after it), with the parser moved there, or -1
+// when the argument is not one whole expression; the rewrites recorded then are dropped by the caller.
+func (p *parser) canonFirstArgumentInPlace() int {
+	c := p.canon
+	queryStart, queryEnd := c.queryStart, c.queryEnd
+	defer func() { c.queryStart, c.queryEnd = queryStart, queryEnd }()
+	arg := parser{sc: p.sc, cur: p.cur, prevEnd: p.prevEnd, canon: c}
+	if _, err := arg.parseExpr(); err != nil || arg.cur.Typ != TokComma {
+		return -1
+	}
+	p.sc, p.cur, p.prevEnd = arg.sc, arg.cur, arg.prevEnd
+	return p.pos()
 }
 
 // parseNumberLiteral parses a number, or a minus and a number.

@@ -1,0 +1,53 @@
+id: semantics/nested-calls-linear-work
+title: Queries that nest label_replace calls deeply are read in time that grows with their length, and accepted at every depth as Loki accepts them
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's parser accepts label_replace nested to any depth under its 128 KB input size limit: the Loki oracle
+  (v3.7.9 parser, test/oracle/loki check) accepts 4,518 levels of the shortest call around an alternative log range
+  and 3,047 levels of a longer call around the plain form, and refuses a call with a bad regex or three arguments at
+  the innermost level with the same error at every depth. The verdicts are recorded in
+  internal/logql/testdata/nested_calls_loki_verdicts.json; the proxy refuses no query for its depth.
+
+  The rewrite of the alternative log range forms (CanonicalizeLogRanges, on the request path before the query plan)
+  canonicalized the first argument of every call kept as text (label_replace, vector, approx_topk) on its own, and did
+  so twice per call: the work doubled with every level of nesting (18 levels, about 600 bytes, took 0.8 s). It now
+  reads each call's first argument where it stands, with a parser of its own on the same text, so every nested call is
+  read once and its plain forms are recorded like any other. Where the text holds a comment, a character literal, a
+  line break inside a string or brackets that do not nest, the end of the argument the parser read is checked against
+  the one the text gives, and a query Loki's lexer refuses is canonicalized the way before. The answers do not change:
+  recorded before the change (canonicalize_nested_golden.json), and the two ways compared by a fuzz target.
+
+  The validation and the parse of the same queries still read nested calls again per level; that is the next step of
+  the same work.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'label_replace(label_replace(sum(rate(({service_name="api-gateway"} |= "x")[1m])), "a", "$1", "b", "(.*)"), "c", "$1", "d", "(.*)")'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    200 with the same matrix as Loki, at once; the same query nested hundreds of levels deep answers within the
+    time its length takes to read.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: api-only
+  effort: S
+  area: 'internal/logql parser (parseOpaqueCall, canonFirstArgumentInPlace), canonical.go (CanonicalizeLogRanges, plainArgumentText)'
+  loki: 'nested label_replace accepted at every depth under the input size limit'
+  proxy: 'the same verdicts; the rewrite of alternative log ranges reads each nested call once'
+  planned_test: 'TestCanonicalizeLogRangesNestedGolden, TestCanonicalizeLogRangesNestedDepthCost, TestCanonicalizeInPlaceMatchesPerArgument, TestNestedCallsMatchRecordedLoki, FuzzCanonicalizeNestedLabelReplace, FuzzCanonicalizeInPlaceMatchesPerArgument and FuzzParseTerminates (internal/logql)'
+  visual: none
+  visual_reason: 'the answers do not change'
+  clusters: []

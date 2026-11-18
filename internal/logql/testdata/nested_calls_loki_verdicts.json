@@ -1,0 +1,584 @@
+{
+ "loki": "v3.7.9 parser, test/oracle/loki check",
+ "rows": [
+  {
+   "accept": true,
+   "query": "SUM(RATE(({app=\"api\"} |= \"x\")[1m]))"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(SUM(RATE(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(SUM(RATE(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(SUM(RATE(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(SUM(RATE(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(SUM(RATE(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(SUM(RATE(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(rate(({app=\"api\"} |= \"x\")[1m]), \"a\", \"$1\", \"b\", \"(.*)\") + vector(1), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(rate(({app=\"api\"} | json)[5m] offset 1m), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (app) (count_over_time(({app=\"api\"} |= \"x\" | logfmt)[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 564: syntax error: unexpected $end",
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])) # a comment, \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"})[1m])) / sum(rate(({app=\"web\"} != \"y\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate({app=\"api\"}[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(topk(3, sum by (pod) (bytes_over_time(({app=\"api\"} |~ \"a|b\")[5m]))), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(rate(({app=\"api\"} |= \"x\")[1m]), \"a\", \"$1\", \"b\", \"(.*)\") + vector(1), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(rate(({app=\"api\"} | json)[5m] offset 1m), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum by (app) (count_over_time(({app=\"api\"} |= \"x\" | logfmt)[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 392: syntax error: unexpected $end",
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])) # a comment, \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"})[1m])) / sum(rate(({app=\"web\"} != \"y\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate({app=\"api\"}[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(topk(3, sum by (pod) (bytes_over_time(({app=\"api\"} |~ \"a|b\")[5m]))), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(rate(({app=\"api\"} |= \"x\")[1m]), \"a\", \"$1\", \"b\", \"(.*)\") + vector(1), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(rate(({app=\"api\"} | json)[5m] offset 1m), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(sum by (app) (count_over_time(({app=\"api\"} |= \"x\" | logfmt)[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 263: syntax error: unexpected $end",
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])) # a comment, \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate(({app=\"api\"})[1m])) / sum(rate(({app=\"web\"} != \"y\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(sum(rate({app=\"api\"}[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(label_replace(topk(3, sum by (pod) (bytes_over_time(({app=\"api\"} |~ \"a|b\")[5m]))), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(label_replace(rate(({app=\"api\"} |= \"x\")[1m]), \"a\", \"$1\", \"b\", \"(.*)\") + vector(1), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(rate(({app=\"api\"} | json)[5m] offset 1m), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(rate(({app=\"api\"} |= \"x\")[1m]), \"a\", \"$1\", \"b\", \"(.*)\") + vector(1), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(sum by (app) (count_over_time(({app=\"api\"} |= \"x\" | logfmt)[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 177: syntax error: unexpected $end",
+   "query": "label_replace(label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])) # a comment, \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(sum(rate(({app=\"api\"})[1m])) / sum(rate(({app=\"web\"} != \"y\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(sum(rate({app=\"api\"}[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(label_replace(topk(3, sum by (pod) (bytes_over_time(({app=\"api\"} |~ \"a|b\")[5m]))), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(rate(({a=\"b\"} |= \"x\")[1m]), \"a\", \"\", \"a\", \"\"), \"b\", \"\", \"b\", \"\") + label_replace(rate(({a=\"c\"})[1m]), \"c\", \"\", \"c\", \"\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(rate(({app=\"api\"} | json)[5m] offset 1m), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(rate(({app=\"api\"} |= \"x\")[1m]), \"a\", \"$1\", \"b\", \"(.*)\") + vector(1), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(sum by (app) (count_over_time(({app=\"api\"} |= \"x\" | logfmt)[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 134: syntax error: unexpected $end",
+   "query": "label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])) # a comment, \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(sum(rate(({app=\"api\"})[1m])) / sum(rate(({app=\"web\"} != \"y\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(sum(rate({app=\"api\"}[1m])), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(label_replace(topk(3, sum by (pod) (bytes_over_time(({app=\"api\"} |~ \"a|b\")[5m]))), \"dst\", \"$1\", \"src\", \"(.*)\"), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(rate(({a=\"b\"} |= \"label_replace(\")[1m]), \"a\", \"\", \"a\", \"\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(rate(({app=\"api\"} | json)[5m] offset 1m), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(rate(({app=\"api\"} |= \"x\")[1m]), \"a\", \"$1\", \"b\", \"(.*)\") + vector(1)"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(sum by (app) (count_over_time(({app=\"api\"} |= \"x\" | logfmt)[1m])), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 91: syntax error: unexpected $end",
+   "query": "label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])) # a comment, \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(sum(rate(({app=\"api\"} |= \"x\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(sum(rate(({app=\"api\"})[1m])) / sum(rate(({app=\"web\"} != \"y\")[1m])), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(sum(rate({app=\"api\"}[1m])), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(topk(3, sum by (pod) (bytes_over_time(({app=\"api\"} |~ \"a|b\")[5m]))), \"dst\", \"$1\", \"src\", \"(.*)\")"
+  },
+  {
+   "accept": true,
+   "query": "label_replace(vector(1), \"a\", \"\", \"a\", \"\")"
+  },
+  {
+   "accept": true,
+   "query": "rate(({app=\"api\"} | json)[5m] offset 1m)"
+  },
+  {
+   "accept": true,
+   "query": "sum by (app) (count_over_time(({app=\"api\"} |= \"x\" | logfmt)[1m]))"
+  },
+  {
+   "accept": true,
+   "query": "sum(label_replace(sum(label_replace(rate(({a=\"b\"})[1m]), \"a\", \"\", \"a\", \"\")), \"b\", \"\", \"b\", \"\"))"
+  },
+  {
+   "accept": true,
+   "query": "sum(rate(({app=\"api\"} |= \"x\")[1m]))"
+  },
+  {
+   "accept": true,
+   "query": "sum(rate(({app=\"api\"} |= \"x\")[1m])) # a comment"
+  },
+  {
+   "accept": true,
+   "query": "sum(rate(({app=\"api\"})[1m])) / sum(rate(({app=\"web\"} != \"y\")[1m]))"
+  },
+  {
+   "accept": true,
+   "query": "sum(rate({app=\"api\"}[1m]))"
+  },
+  {
+   "accept": true,
+   "query": "topk(3, sum by (pod) (bytes_over_time(({app=\"api\"} |~ \"a|b\")[5m])))"
+  }
+ ],
+ "shapes": [
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 1
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 2
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 4
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 8
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 16
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 32
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 64
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 128
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 256
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 512
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 1024
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 2048
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 4096
+  },
+  {
+   "accept": false,
+   "error": "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+   "shape": "bad-regex-innermost",
+   "depth": 4517
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 1
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 2
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 4
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 8
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 16
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 32
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 64
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 128
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 256
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 512
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 1024
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 2048
+  },
+  {
+   "accept": true,
+   "shape": "long-plain",
+   "depth": 3047
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 1
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 2
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 4
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 8
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 16
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 32
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 64
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 128
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 256
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 512
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 1024
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 2048
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 4096
+  },
+  {
+   "accept": true,
+   "shape": "short-alternative",
+   "depth": 4518
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 61: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 1
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 75: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 2
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 103: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 4
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 159: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 8
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 271: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 16
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 495: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 32
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 943: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 64
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 1839: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 128
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 3631: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 256
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 7215: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 512
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 14383: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 1024
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 28719: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 2048
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 57391: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 4096
+  },
+  {
+   "accept": false,
+   "error": "parse error at line 1, col 63299: syntax error: unexpected ), expecting ,",
+   "shape": "three-arguments-innermost",
+   "depth": 4518
+  }
+ ]
+}
