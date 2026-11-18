@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"strings"
+
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 )
@@ -57,7 +59,26 @@ func rankOverBinaryLabelReplaceResponseKeyVersion(query string, ranked bool) str
 // the same way: what the tree holds does not depend on the length they resolve to, so the request's window and step
 // are not read.
 func rankFencePlan(query string) *queryplan.Plan {
-	return resolvedPlan(resolveGrafanaRangeTemplateTokens(query, "", "", ""))
+	if hasGrafanaVariable(query) {
+		query = resolveGrafanaRangeTemplateTokens(query, "", "", "")
+	}
+	return resolvedPlan(query)
+}
+
+// hasGrafanaVariable reports a `$__` or `${` in query: a replacement reference (`$1`) is no variable, and a query that
+// holds only those (a label_replace call's usual spelling) pays no resolution.
+func hasGrafanaVariable(query string) bool {
+	for i := 0; i < len(query); i++ {
+		j := strings.IndexByte(query[i:], '$')
+		if j < 0 {
+			return false
+		}
+		i += j
+		if i+1 < len(query) && (query[i+1] == '_' || query[i+1] == '{') {
+			return true
+		}
+	}
+	return false
 }
 
 // rankOverBinaryLabelReplace reports a ranking, stddev or stdvar over a binary operand (binaryOperandNode) that holds a

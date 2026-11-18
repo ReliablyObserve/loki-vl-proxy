@@ -1034,3 +1034,24 @@ func exprHoldsLabelReplace(e logqlpkg.Expr) bool {
 	}
 	return false
 }
+
+// BenchmarkRankOverBinaryFence times the rank over binary fences (the range site's and the instant site's label_replace
+// fence) on a query that is no ranking (the text screen turns it away), a ranking that holds no binary operation, a
+// ranking over a binary operation with a typed label_replace, and the same with a Grafana range variable, which the
+// fence resolves before it reads the plan.
+func BenchmarkRankOverBinaryFence(b *testing.B) {
+	for _, tc := range []struct{ name, query string }{
+		{"no-ranking", `sum by (a) (rate({app="a"}[5m]))`},
+		{"ranking-no-binary", `topk(2, sum by (a) (rate({app="a"}[5m])))`},
+		{"binary-label-replace", `topk(1, label_replace(rate({app="a"}[1m]), "p", "x-$1", "p", "(.*)") * 2)`},
+		{"binary-label-replace-variable", `topk(1, label_replace(rate({app="a"}[$__interval]), "p", "x-$1", "p", "(.*)") * 2)`},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = rankOverBinaryFence(tc.query)
+				_ = rankOverBinaryLabelReplaceFence(tc.query)
+			}
+		})
+	}
+}
