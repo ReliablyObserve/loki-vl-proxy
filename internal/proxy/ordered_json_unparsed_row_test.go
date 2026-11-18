@@ -30,6 +30,18 @@ type unparsedLineStub struct {
 	delay time.Duration
 	mu    sync.Mutex
 	seen  []string
+	// hold, when above zero, keeps the unparsed-line lookup's answer until hold
+	// requests have arrived since the last take (at most two seconds), so the
+	// requests a cold request starts beside the lookup reach the stub before
+	// the lookup's answer cancels them, however the runner schedules them.
+	hold int
+}
+
+// arrived reports whether n requests have arrived since the last take.
+func (s *unparsedLineStub) arrived(n int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.seen) >= n
 }
 
 func (s *unparsedLineStub) server(t *testing.T) *httptest.Server {
@@ -54,7 +66,17 @@ func (s *unparsedLineStub) server(t *testing.T) *httptest.Server {
 		}
 		s.mu.Lock()
 		s.seen = append(s.seen, b.String())
+		hold := s.hold
 		s.mu.Unlock()
+		if hold > 0 && lookupsOf([]string{b.String()}) == 1 {
+			for deadline := time.Now().Add(2 * time.Second); !s.arrived(hold) && time.Now().Before(deadline); {
+				select {
+				case <-time.After(time.Millisecond):
+				case <-r.Context().Done():
+					return
+				}
+			}
+		}
 		if s.delay > 0 {
 			select {
 			case <-time.After(s.delay):
@@ -134,8 +156,9 @@ func TestOrderedJSONUnparsedLine_RowEvaluatorReusesTheRiskChecksRow(t *testing.T
 // One spelling sends one set of VictoriaLogs requests. A cold request starts
 // the stats query and the parse checks beside the unparsed-line lookup and
 // cancels them once the lookup finds a line Loki's parser rejects: with
-// VictoriaLogs answering after a round trip (here 20 ms) every one of them
-// has been sent by then, and 60 cold requests send one set. Once a row is
+// VictoriaLogs answering the lookup after all of them arrived (a fixed 20 ms
+// round trip was not enough on a loaded runner: one check was cancelled before
+// it was sent in 1 of 60 runs), 60 cold requests send one set. Once a row is
 // found, a refresh of the window (the next step) starts nothing beside the row
 // evaluator: no stats, no checks, only its own lookup of the refreshed window
 // (its error names the first row of exactly that window) and its read, the
@@ -146,11 +169,19 @@ func TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet(t *testing.T) {
 	quietProxyLog(t)
 	coldSets, answers := map[string]int{}, map[string]int{}
 	for i := 0; i < 60; i++ {
-		stub := &unparsedLineStub{delay: 20 * time.Millisecond}
+		// The lookup, the stats query and the two parse checks.
+		stub := &unparsedLineStub{delay: 20 * time.Millisecond, hold: 4}
 		p := newCompatTestProxy(t, stub.server(t).URL)
 		answers[unparsedLineRequest(t, p, 1700000000)]++
-		coldSets[strings.Join(stub.take(), "\n")]++
+		cold := stub.take()
+		if len(cold) != stub.hold+1 {
+			t.Fatalf("a cold request sent %d requests, want the lookup, the stats query, the two parse checks and the row read:\n%s", len(cold), strings.Join(cold, "\n"))
+		}
+		coldSets[strings.Join(cold, "\n")]++
 		if i%20 == 0 {
+			stub.mu.Lock()
+			stub.hold = 0
+			stub.mu.Unlock()
 			// Refreshes on the same proxy: the window moves by one step.
 			var refresh []string
 			for j := 1; j <= 5; j++ {
