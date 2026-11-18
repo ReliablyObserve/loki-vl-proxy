@@ -2360,6 +2360,7 @@
     "internal/proxy/vl_refusal_test.go | semantics/error-cache-vl-refusal-peer-sync",
     "internal/proxy/vl_refusal_test.go | vl-math-quoted-constant-clone-crash",
     "internal/proxy/vl_refusal_test.go | vl-query-too-long",
+    "internal/proxy/vl_refusal_test.go | vl-stats-range-pipe-before-stats",
     "internal/proxy/vl_regexp_class_oracle_test.go | quality/probe-regexp-parse-cost",
     "internal/proxy/vl_regexp_class_test.go | quality/probe-regexp-parse-cost",
     "internal/proxy/volume_segments_test.go | loki_api_v1_index_volume",
@@ -3202,6 +3203,11 @@
     "test/e2e-compat/vl_empty_in_test.go | vl-empty-in-matches-nothing",
     "test/e2e-compat/vl_pattern_lines_test.go | vl-phrase-filter-quoted-names",
     "test/e2e-compat/vl_pattern_lines_test.go | vl-sort-ties-by-text",
+    "test/e2e-compat/vl_refusal_prediction_test.go | vl-pipe-before-release",
+    "test/e2e-compat/vl_refusal_prediction_test.go | vl-query-too-long",
+    "test/e2e-compat/vl_refusal_prediction_test.go | vl-stats-missing-stats-pipe",
+    "test/e2e-compat/vl_refusal_prediction_test.go | vl-stats-pipe-after-stats",
+    "test/e2e-compat/vl_refusal_prediction_test.go | vl-stats-range-pipe-before-stats",
     "test/e2e-compat/vl_zstd_response_window_test.go | vl-zstd-response-window",
     "test/e2e-fleet/oversized_reply_local_test.go | quality/edge-cache-oversized-reply",
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-fleet-recovery",
@@ -3237,7 +3243,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 752,
+      "go": 753,
       "playwright": 2
     },
     "page_kinds": {

@@ -290,7 +290,9 @@ func (p *Proxy) predictVLRefusal(ctx context.Context, method, path string, param
 		}
 	}
 	refusal, predicted := logsql.PredictRefusal(in, v)
-	if !predicted {
+	if !predicted || p.breaker != nil && p.breaker.State() != "closed" {
+		// While the circuit breaker probes VictoriaLogs (half open), a call it
+		// let through is a probe: it is sent, so the breaker learns from it.
 		return nil, nil, false
 	}
 	p.countPredictedRefusal(refusal.Rule)
@@ -512,6 +514,11 @@ func (p *Proxy) receiveRefusal(key string, value []byte, _ time.Duration) {
 	if !strings.HasPrefix(key, refusalSyncKeyPrefix) || p.errorFlights == nil {
 		return
 	}
+	if p.errorCacheDisabled || p.errorCacheRefusalTTL <= 0 || !p.errorCachePeerSync {
+		// This replica holds no refusal, or takes none from its peers.
+		p.peerSyncCounts[3].Add(1)
+		return
+	}
 	var msg refusalSync
 	if err := json.Unmarshal(value, &msg); err != nil {
 		p.peerSyncCounts[3].Add(1)
@@ -520,10 +527,15 @@ func (p *Proxy) receiveRefusal(key string, value []byte, _ time.Duration) {
 	v := p.vlRelease()
 	ttl := time.UnixMilli(msg.Expires).Sub(cache.Now())
 	if !v.Known || msg.Release != v.String() || msg.Build != p.buildVersion || msg.Scope != p.routingScope() ||
-		ttl <= 0 || ttl > 2*max(p.errorCacheRefusalTTL, refusalSyncMinTTL) || !peerPushAllowed(msg.Key) ||
+		ttl <= 0 || !peerPushAllowed(msg.Key) ||
 		msg.Status < http.StatusBadRequest || msg.Status > 599 || msg.Endpoint == "" || len(msg.Body) > errorFlightMaxAnswerBytes {
 		p.peerSyncCounts[3].Add(1)
 		return
+	}
+	// Never longer than this replica's own hold, plus the share that lets one
+	// replica ask again first.
+	if ttl > p.errorCacheRefusalTTL {
+		ttl = p.errorCacheRefusalTTL
 	}
 	ttl += time.Duration(float64(ttl) * refusalSyncJitter * rand.Float64()) // #nosec G404 -- spreads expiries, not a secret
 	a := &cache.Answer{Status: msg.Status, Header: peerAnswerHeader(msg.Header), Body: msg.Body, Class: cache.ErrorRefusal}

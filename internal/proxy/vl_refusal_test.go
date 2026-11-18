@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -450,4 +451,76 @@ func TestVLRefusal_PredictionLeavesTheBreakerAlone(t *testing.T) {
 	if !p.breaker.Allow() || stub.calls.Load() != 0 {
 		t.Fatalf("breaker open after predictions, or %d calls", stub.calls.Load())
 	}
+}
+
+// A replica that holds no refusal, or takes none from its peers, ignores a push; one with a shorter hold clamps a
+// peer's to its own (plus the jitter share).
+//
+// conformance: semantics/error-cache-vl-refusal-peer-sync
+func TestVLRefusal_ReceiverFollowsItsOwnSettings(t *testing.T) {
+	push := func(p *Proxy, key string) {
+		msg, _ := json.Marshal(refusalSync{Build: p.buildVersion, Release: p.vlRelease().String(), Scope: p.routingScope(),
+			Endpoint: "query_range", Key: key, Expires: cache.Now().Add(10 * time.Minute).UnixMilli(), Status: 500, Body: []byte("x")})
+		p.receiveRefusal(refusalSyncKeyPrefix+"x", msg, time.Minute)
+	}
+	for name, mutate := range map[string]func(*Config){
+		"error cache off": func(cfg *Config) { cfg.ErrorCache.Disabled = true },
+		"refusal TTL 0":   func(cfg *Config) { cfg.ErrorCache.RefusalTTL = -1 },
+		"peer sync off":   func(cfg *Config) { cfg.ErrorCache.PeerSyncDisabled = true },
+	} {
+		p, _ := refusalProxy(t, "http://127.0.0.1:1", "v1.53.0", mutate)
+		if name == "refusal TTL 0" {
+			p.errorCacheRefusalTTL = 0
+		}
+		push(p, "k")
+		if p.peerSyncCounts[2].Load() != 0 || p.peerSyncCounts[3].Load() != 1 {
+			t.Errorf("%s: received %d ignored %d", name, p.peerSyncCounts[2].Load(), p.peerSyncCounts[3].Load())
+		}
+	}
+	p, _ := refusalProxy(t, "http://127.0.0.1:1", "v1.53.0", nil) // a 1m hold; the peer's is 10m
+	push(p, "k")
+	if p.peerSyncCounts[2].Load() != 1 || p.errorFlights.Peek(p.flightPrefix()+"k") == nil {
+		t.Fatal("not held")
+	}
+	restore := cache.AdvanceClockForTesting(time.Minute + time.Minute*15/100 + time.Second)
+	defer restore()
+	if p.errorFlights.Peek(p.flightPrefix()+"k") != nil {
+		t.Fatal("a peer's hold must be clamped to this replica's TTL plus the jitter share")
+	}
+}
+
+// While the circuit breaker probes VictoriaLogs (half open), a call is sent even when a refusal is predicted, so
+// the probe reaches VictoriaLogs and the breaker closes.
+//
+// conformance: vl-stats-range-pipe-before-stats
+func TestVLRefusal_HalfOpenBreakerSendsTheProbe(t *testing.T) {
+	stub := newFlightStub(t, func(_ int64, w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"status":"error","errorType":"422","error":"the pipe cannot be put in front of"}`, http.StatusUnprocessableEntity)
+	})
+	p, _ := refusalProxy(t, stub.srv.URL, "v1.53.0", func(cfg *Config) {
+		cfg.CBFailThreshold, cfg.CBOpenDuration = 1, time.Millisecond
+	})
+	p.breaker.RecordFailure()
+	time.Sleep(5 * time.Millisecond)
+	params := url.Values{"query": {`* | sort by (a) | stats count()`}, "step": {"1m"}}
+	resp, err := p.vlPost(context.Background(), logsql.PathStatsQueryRange, params)
+	if err != nil || predictedVLAnswer(resp, nil) || stub.calls.Load() != 1 {
+		t.Fatalf("half open: %v %v, %d calls", resp, err, stub.calls.Load())
+	}
+	_ = resp.Body.Close()
+	for i := 0; i < 10 && p.breaker.State() != "closed"; i++ {
+		resp, _ = p.vlPost(context.Background(), logsql.PathStatsQueryRange, params)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+	}
+	if p.breaker.State() != "closed" {
+		t.Fatalf("breaker %s after the probes", p.breaker.State())
+	}
+	resp, _ = p.vlPost(context.Background(), logsql.PathStatsQueryRange, params)
+	if !predictedVLAnswer(resp, nil) {
+		t.Fatal("a closed breaker predicts again")
+	}
+	_ = resp.Body.Close()
 }
