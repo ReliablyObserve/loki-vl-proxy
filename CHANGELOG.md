@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A read whose text would pass VictoriaLogs' query length still reads every series through `stats_query_range`, as
     before.
   - Over 6 and 24 hours of lines that each carry a request id, VictoriaLogs takes 0.51-0.69x the time it took before
-    on v1.54.0 and v1.49.0, and the whole request 0.53-0.63x. The read's answer is 1.3-5x larger (up to 0.6 MB for
+    on v1.54.0 and v1.49.0, and the whole request 0.52-0.67x. The read's answer is 1.3-5x larger (up to 0.6 MB for
     24 hours), so a read reaches the stats answer bound sooner and is then read in smaller time chunks.
   - A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
 
