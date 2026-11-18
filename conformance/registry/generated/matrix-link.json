@@ -1,6 +1,6 @@
 {
   "registry": {
-    "cases_defined": 432,
+    "cases_defined": 436,
     "live_cases_blocked": 1,
     "live_cases_gap": 0,
     "live_cases_hold": 0,
@@ -126,9 +126,10 @@
         "3.7.6",
         "3.7.7",
         "3.7.8",
-        "3.7.9"
+        "3.7.9",
+        "3.7.10"
       ],
-      "pinned": "3.7.9"
+      "pinned": "3.7.10"
     },
     "victorialogs": {
       "matrix": [

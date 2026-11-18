@@ -1,4 +1,4 @@
-{"loki":"3.7.9","config":"test/e2e-compat/loki-local-config.yaml (auth_enabled: false)"}
+{"loki":"3.7.10","config":"test/e2e-compat/loki-local-config.yaml (auth_enabled: false)"}
 {"id":"query_range/absent","method":"GET","target":"/loki/api/v1/query_range?query=%7Bapp%3D~%22.%2B%22%7D&start=1762860000&end=1762863600","no_org":true,"status":200,"content_type":"application/json; charset=UTF-8"}
 {"id":"query_range/empty","method":"GET","target":"/loki/api/v1/query_range?query=%7Bapp%3D~%22.%2B%22%7D&start=1762860000&end=1762863600","header":{"X-Scope-OrgID":""},"status":200,"content_type":"application/json; charset=UTF-8"}
 {"id":"query_range/blank","method":"GET","target":"/loki/api/v1/query_range?query=%7Bapp%3D~%22.%2B%22%7D&start=1762860000&end=1762863600","header":{"X-Scope-OrgID":"   "},"status":200,"content_type":"application/json; charset=UTF-8"}

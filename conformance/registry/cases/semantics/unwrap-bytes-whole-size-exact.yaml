@@ -1,0 +1,45 @@
+id: semantics/unwrap-bytes-whole-size-exact
+title: unwrap bytes() reads a whole size exactly up to 2^64-1 bytes, as Loki 3.7.10 does
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki 3.7.10 resolves go-humanize v1.1.0 for `unwrap bytes()` (3.7.9
+  resolved v1.0.1). v1.1.0's ParseBytes multiplies a whole number (no dot) in
+  uint64 and fails with "too large" only when the product overflows; v1.0.1
+  computed every size in float64 and failed from 2^64 up, so a whole size
+  within float64's rounding of 2^64 failed too.
+
+  Recorded with the Loki engine oracle (unwrap_conversion,
+  `sum_over_time({app="x"} | <logfmt|json> | unwrap bytes(v) [1m])` over one
+  line): `v=18446744073709551615` answered 400 SampleExtractionErr
+  (`too large: 18446744073709551615`) on 3.7.9 and a sample of
+  18446744073709551615 bytes (1.8446744073709552e+19) on 3.7.10;
+  `18446744073709551616` and `16EiB` stay "too large". The proxy's raw
+  conversion (unwrap_convert.go parseHumanBytes) follows v1.1.0: checked
+  against go-humanize v1.1.0's ParseBytes on every generated input and held
+  to Loki's recorded answers. Loki's lexer reads a label filter's bytes
+  literal with the same function: `| size > 18446744073709551615B` parses on
+  3.7.10 (3.7.9: "syntax error: unexpected $end"), `18446744073709551616B` and
+  `18014398509481984KiB` still do not; the proxy's literal reader
+  (internal/logql isLokiBytes) follows, held to the Loki parse oracle's answers
+  (label_filter_number_literals_loki.jsonl.gz). The VictoriaLogs pushdown converts a size in
+  float64 and cannot tell such a size from 2^64 (open:
+  semantics/unwrap-bytes-pushdown-near-2-64).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (service_name) (sum_over_time({service_name="cache-redis"} | logfmt | unwrap bytes(size_bytes) [5m]))'
+    time: "<t+1s>"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: structural
+  fields: [status, data.resultType, 'data.result[].value']
+applies_to:
+  loki: ">=3.7.10"
+  victorialogs: ">=v1.49.0"

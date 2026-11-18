@@ -1,4 +1,4 @@
-{"loki":"3.7.9","config":"testdata/tenant_auth_loki_config.yaml"}
+{"loki":"3.7.10","config":"testdata/tenant_auth_loki_config.yaml"}
 {"id":"query_range/absent","method":"GET","target":"/loki/api/v1/query_range?query=%7Bapp%3D~%22.%2B%22%7D&start=1762860000&end=1762863600","no_org":true,"status":401,"content_type":"text/plain; charset=utf-8","body":"no org id\n"}
 {"id":"query_range/empty","method":"GET","target":"/loki/api/v1/query_range?query=%7Bapp%3D~%22.%2B%22%7D&start=1762860000&end=1762863600","header":{"X-Scope-OrgID":""},"status":401,"content_type":"text/plain; charset=utf-8","body":"no org id\n"}
 {"id":"query_range/blank","method":"GET","target":"/loki/api/v1/query_range?query=%7Bapp%3D~%22.%2B%22%7D&start=1762860000&end=1762863600","header":{"X-Scope-OrgID":"   "},"status":401,"content_type":"text/plain; charset=utf-8","body":"no org id\n"}
