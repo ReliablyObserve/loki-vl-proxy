@@ -14,6 +14,13 @@ why: |
   the bucket partials of infinities depend on the block layout; the window evaluator then reads no
   value for the bucket.
 
+  The same root inside the bucket stats: a series whose lines in one bucket are `inf`, `-inf` and `5`
+  is NaN in Loki, while VictoriaLogs' sum turns NaN at `-inf` and restarts at `5`. Under a parser's
+  series identity (`| json`, a request id on every other line) `sum(avg_over_time({service_name="nanv"}
+  | json | unwrap duration_ms [1m]))` at a 20 s step answered 124.67 where Loki answers NaN, and
+  `avg(avg_over_time(... [1m]))` `+Inf` where Loki answers NaN (Loki engine 3.7.9, VictoriaLogs
+  v1.53.0 and v1.49.0, 2026-11-18).
+
   Fix to make: the bucket partials of infinities read the same whatever the layout (as the nan rows
   are flagged apart), held to recorded Loki answers in several layouts.
 request:
