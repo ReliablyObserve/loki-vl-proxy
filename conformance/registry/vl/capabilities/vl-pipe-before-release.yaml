@@ -1,0 +1,19 @@
+id: vl-pipe-before-release
+kind: version_gated_capability
+since: v1.51
+generated:
+  used_in: 0
+
+description: |
+  A pipe a release lacks is refused at parse time: `| coalesce (...)` on v1.49
+  and v1.50 answers 400 (422 on the stats endpoints) "unexpected pipe
+  "coalesce"" (oracle v1.49.0). `| json_array_concat ...` is NOT refused by
+  v1.49/v1.50, which read it as a filter pipe and answer it, so it is never
+  predicted.
+proxy_usage: |
+  logsql.GatePipeCoalesce; the translator already gates coalesce on
+  logsql.Capabilities.PipeCoalesce, so the prediction is a guard for a text that
+  slips past it.
+fallback: |
+  The translator's format-chain fallback (pipe-coalesce).
+proves: []

@@ -419,6 +419,8 @@
     "semantics/error-cache-operator-switches | compare:exact",
     "semantics/error-cache-plan-policy | compare:exact",
     "semantics/error-cache-tenant-isolation | compare:exact",
+    "semantics/error-cache-vl-refusal-held | compare:exact",
+    "semantics/error-cache-vl-refusal-peer-sync | compare:exact",
     "semantics/error-coalescing-no-inherited-cancel | compare:exact",
     "semantics/error-coalescing-request-flights | compare:exact",
     "semantics/error-layer-backend-failure-status | compare:exact",
@@ -1318,6 +1320,17 @@
     "internal/logsql/parser_stats_funcs_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
     "internal/logsql/pipe_math_as_test.go | architecture-syntax-package-layering",
+    "internal/logsql/refusal_table_test.go | vl-math-quoted-constant-clone-crash",
+    "internal/logsql/refusal_table_test.go | vl-pipe-before-release",
+    "internal/logsql/refusal_table_test.go | vl-query-too-long",
+    "internal/logsql/refusal_table_test.go | vl-stats-missing-stats-pipe",
+    "internal/logsql/refusal_table_test.go | vl-stats-pipe-after-stats",
+    "internal/logsql/refusal_table_test.go | vl-stats-range-pipe-before-stats",
+    "internal/logsql/refusal_test.go | vl-extra-filters-too-long",
+    "internal/logsql/refusal_test.go | vl-math-quoted-constant-clone-crash",
+    "internal/logsql/refusal_test.go | vl-query-too-long",
+    "internal/logsql/refusal_test.go | vl-stats-pipe-after-stats",
+    "internal/logsql/refusal_test.go | vl-stats-range-pipe-before-stats",
     "internal/logsql/reserved_fields_test.go | semantics/translator-writes-reserved-field-names",
     "internal/logsql/stream_group_test.go | semantics/detected-level-stream-stats-without-level",
     "internal/lokierr/lokierr_test.go | architecture-syntax-package-layering",
@@ -2335,6 +2348,17 @@
     "internal/proxy/vector_agg_series_differential_test.go | window-bounds-and-step-alignment",
     "internal/proxy/vector_fold_reference_test.go | semantics/aggregation-over-binary-dropped",
     "internal/proxy/vl_calls_header_test.go | quality/edge-cache-oversized-reply",
+    "internal/proxy/vl_refusal_oracle_test.go | vl-extra-filters-too-long",
+    "internal/proxy/vl_refusal_oracle_test.go | vl-math-quoted-constant-clone-crash",
+    "internal/proxy/vl_refusal_oracle_test.go | vl-pipe-before-release",
+    "internal/proxy/vl_refusal_oracle_test.go | vl-query-too-long",
+    "internal/proxy/vl_refusal_oracle_test.go | vl-stats-missing-stats-pipe",
+    "internal/proxy/vl_refusal_oracle_test.go | vl-stats-pipe-after-stats",
+    "internal/proxy/vl_refusal_oracle_test.go | vl-stats-range-pipe-before-stats",
+    "internal/proxy/vl_refusal_test.go | semantics/error-cache-vl-refusal-held",
+    "internal/proxy/vl_refusal_test.go | semantics/error-cache-vl-refusal-peer-sync",
+    "internal/proxy/vl_refusal_test.go | vl-math-quoted-constant-clone-crash",
+    "internal/proxy/vl_refusal_test.go | vl-query-too-long",
     "internal/proxy/vl_regexp_class_oracle_test.go | quality/probe-regexp-parse-cost",
     "internal/proxy/vl_regexp_class_test.go | quality/probe-regexp-parse-cost",
     "internal/proxy/volume_segments_test.go | loki_api_v1_index_volume",
@@ -3202,7 +3226,7 @@
   ],
   "counts": {
     "case_consumers": {
-      "any": 48,
+      "any": 50,
       "api": 116,
       "drilldown": 53,
       "explore": 202,
@@ -3210,7 +3234,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 746,
+      "go": 750,
       "playwright": 2
     },
     "page_kinds": {
@@ -3230,7 +3254,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 94,
-    "wired_items": 444
+    "wired_items": 453
   },
   "gates": [
     "A/B shape selection",

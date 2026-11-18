@@ -167,6 +167,16 @@ var Limits = []Limit{
 		Sizing:     "5s: the same window fails the same way until new lines arrive (a moving window has new bounds, so a new key), and each such answer reads the window's lines or series again; 5 s keeps a refresh loop from re-reading them while a dashboard that changes its window answers at once. Raise it for heavy JSON metrics over settled windows; 0 holds none.",
 	},
 	{
+		Flag:       "error-cache-vl-refusal-ttl",
+		Unit:       "duration",
+		Bounds:     "how long VictoriaLogs' refusal of the query the proxy wrote is held: a refusal VictoriaLogs gives before reading any data and gives the same text every time on the same release (a parse error, a stats shape it does not run, a query or extra_filters arg over its -search.maxQueryLen), answered by VictoriaLogs or predicted from the detected release (-vl-refusal-prediction). Held for the request and for every window of its query (a refresh that moves end=now is refused the same way), keyed by tenant, credentials, response profile, configuration epoch and VictoriaLogs release, so a reload or a release change asks again. At 30s or more a refusal VictoriaLogs answered is pushed to every peer (-error-cache-peer-sync); a peer holds it only for the same proxy build, VictoriaLogs release and routing configuration, for the rest of the hold plus up to 15% so one replica asks again first",
+		Error:      "none of its own: the held answer is Loki's answer for the refusal (500 `Internal Server Error` for a refused plan, or the fallback route's answer)",
+		Metric:     "loki_vl_proxy_error_cache_hits_total{class=\"vl_refusal\"}, loki_vl_proxy_error_cache_peer_sync_total, loki_vl_proxy_vl_refusals_predicted_total",
+		Alert:      "none",
+		LokiParity: "",
+		Sizing:     "5m: the same text on the same VictoriaLogs release is refused the same way until the proxy build, its configuration or the VictoriaLogs release changes, each of which changes the key; the hold only bounds an operator change of a VictoriaLogs limit without a release change (a raised -search.maxQueryLen keeps being refused this long, and the length the proxy learned from a refusal is trusted as long). With peer sync a fleet of N replicas sends about one VictoriaLogs call per refused query per hold instead of one per request (TestVLRefusal_FleetSendsOneCallPerHold: 3 replicas x 5 refreshes, 1 call). Below 30s nothing is pushed to peers (a push takes about a second); 0 holds none (followers in flight still share).",
+	},
+	{
 		Flag:       "error-cache-max-entries",
 		Unit:       "entries",
 		Bounds:     "failed answers held per replica; the oldest is evicted first, and an expired one is dropped when it is read or when room is needed (no background goroutine)",

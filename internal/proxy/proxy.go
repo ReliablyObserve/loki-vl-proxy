@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -175,7 +177,13 @@ type Config struct {
 	CoalescerDisabled bool          // disable singleflight coalescing; every request makes its own backend call
 	// ErrorCache configures request flights and the error cache (error_flights.go).
 	ErrorCache ErrorCacheConfig
-	TenantMap  map[string]TenantMapping // string org ID → VL account/project
+	// VLRefusalPredictionDisabled sends every call, even one the detected
+	// VictoriaLogs release refuses before reading data (vl_refusal.go).
+	VLRefusalPredictionDisabled bool
+	// BuildVersion names the proxy build; peers share held VictoriaLogs
+	// refusals only between replicas of the same build.
+	BuildVersion string
+	TenantMap    map[string]TenantMapping // string org ID → VL account/project
 	// TenantMapFile is the -tenant-map-file path. A configured file keeps the
 	// proxy routing on X-Scope-OrgID even while the file holds no entry (see
 	// tenantHeaderIgnored).
@@ -724,27 +732,37 @@ var CacheTTLs = map[string]time.Duration{
 }
 
 type Proxy struct {
-	backend                               *url.URL
-	rulerBackend                          *url.URL
-	alertsBackend                         *url.URL
-	client                                *http.Client
-	backendBudget                         chan struct{}
-	tailClient                            *http.Client
-	cache                                 *cache.Cache
-	compatCache                           *cache.Cache
-	log                                   *slog.Logger
-	metrics                               *metrics.Metrics
-	queryTracker                          *metrics.QueryTracker
-	coalescer                             *mw.Coalescer
-	errorFlights                          *cache.ErrorFlights
-	errorFlightCounters                   errorFlightCounters
-	windowFreeHeldUntil                   atomic.Int64 // latest expiry of a failure held for every window
-	windowFreeSeenUntil                   atomic.Int64 // until when requests join a window-free probe
-	errorCacheDisabled                    bool
-	errorCacheTransientTTL                time.Duration
-	errorCacheDataTTL                     time.Duration
-	errorEpoch                            atomic.Uint64
-	errorPrefix                           atomic.Pointer[string]
+	backend                *url.URL
+	rulerBackend           *url.URL
+	alertsBackend          *url.URL
+	client                 *http.Client
+	backendBudget          chan struct{}
+	tailClient             *http.Client
+	cache                  *cache.Cache
+	compatCache            *cache.Cache
+	log                    *slog.Logger
+	metrics                *metrics.Metrics
+	queryTracker           *metrics.QueryTracker
+	coalescer              *mw.Coalescer
+	errorFlights           *cache.ErrorFlights
+	errorFlightCounters    errorFlightCounters
+	windowFreeHeldUntil    atomic.Int64 // latest expiry of a failure held for every window
+	windowFreeSeenUntil    atomic.Int64 // until when requests join a window-free probe
+	errorCacheDisabled     bool
+	errorCacheTransientTTL time.Duration
+	errorCacheDataTTL      time.Duration
+	errorEpoch             atomic.Uint64
+	errorPrefix            atomic.Pointer[string]
+	errorCacheRefusalTTL   time.Duration
+	errorCacheMaxEntries   int
+	errorCachePeerSync     bool
+	vlRefusalPrediction    bool
+	buildVersion           string
+	vlReleaseSeen          atomic.Pointer[logsql.Version]
+	vlMaxQueryLen          atomic.Pointer[vlQueryLen]
+	refusalQueries         refusalQuerySet
+	refusalSeenUntil       atomic.Int64
+	vlRefusalCounters
 	limiter                               *mw.RateLimiter
 	admissionLog                          logGate // paces the log line of a request the limiter rejects
 	breaker                               *mw.CircuitBreaker
@@ -1462,6 +1480,11 @@ func New(cfg Config) (*Proxy, error) {
 		errorCacheDisabled:                    cfg.ErrorCache.Disabled,
 		errorCacheTransientTTL:                max(cfg.ErrorCache.TransientTTL, 0),
 		errorCacheDataTTL:                     max(cfg.ErrorCache.DataTTL, 0),
+		errorCacheRefusalTTL:                  max(cfg.ErrorCache.RefusalTTL, 0),
+		errorCacheMaxEntries:                  cfg.ErrorCache.MaxEntries,
+		errorCachePeerSync:                    !cfg.ErrorCache.PeerSyncDisabled,
+		vlRefusalPrediction:                   !cfg.VLRefusalPredictionDisabled,
+		buildVersion:                          cmp.Or(cfg.BuildVersion, "dev"),
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
 		backendBudget:                         newBackendBudget(maxConcurrent),
 		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen, cbWindow),
@@ -1835,6 +1858,8 @@ func New(cfg Config) (*Proxy, error) {
 		// Entries computed with a user's forwarded credentials stay on the
 		// replica that computed them.
 		p.peerCache.SetPushFilter(peerPushAllowed)
+		// Held VictoriaLogs refusals pushed by peers (vl_refusal.go).
+		p.peerCache.HandleEverywhere(p.receiveRefusal)
 	}
 	return p, nil
 }

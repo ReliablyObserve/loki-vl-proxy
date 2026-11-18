@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
@@ -59,6 +60,13 @@ const (
 	// way until new lines arrive, and each such check reads the window's
 	// lines again.
 	DefaultErrorCacheDataTTL = 5 * time.Second
+	// DefaultErrorCacheVLRefusalTTL holds a VictoriaLogs refusal of the query
+	// the proxy wrote five minutes (vl_refusal.go): the same query on the same
+	// release is refused the same way until the proxy or VictoriaLogs changes,
+	// which changes the key; five minutes bound how long an operator change of
+	// a VictoriaLogs limit without a release change (a raised
+	// -search.maxQueryLen) is answered by the old verdict.
+	DefaultErrorCacheVLRefusalTTL = 5 * time.Minute
 	// DefaultErrorCacheMaxEntries and DefaultErrorCacheMaxBytes bound the
 	// held answers per replica.
 	DefaultErrorCacheMaxEntries = 4096
@@ -89,13 +97,17 @@ type ErrorCacheConfig struct {
 	// MaxEntries and MaxBytes bound the held answers; zero uses the defaults.
 	MaxEntries int
 	MaxBytes   int
+	// RefusalTTL holds a VictoriaLogs refusal (vl_refusal.go); zero holds none.
+	RefusalTTL time.Duration
+	// PeerSyncDisabled keeps held refusals on their replica.
+	PeerSyncDisabled bool
 }
 
 // errorFlightCounters are the flight outcomes, for metrics.
 type errorFlightCounters struct {
-	held      [4]atomic.Int64 // requests answered from a held failure, by class
-	coalesced [4]atomic.Int64 // followers handed the leader's failure, by class
-	stored    [4]atomic.Int64 // failures held, by class
+	held      [5]atomic.Int64 // requests answered from a held failure, by class
+	coalesced [5]atomic.Int64 // followers handed the leader's failure, by class
+	stored    [5]atomic.Int64 // failures held, by class
 	succeeded atomic.Int64    // followers that read the leader's success
 }
 
@@ -117,17 +129,17 @@ func newErrorFlights(cfg Config) *cache.ErrorFlights {
 // class the request's plan can fail in.
 func (p *Proxy) errorPolicy(endpoint string, r *http.Request) (cache.Policy, queryplan.Failures) {
 	reach := failureReach(endpoint, r)
-	transient, data := p.errorCacheTransientTTL, p.errorCacheDataTTL
+	transient, data, refusal := p.errorCacheTransientTTL, p.errorCacheDataTTL, p.errorCacheRefusalTTL
 	if p.errorCacheDisabled {
-		transient, data = 0, 0
+		transient, data, refusal = 0, 0, 0
 	}
 	// A failure the request alone decides is shared with requests in flight
 	// and held by no TTL: Loki's parse and parameter errors are answered
 	// before the response cache, from the memoised validation, in about 14 µs
 	// and with no VictoriaLogs call (TestLokiRefusalsSendNoVictoriaLogsCall).
-	pol := cache.NewPolicy(transient, data, 0).Only(func(c cache.ErrorClass) bool {
+	pol := cache.NewPolicy(transient, data, 0).WithRefusal(refusal).Only(func(c cache.ErrorClass) bool {
 		switch c {
-		case cache.ErrorTransient:
+		case cache.ErrorTransient, cache.ErrorRefusal:
 			return reach.Has(queryplan.FailBackend)
 		case cache.ErrorData:
 			return reach&(queryplan.FailLimit|queryplan.FailPipeline) != 0
@@ -188,6 +200,11 @@ func recordFlightFailure(ctx context.Context, err error, status int, typed *loki
 func failureClassOf(ctx context.Context, err error, typed *lokierr.Error) (cache.ErrorClass, queryplan.Failures) {
 	if ctx != nil && ctx.Err() != nil {
 		return cache.ErrorNever, 0 // the client's own cancellation or deadline
+	}
+	if vlRefusalFailure(err, typed) {
+		// VictoriaLogs refused the text the proxy wrote before reading data
+		// (vl_refusal.go): the same text on the same release always is.
+		return cache.ErrorRefusal, queryplan.FailBackend
 	}
 	if typed != nil {
 		switch typed.Msg() {
@@ -587,6 +604,12 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 			return
 		}
 	}
+	if held := p.heldRefusal(k.prefix, endpoint, r); held != nil {
+		// VictoriaLogs refuses this query whatever its window (vl_refusal.go).
+		p.errorFlightCounters.held[held.Class].Add(1)
+		p.writeFlightAnswer(endpoint, route, w, r, held, start)
+		return
+	}
 	for round := 0; round < maxFlightRounds; round++ {
 		lead := &flightLead{key: k}
 		held, f, leads := ef.Join(key, &lead.fl)
@@ -709,6 +732,9 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 			p.errorFlightCounters.stored[answer.Class].Add(1)
 			if windowFree {
 				p.holdWindowFree(lead.key.prefix, endpoint, r, answer, ttl)
+			}
+			if answer.Class == cache.ErrorRefusal && !lead.windowFreeProbe {
+				p.holdRefusal(lead.key.prefix, endpoint, r, answer, ttl)
 			}
 		}
 	}()
@@ -912,16 +938,27 @@ func (p *Proxy) writeFlightAnswer(endpoint, route string, w http.ResponseWriter,
 // flight that started before it ends under the old epoch's keys, which no
 // later request reads.
 func (p *Proxy) clearHeldErrors() {
-	epoch := p.errorEpoch.Add(1)
-	prefix := errorFlightKeyVersion + strconv.FormatUint(epoch, 36) + ":"
-	p.errorPrefix.Store(&prefix)
+	p.errorEpoch.Add(1)
+	p.refreshFlightPrefix()
 	if p.errorFlights != nil {
 		p.errorFlights.Clear()
 	}
+	p.refusalQueries.clear()
 }
 
-// flightPrefix is the prefix of every flight key: the key version and the
-// configuration epoch.
+// refreshFlightPrefix builds the flight key prefix from the configuration
+// epoch and the VictoriaLogs release the proxy talks to: a held failure is
+// read only under the epoch and the release it was answered in.
+func (p *Proxy) refreshFlightPrefix() {
+	prefix := errorFlightKeyVersion + strconv.FormatUint(p.errorEpoch.Load(), 36) + ":"
+	if v := p.vlRelease(); v.Known {
+		prefix += v.String() + ":"
+	}
+	p.errorPrefix.Store(&prefix)
+}
+
+// flightPrefix is the prefix of every flight key: the key version, the
+// configuration epoch and, once known, the VictoriaLogs release.
 func (p *Proxy) flightPrefix() string {
 	if prefix := p.errorPrefix.Load(); prefix != nil {
 		return *prefix
@@ -939,6 +976,16 @@ func (p *Proxy) errorFlightStats() metrics.ErrorFlightStats {
 		s.Stored[i] = p.errorFlightCounters.stored[c].Load()
 	}
 	s.Succeeded = p.errorFlightCounters.succeeded.Load()
+	s.Rules = logsql.RefusalRules()
+	s.Predicted = make([]int64, len(s.Rules))
+	for i := range s.Rules {
+		if i < len(p.vlRefusalsPredicted) {
+			s.Predicted[i] = p.vlRefusalsPredicted[i].Load()
+		}
+	}
+	for i := range s.PeerSync {
+		s.PeerSync[i] = p.peerSyncCounts[i].Load()
+	}
 	if p.errorFlights != nil {
 		entries, bytes := p.errorFlights.Len()
 		s.Entries, s.Bytes = int64(entries), int64(bytes)
