@@ -1,0 +1,15 @@
+id: vl-stats-missing-stats-pipe
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  stats_query and stats_query_range refuse a query without a stats pipe: 422
+  "missing `| stats ...` pipe in the query" (oracle v1.49.0, v1.53.0).
+proxy_usage: |
+  Predicted from the lowered LogsQL AST before the call.
+fallback: |
+  None needed: the proxy always writes a stats pipe; the guard catches a
+  defect.
+proves: []

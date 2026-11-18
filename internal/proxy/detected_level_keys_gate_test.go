@@ -413,7 +413,9 @@ func TestKeysRiskProbeRetriesWithoutTheGateWhenRefusedAsTooLong(t *testing.T) {
 		wantErr bool
 	}{
 		{"limit below the gated text", 3000, "the `query` arg length cannot exceed -search.maxQueryLen=%d bytes; the current query length is %d bytes", 2, false},
-		{"limit below both", 1000, "the `query` arg length cannot exceed -search.maxQueryLen=%d bytes; the current query length is %d bytes", 2, true},
+		// The retry is longer than the limit VictoriaLogs' first refusal named: it is refused without a call
+		// (vl_refusal.go), with the answer VictoriaLogs would give.
+		{"limit below both", 1000, "the `query` arg length cannot exceed -search.maxQueryLen=%d bytes; the current query length is %d bytes", 1, true},
 		{"another 400 is not retried", 0, "cannot parse `query` arg: unexpected token", 1, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

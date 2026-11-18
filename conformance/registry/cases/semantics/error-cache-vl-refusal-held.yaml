@@ -1,0 +1,30 @@
+id: semantics/error-cache-vl-refusal-held
+title: A VictoriaLogs refusal of the proxy's query is held long (window-free when it does not depend on the window), keyed by release, epoch and tenant
+proves:
+  - error-coalescing-and-error-cache
+consumer: any
+pending: true
+why: |
+  VictoriaLogs refuses some texts before reading any data (a parse error, a
+  stats shape it does not run, a query over its length limit), the same way
+  every time on the same release. Such a failure is held for
+  -error-cache-vl-refusal-ttl under the request's flight key and its
+  window-free key (a refresh that moves end=now is refused the same way), with
+  the configuration epoch and the VictoriaLogs release in the key; before the
+  release is known nothing is predicted and the call is sent and classified.
+request:
+  scope: internal
+  entry: failureClassOf, holdRefusal, heldRefusal, predictVLRefusal
+  setup: |
+    A VictoriaLogs stand-in answering a parse refusal or a length refusal; the
+    proxy with a known and an unknown release; repeats with moved windows,
+    another tenant, the clock past the TTL and a new release.
+compare:
+  mode: exact
+  expect: |
+    One call, then 0 for every window of the same query and tenant (a parse or
+    stats shape refusal; an argument or length refusal only for the exact
+    request), byte-equal
+    answers; another tenant, the expired hold and a new release ask again;
+    TestVLRefusal_HeldLongForEveryWindow, TestVLRefusal_UnknownReleaseAndNonRefusals,
+    TestVLRefusal_LearnedLengthPredicted, TestErrorFlights_HeldAnswersEqualFreshOnes.
