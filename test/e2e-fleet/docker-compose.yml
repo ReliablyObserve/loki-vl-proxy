@@ -46,7 +46,7 @@ services:
   # Reference Loki: the answers the fleet rebuilds from VictoriaLogs after
   # every proxy lost its caches are compared with Loki's for the same lines.
   loki:
-    image: ${LOKI_IMAGE:-grafana/loki:3.7.9}
+    image: ${LOKI_IMAGE:-grafana/loki:3.7.10}
     container_name: ${FLEET_NAME_PREFIX:-fleet}-loki
     user: "0:0"
     ports:

@@ -31,7 +31,7 @@ func TestStateIsWrittenIntoEveryReRecordedRow(t *testing.T) {
 			kept[r.ID] = r.State
 		}
 	}
-	base := fakeLoki(t, recordedAnswers(t, answers, order), "3.7.9")
+	base := fakeLoki(t, recordedAnswers(t, answers, order), "3.7.10")
 	var out bytes.Buffer
 	// The committed rows were recorded from a serving Loki; this one is fresh.
 	cfg := config{loki: base, files: []string{answers}, state: lokirecorded.StateFresh}
@@ -78,7 +78,7 @@ func TestRowsWithoutAnAnswerAreRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 	served := map[string]lokirecorded.Reply{f.Rows[0].Request(): {Status: 200, ContentType: "application/json", Body: `{"status":"success","data":[]}`}}
-	base := fakeLoki(t, served, "3.7.9")
+	base := fakeLoki(t, served, "3.7.10")
 	changed, err := run(config{loki: base, files: []string{path}, state: lokirecorded.StateServing}, io.Discard)
 	if err != nil || changed != 1 {
 		t.Fatalf("changed %d (%v)", changed, err)
@@ -241,7 +241,7 @@ func TestShiftAsksTheRowsWindowAsOfNow(t *testing.T) {
 		t.Fatalf("shifted target %s", shifted.Target)
 	}
 	reply := lokirecorded.Reply{Status: 400, ContentType: "text/plain; charset=utf-8", Nosniff: "nosniff", Body: "only label matchers are supported"}
-	base := fakeLoki(t, map[string]lokirecorded.Reply{shifted.Request(): reply}, "3.7.9")
+	base := fakeLoki(t, map[string]lokirecorded.Reply{shifted.Request(): reply}, "3.7.10")
 	changed, err := run(config{loki: base, files: []string{path}, shift: true}, io.Discard)
 	if err != nil || changed != 1 {
 		t.Fatalf("changed %d (%v)", changed, err)
@@ -287,7 +287,7 @@ func TestRowWithABoundThatDoesNotMoveIsSentAsRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 	reply := lokirecorded.Reply{Status: 400, ContentType: "text/plain; charset=utf-8", Nosniff: "nosniff", Body: "length of the recorded window"}
-	base := fakeLoki(t, map[string]lokirecorded.Reply{f.Rows[0].Request(): reply}, "3.7.9")
+	base := fakeLoki(t, map[string]lokirecorded.Reply{f.Rows[0].Request(): reply}, "3.7.10")
 	if changed, err := run(config{loki: base, files: []string{path}, shift: true}, io.Discard); err != nil || changed != 1 {
 		t.Fatalf("changed %d (%v)", changed, err)
 	}

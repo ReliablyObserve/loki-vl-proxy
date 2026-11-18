@@ -1,0 +1,50 @@
+id: limits/drilldown-series-limit-skips-every-new-series
+title: Over the series limit a Logs Drilldown metric answer holds exactly the limit's series, every one labelled (Loki 3.7.10)
+pending: true
+proves:
+  - series-limits-and-partial-results
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: drilldown
+why: |
+  Loki 3.7.10 (grafana/loki#26433, release notes "Skip every new series once
+  the Logs Drilldown series limit trips") stops one more series past
+  max_query_series from entering a Drilldown partial answer. Loki 3.7.9 kept
+  the limit's series and added a series without labels for every further
+  series that was new in the step where the limit tripped, so the panel showed
+  nameless series and more than max_query_series of them.
+
+  Recorded with the Loki engine oracle (test/oracle/loki engine, the request's
+  X-Query-Tags in the query context) at max_query_series 3, over 3, 4, 5 and 8
+  pod streams that start together or one every 5 minutes, for
+  `sum by (pod) (count_over_time({app="sl"}[1m]))`,
+  `count_over_time({app="sl"}[1m])` and `sum by (pod) (rate({app="sl"}[5m]))`,
+  range (step 60 s over 1h) and instant:
+    * Loki 3.7.9: 4 series (one unlabelled) over 5 pods and 7 (four
+      unlabelled) over 8 pods that start together, range;
+    * Loki 3.7.10: exactly 3 labelled series and the warning "maximum number
+      of series (3) reached for a single query; returning partial results" on
+      every request over the limit, none at the limit.
+  The proxy (-max-stats-query-series 3, VictoriaLogs v1.49.0 and v1.53.0)
+  answers the same warning, the same series count and no series without
+  labels on every request; it never added unlabelled series, so 3.7.10 needs
+  no proxy change. Which series are kept and how far a range answer reaches
+  are recorded differences (limits/drilldown-breakdown-keeps-busiest,
+  limits/drilldown-series-limit-range-cut-at-trip-step).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="wide"}[1m]))'
+    start: "<end-1h>"
+    end: "<end>"
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: structural
+  fields: [status, warnings, data.resultType, 'data.result[].metric']
+applies_to:
+  loki: ">=3.7.10"
+  victorialogs: ">=v1.49.0"
