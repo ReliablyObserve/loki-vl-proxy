@@ -139,7 +139,7 @@ func sameUnwrapValue(a, b float64) bool {
 // value exactly when Loki makes its sample (with Loki's value), rejects it with the error text Loki puts in
 // __error_details__ when Loki fails the query with SampleExtractionErr, and a blank value makes no sample.
 //
-// conformance: semantics/unwrap-conversion-error, semantics/unwrap-sample-validity, semantics/unwrap-duration-seconds
+// conformance: semantics/unwrap-conversion-error, semantics/unwrap-sample-validity, semantics/unwrap-duration-seconds, semantics/unwrap-bytes-whole-size-exact
 func TestUnwrapConversionMatchesRecordedLoki(t *testing.T) {
 	sets, cases := unwrapConversionSets()
 	answers := lokiEngineAnswers(t, "unwrap_conversion", sets)

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The compatibility stack and CI now test against Loki 3.7.10 (was 3.7.9): the compose files, the pinned CI jobs,
+  the weekly Loki matrix (3.7.10 added) and the test-only Loki oracles. Loki 3.7.10 gives a Logs Drilldown metric
+  query over `max_query_series` exactly that many labelled series with its partial-result warning (3.7.9 added a
+  series without labels for every further new series, grafana/loki#26433); the proxy already answered that way,
+  now pinned against recorded 3.7.10 answers. Loki's recorded answers for step alignment, tenant headers and the
+  engine differentials are unchanged on 3.7.10, apart from `unwrap bytes()` below.
 - A VictoriaLogs call that the running VictoriaLogs release refuses before reading any data is no longer sent. The
   proxy predicts the refusal from the query it is about to send, the endpoint and the detected release, and answers
   it as it answers VictoriaLogs' own refusal: the caller's fallback route, or Loki's `500 Internal Server Error` for
@@ -48,11 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
   where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
   stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
-
-## [2.337.0] - 2026-11-18
-
-### Fixed
-
+- `unwrap bytes()` reads a whole size exactly up to 18446744073709551615 bytes, as Loki 3.7.10 does (its
+  go-humanize v1.1.0): such a value now makes a sample on the proxy's own evaluators instead of failing the query
+  with `SampleExtractionErr` (`too large`); a size of 2^64 bytes or more still fails as in Loki. A label filter
+  with such a bytes literal (`| size > 18446744073709551615B`) now parses, as in Loki 3.7.10, instead of
+  answering Loki 3.7.9's `400` parse error. The VictoriaLogs
+  pushdown still reads sizes within float64 rounding of 2^64 bytes as too large (registered as a known difference).
 - `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time`
   and `stdvar_over_time` after `| json` or `| logfmt` now read one series for lines that hold the same keys in another
   order, as Loki does. The series of such a line was named by VictoriaLogs' `pack_json` of its parsed fields, which
@@ -61,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
   logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
   later). Answers cached before are not served (the identity's response key version moves to v4).
+## [2.337.0] - 2026-11-18
+
+### Fixed
+
 - The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
   `{...} |= "x" [1m]` form no longer doubles its work with each level of `label_replace` (or `vector`, `approx_topk`)
   calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where

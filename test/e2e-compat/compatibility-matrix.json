@@ -2,7 +2,7 @@
   "stack": {
     "loki": {
       "image_repo": "grafana/loki",
-      "pinned_version": "3.7.9",
+      "pinned_version": "3.7.10",
       "support_window": {
         "policy": "current_minor_plus_previous_minor",
         "description": "Support the current Loki minor family and one minor family behind. Keep all patch releases in the supported families, and slide the window forward when a new minor becomes current.",
@@ -39,7 +39,8 @@
         "3.7.6",
         "3.7.7",
         "3.7.8",
-        "3.7.9"
+        "3.7.9",
+        "3.7.10"
       ],
       "role": "reference implementation"
     },
