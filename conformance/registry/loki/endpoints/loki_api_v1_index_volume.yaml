@@ -40,6 +40,16 @@ context:
     selector when a service is selected. Grafana Explore never calls it.
     The API consumer also uses `aggregateBy=labels` and several `targetLabels`,
     which Drilldown does not.
+    Since Logs Drilldown 3.2.0 (grafana/logs-drilldown#2177) the landing-page
+    volume request carries a fixed request id, so Grafana cancels the one still
+    in flight when the data source or the time range changes: the proxy sees the
+    first request's client go away (a client cancel, Loki's 499) and the new one.
+    Captured on the pinned stack (Grafana 13.3.1, Drilldown 3.2.0): one
+    index/volume, one detected_labels and one drilldown-limits call per landing
+    load, each through Grafana's resource API with `X-Query-Tags:
+    Source=grafana-lokiexplore-app`, `X-Plugin-Id: loki` and a User-Agent naming
+    Grafana and its Loki datasource plugin (`Grafana/13.3.1 (linux; arm64)
+    loki/13.2.5`).
 examples:
   - consumer: drilldown
     request: |
