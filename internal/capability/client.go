@@ -25,13 +25,13 @@ type ClientSeries struct {
 
 type clientKey [4]string
 
-// clientCounts counts requests by client profile. The request path reads one map under a read lock and bumps an
-// atomic counter (no allocation); a profile not seen before takes the slow path, which applies the label caps and
-// points the profile at the series it counts into.
+// clientCounts counts requests by client profile. The request path loads one immutable map (no lock, no shared
+// reader counter) and bumps an atomic counter, allocating nothing; a profile not seen before takes the slow path, which
+// applies the label caps, points the profile at the series it counts into and publishes a copy of the map.
 type clientCounts struct {
-	mu     sync.RWMutex
-	raw    map[clientprofile.Profile]*atomic.Uint64 // profile -> its series counter (several profiles share the other series)
-	values [3]map[string]struct{}                   // distinct version labels seen, per label
+	raw    atomic.Pointer[map[clientprofile.Profile]*atomic.Uint64] // profile -> its series counter (several share the other series)
+	mu     sync.Mutex                                               // the slow path and the series
+	values [3]map[string]struct{}                                   // distinct version labels seen, per label
 	series map[clientKey]*atomic.Uint64
 }
 
@@ -46,12 +46,11 @@ func (l *Layer) ObserveClient(p clientprofile.Profile) {
 		return // a proxy value built without New (a test) counts nothing
 	}
 	c := &l.clients
-	c.mu.RLock()
-	n := c.raw[p]
-	c.mu.RUnlock()
-	if n != nil {
-		n.Add(1)
-		return
+	if m := c.raw.Load(); m != nil {
+		if n := (*m)[p]; n != nil {
+			n.Add(1)
+			return
+		}
 	}
 	c.slow(p).Add(1)
 }
@@ -59,11 +58,15 @@ func (l *Layer) ObserveClient(p clientprofile.Profile) {
 func (c *clientCounts) slow(p clientprofile.Profile) *atomic.Uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if n := c.raw[p]; n != nil {
+	var cur map[clientprofile.Profile]*atomic.Uint64
+	if m := c.raw.Load(); m != nil {
+		cur = *m
+	}
+	if n := cur[p]; n != nil {
 		return n
 	}
-	if c.raw == nil {
-		c.raw, c.series = map[clientprofile.Profile]*atomic.Uint64{}, map[clientKey]*atomic.Uint64{}
+	if c.series == nil {
+		c.series = map[clientKey]*atomic.Uint64{}
 		for i := range c.values {
 			c.values[i] = map[string]struct{}{}
 		}
@@ -87,8 +90,13 @@ func (c *clientCounts) slow(p clientprofile.Profile) *atomic.Uint64 {
 		n = new(atomic.Uint64)
 		c.series[key] = n
 	}
-	if len(c.raw) < maxClientProfiles {
-		c.raw[p] = n
+	if len(cur) < maxClientProfiles {
+		next := make(map[clientprofile.Profile]*atomic.Uint64, len(cur)+1)
+		for k, v := range cur {
+			next[k] = v
+		}
+		next[p] = n
+		c.raw.Store(&next)
 	}
 	return n
 }
@@ -96,8 +104,8 @@ func (c *clientCounts) slow(p clientprofile.Profile) *atomic.Uint64 {
 // ClientSeriesSnapshot lists the client series, sorted for a stable exposition.
 func (l *Layer) ClientSeriesSnapshot() []ClientSeries {
 	c := &l.clients
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	out := make([]ClientSeries, 0, len(c.series))
 	for k, n := range c.series {
 		out = append(out, ClientSeries{Surface: k[0], Grafana: k[1], Datasource: k[2], Drilldown: k[3], Requests: n.Load()})

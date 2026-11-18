@@ -172,6 +172,11 @@ func TestProbeValuesAndClassify(t *testing.T) {
 			}
 		}
 		if p.RefusalText[0] != "" {
+			// VictoriaLogs echoes the query in its errors: an unrelated parse error that quotes the probe's own text
+			// (its pipes and its _time filter) is no refusal of the gate.
+			if got := p.Classify(p.RefusalStatus[0], []byte("cannot parse `query` arg: unexpected token; query="+p.Query)); got != VerdictNone {
+				t.Errorf("%s: an error that only echoes the probe query is no verdict, got %v", g.Name, got)
+			}
 			if got := p.Classify(p.RefusalStatus[0], []byte("some other parse error")); got != VerdictNone {
 				t.Errorf("%s: an unrelated parse error is no verdict, got %v", g.Name, got)
 			}

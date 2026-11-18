@@ -243,7 +243,7 @@ var gates = [numGates]Gate{
 		Name: "vl.pipe_coalesce", Kind: Capability, From: [3]int{1, 51, 0},
 		Registry: "pipe-coalesce", Citation: "VictoriaLogs v1.51.0 (#690)",
 		Probe: &Probe{Path: pathQuery, Query: probes.Coalesce, Accepted: VerdictOn, Refused: VerdictOff,
-			RefusalStatus: []int{400}, RefusalText: []string{`unexpected pipe "coalesce"`}, CrashSafe: [2]string{"v1.49.0", "v1.53.0"}},
+			RefusalStatus: []int{400}, RefusalText: []string{`unexpected pipe "coalesce"`}, CrashSafe: [2]string{"v1.49.0", "v1.54.0"}},
 		Reads: "the service_name derivation (one coalesce or a format chain) and the refusal prediction",
 	},
 	ColumnFieldValues: {
@@ -255,14 +255,14 @@ var gates = [numGates]Gate{
 		Name: "vl.stream_metadata_endpoints", Kind: Capability, From: [3]int{1, 30, 0}, Default: true,
 		Registry: "stream-metadata-endpoints", Citation: "VictoriaLogs v1.30.0 (stream_field_names, stream_field_values)",
 		Probe: &Probe{Path: pathStreamFieldName, Query: probes.StreamFieldNames, Accepted: VerdictOn, Refused: VerdictOff,
-			RefusalStatus: []int{404}, RefusalText: []string{""}, CrashSafe: [2]string{"v1.49.0", "v1.53.0"}},
+			RefusalStatus: []int{404}, RefusalText: []string{""}, CrashSafe: [2]string{"v1.49.0", "v1.54.0"}},
 		Reads: "label and series metadata: the stream endpoints are tried first (label_metadata.go, label_handlers.go)",
 	},
 	StatsLimitAfterStats: {
 		Name: "vl.stats_limit_after_stats", Kind: Capability, From: [3]int{1, 51, 0},
 		Registry: "vl-stats-pipe-after-stats", Citation: "VictoriaLogs v1.51.0 (#1296)",
 		Probe: &Probe{Path: pathStatsQuery, Query: probes.StatsLimitAfterStats, Accepted: VerdictOn, Refused: VerdictOff,
-			RefusalStatus: []int{400, 422}, RefusalText: []string{"cannot be put after"}, CrashSafe: [2]string{"v1.49.0", "v1.53.0"}},
+			RefusalStatus: []int{400, 422}, RefusalText: []string{"cannot be put after"}, CrashSafe: [2]string{"v1.49.0", "v1.54.0"}},
 		Reads: "the refusal prediction of a limit or offset pipe after the last stats pipe",
 	},
 	PipeJSONArrayConcat: {
@@ -274,7 +274,7 @@ var gates = [numGates]Gate{
 		Name: "vl.range_time_writers_refused", Kind: Behaviour, From: [3]int{1, 53, 0},
 		Registry: "vl-stats-range-pipe-before-stats", Citation: "VictoriaLogs v1.53.0 (canReturnLastNResults checks)",
 		Probe: &Probe{Path: pathStatsQueryRange, Query: probes.RangeTimeWriter, Step: "1s", Accepted: VerdictOff, Refused: VerdictOn,
-			RefusalStatus: []int{400, 422}, RefusalText: []string{"_time"}, CrashSafe: [2]string{"v1.49.0", "v1.53.0"}},
+			RefusalStatus: []int{400, 422}, RefusalText: []string{"cannot be put in front of"}, CrashSafe: [2]string{"v1.49.0", "v1.54.0"}},
 		Reads: "the refusal prediction of a stats_query_range pipe that writes _time ahead of the last stats pipe",
 	},
 	MathQuotedConstantClone: {

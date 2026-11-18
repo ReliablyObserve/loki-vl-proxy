@@ -115,7 +115,7 @@ var capabilityFamilies = []capabilityFamily{
 		}
 		return out
 	}},
-	{name: "loki_vl_proxy_capability_epoch", help: "Changes of the capability gate set since the process started; cache and plan keys carry the set's digest.", points: func(s CapabilityStats) []capabilityPoint {
+	{name: "loki_vl_proxy_capability_epoch", help: "Changes of the capability gate set since the process started; the held-refusal keys and the peer sync carry the set's digest.", points: func(s CapabilityStats) []capabilityPoint {
 		return []capabilityPoint{{nil, float64(s.Epoch)}}
 	}},
 	{name: "loki_vl_proxy_backend_feature_probe_total", help: "Feature probe results by gate and verdict (on, off, inconclusive); an inconclusive answer keeps the previous verdict.", counter: true, points: func(s CapabilityStats) []capabilityPoint {

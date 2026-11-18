@@ -61,6 +61,7 @@ func TestProbesCrashSafe(t *testing.T) {
 				}
 				// A Behaviour probe's accepted answer means the gate is off: the verdict is the gate's, not the HTTP outcome.
 				got := p.Classify(resp.StatusCode, body)
+				t.Logf("%s on %s: %d %q", g.Name, release, resp.StatusCode, body)
 				if got != want {
 					t.Errorf("%s on %s: answered %d %q, probe says %v, the release table says %v", g.Name, release, resp.StatusCode, body, got, want)
 				}

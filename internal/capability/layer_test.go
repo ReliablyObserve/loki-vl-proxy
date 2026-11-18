@@ -454,3 +454,20 @@ func BenchmarkLayerFor(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkObserveClientParallel(b *testing.B) {
+	l := newTestLayer(newClock())
+	profiles := make([]clientprofile.Profile, 8)
+	for i := range profiles {
+		profiles[i] = clientprofile.Profile{Surface: clientprofile.SurfaceDatasource, Grafana: clientprofile.Version{Major: 13, Minor: uint16(i), Known: true}}
+		l.ObserveClient(profiles[i])
+	}
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			l.ObserveClient(profiles[i&7])
+			i++
+		}
+	})
+}

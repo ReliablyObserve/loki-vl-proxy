@@ -2876,6 +2876,7 @@
       "internal/proxy/ordered_json_extracted_pushdown_test.go"
     ],
     "vl-capability-layer": [
+      "internal/capability/docs_test.go",
       "internal/capability/gates_test.go",
       "internal/capability/layer_test.go",
       "internal/capability/probes_oracle_test.go",
@@ -3053,6 +3054,9 @@
     ],
     "internal/cache/peer_test.go": [
       "peer-cache-patterns"
+    ],
+    "internal/capability/docs_test.go": [
+      "vl-capability-layer"
     ],
     "internal/capability/gates_test.go": [
       "vl-capability-layer"
@@ -6606,7 +6610,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 775,
+  "tests_with_markers": 776,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
