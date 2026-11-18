@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"strings"
-
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 )
@@ -26,7 +24,7 @@ func rankOverBinaryResponseKeyVersion(query string, ranked bool) string {
 	if !ranked {
 		return ""
 	}
-	if plan := rankFencePlan(query); plan != nil && rankOverBinary(plan.Root) {
+	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && rankOverBinary(plan.Root) {
 		if rankOverBinaryLabelReplace(plan.Root) {
 			return rankOverBinaryResponseVersion + rankOverBinaryLabelReplaceResponseVersion
 		}
@@ -46,39 +44,10 @@ func rankOverBinaryLabelReplaceResponseKeyVersion(query string, ranked bool) str
 	if !ranked {
 		return ""
 	}
-	if plan := rankFencePlan(query); plan != nil && rankOverBinaryLabelReplace(plan.Root) {
+	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && rankOverBinaryLabelReplace(plan.Root) {
 		return rankOverBinaryLabelReplaceResponseVersion
 	}
 	return ""
-}
-
-// rankFencePlan is the plan the rank fences read: of the query as the handlers read it. A label_replace call keeps a
-// Grafana range variable (`[$__interval]`, `[$__auto]`, `[$__range]`) in its first argument through the parser, as text
-// it cannot type, and the handlers resolve the variable before they read the query (resolveGrafanaRangeTemplateTokens),
-// so the call is a typed label_replace there, with the binary operation it may hold. The fence resolves the variables
-// the same way: what the tree holds does not depend on the length they resolve to, so the request's window and step
-// are not read.
-func rankFencePlan(query string) *queryplan.Plan {
-	if hasGrafanaVariable(query) {
-		query = resolveGrafanaRangeTemplateTokens(query, "", "", "")
-	}
-	return resolvedPlan(query)
-}
-
-// hasGrafanaVariable reports a `$__` or `${` in query: a replacement reference (`$1`) is no variable, and a query that
-// holds only those (a label_replace call's usual spelling) pays no resolution.
-func hasGrafanaVariable(query string) bool {
-	for i := 0; i < len(query); i++ {
-		j := strings.IndexByte(query[i:], '$')
-		if j < 0 {
-			return false
-		}
-		i += j
-		if i+1 < len(query) && (query[i+1] == '_' || query[i+1] == '{') {
-			return true
-		}
-	}
-	return false
 }
 
 // rankOverBinaryLabelReplace reports a ranking, stddev or stdvar over a binary operand (binaryOperandNode) that holds a
