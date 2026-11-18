@@ -67,7 +67,7 @@ decisions:
       words in both auth modes, which also narrows what reaches the tenant
       map and the tenant-label filter. proxy.Config's zero value keeps
       numeric passthrough on for library users.
-    evidence: 'Loki 3.7.9 recorded 2026-11-11: 664 answers with auth_enabled true (local release binary) in internal/proxy/testdata/tenant_auth_loki_answers.jsonl; 616 GET answers with auth_enabled false (the e2e stack, read-only) in internal/proxy/testdata/tenant_noauth_loki_answers.jsonl'
+    evidence: 'Loki 3.7.9 recorded 2026-11-11, Loki 3.7.10 re-recorded 2026-11-18 with every answer unchanged: 664 answers with auth_enabled true (local release binary) in internal/proxy/testdata/tenant_auth_loki_answers.jsonl; 616 GET answers with auth_enabled false (the e2e stack, read-only) in internal/proxy/testdata/tenant_noauth_loki_answers.jsonl'
     code: [cmd/proxy/main.go, internal/proxy/tenant_header.go, internal/proxy/middleware.go, internal/proxy/request_scope.go]
     tests: [TestResolveNumericPassthrough, TestTenantNumericPassthroughFlag, TestRun_TenantEnvTurnsTenancyOn, TestTenantAuth_AnswersLikeLoki, TestTenantNoAuth_HeaderIgnoredLikeLoki, TestTenantHeaderIgnored_OnlyWithTenancyOff, TestTenantHeader_NumericPassthroughRoutesTenancyOffIgnores, TestTenantRouting_Matrix, TestLokiTenantIDError_MatchesRecordedCharacterSweep, FuzzTenantHeader]
     quality: 'Every recorded answer equal to Loki in its mode: status, Content-Type and body byte for byte, including invalid UTF-8; with tenancy off VictoriaLogs never receives a tenant; numeric passthrough, once enabled, routes as before.'

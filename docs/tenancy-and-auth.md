@@ -43,7 +43,7 @@ This is the operator guide for who can read what through Loki-VL-proxy. It lists
 
 ### Refusals with tenancy on
 
-Once tenancy is on, the proxy refuses a header as Loki 3.7.9 does with `auth_enabled: true`, before any cache lookup or VictoriaLogs call. Loki's answers are recorded in `internal/proxy/testdata/tenant_auth_loki_answers.jsonl` and replayed by `TestTenantAuth_AnswersLikeLoki`. The full per-route table is in the [API reference](api-reference.md#tenant-header-x-scope-orgid).
+Once tenancy is on, the proxy refuses a header as Loki 3.7.10 does with `auth_enabled: true`, before any cache lookup or VictoriaLogs call. Loki's answers are recorded in `internal/proxy/testdata/tenant_auth_loki_answers.jsonl` and replayed by `TestTenantAuth_AnswersLikeLoki`. The full per-route table is in the [API reference](api-reference.md#tenant-header-x-scope-orgid).
 
 | Header | Read routes |
 |---|---|

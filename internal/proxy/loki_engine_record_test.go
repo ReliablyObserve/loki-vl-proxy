@@ -64,6 +64,9 @@ func lokiEngineKey(set oraclerun.EngineDataSet, req oraclerun.EngineRequest) str
 	data, _ := json.Marshal(streams)
 	h.Write(data)
 	fmt.Fprintf(h, "\x00%d\x00%v\x00%v\x00%s", set.MaxSeries, req.Instant, req.Unaligned, req.Form)
+	if req.QueryTags != "" { // only when set, so the keys of requests without tags stay what they were recorded with
+		fmt.Fprintf(h, "\x00tags=%s", req.QueryTags)
+	}
 	return hex.EncodeToString(h.Sum(nil)[:12])
 }
 

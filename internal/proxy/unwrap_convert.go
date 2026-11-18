@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"math"
+	"math/bits"
 	"strconv"
 	"strings"
 	"time"
@@ -52,20 +53,26 @@ var humanBytesTable = func() map[string]uint64 {
 	return t
 }()
 
-// parseHumanBytes reads a human byte size as go-humanize v1.0.1's ParseBytes does, the version Loki 3.7 resolves
+// parseHumanBytes reads a human byte size as go-humanize v1.1.0's ParseBytes does, the version Loki 3.7.10 resolves
 // for bytes() (test/oracle/loki/go.mod): the leading run of digits (any Unicode decimal digit), dots and commas
 // is the number, commas removed, read with strconv.ParseFloat; the rest, trimmed and lower-cased, names the unit.
-// The size is computed in float64 and truncated, so whole numbers above 2^53 round, and a size of 2^64 or more is
-// "too large". humanize counts the number's runes and cuts the string at that many bytes; that is kept, a
-// non-ASCII digit shortens the number read. Checked on every input of
-// TestUnwrapBytesPatternAgreesWithParseBytesOnGeneratedInputs against v1.0.1 itself (lokiParseBytes).
+// A whole number (no dot) that strconv.ParseUint reads is multiplied exactly in uint64 and is "too large" when the
+// product overflows; any other size is computed in float64 and truncated, and is "too large" from 2^64 up. Loki
+// 3.7.9 resolved v1.0.1, which had only the float64 path: a whole size within float64's rounding of 2^64 (such as
+// 18446744073709551615) was "too large" there. humanize counts the number's runes and cuts the string at that many
+// bytes; that is kept, a non-ASCII digit shortens the number read. Checked on every input of
+// TestUnwrapBytesPatternAgreesWithParseBytesOnGeneratedInputs against ParseBytes itself.
 func parseHumanBytes(s string) (uint64, error) {
-	runes, comma := 0, false
+	runes, comma, dot := 0, false, false
+scan:
 	for _, r := range s {
-		if r == ',' {
+		switch {
+		case r == ',':
 			comma = true
-		} else if r != '.' && !unicode.IsDigit(r) {
-			break
+		case r == '.':
+			dot = true
+		case !unicode.IsDigit(r):
+			break scan
 		}
 		runes++
 	}
@@ -73,14 +80,29 @@ func parseHumanBytes(s string) (uint64, error) {
 	if comma {
 		num = strings.ReplaceAll(num, ",", "")
 	}
-	f, err := strconv.ParseFloat(num, 64)
-	if err != nil {
-		return 0, err
+	// A whole number uint64 holds is read exactly (and is also one ParseFloat reads, so the error order is
+	// humanize's); any other number goes through ParseFloat.
+	whole, wholeErr := uint64(0), error(nil)
+	if !dot {
+		whole, wholeErr = strconv.ParseUint(num, 10, 64)
+	}
+	var f float64
+	if dot || wholeErr != nil {
+		var err error
+		if f, err = strconv.ParseFloat(num, 64); err != nil {
+			return 0, err
+		}
 	}
 	unit := strings.ToLower(strings.TrimSpace(s[runes:]))
 	m, ok := humanBytesTable[unit]
 	if !ok {
 		return 0, fmt.Errorf("unhandled size name: %v", unit)
+	}
+	if !dot && wholeErr == nil {
+		if hi, lo := bits.Mul64(whole, m); hi == 0 {
+			return lo, nil
+		}
+		return 0, fmt.Errorf("too large: %v", s)
 	}
 	f *= float64(m)
 	if f >= math.MaxUint64 {
