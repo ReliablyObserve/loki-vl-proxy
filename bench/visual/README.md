@@ -215,7 +215,10 @@ A resource request that differs base vs PR (no query id, for example Explore's `
 Adding or removing that label re-runs the workflow. Also failing, on the PR side:
 
 - a panel that showed data on the base is empty, or the page shows more "No data"
-  panels than the base;
+  panels than the base (and Loki); such a capture is first loaded once more, more
+  patiently, like a data difference: a side counts as settled once no request is in
+  flight for a few seconds, so a side whose query was still loading then shows a blank
+  panel where the side that finished says "No data";
 - an error banner (plugin unavailable, failed to load, something went wrong), a panel
   error icon or an error boundary the base does not show;
 - any error answer (an error in a result or a non-200 status), even when the base has the
