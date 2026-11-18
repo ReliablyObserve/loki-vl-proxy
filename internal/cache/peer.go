@@ -147,8 +147,10 @@ type PeerCache struct {
 	// PushBuffered counts them by reason, PushCoalesced the ones that
 	// replaced or lost to a value of the same key, PushReplayed the ones
 	// delivered later and PushBufferDropped the ones given up, by reason.
-	pushBuf           *pushBuffer // nil when buffering is off
-	pushSeq           atomic.Uint64
+	pushBuf *pushBuffer // nil when buffering is off
+	pushSeq atomic.Uint64
+	// everywhere is the handler of the everywhere class's pushed values.
+	everywhere        atomic.Pointer[func(key string, value []byte, ttl time.Duration)]
 	replayers         atomic.Int32 // replay goroutines running
 	PushBuffered      [bufferedReasons]atomic.Int64
 	PushCoalesced     atomic.Int64
@@ -702,13 +704,66 @@ func (pc *PeerCache) Replicate(key string, value []byte, ttl time.Duration) {
 	if pc == nil || len(value) == 0 || !pc.pushAllowed(key, value) {
 		return
 	}
+	pc.pushTo(pc.replicasOf(key), key, value, ttl, true)
+}
+
+// EverywherePrefix starts the keys of the everywhere replication class: small
+// values every replica needs in its own memory (a held VictoriaLogs refusal),
+// pushed to every peer rather than to the key's ring replicas, and handed on
+// arrival to the handler registered with HandleEverywhere instead of being
+// stored in the cache tiers. A lookup never asks a peer for one.
+const EverywherePrefix = "every:"
+
+// HandleEverywhere sets the handler of the everywhere class's values a peer
+// pushes (nil drops them).
+func (pc *PeerCache) HandleEverywhere(fn func(key string, value []byte, ttl time.Duration)) {
+	if pc == nil {
+		return
+	}
+	if fn == nil {
+		pc.everywhere.Store(nil)
+		return
+	}
+	pc.everywhere.Store(&fn)
+}
+
+// Broadcast pushes key, of the everywhere class, to every peer other than this
+// instance, in the background, through the replica push queue and its bounds.
+// A peer that is not up or whose breaker is open is skipped (it asks
+// VictoriaLogs instead); a push that fails later is buffered like any replica
+// push, so a value of this class carries its own expiry. It reports whether
+// the value was queued: a key outside the class, one the push filter rejects
+// and a value above the peers' body limit are not.
+func (pc *PeerCache) Broadcast(key string, value []byte, ttl time.Duration) bool {
+	if pc == nil || len(value) == 0 || !strings.HasPrefix(key, EverywherePrefix) || !pc.pushAllowed(key, value) {
+		return false
+	}
+	pc.mu.RLock()
+	peers := pc.peers
+	pc.mu.RUnlock()
+	pc.pushTo(peers, key, value, ttl, false)
+	return true
+}
+
+// pushTo pushes key to addrs other than this instance; buffer keeps a push to
+// a peer that is not up or unavailable for later.
+func (pc *PeerCache) pushTo(addrs []string, key string, value []byte, ttl time.Duration, buffer bool) {
 	seq := pc.pushSeq.Add(1)
-	for _, addr := range pc.replicasOf(key) {
+	for _, addr := range addrs {
 		if addr == pc.selfAddr {
 			continue
 		}
 		job := pushJob{addr: addr, key: key, value: value, ttl: ttl, seq: seq}
 		pb := pc.breaker(addr)
+		if !buffer {
+			if !pc.peerAllowed(addr) {
+				continue
+			}
+			if !pc.enqueuePush(job) {
+				pb.releaseProbe()
+			}
+			continue
+		}
 		if pb.buffered.Load() > 0 {
 			// Behind the peer's backlog, so it never lands before an older value.
 			pc.bufferPush(addr, job, bufferedBacklog)
@@ -1095,6 +1150,16 @@ func (pc *PeerCache) serveSet(w http.ResponseWriter, r *http.Request, localCache
 	}
 	if len(body) == 0 {
 		http.Error(w, "empty value", http.StatusBadRequest)
+		return
+	}
+	if strings.HasPrefix(key, EverywherePrefix) {
+		// The everywhere class goes to its owner's handler, never to the
+		// cache tiers.
+		if fn := pc.everywhere.Load(); fn != nil {
+			(*fn)(key, body, ttl)
+		}
+		w.Header().Set("X-Peer-Set-Encoding", "zstd")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	// A replica's copy: memory and disk, never pushed again.

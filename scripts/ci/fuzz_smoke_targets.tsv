@@ -106,6 +106,7 @@ smoke	internal/logql	FuzzLabelFilterRegexFormsAgree	12s	-	a label matcher regex 
 smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
 smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
 smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
+smoke	internal/logsql	FuzzPredictRefusal	12s	-	predict refusal
 smoke	internal/logsql	FuzzOutboundGuard	12s	-	outbound guard
 smoke	internal/logsql	FuzzQuoteFieldName	12s	-	quote field name
 smoke	internal/logsql	FuzzQueryString	12s	-	query string

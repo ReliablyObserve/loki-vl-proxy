@@ -76,11 +76,14 @@ extraArgs:
   cache-max: "50000"
   # cache-disabled: "false"                  # disable in-memory cache entirely (testing/benchmarking)
   # coalescer-disabled: "false"              # disable singleflight request coalescing, and the request-level join of identical requests in flight
-  # error-cache-enabled: "true"               # hold failed read answers per request for their class's TTL (local to the replica, never pushed to peers); client cancellations/deadlines, the proxy's own 429s, auth failures and proxy defects are never held
+  # error-cache-enabled: "true"               # hold failed read answers per request for their class's TTL (local to the replica; only VictoriaLogs refusals held 30s or more reach peers); client cancellations/deadlines, the proxy's own 429s, auth failures and proxy defects are never held (a VictoriaLogs refusal of the query the proxy wrote is held, see error-cache-vl-refusal-ttl)
   # error-cache-transient-ttl: "1s"           # backend failures (VictoriaLogs 5xx/429/queue timeout, refused or reset connections; timeouts are never held): one VictoriaLogs call per TTL per failing request per replica; 0 holds none
   # error-cache-data-ttl: "5s"                # failures read from the window's data (series limit, response/line limits, JSON parser or unwrap conversion errors under a metric); 0 holds none
   # error-cache-max-entries: "4096"           # most failed answers held per replica (oldest evicted first)
   # error-cache-max-bytes: "8388608"          # most bytes of failed answers held per replica; one answer above 64 KiB is never held
+  # error-cache-vl-refusal-ttl: "5m"          # VictoriaLogs refusals of the query the proxy wrote (parse errors, refused stats shapes, over -search.maxQueryLen), held for every window of the query, keyed by the VictoriaLogs release; 0 holds none
+  # error-cache-peer-sync: "true"             # push a refusal held 30s or more to every peer (same build, VictoriaLogs release and routing configuration only)
+  # vl-refusal-prediction: "true"             # answer a call the detected VictoriaLogs release refuses before reading data without sending it
 
   # --- query_range window cache ---
   # Loki-aligned split/fanout defaults:

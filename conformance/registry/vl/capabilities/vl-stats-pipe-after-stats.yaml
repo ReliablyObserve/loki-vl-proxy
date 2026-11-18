@@ -1,0 +1,18 @@
+id: vl-stats-pipe-after-stats
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  GetStatsLabels lets only filter, first, last, sort, running_stats,
+  total_stats, math, fields, delete, copy, rename, format and unpack_json follow
+  the last stats pipe: 422 "the ... pipe cannot be put after ... pipe". limit
+  and offset after it are refused on stats_query_range on every release ("isn't
+  allowed in range queries" from v1.51) and on stats_query before v1.51.0
+  (#1296; oracle v1.49.0 refuses, v1.53.0 answers).
+proxy_usage: |
+  logsql.GateStatsLimitAfterStats.
+fallback: |
+  None: a translation defect, answered as Loki's 500.
+proves: []
