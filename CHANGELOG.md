@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [2.340.1] - 2026-11-18
 
+### Fixed
 - Each tenant's sub-request of a multi-tenant request (`X-Scope-OrgID` naming several tenants with `|`) now uses its
   own request scope, so its cached query_range answer is keyed by that tenant. The sub-requests kept the multi-tenant
   request's scope until their handler set their own, and the query_range response cache key is built before that:
