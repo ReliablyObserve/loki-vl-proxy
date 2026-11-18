@@ -220,6 +220,16 @@ Loki lexes a query with Go's `text/scanner`, a duration and bytes attempt after 
 
 Not covered: a range of a bare `0`, which Loki reads as a duration of nothing and the proxy rejects, a range that holds a Grafana variable (`[$__auto]`) keeps the parser's own error, a byte order mark at the start of a query is a name to the proxy where Loki drops it, a stage that is a bare name alone (`| x`) passes through to the backend as an unknown stage (a name followed by more of the stage, `| x+y=1`, `| a, b` or `| a .5`, is Loki's syntax error at the token after the name), the content of a stream selector that is not closed (`{app="a"} + {`) keeps the generic error, `approx_topk` is read as an opaque call, so a character after it that is no parenthesis or a grouping gets the call's errors instead of Loki's `expecting ( or by or without` and `grouping not allowed for approx_topk aggregation`, and an unwrap of a name that is no conversion followed by a parenthesis (`| unwrap x(a)`) is accepted where Loki reports `unexpected (`.
 
+## The query the handlers read
+
+Before any handler, the response cache or the translation reads a query, the request rewrite writes it in one spelling that Loki reads as the query sent (`lowercaseQueryKeywords` in `internal/proxy/http_utils.go`):
+
+1. `#` comments are removed (`logql.StripComments`), and the logfmt flags (`logql.StripParserFlags`);
+2. keywords are written in lower case (`logql.LowercaseKeywords`);
+3. for a query the validation accepts, the metric calls and parentheses are written in one spelling (`logql.CanonicalSpelling`): no blank between a metric call's name and its parenthesis (`rate ({a="x"}[5m])`, `vector (1)`, `sum (rate(...))`), no blank right inside its parentheses (`vector( 1 )`, `sum by (a) ( rate(...) )`), no parentheses around a call or around parentheses (`(rate(...))`, `sum((rate(...)))`), and none around a binary operation that no operator reads (the whole query, or the whole argument of a call); parentheses right after a vector matching clause (`x / on(a) (sum(...))`) keep their spelling. The metric calls are the range functions, the vector aggregations and rankings, `label_replace` (whose first argument is respelled as a query of its own), `vector` and `approx_topk`. Log queries, pipelines, ranges, `by`/`without`/`on`/`ignoring` clauses, numbers and the blanks around binary operators keep their bytes.
+
+A query the validation rejects keeps its spelling, so its error names Loki's line and column. The rewrite is memoised by the query as sent (up to 1,024 queries of up to 4 KiB): a repeated query costs one lookup; a new one a scan of its bytes, and only a query the scan names a validation (memoised for the validation that follows) and a parse. Loki's parser reads every respelled query as the query sent (`TestCanonicalSpellingMatchesLoki`, recorded Loki parser answers over the plan-corpus rows the rewrite changes and a grid of spellings), and a respelled query gets the answer, the VictoriaLogs requests and the response cache entry of its canonical spelling (`TestCanonicalSpelling_AnswersMatchLokiEngine`, `TestCanonicalSpelling_SameVictoriaLogsRequests`).
+
 ## Semantic Validation
 
 After parsing, `validateSemantics` walks the AST and enforces constraints:

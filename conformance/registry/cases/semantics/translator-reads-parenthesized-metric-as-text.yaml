@@ -1,5 +1,5 @@
 id: semantics/translator-reads-parenthesized-metric-as-text
-title: The string translator writes a metric query wrapped whole in parentheses as a phrase search (open; the query plan reads the metric)
+title: 'A metric query wrapped whole in parentheses is answered as Loki reads it (fixed: the request rewrite removes the parentheses, which the string translator read as a phrase search)'
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -27,6 +27,21 @@ why: |
   in internal/querycorpus) and leaves them out. The fix is in the query plan
   path (the translator is frozen): it closes when metric queries are served
   from the plan.
+
+  Fixed in the proxy (#1644): the request rewrite that writes keywords in
+  lower case and drops comments (lowercaseQueryKeywords) also writes the
+  metric calls and parentheses of a query Loki accepts in one spelling
+  (logql.CanonicalSpelling): no blank between a metric call's name and its
+  parenthesis or right inside it, no parentheses around a call or around a
+  binary operation no operator reads. Every handler, the translation and the
+  response key then read the query Loki reads. Loki's parser reads each
+  respelled query as the query (the Loki oracle, TestCanonicalSpellingMatchesLoki:
+  the 58 plan-corpus rows the rewrite changes and a grid of 181 spellings), and
+  the proxy's answers through the routes are Loki's engine answers for the
+  query as sent, with the requests and the cached answer of the spelling
+  without the blank (TestCanonicalSpelling_AnswersMatchLokiEngine,
+  TestCanonicalSpelling_SameVictoriaLogsRequests). The string translator still
+  misreads the spelling; it no longer receives it.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -43,13 +58,14 @@ compare:
   expect: |
     The series of count_over_time({app="x"}[5m]), as without the parentheses.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1644"
   impact: edge
   effort: S
-  area: 'internal/translator (reads the metric from the query text); fixed when the query plan serves metric queries'
+  area: 'internal/logql canonical_spelling.go (CanonicalSpelling), applied by internal/proxy http_utils.go lowercaseQueryKeywords (requestQueryText) before any handler'
   loki: 'parentheses around an expression do not change it'
-  proxy: 'the string translator writes the parenthesized metric query as a phrase filter, which VictoriaLogs rejects'
-  planned_test: 'TestTranslatorMisreadsParenthesizedMetric (internal/querycorpus) records the defect; an e2e row against Loki when the plan serves metric queries'
+  proxy: 'the request rewrite removes the parentheses before any handler reads the query; the string translator, which writes the parenthesized query as a phrase filter, no longer receives it'
+  planned_test: 'TestTranslatorMisreadsParenthesizedMetric (internal/querycorpus) records the defect; an e2e row against Loki when the plan serves metric queries; TestCanonicalSpelling and FuzzCanonicalSpelling (internal/logql), TestCanonicalSpellingMatchesLoki (internal/querycorpus, recorded Loki parser answers), TestCanonicalSpelling_AnswersMatchLokiEngine and TestCanonicalSpelling_SameVictoriaLogsRequests (internal/proxy, recorded Loki engine answers)'
   visual: none
   visual_reason: 'Grafana does not wrap a metric query in parentheses; generated and API-written queries do'
   clusters: []
