@@ -33,12 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failed answer held while the configuration was reloaded (tenant map, field mappings) is never served after the
   reload, even when its request was still running during the reload: held answers are keyed by a configuration
   epoch that every reload changes.
-- Queries that nest `label_replace` (or `vector`, `approx_topk`) calls deeply around a log range written in an
-  alternative form, such as `rate(({app="api"} |= "x")[1m])`, are prepared in time that grows with their length. The
-  rewrite of those ranges to the plain `{...} |= "x" [1m]` form read every call's first argument on its own, twice,
-  so the work doubled with each level of nesting (18 levels, about 550 bytes, took half a second per request). It now
-  reads each call once, where it stands. Answers do not change, and nested queries are accepted at every depth, as Loki accepts them
-  (semantics/nested-calls-linear-work).
+- The rewrite of a log range written in an alternative form, such as `rate(({app="api"} |= "x")[1m])`, to the plain
+  `{...} |= "x" [1m]` form no longer doubles its work with each level of `label_replace` (or `vector`, `approx_topk`)
+  calls nested around it. It read every call's first argument on its own, twice; it now reads each call once, where
+  it stands. A request with 18 nested calls (about 550 bytes) took half a second and now takes 2.5 ms. Answers do not
+  change, and nested queries are accepted at every depth, as Loki accepts them (semantics/nested-calls-linear-work).
 
 ## [2.335.0] - 2026-11-18
 
