@@ -1,0 +1,33 @@
+id: vl-extra-filters-max-query-len
+kind: version_gated_capability
+since: v1.54
+generated:
+  used_in: 0
+
+description: |
+  From VictoriaLogs v1.54.0 (#1923) the extra_filters and extra_stream_filters
+  args count against -search.maxQueryLen (16384 bytes by default) like the
+  query arg: a longer one answers 400 ("arg length cannot exceed
+  -search.maxQueryLen"). Up to v1.53.x they had no length limit, and a deeply
+  nested filter in them could crash VictoriaLogs (or vlselect).
+proxy_usage: |
+  The proxy sends extra_stream_filters for tenant-label routing (one
+  {"<label>":"<tenant>"} object, injectTenantLabelFilter in
+  internal/proxy/multitenant.go) and extra_filters for the detected_level
+  stream split (a fixed list of level fields, detected_level_levelless.go), the
+  JSON-line placeholder exclusion (the placeholder _msg text and one label name
+  the query itself holds, json_line_keys.go) and the parse-risk probes
+  (ordered_json_metric.go, ordered_json_unparsed_row.go). Each is a short fixed
+  filter plus at most one name or value taken from the request: a label name
+  the query itself holds (so the filter outgrows the limit only with a query
+  that is itself near it) or one tenant id (at most 150 bytes, Loki's rule,
+  enforced before any VictoriaLogs call in tenant_header.go). Every
+  VictoriaLogs call adds the tenant filter
+  in one place (scopedTenantParams, from vlGetInner, vlPost and the tail), so a
+  refused filter fails the request through the error layer (VictoriaLogs' 400
+  answers Loki's 500) and no retry or fallback reads without it.
+fallback: |
+  None needed on a supported version: the proxy's own filters stay far below
+  the limit. A deployment that lowers -search.maxQueryLen below a few hundred
+  bytes refuses the proxy's queries on every version.
+proves: []

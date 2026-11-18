@@ -36,7 +36,7 @@ type firstWindowRun struct {
 // before the emulator sees it).
 func (fw firstWindowRun) do(t *testing.T, rows []vlemu.Row, query string, start, end int64, step time.Duration) (code int, body, contentType string, statsAnswered bool, elapsed time.Duration) {
 	t.Helper()
-	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 	inner := emu.Handler()
 	statsDone := make(chan struct{})
 	var cancelled, closeOnce, armed atomic.Bool
@@ -191,7 +191,7 @@ func TestUnwrapFirstWindowScope(t *testing.T) {
 		{`max by (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`, 5 * time.Hour, false, failing},
 		{`max by (pod) (max_over_time({app="uw"} | logfmt | unwrap amount | __error__="" [5m]))`, 7 * time.Hour, false, failing},
 	} {
-		emu := &vlemu.Emulator{T: t, Rows: tc.rows, Field: "amount", Version: "v1.53.0"}
+		emu := &vlemu.Emulator{T: t, Rows: tc.rows, Field: "amount", Version: "v1.54.0"}
 		inner := emu.Handler()
 		// The first window's lookup reads from start-range (plus 1 ns).
 		firstStart := time.Unix(0, base-int64(5*time.Minute)+1).UTC().Format(time.RFC3339Nano)

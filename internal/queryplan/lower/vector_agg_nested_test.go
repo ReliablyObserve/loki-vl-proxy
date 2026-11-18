@@ -15,28 +15,28 @@ import (
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanNestedVectorAggregationText(t *testing.T) {
-	v53 := Profile{Caps: logsql.CapabilitiesFor("v1.53.0")}
-	dots := Profile{Caps: v53.Caps, Label: func(s string) string { return strings.ReplaceAll(s, ".", "_") }}
+	v54 := Profile{Caps: logsql.CapabilitiesFor("v1.54.0")}
+	dots := Profile{Caps: v54.Caps, Label: func(s string) string { return strings.ReplaceAll(s, ".", "_") }}
 	for _, c := range []struct {
 		q    string
 		prof Profile
 		want string
 	}{
 		// a sum over a sum: the labels of the inner level are the ones the outer keeps.
-		{`sum(sum by (app) (count_over_time({app="a"}[5m])))`, v53, `app:="a" | stats by (app) count() as __lvp_inner | stats sum(__lvp_inner)`},
-		{`sum by (app) (sum by (app, env) (count_over_time({app="a"}[5m])))`, v53, `app:="a" | stats by (app, env) count() as __lvp_inner | stats by (app) sum(__lvp_inner)`},
+		{`sum(sum by (app) (count_over_time({app="a"}[5m])))`, v54, `app:="a" | stats by (app) count() as __lvp_inner | stats sum(__lvp_inner)`},
+		{`sum by (app) (sum by (app, env) (count_over_time({app="a"}[5m])))`, v54, `app:="a" | stats by (app, env) count() as __lvp_inner | stats by (app) sum(__lvp_inner)`},
 		// a label the inner level lacks is cut from the outer clause, and no clause keeps none.
-		{`sum by (app) (sum by (env) (count_over_time({app="a"}[5m])))`, v53, `app:="a" | stats by (env) count() as __lvp_inner | stats sum(__lvp_inner)`},
-		{`max by () (count by (app) (count_over_time({app="a"}[5m])))`, v53, `app:="a" <DL> | stats by (app, _stream, level, detected_level) count() as __lvp_inner | stats by (app) count() as __lvp_inner | stats max(__lvp_inner)`},
+		{`sum by (app) (sum by (env) (count_over_time({app="a"}[5m])))`, v54, `app:="a" | stats by (env) count() as __lvp_inner | stats sum(__lvp_inner)`},
+		{`max by () (count by (app) (count_over_time({app="a"}[5m])))`, v54, `app:="a" <DL> | stats by (app, _stream, level, detected_level) count() as __lvp_inner | stats by (app) count() as __lvp_inner | stats max(__lvp_inner)`},
 		// the labels kept are the outer clause's own, in its order, once each.
-		{`max by (b, a, a) (min by (a, b, c) (bytes_over_time({app="a"}[5m])))`, v53, `app:="a" <DL> | stats by (a, b, c, _stream, level, detected_level) sum_len(_msg) as __lvp_inner | stats by (a, b, c) min(__lvp_inner) as __lvp_inner | stats by (b, a) max(__lvp_inner)`},
+		{`max by (b, a, a) (min by (a, b, c) (bytes_over_time({app="a"}[5m])))`, v54, `app:="a" <DL> | stats by (a, b, c, _stream, level, detected_level) sum_len(_msg) as __lvp_inner | stats by (a, b, c) min(__lvp_inner) as __lvp_inner | stats by (b, a) max(__lvp_inner)`},
 		// a without level subtracts its labels from the ones below.
-		{`avg without (c) (max by (a, b, c) (count_over_time({app="a"}[5m])))`, v53, `app:="a" <DL> | stats by (a, b, c, _stream, level, detected_level) count() as __lvp_inner | stats by (a, b, c) max(__lvp_inner) as __lvp_inner | stats by (a, b) avg(__lvp_inner)`},
+		{`avg without (c) (max by (a, b, c) (count_over_time({app="a"}[5m])))`, v54, `app:="a" <DL> | stats by (a, b, c, _stream, level, detected_level) count() as __lvp_inner | stats by (a, b, c) max(__lvp_inner) as __lvp_inner | stats by (a, b) avg(__lvp_inner)`},
 		// three levels, and the clause after the operand.
-		{`min(max(sum(count_over_time({app="a"}[5m])) by (a, b)) by (a)) by ()`, v53, `app:="a" | stats by (a, b) count() as __lvp_inner | stats by (a) max(__lvp_inner) as __lvp_inner | stats min(__lvp_inner)`},
+		{`min(max(sum(count_over_time({app="a"}[5m])) by (a, b)) by (a)) by ()`, v54, `app:="a" | stats by (a, b) count() as __lvp_inner | stats by (a) max(__lvp_inner) as __lvp_inner | stats min(__lvp_inner)`},
 		// a rate divides in the innermost level; service_name and detected_level derive per row.
-		{`sum by (app) (sum by (app, env) (rate({app="a"}[5m])))`, v53, `app:="a" | stats by (app, env) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (app, env) sum(__lvp_rate) as __lvp_inner | stats by (app) sum(__lvp_inner)`},
-		{`max by (service_name) (count by (service_name, detected_level) (count_over_time({app="a"}[5m])))`, v53, `app:="a" <DL> <SN> | stats by (service_name, detected_level, _stream, level) count() as __lvp_inner | stats by (service_name, detected_level) count() as __lvp_inner | stats by (service_name) max(__lvp_inner)`},
+		{`sum by (app) (sum by (app, env) (rate({app="a"}[5m])))`, v54, `app:="a" | stats by (app, env) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (app, env) sum(__lvp_rate) as __lvp_inner | stats by (app) sum(__lvp_inner)`},
+		{`max by (service_name) (count by (service_name, detected_level) (count_over_time({app="a"}[5m])))`, v54, `app:="a" <DL> <SN> | stats by (service_name, detected_level, _stream, level) count() as __lvp_inner | stats by (service_name, detected_level) count() as __lvp_inner | stats by (service_name) max(__lvp_inner)`},
 		// the label function names the labels of every level.
 		{`sum by (k8s.pod.name) (max by (k8s.pod.name) (count_over_time({app="a"}[5m])))`, dots, `app:="a" <DL> | stats by (k8s_pod_name, _stream, level, detected_level) count() as __lvp_inner | stats by (k8s_pod_name) max(__lvp_inner) as __lvp_inner | stats by (k8s_pod_name) sum(__lvp_inner)`},
 	} {

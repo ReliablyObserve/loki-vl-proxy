@@ -50,7 +50,7 @@ type vlChainRecording struct {
 }
 
 // TestVLChainDetectedLevelMatchesVictoriaLogs: VictoriaLogs v1.49.0 and
-// v1.53.0 (their own storage and query engine, test/oracle/vl store) run the
+// v1.54.0 (their own storage and query engine, test/oracle/vl store) run the
 // proxy's detected_level chain over streams labelled level="ERROR",
 // severity="error", LEVEL="warning", lvl="x", level="Debug" and Severity="fatal"
 // and answer error, error, warn, x, debug and fatal: the chain reads every
@@ -93,7 +93,7 @@ func TestVLChainDetectedLevelMatchesVictoriaLogs(t *testing.T) {
 		key := "{" + strings.Join(parts, ",") + "}"
 		fields[key], streams[key] = f, st
 	}
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		answers := rec.Answers[version]
 		if len(answers) != len(rec.Rows) {
 			t.Fatalf("%s: %d answers for %d rows", version, len(answers), len(rec.Rows))
@@ -183,7 +183,7 @@ func oneLevelStreamOf(t *testing.T, series map[string]string) (map[string]string
 // The proxy-side paths copied the level label as stored (ERROR, Debug) and
 // ignored the other level fields (severity, LEVEL, lvl). Every path now gives
 // the stream's normalised level, at an instant and at steps 60 and 300, on
-// VictoriaLogs v1.49.0 and v1.53.0; the level label keeps its stored value, as
+// VictoriaLogs v1.49.0 and v1.54.0; the level label keeps its stored value, as
 // in Loki. A stream with no level field never gains another value than
 // unknown.
 //
@@ -205,7 +205,7 @@ func TestOneDetectedLevelPerStreamAcrossQueryTypes(t *testing.T) {
 		`max_over_time({app="uw"} | logfmt amount | unwrap amount [5m])`,
 		`count_over_time({app="uw"} | logfmt [5m]) > 0`,
 	}
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, q := range queries {
 			rows := oneLevelRows(strings.Contains(q, "json"))
 			for _, mode := range []string{"instant", "60", "300"} {
@@ -493,7 +493,7 @@ func TestStreamLevelOneValueFence(t *testing.T) {
 	} {
 		t.Run(c.query, func(t *testing.T) {
 			rows := oneLevelRows(strings.Contains(c.query, "json"))
-			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0", DeriveFields: vlChainDetectedLevel}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0", DeriveFields: vlChainDetectedLevel}
 			backend := httptest.NewServer(emu.Handler())
 			defer backend.Close()
 			p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), CompatCache: cache.New(60*time.Second, 100), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
@@ -547,7 +547,7 @@ func TestStreamLevelChainFence(t *testing.T) {
 			if streamLevelSeriesResponseKeyVersion(q) != streamLevelSeriesResponseVersion {
 				t.Fatalf("not fenced")
 			}
-			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0", DeriveFields: vlChainDetectedLevel, RowStreamFields: true}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0", DeriveFields: vlChainDetectedLevel, RowStreamFields: true}
 			backend := httptest.NewServer(emu.Handler())
 			defer backend.Close()
 			p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), CompatCache: cache.New(60*time.Second, 100), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})

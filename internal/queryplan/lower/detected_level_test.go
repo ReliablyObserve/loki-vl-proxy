@@ -19,14 +19,14 @@ import (
 // detectedLevelProfiles are the profiles a detected_level filter changes under: the body read (log and metric), the
 // stored level fields alone (-detected-level-body-scan=false), the tenant's stream labels and the stream fields.
 func detectedLevelProfiles() map[string]Profile {
-	noScan := logsql.CapabilitiesFor("v1.53.0")
+	noScan := logsql.CapabilitiesFor("v1.54.0")
 	noScan.NoDetectedLevelBodyScan = true
 	return map[string]Profile{
-		"plain":         {Caps: logsql.CapabilitiesFor("v1.53.0")},
+		"plain":         {Caps: logsql.CapabilitiesFor("v1.54.0")},
 		"v1.49":         {Caps: logsql.CapabilitiesFor("v1.49.0")},
 		"no body scan":  {Caps: noScan},
-		"stream labels": {Caps: logsql.CapabilitiesFor("v1.53.0"), Label: benchStreamLabels},
-		"stream fields": {Caps: logsql.CapabilitiesFor("v1.53.0"), StreamFields: map[string]bool{"app": true, "level": true}},
+		"stream labels": {Caps: logsql.CapabilitiesFor("v1.54.0"), Label: benchStreamLabels},
+		"stream fields": {Caps: logsql.CapabilitiesFor("v1.54.0"), StreamFields: map[string]bool{"app": true, "level": true}},
 	}
 }
 

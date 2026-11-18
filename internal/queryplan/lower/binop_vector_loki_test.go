@@ -58,7 +58,7 @@ func TestVectorOperandLoweringMatchesLoki(t *testing.T) {
 	}
 	var rows []row
 	var queries []string
-	prof := Profile{Caps: logsql.CapabilitiesFor("v1.53.0"), Label: func(s string) string { return s }}
+	prof := Profile{Caps: logsql.CapabilitiesFor("v1.54.0"), Label: func(s string) string { return s }}
 	for _, q := range vectorBinaryGrid() {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {

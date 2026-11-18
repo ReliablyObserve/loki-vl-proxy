@@ -19,7 +19,7 @@ import (
 )
 
 // The Loki differential of parser errors under wrappers: real Loki (the engine oracle, test/oracle/loki) and real
-// VictoriaLogs (the serve oracle, test/oracle/vl, v1.53.0 and v1.49.0) over the same data, through the proxy's real
+// VictoriaLogs (the serve oracle, test/oracle/vl, v1.54.0 and v1.49.0) over the same data, through the proxy's real
 // query and query_range handlers, as the metric differential runs them (plan_loki_vl_metric_diff_test.go).
 //
 // Loki fails a metric query with HTTP 400 and its pipeline error text when a sample that reaches a range vector
@@ -657,7 +657,7 @@ func parserErrorLabels(series string) (map[string]string, error) {
 	return out, nil
 }
 
-// parserErrorVLRoundTrip holds every marked text to VictoriaLogs' own parser, v1.49.0 and v1.53.0: it accepts the text
+// parserErrorVLRoundTrip holds every marked text to VictoriaLogs' own parser, v1.49.0 and v1.54.0: it accepts the text
 // and its print parses back to the same query (the clone round trip every text the proxy sends must survive).
 func parserErrorVLRoundTrip(t *testing.T, texts map[string]bool) {
 	t.Helper()

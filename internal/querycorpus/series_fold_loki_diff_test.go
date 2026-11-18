@@ -15,7 +15,7 @@ import (
 
 // The Loki differential of a parser's series identity over a range longer than the step, read with the series that
 // lie in one bucket folded in VictoriaLogs (internal/proxy/series_fold_read.go, lower.SeriesFold): real Loki (the
-// engine oracle, test/oracle/loki) and real VictoriaLogs (the serve oracle, test/oracle/vl, v1.53.0 and v1.49.0) over
+// engine oracle, test/oracle/loki) and real VictoriaLogs (the serve oracle, test/oracle/vl, v1.54.0 and v1.49.0) over
 // the same data, through the proxy's real query_range handler.
 //
 //   - Data, three sets of json lines over an hour and the range before it:

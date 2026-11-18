@@ -33,7 +33,7 @@ func BenchmarkListedWindowsRequest(b *testing.B) {
 			Labels: map[string]string{"user": user, "route": route}, Value: amount,
 			Msg: "amount=" + strconv.FormatFloat(amount, 'f', -1, 64) + " user=" + user + " route=" + route})
 	}
-	emu := &vlemu.Emulator{T: b, Rows: rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: b, Rows: rows, Field: "amount", Version: "v1.54.0"}
 	inner := emu.Handler()
 	var mu sync.Mutex
 	replay := map[string][]byte{}
