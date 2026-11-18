@@ -304,7 +304,8 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			offset = int64(od)
 		}
 	}
-	query, fold := cutSeriesFold(e, r.FormValue("query"))
+	query, top := cutTopValueFilter(e, r.FormValue("query"))
+	query, fold := cutSeriesFold(e, query)
 	pipes := strings.Split(query, " | ")
 	first := -1
 	for i, pipe := range pipes {
@@ -402,6 +403,9 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			op(f)
 		}
 		recs = append(recs, emuRec{t: row.TS, f: f})
+	}
+	if top != nil {
+		recs = top.keep(e, r, recs)
 	}
 	if fold != nil {
 		// The series classes over the read's rows, then the fold's pipes before the bucket stats.

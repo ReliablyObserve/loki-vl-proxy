@@ -1,0 +1,50 @@
+id: limits/drilldown-series-limit-range-cut-at-trip-step
+title: A Logs Drilldown range answer over the series limit ends at the step where the limit trips on Loki; the proxy answers the whole range (open)
+pending: true
+proves:
+  - series-limits-and-partial-results
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Over max_query_series Loki gives a Logs Drilldown range request a partial
+  answer with a warning, and stops evaluating at the first step where a
+  series past the limit appears: every series it keeps ends at that step.
+  When the series all start at once (a labels breakdown of busy streams), the
+  answer is one point per series, at the range's first step.
+
+  Recorded with the Loki engine oracle (Loki 3.7.9 and 3.7.10 alike) at
+  max_query_series 3, step 60 s over 1h: over 4, 5 and 8 pod streams
+  starting one every 5 minutes the kept series end 15 minutes into the hour
+  (the fourth pod's first step); over pods starting together they hold one
+  point each. The proxy keeps the busiest series over the whole range with
+  Loki's warning; every point Loki answers for a series both keep is the
+  proxy's point at that time (TestDrilldownSeriesLimitMatchesLoki pins Loki's
+  cut to the trip step). Matching Loki would turn a Drilldown breakdown over
+  the limit into an almost empty chart: kept until the owner decides.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="sl"}[1m]))'
+    start: "<end-1h>"
+    end: "<end>"
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: observed
+  fields: ['data.result[].values']
+  expect: |
+    Every kept series ends at the trip step.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy series limit (Drilldown partial answers)'
+  loki: 'a partial range answer ends at the step where a series past max_query_series appears (engine oracle, Loki 3.7.9 and 3.7.10)'
+  proxy: 'the busiest series over the whole range'
+  planned_test: 'TestDrilldownSeriesLimitMatchesLoki (internal/proxy)'
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.49.0"
