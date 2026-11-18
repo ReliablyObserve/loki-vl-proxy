@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -135,4 +137,119 @@ func lastPointSecond(s lokiSeries) int64 {
 		}
 	}
 	return last
+}
+
+// drilldownSeriesLimitSplitRows is a data set over three and a half hours of pods that come and go: pod i logs
+// every 7 s for 15 minutes from 30 s past minute 7*i. At most three log at once, so a split's first step meets at
+// most the limit and every trip step meets one new series (no tie Loki would break at random).
+func drilldownSeriesLimitSplitRows(start int64) []vlemu.Row {
+	var rows []vlemu.Row
+	for i := 0; i*7 < 210; i++ {
+		stream := fmt.Sprintf(`{app="split",pod="p%02d"}`, i)
+		from := start + int64(i)*int64(7*time.Minute) + int64(30*time.Second)
+		for at := from; at < from+int64(15*time.Minute); at += int64(7 * time.Second) {
+			rows = append(rows, vlemu.Row{TS: at, Stream: stream, Value: 1, Msg: "split line"})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].TS < rows[j].TS })
+	return rows
+}
+
+// Loki's query frontend splits a range request at the hours inside it and cuts each split's answer on its own
+// (the stack's answers: each split asked alone is its fragment of the whole answer). The proxy, with
+// -drilldown-series-limit-split-interval=1h, answers a Drilldown request over three hours, crossing three hour
+// boundaries, with Loki's answers for each split concatenated: the same series, steps and values, for range ==
+// step (Drilldown's [$__auto]) and a range longer than the step, on VictoriaLogs v1.49.0 and v1.54.0.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step, limits/drilldown-partial-with-warning
+// conformance: loki_api_v1_query_range
+func TestDrilldownSeriesLimitSplitsMatchLoki(t *testing.T) {
+	const split = int64(3600)
+	dataStart := drilldownSeriesLimitEnd*1e9 - int64(3*time.Hour+30*time.Minute)
+	rows := drilldownSeriesLimitSplitRows(dataStart)
+	start, end := drilldownSeriesLimitEnd-3*3600-1200, drilldownSeriesLimitEnd-1200 // 20 minutes before an hour
+	queries := []struct {
+		name, query string
+		step        int64
+	}{
+		{"range-eq-step", `sum by (pod) (count_over_time({app="split"}[1m]))`, 60},
+		{"range-gt-step", `sum by (pod) (count_over_time({app="split"}[5m]))`, 60},
+		{"step-30", `sum by (pod) (count_over_time({app="split"}[30s]))`, 30},
+	}
+	set := oraclerun.EngineDataSet{MaxSeries: drilldownSeriesLimit, Streams: engineStreams(rows, func(row vlemu.Row) (string, map[string]string) { return row.Msg, nil })}
+	form := func(q string, from, to, step int64) string {
+		return url.Values{"query": {q}, "start": {strconv.FormatInt(from, 10)}, "end": {strconv.FormatInt(to, 10)}, "step": {strconv.FormatInt(step, 10)}}.Encode()
+	}
+	// Loki's splits: [start, b1 - step], [b1, b2 - step], ..., [bn, end].
+	pieces := func(step int64) [][2]int64 {
+		var out [][2]int64
+		from := start
+		for b := start - start%split + split; b < end; b += split {
+			out = append(out, [2]int64{from, b - step})
+			from = b
+		}
+		return append(out, [2]int64{from, end})
+	}
+	for _, q := range queries {
+		for i, piece := range pieces(q.step) {
+			set.Requests = append(set.Requests, oraclerun.EngineRequest{ID: fmt.Sprintf("%s-split%d", q.name, i), Unaligned: true,
+				QueryTags: drilldownSeriesLimitTags, Form: form(q.query, piece[0], piece[1], q.step)})
+		}
+	}
+	loki := lokiEngineAnswers(t, "drilldown_series_limit_splits", []oraclerun.EngineDataSet{set})
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
+		for _, q := range queries {
+			want := lokiSeries{Points: map[string]map[int64]string{}}
+			cutSplits := 0
+			for i := range pieces(q.step) {
+				a := loki[fmt.Sprintf("%s-split%d", q.name, i)]
+				if a.Status != http.StatusOK {
+					t.Fatalf("%s split %d: Loki answered %d %s", q.name, i, a.Status, a.Error)
+				}
+				piece := decodeDrilldownSeriesLimitAnswer(t, "Loki", a.Body)
+				if len(piece.warnings) > 0 {
+					cutSplits++
+				}
+				for key, points := range piece.series.Points {
+					if want.Points[key] == nil {
+						want.Points[key] = map[int64]string{}
+					}
+					for ms, v := range points {
+						want.Points[key][ms] = v
+					}
+				}
+			}
+			if cutSplits < 3 {
+				t.Fatalf("%s: only %d of Loki's splits passed the limit: the data proves little", q.name, cutSplits)
+			}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version}
+			backend := httptest.NewServer(emu.Handler())
+			t.Cleanup(backend.Close)
+			p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0",
+				BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: drilldownSeriesLimit, DrilldownSeriesLimitSplitInterval: time.Hour})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+			if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+form(q.query, start, end, q.step), map[string]string{"X-Scope-OrgID": "0", "X-Query-Tags": drilldownSeriesLimitTags})
+			if res.Code != http.StatusOK {
+				t.Fatalf("%s %s: proxy answered %d %s", version, q.name, res.Code, res.Body.String())
+			}
+			got := decodeDrilldownSeriesLimitAnswer(t, "proxy", res.Body.Bytes())
+			if len(got.warnings) != 1 {
+				t.Errorf("%s %s: warnings %v, want Loki's", version, q.name, got.warnings)
+			}
+			if len(got.series.Points) != len(want.Points) {
+				t.Errorf("%s %s: proxy %d series, Loki's splits %d", version, q.name, len(got.series.Points), len(want.Points))
+			}
+			for key, wp := range want.Points {
+				if gp := got.series.Points[key]; fmt.Sprint(gp) != fmt.Sprint(wp) {
+					t.Errorf("%s %s: %s\n proxy %v\n  Loki %v", version, q.name, key, gp, wp)
+				}
+			}
+		}
+	}
 }

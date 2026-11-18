@@ -451,6 +451,7 @@ func (p *Proxy) limitMultiTenantMetricSeries(r *http.Request, endpoint string, r
 		for _, rec := range recorders {
 			if limit := seriesLimitWarningLimit(rec.Body.Bytes()); limit > 0 {
 				_ = seriesLimitReached(scoped.Context(), limit)
+				scope.innerTripped.Store(true)
 			}
 		}
 	}
@@ -460,10 +461,10 @@ func (p *Proxy) limitMultiTenantMetricSeries(r *http.Request, endpoint string, r
 	if err != nil {
 		return nil, err
 	}
-	// The merged answer is cut where Loki's one evaluation across the tenants trips the limit: the tenants' own
-	// answers end at their trip steps, which lie at or after it.
+	// The merged answer is cut where Loki's one evaluation of each split across the tenants passes the limit: the
+	// tenants' own answers end at their trip steps, which lie at or after it.
 	if scope.lokiCut && scope.truncated.Load() > 0 {
-		capped = cutLokiResultAfter(capped, scope.cutNs.Load(), scope.stepNs)
+		capped = scope.cutAnswer(capped)
 	}
 	return addSeriesLimitWarning(capped, scope), nil
 }

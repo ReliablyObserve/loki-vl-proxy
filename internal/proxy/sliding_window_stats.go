@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -505,25 +504,23 @@ func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale 
 			return nil, err
 		}
 		if scope := seriesLimitScopeFrom(ctx); scope != nil && scope.lokiCut {
-			// Loki's partial answer: the series met first (their first window), ending where the first one past
-			// the limit begins.
-			firsts := make([]int32, len(s.keys))
-			for series := range s.keys {
-				firsts[series] = math.MaxInt32
-				slidingWindows(s.records[offsets[series]:offsets[series+1]], withBytes, scale, steps, s.windowGrid, func(seg slidingSegment) {
-					if seg.from < firsts[series] {
-						firsts[series] = seg.from
-					}
-				})
+			// Loki's partial answer: per split, the series met first (their windows' steps); cutLokiSplits keeps
+			// Loki's series and steps on the finished answer.
+			keys := make([]string, len(selected))
+			index := make(map[string]int32, len(selected))
+			for i, series := range selected {
+				keys[i] = strconv.Itoa(int(series))
+				index[keys[i]] = series
 			}
-			sort.SliceStable(selected, func(i, j int) bool {
-				if a, b := firsts[selected[i]], firsts[selected[j]]; a != b {
-					return a < b
-				}
-				return s.keys[selected[i]] < s.keys[selected[j]]
-			})
-			if from := firsts[selected[maxSeries]]; from != math.MaxInt32 {
-				scope.recordCut(start.Add(time.Duration(from) * step).UnixNano())
+			kept := seriesKeptForLimit(ctx, keys, nil, func(k string, yield func(int64)) {
+				series := index[k]
+				slidingWindows(s.records[offsets[series]:offsets[series+1]], withBytes, scale, steps, s.windowGrid, func(seg slidingSegment) {
+					scope.firstStepsInSplits(start.Add(time.Duration(seg.from)*step).UnixNano(), start.Add(time.Duration(seg.to-1)*step).UnixNano(), yield)
+				})
+			}, maxSeries)
+			selected = selected[:0]
+			for _, k := range kept {
+				selected = append(selected, index[k])
 			}
 		} else {
 			totals := make([]float64, len(s.keys))
@@ -533,8 +530,8 @@ func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale 
 				}
 			}
 			sort.SliceStable(selected, func(i, j int) bool { return totals[selected[i]] > totals[selected[j]] })
+			selected = selected[:maxSeries]
 		}
-		selected = selected[:maxSeries]
 	}
 	out := make([]slidingOutputSeries, 0, len(selected))
 	for n, series := range selected {

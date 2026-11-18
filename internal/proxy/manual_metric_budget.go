@@ -156,11 +156,16 @@ type seriesLimitScope struct {
 	drilldown  bool
 	foldBudget int          // the raw-row budget a request that folds its series afterwards reads under, unless the tenant's limit is lower; 0 = none
 	truncated  atomic.Int64 // the limit that cut a Drilldown result; 0 = none
-	// lokiCut is -drilldown-series-limit-mode=loki for a Drilldown range request: the partial answer keeps the first
-	// series met and ends at the step where the first series past the limit appears, as Loki's does.
+	// lokiCut is -drilldown-series-limit-mode=loki for a Drilldown range request: the answer is cut as Loki's query
+	// frontend cuts it (cutLokiSplits): in each split of the request (-drilldown-series-limit-split-interval) the
+	// series met first, ending at the step where the series met so far pass the limit.
 	lokiCut bool
-	stepNs  int64        // the request's step, which puts a recorded cut on the answer's grid
-	cutNs   atomic.Int64 // the earliest first time (ns) of a series dropped past the limit; 0 = none
+	// The request's start, end and step (ns), the range of its range functions when they share one (0 otherwise),
+	// and the split interval: they place a time on the answer's grid and in a split.
+	startNs, endNs, stepNs, rangeNs, splitNs int64
+	// innerTripped is set when an answer this request combines (a binary operand's, a tenant's) was itself cut by
+	// the limit: the combined answer carries Loki's warning even where its own splits stay within the limit.
+	innerTripped atomic.Bool
 }
 
 type seriesLimitScopeKey struct{}
@@ -178,8 +183,15 @@ const (
 func (p *Proxy) withSeriesLimitScope(r *http.Request) (*http.Request, *seriesLimitScope) {
 	scope := &seriesLimitScope{drilldown: isGrafanaDrilldownRequest(r)}
 	if scope.drilldown && p.drilldownSeriesLimitMode != drilldownSeriesLimitBusiest {
-		if step, ok := parsePositiveStepDuration(r.FormValue("step")); ok { // a POST form too
-			scope.lokiCut, scope.stepNs = true, int64(step)
+		step, okStep := parsePositiveStepDuration(r.FormValue("step")) // a POST form too
+		start, okStart := parseLokiTimeToUnixNano(r.FormValue("start"))
+		end, okEnd := parseLokiTimeToUnixNano(r.FormValue("end"))
+		if okStep && okStart && okEnd && end >= start {
+			scope.lokiCut = true
+			scope.startNs, scope.endNs, scope.stepNs, scope.splitNs = start, end, int64(step), int64(p.drilldownSeriesLimitSplit)
+			if window, ok := allRangeWindowsEqual(r.FormValue("query")); ok {
+				scope.rangeNs = int64(window)
+			}
 		}
 	}
 	return r.WithContext(context.WithValue(r.Context(), seriesLimitScopeKey{}, scope)), scope
@@ -190,55 +202,148 @@ func seriesLimitScopeFrom(ctx context.Context) *seriesLimitScope {
 	return scope
 }
 
-// recordCut keeps the earliest first time of a series dropped past the limit (several reads of one request may
-// each drop series).
-func (s *seriesLimitScope) recordCut(ns int64) {
-	if s == nil || ns <= 0 {
-		return
+// splitOf is the index of the split of the request that holds the answer's step t: Loki's query frontend splits a
+// range request at the multiples of the split interval since the epoch strictly inside (start, end), and a step on
+// a boundary starts the later split. 0 without a split interval.
+func (s *seriesLimitScope) splitOf(t int64) int {
+	if s.splitNs <= 0 {
+		return 0
 	}
-	for {
-		cur := s.cutNs.Load()
-		if cur != 0 && cur <= ns {
-			return
+	first := s.startNs - s.startNs%s.splitNs + s.splitNs // the first multiple after start
+	if s.startNs < 0 {
+		first = s.startNs - s.startNs%s.splitNs
+	}
+	if first >= s.endNs || t < first {
+		return 0
+	}
+	last := (s.endNs - 1 - first) / s.splitNs // the index of the last boundary before end
+	if k := (t - first) / s.splitNs; k < last {
+		return int(k) + 1
+	}
+	return int(last) + 1
+}
+
+// stepOf is the first step of the request's grid that meets a line (or a sample) at t: Loki's sample at step T
+// covers (T-range, T].
+func (s *seriesLimitScope) stepOf(t int64) int64 {
+	if s.stepNs <= 0 || t <= s.startNs {
+		return s.startNs
+	}
+	return s.startNs + (t-s.startNs+s.stepNs-1)/s.stepNs*s.stepNs
+}
+
+// firstStepsInSplits yields, for a run of steps from first to last (the answer's grid), its first step in every
+// split it reaches.
+func (s *seriesLimitScope) firstStepsInSplits(first, last int64, yield func(int64)) {
+	yield(first)
+	for split := s.splitOf(first) + 1; split <= s.splitOf(last); split++ {
+		boundary := s.startNs - s.startNs%s.splitNs + int64(split)*s.splitNs
+		if s.startNs < 0 {
+			boundary -= s.splitNs
 		}
-		if s.cutNs.CompareAndSwap(cur, ns) {
-			return
-		}
+		yield(s.stepOf(boundary))
 	}
 }
 
-// seriesKeptForLimit returns the limit keys a Drilldown partial answer keeps: the busiest (total, ties by key), or
-// in the Loki mode the first met (first time, ties by key), recording the first time of the first key it drops.
-func seriesKeptForLimit(ctx context.Context, keys []string, total func(string) float64, first func(string) int64, limit int) []string {
+// lineMet yields the first step, in every split, that meets a line (or a VictoriaLogs bucket labelled by its start,
+// passed one nanosecond later) at t: the steps T with T - range < t <= T.
+func (s *seriesLimitScope) lineMet(t int64, yield func(int64)) {
+	first := s.stepOf(t)
+	last := first
+	if s.rangeNs > s.stepNs && s.stepNs > 0 {
+		last = s.stepOf(t+s.rangeNs) - s.stepNs
+	}
+	if last > s.endNs {
+		last = s.endNs
+	}
+	if last < first {
+		last = first
+	}
+	s.firstStepsInSplits(first, last, yield)
+}
+
+// rankedBound is the most series a VictoriaLogs ranking of limit+1 values returns for the request: limit+1, or in
+// the Loki mode limit+1 per split.
+func (s *seriesLimitScope) rankedBound(limit int) int {
+	if s == nil || !s.lokiCut {
+		return limit + 1
+	}
+	return (limit + 1) * (s.splitOf(s.endNs) + 1)
+}
+
+// keepsSuperset reports a request whose series caps keep, in the Loki mode, more than the limit (every split's
+// first limit+1, seriesKeptForLimit) for cutLokiSplits to cut on the finished answer.
+func keepsSuperset(ctx context.Context) bool {
+	scope := seriesLimitScopeFrom(ctx)
+	return scope != nil && scope.lokiCut
+}
+
+// seriesKeptForLimit returns the keys a Drilldown partial answer keeps. The busiest mode keeps limit keys (total,
+// ties by key). The Loki mode keeps, for every split of the request, the limit+1 keys met first in it (the first
+// step of their times, ties by key), all splits together: a bounded superset from which cutLokiSplits, on the
+// finished answer, keeps the series and steps Loki keeps. times yields a key's sample (or line) times.
+func seriesKeptForLimit(ctx context.Context, keys []string, total func(string) float64, times func(string, func(int64)), limit int) []string {
 	if limit <= 0 || len(keys) <= limit {
 		return keys
 	}
 	scope := seriesLimitScopeFrom(ctx)
-	lokiCut := scope != nil && scope.lokiCut
+	if scope != nil && scope.lokiCut {
+		return firstMetPerSplit(scope, keys, times, limit+1)
+	}
 	totals := make(map[string]float64, len(keys))
-	firsts := make(map[string]int64, len(keys))
 	for _, k := range keys {
-		if lokiCut {
-			firsts[k] = first(k)
-		} else {
-			totals[k] = total(k)
-		}
+		totals[k] = total(k)
 	}
 	sorted := append([]string(nil), keys...)
 	sort.Slice(sorted, func(i, j int) bool {
 		a, b := sorted[i], sorted[j]
-		if lokiCut && firsts[a] != firsts[b] {
-			return firsts[a] < firsts[b]
-		}
-		if !lokiCut && totals[a] != totals[b] {
+		if totals[a] != totals[b] {
 			return totals[a] > totals[b]
 		}
 		return a < b
 	})
-	if lokiCut && firsts[sorted[limit]] != math.MaxInt64 {
-		scope.recordCut(firsts[sorted[limit]])
-	}
 	return sorted[:limit]
+}
+
+// firstMetPerSplit is the union over the request's splits of the n keys met first in each.
+func firstMetPerSplit(scope *seriesLimitScope, keys []string, times func(string, func(int64)), n int) []string {
+	type met struct {
+		first int64
+		key   string
+	}
+	bySplit := map[int][]met{}
+	for _, k := range keys {
+		firsts := map[int]int64{}
+		times(k, func(t int64) {
+			step := scope.stepOf(t)
+			split := scope.splitOf(step)
+			if cur, ok := firsts[split]; !ok || step < cur {
+				firsts[split] = step
+			}
+		})
+		for split, first := range firsts {
+			bySplit[split] = append(bySplit[split], met{first, k})
+		}
+	}
+	keep := map[string]bool{}
+	for _, list := range bySplit {
+		sort.Slice(list, func(i, j int) bool {
+			if list[i].first != list[j].first {
+				return list[i].first < list[j].first
+			}
+			return list[i].key < list[j].key
+		})
+		for _, m := range list[:min(n, len(list))] {
+			keep[m.key] = true
+		}
+	}
+	out := make([]string, 0, len(keep))
+	for _, k := range keys {
+		if keep[k] {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // outerFoldedSeriesKey is separate from foldedSumKey: that existing scope can carry a
@@ -323,9 +428,9 @@ func (m *metricResponseRewriter) finish() {
 			mode := drilldownSeriesLimitBusiest
 			if m.scope.lokiCut {
 				mode = drilldownSeriesLimitLoki
-				body = cutLokiResultAfter(body, m.scope.cutNs.Load(), m.scope.stepNs)
+				body = m.scope.cutAnswer(body)
 			}
-			if m.partial != nil {
+			if m.partial != nil && m.scope.truncated.Load() > 0 {
 				m.partial(mode)
 			}
 		}
@@ -341,31 +446,47 @@ func (m *metricResponseRewriter) finish() {
 	_, _ = m.ResponseWriter.Write(body)
 }
 
-// cutLokiResultAfter ends a Loki matrix answer where Loki ends a Drilldown partial answer: at the first step of
-// the answer's grid at or after cutNs (the first time of the first series past the limit), every later point
-// dropped, and a series left without points dropped. A vector, a cut of 0 or an unparsable body is unchanged.
+// cutAnswer is the Loki mode's answer over the limit (cutLokiSplits on the request's splits). When no split passes
+// the limit, and no answer it combines was cut, the answer is whole: no warning.
+func (s *seriesLimitScope) cutAnswer(body []byte) []byte {
+	out, tripped := cutLokiSplits(body, s, int(s.truncated.Load()))
+	if !tripped && !s.innerTripped.Load() {
+		s.truncated.Store(0)
+	}
+	return out
+}
+
+// cutLokiSplits cuts a Loki matrix answer as Loki's query frontend and engine cut a Logs Drilldown range answer over
+// the limit: the frontend splits the request (scope.splitOf) and Loki's engine evaluates each split on its own,
+// stopping at the step where the series met so far in the split pass the limit. That step keeps the series met
+// before it and, of those new at it, enough to fill the limit (Loki's order among them is not fixed; here by
+// labels). The splits' answers are concatenated and not limited again. It reports whether any split was cut. A
+// vector, a limit of 0 or an unparsable body is unchanged.
 //
 // It reads the answer in place and copies its bytes: everything outside data.result, every series it keeps whole
 // and every point it keeps are written as they came, so only the output buffer is allocated.
-func cutLokiResultAfter(body []byte, cutNs, stepNs int64) []byte {
-	if cutNs <= 0 || stepNs <= 0 {
-		return body
+//
+//nolint:gocyclo // one pass over the series, one over the splits and one that writes: the cut is one function.
+func cutLokiSplits(body []byte, scope *seriesLimitScope, limit int) ([]byte, bool) {
+	if limit <= 0 || scope == nil {
+		return body, false
 	}
 	if resultType, err := jsonparser.GetString(body, "data", "resultType"); err != nil || resultType != "matrix" {
-		return body
+		return body, false
 	}
 	result, typ, resultEnd, err := jsonparser.Get(body, "data", "result")
 	if err != nil || typ != jsonparser.Array {
-		return body
+		return body, false
 	}
 	resultStart := resultEnd - len(result)
-	// One read of the series: each one's bytes and its values array, and the grid origin from their first points.
+	// One read of the series: each one's bytes, its labels, its values array and its points' times.
 	type seriesBytes struct {
 		raw                    []byte
+		key                    string
 		valuesStart, valuesEnd int
+		times                  []int64 // -1: a point without a readable time
 	}
 	var all []seriesBytes
-	origin := int64(math.MaxInt64)
 	malformed := false
 	if _, err := jsonparser.ArrayEach(result, func(series []byte, _ jsonparser.ValueType, _ int, _ error) {
 		values, typ, valuesEnd, err := jsonparser.Get(series, "values")
@@ -373,66 +494,117 @@ func cutLokiResultAfter(body []byte, cutNs, stepNs int64) []byte {
 			malformed = true
 			return
 		}
-		all = append(all, seriesBytes{raw: series, valuesStart: valuesEnd - len(values), valuesEnd: valuesEnd})
-		if first, _, _, err := jsonparser.Get(values, "[0]"); err == nil {
-			if ns, ok := lokiPointTimeNs(first); ok && ns < origin {
-				origin = ns
+		metric, _, _, _ := jsonparser.Get(series, "metric")
+		sb := seriesBytes{raw: series, key: string(metric), valuesStart: valuesEnd - len(values), valuesEnd: valuesEnd}
+		if _, err := jsonparser.ArrayEach(values, func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
+			ns, ok := lokiPointTimeNs(point)
+			if !ok {
+				ns = -1
+			}
+			sb.times = append(sb.times, ns)
+		}); err != nil {
+			malformed = true
+			return
+		}
+		all = append(all, sb)
+	}); err != nil || malformed {
+		return body, false
+	}
+	// Per split: the series by the first step that meets them in it; the kept ones reach up to the trip step.
+	type met struct {
+		first int64
+		idx   int
+	}
+	bySplit := map[int][]met{}
+	for i, sb := range all {
+		firsts := map[int]int64{}
+		for _, t := range sb.times {
+			if t < 0 {
+				continue
+			}
+			split := scope.splitOf(t)
+			if cur, ok := firsts[split]; !ok || t < cur {
+				firsts[split] = t
 			}
 		}
-	}); err != nil || malformed || origin == math.MaxInt64 {
-		return body
+		for split, first := range firsts {
+			bySplit[split] = append(bySplit[split], met{first, i})
+		}
 	}
-	// The grid: every point lies on origin + k*step; the cut moves up to the first grid time at or after it.
-	end := origin
-	if cutNs > origin {
-		end = origin + (cutNs-origin+stepNs-1)/stepNs*stepNs
+	// reach[i][split] is the last time series i keeps in split; a split it is not kept in is missing.
+	reach := make([]map[int]int64, len(all))
+	tripped := false
+	for split, list := range bySplit {
+		sort.Slice(list, func(a, b int) bool {
+			if list[a].first != list[b].first {
+				return list[a].first < list[b].first
+			}
+			return all[list[a].idx].key < all[list[b].idx].key
+		})
+		until := int64(math.MaxInt64)
+		kept := list
+		if len(list) > limit {
+			until, kept, tripped = list[limit].first, list[:limit], true
+		}
+		for _, m := range kept {
+			if reach[m.idx] == nil {
+				reach[m.idx] = map[int]int64{}
+			}
+			reach[m.idx][split] = until
+		}
+	}
+	if !tripped {
+		return body, false
 	}
 	out := make([]byte, 0, len(body))
 	out = append(out, body[:resultStart]...)
 	out = append(out, '[')
 	kept := 0
-	for _, s := range all {
-		series, values := s.raw, s.raw[s.valuesStart:s.valuesEnd]
-		// The series is written with the points it keeps, and taken back when it keeps none, or written again as
-		// it came when it keeps every one.
-		mark := len(out)
-		if kept > 0 {
-			out = append(out, ',')
+	for i, sb := range all {
+		keep := func(t int64) bool {
+			if t < 0 {
+				return false
+			}
+			until, ok := reach[i][scope.splitOf(t)]
+			return ok && t <= until
 		}
-		out = append(out, series[:s.valuesStart]...)
-		out = append(out, '[')
 		points, whole := 0, true
-		if _, err := jsonparser.ArrayEach(values, func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
-			if ns, ok := lokiPointTimeNs(point); ok && ns <= end {
-				if points > 0 {
-					out = append(out, ',')
-				}
-				out = append(out, point...)
+		for _, t := range sb.times {
+			if keep(t) {
 				points++
 			} else {
 				whole = false
 			}
-		}); err != nil {
-			return body
 		}
-		switch {
-		case points == 0:
-			out = out[:mark]
+		if points == 0 {
 			continue
-		case whole:
-			out = out[:mark]
-			if kept > 0 {
-				out = append(out, ',')
-			}
-			out = append(out, series...)
-		default:
-			out = append(out, ']')
-			out = append(out, series[s.valuesEnd:]...)
+		}
+		if kept > 0 {
+			out = append(out, ',')
 		}
 		kept++
+		if whole {
+			out = append(out, sb.raw...)
+			continue
+		}
+		out = append(out, sb.raw[:sb.valuesStart]...)
+		out = append(out, '[')
+		n, j := 0, 0
+		_, _ = jsonparser.ArrayEach(sb.raw[sb.valuesStart:sb.valuesEnd], func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
+			if keep(sb.times[j]) {
+				if n > 0 {
+					out = append(out, ',')
+				}
+				out = append(out, point...)
+				n++
+			}
+			j++
+		})
+		out = append(out, ']')
+		out = append(out, sb.raw[sb.valuesEnd:]...)
 	}
 	out = append(out, ']')
-	return append(out, body[resultEnd:]...)
+	return append(out, body[resultEnd:]...), true
 }
 
 // lokiPointTimeNs is the time of a Loki matrix point ([<seconds>, "<value>"]) in ns, rounded to the millisecond
@@ -712,11 +884,15 @@ func capSeriesForRequestAt(ctx context.Context, series map[string]manualSeriesSa
 			total += smp.value
 		}
 		return total
-	}, func(k string) int64 {
-		if first := firstSampleTime(series[k].Samples); first != math.MaxInt64 {
-			return first + firstOffset
+	}, func(k string, yield func(int64)) {
+		scope := seriesLimitScopeFrom(ctx)
+		for _, smp := range series[k].Samples {
+			if firstOffset > 0 {
+				scope.lineMet(smp.ts+firstOffset, yield) // a bucket: its lines are read by every step its range reaches
+			} else {
+				yield(smp.ts)
+			}
 		}
-		return math.MaxInt64
 	}, limit)
 	out := make(map[string]manualSeriesSamples, len(kept))
 	for _, k := range kept {

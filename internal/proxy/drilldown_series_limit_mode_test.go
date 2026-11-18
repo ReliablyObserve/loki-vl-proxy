@@ -9,54 +9,87 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// cutLokiResultAfter ends a matrix at the first grid step at or after the cut: points after it go, a series left
-// without points goes, the response keeps Loki's key order, and a vector, a zero cut or a body that is not JSON is
-// unchanged.
+// The split grid is Loki's query frontend's: multiples of the interval since the epoch strictly inside (start, end),
+// a step on a boundary starting the later split; no interval is one split.
 //
 // conformance: limits/drilldown-series-limit-range-cut-at-trip-step
-func TestCutLokiResultAfter(t *testing.T) {
-	body := `{"status":"success","warnings":["w"],"data":{"resultType":"matrix","result":[` +
-		`{"metric":{"pod":"a"},"values":[[100,"1"],[160,"2"],[220,"3"]]},` +
-		`{"metric":{"pod":"b"},"values":[[220,"4"],[280,"5"]]}]}}`
-	step := int64(60 * time.Second)
+func TestSeriesLimitScopeSplits(t *testing.T) {
+	h := int64(time.Hour)
+	s := &seriesLimitScope{startNs: 1000*h + 600e9, endNs: 1003 * h, stepNs: 60e9, splitNs: h}
 	for _, tc := range []struct {
-		name string
-		cut  int64
-		want string
-	}{
-		{"on a step", 160e9, `{"status":"success","warnings":["w"],"data":{"resultType":"matrix","result":[{"metric":{"pod":"a"},"values":[[100,"1"],[160,"2"]]}]}}`},
-		{"inside a step moves up to it", 161e9, `{"status":"success","warnings":["w"],"data":{"resultType":"matrix","result":[{"metric":{"pod":"a"},"values":[[100,"1"],[160,"2"],[220,"3"]]},{"metric":{"pod":"b"},"values":[[220,"4"]]}]}}`},
-		{"before the first step keeps it", 1e9, `{"status":"success","warnings":["w"],"data":{"resultType":"matrix","result":[{"metric":{"pod":"a"},"values":[[100,"1"]]}]}}`},
-		{"after the last step keeps all", 999e9, body},
-	} {
-		got := string(cutLokiResultAfter([]byte(body), tc.cut, step))
-		if tc.want == body {
-			var a, b any
-			_ = json.Unmarshal([]byte(got), &a)
-			_ = json.Unmarshal([]byte(body), &b)
-			if jsonText(a) != jsonText(b) {
-				t.Errorf("%s: %s", tc.name, got)
-			}
-			continue
+		t    int64
+		want int
+	}{{1000*h + 600e9, 0}, {1001*h - 60e9, 0}, {1001 * h, 1}, {1002*h + 1, 2}, {1003 * h, 2}} {
+		if got := s.splitOf(tc.t); got != tc.want {
+			t.Errorf("splitOf(%d) = %d, want %d", tc.t-1000*h, got, tc.want)
 		}
-		if got != tc.want {
-			t.Errorf("%s:\n got %s\nwant %s", tc.name, got, tc.want)
+	}
+	if aligned := (&seriesLimitScope{startNs: 1000 * h, endNs: 1001 * h, stepNs: 60e9, splitNs: h}); aligned.splitOf(1001*h) != 0 {
+		t.Error("an end on a boundary is not a split: the last step stays in the one split")
+	}
+	if none := (&seriesLimitScope{startNs: 0, endNs: 10 * h, stepNs: 60e9}); none.splitOf(5*h) != 0 {
+		t.Error("no split interval: one split")
+	}
+	if got := s.stepOf(1000*h + 600e9 + 1); got != 1000*h+660e9 {
+		t.Errorf("a line is met at the first step at or after it: %d", got)
+	}
+	var firsts []int64
+	s.firstStepsInSplits(1000*h+900e9, 1002*h+300e9, func(t int64) { firsts = append(firsts, t-1000*h) })
+	if fmt.Sprint(firsts) != fmt.Sprint([]int64{900e9, h, 2 * h}) {
+		t.Errorf("a run's first step in every split: %v", firsts)
+	}
+}
+
+// cutLokiSplits keeps, in each split, the series met first up to the step where the series met so far pass the
+// limit, filling the limit from those new at that step by labels; a split within the limit stays whole; the
+// answer keeps Loki's key order and the bytes around data.result; a vector or a body that is not JSON is unchanged.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step
+func TestCutLokiSplits(t *testing.T) {
+	body := `{"status":"success","warnings":["w"],"data":{"resultType":"matrix","result":[` +
+		`{"metric":{"pod":"a"},"values":[[100,"1"],[160,"2"],[220,"3"],[280,"4"]]},` +
+		`{"metric":{"pod":"b"},"values":[[160,"5"],[220,"6"],[280,"7"]]},` +
+		`{"metric":{"pod":"c"},"values":[[220,"8"],[280,"9"]]}],"stats":{}}}`
+	one := &seriesLimitScope{startNs: 100e9, endNs: 280e9, stepNs: 60e9}
+	split := &seriesLimitScope{startNs: 100e9, endNs: 280e9, stepNs: 60e9, splitNs: 200e9} // a boundary at 200
+	head, tail := `{"status":"success","warnings":["w"],"data":{"resultType":"matrix","result":[`, `],"stats":{}}}`
+	for _, tc := range []struct {
+		name    string
+		scope   *seriesLimitScope
+		limit   int
+		want    string
+		tripped bool
+	}{
+		{"one split: c past the limit at 220", one, 2, `{"metric":{"pod":"a"},"values":[[100,"1"],[160,"2"],[220,"3"]]},{"metric":{"pod":"b"},"values":[[160,"5"],[220,"6"]]}`, true},
+		{"one split: b past the limit at 160", one, 1, `{"metric":{"pod":"a"},"values":[[100,"1"],[160,"2"]]}`, true},
+		{"one split within the limit", one, 3, "", false},
+		// Split 0 holds a (100) and b (160): within a limit of 2. Split 1 meets a, b and c at 220: past it there,
+		// so a and b (by labels) are kept up to 220.
+		{"two splits: only the second trips", split, 2, `{"metric":{"pod":"a"},"values":[[100,"1"],[160,"2"],[220,"3"]]},{"metric":{"pod":"b"},"values":[[160,"5"],[220,"6"]]}`, true},
+		// A limit of 1: split 0 trips at 160 (keeps a), split 1 trips at 220 (keeps a).
+		{"two splits, both trip", split, 1, `{"metric":{"pod":"a"},"values":[[100,"1"],[160,"2"],[220,"3"]]}`, true},
+	} {
+		got, tripped := cutLokiSplits([]byte(body), tc.scope, tc.limit)
+		want := body
+		if tc.want != "" {
+			want = head + tc.want + tail
+		}
+		if string(got) != want || tripped != tc.tripped {
+			t.Errorf("%s:\n got %v %s\nwant %v %s", tc.name, tripped, got, tc.tripped, want)
 		}
 	}
 	vector := `{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[100,"1"]}]}}`
 	for _, in := range []string{vector, "not json", `{"data":1}`} {
-		if got := string(cutLokiResultAfter([]byte(in), 160e9, step)); got != in {
+		if got, tripped := cutLokiSplits([]byte(in), one, 1); string(got) != in || tripped {
 			t.Errorf("%q changed: %s", in, got)
 		}
-	}
-	if got := string(cutLokiResultAfter([]byte(body), 0, step)); got != body {
-		t.Errorf("a zero cut changed the body: %s", got)
 	}
 }
 
@@ -65,41 +98,37 @@ func jsonText(v any) string {
 	return string(b)
 }
 
-// seriesKeptForLimit keeps the busiest series by default and, in the Loki mode, the series met first, recording
-// the first time of the first series it drops; ties break on the key both ways.
+// seriesKeptForLimit keeps the busiest limit series by default and, in the Loki mode, the limit+1 series met first in
+// every split (a superset cutLokiSplits cuts on the finished answer); ties break on the key both ways.
 //
 // conformance: limits/drilldown-series-limit-range-cut-at-trip-step, limits/drilldown-breakdown-keeps-busiest
 func TestSeriesKeptForLimit(t *testing.T) {
-	keys := []string{"a", "b", "c", "d"}
-	totals := map[string]float64{"a": 1, "b": 9, "c": 5, "d": 9}
-	firsts := map[string]int64{"a": 30, "b": 10, "c": 20, "d": 10}
+	keys := []string{"a", "b", "c", "d", "e"}
+	totals := map[string]float64{"a": 1, "b": 9, "c": 5, "d": 9, "e": 2}
+	// Sample times: a and b in the first split only, c and d in the second only, e in both.
+	times := map[string][]int64{"a": {30}, "b": {10}, "c": {120, 130}, "d": {110}, "e": {20, 140}}
 	total := func(k string) float64 { return totals[k] }
-	first := func(k string) int64 { return firsts[k] }
-
+	each := func(k string, yield func(int64)) {
+		for _, t := range times[k] {
+			yield(t)
+		}
+	}
 	busiest := &seriesLimitScope{drilldown: true}
 	ctx := context.WithValue(context.Background(), seriesLimitScopeKey{}, busiest)
-	if got := strings.Join(seriesKeptForLimit(ctx, keys, total, first, 2), ","); got != "b,d" {
+	if got := strings.Join(seriesKeptForLimit(ctx, keys, total, each, 2), ","); got != "b,d" {
 		t.Errorf("busiest: %s", got)
 	}
-	if busiest.cutNs.Load() != 0 {
-		t.Error("busiest mode records no cut")
+	one := &seriesLimitScope{drilldown: true, lokiCut: true, startNs: 0, endNs: 200, stepNs: 10}
+	ctx = context.WithValue(context.Background(), seriesLimitScopeKey{}, one)
+	if got := strings.Join(seriesKeptForLimit(ctx, keys, total, each, 2), ","); got != "a,b,e" {
+		t.Errorf("loki, one split: the three met first (b 10, e 20, a 30), in the keys' order: %s", got)
 	}
-
-	loki := &seriesLimitScope{drilldown: true, lokiCut: true, stepNs: 1}
-	ctx = context.WithValue(context.Background(), seriesLimitScopeKey{}, loki)
-	if got := strings.Join(seriesKeptForLimit(ctx, keys, total, first, 2), ","); got != "b,d" {
-		t.Errorf("loki, two series met at 10: %s", got)
+	split := &seriesLimitScope{drilldown: true, lokiCut: true, startNs: 0, endNs: 200, stepNs: 10, splitNs: 100}
+	ctx = context.WithValue(context.Background(), seriesLimitScopeKey{}, split)
+	if got := strings.Join(seriesKeptForLimit(ctx, keys, total, each, 1), ","); got != "b,c,d,e" {
+		t.Errorf("loki, two splits: the two met first in each (b 10, e 20; d 110, c 120), in the keys' order: %s", got)
 	}
-	if loki.cutNs.Load() != 20 {
-		t.Errorf("loki cut %d, want 20 (c, the first series dropped)", loki.cutNs.Load())
-	}
-	if got := strings.Join(seriesKeptForLimit(ctx, keys, total, first, 3), ","); got != "b,d,c" {
-		t.Errorf("loki, three: %s", got)
-	}
-	if loki.cutNs.Load() != 20 {
-		t.Errorf("a later, later cut does not move the earliest one: %d", loki.cutNs.Load())
-	}
-	if got := seriesKeptForLimit(ctx, keys, total, first, 4); len(got) != 4 {
+	if got := seriesKeptForLimit(ctx, keys, total, each, 5); len(got) != 5 {
 		t.Errorf("under the limit every key stays: %v", got)
 	}
 }
@@ -116,150 +145,234 @@ func TestDrilldownSeriesLimitModeScope(t *testing.T) {
 		return r
 	}
 	p := newTestProxy(t, "http://127.0.0.1:1")
-	if _, s := p.withSeriesLimitScope(drilldown("/loki/api/v1/query_range?query=x&step=60")); !s.lokiCut || s.stepNs != int64(time.Minute) {
+	p.drilldownSeriesLimitSplit = time.Hour
+	if _, s := p.withSeriesLimitScope(drilldown("/loki/api/v1/query_range?query=x&start=100&end=7300&step=60")); !s.lokiCut || s.stepNs != int64(time.Minute) ||
+		s.startNs != 100e9 || s.endNs != 7300e9 || s.splitNs != int64(time.Hour) {
 		t.Errorf("default mode, range: %+v", s)
+	}
+	if _, err := New(Config{BackendURL: "http://127.0.0.1:1", DrilldownSeriesLimitSplitInterval: -time.Second}); err == nil {
+		t.Fatal("a negative split interval must be refused")
 	}
 	if _, s := p.withSeriesLimitScope(drilldown("/loki/api/v1/query?query=x")); s.lokiCut {
 		t.Error("an instant request keeps the busiest series")
 	}
-	if _, s := p.withSeriesLimitScope(httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=x&step=60", nil)); s.lokiCut {
+	if _, s := p.withSeriesLimitScope(httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=x&start=100&end=7300&step=60", nil)); s.lokiCut {
 		t.Error("a request that is not Drilldown's is not cut")
 	}
 	p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest
-	if _, s := p.withSeriesLimitScope(drilldown("/loki/api/v1/query_range?query=x&step=60")); s.lokiCut {
+	if _, s := p.withSeriesLimitScope(drilldown("/loki/api/v1/query_range?query=x&start=100&end=7300&step=60")); s.lokiCut {
 		t.Error("busiest mode keeps the whole range")
 	}
 }
 
-// FuzzCutLokiResultAfter: any body and cut terminate, a JSON matrix keeps only points at or before the cut's step,
-// and anything else comes back unchanged.
-func FuzzCutLokiResultAfter(f *testing.F) {
-	f.Add(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"values":[[1,"1"],[61,"2"]]}]}}`, int64(30e9))
-	f.Add(`{"data":{"resultType":"vector","result":[]}}`, int64(1))
-	f.Add(`{"data":{"resultType":"matrix","result":[{"values":[["x","1"]]}]}}`, int64(5e9))
-	f.Fuzz(func(t *testing.T, body string, cut int64) {
-		if len(body) > 4096 {
+// FuzzCutLokiSplits: any body, limit and split terminate and never add a series or a point.
+func FuzzCutLokiSplits(f *testing.F) {
+	f.Add(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"values":[[1,"1"],[61,"2"]]},{"metric":{"a":"c"},"values":[[61,"1"]]}]}}`, 1, int64(60e9))
+	f.Add(`{"data":{"resultType":"vector","result":[]}}`, 1, int64(0))
+	f.Add(`{"data":{"resultType":"matrix","result":[{"values":[["x","1"]]}]}}`, 2, int64(1))
+	f.Fuzz(func(t *testing.T, body string, limit int, splitNs int64) {
+		if len(body) > 4096 || splitNs < 0 {
 			return
 		}
-		out := cutLokiResultAfter([]byte(body), cut, int64(60*time.Second))
-		var in, got struct {
-			Data struct {
-				ResultType string `json:"resultType"`
-				Result     []struct {
-					Values [][]json.RawMessage `json:"values"`
-				} `json:"result"`
-			} `json:"data"`
+		scope := &seriesLimitScope{startNs: 0, endNs: 200e9, stepNs: 60e9, splitNs: splitNs}
+		out, _ := cutLokiSplits([]byte(body), scope, limit)
+		count := func(b []byte) (series, points int, ok bool) {
+			var r struct {
+				Data struct {
+					Result []struct {
+						Values [][]json.RawMessage `json:"values"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			if json.Unmarshal(b, &r) != nil {
+				return 0, 0, false
+			}
+			for _, s := range r.Data.Result {
+				points += len(s.Values)
+			}
+			return len(r.Data.Result), points, true
 		}
-		if json.Unmarshal(out, &got) != nil || json.Unmarshal([]byte(body), &in) != nil {
-			return
-		}
-		if len(got.Data.Result) > len(in.Data.Result) {
-			t.Fatalf("the cut added series: %s -> %s", body, out)
+		gs, gp, okOut := count(out)
+		is, ip, okIn := count([]byte(body))
+		if okIn && okOut && (gs > is || gp > ip) {
+			t.Fatalf("the cut added series or points: %s -> %s", body, out)
 		}
 	})
 }
 
-// cutLokiResultAfterReference is the cut written plainly over decoded JSON: the grid origin is the earliest first
-// point, the end the first grid time at or after the cut, every point after the end and every series left empty go.
-// It returns the kept series (metric and points), nil when the body is not a matrix with a positive cut and step.
-func cutLokiResultAfterReference(body []byte, cutNs, stepNs int64) []any {
-	if cutNs <= 0 || stepNs <= 0 {
-		return nil
-	}
+// cutLokiSplitsReference is the cut written plainly over decoded JSON: per split, the series by their first point
+// in it (ties by labels), the first limit kept up to the (limit+1)th's first point, the rest dropped there. It
+// returns the kept series (labels and points), nil when no split passes the limit.
+func cutLokiSplitsReference(body []byte, scope *seriesLimitScope, limit int) []any {
 	var resp struct {
 		Data struct {
 			ResultType string `json:"resultType"`
 			Result     []struct {
-				Metric map[string]string `json:"metric"`
-				Values [][]json.Number   `json:"values"`
+				Metric json.RawMessage `json:"metric"`
+				Values [][]json.Number `json:"values"`
 			} `json:"result"`
 		} `json:"data"`
 	}
-	if json.Unmarshal(body, &resp) != nil || resp.Data.ResultType != "matrix" {
+	if json.Unmarshal(body, &resp) != nil || resp.Data.ResultType != "matrix" || limit <= 0 {
 		return nil
 	}
 	ns := func(p []json.Number) int64 {
 		sec, _ := strconv.ParseFloat(string(p[0]), 64)
 		return int64(math.Round(sec*1e3)) * int64(time.Millisecond)
 	}
-	origin := int64(math.MaxInt64)
-	for _, s := range resp.Data.Result {
-		if len(s.Values) > 0 && ns(s.Values[0]) < origin {
-			origin = ns(s.Values[0])
+	type met struct {
+		first int64
+		idx   int
+	}
+	bySplit := map[int][]met{}
+	for i, s := range resp.Data.Result {
+		firsts := map[int]int64{}
+		for _, p := range s.Values {
+			t := ns(p)
+			if cur, ok := firsts[scope.splitOf(t)]; !ok || t < cur {
+				firsts[scope.splitOf(t)] = t
+			}
+		}
+		for split, first := range firsts {
+			bySplit[split] = append(bySplit[split], met{first, i})
 		}
 	}
-	end := origin
-	if cutNs > origin {
-		end = origin + (cutNs-origin+stepNs-1)/stepNs*stepNs
+	until := map[[2]int]int64{}
+	tripped := false
+	for split, list := range bySplit {
+		sort.Slice(list, func(a, b int) bool {
+			if list[a].first != list[b].first {
+				return list[a].first < list[b].first
+			}
+			return string(resp.Data.Result[list[a].idx].Metric) < string(resp.Data.Result[list[b].idx].Metric)
+		})
+		end := int64(math.MaxInt64)
+		if len(list) > limit {
+			end, list, tripped = list[limit].first, list[:limit], true
+		}
+		for _, m := range list {
+			until[[2]int{m.idx, split}] = end
+		}
+	}
+	if !tripped {
+		return nil
 	}
 	var out []any
-	for _, s := range resp.Data.Result {
+	for i, s := range resp.Data.Result {
 		var kept []string
 		for _, p := range s.Values {
-			if ns(p) <= end {
+			t := ns(p)
+			if end, ok := until[[2]int{i, scope.splitOf(t)}]; ok && t <= end {
 				kept = append(kept, string(p[0])+"="+string(p[1]))
 			}
 		}
 		if kept != nil {
-			out = append(out, fmt.Sprint(s.Metric, kept))
+			out = append(out, string(s.Metric)+fmt.Sprint(kept))
 		}
 	}
 	return out
 }
 
-// randomCutMatrix is a matrix answer of random series and steps, as the proxy writes one (whole and fractional
-// second times, ascending points, a warning first).
-func randomCutMatrix(rng *rand.Rand) ([]byte, int64, int64) {
+// randomSplitMatrix is a matrix answer of random series over a random number of splits, as the proxy writes one
+// (whole and fractional second times, ascending points, a warning first), with its scope and a limit.
+func randomSplitMatrix(rng *rand.Rand) ([]byte, *seriesLimitScope, int) {
 	step := int64(1+rng.Intn(120)) * int64(time.Second) / int64(1+rng.Intn(4))
 	step -= step % int64(time.Millisecond)
-	origin := int64(1700000000+rng.Intn(1000))*int64(time.Second) + int64(rng.Intn(4))*250*int64(time.Millisecond)
+	start := int64(1700000000+rng.Intn(1000))*int64(time.Second) + int64(rng.Intn(4))*250*int64(time.Millisecond)
+	steps := 1 + rng.Intn(80)
+	split := int64(0)
+	if rng.Intn(3) > 0 {
+		split = step * int64(1+rng.Intn(20))
+	}
+	scope := &seriesLimitScope{startNs: start, endNs: start + int64(steps)*step, stepNs: step, splitNs: split}
 	var sb strings.Builder
 	sb.WriteString(`{"warnings":["w"],"status":"success","data":{"resultType":"matrix","result":[`)
-	series := rng.Intn(8)
+	series := rng.Intn(9)
 	for s := 0; s < series; s++ {
 		if s > 0 {
 			sb.WriteByte(',')
 		}
 		sb.WriteString(`{"metric":{"pod":"p` + strconv.Itoa(s) + `"},"values":[`)
-		k := rng.Intn(5)
-		for i, n := 0, rng.Intn(12); i < n; i++ {
-			if i > 0 {
+		n := 0
+		for k := rng.Intn(steps); k <= steps; k += 1 + rng.Intn(4) {
+			if n > 0 {
 				sb.WriteByte(',')
 			}
-			at := origin + int64(k)*step
+			at := start + int64(k)*step
 			sb.WriteString(`[` + strconv.FormatFloat(float64(at)/1e9, 'f', -1, 64) + `,"` + strconv.Itoa(rng.Intn(9)) + `"]`)
-			k += 1 + rng.Intn(3)
+			n++
 		}
 		sb.WriteString(`]}`)
 	}
 	sb.WriteString(`],"stats":{}}}`)
-	cut := origin + rng.Int63n(20*step+1) - step
-	return []byte(sb.String()), cut, step
+	return []byte(sb.String()), scope, 1 + rng.Intn(4)
 }
 
 // The in-place cut keeps exactly the series and points the plain cut over decoded JSON keeps, over random answers,
-// cuts and steps, and leaves the bytes around data.result as they came.
+// limits and splits, and leaves the bytes around data.result as they came.
 //
 // conformance: limits/drilldown-series-limit-range-cut-at-trip-step
-func TestCutLokiResultAfterMatchesReference(t *testing.T) {
+func TestCutLokiSplitsMatchesReference(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
+	trips := 0
 	for i := 0; i < 5000; i++ {
-		body, cut, step := randomCutMatrix(rng)
-		checkCutMatchesReference(t, body, cut, step)
+		body, scope, limit := randomSplitMatrix(rng)
+		if checkCutMatchesReference(t, body, scope, limit) {
+			trips++
+		}
+	}
+	if trips < 1000 {
+		t.Fatalf("only %d answers were cut: the run proves little", trips)
 	}
 }
 
-func checkCutMatchesReference(t *testing.T, body []byte, cut, step int64) {
+func checkCutMatchesReference(t *testing.T, body []byte, scope *seriesLimitScope, limit int) bool {
 	t.Helper()
-	out := cutLokiResultAfter(body, cut, step)
-	want := cutLokiResultAfterReference(body, cut, step)
-	got := cutLokiResultAfterReference(out, math.MaxInt64/2, 1) // the output read back whole
+	out, tripped := cutLokiSplits(body, scope, limit)
+	want := cutLokiSplitsReference(body, scope, limit)
+	if !tripped {
+		if want != nil || string(out) != string(body) {
+			t.Fatalf("no split passes the limit, the reference cut %v / the body changed: %s", want, out)
+		}
+		return false
+	}
+	whole := &seriesLimitScope{startNs: scope.startNs, endNs: scope.endNs, stepNs: scope.stepNs}
+	got := cutLokiSplitsReference(out, whole, math.MaxInt32) // nil: within the limit; read the output whole
+	if got == nil {
+		got = keptWhole(t, out)
+	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("cut %d step %d:\n in %s\nout %s\ngot  %v\nwant %v", cut, step, body, out, got, want)
+		t.Fatalf("limit %d split %d:\n in %s\nout %s\ngot  %v\nwant %v", limit, scope.splitNs, body, out, got, want)
 	}
 	if !strings.HasPrefix(string(out), `{"warnings":["w"],"status":"success","data":{"resultType":"matrix","result":[`) || !strings.HasSuffix(string(out), `],"stats":{}}}`) {
 		t.Fatalf("the bytes around data.result changed: %s", out)
 	}
+	return true
+}
+
+// keptWhole lists a matrix answer's series as cutLokiSplitsReference does.
+func keptWhole(t *testing.T, body []byte) []any {
+	t.Helper()
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric json.RawMessage `json:"metric"`
+				Values [][]json.Number `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatal(err)
+	}
+	var out []any
+	for _, s := range resp.Data.Result {
+		var kept []string
+		for _, p := range s.Values {
+			kept = append(kept, string(p[0])+"="+string(p[1]))
+		}
+		out = append(out, string(s.Metric)+fmt.Sprint(kept))
+	}
+	return out
 }
 
 // lokiPointTimeNs reads a point's time as the float reading rounded to the millisecond does, exactly for the
@@ -295,39 +408,44 @@ func TestLokiPointTimeNs(t *testing.T) {
 	}
 }
 
-// FuzzCutLokiResultAfterMatchesReference is TestCutLokiResultAfterMatchesReference over fuzzed answers.
-func FuzzCutLokiResultAfterMatchesReference(f *testing.F) {
+// FuzzCutLokiSplitsMatchesReference is TestCutLokiSplitsMatchesReference over fuzzed answers.
+func FuzzCutLokiSplitsMatchesReference(f *testing.F) {
 	f.Add(int64(1))
 	f.Add(int64(42))
 	f.Fuzz(func(t *testing.T, seed int64) {
-		body, cut, step := randomCutMatrix(rand.New(rand.NewSource(seed)))
-		checkCutMatchesReference(t, body, cut, step)
+		body, scope, limit := randomSplitMatrix(rand.New(rand.NewSource(seed)))
+		checkCutMatchesReference(t, body, scope, limit)
 	})
 }
 
-// BenchmarkCutLokiResultAfter is what a Drilldown answer over the limit pays in the Loki mode: 1000 series of 60
-// points, cut half way.
-func BenchmarkCutLokiResultAfter(b *testing.B) {
+// BenchmarkCutLokiSplits is what a Drilldown answer over the limit pays in the Loki mode: 1000 series of 60 points
+// (one new series every 3.6 s of the hour), at a limit of 500, as one split and over hours of 15 minutes.
+func BenchmarkCutLokiSplits(b *testing.B) {
 	var sb strings.Builder
 	sb.WriteString(`{"status":"success","warnings":["w"],"data":{"resultType":"matrix","result":[`)
 	for s := 0; s < 1000; s++ {
 		if s > 0 {
 			sb.WriteByte(',')
 		}
-		sb.WriteString(`{"metric":{"pod":"p` + strings.Repeat("x", s%7) + `"},"values":[`)
+		sb.WriteString(`{"metric":{"pod":"p` + strconv.Itoa(s) + `"},"values":[`)
 		for i := 0; i < 60; i++ {
 			if i > 0 {
 				sb.WriteByte(',')
 			}
-			sb.WriteString(`[` + jsonText(1800000000+i*60) + `,"1"]`)
+			sb.WriteString(`[` + jsonText(1800000000+(s*36/600+i)*60) + `,"1"]`)
 		}
 		sb.WriteString(`]}`)
 	}
 	sb.WriteString(`]}}`)
 	body := []byte(sb.String())
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = cutLokiResultAfter(body, (1800000000+1800)*int64(time.Second), int64(time.Minute))
+	for _, split := range []time.Duration{0, 15 * time.Minute} {
+		b.Run("split="+split.String(), func(b *testing.B) {
+			scope := &seriesLimitScope{startNs: 1800000000e9, endNs: 1800000000e9 + int64(2*time.Hour), stepNs: int64(time.Minute), splitNs: int64(split)}
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_, _ = cutLokiSplits(body, scope, 500)
+			}
+		})
 	}
 }
 
@@ -345,11 +463,11 @@ func TestRankedSingleFieldQueryFirstMet(t *testing.T) {
 		{`app:="x" | stats by ("service.name") count()`,
 			`app:="x" | filter "service.name":in(app:="x" | stats by ("service.name") min(_time) as __lvp_rank | sort by (__lvp_rank, "service.name") | limit 11 | fields "service.name") | stats by ("service.name") count()`},
 	} {
-		if got, ok := rankedSingleFieldQueryFirstMet(tc.query, 10); !ok || got != tc.want {
+		if got, ok := rankedSingleFieldQueryFirstMet(tc.query, 10, nil); !ok || got != tc.want {
 			t.Errorf("rankedSingleFieldQueryFirstMet(%q)\n got %v %q\nwant %q", tc.query, ok, got, tc.want)
 		}
 	}
-	if got := firstMetRanking("pod", "_c", false, 4); got != ` | stats by (pod) min(_time) as _c | sort by (_c) | limit 4` {
+	if got := (*seriesLimitScope)(nil).firstMetRanking("pod", "_c", false, 4, 0); got != ` | stats by (pod) min(_time) as _c | sort by (_c) | limit 4` {
 		t.Errorf("top-value ranking: %q", got)
 	}
 }

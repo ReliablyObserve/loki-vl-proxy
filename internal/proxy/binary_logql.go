@@ -165,6 +165,9 @@ func (p *Proxy) evaluateBinaryLogQLOperand(r *http.Request, expr logqlpkg.Expr, 
 		// its own answer, cached or not; the combined answer must carry it too.
 		if limit := seriesLimitWarningLimit(w.body.Bytes()); limit > 0 && requestKeepsPartialSeries(r.Context()) {
 			_ = seriesLimitReached(r.Context(), limit)
+			if scope := seriesLimitScopeFrom(r.Context()); scope != nil {
+				scope.innerTripped.Store(true) // the operand was cut: the combined answer keeps Loki's warning
+			}
 		}
 		p.restoreBinaryOperandResponse(w, expr, resultType)
 	}

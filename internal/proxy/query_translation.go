@@ -1456,14 +1456,11 @@ func busiestBareParserSeries(ctx context.Context, series map[string]*bareParserM
 			total += sample.value
 		}
 		return total
-	}, func(key string) int64 {
-		first := int64(math.MaxInt64)
+	}, func(key string, yield func(int64)) {
+		scope := seriesLimitScopeFrom(ctx)
 		for _, sample := range series[key].samples {
-			if sample.tsNanos < first {
-				first = sample.tsNanos
-			}
+			scope.lineMet(sample.tsNanos, yield) // a line: met by every step its range reaches
 		}
-		return first
 	}, limit)
 	out := make(map[string]*bareParserMetricSeries, len(kept))
 	for _, key := range kept {

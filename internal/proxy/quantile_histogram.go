@@ -260,12 +260,11 @@ func capQuantileSeries(ctx context.Context, series map[string]quantileSeries, li
 			rows += sample.count
 		}
 		return rows
-	}, func(key string) int64 {
-		if samples := series[key].Samples; len(samples) > 0 {
-			// Ascending, labelled by the bucket's start: its lines are first met at the step after it.
-			return samples[0].ts + 1
+	}, func(key string, yield func(int64)) {
+		scope := seriesLimitScopeFrom(ctx)
+		for _, sample := range series[key].Samples {
+			scope.lineMet(sample.ts+1, yield) // labelled by the bucket's start: its lines are met after it
 		}
-		return math.MaxInt64
 	}, limit)
 	capped := make(map[string]quantileSeries, len(kept))
 	for _, key := range kept {

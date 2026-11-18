@@ -549,6 +549,10 @@ type Config struct {
 	// default, also for ""): the first series met, ending at the step where the first series past the limit
 	// appears, as Loki answers; "busiest": the busiest series over the whole range.
 	DrilldownSeriesLimitMode string
+	// DrilldownSeriesLimitSplitInterval mirrors Loki's split_queries_by_interval for the Loki series-limit mode:
+	// Loki's query frontend splits a range request at the multiples of the interval and cuts each split's answer
+	// on its own. 0 cuts the request as one split.
+	DrilldownSeriesLimitSplitInterval time.Duration
 	// ExecutionLimits bounds per-request work and the bytes a request may pull
 	// out of VictoriaLogs. Zero values select the built-in defaults.
 	ExecutionLimits ExecutionLimitsConfig
@@ -843,6 +847,7 @@ type Proxy struct {
 	labelFilterRefillMaxPages             int           // extra pages read to fill a filtered log page (0=none)
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=1000)
 	drilldownSeriesLimitMode              string        // -drilldown-series-limit-mode: loki (default) or busiest
+	drilldownSeriesLimitSplit             time.Duration // -drilldown-series-limit-split-interval: Loki's split_queries_by_interval; 0 = one split
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
 	metadataScanLimiter                   *metadataScanLimiter
@@ -1132,6 +1137,10 @@ func New(cfg Config) (*Proxy, error) {
 	default:
 		return nil, fmt.Errorf("invalid -drilldown-series-limit-mode: %q (must be %q or %q)", cfg.DrilldownSeriesLimitMode, drilldownSeriesLimitLoki, drilldownSeriesLimitBusiest)
 	}
+	if cfg.DrilldownSeriesLimitSplitInterval < 0 {
+		return nil, fmt.Errorf("invalid -drilldown-series-limit-split-interval: %s (must be >= 0; 0 cuts a request as one split)", cfg.DrilldownSeriesLimitSplitInterval)
+	}
+
 	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.DeleteAPIAuthToken); err != nil {
 		return nil, err
 	}
@@ -1511,6 +1520,7 @@ func New(cfg Config) (*Proxy, error) {
 		labelFilterRefillMaxPages:             max(cfg.LabelFilterRefillMaxPages, 0),
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		drilldownSeriesLimitMode:              cfg.DrilldownSeriesLimitMode,
+		drilldownSeriesLimitSplit:             cfg.DrilldownSeriesLimitSplitInterval,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
 		labelWarmBackoff:                      newLabelWarmBackoff(),

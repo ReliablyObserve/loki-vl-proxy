@@ -1250,8 +1250,9 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 	query := spec.BaseQuery + " | stats by (" + field + ") count() as _c | sort by (_c desc) | limit " + strconv.Itoa(limit+1)
 	firstMet := false
 	if scope := seriesLimitScopeFrom(ctx); scope != nil && scope.lokiCut {
-		// Loki's partial answer keeps the values met first: rank by each value's first line.
-		query, firstMet = spec.BaseQuery+firstMetRanking(field, "_c", false, limit+1), true
+		// Loki's partial answer keeps, in each split, the values met first: rank by each value's first line, in
+		// every split (the lines a split's steps read begin a range before it).
+		query, firstMet = spec.BaseQuery+scope.firstMetRanking(field, "_c", false, limit+1, scope.startNs-windowStart.UnixNano()), true
 	}
 	params.Set("query", query)
 	params.Set("start", windowStart.UTC().Format(time.RFC3339Nano))
@@ -1271,6 +1272,18 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 		return nil, err
 	}
 	values := drilldownTopValuesFromMatrix(body, spec.GroupBy[0])
+	if firstMet {
+		// A value can rank in several splits.
+		seen := make(map[string]bool, len(values))
+		unique := values[:0]
+		for _, v := range values {
+			if !seen[v] {
+				seen[v] = true
+				unique = append(unique, v)
+			}
+		}
+		values = unique
+	}
 	withEmpty := drilldownTopValuesHaveEmpty(body, spec.GroupBy[0])
 	if len(values) == 0 {
 		return nil, errBodyTooLarge
@@ -1281,18 +1294,19 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 		prefix, suffix = prefix+"(", " or "+field+`:"")`+suffix
 	}
 	ranked := len(values)
-	if len(values) > limit {
+	if len(values) > limit && !firstMet {
 		values = values[:limit]
 	}
 	filter, values, err := fitTopValueFilter(spec.GroupBy[0], values, prefix, suffix)
 	if err != nil {
 		return nil, err
 	}
-	if firstMet && len(values) < ranked {
-		// Loki's answer ends where the first value left out begins.
-		seriesLimitScopeFrom(ctx).recordCut(drilldownRankedFirstTime(body, spec.GroupBy[0], len(values)))
-	}
-	if len(values) < ranked {
+	if firstMet && ranked > limit {
+		// Every split's first limit+1 values: the finished answer is cut as Loki cuts it (cutLokiSplits).
+		if err := seriesLimitReached(tenantSeriesLimitContext(ctx), limit); err != nil {
+			return nil, err
+		}
+	} else if len(values) < ranked {
 		// The ranking is bound by the tenant's limit, whatever the request folds.
 		if err := seriesLimitReached(tenantSeriesLimitContext(ctx), len(values)); err != nil {
 			return nil, err
@@ -1302,37 +1316,6 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 		filter = "(" + filter + " or " + field + `:"")`
 	}
 	return p.collectRangeMetricHits(ctx, spec.BaseQuery+" | filter "+filter, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
-}
-
-// drilldownRankedFirstTime is the first-line time (ns) of the n-th value (0-based) of a ranking by min(_time),
-// 0 when the answer holds no such value or time.
-func drilldownRankedFirstTime(body []byte, field string, n int) int64 {
-	v, err := fj.ParseBytes(body)
-	if err != nil {
-		return 0
-	}
-	i := 0
-	for _, entry := range v.GetArray("data", "result") {
-		if len(entry.GetStringBytes("metric", field)) == 0 {
-			continue // the group without the field, which drilldownTopValuesFromMatrix leaves out too
-		}
-		if i == n {
-			pair := entry.GetArray("value")
-			if len(pair) < 2 {
-				return 0
-			}
-			text := string(pair[1].GetStringBytes())
-			if ts, err := time.Parse(time.RFC3339Nano, text); err == nil {
-				return ts.UnixNano()
-			}
-			if secs, err := strconv.ParseFloat(text, 64); err == nil {
-				return int64(secs * 1e9)
-			}
-			return 0
-		}
-		i++
-	}
-	return 0
 }
 
 // requestKeepsPartialSeries reports whether the request answers a series limit
@@ -2803,7 +2786,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if maxSeries > 0 && len(series) > maxSeries {
+	if maxSeries > 0 && len(series) > maxSeries && !keepsSuperset(ctx) {
 		return nil, newSeriesLimitError(ctx, maxSeries)
 	}
 	keys := make([]string, 0, len(series))
