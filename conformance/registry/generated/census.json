@@ -1084,6 +1084,9 @@
     "semantics/unwrap-gate-parsefloat-divergences | gap:open",
     "semantics/unwrap-gate-parsefloat-divergences | perf",
     "semantics/unwrap-gate-parsefloat-divergences | query",
+    "semantics/unwrap-identity-key-order | compare:observed",
+    "semantics/unwrap-identity-key-order | gap:fixed",
+    "semantics/unwrap-identity-key-order | query",
     "semantics/unwrap-in-log-query | compare:observed",
     "semantics/unwrap-in-log-query | gap:fixed",
     "semantics/unwrap-in-log-query | query",
@@ -2574,6 +2577,9 @@
     "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/unwrap_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go | metric-series-identity",
+    "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go | semantics/unwrap-identity-key-order",
+    "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
@@ -2637,6 +2643,7 @@
     "internal/queryplan/lower/unwrap_dynamic_split_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-extraction-list-series-identity",
+    "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-identity-key-order",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-over-time-range-windows-residual-forms",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_dynamic_window_test.go | semantics/unwrap-per-series-identity-raw-rows",
@@ -2656,6 +2663,7 @@
     "internal/queryplan/validate_test.go | semantics/set-operation-folded-literal-operand",
     "internal/queryplan/validate_test.go | semantics/sort-grouping-accepted",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
+    "internal/testutil/vlemu/series_fold_test.go | semantics/unwrap-identity-key-order",
     "internal/translate/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_filter_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_keyword_test.go | severity-detected-level-derivation",
@@ -3267,12 +3275,12 @@
       "any": 50,
       "api": 119,
       "drilldown": 55,
-      "explore": 204,
+      "explore": 205,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 755,
+      "go": 757,
       "playwright": 2
     },
     "page_kinds": {
@@ -3292,7 +3300,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 456
+    "wired_items": 457
   },
   "gates": [
     "A/B shape selection",

@@ -781,6 +781,7 @@
       "internal/proxy/without_pushdown_differential_test.go",
       "internal/querycorpus/listed_window_chunks_loki_diff_test.go",
       "internal/querycorpus/series_fold_loki_diff_test.go",
+      "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go",
       "internal/translator/nested_vector_chain_test.go",
       "internal/translator/series_aggregation_test.go",
       "internal/translator/unwrap_logfmt_narrow_test.go",
@@ -2474,6 +2475,11 @@
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
+    "semantics/unwrap-identity-key-order": [
+      "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_test.go",
+      "internal/testutil/vlemu/series_fold_test.go"
+    ],
     "semantics/unwrap-in-log-query": [
       "internal/logql/range_unwrap_grammar_loki_test.go",
       "internal/proxy/fail_fast_unicode_test.go",
@@ -2519,6 +2525,7 @@
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
+      "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go",
       "internal/queryplan/lower/parser_label_filters_test.go",
       "internal/queryplan/lower/series_fold_test.go",
       "internal/queryplan/lower/unwrap_dynamic_split_test.go",
@@ -2940,7 +2947,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 664,
+  "registry_items": 665,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -5266,6 +5273,11 @@
     "internal/querycorpus/unwrap_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/unwrap_identity_key_order_loki_diff_test.go": [
+      "metric-series-identity",
+      "semantics/unwrap-identity-key-order",
+      "semantics/unwrap-per-series-identity-raw-rows"
+    ],
     "internal/querycorpus/vector_agg_blank_grid_test.go": [
       "architecture-syntax-package-layering",
       "semantics/translator-reads-blank-before-range-call-as-text"
@@ -5428,6 +5440,7 @@
     "internal/queryplan/lower/unwrap_dynamic_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-extraction-list-series-identity",
+      "semantics/unwrap-identity-key-order",
       "semantics/unwrap-over-time-range-windows-residual-forms",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
@@ -5469,6 +5482,9 @@
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
+    ],
+    "internal/testutil/vlemu/series_fold_test.go": [
+      "semantics/unwrap-identity-key-order"
     ],
     "internal/translate/detected_level_chain_memo_test.go": [
       "severity-detected-level-derivation"
@@ -6484,7 +6500,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 757,
+  "tests_with_markers": 759,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6586,5 +6602,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 456
+  "wired_items": 457
 }
