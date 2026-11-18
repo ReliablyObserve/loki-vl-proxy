@@ -58,7 +58,7 @@ func (b vlTailRowRateBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 // reaches the client. Loki has no such limit (its tail keeps streaming), so a
 // busy tail that hits it mid-stream ends earlier than Loki's on v1.54.0:
 // recorded in the registry (vl-live-tail-row-rate-limit) as a follow-up.
-// conformance: vl-live-tail-row-rate-limit, semantics/error-layer-internal-go-text, loki_api_v1_tail
+// conformance: vl-live-tail-row-rate-limit, semantics/tail-ends-on-vl-row-rate-limit, semantics/error-layer-internal-go-text, loki_api_v1_tail
 func TestTail_VLRowRateLimitClosesWithLokiText(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

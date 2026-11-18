@@ -18,11 +18,14 @@ proxy_usage: |
   JSON-line placeholder exclusion (the placeholder _msg text and one label name
   the query itself holds, json_line_keys.go) and the parse-risk probes
   (ordered_json_metric.go, ordered_json_unparsed_row.go). Each is a short fixed
-  filter plus at most one name or value taken from the request, so it reaches
-  the limit only when the query or the tenant id already does, and VictoriaLogs
-  rejects such a query arg on every version. A tenant filter VictoriaLogs
-  refuses fails the request (Loki's 500 through the error layer); it never
-  falls back to an unfiltered read.
+  filter plus at most one name or value taken from the request: a label name
+  the query itself holds (so the filter outgrows the limit only with a query
+  that is itself near it) or one tenant id (at most 150 bytes, Loki's rule,
+  enforced before any VictoriaLogs call in tenant_header.go). Every
+  VictoriaLogs call adds the tenant filter
+  in one place (scopedTenantParams, from vlGetInner, vlPost and the tail), so a
+  refused filter fails the request through the error layer (VictoriaLogs' 400
+  answers Loki's 500) and no retry or fallback reads without it.
 fallback: |
   None needed on a supported version: the proxy's own filters stay far below
   the limit. A deployment that lowers -search.maxQueryLen below a few hundred

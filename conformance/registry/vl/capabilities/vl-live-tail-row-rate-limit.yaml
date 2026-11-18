@@ -6,8 +6,9 @@ generated:
 
 description: |
   From VictoriaLogs v1.54.0 (#1837) a live tail (/select/logsql/tail) whose
-  query matches more than 10,000 new rows in one refresh ends with an error
-  (maxRowsPerTailQuery in app/vlselect/logsql ProcessLiveTailRequest): before
+  query matches more than 10,000 rows in one refresh's read ends with an error
+  (maxRowsPerTailQuery in app/vlselect/logsql ProcessLiveTailRequest; the count
+  starts again at every refresh): before
   its first rows the answer is a 400 with the text "the query matches too many
   logs (10000+)", after them the same text is a line in the NDJSON stream. Up to
   v1.53.x such a tail kept streaming (and could exhaust VictoriaLogs' memory).

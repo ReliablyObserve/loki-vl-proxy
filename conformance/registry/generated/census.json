@@ -911,6 +911,9 @@
     "semantics/tail-delivers-rows-visible-out-of-order | compare:observed",
     "semantics/tail-delivers-rows-visible-out-of-order | gap:fixed",
     "semantics/tail-delivers-rows-visible-out-of-order | query",
+    "semantics/tail-ends-on-vl-row-rate-limit | compare:observed",
+    "semantics/tail-ends-on-vl-row-rate-limit | gap:open",
+    "semantics/tail-ends-on-vl-row-rate-limit | query",
     "semantics/tail-history-limit-above-max-entries | compare:observed",
     "semantics/tail-history-limit-above-max-entries | query",
     "semantics/tail-history-start-limit | compare:observed",
@@ -2193,6 +2196,7 @@
     "internal/proxy/tail_settle_test.go | tail-reads-settled-rows",
     "internal/proxy/tail_vl_row_rate_test.go | loki_api_v1_tail",
     "internal/proxy/tail_vl_row_rate_test.go | semantics/error-layer-internal-go-text",
+    "internal/proxy/tail_vl_row_rate_test.go | semantics/tail-ends-on-vl-row-rate-limit",
     "internal/proxy/tail_vl_row_rate_test.go | vl-live-tail-row-rate-limit",
     "internal/proxy/tenant_auth_parity_test.go | semantics/tenant-header-loki-answers",
     "internal/proxy/tenant_auth_parity_test.go | tenant-auth-follows-loki",
@@ -3216,7 +3220,7 @@
       "any": 48,
       "api": 119,
       "drilldown": 53,
-      "explore": 202,
+      "explore": 203,
       "grafana-datasource": 3,
       "operator": 4
     },
@@ -3241,7 +3245,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 96,
-    "wired_items": 446
+    "wired_items": 447
   },
   "gates": [
     "A/B shape selection",

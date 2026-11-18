@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser and storage (the parse, store and clone round-trip oracles, the Loki differentials and the recorded
   VictoriaLogs verdicts) is recorded again on v1.54.0. No proxy request depends on a v1.54.0 feature, so answers on
   v1.49.0 through v1.53.x do not change. What v1.54.0 changes for proxy users: a live tail whose query matches more
-  than 10,000 new rows in one refresh (a second by default) is ended by VictoriaLogs; the proxy serves such a tail refused at its start from its
+  than 10,000 rows in one refresh's read is ended by VictoriaLogs; the proxy serves such a tail refused at its start from its
   polling tail in the default `-tail.mode=auto` and closes one ended mid-stream with Loki's internal error, never
   VictoriaLogs' text (registry `vl-live-tail-row-rate-limit`). A read of the newest rows with a limit no longer misses or
   repeats rows that share a timestamp, and a cluster with partial responses on returns a storage node's error

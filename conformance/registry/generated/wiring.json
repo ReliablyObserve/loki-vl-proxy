@@ -2210,6 +2210,9 @@
       "internal/proxy/tail_settle_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
     ],
+    "semantics/tail-ends-on-vl-row-rate-limit": [
+      "internal/proxy/tail_vl_row_rate_test.go"
+    ],
     "semantics/tail-history-start-limit": [
       "internal/proxy/tail_history_test.go",
       "test/e2e-compat/tail_history_test.go"
@@ -2885,7 +2888,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 653,
+  "registry_items": 654,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4599,6 +4602,7 @@
     "internal/proxy/tail_vl_row_rate_test.go": [
       "loki_api_v1_tail",
       "semantics/error-layer-internal-go-text",
+      "semantics/tail-ends-on-vl-row-rate-limit",
       "vl-live-tail-row-rate-limit"
     ],
     "internal/proxy/tenant_auth_parity_test.go": [
@@ -6480,5 +6484,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 446
+  "wired_items": 447
 }
