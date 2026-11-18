@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused query five times each send one VictoriaLogs call. Metrics:
   `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
 
+### Fixed
+
+- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
+  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
+  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
+  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
+  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
+  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
+
 ## [2.337.0] - 2026-11-18
 
 ### Fixed
@@ -62,12 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
-  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
-  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
-  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
-  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
-  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
 - A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
   with a blank before its parenthesis (`rate ({app="a"}[5m])`, a tab or a line break there), a query wrapped whole in
   parentheses (`(count_over_time({app="a"}[5m]))`), and a `vector(n)` operand with blanks (`rate(...) + vector (1)`,
