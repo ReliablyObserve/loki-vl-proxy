@@ -21,8 +21,8 @@ why: |
   the one the text gives, and a query Loki's lexer refuses is canonicalized the way before. The answers do not change:
   recorded before the change (canonicalize_nested_golden.json), and the two ways compared by a fuzz target.
 
-  The validation and the parse of the same queries still read nested calls again per level; that is the next step of
-  the same work.
+  At the time of this change the validation, the parse and the request spelling of the same queries still read
+  nested calls again per level; those are separate steps of the same work.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -38,8 +38,7 @@ compare:
   fields: [status, data]
   expect: |
     200 with the same matrix as Loki; the rewrite of the alternative range reads each nested call once (its work
-    grows linearly with the depth). The validation and the request spelling of deeply nested calls are separate
-    steps of the same work.
+    grows linearly with the depth).
 gap:
   status: fixed
   fixed_by: "this change"
@@ -47,7 +46,7 @@ gap:
   effort: S
   area: 'internal/logql parser (parseOpaqueCall, canonFirstArgumentInPlace), canonical.go (CanonicalizeLogRanges, plainArgumentText)'
   loki: 'nested label_replace accepted at every depth under the input size limit'
-  proxy: 'the same verdicts; the rewrite of alternative log ranges reads each nested call once (fixed here); validation and spelling at depth are separate steps'
+  proxy: 'the same verdicts; the rewrite of alternative log ranges reads each nested call once (fixed here)'
   planned_test: 'TestCanonicalizeLogRangesNestedGolden, TestCanonicalizeLogRangesNestedDepthCost, TestCanonicalizeInPlaceMatchesPerArgument, TestNestedCallsMatchRecordedLoki, FuzzCanonicalizeNestedLabelReplace, FuzzCanonicalizeInPlaceMatchesPerArgument and FuzzParseTerminates (internal/logql)'
   visual: none
   visual_reason: 'the answers do not change'

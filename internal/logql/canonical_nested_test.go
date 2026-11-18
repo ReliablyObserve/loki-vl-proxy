@@ -369,9 +369,10 @@ func TestNestedCallsMatchRecordedLoki(t *testing.T) {
 	}
 }
 
-// nestedKnownTextDifference reports the refusals whose text differs from Loki's before this change, kept as they are
-// here: a call left open by a comment (the proxy names the unterminated call, Loki the end of the input), and a
-// call with three arguments inside another call (the proxy counts the column from the call, Loki from the query).
+// nestedKnownTextDifference reports the refusals whose text may differ from Loki's: a call left open by a comment (the
+// proxy named the unterminated call, Loki the end of the input) and a call with three arguments inside another call
+// (the proxy counted the column from the call, Loki from the query). Their text is not checked here, so Loki's text
+// and the earlier one both pass; accept and refuse are checked for every row.
 func nestedKnownTextDifference(q string, v nestedVerdict) bool {
 	return strings.Contains(q, "#") || v.Shape == "three-arguments-innermost"
 }
