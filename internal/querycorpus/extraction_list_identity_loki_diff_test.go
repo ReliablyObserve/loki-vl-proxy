@@ -15,7 +15,7 @@ import (
 
 // The Loki differential of the series a range function reads after a parser that names the keys it extracts
 // (`| logfmt amount, route`, `| json amount`): real Loki (the engine oracle, test/oracle/loki) and real VictoriaLogs
-// (the serve oracle, test/oracle/vl, v1.53.0 and v1.49.0) over the same data, through the proxy's real query and
+// (the serve oracle, test/oracle/vl, v1.54.0 and v1.49.0) over the same data, through the proxy's real query and
 // query_range handlers, as the metric differential runs them (plan_loki_vl_metric_diff_test.go).
 //
 // A Loki series after an extraction list is the stream plus the labels the list extracts that the line holds (an

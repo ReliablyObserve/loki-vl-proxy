@@ -17,7 +17,7 @@ import (
 // The Loki differential of a ranking over a binary operation (semantics/rank-over-binary-operation): topk, bottomk,
 // sort, sort_desc, stddev and stdvar whose operand is a binary operation between two aggregations, an aggregation and a number, with
 // vector matching, a bool modifier, a set operator or a chain of operations. Real Loki (the engine oracle) and real
-// VictoriaLogs (the serve oracle, v1.53.0 and v1.49.0) over the same data, through the proxy's real handlers, as the
+// VictoriaLogs (the serve oracle, v1.54.0 and v1.49.0) over the same data, through the proxy's real handlers, as the
 // metric differential runs them.
 //
 //   - Data (rankBinaryFixture): lines on five streams of job=rb, two levels on pods a and b and one on pod c, each at

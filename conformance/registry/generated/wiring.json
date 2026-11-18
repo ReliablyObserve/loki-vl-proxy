@@ -759,6 +759,7 @@
       "internal/proxy/tail_history_test.go",
       "internal/proxy/tail_pipeline_test.go",
       "internal/proxy/tail_settle_test.go",
+      "internal/proxy/tail_vl_row_rate_test.go",
       "test/e2e-compat/tail_backend_outage_test.go",
       "test/e2e-compat/tail_history_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
@@ -1503,6 +1504,7 @@
       "internal/proxy/stream_response_broken_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
+      "internal/proxy/tail_vl_row_rate_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-proxy-limit-status": [
@@ -2245,6 +2247,9 @@
       "internal/proxy/tail_settle_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
     ],
+    "semantics/tail-ends-on-vl-row-rate-limit": [
+      "internal/proxy/tail_vl_row_rate_test.go"
+    ],
     "semantics/tail-history-start-limit": [
       "internal/proxy/tail_history_test.go",
       "test/e2e-compat/tail_history_test.go"
@@ -2886,6 +2891,9 @@
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
+    "vl-live-tail-row-rate-limit": [
+      "internal/proxy/tail_vl_row_rate_test.go"
+    ],
     "vl-math-quoted-constant-clone-crash": [
       "internal/logsql/refusal_table_test.go",
       "internal/logsql/refusal_test.go",
@@ -2970,7 +2978,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 668,
+  "registry_items": 672,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4739,6 +4747,12 @@
       "semantics/tail-delivers-rows-visible-out-of-order",
       "semantics/tail-survives-backend-outage",
       "tail-reads-settled-rows"
+    ],
+    "internal/proxy/tail_vl_row_rate_test.go": [
+      "loki_api_v1_tail",
+      "semantics/error-layer-internal-go-text",
+      "semantics/tail-ends-on-vl-row-rate-limit",
+      "vl-live-tail-row-rate-limit"
     ],
     "internal/proxy/tenant_auth_parity_test.go": [
       "semantics/tenant-header-loki-answers",
@@ -6560,7 +6574,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 769,
+  "tests_with_markers": 770,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6662,5 +6676,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 460
+  "wired_items": 462
 }

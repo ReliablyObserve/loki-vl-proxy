@@ -14,7 +14,7 @@ import (
 
 // The Loki differential of first_over_time and last_over_time with an offset that is not a multiple of the step
 // (semantics/first-last-over-time-translation: `last_over_time({...} | logfmt | unwrap latency_ms [1m] offset 2s)
-// by (level)` at a 60s step). Real Loki (the engine oracle) and real VictoriaLogs (the serve oracle, v1.53.0 and
+// by (level)` at a 60s step). Real Loki (the engine oracle) and real VictoriaLogs (the serve oracle, v1.54.0 and
 // v1.49.0) over the same data, through the proxy's real handlers, as the metric differential runs them.
 //
 //   - Data (firstLastOffsetFixture): logfmt lines of level and latency_ms on two streams of job=fo, a line every

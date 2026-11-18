@@ -84,7 +84,7 @@ func (f *levelLessFakeVL) handler(t *testing.T) http.Handler {
 			_, _ = io.WriteString(w, "OK")
 			return
 		case "/metrics":
-			_, _ = io.WriteString(w, `vm_app_version{version="victoria-logs-20250101-000000-tags-v1.53.0-0-g0", short_version="v1.53.0"} 1`+"\n")
+			_, _ = io.WriteString(w, `vm_app_version{version="victoria-logs-20250101-000000-tags-v1.54.0-0-g0", short_version="v1.54.0"} 1`+"\n")
 			return
 		case "/select/logsql/stats_query_range":
 		case "/select/logsql/query":
@@ -337,7 +337,7 @@ func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 						_, _ = io.WriteString(w, "OK")
 						return
 					case "/metrics":
-						_, _ = io.WriteString(w, `vm_app_version{version="victoria-logs-20250101-000000-tags-v1.53.0-0-g0", short_version="v1.53.0"} 1`+"\n")
+						_, _ = io.WriteString(w, `vm_app_version{version="victoria-logs-20250101-000000-tags-v1.54.0-0-g0", short_version="v1.54.0"} 1`+"\n")
 						return
 					}
 					_ = r.ParseForm()

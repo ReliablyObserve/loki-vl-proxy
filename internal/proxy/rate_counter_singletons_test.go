@@ -307,13 +307,13 @@ func compareRateCounter(t testing.TB, label string, s rcScenario, got, want map[
 // transaction id makes every line a series of its own, `sum` and `sum by
 // (level)` of rate_counter over `| logfmt` answer Loki's points bit for bit
 // (0 at every step whose window holds a sample, no point elsewhere), from
-// VictoriaLogs stats alone (no row read), on VictoriaLogs v1.49.0, v1.53.0 and
+// VictoriaLogs stats alone (no row read), on VictoriaLogs v1.49.0, v1.54.0 and
 // an unknown version, under a mapped tenant and the default one. `| json`
 // keeps the per-row evaluator.
 //
 // conformance: semantics/unwrap-rate-counter-one-sample-series, semantics/unwrap-rate-ungrouped-sum-per-stream, metric-series-identity
 func TestRateCounterOneSampleMatchesLoki(t *testing.T) {
-	for _, version := range []string{"v1.49.0", "v1.53.0", ""} {
+	for _, version := range []string{"v1.49.0", "v1.54.0", ""} {
 		for _, parser := range []string{"logfmt", "json"} {
 			t.Run(version+"/"+parser, func(t *testing.T) {
 				rnd := rand.New(rand.NewSource(int64(len(version)*31 + len(parser))))
@@ -360,7 +360,7 @@ func TestRateCounterOneSampleProofRefusesSharedSeries(t *testing.T) {
 				dups++
 			}
 		}
-		_, readRows := runRateCounterScenario(t, "v1.53.0", s, "0")
+		_, readRows := runRateCounterScenario(t, "v1.54.0", s, "0")
 		if dups >= 2 && !readRows {
 			t.Fatalf("#%d %s: %d lines share a series, the stats-only answer was given", i, s.query(), dups)
 		}
@@ -410,7 +410,7 @@ func TestRateCounterOneSampleProofEdges(t *testing.T) {
 			for i := 0; i < 30; i++ {
 				s.rows = append(s.rows, tc.row(i))
 			}
-			got, readRows := runRateCounterScenario(t, "v1.53.0", s, "0")
+			got, readRows := runRateCounterScenario(t, "v1.54.0", s, "0")
 			if readRows == tc.zeroOK {
 				t.Fatalf("rows read %v, want %v", readRows, !tc.zeroOK)
 			}
@@ -421,7 +421,7 @@ func TestRateCounterOneSampleProofEdges(t *testing.T) {
 	}
 	t.Run("no line", func(t *testing.T) {
 		s := rcScenario{window: 5 * time.Minute, step: 30 * time.Second, start: base, end: base + int64(5*time.Minute), parser: "logfmt"}
-		got, readRows := runRateCounterScenario(t, "v1.53.0", s, "0")
+		got, readRows := runRateCounterScenario(t, "v1.54.0", s, "0")
 		if readRows || len(got) != 0 {
 			t.Fatalf("rows read %v, %d series; want none", readRows, len(got))
 		}
@@ -483,7 +483,7 @@ func FuzzRateCounterOneSample(f *testing.F) {
 			parser = "logfmt"
 		}
 		s := generateRateCounterScenario(rand.New(rand.NewSource(seed)), parser, shared)
-		got, readRows := runRateCounterScenario(t, "v1.53.0", s, "0")
+		got, readRows := runRateCounterScenario(t, "v1.54.0", s, "0")
 		if !readRows {
 			compareRateCounter(t, "fuzz", s, got, rateCounterReference(t, s))
 		}
@@ -501,7 +501,7 @@ func TestRateCounterKeysAreReusedPerQuery(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		rows = append(rows, vlemu.Row{TS: base - int64(10*time.Minute) + int64(i)*int64(5*time.Second), Stream: `{app="rc"}`, Value: float64(i % 9), Msg: fmt.Sprintf("amount=%d txn=k%d", i%9, i)})
 	}
-	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 	backend := httptest.NewServer(rateCounterEmuHandler(emu))
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})

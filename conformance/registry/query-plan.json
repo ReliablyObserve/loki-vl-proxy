@@ -42,7 +42,7 @@
       "spelling_divergent": 5,
       "unsound": 0
     },
-    "v1.53 identity": {
+    "v1.54 identity": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -51,7 +51,7 @@
       "spelling_divergent": 5,
       "unsound": 0
     },
-    "v1.53 no body scan": {
+    "v1.54 no body scan": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -60,7 +60,7 @@
       "spelling_divergent": 5,
       "unsound": 0
     },
-    "v1.53 no body scan, stream fields, keepLine": {
+    "v1.54 no body scan, stream fields, keepLine": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -69,7 +69,7 @@
       "spelling_divergent": 0,
       "unsound": 0
     },
-    "v1.53 stream fields": {
+    "v1.54 stream fields": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -78,7 +78,7 @@
       "spelling_divergent": 5,
       "unsound": 0
     },
-    "v1.53 stream fields and labels": {
+    "v1.54 stream fields and labels": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -87,7 +87,7 @@
       "spelling_divergent": 5,
       "unsound": 0
     },
-    "v1.53 stream labels": {
+    "v1.54 stream labels": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -96,7 +96,7 @@
       "spelling_divergent": 5,
       "unsound": 0
     },
-    "v1.53 stream labels keepLine": {
+    "v1.54 stream labels keepLine": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -105,7 +105,7 @@
       "spelling_divergent": 0,
       "unsound": 0
     },
-    "v1.53 underscores": {
+    "v1.54 underscores": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -114,7 +114,7 @@
       "spelling_divergent": 5,
       "unsound": 0
     },
-    "v1.53 underscores keepLine": {
+    "v1.54 underscores keepLine": {
       "rows": 2630,
       "keys": 2575,
       "shared_texts": 55,
@@ -190,7 +190,7 @@
           "translator": 5
         }
       },
-      "v1.53 loki profile": {
+      "v1.54 loki profile": {
         "compared": 221,
         "not_comparable": {
           "Loki rejects the query": 6,
@@ -392,7 +392,7 @@
           }
         }
       },
-      "v1.53 loki profile": {
+      "v1.54 loki profile": {
         "instant": {
           "runs": 805,
           "plan_runs": 805,

@@ -16,7 +16,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
-// TestJSONLineFieldsVictoriaLogsCost measures what -json-line-fields-as-line-keys costs VictoriaLogs (v1.53.0 and
+// TestJSONLineFieldsVictoriaLogsCost measures what -json-line-fields-as-line-keys costs VictoriaLogs (v1.54.0 and
 // v1.49.0, its own query handlers through the serve oracle): the same reads the proxy sends with the flag off and with
 // it on, over a data set of placeholder rows (JSON lines stored as fields) and logfmt rows, median of repeated runs.
 // It records nothing and asserts nothing but that both answer; LVP_JSONLINE_VLCOST=1 runs it.

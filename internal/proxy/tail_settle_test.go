@@ -27,7 +27,7 @@ type settleRow struct {
 
 // settleVL emulates VictoriaLogs' read side as the tail sees it
 // (app/vlselect/logsql ProcessLiveTailRequest and tailProcessor, v1.49.0 and
-// v1.53.0):
+// v1.54.0):
 //   - an ingested row becomes searchable only when its rows-buffer shard
 //     flushes (lib/logstorage/datadb.go rowsBuffer: shards filled round-robin,
 //     each flushed a second after its first row), so rows of one stream can

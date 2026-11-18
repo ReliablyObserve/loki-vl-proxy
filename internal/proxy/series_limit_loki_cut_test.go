@@ -549,7 +549,7 @@ func BenchmarkSeriesLimitDrilldownRangeRequest(b *testing.B) {
 func TestSeriesLimit_LokiModeRankedRefresh(t *testing.T) {
 	rows := drilldownSeriesLimitRows(8, true) // p00..p07, one every 5 minutes
 	newProxy := func() (*vlemu.Emulator, *Proxy) {
-		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 		srv := httptest.NewServer(emu.Handler())
 		t.Cleanup(srv.Close)
 		p, err := New(Config{BackendURL: srv.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0",

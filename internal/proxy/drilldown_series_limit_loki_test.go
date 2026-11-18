@@ -203,7 +203,7 @@ func TestDrilldownSeriesLimitMatchesLoki(t *testing.T) {
 
 	wantWarning := fmt.Sprintf("maximum number of series (%d) reached for a single query; returning partial results", drilldownSeriesLimit)
 	truncated, sharedSeries, cut, sameSet := 0, 0, 0, 0
-	for _, run := range []struct{ version, mode string }{{"v1.49.0", "loki"}, {"v1.53.0", "loki"}, {"v1.49.0", "busiest"}, {"v1.53.0", "busiest"}} {
+	for _, run := range []struct{ version, mode string }{{"v1.49.0", "loki"}, {"v1.54.0", "loki"}, {"v1.49.0", "busiest"}, {"v1.54.0", "busiest"}} {
 		version, mode := run.version, run.mode
 		proxies := map[string]*Proxy{}
 		for _, c := range order {
