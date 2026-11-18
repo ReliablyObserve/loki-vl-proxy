@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 )
 
 // Refusal prediction: what VictoriaLogs answers a query with before it reads any data, decided from the query text
@@ -16,93 +18,32 @@ import (
 // it knows: anything else is sent and VictoriaLogs' answer classified, so a prediction never refuses a query
 // VictoriaLogs would run.
 
-// Version is a VictoriaLogs release.
-type Version struct {
-	Major, Minor, Patch int
-	// Known is false for a release the proxy has not detected: nothing is predicted.
-	Known bool
+// gateView is what the refusal rules read of the capability set. A rule fires only on gates that are decided (by the
+// release or by a probe), never on a default; the crash guard reads the Safety gate, which is off, and so guards,
+// until the release is known to carry the fix.
+type gateView struct {
+	// known is whether the effective release is known (the length limit the proxy learns belongs to a release).
+	known bool
+	// refuseCoalesce: the coalesce pipe is decided to be absent, so a query holding it is refused.
+	refuseCoalesce bool
+	// limitAfterStats and rangeWriters are the stats shape rules' gates; statsDecided is both decided.
+	limitAfterStats, rangeWriters, statsDecided bool
+	// extraLen: the extra_filters length refusal is decided to be present.
+	extraLen bool
+	// cloneFixed is the math_quoted_constant_clone Safety gate: on only for a release known to carry the fix.
+	cloneFixed bool
 }
 
-// ParseVersion reads a VictoriaLogs semver ("v1.53.0", "1.52.1"); an unreadable one is not Known.
-func ParseVersion(s string) Version {
-	maj, min, patch, ok := parseSemver(s)
-	if !ok {
-		return Version{}
+func viewOf(s capability.Set) gateView {
+	return gateView{
+		known:           s.Release().Known,
+		refuseCoalesce:  s.Decided(capability.PipeCoalesce) && !s.On(capability.PipeCoalesce),
+		limitAfterStats: s.On(capability.StatsLimitAfterStats), rangeWriters: s.On(capability.RangeTimeWritersRefused),
+		statsDecided: s.Decided(capability.StatsLimitAfterStats) && s.Decided(capability.RangeTimeWritersRefused),
+		extraLen:     s.Decided(capability.ExtraFiltersLen) && s.On(capability.ExtraFiltersLen),
+		cloneFixed:   s.On(capability.MathQuotedConstantClone),
 	}
-	return Version{Major: maj, Minor: min, Patch: patch, Known: true}
 }
-
-// String is the release as VictoriaLogs names it ("v1.53.0"), or "unknown".
-func (v Version) String() string {
-	if !v.Known {
-		return "unknown"
-	}
-	return "v" + strconv.Itoa(v.Major) + "." + strconv.Itoa(v.Minor) + "." + strconv.Itoa(v.Patch)
-}
-
-// Gate is a VictoriaLogs behaviour by release line: it holds from From on, and on an older release line from the
-// first patch Lines names for it (an LTS line that got a fix in a patch release; v1.52.1 carries a fix v1.53.0
-// also has, while v1.52.0 does not). Gating by line, not only by a minimum version, keeps a patch release of an
-// older line from being read as the line's first release. No gate has a line entry today: the LTS patches that
-// name fixes (v1.52.1, v1.52.2) are enterprise-only images the proxy's checks have not run against.
-type Gate struct {
-	From  [3]int
-	Lines map[[2]int]int
-}
-
-// In reports whether release v has the behaviour.
-func (g Gate) In(v Version) bool {
-	if !v.Known {
-		return false
-	}
-	if cmp3(v.Major, v.Minor, v.Patch, g.From) >= 0 {
-		return true
-	}
-	if patch, ok := g.Lines[[2]int{v.Major, v.Minor}]; ok {
-		return v.Patch >= patch
-	}
-	return false
-}
-
-func cmp3(maj, min, patch int, w [3]int) int {
-	switch {
-	case maj != w[0]:
-		return maj - w[0]
-	case min != w[1]:
-		return min - w[1]
-	}
-	return patch - w[2]
-}
-
-// The release gates of the predicted refusals (VictoriaLogs CHANGELOG and lib/logstorage of each release).
-var (
-	// GatePipeCoalesce: the coalesce pipe (v1.51.0, #690). Before it `| coalesce (...)` is refused as an
-	// unexpected pipe.
-	GatePipeCoalesce = Gate{From: [3]int{1, 51, 0}}
-	// GatePipeJSONArrayConcat: the json_array_concat pipe (v1.52.0, #712). v1.49 and v1.50 read
-	// `| json_array_concat ...` as a filter pipe and answer it; it is never predicted.
-	GatePipeJSONArrayConcat = Gate{From: [3]int{1, 52, 0}}
-	// GateStatsLimitAfterStats: limit and offset pipes after the last stats pipe of a stats_query (v1.51.0,
-	// #1296). Before it they are refused as pipes that cannot be put after stats.
-	GateStatsLimitAfterStats = Gate{From: [3]int{1, 51, 0}}
-	// GateRangeTimeWriters: on stats_query_range, a pipe in front of the last stats pipe that writes _time (math
-	// ... as _time, replace ... at _time, unpack_json/unpack_logfmt of _time, unroll of _time, extract of
-	// <_time>, collapse_nums at _time) is refused (v1.53.0, its canReturnLastNResults checks). v1.49 to v1.52.x
-	// answer such a query, bucketing by the overwritten _time.
-	GateRangeTimeWriters = Gate{From: [3]int{1, 53, 0}}
-	// GateMathQuotedConstantClone: a math pipe holding a quoted number ("2025-01-01T00:00:00Z") keeps its quotes
-	// when VictoriaLogs prints the query (v1.53.0). Before it, a query that VictoriaLogs clones (the limit query
-	// arg of /select/logsql/query, live tailing, a cluster's remote query) fails its own reparse and VictoriaLogs
-	// panics: the connection drops without an answer and the VictoriaLogs process exits (probed on the published v1.49.0 and
-	// v1.52.0 images). The v1.52.1 and v1.52.2 LTS releases, whose notes name the fix, exist only as enterprise
-	// images and their tags' source lacks it: the whole v1.52 line is guarded, as a backend crash costs more than
-	// refusing that one query on an LTS build that has the fix.
-	GateMathQuotedConstantClone = Gate{From: [3]int{1, 53, 0}}
-	// GateExtraFiltersLen: -search.maxQueryLen also bounds each extra_filters and extra_stream_filters arg (v1.54.0,
-	// #1923; app/vlselect/logsql parseExtraFilters; probed on the published v1.54.0 image, v1.52.0 and v1.53.0 answer
-	// such a call). The v1.52.2 LTS release that names the same fix is enterprise-only and not gated in.
-	GateExtraFiltersLen = Gate{From: [3]int{1, 54, 0}}
-)
 
 // The VictoriaLogs query endpoints a refusal is predicted on.
 const (
@@ -151,24 +92,18 @@ func RefusalRules() []string {
 	return []string{RuleQueryTooLong, RuleExtraFiltersTooLong, RulePipeBeforeRelease, RuleStatsMissingStats, RuleRangePipeBeforeStat, RuleStatsPipeAfterStats, RuleMathQuotedClone}
 }
 
-// PredictRefusal returns VictoriaLogs' answer to in on release v when VictoriaLogs refuses it before reading any
-// data. It reads the text with the proxy's LogsQL parser only after an allocation-free screen finds a construct a
-// rule can fire on; a text the parser does not read and a pipe no rule knows predict nothing, and so does an
-// unknown release, except for a call its handler would crash on (guarded until the release is known to be fixed).
-//
-// TODO(capability layer): take the layer's gate set instead of a Version once it lands; the gates below move into
-// its table unchanged.
-func PredictRefusal(in RefusalInput, v Version) (Refusal, bool) {
+// PredictRefusal returns VictoriaLogs' answer to in on the backend the capability set describes, when VictoriaLogs
+// refuses it before reading any data. It reads the text with the proxy's LogsQL parser only after an allocation-free
+// screen finds a construct a rule can fire on; a text the parser does not read and a pipe no rule knows predict
+// nothing. A rule reads only gates the set has decided (by the release or by a probe), so an unknown backend
+// predicts nothing but a call its handler would crash on (guarded until the release is known to be fixed).
+func PredictRefusal(in RefusalInput, set capability.Set) (Refusal, bool) {
 	status := refusalStatus(in.Path)
 	if status == 0 {
 		return Refusal{}, false
 	}
-	if !v.Known {
-		// Nothing is predicted for an unknown release but a crash: a release that may lack the fix is guarded,
-		// as a crash takes VictoriaLogs down.
-		return predictCloneCrash(in, v)
-	}
-	if in.MaxQueryLen > 0 && len(in.Query) > in.MaxQueryLen && in.Path != PathTail {
+	v := viewOf(set)
+	if in.MaxQueryLen > 0 && v.known && len(in.Query) > in.MaxQueryLen && in.Path != PathTail {
 		// app/vlselect/logsql parseQueryFromRequest checks the length before parsing.
 		return Refusal{Rule: RuleQueryTooLong, Status: status, Message: fmt.Sprintf(
 			"the `query` arg length cannot exceed -search.maxQueryLen=%d bytes; the current query length is %d bytes", in.MaxQueryLen, len(in.Query))}, true
@@ -183,7 +118,7 @@ func PredictRefusal(in RefusalInput, v Version) (Refusal, bool) {
 	}
 	if screen&screenPipes != 0 {
 		for _, p := range q.Pipes {
-			if _, ok := p.(PipeCoalesce); ok && !GatePipeCoalesce.In(v) {
+			if _, ok := p.(PipeCoalesce); ok && v.refuseCoalesce {
 				return Refusal{Rule: RulePipeBeforeRelease, Status: status, Message: `cannot parse ` + "`query`" + ` arg: unexpected pipe "coalesce"`}, true
 			}
 		}
@@ -202,18 +137,6 @@ func PredictRefusal(in RefusalInput, v Version) (Refusal, bool) {
 	return Refusal{}, false
 }
 
-// predictCloneCrash is the clone crash rule alone (GateMathQuotedConstantClone).
-func predictCloneCrash(in RefusalInput, v Version) (Refusal, bool) {
-	if screenRefusal(in, v)&screenClone == 0 {
-		return Refusal{}, false
-	}
-	q, err := Parse(in.Query)
-	if err != nil {
-		return Refusal{}, false
-	}
-	return cloneCrashIn(q)
-}
-
 // cloneCrashIn finds a math pipe of q holding a quoted constant VictoriaLogs cannot read back.
 func cloneCrashIn(q *Query) (Refusal, bool) {
 	for _, p := range q.Pipes {
@@ -226,8 +149,8 @@ func cloneCrashIn(q *Query) (Refusal, bool) {
 
 // extraFiltersTooLong is VictoriaLogs' refusal of an extra_filters or extra_stream_filters arg longer than its
 // -search.maxQueryLen (checked after the query parses, in that order).
-func extraFiltersTooLong(in RefusalInput, v Version, status int) (Refusal, bool) {
-	if in.MaxQueryLen <= 0 || in.Path == PathTail || !GateExtraFiltersLen.In(v) {
+func extraFiltersTooLong(in RefusalInput, v gateView, status int) (Refusal, bool) {
+	if in.MaxQueryLen <= 0 || in.Path == PathTail || !v.extraLen {
 		return Refusal{}, false
 	}
 	for _, arg := range [...]struct {
@@ -273,17 +196,17 @@ const (
 
 // screenRefusal is the cheap test of every rule but the length: which rules may fire on in, read from its pipe
 // names alone, without allocating.
-func screenRefusal(in RefusalInput, v Version) int {
+func screenRefusal(in RefusalInput, v gateView) int {
 	var screen int
-	if !GatePipeCoalesce.In(v) && strings.Contains(in.Query, "coalesce") {
+	if v.refuseCoalesce && strings.Contains(in.Query, "coalesce") {
 		screen |= screenPipes
 	}
-	if in.Path == PathStatsQuery || in.Path == PathStatsQueryRange {
+	if v.statsDecided && (in.Path == PathStatsQuery || in.Path == PathStatsQueryRange) {
 		if statsShapeMayRefuse(in.Query, in.Path == PathStatsQueryRange, v) {
 			screen |= screenStats
 		}
 	}
-	if clonesQuery(in) && !GateMathQuotedConstantClone.In(v) && strings.Contains(in.Query, "math") && strings.ContainsAny(in.Query, "\"`'") {
+	if clonesQuery(in) && !v.cloneFixed && strings.Contains(in.Query, "math") && strings.ContainsAny(in.Query, "\"`'") {
 		screen |= screenClone
 	}
 	return screen
@@ -293,7 +216,7 @@ func screenRefusal(in RefusalInput, v Version) int {
 // reports a shape GetStatsLabelsAddGroupingByTime may refuse: no stats pipe; on a range query a pipe ahead of the
 // last stats pipe that is never allowed there, or one that may write or drop _time; a pipe after it that is never
 // allowed there.
-func statsShapeMayRefuse(query string, rangeQuery bool, v Version) bool {
+func statsShapeMayRefuse(query string, rangeQuery bool, v gateView) bool {
 	var names [64]pipeWord
 	n, ok := pipeWords(query, names[:])
 	if !ok {
@@ -396,7 +319,7 @@ const (
 
 // frontRule is how VictoriaLogs v reads a pipe named name ahead of the last stats pipe of a range query (its
 // canReturnLastNResults).
-func frontRule(name string, v Version) int {
+func frontRule(name string, v gateView) int {
 	switch name {
 	case "total_stats", "running_stats", "sort", "order", "limit", "head", "offset", "skip", "first", "last", "top", "uniq",
 		"sample", "field_names", "field_values", "facets", "join", "union", "stream_context", "generate_sequence",
@@ -409,7 +332,7 @@ func frontRule(name string, v Version) int {
 		return frontTime
 	case "math", "eval", "replace", "replace_regexp", "unpack_json", "unpack_logfmt", "unroll", "extract",
 		"extract_regexp", "collapse_nums":
-		if GateRangeTimeWriters.In(v) {
+		if v.rangeWriters {
 			return frontTime
 		}
 	}
@@ -418,10 +341,10 @@ func frontRule(name string, v Version) int {
 
 // afterStatsAllowedName reports a pipe name GetStatsLabels lets follow the last stats pipe on v (a pipe the screen
 // does not name is a filter pipe written without its keyword, which is allowed).
-func afterStatsAllowedName(name string, rangeQuery bool, v Version) bool {
+func afterStatsAllowedName(name string, rangeQuery bool, v gateView) bool {
 	switch name {
 	case "limit", "head", "offset", "skip":
-		return !rangeQuery && GateStatsLimitAfterStats.In(v)
+		return !rangeQuery && v.limitAfterStats
 	case "unpack_logfmt", "extract", "extract_regexp", "replace", "replace_regexp", "hash", "len", "json_array_len",
 		"pack_json", "pack_logfmt", "split", "unpack_words", "coalesce", "json_array_concat", "top", "uniq", "sample",
 		"field_names", "field_values", "facets", "join", "union", "stream_context", "unroll", "collapse_nums",
@@ -433,7 +356,7 @@ func afterStatsAllowedName(name string, rangeQuery bool, v Version) bool {
 
 // predictStatsRefusal applies GetStatsLabelsAddGroupingByTime's checks to q, in its order: a stats pipe, then on a
 // range query the pipes ahead of the last stats pipe, then the pipes after it.
-func predictStatsRefusal(q *Query, rangeQuery bool, v Version) (Refusal, bool) {
+func predictStatsRefusal(q *Query, rangeQuery bool, v gateView) (Refusal, bool) {
 	if mergesLimits(q.Pipes) {
 		return Refusal{}, false
 	}
@@ -471,7 +394,7 @@ func predictStatsRefusal(q *Query, rangeQuery bool, v Version) (Refusal, bool) {
 			continue
 		}
 		msg := fmt.Sprintf("the %q pipe cannot be put after %q pipe in the query", pipeBody(p), pipeBody(stats))
-		if rangeQuery && GateStatsLimitAfterStats.In(v) && isLimitOrOffset(p) {
+		if rangeQuery && v.limitAfterStats && isLimitOrOffset(p) {
 			msg = fmt.Sprintf("the %s pipe isn't allowed in range queries, since it cannot be applied individually for each step", pipeBody(p))
 		}
 		return Refusal{Rule: RuleStatsPipeAfterStats, Status: http.StatusUnprocessableEntity, Message: msg}, true
@@ -526,7 +449,7 @@ func pipeBody(p Pipe) string {
 
 // frontPipeRefused reports whether VictoriaLogs v refuses p ahead of the last stats pipe of a range query (its
 // canReturnLastNResults is false); known is false for a pipe no rule reads, which predicts nothing.
-func frontPipeRefused(p Pipe, v Version) (refused, known bool) {
+func frontPipeRefused(p Pipe, v gateView) (refused, known bool) {
 	switch p.(type) {
 	case PipeFilter, PipeDecolorize, PipeDropEmptyFields, PipeSetStreamFields, PipeTimeAdd, PipeUnpackSyslog:
 		return false, true
@@ -538,7 +461,7 @@ func frontPipeRefused(p Pipe, v Version) (refused, known bool) {
 	if field, ok := frontResultField(p); ok {
 		// A pipe writing one field: refused when it writes _time; a written field the pipe defaults (an empty one)
 		// is not read.
-		if field.gated && !GateRangeTimeWriters.In(v) {
+		if field.gated && !v.rangeWriters {
 			return false, true
 		}
 		return unquoteName(field.name) == "_time", field.name != "" || !field.optional
@@ -589,8 +512,8 @@ func frontResultField(p Pipe) (resultField, bool) {
 }
 
 // frontListPipeRefused is frontPipeRefused for the pipes that name several fields.
-func frontListPipeRefused(p Pipe, v Version) (refused, known bool) {
-	writers := GateRangeTimeWriters.In(v)
+func frontListPipeRefused(p Pipe, v gateView) (refused, known bool) {
+	writers := v.rangeWriters
 	switch t := p.(type) {
 	case PipeFields:
 		for _, f := range t.Labels {
@@ -667,13 +590,13 @@ func namesWildcard(names []string) bool {
 
 // afterStatsPipeAllowed reports whether VictoriaLogs v lets p follow the last stats pipe (GetStatsLabels' switch
 // over the pipes after it); known is false for a pipe no rule reads.
-func afterStatsPipeAllowed(p Pipe, rangeQuery bool, v Version) (allowed, known bool) {
+func afterStatsPipeAllowed(p Pipe, rangeQuery bool, v gateView) (allowed, known bool) {
 	switch p.(type) {
 	case PipeFilter, PipeFirst, PipeLast, PipeSort, PipeRunningStats, PipeTotalStats, PipeMath, PipeFields,
 		PipeDelete, PipeCopy, PipeRename, PipeFormat, PipeUnpackJSON:
 		return true, true
 	case PipeLimit, PipeOffset:
-		return !rangeQuery && GateStatsLimitAfterStats.In(v), true
+		return !rangeQuery && v.limitAfterStats, true
 	case PipeUnpackLogfmt, PipeExtract, PipeExtractRegexp, PipeReplace, PipeReplaceRegexp, PipeHash, PipeLen,
 		PipeJSONArrayLen, PipePackJSON, PipePackLogfmt, PipeSplit, PipeUnpackWords, PipeCoalesce, PipeJSONArrayConcat,
 		PipeTop, PipeUniq, PipeSample, PipeFieldNames, PipeFieldValues, PipeFacets, PipeJoin, PipeUnion,

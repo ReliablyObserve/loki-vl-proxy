@@ -193,6 +193,18 @@
       "writer": "writeErrorShaped"
     },
     {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, lokierr.MethodNotAllowed()",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/backend_capabilities.go handleCapabilities",
+      "writer": "fail"
+    },
+    {
       "dynamic": true,
       "error_text": false,
       "error_type": "bad_data",
@@ -2781,11 +2793,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 191,
+        "count": 192,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 187,
+        "layer_sites": 188,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2793,6 +2805,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 224
+    "call_sites": 225
   }
 }

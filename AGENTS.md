@@ -277,6 +277,20 @@ answer is held only for its class's TTL (`cache.Policy`). Keep it that way:
   (`LVP_RUN_ORACLES=1`) on v1.49.0 and the newest release. A rule never fires on
   a pipe it does not know or a text the parser does not read, and nothing but a
   crash guard fires before the release is detected.
+- Every input that turns an optimisation or a behaviour on or off is a gate of
+  the one table in `internal/capability/gates.go` (`capability` = a feature
+  used when present, unknown is off; `safety` = a crash or wrong-answer guard,
+  unknown is guarded, never probed; `behaviour` = how VictoriaLogs answers,
+  unknown is undecided). Code asks a `capability.Set` (`p.caps.Backend()`,
+  `Layer.For(ctx)`); nothing else compares release strings or keeps a version
+  field. A new gate is a table row, a `vl/capabilities/` item named by its
+  `Registry`, a row of the table test, and, when it has a probe, a pass of
+  `TestProbesCrashSafe` (`LVP_RUN_ORACLES=1`) on v1.49.0 and the newest
+  release; `docs/reference/capability-gates.md` is regenerated
+  (`go run ./cmd/configdoc`). Only a version that names VictoriaLogs counts as
+  its release, the lowest release seen in the window decides, and an outage
+  never flips a gate. Cross-replica keys carry `Set.Digest()`, never a
+  per-process counter.
 - Only a failure a peer would pay a VictoriaLogs call for, held 30 s or more,
   is pushed to peers (the peer cache's everywhere class); its peer key carries
   the build, the VictoriaLogs release and the routing digest, never a

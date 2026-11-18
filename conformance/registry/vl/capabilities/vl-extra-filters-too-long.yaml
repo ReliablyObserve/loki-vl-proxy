@@ -13,7 +13,8 @@ description: |
 proxy_usage: |
   The proxy's tenant and exclusion scoping is sent as extra_stream_filters and
   extra_filters; on v1.54+ an arg over the learned limit is answered with the
-  refusal without the call.
+  refusal without the call. The behaviour gate vl.extra_filters_len (internal/capability)
+  is decided by the release; undecided, nothing is predicted.
 fallback: |
   None on older releases (they run it); the refusal itself is Loki's 500 as a
   refused plan.

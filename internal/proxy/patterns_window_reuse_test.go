@@ -129,7 +129,7 @@ func TestPatternsShiftedRangeReusesCompletedWindows(t *testing.T) {
 	}
 
 	p := newTestProxy(t, backend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	p.queryRangeHistoryCacheTTL = 24 * time.Hour
 	first := request(p, start, end)
 	if len(first.Data) == 0 {
@@ -169,7 +169,7 @@ func TestPatternsShiftedRangeReusesCompletedWindows(t *testing.T) {
 	requireProxyMetricsContain(t, p, `loki_vl_proxy_cache_layer_hits_total{layer="loki",component="primary",tier="l1_memory"}`)
 
 	cold := newTestProxy(t, backend.URL)
-	cold.backendSupportsDensePatternWindowing = true
+	cold.setReleaseForTest("v1.50.0")
 	expected := request(cold, start.Add(30*time.Second), end.Add(30*time.Second))
 	gotJSON, _ := json.Marshal(shifted)
 	wantJSON, _ := json.Marshal(expected)
@@ -182,7 +182,7 @@ func TestPatternsShiftedRangeReusesCompletedWindows(t *testing.T) {
 	recentStart := time.Now().UTC().Add(-30*time.Minute - 30*time.Second).Truncate(30 * time.Second)
 	recentEnd := recentStart.Add(30 * time.Minute)
 	recent := newTestProxy(t, backend.URL)
-	recent.backendSupportsDensePatternWindowing = true
+	recent.setReleaseForTest("v1.50.0")
 	recent.queryRangeHistoryCacheTTL = 24 * time.Hour
 	_ = request(recent, recentStart, recentEnd)
 	recentFirstCalls := backendCalls.Load()
@@ -230,7 +230,7 @@ func TestPatternsShiftedRangeReusesDiskWindowsAfterRestart(t *testing.T) {
 			memory.Close()
 			t.Fatal(err)
 		}
-		p.backendSupportsDensePatternWindowing = true
+		p.setReleaseForTest("v1.50.0")
 		p.queryRangeHistoryCacheTTL = 24 * time.Hour
 		return p, memory
 	}
@@ -290,7 +290,7 @@ func TestPatternsShiftedRangeReusesDiskWindowsAfterRestart(t *testing.T) {
 	requireProxyMetricsContain(t, second, `loki_vl_proxy_cache_layer_hits_total{layer="loki",component="primary",tier="l2_disk"}`)
 
 	uncached := newTestProxy(t, backend.URL)
-	uncached.backendSupportsDensePatternWindowing = true
+	uncached.setReleaseForTest("v1.50.0")
 	uncached.queryRangeHistoryCacheTTL = 24 * time.Hour
 	expected := request(uncached, start.Add(30*time.Second))
 	gotJSON, _ := json.Marshal(shifted)
@@ -330,7 +330,7 @@ func TestPatternsShiftedRangeReusesSecondPassWindows(t *testing.T) {
 	}))
 	defer backend.Close()
 	p := newTestProxy(t, backend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	p.queryRangeHistoryCacheTTL = 24 * time.Hour
 	start := time.Date(2026, 10, 1, 0, 0, 10, 0, time.UTC)
 	request := func(proxy *Proxy, from time.Time) patternsResponse {
@@ -363,7 +363,7 @@ func TestPatternsShiftedRangeReusesSecondPassWindows(t *testing.T) {
 	}
 
 	cold := newTestProxy(t, backend.URL)
-	cold.backendSupportsDensePatternWindowing = true
+	cold.setReleaseForTest("v1.50.0")
 	expected := request(cold, start.Add(30*time.Second))
 	gotJSON, _ := json.Marshal(shifted)
 	wantJSON, _ := json.Marshal(expected)
@@ -388,7 +388,7 @@ func TestPatternsIncompleteWindowReadIsNotCached(t *testing.T) {
 	}))
 	defer backend.Close()
 	p := newTestProxy(t, backend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	p.queryRangeHistoryCacheTTL = 24 * time.Hour
 	start := time.Date(2026, 10, 1, 0, 0, 10, 0, time.UTC)
 	request := func(from time.Time) {

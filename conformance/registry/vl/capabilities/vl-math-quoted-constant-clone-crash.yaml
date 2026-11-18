@@ -17,7 +17,9 @@ proxy_usage: |
   The proxy never sends such a call to an older release (vlGetInner,
   vlPostSend, the native tail call): it answers the transport failure a dropped
   connection gives, the client's Loki 500 unchanged. No LogQL input makes the
-  proxy write a quoted constant into a math pipe today; this is a guard.
+  proxy write a quoted constant into a math pipe today; this is a guard. The gate
+  vl.math_quoted_constant_clone is a Safety gate (internal/capability): off, so guarded,
+  for an unknown release, an unknown flavour and the whole v1.52 line; it has no probe.
 fallback: |
   None: the call is not sent.
 proves: []

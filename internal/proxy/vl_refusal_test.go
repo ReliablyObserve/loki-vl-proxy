@@ -72,7 +72,7 @@ func TestVLRefusal_HeldLongForEveryWindow(t *testing.T) {
 	if got := stub.tenantCalls("10"); got != 2 {
 		t.Fatalf("after the TTL the refusal must be asked again: %d calls", got)
 	}
-	p.noteVLRelease("v1.54.0")
+	p.setReleaseForTest("v1.54.0")
 	flightGet(h, context.Background(), refusalWindow(0), "team-a")
 	if got := stub.tenantCalls("10"); got != 3 {
 		t.Fatalf("a new release must ask again: %d calls", got)
@@ -94,8 +94,8 @@ func TestVLRefusal_UnknownReleaseAndNonRefusals(t *testing.T) {
 	p, h := refusalProxy(t, stub.srv.URL, "", nil)
 	flightGet(h, context.Background(), refusalWindow(0), "team-a")
 	flightGet(h, context.Background(), "/loki/api/v1/query_range?query=%7Bapp%3D%22web%22%7D&start=1700000000&end=1700003600", "team-a")
-	if stub.calls.Load() != 2 || p.learnedMaxQueryLen(p.vlRelease()) != 0 {
-		t.Fatalf("unknown release: %d calls, learned %d", stub.calls.Load(), p.learnedMaxQueryLen(p.vlRelease()))
+	if stub.calls.Load() != 2 || p.learnedMaxQueryLen(p.caps.Backend()) != 0 {
+		t.Fatalf("unknown release: %d calls, learned %d", stub.calls.Load(), p.learnedMaxQueryLen(p.caps.Backend()))
 	}
 	for _, c := range []struct {
 		status int
@@ -133,8 +133,8 @@ func TestVLRefusal_LearnedLengthPredicted(t *testing.T) {
 	})
 	p, h := refusalProxy(t, stub.srv.URL, "v1.53.0", nil)
 	first := flightGet(h, context.Background(), refusalWindow(0), "team-a")
-	if stub.calls.Load() != 1 || p.learnedMaxQueryLen(p.vlRelease()) != 20 {
-		t.Fatalf("%d calls, learned %d", stub.calls.Load(), p.learnedMaxQueryLen(p.vlRelease()))
+	if stub.calls.Load() != 1 || p.learnedMaxQueryLen(p.caps.Backend()) != 20 {
+		t.Fatalf("%d calls, learned %d", stub.calls.Load(), p.learnedMaxQueryLen(p.caps.Backend()))
 	}
 	other := flightGet(h, context.Background(), "/loki/api/v1/query_range?query=%7Bapp%3D%22web%22%7D&start=1700000000&end=1700003600&limit=100", "team-a")
 	if stub.calls.Load() != 1 || other.Code != first.Code || other.Body.String() != first.Body.String() {
@@ -148,7 +148,7 @@ func TestVLRefusal_LearnedLengthPredicted(t *testing.T) {
 	p2, h2 := refusalProxy(t, stub2.srv.URL, "v1.53.0", func(cfg *Config) { cfg.VLRefusalPredictionDisabled = true })
 	flightGet(h2, context.Background(), refusalWindow(0), "team-a")
 	flightGet(h2, context.Background(), "/loki/api/v1/query_range?query=%7Bapp%3D%22web%22%7D&start=1700000000&end=1700003600&limit=100", "team-a")
-	if stub2.calls.Load() != 2 || p2.learnedMaxQueryLen(p2.vlRelease()) != 20 {
+	if stub2.calls.Load() != 2 || p2.learnedMaxQueryLen(p2.caps.Backend()) != 20 {
 		t.Fatalf("prediction off: %d calls", stub2.calls.Load())
 	}
 	// Predictions name the limit too, but never extend how long it is trusted.
@@ -160,7 +160,7 @@ func TestVLRefusal_LearnedLengthPredicted(t *testing.T) {
 	}
 	restore = cache.AdvanceClockForTesting(2 * time.Minute)
 	defer restore()
-	if p.learnedMaxQueryLen(p.vlRelease()) != 0 {
+	if p.learnedMaxQueryLen(p.caps.Backend()) != 0 {
 		t.Fatal("a learned limit must expire with the refusal TTL, however many predictions name it")
 	}
 }
@@ -386,11 +386,11 @@ func TestVLRefusal_Bounds(t *testing.T) {
 		t.Fatal("default bound")
 	}
 	before := p.flightPrefix()
-	p.noteVLRelease("garbage")
-	p.noteVLRelease("v1.53.0")
+	p.storeBackendVersion("test", "garbage")
+	p.storeBackendVersion("test", "v1.53.0")
 	after := p.flightPrefix()
-	p.noteVLRelease("v1.53.0")
-	if before == after || p.flightPrefix() != after || !strings.Contains(after, "v1.53.0") {
+	p.storeBackendVersion("test", "v1.53.0")
+	if before == after || p.flightPrefix() != after || !strings.Contains(after, p.caps.Backend().Digest()) {
 		t.Fatalf("prefix %q -> %q", before, after)
 	}
 	pc := cache.NewPeerCache(cache.PeerConfig{SelfAddr: "self:1", DiscoveryType: "static", StaticPeers: "self:1,other:1"})
@@ -398,12 +398,12 @@ func TestVLRefusal_Bounds(t *testing.T) {
 	p.peerCache, p.errorCachePeerSync = pc, true
 	a := &cache.Answer{Status: http.StatusInternalServerError, Body: []byte("x")}
 	until := cache.Now().Add(time.Minute)
-	p.vlReleaseSeen.Store(nil)
+	p.setReleaseForTest("")
 	p.syncRefusal("query_range", "q", "k", a, until)
 	if p.peerSyncCounts[0].Load() != 0 {
 		t.Fatal("no push before the release is known")
 	}
-	p.noteVLRelease("v1.53.0")
+	p.storeBackendVersion("test", "v1.53.0")
 	for i := 0; i < int(refusalSyncRate)+1; i++ {
 		p.syncRefusal("query_range", "q", "k", a, until)
 	}
@@ -459,7 +459,7 @@ func TestVLRefusal_PredictionLeavesTheBreakerAlone(t *testing.T) {
 // conformance: semantics/error-cache-vl-refusal-peer-sync
 func TestVLRefusal_ReceiverFollowsItsOwnSettings(t *testing.T) {
 	push := func(p *Proxy, key string) {
-		msg, _ := json.Marshal(refusalSync{Build: p.buildVersion, Release: p.vlRelease().String(), Scope: p.routingScope(),
+		msg, _ := json.Marshal(refusalSync{Build: p.buildVersion, Release: p.caps.Backend().Digest(), Scope: p.routingScope(),
 			Endpoint: "query_range", Key: key, Expires: cache.Now().Add(10 * time.Minute).UnixMilli(), Status: 500, Body: []byte("x")})
 		p.receiveRefusal(refusalSyncKeyPrefix+"x", msg, time.Minute)
 	}

@@ -1,0 +1,18 @@
+id: stream-metadata-endpoints
+kind: version_gated_capability
+since: v1.30
+generated:
+  used_in: 0
+
+description: |
+  stream_field_names and stream_field_values (VictoriaLogs v1.30) list the stream
+  labels without reading rows. The gate sits below the v1.49.0 floor: it is on
+  when nothing is known (a newer deployment must not regress), off only for a
+  release below v1.30 or when the endpoint probe finds the path absent (404).
+proxy_usage: |
+  Label and series metadata (label_metadata.go, label_handlers.go) try the stream
+  endpoints first when the gate vl.stream_metadata_endpoints is on. The probe is one
+  GET of /select/logsql/stream_field_names over an empty one-second window.
+fallback: |
+  field_names and field_values on a backend without the stream endpoints.
+proves: []

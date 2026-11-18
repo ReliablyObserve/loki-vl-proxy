@@ -59,6 +59,7 @@ type Metrics struct {
 	coalescedStatsProvider func() CoalescerStats
 	coalescedProviderMu    sync.RWMutex
 	errorFlights           errorFlightProvider
+	capability             capabilityProvider
 
 	// Translation stats
 	translationsTotal atomic.Int64
@@ -2323,6 +2324,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_wait_count_total %d\n", coalesced.WaitCount)
 
 	m.writeErrorFlightMetrics(&sb)
+	m.writeCapabilityMetrics(&sb)
 	m.writeQueryComplexityMetrics(&sb)
 
 	sb.WriteString("# HELP loki_vl_proxy_window_cache_hit_total Query-range window cache hits.\n")

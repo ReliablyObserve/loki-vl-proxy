@@ -228,7 +228,8 @@ func TestPlanSpellingsMatchLoki(t *testing.T) {
 		}
 		front := httptest.NewServer(vlReplayFront(t, v.version, upstream, recorded[v.version], &mu))
 		t.Cleanup(front.Close)
-		p, err := New(Config{BackendURL: front.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+		// The recordings hold the spellings' requests only; the gates come from the recorded release, not from feature probes.
+		p, err := New(Config{BackendURL: front.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, BackendFeatureProbesDisabled: true})
 		if err != nil {
 			t.Fatal(err)
 		}

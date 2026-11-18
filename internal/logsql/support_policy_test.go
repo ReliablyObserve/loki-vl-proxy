@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
@@ -99,33 +100,33 @@ func TestVictoriaLogsSupportPolicy(t *testing.T) {
 		t.Fatalf("charts values.yaml backend-min-version = %v, want %q", hv, w.MinimumSupported)
 	}
 
-	// Capability profiles in the manifest must be the ones deriveBackendCapabilities
-	// returns, with the same lower bound: the names describe where a capability
-	// starts, so they do not move with the support floor.
-	backendGo, err := os.ReadFile("../proxy/backend.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	derived := map[string]string{} // profile -> lower bound "1.49" ("" for the default case)
-	for _, c := range regexp.MustCompile(`case semverAtLeast\(semver, 1, (\d+), 0\):\s*return backendCapabilities\{"([^"]+)"`).FindAllStringSubmatch(string(backendGo), -1) {
-		derived[c[2]] = "v1." + c[1] + ".0"
-	}
-	if def := regexp.MustCompile(`default:\s*return backendCapabilities\{"([^"]+)"`).FindStringSubmatch(string(backendGo)); def != nil {
-		derived[def[1]] = ""
+	// Capability profiles in the manifest must be the ones the capability layer names (capability.Set.Profile), with
+	// the same bounds: the names describe where a capability starts, so they do not move with the support floor.
+	profileOf := func(v string) string { return capability.ForRelease(capability.ParseRelease(v)).Profile() }
+	derived := map[string]bool{}
+	for _, sample := range []string{"v1.29.9", "v1.30.0", "v1.49.0", "v1.50.0", "v1.54.0"} {
+		derived[profileOf(sample)] = true
 	}
 	if len(derived) != len(m.Stack.VL.Profiles) {
-		t.Fatalf("manifest capability_profiles %v and deriveBackendCapabilities %v differ in count", m.Stack.VL.Profiles, derived)
+		t.Fatalf("manifest capability_profiles %v and the capability layer's profiles %v differ in count", m.Stack.VL.Profiles, derived)
 	}
 	for _, pr := range m.Stack.VL.Profiles {
-		lower, ok := derived[pr.Profile]
-		if !ok {
-			t.Fatalf("manifest profile %q is not derived by deriveBackendCapabilities (%v)", pr.Profile, derived)
+		if !derived[pr.Profile] {
+			t.Fatalf("manifest profile %q is not named by the capability layer (%v)", pr.Profile, derived)
 		}
-		if lower != "" && !strings.HasPrefix(pr.VersionRange, ">= "+lower) {
-			t.Fatalf("manifest profile %q range %q must start at %s as in deriveBackendCapabilities", pr.Profile, pr.VersionRange, lower)
-		}
-		if lower == "" && !strings.HasPrefix(pr.VersionRange, "< ") {
+		if lo := regexp.MustCompile(`^>= (v[0-9.]+)`).FindStringSubmatch(pr.VersionRange); lo != nil {
+			if profileOf(lo[1]) != pr.Profile {
+				t.Fatalf("manifest profile %q range %q: the capability layer names %s %q", pr.Profile, pr.VersionRange, lo[1], profileOf(lo[1]))
+			}
+		} else if !strings.HasPrefix(pr.VersionRange, "< ") {
 			t.Fatalf("manifest fallback profile %q range %q must be an upper-bounded range", pr.Profile, pr.VersionRange)
+		}
+		if hi := regexp.MustCompile(`< (v1\.(\d+)\.0)$`).FindStringSubmatch(pr.VersionRange); hi != nil {
+			minor, _ := strconv.Atoi(hi[2])
+			below := "v1." + strconv.Itoa(minor-1) + ".99"
+			if profileOf(below) != pr.Profile {
+				t.Fatalf("manifest profile %q range %q: the capability layer names %s %q", pr.Profile, pr.VersionRange, below, profileOf(below))
+			}
 		}
 	}
 

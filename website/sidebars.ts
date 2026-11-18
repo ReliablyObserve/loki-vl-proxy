@@ -36,6 +36,7 @@ const sidebars: SidebarsConfig = {
         'reference/configuration-reference',
         'reference/limits-registry',
         'reference/errors-and-alerts',
+        'reference/capability-gates',
       ],
     },
 
