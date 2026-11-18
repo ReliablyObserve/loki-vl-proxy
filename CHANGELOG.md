@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The proxy reads a typed client profile from each request's headers: the surface (`explore`, `drilldown`,
+  `datasource` for other Grafana requests such as dashboards and alerting, `api` for clients that are not
+  Grafana) and the Grafana, Loki datasource plugin and Logs Drilldown versions, as closed values and normalised
+  `major.minor.patch` versions only. The request, upstream and slow log lines carry `client.surface`,
+  `grafana.datasource.version` (Grafana 13 names its Loki datasource plugin in its User-Agent, for example
+  `loki/13.2.5`) and `grafana.drilldown.version` (only when a request names it, which no current Grafana or
+  Drilldown release does), and `/debug/queries` lists them for each recent request. `grafana.version` in the log
+  lines and the VictoriaLogs request header is now normalised to `major.minor.patch` (a pre-release or build
+  suffix is dropped; a User-Agent with no such version sends none). The rules come from the requests Grafana
+  13.3.1, 13.3.0 and 12.4.14 with Logs Drilldown 3.2.0, 3.1.0 and 2.6.0 send for every Explore and Drilldown
+  request kind; Grafana 12's untagged Explore query reads as `datasource`. Responses and cache keys do not
+  change.
+
 ### Changed
 
 - VictoriaLogs v1.54.0 replaces v1.53.0 as the newest tested release and the pull-request CI pin: the tested versions

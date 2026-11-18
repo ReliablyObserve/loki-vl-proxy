@@ -165,6 +165,11 @@
       "cmd/proxy/delete_api_validation_test.go",
       "internal/proxy/delete_route_test.go"
     ],
+    "drilldown/client-detection-captured-header-sets": [
+      "internal/clientprofile/detect_test.go",
+      "internal/proxy/client_profile_capture_test.go",
+      "test/e2e-ui/tests/client-detection.spec.ts"
+    ],
     "drilldown/fields-pill-json-path-extracted-empty": [
       "internal/proxy/drilldown_fields_json_path_test.go",
       "internal/translator/json_bracket_path_test.go",
@@ -816,6 +821,7 @@
     ],
     "observability-slow-query-log": [
       "internal/metrics/callertracker_test.go",
+      "internal/proxy/client_profile_capture_test.go",
       "internal/proxy/query_caller_test.go",
       "internal/proxy/query_flow_test.go",
       "internal/proxy/slow_query_log_test.go"
@@ -2962,7 +2968,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 670,
+  "registry_items": 671,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3024,6 +3030,9 @@
     ],
     "internal/cache/peer_test.go": [
       "peer-cache-patterns"
+    ],
+    "internal/clientprofile/detect_test.go": [
+      "drilldown/client-detection-captured-header-sets"
     ],
     "internal/config/generate_edge_test.go": [
       "operator-configurable-limits"
@@ -3442,6 +3451,10 @@
     "internal/proxy/chunked_range_windows_loki_test.go": [
       "drilldown/long-range-pieces-answer-like-loki",
       "loki_api_v1_query_range"
+    ],
+    "internal/proxy/client_profile_capture_test.go": [
+      "drilldown/client-detection-captured-header-sets",
+      "observability-slow-query-log"
     ],
     "internal/proxy/cold_bad_row_test.go": [
       "semantics/error-layer-silent-success"
@@ -6527,6 +6540,9 @@
       "semantics/error-cache-vl-refusal-peer-sync",
       "vl-query-too-long"
     ],
+    "test/e2e-ui/tests/client-detection.spec.ts": [
+      "drilldown/client-detection-captured-header-sets"
+    ],
     "test/e2e-ui/tests/datasource.spec.ts": [
       "profiles/dotted-name-parse-error",
       "profiles/grafana-shows-loki-error-text",
@@ -6536,7 +6552,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 765,
+  "tests_with_markers": 768,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6638,5 +6654,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 460
+  "wired_items": 461
 }
