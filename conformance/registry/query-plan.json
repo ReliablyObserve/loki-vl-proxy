@@ -458,7 +458,7 @@
     }
   },
   "predicate_parity": {
-    "rows": 2708,
+    "rows": 2709,
     "validated": 2585,
     "attributes": {
       "offset": {
@@ -478,7 +478,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 7838,
+    "native": 7848,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 90,
@@ -524,7 +524,6 @@
       "RangeAgg route unwrap rate": 20,
       "RangeAgg route unwrap rate_counter": 70,
       "RangeAgg route unwrap stdvar": 50,
-      "RangeAgg unwrap conversion": 10,
       "Rank (route rule)": 1900,
       "Rank operand BinOp": 80,
       "Scalar": 20,
@@ -558,84 +557,84 @@
       "500": 25
     },
     "routes": {
-      "24h chunk/BinOp": "99ef77417c0511e2",
+      "24h chunk/BinOp": "e644dfccd5106fb0",
       "24h chunk/LabelReplace": "23c726488e0d9e40",
       "24h chunk/LogSelect": "abd6ac46240528b4",
-      "24h chunk/RangeAgg": "5a87e7acaaf02610",
+      "24h chunk/RangeAgg": "fd6b7b252361eae5",
       "24h chunk/Rank": "0e8b644afe1f6c99",
       "24h chunk/Scalar": "b01ddfee0a162681",
       "24h chunk/VectorAgg": "25478dde94f37fcd",
       "24h chunk/VectorLit": "fafe78111335aec9",
-      "instant/BinOp": "4e29924f0edd29d1",
+      "instant/BinOp": "394d7ccba3f358b1",
       "instant/LabelReplace": "f8f806d23f05cc4d",
       "instant/LogSelect": "616d57d92ae8e14f",
-      "instant/RangeAgg": "1187d94b75c2b5a3",
+      "instant/RangeAgg": "6d94b48225b28165",
       "instant/Rank": "9ec7fa8848911d26",
       "instant/Scalar": "058ee94c303a0c46",
       "instant/VectorAgg": "cb3cf6c588b6c048",
       "instant/VectorLit": "29ac61516bcfbcbb",
-      "step\u003crange/BinOp": "fa2b49e94c9bb6e1",
+      "step\u003crange/BinOp": "38e8284141f2f931",
       "step\u003crange/LabelReplace": "ae5fe7f9a589074d",
       "step\u003crange/LogSelect": "abd6ac46240528b4",
-      "step\u003crange/RangeAgg": "8c014d6f75d3bd67",
+      "step\u003crange/RangeAgg": "ccea2e2c98caa4dd",
       "step\u003crange/Rank": "a1c0762e7e661c35",
       "step\u003crange/Scalar": "b01ddfee0a162681",
       "step\u003crange/VectorAgg": "d7b0ab7b426a9ae1",
       "step\u003crange/VectorLit": "fafe78111335aec9",
-      "step=range/BinOp": "ede88306279c0f16",
+      "step=range/BinOp": "ad9dd1c2dcfd5d00",
       "step=range/LabelReplace": "b36b7eb5d35da2a9",
       "step=range/LogSelect": "abd6ac46240528b4",
-      "step=range/RangeAgg": "cb2f200eea1502d9",
+      "step=range/RangeAgg": "e12f95e23c669b5f",
       "step=range/Rank": "f25449313fc95180",
       "step=range/Scalar": "b01ddfee0a162681",
       "step=range/VectorAgg": "749e6de84bb14e1e",
       "step=range/VectorLit": "fafe78111335aec9",
-      "step\u003erange/BinOp": "e4c89ae03564028f",
+      "step\u003erange/BinOp": "33814d75a16bcaef",
       "step\u003erange/LabelReplace": "81d34ed114a34a06",
       "step\u003erange/LogSelect": "abd6ac46240528b4",
-      "step\u003erange/RangeAgg": "dde0d6a9134faa29",
+      "step\u003erange/RangeAgg": "8a89897af7edad16",
       "step\u003erange/Rank": "f300d12c6c6c74f1",
       "step\u003erange/Scalar": "b01ddfee0a162681",
       "step\u003erange/VectorAgg": "26de76e303fcf78d",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     },
     "calls": {
-      "24h chunk/BinOp": "6ddb9fae5f9bc6a3",
+      "24h chunk/BinOp": "899951d84465c623",
       "24h chunk/LabelReplace": "360c3bcf11623e30",
       "24h chunk/LogSelect": "53009fb2325e656e",
-      "24h chunk/RangeAgg": "9d69a1e2522f0815",
+      "24h chunk/RangeAgg": "d73ae2b82f859832",
       "24h chunk/Rank": "7296ee4d1f60b89b",
       "24h chunk/Scalar": "2c7012c3274c662d",
       "24h chunk/VectorAgg": "eee3346992efa938",
       "24h chunk/VectorLit": "7aa978e4ba5a3f44",
-      "instant/BinOp": "dbfc0ce41e9fbb45",
+      "instant/BinOp": "d869152466924e7d",
       "instant/LabelReplace": "60cb24c1c3d104de",
       "instant/LogSelect": "d24b4175dd2ef0d1",
-      "instant/RangeAgg": "c71f498b9f592c10",
+      "instant/RangeAgg": "87a34967fd9cfc41",
       "instant/Rank": "49acb3486b3e5fab",
       "instant/Scalar": "4989874b8a3c42dc",
       "instant/VectorAgg": "57b2c95ef4f8e497",
       "instant/VectorLit": "0dc325c3d1510308",
-      "step\u003crange/BinOp": "fe0525c75b254f00",
+      "step\u003crange/BinOp": "ca1614f0d957e12c",
       "step\u003crange/LabelReplace": "163e4752476d3657",
       "step\u003crange/LogSelect": "20901f6b70bbb04a",
-      "step\u003crange/RangeAgg": "c6f0aabfac3338fd",
+      "step\u003crange/RangeAgg": "5814d547d2351fc0",
       "step\u003crange/Rank": "2425b8df850ec84f",
       "step\u003crange/Scalar": "6db69b6718a0b07a",
       "step\u003crange/VectorAgg": "0199dddb4324a1e5",
       "step\u003crange/VectorLit": "58ad28055f0b3615",
-      "step=range/BinOp": "9b3089029c0c2053",
+      "step=range/BinOp": "e561c573b24201d5",
       "step=range/LabelReplace": "2b84e7699ac4734d",
       "step=range/LogSelect": "20901f6b70bbb04a",
-      "step=range/RangeAgg": "cc53d1680b7871a1",
+      "step=range/RangeAgg": "a07c43451611560f",
       "step=range/Rank": "cdedd467199fa2a3",
       "step=range/Scalar": "6db69b6718a0b07a",
       "step=range/VectorAgg": "be5be7e1aae73544",
       "step=range/VectorLit": "58ad28055f0b3615",
-      "step\u003erange/BinOp": "1db100a8d0a4c7b3",
+      "step\u003erange/BinOp": "0c0afbd7e107ad2b",
       "step\u003erange/LabelReplace": "c7b2cbfd968b13d9",
       "step\u003erange/LogSelect": "20901f6b70bbb04a",
-      "step\u003erange/RangeAgg": "376f422eac0df4a8",
+      "step\u003erange/RangeAgg": "85ac85c961cfd776",
       "step\u003erange/Rank": "fa21b35969d0a2c6",
       "step\u003erange/Scalar": "6db69b6718a0b07a",
       "step\u003erange/VectorAgg": "cabfaf12ed38cbf1",
@@ -643,8 +642,8 @@
     },
     "vl_calls": {
       "24h chunk/BinOp": {
-        "runs": 626,
-        "cold": 1212,
+        "runs": 628,
+        "cold": 1214,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -661,8 +660,8 @@
         "repeat_runs": 0
       },
       "24h chunk/RangeAgg": {
-        "runs": 1234,
-        "cold": 1616,
+        "runs": 1232,
+        "cold": 1612,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -691,8 +690,8 @@
         "repeat_runs": 0
       },
       "instant/BinOp": {
-        "runs": 626,
-        "cold": 830,
+        "runs": 628,
+        "cold": 832,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -709,8 +708,8 @@
         "repeat_runs": 10
       },
       "instant/RangeAgg": {
-        "runs": 1234,
-        "cold": 1276,
+        "runs": 1232,
+        "cold": 1274,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -739,8 +738,8 @@
         "repeat_runs": 0
       },
       "step\u003crange/BinOp": {
-        "runs": 626,
-        "cold": 1212,
+        "runs": 628,
+        "cold": 1214,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -757,8 +756,8 @@
         "repeat_runs": 0
       },
       "step\u003crange/RangeAgg": {
-        "runs": 1234,
-        "cold": 1566,
+        "runs": 1232,
+        "cold": 1562,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -787,8 +786,8 @@
         "repeat_runs": 0
       },
       "step=range/BinOp": {
-        "runs": 626,
-        "cold": 1213,
+        "runs": 628,
+        "cold": 1215,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -805,8 +804,8 @@
         "repeat_runs": 0
       },
       "step=range/RangeAgg": {
-        "runs": 1234,
-        "cold": 1520,
+        "runs": 1232,
+        "cold": 1516,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -835,8 +834,8 @@
         "repeat_runs": 0
       },
       "step\u003erange/BinOp": {
-        "runs": 626,
-        "cold": 1211,
+        "runs": 628,
+        "cold": 1213,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -853,8 +852,8 @@
         "repeat_runs": 0
       },
       "step\u003erange/RangeAgg": {
-        "runs": 1234,
-        "cold": 1534,
+        "runs": 1232,
+        "cold": 1530,
         "repeat": 1,
         "repeat_runs": 1
       },
@@ -887,9 +886,9 @@
   "shadow": {
     "rows": 24000,
     "profiles": 12,
-    "native": 22173,
+    "native": 22209,
     "native_proxy_evaluated": 4464,
-    "native_loki_held": 534,
+    "native_loki_held": 561,
     "mismatches": 0,
     "rejected": 345,
     "delegated_by_construct": {
@@ -899,14 +898,11 @@
       "BinOp operand LabelReplace": 45,
       "BinOp operand RangeAgg": 18,
       "BinOp operand Rank": 9,
-      "BinOp operand VectorAgg": 18,
-      "BinOp quoted text": 9,
+      "BinOp operand VectorAgg": 27,
       "BinOp scalar operands": 18,
       "BinOp set operator": 18,
-      "BinOp spelling": 9,
       "LabelReplace operand BinOp": 18,
       "LabelReplace operand VectorAgg": 54,
-      "LabelReplace operand spelling": 18,
       "LabelReplace service_name grouping": 36,
       "LogSelect keep order": 12,
       "LogSelect level filter after stage": 24,
@@ -917,9 +913,7 @@
       "RangeAgg LogSelect unpack label read": 225,
       "RangeAgg LogSelect unpack line read": 18,
       "RangeAgg LogSelect unpack parser order": 9,
-      "RangeAgg unwrap quantile spelling": 9,
-      "RangeAgg unwrap spelling": 9,
-      "Rank operand BinOp": 63,
+      "Rank operand BinOp": 72,
       "Scalar": 18,
       "SeriesAgg operand BinOp": 9,
       "VectorAgg LogSelect json extraction": 18,

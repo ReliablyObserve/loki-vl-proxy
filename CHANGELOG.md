@@ -64,6 +64,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response cache entry and send VictoriaLogs the same requests. A query Loki rejects keeps its spelling, so its error
   text and positions do not change. The rewrite is memoised by the query as sent (up to 1,024 queries of up to
   4 KiB), so a repeated query costs one lookup, less than the keyword rewrite alone cost before.
+- `| unwrap x(a)`, an unwrap of a name that is no conversion followed by a parenthesis, is now Loki's `400` syntax
+  error at the parenthesis (`unexpected (, expecting RANGE or |`) before any VictoriaLogs call; the proxy accepted it
+  and answered a query. Only `bytes`, `duration` and `duration_seconds` (in any letter case) are conversions.
+- A vector aggregation over an unwrap conversion written with a blank before or inside its parenthesis
+  (`sum by (pod) (max_over_time({...} | logfmt | unwrap duration_seconds (d) [5m]))`) answers Loki's series instead
+  of none. The metric query planning no longer keeps spellings the string translator reads otherwise than the
+  parsed query on the translator: quoted text holding a parenthesis under a binary operation or `label_replace`, the
+  blanks around a binary operator, a number or vector matching modifier spelled another way, a quantile written
+  `.5`, `0.50` or `5e-1`, and an unwrap conversion with blanks are served from the query plan, which reads them as
+  Loki does (their answers are held to recorded Loki answers over VictoriaLogs v1.49 and v1.53). Answers cached for
+  an unwrap conversion spelled with a blank before this change are not served after it.
 - A metric checked for unwrap conversion errors or for JSON parser errors reads a VictoriaLogs answer that arrives
   without a length (a chunked answer) from a small buffer that grows, as in 2.333.1 (the folded reads of a parser's
   series identity, below, had moved every checked read to a 128 KiB starting buffer). An answer with its length (a

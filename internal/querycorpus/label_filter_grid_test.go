@@ -14,6 +14,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -210,7 +211,9 @@ func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated
 func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, delegated map[string]int, problems []string) {
 	t.Helper()
 	delegated = map[string]int{}
-	for _, q := range grid {
+	for _, row := range grid {
+		// The handlers plan and translate the query as the request's rewrite and validation leave it.
+		q := handlerText(row)
 		if translatorReadsStageMarker(q) {
 			continue // the translator cuts the value (semantics/translator-reads-marker-bytes-in-quoted-value)
 		}
@@ -289,8 +292,21 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence "+knownCountVariance]++
 				continue
 			}
+			spelling := translatorspelling.Case(q, plan)
+			if routed, _ := routedRoot(plan); !routed && spelling != "" && !sameAsTranslator(got, legacy) {
+				// A spelling the translator reads otherwise than the plan, which the proxy serves: held to Loki by the
+				// case's differential (spellingDifferential).
+				delegated["known divergence "+spelling]++
+				continue
+			}
 			if routed, divergence := routedRoot(plan); routed {
 				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
+					if spelling != "" {
+						// The operand the route sends is served from the plan too (its construct is flipped): the
+						// translator's text for it, the reference here, reads the spelling otherwise.
+						delegated["known divergence "+spelling]++
+						continue
+					}
 					problems = append(problems, msg)
 					continue
 				}

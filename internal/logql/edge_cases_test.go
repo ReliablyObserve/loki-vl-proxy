@@ -348,13 +348,19 @@ func TestEdge_Unwrap(t *testing.T) {
 		`{app="nginx"} | unwrap duration`,
 		`{app="nginx"} | unwrap bytes(size)`,
 		`{app="nginx"} | unwrap duration(latency)`,
-		`{app="nginx"} | unwrap rate(throughput)`,
 		`{app="nginx"} | json | unwrap duration`,
 		`{app="nginx"} | logfmt | unwrap bytes(response_size)`,
 		`{app="nginx"} | json | level="error" | unwrap latency`,
 	}
 	for _, q := range valid {
 		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+	// Only bytes, duration and duration_seconds are conversions: another name before a parenthesis is the label, and
+	// the parenthesis Loki's syntax error (semantics/unwrap-name-before-parenthesis-accepted).
+	for _, q := range []string{`{app="nginx"} | unwrap rate(throughput)`, `sum_over_time({app="nginx"} | unwrap rate(throughput) [1m])`} {
+		if _, err := logql.Parse(q); err == nil {
+			t.Errorf("Parse(%q) accepted a name that is no conversion before a parenthesis", q)
+		}
 	}
 }
 

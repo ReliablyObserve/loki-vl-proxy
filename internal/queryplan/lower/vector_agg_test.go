@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // vectorAggText is the text of the lowering of q under prof, with the detected_level chain and the service_name
@@ -156,73 +156,41 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 	}
 }
 
-// A query with blanks between the operand's parenthesis and the range function (`sum( rate(...) )`), or between the
-// function and its parenthesis, is a phrase to the string translator: its regexps do not skip them. The proxy's
-// request rewrite leaves the blanks, so the proxy answers a phrase search for it today where Loki answers the
-// metric. The plan has no text and lowers the aggregation as Loki reads it (Plan); the text screen turns the query
-// away (PlanQuery, ScreenText), so the lowering equals the translator wherever it answers. The difference is
-// recorded for the day metric queries flip.
+// A query with blanks between the operand's parenthesis and the range function (`sum( rate(...) )`), between the
+// function and its parenthesis, or with parentheses around the whole query or its operand, is the same query to Loki.
+// The string translator reads those spellings as a phrase. The plan has no text: PlanQuery lowers every spelling to
+// the text of its canonical spelling (logql.CanonicalSpelling, the one the proxy's request rewrite gives the handlers),
+// and blanks the canonical spelling keeps lower as they are.
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanVectorAggregationBlankPadding(t *testing.T) {
-	canonical := vectorAggText(t, `sum(rate({app="a"}[5m]))`, Profile{})
 	for _, q := range []string{
 		`sum( rate({app="a"}[5m]))`, `sum(rate ({app="a"}[5m]))`, `sum( rate( {app="a"} [5m] ) )`, "sum(\n\trate\t(\t{app=\"a\"}[5m]))",
 		`sum by (app) ( rate({app="a"}[5m]))`, `sum(count_over_time ({app="a"}[5m])) by (app)`, `count without (pod) (  bytes_over_time ({app="a"}[5m]))`,
-	} {
-		legacy, err := translator.TranslateLogQLWithCapabilities(q, nil, nil, logsql.Capabilities{})
-		if err != nil || !strings.HasPrefix(legacy, `"`) {
-			t.Errorf("%q: the translator writes %q (%v): the difference this test records is gone", q, legacy, err)
-		}
-		p := rangeAggPlan(q)
-		if _, err := Plan(p, Profile{}); err != nil {
-			t.Errorf("%q: Plan: %v", q, err)
-		}
-		var nl *NotLoweredError
-		if _, err := PlanQuery(q, p, Profile{}); !errors.As(err, &nl) || nl.Construct != "VectorAgg operand spelling" {
-			t.Errorf("%q: PlanQuery = %v, want not lowered: VectorAgg operand spelling", q, err)
-		}
-		if ScreenText(q, p) == nil {
-			t.Errorf("%q: ScreenText lets it through", q)
-		}
-	}
-	if got := vectorAggText(t, `sum( rate({app="a"}[5m]))`, Profile{}); got != canonical {
-		t.Errorf("blanks change the lowering:\n got %s\nwant %s", got, canonical)
-	}
-	// Blanks elsewhere are read alike by both: they stay lowered.
-	for _, q := range []string{
 		`sum by ( app ) (rate({ app = "a" } [5m] ))`, "  sum(rate({app=\"a\"}[5m]))\n", `sum  by  (app)  (rate({app="a"}[5m]) )`,
 		`sum(rate({app="a"} |= "( rate (" [5m]))`, `sum(rate({app="a"} |= ` + "`" + `( rate (` + "`" + `[5m]))`, `sum(rate( {app="a"}[5m]))`,
 		`sum(rate({app="a"}[5m]) ) by (app, env)`,
+		`(sum(rate({app="a"}[5m])))`, "( sum by (app) (rate({app=\"a\"}[5m])) )", `sum((rate({app="a"}[5m])))`, `((rate({app="a"}[5m])))`,
+		"(count_over_time({app=\"a\"}[5m])\n)", `(sum(rate({app="a"}[5m]))) / (sum(rate({app="b"}[5m])))`,
+		`rate( {app="a"} [5m] )`, `count_over_time( {app="a"}[5m])`,
 	} {
-		p := rangeAggPlan(q)
-		if err := ScreenText(q, p); err != nil {
-			t.Errorf("%q: turned away: %v", q, err)
+		canon := logql.CanonicalSpelling(q)
+		p, c := rangeAggPlan(q), rangeAggPlan(canon)
+		if p == nil || c == nil {
+			t.Fatalf("%q (canonical %q): does not parse", q, canon)
 		}
-	}
-	// A metric wrapped whole in parentheses is a phrase to the translator (both constructs).
-	for q, construct := range map[string]string{
-		`(sum(rate({app="a"}[5m])))`: "VectorAgg parenthesized", "( sum by (app) (rate({app=\"a\"}[5m])) )": "VectorAgg parenthesized",
-		`sum((rate({app="a"}[5m])))`: "VectorAgg operand spelling", `((rate({app="a"}[5m])))`: "RangeAgg parenthesized", "(count_over_time({app=\"a\"}[5m])\n)": "RangeAgg parenthesized",
-	} {
-		var nl *NotLoweredError
-		if _, err := PlanQuery(q, rangeAggPlan(q), Profile{}); !errors.As(err, &nl) || nl.Construct != construct {
-			t.Errorf("%q: PlanQuery = %v, want not lowered: %s", q, err, construct)
+		got, err := PlanQuery(q, p, Profile{})
+		if err != nil {
+			t.Errorf("%q: PlanQuery: %v", q, err)
+			continue
 		}
-	}
-	// A binary of two parenthesized operands is not wrapped whole; the binary's screen reads its operands (each a
-	// phrase to the translator).
-	for _, q := range []string{`(sum(rate({app="a"}[5m]))) / (sum(rate({app="b"}[5m])))`} {
-		var nl *NotLoweredError
-		if err := ScreenText(q, rangeAggPlan(q)); wrappedWhole(q) || !errors.As(err, &nl) || nl.Construct != "BinOp operand spelling" {
-			t.Errorf("%q: ScreenText = %v, want not lowered: BinOp operand spelling", q, err)
+		want, err := PlanQuery(canon, c, Profile{})
+		if err != nil {
+			t.Errorf("%q: PlanQuery: %v", canon, err)
+			continue
 		}
-	}
-	// A range aggregation alone reads blanks inside its parentheses alike (a blank before its parenthesis is a
-	// phrase to the translator: TestPlanRangeCallBlankBeforeParenthesis).
-	for _, q := range []string{`rate( {app="a"} [5m] )`, `count_over_time( {app="a"}[5m])`} {
-		if err := ScreenText(q, rangeAggPlan(q)); err != nil {
-			t.Errorf("%q: turned away: %v", q, err)
+		if physical.Encode(got) != physical.Encode(want) {
+			t.Errorf("%q lowers to\n %s\nits canonical spelling %q to\n %s", q, physical.Encode(got), canon, physical.Encode(want))
 		}
 	}
 }

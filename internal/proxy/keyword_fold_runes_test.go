@@ -183,9 +183,10 @@ func TestKeywordFoldRunesShareTheLowerCaseCacheEntry(t *testing.T) {
 // query. A character Loki does not skip there is Loki's 400 with Loki's text before any VictoriaLogs request. A blank
 // before the parenthesis of a metric call (a range function, vector(), label_replace, sort_desc) is written away by
 // the request rewrite (logql.CanonicalSpelling), so those spellings must answer as the spaced query
-// (semantics/translator-reads-blank-before-range-call-as-text, semantics/vector-call-blank-before-parenthesis-as-query).
-// The spellings still read unlike Loki are a known difference of their own, pinned here so a change shows: a blank
-// before the parenthesis of an unwrap conversion, of an ip() label filter or of approx_topk.
+// (semantics/translator-reads-blank-before-range-call-as-text, semantics/vector-call-blank-before-parenthesis-as-query),
+// and a blank before an unwrap conversion's parenthesis is read from the tree by the plan, which serves it. The
+// spellings still read unlike Loki are a known difference of their own, pinned here so a change shows: a blank before
+// the parenthesis of an ip() label filter or of approx_topk.
 //
 // conformance: semantics/translator-reads-only-space-between-tokens, semantics/parser-reads-unicode-blank-as-white-space, semantics/blank-before-call-parenthesis-read-unlike-loki, semantics/translator-reads-blank-before-range-call-as-text, semantics/vector-call-blank-before-parenthesis-as-query
 func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
@@ -258,16 +259,16 @@ func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
 }
 
 // blankKnownDifference names the registry case of a blank spelling the proxy still answers unlike the spaced one, or
-// "": a tab, a line feed, a carriage return or a run of spaces between an unwrap conversion's, an ip() label filter's
-// or approx_topk's name and its parenthesis. Any other metric call spelled so is respelled by the request rewrite and
-// has none.
+// "": a tab, a line feed, a carriage return or a run of spaces between an ip() label filter's or approx_topk's name and
+// its parenthesis. Any other metric call spelled so is respelled by the request rewrite, and an unwrap conversion is
+// read from the tree by the plan: they have none.
 func blankKnownDifference(q string) string {
 	m := blankBeforeCall.FindStringSubmatch(q)
 	if m == nil {
 		return ""
 	}
 	switch strings.ToLower(m[1]) {
-	case "ip", "bytes", "duration", "duration_seconds", "approx_topk":
+	case "ip", "approx_topk":
 		return "semantics/blank-before-call-parenthesis-read-unlike-loki"
 	}
 	return ""

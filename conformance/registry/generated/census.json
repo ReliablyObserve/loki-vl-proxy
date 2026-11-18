@@ -949,6 +949,9 @@
     "semantics/translator-folds-binary-by-operand-without | compare:observed",
     "semantics/translator-folds-binary-by-operand-without | gap:open",
     "semantics/translator-folds-binary-by-operand-without | query",
+    "semantics/translator-reads-binary-operation-text | compare:observed",
+    "semantics/translator-reads-binary-operation-text | gap:fixed",
+    "semantics/translator-reads-binary-operation-text | query",
     "semantics/translator-reads-blank-before-range-call-as-text | compare:observed",
     "semantics/translator-reads-blank-before-range-call-as-text | gap:fixed",
     "semantics/translator-reads-blank-before-range-call-as-text | query",
@@ -1069,7 +1072,7 @@
     "semantics/unwrap-json-extraction-list-parser-error | gap:open",
     "semantics/unwrap-json-extraction-list-parser-error | query",
     "semantics/unwrap-name-before-parenthesis-accepted | compare:observed",
-    "semantics/unwrap-name-before-parenthesis-accepted | gap:open",
+    "semantics/unwrap-name-before-parenthesis-accepted | gap:fixed",
     "semantics/unwrap-name-before-parenthesis-accepted | query",
     "semantics/unwrap-over-time-range-windows | compare:observed",
     "semantics/unwrap-over-time-range-windows | gap:fixed",
@@ -1130,7 +1133,7 @@
     "semantics/unwrap-sum-without-extracted-label-collision | gap:open",
     "semantics/unwrap-sum-without-extracted-label-collision | query",
     "semantics/unwrap-unknown-conversion-function-accepted | compare:observed",
-    "semantics/unwrap-unknown-conversion-function-accepted | gap:open",
+    "semantics/unwrap-unknown-conversion-function-accepted | gap:fixed",
     "semantics/uppercase-topk-ranks-once | compare:observed",
     "semantics/uppercase-topk-ranks-once | gap:open",
     "semantics/uppercase-topk-ranks-once | query",
@@ -1949,6 +1952,11 @@
     "internal/proxy/plan_served_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_served_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/proxy/plan_served_test.go | semantics/translator-writes-reserved-field-names",
+    "internal/proxy/plan_spellings_loki_test.go | loki_api_v1_query_range",
+    "internal/proxy/plan_spellings_loki_test.go | semantics/blank-before-call-parenthesis-read-unlike-loki",
+    "internal/proxy/plan_spellings_loki_test.go | semantics/translator-reads-binary-operation-text",
+    "internal/proxy/plan_spellings_loki_test.go | semantics/translator-reads-quoted-text-as-syntax",
+    "internal/proxy/plan_spellings_loki_test.go | semantics/translator-writes-leading-dot-quantile",
     "internal/proxy/post_aggregation_physical_test.go | architecture-syntax-package-layering",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/proxy_test.go | semantics/error-layer-silent-success",
@@ -2045,6 +2053,7 @@
     "internal/proxy/reserved_field_test.go | cache-response-key-versions",
     "internal/proxy/reserved_field_test.go | semantics/translator-writes-reserved-field-names",
     "internal/proxy/response_key_fence_parser_test.go | cache-response-key-versions",
+    "internal/proxy/response_key_fence_parser_test.go | semantics/blank-before-call-parenthesis-read-unlike-loki",
     "internal/proxy/response_key_fence_parser_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/response_key_fences_test.go | cache-response-key-versions",
     "internal/proxy/response_key_fences_test.go | semantics/ip-filter-ipv4-after-hex-colon",
@@ -2586,6 +2595,7 @@
     "internal/queryplan/lower/unwrap_stats_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | semantics/translator-writes-keyword-field-names-bare",
+    "internal/queryplan/lower/unwrap_test.go | semantics/translator-writes-leading-dot-quantile",
     "internal/queryplan/lower/vector_agg_nested_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vl_clone_roundtrip_test.go | semantics/reserved-field-name-case-outbound",
@@ -3200,14 +3210,14 @@
   "counts": {
     "case_consumers": {
       "any": 47,
-      "api": 116,
+      "api": 117,
       "drilldown": 53,
       "explore": 202,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 745,
+      "go": 746,
       "playwright": 2
     },
     "page_kinds": {
@@ -3227,7 +3237,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 94,
-    "wired_items": 443
+    "wired_items": 444
   },
   "gates": [
     "A/B shape selection",

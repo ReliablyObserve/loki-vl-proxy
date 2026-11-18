@@ -18,6 +18,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -113,6 +114,12 @@ var servedDivergences = map[string]string{
 	"semantics/translator-writes-reserved-field-names": "TestReservedFieldLabelsMatchLoki (internal/queryplan/lower)",
 }
 
+// spellingDifferential holds the rows translatorspelling.Case names (a spelling the translator reads otherwise than
+// the plan, which reads the tree) to Loki: the proxy serves the plan's text for them. The other rows of those cases
+// (semantics/translator-reads-quoted-text-as-syntax: a log query's label filter value) have no differential yet and
+// stay delegated.
+const spellingDifferential = "TestPlanSpellingsMatchLoki (internal/proxy)"
+
 // encodeOrEmpty is the text of op, or "" for none.
 func encodeOrEmpty(op physical.Op) string {
 	if op == nil {
@@ -146,8 +153,9 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 	slices := map[[2]string]*shadowSlice{}
 	for _, row := range corpus {
 		// The handlers read the query as the request's rewrite leaves it (proxy.RequestQueryText): the metric calls and
-		// parentheses in one spelling, keywords in lower case, no comments.
-		q := proxy.RequestQueryText(row)
+		// parentheses in one spelling, keywords in lower case, no comments; then they clamp a quantile above 1
+		// (proxy.RewriteQuantilePhiGT1) before they plan and translate it.
+		q := proxy.RewriteQuantilePhiGT1(proxy.RequestQueryText(row))
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
@@ -213,6 +221,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 			if !ok && translatorMisreadsQuotedText(q) {
 				caseID, ok = "semantics/translator-reads-quoted-text-as-syntax", true
 			}
+			differential := ""
 			if !ok && !routed && translatorMisreadsParenthesizedMetric(q) {
 				caseID, ok = "semantics/translator-reads-parenthesized-metric-as-text", true
 			}
@@ -253,7 +262,15 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				// a number as Loki does, the translator writes the exact text of the literal.
 				caseID, ok = "semantics/label-filter-numeric-equality", true
 			}
-			if ok && served != nil && servedDivergences[caseID] != "" {
+			if c := translatorspelling.Case(q, plan); !ok && !routed && c != "" && !sameAsTranslator(got, legacy) {
+				// A spelling the translator reads otherwise than the plan, which reads the tree: the proxy serves the
+				// plan's text, held to Loki by the spelling's differential.
+				caseID, ok, differential = c, true, spellingDifferential
+			}
+			if differential == "" {
+				differential = servedDivergences[caseID]
+			}
+			if ok && served != nil && differential != "" {
 				// The proxy serves the plan's text for the row: it must be the lowering's, byte for byte, and the
 				// case's differential holds its answers to Loki.
 				switch text, isServed := served(q, prof); {
@@ -318,6 +335,17 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 		}
 	}
 	return sec, problems, slices
+}
+
+// spellingDivergences are the rows of sec delegated as a spelling the translator reads otherwise than the plan
+// (translatorspelling.Case): like a keep's series identity, a lowering that differs from the translator there is that
+// divergence, held to Loki by its differential, not a mismatch.
+func spellingDivergences(sec shadowSection) int {
+	n := 0
+	for _, c := range []string{translatorspelling.QuotedText, translatorspelling.UnwrapConversionBlank, translatorspelling.QuantileLiteral, translatorspelling.BinaryText} {
+		n += sec.DelegatedByConstruct["known divergence "+c]
+	}
+	return n
 }
 
 // knownKeepIdentity is the registry case of the plan's series identity behind a keep, which the proxy serves from
@@ -516,7 +544,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		// A row whose series a keep before the unwrap, or a parser's labels, decide is held to Loki
 		// (TestKeepUnwrapIdentityMatchLoki), not to the translator: a lowering that differs there is that divergence,
 		// not a mismatch.
-		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance] {
+		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance]-spellingDivergences(bad) {
 			t.Fatalf("a lowering that answers `*` for everything: %+v", bad)
 		}
 	})
@@ -528,14 +556,14 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
 	}
 	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance] {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance]-spellingDivergences(bad) {
 			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
 		}
 	})
 }
 
 func joinFirst(lines []string, n int) string {
-	if len(lines) > n {
+	if os.Getenv("ZZALL") == "" && len(lines) > n {
 		lines = append(lines[:n:n], fmt.Sprintf("... and %d more", len(lines)-n))
 	}
 	out := ""

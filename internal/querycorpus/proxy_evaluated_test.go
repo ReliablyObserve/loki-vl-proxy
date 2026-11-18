@@ -153,11 +153,8 @@ func (p planProfile) operandTranslate(q string) (string, error) {
 	return lower.QuoteKeywordFieldText(s), nil
 }
 
-// routedQuery is the query as the handlers route it: keywords in lower case, comments and logfmt flags removed
-// (lowercaseQueryKeywords).
-func routedQuery(q string) string {
-	return logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(q)))
-}
+// routedQuery is the query as the handlers route it: the request's rewrite and validation (handlerText).
+func routedQuery(q string) string { return handlerText(q) }
 
 // proxyReference is the proxy's route for q under the profile: the operators, the operand's request, and whether
 // the proxy routes the query at all.

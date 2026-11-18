@@ -5,7 +5,7 @@
     "lowering_marker_reads": 11,
     "parse_calls": 55,
     "string_reads": 47,
-    "text_built": 210,
+    "text_built": 208,
     "translator_string_ops": 678
   },
   "files": {
@@ -95,7 +95,7 @@
       "internal/proxy/unwrap_samples.go": 2,
       "internal/proxy/volume.go": 6,
       "internal/queryplan/lower/range_agg.go": 2,
-      "internal/queryplan/lower/unwrap.go": 3
+      "internal/queryplan/lower/unwrap.go": 1
     },
     "translator_string_ops": {
       "internal/translate/detected_level.go": 38,
@@ -109,6 +109,7 @@
       "internal/translate/linefilter.go": 23,
       "internal/translate/linefilter_pattern.go": 9,
       "internal/translate/selector.go": 17,
+      "internal/translate/stream_labels.go": 1,
       "internal/translate/unwrap_gate.go": 2,
       "internal/translate/vector.go": 4,
       "internal/translator/ip_label_filter.go": 1,
@@ -118,7 +119,7 @@
       "internal/translator/normalize.go": 6,
       "internal/translator/parsed_key_variants.go": 63,
       "internal/translator/pipeline_capture_labels.go": 1,
-      "internal/translator/plain_stream_labels.go": 21,
+      "internal/translator/plain_stream_labels.go": 20,
       "internal/translator/series_identity.go": 16,
       "internal/translator/stats_codec.go": 19,
       "internal/translator/translator.go": 372,
