@@ -62,10 +62,10 @@ The aim is a production workhorse for the whole query path: Grafana Explore, Log
 
 **What is in place** (all on `main`, see the [CHANGELOG](CHANGELOG.md)):
 
-- Loki's answers at the boundary: a query Loki rejects from the request alone is refused before any VictoriaLogs call, with Loki's status and text, and so is a tail handshake that fails; one spelling of a query is read whatever blanks, comments or parentheses surround it; a parser's series identity follows Loki's for sliding windows (a range longer than the step) as well as for tumbling ones.
+- Loki's answers at the boundary: a query Loki rejects from the request alone is refused before any VictoriaLogs call, with Loki's status and text, and so is a tail handshake that fails; one spelling of a query is read whatever blanks, comments or parentheses surround it; `sum`, `max`, `min` and `avg` over the unwrap range functions after `| json` or `| logfmt` read Loki's series on `query_range` with a range longer than the step (two related sliding-window differences are open in the registry).
 - Loki's tenancy and auth: tenancy is off by default as in Loki with `auth_enabled: false`, and Loki's answers for a missing, unknown or multiple org ID when it is on ([Tenancy and authentication](docs/tenancy-and-auth.md)); the delete API is behind its own token and runs Loki's delete requests as VictoriaLogs delete tasks.
 - Loki's default limits: `max_query_length` (`721h`) and `limit` (100 entries on a range log query that sends none); the query length can also be set per tenant.
-- VictoriaLogs stays protected: identical read requests share one run, a failed answer is held for its class (a second or a few, never pushed to peers) so a refreshing dashboard does not ask a failing VictoriaLogs again on every refresh, the circuit breaker and retry budget bound retries, and queries that would crash or hang a parser or VictoriaLogs (a label named like `_TIME`, non-ASCII input) are answered or rejected without reaching it.
+- VictoriaLogs stays protected: identical read requests share one run, a failed answer is held for its class (a second or a few, never pushed to peers) so a refreshing dashboard does not ask a failing VictoriaLogs again on every refresh, the circuit breaker and retry budget bound retries, a label named like `_TIME` no longer restarts VictoriaLogs, and a query with certain non-ASCII characters is rejected with Loki's 400 instead of stalling the parser.
 - Who is asking: per-tenant, per-user and per-Grafana-app attribution in the request logs, per-tenant VictoriaLogs cost metrics and `/debug/queries` for the heaviest callers ([Operations](docs/operations.md)).
 
 **Remaining steps for the query path** (each is tracked in a generated report, so the list shrinks as the reports do):
@@ -74,7 +74,7 @@ The aim is a production workhorse for the whole query path: Grafana Explore, Log
 2. Prove the behaviours still unproven or partly proven: the [compatibility roadmap](conformance/reports/roadmap.md) lists them in client order.
 3. Bring every shape and range to at least Loki's speed, and no row above 2x Loki: the rows above 2x are listed in the performance summary below and are defects until they leave it.
 4. Match Loki's remaining error answers (the known error differences in the quality summary below).
-5. Keep proving all of it on every supported VictoriaLogs version and on a multi-replica fleet.
+5. Keep proving all of it on the two tested VictoriaLogs versions and on a multi-replica fleet.
 
 **Alerting is not ready.** The proxy does not evaluate alerting or recording rules and does not implement Loki's ruler API; only a read bridge shows vmalert's rules and alerts to Grafana ([Rules and alerts migration](docs/rules-alerts-migration.md)). Loki-style alerting and recording rules are the next big area, started once the query path is 100% ready. Until then run `vmalert` against VictoriaLogs and do not plan on the proxy for rule evaluation.
 
@@ -429,7 +429,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 
 **Adaptive parallelism.** Parallel window fetches use EWMA-based backpressure — ramps up when VictoriaLogs is fast, backs off automatically before it becomes a problem.
 
-**Identical-request sharing.** Identical read requests (same route, parameters, tenant, credentials and response profile) that arrive while the first one runs wait for it on every cached read route, GET and POST, instead of each asking VictoriaLogs; a failure is handed over with Loki's status and text. Failed answers are then held per replica for the time of their class (`-error-cache-transient-ttl`, `-error-cache-data-ttl`), so refreshing dashboards do not hammer a failing VictoriaLogs. See [Operations](docs/operations.md) and the [configuration reference](docs/configuration.md).
+**Identical-request sharing.** Identical read requests (same route, parameters, tenant, credentials and response profile) that arrive while the first one runs wait for it on every cached read route, GET and POST, instead of each asking VictoriaLogs; a failure is handed over with Loki's status and text. Failed answers are then held per replica for the time of their class (`-error-cache-transient-ttl`, `-error-cache-data-ttl`), so a refreshing dashboard does not ask a failing VictoriaLogs on every refresh. See [Operations](docs/operations.md) and the [configuration reference](docs/configuration.md).
 
 **Lock-free hot paths.** Circuit breaker, metrics histograms, and rate limiter use atomic operations instead of mutexes. Structured logging uses an async buffered handler. At 100+ concurrent requests, these eliminate the contention that dominates proxy-added latency.
 

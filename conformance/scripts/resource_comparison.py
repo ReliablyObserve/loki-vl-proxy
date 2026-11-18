@@ -24,6 +24,9 @@ NOT_MEASURED = ("Not measured yet: `bench/resources/compare.py` measures the loc
 # What a result must say about itself before any number from it is printed.
 PROVENANCE = ("date", "commit", "images", "host")  # after normalise(): proxy_commit is read as commit
 SIDES = (("loki", "Loki"), ("proxy+victorialogs", "Proxy + VictoriaLogs"))
+# The workload bench/resources/compare.py sends, for results that do not carry a `method` block (a test holds the two equal).
+WORKLOAD = ("9 queries (count, rate, bytes, topk and unwrap metrics, plain and json/logfmt log queries) over 15 min, "
+            "30 min, 60 min, three times each, 8 concurrent workers, every request a cold miss")
 LINKS = {  # the pointer to the production cost case, per page
     "readme": "[The Cost Case](#the-cost-case)",
     "docs": "[Cost model](cost-model.md) and the production figures in the [README](https://github.com/ReliablyObserve/loki-vl-proxy#the-cost-case)",
@@ -59,6 +62,8 @@ def totals(run):
             raise ValueError(f"{run['side']}: container {name} has no measured CPU or memory")
         cpu += c["cpu_s_workload"]
         mem += c["mem_peak_mib"]
+    if cpu <= 0:
+        raise ValueError(f"{run['side']}: the workload used no CPU above the idle rate; the run is not a measurement")
     return cpu, mem
 
 
@@ -112,7 +117,7 @@ def render(results, page="readme"):
     if warn:
         out += [f"**Not a valid comparison: {'; '.join(warn)}.**", ""]
     method = results.get("method", {})
-    out.append(f"Method: {method.get('workload', 'the same query_range workload on both sides')}. CPU-seconds are "
+    out.append(f"Method: {method.get('workload', WORKLOAD)}. CPU-seconds are "
                f"the containers' user plus system time during the workload minus each container's idle rate measured "
                f"just before it ({method.get('idle_s', 30)} s), since ingest keeps running; peak memory is the "
                f"resident set sampled every 0.5 s. A busybox sidecar in each container's PID namespace reads "

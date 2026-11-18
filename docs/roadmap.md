@@ -127,15 +127,15 @@ visual differences remain in [Known Issues](KNOWN_ISSUES.md) and the
 
 Shipped from 2026-11-11 (2.130.0) to 2.336.0; the [CHANGELOG](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/CHANGELOG.md) has each entry in full.
 
-- [x] Identical read requests share one run on every cached read route, and failed answers are held per class and per replica (`-error-cache-*`), so refreshing dashboards do not hammer a failing VictoriaLogs (2.335.0)
+- [x] Identical read requests share one run on every cached read route, and failed answers are held per class and per replica (`-error-cache-*`), so a refreshing dashboard does not ask a failing VictoriaLogs on every refresh (2.335.0)
 - [x] Plan-time Loki rejections: every request Loki refuses with a 4xx from the request alone, and a tail handshake that fails, are refused before any VictoriaLogs call (2.336.0)
 - [x] One canonical spelling of a metric query before any handler reads it (blanks, comments and redundant parentheses), so equal queries share cache entries and requests (2.336.0)
-- [x] Per-series identity of a parser's labels for sliding windows (`query_range` with a range longer than the step), as Loki reads them (2.334.0)
+- [x] `sum`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` read Loki's series on `query_range` when the range is longer than the step (2.334.0; two related differences remain open in the registry)
 - [x] Loki-exact multi-tenancy and auth: tenancy off by default as with `auth_enabled: false`, Loki's answers for the tenant header and caller credentials recorded from Loki (2.171.0 and later)
 - [x] The delete API runs Loki's create and cancel as VictoriaLogs delete tasks, behind its own token (2.171.0, 2.330.0)
 - [x] Per-tenant, per-user and per-Grafana-app attribution in the logs, per-tenant VictoriaLogs cost metrics and `/debug/queries` (2.172.0)
-- [x] VictoriaLogs crash guards (a label named like `_TIME` no longer restarts VictoriaLogs, 2.141.0) and a parser that always terminates within a bound (2.150.0)
-- [x] Loki's default limits: `max_query_length` `721h` (2.265.0) and 100 entries for a range log query that sends no `limit` (2.271.0)
+- [x] A label named like `_TIME` is written so that VictoriaLogs can parse its own print of the query and no longer restarts (2.141.0), and a LogQL query with certain non-ASCII characters is rejected with Loki's 400 instead of stalling the parser, which is now held to a time and memory bound by a fuzz target (2.150.0)
+- [x] Loki's default limits: `max_query_length` `721h` (2.270.0) and 100 entries for a range log query that sends no `limit` (2.280.0)
 
 - [x] Populated-query parity corrections — Loki-consistent IP line-filter validation, implicit many-to-one rejection, quantile grouping, regexp capture names, tumbling-bucket timestamps, step-aligned binary joins, `unwrap duration()`/`bytes()` on bare parsers, second-precision scalar timestamps, and bounded raw metric collection; measured findings replace the earlier 100% compatibility claim (1.68.0)
 - [x] Security hardening and bounded execution — tenant-scoped cache and coalescer keys, global-tenant wildcard denial in label-routing mode, 4 KiB tail client messages, subquery/`line_format`/binary evaluation budgets, per-timestamp `topk`/`bottomk`, and exact final-response cache keys (1.67.0)

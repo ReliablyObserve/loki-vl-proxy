@@ -67,6 +67,12 @@ class RenderTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             rc.render(bad)
 
+    def test_a_run_with_no_cpu_above_idle_is_refused(self):
+        bad = copy.deepcopy(RESULTS)
+        bad["sides"][1] = run("proxy+victorialogs", -1.0, 800)
+        with self.assertRaises(ValueError):
+            rc.render(bad)
+
     def test_no_results_render_a_not_measured_note(self):
         self.assertEqual(rc.render(None), rc.NOT_MEASURED)
 
@@ -75,6 +81,18 @@ class RenderTest(unittest.TestCase):
             rc.replace_section("no markers", "x")
         text = f"a\n{rc.START}\nold\n{rc.END}\nb"
         self.assertEqual(rc.replace_section(text, "new"), f"a\n{rc.START}\n\nnew\n\n{rc.END}\nb")
+
+
+class HarnessTest(unittest.TestCase):
+    def test_the_default_workload_text_is_the_harness_workload(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("compare", os.path.join(REPO, "bench", "resources", "compare.py"))
+        compare = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(compare)
+        self.assertEqual(rc.WORKLOAD, compare.WORKLOAD)
+        bare = copy.deepcopy(RESULTS)
+        del bare["method"]
+        self.assertIn(compare.WORKLOAD, rc.render(bare))
 
 
 class CommittedSectionTest(unittest.TestCase):
