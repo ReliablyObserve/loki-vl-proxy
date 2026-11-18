@@ -1920,6 +1920,13 @@
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/parser_error_matrix_test.go"
     ],
+    "semantics/nested-calls-read-once": [
+      "internal/logql/argument_reader_test.go",
+      "internal/logql/deep_call_cost_test.go",
+      "internal/logql/quiet_calls_test.go",
+      "internal/proxy/long_query_memo_test.go",
+      "internal/proxy/strip_outer_calls_test.go"
+    ],
     "semantics/non-sum-vector-aggregation-unreduced": [
       "internal/proxy/instant_unwrap_sum_test.go",
       "internal/proxy/matrix_fold_sink_test.go",
@@ -2877,7 +2884,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 647,
+  "registry_items": 648,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2944,6 +2951,9 @@
       "limits/every-cap-is-a-flag",
       "operator-configurable-limits"
     ],
+    "internal/logql/argument_reader_test.go": [
+      "semantics/nested-calls-read-once"
+    ],
     "internal/logql/blank_after_keyword_loki_test.go": [
       "semantics/parser-reads-unicode-blank-as-white-space",
       "semantics/translator-reads-only-space-between-tokens"
@@ -2959,6 +2969,9 @@
     ],
     "internal/logql/count_values_test.go": [
       "semantics/count-values-unsupported"
+    ],
+    "internal/logql/deep_call_cost_test.go": [
+      "semantics/nested-calls-read-once"
     ],
     "internal/logql/dotted_names_test.go": [
       "profiles/dotted-name-parse-error"
@@ -3049,6 +3062,9 @@
     "internal/logql/print_reparse_test.go": [
       "semantics/binary-operand-literals-reprint",
       "semantics/label-filter-expression-syntax"
+    ],
+    "internal/logql/quiet_calls_test.go": [
+      "semantics/nested-calls-read-once"
     ],
     "internal/logql/range_rules_test.go": [
       "semantics/proxy-accepts-invalid-logql"
@@ -3861,6 +3877,9 @@
       "profiles/parsed-fields-without-parser",
       "profiles/structured-metadata-keys-per-profile"
     ],
+    "internal/proxy/long_query_memo_test.go": [
+      "semantics/nested-calls-read-once"
+    ],
     "internal/proxy/lowering_shadow_evaluated_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4528,6 +4547,9 @@
       "loki_api_v1_query_range",
       "semantics/stream-label-shadowed-by-ingest-json-key",
       "severity/detected-level-filter-json-level"
+    ],
+    "internal/proxy/strip_outer_calls_test.go": [
+      "semantics/nested-calls-read-once"
     ],
     "internal/proxy/sub_second_step_precision_test.go": [
       "semantics/sub-second-step-grid"
@@ -6364,7 +6386,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 748,
+  "tests_with_markers": 753,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6462,5 +6484,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 444
+  "wired_items": 445
 }

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Better performance for deeply nested queries. A query that nests `label_replace` calls hundreds or thousands of
+  levels deep (Loki accepts them up to its 128 KB input size limit) is parsed, validated and respelled in time that
+  grows with its length: about 1 µs and 2 allocations per level to parse at 2,048 levels. Before, the parse grew with
+  the square of the depth and the validation and the request rewrite with its cube. At 200 levels (8.6 KB) the
+  validation took 1 s and one `query_range` 3.1 s of CPU; it now takes a few milliseconds. The parser types each nested call
+  once, jumping over the parentheses an outer call's parser already read. The validation does not read a typed call
+  again, and the request rewrite reads `label_replace`'s first argument where it stands. The strip of outer
+  `label_replace` calls the handlers read goes through one table of the text's brackets. A query longer than the 4 KiB
+  the short memos keep is validated, respelled and parsed once per request, in a memo bounded at 4 MiB per generation
+  (two generations).
+
 ### Fixed
 
 - A metric query spelled with blanks or parentheses Loki reads away now answers what Loki answers: a range function
@@ -33,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failed answer held while the configuration was reloaded (tenant map, field mappings) is never served after the
   reload, even when its request was still running during the reload: held answers are keyed by a configuration
   epoch that every reload changes.
+- A `label_replace` call Loki cannot read is answered with Loki's error text, line and column. Three or five
+  strings, a number for a string and an invalid escape now count the column from the start of the query, not from
+  the call (Loki's `col 70` where the proxy said `col 56`), and use the line Loki gives. Such an error, and a
+  `vector` argument that is no number, answers ahead of the checks over the tree, as in Loki. A `label_replace`,
+  `vector` or `approx_topk` call a `#` comment leaves open is Loki's `syntax error: unexpected $end` at the end of the
+  query, with what Loki expects there, or the error of a regex Loki builds before it; the proxy said
+  `unterminated '('`. label_replace's regex is checked ahead of the tree inside the call, an outer call's first, as
+  Loki checks it. These answers are recorded from Loki.
 
 ## [2.335.0] - 2026-11-18
 

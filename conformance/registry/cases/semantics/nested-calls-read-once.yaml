@@ -1,0 +1,64 @@
+id: semantics/nested-calls-read-once
+title: Queries that nest label_replace calls deeply are parsed, validated and respelled once per request in time that grows with their length, and rejected with Loki's errors
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's parser accepts label_replace nested to any depth under its 128 KB input size limit (the Loki oracle,
+  test/oracle/loki check: 3,047 levels of a call around `sum by (app) (rate(...))`, 2,730 levels alternating with
+  sum, 2,911 levels spelled with blanks, 2,382 levels of `x + vector(1)`); the proxy refuses no query for its depth.
+
+  The parser kept each label_replace, vector and approx_topk call as text and read its parts with a parser of its
+  own, which read every call nested in it again; the validation read every call's text again per level, and the
+  request rewrite (CanonicalSpelling) respelled each call's first argument apart. A nesting of d calls cost the
+  square of d in the parse and the cube of d in the validation and the rewrite: 200 levels (8.6 KB) took 1 s to
+  validate and 3.1 s of CPU for one query_range. Now:
+  - the first quiet parser of a nesting records where every parenthesis in it closes, and the parsers of the nested
+    calls jump there (internal/logql/quiet_calls.go); they note the log queries they read in one list, so that no
+    level walks the tree below it again;
+  - the validation does not read a call the parser typed again (its first argument is the typed one, its strings are
+    well formed, the same last regex is compiled once per pass);
+  - CanonicalSpelling reads label_replace's first argument where it stands, with the same parser;
+  - the strip of outer label_replace calls the handlers read (stripOuterCalls) reads a nesting through one bracket
+    table of the whole text (logql.ArgumentReader);
+  - a query longer than the 4 KB the short memos keep is validated, respelled and parsed once per request and kept
+    in a memo bounded by bytes (internal/proxy/long_query_memo.go), as the short memos keep a short query.
+  Every step is linear in the depth (about 1 µs and 2 allocations per level to parse at 2,048 levels).
+
+  Loki's errors for such calls are written where Loki writes them (recorded answers,
+  internal/logql/testdata/call_errors_loki.jsonl): the column of a call with three or five strings or a number
+  counts from the start of the query, not from the call (Loki col 70, the proxy said 56, at one level); a call a `#`
+  comment leaves open is Loki's `syntax error: unexpected $end` at the end of the query, with what it expects, and
+  a regex Loki builds before it answers first (the proxy said `unterminated '('`); an invalid escape on a later line
+  carries Loki's line and column; a call Loki cannot read is its syntax error ahead of every check over the tree;
+  and label_replace's regex is checked ahead of the tree inside the call (an outer call's first).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'label_replace(label_replace(sum by (app) (rate({service_name="api-gateway"}[1m])), "a", "$1", "b", "(.*)"), "c", "$1", "d", "(.*)")'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    200 with the same matrix as Loki; the same query nested thousands of levels deep answers in time linear in its
+    length, and a nesting Loki rejects gets Loki's error text, line and column.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: api-only
+  effort: M
+  area: 'internal/logql parser (consumeBalancedParens, typeCall, quiet_calls.go, unterminatedCallError), semantic.go, validate.go, canonical_spelling.go, argument_reader.go; internal/proxy long_query_memo.go, http_utils.go, query_plan.go, range_metric_compat.go'
+  loki: 'nested label_replace accepted at every depth under the input size limit; syntax errors at the end of the query'
+  proxy: 'the same verdicts and error texts; every request step reads a nested call once'
+  planned_test: 'TestCallReadsMatchReadingAgain, TestCallErrorsMatchRecordedLoki, TestDeepCallsCostGrowsLinearly, TestCanonicalSpellingDeepNesting, TestArgumentReaderMatchesFirstArgumentLen, FuzzCallReadsMatchReadingAgain, FuzzArgumentReaderMatchesFirstArgumentLen (internal/logql); TestLongQueryMemoReadsOnce, TestTextMemoBoundedByCost, TestStripOuterCallsMatchesRescanning, FuzzStripOuterCallsMatchesRescanning (internal/proxy)'
+  visual: none
+  visual_reason: 'the answers do not change; only their cost and the text of errors for malformed calls'
+  clusters: []
