@@ -81,12 +81,16 @@ def esc_html(text, limit=0):
     return html.escape(text[:limit] if limit else text, quote=True)
 
 
+def new_empty_panel(main, pr, loki=None):
+    """The PR side shows more "No data" panels than the base and Loki."""
+    return pr.get("noData", 0) > max(main.get("noData", 0), (loki or {}).get("noData", 0))
+
+
 def ui_problems(main, pr, loki=None):
     """What the PR side shows that the base does not. An empty panel or a query error Loki shows too is Loki's
     answer, not a regression."""
     out = []
-    loki_no_data = (loki or {}).get("noData", 0)
-    if pr.get("noData", 0) > max(main.get("noData", 0), loki_no_data):
+    if new_empty_panel(main, pr, loki):
         out.append(f"new empty panel (\"No data\" {main.get('noData', 0)} on base, {pr.get('noData', 0)} on PR)")
     loki_banners = [error_text(b) for b in (loki or {}).get("banners", [])]
     new = [b for b in pr.get("banners", []) if b not in main.get("banners", []) and error_text(b) not in loki_banners]

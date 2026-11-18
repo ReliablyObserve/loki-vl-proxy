@@ -1,5 +1,7 @@
 {
   "cases": [
+    "drilldown/client-detection-captured-header-sets | applies_to",
+    "drilldown/client-detection-captured-header-sets | compare:observed",
     "drilldown/detected-field-values | compare:observed",
     "drilldown/detected-field-values | gap:open",
     "drilldown/detected-field-values | query",
@@ -1272,6 +1274,7 @@
     "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
+    "internal/clientprofile/detect_test.go | drilldown/client-detection-captured-header-sets",
     "internal/config/generate_edge_test.go | operator-configurable-limits",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
     "internal/config/registry_test.go | operator-configurable-limits",
@@ -1486,6 +1489,8 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
     "internal/proxy/chunked_range_windows_loki_test.go | drilldown/long-range-pieces-answer-like-loki",
     "internal/proxy/chunked_range_windows_loki_test.go | loki_api_v1_query_range",
+    "internal/proxy/client_profile_capture_test.go | drilldown/client-detection-captured-header-sets",
+    "internal/proxy/client_profile_capture_test.go | observability-slow-query-log",
     "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
     "internal/proxy/comment_before_call_test.go | semantics/comment-between-function-and-parenthesis-accepted",
     "internal/proxy/comment_forms_test.go | semantics/comment-between-function-and-parenthesis-accepted",
@@ -3281,6 +3286,7 @@
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "test/e2e-fleet/vl_refusal_test.go | semantics/error-cache-vl-refusal-peer-sync",
     "test/e2e-fleet/vl_refusal_test.go | vl-query-too-long",
+    "test/e2e-ui/tests/client-detection.spec.ts | drilldown/client-detection-captured-header-sets",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
@@ -3290,14 +3296,14 @@
     "case_consumers": {
       "any": 50,
       "api": 120,
-      "drilldown": 55,
+      "drilldown": 56,
       "explore": 205,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 770,
-      "playwright": 2
+      "go": 772,
+      "playwright": 3
     },
     "page_kinds": {
       "drilldown": 18,
@@ -3316,7 +3322,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 459
+    "wired_items": 460
   },
   "gates": [
     "A/B shape selection",
@@ -3495,6 +3501,10 @@
     "tail-json-filter"
   ],
   "playwright_cells": [
+    "client-detection.spec.ts | Explore requests are Explore, never Drilldown @explore-core @cov:drilldown/client-detection-captured-header-sets",
+    "client-detection.spec.ts | every Logs Drilldown request is recognised as Drilldown @drilldown-core @cov:drilldown/client-detection-captured-header-sets",
+    "client-detection.spec.ts | shard:drilldown-core-tail",
+    "client-detection.spec.ts | shard:explore-core",
     "datasource.spec.ts | a dotted name is Loki's parse error on the Explore and Drilldown datasources @cov:profiles/dotted-name-parse-error @cov:profiles/grafana-shows-loki-error-text",
     "datasource.spec.ts | datasource health check succeeds",
     "datasource.spec.ts | shard:regression-datasource",

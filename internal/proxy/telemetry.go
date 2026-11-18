@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientprofile"
 )
 
 type ctxKey int
@@ -17,7 +19,6 @@ const (
 	origRequestKey
 	requestTelemetryKey
 	requestRouteMetaKey
-	requestGrafanaClientKey
 	authFingerprintKey // memoized forwardedAuthFingerprint result; set by injectAuthFingerprint
 )
 
@@ -102,6 +103,11 @@ type requestRouteMeta struct {
 }
 
 type grafanaClientProfile struct {
+	// client is the typed profile (clientprofile.Detect): surface, Grafana and Loki datasource versions, each a
+	// closed set or a normalised version. The fields below are the earlier string profile the response cache key
+	// and the Drilldown windowing read; version is client.Grafana's label ("" when unknown).
+	client            clientprofile.Profile
+	datasourceVersion string // client.Datasource's label, "" when unknown
 	surface           string
 	sourceTag         string
 	version           string
@@ -291,9 +297,12 @@ func requestRouteMetaFromContext(ctx context.Context) requestRouteMeta {
 }
 
 func grafanaClientProfileFromContext(ctx context.Context) grafanaClientProfile {
-	profile, _ := ctx.Value(requestGrafanaClientKey).(grafanaClientProfile)
+	profile, _ := clientprofile.CarrierFrom(ctx).(grafanaClientProfile)
 	return profile
 }
+
+// ClientProfile makes the request's Grafana profile the carrier of its typed client profile (clientprofile.From).
+func (g grafanaClientProfile) ClientProfile() clientprofile.Profile { return g.client }
 
 // withOrgID stores the X-Scope-OrgID and original request in the request context (request-scoped, no shared state).
 func withOrgID(r *http.Request) *http.Request {
