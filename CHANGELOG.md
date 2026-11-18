@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query, with what Loki expects there, or the error of a regex Loki builds before it; the proxy said
   `unterminated '('`. label_replace's regex is checked ahead of the tree inside the call, an outer call's first, as
   Loki checks it. These answers are recorded from Loki.
+- Each tenant's sub-request of a multi-tenant request (`X-Scope-OrgID` naming several tenants with `|`) now uses its
+  own request scope, so its cached query_range answer is keyed by that tenant. The sub-requests kept the multi-tenant
+  request's scope until their handler set their own, and the query_range response cache key is built before that:
+  the tenants of one request shared one key, and a tenant's part of the merged answer could hold another tenant's
+  lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
+  cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
+  v1.67.0 to v2.338.0.
 
 ### Performance
 
@@ -69,13 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Each tenant's sub-request of a multi-tenant request (`X-Scope-OrgID` naming several tenants with `|`) now uses its
-  own request scope, so its cached query_range answer is keyed by that tenant. The sub-requests kept the multi-tenant
-  request's scope until their handler set their own, and the query_range response cache key is built before that:
-  the tenants of one request shared one key, and a tenant's part of the merged answer could hold another tenant's
-  lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
-  cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
-  v1.67.0 to v2.338.0.
 - `unwrap bytes()` reads a whole size exactly up to 18446744073709551615 bytes, as Loki 3.7.10 does (its
   go-humanize v1.1.0): such a value now makes a sample on the proxy's own evaluators instead of failing the query
   with `SampleExtractionErr` (`too large`); a size of 2^64 bytes or more still fails as in Loki. A label filter
