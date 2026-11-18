@@ -707,6 +707,9 @@
     "semantics/nested-aggregation-query-length | compare:observed",
     "semantics/nested-aggregation-query-length | gap:open",
     "semantics/nested-aggregation-query-length | query",
+    "semantics/nested-calls-linear-work | compare:observed",
+    "semantics/nested-calls-linear-work | gap:fixed",
+    "semantics/nested-calls-linear-work | query",
     "semantics/non-sum-vector-aggregation-unreduced | compare:observed",
     "semantics/non-sum-vector-aggregation-unreduced | gap:fixed",
     "semantics/non-sum-vector-aggregation-unreduced | query",
@@ -1250,6 +1253,7 @@
     "internal/config/registry_test.go | operator-configurable-limits",
     "internal/logql/blank_after_keyword_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/logql/blank_after_keyword_loki_test.go | semantics/translator-reads-only-space-between-tokens",
+    "internal/logql/canonical_nested_test.go | semantics/nested-calls-linear-work",
     "internal/logql/canonical_spelling_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/logql/canonical_spelling_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/logql/canonical_spelling_test.go | semantics/vector-call-blank-before-parenthesis-as-query",
@@ -3207,14 +3211,14 @@
   "counts": {
     "case_consumers": {
       "any": 48,
-      "api": 118,
+      "api": 119,
       "drilldown": 53,
       "explore": 202,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 746,
+      "go": 747,
       "playwright": 2
     },
     "page_kinds": {
@@ -3234,7 +3238,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 96,
-    "wired_items": 444
+    "wired_items": 445
   },
   "gates": [
     "A/B shape selection",
