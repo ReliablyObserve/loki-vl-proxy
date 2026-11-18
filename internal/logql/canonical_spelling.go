@@ -5,6 +5,7 @@ import (
 	"math/bits"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 // CanonicalSpelling writes the metric calls and parentheses of a query in one spelling, the one its parsed tree
@@ -171,16 +172,47 @@ func (p *parser) spellRemove(from, to int) rewrite {
 
 // spellOpaqueCall handles a metric call the parser keeps as text, src[start:end], whose arguments start at arg. A call
 // whose parts the parser does not read keeps its spelling, and so does the query: approx_topk, a vector call that is
-// not one number (label_replace is read where it stands, spellLabelReplace).
-func (p *parser) spellOpaqueCall(name string, start, _, end int) {
-	if name != "vector" {
+// not one number, a label_replace call that is not a query and four strings. label_replace's first argument is read
+// where it stands (spellLabelReplace); with spellPerArgument (tests only) it is respelled here as a query of its own.
+func (p *parser) spellOpaqueCall(name string, start, arg, end int) {
+	switch name {
+	case "vector":
+		o := &OpaqueMetricExpr{Raw: strings.TrimSpace(p.sc.src[start:end]), Func: name}
+		if typeOpaqueCall(o); !o.Typed {
+			p.spell.bad = true
+		}
+	case "label_replace":
+		argEnd := arg + FirstArgumentLen(p.sc.src[arg:end])
+		edits, ok := spellEdits(p.sc.src[arg:argEnd])
+		if !ok || !labelReplaceStrings(p.sc.src[argEnd:end]) {
+			p.spell.bad = true
+			return
+		}
+		for _, e := range edits {
+			p.spell.edits = append(p.spell.edits, rewrite{start: e.start + arg, end: e.end + arg})
+		}
+	default:
 		p.spell.bad = true
-		return
 	}
-	o := &OpaqueMetricExpr{Raw: strings.TrimSpace(p.sc.src[start:end]), Func: name}
-	if typeOpaqueCall(o); !o.Typed {
-		p.spell.bad = true
+}
+
+// spellPerArgument respells label_replace's first argument as a query of its own, read apart (tests compare it with
+// the reading in place, spellLabelReplace).
+var spellPerArgument atomic.Bool
+
+// labelReplaceStrings reports whether rest, the text after label_replace's first argument, is its four strings and
+// its closing parenthesis: `, "dst", "replacement", "src", "regex")`.
+func labelReplaceStrings(rest string) bool {
+	sc := scanner{src: rest, quiet: true}
+	for i := 0; i < 4; i++ {
+		if sc.next().Typ != TokComma {
+			return false
+		}
+		if t := sc.next(); t.Typ != TokString && t.Typ != TokRawString {
+			return false
+		}
 	}
+	return sc.next().Typ == TokRParen && sc.next().Typ == TokEOF
 }
 
 // errSpellKept stops CanonicalSpelling's parse of a query whose spelling it keeps.

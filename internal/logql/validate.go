@@ -98,6 +98,10 @@ func validateLogQLTree(query string) (expr Expr, msg, unknown string) {
 		return nil, plainUnwrap.Msg, ""
 	}
 
+	// A call kept as text the parser could not type is Loki's syntax error, which ends its parse where it stands.
+	if msg := untypedCallsError(expr, query); msg != "" {
+		return nil, msg, ""
+	}
 	// Semantic pass over the typed AST. Loki raises its parser actions while it reads the query, ahead of every
 	// check over the parsed tree, in the order of the text.
 	if msg := semanticPass(expr, query, false); msg != "" {

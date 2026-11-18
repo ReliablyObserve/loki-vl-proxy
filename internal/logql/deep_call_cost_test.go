@@ -160,3 +160,34 @@ func BenchmarkDeepCalls(b *testing.B) {
 		}
 	}
 }
+
+// Every phase reads a nesting in time and allocations linear in its depth: from depth 256 to 2048 the allocations
+// may grow at most nine times (eight for linear growth) and the best of five runs at most sixteen times (sixty-four
+// for the square of the depth, which a read of every level again costs).
+//
+// conformance: semantics/nested-calls-read-once
+func TestDeepCallsCostGrowsLinearly(t *testing.T) {
+	const shallow, deep = 256, 2048
+	best := func(run func(string), q string) time.Duration {
+		d := time.Duration(1<<63 - 1)
+		for i := 0; i < 5; i++ {
+			start := time.Now()
+			run(q)
+			d = min(d, time.Since(start))
+		}
+		return d
+	}
+	for _, shape := range deepCallShapes {
+		for _, phase := range deepCallPhases {
+			small, large := deepCall(shape, shallow), deepCall(shape, deep)
+			a := testing.AllocsPerRun(1, func() { phase.run(small) })
+			b := testing.AllocsPerRun(1, func() { phase.run(large) })
+			if b > 9*a+16 {
+				t.Errorf("%s/%s: %v allocations at depth %d, %v at depth %d", shape.name, phase.name, a, shallow, b, deep)
+			}
+			if ts, tl := best(phase.run, small), best(phase.run, large); tl > 16*ts+time.Millisecond {
+				t.Errorf("%s/%s: %v at depth %d, %v at depth %d", shape.name, phase.name, ts, shallow, tl, deep)
+			}
+		}
+	}
+}

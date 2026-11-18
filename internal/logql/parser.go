@@ -559,13 +559,13 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 		argStart := p.pos()
 		if p.spell != nil {
 			p.spellGap(p.prevEnd, argStart)
-			if name == "label_replace" {
+			if name == "label_replace" && !spellPerArgument.Load() {
 				return p.spellLabelReplace(startPos, treeErr)
 			}
 		}
 		endPos, ok := p.consumeBalancedParens()
 		if !ok || endPos < startPos {
-			return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
+			return nil, p.unterminatedCallError(name, startPos)
 		}
 		if p.spell != nil {
 			p.spellOpaqueCall(name, startPos, argStart, endPos)
@@ -586,6 +586,69 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 		return o, nil
 	}
 	return nil, p.syntaxErrorAt("(")
+}
+
+// unterminatedCallError is the error of a call kept as text, its name at offset start, whose parentheses never close
+// (a `#` comment can leave them open): Loki's parser reads its arguments and fails where they stop, at the end of
+// the query. The call is read again from its name, with a quiet parser of its own: its syntax error, or the error of
+// a matcher or stage Loki builds before it (the call's log queries join the ones read before it,
+// actionErrorSoFar). A parser that collects rewrites, or a call read so without an error, keeps the parser's own.
+func (p *parser) unterminatedCallError(name string, start int) error {
+	own := fmt.Errorf("logql: unterminated '(' after %q", name)
+	if p.canon != nil || p.spell != nil || p.flagSpans != nil {
+		return own
+	}
+	q := &parser{sc: scanner{src: p.sc.src, pos: start, quiet: true}, base: p.base}
+	q.advance()
+	err := q.openCallError(name)
+	if err == nil {
+		return own
+	}
+	if cur := p.curLogQuery; cur != nil {
+		p.noteChecked(cur)
+		p.curLogQuery = nil
+	}
+	for _, lq := range q.checkedLogQueries[:min(q.checkedLogQueryCount, len(q.checkedLogQueries))] {
+		p.noteChecked(lq)
+	}
+	for _, lq := range q.moreCheckedLogQueries {
+		p.noteChecked(lq)
+	}
+	p.curLogQuery = q.curLogQuery
+	return err
+}
+
+// openCallError reads the call name the parser stands at as Loki's grammar writes it, label_replace(<expr>,
+// "dst", "replacement", "src", "regex"), vector(<number>) or approx_topk(<number>, <expr>), and returns the first
+// syntax error, or nil.
+func (p *parser) openCallError(name string) error {
+	if p.advance(); p.cur.Typ != TokLParen {
+		return nil // approx_topk's grouping: the parser's own error
+	}
+	p.advance()
+	switch name {
+	case "label_replace":
+		if _, err := p.parseExpr(); err != nil {
+			return err
+		}
+		return p.labelReplaceStringsError()
+	case "vector":
+		return p.vectorArgumentError()
+	case "approx_topk":
+		for i := 0; i < 2; i++ {
+			if _, err := p.parseExpr(); err != nil {
+				return err
+			}
+			if p.cur.Typ == TokEOF {
+				return p.syntaxErrorAt("") // the expression could go on: Loki names nothing
+			}
+			if i > 0 || p.cur.Typ != TokComma {
+				return nil
+			}
+			p.advance()
+		}
+	}
+	return nil
 }
 
 // parseNumberLiteral parses a number, or a minus and a number.

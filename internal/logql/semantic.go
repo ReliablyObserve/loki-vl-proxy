@@ -7,7 +7,6 @@ import (
 	"regexp/syntax"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 // errEmptyCompatibleMatchers is Loki's text for a selector with no equality matcher, rendered as a
@@ -93,17 +92,16 @@ func (w *semanticWalk) pass(expr Expr) string {
 				return msg
 			}
 		}
-		if inner != nil {
-			if msg := w.pass(inner); msg != "" {
-				return msg
-			}
-		}
 		if x.Typed && x.Func == "label_replace" && len(x.Args) == 4 && x.Args[3] != w.regexOK {
-			// Loki compiles the regex anchored, as it matches it.
+			// Loki compiles the regex anchored, as it matches it, and checks it ahead of the call's sample expression
+			// (an outer call's regex first, then the checks of the tree inside).
 			if _, err := regexp.Compile("^(?:" + x.Args[3] + ")$"); err != nil {
 				return "parse error : invalid regex in label_replace: " + err.Error()
 			}
 			w.regexOK = x.Args[3]
+		}
+		if inner != nil {
+			return w.pass(inner)
 		}
 	}
 	return ""
@@ -154,6 +152,77 @@ func binaryLogOperandError(op, side string, operand Expr) string {
 	return "parse error : unexpected type for " + side + " leg of binary operation (" + op + "): *syntax." + typ
 }
 
+// untypedCallsError is the first syntax error, in the order of the text, of a call kept as text that the parser
+// could not type (untypedCall): Loki's parser stops there, so it answers ahead of every check over the tree, and
+// only the errors of the matchers and stages Loki built before it (an action, firstActionError) answer ahead of
+// it: those of the log queries before the call, then those of its own sample expression. It is "" when every call
+// was typed, the walk then visits each node once.
+func untypedCallsError(expr Expr, query string) string {
+	call, msg := firstUntypedCallError(expr, query)
+	if call == nil {
+		return ""
+	}
+	if action, _ := actionErrorBefore(expr, call); action != "" {
+		return action
+	}
+	if inner, _ := opaqueFirstArgument(query, call); inner != nil {
+		if action := firstActionError(inner); action != "" {
+			return action
+		}
+	}
+	return msg
+}
+
+// firstUntypedCallError is the first call of expr, in the order of the text, that the parser could not type and
+// that Loki rejects, with its error.
+func firstUntypedCallError(expr Expr, query string) (*OpaqueMetricExpr, string) {
+	switch x := expr.(type) {
+	case *RangeAggregation:
+		return firstUntypedCallError(x.Inner, query)
+	case *VectorAggregation:
+		return firstUntypedCallError(x.Inner, query)
+	case *BinOpExpr:
+		if call, msg := firstUntypedCallError(x.Left, query); call != nil {
+			return call, msg
+		}
+		return firstUntypedCallError(x.Right, query)
+	case *OpaqueMetricExpr:
+		if x.Typed {
+			return firstUntypedCallError(x.Inner, query)
+		}
+		if _, msg := untypedCall(query, x); msg != "" {
+			return x, msg
+		}
+	}
+	return nil, ""
+}
+
+// actionErrorBefore is the first action error (firstActionError) of the log queries of expr that stand before the
+// node stop, and whether stop was reached.
+func actionErrorBefore(expr Expr, stop Expr) (string, bool) {
+	if expr == stop {
+		return "", true
+	}
+	switch x := expr.(type) {
+	case *LogQuery:
+		return logQueryActionError(x), false
+	case *RangeAggregation:
+		return actionErrorBefore(x.Inner, stop)
+	case *VectorAggregation:
+		return actionErrorBefore(x.Inner, stop)
+	case *BinOpExpr:
+		if msg, reached := actionErrorBefore(x.Left, stop); msg != "" || reached {
+			return msg, reached
+		}
+		return actionErrorBefore(x.Right, stop)
+	case *OpaqueMetricExpr:
+		if x.Inner != nil {
+			return actionErrorBefore(x.Inner, stop)
+		}
+	}
+	return "", false
+}
+
 // untypedCall reads a call the parser keeps as text and could not type (approx_topk, or a call Loki rejects): its
 // sample expression, if it has one, and Loki's error for it, if any: a vector call whose argument is not a number, a
 // first argument that does not parse, label_replace strings that are not four well formed strings.
@@ -197,6 +266,11 @@ func vectorArgumentError(query string, call *OpaqueMetricExpr) error {
 		return nil
 	}
 	p.advance()
+	return p.vectorArgumentError()
+}
+
+// vectorArgumentError is the error of vector's argument and closing parenthesis, the parser at the argument.
+func (p *parser) vectorArgumentError() error {
 	if p.cur.Typ != TokNumber {
 		return p.syntaxErrorAt("NUMBER")
 	}
@@ -256,6 +330,12 @@ func labelReplaceArgumentsError(query string, call *OpaqueMetricExpr) error {
 	if _, err := p.parseExpr(); err != nil {
 		return nil // reported by opaqueFirstArgument
 	}
+	return p.labelReplaceStringsError()
+}
+
+// labelReplaceStringsError is the error of label_replace's four strings and closing parenthesis, the parser past its
+// first argument.
+func (p *parser) labelReplaceStringsError() error {
 	for i := 0; i < 4; i++ {
 		if p.cur.Typ != TokComma {
 			if i == 0 {
@@ -263,17 +343,8 @@ func labelReplaceArgumentsError(query string, call *OpaqueMetricExpr) error {
 			}
 			return p.syntaxErrorAt(",")
 		}
-		p.advance()
-		switch p.cur.Typ {
-		case TokString, TokRawString:
-		case TokError:
-			if p.cur.Val == "invalid quoted string" {
-				// Loki's lexer reports the start of the string.
-				before := p.sc.src[:p.pos()]
-				return newParseError(1, utf8.RuneCountInString(before)+1, "invalid char escape")
-			}
-			return p.syntaxErrorAt("STRING")
-		default:
+		if p.advance(); p.cur.Typ != TokString && p.cur.Typ != TokRawString {
+			// A string Loki's lexer cannot read is its own error, at the start of the string (syntaxErrorAt).
 			return p.syntaxErrorAt("STRING")
 		}
 		p.advance()
