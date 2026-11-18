@@ -107,17 +107,6 @@ type rankingBackend struct {
 	lastBodySize int64
 }
 
-// rankingSizeWriter counts the bytes of an answer.
-type rankingSizeWriter struct {
-	http.ResponseWriter
-	n int64
-}
-
-func (w *rankingSizeWriter) Write(b []byte) (int, error) {
-	n, err := w.ResponseWriter.Write(b)
-	w.n += int64(n)
-	return n, err
-}
 
 func (b *rankingBackend) record(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,14 +122,27 @@ func (b *rankingBackend) record(next http.Handler) http.Handler {
 			b.sent = append(b.sent, r.URL.Path+" "+q)
 			b.mu.Unlock()
 		}
-		cw := &rankingSizeWriter{ResponseWriter: w}
-		next.ServeHTTP(cw, r)
+		// The answer is recorded before the client reads any of it.
+		rec := httptest.NewRecorder()
+		next.ServeHTTP(rec, r)
 		if r.URL.Path == "/select/logsql/stats_query_range" && !strings.Contains(q, ":in(") {
 			b.mu.Lock()
-			b.lastBodySize = cw.n
+			b.lastBodySize = int64(rec.Body.Len())
 			b.mu.Unlock()
 		}
+		for k, v := range rec.Header() {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
 	})
+}
+
+// wholeReadSize is the size of the last stats_query_range answer without a ranking.
+func (b *rankingBackend) wholeReadSize() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.lastBodySize
 }
 
 func (b *rankingBackend) take() []string {
@@ -490,7 +492,9 @@ func TestDrilldownSeriesLimitRankingCornerMatchesLoki(t *testing.T) {
 				if res, sent := askRanked(t, b, c); res.Code != http.StatusOK || sentRanked(sent) {
 					t.Fatalf("%s %s: the whole read answered %d, ranked %v", b.name, c.app, res.Code, sentRanked(sent))
 				}
-				c.bodyBound = b.lastBodySize - 1
+				if c.bodyBound = b.wholeReadSize() - 1; c.bodyBound <= 0 {
+					t.Fatalf("%s %s: no whole read was recorded", b.name, c.app)
+				}
 			}
 			res, sent := askRanked(t, b, c)
 			if res.Code != http.StatusOK || !sentRanked(sent) {
