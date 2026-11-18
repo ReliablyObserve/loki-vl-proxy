@@ -12,7 +12,8 @@ description: |
   allowed in range queries" from v1.51) and on stats_query before v1.51.0
   (#1296; oracle v1.49.0 refuses, v1.53.0 answers).
 proxy_usage: |
-  logsql.GateStatsLimitAfterStats.
+  the gate vl.stats_limit_after_stats (internal/capability), read by logsql.PredictRefusal. A release whose probe
+  (`* | stats count() as c | limit 1` on stats_query) is answered decides it when no release is readable.
 fallback: |
   None: a translation defect, answered as Loki's 500.
 proves: []

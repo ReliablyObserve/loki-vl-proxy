@@ -49,7 +49,10 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
 		if p.debugVLCallsHeader {
-			sc.beforeHeader = rt.setVLCallsHeaders
+			sc.beforeHeader = func(h http.Header) {
+				rt.setVLCallsHeaders(h)
+				p.setCapabilitiesHeader(ctx, h)
+			}
 		}
 		next.ServeHTTP(sc, reqWithTelemetry)
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -124,66 +125,40 @@ func (p *Proxy) observeInternalOperation(ctx context.Context, operation, outcome
 }
 
 // --- Backend version detection ---
+//
+// What the proxy knows about the VictoriaLogs release(s) behind it, and every gate derived from it, lives in the
+// capability layer (internal/capability, p.caps); this file feeds it (response headers, the /metrics endpoint,
+// feature probes) and reads gates out of it.
 
+// backendKey names the backend a release was seen on (the URL host: never credentials).
+func (p *Proxy) backendKey() string {
+	if p.backend == nil {
+		return ""
+	}
+	return p.backend.Host
+}
+
+// observeBackendVersionFromHeaders reads a VictoriaLogs release out of a response's headers. Only a value that names
+// VictoriaLogs counts (capability.ParseBuild): a bare semver, or the version of vmauth, vlagent or VictoriaMetrics
+// that answers in front of it, is not a VictoriaLogs release. A repeated value costs one string compare.
 func (p *Proxy) observeBackendVersionFromHeaders(headers http.Header) {
 	if headers == nil {
 		return
 	}
-	candidates := []string{
-		headers.Get("Server"),
-		headers.Get("X-App-Version"),
-		headers.Get("X-Backend-Version"),
-		headers.Get("X-Victoriametrics-Build"),
-	}
-	for _, candidate := range candidates {
-		candidate = strings.TrimSpace(candidate)
+	for _, name := range [...]string{"Server", "X-App-Version", "X-Backend-Version", "X-Victoriametrics-Build"} {
+		candidate := headers.Get(name)
 		if candidate == "" {
 			continue
 		}
-		semver := extractBackendSemver(candidate)
-		if semver == "" {
-			continue
+		if p.caps.ObserveRaw(p.backendKey(), candidate, capability.SourceHeader) {
+			return
 		}
-		p.storeBackendVersion(candidate, semver)
-		return
 	}
-	// No version in the response: while it stays unknown (failed or pending
-	// startup probe) retry the metrics probe in the background. An unknown
-	// version behaves as the v1.49.0 floor; only the v1.50+ behaviour waits for
-	// the probe.
-	p.backendVersionMu.RLock()
-	known := p.backendVersionSemver != ""
-	p.backendVersionMu.RUnlock()
-	if !known {
+	// No VictoriaLogs release in the response: while it stays unknown (a failed or pending startup probe) retry the
+	// metrics probe in the background. An unknown release behaves as the v1.49.0 floor.
+	if !p.caps.Backend().Release().Known {
 		p.maybeReprobeBackendVersion(time.Now())
 	}
-}
-
-func extractBackendSemver(raw string) string {
-	return backendSemverPattern.FindString(raw)
-}
-
-func extractBackendSemverFromMetrics(metricsText string) string {
-	metricsText = strings.TrimSpace(metricsText)
-	if metricsText == "" {
-		return ""
-	}
-	for _, line := range strings.Split(metricsText, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if !strings.Contains(line, "vm_app_version{") && !strings.Contains(line, "victorialogs_build_info{") {
-			continue
-		}
-		if match := backendMetricsQuotedVersionPattern.FindStringSubmatch(line); len(match) == 2 {
-			return match[1]
-		}
-		if fallback := extractBackendSemver(line); fallback != "" {
-			return fallback
-		}
-	}
-	return ""
 }
 
 func parseSemverTriplet(version string) (int, int, int, bool) {
@@ -251,117 +226,34 @@ func semverAtLeastSemver(version, minVersion string) bool {
 	return vPatch >= mPatch
 }
 
-func semverAtLeast(semver string, major, minor, patch int) bool {
-	mj, mn, pt, ok := parseSemverTriplet(semver)
-	if !ok {
-		return false
-	}
-	if mj != major {
-		return mj > major
-	}
-	if mn != minor {
-		return mn > minor
-	}
-	return pt >= patch
-}
-
-type backendCapabilities struct {
-	profile                   string
-	supportsStreamMetadata    bool
-	supportsDensePatternWin   bool
-	supportsColumnFieldValues bool // v1.50+: stream fields stored in column index; field_values == stream_field_values but 20x faster
-}
-
-func deriveBackendCapabilities(semver string) backendCapabilities {
-	switch {
-	case semverAtLeast(semver, 1, 50, 0):
-		return backendCapabilities{"vl-v1.50-plus", true, true, true}
-	case semverAtLeast(semver, 1, 49, 0):
-		return backendCapabilities{"vl-v1.49-plus", true, false, false}
-	case semverAtLeast(semver, 1, 30, 0):
-		return backendCapabilities{"vl-v1.30-plus", true, false, false}
-	default:
-		return backendCapabilities{"legacy-pre-v1.30", false, false, false}
-	}
-}
-
-func (p *Proxy) storeBackendVersion(raw, semver string) {
-	if semver == "" {
+// storeBackendVersion records a release the caller trusts to be VictoriaLogs's (an operator-named or test-named
+// version; what a backend reports goes through capability.ParseBuild). source is a label of where it came from.
+func (p *Proxy) storeBackendVersion(source, semver string) {
+	r := capability.ParseRelease(semver)
+	if !r.Known {
 		return
 	}
-	p.backendVersionMu.Lock()
-	defer p.backendVersionMu.Unlock()
-	// Keep first detected version to avoid churn from intermediaries rewriting headers.
-	if p.backendVersionSemver != "" {
-		return
+	r.Raw = source
+	if strings.HasPrefix(source, "metrics:") {
+		r.Source = capability.SourceMetrics
 	}
-	caps := deriveBackendCapabilities(semver)
-	p.backendVersionRaw = raw
-	p.backendVersionSemver = semver
-	p.noteVLRelease(semver)
-	p.backendCapabilityProfile = caps.profile
-	p.backendSupportsStreamMetadata = caps.supportsStreamMetadata
-	p.backendSupportsDensePatternWindowing = caps.supportsDensePatternWin
-	p.backendSupportsColumnFieldValues = caps.supportsColumnFieldValues
-	if !p.backendVersionLogged {
-		p.backendVersionLogged = true
-		p.log.Info(
-			"backend version detected",
-			"backend.version.raw", raw,
-			"backend.version.semver", semver,
-			"backend.capability_profile", p.backendCapabilityProfile,
-			"metadata.stream_endpoints", p.backendSupportsStreamMetadata,
-			"patterns.dense_windowing", p.backendSupportsDensePatternWindowing,
-			"field_values.column_index", p.backendSupportsColumnFieldValues,
-			"service_name.derivation", serviceNameDerivationForm(logsql.CapabilitiesFor(semver)),
-		)
-		if !semverAtLeast(semver, logsql.MinSupportedMajor, logsql.MinSupportedMinor, 0) {
-			// Independent of -backend-min-version: Helm values or an operator
-			// may carry an older floor, but the supported lines start here.
-			p.log.Warn(
-				"backend version is below the supported VictoriaLogs lines",
-				"backend.version.semver", semver,
-				"minimum_supported_version", fmt.Sprintf("v%d.%d.0", logsql.MinSupportedMajor, logsql.MinSupportedMinor),
-				"note", "VictoriaLogs v1.49.0 and every v1.5x release are supported; this version is unsupported and untested",
-			)
-		}
-	}
+	p.caps.Observe(p.backendKey(), r)
 }
 
-// serviceNameDerivationForm names the LogsQL the proxy uses to derive
-// service_name on this backend, so an operator can tell the two apart in the
-// logs.
-func serviceNameDerivationForm(caps logsql.Capabilities) string {
-	if caps.PipeCoalesce {
-		return "coalesce"
-	}
-	return "format"
+// logsqlCapabilities returns the LogsQL capabilities of the observed backend. Before the first release is known it
+// returns the floor baseline.
+func (p *Proxy) logsqlCapabilities() logsql.Capabilities {
+	return logsql.CapabilitiesOf(p.caps.Backend())
 }
 
 func (p *Proxy) supportsStreamMetadataEndpoints() bool {
-	p.backendVersionMu.RLock()
-	defer p.backendVersionMu.RUnlock()
-	// Before first backend version observation, optimistically keep stream-first
-	// behavior so we don't regress newer deployments.
-	if p.backendVersionSemver == "" {
-		return true
-	}
-	return p.backendSupportsStreamMetadata
-}
-
-// logsqlCapabilities returns the LogsQL capabilities of the observed backend
-// version. Before the first version observation it returns the safe baseline.
-func (p *Proxy) logsqlCapabilities() logsql.Capabilities {
-	p.backendVersionMu.RLock()
-	semver := p.backendVersionSemver
-	p.backendVersionMu.RUnlock()
-	return logsql.CapabilitiesFor(semver)
+	// Before the first release is known the stream endpoints are used (the gate holds its default, on), so a newer
+	// deployment does not regress; the release, or an endpoint probe that finds them absent, turns it off.
+	return p.caps.Backend().On(capability.StreamMetadataEndpoints)
 }
 
 func (p *Proxy) supportsDensePatternWindowing() bool {
-	p.backendVersionMu.RLock()
-	defer p.backendVersionMu.RUnlock()
-	return p.backendSupportsDensePatternWindowing
+	return p.caps.Backend().On(capability.DensePatternWindowing)
 }
 
 func (p *Proxy) supportsDensePatternWindowingForRequest(r *http.Request) bool {
@@ -385,152 +277,17 @@ func (p *Proxy) supportsDensePatternWindowingForRequest(r *http.Request) bool {
 // stored in the column index. On these backends field_values is equivalent to
 // stream_field_values but ~20x faster, so we prefer it for label value lookups.
 func (p *Proxy) supportsColumnIndexedFields() bool {
-	p.backendVersionMu.RLock()
-	defer p.backendVersionMu.RUnlock()
-	return p.backendSupportsColumnFieldValues
+	return p.caps.Backend().On(capability.ColumnFieldValues)
 }
 
-// backendVersionReprobeInterval spaces metrics version probes while the backend
-// version is still unknown.
-const backendVersionReprobeInterval = 5 * time.Minute
-
-// maybeReprobeBackendVersion starts at most one background metrics probe per
-// backendVersionReprobeInterval, bounded by the version check timeout, so a
-// startup probe that failed (backend not ready, /metrics not routed) does not
-// pin version-gated behaviour for the process lifetime. It never blocks the
-// calling request.
-func (p *Proxy) maybeReprobeBackendVersion(now time.Time) {
-	last := p.backendVersionProbedAt.Load()
-	if now.UnixNano()-last < int64(backendVersionReprobeInterval) || !p.backendVersionProbedAt.CompareAndSwap(last, now.UnixNano()) {
-		return
-	}
-	timeout := p.backendVersionCheckTimeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	stop := p.keepWarmStop // closed by Shutdown
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-		if stop != nil {
-			go func() {
-				select {
-				case <-stop:
-					cancel()
-				case <-ctx.Done():
-				}
-			}()
-		}
-		p.probeBackendVersionFromMetrics(ctx)
-	}()
-}
-
+// backendVersionState is what the drilldown-limits answer reports of the backend: the raw text of the effective
+// (lowest in the window) release, its canonical name and the capability profile.
 func (p *Proxy) backendVersionState() (raw, semver, profile string) {
-	p.backendVersionMu.RLock()
-	defer p.backendVersionMu.RUnlock()
-	return p.backendVersionRaw, p.backendVersionSemver, p.backendCapabilityProfile
-}
-
-func (p *Proxy) storeBackendCapabilityProbe(source string, supportsStreamMetadata, supportsMetadataSubstring bool) {
-	if p == nil {
-		return
+	set := p.caps.Backend()
+	if r := set.Release(); r.Known {
+		raw, semver = r.Raw, r.String()
 	}
-	p.backendVersionMu.Lock()
-	defer p.backendVersionMu.Unlock()
-	if p.backendVersionSemver != "" {
-		return
-	}
-	p.backendVersionRaw = source
-	switch {
-	case supportsStreamMetadata && supportsMetadataSubstring:
-		p.backendCapabilityProfile = "vl-probed-v1.49-plus"
-	case supportsStreamMetadata:
-		p.backendCapabilityProfile = "vl-probed-v1.30-plus"
-	default:
-		p.backendCapabilityProfile = "legacy-probed-pre-v1.30"
-	}
-	p.backendSupportsStreamMetadata = supportsStreamMetadata
-	// Keep dense-windowing and column-field-values conservative without explicit semver evidence.
-	p.backendSupportsDensePatternWindowing = false
-	p.backendSupportsColumnFieldValues = false
-	if !p.backendVersionLogged {
-		p.backendVersionLogged = true
-		p.log.Info(
-			"backend capability profile inferred",
-			"backend.version.source", source,
-			"backend.capability_profile", p.backendCapabilityProfile,
-			"metadata.stream_endpoints", p.backendSupportsStreamMetadata,
-			"patterns.dense_windowing", p.backendSupportsDensePatternWindowing,
-		)
-	}
-}
-
-func (p *Proxy) probeBackendVersionFromMetrics(ctx context.Context) {
-	if p == nil {
-		return
-	}
-	resp, err := p.vlGet(ctx, "/metrics", nil)
-	if err != nil {
-		p.log.Debug("backend version metrics probe failed", "error", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		p.log.Debug("backend version metrics probe returned non-success status", "http.response.status_code", resp.StatusCode)
-		return
-	}
-
-	const maxMetricsProbeBytes = 2 << 20 // 2 MiB
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxMetricsProbeBytes))
-	if err != nil {
-		p.log.Debug("backend version metrics probe read failed", "error", err)
-		return
-	}
-	semver := extractBackendSemverFromMetrics(string(body))
-	if semver == "" {
-		p.log.Debug("backend version metrics probe found no semver")
-		return
-	}
-	p.storeBackendVersion("metrics:"+semver, semver)
-}
-
-func (p *Proxy) probeBackendEndpointSupport(ctx context.Context, path string, params url.Values) bool {
-	if p == nil {
-		return false
-	}
-	resp, err := p.vlGet(ctx, path, params)
-	if err != nil {
-		p.log.Debug("backend endpoint probe failed", "path", path, "error", err)
-		return false
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	return resp.StatusCode < http.StatusBadRequest
-}
-
-func (p *Proxy) probeBackendCapabilitiesFromEndpoints(ctx context.Context) {
-	if p == nil {
-		return
-	}
-	// The probes ask whether an endpoint exists (status below 400), not for
-	// data: a one-minute window keeps them from being full-retention scans on
-	// every replica start.
-	now := time.Now()
-	q := url.Values{}
-	q.Set("query", "*")
-	q.Set("start", strconv.FormatInt(now.Add(-time.Minute).UnixNano(), 10))
-	q.Set("end", strconv.FormatInt(now.UnixNano(), 10))
-	supportsStreamMetadata := p.probeBackendEndpointSupport(ctx, "/select/logsql/stream_field_names", q)
-
-	sub := url.Values{}
-	sub.Set("query", "*")
-	sub.Set("start", q.Get("start"))
-	sub.Set("end", q.Get("end"))
-	sub.Set("q", "a")
-	sub.Set("filter", "substring")
-	supportsMetadataSubstring := p.probeBackendEndpointSupport(ctx, "/select/logsql/field_names", sub)
-
-	p.storeBackendCapabilityProbe("endpoint-probe", supportsStreamMetadata, supportsMetadataSubstring)
+	return raw, semver, set.Profile()
 }
 
 // ValidateBackendVersionCompatibility checks backend version support at startup.
@@ -575,14 +332,15 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 		return nil
 	}
 
-	raw, semver, profile := p.backendVersionState()
-	if semver == "" {
+	if _, semver, _ := p.backendVersionState(); semver == "" {
 		p.probeBackendVersionFromMetrics(checkCtx)
-		raw, semver, profile = p.backendVersionState()
 	}
-	if semver == "" {
-		p.probeBackendCapabilitiesFromEndpoints(checkCtx)
-		raw, semver, profile = p.backendVersionState()
+	// Feature probes decide the gates that have one when no release is readable, and cross-check the release when it
+	// is (-backend-feature-probes=false turns them off).
+	p.probeBackendFeatures(checkCtx)
+	raw, semver, profile := p.backendVersionState()
+	if raw == "" {
+		raw = "feature-probe"
 	}
 	if semver == "" && profile != "" {
 		p.log.Warn(

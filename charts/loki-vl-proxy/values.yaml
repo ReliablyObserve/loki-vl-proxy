@@ -390,6 +390,8 @@ extraArgs:
   # backend-min-version: "v1.49.0"              # startup minimum supported VictoriaLogs version
   # backend-allow-unsupported-version: "false"  # allow older backend at your own risk
   # backend-version-check-timeout: "5s"         # startup backend version check timeout
+  # backend-version-reprobe-interval: "5m"     # how often the VictoriaLogs release is read again and the feature gates probed (0 disables the periodic round)
+  # backend-feature-probes: "true"             # probe the feature gates; false decides them from the release alone
   # backend-version-strict: "false"             # when true, /health failure, non-2xx, or missing/sub-min backend semver fails startup (default false: warn only); overrides --backend-allow-unsupported-version
   # backend-tls-skip-verify: "false"
   # backend-default-msg-value: ""               # VictoriaLogs -defaultMsgValue when customized; rows whose _msg is empty or that placeholder get a line rebuilt from their fields

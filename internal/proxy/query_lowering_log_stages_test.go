@@ -52,9 +52,7 @@ func newLoweringProfileProxy(t testing.TB, name string, config func(*Config), ve
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	if version != "" {
-		p.backendVersionMu.Lock()
-		p.backendVersionSemver = version
-		p.backendVersionMu.Unlock()
+		p.setReleaseForTest(version)
 	}
 	p.translationCache = nil
 	return p

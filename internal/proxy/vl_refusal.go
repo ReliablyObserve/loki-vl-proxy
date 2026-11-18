@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
@@ -64,42 +65,20 @@ const refusalSyncRate float64 = 20
 // copies expire: about one call per hold for the fleet.
 const refusalSyncJitter = 0.15
 
-// vlRelease is the VictoriaLogs release the proxy detected (not Known before).
-func (p *Proxy) vlRelease() logsql.Version {
-	if v := p.vlReleaseSeen.Load(); v != nil {
-		return *v
-	}
-	return logsql.Version{}
-}
-
-// noteVLRelease records the detected release semver and rebuilds the flight
-// key prefix with it.
-func (p *Proxy) noteVLRelease(semver string) {
-	v := logsql.ParseVersion(semver)
-	if !v.Known {
-		return
-	}
-	if cur := p.vlReleaseSeen.Load(); cur != nil && *cur == v {
-		return
-	}
-	p.vlReleaseSeen.Store(&v)
-	p.refreshFlightPrefix()
-}
-
 // vlQueryLen is VictoriaLogs' -search.maxQueryLen as its last refusal named it,
-// for the release it was named by, until when it is trusted.
+// for the capability set (its digest) it was named under, until when it is trusted.
 type vlQueryLen struct {
 	bytes   int
-	release logsql.Version
+	release string // the capability set's Digest
 	until   int64
 }
 
 // learnedMaxQueryLen is VictoriaLogs' query length limit when a refusal of
-// release v named it within the refusal TTL; zero otherwise (an operator may
+// the capability set named it within the refusal TTL; zero otherwise (an operator may
 // change it without a release change, so it is learned again after that).
-func (p *Proxy) learnedMaxQueryLen(v logsql.Version) int {
+func (p *Proxy) learnedMaxQueryLen(set capability.Set) int {
 	l := p.vlMaxQueryLen.Load()
-	if l == nil || l.release != v || cache.Now().UnixNano() >= l.until {
+	if l == nil || l.release != set.Digest() || cache.Now().UnixNano() >= l.until {
 		return 0
 	}
 	return l.bytes
@@ -124,11 +103,11 @@ func (p *Proxy) noteVLRefusalMessage(raw string) {
 	if err != nil || limit <= 0 {
 		return
 	}
-	v := p.vlRelease()
-	if !v.Known {
+	set := p.caps.Backend()
+	if !set.Release().Known {
 		return
 	}
-	if cur := p.vlMaxQueryLen.Load(); cur != nil && cur.bytes == limit && cur.release == v && cache.Now().UnixNano() < cur.until {
+	if cur := p.vlMaxQueryLen.Load(); cur != nil && cur.bytes == limit && cur.release == set.Digest() && cache.Now().UnixNano() < cur.until {
 		// Known already (a predicted refusal names it too): the fact expires
 		// with the TTL it was learned with, and the next call after that is
 		// sent and learns it again.
@@ -138,7 +117,7 @@ func (p *Proxy) noteVLRefusalMessage(raw string) {
 	if ttl <= 0 {
 		ttl = DefaultErrorCacheVLRefusalTTL
 	}
-	p.vlMaxQueryLen.Store(&vlQueryLen{bytes: limit, release: v, until: cache.Now().Add(ttl).UnixNano()})
+	p.vlMaxQueryLen.Store(&vlQueryLen{bytes: limit, release: set.Digest(), until: cache.Now().Add(ttl).UnixNano()})
 }
 
 // isVLRefusalMessage reports a VictoriaLogs answer (status, raw message) that
@@ -277,19 +256,19 @@ func (p *Proxy) predictVLRefusal(ctx context.Context, method, path string, param
 	if !p.vlRefusalPrediction {
 		return nil, nil, false
 	}
-	v := p.vlRelease()
+	set := p.caps.Backend()
 	query := params.Get("query")
 	if query == "" {
 		return nil, nil, false
 	}
-	in := logsql.RefusalInput{Path: path, Query: query, MaxQueryLen: p.learnedMaxQueryLen(v),
+	in := logsql.RefusalInput{Path: path, Query: query, MaxQueryLen: p.learnedMaxQueryLen(set),
 		ExtraFilters: params["extra_filters"], ExtraStreamFilters: params["extra_stream_filters"]}
 	if path == logsql.PathQuery {
 		if limit, perr := strconv.Atoi(params.Get("limit")); perr == nil && limit > 0 {
 			in.Limit = true
 		}
 	}
-	refusal, predicted := logsql.PredictRefusal(in, v)
+	refusal, predicted := logsql.PredictRefusal(in, set)
 	if !predicted || p.breaker != nil && p.breaker.State() != "closed" {
 		// While the circuit breaker probes VictoriaLogs (half open), a call it
 		// let through is a probe: it is sent, so the breaker learns from it.
@@ -484,8 +463,8 @@ func (p *Proxy) syncRefusal(endpoint, query, key string, a *cache.Answer, until 
 	if p.peerCache == nil || !p.errorCachePeerSync || until.Sub(cache.Now()) < refusalSyncMinTTL || !peerPushAllowed(key) {
 		return
 	}
-	v := p.vlRelease()
-	if !v.Known {
+	set := p.caps.Backend()
+	if !set.Release().Known {
 		return
 	}
 	if !p.refusalSyncBudget.take(cache.Now()) {
@@ -493,7 +472,7 @@ func (p *Proxy) syncRefusal(endpoint, query, key string, a *cache.Answer, until 
 		return
 	}
 	msg := refusalSync{
-		Build: p.buildVersion, Release: v.String(), Scope: p.routingScope(), Endpoint: endpoint, Query: query, Key: key,
+		Build: p.buildVersion, Release: set.Digest(), Scope: p.routingScope(), Endpoint: endpoint, Query: query, Key: key,
 		Expires: until.UnixMilli(), Status: a.Status, Header: peerAnswerHeader(a.Header), Body: a.Body,
 	}
 	value, err := json.Marshal(msg)
@@ -524,9 +503,9 @@ func (p *Proxy) receiveRefusal(key string, value []byte, _ time.Duration) {
 		p.peerSyncCounts[3].Add(1)
 		return
 	}
-	v := p.vlRelease()
+	set := p.caps.Backend()
 	ttl := time.UnixMilli(msg.Expires).Sub(cache.Now())
-	if !v.Known || msg.Release != v.String() || msg.Build != p.buildVersion || msg.Scope != p.routingScope() ||
+	if !set.Release().Known || msg.Release != set.Digest() || msg.Build != p.buildVersion || msg.Scope != p.routingScope() ||
 		ttl <= 0 || !peerPushAllowed(msg.Key) ||
 		msg.Status < http.StatusBadRequest || msg.Status > 599 || msg.Endpoint == "" || len(msg.Body) > errorFlightMaxAnswerBytes {
 		p.peerSyncCounts[3].Add(1)

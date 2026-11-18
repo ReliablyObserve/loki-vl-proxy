@@ -177,7 +177,7 @@ The package targets **v1.49.0 minimum**. Everything introduced up to v1.49.0 is 
 | v1.49 | Floor: the zero `Capabilities` value |
 | v1.50+ | Dense pattern windowing (`Capabilities.DensePatternWindowing`) |
 
-`CapabilitiesFor(semver)` is called from `storeBackendVersion()` and `logsqlCapabilities()`. An unknown or malformed version, and a version below the floor (unsupported, only started with `-backend-allow-unsupported-version`), return the zero `Capabilities`, the floor: no fallbacks are kept for older releases.
+`Capabilities` is a derived view of the capability gate table (`internal/capability`, [capability gates](reference/capability-gates.md)): `CapabilitiesOf(set)` reads the proxy's current gate set (`logsqlCapabilities()`) and `CapabilitiesFor(semver)` the gates of a named release, for tests. An unknown or malformed version, and a version below the floor (unsupported, only started with `-backend-allow-unsupported-version`), return the zero `Capabilities`, the floor: no fallbacks are kept for older releases. `PredictRefusal` reads the same set; neither compares release strings.
 
 ---
 

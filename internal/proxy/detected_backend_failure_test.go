@@ -350,9 +350,7 @@ func TestDetectedLabelsFailedLabelValuesIsNotAPartialList(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	// VictoriaLogs v1.50 and later read stream label values from the column index.
-	p.backendVersionMu.Lock()
-	p.backendSupportsColumnFieldValues = true
-	p.backendVersionMu.Unlock()
+	p.setReleaseForTest("v1.50.0")
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 	req := httptest.NewRequest(http.MethodGet, `/loki/api/v1/detected_labels?query={app="api"}&start=1705314600&end=1705318200`, nil)

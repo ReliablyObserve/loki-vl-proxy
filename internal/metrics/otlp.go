@@ -276,6 +276,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	)
 	metrics = append(metrics, p.cacheTierMetrics(now)...)
 	metrics = append(metrics, p.errorFlightMetrics(now)...)
+	metrics = append(metrics, p.capabilityMetrics(now)...)
 	metrics = append(metrics, p.cacheLayerMetrics(now)...)
 
 	var memStats runtime.MemStats

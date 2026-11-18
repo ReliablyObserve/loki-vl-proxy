@@ -952,8 +952,8 @@ func (p *Proxy) clearHeldErrors() {
 // read only under the epoch and the release it was answered in.
 func (p *Proxy) refreshFlightPrefix() {
 	prefix := errorFlightKeyVersion + strconv.FormatUint(p.errorEpoch.Load(), 36) + ":"
-	if v := p.vlRelease(); v.Known {
-		prefix += v.String() + ":"
+	if set := p.caps.Backend(); set.Release().Known {
+		prefix += set.Digest() + ":" // a content hash: the same on every replica of the same backend
 	}
 	p.errorPrefix.Store(&prefix)
 }

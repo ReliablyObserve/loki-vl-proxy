@@ -48,7 +48,7 @@ Supported and tested versions are also listed in the [README](https://github.com
 
 ## Runtime Capability Profiles
 
-The proxy passively detects backend version from upstream response headers and selects a capability profile. This keeps one binary safe across mixed backend versions while enabling newer LogSQL optimizations where available.
+The proxy reads the VictoriaLogs release from its `/metrics` endpoint and from response headers (only a version that names VictoriaLogs counts: the version of a `vmauth`, `vlagent` or VictoriaMetrics in front of it does not), takes the lowest release seen in the last window, and derives every capability gate from it in one table (see [capability gates](reference/capability-gates.md)); feature probes (`-backend-feature-probes`) decide the gates they cover when no release is readable and cross-check the release when one is. It re-reads the release every `-backend-version-reprobe-interval`, so an upgrade or a rollback of VictoriaLogs changes the gates without a proxy restart. This keeps one binary safe across mixed backend versions while enabling newer LogsQL optimizations where available.
 
 | VictoriaLogs version family | Capability profile | Stream metadata endpoints fast path (`stream_field_*`) | Metadata substring filter (`q` + `filter=substring`) | Dense patterns windowing profile |
 |---|---|---|---|---|

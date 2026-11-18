@@ -1268,6 +1268,14 @@
     "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
+    "internal/capability/gates_test.go | vl-capability-layer",
+    "internal/capability/layer_test.go | vl-capability-layer",
+    "internal/capability/probes_oracle_test.go | pipe-coalesce",
+    "internal/capability/probes_oracle_test.go | stream-metadata-endpoints",
+    "internal/capability/probes_oracle_test.go | vl-capability-layer",
+    "internal/capability/probes_oracle_test.go | vl-stats-pipe-after-stats",
+    "internal/capability/probes_oracle_test.go | vl-stats-range-pipe-before-stats",
+    "internal/capability/release_test.go | vl-capability-layer",
     "internal/config/generate_edge_test.go | operator-configurable-limits",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
     "internal/config/registry_test.go | operator-configurable-limits",
@@ -1347,6 +1355,12 @@
     "internal/logsql/parser_stats_funcs_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
     "internal/logsql/pipe_math_as_test.go | architecture-syntax-package-layering",
+    "internal/logsql/refusal_baseline_test.go | vl-extra-filters-too-long",
+    "internal/logsql/refusal_baseline_test.go | vl-math-quoted-constant-clone-crash",
+    "internal/logsql/refusal_baseline_test.go | vl-pipe-before-release",
+    "internal/logsql/refusal_baseline_test.go | vl-query-too-long",
+    "internal/logsql/refusal_baseline_test.go | vl-stats-pipe-after-stats",
+    "internal/logsql/refusal_baseline_test.go | vl-stats-range-pipe-before-stats",
     "internal/logsql/refusal_table_test.go | vl-math-quoted-constant-clone-crash",
     "internal/logsql/refusal_table_test.go | vl-pipe-before-release",
     "internal/logsql/refusal_table_test.go | vl-query-too-long",
@@ -1374,6 +1388,7 @@
     "internal/lokierr/lokierr_test.go | status-429",
     "internal/lokierr/lokierr_test.go | status-500",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
+    "internal/metrics/capability_test.go | vl-capability-layer",
     "internal/metrics/request_flow_test.go | observability-query-flow",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
@@ -1399,6 +1414,8 @@
     "internal/proxy/alerting_tenant_label_test.go | prometheus_api_v1_rules",
     "internal/proxy/alerting_tenant_label_test.go | semantics/tenant-label-default-aliases",
     "internal/proxy/alerting_tenant_label_test.go | tenant-label-isolation",
+    "internal/proxy/backend_capabilities_test.go | instrumentation-reveals-no-secrets",
+    "internal/proxy/backend_capabilities_test.go | vl-capability-layer",
     "internal/proxy/backend_heavy_test.go | backend-admission-and-heavy-query-queueing",
     "internal/proxy/backend_heavy_test.go | backend-deadlines-and-cancellation",
     "internal/proxy/backend_heavy_test.go | heavy-metric-fetch-bounds",
@@ -3280,7 +3297,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 757,
+      "go": 764,
       "playwright": 2
     },
     "page_kinds": {
@@ -3300,7 +3317,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 457
+    "wired_items": 460
   },
   "gates": [
     "A/B shape selection",

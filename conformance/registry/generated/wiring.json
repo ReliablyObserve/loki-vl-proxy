@@ -228,6 +228,7 @@
       "test/e2e-compat/row_limit_like_loki_limit_test.go"
     ],
     "instrumentation-reveals-no-secrets": [
+      "internal/proxy/backend_capabilities_test.go",
       "internal/proxy/instrumentation_secrets_test.go"
     ],
     "json-metric-unparsed-line-lookup-once": [
@@ -989,6 +990,9 @@
     ],
     "peer-cache-stats-extent": [
       "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
+    "pipe-coalesce": [
+      "internal/capability/probes_oracle_test.go"
     ],
     "profiles/detected-fields-dotted-json-keys": [
       "internal/proxy/loki_profile_test.go",
@@ -2806,6 +2810,9 @@
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go"
     ],
+    "stream-metadata-endpoints": [
+      "internal/capability/probes_oracle_test.go"
+    ],
     "tail-reads-settled-rows": [
       "cmd/proxy/main_test.go",
       "internal/proxy/tail_settle_test.go",
@@ -2850,6 +2857,14 @@
     "versions/stats-bucket-label-v1.45": [
       "internal/proxy/ordered_json_extracted_pushdown_test.go"
     ],
+    "vl-capability-layer": [
+      "internal/capability/gates_test.go",
+      "internal/capability/layer_test.go",
+      "internal/capability/probes_oracle_test.go",
+      "internal/capability/release_test.go",
+      "internal/metrics/capability_test.go",
+      "internal/proxy/backend_capabilities_test.go"
+    ],
     "vl-delete-tasks-tenant-and-time": [
       "internal/proxy/delete_api_test.go"
     ],
@@ -2857,6 +2872,7 @@
       "test/e2e-compat/vl_empty_in_test.go"
     ],
     "vl-extra-filters-too-long": [
+      "internal/logsql/refusal_baseline_test.go",
       "internal/logsql/refusal_test.go",
       "internal/proxy/vl_refusal_oracle_test.go"
     ],
@@ -2864,6 +2880,7 @@
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
     "vl-math-quoted-constant-clone-crash": [
+      "internal/logsql/refusal_baseline_test.go",
       "internal/logsql/refusal_table_test.go",
       "internal/logsql/refusal_test.go",
       "internal/proxy/vl_refusal_oracle_test.go",
@@ -2873,11 +2890,13 @@
       "test/e2e-compat/vl_pattern_lines_test.go"
     ],
     "vl-pipe-before-release": [
+      "internal/logsql/refusal_baseline_test.go",
       "internal/logsql/refusal_table_test.go",
       "internal/proxy/vl_refusal_oracle_test.go",
       "test/e2e-compat/vl_refusal_prediction_test.go"
     ],
     "vl-query-too-long": [
+      "internal/logsql/refusal_baseline_test.go",
       "internal/logsql/refusal_table_test.go",
       "internal/logsql/refusal_test.go",
       "internal/proxy/vl_refusal_oracle_test.go",
@@ -2894,12 +2913,16 @@
       "test/e2e-compat/vl_refusal_prediction_test.go"
     ],
     "vl-stats-pipe-after-stats": [
+      "internal/capability/probes_oracle_test.go",
+      "internal/logsql/refusal_baseline_test.go",
       "internal/logsql/refusal_table_test.go",
       "internal/logsql/refusal_test.go",
       "internal/proxy/vl_refusal_oracle_test.go",
       "test/e2e-compat/vl_refusal_prediction_test.go"
     ],
     "vl-stats-range-pipe-before-stats": [
+      "internal/capability/probes_oracle_test.go",
+      "internal/logsql/refusal_baseline_test.go",
       "internal/logsql/refusal_table_test.go",
       "internal/logsql/refusal_test.go",
       "internal/proxy/vl_refusal_oracle_test.go",
@@ -2947,7 +2970,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 665,
+  "registry_items": 668,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3009,6 +3032,22 @@
     ],
     "internal/cache/peer_test.go": [
       "peer-cache-patterns"
+    ],
+    "internal/capability/gates_test.go": [
+      "vl-capability-layer"
+    ],
+    "internal/capability/layer_test.go": [
+      "vl-capability-layer"
+    ],
+    "internal/capability/probes_oracle_test.go": [
+      "pipe-coalesce",
+      "stream-metadata-endpoints",
+      "vl-capability-layer",
+      "vl-stats-pipe-after-stats",
+      "vl-stats-range-pipe-before-stats"
+    ],
+    "internal/capability/release_test.go": [
+      "vl-capability-layer"
     ],
     "internal/config/generate_edge_test.go": [
       "operator-configurable-limits"
@@ -3199,6 +3238,14 @@
     "internal/logsql/pipe_math_as_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/logsql/refusal_baseline_test.go": [
+      "vl-extra-filters-too-long",
+      "vl-math-quoted-constant-clone-crash",
+      "vl-pipe-before-release",
+      "vl-query-too-long",
+      "vl-stats-pipe-after-stats",
+      "vl-stats-range-pipe-before-stats"
+    ],
     "internal/logsql/refusal_table_test.go": [
       "vl-math-quoted-constant-clone-crash",
       "vl-pipe-before-release",
@@ -3237,6 +3284,9 @@
     ],
     "internal/metrics/callertracker_test.go": [
       "observability-slow-query-log"
+    ],
+    "internal/metrics/capability_test.go": [
+      "vl-capability-layer"
     ],
     "internal/metrics/request_flow_test.go": [
       "observability-query-flow"
@@ -3280,6 +3330,10 @@
       "prometheus_api_v1_rules",
       "semantics/tenant-label-default-aliases",
       "tenant-label-isolation"
+    ],
+    "internal/proxy/backend_capabilities_test.go": [
+      "instrumentation-reveals-no-secrets",
+      "vl-capability-layer"
     ],
     "internal/proxy/backend_heavy_test.go": [
       "backend-admission-and-heavy-query-queueing",
@@ -6500,7 +6554,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 759,
+  "tests_with_markers": 766,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6602,5 +6656,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 457
+  "wired_items": 460
 }

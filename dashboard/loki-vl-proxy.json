@@ -915,7 +915,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by(route) (rate(loki_vl_proxy_client_requests_total[5m]))",
+          "expr": "sum by(route) (rate(loki_vl_proxy_client_profile_requests_total[5m]))",
           "legendFormat": "{{route}}",
           "refId": "A"
         }
@@ -3991,6 +3991,382 @@
           "expr": "sum(rate(loki_vl_proxy_coalesced_wait_nanoseconds_total[5m])) / clamp_min(sum(rate(loki_vl_proxy_coalesced_wait_count_total[5m])), 1) / 1e9",
           "legendFormat": "average waiter delay",
           "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 80,
+      "title": "Versions and capabilities",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 185,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "id": 81,
+      "title": "VictoriaLogs release",
+      "description": "The VictoriaLogs release(s) the proxy sees behind it and its flavour (OSS, enterprise, enterprise-fips). The lowest release seen in the window decides every capability gate, so a mixed pool or a rolling upgrade never enables a feature one member lacks. Only a version that names VictoriaLogs counts; vmauth, vlagent or VictoriaMetrics versions are ignored.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 186,
+        "w": 6,
+        "h": 6
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "unknown"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by(version, flavour) (loki_vl_proxy_backend_version_info)",
+          "legendFormat": "{{version}} {{flavour}}",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "state-timeline",
+      "id": 82,
+      "title": "VictoriaLogs releases seen",
+      "description": "Every release in the capability window, by replica: a rolling upgrade or a rollback shows as one release replacing another. The source says where the proxy read it (metrics endpoint or a response header).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 186,
+        "w": 9,
+        "h": 6
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "rowHeight": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "seen",
+                  "color": "green",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_backend_version_info",
+          "legendFormat": "{{instance}} {{version}} {{flavour}} ({{source}})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "state-timeline",
+      "id": 83,
+      "title": "Capability gates",
+      "description": "Every gate of the capability table: on or off, and what decided it (version, probe, both, default, mismatch). A gate flips when VictoriaLogs is upgraded or rolled back; the capability set digest in cross-replica keys changes with it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 186,
+        "w": 9,
+        "h": 6
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "rowHeight": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "off",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "on",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by(gate, source) (loki_vl_proxy_capability_gate)",
+          "legendFormat": "{{gate}} ({{source}})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "id": 84,
+      "title": "Client versions in use",
+      "description": "Requests by client surface and the Grafana, bundled Loki datasource and Logs Drilldown versions read from the request over the dashboard range (unknown when a request carries none; other beyond 32 values per label).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 192,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Requests",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "surface": "Surface",
+              "grafana_version": "Grafana",
+              "datasource_version": "Loki datasource",
+              "drilldown_version": "Logs Drilldown",
+              "Value": "Requests"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(surface, grafana_version, datasource_version, drilldown_version) (increase(loki_vl_proxy_client_profile_requests_total[$__range]))",
+          "legendFormat": "",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "piechart",
+      "id": 85,
+      "title": "Request share by Grafana version",
+      "description": "Share of requests by Grafana runtime version over the dashboard range.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 192,
+        "w": 6,
+        "h": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "percent"
+          ]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(grafana_version) (increase(loki_vl_proxy_client_profile_requests_total[$__range]))",
+          "legendFormat": "{{grafana_version}}",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 86,
+      "title": "Probe mismatches and gate set changes",
+      "description": "Times a feature probe contradicted the VictoriaLogs release for a gate (the observed behaviour wins), and changes of the gate set. Both are zero in steady state; a mismatch means the version a proxy reads is not what the backend does (a proxy in front, a patched build).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 192,
+        "w": 6,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(gate) (increase(loki_vl_proxy_capability_mismatch_total[$__rate_interval]))",
+          "legendFormat": "mismatch {{gate}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(changes(loki_vl_proxy_capability_epoch[$__rate_interval]))",
+          "legendFormat": "gate set changes",
+          "refId": "B"
         }
       ]
     }

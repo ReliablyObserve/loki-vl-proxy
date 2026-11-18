@@ -305,6 +305,7 @@ func TestListedWindowChunksEdges(t *testing.T) {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
+		statsCalls = 0 // the startup feature probe of the stats_query_range gate is not the bucket read
 		params := url.Values{"query": {query}, "start": {strconv.FormatInt(end/1e9-1800, 10)}, "end": {strconv.FormatInt(end/1e9, 10)}, "step": {"30"}}
 		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
 		if statsCalls != 1 {

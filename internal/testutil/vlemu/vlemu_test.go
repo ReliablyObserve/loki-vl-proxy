@@ -3,6 +3,7 @@ package vlemu
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -136,7 +137,7 @@ func TestEmulatorEndpoints(t *testing.T) {
 		t.Errorf("/metrics without a version = %q", rec.Body)
 	}
 	e.Version = "v1.53.0"
-	if rec := serve(h, "/metrics", nil); rec.Body.String() != `vm_app_version{short_version="v1.53.0",version="v1.53.0"} 1`+"\n" {
+	if rec := serve(h, "/metrics", nil); rec.Body.String() != `vm_app_version{short_version="v1.53.0",version="victoria-logs-20260101-000000-tags-v1.53.0-0-gabcdef0123"} 1`+"\n" {
 		t.Errorf("/metrics = %q", rec.Body)
 	}
 	if rec := serve(h, "/select/logsql/field_names", nil); rec.Body.String() != `{"values":[]}` {
@@ -341,5 +342,40 @@ func TestEmulatorRowStreamFields(t *testing.T) {
 	want := map[string]string{"app": "a", "severity": "error"}
 	if len(streams) != 2 || !reflect.DeepEqual(streams[0], want) || !reflect.DeepEqual(streams[1], want) {
 		t.Errorf("DeriveFields streams %v, want %v twice", streams, want)
+	}
+}
+
+// The emulator answers the proxy's feature probes (the capability table's) as the release it emulates does, without
+// recording them as queries: a release the probe's gate is in runs it, an older one refuses it as VictoriaLogs does,
+// and an emulator that names no release gives no verdict.
+func TestEmulatorAnswersCapabilityProbes(t *testing.T) {
+	for _, c := range []struct {
+		version string
+		want    map[string]int // gate name -> status
+	}{
+		{"v1.49.0", map[string]int{"vl.pipe_coalesce": 400, "vl.stats_limit_after_stats": 422, "vl.range_time_writers_refused": 200}},
+		{"v1.53.0", map[string]int{"vl.pipe_coalesce": 200, "vl.stats_limit_after_stats": 200, "vl.range_time_writers_refused": 400}},
+		{"", map[string]int{"vl.pipe_coalesce": 503, "vl.stats_limit_after_stats": 503, "vl.range_time_writers_refused": 503}},
+	} {
+		e := newEmu(t)
+		e.Version = c.version
+		h := e.Handler()
+		for _, g := range capability.Gates() {
+			want, ok := c.want[g.Name]
+			if !ok {
+				continue
+			}
+			rec := serve(h, g.Probe.Path, url.Values{"query": {g.Probe.Query}})
+			status := rec.Code
+			if g.Name == "vl.stats_limit_after_stats" && status == 400 {
+				status = 422
+			}
+			if status != want {
+				t.Errorf("%s %s: status %d, want %d", c.version, g.Name, rec.Code, want)
+			}
+		}
+		if len(e.Calls) != 0 {
+			t.Errorf("%s: probes were recorded as queries: %v", c.version, e.Calls)
+		}
 	}
 }

@@ -1,6 +1,10 @@
 package config
 
-import "path/filepath"
+import (
+	"path/filepath"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
+)
 
 // Documents are the generated reference pages, keyed by their path relative to
 // the repository root.
@@ -8,6 +12,7 @@ const (
 	ConfigurationReferencePath = "docs/reference/configuration-reference.md"
 	LimitsRegistryPath         = "docs/reference/limits-registry.md"
 	ErrorsAndAlertsPath        = "docs/reference/errors-and-alerts.md"
+	CapabilityGatesPath        = "docs/reference/capability-gates.md"
 	// LimitsJSONPath is the machine-readable export the conformance registry
 	// reads, so limits are inventoried from this registry rather than listed
 	// again by hand.
@@ -40,6 +45,7 @@ func Generate(root string) (map[string]string, error) {
 		ConfigurationReferencePath: RenderConfigurationReference(flags),
 		LimitsRegistryPath:         limits,
 		ErrorsAndAlertsPath:        errors,
+		CapabilityGatesPath:        capability.RenderGatesDoc(),
 		LimitsJSONPath:             limitsJSON,
 	}, nil
 }

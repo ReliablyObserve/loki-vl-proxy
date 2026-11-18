@@ -1,0 +1,46 @@
+id: vl-capability-layer
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  One table (internal/capability/gates.go) holds every input that turns an
+  optimisation or a behaviour on or off: where the gate starts (a release and the
+  LTS patch lines that back-ported it), its kind, whether a feature probe can
+  observe it, and the registry item that carries its citation and evidence. The
+  effective VictoriaLogs release is the LOWEST release seen in the last window
+  (a vmauth pool or a rolling upgrade never enables a gate one member lacks); a
+  release that is not seen again leaves the window only when a newer observation
+  exists, so an outage never empties it. Only a version that names VictoriaLogs
+  counts: the victoria-logs-<date>-<time>-tags-vX.Y.Z[-enterprise[-fips]]-<n>-g<hash>
+  build string (VictoriaLogs /metrics vm_app_version and victorialogs_build_info,
+  VictoriaLogs/vX.Y.Z headers); the version of vmauth, vlagent, vmagent or
+  VictoriaMetrics (the stack's vmauth is VictoriaMetrics v1.155.0) and a bare
+  semver are refused.
+  Three kinds: capability (a feature used when present; unknown means off, the
+  observed behaviour wins over the version), safety (a crash or wrong-answer
+  guard; unknown or contradicted means guarded, no probe) and behaviour (how
+  VictoriaLogs answers; unknown means undecided, nothing is predicted from it).
+  Only an explicit refusal turns a probed gate off; a timeout, a 5xx, a 401, a
+  transport error or an open breaker gives no verdict, so an outage never flips a
+  gate or moves the digest. The set has a content digest (release, flavour and the
+  on/decided bits) that cross-replica keys carry; the epoch moves only when it does.
+proxy_usage: |
+  internal/proxy/backend_capabilities.go feeds the layer (the /metrics read, response
+  headers, the gates' probes at startup and every -backend-version-reprobe-interval),
+  logs one `capability set changed` line per change, moves the flight key prefix and
+  the refusal peer sync identity to the new digest, serves GET /admin/capabilities
+  (admin-protected) and the loki_vl_proxy_backend_version_info,
+  loki_vl_proxy_capability_gate, loki_vl_proxy_capability_mismatch_total,
+  loki_vl_proxy_capability_epoch, loki_vl_proxy_backend_feature_probe_total and
+  loki_vl_proxy_client_profile_requests_total metrics. logsql.PredictRefusal and
+  logsql.CapabilitiesOf read gates from the set; nothing else compares release strings.
+fallback: |
+  An unreadable release with probes off holds the v1.49.0 floor (every post-floor
+  gate off, the crash guard guarding). -backend-feature-probes=false decides the gates
+  from the release alone.
+proves:
+  - internal/capability tests (gate set by release and flavour, lowest-in-window, upgrade and rollback, outage, mismatch, probes decide)
+  - internal/logsql TestGateTableKeepsEveryRefusalAnswer (the moved gates changed no answer)
+  - internal/capability TestProbesCrashSafe (LVP_RUN_ORACLES=1, VictoriaLogs v1.49.0 and the oracle's pinned release)

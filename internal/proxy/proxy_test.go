@@ -162,7 +162,7 @@ func TestContract_Labels_PrefersStreamFieldNames(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
 	p.handleLabels(w, r)
@@ -196,7 +196,7 @@ func TestContract_Labels_FallsBackToGenericFieldNames(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
 	p.handleLabels(w, r)
@@ -634,7 +634,7 @@ func TestContract_Series_ResponseFormat(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/series?match[]=%7Bapp%3D%22nginx%22%7D", nil)
 	r.ParseForm()
@@ -678,7 +678,7 @@ func TestContract_Series_ParsesLabelsCorrectly(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/series?match[]=%7B%7D", nil)
 	r.ParseForm()
@@ -1035,7 +1035,7 @@ func TestContract_Patterns_UsesFromToWhenStartEndMissing(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(
 		"GET",
@@ -1412,7 +1412,7 @@ func TestContract_Patterns_DenseShortRangeKeepsBackendCallsBounded(t *testing.T)
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(
 		"GET",
@@ -1445,7 +1445,7 @@ func TestBackendVersionDetection_FromResponseHeaders(t *testing.T) {
 	h.Set("Server", "VictoriaLogs/v1.50.0")
 	p.observeBackendVersionFromHeaders(h)
 
-	if got := p.backendVersionSemver; got != "v1.50.0" {
+	if got := p.caps.Backend().Release().String(); got != "v1.50.0" {
 		t.Fatalf("expected semver v1.50.0 from headers, got %q", got)
 	}
 	if !p.supportsDensePatternWindowing() {
@@ -1454,7 +1454,7 @@ func TestBackendVersionDetection_FromResponseHeaders(t *testing.T) {
 	if !p.supportsStreamMetadataEndpoints() {
 		t.Fatalf("expected stream metadata endpoints to stay enabled for VictoriaLogs >= v1.50.0")
 	}
-	if got := p.backendCapabilityProfile; got != "vl-v1.50-plus" {
+	if got := p.caps.Backend().Profile(); got != "vl-v1.50-plus" {
 		t.Fatalf("expected capability profile vl-v1.50-plus, got %q", got)
 	}
 }
@@ -1466,7 +1466,7 @@ func TestBackendVersionDetection_OlderVersionKeepsConservativeProfile(t *testing
 	h.Set("X-App-Version", "victoria-logs v1.49.0")
 	p.observeBackendVersionFromHeaders(h)
 
-	if got := p.backendVersionSemver; got != "v1.49.0" {
+	if got := p.caps.Backend().Release().String(); got != "v1.49.0" {
 		t.Fatalf("expected semver v1.49.0 from headers, got %q", got)
 	}
 	if p.supportsDensePatternWindowing() {
@@ -1475,7 +1475,7 @@ func TestBackendVersionDetection_OlderVersionKeepsConservativeProfile(t *testing
 	if !p.supportsStreamMetadataEndpoints() {
 		t.Fatalf("expected stream metadata endpoints enabled for VictoriaLogs >= v1.30.0")
 	}
-	if got := p.backendCapabilityProfile; got != "vl-v1.49-plus" {
+	if got := p.caps.Backend().Profile(); got != "vl-v1.49-plus" {
 		t.Fatalf("expected capability profile vl-v1.49-plus, got %q", got)
 	}
 }
@@ -1487,7 +1487,7 @@ func TestBackendVersionDetection_LegacyVersionDisablesStreamMetadataFastPath(t *
 	h.Set("Server", "VictoriaLogs/v1.29.0")
 	p.observeBackendVersionFromHeaders(h)
 
-	if got := p.backendVersionSemver; got != "v1.29.0" {
+	if got := p.caps.Backend().Release().String(); got != "v1.29.0" {
 		t.Fatalf("expected semver v1.29.0 from headers, got %q", got)
 	}
 	if p.supportsStreamMetadataEndpoints() {
@@ -1496,7 +1496,7 @@ func TestBackendVersionDetection_LegacyVersionDisablesStreamMetadataFastPath(t *
 	if p.supportsDensePatternWindowing() {
 		t.Fatalf("expected dense pattern windowing disabled for legacy VictoriaLogs versions")
 	}
-	if got := p.backendCapabilityProfile; got != "legacy-pre-v1.30" {
+	if got := p.caps.Backend().Profile(); got != "legacy-pre-v1.30" {
 		t.Fatalf("expected capability profile legacy-pre-v1.30, got %q", got)
 	}
 }
@@ -1561,10 +1561,11 @@ func TestBackendVersionCompatibilityGate_BlocksTooOldVersion(t *testing.T) {
 	defer backend.Close()
 
 	p, err := New(Config{
-		BackendURL:                 backend.URL,
-		Cache:                      cache.New(60*time.Second, 1000),
-		BackendMinVersion:          "v1.30.0",
-		BackendVersionCheckTimeout: time.Second,
+		BackendURL:                   backend.URL,
+		Cache:                        cache.New(60*time.Second, 1000),
+		BackendMinVersion:            "v1.30.0",
+		BackendVersionCheckTimeout:   time.Second,
+		BackendFeatureProbesDisabled: true,
 	})
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
@@ -1611,10 +1612,11 @@ func TestBackendVersionCompatibilityGate_PassesSupportedVersion(t *testing.T) {
 	defer backend.Close()
 
 	p, err := New(Config{
-		BackendURL:                 backend.URL,
-		Cache:                      cache.New(60*time.Second, 1000),
-		BackendMinVersion:          "v1.30.0",
-		BackendVersionCheckTimeout: time.Second,
+		BackendURL:                   backend.URL,
+		Cache:                        cache.New(60*time.Second, 1000),
+		BackendMinVersion:            "v1.30.0",
+		BackendVersionCheckTimeout:   time.Second,
+		BackendFeatureProbesDisabled: true,
 	})
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
@@ -1632,7 +1634,7 @@ func TestBackendVersionCompatibilityGate_FallbackMetricsDetectsVersion(t *testin
 			_, _ = w.Write([]byte("ok"))
 		case "/metrics":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`vm_app_version{short_version="v1.50.0",version="v1.50.0-cluster"} 1` + "\n"))
+			_, _ = w.Write([]byte(`vm_app_version{short_version="v1.50.0",version="victoria-logs-20260414-184331-tags-v1.50.0-0-g80d223f95f"} 1` + "\n"))
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -1640,10 +1642,11 @@ func TestBackendVersionCompatibilityGate_FallbackMetricsDetectsVersion(t *testin
 	defer backend.Close()
 
 	p, err := New(Config{
-		BackendURL:                 backend.URL,
-		Cache:                      cache.New(60*time.Second, 1000),
-		BackendMinVersion:          "v1.30.0",
-		BackendVersionCheckTimeout: time.Second,
+		BackendURL:                   backend.URL,
+		Cache:                        cache.New(60*time.Second, 1000),
+		BackendMinVersion:            "v1.30.0",
+		BackendVersionCheckTimeout:   time.Second,
+		BackendFeatureProbesDisabled: true,
 	})
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
@@ -1651,7 +1654,7 @@ func TestBackendVersionCompatibilityGate_FallbackMetricsDetectsVersion(t *testin
 	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 		t.Fatalf("expected compatibility gate to pass via metrics fallback, got: %v", err)
 	}
-	if got := p.backendVersionSemver; got != "v1.50.0" {
+	if got := p.caps.Backend().Release().String(); got != "v1.50.0" {
 		t.Fatalf("expected semver v1.50.0 from metrics fallback, got %q", got)
 	}
 	if !p.supportsDensePatternWindowing() {
@@ -1667,7 +1670,7 @@ func TestBackendVersionCompatibilityGate_FallbackMetricsTooOldBlocks(t *testing.
 			_, _ = w.Write([]byte("ok"))
 		case "/metrics":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`vm_app_version{short_version="v1.29.0",version="v1.29.0"} 1` + "\n"))
+			_, _ = w.Write([]byte(`vm_app_version{short_version="v1.29.0",version="victoria-logs-20240101-000000-tags-v1.29.0-0-gabcdef0"} 1` + "\n"))
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -1675,10 +1678,11 @@ func TestBackendVersionCompatibilityGate_FallbackMetricsTooOldBlocks(t *testing.
 	defer backend.Close()
 
 	p, err := New(Config{
-		BackendURL:                 backend.URL,
-		Cache:                      cache.New(60*time.Second, 1000),
-		BackendMinVersion:          "v1.30.0",
-		BackendVersionCheckTimeout: time.Second,
+		BackendURL:                   backend.URL,
+		Cache:                        cache.New(60*time.Second, 1000),
+		BackendMinVersion:            "v1.30.0",
+		BackendVersionCheckTimeout:   time.Second,
+		BackendFeatureProbesDisabled: true,
 	})
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
@@ -1701,9 +1705,8 @@ func TestBackendVersionCompatibilityGate_EndpointProbeInfersCapabilities(t *test
 		case "/select/logsql/stream_field_names":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"hits":[]}`))
-		case "/select/logsql/field_names":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"hits":[]}`))
+		case "/select/logsql/query", "/select/logsql/stats_query", "/select/logsql/stats_query_range":
+			w.WriteHeader(http.StatusServiceUnavailable) // no verdict: only the stream endpoint probe answers
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -1722,10 +1725,10 @@ func TestBackendVersionCompatibilityGate_EndpointProbeInfersCapabilities(t *test
 	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 		t.Fatalf("expected compatibility gate to continue with endpoint capability probe, got: %v", err)
 	}
-	if p.backendVersionSemver != "" {
-		t.Fatalf("expected empty semver when only endpoint probe is available, got %q", p.backendVersionSemver)
+	if p.caps.Backend().Release().Known {
+		t.Fatalf("expected no release when only endpoint probes answer, got %q", p.caps.Backend().Release().String())
 	}
-	if got := p.backendCapabilityProfile; got != "vl-probed-v1.49-plus" {
+	if got := p.caps.Backend().Profile(); got != "vl-probed-v1.49-plus" {
 		t.Fatalf("expected capability profile vl-probed-v1.49-plus, got %q", got)
 	}
 	if !p.supportsStreamMetadataEndpoints() {
@@ -2246,7 +2249,7 @@ func TestContract_Patterns_DenseShortRangeAvoidsFortyMinuteSamplingGaps(t *testi
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	p.backendSupportsDensePatternWindowing = true
+	p.setReleaseForTest("v1.50.0")
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(
@@ -2754,10 +2757,7 @@ func TestContract_DrilldownLimits_ExposesBackendDetectionStateWhenAvailable(t *t
 
 func TestContract_SupportsDensePatternWindowingForRequest_GrafanaRuntimeAware(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
-	p.backendVersionMu.Lock()
-	p.backendSupportsDensePatternWindowing = true
-	p.backendVersionSemver = "v1.50.0"
-	p.backendVersionMu.Unlock()
+	p.setReleaseForTest("v1.50.0")
 
 	baseReq := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22api%22%7D", nil)
 

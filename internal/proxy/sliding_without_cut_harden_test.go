@@ -17,7 +17,7 @@ import (
 func (r *swRunner) swSetVersion(version string) {
 	r.emu.Version = version
 	for _, p := range r.proxies {
-		p.backendVersionSemver = ""
+		p.setReleaseForTest("")
 		p.storeBackendVersion(version, version)
 	}
 }
