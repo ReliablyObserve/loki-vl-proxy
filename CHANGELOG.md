@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validation, in the walk of its tree (every 256 nodes) and at every node of its lowering, and before the first
   VictoriaLogs call; the parser and the string translator are not interrupted while they run.
 
+### CI
+
+- make auto-release honor forward chart version overrides so published tags/images/charts can jump directly to `1.0.0` (and future explicit major/minor targets) instead of always patch-bumping from the latest tag
+
+### Documentation
+
+- update release and security policy docs for the `1.x` support line and release branch examples
+
 ## [2.340.1] - 2026-11-18
 
 ### Fixed
@@ -13354,11 +13362,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
-- make auto-release honor forward chart version overrides so published tags/images/charts can jump directly to `1.0.0` (and future explicit major/minor targets) instead of always patch-bumping from the latest tag
 
-### Documentation
-
-- update release and security policy docs for the `1.x` support line and release branch examples
 
 ## [0.27.43] - 2026-04-13
 
