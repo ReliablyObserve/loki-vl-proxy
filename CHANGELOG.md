@@ -7,25 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.340.1] - 2026-11-18
-
-### Fixed
-- Each tenant's sub-request of a multi-tenant request (`X-Scope-OrgID` naming several tenants with `|`) now uses its
-  own request scope, so its cached query_range answer is keyed by that tenant. The sub-requests kept the multi-tenant
-  request's scope until their handler set their own, and the query_range response cache key is built before that:
-  the tenants of one request shared one key, and a tenant's part of the merged answer could hold another tenant's
-  lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
-  cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
-  v1.67.0 to v2.338.0.
-- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
-  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
-  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
-  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
-  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
-  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
-
-## [2.340.0] - 2026-11-18
-
 ### Added
 
 - One capability layer decides every gate that turns an optimisation or a behaviour on or off (`internal/capability`):
@@ -68,6 +49,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The held VictoriaLogs refusals, their peer sync and the request flight keys carry a content digest of the gate set
   (release, flavour, every gate's state) instead of the release string, so an entry built under another gate set is
   a miss on this replica and on a peer, and replicas of one backend agree on it.
+
+### Changed
+
+- Only a version that names VictoriaLogs counts as its release: the `victoria-logs-<date>-<time>-tags-vX.Y.Z[-enterprise[-fips]]-<n>-g<hash>`
+  build string of its `/metrics` (`vm_app_version`, `victorialogs_build_info`) or a `VictoriaLogs/vX.Y.Z` style
+  header. The version of `vmauth`, `vlagent`, `vmagent` or VictoriaMetrics that answers in front of it (the stack's
+  `vmauth` is VictoriaMetrics v1.155.0) and a bare semver were read as VictoriaLogs' before and are ignored now; the
+  `-enterprise` and `-enterprise-fips` suffixes are parsed as flavours. The `backend_capability_profile` of the
+  drilldown-limits answer is `vl-probed-v1.49-plus` when only the stream endpoint probe answers (the metadata
+  substring probe, which could not tell a release apart, is gone).
+  Behind `vmauth` (which serves its own `/metrics`), where the proxy used to take vmauth's version for the
+  VictoriaLogs release and so turned every gate on by accident, the release is now unknown unless a header or a
+  VictoriaLogs `/metrics` route names it: the feature probes decide the gates they cover and, when a probe finds a
+  feature of v1.51 or later present, the capabilities of earlier releases follow (dense pattern windowing and
+  column-indexed field values for a backend that answers `coalesce`, when no probe contradicts); a backend behind
+  `vmauth` that answers no probe holds the v1.49.0 floor. Keep `-backend-feature-probes=true` (the default) behind
+  `vmauth`, or expose VictoriaLogs' `/metrics` through it. The refusal prediction of a call VictoriaLogs v1.54.0
+  would refuse (an `extra_filters` argument over its length limit) does not fire while the release is unknown, and
+  a math pipe with a quoted number is no longer sent on a call VictoriaLogs clones (the guard holds for an unknown
+  release, as it does without vmauth).
+
+- Every feature probe reads one fixed one-second window in the year 2000, with a row limit of one, so it never scans
+  a stored row.
+
+### Fixed
+
+- `-backend-version-strict=true` no longer passes startup on the version of another product. Behind `vmauth` (which
+  serves its own `/metrics`) the check used to read vmauth's version (VictoriaMetrics v1.155.0) as the VictoriaLogs
+  release and pass; it now finds no VictoriaLogs release and, in strict mode, fails startup ("backend did not expose
+  version in response headers or /metrics payload"). Keep startup working by turning strict off, by exposing
+  VictoriaLogs' own `/metrics` through `vmauth` (a route to `/metrics` of VictoriaLogs), or by letting a response
+  header that names VictoriaLogs carry the release.
+
+## [2.340.1] - 2026-11-18
+
+### Fixed
+- Each tenant's sub-request of a multi-tenant request (`X-Scope-OrgID` naming several tenants with `|`) now uses its
+  own request scope, so its cached query_range answer is keyed by that tenant. The sub-requests kept the multi-tenant
+  request's scope until their handler set their own, and the query_range response cache key is built before that:
+  the tenants of one request shared one key, and a tenant's part of the merged answer could hold another tenant's
+  lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
+  cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
+  v1.67.0 to v2.338.0.
+- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
+  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
+  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
+  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
+  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
+  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
+
+## [2.340.0] - 2026-11-18
+
+### Added
+
 - The proxy reads a typed client profile from each request's headers: the surface (`explore`, `drilldown`,
   `datasource` for other Grafana requests such as dashboards and alerting, `api` for clients that are not
   Grafana) and the Grafana, Loki datasource plugin and Logs Drilldown versions, as closed values and normalised
@@ -83,12 +118,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `-backend-version-strict=true` no longer passes startup on the version of another product. Behind `vmauth` (which
-  serves its own `/metrics`) the check used to read vmauth's version (VictoriaMetrics v1.155.0) as the VictoriaLogs
-  release and pass; it now finds no VictoriaLogs release and, in strict mode, fails startup ("backend did not expose
-  version in response headers or /metrics payload"). Keep startup working by turning strict off, by exposing
-  VictoriaLogs' own `/metrics` through `vmauth` (a route to `/metrics` of VictoriaLogs), or by letting a response
-  header that names VictoriaLogs carry the release.
 - A `label_replace` call Loki cannot read is answered with Loki's error text, line and column. Three or five
   strings, a number for a string and an invalid escape now count the column from the start of the query, not from
   the call (Loki's `col 70` where the proxy said `col 56`), and use the line Loki gives. Such an error, and a
@@ -114,26 +143,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Only a version that names VictoriaLogs counts as its release: the `victoria-logs-<date>-<time>-tags-vX.Y.Z[-enterprise[-fips]]-<n>-g<hash>`
-  build string of its `/metrics` (`vm_app_version`, `victorialogs_build_info`) or a `VictoriaLogs/vX.Y.Z` style
-  header. The version of `vmauth`, `vlagent`, `vmagent` or VictoriaMetrics that answers in front of it (the stack's
-  `vmauth` is VictoriaMetrics v1.155.0) and a bare semver were read as VictoriaLogs' before and are ignored now; the
-  `-enterprise` and `-enterprise-fips` suffixes are parsed as flavours. The `backend_capability_profile` of the
-  drilldown-limits answer is `vl-probed-v1.49-plus` when only the stream endpoint probe answers (the metadata
-  substring probe, which could not tell a release apart, is gone).
-  Behind `vmauth` (which serves its own `/metrics`), where the proxy used to take vmauth's version for the
-  VictoriaLogs release and so turned every gate on by accident, the release is now unknown unless a header or a
-  VictoriaLogs `/metrics` route names it: the feature probes decide the gates they cover and, when a probe finds a
-  feature of v1.51 or later present, the capabilities of earlier releases follow (dense pattern windowing and
-  column-indexed field values for a backend that answers `coalesce`, when no probe contradicts); a backend behind
-  `vmauth` that answers no probe holds the v1.49.0 floor. Keep `-backend-feature-probes=true` (the default) behind
-  `vmauth`, or expose VictoriaLogs' `/metrics` through it. The refusal prediction of a call VictoriaLogs v1.54.0
-  would refuse (an `extra_filters` argument over its length limit) does not fire while the release is unknown, and
-  a math pipe with a quoted number is no longer sent on a call VictoriaLogs clones (the guard holds for an unknown
-  release, as it does without vmauth).
-
-- Every feature probe reads one fixed one-second window in the year 2000, with a row limit of one, so it never scans
-  a stored row.
 - VictoriaLogs v1.54.0 replaces v1.53.0 as the newest tested release and the pull-request CI pin: the tested versions
   are now v1.49.0 and v1.54.0 (every v1.5x release stays supported, the floor stays v1.49.0). The compose stacks,
   examples and benchmark pins run `victoriametrics/victoria-logs:v1.54.0`, and every comparison with VictoriaLogs' own
