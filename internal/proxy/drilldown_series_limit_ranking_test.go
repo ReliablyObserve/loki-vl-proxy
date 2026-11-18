@@ -107,7 +107,6 @@ type rankingBackend struct {
 	lastBodySize int64
 }
 
-
 func (b *rankingBackend) record(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
