@@ -299,13 +299,14 @@ func TestMultiTenantFanout_StaleTenantAnswerIsMarkedAndNotCached(t *testing.T) {
 	p, compat, mux := newTwoTenantProxy(t, srv.URL)
 
 	path := "/loki/api/v1/label/app/values?start=1703980800000000000&end=1704067200000000000"
-	// Sub-requests inherit the fanout request's auth scope and its tenant
+	// A tenant's sub-request carries its own scope and the fanout's tenant
 	// selector filter (query=*); build the tenant-a key the same way.
 	outer := httptest.NewRequest(http.MethodGet, path+"&query=%2A", nil)
 	outer.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
 	scoped := p.injectAuthFingerprint(outer)
 	tenantReq := scoped.Clone(scoped.Context())
 	tenantReq.Header.Set("X-Scope-OrgID", "tenant-a")
+	tenantReq = p.withRequestScope(tenantReq)
 	tenantKey := p.canonicalReadCacheKey("label_values", "tenant-a", tenantReq, "app")
 	p.setEndpointReadCacheWithTTL("label_values", tenantKey, lokiLabelsResponse([]string{"stale-a"}), time.Millisecond)
 	time.Sleep(5 * time.Millisecond)
