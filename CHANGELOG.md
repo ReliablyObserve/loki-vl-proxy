@@ -7,21 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- The proxy reads a typed client profile from each request's headers: the surface (`explore`, `drilldown`,
-  `datasource` for other Grafana requests such as dashboards and alerting, `api` for clients that are not
-  Grafana) and the Grafana, Loki datasource plugin and Logs Drilldown versions, as closed values and normalised
-  `major.minor.patch` versions only. The request, upstream and slow log lines carry `client.surface`,
-  `grafana.datasource.version` (Grafana 13 names its Loki datasource plugin in its User-Agent, for example
-  `loki/13.2.5`) and `grafana.drilldown.version` (only when a request names it, which no current Grafana or
-  Drilldown release does), and `/debug/queries` lists them for each recent request. `grafana.version` in the log
-  lines and the VictoriaLogs request header is now normalised to `major.minor.patch` (a pre-release or build
-  suffix is dropped; a User-Agent with no such version sends none). The rules come from the requests Grafana
-  13.3.1, 13.3.0 and 12.4.14 with Logs Drilldown 3.2.0, 3.1.0 and 2.6.0 send for every Explore and Drilldown
-  request kind; Grafana 12's untagged Explore query reads as `datasource`. Responses and cache keys do not
-  change.
-
 ### Changed
 
 - **Breaking:** a Logs Drilldown answer over the series limit (`-max-stats-query-series`, or the tenant's
@@ -37,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `split_instant_metric_queries_by_interval`, default 1h): an instant answer over the limit keeps the busiest series,
   and, as deployed Loki's, carries no warning when its range is longer than that interval. Both intervals take
   Loki's per-tenant names in `-tenant-limits`. VictoriaLogs still answers a breakdown over the limit in one ranked
-  read (`sort ... partition by (_time) limit`, limit+1 values per split). A multi-tenant answer is cut where the
+  read (`sort ... partition by (_time) limit`: limit+1 values per bucket of a grid with an edge at every split's first
+  step, which holds every split's first-met series wherever the request starts); an answer too large for one read
+  ranks in one call instead of two. A multi-tenant answer is cut where the
   merged answer passes the limit in each split, and every response cache keeps the answer as sent, so a repeat is the
   first answer byte for byte. Answers cached before the change are not served (the mode and the intervals are part
   of a Drilldown request's cache key). The new
@@ -45,20 +32,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Drilldown answers the limit cut. Checked against Loki 3.7.10: its engine's recorded answers (the cut, its rule over
   series that come and go, and each split asked alone), and an isolated stack with `max_query_series` 3 (splits,
   sharding on and off, the results cache off, instants with and without the instant split).
-- VictoriaLogs v1.54.0 replaces v1.53.0 as the newest tested release and the pull-request CI pin: the tested versions
-  are now v1.49.0 and v1.54.0 (every v1.5x release stays supported, the floor stays v1.49.0). The compose stacks,
-  examples and benchmark pins run `victoriametrics/victoria-logs:v1.54.0`, and every comparison with VictoriaLogs' own
-  parser and storage (the parse, store and clone round-trip oracles, the Loki differentials and the recorded
-  VictoriaLogs verdicts) is recorded again on v1.54.0. No proxy request depends on a v1.54.0 feature, so answers on
-  v1.49.0 through v1.53.x do not change. What v1.54.0 changes for proxy users: a live tail whose query matches more
-  than 10,000 rows in one refresh's read is ended by VictoriaLogs; the proxy serves such a tail refused at its start from its
-  polling tail in the default `-tail.mode=auto` and closes one ended mid-stream with Loki's internal error, never
-  VictoriaLogs' text (registry `vl-live-tail-row-rate-limit`). A read of the newest rows with a limit no longer misses or
-  repeats rows that share a timestamp, and a cluster with partial responses on returns a storage node's error
-  instead of an incomplete answer (`vl-limit-read-timestamp-ties`). `extra_filters` and `extra_stream_filters` count
-  against VictoriaLogs' `-search.maxQueryLen`; the proxy's own filters stay far below it (`vl-extra-filters-max-query-len`).
-  The root and example compose files check VictoriaLogs with its new `-healthcheck` flag; the matrix stacks keep
-  `-version`, which v1.49.0 also has.
+
+## [2.340.1] - 2026-11-18
+
+### Fixed
+- Each tenant's sub-request of a multi-tenant request (`X-Scope-OrgID` naming several tenants with `|`) now uses its
+  own request scope, so its cached query_range answer is keyed by that tenant. The sub-requests kept the multi-tenant
+  request's scope until their handler set their own, and the query_range response cache key is built before that:
+  the tenants of one request shared one key, and a tenant's part of the merged answer could hold another tenant's
+  lines. This applied with the query_range response cache on that path: a POST, or a GET with the compatibility edge
+  cache off (`-compat-cache-enabled=false` or `-compat-cache-max-percent=0`), without `-stream-response`. Releases
+  v1.67.0 to v2.338.0.
+- `sum` and `avg` over a parser's series (after `| json` or `| logfmt`, over `avg_over_time`, `stddev_over_time` or
+  `stdvar_over_time`) are now NaN where one series is NaN without a line of `nan`, as Loki answers: lines of `inf` and
+  `-inf` in one window (their mean is NaN), or the deviation of a value and an infinity. VictoriaLogs' `sum` keeps NaN as
+  its empty value, so the outer sum over the series left such a series out on a range up to the step (a finite total
+  where Loki answers NaN), and on a longer range a series that keeps its own buckets came out of the fold's second
+  stats pipe as 0. The rows of such a series are now grouped apart as nan rows are, and the series is NaN where it sits.
+
+## [2.340.0] - 2026-11-18
+
+### Added
+
+- The proxy reads a typed client profile from each request's headers: the surface (`explore`, `drilldown`,
+  `datasource` for other Grafana requests such as dashboards and alerting, `api` for clients that are not
+  Grafana) and the Grafana, Loki datasource plugin and Logs Drilldown versions, as closed values and normalised
+  `major.minor.patch` versions only. The request, upstream and slow log lines carry `client.surface`,
+  `grafana.datasource.version` (Grafana 13 names its Loki datasource plugin in its User-Agent, for example
+  `loki/13.2.5`) and `grafana.drilldown.version` (only when a request names it, which no current Grafana or
+  Drilldown release does), and `/debug/queries` lists them for each recent request. `grafana.version` in the log
+  lines and the VictoriaLogs request header is now normalised to `major.minor.patch` (a pre-release or build
+  suffix is dropped; a User-Agent with no such version sends none). The rules come from the requests Grafana
+  13.3.1, 13.3.0 and 12.4.14 with Logs Drilldown 3.2.0, 3.1.0 and 2.6.0 send for every Explore and Drilldown
+  request kind; Grafana 12's untagged Explore query reads as `datasource`. Responses and cache keys do not
+  change.
 
 ### Fixed
 
@@ -84,6 +91,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The strip of outer `label_replace` calls the handlers read goes through one table of the text's brackets. A query
   longer than the 4 KiB the short memos keep is validated, respelled and parsed once per request, in a memo bounded at
   4 MiB per generation (two generations).
+
+### Changed
+
+- VictoriaLogs v1.54.0 replaces v1.53.0 as the newest tested release and the pull-request CI pin: the tested versions
+  are now v1.49.0 and v1.54.0 (every v1.5x release stays supported, the floor stays v1.49.0). The compose stacks,
+  examples and benchmark pins run `victoriametrics/victoria-logs:v1.54.0`, and every comparison with VictoriaLogs' own
+  parser and storage (the parse, store and clone round-trip oracles, the Loki differentials and the recorded
+  VictoriaLogs verdicts) is recorded again on v1.54.0. No proxy request depends on a v1.54.0 feature, so answers on
+  v1.49.0 through v1.53.x do not change. What v1.54.0 changes for proxy users: a live tail whose query matches more
+  than 10,000 rows in one refresh's read is ended by VictoriaLogs; the proxy serves such a tail refused at its start from its
+  polling tail in the default `-tail.mode=auto` and closes one ended mid-stream with Loki's internal error, never
+  VictoriaLogs' text (registry `vl-live-tail-row-rate-limit`). A read of the newest rows with a limit no longer misses or
+  repeats rows that share a timestamp, and a cluster with partial responses on returns a storage node's error
+  instead of an incomplete answer (`vl-limit-read-timestamp-ties`). `extra_filters` and `extra_stream_filters` count
+  against VictoriaLogs' `-search.maxQueryLen`; the proxy's own filters stay far below it (`vl-extra-filters-max-query-len`).
+  The root and example compose files check VictoriaLogs with its new `-healthcheck` flag; the matrix stacks keep
+  `-version`, which v1.49.0 also has.
 
 ## [2.339.0] - 2026-11-18
 
