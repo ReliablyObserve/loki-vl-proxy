@@ -66,7 +66,7 @@ var vlPort = 54428
 var proxyPortBase = 55200
 var baselineRef string
 var candidateRef string
-var lokiImage = "grafana/loki:3.7.9"
+var lokiImage = "grafana/loki:3.7.10"
 var vlImage = "victoriametrics/victoria-logs:v1.54.0"
 
 const token = "isolated-cache-perf-fixture"

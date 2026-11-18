@@ -5388,8 +5388,8 @@
     "messages_documented": 10,
     "messages_recorded": 36,
     "not_comparable_rows": 141,
-    "recorded_loki": "3.7.9",
-    "recorded_on": "2026-11-15",
+    "recorded_loki": "3.7.10",
+    "recorded_on": "2026-11-18",
     "recorded_rows": 389,
     "unmapped_items": 7
   }
