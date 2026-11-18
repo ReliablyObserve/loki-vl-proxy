@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -367,41 +369,196 @@ func seriesKeptForLimit(ctx context.Context, keys []string, total func(string) f
 	return sorted[:limit]
 }
 
-// firstMetPerSplit is the union over the request's splits of the n keys met first in each.
+// valuesAfterMetric is what follows a series' labels in the matrix the proxy writes.
+var valuesAfterMetric = []byte(`,"values":[`)
+
+// compactPoints calls fn with every point of a values array written compactly ([[t,"v"],[t,"v"]], the proxy's own
+// encoding: no blanks, a number and a string per point) and returns the length of the array, or -1, before calling
+// fn at all, when data does not start with such an array: the caller reads it with the JSON parser then. fn gets
+// each point with its time as lokiPointTimeNs reads it.
+func compactPoints(data []byte, fn func(point []byte, ns int64, ok bool)) int {
+	end := compactPointsEnd(data)
+	if end < 0 {
+		return -1
+	}
+	for i := 1; i < end-1; {
+		j := i + 1
+		for data[j] != ',' {
+			j++
+		}
+		num := data[i+1 : j]
+		j += 2 // `,"`
+		for data[j] != '"' {
+			if data[j] == '\\' {
+				j++
+			}
+			j++
+		}
+		point := data[i : j+2]
+		if ns, ok := wholeMillisecondSecondsNs(num); ok {
+			fn(point, ns, true)
+		} else {
+			ns, ok := lokiPointTimeNs(point)
+			fn(point, ns, ok)
+		}
+		i = j + 3 // `"]` and the comma
+	}
+	return end
+}
+
+// compactPointsEnd checks data starts with a compactly written values array and returns its length, -1 otherwise.
+func compactPointsEnd(data []byte) int {
+	if len(data) < 2 || data[0] != '[' {
+		return -1
+	}
+	if data[1] == ']' {
+		return 2
+	}
+	for i := 1; ; {
+		if i >= len(data) || data[i] != '[' {
+			return -1
+		}
+		j := i + 1
+		for j < len(data) && (data[j] >= '0' && data[j] <= '9' || data[j] == '.' || data[j] == '-' || data[j] == '+' || data[j] == 'e' || data[j] == 'E') {
+			j++
+		}
+		if j == i+1 || j+1 >= len(data) || data[j] != ',' || data[j+1] != '"' {
+			return -1
+		}
+		j += 2
+		for j < len(data) && data[j] != '"' {
+			if data[j] == '\\' {
+				j++
+			} else if data[j] < 0x20 {
+				return -1
+			}
+			j++
+		}
+		if j+1 >= len(data) || data[j+1] != ']' {
+			return -1
+		}
+		i = j + 2
+		if i >= len(data) {
+			return -1
+		}
+		switch data[i] {
+		case ']':
+			return i + 1
+		case ',':
+			i++
+		default:
+			return -1
+		}
+	}
+}
+
+// openingBracket is the index of the '[' before the array element at offset in data.
+func openingBracket(data []byte, offset int) int {
+	for offset--; offset >= 0 && data[offset] != '['; offset-- {
+	}
+	return offset
+}
+
+// splitMet is a series met in a split: the split, the first step (or time) that meets it there and the series'
+// index.
+type splitMet struct {
+	split       int
+	first, last int64
+	idx         int
+}
+
+// splitMetRuns collects splitMet entries from a series' times in the order they come: one entry per run of times
+// in one split (its smallest), so a series whose times ascend gives one entry per split it reaches. Entries of a
+// series and split that are not one run are merged when the entries are read (firstMetBySplit).
+type splitMetRuns struct {
+	entries []splitMet
+	idx     int
+	split   int
+	lo, hi  int64 // the run's smallest and largest time
+}
+
+func (r *splitMetRuns) start(idx int) { r.flush(); r.idx, r.split = idx, -1 }
+
+// reset drops the entries from at on and starts series idx again.
+func (r *splitMetRuns) reset(idx, at int) { r.entries, r.idx, r.split = r.entries[:at], idx, -1 }
+
+func (r *splitMetRuns) add(split int, t int64) {
+	if split != r.split {
+		r.flush()
+		r.split, r.lo, r.hi = split, t, t
+		return
+	}
+	if t < r.lo {
+		r.lo = t
+	}
+	if t > r.hi {
+		r.hi = t
+	}
+}
+
+func (r *splitMetRuns) flush() {
+	if r.split >= 0 {
+		r.entries = append(r.entries, splitMet{split: r.split, first: r.lo, last: r.hi, idx: r.idx})
+		r.split = -1
+	}
+}
+
+// firstMetBySplit sorts entries by split, first step and less (the series' labels), and calls group for every
+// split with its series in the order they are met, each once (its first entry).
+func firstMetBySplit(entries []splitMet, series int, less func(a, b int) int, group func(split int, met []splitMet)) {
+	slices.SortFunc(entries, func(a, b splitMet) int {
+		if a.split != b.split {
+			return cmp.Compare(a.split, b.split)
+		}
+		if a.first != b.first {
+			return cmp.Compare(a.first, b.first)
+		}
+		if c := less(a.idx, b.idx); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.idx, b.idx)
+	})
+	seen := make([]int, series) // the split+1 a series was last met in
+	for lo := 0; lo < len(entries); {
+		split, hi, out := entries[lo].split, lo, lo
+		for ; hi < len(entries) && entries[hi].split == split; hi++ {
+			if e := entries[hi]; seen[e.idx] != split+1 {
+				seen[e.idx] = split + 1
+				entries[out] = e
+				out++
+			}
+		}
+		group(split, entries[lo:out])
+		lo = hi
+	}
+}
+
+// firstMetPerSplit is the union over the request's splits of the n keys met first in each. It allocates per
+// request, not per key or per split.
 func firstMetPerSplit(scope *seriesLimitScope, keys []string, times func(string, func(int64)), n int) []string {
-	type met struct {
-		first int64
-		key   string
+	runs := &splitMetRuns{split: -1, entries: make([]splitMet, 0, len(keys))}
+	record := func(t int64) {
+		step := scope.stepOf(t)
+		runs.add(scope.splitOf(step), step)
 	}
-	bySplit := map[int][]met{}
-	for _, k := range keys {
-		firsts := map[int]int64{}
-		times(k, func(t int64) {
-			step := scope.stepOf(t)
-			split := scope.splitOf(step)
-			if cur, ok := firsts[split]; !ok || step < cur {
-				firsts[split] = step
+	for i, k := range keys {
+		runs.start(i)
+		times(k, record)
+	}
+	runs.flush()
+	keep := make([]bool, len(keys))
+	kept := 0
+	firstMetBySplit(runs.entries, len(keys), func(a, b int) int { return strings.Compare(keys[a], keys[b]) }, func(_ int, met []splitMet) {
+		for _, m := range met[:min(n, len(met))] {
+			if !keep[m.idx] {
+				keep[m.idx] = true
+				kept++
 			}
-		})
-		for split, first := range firsts {
-			bySplit[split] = append(bySplit[split], met{first, k})
 		}
-	}
-	keep := map[string]bool{}
-	for _, list := range bySplit {
-		sort.Slice(list, func(i, j int) bool {
-			if list[i].first != list[j].first {
-				return list[i].first < list[j].first
-			}
-			return list[i].key < list[j].key
-		})
-		for _, m := range list[:min(n, len(list))] {
-			keep[m.key] = true
-		}
-	}
-	out := make([]string, 0, len(keep))
-	for _, k := range keys {
-		if keep[k] {
+	})
+	out := make([]string, 0, kept)
+	for i, k := range keys {
+		if keep[i] {
 			out = append(out, k)
 		}
 	}
@@ -490,7 +647,7 @@ func (m *metricResponseRewriter) finish() {
 			mode := drilldownSeriesLimitBusiest
 			if m.scope.lokiCut {
 				mode = drilldownSeriesLimitLoki
-				body = m.scope.cutAnswer(body)
+				body = m.scope.cutAnswerInPlace(body) // the rewriter's own buffer: nothing else reads it
 			}
 			if m.partial != nil && m.scope.truncated.Load() > 0 {
 				m.partial(mode)
@@ -511,7 +668,16 @@ func (m *metricResponseRewriter) finish() {
 // cutAnswer is the Loki mode's answer over the limit (cutLokiSplits on the request's splits). When no split passes
 // the limit, and no answer it combines was cut, the answer is whole: no warning.
 func (s *seriesLimitScope) cutAnswer(body []byte) []byte {
-	out, tripped := cutLokiSplits(body, s, int(s.truncated.Load()))
+	return s.cut(body, false)
+}
+
+// cutAnswerInPlace is cutAnswer writing the cut answer over body, which the caller no longer reads.
+func (s *seriesLimitScope) cutAnswerInPlace(body []byte) []byte {
+	return s.cut(body, true)
+}
+
+func (s *seriesLimitScope) cut(body []byte, inPlace bool) []byte {
+	out, tripped := cutLokiSplitsInto(body, s, int(s.truncated.Load()), inPlace)
 	if !tripped && !s.innerTripped.Load() {
 		s.truncated.Store(0)
 	}
@@ -526,119 +692,153 @@ func (s *seriesLimitScope) cutAnswer(body []byte) []byte {
 // vector, a limit of 0 or an unparsable body is unchanged.
 //
 // It reads the answer in place and copies its bytes: everything outside data.result, every series it keeps whole
-// and every point it keeps are written as they came, so only the output buffer is allocated.
-//
-//nolint:gocyclo // one pass over the series, one over the splits and one that writes: the cut is one function.
+// and every point it keeps are written as they came, so only the output buffer and per-series bookkeeping are
+// allocated.
 func cutLokiSplits(body []byte, scope *seriesLimitScope, limit int) ([]byte, bool) {
+	return cutLokiSplitsInto(body, scope, limit, false)
+}
+
+// cutLokiSplitsInto is cutLokiSplits, writing the cut answer over body when inPlace: the answer only drops bytes,
+// so every byte is written at or before where it was read (copy moves overlapping bytes).
+//
+//nolint:gocyclo // one pass over the series (a compact fast path and the parser's), one over the splits and one that writes: the cut is one function.
+func cutLokiSplitsInto(body []byte, scope *seriesLimitScope, limit int, inPlace bool) ([]byte, bool) {
 	if limit <= 0 || scope == nil {
 		return body, false
 	}
 	if resultType, err := jsonparser.GetString(body, "data", "resultType"); err != nil || resultType != "matrix" {
 		return body, false
 	}
-	result, typ, resultEnd, err := jsonparser.Get(body, "data", "result")
-	if err != nil || typ != jsonparser.Array {
-		return body, false
-	}
-	resultStart := resultEnd - len(result)
-	// One read of the series: each one's bytes, its labels, its values array and its points' times.
+	// One read of the series: each one's bytes, its labels, its values array, and its points' times as runs per
+	// split (no slice of every time: a series' runs say whether it is kept whole, and the points of one kept in part
+	// are read again when it is written). runs[runsStart:runsEnd] are a series' runs, in its order.
 	type seriesBytes struct {
 		raw                    []byte
-		key                    string
+		key                    []byte
 		valuesStart, valuesEnd int
-		times                  []int64 // -1: a point without a readable time
+		runsStart, runsEnd     int
+		unreadable             bool // a point without a readable time, which no split keeps
 	}
-	var all []seriesBytes
+	all := make([]seriesBytes, 0, 64)
+	runs := &splitMetRuns{split: -1, entries: make([]splitMet, 0, 64)}
 	malformed := false
-	if _, err := jsonparser.ArrayEach(result, func(series []byte, _ jsonparser.ValueType, _ int, _ error) {
-		values, typ, valuesEnd, err := jsonparser.Get(series, "values")
-		if err != nil || typ != jsonparser.Array {
+	// The arrays are read element by element from where their keys are (ArrayEach with keys), never measured
+	// first: data.result and each values array are read once. An array's opening bracket is found back from its
+	// first element.
+	resultStart := -1
+	closing, err := jsonparser.ArrayEach(body, func(series []byte, typ jsonparser.ValueType, offset int, _ error) {
+		if resultStart < 0 {
+			resultStart = openingBracket(body, offset)
+		}
+		if typ != jsonparser.Object {
 			malformed = true
 			return
 		}
-		metric, _, _, _ := jsonparser.Get(series, "metric")
-		sb := seriesBytes{raw: series, key: string(metric), valuesStart: valuesEnd - len(values), valuesEnd: valuesEnd}
-		if _, err := jsonparser.ArrayEach(values, func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
-			ns, ok := lokiPointTimeNs(point)
-			if !ok {
-				ns = -1
+		metric, _, metricEnd, _ := jsonparser.Get(series, "metric")
+		sb := seriesBytes{raw: series, key: metric, valuesStart: -1}
+		runs.start(len(all))
+		sb.runsStart = len(runs.entries)
+		point := func(_ []byte, ns int64, ok bool) {
+			if ok && ns >= 0 {
+				runs.add(scope.splitOf(ns), ns)
+			} else {
+				sb.unreadable = true
 			}
-			sb.times = append(sb.times, ns)
-		}); err != nil {
-			malformed = true
-			return
 		}
+		// The proxy writes {"metric":{...},"values":[[t,"v"],...]}: its points are read by compactPoints; any other
+		// spelling through the JSON parser.
+		if at := metricEnd + len(valuesAfterMetric); metricEnd > 0 && bytes.HasPrefix(series[metricEnd:], valuesAfterMetric) {
+			if end := compactPoints(series[at-1:], point); end > 0 && at-1+end == len(series)-1 && series[len(series)-1] == '}' {
+				sb.valuesStart, sb.valuesEnd = at-1, at-1+end
+			} else {
+				runs.reset(len(all), sb.runsStart)
+				sb.unreadable = false
+			}
+		}
+		if sb.valuesStart < 0 {
+			end, err := jsonparser.ArrayEach(series, func(p []byte, _ jsonparser.ValueType, offset int, _ error) {
+				if sb.valuesStart < 0 {
+					sb.valuesStart = openingBracket(series, offset)
+				}
+				ns, ok := lokiPointTimeNs(p)
+				point(p, ns, ok)
+			}, "values")
+			if err != nil {
+				malformed = true
+				return
+			}
+			sb.valuesEnd = end + 1
+			if sb.valuesStart < 0 { // no points: the series is in no split and is not written
+				sb.valuesStart = sb.valuesEnd
+			}
+		}
+		runs.flush()
+		sb.runsEnd = len(runs.entries)
 		all = append(all, sb)
-	}); err != nil || malformed {
+	}, "data", "result")
+	if err != nil || malformed || resultStart < 0 || closing >= len(body) || body[closing] != ']' {
 		return body, false
 	}
+	resultEnd := closing + 1
 	// Per split: the series by the first step that meets them in it; the kept ones reach up to the trip step.
-	type met struct {
-		first int64
+	ordered := runs.entries
+	byFirst := slices.Clone(ordered)
+	// reach holds, per series, the splits it is kept in and the last time it keeps there: reach[at[i]:at[i+1]].
+	type splitUntil struct {
 		idx   int
+		split int
+		until int64
 	}
-	bySplit := map[int][]met{}
-	for i, sb := range all {
-		firsts := map[int]int64{}
-		for _, t := range sb.times {
-			if t < 0 {
-				continue
-			}
-			split := scope.splitOf(t)
-			if cur, ok := firsts[split]; !ok || t < cur {
-				firsts[split] = t
-			}
-		}
-		for split, first := range firsts {
-			bySplit[split] = append(bySplit[split], met{first, i})
-		}
-	}
-	// reach[i][split] is the last time series i keeps in split; a split it is not kept in is missing.
-	reach := make([]map[int]int64, len(all))
 	tripped := false
-	for split, list := range bySplit {
-		sort.Slice(list, func(a, b int) bool {
-			if list[a].first != list[b].first {
-				return list[a].first < list[b].first
-			}
-			return all[list[a].idx].key < all[list[b].idx].key
-		})
+	reach := make([]splitUntil, 0, len(all))
+	firstMetBySplit(byFirst, len(all), func(a, b int) int { return bytes.Compare(all[a].key, all[b].key) }, func(split int, met []splitMet) {
 		until := int64(math.MaxInt64)
-		kept := list
-		if len(list) > limit {
-			until, kept, tripped = list[limit].first, list[:limit], true
+		if len(met) > limit {
+			tripped, until = true, met[limit].first
 		}
-		for _, m := range kept {
-			if reach[m.idx] == nil {
-				reach[m.idx] = map[int]int64{}
-			}
-			reach[m.idx][split] = until
+		for _, m := range met[:min(limit, len(met))] {
+			reach = append(reach, splitUntil{m.idx, split, until})
 		}
-	}
+	})
 	if !tripped {
 		return body, false
 	}
-	out := make([]byte, 0, len(body))
+	slices.SortFunc(reach, func(a, b splitUntil) int { return cmp.Compare(a.idx, b.idx) })
+	at := make([]int, len(all)+1)
+	for _, r := range reach {
+		at[r.idx+1]++
+	}
+	for i := 1; i < len(at); i++ {
+		at[i] += at[i-1]
+	}
+	out := body[:0]
+	if !inPlace {
+		out = make([]byte, 0, len(body))
+	}
 	out = append(out, body[:resultStart]...)
 	out = append(out, '[')
 	kept := 0
 	for i, sb := range all {
+		mine := reach[at[i]:at[i+1]]
+		until := func(split int) (int64, bool) {
+			for _, k := range mine {
+				if k.split == split {
+					return k.until, true
+				}
+			}
+			return 0, false
+		}
 		keep := func(t int64) bool {
-			if t < 0 {
-				return false
-			}
-			until, ok := reach[i][scope.splitOf(t)]
-			return ok && t <= until
+			last, ok := until(scope.splitOf(t))
+			return ok && t <= last
 		}
-		points, whole := 0, true
-		for _, t := range sb.times {
-			if keep(t) {
-				points++
-			} else {
-				whole = false
-			}
+		some, whole := false, !sb.unreadable
+		for _, r := range ordered[sb.runsStart:sb.runsEnd] {
+			last, ok := until(r.split)
+			some = some || ok && r.first <= last
+			whole = whole && ok && r.last <= last
 		}
-		if points == 0 {
+		if !some {
 			continue
 		}
 		if kept > 0 {
@@ -651,17 +851,23 @@ func cutLokiSplits(body []byte, scope *seriesLimitScope, limit int) ([]byte, boo
 		}
 		out = append(out, sb.raw[:sb.valuesStart]...)
 		out = append(out, '[')
-		n, j := 0, 0
-		_, _ = jsonparser.ArrayEach(sb.raw[sb.valuesStart:sb.valuesEnd], func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
-			if keep(sb.times[j]) {
+		n := 0
+		write := func(point []byte, ns int64, ok bool) {
+			if ok && ns >= 0 && keep(ns) {
 				if n > 0 {
 					out = append(out, ',')
 				}
 				out = append(out, point...)
 				n++
 			}
-			j++
-		})
+		}
+		if compactPoints(sb.raw[sb.valuesStart:sb.valuesEnd], write) < 0 {
+			n = 0
+			_, _ = jsonparser.ArrayEach(sb.raw[sb.valuesStart:sb.valuesEnd], func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
+				ns, ok := lokiPointTimeNs(point)
+				write(point, ns, ok)
+			})
+		}
 		out = append(out, ']')
 		out = append(out, sb.raw[sb.valuesEnd:]...)
 	}

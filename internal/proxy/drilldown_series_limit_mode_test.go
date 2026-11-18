@@ -330,6 +330,10 @@ func TestCutLokiSplitsMatchesReference(t *testing.T) {
 func checkCutMatchesReference(t *testing.T, body []byte, scope *seriesLimitScope, limit int) bool {
 	t.Helper()
 	out, tripped := cutLokiSplits(body, scope, limit)
+	// The rewriter cuts its own buffer in place: the same bytes.
+	if inPlace, inPlaceTripped := cutLokiSplitsInto(append([]byte(nil), body...), scope, limit, true); string(inPlace) != string(out) || inPlaceTripped != tripped {
+		t.Fatalf("limit %d split %d: the cut in place differs:\n in %s\nout %s\ngot %s", limit, scope.splitNs, body, out, inPlace)
+	}
 	want := cutLokiSplitsReference(body, scope, limit)
 	if !tripped {
 		if want != nil || string(out) != string(body) {
