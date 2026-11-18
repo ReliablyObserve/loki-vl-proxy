@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The compatibility stack and CI now run Grafana 13.3.1 (was 13.3.0) with Logs Drilldown
+  (grafana-lokiexplore-app) 3.2.0 (was 3.1.0): the compose files and their `GF_PLUGINS_PREINSTALL`, the pinned
+  and current-family CI runtime profiles and the docs that name them. 13.3.0 and Drilldown 3.1.0 stay in the
+  contract matrices; the previous-family profile keeps Grafana 12.4.14 with Drilldown 2.6.0 (Drilldown 3.x needs
+  Grafana 13.2 or later). Drilldown 3.2.0 makes the same Loki calls as 3.1.0; its landing-page volume request now
+  carries a fixed request id, so Grafana cancels the previous one when the data source or time range changes. Every
+  e2e-ui shard passes on the new pins. The e2e-ui Drilldown checks find the service page tabs and the landing
+  services by Drilldown 3.2.0's stable test ids (role and name stay as the fallback).
+
 - The compatibility stack and CI now test against Loki 3.7.10 (was 3.7.9): the compose files, the pinned CI jobs,
   the weekly Loki matrix (3.7.10 added) and the test-only Loki oracles. Loki 3.7.10 gives a Logs Drilldown metric
   query over `max_query_series` exactly that many labelled series with its partial-result warning (3.7.9 added a
@@ -47,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
   logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
   later). Answers cached before are not served (the identity's response key version moves to v4).
+
+### Security
+
+- The stack's Grafana moves to 13.3.1, which fixes CVE-2026-102589, CVE-2026-107509, CVE-2026-110992,
+  CVE-2026-111024, CVE-2026-13721 and CVE-2026-14242 (Grafana's security release). The proxy itself is unchanged;
+  the pin is what the compose files, the examples and CI run.
 
 ## [2.338.0] - 2026-11-18
 

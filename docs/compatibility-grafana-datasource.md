@@ -29,7 +29,8 @@ This track focuses on the built-in Grafana Loki datasource contract (`/api/datas
 
 | Grafana runtime version | Coverage path | Focus |
 |---|---|---|
-| `13.3.0` | pinned runtime CI | current-family datasource + Drilldown runtime contract; React 19; Explore auto-run quirk below |
+| `13.3.1` | pinned runtime CI | current-family datasource + Drilldown runtime contract; six security fixes over `13.3.0`; bundles the Loki datasource plugin `13.2.5` (User-Agent `Grafana/13.3.1 (linux; arm64) loki/13.2.5`) |
+| `13.3.0` | datasource contract matrix | previous pinned runtime; Explore auto-run quirk below |
 | `13.2.5` | datasource contract matrix | previous pinned runtime |
 | `13.2.3` | datasource contract matrix | previous pinned runtime |
 | `13.2.1` | datasource contract matrix | previous pinned runtime |
@@ -105,7 +106,7 @@ These are handled by strict contract tests and conservative runtime-family gatin
 
 Current runtime family state:
 
-- current: `13.x` (pinned: `13.3.0`)
+- current: `13.x` (pinned: `13.3.1`)
 - previous supported: `12.x`
 - lts supported: `11.x`
 - next expected family to evaluate: `14.x` when released
