@@ -95,10 +95,21 @@ func RequestQueryText(query string) string {
 
 // requestQueryText is the query as lowercaseQueryKeywords leaves it for the handlers, under the query length limit
 // maxQueryBytes: a query over it keeps its spelling for the limit's error. It is memoised by the query as sent
-// (requestTextCache), so a query seen before costs one lookup.
+// (requestTextCache, longQueryMemo for a long query), so a query seen before costs one lookup.
 func requestQueryText(query string, maxQueryBytes int) string {
-	if len(query) > validationCacheMaxQueryBytes || queryLengthLimit(query, maxQueryBytes) != nil {
+	if queryLengthLimit(query, maxQueryBytes) != nil {
 		return handlerText(query, maxQueryBytes)
+	}
+	if len(query) > validationCacheMaxQueryBytes {
+		if !longQuery(query) {
+			return handlerText(query, maxQueryBytes)
+		}
+		if v, ok := longQueryMemo.load(longRequestTextKey(query)); ok {
+			return v.(string)
+		}
+		text := handlerText(query, maxQueryBytes)
+		longQueryMemo.store(longRequestTextKey(query), longMemoCost(query, longMemoTextWeight), text, false)
+		return text
 	}
 	if v, ok := requestTextCache.Load(query); ok {
 		if text, ok := v.(string); ok {
@@ -232,15 +243,20 @@ type queryValidation struct {
 }
 
 // cachedQueryValidation validates query once per distinct string: it parses
-// and checks the query on a miss and stores the result while the query is at
-// most validationCacheMaxQueryBytes long.
+// and checks the query on a miss and stores the result (in validationCache while
+// the query is at most validationCacheMaxQueryBytes long, in longQueryMemo when
+// it is longer).
 func cachedQueryValidation(query string) queryValidation {
-	cacheable := len(query) <= validationCacheMaxQueryBytes
+	cacheable, long := len(query) <= validationCacheMaxQueryBytes, longQuery(query)
 	if cacheable {
 		if v, ok := validationCache.Load(query); ok {
 			if cached, ok := v.(queryValidation); ok {
 				return cached
 			}
+		}
+	} else if long {
+		if v, ok := longQueryMemo.load(longValidationKey(query)); ok {
+			return v.(queryValidation)
 		}
 	}
 	expr, msg, phase := validateQueryPhases(query)
@@ -257,14 +273,17 @@ func cachedQueryValidation(query string) queryValidation {
 		if lq, ok := expr.(*logql.LogQuery); ok {
 			result.logQuery, result.selector = true, len(lq.Pipeline) == 0
 		}
-		if cacheable && !turnedAwayByStages(expr) && lowersParse(query) {
+		if cacheable && !turnedAwayByStages(expr) && lowersParse(query) || long {
 			// The translation plans the query: it reads this parse from the plan memo, as the handlers that read the
-			// query's tree do (sharedLogQLExpr), and does not parse the query again.
+			// query's tree do (sharedLogQLExpr), and does not parse the query again. A long query's parse is kept
+			// whatever reads it next.
 			planMemoStore(query, &planMemoEntry{expr: expr})
 		}
 	}
 	if cacheable {
 		storeValidationResult(query, result)
+	} else if long {
+		longQueryMemo.store(longValidationKey(query), longMemoCost(query, longMemoTextWeight), result, false)
 	}
 	return result
 }
@@ -277,20 +296,36 @@ type parsedLogQueryResult struct {
 	err error
 }
 
-// parsedLogQuery is a log query's AST, parsed once per distinct query string while it is at most
-// validationCacheMaxQueryBytes long. The AST is shared between callers: they read it and never change it.
+// parsedLogQuery is a log query's AST, parsed once per distinct query string (kept as cachedQueryValidation keeps
+// its result). The AST is shared between callers: they read it and never change it.
 func parsedLogQuery(query string) (*logql.LogQuery, error) {
-	cacheable := len(query) <= validationCacheMaxQueryBytes
+	cacheable, long := len(query) <= validationCacheMaxQueryBytes, longQuery(query)
 	if cacheable {
 		if v, ok := validationCache.Load(parsedLogQueryKey(query)); ok {
 			if cached, ok := v.(parsedLogQueryResult); ok {
 				return cached.lq, cached.err
 			}
 		}
+	} else if long {
+		if v, ok := longQueryMemo.load(parsedLogQueryKey(query)); ok {
+			cached := v.(parsedLogQueryResult)
+			return cached.lq, cached.err
+		}
+		if e, ok := planMemoLoad(query); ok {
+			// The query's parse is in the plan memo (the validation keeps a long query's): logql.ParseLogQuery's
+			// answer is read from it.
+			if lq, ok := e.expr.(*logql.LogQuery); ok {
+				return lq, nil
+			}
+			return nil, fmt.Errorf("logql: expression is not a log query: %T", e.expr)
+		}
 	}
 	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if cacheable {
 		storeValidationResult(parsedLogQueryKey(query), parsedLogQueryResult{lq: lq, err: err})
+	} else if long {
+		longQueryMemo.store(parsedLogQueryKey(query), longMemoCost(query, longMemoParseWeight),
+			parsedLogQueryResult{lq: lq, err: err}, false)
 	}
 	return lq, err
 }
