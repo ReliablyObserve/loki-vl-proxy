@@ -31,8 +31,9 @@ why: |
   _stream_id), which `rename _stream as __lvp_sid` moves to the series field; no pipe after the
   identity reads either (TestDynamicIdentityLeavesNoStreamReader), and the hash pipe ends the identity
   as before (the fold's subquery and the window evaluator read the same text). Cost against pack_json
-  (decision parser-identity-canonical-key-order of metric-series-identity): the sliding windows at or
-  below main's VictoriaLogs time, a range up to the step about 4-16% more (accepted by the owner).
+  (decision parser-identity-canonical-key-order of metric-series-identity): about 0-8% more
+  VictoriaLogs time on lines of one key order, up to 16% on a range up to the step with mixed key
+  orders (accepted by the owner).
 
   Known limit: set_stream_fields writes a field name unquoted. A JSON or logfmt key that holds the
   proxy's own prefix and `="` (`a="x",__lvp_p_b`) can write the same value as two other keys
