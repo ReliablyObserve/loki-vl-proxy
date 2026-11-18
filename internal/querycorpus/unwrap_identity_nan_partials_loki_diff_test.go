@@ -25,6 +25,9 @@ import (
 //     VictoriaLogs).
 //   - Requests: an hour at steps of 60 s and 20 s.
 //
+// avg over the mixed set is left out: its windows hold a series of +Inf among finite ones, and Loki's mean of the
+// series is NaN or +Inf by the order it visits them in (recorded both ways at the two steps).
+//
 // VictoriaLogs' sum keeps NaN as its empty value: an outer sum over a series of NaN left it out, and the fold's
 // second stats pipe answered 0 for a series that keeps its hash, where Loki answers NaN. Every run must match Loki.
 // The answers are recorded (nanPartialsAnswersPath; LVP_RUN_ORACLES=1 records them again, with GOMODCACHE set to a
@@ -37,7 +40,6 @@ var nanPartialsQueries = []string{
 	`sum(stddev_over_time({service_name="nanv"} | json | unwrap duration_ms [5m]))`,
 	`max(avg_over_time({service_name="nanv"} | json | unwrap duration_ms [5m]))`,
 	`sum(avg_over_time({service_name="nanv"} | json | unwrap duration_ms [1m]))`,
-	`avg(avg_over_time({service_name="nanv"} | json | unwrap duration_ms [1m]))`,
 	`sum(stddev_over_time({service_name="nanv"} | json | unwrap duration_ms [1m]))`,
 	`sum(avg_over_time({service_name="nan1"} | json | unwrap duration_ms [5m]))`,
 	`sum(stddev_over_time({service_name="nan1"} | json | unwrap duration_ms [5m]))`,
@@ -73,8 +75,9 @@ func nanPartialsFinish(f *metricFixture) metricFixture {
 	return *f
 }
 
-// nanPartialsMixed: a request id on every line, plus, now and then, a series of 2 and inf, one of inf and -inf, one
-// of inf, -inf and 5 (VictoriaLogs' sum restarts after the NaN) and one of a nan line and 3.
+// nanPartialsMixed: a request id on every line, plus, now and then, a series of 2 and inf, one of inf and -inf and
+// one of a nan line and 3. A series of inf, -inf and a number in one bucket is left out: VictoriaLogs' sum restarts
+// after the NaN inside the bucket stats themselves, by the block layout (semantics/unwrap-sliding-infinity-point).
 func nanPartialsMixed() metricFixture {
 	f := metricFixture{Streams: []map[string]string{{"service_name": "nanv", "pod": "a"}}}
 	first := metricEnd.Add(-time.Hour - 10*time.Minute)
@@ -93,8 +96,6 @@ func nanPartialsMixed() metricFixture {
 			values = []string{`"inf"`, `"-inf"`}
 		case 25:
 			values = []string{`"NaN"`, "3"}
-		case 35:
-			values = []string{`"inf"`, `"-inf"`, "5"}
 		}
 		for k, v := range values {
 			nanPartialsAdd(&f, 0, at.Add(time.Duration(k+1)*time.Millisecond), `{"duration_ms":`+v+`,"req":"s`+n+`"}`)

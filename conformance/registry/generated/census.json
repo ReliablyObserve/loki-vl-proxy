@@ -1063,6 +1063,9 @@
     "semantics/unwrap-gate-parsefloat-divergences | gap:open",
     "semantics/unwrap-gate-parsefloat-divergences | perf",
     "semantics/unwrap-gate-parsefloat-divergences | query",
+    "semantics/unwrap-identity-nan-partials | compare:observed",
+    "semantics/unwrap-identity-nan-partials | gap:fixed",
+    "semantics/unwrap-identity-nan-partials | query",
     "semantics/unwrap-in-log-query | compare:observed",
     "semantics/unwrap-in-log-query | gap:fixed",
     "semantics/unwrap-in-log-query | query",
@@ -2287,6 +2290,8 @@
     "internal/proxy/unwrap_fuzz_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/unwrap_fuzz_test.go | semantics/unwrap-sample-validity",
     "internal/proxy/unwrap_gate_spec_test.go | architecture-syntax-package-layering",
+    "internal/proxy/unwrap_nan_mark_test.go | semantics/unwrap-gate-parsefloat-divergences",
+    "internal/proxy/unwrap_nan_mark_test.go | semantics/unwrap-identity-nan-partials",
     "internal/proxy/unwrap_over_time_reference_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/unwrap_over_time_reference_test.go | window-bounds-and-step-alignment",
     "internal/proxy/unwrap_over_time_window_test.go | metric-series-identity",
@@ -2519,6 +2524,9 @@
     "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/unwrap_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go | metric-series-identity",
+    "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go | semantics/unwrap-identity-nan-partials",
+    "internal/querycorpus/unwrap_identity_nan_partials_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
@@ -3205,12 +3213,12 @@
       "any": 48,
       "api": 116,
       "drilldown": 53,
-      "explore": 202,
+      "explore": 203,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 746,
+      "go": 748,
       "playwright": 2
     },
     "page_kinds": {
@@ -3230,7 +3238,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 94,
-    "wired_items": 444
+    "wired_items": 445
   },
   "gates": [
     "A/B shape selection",

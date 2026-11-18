@@ -31,7 +31,14 @@ why: |
   value a later stats pipe sums or averages is NaN (`format if (__lvp_bad:="0" (-__lvp_inner:<=inf))
   "2" as __lvp_bad`; `x:<=inf` is false only for NaN on v1.49.0 and v1.53.0), so the proxy's nan group
   makes the series NaN where it sits, as for a line of nan. Max and min over the series, the first
-  stats pipe and every query without the series hash are sent as before.
+  stats pipe and every query without the series hash are sent as before. The instant runs of sum, sum
+  by and avg over the deviation of an infinity after a parser of every key now match Loki too
+  (TestUnwrapDynamicValueFormsMatchLoki, removed from its known differences).
+
+  Not covered here: an extraction list's identity (no series hash; its outer sum still leaves a NaN
+  series out, kept as known differences of TestUnwrapDynamicValueFormsMatchLoki), and infinities of
+  both signs followed by a number in one bucket, where VictoriaLogs' sum restarts inside the bucket
+  stats themselves (semantics/unwrap-sliding-infinity-point).
 request:
   method: GET
   path: /loki/api/v1/query_range
