@@ -1,0 +1,49 @@
+id: limits/drilldown-series-limit-or-operand-past-trip-step
+title: 'A Drilldown `or` whose left operand is cut by the series limit may keep the right operand''s points past the trip step (possible, not verified)'
+pending: true
+proves:
+  - series-limits-and-partial-results
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Not verified on either side; recorded so it is checked, not as a known
+  difference. In the Loki series-limit mode the proxy evaluates each binary
+  operand through the range handler, which cuts an operand over the limit at
+  its own trip step, and the combined answer is cut again only when it is
+  itself over the limit. For `A or B` where A is cut and every series of B
+  carries labels A also has, the combined answer is within the limit, so the
+  steps after A's trip step may hold B's samples (`or` keeps B's sample where
+  A has none at that step). Loki's partial answer ends at the step where the
+  limit trips (limits/drilldown-series-limit-range-cut-at-trip-step); whether
+  Loki trips on an operand of `or` or only on the combined result is what a
+  recording must show first. Logs Drilldown's own panels are not known to
+  send `or` queries.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="sl"}[1m])) or sum by (pod) (count_over_time({app="sl", pod="p00"}[1m]))'
+    start: "<end-1h>"
+    end: "<end>"
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: observed
+  fields: ['data.result[].values']
+  expect: |
+    Loki's recorded answer (engine oracle, max_query_series below the left
+    operand's series count): the last step of every series, compared with the
+    proxy's in the Loki series-limit mode.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy binary operands under the Drilldown series limit (evaluateBinaryLogQLOperand, the operand cut is not carried to the combined answer)'
+  loki: 'not recorded yet: whether a partial `or` answer ends at the left operand''s trip step'
+  proxy: 'the combined answer is cut only when it is itself over the limit; B''s samples after A''s trip step may remain'
+  planned_test: 'a Loki engine oracle recording of the request above, then a proxy differential in both series-limit modes (internal/proxy)'
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.49.0"

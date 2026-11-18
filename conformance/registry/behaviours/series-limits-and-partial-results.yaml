@@ -82,6 +82,7 @@ cases:
   - limits/top-n-ranking-not-silent
   - limits/drilldown-series-limit-skips-every-new-series
   - limits/drilldown-series-limit-range-cut-at-trip-step
+  - limits/drilldown-series-limit-or-operand-past-trip-step
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
