@@ -1,0 +1,75 @@
+id: query-complexity-limits
+kind: semantics
+title: Operator limits on query size and on the proxy's own planning time
+
+loki: |
+  Loki 3.7.9 has no limit on the number of nodes or the nesting depth of a query, and none on the time its parser
+  and planner take, below its 128 KB input size limit (syntax.maxInputSize, 131072). Recorded with the Loki oracle
+  (v3.7.9 parser, test/oracle/loki check): it accepted 65,000 nested parentheses (130 KB), 26,000 nested sum( calls
+  (130 KB), 65,000 binary operands `1+1+...` (130 KB), 20,000 nested `(... + 1)` (120 KB), 3,000 `| json` stages
+  (21 KB) and 4,518 nested label_replace calls (131 KB). Loki took 13 s of CPU time and 560 MB RSS for that batch.
+
+victorialogs: |
+  Not involved: the limits refuse a query before any VictoriaLogs call.
+
+proxy: |
+  Three operator limits, none of which refuses a query Loki accepts at its defaults. -max-query-ast-nodes and
+  -max-query-nesting-depth default (0) to the query length limit in effect (-max-query-length-bytes): a query that
+  parses has at most as many nodes and as many levels as bytes (logql.Complexity, FuzzComplexityBoundedByLength), so
+  the derived limits never trip, and a query shorter than both limits is not walked at all. They trip only when an
+  operator lowers them, once the query has been parsed and ahead of the response cache, and they bound what the
+  proxy does after the parse, not the parse. -max-query-plan-time (default 10 s) bounds the proxy's own parse,
+  validation and lowering time of one request, not admission waits, cache reads or VictoriaLogs calls; it is checked
+  after the validation, in the walk of the tree checks (every 256 nodes), at every node of the lowering and before the
+  first VictoriaLogs call. The parser, its semantic pass and the string translator are not interrupted while they
+  run: their time counts once they return, at the next check. A refusal is a neutral 400 through the error layer
+  (`query too complex: too many nodes`, `query too complex: nesting too deep`,
+  `query planning took longer than the limit`), carrying no number, the flag, value and counts in the request error
+  log line only, counted by loki_vl_proxy_query_complexity_rejections_total{limit}. A limit verdict is never stored:
+  only the facts about a query (its validation, its nodes and depth) enter the shared validation cache, so two
+  proxies in one process with different limits answer the same query differently; a budget trip stores nothing at all
+  (validation cache, plan memo, translation cache, response cache), is classified as a request failure (shared with
+  identical requests in flight, held for no time), and a repeat plans again.
+
+implementation:
+  - internal/logql/complexity.go
+  - internal/proxy/query_complexity.go
+  - internal/proxy/query_budget.go
+  - internal/proxy/http_utils.go
+  - internal/queryplan/validate.go
+  - internal/queryplan/lower/lower.go
+  - internal/lokierr/messages.go
+  - internal/config/limits.go
+
+decisions:
+  - id: query-complexity-limits-are-proxy-only
+    chosen: 'Offer operator limits on query nodes, nesting depth and planning time that never refuse a query Loki accepts at their defaults'
+    over:
+      - 'a fixed hard ceiling on nodes or depth (a hidden limit Loki does not have)'
+      - 'defaults below Loki'
+      - 'no limit at all (nothing for an operator to bound hostile or generated queries with)'
+    why: 'Loki refuses nothing below 128 KB, so an intended proxy-only difference must be off unless an operator asks for it: the node and depth defaults derive from the query length limit, which no query that passed it can exceed, and the planning budget default sits above the slowest planning work measured on anything Loki accepts. Operators who want a stricter bound lower the flags. Loki answers in full where the proxy refuses, so this is a recorded difference in the error layer, with no recorded Loki answer to compare (Loki never refuses these queries). The default budget comes down once a follow-up moves the translation of nested vector aggregations onto the query plan.'
+    evidence: 'Loki 3.7.9 parser oracle, 2026-11-18: accepted 65,000 nested parentheses, 26,000 nested sum(, 65,000 binary operands, 20,000 nested (... + 1) and 3,000 | json stages; 13 s CPU, 560 MB RSS for the batch. Proxy planning work, as of 2026-11-18, commit 8e80a32b7, Apple M5 Pro, GOMAXPROCS=4, go test -v -run TestPlanBudgetDefaultNeverTripsOnTheCorpus ./internal/proxy (LVP_PLAN_TIME_DEEP=1 for the deep shapes): plan corpus 2,708 queries, 0.4 ms slowest (1.2 ms under -race); 65,000 parentheses validate 3-16 ms and translate 15-19 ms; 65,000 binary operands 24-32 ms and 21-27 ms; 3,000 json stages 0.3 ms and 0.8-2.5 ms; 26,000 nested sum( validate 4 ms and translate 3.3 s on a quiet host, 6.2 s at a load average of 40 (the string translator), 5.0 s under -race. The largest valid corpus query has 21 nodes and 8 levels. Error answers: msg-limit-query-complexity and msg-limit-plan-time have no recorded Loki answer (conformance/registry/error-coverage-spec.json no_recorded_answer).'
+    code: [internal/logql/complexity.go, internal/proxy/query_complexity.go, internal/proxy/query_budget.go, internal/lokierr/messages.go]
+    tests:
+      - TestComplexityCountsNodesAndDepth
+      - FuzzComplexityBoundedByLength
+      - TestQueryComplexityLimitsRejectOnlyWhenLowered
+      - TestQueryComplexityDerivedDefaultsNeverTrip
+      - TestQueryComplexityLimitsArePerProxy
+      - TestPlanBudgetStopsValidationAndStoresNothing
+      - TestPlanBudgetStopsTheLowering
+      - TestPlanBudgetBeforeTheFirstBackendCall
+      - TestPlanBudgetGateAnswersNeutral400AndKeepsNothing
+      - TestPlanBudgetTripIsNotHeldAfterTheFlight
+      - TestPlanBudgetFailuresAreRequestClassAndNeverHeld
+      - TestPlanBudgetRefusalsAfterTheGateAreTheNeutral400
+      - TestPlanBudgetEdges
+      - TestPlanBudgetDefaultNeverTripsOnTheCorpus
+      - TestValidateWithinBudget
+      - TestLoweringStopsWhenItsBudgetIsExhausted
+      - TestRecordQueryComplexityRejection
+      - TestQueryComplexityFlags
+    quality: 'No query Loki accepts is refused at the defaults (node and depth limits derived from the length limit, held by a fuzz target; planning budget above the slowest measured work). A refusal names no flag or number to the client, leaves nothing cached and costs no VictoriaLogs call.'
+    performance: 'A request whose query is in the validation and request-text caches pays one map lookup more (the gate), and no walk while the limits are above the query length; a miss validates once as before (benchstat, base against head, interleaved, count 10: BenchmarkQueryRequestValidation and BenchmarkTranslateQueryMissInRequest).'
+    pending: true

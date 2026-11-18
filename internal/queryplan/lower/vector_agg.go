@@ -41,6 +41,9 @@ import (
 //     vectorAggKeepAll), a grouping label the label function turns into nothing, and a query whose text the
 //     translator would read as a clause or a stats pipe (a quoted `without`, `| stats`).
 func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	return vectorAggClauses(va, prof, false)
 }
 

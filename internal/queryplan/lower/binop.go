@@ -58,6 +58,9 @@ import (
 //     above an empty clause are not in it, `count without ()` turns every series into 1);
 //   - a spelling the translator reads unlike the plan (screenBinOp, before the lowering).
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
+	if prof.spent() {
+		return nil, ErrBudgetExhausted
+	}
 	if err := binOpShape(n); err != nil {
 		return nil, err
 	}

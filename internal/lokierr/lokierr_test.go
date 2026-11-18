@@ -276,6 +276,9 @@ func TestConstructorTexts(t *testing.T) {
 		{NoOrgID(cause), KindRoute, http.StatusUnauthorized, "no org id"},
 		{LimitReached("some-flag", 7, cause), KindLimit, http.StatusBadRequest, "limit reached while evaluating the query"},
 		{ResponseTooLarge("some-flag", 65, 64, cause), KindLimit, http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)"},
+		{QueryTooComplex(false, 10, "some-flag", cause), KindLimit, http.StatusBadRequest, "query too complex: too many nodes"},
+		{QueryTooComplex(true, 4, "some-flag", cause), KindLimit, http.StatusBadRequest, "query too complex: nesting too deep"},
+		{PlanTimeExceeded("some-flag", 7, cause), KindLimit, http.StatusBadRequest, "query planning took longer than the limit"},
 	}
 	for _, tc := range cases {
 		if tc.e.Kind() != tc.kind || tc.e.Status() != tc.status || tc.e.Text() != tc.text || tc.e.Error() != tc.text {
@@ -416,6 +419,8 @@ func TestLimitCarriesItsFlagForTheLogOnly(t *testing.T) {
 		{"queue full", QueueFull(cause).WithLimit("some-flag", 7)},
 		{"series of", SeriesLimitOf("some-flag", 7, cause)},
 		{"queue full at", QueueFullAt("some-flag", 7, cause)},
+		{"query too complex", QueryTooComplex(false, 7, "some-flag", cause)},
+		{"plan time", PlanTimeExceeded("some-flag", 7, cause)},
 	} {
 		flag, value, ok := tc.e.Limit()
 		if !ok || flag != "some-flag" || value != 7 {
