@@ -280,6 +280,12 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		if !ok {
 			return "", "", false
 		}
+		if agg.Op == logql.RangeQuantileOverTime && !agg.HasParam {
+			// Loki rejects a quantile_over_time without its quantile (`parameter required for operation
+			// quantile_over_time`) and so does every route (TestQueryTreeValidationOnEveryRoute): no query is sent
+			// to VictoriaLogs, so there is no pair to hold.
+			return "", "", false
+		}
 		if lq, ok = agg.Inner.(*logql.LogQuery); !ok {
 			return "", "", false
 		}

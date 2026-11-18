@@ -341,8 +341,9 @@ func TestTypedPairOfBlankBeforeRangeCallIsTheCanonicalOne(t *testing.T) {
 
 // The oracle's typed pairs are what VictoriaLogs would receive from the proxy: the text the handlers translate (a
 // quantile_over_time phi above 1 is clamped to 1, which VictoriaLogs accepts), no pair for rate_counter (its stats
-// function is a marker the proxy answers itself), and, for a ranking the proxy evaluates, the operand's request the
-// plan lowers to against the operand request the proxy sends (the whole query is never translated on that route).
+// function is a marker the proxy answers itself), none for a quantile_over_time without its quantile (Loki's 400 on
+// every route), and, for a ranking the proxy evaluates, the operand's request the plan lowers to against the operand
+// request the proxy sends (the whole query is never translated on that route).
 // conformance: architecture-syntax-package-layering
 func TestTypedPairsAreWhatTheProxySends(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
@@ -353,6 +354,12 @@ func TestTypedPairsAreWhatTheProxySends(t *testing.T) {
 		}
 		if _, _, ok := typedQueryPair(`rate_counter({app="a"} | unwrap n [5m])`, v); ok {
 			t.Errorf("%s: rate_counter makes a pair", v)
+		}
+		// A quantile_over_time without its quantile is Loki's 400 on every route: nothing reaches VictoriaLogs.
+		for _, q := range []string{`quantile_over_time({app="a"} | unwrap c [5m])`, `quantile_over_time({a="b"} | json | unwrap c[5m])`} {
+			if _, _, ok := typedQueryPair(q, v); ok {
+				t.Errorf("%s: %q makes a pair", v, q)
+			}
 		}
 		for _, q := range []string{
 			`topk(3, rate({app="a"}[5m]))`, `bottomk(2, count_over_time({app="a"} |= "x" [1m]))`, `sort(bytes_rate({app="a"}[5m]))`,
