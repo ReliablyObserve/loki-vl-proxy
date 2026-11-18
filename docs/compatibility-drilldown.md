@@ -28,7 +28,8 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Grafana version | Coverage path | Version-specific focus |
 |---|---|---|
-| `13.3.0` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19; runs Drilldown `3.1.0` (needs Grafana `>= 13.2.0`); Explore keeps the auto-run from the URL on Cancel (loading), also on Loki direct, see [Grafana datasource compatibility](compatibility-grafana-datasource.md#grafana-1330-explore-auto-run-stays-on-cancel) |
+| `13.3.1` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; runs Drilldown `3.2.0` (needs Grafana `>= 13.2.0`); six security fixes over `13.3.0` |
+| `13.3.0` | Datasource contract matrix | Previous pinned build; React 19; ran Drilldown `3.1.0`; Explore keeps the auto-run from the URL on Cancel (loading), also on Loki direct, see [Grafana datasource compatibility](compatibility-grafana-datasource.md#grafana-1330-explore-auto-run-stays-on-cancel) |
 | `12.4.14` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
 | `12.4.1` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts |
 | `11.6.6` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `1.x` runtime-family assertions |
@@ -37,7 +38,8 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Logs Drilldown version | Coverage path | Version-specific focus |
 |---|---|---|
-| `3.1.0` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract; requires Grafana `>= 13.2.0`; same Loki HTTP calls as `2.6.0`; the logs panel footer shows the `Summary: total bytes processed` stat and a "Query details" drawer built from the `query_range` `stats` object; patterns tab requires patterns-autodetect as Grafana default |
+| `3.2.0` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract; requires Grafana `>= 13.2.0`; same Loki HTTP calls as `3.1.0`; the landing-page volume request carries a fixed request id, so Grafana cancels the previous one when the data source or time range changes (grafana/logs-drilldown#2177); filter toggles carry `aria-pressed` (#2182) |
+| `3.1.0` | Scheduled and manual contract matrix | Previous pinned contract; requires Grafana `>= 13.2.0`; same Loki HTTP calls as `2.6.0`; the logs panel footer shows the `Summary: total bytes processed` stat and a "Query details" drawer built from the `query_range` `stats` object; patterns tab requires patterns-autodetect as Grafana default |
 | `3.0.0` | Scheduled and manual contract matrix | Requires Grafana `>= 13.1.0`; same Loki HTTP calls as `2.6.0` |
 | `2.6.0` | PR previous-family smoke (Grafana `12.4.x`, via `drilldown_plugin_version`) + scheduled/manual contract matrix | Last release that runs on Grafana `12.x`; label/field filter inputs located by placeholder; patterns tab requires patterns-autodetect as Grafana default; volume by other fields is behind the `drilldown.logs.logsVolumeByField` feature flag (off by default) |
 | `2.5.2` | Scheduled and manual contract matrix | Earlier pinned contract |
@@ -232,7 +234,7 @@ In the e2e-compat compose stack, `loki-vl-proxy-patterns-autodetect` is set as `
 
 Potential next family move:
 
-- current: `3.x` (pinned: `3.1.0`)
+- current: `3.x` (pinned: `3.2.0`)
 - previous: `2.x`, kept on the previous-family Grafana smoke profile (Drilldown `3.x` needs Grafana `>= 13.1`/`13.2`)
 - `1.0.x` stays in the contract matrix as an additional family until the owner retires it
 - next expected family to evaluate: `4.x` when released
