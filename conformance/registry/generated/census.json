@@ -2029,6 +2029,7 @@
     "internal/proxy/selector_value_test.go | loki_api_v1_query_range",
     "internal/proxy/selector_value_test.go | semantics/selector-values-are-strings",
     "internal/proxy/selector_value_test.go | status-400",
+    "internal/proxy/series_fold_read_test.go | semantics/error-layer-silent-success",
     "internal/proxy/series_fold_read_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/series_fold_read_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/series_limit_routes_test.go | limits/drilldown-partial-with-warning",

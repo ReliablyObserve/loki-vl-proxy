@@ -13,7 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_over_time`, `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` (no
   `| keep`) costs VictoriaLogs about 40% less time and answers about a third faster. An example is
   `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms [5m]))` under Grafana's `$__auto` step. Answers
-  and statuses do not change, and each request still makes one VictoriaLogs call.
+  and statuses are the same on every measured request, and each request still makes one VictoriaLogs call. Three
+  edge cases change:
+  - A series holding a NaN in a bucket now always answers NaN in the windows that hold it. VictoriaLogs' `sum`
+    could turn that NaN into 0.
+  - A series of several lines whose sum overflows to an infinity is read as a series of its own, as an infinite
+    series always was, instead of being added into the bucket's other series.
+  - A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
   - VictoriaLogs scans the lines once instead of twice: the subquery that listed the series spanning buckets is gone.
   - Each line is unpacked once instead of twice, and its series hash is computed once.
   - The read now groups by the series and then by its buckets in one query, so it is sent to `/select/logsql/query`

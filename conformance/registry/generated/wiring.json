@@ -1458,6 +1458,7 @@
       "internal/proxy/perf_regression_test.go",
       "internal/proxy/proxy_test.go",
       "internal/proxy/query_semantics_compat_handlers_test.go",
+      "internal/proxy/series_fold_read_test.go",
       "internal/proxy/stats_body_failure_test.go",
       "internal/proxy/stats_error_body_test.go",
       "internal/proxy/stream_response_broken_body_test.go",
@@ -4299,6 +4300,7 @@
       "status-400"
     ],
     "internal/proxy/series_fold_read_test.go": [
+      "semantics/error-layer-silent-success",
       "semantics/unwrap-conversion-error",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],

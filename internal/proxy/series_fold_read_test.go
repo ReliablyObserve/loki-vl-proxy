@@ -3,15 +3,21 @@ package proxy
 import (
 	"encoding/json"
 	"errors"
+	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // avgFoldRead is the fold of sum by (app) over avg over time.
@@ -176,5 +182,94 @@ func TestSeriesFoldMatrix(t *testing.T) {
 	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
 	if _, err := read.matrix([]byte(rows)); !errors.Is(err, errBodyTooLarge) {
 		t.Errorf("past the bound: %v", err)
+	}
+}
+
+// FuzzSeriesFoldMatrix holds the reader of a folded answer on any bytes: it never panics, answers JSON within the
+// stats body bound, and otherwise fails closed (an unreadable answer, or past the bound).
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func FuzzSeriesFoldMatrix(f *testing.F) {
+	for _, seed := range []string{
+		`{"_time":"2026-01-01T00:01:00.000000001Z","app":"a","__lvp_bad":"0","__lvp_fold":"7","__lvp_fc":"2"}` + "\n" +
+			`{"_time":"2026-01-01T00:00:00.000000001Z","app":"a","__lvp_sid":"9","__lvp_bad":"2","__lvp_sum":"NaN","__sample_count":"1","__lvp_fold":"NaN","__lvp_fc":"1"}`,
+		`{"_time":"1767225600","__lvp_sid":"","__lvp_fold":"+Inf"}`,
+		"\n\n",
+		`[1,2]`,
+		`{"_time":`,
+		`{"app":"a"}`,
+		`{"_time":"2026-01-01T00:00:00Z","app":{"x":1},"__lvp_sid":"\u0000","__lvp_sum":"\"<>&"}`,
+	} {
+		f.Add([]byte(seed), "app")
+	}
+	old := maxStatsBucketResponseBytes
+	maxStatsBucketResponseBytes = 4096
+	f.Cleanup(func() { maxStatsBucketResponseBytes = old })
+	f.Fuzz(func(t *testing.T, raw []byte, group string) {
+		if len(raw) > 1<<14 {
+			return
+		}
+		read := &seriesFoldRead{outer: logql.VectorSum, columns: []string{"__lvp_sum", "__sample_count"}, valueColumn: "__lvp_sum",
+			countColumn: "__sample_count", by: []string{group, dynamicSeriesHashLabel}}
+		body, err := read.matrix(raw)
+		var unreadable *statsBucketsUnreadableError
+		switch {
+		case err == nil:
+			if !json.Valid(body) || int64(len(body)) > maxStatsBucketResponseBytes+3 {
+				t.Fatalf("%d bytes, valid %v", len(body), json.Valid(body))
+			}
+		case !errors.As(err, &unreadable) && !errors.Is(err, errBodyTooLarge):
+			t.Fatalf("an error that is neither unreadable nor too large: %v", err)
+		}
+	})
+}
+
+// A folded read VictoriaLogs fails (its timeout: a 503 with its own text) answers through the error layer, never with
+// VictoriaLogs' text; an answer that is not rows fails the read the same way, with no raw-row read.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/error-layer-silent-success
+func TestSeriesFoldReadFailure(t *testing.T) {
+	s := generateDynWindowScenario(rand.New(rand.NewSource(3)), "sum", "pod", "avg_over_time", "json")
+	for name, answer := range map[string]func(w http.ResponseWriter){
+		"timeout": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("the request couldn't be executed in 0.002 seconds; possible solutions: to increase -search.maxQueryDuration=10m0s"))
+		},
+		"not rows": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}trailing`))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+			inner := emu.Handler()
+			folded := 0
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				if r.URL.Path == "/select/logsql/query" && strings.Contains(r.Form.Get("query"), ") as "+lower.SeriesFoldRows) {
+					folded++
+					answer(w)
+					return
+				}
+				inner.ServeHTTP(w, r)
+			})
+			backend := httptest.NewServer(handler)
+			defer backend.Close()
+			c := cache.New(time.Minute, 100)
+			defer c.Close()
+			p, err := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeTestProxy(p)
+			params := url.Values{"query": {s.query()}, "start": {strconv.FormatInt(s.start/1e9, 10)}, "end": {strconv.FormatInt(s.end/1e9, 10)},
+				"step": {strconv.FormatInt(int64(s.step/time.Second), 10)}}
+			res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+			if res.Code < 500 || folded == 0 || strings.Contains(res.Body.String(), "couldn't be executed") || strings.Contains(res.Body.String(), "trailing") {
+				t.Fatalf("%d after %d folded reads: %.300s", res.Code, folded, res.Body)
+			}
+			if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
+				t.Fatalf("read raw rows: %s", raw[0])
+			}
+		})
 	}
 }
