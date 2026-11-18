@@ -44,6 +44,12 @@ func init() { planMemoCur.Store(&planGeneration{}) }
 
 // planMemoLoad is the memoised entry of query, if a generation holds it.
 func planMemoLoad(query string) (*planMemoEntry, bool) {
+	if len(query) > validationCacheMaxQueryBytes {
+		if v, ok := longQueryMemo.load(longPlanKey(query)); ok {
+			return v.(*planMemoEntry), true
+		}
+		return nil, false
+	}
 	if v, ok := planMemoCur.Load().plans.Load(query); ok {
 		return v.(*planMemoEntry), true
 	}
@@ -60,6 +66,16 @@ func planMemoLoad(query string) (*planMemoEntry, bool) {
 // planMemoStore keeps e in the current generation, starting a new one when the
 // current one is full. An entry with a plan replaces one without.
 func planMemoStore(query string, e *planMemoEntry) {
+	if len(query) > validationCacheMaxQueryBytes {
+		if longQuery(query) {
+			weight := int64(longMemoParseWeight)
+			if e.plan != nil {
+				weight = longMemoPlanWeight
+			}
+			longQueryMemo.store(longPlanKey(query), longMemoCost(query, weight), e, e.plan != nil)
+		}
+		return
+	}
 	cur := planMemoCur.Load()
 	if cur.size.Load() >= planMemoLimit {
 		planMemoMu.Lock()
@@ -81,11 +97,11 @@ func planMemoStore(query string, e *planMemoEntry) {
 	}
 }
 
-// sharedLogQLExpr is query's parse from the memo, parsing it once on a miss.
+// sharedLogQLExpr is query's parse from the memo (longQueryMemo for a long query), parsing it once on a miss.
 // The expression is shared with every other request sending the query, so the
 // caller reads it only: a caller that modifies the AST uses parseLogQLExpr.
 func sharedLogQLExpr(query string) (logqlpkg.Expr, bool) {
-	cacheable := len(query) <= validationCacheMaxQueryBytes
+	cacheable := len(query) <= validationCacheMaxQueryBytes || longQuery(query)
 	if cacheable {
 		if e, ok := planMemoLoad(query); ok {
 			return e.expr, true
@@ -104,7 +120,7 @@ func sharedLogQLExpr(query string) (logqlpkg.Expr, bool) {
 // resolvedPlan is the resolved plan of query, memoised by the query text; nil
 // when the query does not parse or build.
 func resolvedPlan(query string) *queryplan.Plan {
-	cacheable := len(query) <= validationCacheMaxQueryBytes
+	cacheable := len(query) <= validationCacheMaxQueryBytes || longQuery(query)
 	var expr logqlpkg.Expr
 	if cacheable {
 		if e, ok := planMemoLoad(query); ok {
