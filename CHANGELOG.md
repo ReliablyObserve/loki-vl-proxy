@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries a fixed request id, so Grafana cancels the previous one when the data source or time range changes. Every
   e2e-ui shard passes on the new pins. The e2e-ui Drilldown checks find the service page tabs and the landing
   services by Drilldown 3.2.0's stable test ids (role and name stay as the fallback).
+
 - The compatibility stack and CI now test against Loki 3.7.10 (was 3.7.9): the compose files, the pinned CI jobs,
   the weekly Loki matrix (3.7.10 added) and the test-only Loki oracles. Loki 3.7.10 gives a Logs Drilldown metric
   query over `max_query_series` exactly that many labelled series with its partial-result warning (3.7.9 added a
