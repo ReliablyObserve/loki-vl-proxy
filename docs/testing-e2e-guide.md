@@ -63,20 +63,20 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 
 | Service | Host Port | Purpose |
 |---------|-----------|---------|
-| `loki` (Loki 3.7.9) | 13101 | Reference implementation (ground truth) |
-| `victorialogs` (VictoriaLogs v1.53.0) | 19428 | Backend for the proxy |
+| `loki` (Loki 3.7.10) | 13101 | Reference implementation (ground truth) |
+| `victorialogs` (VictoriaLogs v1.54.0) | 19428 | Backend for the proxy |
 | `vmauth` (vmauth v1.138.0) | (internal) | Auth proxy in front of VictoriaLogs for `loki-vl-proxy-vmauth` |
 | `vmauth-ring` (vmauth v1.138.0) | 13200 | Round-robin load balancer across the three peer-ring proxies (cache-tier benchmarks only) |
 | `victoriametrics` (VictoriaMetrics v1.119.0) | 18428 | vmalert remote-write target and scrape store for proxy/Loki/VictoriaLogs metrics |
 | `vmalert` (vmalert v1.138.0) | 18880 | Alert/rule backend |
 | 12 proxy variants | 13100, 13102-13103, 13105-13111, 13150-13151 | See [Proxy Variants](#proxy-variants) |
 | `tail-ingress` (nginx 1.27) | 13104 | Nginx reverse proxy for tail WebSocket tests |
-| `grafana` (Grafana 13.3.0) | 3002 | UI with all datasources provisioned |
+| `grafana` (Grafana 13.3.1) | 3002 | UI with all datasources provisioned |
 | `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
 
 The generator gives every line of a live push its own timestamp (at least 1 µs after the previous line), as its backfill does, so Loki and VictoriaLogs never hold lines of one stream at the same instant: Loki keeps such lines in arrival order and VictoriaLogs has no order for them, which would otherwise show up as differences in the patterns miner, `first_over_time`/`last_over_time` and the lines a `limit` cuts. `LOG_DISTINCT_TIMESTAMPS=0` gives all lines of one stream in a push the same timestamp, to produce ties on purpose. The proxy's tie behaviour is pinned by tests that create ties themselves (`TestFirstLastOverTimeTiedSamplesAnswerOneOfTheTiedValues`, `TestPatternStateMinesLinesThatShareATimeOnce`, `TestStreamOrdering_SameNanosecondSortedByMessage`, `TestVLCapability_PatternLinesFilterAndTieOrder`).
 
-Grafana preinstalls `victoriametrics-logs-datasource@0.33.1` and `grafana-lokiexplore-app@3.1.0`.
+Grafana preinstalls `victoriametrics-logs-datasource@0.33.1` and `grafana-lokiexplore-app@3.2.0`.
 
 ## Dual-Write Pattern
 
@@ -235,10 +235,10 @@ Set environment variables before `docker compose up` to override image versions:
 
 | Variable | Default |
 |----------|---------|
-| `LOKI_IMAGE` | `grafana/loki:3.7.9` |
-| `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.53.0` |
-| `GRAFANA_IMAGE` | `grafana/grafana:13.3.0` |
-| `GRAFANA_PLUGINS_PREINSTALL` | `victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0` (Grafana `12.x` needs `grafana-lokiexplore-app@2.6.0`; Drilldown `3.x` requires Grafana `>= 13.2`) |
+| `LOKI_IMAGE` | `grafana/loki:3.7.10` |
+| `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.54.0` |
+| `GRAFANA_IMAGE` | `grafana/grafana:13.3.1` |
+| `GRAFANA_PLUGINS_PREINSTALL` | `victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.2.0` (Grafana `12.x` needs `grafana-lokiexplore-app@2.6.0`; Drilldown `3.x` requires Grafana `>= 13.2`) |
 | `PROXY_IMAGE` | `loki-vl-proxy:e2e-local` |
 | `VMAUTH_IMAGE` | `victoriametrics/vmauth:v1.138.0` |
 | `VMALERT_IMAGE` | `victoriametrics/vmalert:v1.138.0` |

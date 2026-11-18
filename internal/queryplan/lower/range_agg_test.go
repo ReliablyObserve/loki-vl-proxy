@@ -29,17 +29,17 @@ func rangeProfiles() []rangeProfile {
 	underscores := func(s string) string { return strings.ReplaceAll(s, ".", "_") }
 	labels := translator.WithStreamLabels(underscores, []string{"app", "namespace", "service_name", "env", "level", "pod"})
 	fields := map[string]bool{"app": true, "namespace": true, "env": true, "service_name": true}
-	v53, v49 := logsql.CapabilitiesFor("v1.53.0"), logsql.CapabilitiesFor("v1.49.0")
+	v54, v49 := logsql.CapabilitiesFor("v1.54.0"), logsql.CapabilitiesFor("v1.49.0")
 	return []rangeProfile{
-		{"v1.53 identity", nil, nil, v53},
+		{"v1.54 identity", nil, nil, v54},
 		{"v1.49 identity", nil, nil, v49},
-		{"v1.53 underscores", underscores, nil, v53},
+		{"v1.54 underscores", underscores, nil, v54},
 		{"v1.49 underscores", underscores, nil, v49},
-		{"v1.53 stream fields", underscores, fields, v53},
+		{"v1.54 stream fields", underscores, fields, v54},
 		{"v1.49 stream fields", underscores, fields, v49},
-		{"v1.53 stream labels", labels, nil, v53},
+		{"v1.54 stream labels", labels, nil, v54},
 		{"v1.49 stream labels", labels, nil, v49},
-		{"v1.53 stream fields and labels", labels, fields, v53},
+		{"v1.54 stream fields and labels", labels, fields, v54},
 	}
 }
 
@@ -272,7 +272,7 @@ func TestPlanLogSelectDropsKeepAllSelector(t *testing.T) {
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanRangeAggregationIgnoresCapsAndStreamFields(t *testing.T) {
-	v53, v49 := logsql.CapabilitiesFor("v1.53.0"), logsql.CapabilitiesFor("v1.49.0")
+	v54, v49 := logsql.CapabilitiesFor("v1.54.0"), logsql.CapabilitiesFor("v1.49.0")
 	for _, q := range []string{
 		`count_over_time({app="a"} | status=~"error|warn" [5m])`,
 		`count_over_time({app="a"} | ip_a=ip("10.0.0.0/8") |= ip("10.0.0.0/8") [5m])`,
@@ -281,7 +281,7 @@ func TestPlanRangeAggregationIgnoresCapsAndStreamFields(t *testing.T) {
 	} {
 		base := ""
 		for _, prof := range []Profile{
-			{Caps: v53}, {Caps: v49}, {Caps: v53, StreamFields: map[string]bool{"app": true, "service_name": true}}, {},
+			{Caps: v54}, {Caps: v49}, {Caps: v54, StreamFields: map[string]bool{"app": true, "service_name": true}}, {},
 		} {
 			op, err := Plan(rangeAggPlan(q), prof)
 			if err != nil {
@@ -359,7 +359,7 @@ func TestPlanRangeAggregationRestoresStreamLabels(t *testing.T) {
 		`count_over_time({app="a"}[5m])`, `count_over_time({app="a"} |= "x" [5m])`, `bytes_over_time({app="a"} |> "<_> x <_>" [5m])`,
 		`absent_over_time({app="a"} |> "<_> x <_>" |= "k" | a="1" [5m])`, `count_over_time({app="a"} | a="1" [5m])`,
 	} {
-		lowered, legacy, same, delegated, ok := rangeAggLowering(t, q, rangeProfile{name: "labels", label: label, caps: logsql.CapabilitiesFor("v1.53.0")})
+		lowered, legacy, same, delegated, ok := rangeAggLowering(t, q, rangeProfile{name: "labels", label: label, caps: logsql.CapabilitiesFor("v1.54.0")})
 		if !ok || delegated || !same {
 			t.Errorf("%s: ok %v delegated %v\n lowered %s\n  string %s", q, ok, delegated, lowered, legacy)
 		}

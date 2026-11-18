@@ -26,7 +26,7 @@ import (
 // query. A text VictoriaLogs accepts but cannot read back from its own print restarts the VictoriaLogs process. The
 // VictoriaLogs oracle's roundtrip command runs each text through the handler's steps (parse at a timestamp, the
 // request's _time filter, the sort and limit pipes, GetLastNResultsQuery) and every clone on the way, with the panic
-// recovered: the verdicts of v1.49.0 and v1.53.0 are recorded in testdata/vl-clone-roundtrip.jsonl.gz
+// recovered: the verdicts of v1.49.0 and v1.54.0 are recorded in testdata/vl-clone-roundtrip.jsonl.gz
 // (LVP_RUN_ORACLES=1 records them again; the oracle downloads VictoriaLogs, so set GOMODCACHE to a fresh directory
 // when the shared cache holds other copies).
 const vlCloneRoundtrip = "testdata/vl-clone-roundtrip.jsonl.gz"
@@ -270,7 +270,7 @@ func collectVLTexts(v reflect.Value, out *[]string) {
 
 // Every text the proxy sends for a label called _time, _stream, _stream_id or _msg in any case, or after a word
 // LogsQL reads as a keyword, in every position of the grid (selector, label filters, comparisons, parsers, drop, keep,
-// label_format, groupings, range aggregations and unwrap), survives VictoriaLogs' clone on v1.49.0 and v1.53.0:
+// label_format, groupings, range aggregations and unwrap), survives VictoriaLogs' clone on v1.49.0 and v1.54.0:
 // the lowering's and the string translator's texts, each through the outbound guard (logsql.GuardReservedFieldCase,
 // which the proxy runs on every query it sends), are none of them a query VictoriaLogs accepts and then panics on. A
 // text missing from the recorded verdicts fails the test until they are recorded again. The spelling grid records
@@ -294,7 +294,7 @@ func TestPlanTextsSurviveVictoriaLogsClone(t *testing.T) {
 			t.Errorf("%s: no recorded verdict: record them again with LVP_RUN_ORACLES=1", q)
 			continue
 		}
-		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			if x := r.V[v]; x.Accept && !x.OK {
 				t.Errorf("%s: VictoriaLogs %s accepts it and fails on its clone: %s", q, v, x.Panic)
 			}
@@ -308,7 +308,7 @@ func TestPlanTextsSurviveVictoriaLogsClone(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: no recorded verdict: record them again with LVP_RUN_ORACLES=1", sp.q)
 		}
-		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			if x := r.V[v]; (x.Accept && !x.OK) != sp.crash {
 				t.Errorf("%s: VictoriaLogs %s accepts %v, clone ok %v, want a failing clone %v (%s)", sp.q, v, x.Accept, x.OK, sp.crash, x.Panic)
 			}
@@ -361,7 +361,7 @@ func recordVLCloneRoundtrip(t *testing.T, texts []string) {
 	for i, q := range texts {
 		rows[i] = vlCloneRow{Query: q, V: map[string]vlCloneVerdict{}}
 	}
-	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		modfile := ""
 		if v == "v1.49.0" {
 			modfile = "go.v1.49.0.mod"

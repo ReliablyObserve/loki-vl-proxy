@@ -22,7 +22,7 @@ import (
 // The numeric equality oracle: for each query, the lines Loki's pipeline keeps (the Loki oracle, process, over the
 // query run on every line of its value list) and the lines VictoriaLogs returns for the text the lowering writes and
 // for the text the string translator writes (the VictoriaLogs oracle, store: the lines stored as the Loki push API
-// hands them over, on v1.49.0 and v1.53.0). The answers are recorded; LVP_RUN_ORACLES=1 records them again (with a
+// hands them over, on v1.49.0 and v1.54.0). The answers are recorded; LVP_RUN_ORACLES=1 records them again (with a
 // module cache whose VictoriaLogs checksum matches, see test/oraclerun).
 
 // numericEqualitySet is a parser and a kind of value: the lines of one app, each holding one value of the list.
@@ -290,7 +290,7 @@ var numericEqualityDifferences = map[string]string{
 }
 
 // The lowering of a numeric equality keeps the lines Loki keeps for every value of the grid that is not in
-// numericEqualityDifferences, on v1.49.0 and v1.53.0: Loki reads the value as a number, a Go duration or a bytes
+// numericEqualityDifferences, on v1.49.0 and v1.54.0: Loki reads the value as a number, a Go duration or a bytes
 // size and compares it with the literal as numbers, and the lowering writes the pair of range filters VictoriaLogs
 // compares as numbers. A line Loki keeps with __error__ (a value that is none of these) is dropped under = and ==,
 // the numeric label filter's open difference (semantics/label-filter-numeric-error-label), and kept under !=, as Loki
@@ -318,7 +318,7 @@ func TestNumericEqualityAfterParserMatchesLoki(t *testing.T) {
 			t.Fatalf("answer %d is for %s, not %s: record them again", i, a.Q, q.Q)
 		}
 		s := sets[q.Set]
-		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			got := a.VL[v]
 			plan, legacy := numericEqualitySentTexts(t, q.Q, v)
 			if plan != got.Plan || legacy != got.Translator {
@@ -489,7 +489,7 @@ func recordNumericEqualityAnswers(t *testing.T) {
 			rowOf[s.app+"\x00"+line] = idx
 		}
 	}
-	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		modfile := ""
 		if v == "v1.49.0" {
 			modfile = "go.v1.49.0.mod"

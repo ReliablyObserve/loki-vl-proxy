@@ -25,7 +25,7 @@ import (
 )
 
 // TestExtractionListIdentityVictoriaLogsCost measures what the extraction list's series identity costs VictoriaLogs
-// (v1.53.0 and v1.49.0, its own query handlers through the serve oracle): the stats query the string translator
+// (v1.54.0 and v1.49.0, its own query handlers through the serve oracle): the stats query the string translator
 // writes (a series per line, or the clause alone), the one the lowering writes (a value per series of the stream, its
 // stored level fields and the listed labels, then the aggregation; one stats pipe over the rows for the maximum of
 // maxima and the minimum of minima) and, when LVP_XLIST_VLCOST_BASE names a JSON object of query to text (another

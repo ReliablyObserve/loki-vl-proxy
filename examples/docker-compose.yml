@@ -24,7 +24,7 @@ services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.53.0
+    image: victoriametrics/victoria-logs:v1.54.0
     ports:
       - "9428:9428"
     command:
@@ -35,8 +35,9 @@ services:
     restart: unless-stopped
     healthcheck:
       # VictoriaLogs images are scratch-based from v1.52.0 (no shell, no wget);
-      # the binary's -version exit path is the probe that works on every version.
-      test: ["CMD", "/victoria-logs-prod", "-version"]
+      # from v1.54.0 the binary checks that its listener accepts connections
+      # (-healthcheck). The image here is pinned; on an older one use -version.
+      test: ["CMD", "/victoria-logs-prod", "-healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,7 +69,7 @@ services:
 
   # ── Grafana ────────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:13.3.0
+    image: grafana/grafana:13.3.1
     ports:
       - "3000:3000"
     environment:

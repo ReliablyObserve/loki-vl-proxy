@@ -106,7 +106,7 @@ func proxyServed(t *testing.T) servedText {
 
 // servedDivergences are the recorded known divergences a row of which the proxy may serve from the plan, each with
 // the differential that holds the plan's answers to Loki (recorded Loki answers, the Loki oracle and VictoriaLogs
-// v1.49 and v1.53). A served row of another divergence stays delegated: no differential holds its answer.
+// v1.49 and v1.54). A served row of another divergence stays delegated: no differential holds its answer.
 var servedDivergences = map[string]string{
 	knownKeepIdentity:    "TestKeepUnwrapIdentityMatchLoki (internal/querycorpus)",
 	knownDynamicIdentity: "TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus)",

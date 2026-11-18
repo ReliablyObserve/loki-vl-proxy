@@ -195,7 +195,7 @@ func planSpellingServeSet(rows []pushdownRow) oraclerun.ServeDataSet {
 
 // The spellings the string translator reads otherwise than the query plan answer what Loki answers for them (Loki's
 // engine over the same lines, recorded with the engine oracle), through the proxy's routes against VictoriaLogs
-// v1.49.0 and v1.53.0 (their own query handlers, recorded through the serve oracle and replayed; LVP_RUN_ORACLES=1
+// v1.49.0 and v1.54.0 (their own query handlers, recorded through the serve oracle and replayed; LVP_RUN_ORACLES=1
 // records both again, with a module cache in which VictoriaLogs' sources match test/oracle/vl/go.sum). The proxy
 // serves the plan's text for these queries (no text screen turns them away to the translator): quoted text holding a
 // parenthesis under a binary operation, alone, under a ranking or as label_replace's argument, the operator, number
@@ -215,7 +215,7 @@ func TestPlanSpellingsMatchLoki(t *testing.T) {
 		recorded = readPlanSpellingVLAnswers(t)
 	}
 	var mu sync.Mutex
-	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.53.0", ""}} {
+	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.54.0", ""}} {
 		upstream := ""
 		if recording {
 			srv, err := oraclerun.StartVLServe(filepath.Join("..", "..", "test", "oracle", "vl"), v.modfile, []oraclerun.ServeDataSet{planSpellingServeSet(rows)})

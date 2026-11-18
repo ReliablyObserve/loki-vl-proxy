@@ -67,29 +67,29 @@ type planProfile struct {
 }
 
 // planProfiles are the 12 option combinations that change the translator's output, measured on the corpus: the
-// VictoriaLogs floor (v1.49) against the pin (v1.53), the label style, the stream fields, the Loki-compatible
+// VictoriaLogs floor (v1.49) against the pin (v1.54), the label style, the stream fields, the Loki-compatible
 // stream labels, the detected_level body scan and the keepLine of log queries.
 func planProfiles() []planProfile {
 	identity := func(s string) string { return s }
 	underscores := proxy.NewLabelTranslator(proxy.LabelStyleUnderscores, nil).ToVL
 	streamLabels := translator.WithStreamLabels(underscores, []string{"app", "namespace", "service_name", "env", "cluster", "pod"})
 	fields := map[string]bool{"app": true, "namespace": true, "env": true, "service_name": true, "cluster": true, "job": true, "level": true, "container": true, "pod": true}
-	v53, v49 := logsql.CapabilitiesFor("v1.53.0"), logsql.CapabilitiesFor("v1.49.0")
-	noScan := v53
+	v54, v49 := logsql.CapabilitiesFor("v1.54.0"), logsql.CapabilitiesFor("v1.49.0")
+	noScan := v54
 	noScan.NoDetectedLevelBodyScan = true
 	return []planProfile{
-		{"v1.53 identity", identity, nil, v53, false},
+		{"v1.54 identity", identity, nil, v54, false},
 		{"v1.49 identity", identity, nil, v49, false},
-		{"v1.53 underscores", underscores, nil, v53, false},
+		{"v1.54 underscores", underscores, nil, v54, false},
 		{"v1.49 underscores", underscores, nil, v49, false},
-		{"v1.53 underscores keepLine", underscores, nil, v53, true},
-		{"v1.53 stream labels", streamLabels, nil, v53, false},
-		{"v1.53 no body scan", underscores, nil, noScan, false},
-		{"v1.53 stream fields", underscores, fields, v53, false},
+		{"v1.54 underscores keepLine", underscores, nil, v54, true},
+		{"v1.54 stream labels", streamLabels, nil, v54, false},
+		{"v1.54 no body scan", underscores, nil, noScan, false},
+		{"v1.54 stream fields", underscores, fields, v54, false},
 		{"v1.49 stream fields", underscores, fields, v49, false},
-		{"v1.53 stream fields and labels", streamLabels, fields, v53, false},
-		{"v1.53 stream labels keepLine", streamLabels, nil, v53, true},
-		{"v1.53 no body scan, stream fields, keepLine", underscores, fields, noScan, true},
+		{"v1.54 stream fields and labels", streamLabels, fields, v54, false},
+		{"v1.54 stream labels keepLine", streamLabels, nil, v54, true},
+		{"v1.54 no body scan, stream fields, keepLine", underscores, fields, noScan, true},
 	}
 }
 

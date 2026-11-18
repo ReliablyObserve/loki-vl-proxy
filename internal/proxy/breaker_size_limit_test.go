@@ -34,7 +34,7 @@ func TestOversizedReadsKeepTheBreakerClosed(t *testing.T) {
 		// the outer sum answers.
 		rows = append(rows, vlemu.Row{TS: ts.UnixNano(), Stream: `{app="dw",req="` + req + `"}`, Value: float64(i % 9)})
 	}
-	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	c := cache.NewWithMaxBytes(time.Minute, 100000, 256<<20)

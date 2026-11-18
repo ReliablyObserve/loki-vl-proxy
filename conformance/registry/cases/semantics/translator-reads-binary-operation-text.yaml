@@ -25,7 +25,7 @@ why: |
   text as this known divergence (internal/testutil/translatorspelling names the
   spelling). The binary route evaluates each operand from the parsed tree, so
   the proxy's answers were Loki's on main as well: TestPlanSpellingsMatchLoki
-  (recorded Loki engine answers, VictoriaLogs v1.49.0 and v1.53.0 recorded
+  (recorded Loki engine answers, VictoriaLogs v1.49.0 and v1.54.0 recorded
   through their own query handlers) holds them on the operator, number and
   modifier spellings, alone and under a ranking, on main and with this change.
 request:

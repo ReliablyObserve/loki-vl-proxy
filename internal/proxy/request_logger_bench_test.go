@@ -16,8 +16,8 @@ import (
 // BenchmarkRequestLogger is the cost of the request wrapper: caller resolution, telemetry, metrics and the log
 // lines (JSON at INFO, to io.Discard). "plain" is the default configuration around a handler that does nothing;
 // "user" sends X-Grafana-User and X-Query-Tags with -metrics.trust-proxy-headers and
-// -server.enable-query-analytics on; the "vl4" variants make 4 VictoriaLogs calls, each logging its
-// upstream_request line.
+// -server.enable-query-analytics on; "grafana" adds the User-Agent and headers Grafana 13 sends (the client
+// profile reads them); the "vl4" variants make 4 VictoriaLogs calls, each logging its upstream_request line.
 func BenchmarkRequestLogger(b *testing.B) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"_time":"2026-11-07T10:00:00Z","_msg":"x"}`+"\n")
@@ -27,7 +27,8 @@ func BenchmarkRequestLogger(b *testing.B) {
 		name    string
 		user    bool
 		vlCalls int
-	}{{"plain", false, 0}, {"user", true, 0}, {"plain_vl4", false, 4}, {"user_vl4", true, 4}} {
+		grafana bool
+	}{{"plain", false, 0, false}, {"user", true, 0, false}, {"plain_vl4", false, 4, false}, {"user_vl4", true, 4, false}, {"grafana", true, 0, true}} {
 		b.Run(tc.name, func(b *testing.B) {
 			p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error"})
 			if err != nil {
@@ -42,6 +43,11 @@ func BenchmarkRequestLogger(b *testing.B) {
 				p.metricsTrustProxyHeaders, p.enableQueryAnalytics = true, true
 				req.Header.Set("X-Grafana-User", "alice@example.com")
 				req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+			}
+			if tc.grafana {
+				req.Header.Set("User-Agent", "Grafana/13.3.1 (linux; arm64) loki/13.2.5")
+				req.Header.Set("X-Grafana-Org-Id", "1")
+				req.Header.Set("X-Datasource-Uid", "P8E8184100EF78CAD")
 			}
 			params := url.Values{"query": {`app:="api"`}, "start": {"1"}, "end": {"2"}}
 			h := p.requestLogger("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, r *http.Request) {

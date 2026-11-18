@@ -35,37 +35,37 @@ func vectorAggText(t *testing.T, q string, prof Profile) string {
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanVectorAggregationText(t *testing.T) {
-	v53 := Profile{Caps: logsql.CapabilitiesFor("v1.53.0")}
+	v54 := Profile{Caps: logsql.CapabilitiesFor("v1.54.0")}
 	v49 := Profile{Caps: logsql.CapabilitiesFor("v1.49.0")}
-	dots := Profile{Caps: v53.Caps, Label: func(s string) string { return strings.ReplaceAll(s, ".", "_") }}
+	dots := Profile{Caps: v54.Caps, Label: func(s string) string { return strings.ReplaceAll(s, ".", "_") }}
 	for _, c := range []struct {
 		q    string
 		prof Profile
 		want string
 	}{
-		{`sum(count_over_time({app="a"}[5m]))`, v53, `app:="a" | stats count()`},
-		{`sum by (app) (count_over_time({app="a"}[5m]))`, v53, `app:="a" | stats by (app) count()`},
-		{`sum(bytes_over_time({app="a"}[5m])) by (app, env)`, v53, `app:="a" | stats by (app, env) sum_len(_msg)`},
-		{`sum by () (absent_over_time({app="a"}[5m]))`, v53, `app:="a" | stats count()`},
+		{`sum(count_over_time({app="a"}[5m]))`, v54, `app:="a" | stats count()`},
+		{`sum by (app) (count_over_time({app="a"}[5m]))`, v54, `app:="a" | stats by (app) count()`},
+		{`sum(bytes_over_time({app="a"}[5m])) by (app, env)`, v54, `app:="a" | stats by (app, env) sum_len(_msg)`},
+		{`sum by () (absent_over_time({app="a"}[5m]))`, v54, `app:="a" | stats count()`},
 		{`sum by (k8s.pod.name) (count_over_time({app="a"}[5m]))`, dots, `app:="a" | stats by (k8s_pod_name) count()`},
-		{`sum by (app, app) (count_over_time({app="a"}[5m]))`, v53, `app:="a" | stats by (app) count()`},
-		{`sum by (service_name) (count_over_time({app="a"}[5m]))`, v53, `app:="a" <SN> | stats by (service_name) count()`},
-		{`sum by (detected_level) (count_over_time({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (detected_level) count()`},
+		{`sum by (app, app) (count_over_time({app="a"}[5m]))`, v54, `app:="a" | stats by (app) count()`},
+		{`sum by (service_name) (count_over_time({app="a"}[5m]))`, v54, `app:="a" <SN> | stats by (service_name) count()`},
+		{`sum by (detected_level) (count_over_time({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (detected_level) count()`},
 		{`sum by (detected_level, service_name) (count_over_time({app="a"}[5m]))`, v49, `app:="a" <DL> <SN> | stats by (detected_level, service_name) count()`},
-		{`count(count_over_time({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | stats count()`},
-		{`max by (app) (bytes_over_time({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (app, _stream, level, detected_level) sum_len(_msg) as __lvp_inner | stats by (app) max(__lvp_inner)`},
-		{`avg by (level) (count_over_time({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (level, _stream, detected_level) count() as __lvp_inner | stats by (level) avg(__lvp_inner)`},
-		{`min by (detected_level) (count_over_time({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (detected_level, _stream, level) count() as __lvp_inner | stats by (detected_level) min(__lvp_inner)`},
-		{`sum(rate({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats sum(__lvp_rate)`},
-		{`sum by (app) (rate({app="a"}[5m]))`, v53, `app:="a" | stats by (app) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (app) sum(__lvp_rate)`},
+		{`count(count_over_time({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | stats count()`},
+		{`max by (app) (bytes_over_time({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (app, _stream, level, detected_level) sum_len(_msg) as __lvp_inner | stats by (app) max(__lvp_inner)`},
+		{`avg by (level) (count_over_time({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (level, _stream, detected_level) count() as __lvp_inner | stats by (level) avg(__lvp_inner)`},
+		{`min by (detected_level) (count_over_time({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (detected_level, _stream, level) count() as __lvp_inner | stats by (detected_level) min(__lvp_inner)`},
+		{`sum(rate({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats sum(__lvp_rate)`},
+		{`sum by (app) (rate({app="a"}[5m]))`, v54, `app:="a" | stats by (app) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (app) sum(__lvp_rate)`},
 		{`sum by (service_name) (bytes_rate({app="a"}[1m]))`, v49, `app:="a" <SN> | stats by (service_name) sum_len(_msg) as __lvp_inner | math __lvp_inner/60 as __lvp_rate | stats by (service_name) sum(__lvp_rate)`},
-		{`count by (app) (rate({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (app, _stream, level, detected_level) count() as __lvp_inner | stats by (app) count()`},
-		{`avg(rate({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats avg(__lvp_rate)`},
-		{`min by (service_name) (bytes_rate({app="a"}[5m]))`, v53, `app:="a" <DL> <SN> | stats by (service_name, _stream, level, detected_level) sum_len(_msg) as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (service_name) min(__lvp_rate)`},
+		{`count by (app) (rate({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (app, _stream, level, detected_level) count() as __lvp_inner | stats by (app) count()`},
+		{`avg(rate({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats avg(__lvp_rate)`},
+		{`min by (service_name) (bytes_rate({app="a"}[5m]))`, v54, `app:="a" <DL> <SN> | stats by (service_name, _stream, level, detected_level) sum_len(_msg) as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (service_name) min(__lvp_rate)`},
 		// without: no grouping for a sum of a count, the series for the rest, and the fold the proxy applies.
-		{`sum without (app) (count_over_time({app="a"}[5m]))`, v53, `app:="a" | stats count()__without__:sum:app`},
-		{`sum without (a, b) (rate({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (_stream, level, detected_level) sum(__lvp_rate)__without__:sum:a,b`},
-		{`count without (app) (count_over_time({app="a"}[5m]))`, v53, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | stats by (_stream, level, detected_level) count()__without__:count:app`},
+		{`sum without (app) (count_over_time({app="a"}[5m]))`, v54, `app:="a" | stats count()__without__:sum:app`},
+		{`sum without (a, b) (rate({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (_stream, level, detected_level) sum(__lvp_rate)__without__:sum:a,b`},
+		{`count without (app) (count_over_time({app="a"}[5m]))`, v54, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | stats by (_stream, level, detected_level) count()__without__:count:app`},
 		{`avg without (k8s.pod.name) (rate({app="a"}[5m]))`, dots, `app:="a" <DL> | stats by (_stream, level, detected_level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (_stream, level, detected_level) avg(__lvp_rate)__without__:avg:k8s.pod.name`},
 	} {
 		if got := vectorAggText(t, c.q, c.prof); got != c.want {

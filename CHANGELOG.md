@@ -7,6 +7,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The proxy reads a typed client profile from each request's headers: the surface (`explore`, `drilldown`,
+  `datasource` for other Grafana requests such as dashboards and alerting, `api` for clients that are not
+  Grafana) and the Grafana, Loki datasource plugin and Logs Drilldown versions, as closed values and normalised
+  `major.minor.patch` versions only. The request, upstream and slow log lines carry `client.surface`,
+  `grafana.datasource.version` (Grafana 13 names its Loki datasource plugin in its User-Agent, for example
+  `loki/13.2.5`) and `grafana.drilldown.version` (only when a request names it, which no current Grafana or
+  Drilldown release does), and `/debug/queries` lists them for each recent request. `grafana.version` in the log
+  lines and the VictoriaLogs request header is now normalised to `major.minor.patch` (a pre-release or build
+  suffix is dropped; a User-Agent with no such version sends none). The rules come from the requests Grafana
+  13.3.1, 13.3.0 and 12.4.14 with Logs Drilldown 3.2.0, 3.1.0 and 2.6.0 send for every Explore and Drilldown
+  request kind; Grafana 12's untagged Explore query reads as `datasource`. Responses and cache keys do not
+  change.
+
+### Fixed
+
+- A `label_replace` call Loki cannot read is answered with Loki's error text, line and column. Three or five
+  strings, a number for a string and an invalid escape now count the column from the start of the query, not from
+  the call (Loki's `col 70` where the proxy said `col 56`), and use the line Loki gives. Such an error, and a
+  `vector` argument that is no number, answers ahead of the checks over the tree, as in Loki. A `label_replace`,
+  `vector` or `approx_topk` call a `#` comment leaves open is Loki's `syntax error: unexpected $end` at the end of the
+  query, with what Loki expects there, or the error of a regex Loki builds before it; the proxy said
+  `unterminated '('`. label_replace's regex is checked ahead of the tree inside the call, an outer call's first, as
+  Loki checks it. These answers are recorded from Loki.
+- `| unwrap x(a)`, an unwrap of a name that is no conversion followed by a parenthesis, is now Loki's `400` syntax
+  error at the parenthesis (`unexpected (, expecting RANGE or |`) before any VictoriaLogs call; the proxy accepted it
+  and answered a query. Only `bytes`, `duration` and `duration_seconds` (in any letter case) are conversions.
+- A vector aggregation over an unwrap conversion written with a blank before or inside its parenthesis
+  (`sum by (pod) (max_over_time({...} | logfmt | unwrap duration_seconds (d) [5m]))`) answers Loki's series instead
+  of none. The metric query planning no longer keeps spellings the string translator reads otherwise than the
+  parsed query on the translator: quoted text holding a parenthesis under a binary operation or `label_replace`, the
+  blanks around a binary operator, a number or vector matching modifier spelled another way, a quantile written
+  `.5`, `0.50` or `5e-1`, and an unwrap conversion with blanks are served from the query plan, which reads them as
+  Loki does (their answers are held to recorded Loki answers over VictoriaLogs v1.49 and v1.54). Answers cached for
+  an unwrap conversion spelled with a blank before this change are not served after it.
+
+### Performance
+
+- Better performance for deeply nested queries. A query that nests `label_replace` calls hundreds or thousands of
+  levels deep (Loki accepts them up to its 128 KB input size limit) is parsed, validated and respelled in time that
+  grows with its length: about 1 µs and 2 allocations per level to parse at 2,048 levels. Before, the parse grew with
+  the square of the depth and the validation and the request rewrite with its cube. At 200 levels (8.6 KB) the
+  validation took 1 s and one `query_range` 3.1 s of CPU; they now take about 0.6 ms and 10 ms. The string translator
+  still reads each level again on the `query_range` path (about 1 s at 128 KB) until the switch to the query plan. The
+  parser types each nested call once, jumping over the parentheses an outer call's parser already read. The validation
+  does not read a typed call again, and the request rewrite reads `label_replace`'s first argument where it stands.
+  The strip of outer `label_replace` calls the handlers read goes through one table of the text's brackets. A query
+  longer than the 4 KiB the short memos keep is validated, respelled and parsed once per request, in a memo bounded at
+  4 MiB per generation (two generations).
+
+### Changed
+
+- VictoriaLogs v1.54.0 replaces v1.53.0 as the newest tested release and the pull-request CI pin: the tested versions
+  are now v1.49.0 and v1.54.0 (every v1.5x release stays supported, the floor stays v1.49.0). The compose stacks,
+  examples and benchmark pins run `victoriametrics/victoria-logs:v1.54.0`, and every comparison with VictoriaLogs' own
+  parser and storage (the parse, store and clone round-trip oracles, the Loki differentials and the recorded
+  VictoriaLogs verdicts) is recorded again on v1.54.0. No proxy request depends on a v1.54.0 feature, so answers on
+  v1.49.0 through v1.53.x do not change. What v1.54.0 changes for proxy users: a live tail whose query matches more
+  than 10,000 rows in one refresh's read is ended by VictoriaLogs; the proxy serves such a tail refused at its start from its
+  polling tail in the default `-tail.mode=auto` and closes one ended mid-stream with Loki's internal error, never
+  VictoriaLogs' text (registry `vl-live-tail-row-rate-limit`). A read of the newest rows with a limit no longer misses or
+  repeats rows that share a timestamp, and a cluster with partial responses on returns a storage node's error
+  instead of an incomplete answer (`vl-limit-read-timestamp-ties`). `extra_filters` and `extra_stream_filters` count
+  against VictoriaLogs' `-search.maxQueryLen`; the proxy's own filters stay far below it (`vl-extra-filters-max-query-len`).
+  The root and example compose files check VictoriaLogs with its new `-healthcheck` flag; the matrix stacks keep
+  `-version`, which v1.49.0 also has.
+
+## [2.339.0] - 2026-11-18
+
+### Changed
+
+- The compatibility stack and CI now run Grafana 13.3.1 (was 13.3.0) with Logs Drilldown
+  (grafana-lokiexplore-app) 3.2.0 (was 3.1.0): the compose files and their `GF_PLUGINS_PREINSTALL`, the pinned
+  and current-family CI runtime profiles and the docs that name them. 13.3.0 and Drilldown 3.1.0 stay in the
+  contract matrices; the previous-family profile keeps Grafana 12.4.14 with Drilldown 2.6.0 (Drilldown 3.x needs
+  Grafana 13.2 or later). Drilldown 3.2.0 makes the same Loki calls as 3.1.0; its landing-page volume request now
+  carries a fixed request id, so Grafana cancels the previous one when the data source or time range changes. Every
+  e2e-ui shard passes on the new pins. The e2e-ui Drilldown checks find the service page tabs and the landing
+  services by Drilldown 3.2.0's stable test ids (role and name stay as the fallback).
+
+- The compatibility stack and CI now test against Loki 3.7.10 (was 3.7.9): the compose files, the pinned CI jobs,
+  the weekly Loki matrix (3.7.10 added) and the test-only Loki oracles. Loki 3.7.10 gives a Logs Drilldown metric
+  query over `max_query_series` exactly that many labelled series with its partial-result warning (3.7.9 added a
+  series without labels for every further new series, grafana/loki#26433); the proxy already answered that way,
+  now pinned against recorded 3.7.10 answers. Loki's recorded answers for step alignment, tenant headers and the
+  engine differentials are unchanged on 3.7.10, apart from `unwrap bytes()` below.
+
+### Fixed
+
+- `unwrap bytes()` reads a whole size exactly up to 18446744073709551615 bytes, as Loki 3.7.10 does (its
+  go-humanize v1.1.0): such a value now makes a sample on the proxy's own evaluators instead of failing the query
+  with `SampleExtractionErr` (`too large`); a size of 2^64 bytes or more still fails as in Loki. A label filter
+  with such a bytes literal (`| size > 18446744073709551615B`) now parses, as in Loki 3.7.10, instead of
+  answering Loki 3.7.9's `400` parse error. The VictoriaLogs
+  pushdown still reads sizes within float64 rounding of 2^64 bytes as too large (registered as a known difference).
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time`
+  and `stdvar_over_time` after `| json` or `| logfmt` now read one series for lines that hold the same keys in another
+  order, as Loki does. The series of such a line was named by VictoriaLogs' `pack_json` of its parsed fields, which
+  writes them in the order the line's keys come in, so `{"route":"/x","duration_ms":3,"user":"u"}` and
+  `{"user":"u","duration_ms":4,"route":"/x"}` of one stream were two series: `sum(avg_over_time({...} | json | unwrap
+  duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
+  logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
+  later). Answers cached before are not served (the identity's response key version moves to v4).
+
+### Security
+
+- The stack's Grafana moves to 13.3.1, which fixes CVE-2026-102589, CVE-2026-107509, CVE-2026-110992,
+  CVE-2026-111024, CVE-2026-13721 and CVE-2026-14242 (Grafana's security release). The proxy itself is unchanged;
+  the pin is what the compose files, the examples and CI run.
+
+## [2.338.0] - 2026-11-18
+
 ### Changed
 
 - A VictoriaLogs call that the running VictoriaLogs release refuses before reading any data is no longer sent. The
@@ -39,28 +152,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration, and never for an answer computed with forwarded credentials. Three replicas refreshing the same
   refused query five times each send one VictoriaLogs call. Metrics:
   `loki_vl_proxy_error_cache_hits_total{class="vl_refusal"}` and `loki_vl_proxy_error_cache_peer_sync_total{outcome}`.
-
-### Fixed
-
-- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time`
-  and `stdvar_over_time` after `| json` or `| logfmt` now read one series for lines that hold the same keys in another
-  order, as Loki does. The series of such a line was named by VictoriaLogs' `pack_json` of its parsed fields, which
-  writes them in the order the line's keys come in, so `{"route":"/x","duration_ms":3,"user":"u"}` and
-  `{"user":"u","duration_ms":4,"route":"/x"}` of one stream were two series: `sum(avg_over_time({...} | json | unwrap
-  duration_ms [5m]))` answered 14 where Loki answers 7, on every range and step, for flat and nested JSON and for
-  logfmt. The series is now written with `set_stream_fields`, which sorts the fields by name (VictoriaLogs v1.49.0 and
-  later). Answers cached before are not served (the identity's response key version moves to v4).
-- `| unwrap x(a)`, an unwrap of a name that is no conversion followed by a parenthesis, is now Loki's `400` syntax
-  error at the parenthesis (`unexpected (, expecting RANGE or |`) before any VictoriaLogs call; the proxy accepted it
-  and answered a query. Only `bytes`, `duration` and `duration_seconds` (in any letter case) are conversions.
-- A vector aggregation over an unwrap conversion written with a blank before or inside its parenthesis
-  (`sum by (pod) (max_over_time({...} | logfmt | unwrap duration_seconds (d) [5m]))`) answers Loki's series instead
-  of none. The metric query planning no longer keeps spellings the string translator reads otherwise than the
-  parsed query on the translator: quoted text holding a parenthesis under a binary operation or `label_replace`, the
-  blanks around a binary operator, a number or vector matching modifier spelled another way, a quantile written
-  `.5`, `0.50` or `5e-1`, and an unwrap conversion with blanks are served from the query plan, which reads them as
-  Loki does (their answers are held to recorded Loki answers over VictoriaLogs v1.49 and v1.53). Answers cached for
-  an unwrap conversion spelled with a blank before this change are not served after it.
 
 ## [2.337.0] - 2026-11-18
 

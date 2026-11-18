@@ -35,7 +35,7 @@ import (
 //     step's grid.
 //   - Loki: the Loki oracle's engine command (test/oracle/loki/engine): Loki's HTTP parameter parser, the engine
 //     over an in-memory querier, Loki's response encoder and error status.
-//   - VictoriaLogs: the VictoriaLogs oracle's serve command (test/oracle/vl/serve, v1.53.0 and v1.49.0): the data
+//   - VictoriaLogs: the VictoriaLogs oracle's serve command (test/oracle/vl/serve, v1.54.0 and v1.49.0): the data
 //     stored as the Loki push API hands it over, answered by VictoriaLogs' own query handlers.
 //   - Proxy: a fresh proxy's query or query_range handler (proxy.New, the Loki-compatible profile of the log
 //     differential) sends its requests to VictoriaLogs through a recording front server

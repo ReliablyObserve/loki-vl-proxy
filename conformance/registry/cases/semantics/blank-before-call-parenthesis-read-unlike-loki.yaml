@@ -48,7 +48,7 @@ why: |
   and answer (TestKeywordBlankRequestsEqualSpaced: 14 known rows left, ip() and
   approx_topk), and a vector aggregation over one, which answered no series,
   answers Loki's (TestPlanSpellingsMatchLoki, recorded Loki engine answers over
-  VictoriaLogs v1.49.0 and v1.53.0). Answers cached for such a spelling before
+  VictoriaLogs v1.49.0 and v1.54.0). Answers cached for such a spelling before
   are not served after (@unwrap-conversion-blank-v1).
 request:
   scope: query-grammar

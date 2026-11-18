@@ -76,7 +76,7 @@ func firstLastWant(rows []vlemu.Row, fn, agg, by string, window, off, step time.
 // window's open start and its closed end and a nanosecond either side, a series of one sample (first and last are
 // it), empty steps inside a window, a range that is not a multiple of the step, a start off the step grid, an
 // offset, and no line in the request; every aggregation the evaluator folds after the windows and the function
-// alone, ungrouped and by a stream label, both alignment profiles, VictoriaLogs v1.49.0 and v1.53.0. Every point
+// alone, ungrouped and by a stream label, both alignment profiles, VictoriaLogs v1.49.0 and v1.54.0. Every point
 // carries Loki's timestamp and value, and none is missing or extra.
 //
 // conformance: semantics/unwrap-first-last-range-longer-than-step, window-bounds-and-step-alignment, loki_api_v1_query_range
@@ -100,7 +100,7 @@ func TestFirstLastOverTimeRangeLongerThanStep(t *testing.T) {
 		{"no line in the request", 15 * time.Second, 5 * time.Second, 0, 0, []int64{500 * sec}},
 	}
 	answered := 0
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, align := range []bool{true, false} {
 			for _, c := range cases {
 				for _, fn := range []string{"first_over_time", "last_over_time"} {

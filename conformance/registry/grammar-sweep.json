@@ -152,11 +152,11 @@
     }
   ],
   "classes": {
-    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.53.0] | rangeagg pairing fn quantile_over_time(.5, %s)": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.54.0] | rangeagg pairing fn quantile_over_time(.5, %s)": {
       "count": 2,
       "case": "semantics/translator-writes-leading-dot-quantile",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.53.0]",
+      "key": "cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.54.0]",
       "element": "rangeagg pairing fn quantile_over_time(.5, %s)",
       "examples": [
         {
@@ -171,11 +171,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.53.0] | rangeagg unwrap fn quantile_over_time(.5, %s)": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.54.0] | rangeagg unwrap fn quantile_over_time(.5, %s)": {
       "count": 10,
       "case": "semantics/translator-writes-leading-dot-quantile",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.53.0]",
+      "key": "cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.54.0]",
       "element": "rangeagg unwrap fn quantile_over_time(.5, %s)",
       "examples": [
         {
@@ -228,11 +228,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0] | log stage | label_format a=a": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.54.0] | log stage | label_format a=a": {
       "count": 4,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0]",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.54.0]",
       "element": "log stage | label_format a=a",
       "examples": [
         {
@@ -247,11 +247,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0] | log stage | label_format a=b": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.54.0] | log stage | label_format a=b": {
       "count": 3,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0]",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.54.0]",
       "element": "log stage | label_format a=b",
       "examples": [
         {
@@ -266,11 +266,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0] | log stage | label_format a=b, c=d, e=f": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.54.0] | log stage | label_format a=b, c=d, e=f": {
       "count": 5,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0]",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.54.0]",
       "element": "log stage | label_format a=b, c=d, e=f",
       "examples": [
         {
@@ -285,11 +285,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S': missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | log stage | json a=\"b[\\\"c\\\"]\"": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S': missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.54.0] | log stage | json a=\"b[\\\"c\\\"]\"": {
       "count": 29,
       "case": "semantics/translator-writes-json-path-with-escaped-quote",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "cannot parse \"S\" pipe: cannot parse 'S': missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S': missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.54.0]",
       "element": "log stage | json a=\"b[\\\"c\\\"]\"",
       "examples": [
         {
@@ -342,11 +342,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: unexpected token: \"S\" [v1.53.0] | log stage | json a": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: unexpected token: \"S\" [v1.54.0] | log stage | json a": {
       "count": 3,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "cannot parse \"S\" pipe: unexpected token: \"S\" [v1.53.0]",
+      "key": "cannot parse \"S\" pipe: unexpected token: \"S\" [v1.54.0]",
       "element": "log stage | json a",
       "examples": [
         {
@@ -361,11 +361,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: unexpected token: \"S\" [v1.53.0] | log stage | json a, b": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: unexpected token: \"S\" [v1.54.0] | log stage | json a, b": {
       "count": 2,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "cannot parse \"S\" pipe: unexpected token: \"S\" [v1.53.0]",
+      "key": "cannot parse \"S\" pipe: unexpected token: \"S\" [v1.54.0]",
       "element": "log stage | json a, b",
       "examples": [
         {
@@ -380,11 +380,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | vecagg agg approx_topk|2, ": {
+    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.54.0] | vecagg agg approx_topk|2, ": {
       "count": 4,
       "case": "semantics/approx-topk-opaque-plan",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.54.0]",
       "element": "vecagg agg approx_topk|2, ",
       "examples": [
         {
@@ -399,11 +399,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | vecagg inner label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")": {
+    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.54.0] | vecagg inner label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")": {
       "count": 2,
       "case": "semantics/label-replace-aggregation-over-transform",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.54.0]",
       "element": "vecagg inner label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")",
       "examples": [
         {
@@ -432,11 +432,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.53.0] | spacing every blank": {
+    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.54.0] | spacing every blank": {
       "count": 4,
       "case": "semantics/translator-reads-only-space-between-tokens",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected pipe name \"S\" [v1.53.0]",
+      "key": "unexpected pipe name \"S\" [v1.54.0]",
       "element": "spacing every blank",
       "examples": [
         {
@@ -451,11 +451,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.53.0] | spacing one blank": {
+    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.54.0] | spacing one blank": {
       "count": 4,
       "case": "semantics/translator-reads-only-space-between-tokens",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected pipe name \"S\" [v1.53.0]",
+      "key": "unexpected pipe name \"S\" [v1.54.0]",
       "element": "spacing one blank",
       "examples": [
         {
@@ -470,11 +470,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.53.0] | spacing removed": {
+    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.54.0] | spacing removed": {
       "count": 1,
       "case": "semantics/translator-reads-only-space-between-tokens",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected pipe name \"S\" [v1.53.0]",
+      "key": "unexpected pipe name \"S\" [v1.54.0]",
       "element": "spacing removed",
       "examples": [
         {
@@ -598,11 +598,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage != \"a\" or \"b\"": {
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.54.0] | log stage != \"a\" or \"b\"": {
       "count": 30,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "key": "unexpected token after [S]: \"S\" [v1.54.0]",
       "element": "log stage != \"a\" or \"b\"",
       "examples": [
         {
@@ -617,11 +617,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage != \"x\"": {
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.54.0] | log stage != \"x\"": {
       "count": 10,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "key": "unexpected token after [S]: \"S\" [v1.54.0]",
       "element": "log stage != \"x\"",
       "examples": [
         {
@@ -636,11 +636,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage != \"x\" != \"y\"": {
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.54.0] | log stage != \"x\" != \"y\"": {
       "count": 15,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "key": "unexpected token after [S]: \"S\" [v1.54.0]",
       "element": "log stage != \"x\" != \"y\"",
       "examples": [
         {
@@ -655,11 +655,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage != ip(\"10.0.0.0/8\")": {
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.54.0] | log stage != ip(\"10.0.0.0/8\")": {
       "count": 38,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "key": "unexpected token after [S]: \"S\" [v1.54.0]",
       "element": "log stage != ip(\"10.0.0.0/8\")",
       "examples": [
         {
@@ -674,11 +674,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage !~ \"a\" or \"b\"": {
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.54.0] | log stage !~ \"a\" or \"b\"": {
       "count": 39,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "key": "unexpected token after [S]: \"S\" [v1.54.0]",
       "element": "log stage !~ \"a\" or \"b\"",
       "examples": [
         {
@@ -693,11 +693,11 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage !~ \"x\"": {
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.54.0] | log stage !~ \"x\"": {
       "count": 14,
       "case": "semantics/translator-writes-negated-line-filter-after-pipe",
       "kind": "VictoriaLogs rejects the translator text",
-      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "key": "unexpected token after [S]: \"S\" [v1.54.0]",
       "element": "log stage !~ \"x\"",
       "examples": [
         {
