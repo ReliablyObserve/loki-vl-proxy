@@ -1,0 +1,44 @@
+id: semantics/unwrap-avg-overflow
+title: "avg_over_time over values whose sum overflows answers an infinity or NaN where Loki's mean is finite (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's avg_over_time of `1.5e308` and `1.5e308` is `1.5e308`: its mean does not overflow. The proxy
+  takes the mean from VictoriaLogs' `sum` and `count` (the bucket partials the window evaluator merges,
+  or `avg` in one stats pipe), and the sum of such values overflows to `+Inf` (`-Inf` for negative
+  ones), so the series is `+Inf`, and `+Inf` and `-Inf` series added together are NaN.
+  Reproduced with Loki's engine (Loki 3.7.9) and VictoriaLogs v1.53.0 and v1.49.0 (in-process query
+  handlers) over one hour, a request id on every line every ten seconds plus pairs of `1.5e308`, pairs of
+  `-1.5e308` and triples `1e308, -1e308, 1e308` of one request id each in one bucket (2026-11-18):
+    * `sum(avg_over_time({service_name="ovf"} | json | unwrap duration_ms [5m]))`, step 60 s: NaN where
+      Loki answers `+Inf` or a finite `3.3e307`;
+    * the same with `[1m]` (range up to the step): 260 where Loki answers 89 (the infinities' NaN
+      restarts VictoriaLogs' outer sum);
+    * `avg(avg_over_time(... [5m]))`: NaN where Loki answers `1.0e307`;
+    * `sum(avg_over_time({service_name="ovf"} | regexp ... | unwrap d [1m]))` (no series identity):
+      381 where Loki answers 6.6, so every parser and path is concerned.
+  max, min, stddev and stdvar over time of the same data match Loki.
+
+  Fix to make: a mean that does not overflow where Loki's does not (for instance partials scaled
+  before VictoriaLogs adds them, or a bounded proxy-side reading of the buckets whose sum is not
+  finite while their values are), held to recorded Loki answers.
+request:
+  scope: query-grammar
+  entry: "the reproduction above (data and queries), Loki engine oracle and VictoriaLogs serve oracle"
+  setup: "Send as the query of /loki/api/v1/query_range over lines of one request id holding duration_ms 1.5e308 twice in one second: sum(avg_over_time({service_name=\"ovf\"} | json | unwrap duration_ms [5m])) ."
+compare:
+  mode: exact
+  fields: [series, values]
+  expect: "Loki's finite mean of the overflowing values (1.5e308), and their sums as Loki adds them."
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy, internal/queryplan/lower (avg_over_time as VictoriaLogs sum / count)'
+  loki: 'a finite mean (1.5e308)'
+  proxy: '+Inf, or NaN once +Inf and -Inf series are added'
+  planned_test: 'a recorded Loki differential of overflowing values (json, logfmt and regexp; range longer than and up to the step)'
+  clusters: []
