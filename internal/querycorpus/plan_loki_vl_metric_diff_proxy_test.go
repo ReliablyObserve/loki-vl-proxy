@@ -194,7 +194,7 @@ type metricHandlerRun struct {
 // runMetricHandler serves a request from a fresh proxy of the profile (every cache cold) in front of front.
 func runMetricHandler(t *testing.T, prof diffProfile, mr metricRequest, front *metricFront) metricHandlerRun {
 	t.Helper()
-	srv := httptest.NewServer(front)
+	srv := newMemoryFront(front)
 	defer srv.Close()
 	p, err := proxy.New(proxy.Config{
 		BackendURL:             srv.URL,

@@ -524,7 +524,7 @@ func runJLHandler(t *testing.T, prof diffProfile, v jlVariant, mode jlMode, mr m
 // request through it; serving the zero request stops it.
 func newJLProxy(t *testing.T, prof diffProfile, v jlVariant, mode jlMode, front *metricFront) func(metricRequest) metricHandlerRun {
 	t.Helper()
-	srv := httptest.NewServer(front)
+	srv := newMemoryFront(front)
 	cfg := proxy.Config{
 		BackendURL:             srv.URL,
 		Cache:                  cache.New(time.Minute, 1000),
