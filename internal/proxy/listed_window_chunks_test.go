@@ -58,7 +58,7 @@ type listedChunkRun struct {
 // window moved by a step.
 func runListedChunks(t testing.TB, rows []vlemu.Row, query string, end int64, span, step time.Duration, budget int, repeat bool) []listedChunkRun {
 	t.Helper()
-	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	cfg := Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0",
@@ -285,7 +285,7 @@ func TestListedWindowChunksEdges(t *testing.T) {
 		}
 	})
 	t.Run("a failed bucket read", func(t *testing.T) {
-		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 		inner := emu.Handler()
 		statsCalls := 0
 		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

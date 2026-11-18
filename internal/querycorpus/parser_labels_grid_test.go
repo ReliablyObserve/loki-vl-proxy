@@ -476,7 +476,7 @@ func TestParserLabelsVLOracle(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestTypedPairIsMadeOnTheTranslatedText(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
-	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		typed, built, ok := typedQueryPair(`quantile_over_time(2.0, {app="a"} | json | unwrap duration_ms [5m])`, v)
 		if !ok || typed != built || !strings.Contains(typed, "quantile(1,") {
 			t.Errorf("%s: phi above 1: pair %v, typed %q, built %q", v, ok, typed, built)

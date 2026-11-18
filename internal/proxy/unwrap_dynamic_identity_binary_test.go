@@ -76,7 +76,7 @@ func TestDynamicIdentityBinaryOperandsReadTheHash(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
-	p.storeBackendVersion("v1.53.0", "v1.53.0")
+	p.storeBackendVersion("v1.54.0", "v1.54.0")
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 	const end = int64(1700011800)

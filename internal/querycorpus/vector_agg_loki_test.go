@@ -53,7 +53,7 @@ func TestVectorAggGroupingMatchesLoki(t *testing.T) {
 	}
 	w := bufio.NewWriter(f)
 	identity := func(s string) string { return s }
-	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.53.0"), Label: identity}
+	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.54.0"), Label: identity}
 	for _, q := range append(vectorAggGrid(), vectorAggNestedGrid()...) {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {

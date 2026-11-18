@@ -37,7 +37,7 @@ import (
 //   - Loki: the Loki oracle's process command (test/oracle/loki) for every line of every stream: whether the
 //     selector selects the stream, whether the pipeline keeps the line, the line and the labels after the stages,
 //     in Loki's categories (stream, structured metadata, parsed).
-//   - VictoriaLogs: the store oracle (test/oracle/vl, v1.53.0 and v1.49.0) holds the same lines as the Loki push
+//   - VictoriaLogs: the store oracle (test/oracle/vl, v1.54.0 and v1.49.0) holds the same lines as the Loki push
 //     API hands them over (stream labels, then structured metadata, then _msg; each name spelled as the profile's
 //     label translator writes it upstream) and runs the plan's LogsQL and the string translator's LogsQL.
 //   - Proxy: the rows VictoriaLogs returned go through a fresh proxy's query_range handler (proxy.New, the profile's
@@ -84,7 +84,7 @@ type diffProfile struct {
 
 func diffProfiles() []diffProfile {
 	return []diffProfile{
-		{"v1.53 loki profile", "v1.53.0", "", proxy.LabelStyleUnderscores, proxy.MetadataFieldModeTranslated},
+		{"v1.54 loki profile", "v1.54.0", "", proxy.LabelStyleUnderscores, proxy.MetadataFieldModeTranslated},
 		{"v1.49 loki profile", "v1.49.0", "go.v1.49.0.mod", proxy.LabelStyleUnderscores, proxy.MetadataFieldModeTranslated},
 	}
 }

@@ -99,7 +99,7 @@ func BenchmarkRateCounterUnderSum6h(b *testing.B) {
 		rows = append(rows, vlemu.Row{TS: ts + int64(i%7)*1e8, Stream: fmt.Sprintf(`{app="rc",pod="p%d"}`, i%4), Value: float64(i % 50),
 			Labels: map[string]string{"txn": "t" + strconv.Itoa(i)}, Msg: fmt.Sprintf("amount=%d txn=t%d", i%50, i)})
 	}
-	emu := &vlemu.Emulator{T: b, Rows: rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: b, Rows: rows, Field: "amount", Version: "v1.54.0"}
 	backend := httptest.NewServer(rateCounterEmuHandler(emu))
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})

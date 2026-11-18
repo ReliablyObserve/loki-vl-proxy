@@ -15,7 +15,7 @@ import (
 )
 
 // The Loki differential of an extraction list that names a label of many values, over a long range at a small step:
-// real Loki (the engine oracle, test/oracle/loki) and real VictoriaLogs (the serve oracle, test/oracle/vl, v1.53.0 and
+// real Loki (the engine oracle, test/oracle/loki) and real VictoriaLogs (the serve oracle, test/oracle/vl, v1.54.0 and
 // v1.49.0) over the same data, through the proxy's real query_range handler.
 //
 // The series are the stream and the listed user, a few thousand of them, so the windows of a range longer than the

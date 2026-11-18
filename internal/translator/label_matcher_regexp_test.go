@@ -84,8 +84,8 @@ var labelRegexpCases = []labelRegexpCase{
 // is an unanchored match in which '.' matches a newline (regexutil parses with
 // syntax.DotNL), except that "" and ".*" match every row and ".+" every
 // non-empty value (lib/logstorage parser.go newFilterRegexpOpt and
-// filter_regexp.go matchRow, v1.49.0 and v1.53.0). The same filters were run
-// against VictoriaLogs v1.49.0 and v1.53.0 storage with these values and
+// filter_regexp.go matchRow, v1.49.0 and v1.54.0). The same filters were run
+// against VictoriaLogs v1.49.0 and v1.54.0 storage with these values and
 // selected the same rows.
 func vlFilterMatches(t *testing.T, filter, field, value string) bool {
 	t.Helper()
@@ -155,7 +155,7 @@ func complementOf(selected []string) []string {
 
 // conformance: profiles/label-filter-regexp-anchoring, profiles/stream-selector-regexp-anchoring
 func TestLabelRegexpMatchesWhatLokiMatches(t *testing.T) {
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		caps := logsql.CapabilitiesFor(version)
 		for _, tc := range labelRegexpCases {
 			filterWant := tc.filter
