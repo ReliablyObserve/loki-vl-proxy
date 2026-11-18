@@ -182,7 +182,8 @@ func recordFlightFailure(ctx context.Context, err error, status int, typed *loki
 		return
 	}
 	class, need := failureClassOf(ctx, err, typed)
-	windowFree := class == cache.ErrorTransient && windowFreeFailure(err, typed)
+	windowFree := class == cache.ErrorTransient && windowFreeFailure(err, typed) ||
+		class == cache.ErrorRefusal && windowFreeRefusal(err, typed)
 	rt.mu.Lock()
 	f := &rt.failure
 	if f.count > 0 && (f.status != status || f.class != class || f.need != need) {
@@ -730,11 +731,11 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 			// Finish holds the failure, and for a pre-key the hint that
 			// requests with it read it under their exact key.
 			p.errorFlightCounters.stored[answer.Class].Add(1)
-			if windowFree {
+			switch {
+			case windowFree && answer.Class == cache.ErrorTransient:
 				p.holdWindowFree(lead.key.prefix, endpoint, r, answer, ttl)
-			}
-			if answer.Class == cache.ErrorRefusal && !lead.windowFreeProbe {
-				p.holdRefusal(lead.key.prefix, endpoint, r, answer, ttl)
+			case answer.Class == cache.ErrorRefusal && !lead.windowFreeProbe:
+				p.holdRefusal(lead.key, endpoint, r, answer, ttl, windowFree)
 			}
 		}
 	}()

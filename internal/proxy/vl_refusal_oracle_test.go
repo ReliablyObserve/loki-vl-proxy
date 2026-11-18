@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -42,6 +44,60 @@ func oracleVLRelease(t *testing.T, dir, modfile string) string {
 		t.Fatalf("no VictoriaLogs release in %s", name)
 	}
 	return string(m[1])
+}
+
+// cloneVerdict is the oracle's roundtrip verdict of a query: whether VictoriaLogs' parser accepts it and every clone
+// of it reads back.
+type cloneVerdict struct {
+	Accept bool   `json:"accept"`
+	OK     bool   `json:"ok"`
+	Panic  string `json:"panic"`
+}
+
+// cloneVerdicts runs the VictoriaLogs oracle's roundtrip command (test/oracle/vl roundtrip.go: the handler's parse,
+// its time filter and limit pipes, and every clone) over the queries of the cases that hold a math pipe.
+func cloneVerdicts(t *testing.T, dir, modfile string, cases []refusalcases.Case) map[string]cloneVerdict {
+	t.Helper()
+	work := t.TempDir()
+	in := filepath.Join(work, "in.jsonl")
+	var b strings.Builder
+	var queries []string
+	for _, c := range cases {
+		if strings.Contains(c.In.Query, "| math") {
+			line, _ := json.Marshal(map[string]string{"id": strconv.Itoa(len(queries)), "q": c.In.Query})
+			b.Write(line)
+			b.WriteByte('\n')
+			queries = append(queries, c.In.Query)
+		}
+	}
+	if err := os.WriteFile(in, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin, err := oraclerun.Build(dir, modfile, work, "vl-oracle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(work, "out.jsonl")
+	if err := oraclerun.Run(bin, "roundtrip", "-in", in, "-out", out); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verdicts := map[string]cloneVerdict{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		var v struct {
+			ID string `json:"id"`
+			cloneVerdict
+		}
+		if err := json.Unmarshal([]byte(line), &v); err != nil {
+			t.Fatal(err)
+		}
+		i, _ := strconv.Atoi(v.ID)
+		verdicts[queries[i]] = v.cloneVerdict
+	}
+	return verdicts
 }
 
 // vlOracleAnswer is VictoriaLogs' answer to a call: its status and raw message, or a dropped connection.
@@ -106,6 +162,7 @@ func TestVLRefusalPredictionMatchesVictoriaLogs(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer srv.Stop()
+			clones := cloneVerdicts(t, dir, modfile, cases)
 			predicted, refused := 0, 0
 			for _, c := range cases {
 				in := c.In
@@ -118,8 +175,11 @@ func TestVLRefusalPredictionMatchesVictoriaLogs(t *testing.T) {
 				}
 				switch {
 				case ok && r.Crash:
-					if !got.dropped {
-						t.Errorf("%s: predicted a crash, VictoriaLogs answered %d %q", c.Name, got.status, got.raw)
+					// VictoriaLogs' own clone (the oracle's roundtrip: the limit arg's last-N query, the time filter
+					// clone, a cluster's remote query) must fail to read the query back. A call this server does not
+					// clone may still be answered.
+					if v := clones[c.In.Query]; !v.Accept || v.OK {
+						t.Errorf("%s: predicted a crash, VictoriaLogs' clone %+v", c.Name, v)
 					}
 				case ok:
 					if got.status != r.Status || !isVLRefusalMessage(got.status, got.raw) ||
@@ -137,9 +197,16 @@ func TestVLRefusalPredictionMatchesVictoriaLogs(t *testing.T) {
 						t.Errorf("%s: want %q, VictoriaLogs answered %d", c.Name, c.Rule, got.status)
 					}
 				}
+				if !ok || !r.Crash {
+					if v, mathRow := clones[c.In.Query]; mathRow && v.Accept && !v.OK {
+						t.Errorf("%s: VictoriaLogs' clone fails on a query not guarded: %+v", c.Name, v)
+					}
+				}
 				if ok {
 					predicted++
-					checkProxyAnswerEqual(t, srv.URL, release, c.Name, in)
+					if !r.Crash || got.dropped {
+						checkProxyAnswerEqual(t, srv.URL, release, c.Name, in)
+					}
 				}
 			}
 			t.Logf("%s: %d rows, %d refused by VictoriaLogs, %d predicted", release, len(cases), refused, predicted)

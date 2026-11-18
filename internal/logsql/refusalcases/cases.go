@@ -66,13 +66,18 @@ func Cases() []Case {
 		{"limit after instant stats before v1.51", logsql.RefusalInput{Path: sq, Query: `* | stats count() as c | limit 1`}, "v1.49.0", logsql.RuleStatsPipeAfterStats},
 		{"limit after instant stats from v1.51", logsql.RefusalInput{Path: sq, Query: `* | stats count() as c | limit 1`}, "v1.53.0", ""},
 		{"unpack_logfmt after stats", logsql.RefusalInput{Path: sq, Query: `* | stats by (level) count() as c | unpack_logfmt`}, "", logsql.RuleStatsPipeAfterStats},
+		{"sort then limit after instant stats before v1.51 (merged into the sort)", logsql.RefusalInput{Path: sq, Query: `* | stats by (level) count() as c | sort by (c desc) | limit 3`}, "v1.49.0", ""},
+		{"limit then sort after range stats (merged)", logsql.RefusalInput{Path: sr, Query: `* | stats by (level) count() as c | sort by (c) | limit 3`}, "", ""},
+		{"offset 0 after range stats (dropped)", logsql.RefusalInput{Path: sr, Query: `* | stats count() as c | offset 0`}, "", ""},
 		{"sort and math after stats", logsql.RefusalInput{Path: sr, Query: `* | stats by (level) count() as c | math c*2 as d | sort by (d)`}, "", ""},
 		// A query VictoriaLogs clones and cannot read back.
 		{"math with a quoted time and a limit before v1.53", logsql.RefusalInput{Path: q, Query: `* | math "2025-01-01T00:00:00Z" as x`, Limit: true}, "v1.49.0", logsql.RuleMathQuotedClone},
 		{"math with a quoted plain number and a limit before v1.53", logsql.RefusalInput{Path: q, Query: `* | math "1.5" + 1 as x`, Limit: true}, "v1.49.0", ""},
 		{"math with a quoted time in a sum and a limit before v1.53", logsql.RefusalInput{Path: q, Query: `* | math 1 + '2025-01-01T00:00:00Z' as x`, Limit: true}, "v1.49.0", logsql.RuleMathQuotedClone},
 		{"math with a quoted field name and a limit", logsql.RefusalInput{Path: q, Query: `* | math "level" as x`, Limit: true}, "v1.49.0", ""},
-		{"math with a quoted time without a limit", logsql.RefusalInput{Path: q, Query: `* | math "2025-01-01T00:00:00Z" as x`}, "v1.49.0", ""},
+		{"math with a quoted time without a limit (cloned by a cluster)", logsql.RefusalInput{Path: q, Query: `* | math "2025-01-01T00:00:00Z" as x`}, "v1.49.0", logsql.RuleMathQuotedClone},
+		{"math with a quoted time in the last-N shape", logsql.RefusalInput{Path: q, Query: `* | math "2025-01-01T00:00:00Z" as x | sort by (_time desc) limit 5`}, "v1.49.0", logsql.RuleMathQuotedClone},
+		{"math with a quoted time on range stats", logsql.RefusalInput{Path: sr, Query: `* | math "2025-01-01T00:00:00Z" as x | stats count() as c`}, "v1.49.0", logsql.RuleMathQuotedClone},
 		{"math with a quoted time and a limit from v1.53", logsql.RefusalInput{Path: q, Query: `* | math "2025-01-01T00:00:00Z" as x`, Limit: true}, "v1.53.0", ""},
 	}
 	var out []Case

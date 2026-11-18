@@ -1,5 +1,5 @@
 id: semantics/error-cache-vl-refusal-held
-title: A VictoriaLogs refusal of the proxy's query is held long, for every window, keyed by release, epoch and tenant
+title: A VictoriaLogs refusal of the proxy's query is held long (window-free when it does not depend on the window), keyed by release, epoch and tenant
 proves:
   - error-coalescing-and-error-cache
 consumer: any
@@ -22,7 +22,9 @@ request:
 compare:
   mode: exact
   expect: |
-    One call, then 0 for every window of the same query and tenant, byte-equal
+    One call, then 0 for every window of the same query and tenant (a parse or
+    stats shape refusal; an argument or length refusal only for the exact
+    request), byte-equal
     answers; another tenant, the expired hold and a new release ask again;
     TestVLRefusal_HeldLongForEveryWindow, TestVLRefusal_UnknownReleaseAndNonRefusals,
     TestVLRefusal_LearnedLengthPredicted, TestErrorFlights_HeldAnswersEqualFreshOnes.

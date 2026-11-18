@@ -92,8 +92,8 @@ var (
 	GateRangeTimeWriters = Gate{From: [3]int{1, 53, 0}}
 	// GateMathQuotedConstantClone: a math pipe holding a quoted number ("2025-01-01T00:00:00Z") keeps its quotes
 	// when VictoriaLogs prints the query (v1.53.0). Before it, a query that VictoriaLogs clones (the limit query
-	// arg of /select/logsql/query, live tailing) fails its own reparse and the request's handler panics: the
-	// connection drops without an answer and the VictoriaLogs process exits (probed on the published v1.49.0 and
+	// arg of /select/logsql/query, live tailing, a cluster's remote query) fails its own reparse and VictoriaLogs
+	// panics: the connection drops without an answer and the VictoriaLogs process exits (probed on the published v1.49.0 and
 	// v1.52.0 images). The v1.52.1 and v1.52.2 LTS releases, whose notes name the fix, exist only as enterprise
 	// images and their tags' source lacks it: the whole v1.52 line is guarded, as a backend crash costs more than
 	// refusing that one query on an LTS build that has the fix.
@@ -256,9 +256,12 @@ func refusalStatus(path string) int {
 	return 0
 }
 
-// clonesQuery reports a call whose query VictoriaLogs clones (prints and parses again) before running it.
+// clonesQuery reports a call whose query VictoriaLogs may clone (print and parse again) before running it: the limit
+// arg and a query ending in the last-N shape on /select/logsql/query, live tailing, the time filter clone of
+// stats_query_range and hits, and a cluster's remote query, which clones every query. Every query path counts, so
+// the guard holds whatever VictoriaLogs runs behind the proxy (the oracle's roundtrip command clones the same way).
 func clonesQuery(in RefusalInput) bool {
-	return in.Path == PathTail || in.Path == PathQuery && in.Limit
+	return refusalStatus(in.Path) != 0
 }
 
 // What screenRefusal found worth parsing for.
@@ -431,6 +434,9 @@ func afterStatsAllowedName(name string, rangeQuery bool, v Version) bool {
 // predictStatsRefusal applies GetStatsLabelsAddGroupingByTime's checks to q, in its order: a stats pipe, then on a
 // range query the pipes ahead of the last stats pipe, then the pipes after it.
 func predictStatsRefusal(q *Query, rangeQuery bool, v Version) (Refusal, bool) {
+	if mergesLimits(q.Pipes) {
+		return Refusal{}, false
+	}
 	last := -1
 	for i, p := range q.Pipes {
 		if _, ok := p.(PipeStats); ok {
@@ -471,6 +477,38 @@ func predictStatsRefusal(q *Query, rangeQuery bool, v Version) (Refusal, bool) {
 		return Refusal{Rule: RuleStatsPipeAfterStats, Status: http.StatusUnprocessableEntity, Message: msg}, true
 	}
 	return Refusal{}, false
+}
+
+// mergesLimits reports pipes VictoriaLogs' optimizer rewrites before it checks a stats query
+// (lib/logstorage optimizeOffsetLimitPipes, optimizeSortLimitPipes, optimizeSortOffsetPipes, optimizeUniqLimitPipes):
+// a limit or offset next to a sort, uniq, limit or offset (merged into it, swapped or dropped), or a limit or offset
+// of zero. The shape VictoriaLogs checks is then not the one written, so no stats rule predicts on it.
+func mergesLimits(pipes []Pipe) bool {
+	merges := func(p Pipe) bool {
+		switch p.(type) {
+		case PipeSort, PipeUniq, PipeLimit, PipeOffset:
+			return true
+		}
+		return false
+	}
+	for i, p := range pipes {
+		switch t := p.(type) {
+		case PipeLimit:
+			if t.N == 0 {
+				return true
+			}
+		case PipeOffset:
+			if t.N == 0 {
+				return true
+			}
+		default:
+			continue
+		}
+		if i > 0 && merges(pipes[i-1]) || i+1 < len(pipes) && merges(pipes[i+1]) {
+			return true
+		}
+	}
+	return false
 }
 
 func isLimitOrOffset(p Pipe) bool {

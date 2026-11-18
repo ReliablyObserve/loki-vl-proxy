@@ -1399,7 +1399,9 @@
       "internal/proxy/vl_refusal_test.go"
     ],
     "semantics/error-cache-vl-refusal-peer-sync": [
-      "internal/proxy/vl_refusal_test.go"
+      "internal/cache/peer_everywhere_test.go",
+      "internal/proxy/vl_refusal_test.go",
+      "test/e2e-fleet/vl_refusal_test.go"
     ],
     "semantics/error-coalescing-no-inherited-cancel": [
       "internal/middleware/coalescer_cancel_test.go",
@@ -2857,7 +2859,8 @@
       "internal/logsql/refusal_table_test.go",
       "internal/logsql/refusal_test.go",
       "internal/proxy/vl_refusal_oracle_test.go",
-      "internal/proxy/vl_refusal_test.go"
+      "internal/proxy/vl_refusal_test.go",
+      "test/e2e-fleet/vl_refusal_test.go"
     ],
     "vl-sort-ties-by-text": [
       "test/e2e-compat/vl_pattern_lines_test.go"
@@ -2952,6 +2955,9 @@
     ],
     "internal/cache/peer_close_conn_test.go": [
       "shutdown-releases-background-work"
+    ],
+    "internal/cache/peer_everywhere_test.go": [
+      "semantics/error-cache-vl-refusal-peer-sync"
     ],
     "internal/cache/peer_hedge_test.go": [
       "peer-cache-patterns",
@@ -6425,6 +6431,10 @@
       "quality/query-range-extent-cache",
       "quality/query-range-extent-cache-large-answer"
     ],
+    "test/e2e-fleet/vl_refusal_test.go": [
+      "semantics/error-cache-vl-refusal-peer-sync",
+      "vl-query-too-long"
+    ],
     "test/e2e-ui/tests/datasource.spec.ts": [
       "profiles/dotted-name-parse-error",
       "profiles/grafana-shows-loki-error-text",
@@ -6434,7 +6444,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 752,
+  "tests_with_markers": 754,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

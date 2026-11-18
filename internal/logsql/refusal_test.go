@@ -163,3 +163,77 @@ func BenchmarkPredictRefusalSuccessPath(b *testing.B) {
 		}
 	}
 }
+
+// Every pipe ahead of the last stats pipe of a range query is read as VictoriaLogs v1.49 and v1.53 read it
+// (canReturnLastNResults): refused, run, or not read (no prediction).
+//
+// conformance: vl-stats-range-pipe-before-stats, vl-stats-pipe-after-stats
+func TestRefusalFrontAndAfterPipes(t *testing.T) {
+	v49, v53 := ParseVersion("v1.49.0"), ParseVersion("v1.53.0")
+	type want struct{ refused49, refused53, known bool }
+	cases := []struct {
+		p    Pipe
+		want want
+	}{
+		{PipeFilter{}, want{false, false, true}},
+		{PipeTop{N: 1}, want{true, true, true}},
+		{PipeFormat{ResultField: "_time"}, want{true, true, true}},
+		{PipeFormat{}, want{false, false, true}},
+		{PipeHash{Result: "_time"}, want{true, true, true}},
+		{PipeLen{Result: "x"}, want{false, false, true}},
+		{PipeJSONArrayLen{Result: "_time"}, want{true, true, true}},
+		{PipePackJSON{ResultField: "_time"}, want{true, true, true}},
+		{PipePackLogfmt{}, want{false, false, true}},
+		{PipeSplit{As: "_time"}, want{true, true, true}},
+		{PipeSplit{}, want{false, false, false}},
+		{PipeUnpackWords{As: "x"}, want{false, false, true}},
+		{PipeCoalesce{Result: "_time"}, want{true, true, true}},
+		{PipeJSONArrayConcat{As: "_time"}, want{true, true, true}},
+		{PipeMath{Alias: "_time"}, want{false, true, true}},
+		{PipeReplaceRegexp{Field: "_time"}, want{false, true, true}},
+		{PipeCollapseNums{Field: "_time"}, want{false, true, true}},
+		{PipeUnroll{Fields: []string{"a*"}}, want{false, false, false}},
+		{PipeUnpackLogfmt{Fields: []string{"time"}, ResultPrefix: "_"}, want{false, true, true}},
+		{PipeUnpackLogfmt{Fields: []string{"_time"}, KeepOriginalFields: true}, want{false, false, true}},
+		{PipeUnpackJSON{Fields: []string{"_time"}, ResultPrefix: "x_"}, want{false, false, true}},
+		{PipeExtractRegexp{Pattern: "(?P<_time>[0-9]+)"}, want{false, true, true}},
+		{PipeExtract{Pattern: "<_time>", KeepOriginalFields: true}, want{false, false, true}},
+		{PipeDelete{Labels: []string{"_time"}}, want{true, true, true}},
+		{PipeDelete{Labels: []string{"_*"}}, want{false, false, false}},
+		{PipeCopy{Pairs: [][2]string{{"a*", "b*"}}}, want{false, false, false}},
+		{PipeRename{Pairs: [][2]string{{"_time", "t"}}}, want{true, true, true}},
+		{PipeRename{Pairs: [][2]string{{"a", "b"}}}, want{false, false, true}},
+		{PipeFields{Labels: []string{"*"}}, want{false, false, true}},
+		{PipeUpdate{Field: "x"}, want{false, false, false}},
+	}
+	for _, c := range cases {
+		r49, k49 := frontPipeRefused(c.p, v49)
+		r53, k53 := frontPipeRefused(c.p, v53)
+		if r49 != c.want.refused49 || r53 != c.want.refused53 || k49 != c.want.known || k53 != c.want.known {
+			t.Errorf("%T %+v: v1.49 %v/%v v1.53 %v/%v, want %+v", c.p, c.p, r49, k49, r53, k53, c.want)
+		}
+	}
+	for _, c := range []struct {
+		p              Pipe
+		allowed, known bool
+		rangeQuery     bool
+		release        string
+	}{
+		{PipeTotalStats{}, true, true, true, "v1.49.0"},
+		{PipeOffset{N: 1}, true, true, false, "v1.53.0"},
+		{PipeOffset{N: 1}, false, true, true, "v1.53.0"},
+		{PipeHash{}, false, true, false, "v1.53.0"},
+		{PipeUpdate{}, false, false, false, "v1.53.0"},
+	} {
+		allowed, known := afterStatsPipeAllowed(c.p, c.rangeQuery, ParseVersion(c.release))
+		if allowed != c.allowed || known != c.known {
+			t.Errorf("after stats %T range=%v %s: %v/%v", c.p, c.rangeQuery, c.release, allowed, known)
+		}
+	}
+	if len(RefusalRules()) != 7 || !isLimitOrOffset(PipeOffset{}) || isLimitOrOffset(PipeSort{}) {
+		t.Fatal("rules")
+	}
+	if !mergesLimits([]Pipe{PipeUniq{}, PipeLimit{N: 2}}) || mergesLimits([]Pipe{PipeStats{}, PipeLimit{N: 2}}) {
+		t.Fatal("merges")
+	}
+}

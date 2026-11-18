@@ -128,6 +128,12 @@ func (p *Proxy) noteVLRefusalMessage(raw string) {
 	if !v.Known {
 		return
 	}
+	if cur := p.vlMaxQueryLen.Load(); cur != nil && cur.bytes == limit && cur.release == v && cache.Now().UnixNano() < cur.until {
+		// Known already (a predicted refusal names it too): the fact expires
+		// with the TTL it was learned with, and the next call after that is
+		// sent and learns it again.
+		return
+	}
 	ttl := p.errorCacheRefusalTTL
 	if ttl <= 0 {
 		ttl = DefaultErrorCacheVLRefusalTTL
@@ -153,7 +159,7 @@ func isVLRefusalMessage(status int, raw string) bool {
 		return true
 	}
 	switch {
-	case strings.HasPrefix(msg, "missing | stats ... pipe in the query"),
+	case strings.HasPrefix(msg, "missing ") && strings.HasSuffix(strings.SplitN(msg, " in the query", 2)[0], "stats ... pipe"),
 		strings.HasPrefix(msg, "the query arg length cannot exceed -search.maxQueryLen="),
 		strings.HasPrefix(msg, "the extra_filters arg length cannot exceed -search.maxQueryLen="),
 		strings.HasPrefix(msg, "the extra_stream_filters arg length cannot exceed -search.maxQueryLen="):
@@ -177,6 +183,53 @@ var vlStatsShapeReasons = []string{
 	"pipe cannot be put after",
 	"isn't allowed in range queries",
 	"must contain the same list of fields as | stats pipe",
+}
+
+// windowFreeRefusal reports a refusal that does not depend on the request's
+// window: a parse error of the query itself and a stats shape refusal (the
+// pipes the proxy writes for a query). A refused start, end, time, step or
+// offset arg, and a length refusal (the text can grow with the window, as an
+// in() list built from the window's data does), are held for the exact
+// request only.
+func windowFreeRefusal(err error, typed *lokierr.Error) bool {
+	for _, e := range []error{err, typedCause(typed)} {
+		if e == nil {
+			continue
+		}
+		if statusErr, ok := asType[*upstreamStatusError](e); ok && statusErr.refusal {
+			return statusErr.windowFree
+		}
+	}
+	return false
+}
+
+// isWindowFreeRefusalMessage is isVLRefusalMessage for a refusal that does
+// not depend on the request's window (windowFreeRefusal).
+func isWindowFreeRefusalMessage(status int, raw string) bool {
+	if !isVLRefusalMessage(status, raw) {
+		return false
+	}
+	msg := strings.TrimSpace(raw)
+	if strings.Contains(msg, vlMaxQueryLenMarker) {
+		return false
+	}
+	if reason, ok := stripVLParseEcho(msg); ok {
+		return !strings.Contains(reason, vlMaxQueryLenMarker)
+	}
+	msg = strings.ReplaceAll(msg, "`", "")
+	for _, arg := range vlArgumentRefusalPrefixes {
+		if strings.HasPrefix(msg, arg) {
+			return false
+		}
+	}
+	return true
+}
+
+// vlArgumentRefusalPrefixes start VictoriaLogs' refusals of an argument other
+// than the query text (they may depend on the window).
+var vlArgumentRefusalPrefixes = []string{
+	"cannot parse start=", "cannot parse end=", "cannot parse time=", "'step' must be bigger than zero",
+	"cannot parse duration from the arg", "missing 'field' query arg", "query arg cannot be empty",
 }
 
 // vlPredictedCrashError is a call not sent because VictoriaLogs' handler
@@ -351,16 +404,25 @@ func (p *Proxy) heldRefusal(prefix, endpoint string, r *http.Request) *cache.Ans
 
 // holdRefusal holds a refusal r's flight ended with for every window of r's
 // query, and pushes it to the peers when VictoriaLogs answered it.
-func (p *Proxy) holdRefusal(prefix, endpoint string, r *http.Request, a *cache.Answer, ttl time.Duration) {
-	wk := p.windowFreeKey(prefix, endpoint, r)
+func (p *Proxy) holdRefusal(k flightKey, endpoint string, r *http.Request, a *cache.Answer, ttl time.Duration, windowFree bool) {
+	predicted := predictedRefusal(r.Context())
+	if !windowFree {
+		// Held under the request's flight key by Finish; pushed under it when
+		// that key is the exact one (a pre-key carries a per-process digest).
+		if !predicted && k.r == nil {
+			p.syncRefusal(endpoint, "", strings.TrimPrefix(k.join, k.prefix), a, cache.Now().Add(ttl))
+		}
+		return
+	}
+	wk := p.windowFreeKey(k.prefix, endpoint, r)
 	until := p.errorFlights.Hold(wk, a, ttl)
 	if until.IsZero() {
 		return
 	}
 	p.refusalQueries.add(endpoint, r.FormValue("query"), until.UnixNano(), p.errorFlightsMaxEntries())
 	raiseTo(&p.refusalSeenUntil, until.UnixNano())
-	if !predictedRefusal(r.Context()) {
-		p.syncRefusal(endpoint, r.FormValue("query"), strings.TrimPrefix(wk, prefix), a, until)
+	if !predicted {
+		p.syncRefusal(endpoint, r.FormValue("query"), strings.TrimPrefix(wk, k.prefix), a, until)
 	}
 }
 
@@ -373,16 +435,18 @@ func (p *Proxy) errorFlightsMaxEntries() int {
 
 // refusalSync is a held refusal as it is pushed to the peers.
 type refusalSync struct {
-	Build    string      `json:"b"`
-	Release  string      `json:"r"`
-	Scope    string      `json:"s"`
-	Endpoint string      `json:"e"`
-	Query    string      `json:"q"`
-	Key      string      `json:"k"`
-	Expires  int64       `json:"x"`
-	Status   int         `json:"c"`
-	Header   http.Header `json:"h,omitempty"`
-	Body     []byte      `json:"y,omitempty"`
+	Build    string `json:"b"`
+	Release  string `json:"r"`
+	Scope    string `json:"s"`
+	Endpoint string `json:"e"`
+	// Query is the query of a window-free refusal; empty for one held for the
+	// exact request.
+	Query   string      `json:"q,omitempty"`
+	Key     string      `json:"k"`
+	Expires int64       `json:"x"`
+	Status  int         `json:"c"`
+	Header  http.Header `json:"h,omitempty"`
+	Body    []byte      `json:"y,omitempty"`
 }
 
 // refusalSyncKeyPrefix starts the peer keys of held refusals.
@@ -414,7 +478,7 @@ func (p *Proxy) syncRefusal(endpoint, query, key string, a *cache.Answer, until 
 	}
 	msg := refusalSync{
 		Build: p.buildVersion, Release: v.String(), Scope: p.routingScope(), Endpoint: endpoint, Query: query, Key: key,
-		Expires: until.UnixMilli(), Status: a.Status, Header: a.Header, Body: a.Body,
+		Expires: until.UnixMilli(), Status: a.Status, Header: peerAnswerHeader(a.Header), Body: a.Body,
 	}
 	value, err := json.Marshal(msg)
 	if err != nil {
@@ -443,20 +507,39 @@ func (p *Proxy) receiveRefusal(key string, value []byte, _ time.Duration) {
 	ttl := time.UnixMilli(msg.Expires).Sub(cache.Now())
 	if !v.Known || msg.Release != v.String() || msg.Build != p.buildVersion || msg.Scope != p.routingScope() ||
 		ttl <= 0 || ttl > 2*max(p.errorCacheRefusalTTL, refusalSyncMinTTL) || !peerPushAllowed(msg.Key) ||
-		msg.Status < http.StatusBadRequest || msg.Endpoint == "" {
+		msg.Status < http.StatusBadRequest || msg.Status > 599 || msg.Endpoint == "" || len(msg.Body) > errorFlightMaxAnswerBytes {
 		p.peerSyncCounts[3].Add(1)
 		return
 	}
 	ttl += time.Duration(float64(ttl) * refusalSyncJitter * rand.Float64()) // #nosec G404 -- spreads expiries, not a secret
-	a := &cache.Answer{Status: msg.Status, Header: msg.Header, Body: msg.Body, Class: cache.ErrorRefusal}
+	a := &cache.Answer{Status: msg.Status, Header: peerAnswerHeader(msg.Header), Body: msg.Body, Class: cache.ErrorRefusal}
 	until := p.errorFlights.Hold(p.flightPrefix()+msg.Key, a, ttl)
 	if until.IsZero() {
 		p.peerSyncCounts[3].Add(1)
 		return
 	}
-	p.refusalQueries.add(msg.Endpoint, msg.Query, until.UnixNano(), p.errorFlightsMaxEntries())
-	raiseTo(&p.refusalSeenUntil, until.UnixNano())
+	if msg.Query != "" {
+		// A window-free refusal: its query's requests of every window read it.
+		p.refusalQueries.add(msg.Endpoint, msg.Query, until.UnixNano(), p.errorFlightsMaxEntries())
+		raiseTo(&p.refusalSeenUntil, until.UnixNano())
+	}
 	p.peerSyncCounts[2].Add(1)
+}
+
+// peerAnswerHeaders are the only headers a held refusal from a peer answers
+// with: an error answer's content headers. Anything else a peer sends (a
+// cookie, a redirect, CORS) is dropped.
+var peerAnswerHeaders = []string{"Content-Type", "X-Content-Type-Options"}
+
+// peerAnswerHeader is h reduced to peerAnswerHeaders.
+func peerAnswerHeader(h http.Header) http.Header {
+	out := make(http.Header, len(peerAnswerHeaders))
+	for _, name := range peerAnswerHeaders {
+		if v := h.Values(name); len(v) > 0 {
+			out[name] = append([]string(nil), v[0])
+		}
+	}
+	return out
 }
 
 // syncBudget is a token bucket of refusalSyncRate pushes per second.

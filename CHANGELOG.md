@@ -31,8 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-vl-refusal-prediction` (default `true`) turns it off; metric `loki_vl_proxy_vl_refusals_predicted_total{rule}`.
 - VictoriaLogs' refusal of the query the proxy wrote (a parse error, a refused stats shape, a query over its length
   limit, answered or predicted) is now held for `-error-cache-vl-refusal-ttl` (default `5m`) instead of not at all
-  or for a second. It is held for every window of the query, keyed by tenant, credentials, response profile,
-  configuration epoch and VictoriaLogs release, so a reload or a new release asks again. A refusal VictoriaLogs
+  or for a second. A parse or stats shape refusal is held for every window of the query (a length or argument
+  refusal for the exact request only), keyed by tenant, credentials, response profile, configuration epoch and
+  VictoriaLogs release, so a reload or a new release asks again. A refusal VictoriaLogs
   answered and held for 30 s or more is pushed to every peer (`-error-cache-peer-sync`, default `true`). A peer
   holds it only when it runs the same proxy build against the same VictoriaLogs release with the same routing
   configuration, and never for an answer computed with forwarded credentials. Three replicas refreshing the same

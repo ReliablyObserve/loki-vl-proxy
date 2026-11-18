@@ -150,10 +150,49 @@ func TestVLRefusal_LearnedLengthPredicted(t *testing.T) {
 	if stub2.calls.Load() != 2 || p2.learnedMaxQueryLen(p2.vlRelease()) != 20 {
 		t.Fatalf("prediction off: %d calls", stub2.calls.Load())
 	}
-	restore := cache.AdvanceClockForTesting(2 * time.Minute)
+	// Predictions name the limit too, but never extend how long it is trusted.
+	restore := cache.AdvanceClockForTesting(50 * time.Second)
+	flightGet(h, context.Background(), "/loki/api/v1/query_range?query=%7Bapp%3D%22db%22%7D&start=1700000000&end=1700003600&limit=100", "team-a")
+	restore()
+	if stub.calls.Load() != 1 {
+		t.Fatalf("a predicted refusal sent a call: %d", stub.calls.Load())
+	}
+	restore = cache.AdvanceClockForTesting(2 * time.Minute)
 	defer restore()
 	if p.learnedMaxQueryLen(p.vlRelease()) != 0 {
-		t.Fatal("a learned limit must expire with the refusal TTL")
+		t.Fatal("a learned limit must expire with the refusal TTL, however many predictions name it")
+	}
+}
+
+// A refusal of an argument other than the query text, or of the length, is held for the exact request only: a
+// request with another window asks VictoriaLogs.
+//
+// conformance: semantics/error-cache-vl-refusal-held
+func TestVLRefusal_WindowDependentRefusalsHeldExactly(t *testing.T) {
+	stub := newFlightStub(t, func(_ int64, w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "cannot parse start=xyz: cannot parse timestamp", http.StatusBadRequest)
+	})
+	_, h := refusalProxy(t, stub.srv.URL, "v1.53.0", nil)
+	flightGet(h, context.Background(), refusalWindow(0), "team-a")
+	flightGet(h, context.Background(), refusalWindow(0), "team-a")
+	if stub.calls.Load() != 1 {
+		t.Fatalf("exact repeat: %d calls", stub.calls.Load())
+	}
+	flightGet(h, context.Background(), refusalWindow(15), "team-a")
+	if stub.calls.Load() != 2 {
+		t.Fatalf("another window must ask again: %d calls", stub.calls.Load())
+	}
+	for raw, want := range map[string]bool{
+		"cannot parse `query` arg [x]: unexpected token":                                   true,
+		"the pipe `| \"sort by (a)\"` cannot be put in front of `| \"stats count(*)\"`, x": true,
+		"cannot parse start=xyz": false,
+		"the `query` arg length cannot exceed -search.maxQueryLen=10 bytes; the current query": false,
+		"the `extra_filters` arg length cannot exceed -search.maxQueryLen=10 bytes":            false,
+		"cannot parse duration from the arg step":                                              false,
+	} {
+		if got := isWindowFreeRefusalMessage(http.StatusBadRequest, raw); got != want {
+			t.Errorf("%q: window-free %v, want %v", raw, got, want)
+		}
 	}
 }
 
@@ -300,6 +339,11 @@ func TestVLRefusal_SyncOnlyWhatPeersWouldPayFor(t *testing.T) {
 	if p.peerSyncCounts[3].Load() != 2 {
 		t.Fatalf("ignored %d", p.peerSyncCounts[3].Load())
 	}
+	// A peer's headers other than the error's content type never reach a client.
+	h := peerAnswerHeader(http.Header{"Content-Type": {"text/plain; charset=utf-8"}, "Set-Cookie": {"a=b"}, "Location": {"/x"}, "Access-Control-Allow-Origin": {"*"}})
+	if len(h) != 1 || h.Get("Content-Type") == "" {
+		t.Fatalf("peer headers %v", h)
+	}
 }
 
 // The prediction and peer sync counters are exposed with their rules and outcomes.
@@ -319,5 +363,70 @@ func TestVLRefusal_Metrics(t *testing.T) {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("missing %s", want)
 		}
+	}
+}
+
+// The window-free query set stays within its bound (expired entries go first), the release is recorded once, and
+// a refusal is not pushed without a known release or once the send budget is spent.
+//
+// conformance: semantics/error-cache-vl-refusal-peer-sync
+func TestVLRefusal_Bounds(t *testing.T) {
+	var s refusalQuerySet
+	now := cache.Now().UnixNano()
+	s.add("query_range", "a", now-1, 2)
+	s.add("query_range", "b", now+int64(time.Minute), 2)
+	s.add("query_range", "c", now+int64(time.Minute), 2) // the expired a makes room
+	s.add("query_range", "d", now+int64(time.Minute), 2) // full: not added
+	if s.has("query_range", "a", now) || !s.has("query_range", "c", now) || s.has("query_range", "d", now) {
+		t.Fatalf("set %v", s.m)
+	}
+	p, _ := refusalProxy(t, "http://127.0.0.1:1", "", nil)
+	if p.errorFlightsMaxEntries() != DefaultErrorCacheMaxEntries {
+		t.Fatal("default bound")
+	}
+	before := p.flightPrefix()
+	p.noteVLRelease("garbage")
+	p.noteVLRelease("v1.53.0")
+	after := p.flightPrefix()
+	p.noteVLRelease("v1.53.0")
+	if before == after || p.flightPrefix() != after || !strings.Contains(after, "v1.53.0") {
+		t.Fatalf("prefix %q -> %q", before, after)
+	}
+	pc := cache.NewPeerCache(cache.PeerConfig{SelfAddr: "self:1", DiscoveryType: "static", StaticPeers: "self:1,other:1"})
+	t.Cleanup(pc.Close)
+	p.peerCache, p.errorCachePeerSync = pc, true
+	a := &cache.Answer{Status: http.StatusInternalServerError, Body: []byte("x")}
+	until := cache.Now().Add(time.Minute)
+	p.vlReleaseSeen.Store(nil)
+	p.syncRefusal("query_range", "q", "k", a, until)
+	if p.peerSyncCounts[0].Load() != 0 {
+		t.Fatal("no push before the release is known")
+	}
+	p.noteVLRelease("v1.53.0")
+	for i := 0; i < int(refusalSyncRate)+1; i++ {
+		p.syncRefusal("query_range", "q", "k", a, until)
+	}
+	if p.peerSyncCounts[0].Load() != int64(refusalSyncRate) || p.peerSyncCounts[1].Load() != 1 {
+		t.Fatalf("sent %d throttled %d", p.peerSyncCounts[0].Load(), p.peerSyncCounts[1].Load())
+	}
+}
+
+// A refusal held for the exact request (a length refusal) reaches the peers under that request's key: the same
+// request on another replica sends no call, another window does.
+//
+// conformance: semantics/error-cache-vl-refusal-peer-sync
+func TestVLRefusal_FleetExactRefusal(t *testing.T) {
+	f := newPeerFleet(t, []string{"v1.53.0", "v1.53.0"}, func(_ int64, w http.ResponseWriter, r *http.Request) {
+		http.Error(w, fmt.Sprintf("the `query` arg length cannot exceed -search.maxQueryLen=5 bytes; the current query length is %d bytes; query=x", len(r.FormValue("query"))), http.StatusBadRequest)
+	})
+	first := flightGet(f.handler[0], context.Background(), refusalWindow(0), "team-a")
+	waitFor(t, func() bool { return f.proxies[1].peerSyncCounts[2].Load() == 1 })
+	got := flightGet(f.handler[1], context.Background(), refusalWindow(0), "team-a")
+	if f.calls() != 1 || got.Code != first.Code || got.Body.String() != first.Body.String() {
+		t.Fatalf("exact repeat on a peer: %d calls, %d %q", f.calls(), got.Code, got.Body.String())
+	}
+	flightGet(f.handler[1], context.Background(), refusalWindow(15), "team-a")
+	if f.calls() != 2 {
+		t.Fatalf("another window must ask: %d calls", f.calls())
 	}
 }

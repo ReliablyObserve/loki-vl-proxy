@@ -1231,6 +1231,7 @@
     "internal/cache/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/cache/error_flights_test.go | semantics/error-coalescing-request-flights",
     "internal/cache/peer_close_conn_test.go | shutdown-releases-background-work",
+    "internal/cache/peer_everywhere_test.go | semantics/error-cache-vl-refusal-peer-sync",
     "internal/cache/peer_hedge_test.go | peer-cache-patterns",
     "internal/cache/peer_hedge_test.go | peer-cache-read-hedge",
     "internal/cache/peer_protocol_edges_test.go | peer-cache-fleet-recovery",
@@ -3219,6 +3220,8 @@
     "test/e2e-fleet/settled_steps_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
+    "test/e2e-fleet/vl_refusal_test.go | semantics/error-cache-vl-refusal-peer-sync",
+    "test/e2e-fleet/vl_refusal_test.go | vl-query-too-long",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
@@ -3234,7 +3237,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 750,
+      "go": 752,
       "playwright": 2
     },
     "page_kinds": {
