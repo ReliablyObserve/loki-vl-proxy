@@ -210,7 +210,8 @@ func typeOpaqueCall(o *OpaqueMetricExpr) { typeOpaqueCallWith(o, nil, 0, false) 
 // from (quiet_calls.go): the calls nested in it are not scanned again. Its parser notes the log queries it reads
 // (noteChecked) in calls when shared, in lists of its own otherwise, which it returns.
 func typeOpaqueCallWith(o *OpaqueMetricExpr, calls *quietCalls, base int, shared bool) typedCallNotes {
-	p := &parser{sc: scanner{src: o.Raw, quiet: true}, calls: calls, base: base, sharedNotes: shared}
+	p := quietParser(o.Raw, 0, base)
+	p.calls, p.sharedNotes = calls, shared
 	typeOpaqueCallIn(p, o)
 	return typedCallNotes{first: p.checkedLogQueries, count: p.checkedLogQueryCount, more: p.moreCheckedLogQueries,
 		cur: p.curLogQuery}
@@ -598,7 +599,7 @@ func (p *parser) unterminatedCallError(name string, start int) error {
 	if p.canon != nil || p.spell != nil || p.flagSpans != nil {
 		return own
 	}
-	q := &parser{sc: scanner{src: p.sc.src, pos: start, quiet: true}, base: p.base}
+	q := quietParser(p.sc.src, start, p.base)
 	q.advance()
 	err := q.openCallError(name)
 	if err == nil {

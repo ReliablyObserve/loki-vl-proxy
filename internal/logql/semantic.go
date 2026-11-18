@@ -260,7 +260,7 @@ func callText(query string, x *OpaqueMetricExpr) (src string, pos int) {
 // can read: `vector(x)`, `vector(5x)`, `vector(0x1)`. It is nil for a valid call.
 func vectorArgumentError(query string, call *OpaqueMetricExpr) error {
 	src, pos := callText(query, call)
-	p := &parser{sc: scanner{src: src, pos: pos, quiet: true}}
+	p := quietParser(src, pos, 0)
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil
@@ -294,7 +294,7 @@ func (p *parser) vectorArgumentError() error {
 // itself rejected.
 func opaqueFirstArgument(query string, call *OpaqueMetricExpr) (Expr, error) {
 	src, pos := callText(query, call)
-	p := &parser{sc: scanner{src: src, pos: pos, quiet: true}}
+	p := quietParser(src, pos, 0)
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil, nil
@@ -321,7 +321,7 @@ func opaqueFirstArgument(query string, call *OpaqueMetricExpr) (Expr, error) {
 // any other call.
 func labelReplaceArgumentsError(query string, call *OpaqueMetricExpr) error {
 	src, pos := callText(query, call)
-	p := &parser{sc: scanner{src: src, pos: pos, quiet: true}}
+	p := quietParser(src, pos, 0)
 	p.advance()
 	if p.cur.Typ != TokIdent || p.cur.Val != "label_replace" {
 		return nil
