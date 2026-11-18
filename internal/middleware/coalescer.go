@@ -118,6 +118,9 @@ type flight struct {
 	resp   *coalescedResponse
 	err    error
 	joined int // callers that took part in the call, the leader included
+	// ctxEnded: the shared context had ended (its deadline, or every waiter
+	// left) when the call failed, read before the call is closed.
+	ctxEnded bool
 }
 
 // Do executes the request, deduplicating identical concurrent requests.
@@ -128,22 +131,46 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 	return status, headers, body, err
 }
 
+// maxInheritedRetries bounds how often a follower starts the call again after
+// the call it waited on ended with another caller's cancellation or deadline.
+const maxInheritedRetries = 2
+
 // do runs fn once per key for all concurrent callers. fn gets the shared
 // context of the call, not the context of the caller that started it.
+//
+// The shared call carries the deadline of the caller that started it. When it
+// ends with a cancellation or a deadline while this caller's own context is
+// still alive, the failure is not this caller's: it starts the call again
+// (joining a newer one when another caller already did), so a follower never
+// answers with the leader's cancellation or timeout.
 func (c *Coalescer) do(ctx context.Context, key string, fn func(context.Context) (*http.Response, error)) (int, http.Header, []byte, bool, error) {
 	if c.disabled {
 		status, headers, body, err := c.callDirect(func() (*http.Response, error) { return fn(ctx) })
 		return status, headers, body, false, err
 	}
+	for attempt := 0; ; attempt++ {
+		status, headers, body, shared, inherited, err := c.doOnce(ctx, key, fn)
+		if inherited && attempt < maxInheritedRetries && ctx.Err() == nil {
+			continue
+		}
+		return status, headers, body, shared, err
+	}
+}
+
+// doOnce joins or starts one shared call. inherited reports a call this
+// caller only followed that failed because the shared context ended (the
+// first caller's deadline, or every waiter leaving): not a failure of the
+// backend, and not this caller's.
+func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Context) (*http.Response, error)) (status int, headers http.Header, body []byte, shared, inherited bool, err error) {
 
 	// A caller that has already left starts no shared call: nobody would wait for it.
 	if err := ctx.Err(); err != nil {
-		return 0, nil, nil, false, err
+		return 0, nil, nil, false, false, err
 	}
 	started := time.Now()
+	executed := false
 	c.flightMu.Lock()
 	f := c.flights[key]
-	executed := false
 	if f != nil && f.shared.Join() {
 		f.joined++
 	} else {
@@ -160,11 +187,11 @@ func (c *Coalescer) do(ctx context.Context, key string, fn func(context.Context)
 	case <-f.done:
 	case <-ctx.Done():
 		f.shared.Leave()
-		return 0, nil, nil, false, ctx.Err()
+		return 0, nil, nil, false, false, ctx.Err()
 	}
 
 	c.flightMu.Lock()
-	shared := f.joined > 1
+	shared = f.joined > 1
 	c.flightMu.Unlock()
 	// A caller whose call did not execute avoided a backend call, even on shared failure.
 	if shared && !executed {
@@ -173,14 +200,16 @@ func (c *Coalescer) do(ctx context.Context, key string, fn func(context.Context)
 		c.WaitNanos.Add(time.Since(started).Nanoseconds())
 	}
 	if f.err != nil {
-		return 0, nil, nil, shared, f.err
+		inherited = !executed && f.ctxEnded &&
+			(errors.Is(f.err, context.Canceled) || errors.Is(f.err, context.DeadlineExceeded))
+		return 0, nil, nil, shared, inherited, f.err
 	}
 	if shared {
 		c.CoalescedTotal.Add(1)
 		c.ActiveShared.Add(1)
 		defer c.ActiveShared.Add(-1)
 	}
-	return f.resp.status, nil, f.resp.body, shared, nil
+	return f.resp.status, nil, f.resp.body, shared, false, nil
 }
 
 // run executes the shared call and publishes its result to every waiter.
@@ -199,7 +228,7 @@ func (c *Coalescer) run(key string, f *flight, fn func(context.Context) (*http.R
 	}()
 	resp, err := fn(f.shared.Context())
 	if err != nil {
-		f.err = err
+		f.err, f.ctxEnded = err, f.shared.Context().Err() != nil
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()

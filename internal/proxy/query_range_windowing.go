@@ -270,7 +270,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 				break
 			}
 
-			retryable := shouldRetryQueryRangeWindow(err)
+			retryable := shouldRetryQueryRangeWindow(err) && p.windowRetryAllowed()
 			if retryable && batchSize > 1 {
 				nextBatchSize := max(1, batchSize/2)
 				p.metrics.RecordQueryRangeWindowDegradedBatch()
@@ -600,7 +600,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 		lastFetchErr = fetchErr
 
 		p.observeQueryRangeWindowFetch(fetchDuration, true)
-		if attempt >= queryRangeWindowFetchAttempts || !shouldRetryQueryRangeWindow(fetchErr) {
+		if attempt >= queryRangeWindowFetchAttempts || !shouldRetryQueryRangeWindow(fetchErr) || !p.windowRetryAllowed() {
 			break
 		}
 
@@ -1582,4 +1582,15 @@ func marshalStringMapJSONTo(buf *bytes.Buffer, m map[string]string) {
 		appendJSONStringToBuffer(buf, v)
 	}
 	buf.WriteByte('}')
+}
+
+// windowRetryAllowed reports whether a window fetch may be tried again under
+// the backend retry bounds every other read follows: no retry while the circuit
+// breaker is not closed, and each retry spends from the shared retry budget,
+// so a backend outage cannot multiply the calls of every request.
+func (p *Proxy) windowRetryAllowed() bool {
+	if p.breaker != nil && p.breaker.State() != "closed" {
+		return false
+	}
+	return p.backendRetry == nil || p.backendRetry.budget.spend()
 }

@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **10 proven**, 23 partial, 3 gaps, 0 waived, 10 with no state recorded
+- Behaviour and feature items: **11 proven**, 23 partial, 3 gaps, 0 waived, 10 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -30,7 +30,7 @@ Proven in part; the rest is named in the item's cases.
 | `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | explore | 9 / 17 | 7 | 3/6 deltas proven. |
 | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 6 / 6 | 10 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
 | `json-metric-unparsed-line-lookup-once` — A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests | — | 0 / 0 | 1 | Unit-proven against a fake VictoriaLogs (internal/proxy/ ordered_json_unparsed_row_test.go). The stack check is the per- |
-| `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 14 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |
+| `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 15 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |
 | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 0 / 4 | 50 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
 | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | — | 0 / 4 | 5 | `| regexp` and `| pattern` captures are part of the series identity on the instant, range and byte routes, proven agains |
 | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 18 / 23 | 49 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
@@ -60,6 +60,7 @@ Held by at least one test that declares it.
 | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 4 / 4 | 13 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
 | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | — | 0 / 0 | 1 | internal/proxy/credential_passthrough_test.go: basic auth, forwarded OAuth (access and ID token), a custom header, cooki |
 | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | — | 0 / 0 | 2 | internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled with an empty or blank delete token (an admin |
+| `error-coalescing-and-error-cache` — Identical requests share one run, and failed answers are held for their class's TTL | — | 8 / 8 | 6 | Unit and race tests drive real requests through the proxy's routes against a stub VictoriaLogs: TestErrorFlights_Concurr |
 | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | — | 0 / 0 | 1 | internal/proxy/instrumentation_secrets_test.go configures an admin token, a delete token, a peer token and peers, backen |
 | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 5 / 5 | 13 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
 | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | — | 1 / 1 | 5 | internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from Loki 3.7.9 with auth_enabled: true (13 read |

@@ -365,6 +365,7 @@ func (p *Proxy) writeFailure(w http.ResponseWriter, ctx context.Context, err err
 		status, _, text = lokiClientError(ctx, err)
 	}
 	p.logRequestError(ctx, status, text, err, typed)
+	recordFlightFailure(ctx, err, status, typed)
 	shape(w, status, text)
 	if rec, ok := w.(failureRecorder); ok {
 		rec.recordFailure(err)
