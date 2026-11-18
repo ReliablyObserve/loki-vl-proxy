@@ -1,0 +1,21 @@
+id: semantics/error-cache-byte-equal-answers
+title: A shared or held failure is byte-equal to a fresh one
+proves:
+  - error-coalescing-and-error-cache
+consumer: any
+pending: true
+why: |
+  Clients see exactly Loki's status, errorType and text; a failure answered
+  from the flight or the error cache must be indistinguishable from one the
+  request computed itself, apart from the proxy's own debug headers.
+request:
+  scope: internal
+  entry: writeFlightAnswer
+  setup: |
+    20 identical failing requests through the flight, and one through a proxy
+    with the join and the error cache off.
+compare:
+  mode: exact
+  expect: |
+    Same status, body, Content-Type and X-Content-Type-Options; the
+    X-Loki-VL-Cache-Result debug header says hit for held and shared answers.

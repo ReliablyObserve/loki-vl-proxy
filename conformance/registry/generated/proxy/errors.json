@@ -517,6 +517,30 @@
       "writer": "writeErr"
     },
     {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, r.Context().Err()",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/error_flights.go serveFlight",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, r.Context().Err()",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/error_flights.go serveWindowFreeProbe",
+      "writer": "fail"
+    },
+    {
       "dynamic": true,
       "error_text": false,
       "error_type": "bad_data",
@@ -2709,11 +2733,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 185,
+        "count": 187,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 181,
+        "layer_sites": 183,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2721,6 +2745,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 218
+    "call_sites": 220
   }
 }

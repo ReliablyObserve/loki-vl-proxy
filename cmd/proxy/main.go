@@ -234,6 +234,11 @@ type proxyRuntimeConfig struct {
 	peerHotReadAheadTenantFairShare     int
 	peerHotReadAheadErrorBackoff        time.Duration
 	coalescerDisabled                   bool
+	errorCacheEnabled                   bool
+	errorCacheTransientTTL              time.Duration
+	errorCacheDataTTL                   time.Duration
+	errorCacheMaxEntries                int
+	errorCacheMaxBytes                  int
 	coldBackendURL                      string
 	coldBackendBoundary                 time.Duration
 	coldBackendOverlap                  time.Duration
@@ -511,7 +516,12 @@ func run(
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
-	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead")
+	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead. It also turns off the request-level join: identical read requests in flight then run each on their own (held failures are still answered, see -error-cache-enabled)")
+	errorCacheEnabled := fs.Bool("error-cache-enabled", true, "Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held. Identical requests in flight share one run either way (see -coalescer-disabled)")
+	errorCacheTransientTTL := fs.Duration("error-cache-transient-ttl", proxy.DefaultErrorCacheTransientTTL, "How long a backend failure (VictoriaLogs 5xx, 429 or queue timeout, a refused or reset connection) is held per request; 0 holds none. A timeout or an aborted body is never held. Each replica asks VictoriaLogs at most once per this TTL per failing request, and the first request after VictoriaLogs recovers answers within it")
+	errorCacheDataTTL := fs.Duration("error-cache-data-ttl", proxy.DefaultErrorCacheDataTTL, "How long a failure read from the data in the request's window (Loki's series limit, a line or response size limit, a JSON parser or unwrap conversion error under a metric) is held per request; 0 holds none. The same window fails the same way until new lines arrive")
+	errorCacheMaxEntries := fs.Int("error-cache-max-entries", proxy.DefaultErrorCacheMaxEntries, "Most failed answers held per replica (oldest evicted first); 0 uses the default")
+	errorCacheMaxBytes := fs.Int("error-cache-max-bytes", proxy.DefaultErrorCacheMaxBytes, "Most bytes of failed answers held per replica (oldest evicted first; a single answer above 64 KiB is never held); 0 uses the default")
 	compatCacheEnabled := fs.Bool("compat-cache-enabled", true, "Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints")
 	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1. One entry holds at most a tenth of this budget: a larger query, query_range or series answer is kept in primary L1 memory instead (up to a tenth of -cache-max-bytes), where it shares L1 with the other cached answers; such an answer stays on the replica that computed it (not on disk, not pushed to peers)")
 
@@ -1088,6 +1098,11 @@ func run(
 			peerHotReadAheadTenantFairShare:     *peerHotReadAheadTenantFairShare,
 			peerHotReadAheadErrorBackoff:        *peerHotReadAheadErrorBackoff,
 			coalescerDisabled:                   *coalescerDisabled,
+			errorCacheEnabled:                   *errorCacheEnabled,
+			errorCacheTransientTTL:              *errorCacheTransientTTL,
+			errorCacheDataTTL:                   *errorCacheDataTTL,
+			errorCacheMaxEntries:                *errorCacheMaxEntries,
+			errorCacheMaxBytes:                  *errorCacheMaxBytes,
 			coldBackendURL:                      *coldBackendURL,
 			coldBackendBoundary:                 *coldBackendBoundary,
 			coldBackendOverlap:                  *coldBackendOverlap,
@@ -2280,30 +2295,37 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	}
 
 	return proxy.Config{
-		BackendURL:                         cfg.backendURL,
-		RulerBackendURL:                    cfg.rulerBackendURL,
-		AlertsBackendURL:                   alertsBackendURL,
-		Cache:                              cfg.cache,
-		CompatCache:                        cfg.compatCache,
-		LogLevel:                           cfg.logLevel,
-		MaxConcurrent:                      cfg.maxConcurrent,
-		RatePerSecond:                      cfg.ratePerSecond,
-		RateBurst:                          cfg.rateBurst,
-		TenantMap:                          tenantMap,
-		TenantMapFile:                      cfg.tenantMapFile,
-		TenantLabel:                        cfg.tenantLabel,
-		TenantLimitsAllowPublish:           parseCSV(cfg.tenantLimitsAllowPublish),
-		TenantDefaultLimits:                tenantDefaultLimits,
-		TenantLimits:                       tenantLimits,
-		MaxLines:                           cfg.maxLines,
-		RangeMetricRowLimit:                cfg.rangeMetricRowLimit,
-		OrderedJSONMetricMaxBytes:          cfg.orderedJSONMetricMaxBytes,
-		LabelFilterRefillMaxPages:          cfg.labelFilterRefillMaxPages,
-		BackendTimeout:                     cfg.backendTimeout,
-		CBFailThreshold:                    cfg.cbFailThreshold,
-		CBOpenDuration:                     cfg.cbOpenDuration,
-		CBWindowDuration:                   cfg.cbWindowDuration,
-		CoalescerDisabled:                  cfg.coalescerDisabled,
+		BackendURL:                cfg.backendURL,
+		RulerBackendURL:           cfg.rulerBackendURL,
+		AlertsBackendURL:          alertsBackendURL,
+		Cache:                     cfg.cache,
+		CompatCache:               cfg.compatCache,
+		LogLevel:                  cfg.logLevel,
+		MaxConcurrent:             cfg.maxConcurrent,
+		RatePerSecond:             cfg.ratePerSecond,
+		RateBurst:                 cfg.rateBurst,
+		TenantMap:                 tenantMap,
+		TenantMapFile:             cfg.tenantMapFile,
+		TenantLabel:               cfg.tenantLabel,
+		TenantLimitsAllowPublish:  parseCSV(cfg.tenantLimitsAllowPublish),
+		TenantDefaultLimits:       tenantDefaultLimits,
+		TenantLimits:              tenantLimits,
+		MaxLines:                  cfg.maxLines,
+		RangeMetricRowLimit:       cfg.rangeMetricRowLimit,
+		OrderedJSONMetricMaxBytes: cfg.orderedJSONMetricMaxBytes,
+		LabelFilterRefillMaxPages: cfg.labelFilterRefillMaxPages,
+		BackendTimeout:            cfg.backendTimeout,
+		CBFailThreshold:           cfg.cbFailThreshold,
+		CBOpenDuration:            cfg.cbOpenDuration,
+		CBWindowDuration:          cfg.cbWindowDuration,
+		CoalescerDisabled:         cfg.coalescerDisabled,
+		ErrorCache: proxy.ErrorCacheConfig{
+			Disabled:     !cfg.errorCacheEnabled,
+			TransientTTL: cfg.errorCacheTransientTTL,
+			DataTTL:      cfg.errorCacheDataTTL,
+			MaxEntries:   cfg.errorCacheMaxEntries,
+			MaxBytes:     cfg.errorCacheMaxBytes,
+		},
 		BackendMinVersion:                  cfg.backendMinVersion,
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
@@ -2520,10 +2542,15 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		{"-max-zero-fill-buckets", cfg.maxZeroFillBuckets},
 		{"-max-query-length-bytes", cfg.maxQueryLengthBytes},
 		{"-label-values-max-response-bytes", cfg.labelValuesMaxResponseBytes},
+		{"-error-cache-max-entries", cfg.errorCacheMaxEntries},
+		{"-error-cache-max-bytes", cfg.errorCacheMaxBytes},
 	} {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
+	}
+	if cfg.errorCacheTransientTTL < 0 || cfg.errorCacheDataTTL < 0 {
+		return fmt.Errorf("invalid -error-cache-transient-ttl=%s / -error-cache-data-ttl=%s (must be >= 0; 0 holds no failure of that class)", cfg.errorCacheTransientTTL, cfg.errorCacheDataTTL)
 	}
 	if cfg.peerReadHedgeMaxDelay < 0 {
 		return fmt.Errorf("invalid -peer-read-hedge-max-delay=%s (must be >= 0; 0 turns hedged peer reads off)", cfg.peerReadHedgeMaxDelay)

@@ -1,5 +1,5 @@
 id: semantics/blank-before-call-parenthesis-read-unlike-loki
-title: A tab, a line feed or a carriage return between label_replace, an unwrap conversion, sort_desc, approx_topk or ip and its parenthesis is answered unlike the spelling without it (open)
+title: A tab, a line feed or a carriage return between an unwrap conversion, approx_topk or an ip() label filter and its parenthesis is answered unlike the spelling without it (open; label_replace and sort_desc spelled so are fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -27,11 +27,22 @@ why: |
   Found by the keyword blank sweep (internal/proxy
   TestKeywordBlankRequestsEqualSpaced pins these rows; a range function and
   vector() spelled so are semantics/translator-reads-blank-before-range-call-as-text
-  and semantics/vector-call-blank-before-parenthesis-as-query). Not changed here.
+  and semantics/vector-call-blank-before-parenthesis-as-query).
+
+  label_replace, sort_desc and the other metric calls spelled so are fixed
+  (#1644): the request rewrite writes a metric call without the blanks before
+  its parenthesis before any handler reads the query (logql.CanonicalSpelling),
+  so they get the requests and the answer of the spelling without them (the
+  keyword blank sweep's known rows fell from 343 to 56). What is left:
+  approx_topk, whose arguments the proxy's parser keeps as text (the rewrite
+  leaves a call it does not read alone), and two spellings inside a pipeline,
+  which the rewrite does not respell: an unwrap conversion
+  (`| unwrap bytes<TAB>(a)`, 42 rows) and an ip() label filter
+  (`| x = ip<TAB>("1.2.3.4")`, 7 rows); approx_topk is the other 7.
 request:
   scope: query-grammar
   entry: "TestKeywordBlankRequestsEqualSpaced (internal/proxy): the rows pinned to this case"
-  setup: "Send as the query of /loki/api/v1/query_range (start now-1h, end now, step 60s): label_replace<TAB>(rate({app=\"api-gateway\"}[5m]), \"a\", \"b\", \"c\", \"d\"), with a tab before the parenthesis. The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+  setup: "Send as the query of /loki/api/v1/query_range (start now-1h, end now, step 60s): sum_over_time({app=\"api-gateway\"} | unwrap bytes<TAB>(size) [5m]), with a tab before the parenthesis. The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
 compare:
   mode: observed
   fields: [status, data]
@@ -41,7 +52,7 @@ gap:
   status: open
   impact: edge
   effort: S
-  area: 'internal/proxy handlers and the string translator (the call name and its parenthesis are matched as one text)'
+  area: 'internal/proxy handlers and the string translator (an unwrap conversion''s, approx_topk''s or an ip() label filter''s name and its parenthesis are matched as one text)'
   loki: 'the lexer reads a call name followed by any blank it skips and a parenthesis as the call'
   proxy: 'the requests and the answer differ from the spelling without the blank'
   planned_test: 'TestKeywordBlankRequestsEqualSpaced (internal/proxy, pinned rows); TestKeywordBlankMatchesLoki (internal/logql, recorded Loki answers); TestTypedPairOfIPCallBlankIsTheUnspacedOnes (internal/querycorpus, the ip() line filter typed-selector pair)'
