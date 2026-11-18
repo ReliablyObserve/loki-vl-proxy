@@ -320,7 +320,8 @@ func unwrapCountingRewrite(query string, accept func(field, conv string) (errors
 	return base + unwrapCountedGateMode(field, conv, errors) + rest, base, field, conv, errors, true
 }
 
-// unwrapGroupStatsByFlag adds the flag to the grouping of every stats pipe of rest (the pipes after the gate).
+// unwrapGroupStatsByFlag adds the flag to the grouping of every stats pipe of rest (the pipes after the gate) but a
+// folded read's series stats.
 // ok is false for a pipe that could drop or reorder a flagged group (anything but stats and the row-wise pipes,
 // unwrapRowPipe), or when no stats pipe follows.
 func unwrapGroupStatsByFlag(rest string) (string, bool) {
@@ -334,6 +335,9 @@ func unwrapGroupStatsByFlag(rest string) (string, bool) {
 	for _, pipe := range pipes {
 		b.WriteString(" | ")
 		switch {
+		case lower.SeriesFoldKeepsFlag(pipe):
+			// A folded read's series stats and the pipes around them: each series' rows carry the flag (lower.SeriesFold).
+			b.WriteString(pipe)
 		case strings.HasPrefix(pipe, "stats "):
 			by, funcs, ok := splitStatsPipe(pipe)
 			if !ok {

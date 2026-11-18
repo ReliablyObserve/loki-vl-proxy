@@ -150,6 +150,10 @@ func (e *Emulator) Handler() http.Handler {
 			e.ServeStats(w, r)
 		case "/select/logsql/query":
 			e.Record(r.URL.Path, r.FormValue("query"))
+			if isSeriesFold(r.FormValue("query")) {
+				e.serveSeriesFold(w, r)
+				return
+			}
 			e.serveRaw(w, r)
 		default:
 			_, _ = w.Write([]byte(`{"values":[]}`))
@@ -304,123 +308,15 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			offset = int64(od)
 		}
 	}
-	query, fold := cutSeriesFold(e, r.FormValue("query"))
+	query := r.FormValue("query")
 	pipes := strings.Split(query, " | ")
-	first := -1
-	for i, pipe := range pipes {
-		if strings.HasPrefix(pipe, "stats ") {
-			first = i
-			break
-		}
-	}
+	first := firstStatsPipe(pipes)
 	if first < 0 {
 		e.T.Fatalf("emulator: no stats pipe in %s", r.FormValue("query"))
 	}
-	// The pipes before the first stats pipe select rows: the unwrap gate and
-	// parsers keep every generated row (all values are numbers), and the window
-	// phase filter of a window shorter than the step keeps the lines inside one.
-	var phaseAnchor, phaseStep, phaseLower, phaseUpper int64
-	// fieldOps are the pipes before the first stats pipe that change fields, in
-	// order: the translator's detected_level chain ends by writing the field (the
-	// emulator applies Loki's rule to the row instead of running its pipes), and
-	// a delete pipe removes the fields it names (`| drop detected_level`).
-	var fieldOps []func(f map[string]string)
-	for _, pipe := range pipes[:first] {
-		if pipe == `format "<__dl>" as detected_level` {
-			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.levelOfFields(f) })
-		}
-		if names, ok := strings.CutPrefix(pipe, "delete "); ok {
-			fieldOps = append(fieldOps, func(f map[string]string) {
-				for _, name := range strings.Split(names, ", ") {
-					if !strings.HasSuffix(name, "*") {
-						delete(f, name)
-					}
-				}
-			})
-		}
-		if pipe == seriesHashPipe {
-			// The series hash of a parser's dynamic identity: the identity pipes before it are not run.
-			fieldOps = append(fieldOps, func(f map[string]string) { f[seriesHashField] = e.seriesHash(f) })
-		}
-		if m := PhaseMathRE.FindStringSubmatch(pipe); m != nil {
-			phaseAnchor, _ = strconv.ParseInt(m[1], 10, 64)
-			phaseStep, _ = strconv.ParseInt(m[2], 10, 64)
-		}
-		if m := PhaseFilterRE.FindStringSubmatch(pipe); m != nil {
-			phaseLower, _ = strconv.ParseInt(m[1], 10, 64)
-			phaseUpper, _ = strconv.ParseInt(m[2], 10, 64)
-		}
-	}
-	var recs []emuRec
-	// The rows the fold's subquery reads: every selected row, the gate's drops included, and the value it reads.
-	var subRows []emuRec
-	var subRaw []string
-	for _, row := range e.SelectRows(r) {
-		if fold != nil {
-			f := map[string]string{"_stream": row.Stream, "_msg": e.Line(row)}
-			for _, m := range StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) {
-				f[m[1]] = m[2]
-			}
-			for k, v := range row.Labels {
-				f[k] = v
-			}
-			for _, op := range fieldOps {
-				op(f)
-			}
-			subRows, subRaw = append(subRows, emuRec{t: row.TS, f: f}), append(subRaw, row.Text())
-		}
-		if phaseStep > 0 {
-			if !WindowPhaseKeeps(row.TS, phaseAnchor, phaseStep, phaseLower, phaseUpper, e.FloatPhase) {
-				continue
-			}
-		}
-		f := map[string]string{"_stream": row.Stream, "_msg": e.Line(row), "__lvp_v": row.Text(), "__lvp_bad": "0"}
-		if row.Raw != "" {
-			// The counting gate (unwrapCountedGateMode): a nan is flagged 2 and a
-			// value the conversion rejects 1, each with the value 0, when the
-			// query counts them; the plain gate drops both.
-			flag := "1"
-			if _, err := strconv.ParseFloat(row.Raw, 64); err == nil {
-				flag = "0"
-			} else if strings.EqualFold(row.Raw, "nan") {
-				flag = "2"
-			}
-			if flag != "0" {
-				if !strings.Contains(r.FormValue("query"), `"`+flag+`" as __lvp_bad`) {
-					continue
-				}
-				f["__lvp_bad"], f["__lvp_v"] = flag, "0"
-			}
-		}
-		for _, m := range StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) { // stream fields are fields
-			f[m[1]] = m[2]
-		}
-		for k, v := range row.Labels {
-			f[k] = v
-		}
-		for _, op := range fieldOps {
-			op(f)
-		}
-		recs = append(recs, emuRec{t: row.TS, f: f})
-	}
-	if fold != nil {
-		// The series classes over the read's rows, then the fold's pipes before the bucket stats.
-		fold.classify(subRows, subRaw)
-		for _, pipe := range pipes[:first] {
-			fold.foldPipe(pipe, recs)
-		}
-		// The blanked series of one line keep no class.
-		for _, rec := range recs {
-			if _, ok := rec.f["__lvp_c"]; !ok {
-				rec.f["__lvp_c"] = ""
-			}
-		}
-	}
+	recs := e.statsRecs(r, pipes[:first])
 	var by, names []string
 	for _, pipe := range pipes[first:] {
-		if fold != nil && fold.foldPipe(pipe, recs) {
-			continue
-		}
 		if m := emuMathRE.FindStringSubmatch(pipe); m != nil {
 			div, _ := strconv.ParseFloat(m[2], 64)
 			for _, rec := range recs {
@@ -485,34 +381,7 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 				by = append(by, field)
 			}
 		}
-		type group struct {
-			t    int64
-			key  map[string]string
-			recs []emuRec
-		}
-		groups := map[string]*group{}
-		var order []string
-		for _, rec := range recs {
-			bucket := int64(0)
-			if ranged {
-				bucket = FloorDiv(rec.t+offset, step)*step - offset
-			}
-			key := map[string]string{}
-			id := strconv.FormatInt(bucket, 10)
-			for _, field := range by {
-				key[field] = rec.f[field]
-				id += "\x00" + rec.f[field]
-			}
-			g := groups[id]
-			if g == nil {
-				g = &group{t: bucket, key: key}
-				groups[id] = g
-				order = append(order, id)
-			}
-			g.recs = append(g.recs, rec)
-		}
-		type fn struct{ kind, arg, alias string }
-		var fns []fn
+		var fns []struct{ kind, alias string }
 		for _, expr := range splitStatsFuncs(m[2]) {
 			fm := emuFuncRE.FindStringSubmatch(strings.TrimSpace(expr))
 			if fm == nil {
@@ -522,7 +391,7 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			if alias == "" {
 				alias = fm[1] + "(" + fm[2] + ")"
 			}
-			fns = append(fns, fn{fm[1], fm[2], alias})
+			fns = append(fns, struct{ kind, alias string }{fm[1], alias})
 		}
 		names = names[:0]
 		onlyRows := true
@@ -535,71 +404,12 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "missing metric fields in the results of query ["+r.FormValue("query")+"]", http.StatusBadRequest)
 			return
 		}
-		var next []emuRec
-		for _, id := range order {
-			g := groups[id]
-			f := map[string]string{}
-			for k, v := range g.key {
-				f[k] = v
+		next := e.statsGroups(r.FormValue("query"), by, m[2], recs, func(t int64) int64 {
+			if ranged {
+				return FloorDiv(t+offset, step)*step - offset
 			}
-			for _, fx := range fns {
-				if fx.kind == "row_min" || fx.kind == "row_max" {
-					// row_min(_time, f) is the row of the earliest sample (row_max the
-					// latest; the first row met wins a tie) as a JSON object of f.
-					src, only, _ := strings.Cut(fx.arg, ", ")
-					if src != "_time" || only == "" {
-						e.T.Fatalf("emulator: %s(%s)", fx.kind, fx.arg)
-					}
-					pick := 0
-					for i, rec := range g.recs {
-						if (fx.kind == "row_min" && rec.t < g.recs[pick].t) || (fx.kind == "row_max" && rec.t > g.recs[pick].t) {
-							pick = i
-						}
-					}
-					enc, _ := json.Marshal(map[string]string{only: g.recs[pick].f[only]})
-					f[fx.alias] = string(enc)
-					continue
-				}
-				if fx.kind == "stddev" {
-					// The population standard deviation of the group's values.
-					var mean, m2 float64
-					for i, rec := range g.recs {
-						v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)
-						d := v - mean
-						mean += d / float64(i+1)
-						m2 += d * (v - mean)
-					}
-					f[fx.alias] = strconv.FormatFloat(math.Sqrt(m2/float64(len(g.recs))), 'f', -1, 64)
-					continue
-				}
-				var acc float64
-				for i, rec := range g.recs {
-					v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)
-					switch fx.kind {
-					case "sum":
-						acc += v
-					case "count":
-						acc++
-					case "sum_len":
-						acc += float64(len(rec.f[fx.arg]))
-					case "avg":
-						acc += (v - acc) / float64(i+1)
-					case "max":
-						if i == 0 || v > acc {
-							acc = v
-						}
-					case "min":
-						if i == 0 || v < acc {
-							acc = v
-						}
-					default:
-						e.T.Fatalf("emulator: stats function %s", fx.kind)
-					}
-				}
-				f[fx.alias] = strconv.FormatFloat(acc, 'f', -1, 64)
-			}
-			next = append(next, emuRec{t: g.t, f: f})
-		}
+			return 0
+		})
 		recs = next
 	}
 
@@ -668,6 +478,200 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"resultType": resultType, "result": result}})
+}
+
+// firstStatsPipe is the index of the first stats pipe of pipes, -1 when there is none.
+func firstStatsPipe(pipes []string) int {
+	for i, pipe := range pipes {
+		if strings.HasPrefix(pipe, "stats ") {
+			return i
+		}
+	}
+	return -1
+}
+
+// statsRecs are the rows the request selects as the pipes before the first stats pipe (before) leave them.
+func (e *Emulator) statsRecs(r *http.Request, before []string) []emuRec {
+	// The pipes before the first stats pipe select rows: the unwrap gate and
+	// parsers keep every generated row (all values are numbers), and the window
+	// phase filter of a window shorter than the step keeps the lines inside one.
+	var phaseAnchor, phaseStep, phaseLower, phaseUpper int64
+	// fieldOps are the pipes before the first stats pipe that change fields, in
+	// order: the translator's detected_level chain ends by writing the field (the
+	// emulator applies Loki's rule to the row instead of running its pipes), and
+	// a delete pipe removes the fields it names (`| drop detected_level`).
+	var fieldOps []func(f map[string]string)
+	for _, pipe := range before {
+		if pipe == `format "<__dl>" as detected_level` {
+			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.levelOfFields(f) })
+		}
+		if names, ok := strings.CutPrefix(pipe, "delete "); ok {
+			fieldOps = append(fieldOps, func(f map[string]string) {
+				for _, name := range strings.Split(names, ", ") {
+					if !strings.HasSuffix(name, "*") {
+						delete(f, name)
+					}
+				}
+			})
+		}
+		if pipe == seriesHashPipe {
+			// The series hash of a parser's dynamic identity: the identity pipes before it are not run.
+			fieldOps = append(fieldOps, func(f map[string]string) { f[seriesHashField] = e.seriesHash(f) })
+		}
+		if m := PhaseMathRE.FindStringSubmatch(pipe); m != nil {
+			phaseAnchor, _ = strconv.ParseInt(m[1], 10, 64)
+			phaseStep, _ = strconv.ParseInt(m[2], 10, 64)
+		}
+		if m := PhaseFilterRE.FindStringSubmatch(pipe); m != nil {
+			phaseLower, _ = strconv.ParseInt(m[1], 10, 64)
+			phaseUpper, _ = strconv.ParseInt(m[2], 10, 64)
+		}
+	}
+	var recs []emuRec
+	for _, row := range e.SelectRows(r) {
+		if phaseStep > 0 {
+			if !WindowPhaseKeeps(row.TS, phaseAnchor, phaseStep, phaseLower, phaseUpper, e.FloatPhase) {
+				continue
+			}
+		}
+		f := map[string]string{"_stream": row.Stream, "_msg": e.Line(row), "__lvp_v": row.Text(), "__lvp_bad": "0"}
+		if row.Raw != "" {
+			// The counting gate (unwrapCountedGateMode): a nan is flagged 2 and a
+			// value the conversion rejects 1, each with the value 0, when the
+			// query counts them; the plain gate drops both.
+			flag := "1"
+			if _, err := strconv.ParseFloat(row.Raw, 64); err == nil {
+				flag = "0"
+			} else if strings.EqualFold(row.Raw, "nan") {
+				flag = "2"
+			}
+			if flag != "0" {
+				if !strings.Contains(r.FormValue("query"), `"`+flag+`" as __lvp_bad`) {
+					continue
+				}
+				f["__lvp_bad"], f["__lvp_v"] = flag, "0"
+			}
+		}
+		for _, m := range StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) { // stream fields are fields
+			f[m[1]] = m[2]
+		}
+		for k, v := range row.Labels {
+			f[k] = v
+		}
+		for _, op := range fieldOps {
+			op(f)
+		}
+		recs = append(recs, emuRec{t: row.TS, f: f})
+	}
+	return recs
+}
+
+// statsGroups runs one stats pipe (grouped by by, its functions funcs) over recs: a row per group of the bucket
+// bucketOf gives each row's time and of the by fields, its time the bucket's.
+func (e *Emulator) statsGroups(query string, by []string, funcs string, recs []emuRec, bucketOf func(int64) int64) []emuRec {
+	m := []string{"", "", funcs}
+	type group struct {
+		t    int64
+		key  map[string]string
+		recs []emuRec
+	}
+	groups := map[string]*group{}
+	var order []string
+	for _, rec := range recs {
+		bucket := bucketOf(rec.t)
+		key := map[string]string{}
+		id := strconv.FormatInt(bucket, 10)
+		for _, field := range by {
+			key[field] = rec.f[field]
+			id += "\x00" + rec.f[field]
+		}
+		g := groups[id]
+		if g == nil {
+			g = &group{t: bucket, key: key}
+			groups[id] = g
+			order = append(order, id)
+		}
+		g.recs = append(g.recs, rec)
+	}
+	type fn struct{ kind, arg, alias string }
+	var fns []fn
+	for _, expr := range splitStatsFuncs(m[2]) {
+		fm := emuFuncRE.FindStringSubmatch(strings.TrimSpace(expr))
+		if fm == nil {
+			e.T.Fatalf("emulator: unknown stats function %q in %s", expr, query)
+		}
+		alias := fm[3]
+		if alias == "" {
+			alias = fm[1] + "(" + fm[2] + ")"
+		}
+		fns = append(fns, fn{fm[1], fm[2], alias})
+	}
+	var next []emuRec
+	for _, id := range order {
+		g := groups[id]
+		f := map[string]string{}
+		for k, v := range g.key {
+			f[k] = v
+		}
+		for _, fx := range fns {
+			if fx.kind == "row_min" || fx.kind == "row_max" {
+				// row_min(_time, f) is the row of the earliest sample (row_max the
+				// latest; the first row met wins a tie) as a JSON object of f.
+				src, only, _ := strings.Cut(fx.arg, ", ")
+				if src != "_time" || only == "" {
+					e.T.Fatalf("emulator: %s(%s)", fx.kind, fx.arg)
+				}
+				pick := 0
+				for i, rec := range g.recs {
+					if (fx.kind == "row_min" && rec.t < g.recs[pick].t) || (fx.kind == "row_max" && rec.t > g.recs[pick].t) {
+						pick = i
+					}
+				}
+				enc, _ := json.Marshal(map[string]string{only: g.recs[pick].f[only]})
+				f[fx.alias] = string(enc)
+				continue
+			}
+			if fx.kind == "stddev" {
+				// The population standard deviation of the group's values.
+				var mean, m2 float64
+				for i, rec := range g.recs {
+					v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)
+					d := v - mean
+					mean += d / float64(i+1)
+					m2 += d * (v - mean)
+				}
+				f[fx.alias] = strconv.FormatFloat(math.Sqrt(m2/float64(len(g.recs))), 'f', -1, 64)
+				continue
+			}
+			var acc float64
+			for i, rec := range g.recs {
+				v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)
+				switch fx.kind {
+				case "sum":
+					acc += v
+				case "count":
+					acc++
+				case "sum_len":
+					acc += float64(len(rec.f[fx.arg]))
+				case "avg":
+					acc += (v - acc) / float64(i+1)
+				case "max":
+					if i == 0 || v > acc {
+						acc = v
+					}
+				case "min":
+					if i == 0 || v < acc {
+						acc = v
+					}
+				default:
+					e.T.Fatalf("emulator: stats function %s", fx.kind)
+				}
+			}
+			f[fx.alias] = strconv.FormatFloat(acc, 'f', -1, 64)
+		}
+		next = append(next, emuRec{t: g.t, f: f})
+	}
+	return next
 }
 
 // splitStatsFuncs splits the functions of a stats pipe at the commas outside

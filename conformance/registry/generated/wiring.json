@@ -2311,6 +2311,7 @@
       "internal/proxy/label_filter_readers_differential_test.go",
       "internal/proxy/query_range_steps_harden_test.go",
       "internal/proxy/query_range_steps_test.go",
+      "internal/proxy/series_fold_read_test.go",
       "internal/proxy/unwrap_binary_operand_loki_test.go",
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
@@ -2321,6 +2322,7 @@
       "internal/proxy/unwrap_recent_errors_test.go",
       "internal/proxy/unwrap_recorded_loki_test.go",
       "internal/proxy/window_phase_filter_test.go",
+      "internal/queryplan/lower/series_fold_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_extent_cache_test.go",
       "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
@@ -2428,6 +2430,7 @@
     ],
     "semantics/unwrap-per-series-identity-raw-rows": [
       "internal/proxy/listed_window_chunks_test.go",
+      "internal/proxy/series_fold_read_test.go",
       "internal/proxy/unwrap_dynamic_identity_binary_test.go",
       "internal/proxy/unwrap_dynamic_identity_cache_test.go",
       "internal/proxy/unwrap_dynamic_identity_test.go",
@@ -2436,8 +2439,8 @@
       "internal/querycorpus/extraction_list_identity_loki_diff_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/querycorpus/listed_window_chunks_loki_diff_test.go",
+      "internal/querycorpus/series_fold_bounds_vl_test.go",
       "internal/querycorpus/series_fold_loki_diff_test.go",
-      "internal/querycorpus/series_fold_scope_vl_test.go",
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
@@ -4295,6 +4298,10 @@
       "semantics/selector-values-are-strings",
       "status-400"
     ],
+    "internal/proxy/series_fold_read_test.go": [
+      "semantics/unwrap-conversion-error",
+      "semantics/unwrap-per-series-identity-raw-rows"
+    ],
     "internal/proxy/series_limit_routes_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -5010,11 +5017,11 @@
       "architecture-syntax-package-layering",
       "semantics/stddev-stdvar-nested-or-binary"
     ],
-    "internal/querycorpus/series_fold_loki_diff_test.go": [
-      "metric-series-identity",
+    "internal/querycorpus/series_fold_bounds_vl_test.go": [
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
-    "internal/querycorpus/series_fold_scope_vl_test.go": [
+    "internal/querycorpus/series_fold_loki_diff_test.go": [
+      "metric-series-identity",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/querycorpus/shadow_rejected_loki_test.go": [
@@ -5186,6 +5193,7 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/series_fold_test.go": [
+      "semantics/unwrap-conversion-error",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/queryplan/lower/spelling_test.go": [
@@ -6248,7 +6256,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 739,
+  "tests_with_markers": 740,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

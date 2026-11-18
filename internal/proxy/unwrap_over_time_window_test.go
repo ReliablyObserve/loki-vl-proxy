@@ -339,7 +339,7 @@ func checkOverTimeRoute(t *testing.T, label string, emu *vlemu.Emulator, c owCas
 	if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
 		t.Fatalf("%s: the metric read raw rows: %s\nquery %s step=%v window=%v", label, raw[0], c.query(), c.step, c.window)
 	}
-	stats := append(emu.EndpointCalls("/select/logsql/stats_query_range"), emu.EndpointCalls("/select/logsql/stats_query")...)
+	stats := append(append(emu.EndpointCalls("/select/logsql/stats_query_range"), emu.EndpointCalls("/select/logsql/stats_query")...), emu.SeriesFoldCalls()...)
 	if len(stats) == 0 {
 		t.Fatalf("%s: no stats query\nquery %s", label, c.query())
 	}
@@ -902,7 +902,7 @@ func TestUnwrapOverTimeShortRangeStaysOnStepBuckets(t *testing.T) {
 func TestUnwrapOverTimeRangeWindowsNaN(t *testing.T) {
 	at := time.Unix(1700000040, 0)
 	nanAt := at.Add(5*time.Minute + 20*time.Second)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(vlemu.FoldOverStats(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		query := r.Form.Get("query")
 		if r.URL.Path != "/select/logsql/stats_query_range" {
@@ -943,7 +943,7 @@ func TestUnwrapOverTimeRangeWindowsNaN(t *testing.T) {
 			}
 		}
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` + strings.Join(result, ",") + `]}}`))
-	}))
+	})))
 	t.Cleanup(srv.Close)
 	for _, tc := range []struct {
 		fn    string

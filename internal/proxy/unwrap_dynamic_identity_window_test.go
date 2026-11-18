@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
@@ -372,7 +373,7 @@ func checkSeriesFoldScenario(t *testing.T, label string, s dynWindowScenario, ve
 			t.Fatalf("%s %s: read raw rows: %s", label, s.query(), raw[0])
 		}
 		reads := identityStatsCalls(emu)
-		if len(reads) != 1 || strings.Contains(reads[0], "__lvp_ks:in(") == off {
+		if len(reads) != 1 || strings.Contains(reads[0], seriesFoldMark) == off {
 			t.Fatalf("%s %s (fold off %v): %d bucket reads grouped by the series hash, want one: %v", label, s.query(), off, len(reads), reads)
 		}
 	}
@@ -579,7 +580,7 @@ func TestDynamicIdentityWindowCacheReuse(t *testing.T) {
 		shim.reset()
 		cold := get(end)
 		coldCalls, coldBytes := counter.take()
-		if !shimReadsFold(shim) {
+		if !shimReadsFold(shim, emu) {
 			t.Errorf("%s: the stats calls do not fold the series hash written before the gate", q)
 		}
 		again := get(end)
@@ -599,19 +600,27 @@ func TestDynamicIdentityWindowCacheReuse(t *testing.T) {
 	}
 }
 
-// shimReadsFold reports stats_query_range calls the extent shim saw, every one writing the series hash before the
-// unwrap gate (lower.Profile IdentityAhead), grouping by it and folding it (the subquery of lower.SeriesFold).
-func shimReadsFold(s *extentShim) bool {
+// shimReadsFold reports that the identity reads were folded: the extent shim saw no stats_query_range call of them,
+// and every folded read the emulator saw writes the series hash before the unwrap gate (lower.Profile IdentityAhead)
+// and groups by it and the gate's flag (lower.SeriesFold).
+func shimReadsFold(s *extentShim, emu *vlemu.Emulator) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for _, c := range s.calls {
-		hash := strings.Index(c.query, "| hash(__lvp_sid) as __lvp_sid |")
-		gate := strings.Index(c.query, "| copy ")
-		if hash < 0 || gate < hash || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") || !strings.Contains(c.query, "__lvp_ks:in(") {
+		if strings.Contains(c.query, "| hash(__lvp_sid) as __lvp_sid |") {
+			s.mu.Unlock()
 			return false
 		}
 	}
-	return len(s.calls) > 0
+	s.mu.Unlock()
+	folded := emu.SeriesFoldCalls()
+	for _, q := range folded {
+		hash := strings.Index(q, "| hash(__lvp_sid) as __lvp_sid |")
+		gate := strings.Index(q, `| copy "`)
+		if hash < 0 || gate < hash || !strings.Contains(q, "__lvp_sid, __lvp_bad)") {
+			return false
+		}
+	}
+	return len(folded) > 0
 }
 
 // FuzzDynamicIdentityWindowsMark holds the window decision of a parser's series identity on any query and step: a
@@ -690,16 +699,19 @@ func TestIdentityAheadReadError(t *testing.T) {
 	}
 }
 
-// identityStatsCalls are the stats_query_range calls the emulator saw that read a parser's identity buckets (the hash
-// before the gate, grouped by it).
+// identityStatsCalls are the calls the emulator saw that read a parser's identity buckets (the hash before the gate,
+// grouped by it): the folded reads (of /select/logsql/query) and the reads of every series (of stats_query_range).
 func identityStatsCalls(emu *vlemu.Emulator) (buckets []string) {
-	for _, q := range emu.EndpointCalls("/select/logsql/stats_query_range") {
+	for _, q := range append(emu.EndpointCalls("/select/logsql/stats_query_range"), emu.SeriesFoldCalls()...) {
 		if strings.Contains(q, "hash(__lvp_sid) as __lvp_sid") && strings.Contains(q, "__lvp_sid, __lvp_bad)") {
 			buckets = append(buckets, q)
 		}
 	}
 	return buckets
 }
+
+// seriesFoldMark is in the text of a folded read only: its series stats collect each series' bucket rows.
+const seriesFoldMark = ") as " + lower.SeriesFoldRows
 
 // streamLabel is the value of label in a stream's text, `{pod="a",app="b"}`.
 func streamLabel(stream, label string) string {
@@ -741,9 +753,9 @@ func FuzzSeriesFold(f *testing.F) {
 	})
 }
 
-// A folded read whose text would pass VictoriaLogs' default query length (the read's filter is written three times:
-// the read and the subquery's two uses) is never sent: the read is sent again reading every series, which answers
-// the reference's values with no error.
+// A folded read whose text would pass VictoriaLogs' default query length is never sent: the read is sent again
+// reading every series (a shorter text: the fold's pipes are not in it), which answers the reference's values with no
+// error. The filter is as long as the read of every series allows.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows
 func TestSeriesFoldTooLongReadsEverySeries(t *testing.T) {
@@ -753,10 +765,22 @@ func TestSeriesFoldTooLongReadsEverySeries(t *testing.T) {
 	short.parser = `json != "nope"`
 	shortEmu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
 	if _, code, body := runDynWindowScenario(t, shortEmu, short, Config{}); code != http.StatusOK || len(identityStatsCalls(shortEmu)) != 1 ||
-		!strings.Contains(identityStatsCalls(shortEmu)[0], "__lvp_ks:in(") {
+		!strings.Contains(identityStatsCalls(shortEmu)[0], seriesFoldMark) {
 		t.Fatalf("a short filter: %d, reads %v: %.200s", code, identityStatsCalls(shortEmu), body)
 	}
-	long := strings.Repeat("x", 5000)
+	// The texts of the short filter, folded and read every series: the long filter fills the latter up to the length.
+	shortOff := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	seriesFoldOff = true
+	_, code, _ := runDynWindowScenario(t, shortOff, short, Config{})
+	seriesFoldOff = false
+	if code != http.StatusOK || len(identityStatsCalls(shortOff)) != 1 {
+		t.Fatalf("a short filter read every series: %d, %d reads", code, len(identityStatsCalls(shortOff)))
+	}
+	every, folded := len(identityStatsCalls(shortOff)[0]), len(identityStatsCalls(shortEmu)[0])
+	long := strings.Repeat("x", 16384-every)
+	if folded+len(long) <= 16384 {
+		t.Fatalf("the fold adds %d characters: no filter both texts allow", folded-every)
+	}
 	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
 	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
@@ -776,8 +800,8 @@ func TestSeriesFoldTooLongReadsEverySeries(t *testing.T) {
 		t.Fatalf("%d %.300s", res.Code, res.Body)
 	}
 	reads := identityStatsCalls(emu)
-	if len(reads) != 1 || strings.Contains(reads[0], "__lvp_ks:in(") || len(reads[0]) > 16384 {
-		t.Fatalf("%d reads (folded %v), want one read of every series under the query length", len(reads), len(reads) > 0 && strings.Contains(reads[0], "__lvp_ks:in("))
+	if len(reads) != 1 || strings.Contains(reads[0], seriesFoldMark) || len(reads[0]) > 16384 {
+		t.Fatalf("%d reads (folded %v), want one read of every series under the query length", len(reads), len(reads) > 0 && strings.Contains(reads[0], seriesFoldMark))
 	}
 	var resp struct {
 		Data struct {

@@ -104,20 +104,27 @@ why: |
   series: the request is marked before it is translated (dynamicIdentityWindows,
   identityAheadKey), the lowering writes the series hash before the unwrap gate
   (lower.Profile IdentityAhead), and VictoriaLogs takes the function's partial
-  aggregates per series hash and per anchored bucket in one stats_query_range
-  call per time chunk (the chunks of the extraction list's windows,
-  listed_window_chunks.go). In the same call it folds the series that lie
-  wholly in one bucket of the read (lower.SeriesFold, decision
-  metric-series-identity/parser-identity-sliding-windows-bucket-merge): a
-  subquery over the read lists the hashes of the series that span buckets (or
-  hold a line whose value may read as NaN), every other row's hash is blanked
-  unless its value is not finite, and a second stats pipe adds up per bucket and
-  group the blanked series' values and their count. The window evaluator merges
+  aggregates per series hash and per anchored bucket in one call per time chunk
+  (the chunks of the extraction list's windows, listed_window_chunks.go). In
+  the same scan it folds the series that lie wholly in one bucket of the read
+  (lower.SeriesFold, decision
+  metric-series-identity/parser-identity-sliding-windows-bucket-merge), on
+  /select/logsql/query with the bounds stats_query_range reads for the read's
+  grid (stats_query_range adds the bucket to every stats pipe, so none could
+  group a series across buckets): the bucket stats by the bucket, the grouping
+  and the hash; a stats pipe by the grouping and the hash counts each series'
+  buckets and keeps its bucket rows; a series in one bucket whose value is
+  finite (not a NaN line's) is folded, every other series' rows are read back
+  (unroll); the last stats pipe passes the kept series' partials through and
+  adds up (or takes the extreme of) the folded values and counts them. The line
+  is unpacked once (lower.SeriesFoldBase) and the hash computed once. The proxy
+  reads the rows back into stats_query_range's answer shape (seriesFoldRead.matrix).
+  The window evaluator merges
   each kept series' buckets into Loki's windows (t-range, t] and adds a folded
   row to every window that holds its bucket, weighted by its count, in the outer
   sum, max, min or avg (foldAccumulator.addPartial), which drops the hash. The
-  subquery runs over the read's own time range (VictoriaLogs adds it to every
-  subquery, TestSeriesFoldSubqueryScopedToRead on v1.49.0 and v1.53.0), and a
+  bounds sent are the ones stats_query_range reads, bucket for bucket
+  (TestSeriesFoldBoundsMatchStatsQueryRange on v1.49.0 and v1.53.0), and a
   window lies in the read that answers it, so a series spanning two chunks folds
   in each, exactly. The proxy reads the folded rows and the spanning series'
   partials, never raw rows: a key of its own on every line costs about what the
@@ -189,7 +196,7 @@ gap:
   area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes, IdentityAhead), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go, unwrap_dynamic_identity.go (dynamicUnwrapIdentity, dynamicIdentityWindows), range_metric_compat.go (the instant stats route, the window route of the hash); the window evaluator (unwrap_samples.go, listed_window_chunks.go) for a range longer than the step'
   loki: 'the vector aggregation folds per series values, a series being the stream plus the parsed labels (measured on Loki 3.7.7, in this case)'
   proxy: 'the value per stream and hash of the parsed labels, then the aggregation over the series'
-  planned_test: 'TestSeriesFoldMatchLoki, TestSeriesFoldSubqueryScopedToRead, TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan, TestDynamicIdentityBinaryOperandsReadTheHash, TestDynamicIdentityBinaryOperandContext, TestDynamicIdentityCacheKeysFenced, FuzzDynamicIdentityFenceMatchesPlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core, binary rows and the sliding, longer and non-multiple ranges included; the sliding rows written, not yet run on a stack); TestDynamicIdentityWindowsMatchLokiReference, FuzzSeriesFold, TestSeriesFoldSpanningChunks, TestSeriesFoldMemoryBound, TestDynamicIdentityWindowsKeepExtremes, TestDynamicIdentityWindowsFoldBeyondSeriesLimit, TestDynamicIdentityWindowCacheReuse (internal/proxy), TestDynamicUnwrapIdentityAhead, TestSeriesFoldPipes (internal/queryplan/lower)'
+  planned_test: 'TestSeriesFoldMatchLoki, TestSeriesFoldBoundsMatchStatsQueryRange, TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan, TestDynamicIdentityBinaryOperandsReadTheHash, TestDynamicIdentityBinaryOperandContext, TestDynamicIdentityCacheKeysFenced, FuzzDynamicIdentityFenceMatchesPlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core, binary rows and the sliding, longer and non-multiple ranges included; the sliding rows written, not yet run on a stack); TestDynamicIdentityWindowsMatchLokiReference, FuzzSeriesFold, TestSeriesFoldSpanningChunks, TestSeriesFoldMemoryBound, TestDynamicIdentityWindowsKeepExtremes, TestDynamicIdentityWindowsFoldBeyondSeriesLimit, TestDynamicIdentityWindowCacheReuse (internal/proxy), TestDynamicUnwrapIdentityAhead, TestSeriesFoldPipes, TestSeriesFoldBase, TestSeriesFoldKeepsFlag (internal/queryplan/lower), TestSeriesFoldCountingForm, TestSeriesFoldQueryParams, TestSeriesFoldMatrix (internal/proxy), TestEmulatorSeriesFold (internal/testutil/vlemu)'
   note: 'Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. VictoriaLogs stats group by named fields only: the lowering names the parsed labels by a hash of the line unpacked under a prefix.'
   clusters:
     - 0e2f0a0c
