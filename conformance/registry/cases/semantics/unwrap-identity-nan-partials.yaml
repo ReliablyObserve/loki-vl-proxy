@@ -1,0 +1,67 @@
+id: semantics/unwrap-identity-nan-partials
+title: "A parser's series whose value is NaN answers 0 or leaves the sum over the series (fixed)"
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  A series of a range function over an unwrapped label after `| json` or `| logfmt` can be NaN
+  without a line of nan: the sum and the mean of lines of `inf` and `-inf`, and the deviation of `2`
+  and `inf`, are NaN. Loki's `sum` and `avg` over the series are then NaN where it sits.
+
+  VictoriaLogs' `sum` keeps NaN as its empty value (stats_sum.go): a sum over a row of NaN answers
+  NaN or 0 by how the block holds the column (a float column's sum skips NaN), and a NaN in the middle
+  of a sum is dropped by the next value. Two places of a parser's series identity summed such a value
+  after the per-series stats:
+    * the fold's second stats pipe (a range longer than the step, the series that lie in one bucket
+      folded in VictoriaLogs) passes a series that keeps its hash through `sum()`: its NaN partial came
+      out as 0;
+    * at a range up to the step the outer `stats sum(__lvp_inner)` over the series left a NaN series out.
+  Recorded with Loki's engine (Loki 3.7.9) and VictoriaLogs v1.49.0 and v1.53.0 over one hour, step
+  60 s and 20 s (TestUnwrapIdentityNaNPartialsMatchLoki, internal/querycorpus), and repeated 20 times
+  live on both versions:
+    * `sum(avg_over_time({service_name="nan1"} | json | unwrap duration_ms [5m]))` and the
+      `stddev_over_time` form: 0 where Loki answers NaN, 20 of 20 runs;
+    * `sum(avg_over_time({service_name="nanv"} | json | unwrap duration_ms [1m]))`: 231, 561, 345
+      (finite, varying with the step) where Loki answers NaN, 20 of 20 runs.
+
+  Fixed: under a parser's series identity, the counting gate's rewrite flags as nan (2) the rows whose
+  value a later stats pipe sums or averages is NaN (`format if (__lvp_bad:="0" (-__lvp_inner:<=inf))
+  "2" as __lvp_bad`; `x:<=inf` is false only for NaN on v1.49.0 and v1.53.0), so the proxy's nan group
+  makes the series NaN where it sits, as for a line of nan. Max and min over the series, the first
+  stats pipe and every query without the series hash are sent as before. The instant runs of sum, sum
+  by and avg over the deviation of an infinity after a parser of every key now match Loki too
+  (TestUnwrapDynamicValueFormsMatchLoki, removed from its known differences).
+
+  Not covered here: an extraction list's identity (no series hash; its outer sum still leaves a NaN
+  series out, kept as known differences of TestUnwrapDynamicValueFormsMatchLoki), and infinities of
+  both signs followed by a number in one bucket, where VictoriaLogs' sum restarts inside the bucket
+  stats themselves (semantics/unwrap-sliding-infinity-point).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(avg_over_time({service_name="nanv"} | json | unwrap duration_ms [1m]))'
+    start: now-1h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: "NaN at every step whose windows hold a series of NaN, as Loki."
+gap:
+  status: fixed
+  fixed_by: "#1667"
+  impact: edge
+  effort: S
+  area: "internal/proxy (unwrap_conversion_error.go: the counting gate's rewrite of a parser's series identity)"
+  loki: "sum and avg over the series are NaN where a series is NaN"
+  proxy: "sum and avg over the series are NaN where a series is NaN"
+  planned_test: "TestUnwrapIdentityNaNPartialsMatchLoki (internal/querycorpus), TestUnwrapNaNMarkUnderSeriesIdentity (internal/proxy)"
+  visual: none
+  visual_reason: 'generator data holds no infinity; the difference shows only on values of inf, proven by the recorded differential'
+  clusters: []

@@ -23,7 +23,7 @@ func (r *swRunner) swSetVersion(version string) {
 }
 
 // swVersions: unknown, the oldest and the newest supported VictoriaLogs.
-var swVersions = []string{"", "v1.49.0", "v1.53.0"}
+var swVersions = []string{"", "v1.49.0", "v1.54.0"}
 
 // The cut route answers Loki's windows on every supported VictoriaLogs, and
 // where there is no line at all (no series, an empty matrix on both routes).

@@ -1,0 +1,32 @@
+id: vl-limit-read-timestamp-ties
+kind: version_gated_capability
+since: v1.54
+generated:
+  used_in: 0
+
+description: |
+  VictoriaLogs v1.54.0 fixes two answers of a read of the newest (or oldest) N
+  rows (/select/logsql/query with limit, or a query ending in
+  `| sort by (_time desc) limit N`): with many rows at one timestamp, some
+  could be missing or returned twice (#1882); and a subquery in such a read,
+  or in a live tail, could see only the last seconds or minutes instead of the
+  request's time range (#1850). It also returns a storage node's error from
+  vlselect instead of an empty or incomplete answer when partial responses are
+  on (-search.allowPartialResponse, #1935).
+proxy_usage: |
+  The proxy's log reads send no subquery (the in() subqueries it writes are in
+  stats reads: the Drilldown ranked breakdowns of metric_binary.go and the
+  series fold of internal/queryplan/lower/series_fold.go), so #1850 changes
+  none of its answers. A log read whose limit cuts inside rows of one
+  timestamp can, on v1.49.0 through v1.53.x, miss or repeat rows of that
+  timestamp; the proxy's own paging (refillLineFieldRows) drops the rows of
+  the boundary timestamp it already read, which keeps its pages from repeating
+  each other, but cannot restore a row VictoriaLogs left out. With partial
+  responses on in a cluster before v1.54.0, an incomplete answer looks like a
+  complete one to the proxy, which caches it like any other answer.
+fallback: |
+  None in the proxy: run VictoriaLogs v1.54.0 or later where many rows share a
+  timestamp, and keep -search.allowPartialResponse off on older clusters. A
+  live check of a limit read over rows of one timestamp on both matrix
+  versions is a follow-up.
+proves: []

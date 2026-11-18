@@ -1,0 +1,23 @@
+id: vl-math-quoted-constant-clone-crash
+kind: version_gated_capability
+since: v1.53
+generated:
+  used_in: 0
+
+description: |
+  Before v1.53.0 a math pipe holding a quoted constant whose unquoted text the
+  lexer splits ("2025-01-01T00:00:00Z") is printed without its quotes when
+  VictoriaLogs clones the query (the limit arg of /select/logsql/query, live
+  tailing); the reprint does not parse and VictoriaLogs panics. On the published
+  v1.49.0 and v1.52.0 images the whole process exits; the oracle's handler drops
+  the connection. v1.53.0 and v1.54.0 answer 200; `math "1.5" + 1` reprints as
+  itself and runs everywhere. v1.52.1/v1.52.2 (enterprise-only LTS images) are
+  guarded too, and so is a release the proxy has not detected yet.
+proxy_usage: |
+  The proxy never sends such a call to an older release (vlGetInner,
+  vlPostSend, the native tail call): it answers the transport failure a dropped
+  connection gives, the client's Loki 500 unchanged. No LogQL input makes the
+  proxy write a quoted constant into a math pipe today; this is a guard.
+fallback: |
+  None: the call is not sent.
+proves: []

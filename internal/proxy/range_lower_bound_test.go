@@ -60,7 +60,7 @@ func TestRateCounterReadsLokiWindow(t *testing.T) {
 	}
 	query := `sum by (pod) (rate_counter({app="uw"} | unwrap amount [1m]))`
 	for _, step := range []time.Duration{time.Minute, 0} {
-		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 		c := owCase{shape: owShape{query: func(string) string { return query }}, step: step, start: at, end: at}
 		got := runOverTimeCase(t, emu, c, 0)
 		if v, ok := got["pod=a"][at]; !ok || math.Abs(v-40.0/60) > 1e-12 {

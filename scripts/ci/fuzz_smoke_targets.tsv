@@ -106,6 +106,7 @@ smoke	internal/logql	FuzzLabelFilterRegexFormsAgree	12s	-	a label matcher regex 
 smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
 smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
 smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
+smoke	internal/logsql	FuzzPredictRefusal	12s	-	predict refusal
 smoke	internal/logsql	FuzzOutboundGuard	12s	-	outbound guard
 smoke	internal/logsql	FuzzQuoteFieldName	12s	-	quote field name
 smoke	internal/logsql	FuzzQueryString	12s	-	query string
@@ -178,6 +179,8 @@ smoke	internal/querycorpus	FuzzProxyEvaluatedLowering	12s	-	topk, bottomk, sort,
 smoke	internal/queryplan/lower	FuzzNestedVectorAggLowering	12s	-	vector aggregations over vector aggregations lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzParserLabelsLowering	12s	-	grouping, unwrapped and kept labels a parser extracts, a without fold over a parser and a trailing keep lower to the query the string translator writes
 smoke	internal/logql	FuzzParseTerminates	12s	-	every logql entry point returns within 200 ms and allocates at most a mebibyte per input byte
+smoke	internal/logql	FuzzCanonicalizeNestedLabelReplace	12s	-	canonicalizing a call writes its first argument as canonicalizing that argument alone does, at any nesting depth
+smoke	internal/logql	FuzzCanonicalizeInPlaceMatchesPerArgument	12s	-	reading a call's first argument in place canonicalizes any query as canonicalizing each argument on its own does
 smoke	internal/logql	FuzzActionErrorAheadOfLaterErrors	12s	-	a parser action error answers ahead of every later syntax, lexer, tree and build error, inside its range aggregation too
 smoke	internal/logql	FuzzRangeDuration	12s	-	a range is accepted exactly in Prometheus' duration form, with one of Loki's texts otherwise
 smoke	internal/queryplan/lower	FuzzRoute	12s	-	the route rule of a metric query never panics and either routes it with a window that fits the request, a without fold that fits the window, a group pushdown and a sum of all streams that fit the function, and an offset that keeps the moved bounds between September 2001 and int64 nanoseconds, and for a binary operation one route per aggregation operand, equal to the operand's alone, that the lowering writes, or names the delegation
@@ -206,3 +209,8 @@ smoke	internal/proxy	FuzzVLNotInMatchesTheNegatedClass	12s	-	probe regexps writt
 smoke	internal/logsql	FuzzWithGroupKeyInEveryStats	12s	-	the presence witness edit adds the key to every stats pipe and changes nothing else
 smoke	internal/proxy	FuzzListedWindowChunks	12s	-	an extraction list's windows read in time chunks under a small budget answer byte for byte what one read answers
 smoke	internal/proxy	FuzzDeleteRequest	12s	-	the delete API reads a create request with Loki's typed 400 or a request whose start is before its end
+smoke	internal/clientprofile	FuzzParseVersion	12s	-	a client version reads as major.minor.patch of at most four digits each or as unknown, and prints back to itself
+smoke	internal/clientprofile	FuzzDetect	12s	-	any User-Agent, Source tag and referer give a closed surface and bounded version labels; a Drilldown Source tag is always Drilldown
+smoke	internal/logql	FuzzCallReadsMatchReadingAgain	12s	-	nested calls kept as text read through the jumps, the shared notes, the typed-call skip and the in-place spelling read as reading each call again
+smoke	internal/logql	FuzzArgumentReaderMatchesFirstArgumentLen	12s	-	the bracket table reads every first argument as FirstArgumentLen does
+smoke	internal/proxy	FuzzStripOuterCallsMatchesRescanning	12s	-	the strip of outer label_replace calls reads a nesting through one bracket table as reading each call from its text

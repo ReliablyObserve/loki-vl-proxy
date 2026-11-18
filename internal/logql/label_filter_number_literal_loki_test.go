@@ -71,6 +71,9 @@ func numLitValues() []string {
 		}
 	}
 	add("1h30m", "1h 30m", "1m1h", "1h30", "30m1", "1.5h30m", "1h1h", "1h30m15s", "1h30mx", "1h30m5B", "5m5B", "5B5m", "1h.5m", "1h5.m", "1h-5m", "1d12h", "1w1d", "1y1w1d1h1m1s1ms1us1ns", "1s1", "1m1_0s", "1H30M", "2h45m30s500ms")
+	// Sizes at 2^64 bytes: a whole size up to 18446744073709551615 is one since Loki 3.7.10 (go-humanize v1.1.0).
+	add("18446744073709551615B", "18446744073709551614B", "18446744073709551616B", "18446744073709550000B", "18446744073709551615",
+		"18014398509481983KiB", "18014398509481984KiB", "18446744073709551.615KB", "18446744073709551615kB", "18446744073709551615EB")
 	add("5x", "5Bx", "5mx", "5smx", "5kBx", "5B5", "5kB5", "5 B", "5 m", "5_B", "5_m", "5B_", "5m_", "5Bi", "5é", "5B)", "5m)", "0B)", "0x)", "1e)")
 	for _, base := range []string{"5", "5m", "5B", "0B", "0x1", "0x", "1e3", "1e", "5x", "0", "0.5", "0o7", "0b1"} {
 		for _, c := range []string{"\v", "\f", "\r", "\n", "\t", " ", "\u00a0", "\u0085", "\u2003", "\x00", "\x01", "\x1f", "\x7f", "\u200b", "\ufeff"} {
@@ -247,7 +250,7 @@ func readNumLitAnswers(t *testing.T, queries []string) []numLitAnswer {
 // again; where the printed text is itself a recorded query, Loki accepts it too. A minus before a number that
 // starts with a 0 and a letter (`- 0X0`) stays apart: Loki reads `-0X0` as no query.
 //
-// conformance: semantics/label-filter-number-literal-scan
+// conformance: semantics/label-filter-number-literal-scan, semantics/unwrap-bytes-whole-size-exact
 func TestLabelFilterNumberLiteralsPrintReparse(t *testing.T) {
 	queries := numLitQueries()
 	answers := readNumLitAnswers(t, queries)
@@ -288,7 +291,7 @@ func TestLabelFilterNumberLiteralsPrintReparse(t *testing.T) {
 // exactly what Loki's parser accepts and rejects, with Loki's error text. Loki's answers are recorded with the
 // Loki oracle (LVP_RUN_ORACLES=1 records them again).
 //
-// conformance: semantics/label-filter-number-literal-scan
+// conformance: semantics/label-filter-number-literal-scan, semantics/unwrap-bytes-whole-size-exact
 func TestLabelFilterNumberLiteralsMatchLoki(t *testing.T) {
 	queries := numLitQueries()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
@@ -325,7 +328,7 @@ func TestLabelFilterNumberLiteralsMatchLoki(t *testing.T) {
 // The value and kind a label filter reads from an accepted literal, and the stage that starts with a dotted name
 // (the first word of the text is not cut at its dots).
 //
-// conformance: semantics/label-filter-number-literal-scan
+// conformance: semantics/label-filter-number-literal-scan, semantics/unwrap-bytes-whole-size-exact
 func TestLabelFilterLiteralKinds(t *testing.T) {
 	for _, tc := range []struct {
 		text, value string

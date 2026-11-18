@@ -323,7 +323,9 @@ func unwrapCountingRewrite(query string, accept func(field, conv string) (errors
 // unwrapGroupStatsByFlag adds the flag to the grouping of every stats pipe of rest (the pipes after the gate) but a
 // folded read's series stats.
 // ok is false for a pipe that could drop or reorder a flagged group (anything but stats and the row-wise pipes,
-// unwrapRowPipe), or when no stats pipe follows.
+// unwrapRowPipe), or when no stats pipe follows. Under a parser's series identity (the series hash in rest), a stats
+// pipe that follows another one flags as nan the rows whose value one of its sums or averages reads is NaN
+// (unwrapNaNMark).
 func unwrapGroupStatsByFlag(rest string) (string, bool) {
 	pipes, ok := unwrapSplitPipes(rest)
 	if !ok {
@@ -332,6 +334,7 @@ func unwrapGroupStatsByFlag(rest string) (string, bool) {
 	var b strings.Builder
 	b.Grow(len(rest) + 32)
 	stats := false
+	identity := strings.Contains(rest, dynamicSeriesHashLabel)
 	for _, pipe := range pipes {
 		b.WriteString(" | ")
 		switch {
@@ -342,6 +345,12 @@ func unwrapGroupStatsByFlag(rest string) (string, bool) {
 			by, funcs, ok := splitStatsPipe(pipe)
 			if !ok {
 				return rest, false
+			}
+			if stats && identity {
+				if mark := unwrapNaNMark(funcs); mark != "" {
+					b.WriteString(mark)
+					b.WriteString(" | ")
+				}
 			}
 			stats = true
 			b.WriteString("stats by (")
@@ -360,9 +369,36 @@ func unwrapGroupStatsByFlag(rest string) (string, bool) {
 	return b.String(), stats
 }
 
+// unwrapNaNMark is the pipe that flags as nan (2) the clean rows whose value a sum or an average of the stats
+// function list funcs reads is NaN, or "" when the list holds neither. VictoriaLogs' sum keeps NaN as its empty
+// value: a sum over a row of NaN answers 0 or NaN by how the block holds the column (a float column's sum skips
+// NaN), so a series whose value is NaN (lines of an infinity of each sign in one bucket, the deviation of a value and
+// an infinity) left the outer sum, or a series that keeps its hash came out of the fold's second stats pipe as 0,
+// where Loki's sum and average are NaN. The nan group then makes the series NaN where it sits (unwrapNaN). A folded
+// read's merge of the folded values (lower.SeriesFoldField) is never marked: only a finite value folds, the field is
+// blank on the rows of a series that keeps its hash, and those rows' partials pass the last stats pipe through any,
+// which keeps a NaN.
+func unwrapNaNMark(funcs string) string {
+	fs, ok := statsFunctions(funcs)
+	if !ok {
+		return ""
+	}
+	var conds []string
+	for _, f := range fs {
+		if (f.fn == "sum" || f.fn == "avg") && f.arg != "" && f.arg != lower.SeriesFoldField && !strings.ContainsAny(f.arg, " ,()\"\\") && !slices.Contains(conds, "-"+f.arg+":<=inf") {
+			conds = append(conds, "-"+f.arg+":<=inf")
+		}
+	}
+	if len(conds) == 0 {
+		return ""
+	}
+	return "format if (" + unwrapBadField + `:="0" (` + strings.Join(conds, " or ") + `)) "` + unwrapNaNFlag + `" as ` + unwrapBadField
+}
+
 // unwrapRowPipes are the pipes that compute fields of each row and keep every row and its fields: the flag reaches
 // the stats after them.
-var unwrapRowPipes = []string{"math ", "unpack_json ", "unpack_logfmt ", "delete ", "pack_json ", "hash(", "format ", "copy ", "replace_regexp ", "extract_regexp "}
+var unwrapRowPipes = []string{"math ", "unpack_json ", "unpack_logfmt ", "delete ", "pack_json ", "set_stream_fields ", "rename ", "hash(", "format ", "copy ",
+	"replace_regexp ", "extract_regexp "}
 
 // unwrapRowPipe reports a pipe the flag passes: a row-wise pipe, or a filter on the proxy's own fields (the window
 // phase, the rate's presence), which flagged rows pass like any other.
@@ -475,8 +511,8 @@ func splitStatsPipe(pipe string) (by []string, funcs string, ok bool) {
 	return by, rest, true
 }
 
-// statsFunction is one function of a stats pipe: its name and the name of its result.
-type statsFunction struct{ fn, result string }
+// statsFunction is one function of a stats pipe: its name, its argument as written and the name of its result.
+type statsFunction struct{ fn, arg, result string }
 
 // statsFunctions reads a stats pipe's function list (`sum(x) as c, count()`): each function and the name of its
 // result (the alias, else the call as written).
@@ -507,7 +543,7 @@ func statsFunctions(list string) ([]statsFunction, bool) {
 		if end < 0 {
 			return nil, false
 		}
-		f := statsFunction{fn: fn, result: list[:end+1]}
+		f := statsFunction{fn: fn, arg: list[open+1 : end], result: list[:end+1]}
 		list = list[end+1:]
 		if alias, ok := strings.CutPrefix(list, " as "); ok {
 			stop := strings.Index(alias, ", ")

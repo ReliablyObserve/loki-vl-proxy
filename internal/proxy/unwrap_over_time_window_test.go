@@ -399,7 +399,7 @@ func owGenerate(rnd *rand.Rand, fn, parser string, shape owShape, instant bool) 
 //
 // conformance: semantics/unwrap-over-time-range-windows, window-bounds-and-step-alignment
 func TestUnwrapOverTimeWindowsDifferential(t *testing.T) {
-	for _, version := range []string{"", "v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"", "v1.49.0", "v1.54.0"} {
 		for _, parser := range []string{"", "logfmt", "json"} {
 			for _, fn := range []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
 				for _, shape := range owShapes {
@@ -492,7 +492,7 @@ func TestUnwrapGroupPushdownMatchesPerStreamFold(t *testing.T) {
 		{name: "max by (detected_level, pod)", query: func(ra string) string { return "max by (detected_level, pod) (" + ra + ")" }, outer: "max", group: owByPod},
 	}
 	pushed := 0
-	for _, version := range []string{"", "v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"", "v1.49.0", "v1.54.0"} {
 		for _, parser := range []string{"", "logfmt"} {
 			for _, shape := range shapes {
 				if parser != "" && shape.name == "max" {
@@ -552,7 +552,7 @@ func TestUnwrapGroupPushdownDerivesServiceName(t *testing.T) {
 		`max by (service_name) (max_over_time({app="uw"} | unwrap amount [5m]))`,
 		`min by (service_name) (min_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
 	} {
-		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 		c := owCase{shape: owShape{query: func(string) string { return query }}, step: time.Minute, start: base, end: base + 120e9}
 		if code, body := owRawAnswer(t, emu, c, 0); code != http.StatusOK {
 			t.Fatalf("%s: %d %s", query, code, body)
@@ -623,7 +623,7 @@ func TestUnwrapOverTimeRangeWindowEdgeCases(t *testing.T) {
 			if !tc.shape.parser(parser, tc.fn) {
 				continue
 			}
-			for _, version := range []string{"v1.49.0", "v1.53.0"} {
+			for _, version := range []string{"v1.49.0", "v1.54.0"} {
 				label := fmt.Sprintf("%s/%s/%s/%s", tc.fn, tc.shape.name, parser, version)
 				t.Run(label, func(t *testing.T) {
 					c := owCase{fn: tc.fn, parser: parser, shape: tc.shape, window: 2 * time.Minute, step: time.Minute, start: at(70), end: at(310), rows: rows}
@@ -663,7 +663,7 @@ func TestUnwrapOverTimeRawWindowBounds(t *testing.T) {
 						c.rows[j].TS = edge + int64(rnd.Intn(3)-1)
 					}
 				}
-				emu := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: "v1.53.0"}
+				emu := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: "v1.54.0"}
 				got := runOverTimeCase(t, emu, c, 0)
 				if len(emu.EndpointCalls("/select/logsql/query")) == 0 {
 					t.Fatalf("%s: expected the raw-row evaluator, got stats only", c.query())
@@ -693,7 +693,7 @@ func TestUnwrapOverTimeSparseSamplePresence(t *testing.T) {
 		for _, fn := range []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
 			t.Run(fmt.Sprintf("%s/%s", fn, uwWindowText(tc.window)), func(t *testing.T) {
 				c := owCase{fn: fn, parser: "logfmt", shape: owShapes[0], window: tc.window, step: time.Minute, start: base, end: base + int64(time.Hour), rows: rows}
-				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 				got := runOverTimeCase(t, emu, c, 0)
 				want := c.want()
 				if n := len(want["pod=a"]); n != tc.samples {
@@ -726,7 +726,7 @@ func TestUnwrapOverTimeUngroupedSumIgnoresSeriesLimit(t *testing.T) {
 		for _, shape := range []owShape{owShapes[2], owShapes[10]} {
 			t.Run(fn+"/"+shape.name, func(t *testing.T) {
 				c := owCase{fn: fn, shape: shape, window: 5 * time.Minute, step: time.Minute, start: base, end: base + int64(10*time.Minute), rows: rows}
-				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 				got := runOverTimeCase(t, emu, c, 2)
 				compareOverTime(t, fn, c, got, c.want())
 				checkOverTimeRoute(t, fn, emu, c)
@@ -734,7 +734,7 @@ func TestUnwrapOverTimeUngroupedSumIgnoresSeriesLimit(t *testing.T) {
 		}
 	}
 	t.Run("grouped over the limit", func(t *testing.T) {
-		backend := httptest.NewServer((&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}).Handler())
+		backend := httptest.NewServer((&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}).Handler())
 		defer backend.Close()
 		rc := cache.New(60*time.Second, 1000)
 		defer rc.Close()
@@ -776,7 +776,7 @@ func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 		`sum without () (max_over_time({app="uw"} | unwrap amount [5m]))`,
 	} {
 		t.Run(query, func(t *testing.T) {
-			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 			c := owCase{shape: owShape{query: func(string) string { return query }}, window: 5 * time.Minute, step: time.Minute, start: base, end: base + int64(10*time.Minute)}
 			if got := runOverTimeCase(t, emu, c, 0); len(got) == 0 {
 				t.Fatalf("%s: no series", query)
@@ -796,7 +796,7 @@ func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 		`sum(avg_over_time({app="uw"} | json | unwrap amount | __error__="" [5m]))`,
 	} {
 		t.Run("identity "+query, func(t *testing.T) {
-			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 			c := owCase{shape: owShape{query: func(string) string { return query }}, window: 5 * time.Minute, step: time.Minute, start: base, end: base + int64(10*time.Minute)}
 			if got := runOverTimeCase(t, emu, c, 0); len(got) == 0 {
 				t.Fatalf("%s: no series", query)
@@ -876,7 +876,7 @@ func TestUnwrapOverTimeShortRangeStaysOnStepBuckets(t *testing.T) {
 		`sum by (pod) (sum_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
 	} {
 		t.Run(query, func(t *testing.T) {
-			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 			c := owCase{shape: owShape{query: func(string) string { return query }}, step: 10 * time.Minute, start: base, end: base + int64(7*24*time.Hour)}
 			runOverTimeCase(t, emu, c, 0)
 			calls := emu.EndpointCalls("/select/logsql/stats_query_range")

@@ -1,0 +1,38 @@
+id: semantics/tail-ends-on-vl-row-rate-limit
+title: 'A busy tail VictoriaLogs v1.54.0 ends mid-stream closes where Loki keeps streaming (open)'
+pending: true
+proves:
+  - loki_api_v1_tail
+consumer: explore
+why: |
+  From VictoriaLogs v1.54.0 (#1837, registry vl-live-tail-row-rate-limit) a
+  live tail whose query matches more than 10,000 rows in one refresh's read
+  ends: VictoriaLogs writes the error text into the stream after the rows it
+  sent. The proxy reads that line as a broken stream and closes the tail with
+  Loki's internal error (1011), in the default auto mode and in native mode
+  (TestTail_VLRowRateLimitClosesWithLokiText); a tail refused at its start in
+  auto mode is served by the polling tail and stays open. Loki has no such
+  limit: its tail keeps streaming a busy query (dropping entries a slow client
+  cannot take). Up to v1.53.x VictoriaLogs kept streaming, so the difference
+  exists only on v1.54.0 and later.
+request:
+  method: GET
+  path: /loki/api/v1/tail
+  params:
+    query: '{service_name=~".+"}'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    The tail keeps streaming while the client reads.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/tail.go forwardNativeTail (continue on the polling tail after VictoriaLogs ends a busy tail)'
+  loki: 'a busy tail keeps streaming'
+  proxy: 'on VictoriaLogs v1.54.0 and later, a tail ended mid-stream by the row-rate limit closes with 1011'
+  planned_test: 'TestTail_VLRowRateLimitClosesWithLokiText (internal/proxy) turned into the continue-on-polling expectation, plus a live tail of a stream above 10,000 rows per refresh on both matrix versions (test/e2e-compat, group tail-multitenancy)'
+  note: 'Found reading VictoriaLogs v1.54.0 (app/vlselect/logsql ProcessLiveTailRequest) on 2026-11-18; not yet measured on the stack.'

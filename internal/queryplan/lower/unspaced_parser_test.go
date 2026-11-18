@@ -40,7 +40,7 @@ const unspacedParserAnswers = "testdata/unspaced-parser-loki-vl.jsonl"
 // unspacedAnswer is the recorded answer for one pair: for each spelling, the rows Loki keeps with the labels it
 // extracts (row index to label=value pairs); for each VictoriaLogs version, the plan's text for the unspaced spelling
 // and VictoriaLogs' rows for it; and the string translator's text for the unspaced spelling with VictoriaLogs'
-// (v1.53.0) answer to it.
+// (v1.54.0) answer to it.
 type unspacedAnswer struct {
 	Unspaced   string                      `json:"unspaced"`
 	Spaced     string                      `json:"spaced"`
@@ -64,7 +64,7 @@ func unspacedLowered(t *testing.T, q, version string) string {
 // A regexp or pattern parser written with no blank before its expression is the same parser to Loki: its pipeline
 // (the Loki oracle, process) keeps the same lines with the same extracted labels for both spellings. The query plan
 // writes both spellings as the extract pipe the string translator writes for the spaced one, and VictoriaLogs (the
-// VictoriaLogs oracle, store, v1.49.0 and v1.53.0) returns Loki's lines and labels for it; the string translator copies
+// VictoriaLogs oracle, store, v1.49.0 and v1.54.0) returns Loki's lines and labels for it; the string translator copies
 // the unspaced parser as written, which VictoriaLogs rejects. The answers are recorded; LVP_RUN_ORACLES=1 records them
 // again (the VictoriaLogs oracle fetches VictoriaLogs; set GOMODCACHE to a fresh directory when the shared cache holds
 // other copies).

@@ -197,13 +197,13 @@ class Harness:
         config = Path(__file__).with_name('loki.yaml').read_text()
         (self.home / 'loki.yaml').write_text(config)
         spec = {'services': {
-            'loki': {'image': 'grafana/loki:3.7.9', 'mem_limit': '3g', 'user': '0:0',
+            'loki': {'image': 'grafana/loki:3.7.10', 'mem_limit': '3g', 'user': '0:0',
                      'ports': [f'127.0.0.1:{self.ports["loki"]}:3100'],
                      'command': ['-config.file=/etc/loki/local-config.yaml'],
                      'volumes': [{'type': 'bind', 'source': str(self.home / 'loki.yaml'),
                                   'target': '/etc/loki/local-config.yaml', 'read_only': True},
                                  'loki-data:/tmp/loki']},
-            'victorialogs': {'image': 'victoriametrics/victoria-logs:v1.53.0', 'mem_limit': '2g',
+            'victorialogs': {'image': 'victoriametrics/victoria-logs:v1.54.0', 'mem_limit': '2g',
                             'ports': [f'127.0.0.1:{self.ports["victorialogs"]}:9428'],
                             'volumes': ['vl-data:/vlogs'],
                             'command': ['-storageDataPath=/vlogs', '-retentionPeriod=3d',

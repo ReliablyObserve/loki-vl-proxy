@@ -260,36 +260,41 @@ func TestPatternsPersistSnapshotCache_StaysLocalWithoutWriteThrough(t *testing.T
 	defer backend.Close()
 
 	var remoteSetCalls atomic.Int32
-	ownerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ownerHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/_cache/set" {
 			remoteSetCalls.Add(1)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		http.NotFound(w, r)
-	}))
-	defer ownerSrv.Close()
+	})
 
-	ownerURL, err := url.Parse(ownerSrv.URL)
-	if err != nil {
-		t.Fatalf("parse owner URL: %v", err)
-	}
-
+	// On a ring of two peers the snapshot key's owner depends on both addresses. The owner server's port is random,
+	// and for about one port in two thousand every self address below owns the key (the owner's ring points leave a
+	// wide gap after it), so a fresh owner server, on another port, is tried then.
 	var pc *cache.PeerCache
-	for i := 0; i < 256; i++ {
-		candidate := cache.NewPeerCache(cache.PeerConfig{
-			SelfAddr:           fmt.Sprintf("self-%d:3100", i),
-			DiscoveryType:      "static",
-			StaticPeers:        fmt.Sprintf("%s,%s", fmt.Sprintf("self-%d:3100", i), ownerURL.Host),
-			Timeout:            50 * time.Millisecond,
-			WriteThrough:       true,
-			WriteThroughMinTTL: 5 * time.Second,
-		})
-		if !candidate.IsOwner(patternsSnapshotCacheKey) {
-			pc = candidate
-			break
+	for attempt := 0; attempt < 8 && pc == nil; attempt++ {
+		ownerSrv := httptest.NewServer(ownerHandler)
+		t.Cleanup(ownerSrv.Close)
+		ownerURL, err := url.Parse(ownerSrv.URL)
+		if err != nil {
+			t.Fatalf("parse owner URL: %v", err)
 		}
-		candidate.Close()
+		for i := 0; i < 256; i++ {
+			candidate := cache.NewPeerCache(cache.PeerConfig{
+				SelfAddr:           fmt.Sprintf("self-%d:3100", i),
+				DiscoveryType:      "static",
+				StaticPeers:        fmt.Sprintf("%s,%s", fmt.Sprintf("self-%d:3100", i), ownerURL.Host),
+				Timeout:            50 * time.Millisecond,
+				WriteThrough:       true,
+				WriteThroughMinTTL: 5 * time.Second,
+			})
+			if !candidate.IsOwner(patternsSnapshotCacheKey) {
+				pc = candidate
+				break
+			}
+			candidate.Close()
+		}
 	}
 	if pc == nil {
 		t.Fatal("expected non-owner peer-cache test setup for snapshot key")

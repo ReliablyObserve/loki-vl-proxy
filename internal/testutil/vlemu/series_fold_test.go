@@ -75,3 +75,30 @@ func TestEmulatorSeriesFold(t *testing.T) {
 		t.Error("a stats read is a fold")
 	}
 }
+
+// TestSeriesHashKeyOrder: the series hash of a parser's identity reads the line's keys sorted after set_stream_fields,
+// and in the line's order after pack_json (VictoriaLogs' unpack starts a block per sequence of keys and pack_json
+// follows the block's columns), so the emulator splits the series the old text split, json and logfmt alike.
+//
+// conformance: semantics/unwrap-identity-key-order
+func TestSeriesHashKeyOrder(t *testing.T) {
+	e := &Emulator{T: t, Field: "v"}
+	for _, tc := range []struct{ a, b string }{
+		{`{"route":"/x","v":3,"user":"u"}`, `{"user":"u","v":4,"route":"/x"}`},
+		{`route=/x v=3 user=u`, `user=u v=4 route=/x`},
+	} {
+		row := func(msg string) map[string]string {
+			return map[string]string{"_stream": `{app="a"}`, "detected_level": "info", "_msg": msg}
+		}
+		if e.seriesHash(row(tc.a), false) != e.seriesHash(row(tc.b), false) {
+			t.Errorf("set_stream_fields: %s and %s are two series", tc.a, tc.b)
+		}
+		if e.seriesHash(row(tc.a), true) == e.seriesHash(row(tc.b), true) {
+			t.Errorf("pack_json: %s and %s are one series, VictoriaLogs splits them", tc.a, tc.b)
+		}
+	}
+	// The unwrapped key and a value-only difference never split a series.
+	if e.seriesHash(map[string]string{"_msg": `{"v":1,"k":"x"}`}, false) != e.seriesHash(map[string]string{"_msg": `{"k":"x","v":2}`}, false) {
+		t.Error("the unwrapped value split a series")
+	}
+}

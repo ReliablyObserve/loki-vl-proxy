@@ -204,8 +204,30 @@ var opaqueMetricFunctions = map[string]bool{"label_replace": true, "vector": tru
 // with the same parser: label_replace(<expr>, "dst", "replacement", "src",
 // "regex") and vector(<number>), as Loki's grammar writes them. Any other call, or one that does not read so,
 // keeps only its text; validation reports why.
-func typeOpaqueCall(o *OpaqueMetricExpr) {
-	p := &parser{sc: scanner{src: o.Raw, quiet: true}}
+func typeOpaqueCall(o *OpaqueMetricExpr) { typeOpaqueCallWith(o, nil, 0, false) }
+
+// typeOpaqueCallWith is typeOpaqueCall for a call whose text starts at offset base of the text calls was recorded
+// from (quiet_calls.go): the calls nested in it are not scanned again. Its parser notes the log queries it reads
+// (noteChecked) in calls when shared, in lists of its own otherwise, which it returns.
+func typeOpaqueCallWith(o *OpaqueMetricExpr, calls *quietCalls, base int, shared bool) typedCallNotes {
+	p := quietParser(o.Raw, 0, base)
+	p.calls, p.sharedNotes = calls, shared
+	typeOpaqueCallIn(p, o)
+	return typedCallNotes{first: p.checkedLogQueries, count: p.checkedLogQueryCount, more: p.moreCheckedLogQueries,
+		cur: p.curLogQuery}
+}
+
+// typedCallNotes are the log queries the parser of a call kept as text noted in lists of its own (noteChecked), and
+// the one it read last, which it did not note.
+type typedCallNotes struct {
+	first [2]*LogQuery
+	count int
+	more  []*LogQuery
+	cur   *LogQuery
+}
+
+// typeOpaqueCallIn is typeOpaqueCall with the parser p of the call's text.
+func typeOpaqueCallIn(p *parser, o *OpaqueMetricExpr) {
 	p.advance()
 	if p.cur.Typ != TokIdent || p.cur.Val != o.Func {
 		return
@@ -309,6 +331,13 @@ type parser struct {
 	// operation's parameter, deferTreeError): Parse answers it once the query has parsed; the validation reads it
 	// from its node in the order of its walk.
 	treeErr string
+	// base is the offset of the parser's text in the query the parse started from: the quiet parser of a call kept as
+	// text (typeOpaqueCall) reads that call only.
+	base int
+	// calls is what the quiet parsers of nested calls kept as text share (quiet_calls.go): the parentheses the first
+	// of them read over, which recordCalls is set on, and the log queries they note when sharedNotes is set.
+	calls                    *quietCalls
+	recordCalls, sharedNotes bool
 }
 
 // deferTreeError notes msg as the error of the check Loki makes over the parsed tree at node va: it answers after
@@ -379,6 +408,23 @@ type canonState struct {
 	rewrites []rewrite
 	// queryStart and queryEnd delimit the log query parseLogQuery returned last.
 	queryStart, queryEnd int
+	// plain is 1 when the text reads alike to FirstArgumentLen and to the parser (plainArgumentText), -1 when not,
+	// and 0 before the first call kept as text asks.
+	plain int8
+	// perArgument canonicalizes each call's first argument on its own instead of in place (tests only).
+	perArgument bool
+}
+
+// plainArguments reports whether the end of a call's first argument read by the parser is the one FirstArgumentLen
+// finds in src, the text being canonicalized: read once, at the first call kept as text.
+func (c *canonState) plainArguments(src string) bool {
+	if c.plain == 0 {
+		c.plain = -1
+		if plainArgumentText(src) {
+			c.plain = 1
+		}
+	}
+	return c.plain > 0
 }
 
 // rewrite replaces input[start:end] with text.
@@ -531,31 +577,130 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 		argStart := p.pos()
 		if p.spell != nil {
 			p.spellGap(p.prevEnd, argStart)
+			if name == "label_replace" && !spellPerArgument.Load() {
+				return p.spellLabelReplace(startPos, treeErr)
+			}
+		}
+		kept, inPlaceEnd := 0, -1
+		if p.canon != nil {
+			kept = len(p.canon.rewrites)
+			if !p.canon.perArgument {
+				inPlaceEnd = p.canonFirstArgumentInPlace()
+			}
 		}
 		endPos, ok := p.consumeBalancedParens()
 		if !ok || endPos < startPos {
-			return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
+			return nil, p.unterminatedCallError(name, startPos)
 		}
 		if p.spell != nil {
 			p.spellOpaqueCall(name, startPos, argStart, endPos)
 		}
-		if p.canon != nil {
+		if p.canon != nil && (inPlaceEnd < 0 || !p.canon.plainArguments(p.sc.src) && inPlaceEnd != argStart+FirstArgumentLen(p.sc.src[argStart:endPos])) {
 			// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
-			// metric expression, written in the plain form like any other.
+			// metric expression, written in the plain form like any other. An argument the parser could not read
+			// in place is canonicalized on its own, once.
+			p.canon.rewrites = p.canon.rewrites[:kept]
 			argEnd := argStart + FirstArgumentLen(p.sc.src[argStart:endPos])
-			if arg := p.sc.src[argStart:argEnd]; CanonicalizeLogRanges(arg) != arg {
-				p.addRewrite(argStart, argEnd, CanonicalizeLogRanges(arg))
+			arg := p.sc.src[argStart:argEnd]
+			if canon := canonicalizeLogRanges(arg, p.canon.perArgument); canon != arg {
+				p.addRewrite(argStart, argEnd, canon)
 			}
 		}
 		raw := strings.TrimSpace(p.sc.src[startPos:endPos])
 		o := &OpaqueMetricExpr{Raw: raw, Func: name, treeErr: treeErr}
 		if p.canon == nil && p.spell == nil {
-			typeOpaqueCall(o)
-			p.noteOpaqueCall(o.Inner)
+			p.typeCall(o, startPos)
 		}
 		return o, nil
 	}
 	return nil, p.syntaxErrorAt("(")
+}
+
+// unterminatedCallError is the error of a call kept as text, its name at offset start, whose parentheses never close
+// (a `#` comment can leave them open): Loki's parser reads its arguments and fails where they stop, at the end of
+// the query. The call is read again from its name, with a quiet parser of its own: its syntax error, or the error of
+// a matcher or stage Loki builds before it (the call's log queries join the ones read before it,
+// actionErrorSoFar). A parser that collects rewrites, or a call read so without an error, keeps the parser's own.
+func (p *parser) unterminatedCallError(name string, start int) error {
+	own := fmt.Errorf("logql: unterminated '(' after %q", name)
+	if p.canon != nil || p.spell != nil || p.flagSpans != nil {
+		return own
+	}
+	q := quietParser(p.sc.src, start, p.base)
+	q.advance()
+	err := q.openCallError(name)
+	if err == nil {
+		return own
+	}
+	if cur := p.curLogQuery; cur != nil {
+		p.noteChecked(cur)
+		p.curLogQuery = nil
+	}
+	for _, lq := range q.checkedLogQueries[:min(q.checkedLogQueryCount, len(q.checkedLogQueries))] {
+		p.noteChecked(lq)
+	}
+	for _, lq := range q.moreCheckedLogQueries {
+		p.noteChecked(lq)
+	}
+	p.curLogQuery = q.curLogQuery
+	return err
+}
+
+// openCallError reads the call name the parser stands at as Loki's grammar writes it, label_replace(<expr>,
+// "dst", "replacement", "src", "regex"), vector(<number>) or approx_topk [by (...)] (<number>, <expr>), and returns
+// the first syntax error, or nil.
+func (p *parser) openCallError(name string) error {
+	p.advance()
+	if name == "approx_topk" && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
+		if _, err := p.parseGrouping(); err != nil {
+			return err
+		}
+	}
+	if p.cur.Typ != TokLParen {
+		return nil
+	}
+	p.advance()
+	switch name {
+	case "label_replace":
+		inner, err := p.parseExpr()
+		if err != nil {
+			return err
+		}
+		if call, msg := firstUntypedCallError(inner, p.sc.src); call != nil {
+			return &ParseError{Msg: msg} // a call in the argument Loki cannot read
+		}
+		return p.labelReplaceStringsError()
+	case "vector":
+		return p.vectorArgumentError()
+	case "approx_topk":
+		for i := 0; i < 2; i++ {
+			if _, err := p.parseExpr(); err != nil {
+				return err
+			}
+			if i > 0 || p.cur.Typ != TokComma {
+				return p.syntaxErrorAt("") // the expression could go on: Loki names nothing
+			}
+			p.advance()
+		}
+	}
+	return nil
+}
+
+// canonFirstArgumentInPlace reads the first argument of a call kept as text where it stands, with a parser of its
+// own on the same text, so that the plain forms of the ranges in it are recorded like any other and no call nested in
+// it is read again: canonicalizing each call's argument on its own read every level of a nested query once more per
+// level. It returns the offset where the argument ends (at the comma after it), with the parser moved there, or -1
+// when the argument is not one whole expression; the rewrites recorded then are dropped by the caller.
+func (p *parser) canonFirstArgumentInPlace() int {
+	c := p.canon
+	queryStart, queryEnd := c.queryStart, c.queryEnd
+	defer func() { c.queryStart, c.queryEnd = queryStart, queryEnd }()
+	arg := parser{sc: p.sc, cur: p.cur, prevEnd: p.prevEnd, canon: c}
+	if _, err := arg.parseExpr(); err != nil || arg.cur.Typ != TokComma {
+		return -1
+	}
+	p.sc, p.cur, p.prevEnd = arg.sc, arg.cur, arg.prevEnd
+	return p.pos()
 }
 
 // parseNumberLiteral parses a number, or a minus and a number.
@@ -1197,6 +1342,10 @@ func (p *parser) noteChecked(lq *LogQuery) {
 	if !mayFailWhileParsed(lq) {
 		return
 	}
+	if p.sharedNotes {
+		p.calls.notes = append(p.calls.notes, lq)
+		return
+	}
 	if p.checkedLogQueryCount < len(p.checkedLogQueries) {
 		p.checkedLogQueries[p.checkedLogQueryCount] = lq
 	} else {
@@ -1205,34 +1354,65 @@ func (p *parser) noteChecked(lq *LogQuery) {
 	p.checkedLogQueryCount++
 }
 
-// noteOpaqueCall keeps the log queries of a call kept as text (label_replace's sample expression, read by
-// typeOpaqueCall's own parser) after the ones read before it, so that their actions answer ahead of a later syntax
-// error as the others do.
-func (p *parser) noteOpaqueCall(inner Expr) {
-	if inner == nil {
+// typeCall types the call kept as text o, whose text starts at offset start, with a parser of its own
+// (typeOpaqueCall), and keeps the log queries of its sample expression after the ones read before it, so that their
+// actions answer ahead of a later syntax error as the others do. The call's parser notes them as it reads them and
+// jumps over the calls nested in it (quiet_calls.go): neither the call's text nor its tree is read again at each
+// level of a nesting. A call it cannot type, or without a sample expression, leaves the lists as they were.
+func (p *parser) typeCall(o *OpaqueMetricExpr, start int) {
+	if o.Func != "label_replace" {
+		typeOpaqueCallWith(o, p.calls, p.base+start, false) // a number or nothing: no log query to note
 		return
 	}
-	if p.curLogQuery != nil {
-		p.noteChecked(p.curLogQuery)
+	cur := p.curLogQuery
+	if p.calls == nil {
+		// A parser that reads no call quietly (the parse of the whole query): the call's parser notes in lists of its
+		// own, which join this parser's after the log query read before the call.
+		r := typeOpaqueCallWith(o, nil, p.base+start, false)
+		if o.Inner == nil {
+			return
+		}
+		if cur != nil {
+			p.noteChecked(cur)
+			p.curLogQuery = nil
+		}
+		for _, lq := range r.first[:min(r.count, len(r.first))] {
+			p.noteChecked(lq)
+		}
+		for _, lq := range r.more {
+			p.noteChecked(lq)
+		}
+		if r.cur != nil {
+			p.noteChecked(r.cur)
+		}
+		return
+	}
+	// The quiet parsers of nested calls note in one shared list; a parser with lists of its own takes the call's log
+	// queries from it.
+	c := p.calls
+	mark := len(c.notes)
+	if cur != nil && p.sharedNotes {
+		p.noteChecked(cur) // it stands before the call
 		p.curLogQuery = nil
 	}
-	walkLogQueries(inner, p.noteChecked)
-}
-
-// walkLogQueries calls f for every log query of expr, in the order of the text.
-func walkLogQueries(expr Expr, f func(*LogQuery)) {
-	switch x := expr.(type) {
-	case *LogQuery:
-		f(x)
-	case *RangeAggregation:
-		walkLogQueries(x.Inner, f)
-	case *VectorAggregation:
-		walkLogQueries(x.Inner, f)
-	case *BinOpExpr:
-		walkLogQueries(x.Left, f)
-		walkLogQueries(x.Right, f)
-	case *OpaqueMetricExpr:
-		walkLogQueries(x.Inner, f)
+	r := typeOpaqueCallWith(o, c, p.base+start, true)
+	if o.Inner == nil {
+		c.notes = c.notes[:mark]
+		p.curLogQuery = cur
+		return
+	}
+	if r.cur != nil && mayFailWhileParsed(r.cur) {
+		c.notes = append(c.notes, r.cur)
+	}
+	if !p.sharedNotes {
+		if cur != nil {
+			p.noteChecked(cur)
+			p.curLogQuery = nil
+		}
+		for _, lq := range c.notes[mark:] {
+			p.noteChecked(lq)
+		}
+		c.notes = c.notes[:mark]
 	}
 }
 
@@ -1822,6 +2002,17 @@ func lokiTokenName(tok Token) string {
 // function calls.
 func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
 	defer p.keep(p.pos()) // the call's text is kept as it is: its tokens are no names
+	if p.mayJumpParens() {
+		if p.calls == nil {
+			p.recordCalls = true
+		}
+		if p.recordCalls {
+			return p.recordParens()
+		}
+		if endPos, ok := p.jumpParens(); ok {
+			return endPos, true
+		}
+	}
 	depth := 1
 	for depth > 0 && p.cur.Typ != TokEOF {
 		switch p.cur.Typ {

@@ -11,7 +11,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
-// VictoriaLogs itself (test/oracle/vl store, v1.49.0 and v1.53.0) selects the same lines with each probe regexp
+// VictoriaLogs itself (test/oracle/vl store, v1.49.0 and v1.54.0) selects the same lines with each probe regexp
 // written with vlNotInRun as with the [^set]* spelling it replaces, and parses both.
 //
 // conformance: quality/probe-regexp-parse-cost
@@ -31,7 +31,7 @@ func TestVLNotInVictoriaLogsSelectsTheSameLines(t *testing.T) {
 	}
 	// The detected_level probe's form: the escaped-value regexp behind the backslash filter (detectedLevelKeysQuery).
 	queries = append(queries, `{app="notin"} | filter _msg:"\\" _msg:~`+strconv.Quote(detectedLevelEscapedValue)+` | fields row`)
-	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.53.0", ""}} {
+	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.54.0", ""}} {
 		got, err := oraclerun.VLStore(filepath.Join("..", "..", "test", "oracle", "vl"), v.modfile, rows, queries)
 		if err != nil {
 			t.Fatal(err)

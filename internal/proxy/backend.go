@@ -298,6 +298,7 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 	caps := deriveBackendCapabilities(semver)
 	p.backendVersionRaw = raw
 	p.backendVersionSemver = semver
+	p.noteVLRelease(semver)
 	p.backendCapabilityProfile = caps.profile
 	p.backendSupportsStreamMetadata = caps.supportsStreamMetadata
 	p.backendSupportsDensePatternWindowing = caps.supportsDensePatternWin
@@ -655,6 +656,9 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	u := backendRequestURL(p.backend, path)
 	u.RawQuery = params.Encode()
 	querycorpus.RecordBackend(path, params.Get("query"))
+	if resp, err, ok := p.predictVLRefusal(ctx, http.MethodGet, path, params); ok {
+		return resp, err // VictoriaLogs refuses it on this release: not sent (vl_refusal.go)
+	}
 
 	p.log.Debug("VL request", "method", "GET", "url", u.Path, "params", redactQuery(params.Encode(), p.debugLogRawQueries))
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
@@ -810,6 +814,9 @@ func (p *Proxy) vlPostSend(ctx context.Context, path string, params, sentParams 
 	}
 	u := backendRequestURL(p.backend, sendPath)
 	querycorpus.RecordBackend(sendPath, sendParams.Get("query"))
+	if resp, err, ok := p.predictVLRefusal(ctx, http.MethodPost, sendPath, sendParams); ok {
+		return resp, err // VictoriaLogs refuses it on this release: not sent (vl_refusal.go)
+	}
 	body := sendParams.Encode()
 	if p.log.Enabled(ctx, slog.LevelDebug) {
 		// Built only when written: the encoded form, its hash and the URL cost a request's worth of bytes.
@@ -881,6 +888,9 @@ func (p *Proxy) vlPostSend(ctx context.Context, path string, params, sentParams 
 // Callers must either hold a breaker.Allow() token or use DoWithGuard.
 func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	resp, err := p.vlPostHTTP(ctx, path, params)
+	if predictedVLAnswer(resp, err) {
+		return resp, err // no call reached VictoriaLogs: the breaker learns nothing (vl_refusal.go)
+	}
 	if err != nil {
 		if shouldRecordBreakerFailure(ctx, err) {
 			p.breaker.RecordFailure()

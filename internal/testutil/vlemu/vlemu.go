@@ -271,6 +271,8 @@ var (
 	// math <field> as <field>: the number the field holds, written to the result field.
 	emuMathCopyRE = regexp.MustCompile(`^math (\w+) as (\w+)$`)
 	// unpack_json from <field> fields (<name>): the named key of the JSON in the field.
+	// format if (__lvp_bad:="0" (-a:<=inf or -b:<=inf)) "2" as __lvp_bad: the nan mark of a parser's series identity.
+	emuNaNMarkRE    = regexp.MustCompile(`^format if \(__lvp_bad:="0" \((.+)\)\) "2" as __lvp_bad$`)
 	emuUnpackJSONRE = regexp.MustCompile(`^unpack_json from (\w+) fields \((\w+)\)$`)
 	emuFuncRE       = regexp.MustCompile(`^(\w+)\(([^)]*)\)(?: as (\w+))?$`)
 	// replace_regexp(`<expression>`, "<replacement>") at <field>: Go regexp, as VictoriaLogs runs it.
@@ -308,13 +310,16 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			offset = int64(od)
 		}
 	}
-	query := r.FormValue("query")
+	query, top := cutTopValueFilter(e, r.FormValue("query"))
 	pipes := strings.Split(query, " | ")
 	first := firstStatsPipe(pipes)
 	if first < 0 {
 		e.T.Fatalf("emulator: no stats pipe in %s", r.FormValue("query"))
 	}
 	recs := e.statsRecs(r, pipes[:first])
+	if top != nil {
+		recs = top.keep(e, r, recs)
+	}
 	var by, names []string
 	for _, pipe := range pipes[first:] {
 		if m := emuMathRE.FindStringSubmatch(pipe); m != nil {
@@ -358,6 +363,31 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, rec := range recs {
 				rec.f[m[3]] = re.ReplaceAllString(rec.f[m[3]], m[2])
+			}
+			continue
+		}
+		if m := emuNaNMarkRE.FindStringSubmatch(pipe); m != nil {
+			// The nan mark of a parser's series identity: a clean row whose summed or averaged value is NaN (or absent)
+			// is flagged as a nan row (VictoriaLogs: x:<=inf is false only for NaN and an absent value).
+			var fields []string
+			for _, c := range strings.Split(m[1], " or ") {
+				f, ok := strings.CutPrefix(c, "-")
+				if f, ok2 := strings.CutSuffix(f, ":<=inf"); ok && ok2 {
+					fields = append(fields, f)
+				} else {
+					e.T.Fatalf("emulator: nan mark condition %q", c)
+				}
+			}
+			for _, rec := range recs {
+				if rec.f["__lvp_bad"] != "0" {
+					continue
+				}
+				for _, f := range fields {
+					if v, err := strconv.ParseFloat(rec.f[f], 64); err != nil || math.IsNaN(v) {
+						rec.f["__lvp_bad"] = "2"
+						break
+					}
+				}
 			}
 			continue
 		}
@@ -501,6 +531,7 @@ func (e *Emulator) statsRecs(r *http.Request, before []string) []emuRec {
 	// emulator applies Loki's rule to the row instead of running its pipes), and
 	// a delete pipe removes the fields it names (`| drop detected_level`).
 	var fieldOps []func(f map[string]string)
+	packed := false
 	for _, pipe := range before {
 		if pipe == `format "<__dl>" as detected_level` {
 			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.levelOfFields(f) })
@@ -514,9 +545,14 @@ func (e *Emulator) statsRecs(r *http.Request, before []string) []emuRec {
 				}
 			})
 		}
+		if strings.HasPrefix(pipe, "pack_json fields (") && strings.HasSuffix(pipe, " as "+seriesHashField) {
+			// pack_json writes the fields in the order of the block's columns: the line's key order.
+			packed = true
+		}
 		if pipe == seriesHashPipe {
 			// The series hash of a parser's dynamic identity: the identity pipes before it are not run.
-			fieldOps = append(fieldOps, func(f map[string]string) { f[seriesHashField] = e.seriesHash(f) })
+			ordered := packed
+			fieldOps = append(fieldOps, func(f map[string]string) { f[seriesHashField] = e.seriesHash(f, ordered) })
 		}
 		if m := PhaseMathRE.FindStringSubmatch(pipe); m != nil {
 			phaseAnchor, _ = strconv.ParseInt(m[1], 10, 64)
@@ -741,24 +777,57 @@ const (
 )
 
 // seriesHash is a stats row's series under a parser's dynamic identity: the stream, the stored level fields and every
-// key of the line (json, else logfmt) but the unwrapped one.
-func (e *Emulator) seriesHash(f map[string]string) string {
+// key of the line (json, else logfmt) but the unwrapped one. The keys are sorted (set_stream_fields), or kept in the
+// line's order when ordered (pack_json, which follows the block's columns: VictoriaLogs' unpack starts a block for
+// each sequence of keys, so the same keys in another order are another series).
+func (e *Emulator) seriesHash(f map[string]string, ordered bool) string {
 	keys := []string{"_stream=" + f["_stream"], "level=" + f["level"], "detected_level=" + f["detected_level"]}
 	skip := map[string]bool{e.Field: true, strings.ReplaceAll(e.Field, "_", "."): true, strings.ReplaceAll(e.Field, "_", "-"): true}
-	var obj map[string]any
-	if json.Unmarshal([]byte(f["_msg"]), &obj) == nil {
-		for k, v := range obj {
+	var parsed []string
+	if obj, order, ok := jsonObjectInOrder(f["_msg"]); ok {
+		for _, k := range order {
 			if !skip[k] {
-				keys = append(keys, "p."+k+"="+fmt.Sprint(v))
+				parsed = append(parsed, "p."+k+"="+fmt.Sprint(obj[k]))
 			}
 		}
 	} else {
 		for _, kv := range strings.Fields(f["_msg"]) {
 			if k, v, ok := strings.Cut(kv, "="); ok && v != "" && !skip[k] {
-				keys = append(keys, "p."+k+"="+v)
+				parsed = append(parsed, "p."+k+"="+v)
 			}
 		}
 	}
+	if !ordered {
+		keys = append(keys, parsed...)
+		sort.Strings(keys)
+		return strings.Join(keys, "\x00")
+	}
 	sort.Strings(keys)
-	return strings.Join(keys, "\x00")
+	return strings.Join(append(keys, parsed...), "\x00")
+}
+
+// jsonObjectInOrder decodes a JSON object and its top-level keys in the order the text holds them.
+func jsonObjectInOrder(s string) (map[string]any, []string, bool) {
+	var obj map[string]any
+	if json.Unmarshal([]byte(s), &obj) != nil {
+		return nil, nil, false
+	}
+	dec := json.NewDecoder(strings.NewReader(s))
+	if _, err := dec.Token(); err != nil {
+		return nil, nil, false
+	}
+	order := make([]string, 0, len(obj))
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, nil, false
+		}
+		k, _ := tok.(string)
+		order = append(order, k)
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return nil, nil, false
+		}
+	}
+	return obj, order, true
 }

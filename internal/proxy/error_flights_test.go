@@ -681,10 +681,10 @@ func TestErrorFlights_ReachAndBypassKey(t *testing.T) {
 	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	_ = post.ParseForm()
 	pk, gk := p.uncachedFlightKey("labels", post), p.uncachedFlightKey("labels", get)
-	if pk.join == "" || gk.join == "" || pk.join == gk.join || !strings.HasPrefix(pk.join, errorFlightKeyVersion+"POST:") {
+	if pk.join == "" || gk.join == "" || pk.join == gk.join || !strings.HasPrefix(pk.join, p.flightPrefix()+"POST:") {
 		t.Fatalf("pre-keys %q %q", pk.join, gk.join)
 	}
-	if pe, ge := pk.exactKey(), gk.exactKey(); pe == ge || !strings.HasPrefix(pe, errorFlightKeyVersion+"POST:compat:v2:labels:") || pe != pk.exactKey() {
+	if pe, ge := pk.exactKey(), gk.exactKey(); pe == ge || !strings.HasPrefix(pe, p.flightPrefix()+"POST:compat:v2:labels:") || pe != pk.exactKey() {
 		t.Fatalf("exact keys %q %q", pe, ge)
 	}
 	if exact := (&flightKey{join: "j"}); exact.exactKey() != "j" {
@@ -774,7 +774,9 @@ func TestErrorFlights_HeldAnswersEqualFreshOnes(t *testing.T) {
 		{"VictoriaLogs 429", flightLogTarget, status(http.StatusTooManyRequests), true},
 		{"VictoriaLogs 503 after retries", flightLogTarget, status(http.StatusServiceUnavailable), true},
 		{"VictoriaLogs 400 unclassified", flightLogTarget, status(http.StatusBadRequest), true},
-		{"VictoriaLogs parse refusal (plan defect)", flightLogTarget, refusal, false},
+		// A refusal of the text the proxy wrote is the same every time on the same release: held for the
+		// refusal TTL (vl_refusal.go), with the answer a fresh request gets.
+		{"VictoriaLogs parse refusal (plan defect)", flightLogTarget, refusal, true},
 		{"series limit", metric, threeSeries, true},
 	}
 	for _, c := range cases {
@@ -785,7 +787,7 @@ func TestErrorFlights_HeldAnswersEqualFreshOnes(t *testing.T) {
 			})
 			fresh := flightGet(plain, context.Background(), c.target, "team-a")
 			stub := newFlightStub(t, c.answer)
-			_, h := newFlightProxy(t, stub.srv.URL, func(cfg *Config) { cfg.MaxStatsQuerySeries = 1 })
+			_, h := newFlightProxy(t, stub.srv.URL, func(cfg *Config) { cfg.MaxStatsQuerySeries, cfg.ErrorCache.RefusalTTL = 1, time.Minute })
 			first := flightGet(h, context.Background(), c.target, "team-a")
 			calls := stub.calls.Load()
 			held := flightGet(h, context.Background(), c.target, "team-a")

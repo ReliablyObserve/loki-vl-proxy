@@ -883,7 +883,8 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			return
 		}
 		setCacheResult(r.Context(), "miss")
-		p.serveFlight(endpoint, route, w, r, flightKey{join: errorFlightKeyVersion + cacheKey}, start, func(w http.ResponseWriter, r *http.Request, lead *flightLead) {
+		prefix := p.flightPrefix()
+		p.serveFlight(endpoint, route, w, r, flightKey{join: prefix + cacheKey, prefix: prefix}, start, func(w http.ResponseWriter, r *http.Request, lead *flightLead) {
 			if lead == nil {
 				// A follower of a leader whose answer the cache now holds,
 				// or one that runs on its own.

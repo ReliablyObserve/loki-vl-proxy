@@ -230,7 +230,7 @@ func TestPipeStatsNoBy(t *testing.T) {
 }
 
 // TestCapabilitiesAllMinorVersions tests every minor version from the floor
-// (v1.49) through v1.53 and the boundaries between them.
+// (v1.49) through v1.54 and the boundaries between them.
 func TestCapabilitiesAllMinorVersions(t *testing.T) {
 	tests := []struct {
 		semver string
@@ -245,6 +245,7 @@ func TestCapabilitiesAllMinorVersions(t *testing.T) {
 		{"v1.51.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
 		{"v1.52.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
 		{"v1.53.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
+		{"v1.54.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.semver, func(t *testing.T) {

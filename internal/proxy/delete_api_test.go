@@ -383,7 +383,7 @@ var deleteFilterQueries = []string{
 }
 
 // deleteFilterVLVerdicts holds VictoriaLogs' verdicts on the delete filters of deleteFilterQueries (test/oracle/vl
-// roundtrip, v1.49.0 and v1.53.0): the delete task parses the filter and prints it again, so a filter must parse,
+// roundtrip, v1.49.0 and v1.54.0): the delete task parses the filter and prints it again, so a filter must parse,
 // and print and parse back to itself. LVP_RUN_ORACLES=1 records them again.
 var deleteFilterVLVerdicts = filepath.Join("testdata", "delete_filter_vl_verdicts.jsonl")
 
@@ -441,7 +441,7 @@ func recordDeleteFilterVerdicts(t *testing.T, filters map[string]string) {
 	for i, f := range texts {
 		rows[i] = deleteFilterVerdict{Filter: f, V: map[string]map[string]any{}}
 	}
-	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		modfile := ""
 		if v == "v1.49.0" {
 			modfile = "go.v1.49.0.mod"
@@ -480,7 +480,7 @@ func recordDeleteFilterVerdicts(t *testing.T, filters map[string]string) {
 }
 
 // TestDeleteFiltersParseInVictoriaLogs: every filter the delete API sends is accepted by VictoriaLogs' parser on
-// v1.49.0 and v1.53.0 and prints and parses back to itself (the delete task stores the printed filter), recorded with
+// v1.49.0 and v1.54.0 and prints and parses back to itself (the delete task stores the printed filter), recorded with
 // the VictoriaLogs oracle; a filter not in the recording fails until it is recorded.
 //
 // conformance: semantics/delete-api-via-victorialogs, vl-delete-tasks-tenant-and-time
@@ -510,7 +510,7 @@ func TestDeleteFiltersParseInVictoriaLogs(t *testing.T) {
 			t.Errorf("%s: filter %q has no recorded VictoriaLogs verdict: record them with LVP_RUN_ORACLES=1", q, f)
 			continue
 		}
-		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			if r.V[v]["accept"] != true || r.V[v]["ok"] != true {
 				t.Errorf("%s: VictoriaLogs %s on %q: %v", q, v, f, r.V[v])
 			}

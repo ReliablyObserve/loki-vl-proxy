@@ -165,3 +165,27 @@ decisions:
       tracked: ['the at-volume table of the pull request (VictoriaLogs v1.53.0 and v1.49.0 handlers in process, 6h and 24h, a series per line and mixed data, the per-stream read vs #1540 vs this read, interleaved, end to end and VictoriaLogs alone)', 'BenchmarkDynamicIdentityWindows, base vs head']
       bound: 'faster than Loki cold, as close to the per-stream read as an exact identity allows (owner 2026-11-18: build the 1.6-1.9x form), proxy memory flat in the lines'
     pending: true
+  - id: parser-identity-canonical-key-order
+    chosen: 'A parser''s series identity (json or logfmt of every key) writes the series'' value with set_stream_fields over the prefixed parsed fields, level, detected_level and _stream (the fields sorted by name, name="quoted value", empty ones left out), renames _stream to the series field and hashes it: `set_stream_fields __lvp_p_*, level, detected_level, _stream | rename _stream as __lvp_sid | hash(__lvp_sid) as __lvp_sid`. Lines that hold the same keys in another order are one series, as in Loki.'
+    over:
+      - 'pack_json fields (__lvp_p_*, level, detected_level, _stream) and its hash (origin/main): pack_json follows the block''s column order, and unpack_json / unpack_logfmt start a block per sequence of keys, so one Loki series whose lines differ in key order was split in two (sum 14 where Loki answers 7)'
+      - 'the same with _stream and _stream_id kept in copies and put back after the identity: exact, but 7-39% more VictoriaLogs time than pack_json; with _stream alone kept, 1-14% more. No pipe after the identity reads either field (TestDynamicIdentityLeavesNoStreamReader, and every route-parity text)'
+      - 'pack_logfmt: the same column order as pack_json'
+      - 'grouping by the packed text and merging the groups of one label set in the proxy: proxy work per series, and the outer aggregation a range up to the step does in VictoriaLogs would move to the proxy'
+    why: |
+      set_stream_fields is the only VictoriaLogs pipe (v1.49.0 and later) that
+      writes a set of fields in a canonical order: it sorts the tags by name
+      and value and leaves the empty ones out, as pack_json leaves them out.
+      It writes into _stream and blanks _stream_id; the identity is the last
+      reader of either, so the rename moves the value to the series field and
+      nothing is put back. A field name is written unquoted: a key that holds
+      the proxy's own prefix and `="` could write the same value as two other
+      keys (semantics/unwrap-identity-key-order, known limit).
+    evidence: 'internal/querycorpus (2026-11-18, Loki engine oracle 3.7.9, VictoriaLogs v1.53.0 and v1.49.0 serve): TestUnwrapIdentityKeyOrderMatchLoki, flat json, nested json and logfmt lines of one series in two key orders, a range longer than the step and up to it, steps 60 s and 20 s: every run Loki''s answer (origin/main: 14 against 7, 3.5 against 4, 0 against 1); the identity recordings (series fold, dynamic identity, value forms, stddev/stdvar, keep identity) recorded again and matching. VictoriaLogs time of the stats_query_range texts each build sends (400,000 json lines in an hour, half of them in another key order, query_range 1h step 60 s, 15 interleaved rounds, p50, host load 6-16): v1.53.0 sliding windows 0.91-0.98x main, range up to the step 1.04-1.08x; v1.49.0 0.97-0.99x and 1.04-1.16x; the sliding-window answers 2.4-2.9x smaller (main split the series). On lines of one key order: v1.53.0 sliding windows 0.99-1.07x, range up to the step 1.03-1.07x; v1.49.0 1.01-1.07x and 1.01-1.08x.'
+    code: [internal/queryplan/lower/unwrap_dynamic.go, internal/proxy/unwrap_conversion_error.go, internal/testutil/vlemu/vlemu.go]
+    tests: [TestUnwrapIdentityKeyOrderMatchLoki, TestDynamicIdentityLeavesNoStreamReader, TestDynamicIdentityWindowsMatchLokiReference, TestSeriesHashKeyOrder, TestSeriesFoldMatchLoki, TestUnwrapDynamicIdentityMatchLoki, TestPlanTextsSurviveVictoriaLogsClone]
+    quality: 'Loki''s series whatever the key order of a line; every other identity run as before.'
+    performance:
+      tracked: ['the VictoriaLogs time table of the pull request (main vs head, interleaved, v1.53.0 and v1.49.0)']
+      bound: 'about +0-8% VictoriaLogs time on lines of one key order, up to +16% on a range up to the step with mixed key orders (the sort of each row''s fields), accepted by the owner for Loki''s answer (2026-11-18), including the single-order cost'
+    pending: true

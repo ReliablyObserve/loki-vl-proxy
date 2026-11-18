@@ -15,7 +15,7 @@
 services:
   # Reference Loki instance (ground truth)
   loki:
-    image: ${LOKI_IMAGE:-grafana/loki:3.7.9}
+    image: ${LOKI_IMAGE:-grafana/loki:3.7.10}
     container_name: e2e-loki
     # Loki image runs as uid 10001; named volume defaults to root-owned and
     # Loki crashes with "mkdir /tmp/loki/rules: permission denied". Run as root
@@ -69,7 +69,7 @@ services:
 
   # VictoriaLogs backend
   victorialogs:
-    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.53.0}
+    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.54.0}
     container_name: e2e-victorialogs
     ports:
       - "19428:9428"
@@ -151,7 +151,9 @@ services:
     healthcheck:
       # VictoriaLogs images are scratch-based from v1.52.0 (no shell, no wget),
       # so an HTTP probe cannot run inside the container. The binary's -version
-      # exit path is the only in-container probe that works on every version.
+      # exit path is the only in-container probe that works on every version: the
+      # -healthcheck listener check exists from v1.54.0 only, and an unknown flag
+      # fails on the v1.49.0 leg of the version matrix (VICTORIALOGS_IMAGE).
       # Readiness of the HTTP listener is covered by scripts/ci/wait_e2e_stack.sh
       # (host-side poll of /health on the published port) and by the proxies'
       # own health checks, which fail until VictoriaLogs answers.
@@ -578,6 +580,9 @@ services:
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
+      # /debug/queries (admin token): the e2e-ui client-detection checks read the surface and versions it reports
+      # for each Grafana request (tests/client-detection.spec.ts).
+      - "-server.enable-query-analytics=true"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -705,6 +710,9 @@ services:
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
+      # /debug/queries (admin token): the e2e-ui client-detection checks read the surface and versions it reports
+      # for each Grafana request (tests/client-detection.spec.ts).
+      - "-server.enable-query-analytics=true"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -1162,7 +1170,7 @@ services:
 
   # Grafana with 3 datasources for manual side-by-side comparison
   grafana:
-    image: ${GRAFANA_IMAGE:-grafana/grafana:13.3.0}
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.3.1}
     container_name: e2e-grafana
     ports:
       - "3002:3000"
@@ -1179,7 +1187,7 @@ services:
       # CI sets GRAFANA_PLUGINS_PREINSTALL from stack.grafana.plugins of the compatibility matrix; the default is that
       # same pin (checked by scripts/ci/matrix_pins.py). Drilldown 3.x needs Grafana >= 13.2; the previous-family
       # Grafana profile (12.x) overrides the whole value with the Drilldown version of its matrix profile.
-      - GF_PLUGINS_PREINSTALL=${GRAFANA_PLUGINS_PREINSTALL:-victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0}
+      - GF_PLUGINS_PREINSTALL=${GRAFANA_PLUGINS_PREINSTALL:-victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.2.0}
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-lokiexplore-app
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro

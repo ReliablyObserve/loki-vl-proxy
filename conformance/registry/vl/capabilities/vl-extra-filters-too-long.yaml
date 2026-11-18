@@ -1,0 +1,20 @@
+id: vl-extra-filters-too-long
+kind: version_gated_capability
+since: v1.54
+generated:
+  used_in: 0
+
+description: |
+  From v1.54.0 (#1923) -search.maxQueryLen also bounds each extra_filters and
+  extra_stream_filters arg: 400 or 422 "the `extra_filters` arg length cannot
+  exceed -search.maxQueryLen=N bytes". v1.49.0, v1.52.0 and v1.53.0 answer such
+  a call (published images and the oracle). The v1.52.2 LTS release that names
+  the same fix is enterprise-only and is not gated in.
+proxy_usage: |
+  The proxy's tenant and exclusion scoping is sent as extra_stream_filters and
+  extra_filters; on v1.54+ an arg over the learned limit is answered with the
+  refusal without the call.
+fallback: |
+  None on older releases (they run it); the refusal itself is Loki's 500 as a
+  refused plan.
+proves: []

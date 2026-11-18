@@ -1,0 +1,27 @@
+id: semantics/error-cache-vl-refusal-peer-sync
+title: A held VictoriaLogs refusal reaches every peer of the same build, release and configuration
+proves:
+  - error-coalescing-and-error-cache
+consumer: any
+pending: true
+why: |
+  A refusal held 30 s or more costs every other replica a VictoriaLogs call
+  when it misses, so it is pushed to every peer (the peer cache's everywhere
+  class, through its push queue, breakers and token); a peer holds it only for
+  the same proxy build, VictoriaLogs release and routing configuration, keeps
+  tenant and credentials in the key, and never receives an answer computed with
+  forwarded credentials. A predicted refusal is not pushed (each peer predicts
+  it for free); pushes are bounded per replica.
+request:
+  scope: internal
+  entry: syncRefusal, receiveRefusal, PeerCache.Broadcast
+  setup: |
+    Three replicas on v1.53.0 and one on v1.54.0 with peer caches over real
+    listeners, in front of one VictoriaLogs stand-in that refuses the query.
+compare:
+  mode: exact
+  expect: |
+    One VictoriaLogs call for three replicas refreshing five times; the v1.54.0
+    replica ignores the push and asks; another tenant asks; short holds,
+    predicted refusals and peer sync off push nothing
+    (TestVLRefusal_FleetSendsOneCallPerHold, TestVLRefusal_SyncOnlyWhatPeersWouldPayFor).

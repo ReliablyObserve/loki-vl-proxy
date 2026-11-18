@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
@@ -123,8 +124,14 @@ func stripLabelTransforms(logql string) string {
 }
 
 func stripOuterCalls(logql string, prefixes ...string) string {
-	for {
-		logql = strings.TrimSpace(logql)
+	// A nesting is read through one ArgumentReader of the whole text from its second call on: reading each call's
+	// first argument from the text would read every call nested in it again, at every level.
+	whole, base := logql, 0
+	var reader *logqlpkg.ArgumentReader
+	for level := 0; ; level++ {
+		trimmed := strings.TrimLeftFunc(logql, unicode.IsSpace)
+		base += len(logql) - len(trimmed)
+		logql = strings.TrimRightFunc(trimmed, unicode.IsSpace)
 		inner, ok := "", false
 		for _, prefix := range prefixes {
 			if strings.HasPrefix(logql, prefix) {
@@ -132,12 +139,22 @@ func stripOuterCalls(logql string, prefixes ...string) string {
 				// of a call that is the whole expression: `label_replace(a, ...) / b`
 				// is a binary, not a transform.
 				args := logql[len(prefix):]
-				inner, ok = logqlpkg.FirstArgument(args)
+				n := 0
+				if level == 0 {
+					n = logqlpkg.FirstArgumentLen(args)
+				} else {
+					if reader == nil {
+						reader = logqlpkg.NewArgumentReader(whole)
+					}
+					n = min(reader.FirstArgumentLen(base+len(prefix)), len(args))
+				}
+				inner, ok = args[:n], n < len(args) && args[n] == ','
 				end := len(inner)
 				for end < len(args) && args[end] == ',' {
 					end += 1 + logqlpkg.FirstArgumentLen(args[end+1:])
 				}
 				ok = ok && end < len(args) && strings.TrimSpace(args[end+1:]) == ""
+				base += len(prefix)
 				break
 			}
 		}

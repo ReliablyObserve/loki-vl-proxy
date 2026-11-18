@@ -446,13 +446,14 @@ jobs:
     # default unit-test pass missed because no test exercised the windowed +
     # derivedFields + autodetect combination.
     #
-    # internal/proxy alone takes well over 30 minutes of -race test time, so its
-    # top-level tests are split into eight shards by scripts/ci/test_shards.py (the
+    # internal/proxy alone takes over 70 minutes of -race test time, so its
+    # top-level tests are split into ten shards by scripts/ci/test_shards.py (the
     # measured -race weights of the slow tests) that run in parallel, each with its own 12m
-    # budget. Eight: five put about 570 s of weighted tests on each shard, plus the
-    # unweighted ones, which left shard 2 at its 12m budget and timing out; eight put
-    # about 360 s on each, still above the heaviest single test
-    # (TestQueryRangeStepsMatchUncached, about 380 s under -race).
+    # budget. Ten: with the weights of 2026-11-18 a shard holds at most about 495 s of
+    # tests, the heaviest single test (TestMetricRouteCatchesAWrongDecision, about 475 s
+    # under -race) and little else; eight held about 555 s, and with weights measured
+    # before the route parity runs gated VictoriaLogs calls (#1631) one shard held 660 s
+    # and timed out. Regenerate the weights when a shard nears its budget.
     # The `other` entry carries the remaining packages and the verbose
     # concurrent-regression step so no proxy shard does.
     name: race-stress-shard (${{ matrix.shard }})
@@ -462,7 +463,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, other]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -520,8 +521,8 @@ jobs:
           # -race, are spread longest first over the shards; every other test goes
           # to the shard its name hashes to, so each test is in exactly one shard.
           go test -list '.*' ./internal/proxy/ > shard-list.txt
-          python3 scripts/ci/test_shards.py check --shards 8 --list shard-list.txt
-          python3 scripts/ci/test_shards.py regex --shards 8 --shard "$SHARD" --list shard-list.txt > shard-run.txt
+          python3 scripts/ci/test_shards.py check --shards 10 --list shard-list.txt
+          python3 scripts/ci/test_shards.py regex --shards 10 --shard "$SHARD" --list shard-list.txt > shard-run.txt
           test -s shard-run.txt
 
       - name: Race-detector tests (internal/proxy shard)
@@ -1114,11 +1115,13 @@ jobs:
             exit 1
           fi
 
+      # A run takes 31 to 101 s (40 successful runs on 2026-11-17/18); a slow hosted runner once spent the whole 5 minutes
+      # loading packages with the same caches restored, so the bound leaves room for such a runner.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9
         with:
           version: v2.14.0
-          args: --timeout=5m
+          args: --timeout=15m
 
       # The checks below verify the infra itself. They run on every pull
       # request, so a pull request that skips the product jobs is still checked.
@@ -1201,7 +1204,7 @@ jobs:
           - name: otel-edge
             pattern: '^(TestSetup_IngestEdgeCaseData|TestSetup_IngestRichData|TestOTel.*|TestStructuredMetadata_.*|TestQueryDirection_UnderscoreProxy|TestDetectedFields_UnderscoreProxy|TestSeries_UnderscoreProxy|TestMixedLabels_UnderscoreProxy|TestLokiVsProxy_LabelParity|TestGrafanaDrilldown_UnderscoreProxy|TestLabelDeduplication|TestLabelTranslation_EdgeCases|TestOTelCompatibilityScore|TestEdge_.*|TestComplex_.*)$'
           - name: tail-multitenancy
-            pattern: '^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestVLCapability_ExtraStreamFiltersTenantSemantics|TestHardeningLive_TenantLabel.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_Tail_.*|TestTailHistory_StartLimitLikeLoki|TestFeature_QueryAnalytics_Endpoint|TestFeature_SecurityHeaders|TestFeature_MetricsEndpoint|TestFeature_GzipCompression|TestFeature_NoGzipWithoutAccept|TestFeature_UnsupportedZstdUsesGzip|TestFeature_GzipAndIdentityBodiesMatch|TestFeature_DerivedFields_TraceIDInJSON|TestFeature_ResponseStructureConsistency|TestFeature_QueryRange_vs_Query_Consistency|TestFeature_InstantVectorExpression_Compatibility|TestEdge_ConcurrentIdenticalQueries|TestEdge_LongQueryString|TestEdge_CombinedFilterTypes|TestEdge_EmptyResults|TestEdge_RapidSequentialQueries|TestEdge_InstantQuery)$'
+            pattern: '^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestVLCapability_ExtraStreamFiltersTenantSemantics|TestVLCapability_RefusalPredictionsMatchVictoriaLogs|TestHardeningLive_TenantLabel.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_Tail_.*|TestTailHistory_StartLimitLikeLoki|TestFeature_QueryAnalytics_Endpoint|TestFeature_SecurityHeaders|TestFeature_MetricsEndpoint|TestFeature_GzipCompression|TestFeature_NoGzipWithoutAccept|TestFeature_UnsupportedZstdUsesGzip|TestFeature_GzipAndIdentityBodiesMatch|TestFeature_DerivedFields_TraceIDInJSON|TestFeature_ResponseStructureConsistency|TestFeature_QueryRange_vs_Query_Consistency|TestFeature_InstantVectorExpression_Compatibility|TestEdge_ConcurrentIdenticalQueries|TestEdge_LongQueryString|TestEdge_CombinedFilterTypes|TestEdge_EmptyResults|TestEdge_RapidSequentialQueries|TestEdge_InstantQuery)$'
           # Stops and pauses the stack's VictoriaLogs (LVP_E2E_OUTAGE): its own stack.
           - name: error-flights
             pattern: '^(TestSetup_IngestLogs|TestErrorFlightsLive_.*)$'
@@ -1352,7 +1355,7 @@ jobs:
             export FLEET_PROOF_REPORT="$RUNNER_TEMP/fleet-peer-cache-proof-rf$rf.json"
             docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
             docker compose -f test/e2e-fleet/docker-compose.yml up -d --no-build --wait --wait-timeout 180
-            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry|TestFleet_QueryRangeWindowsServeMovedRangesOnPeers|TestFleet_PushesBufferedForAPausedReplicaReachItWhenItAnswers)$' ./test/e2e-fleet/
+            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry|TestFleet_QueryRangeWindowsServeMovedRangesOnPeers|TestFleet_PushesBufferedForAPausedReplicaReachItWhenItAnswers|TestFleet_VLRefusalHeldAcrossReplicas)$' ./test/e2e-fleet/
             docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
           done
 

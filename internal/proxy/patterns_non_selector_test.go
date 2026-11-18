@@ -11,7 +11,7 @@ import (
 // Loki reads the /patterns query as a stream selector alone: a line filter, a parser or a metric expression is a
 // 400 `only label matchers are supported`, before any pattern is mined. The route answers it the same way, with no
 // VictoriaLogs call. Loki 3.7.9 answered the first query below as listed in the live differential of 2026-11-14
-// (build 726dfb48f, VictoriaLogs v1.53.0): HTTP 400, text/plain, that text.
+// (build 726dfb48f, VictoriaLogs v1.54.0): HTTP 400, text/plain, that text.
 //
 // conformance: drilldown/patterns-non-selector-query, loki_api_v1_patterns
 func TestPatternsRouteRejectsAQueryThatIsNotASelector(t *testing.T) {

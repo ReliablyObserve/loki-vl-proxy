@@ -68,6 +68,11 @@ func TestSeriesFoldCountingForm(t *testing.T) {
 			t.Errorf("counted form without %q:\n%s", want, counted)
 		}
 	}
+	// The folded values are finite and a kept series' partials pass through any (a NaN stays NaN): no nan mark before
+	// the last stats pipe, which would flag every kept series' rows (their folded value is blank).
+	if strings.Contains(counted, `"2" as __lvp_bad | stats by (_time, `) {
+		t.Errorf("a nan mark before the fold's last stats pipe:\n%s", counted)
+	}
 	if nan := unwrapNaNFor(counted); !nan.poison || !nan.counts["__sample_count"] {
 		t.Errorf("the NaN rule of the bucket stats: %+v", nan)
 	}

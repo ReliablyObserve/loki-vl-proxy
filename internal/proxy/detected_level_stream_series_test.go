@@ -139,7 +139,7 @@ func TestStreamGroupedSeriesDetectedLevelMatchesLoki(t *testing.T) {
 	}
 	rows := levelStreamRows(streams)
 	base := int64(1_800_000_000) * 1e9
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, a := range recorded.Answers {
 			want := a.LokiSeries
 			sortLabelSets(want)
@@ -184,7 +184,7 @@ func TestStreamGroupedSeriesDetectedLevelEdges(t *testing.T) {
 		{"without detected_level", `level="error"`, "-", "pod, detected_level"},
 		{"without level", `level="error"`, "error", "pod, level"},
 	}
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		for _, c := range cases {
 			streams := []string{`{app="uw",` + c.labels + `,pod="a"}`, `{app="uw",` + c.labels + `,pod="b"}`}
 			rows := levelStreamRows(streams)
@@ -414,7 +414,7 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 	const stale = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"uw","detected_level":"unknown","level":"error","stale":"yes"},"values":[[1800000000,"1"]]}]}}`
 	query := `sum without (pod) (rate({app="uw"} | logfmt amount | unwrap amount [5m]))`
 	rows := levelStreamRows([]string{`{app="uw",level="error",pod="a"}`, `{app="uw",level="error",pod="b"}`})
-	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.54.0"}
 	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), CompatCache: cache.New(60*time.Second, 100), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})

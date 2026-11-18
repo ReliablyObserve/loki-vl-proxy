@@ -45,8 +45,10 @@ why: |
   VictoriaLogs. For a json or logfmt parser of every key with no keep, drop or
   format, under sum, max, min or avg (by labels or none) over avg, max, min,
   stddev and stdvar over time, the lowering unpacks the line a second time under
-  a prefix of its own, deletes every spelling of the unwrapped label, packs the
-  rest with the stored level, detected_level and the stream and hashes it
+  a prefix of its own, deletes every spelling of the unwrapped label, writes the
+  rest with the stored level, detected_level and the stream as one value sorted
+  by name (set_stream_fields, whatever the key order of the line:
+  semantics/unwrap-identity-key-order) and hashes it
   (lower.DynamicUnwrapIdentity). The stats then take the function per series
   (the hash) and the aggregation over the series in VictoriaLogs, in one stats
   query, on query and on query_range with the range up to the step. The proxy

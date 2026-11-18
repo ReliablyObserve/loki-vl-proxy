@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.53.0
+    image: victoriametrics/victoria-logs:v1.54.0
     container_name: vl-proxy-test
     ports:
       - "9428:9428"
@@ -14,8 +14,9 @@ services:
       - vl-data:/vlogs
     healthcheck:
       # VictoriaLogs images are scratch-based from v1.52.0 (no shell, no wget);
-      # the binary's -version exit path is the probe that works on every version.
-      test: ["CMD", "/victoria-logs-prod", "-version"]
+      # from v1.54.0 the binary checks that its listener accepts connections
+      # (-healthcheck). The image here is pinned; on an older one use -version.
+      test: ["CMD", "/victoria-logs-prod", "-healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -37,7 +38,7 @@ services:
         condition: service_healthy
 
   loki:
-    image: grafana/loki:3.7.9
+    image: grafana/loki:3.7.10
     container_name: loki-direct
     ports:
       - "3200:3100"
@@ -51,7 +52,7 @@ services:
       start_period: 10s
 
   grafana:
-    image: grafana/grafana:13.3.0
+    image: grafana/grafana:13.3.1
     container_name: grafana-proxy-test
     ports:
       - "3000:3000"
