@@ -57,6 +57,7 @@ type Metrics struct {
 	coalescedSaved         atomic.Int64 // backend requests saved by coalescing
 	coalescedStatsProvider func() CoalescerStats
 	coalescedProviderMu    sync.RWMutex
+	errorFlights           errorFlightProvider
 
 	// Translation stats
 	translationsTotal atomic.Int64
@@ -2319,6 +2320,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_coalesced_wait_count_total Number of duplicate requests that waited for an in-flight backend response.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_coalesced_wait_count_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_wait_count_total %d\n", coalesced.WaitCount)
+
+	m.writeErrorFlightMetrics(&sb)
 
 	sb.WriteString("# HELP loki_vl_proxy_window_cache_hit_total Query-range window cache hits.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_cache_hit_total counter\n")

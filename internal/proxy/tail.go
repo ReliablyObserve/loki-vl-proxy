@@ -60,6 +60,18 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !tailHandshakeComplete(r) {
+		// The handshake fails whatever VictoriaLogs holds: answer it before
+		// the history read (the upgrader writes its own 400), as Loki's
+		// router does before any query work.
+		upgrader := p.tailUpgrader()
+		if _, err := upgrader.Upgrade(w, r, nil); err != nil { // nosemgrep: go.gorilla.security.audit.websocket-missing-origin-check -- CheckOrigin is set in tailUpgrader()
+			p.log.Error("websocket upgrade failed", "error", err)
+		}
+		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
+		return
+	}
+
 	r = p.withRequestScope(r)
 
 	tailCtx, tailCancel := context.WithCancel(r.Context())
@@ -948,4 +960,13 @@ func (p *Proxy) indexLabelTailEntry(vlLine map[string]interface{}, lineFields ma
 	ensureSyntheticServiceName(labels)
 	ts := strconv.FormatInt(t.UnixNano(), 10)
 	return tailEntry{ts: t.UnixNano(), stream: labels, value: []string{ts, msg}}, true
+}
+
+// tailHandshakeComplete reports a request the websocket upgrade can accept: a
+// GET whose Connection names upgrade and whose Upgrade names websocket, with
+// protocol version 13 and a key (RFC 6455, 4.2.1). Any other request fails the
+// upgrade, so it is answered before the tail reads anything.
+func tailHandshakeComplete(r *http.Request) bool {
+	return r.Method == http.MethodGet && websocket.IsWebSocketUpgrade(r) &&
+		r.Header.Get("Sec-Websocket-Version") == "13" && r.Header.Get("Sec-Websocket-Key") != ""
 }

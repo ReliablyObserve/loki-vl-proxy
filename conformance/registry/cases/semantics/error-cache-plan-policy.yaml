@@ -1,0 +1,24 @@
+id: semantics/error-cache-plan-policy
+title: The query plan decides which failure classes a request may hold; the error's type decides its class
+proves:
+  - error-coalescing-and-error-cache
+consumer: any
+pending: true
+why: |
+  A failure is classified by the type of the error the request answered (never
+  its text), and held only when the plan says the request can fail that way: a
+  number or vector(n) reads no data, so no backend failure; only a metric whose
+  parser errors reach it, or that unwraps, can end in a pipeline error.
+request:
+  scope: internal
+  entry: queryplan.Plan.Failures, failureClassOf, heldFailureClass
+  setup: |
+    The plans of log queries, metrics with and without parser errors reaching
+    them, unwrap, binary operations, label_replace and literals; every error
+    type the error layer answers.
+compare:
+  mode: exact
+  expect: |
+    The class sets and classes listed in TestPlanFailures and
+    TestErrorFlights_FailureClassOf; two failures of different classes, or a
+    final status that differs from the recorded failure, hold nothing.

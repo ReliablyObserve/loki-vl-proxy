@@ -1,0 +1,24 @@
+id: semantics/error-coalescing-no-inherited-cancel
+title: A follower whose request is alive never answers with the leader's cancellation or deadline
+proves:
+  - error-coalescing-and-error-cache
+  - backend-deadlines-and-cancellation
+consumer: any
+pending: true
+why: |
+  Loki answers 499 or 504 only for a query whose own context was cancelled or
+  ran out of time. A shared run carries its leader's context; when the leader
+  goes away or times out, the followers that still wait must start again.
+request:
+  scope: internal
+  entry: serveFlight, Coalescer.do
+  setup: |
+    A leader whose client cancels while VictoriaLogs holds its call and eight
+    followers wait; a coalesced VictoriaLogs call whose first caller's deadline
+    ends it while a follower without a deadline waits.
+compare:
+  mode: exact
+  expect: |
+    The leader answers 499; every follower gets the answer of one new call (2
+    VictoriaLogs calls in all); the coalescer's follower gets the new call's
+    answer, not context deadline exceeded.

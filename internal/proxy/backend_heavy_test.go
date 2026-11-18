@@ -470,6 +470,8 @@ func TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker(t *testing.T) {
 			_ = resp.Body.Close()
 		}
 	}()
+	// Join it after unblock is released (cleanups run after the defers): its body read must end with the test.
+	t.Cleanup(func() { <-holder })
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if inUse, _ := p.heavyQueryLimiter.stats(); inUse > 0 {

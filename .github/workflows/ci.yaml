@@ -1202,6 +1202,10 @@ jobs:
             pattern: '^(TestSetup_IngestEdgeCaseData|TestSetup_IngestRichData|TestOTel.*|TestStructuredMetadata_.*|TestQueryDirection_UnderscoreProxy|TestDetectedFields_UnderscoreProxy|TestSeries_UnderscoreProxy|TestMixedLabels_UnderscoreProxy|TestLokiVsProxy_LabelParity|TestGrafanaDrilldown_UnderscoreProxy|TestLabelDeduplication|TestLabelTranslation_EdgeCases|TestOTelCompatibilityScore|TestEdge_.*|TestComplex_.*)$'
           - name: tail-multitenancy
             pattern: '^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestVLCapability_ExtraStreamFiltersTenantSemantics|TestHardeningLive_TenantLabel.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_Tail_.*|TestTailHistory_StartLimitLikeLoki|TestFeature_QueryAnalytics_Endpoint|TestFeature_SecurityHeaders|TestFeature_MetricsEndpoint|TestFeature_GzipCompression|TestFeature_NoGzipWithoutAccept|TestFeature_UnsupportedZstdUsesGzip|TestFeature_GzipAndIdentityBodiesMatch|TestFeature_DerivedFields_TraceIDInJSON|TestFeature_ResponseStructureConsistency|TestFeature_QueryRange_vs_Query_Consistency|TestFeature_InstantVectorExpression_Compatibility|TestEdge_ConcurrentIdenticalQueries|TestEdge_LongQueryString|TestEdge_CombinedFilterTypes|TestEdge_EmptyResults|TestEdge_RapidSequentialQueries|TestEdge_InstantQuery)$'
+          # Stops and pauses the stack's VictoriaLogs (LVP_E2E_OUTAGE): its own stack.
+          - name: error-flights
+            pattern: '^(TestSetup_IngestLogs|TestErrorFlightsLive_.*)$'
+            outage: "1"
           - name: semantics
             pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrix.*|TestQuerySemanticsOperationsInventory|TestOperationsMatrix_.*|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestCompat_LabelFilterExpressionSyntax|TestCompat_RepeatedLabelFiltersApplyAllLikeLoki|TestCompat_IPLabelFilterEmbeddedAddressLikeLoki|TestCompat_KeywordLabelNamesLikeLoki|TestCompat_BinaryOperandLiterals|TestCompat_SelectorValueMustBeString|TestCompat_MarkerTextInStrings|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields|TestCompat_ReservedFieldNameCaseLikeLoki|TestCompat_ReservedFieldLabelsLikeLoki)$'
     name: e2e-compat (${{ matrix.group.name }})
@@ -1237,6 +1241,7 @@ jobs:
         id: compat
         env:
           GROUP_PATTERN: ${{ matrix.group.pattern }}
+          LVP_E2E_OUTAGE: ${{ matrix.group.outage || '' }}
         run: |
           set -euo pipefail
           # 10 min: parity tests wait up to 90 s each for a fresh Loki to answer
