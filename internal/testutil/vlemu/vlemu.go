@@ -267,6 +267,8 @@ var (
 	// math <field> as <field>: the number the field holds, written to the result field.
 	emuMathCopyRE = regexp.MustCompile(`^math (\w+) as (\w+)$`)
 	// unpack_json from <field> fields (<name>): the named key of the JSON in the field.
+	// format if (__lvp_bad:="0" (-a:<=inf or -b:<=inf)) "2" as __lvp_bad: the nan mark of a parser's series identity.
+	emuNaNMarkRE    = regexp.MustCompile(`^format if \(__lvp_bad:="0" \((.+)\)\) "2" as __lvp_bad$`)
 	emuUnpackJSONRE = regexp.MustCompile(`^unpack_json from (\w+) fields \((\w+)\)$`)
 	emuFuncRE       = regexp.MustCompile(`^(\w+)\(([^)]*)\)(?: as (\w+))?$`)
 	// replace_regexp(`<expression>`, "<replacement>") at <field>: Go regexp, as VictoriaLogs runs it.
@@ -462,6 +464,31 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, rec := range recs {
 				rec.f[m[3]] = re.ReplaceAllString(rec.f[m[3]], m[2])
+			}
+			continue
+		}
+		if m := emuNaNMarkRE.FindStringSubmatch(pipe); m != nil {
+			// The nan mark of a parser's series identity: a clean row whose summed or averaged value is NaN (or absent)
+			// is flagged as a nan row (VictoriaLogs: x:<=inf is false only for NaN and an absent value).
+			var fields []string
+			for _, c := range strings.Split(m[1], " or ") {
+				f, ok := strings.CutPrefix(c, "-")
+				if f, ok2 := strings.CutSuffix(f, ":<=inf"); ok && ok2 {
+					fields = append(fields, f)
+				} else {
+					e.T.Fatalf("emulator: nan mark condition %q", c)
+				}
+			}
+			for _, rec := range recs {
+				if rec.f["__lvp_bad"] != "0" {
+					continue
+				}
+				for _, f := range fields {
+					if v, err := strconv.ParseFloat(rec.f[f], 64); err != nil || math.IsNaN(v) {
+						rec.f["__lvp_bad"] = "2"
+						break
+					}
+				}
 			}
 			continue
 		}
