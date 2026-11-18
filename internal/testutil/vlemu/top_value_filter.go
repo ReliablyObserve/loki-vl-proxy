@@ -1,6 +1,7 @@
 package vlemu
 
 import (
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
@@ -16,12 +17,12 @@ import (
 
 // topValueFilterRE is `| filter <f>:in(<selector> | stats by (<f>) count() as __lvp_rank | sort by (__lvp_rank
 // desc, <f>) | limit <n> | fields <f>)`.
-var topValueFilterRE = regexp.MustCompile(`\| filter (\w+):in\([^|()]*(?:\([^()]*\)[^|()]*)* \| stats by \((\w+)\) (count\(\)|min\(_time\)) as __lvp_rank \| sort by \(__lvp_rank( desc)?, (\w+)\) \| limit (\d+) \| fields (\w+)\) `)
+var topValueFilterRE = regexp.MustCompile(`\| filter (\w+):in\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*? \| stats by \((\w+)\) (count\(\)|min\(_time\)) as __lvp_rank \| sort by \(__lvp_rank( desc)?, (\w+)\) \| limit (\d+) \| fields (\w+)\) `)
 
 // splitTopValueFilterRE is the Loki series-limit mode's top-value filter over several splits: `| filter <f>:in(
-// <selector> | stats by (_time:<bucket> offset <offset>, <f>) min(_time) as __lvp_rank | sort by (__lvp_rank, <f>)
+// <selector> | stats by (_time:<bucket>[ offset <offset>], <f>) min(_time) as __lvp_rank | sort by (__lvp_rank, <f>)
 // partition by (_time) limit <n> | fields <f>)`: the n values met first in every time bucket.
-var splitTopValueFilterRE = regexp.MustCompile(`\| filter (\w+):in\([^|()]*(?:\([^()]*\)[^|()]*)* \| stats by \(_time:(\w+) offset (\w+), (\w+)\) min\(_time\) as __lvp_rank \| sort by \(__lvp_rank, (\w+)\) partition by \(_time\) limit (\d+) \| fields (\w+)\) `)
+var splitTopValueFilterRE = regexp.MustCompile(`\| filter (\w+):in\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*? \| stats by \(_time:(\w+)(?: offset (\w+))?, (\w+)\) min\(_time\) as __lvp_rank \| sort by \(__lvp_rank, (\w+)\) partition by \(_time\) limit (\d+) \| fields (\w+)\) `)
 
 // emuTopValueFilter is a read's top-value filter: its field and how many values it keeps.
 type emuTopValueFilter struct {
@@ -30,6 +31,63 @@ type emuTopValueFilter struct {
 	byFirst bool // ranked by min(_time) ascending, not by count
 	// bucket and offset rank the values in every time bucket (VictoriaLogs' _time:<bucket> offset <offset>).
 	bucket, offset int64
+	// rowKept, when set, is the window filter of a range shorter than the step, which the subquery repeats.
+	rowKept func(ts int64) bool
+	// aligned, when set, is the read's time range [lo, hi] as a stats_query_range read aligns it to its step grid,
+	// which VictoriaLogs scopes the subquery to; within is the subquery's own `_time:[from, to]` filter, if any.
+	aligned, within *[2]int64
+}
+
+// subqueryTimeRangeRE is a `| filter _time:[<from>, <to>]` pipe of a top-value subquery.
+var subqueryTimeRangeRE = regexp.MustCompile(`\| filter _time:\[([^,\]]+), ([^\]]+)\] `)
+
+func subqueryTimeRange(e *Emulator, subquery string) *[2]int64 {
+	m := subqueryTimeRangeRE.FindStringSubmatch(subquery)
+	if m == nil {
+		return nil
+	}
+	return &[2]int64{vlTimeNs(e, m[1]), vlTimeNs(e, m[2])}
+}
+
+// AlignedStatsRange is the time range [lo, hi] a stats_query_range read over [start, end) with step and offset
+// reads: VictoriaLogs aligns the start down and the end up to the step grid (app/vlselect alignStartEndToStep).
+func AlignedStatsRange(start, end, step, offset int64) [2]int64 {
+	floor := func(t int64) int64 { return t - ((t%step)+step)%step }
+	lo := floor(start+offset) - offset
+	hi := end - 1 + offset
+	if hi > 0 {
+		hi += step - hi%step
+	} else {
+		hi -= hi % step
+	}
+	return [2]int64{lo, hi - offset - 1}
+}
+
+// subqueryRows are the rows the filter's subquery ranks: the read's rows over its (aligned) time range, narrowed by
+// the subquery's own time filter.
+func (f *emuTopValueFilter) subqueryRows(e *Emulator, r *http.Request) []Row {
+	if f.aligned == nil && f.within == nil {
+		return e.SelectRows(r)
+	}
+	lo, hi := int64(math.MinInt64), int64(math.MaxInt64)
+	if f.aligned != nil {
+		lo, hi = f.aligned[0], f.aligned[1]
+	} else {
+		lo = vlTimeNs(e, r.FormValue("start"))
+		if raw := r.FormValue("end"); raw != "" {
+			hi = vlTimeNs(e, raw) - 1
+		}
+	}
+	if f.within != nil {
+		lo, hi = max(lo, f.within[0]), min(hi, f.within[1])
+	}
+	var out []Row
+	for _, row := range e.Rows {
+		if row.TS >= lo && row.TS <= hi {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // cutTopValueFilter cuts a top-value filter out of a read's query; nil when the query has none.
@@ -40,12 +98,15 @@ func cutTopValueFilter(e *Emulator, query string) (string, *emuTopValueFilter) {
 			e.T.Fatalf("emulator: top-value filter over several fields: %s", m[0])
 		}
 		bucket, errB := time.ParseDuration(m[2])
-		offset, errO := time.ParseDuration(m[3])
+		offset, errO := time.Duration(0), error(nil)
+		if m[3] != "" { // no offset: buckets from the epoch
+			offset, errO = time.ParseDuration(m[3])
+		}
 		n, errN := strconv.Atoi(m[6])
 		if errB != nil || errO != nil || errN != nil || bucket <= 0 || n <= 0 {
 			e.T.Fatalf("emulator: split top-value filter %q", m[0])
 		}
-		return query[:loc[0]] + query[loc[1]:], &emuTopValueFilter{field: m[1], n: n, byFirst: true, bucket: int64(bucket), offset: int64(offset)}
+		return query[:loc[0]] + query[loc[1]:], &emuTopValueFilter{field: m[1], n: n, byFirst: true, bucket: int64(bucket), offset: int64(offset), within: subqueryTimeRange(e, m[0])}
 	}
 	loc := topValueFilterRE.FindStringSubmatchIndex(query)
 	if loc == nil {
@@ -63,7 +124,7 @@ func cutTopValueFilter(e *Emulator, query string) (string, *emuTopValueFilter) {
 	if err != nil || n <= 0 {
 		e.T.Fatalf("emulator: top-value filter limit %q", m[6])
 	}
-	return query[:loc[0]] + query[loc[1]:], &emuTopValueFilter{field: m[1], n: n, byFirst: byFirst}
+	return query[:loc[0]] + query[loc[1]:], &emuTopValueFilter{field: m[1], n: n, byFirst: byFirst, within: subqueryTimeRange(e, m[0])}
 }
 
 // keep is recs without the rows whose field is not a top value: values ranked by their lines among the rows the
@@ -74,7 +135,10 @@ func (f *emuTopValueFilter) keep(e *Emulator, r *http.Request, recs []emuRec) []
 	}
 	counts := map[string]int{}
 	firsts := map[string]int64{}
-	for _, row := range e.SelectRows(r) {
+	for _, row := range f.subqueryRows(e, r) {
+		if f.rowKept != nil && !f.rowKept(row.TS) {
+			continue
+		}
 		fields := map[string]string{}
 		for _, m := range StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) {
 			fields[m[1]] = m[2]
@@ -82,7 +146,8 @@ func (f *emuTopValueFilter) keep(e *Emulator, r *http.Request, recs []emuRec) []
 		for k, v := range row.Labels {
 			fields[k] = v
 		}
-		if v, ok := fields[f.field]; ok {
+		// VictoriaLogs groups a line without the field under the empty value, which the first-met ranking keeps.
+		if v, ok := fields[f.field]; ok || f.byFirst {
 			counts[v]++
 			if first, seen := firsts[v]; !seen || row.TS < first {
 				firsts[v] = row.TS
@@ -119,7 +184,10 @@ func (f *emuTopValueFilter) keep(e *Emulator, r *http.Request, recs []emuRec) []
 // bucket and takes the offset back), the n values whose first line in it is earliest, ties by value.
 func (f *emuTopValueFilter) keepPerBucket(e *Emulator, r *http.Request, recs []emuRec) []emuRec {
 	firsts := map[int64]map[string]int64{}
-	for _, row := range e.SelectRows(r) {
+	for _, row := range f.subqueryRows(e, r) {
+		if f.rowKept != nil && !f.rowKept(row.TS) {
+			continue
+		}
 		fields := map[string]string{}
 		for _, m := range StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) {
 			fields[m[1]] = m[2]
@@ -127,10 +195,7 @@ func (f *emuTopValueFilter) keepPerBucket(e *Emulator, r *http.Request, recs []e
 		for k, v := range row.Labels {
 			fields[k] = v
 		}
-		v, ok := fields[f.field]
-		if !ok {
-			continue
-		}
+		v := fields[f.field] // a line without the field ranks as the empty value, as VictoriaLogs groups it
 		t := row.TS + f.offset
 		rem := t % f.bucket
 		if rem < 0 {

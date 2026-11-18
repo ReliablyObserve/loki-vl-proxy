@@ -257,8 +257,13 @@ func (s *seriesLimitScope) firstStepsInSplits(first, last int64, yield func(int6
 }
 
 // lineMet yields the first step, in every split, that meets a line (or a VictoriaLogs bucket labelled by its start,
-// passed one nanosecond later) at t: the steps T with T - range < t <= T.
+// passed one nanosecond later) at t: the steps T with T - range < t <= T. A line no step reads yields nothing: one
+// after end, or at or before start - max(range, step) (VictoriaLogs aligns a bucket read's start down to its grid,
+// so a read can hold the bucket before the request's lines).
 func (s *seriesLimitScope) lineMet(t int64, yield func(int64)) {
+	if t > s.endNs || s.rangeNs > 0 && t <= s.startNs-max(s.rangeNs, s.stepNs) {
+		return
+	}
 	first := s.stepOf(t)
 	last := first
 	if s.rangeNs > s.stepNs && s.stepNs > 0 {
@@ -273,13 +278,49 @@ func (s *seriesLimitScope) lineMet(t int64, yield func(int64)) {
 	s.firstStepsInSplits(first, last, yield)
 }
 
+// rankingGrid is the time grid a first-met ranking keeps its values per, for reads that begin lookback before each
+// step (max(range, step); a range shorter than the step keeps only its windows' lines): VictoriaLogs' buckets
+// `_time:<width> offset <offset>` each hold the lines (e, e+width] for the grid's edges e, and buckets is how many
+// of them the read (start-lookback, end] reaches. ok is false for a request in one split, ranked over its read whole.
+//
+// Every split k after the first begins at its first step s_k; the lines its steps read are (s_k - lookback,
+// last step of k]. The edges include every s_k - lookback, so the buckets that begin inside split k's lines hold
+// only lines split k reads, and the values met first in each bucket include the values split k meets first: a
+// value v that split k meets through its earliest line t (in a bucket beginning at e >= s_k - lookback) is behind,
+// in that bucket, only values with a line in (e, t], which split k meets no later than v. The edges are the split
+// starts when the split interval is a multiple of the step (then every s_k lies the same time past its boundary),
+// else every step (a step longer than the split puts at most one in each split; a shorter one that does not divide
+// it keeps exactness at one bucket per step).
+func (s *seriesLimitScope) rankingGrid(lookback int64) (width, offset int64, buckets int, ok bool) {
+	if s == nil || s.splitNs <= 0 || s.stepNs <= 0 || lookback <= 0 || s.splitOf(s.endNs) == 0 {
+		return 0, 0, 0, false
+	}
+	first := s.startNs - s.startNs%s.splitNs + s.splitNs // the first boundary after start
+	if s.startNs < 0 {
+		first = s.startNs - s.startNs%s.splitNs
+	}
+	width = s.stepNs
+	if s.splitNs%s.stepNs == 0 {
+		width = s.splitNs
+	}
+	edge := s.stepOf(first) - lookback // a grid edge
+	// VictoriaLogs truncates t+offset to the width and takes the offset back: a bucket begins at edge+1ns.
+	offset = ((lookback-1-s.stepOf(first))%width + width) % width
+	index := func(t int64) int64 { return floorDiv(t-edge-1, width) } // the bucket of a line at t
+	return width, offset, int(index(s.endNs)-index(s.startNs-lookback+1)) + 1, true
+}
+
 // rankedBound is the most series a VictoriaLogs ranking of limit+1 values returns for the request: limit+1, or in
-// the Loki mode limit+1 per split.
+// the Loki mode limit+1 per bucket of its ranking grid (rankingGrid, the reads beginning a step before each step:
+// the ranked in() read of a range == step answer).
 func (s *seriesLimitScope) rankedBound(limit int) int {
 	if s == nil || !s.lokiCut {
 		return limit + 1
 	}
-	return (limit + 1) * (s.splitOf(s.endNs) + 1)
+	if _, _, buckets, ok := s.rankingGrid(s.stepNs); ok {
+		return (limit + 1) * buckets
+	}
+	return limit + 1
 }
 
 // keepsSuperset reports a request whose series caps keep, in the Loki mode, more than the limit (every split's

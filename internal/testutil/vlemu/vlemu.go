@@ -68,6 +68,10 @@ type Emulator struct {
 	// stream labelled severity or LEVEL decides it there, and the chain reads a
 	// stream's level field before the same name stored on the row.
 	DeriveFields func(stream, fields map[string]string) string
+	// AlignStatsRange reads a stats_query_range request over its time range aligned to the step grid, as
+	// VictoriaLogs does (start down, end up; app/vlselect alignStartEndToStep), its subqueries included; otherwise
+	// over [start, end) as sent.
+	AlignStatsRange bool
 	// RowStreamFields writes the stream fields into every raw row
 	// (/select/logsql/query) as top-level fields, as VictoriaLogs answers them
 	// (a Loki-push row with stream {app="a",level="ERROR"} comes back with
@@ -157,6 +161,24 @@ func (e *Emulator) Handler() http.Handler {
 	})
 }
 
+// alignedStatsRange is the time range [lo, hi] a stats_query_range request reads with AlignStatsRange.
+func (e *Emulator) alignedStatsRange(r *http.Request) ([2]int64, bool) {
+	if !e.AlignStatsRange || r.URL.Path != "/select/logsql/stats_query_range" || r.FormValue("start") == "" || r.FormValue("end") == "" {
+		return [2]int64{}, false
+	}
+	step, err := time.ParseDuration(r.FormValue("step"))
+	if err != nil || step <= 0 {
+		return [2]int64{}, false
+	}
+	offset := time.Duration(0)
+	if raw := r.FormValue("offset"); raw != "" {
+		if offset, err = time.ParseDuration(raw); err != nil {
+			return [2]int64{}, false
+		}
+	}
+	return AlignedStatsRange(vlTimeNs(e, r.FormValue("start")), vlTimeNs(e, r.FormValue("end")), int64(step), int64(offset)), true
+}
+
 func vlTimeNs(e *Emulator, raw string) int64 {
 	if raw == "" {
 		return math.MinInt64
@@ -182,6 +204,9 @@ func (e *Emulator) SelectRows(r *http.Request) []Row {
 	end := int64(math.MaxInt64)
 	if raw := r.FormValue("end"); raw != "" {
 		end = vlTimeNs(e, raw)
+	}
+	if aligned, ok := e.alignedStatsRange(r); ok {
+		start, end = aligned[0], aligned[1]+1
 	}
 	var out []Row
 	for _, row := range e.Rows {
@@ -411,6 +436,14 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 		recs = append(recs, emuRec{t: row.TS, f: f})
 	}
 	if top != nil {
+		if aligned, ok := e.alignedStatsRange(r); ok {
+			top.aligned = &aligned
+		}
+		if phaseStep > 0 { // the subquery repeats the read's window filter
+			top.rowKept = func(ts int64) bool {
+				return WindowPhaseKeeps(ts, phaseAnchor, phaseStep, phaseLower, phaseUpper, e.FloatPhase)
+			}
+		}
 		recs = top.keep(e, r, recs)
 	}
 	if fold != nil {

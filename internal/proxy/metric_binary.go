@@ -515,20 +515,22 @@ func rankedSingleFieldQueryBy(logsqlQuery string, limit int, rank func(field str
 
 // firstMetRanking is the LogsQL pipes, from the LogsQL AST, that rank field's values by their first line, earliest
 // first (ties by the value when tieByField), keep n of them and then run the further pipes: the ranking of the Loki
-// series-limit mode. Over a request with several splits (seriesLimitScope.splitOf) it keeps n per split: the lines
-// a split's steps read begin rangeNs before the split, so the buckets end rangeNs before each boundary. field is as
-// the translator wrote it, quoted where needed.
-func (s *seriesLimitScope) firstMetRanking(field, alias string, tieByField bool, n int, rangeNs int64, then ...logsql.Pipe) string {
+// series-limit mode. Over a request with several splits (seriesLimitScope.splitOf) it keeps n per bucket of the
+// request's ranking grid (rankingGrid: the reads begin lookback, max(range, step), before each step), which holds
+// every split's n values met first. field is as the translator wrote it, quoted where needed.
+func (s *seriesLimitScope) firstMetRanking(field, alias string, tieByField bool, n int, lookback int64, then ...logsql.Pipe) string {
 	by := []logsql.SortField{{Field: alias}}
 	if tieByField {
 		by = append(by, logsql.SortField{Field: field})
 	}
 	stats := logsql.PipeStats{By: []logsql.GroupKey{{Field: field}}, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Min{Field: "_time"}, Alias: alias}}}
 	pipes := []logsql.Pipe{stats, logsql.PipeSort{By: by}, logsql.PipeLimit{N: n}}
-	if s != nil && s.splitOf(s.endNs) > 0 && rangeNs > 0 {
-		// A line at t is first met at the first step at or after it; a step on a boundary starts the later
-		// split. The bucket of a split holds the lines (b - range, b' - range].
-		stats.By = []logsql.GroupKey{{Field: "_time", Bucket: exactVLDuration(time.Duration(s.splitNs)), Offset: exactVLDuration(time.Duration(rangeNs - 1))}, {Field: field}}
+	if width, offset, _, ok := s.rankingGrid(lookback); ok {
+		bucket := logsql.GroupKey{Field: "_time", Bucket: exactVLDuration(time.Duration(width))}
+		if offset != 0 {
+			bucket.Offset = exactVLDuration(time.Duration(offset))
+		}
+		stats.By = []logsql.GroupKey{bucket, {Field: field}}
 		pipes = []logsql.Pipe{stats, logsql.PipeSort{By: by, Partition: []string{"_time"}, Limit: n}}
 	}
 	pipes = append(pipes, then...)
