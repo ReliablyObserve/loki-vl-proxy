@@ -19,12 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capability view over fourteen releases pins it). A gate is a capability (unknown means off), a safety guard
   (unknown or contradicted means guarded; no probe) or a behaviour (unknown means undecided: nothing is predicted
   from it). The reference of the gates is `docs/reference/capability-gates.md`, generated from the table.
+
 - The proxy follows VictoriaLogs through an upgrade or a rollback without a restart. It used to keep the first
   version it saw for the life of the process; now the lowest release seen in the last window decides (a vmauth pool
   or a rolling upgrade never enables a gate one member lacks), it is read again every
   `-backend-version-reprobe-interval` (default `5m`, jittered, one round at a time per replica; `0` disables the
   periodic round), and a release that is not seen again leaves the window only when a newer observation exists, so
   an outage never empties it or flips a gate.
+
 - Feature probes (`-backend-feature-probes`, default on): one tiny read-only query per probed gate over an empty
   one-second window, at startup and on every re-probe, sent with the proxy's own backend auth and headers, bypassing
   the circuit breaker and never counted as client or upstream requests. A probe decides a gate when no release is
@@ -33,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loki_vl_proxy_capability_mismatch_total` report it. Only an explicit refusal turns a probed gate off; a timeout,
   a 5xx, a 401 or a transport error keeps the previous verdict. Every probe is proven not to crash VictoriaLogs v1.49.0
   and the newest release on the VictoriaLogs oracle (`TestProbesCrashSafe`).
+
 - `GET /admin/capabilities` (protected like `/admin/cache/flush`) shows every release seen, the effective release,
   every gate with what decided it, the mismatches, the epoch and the digest. New metrics:
   `loki_vl_proxy_backend_version_info`, `loki_vl_proxy_capability_gate`, `loki_vl_proxy_capability_mismatch_total`,
@@ -41,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the typed client profile of each request; 32 values per version label, `other` beyond). One `capability set changed`
   info line per change of the set; with `-debug-vl-calls-header` every read response carries
   `X-Loki-VL-Capabilities`. The operations dashboard has a "Versions and capabilities" row.
+
 - The held VictoriaLogs refusals, their peer sync and the request flight keys carry a content digest of the gate set
   (release, flavour, every gate's state) instead of the release string, so an entry built under another gate set is
   a miss on this replica and on a peer, and replicas of one backend agree on it.
@@ -84,6 +88,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Only a version that names VictoriaLogs counts as its release: the `victoria-logs-<date>-<time>-tags-vX.Y.Z[-enterprise[-fips]]-<n>-g<hash>`
+  build string of its `/metrics` (`vm_app_version`, `victorialogs_build_info`) or a `VictoriaLogs/vX.Y.Z` style
+  header. The version of `vmauth`, `vlagent`, `vmagent` or VictoriaMetrics that answers in front of it (the stack's
+  `vmauth` is VictoriaMetrics v1.155.0) and a bare semver were read as VictoriaLogs' before and are ignored now; the
+  `-enterprise` and `-enterprise-fips` suffixes are parsed as flavours. The `backend_capability_profile` of the
+  drilldown-limits answer is `vl-probed-v1.49-plus` when only the stream endpoint probe answers (the metadata
+  substring probe, which could not tell a release apart, is gone).
+  Behind `vmauth` (which serves its own `/metrics`), where the proxy used to take vmauth's version for the
+  VictoriaLogs release and so turned every gate on by accident, the release is now unknown unless a header or a
+  VictoriaLogs `/metrics` route names it: the feature probes decide the gates they cover and, when a probe finds a
+  feature of v1.51 or later present, the capabilities of earlier releases follow (dense pattern windowing and
+  column-indexed field values for a backend that answers `coalesce`); a backend behind `vmauth` that answers no probe
+  holds the v1.49.0 floor, and `-backend-version-strict=true` then fails startup ("backend did not expose version")
+  where the vmauth version used to satisfy it. Keep `-backend-feature-probes=true` (the default) behind `vmauth`.
+
+- Every feature probe reads one fixed one-second window in the year 2000, with a row limit of one, so it never scans
+  a stored row.
 - VictoriaLogs v1.54.0 replaces v1.53.0 as the newest tested release and the pull-request CI pin: the tested versions
   are now v1.49.0 and v1.54.0 (every v1.5x release stays supported, the floor stays v1.49.0). The compose stacks,
   examples and benchmark pins run `victoriametrics/victoria-logs:v1.54.0`, and every comparison with VictoriaLogs' own
@@ -102,23 +123,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.339.0] - 2026-11-18
 
 ### Changed
-
-- Only a version that names VictoriaLogs counts as its release: the `victoria-logs-<date>-<time>-tags-vX.Y.Z[-enterprise[-fips]]-<n>-g<hash>`
-  build string of its `/metrics` (`vm_app_version`, `victorialogs_build_info`) or a `VictoriaLogs/vX.Y.Z` style
-  header. The version of `vmauth`, `vlagent`, `vmagent` or VictoriaMetrics that answers in front of it (the stack's
-  `vmauth` is VictoriaMetrics v1.155.0) and a bare semver were read as VictoriaLogs' before and are ignored now; the
-  `-enterprise` and `-enterprise-fips` suffixes are parsed as flavours. The `backend_capability_profile` of the
-  drilldown-limits answer is `vl-probed-v1.49-plus` when only the stream endpoint probe answers (the metadata
-  substring probe, which could not tell a release apart, is gone).
-  Behind `vmauth` (which serves its own `/metrics`), where the proxy used to take vmauth's version for the
-  VictoriaLogs release and so turned every gate on by accident, the release is now unknown unless a header or a
-  VictoriaLogs `/metrics` route names it: the feature probes decide the gates they cover and, when a probe finds a
-  feature of v1.51 or later present, the capabilities of earlier releases follow (dense pattern windowing and
-  column-indexed field values for a backend that answers `coalesce`); a backend behind `vmauth` that answers no probe
-  holds the v1.49.0 floor, and `-backend-version-strict=true` then fails startup ("backend did not expose version")
-  where the vmauth version used to satisfy it. Keep `-backend-feature-probes=true` (the default) behind `vmauth`.
-- Every feature probe reads one fixed one-second window in the year 2000, with a row limit of one, so it never scans
-  a stored row.
 
 - The compatibility stack and CI now run Grafana 13.3.1 (was 13.3.0) with Logs Drilldown
   (grafana-lokiexplore-app) 3.2.0 (was 3.1.0): the compose files and their `GF_PLUGINS_PREINSTALL`, the pinned
