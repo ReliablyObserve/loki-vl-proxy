@@ -210,6 +210,17 @@ func seriesFoldSpanFixture() metricFixture {
 	return f
 }
 
+// foldedReads counts the folded reads (of /select/logsql/query, lower.SeriesFold) among a run's VictoriaLogs requests.
+func foldedReads(sent []string) int {
+	n := 0
+	for _, k := range sent {
+		if strings.HasPrefix(k, "/select/logsql/query?") && strings.Contains(k, url.QueryEscape(") as "+lower.SeriesFoldRows)) {
+			n++
+		}
+	}
+	return n
+}
+
 // TestSeriesFoldMatchLoki replays the recorded answers through the handler: every run is Loki's answer, read in one
 // folded call (of /select/logsql/query) that folds the series in one bucket, and no stats_query_range call.
 //
@@ -244,12 +255,7 @@ func TestSeriesFoldMatchLoki(t *testing.T) {
 				for c, ex := range compareMetric(loki, run).classes {
 					t.Errorf("%s %s %s: %s: %s", prof.name, mr.kind, mq.q, c, ex)
 				}
-				folded := 0
-				for _, k := range run.sent {
-					if strings.HasPrefix(k, "/select/logsql/query?") && strings.Contains(k, url.QueryEscape(") as "+lower.SeriesFoldRows)) {
-						folded++
-					}
-				}
+				folded := foldedReads(run.sent)
 				calls := statsRangeCalls(run.sent)
 				switch chunked := mr.rowLimit > 0; {
 				case calls != 0:

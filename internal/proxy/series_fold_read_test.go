@@ -31,9 +31,10 @@ func avgFoldRead(t *testing.T, q string) *seriesFoldRead {
 // The unwrap check's counting form of a folded read groups the bucket stats and the last stats pipe by the
 // conversion flag, and passes the series stats, the finiteness mark and the unroll as they are: a series whose lines
 // are flagged in one bucket and not in another still has both buckets, so it keeps its hash. The read unpacks the line
-// once and reads in the bucket stats the rows the counted gate flags.
+// once and reads in the bucket stats the rows the counted gate flags. No nan mark is written before the last stats
+// pipe: the folded values are finite and the kept partials pass through any.
 //
-// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-conversion-error
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-conversion-error, semantics/unwrap-identity-nan-partials
 func TestSeriesFoldCountingForm(t *testing.T) {
 	const q = `sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m]))`
 	op, err := lower.PlanQuery(q, resolvedPlan(q), lower.Profile{IdentityAhead: true})
@@ -245,7 +246,7 @@ func TestSeriesFoldReadFailure(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+			emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.54.0"}
 			inner := emu.Handler()
 			folded := 0
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

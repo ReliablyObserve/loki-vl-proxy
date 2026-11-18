@@ -20,7 +20,7 @@ import (
 
 // A folded read (internal/proxy/series_fold_read.go) is a stats_query_range read sent to /select/logsql/query, whose
 // stats pipes group by the bucket themselves: the proxy sends the bounds stats_query_range reads for its parameters
-// (proxy.SeriesFoldQueryParams). Real VictoriaLogs (the serve oracle, test/oracle/vl, v1.53.0 and v1.49.0) answers the
+// (proxy.SeriesFoldQueryParams). Real VictoriaLogs (the serve oracle, test/oracle/vl, v1.54.0 and v1.49.0) answers the
 // same buckets both ways: the points of a stats query grouped by a key on stats_query_range, and the rows of the same
 // stats grouped by the bucket (_time:<step> offset <offset>) and the key on /select/logsql/query.
 //

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `query_range` with a range longer than the step for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`,
+  `max_over_time`, `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` (no
+  `| keep`) costs VictoriaLogs about 40% less time and answers about a third faster. An example is
+  `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms [5m]))` under Grafana's `$__auto` step. Answers
+  and statuses are the same on every measured request, and each request still makes one VictoriaLogs call.
+  - VictoriaLogs scans the lines once instead of twice: the subquery that listed the series spanning buckets is gone.
+  - Each line is unpacked once instead of twice, and its series hash is computed once.
+  - The read now groups by the series and then by its buckets in one query, so it is sent to `/select/logsql/query`
+    with the bounds `stats_query_range` would read. The proxy reads the rows back into the same buckets.
+  - A read whose text would pass VictoriaLogs' query length still reads every series through `stats_query_range`, as
+    before.
+  - Over 24 hours of lines that each carry a request id, the VictoriaLogs time of such a request went from about 2.8×
+    to about 1.8× the time of the per-stream read it replaced; over six hours, from 2.8× to 1.6–1.8×.
+  - Three edge cases change. A series holding a NaN in a bucket now always answers NaN in the windows that hold it
+    (VictoriaLogs' `sum` could turn that NaN into 0). A series of several lines whose sum overflows to an infinity is
+    read as a series of its own, as an infinite series always was, instead of being added into the bucket's other
+    series. A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
+
 ## [2.340.1] - 2026-11-18
 
 ### Fixed
@@ -204,23 +224,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `query_range` with a range longer than the step for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`,
-  `max_over_time`, `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` (no
-  `| keep`) costs VictoriaLogs about 40% less time and answers about a third faster. An example is
-  `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms [5m]))` under Grafana's `$__auto` step. Answers
-  and statuses are the same on every measured request, and each request still makes one VictoriaLogs call.
-  - VictoriaLogs scans the lines once instead of twice: the subquery that listed the series spanning buckets is gone.
-  - Each line is unpacked once instead of twice, and its series hash is computed once.
-  - The read now groups by the series and then by its buckets in one query, so it is sent to `/select/logsql/query`
-    with the bounds `stats_query_range` would read. The proxy reads the rows back into the same buckets.
-  - A read whose text would pass VictoriaLogs' query length still reads every series through `stats_query_range`, as
-    before.
-  - Over 24 hours of lines that each carry a request id, the VictoriaLogs time of such a request went from about 2.8×
-    to about 1.8× the time of the per-stream read it replaced; over six hours, from 2.8× to 1.6–1.8×.
-  - Three edge cases change. A series holding a NaN in a bucket now always answers NaN in the windows that hold it
-    (VictoriaLogs' `sum` could turn that NaN into 0). A series of several lines whose sum overflows to an infinity is
-    read as a series of its own, as an infinite series always was, instead of being added into the bucket's other
-    series. A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
 - Identical read requests no longer each ask VictoriaLogs while one of them runs, and a failed answer is held for a
   second or a few instead of being asked again by every refresh. Requests with the same route, parameters, tenant,
   credentials and response profile that arrive while the first one runs wait for it, on every cached read route
