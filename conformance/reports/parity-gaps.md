@@ -292,7 +292,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `drilldown/patterns-full-range-counts` — Logs Drilldown pattern charts covered only the end of the range and counted a sample of lines (fixed) | #1142 | 0 | 0 |
 | `drilldown/patterns-one-series-per-level` — The proxy answered two /patterns entries with the same pattern and level (fixed) | #1142 | 0 | 0 |
 | `drilldown/patterns-range-end-inside-sample` — A patterns range ending inside a 10 s sample lost that sample's lines after the end (fixed) | #1473 | 0 | 0 |
-| `limits/drilldown-series-limit-range-cut-at-trip-step` — A Logs Drilldown range answer over the series limit ends at the step where the limit trips, as on Loki (fixed; -drilldown-series-limit-mo... | this change (-drilldown-series-limit-mode, default loki) | 0 | 0 |
+| `limits/drilldown-series-limit-range-cut-at-trip-step` — A Logs Drilldown range answer over the series limit ends at the step where the limit trips, as on Loki (fixed; -drilldown-series-limit-mo... | #1672 | 0 | 0 |
 | `quality/index-volume-settled-segments` — An instant /index/volume moved by a refresh reads only its edges from VictoriaLogs, with the answer of one whole-window call (fixed) | perf/segmented-volume-cache | 0 | 0 |
 | `semantics/detected-fields-empty-answer` — detected_fields of a query that matches no line answers Loki's empty body (fixed) | TBD-PR | 0 | 0 |
 | `semantics/detected-fields-no-logfmt-token-fields` — detected_fields with a level pill or a field filter lists Loki's fields, not the words of each line (fixed) | #1032 | 0 | 0 |

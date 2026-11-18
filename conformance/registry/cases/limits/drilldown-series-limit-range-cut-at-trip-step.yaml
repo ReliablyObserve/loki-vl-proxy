@@ -44,7 +44,7 @@ compare:
     Every kept series ends at the trip step.
 gap:
   status: fixed
-  fixed_by: 'this change (-drilldown-series-limit-mode, default loki)'
+  fixed_by: "#1672"
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy series limit (Drilldown partial answers)'
