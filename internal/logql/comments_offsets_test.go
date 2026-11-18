@@ -122,6 +122,9 @@ func FuzzStripComments(f *testing.F) {
 		"label_replace # c\n(vector(1), \"d\", \"$1\", \"a\", \"(.*)\")",
 		"sum_over_time({a=\"b\"} | unwrap bytes # c\n(c) [5m])", "sum_over_time({a=\"b\"} | unwrap duration#c\n [5m])",
 		"sum_over_time({a=\"b\"} | unwrap c # c\n(d) [5m])", "rate # c\nby (a) ({a=\"b\"}[5m])",
+		// a comment inside the parentheses of a call the parser keeps as text (found by fuzz-smoke)
+		"veCtor (#\n0)", "vector( # c\n 2 )", "label_replace(rate({a=\"b\"}[5m]) #c\n, \"d\", \"$1\", \"a\", \"(.*)\")",
+		"sum(rate({a=\"b\"}[5m])) + vector(#c\n1)",
 	} {
 		f.Add(s)
 	}
@@ -165,7 +168,11 @@ func FuzzStripComments(f *testing.F) {
 		if (m1 == "") != (m2 == "") {
 			t.Fatalf("%q accepted %v, stripped %q accepted %v (%s / %s)", q, m1 == "", s, m2 == "", m1, m2)
 		}
-		if m1 == "" && e1 != nil && e2 != nil && e1.String() != e2.String() {
+		// A call the parser keeps as text (vector, label_replace, approx_topk: OpaqueMetricExpr) prints the text it was
+		// written with, a comment inside its parentheses included (`vector(#c\n0)`, which Loki reads as vector(0)): the
+		// trees are compared with the comments of that printed text stripped, as the request path strips them before
+		// any handler reads the query.
+		if m1 == "" && e1 != nil && e2 != nil && StripComments(e1.String()) != e2.String() {
 			t.Fatalf("%q: stripping changes the tree:\n%s\n%s", q, e1, e2)
 		}
 	})
