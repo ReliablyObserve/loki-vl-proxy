@@ -1662,10 +1662,12 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	p.metrics.SetCoalescerStatsProvider(coalescerStats)
 	p.metrics.SetErrorFlightStatsProvider(p.errorFlightStats)
-	// A release leaves the capability window only after it was not seen for six probe intervals (and a probe round):
-	// behind a load balancer each read comes from a random member, and a window this wide keeps the chance that an
-	// older member is missed by every read of it small.
-	p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
+	// A release leaves the capability window six re-probe intervals (and a probe round) after it was last seen: behind a
+	// load balancer each read reaches one random member, and a window this wide keeps the chance that an older member
+	// is missed by every read of it small. With no periodic round the layer's default window stands.
+	if p.backendReprobeInterval > 0 {
+		p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
+	}
 	p.caps.Subscribe(p.onCapabilityChange)
 	p.metrics.SetCapabilityStatsProvider(p.capabilityStats)
 	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {

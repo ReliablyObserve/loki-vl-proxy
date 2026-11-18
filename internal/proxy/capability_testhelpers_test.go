@@ -11,7 +11,9 @@ import (
 // fresh capability layer wired like the proxy's own, then the release observed. Tests call it before they serve.
 func (p *Proxy) setReleaseForTest(release string) {
 	p.caps = capability.New(capability.Options{})
-	p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
+	if p.backendReprobeInterval > 0 {
+		p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
+	}
 	p.caps.Subscribe(p.onCapabilityChange)
 	p.refreshFlightPrefix()
 	if release != "" {

@@ -399,8 +399,12 @@ func TestWindowNeverDropsTheLastReleaseAndIsBounded(t *testing.T) {
 		t.Fatal("window")
 	}
 	l.SetWindow(time.Minute)
-	if l.window != time.Hour {
-		t.Fatal("the window never shrinks")
+	if l.window != time.Minute {
+		t.Fatal("the window follows the interval it is derived from, up or down")
+	}
+	l.SetWindow(0)
+	if l.window != time.Minute {
+		t.Fatal("a window that is not positive is ignored")
 	}
 	l.Observe("x", Release{}) // not Known: ignored
 }
@@ -519,8 +523,12 @@ func TestStatusShape(t *testing.T) {
 		t.Fatal("pipe_coalesce missing")
 	}
 	clk.Advance(2 * l.window)
-	if l.Status().Releases[0].InWindow {
-		t.Fatal("a release past the window is marked")
+	if !l.Status().Releases[0].InWindow {
+		t.Fatal("the only release stays counted through silence (an outage empties nothing)")
+	}
+	l.Observe("b:9428", rel("v1.54.0"))
+	if st := l.Status(); len(st.Releases) != 1 || st.Releases[0].Release != "v1.54.0" {
+		t.Fatalf("a release not seen for the window stops counting once a newer observation exists: %+v", st.Releases)
 	}
 }
 
@@ -613,4 +621,61 @@ func BenchmarkObserveClientParallel(b *testing.B) {
 			i++
 		}
 	})
+}
+
+// Upgrade, rollback and upgrade again with a fake clock: each time the backend changes, the digest follows (at once
+// downwards, within the window upwards), every change is one set change, and the releases listed are the ones that
+// count now.
+//
+// conformance: vl-capability-layer
+func TestUpgradeRollbackUpgradeCycles(t *testing.T) {
+	const interval = 10 * time.Second
+	clk := newClock()
+	l := newTestLayer(clk)
+	l.SetWindow(6*interval + 55*time.Second)
+	var changes int
+	l.Subscribe(func(Set, Set) { changes++ })
+	tick := func(release string) {
+		clk.Advance(interval)
+		l.Observe("lb", rel(release)) // the /metrics read of one round
+		l.Prune()
+	}
+	counted := func() []string {
+		var out []string
+		for _, r := range l.Status().Releases {
+			if r.InWindow {
+				out = append(out, r.Release)
+			}
+		}
+		return out
+	}
+	for i := 0; i < 3; i++ {
+		tick("v1.54.0")
+	}
+	d54 := l.Backend().Digest()
+	if changes != 1 {
+		t.Fatalf("one change for the first release, got %d", changes)
+	}
+	for cycle := 0; cycle < 3; cycle++ {
+		before := changes
+		tick("v1.49.0") // the backend is now v1.49.0 (the other one is gone)
+		d49 := l.Backend().Digest()
+		if d49 == d54 || l.Backend().Release().String() != "v1.49.0" || changes != before+1 {
+			t.Fatalf("cycle %d: the lower release must decide at once: %s (%d changes)", cycle, l.Backend().Release(), changes-before)
+		}
+		// Back to v1.54.0: v1.49.0 stops counting a window after it was last seen, no later than window + one interval.
+		rounds := 0
+		for l.Backend().Digest() != d54 {
+			tick("v1.54.0")
+			if rounds++; rounds > 6+6+1 { // the window (six intervals and a probe round) plus one interval
+				t.Fatalf("cycle %d: the digest did not return to the first value after %d rounds; counted %v", cycle, rounds, counted())
+			}
+		}
+		if changes != before+2 {
+			t.Fatalf("cycle %d: every change is one set change: %d", cycle, changes-before)
+		}
+		if got := counted(); len(got) != 1 || got[0] != "v1.54.0" {
+			t.Fatalf("cycle %d: only the releases that count are listed, got %v", cycle, got)
+		}
+	}
 }

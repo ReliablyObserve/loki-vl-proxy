@@ -231,12 +231,13 @@ func (p *Proxy) probeBackendFeatures(ctx context.Context) {
 	if p == nil || p.backendFeatureProbesDisabled {
 		return
 	}
+	var results []capability.ProbeResult
 	for _, g := range capability.Gates() {
 		if g.Probe == nil || g.Kind == capability.Safety {
 			continue
 		}
 		if ctx.Err() != nil {
-			return
+			break
 		}
 		verdict := capability.VerdictNone
 		status, body, err := p.backendProbeGet(ctx, g.Probe.Path, g.Probe.Values(), maxProbeBody)
@@ -245,8 +246,10 @@ func (p *Proxy) probeBackendFeatures(ctx context.Context) {
 		} else if p.log.Enabled(ctx, slog.LevelDebug) {
 			p.log.Debug("backend feature probe failed", "gate", g.Name, "error", err)
 		}
-		p.caps.ObserveProbe(g.ID, verdict)
+		results = append(results, capability.ProbeResult{Gate: g.ID, Verdict: verdict})
 	}
+	// One round, one rebuild of the set: a round that moves several gates is one change.
+	p.caps.ObserveProbes(results)
 }
 
 // onCapabilityChange is the layer's subscriber: it logs the change once, moves the flight key prefix to the new

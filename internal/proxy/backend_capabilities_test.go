@@ -746,3 +746,83 @@ func TestPatternKeysCarryTheDenseWindowingGate(t *testing.T) {
 		}
 	}
 }
+
+// A backend that goes to v1.49.0 and back to v1.54.0, three times, with the window the proxy derives from a 10s
+// re-probe interval: the digest follows the lowest release down at once and returns to the first value once the
+// lower release has not been seen for the window, each change is one `capability set changed` line, and the
+// version metric lists only the releases that count.
+//
+// conformance: vl-capability-layer
+func TestCapabilityUpgradeRollbackCyclesThroughTheProxy(t *testing.T) {
+	const interval = 10 * time.Second
+	b := newCapBackend(t, buildV154)
+	p := newCapProxy(t, b, func(c *Config) { c.BackendVersionReprobeInterval = interval })
+	logs := captureLog(p)
+	clock := time.Now()
+	p.caps = capability.New(capability.Options{Now: func() time.Time { return clock }})
+	p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
+	var digestChanges int
+	p.caps.Subscribe(func(capability.Set, capability.Set) { digestChanges++ })
+	p.caps.Subscribe(p.onCapabilityChange)
+	round := func(build string) {
+		b.setBuild(build)
+		clock = clock.Add(interval)
+		p.runCapabilityProbes(context.Background(), true)
+	}
+	versions := func() []string {
+		rec := httptest.NewRecorder()
+		p.metrics.Handler(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		var out []string
+		for _, line := range strings.Split(rec.Body.String(), "\n") {
+			if strings.HasPrefix(line, "loki_vl_proxy_backend_version_info{") {
+				out = append(out, line[strings.Index(line, `version="`)+9:strings.Index(line, `",flavour`)])
+			}
+		}
+		return out
+	}
+	for i := 0; i < 3; i++ {
+		round(buildV154)
+	}
+	d54 := p.caps.Backend().Digest()
+	for cycle := 0; cycle < 3; cycle++ {
+		before := digestChanges
+		round(buildV149)
+		if p.caps.Backend().Release().String() != "v1.49.0" || p.caps.Backend().Digest() == d54 || digestChanges != before+1 {
+			t.Fatalf("cycle %d: down: %s, %d changes", cycle, p.caps.Backend().Release(), digestChanges-before)
+		}
+		rounds := 0
+		for p.caps.Backend().Digest() != d54 {
+			round(buildV154)
+			if rounds++; rounds > 13 {
+				t.Fatalf("cycle %d: the digest did not return after %d rounds (%v counted)", cycle, rounds, versions())
+			}
+		}
+		if got := versions(); len(got) != 1 || got[0] != "v1.54.0" {
+			t.Fatalf("cycle %d: the version metric must list the releases that count only, got %v", cycle, got)
+		}
+		if digestChanges != before+2 {
+			t.Fatalf("cycle %d: %d changes, want 2 (down, up)", cycle, digestChanges-before)
+		}
+	}
+	if n := strings.Count(logs.String(), `"msg":"capability set changed"`); n != digestChanges {
+		t.Fatalf("%d change lines for %d changes:\n%s", n, digestChanges, logs.String())
+	}
+}
+
+// A startup round that moves several gates is one change, one line: the probes of a round are applied together.
+//
+// conformance: vl-capability-layer
+func TestCapabilityProbeRoundIsOneChange(t *testing.T) {
+	b := newCapBackend(t, buildVMAuth)
+	b.mu.Lock()
+	b.rel = "v1.52.0"
+	b.mu.Unlock()
+	p := newCapProxy(t, b, nil)
+	logs := captureLog(p)
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(logs.String(), `"msg":"capability set changed"`); n != 1 || p.caps.Backend().Epoch() != 1 {
+		t.Fatalf("%d lines, epoch %d, want one change:\n%s", n, p.caps.Backend().Epoch(), logs.String())
+	}
+}

@@ -94,13 +94,15 @@ func New(o Options) *Layer {
 	return l
 }
 
-// SetWindow widens the window to at least w (the proxy keeps it above two re-probe intervals, so a release is not
-// forgotten between two probes).
+// SetWindow sets how long a release (and a probe's absent answer) counts after it was last seen. The proxy derives it
+// from the re-probe interval, so a release that left the backend stops counting a fixed number of intervals later,
+// whatever the interval is; a window that is not positive is ignored.
 func (l *Layer) SetWindow(w time.Duration) {
-	l.mu.Lock()
-	if w > l.window {
-		l.window = w
+	if w <= 0 {
+		return
 	}
+	l.mu.Lock()
+	l.window = w
 	l.mu.Unlock()
 }
 
@@ -223,6 +225,25 @@ func (l *Layer) pruneLocked(now time.Time) {
 	l.seen = kept
 }
 
+// countedLocked is the releases that count at now: those seen within the window, or every one when none was (a
+// silent backend keeps what it last showed). It is what pruneLocked leaves, computed without changing anything, so the
+// status and the version metric show the releases that decide the gates even between two prunes.
+func (l *Layer) countedLocked(now time.Time) map[*observed]bool {
+	cutoff := now.Add(-l.window).UnixNano()
+	out := make(map[*observed]bool, len(l.seen))
+	for _, o := range l.seen {
+		if o.lastSeenNs.Load() >= cutoff {
+			out[o] = true
+		}
+	}
+	if len(out) == 0 {
+		for _, o := range l.seen {
+			out[o] = true
+		}
+	}
+	return out
+}
+
 // effectiveLocked is the lowest release seen in the window.
 func (l *Layer) effectiveLocked() Release {
 	var eff Release
@@ -234,23 +255,36 @@ func (l *Layer) effectiveLocked() Release {
 	return eff
 }
 
-// ObserveProbe records a feature probe's verdict for a gate. A VerdictNone changes nothing (it is still counted): an
-// outage never flips a gate. Behind a load balancer the answers come from random members of one backend, so the
-// verdicts are read like the releases: the lowest member decides, an absent answer anywhere in the window wins over
-// a present one (verdictsLocked).
-func (l *Layer) ObserveProbe(id GateID, v Verdict) {
-	if id >= numGates || gates[id].Probe == nil || gates[id].Kind == Safety {
-		return
-	}
+// ProbeResult is one probe's answer for a gate.
+type ProbeResult struct {
+	Gate    GateID
+	Verdict Verdict
+}
+
+// ObserveProbe records a feature probe's verdict for a gate (ObserveProbes for a round). A VerdictNone changes
+// nothing (it is still counted): an outage never flips a gate. Behind a load balancer the answers come from random
+// members of one backend, so the verdicts are read like the releases: the lowest member decides, an absent answer
+// anywhere in the window wins over a present one (verdictsLocked).
+func (l *Layer) ObserveProbe(id GateID, v Verdict) { l.ObserveProbes([]ProbeResult{{id, v}}) }
+
+// ObserveProbes records a round of probe answers and rebuilds the set once, so a round that moves several gates is one
+// change (one log line, one epoch step), not one per gate.
+func (l *Layer) ObserveProbes(results []ProbeResult) {
 	l.mu.Lock()
 	now := l.now()
-	l.probeCount[id][v]++
-	l.probeAt[id] = now
-	switch v {
-	case VerdictOn:
-		l.probeOn[id] = now
-	case VerdictOff:
-		l.probeOff[id] = now
+	for _, r := range results {
+		id, v := r.Gate, r.Verdict
+		if id >= numGates || gates[id].Probe == nil || gates[id].Kind == Safety {
+			continue
+		}
+		l.probeCount[id][v]++
+		l.probeAt[id] = now
+		switch v {
+		case VerdictOn:
+			l.probeOn[id] = now
+		case VerdictOff:
+			l.probeOff[id] = now
+		}
 	}
 	old, nw, changed := l.recomputeLocked()
 	subs := l.subs
@@ -390,9 +424,10 @@ func (l *Layer) Status() Status {
 	cur := *l.cur.Load()
 	st := Status{Epoch: cur.epoch, Digest: cur.Digest(), Effective: cur.release.String(), Known: cur.release.Known, Changes: l.changes, LokiTarget: l.lokiTarget,
 		Releases: make([]ReleaseView, 0, len(l.seen)), Gates: make([]GateView, 0, numGates), Mismatches: []string{}}
+	counted := l.countedLocked(now)
 	for _, o := range l.seen {
 		st.Releases = append(st.Releases, ReleaseView{Raw: o.rel.Raw, Release: o.rel.String(), Flavour: o.rel.Flavour.String(), Source: o.rel.Source.String(),
-			Backend: backendID(o.backend), FirstSeen: o.firstSeen, LastSeen: o.lastSeen(), InWindow: !o.lastSeen().Before(now.Add(-l.window))})
+			Backend: backendID(o.backend), FirstSeen: o.firstSeen, LastSeen: o.lastSeen(), InWindow: counted[o]})
 	}
 	sort.Slice(st.Releases, func(i, j int) bool { return st.Releases[i].FirstSeen.Before(st.Releases[j].FirstSeen) })
 	for i := range gates {
