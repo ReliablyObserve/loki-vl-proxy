@@ -446,13 +446,14 @@ jobs:
     # default unit-test pass missed because no test exercised the windowed +
     # derivedFields + autodetect combination.
     #
-    # internal/proxy alone takes well over 30 minutes of -race test time, so its
-    # top-level tests are split into eight shards by scripts/ci/test_shards.py (the
+    # internal/proxy alone takes over 70 minutes of -race test time, so its
+    # top-level tests are split into ten shards by scripts/ci/test_shards.py (the
     # measured -race weights of the slow tests) that run in parallel, each with its own 12m
-    # budget. Eight: five put about 570 s of weighted tests on each shard, plus the
-    # unweighted ones, which left shard 2 at its 12m budget and timing out; eight put
-    # about 360 s on each, still above the heaviest single test
-    # (TestQueryRangeStepsMatchUncached, about 380 s under -race).
+    # budget. Ten: with the weights of 2026-11-18 a shard holds at most about 495 s of
+    # tests, the heaviest single test (TestMetricRouteCatchesAWrongDecision, about 475 s
+    # under -race) and little else; eight held about 555 s, and with weights measured
+    # before the route parity runs gated VictoriaLogs calls (#1631) one shard held 660 s
+    # and timed out. Regenerate the weights when a shard nears its budget.
     # The `other` entry carries the remaining packages and the verbose
     # concurrent-regression step so no proxy shard does.
     name: race-stress-shard (${{ matrix.shard }})
@@ -462,7 +463,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, other]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -520,8 +521,8 @@ jobs:
           # -race, are spread longest first over the shards; every other test goes
           # to the shard its name hashes to, so each test is in exactly one shard.
           go test -list '.*' ./internal/proxy/ > shard-list.txt
-          python3 scripts/ci/test_shards.py check --shards 8 --list shard-list.txt
-          python3 scripts/ci/test_shards.py regex --shards 8 --shard "$SHARD" --list shard-list.txt > shard-run.txt
+          python3 scripts/ci/test_shards.py check --shards 10 --list shard-list.txt
+          python3 scripts/ci/test_shards.py regex --shards 10 --shard "$SHARD" --list shard-list.txt > shard-run.txt
           test -s shard-run.txt
 
       - name: Race-detector tests (internal/proxy shard)
