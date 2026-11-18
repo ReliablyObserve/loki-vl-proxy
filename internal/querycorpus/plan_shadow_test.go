@@ -144,7 +144,10 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 	sec := shadowSection{Profiles: len(profiles), DelegatedByConstruct: map[string]int{}}
 	var problems []string
 	slices := map[[2]string]*shadowSlice{}
-	for _, q := range corpus {
+	for _, row := range corpus {
+		// The handlers read the query as the request's rewrite leaves it (proxy.RequestQueryText): the metric calls and
+		// parentheses in one spelling, keywords in lower case, no comments.
+		q := proxy.RequestQueryText(row)
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
@@ -206,7 +209,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 			// A root the proxy evaluates is held to the proxy's route, which strips the parentheses that wrap the whole
 			// query before it translates the operand: the translator's misreading of them is not in that reference.
 			routed, divergence := routedRoot(plan)
-			caseID, ok := knownTypedDivergences()[queryID("logql", q)]
+			caseID, ok := knownTypedDivergences()[queryID("logql", row)]
 			if !ok && translatorMisreadsQuotedText(q) {
 				caseID, ok = "semantics/translator-reads-quoted-text-as-syntax", true
 			}

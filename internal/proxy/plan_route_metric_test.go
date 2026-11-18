@@ -61,6 +61,12 @@ const routeTimeout = "120000ms"
 
 func routeTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
+// routeHandlerText is the query as the route parity proxy's request rewrite leaves it for the handlers
+// (lowercaseQueryKeywords).
+func routeHandlerText(q string) string {
+	return requestQueryText(q, defaultExecutionLimits().QueryLengthBytes)
+}
+
 // routeTextDelegation is the delegation of a plan the handlers read by its text another way ("<kind> route <what>"),
 // or the lowering's own delegation when it names one.
 func routeTextDelegation(p *queryplan.Plan, what string) error {
@@ -153,15 +159,21 @@ func metricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool) (route
 // nothing): the mutation test changes one decision to show the harness sees it.
 func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool, mutate func(*lower.MetricRoute)) (routeRecord, error) {
 	rangeDur := firstRange(p.Root)
-	// The handlers read a range aggregation at the root by its spelling: one spelled otherwise ("rate (", a
-	// parenthesised query) takes another route there (a misreading the plan does not copy).
+	// The handlers read the query as the request's rewrite leaves it (lowercaseQueryKeywords): keywords in lower
+	// case, no comments or logfmt flags, the metric calls and parentheses in one spelling. A query the rewrite changes
+	// takes the route of the text it writes, with a rewrite step.
+	if text := routeHandlerText(q); text != q {
+		rec, err := predictMetricRoute(text, p, rp, data, mutate)
+		if err != nil {
+			return routeRecord{}, err
+		}
+		rec.Steps = uniqueSorted(append(rec.Steps, "rewrite "+text))
+		return rec, nil
+	}
+	// The handlers read a range aggregation at the root by its spelling: the rewrite writes it with its parenthesis,
+	// so any other spelling is one the plan does not read.
 	if ra, ok := p.Root.(*queryplan.RangeAgg); ok && !strings.HasPrefix(strings.TrimSpace(q), string(ra.Op)+"(") {
 		return routeRecord{}, routeTextDelegation(p, "spelling")
-	}
-	// A query the handlers' request rewrite changes (a comment, a keyword spelled in upper case) is recorded as a
-	// rewrite step: the spelling is not the plan's.
-	if logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(q))) != q {
-		return routeRecord{}, routeTextDelegation(p, "rewrite")
 	}
 	// The handlers read the offset clause with a regular expression over the query text: a text with the
 	// expression's shape where the plan has no offset (a line filter), or whose range brackets it counts another
@@ -1190,11 +1202,13 @@ func TestMetricRouteOffsetEdges(t *testing.T) {
 		{q: `count_over_time({app="of"}[1m] offset 300000h)`, delegated: "RangeAgg route offset bounds"},
 		{q: `sum by (pod) (rate({app="of"}[1m] offset -2200000h))`, delegated: "VectorAgg route offset bounds"},
 		{q: `absent_over_time({app="of"}[1m] offset 500000h)`, delegated: "RangeAgg route offset bounds"},
-		// the handlers read the clause from the query text: a comment or an upper-case keyword is rewritten first, a
-		// line filter that looks like a clause is cut and moves the window, one that looks like a range makes the
-		// offset an error: the plan copies none of these
-		{q: `count_over_time({app="of"}[1m] offset 5m) # last hour`, delegated: "RangeAgg route rewrite"},
-		{q: `sum(count_over_time({app="of"}[1m] OFFSET 5m))`, delegated: "VectorAgg route rewrite"},
+		// the handlers read the clause from the query text: a comment, an upper-case keyword or a respelled call is
+		// rewritten first, and routed as the rewritten text; a line filter that looks like a clause is cut and moves
+		// the window, one that looks like a range makes the offset an error: the plan copies neither
+		{q: `count_over_time({app="of"}[1m] offset 5m) # last hour`},
+		{q: `sum(count_over_time({app="of"}[1m] OFFSET 5m))`},
+		{q: `count_over_time ({app="of"}[1m] offset 5m)`},
+		{q: `(sum by (pod) ( rate({app="of"}[1m] offset 5m) ))`},
 		{q: `count_over_time({app="of"} |= "] offset 5m" [1m])`, delegated: "RangeAgg route offset text"},
 		{q: `count_over_time({app="of"} |= "] offset 5m" [1m] offset 5m)`, delegated: "RangeAgg route offset text"},
 		{q: `count_over_time({app="of"} |= "x[5m]" [1m] offset 5m)`, delegated: "RangeAgg route offset text"},
@@ -1473,11 +1487,12 @@ func TestMetricRouteBinaryEdges(t *testing.T) {
 		{q: `label_replace(rate({app="bi"}[5m]), "x", "$1", "app", "(.*)") + 1`, delegated: "BinOp operand LabelReplace"},
 		{q: `topk(1, rate({app="bi"}[5m])) + 1`, delegated: "BinOp operand Rank"},
 		{q: `(rate({app="bi"}[5m]) + 1) / 2`, delegated: "BinOp operand BinOp"},
-		// the handlers read the text: a comment or keyword they rewrite, a vector(n) spelled so that they search for it,
-		// a line filter that looks like a clause
-		{q: `rate({app="bi"}[5m]) + 1 # last hour`, delegated: "BinOp route rewrite"},
-		{q: `rate({app="bi"}[5m]) + 1 # c`, delegated: "BinOp route rewrite"},
-		{q: `sum(rate({app="bi"}[5m])) + vector (1)`, delegated: "BinOp operand spelling"},
+		// the handlers read the text as the request rewrite leaves it (a comment, a keyword in upper case, a respelled
+		// call or parentheses), and a line filter that looks like a clause as written
+		{q: `rate({app="bi"}[5m]) + 1 # last hour`},
+		{q: `rate({app="bi"}[5m]) + 1 # c`},
+		{q: `sum(rate({app="bi"}[5m])) + vector (1)`},
+		{q: `(rate ({app="bi"}[5m])) + vector( 1 )`},
 		{q: `rate({app="bi"} |= "] offset 5m" [5m]) > 1`, delegated: "BinOp route offset text"},
 	} {
 		t.Run(c.q, func(t *testing.T) {

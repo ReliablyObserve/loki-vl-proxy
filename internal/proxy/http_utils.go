@@ -70,16 +70,72 @@ var (
 // it (the handlers answer `| logfmt --strict` as `| logfmt`). Loki's lexer
 // is case-insensitive for keywords (SUM BY, TOPK(...), RATE(...), OFFSET) and
 // skips comments; the translator and the handlers match the lower-case spelling
-// and read the query text without comments.
-func lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
+// and read the query text without comments. A query Loki accepts then gets its
+// metric calls and parentheses in one spelling (logql.CanonicalSpelling): the
+// handlers, the translation and the response key read `rate ({a="x"}[5m])`,
+// `(rate({a="x"}[5m]))` and `vector (1)` as `rate({a="x"}[5m])` and `vector(1)`,
+// as Loki does. A query Loki rejects keeps its spelling, so the validation answers
+// Loki's error for the text as sent.
+func (p *Proxy) lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if query := r.FormValue("query"); query != "" {
-			if lower := logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(query))); lower != query {
-				setRequestQuery(r, lower)
+			if text := requestQueryText(query, p.limits().QueryLengthBytes); text != query {
+				setRequestQuery(r, text)
 			}
 		}
 		next(w, r)
 	}
+}
+
+// RequestQueryText is the query text the handlers read for a query sent as it is, under the default query length
+// limit (lowercaseQueryKeywords): the corpus shadows hold the lowering to what the proxy serves for it.
+func RequestQueryText(query string) string {
+	return requestQueryText(query, defaultExecutionLimits().QueryLengthBytes)
+}
+
+// requestQueryText is the query as lowercaseQueryKeywords leaves it for the handlers, under the query length limit
+// maxQueryBytes: a query over it keeps its spelling for the limit's error. It is memoised by the query as sent
+// (requestTextCache), so a query seen before costs one lookup.
+func requestQueryText(query string, maxQueryBytes int) string {
+	if len(query) > validationCacheMaxQueryBytes || queryLengthLimit(query, maxQueryBytes) != nil {
+		return handlerText(query, maxQueryBytes)
+	}
+	if v, ok := requestTextCache.Load(query); ok {
+		if text, ok := v.(string); ok {
+			return text
+		}
+	}
+	text := handlerText(query, maxQueryBytes)
+	if requestTextCacheSize.Load() < requestTextCacheMaxSize {
+		if _, loaded := requestTextCache.LoadOrStore(query, text); !loaded {
+			requestTextCacheSize.Add(1)
+		}
+	}
+	return text
+}
+
+// requestTextCache memoises requestQueryText by the query as sent, bounded as validationCache is (a deterministic
+// function of a query no longer than validationCacheMaxQueryBytes and within the length limit).
+var (
+	requestTextCache     sync.Map
+	requestTextCacheSize atomic.Int32
+)
+
+const requestTextCacheMaxSize = 1024
+
+// handlerText is requestQueryText without the memo: keywords in lower case, no comments or logfmt flags, and for a
+// metric query the validation accepts its calls and parentheses in one spelling (logql.CanonicalSpelling).
+func handlerText(query string, maxQueryBytes int) string {
+	lower := logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(query)))
+	if strings.IndexByte(lower, '(') < 0 || queryLengthLimit(query, maxQueryBytes) != nil {
+		return lower // no call to respell; or Loki's length error for the text as sent
+	}
+	// The pre-check reads the bytes once; only a query it names is validated (memoised: the validation after the
+	// rewrite reads that entry) and parsed for its spelling.
+	if logql.CanonicalSpellingCandidate(lower) && cachedQueryValidation(lower).msg == "" {
+		return logql.CanonicalSpellingOfValid(lower)
+	}
+	return lower
 }
 
 // setRequestQuery replaces the query parameter of a parsed request wherever a
@@ -365,6 +421,7 @@ func (p *Proxy) writeFailure(w http.ResponseWriter, ctx context.Context, err err
 		status, _, text = lokiClientError(ctx, err)
 	}
 	p.logRequestError(ctx, status, text, err, typed)
+	recordFlightFailure(ctx, err, status, typed)
 	shape(w, status, text)
 	if rec, ok := w.(failureRecorder); ok {
 		rec.recordFailure(err)
@@ -1538,9 +1595,20 @@ func normalizeBackendCompression(mode string) string {
 
 // decodedBackendBodyFloor is the least a decoded backend response may hold: the
 // request coalescer's own ceiling for a shared body, so the transport never
-// rejects a body the consumers behind it accept. A variable so tests can use a
-// small one.
-var decodedBackendBodyFloor int64 = 256 << 20
+// rejects a body the consumers behind it accept. Tests use a small one through
+// decodedBackendBodyFloorOverride.
+const defaultDecodedBackendBodyFloor int64 = 256 << 20
+
+// decodedBackendBodyFloorOverride replaces the floor when above zero. Atomic: tests set it while the goroutines of an
+// earlier test (a request still reading its body) may read it.
+var decodedBackendBodyFloorOverride atomic.Int64
+
+func decodedBackendBodyFloor() int64 {
+	if v := decodedBackendBodyFloorOverride.Load(); v > 0 {
+		return v
+	}
+	return defaultDecodedBackendBodyFloor
+}
 
 // backendZstdMaxWindow bounds the history a zstd response may declare in its
 // frame header; the decoder allocates it before decoding a byte. The encoders
@@ -1548,9 +1616,9 @@ var decodedBackendBodyFloor int64 = 256 << 20
 const backendZstdMaxWindow = 16 << 20
 
 // decodedBodyLimit is the decoded size a backend response may reach: the larger
-// of decodedBackendBodyFloor and -backend-max-buffered-response-bytes.
+// of decodedBackendBodyFloor() and -backend-max-buffered-response-bytes.
 func (p *Proxy) decodedBodyLimit() int64 {
-	return max(decodedBackendBodyFloor, int64(p.limits().BufferedBackendBodyBytes))
+	return max(decodedBackendBodyFloor(), int64(p.limits().BufferedBackendBodyBytes))
 }
 
 // decodeCompressedHTTPResponse replaces a gzip or zstd body with its decoded

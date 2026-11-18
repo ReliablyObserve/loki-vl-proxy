@@ -43,11 +43,12 @@ type paritySection struct {
 	Attributes map[string]*parityAttribute `json:"attributes"`
 }
 
-// handlerQueryText is the query a query_range handler reads from the request: keywords lowercased (the
-// lowercaseQueryKeywords middleware), validated, then the keep-series rewrite (applyKeepSeriesGrouping on a range
-// request). ok is false when the query does not validate: no handler sees it.
+// handlerQueryText is the query a query_range handler reads from the request: the request rewrite's text (the
+// lowercaseQueryKeywords middleware: keywords lowercased, the metric calls in one spelling), validated, then the
+// keep-series rewrite (applyKeepSeriesGrouping on a range request). ok is false when the query does not validate: no
+// handler sees it.
 func handlerQueryText(q string) (string, bool) {
-	q = logqlpkg.LowercaseKeywords(q)
+	q = requestQueryText(q, defaultExecutionLimits().QueryLengthBytes)
 	if _, msg := logqlpkg.ValidateLogQLExpr(q); msg != "" {
 		return "", false
 	}
