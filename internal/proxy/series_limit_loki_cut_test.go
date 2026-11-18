@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // The staggered fixture tells the three possible rankings apart. On the 1m grid of [base+5m, base+10m] with a 5m
@@ -536,5 +537,61 @@ func BenchmarkSeriesLimitDrilldownRangeRequest(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// A Drilldown breakdown refreshed over a moved window takes the ranked read (VictoriaLogs ranks the field's values
+// by their first line and returns limit+1 series): every refresh keeps the series met first in its own window and
+// ends at that window's trip step, as a fresh proxy answers it.
+//
+// conformance: limits/drilldown-series-limit-range-cut-at-trip-step, series-limits-and-partial-results
+// conformance: loki_api_v1_query_range
+func TestSeriesLimit_LokiModeRankedRefresh(t *testing.T) {
+	rows := drilldownSeriesLimitRows(8, true) // p00..p07, one every 5 minutes
+	newProxy := func() (*vlemu.Emulator, *Proxy) {
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+		srv := httptest.NewServer(emu.Handler())
+		t.Cleanup(srv.Close)
+		p, err := New(Config{BackendURL: srv.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0",
+			BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: drilldownSeriesLimit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return emu, p
+	}
+	headers := map[string]string{"X-Scope-OrgID": "0", "X-Query-Tags": drilldownSeriesLimitTags}
+	target := func(shift int64) string {
+		return "/loki/api/v1/query_range?" + url.Values{"query": {`sum by (pod) (count_over_time({app="sl"}[1m]))`},
+			"start": {strconv.FormatInt(drilldownSeriesLimitEnd-3600+shift, 10)}, "end": {strconv.FormatInt(drilldownSeriesLimitEnd+shift, 10)},
+			"step": {"60"}}.Encode()
+	}
+	emu, p := newProxy()
+	ranked := 0
+	for _, shift := range []int64{0, 60, 120, 600} {
+		got := doCompatProxyRequest(p, target(shift), headers)
+		_, fresh := newProxy()
+		want := doCompatProxyRequest(fresh, target(shift), headers)
+		if got.Body.String() != want.Body.String() {
+			t.Fatalf("shift %ds: a refresh differs from a fresh proxy's answer:\nrefresh %s\nfresh   %s", shift, got.Body.String(), want.Body.String())
+		}
+		// p00, p01 and p02 are met first; p03 starts 15 minutes in and trips the limit at the first step after it.
+		first := drilldownSeriesLimitEnd - 3600 + 15*60 // p03's first line is 0.3 s after this
+		windowStart := drilldownSeriesLimitEnd - 3600 + shift
+		trip := windowStart + ((first-windowStart)/60+1)*60
+		assertLokiCut(t, got, drilldownSeriesLimit, "[p00 p01 p02]", time.Unix(trip, 0).UTC())
+	}
+	emu.Mu.Lock()
+	for _, call := range emu.Calls {
+		if strings.Contains(call.Query, "min(_time) as __lvp_rank") {
+			ranked++
+		}
+	}
+	emu.Mu.Unlock()
+	if ranked == 0 {
+		t.Fatal("no refresh took the ranked read")
 	}
 }
