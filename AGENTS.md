@@ -263,7 +263,24 @@ answer is held only for its class's TTL (`cache.Policy`). Keep it that way:
   data (a parser error, a conversion) extends it.
 - Never hold or share the client's own cancellation or deadline, the proxy's
   own queue or load shedding, credentials failures or a proxy defect, and never
-  hand a follower its leader's cancellation: a live follower starts again.
+  hand a follower its leader's cancellation: a live follower starts again. The
+  one proxy defect that is held is VictoriaLogs' refusal of the text the proxy
+  wrote, given before any data is read (`isVLRefusalMessage`, class
+  `vl_refusal`): it is the same every time on the same release, so it is held
+  long, keyed by the VictoriaLogs release and the configuration epoch.
+- A VictoriaLogs refusal the running release decides from the text is
+  predicted before the call (`logsql.PredictRefusal`, at `vlGetInner`,
+  `vlPostSend` and the native tail call) and answered as VictoriaLogs' own
+  refusal, so callers keep one route for both. A new rule needs: a row in
+  `internal/logsql/refusalcases` (with a row it must not fire on), a
+  `vl/capabilities/` item, and a pass of `TestVLRefusalPredictionMatchesVictoriaLogs`
+  (`LVP_RUN_ORACLES=1`) on v1.49.0 and the newest release. A rule never fires on
+  a pipe it does not know or a text the parser does not read, and nothing but a
+  crash guard fires before the release is detected.
+- Only a failure a peer would pay a VictoriaLogs call for, held 30 s or more,
+  is pushed to peers (the peer cache's everywhere class); its peer key carries
+  the build, the VictoriaLogs release and the routing digest, never a
+  per-process counter.
 
 ## Cache change evidence in pull requests
 

@@ -1,0 +1,23 @@
+id: vl-stats-range-pipe-before-stats
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  stats_query_range refuses a pipe ahead of the last stats pipe that cannot
+  keep _time (GetStatsLabelsAddGroupingByTime, canReturnLastNResults): 422 "the
+  pipe ... cannot be put in front of ..., since it may modify or delete _time
+  field". On every release: total_stats, running_stats, sort, limit, offset,
+  first, last, top, uniq, sample, field_names, field_values, facets, join,
+  union, stream_context, generate_sequence, query_stats; fields without _time;
+  copy, rename, delete, format, hash, len, pack_*, split, unpack_words,
+  coalesce writing or dropping _time. From v1.53.0 only, also math, replace,
+  replace_regexp, unpack_json, unpack_logfmt, unroll, extract, extract_regexp,
+  collapse_nums writing _time; v1.49 to v1.52.x answer those, bucketing by the
+  overwritten _time (oracle v1.49.0 vs v1.53.0, both directions).
+proxy_usage: |
+  logsql.GateRangeTimeWriters; a pipe no rule reads predicts nothing.
+fallback: |
+  None: such a query is a translation defect, answered as Loki's 500.
+proves: []

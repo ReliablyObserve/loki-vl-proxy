@@ -498,6 +498,15 @@ func (p *Proxy) openNativeTailStreamFrom(parent context.Context, logsqlQuery str
 	tailURL.RawQuery = params.Encode()
 	vlURL := tailURL.String()
 	querycorpus.RecordBackend("/select/logsql/tail", params.Get("query"))
+	if resp, err, ok := p.predictVLRefusal(parent, http.MethodGet, "/select/logsql/tail", params); ok {
+		// VictoriaLogs refuses it on this release, or its handler would panic on it: not sent (vl_refusal.go).
+		if err != nil {
+			return nil, false, err
+		}
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		_ = resp.Body.Close()
+		return nil, false, p.redactedBackendStatusError("backend tail unavailable", resp.StatusCode, body)
+	}
 	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to create native tail request: %w", err)

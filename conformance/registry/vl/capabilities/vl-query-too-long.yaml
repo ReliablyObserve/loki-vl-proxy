@@ -1,0 +1,24 @@
+id: vl-query-too-long
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  VictoriaLogs refuses a call whose `query` arg is longer than its
+  -search.maxQueryLen (16384 bytes by default) before parsing it: 400 on
+  /select/logsql/query, 422 on stats_query and stats_query_range, with the text
+  "the `query` arg length cannot exceed -search.maxQueryLen=N bytes" (proven on
+  the oracle's v1.49.0, v1.53.0 and v1.54.0).
+proxy_usage: |
+  The proxy learns N from VictoriaLogs' own refusal of the running release and
+  trusts it for -error-cache-vl-refusal-ttl; a later call over it is answered
+  with that refusal without being sent (logsql.PredictRefusal,
+  internal/proxy/vl_refusal.go). The callers that already fall back on it
+  (queryTooLongError in ordered_json_metric.go, the series fold) take the same
+  fallback.
+fallback: |
+  Before VictoriaLogs names its limit the call is sent and its answer
+  classified; an operator who raises the limit is answered by the old one for
+  at most the refusal TTL.
+proves: []

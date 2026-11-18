@@ -11,14 +11,27 @@ import (
 // failures held, by error class; followers that read the leader's success;
 // and the held answers' entries and bytes.
 type ErrorFlightStats struct {
-	Classes   [3]string
-	Held      [3]int64
-	Coalesced [3]int64
-	Stored    [3]int64
+	Classes   [4]string
+	Held      [4]int64
+	Coalesced [4]int64
+	Stored    [4]int64
 	Succeeded int64
 	Entries   int64
 	Bytes     int64
+	// Rules and Predicted count the VictoriaLogs calls answered by a predicted
+	// refusal instead of being sent, by rule.
+	Rules     []string
+	Predicted []int64
+	// PeerSync counts the held VictoriaLogs refusals sent to peers and
+	// received from them, by outcome (PeerSyncOutcomes).
+	PeerSync [4]int64
 }
+
+// PeerSyncOutcomes name ErrorFlightStats.PeerSync: a held refusal sent to
+// every peer, one not sent because the replica's send budget was spent, one
+// received and held, and one received for another VictoriaLogs release,
+// proxy build or configuration (ignored).
+var PeerSyncOutcomes = [4]string{"sent", "throttled", "received", "ignored"}
 
 // Saved is the requests answered without running: each would have run the
 // request and its backend calls again.
@@ -64,6 +77,8 @@ type errorFlightFamily struct {
 	gauge      bool
 	byClass    func(ErrorFlightStats, int) int64
 	total      func(ErrorFlightStats) int64
+	// labeled, when set, is the family's counts by one label.
+	labeled func(ErrorFlightStats) (label string, values []string, counts []int64)
 }
 
 var errorFlightFamilies = []errorFlightFamily{
@@ -74,6 +89,12 @@ var errorFlightFamilies = []errorFlightFamily{
 	{name: "loki_vl_proxy_request_flight_saved_total", help: "Requests answered without running (held failures, coalesced failures and successes); each saved its own backend calls.", total: ErrorFlightStats.Saved},
 	{name: "loki_vl_proxy_error_cache_entries", help: "Failed answers held by the error cache.", gauge: true, total: func(s ErrorFlightStats) int64 { return s.Entries }},
 	{name: "loki_vl_proxy_error_cache_bytes", help: "Bytes of the failed answers held by the error cache.", gauge: true, total: func(s ErrorFlightStats) int64 { return s.Bytes }},
+	{name: "loki_vl_proxy_vl_refusals_predicted_total", help: "VictoriaLogs calls not sent because the running VictoriaLogs release refuses their query before reading data, by rule (the vl/capabilities registry item).", labeled: func(s ErrorFlightStats) (string, []string, []int64) {
+		return "rule", s.Rules, s.Predicted
+	}},
+	{name: "loki_vl_proxy_error_cache_peer_sync_total", help: "Held VictoriaLogs refusals sent to every peer or received from one, by outcome.", labeled: func(s ErrorFlightStats) (string, []string, []int64) {
+		return "outcome", PeerSyncOutcomes[:], s.PeerSync[:]
+	}},
 }
 
 func (m *Metrics) writeErrorFlightMetrics(sb *strings.Builder) {
@@ -87,6 +108,15 @@ func (m *Metrics) writeErrorFlightMetrics(sb *strings.Builder) {
 			kind = "gauge"
 		}
 		fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s %s\n", f.name, f.help, f.name, kind)
+		if f.labeled != nil {
+			label, values, counts := f.labeled(s)
+			for i, value := range values {
+				if i < len(counts) {
+					fmt.Fprintf(sb, "%s{%s=%q} %d\n", f.name, label, value, counts[i])
+				}
+			}
+			continue
+		}
 		if f.byClass != nil {
 			for i, class := range s.Classes {
 				fmt.Fprintf(sb, "%s{class=%q} %d\n", f.name, class, f.byClass(s, i))
@@ -105,7 +135,14 @@ func (p *OTLPPusher) errorFlightMetrics(now int64) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(errorFlightFamilies))
 	for _, f := range errorFlightFamilies {
 		var points []map[string]interface{}
-		if f.byClass != nil {
+		if f.labeled != nil {
+			label, values, counts := f.labeled(s)
+			for i, value := range values {
+				if i < len(counts) {
+					points = append(points, p.counterDP(f.name, counts[i], now, attr(label, value)))
+				}
+			}
+		} else if f.byClass != nil {
 			for i, class := range s.Classes {
 				points = append(points, p.counterDP(f.name, f.byClass(s, i), now, attr("class", class)))
 			}

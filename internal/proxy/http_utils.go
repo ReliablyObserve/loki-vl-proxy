@@ -867,6 +867,10 @@ type upstreamStatusError struct {
 	status int
 	msg    string
 	class  vlErrorClass
+	// refusal: VictoriaLogs refused the text before reading any data, as it
+	// does every time on the same release (isVLRefusalMessage); windowFree:
+	// the refusal does not depend on the request's window either.
+	refusal, windowFree bool
 }
 
 // vlErrorClass tells apart the failures VictoriaLogs reports with the same
@@ -1259,7 +1263,12 @@ func (p *Proxy) redactedBackendStatusError(prefix string, status int, body []byt
 	if prefix != "" {
 		msg = fmt.Sprintf("%s %d: %s", prefix, status, msg)
 	}
-	statusErr := &upstreamStatusError{status: status, msg: msg, class: classifyVLError(status, extractVLErrorMsg(body))}
+	raw := extractVLErrorMsg(body)
+	statusErr := &upstreamStatusError{status: status, msg: msg, class: classifyVLError(status, raw),
+		refusal: isVLRefusalMessage(status, raw), windowFree: isWindowFreeRefusalMessage(status, raw)}
+	if statusErr.refusal {
+		p.noteVLRefusalMessage(raw)
+	}
 	if statusErr.class == vlErrorQueryRejected {
 		return planDefect(statusErr)
 	}
