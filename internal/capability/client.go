@@ -42,6 +42,9 @@ const maxClientProfiles = 4096
 // ObserveClient counts one request of the client profile p, with the label cardinality bounded: at most
 // MaxClientLabelValues distinct versions per label and MaxClientSeries combinations, the rest under OtherLabel.
 func (l *Layer) ObserveClient(p clientprofile.Profile) {
+	if l == nil {
+		return // a proxy value built without New (a test) counts nothing
+	}
 	c := &l.clients
 	c.mu.RLock()
 	n := c.raw[p]
