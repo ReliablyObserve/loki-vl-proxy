@@ -9,6 +9,8 @@ import {
   waitForGrafanaReady,
   drilldownLabelFilter,
   drilldownFieldFilter,
+  drilldownServiceCard,
+  drilldownTab,
   waitForDrilldownApp,
 } from "./helpers";
 import { buildServiceDrilldownUrl } from "./url-state";
@@ -32,7 +34,7 @@ async function waitForDrilldownDetails(page: Page) {
   await expect(drilldownFieldFilter(page)).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByRole("tab", { name: /^Logs/i }).first()).toBeVisible({
+  await expect(drilldownTab(page, "Logs").first()).toBeVisible({
     timeout: 30_000,
   });
 }
@@ -363,6 +365,12 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(volumeResponse).toBeTruthy();
     expect(volumeResponse?.status).toBe(200);
     expect(JSON.stringify(volumeResponse?.json)).toContain('"resultType":"vector"');
+    // The busiest service the proxy answered is on the page, found by Drilldown's stable test id.
+    const volumes = (volumeResponse?.json as { data?: { result?: { metric?: Record<string, string>; value?: [number, string] }[] } })
+      ?.data?.result ?? [];
+    const busiest = [...volumes].sort((a, b) => Number(b.value?.[1] ?? 0) - Number(a.value?.[1] ?? 0))[0]?.metric?.service_name;
+    expect(busiest).toBeTruthy();
+    await expect(drilldownServiceCard(page, String(busiest))).toBeVisible({ timeout: 30_000 });
     await guards.assertClean();
   });
 
@@ -550,7 +558,7 @@ test.describe("Grafana Logs Drilldown", () => {
       to: "now",
     });
 
-    const patternsTab = page.getByRole("tab", { name: /^Patterns/i }).first();
+    const patternsTab = drilldownTab(page, "Patterns").first();
     await expect(patternsTab).toBeVisible({ timeout: 10_000 });
     await patternsTab.click();
 
