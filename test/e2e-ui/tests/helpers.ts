@@ -160,6 +160,28 @@ export function drilldownFieldFilter(page: Page): Locator {
 }
 
 /**
+ * A Logs Drilldown service page tab (Logs, Labels, Fields, Patterns). Drilldown
+ * 3.2.0 gives each tab a stable test id (`data-testid tab-<name>`, observed on
+ * the pinned stack); the role and name query stays as the fallback for an
+ * earlier release. Not narrowed with first(): a caller may assert the tab is
+ * absent (toHaveCount(0)).
+ */
+export function drilldownTab(page: Page, name: "Logs" | "Labels" | "Fields" | "Patterns"): Locator {
+  return page
+    .getByTestId(`data-testid tab-${name.toLowerCase()}`)
+    .or(page.getByRole("tab", { name: new RegExp(`^${name}`, "i") }));
+}
+
+/**
+ * A service on the Logs Drilldown landing page, by its stable test id
+ * (`data-testid service-selection-<label>:<value>`, Drilldown 3.2.0, #2184),
+ * which does not depend on translated text.
+ */
+export function drilldownServiceCard(page: Page, service: string, label = "service_name"): Locator {
+  return page.getByTestId(`data-testid service-selection-${label}:${service}`);
+}
+
+/**
  * Type a LogQL query into Grafana Explore's query editor.
  */
 export async function typeQuery(page: Page, query: string) {
