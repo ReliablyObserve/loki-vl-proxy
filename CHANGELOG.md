@@ -54,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-enterprise` and `-enterprise-fips` suffixes are parsed as flavours. The `backend_capability_profile` of the
   drilldown-limits answer is `vl-probed-v1.49-plus` when only the stream endpoint probe answers (the metadata
   substring probe, which could not tell a release apart, is gone).
+  Behind `vmauth` (which serves its own `/metrics`), where the proxy used to take vmauth's version for the
+  VictoriaLogs release and so turned every gate on by accident, the release is now unknown unless a header or a
+  VictoriaLogs `/metrics` route names it: the feature probes decide the gates they cover and, when a probe finds a
+  feature of v1.51 or later present, the capabilities of earlier releases follow (dense pattern windowing and
+  column-indexed field values for a backend that answers `coalesce`); a backend behind `vmauth` that answers no probe
+  holds the v1.49.0 floor, and `-backend-version-strict=true` then fails startup ("backend did not expose version")
+  where the vmauth version used to satisfy it. Keep `-backend-feature-probes=true` (the default) behind `vmauth`.
+- Every feature probe reads one fixed one-second window in the year 2000, with a row limit of one, so it never scans
+  a stored row.
 
 - The compatibility stack and CI now run Grafana 13.3.1 (was 13.3.0) with Logs Drilldown
   (grafana-lokiexplore-app) 3.2.0 (was 3.1.0): the compose files and their `GF_PLUGINS_PREINSTALL`, the pinned

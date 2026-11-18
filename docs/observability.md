@@ -956,7 +956,7 @@ The capability layer (see [capability gates](reference/capability-gates.md)) exp
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `loki_vl_proxy_backend_version_info` | gauge | `version`, `flavour`, `source` | `1` per VictoriaLogs release seen within the capability window; the lowest one decides the gates |
-| `loki_vl_proxy_capability_gate` | gauge | `gate`, `side`, `source` | `1` when the gate is on; `source` is what decided it (`version`, `probe`, `both`, `default`, `mismatch`) |
+| `loki_vl_proxy_capability_gate` | gauge | `gate`, `side`, `source` | `1` when the gate is on; `source` is what decided it (`version`, `probe`, `both`, `implied`, `default`, `mismatch`) |
 | `loki_vl_proxy_capability_mismatch_total` | counter | `gate` | times a feature probe contradicted the release for a gate |
 | `loki_vl_proxy_capability_epoch` | gauge | | changes of the gate set in this process (cache keys carry the set's digest, not this counter) |
 | `loki_vl_proxy_backend_feature_probe_total` | counter | `gate`, `verdict` | probe results (`on`, `off`, `inconclusive`); an inconclusive answer keeps the previous verdict |

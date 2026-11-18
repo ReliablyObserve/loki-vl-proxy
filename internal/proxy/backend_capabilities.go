@@ -56,6 +56,9 @@ func (p *Proxy) maybeReprobeBackendVersion(now time.Time) {
 // triggers it, rate limited above); it stops with the proxy. Feature probes run at startup and in the loop only.
 func (p *Proxy) startVersionProbe() {
 	stop := p.keepWarmStop
+	if stopped(stop) {
+		return // shut down: no new goroutine joins the wait group
+	}
 	p.keepWarmWG.Add(1)
 	go func() {
 		defer p.keepWarmWG.Done()
@@ -98,6 +101,10 @@ func (p *Proxy) StartBackendCapabilityLoop() {
 		return
 	}
 	stop := p.keepWarmStop
+	if stopped(stop) {
+		p.capLoopStarted.Store(false)
+		return
+	}
 	p.keepWarmWG.Add(1)
 	go func() {
 		defer p.keepWarmWG.Done()
@@ -123,6 +130,16 @@ func (p *Proxy) StartBackendCapabilityLoop() {
 			timer.Reset(jittered(interval))
 		}
 	}()
+}
+
+// stopped reports a closed stop channel.
+func stopped(stop chan struct{}) bool {
+	select {
+	case <-stop:
+		return true
+	default:
+		return false
+	}
 }
 
 // jittered spreads the replicas' probes: d plus or minus 10%.
@@ -218,7 +235,7 @@ func (p *Proxy) probeBackendFeatures(ctx context.Context) {
 			return
 		}
 		verdict := capability.VerdictNone
-		status, body, err := p.backendProbeGet(ctx, g.Probe.Path, g.Probe.Values(time.Now()), maxProbeBody)
+		status, body, err := p.backendProbeGet(ctx, g.Probe.Path, g.Probe.Values(), maxProbeBody)
 		if err == nil {
 			verdict = g.Probe.Classify(status, body)
 		} else if p.log.Enabled(ctx, slog.LevelDebug) {

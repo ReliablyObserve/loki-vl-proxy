@@ -25,9 +25,12 @@ const (
 	// ReasonMismatch: the probe contradicts the release; the observed behaviour wins (a Safety gate never reads a
 	// probe).
 	ReasonMismatch
+	// ReasonImplied: no release is known, and a probe found a feature of a later release present, so a capability
+	// of that release or an earlier one is present too (a release never loses a feature a previous one had).
+	ReasonImplied
 )
 
-var reasonLabels = [...]string{"default", "version", "probe", "both", "mismatch"}
+var reasonLabels = [...]string{"default", "version", "probe", "both", "mismatch", "implied"}
 
 // String is the reason's label (the `source` label of the gate gauge).
 func (r Reason) String() string { return reasonLabels[r] }
@@ -144,6 +147,18 @@ func compute(r Release, probes verdicts) Set {
 	meta := &setMeta{}
 	r.SeenAt = time.Time{}
 	s.release = r
+	// Without a known release, a probe that finds a feature present bounds the release from below: every capability
+	// the release's line had by then is present too (dense pattern windowing from a backend that answers coalesce).
+	var floor [3]int
+	haveFloor := false
+	if !r.Known {
+		for i := range gates {
+			g := &gates[i]
+			if g.Kind != Safety && g.Probe != nil && g.Flavours == 0 && probes[i] == VerdictOn && (!haveFloor || cmp3(g.From[0], g.From[1], g.From[2], floor) > 0) {
+				floor, haveFloor = g.From, true
+			}
+		}
+	}
 	var names []string
 	for i := range gates {
 		g := &gates[i]
@@ -174,6 +189,8 @@ func compute(r Release, probes verdicts) Set {
 			}
 		case r.Known:
 			on, decided, why = byVersion, true, ReasonVersion
+		case haveFloor && g.Kind == Capability && g.Flavours == 0 && cmp3(g.From[0], g.From[1], g.From[2], floor) <= 0:
+			on, decided, why = true, true, ReasonImplied
 		default:
 			on, decided, why = g.Default, false, ReasonDefault
 		}

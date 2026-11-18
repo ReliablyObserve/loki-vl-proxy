@@ -166,12 +166,27 @@ func TestUnknownReleaseProbesDecide(t *testing.T) {
 		s.On(StatsLimitAfterStats) || !s.Decided(StatsLimitAfterStats) {
 		t.Fatalf("probes decide: %s", s.HeaderValue())
 	}
-	// A gate without a probe, a Safety gate and an undecided Behaviour gate stay as they were.
-	if s.Decided(ExtraFiltersLen) || s.Decided(DensePatternWindowing) || s.On(DensePatternWindowing) || s.On(MathQuotedConstantClone) || s.Decided(MathQuotedConstantClone) {
-		t.Fatalf("undecided gates: %s", s.HeaderValue())
+	// A coalesce answered means v1.51 or later: the capabilities of v1.50 follow (implied), the v1.52 ones do not.
+	// A Safety gate and an undecided Behaviour gate stay as they were.
+	if !s.On(DensePatternWindowing) || s.Why(DensePatternWindowing) != ReasonImplied || !s.On(ColumnFieldValues) || s.On(PipeJSONArrayConcat) || s.Decided(PipeJSONArrayConcat) ||
+		s.Decided(ExtraFiltersLen) || s.On(MathQuotedConstantClone) || s.Decided(MathQuotedConstantClone) {
+		t.Fatalf("implied and undecided gates: %s", s.HeaderValue())
 	}
 	if s.Profile() != "vl-probed-v1.49-plus" {
 		t.Fatalf("profile %q", s.Profile())
+	}
+	// A probe that finds nothing present implies nothing.
+	l3 := newTestLayer(newClock())
+	l3.ObserveProbe(PipeCoalesce, VerdictOff)
+	l3.ObserveProbe(StatsLimitAfterStats, VerdictNone)
+	if s3 := l3.Backend(); s3.On(DensePatternWindowing) || s3.Decided(DensePatternWindowing) || s3.Why(DensePatternWindowing) != ReasonDefault {
+		t.Fatalf("a refused probe implied a capability: %s", s3.HeaderValue())
+	}
+	// A known release is never overridden by an implication.
+	l4 := newTestLayer(newClock())
+	l4.Observe("a", rel("v1.49.0"))
+	if l4.Backend().On(DensePatternWindowing) {
+		t.Fatal("v1.49.0 has no dense windowing")
 	}
 	// A probe cannot decide a Safety gate or a gate without a probe.
 	l.ObserveProbe(MathQuotedConstantClone, VerdictOn)

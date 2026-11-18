@@ -4128,7 +4128,7 @@
       "type": "state-timeline",
       "id": 83,
       "title": "Capability gates",
-      "description": "Every gate of the capability table: on or off, and what decided it (version, probe, both, default, mismatch). A gate flips when VictoriaLogs is upgraded or rolled back; the capability set digest in cross-replica keys changes with it.",
+      "description": "Every gate of the capability table: on or off, and what decided it (version, probe, both, implied, default, mismatch). A gate flips when VictoriaLogs is upgraded or rolled back; the capability set digest in cross-replica keys changes with it.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

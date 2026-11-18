@@ -97,7 +97,7 @@ var capabilityFamilies = []capabilityFamily{
 		}
 		return out
 	}},
-	{name: "loki_vl_proxy_capability_gate", help: "Capability gates: 1 when on, by gate, side and what decided it (version, probe, both, default, mismatch).", points: func(s CapabilityStats) []capabilityPoint {
+	{name: "loki_vl_proxy_capability_gate", help: "Capability gates: 1 when on, by gate, side and what decided it (version, probe, both, implied, default, mismatch).", points: func(s CapabilityStats) []capabilityPoint {
 		out := make([]capabilityPoint, 0, len(s.Gates))
 		for _, g := range s.Gates {
 			v := 0.0

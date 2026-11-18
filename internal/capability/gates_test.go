@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/probes"
 )
 
 // gateSet is the gates a release turns on (decided ones listed by name), as sorted text.
@@ -117,23 +119,41 @@ func TestGateTableIsConsistent(t *testing.T) {
 	}
 }
 
+// Every probe reads the same fixed one-second window long before any retention (it must never scan stored rows), holds
+// its query to that window in its own text where the endpoint takes the range from the query, and asks for one row.
 func TestProbeValuesAndClassify(t *testing.T) {
-	now := time.Unix(1_700_000_000, 0)
+	start, err1 := time.Parse(time.RFC3339, probes.WindowStart)
+	end, err2 := time.Parse(time.RFC3339, probes.WindowEnd)
+	if err1 != nil || err2 != nil || end.Sub(start) != time.Second || start.Year() != 2000 {
+		t.Fatalf("the probe window: %v %v", probes.WindowStart, probes.WindowEnd)
+	}
 	for _, g := range Gates() {
 		p := g.Probe
 		if p == nil {
 			continue
 		}
-		v := p.Values(now)
+		v := p.Values()
 		if v.Get("query") != p.Query {
 			t.Errorf("%s: %v", g.Name, v)
 		}
 		if p.Path == pathQuery && v.Get("limit") != "1" {
 			t.Errorf("%s: a query probe reads one row at most: %v", g.Name, v)
 		}
-		start, end := v.Get("start"), v.Get("end")
-		if p.Path != pathStatsQuery && (start == "" || end == "" || start >= end) {
+		if v.Get("start") != probes.WindowStart || v.Get("end") != probes.WindowEnd {
 			t.Errorf("%s: window %v", g.Name, v)
+		}
+		if p.Path == pathStatsQuery && v.Get("time") != probes.WindowEnd {
+			t.Errorf("%s: the instant is the window's end: %v", g.Name, v)
+		}
+		if p.Path != pathStreamFieldName && !strings.HasPrefix(p.Query, "_time:["+probes.WindowStart+", "+probes.WindowEnd+") ") {
+			t.Errorf("%s: the query holds itself to the window: %q", g.Name, p.Query)
+		}
+		for _, arg := range []string{"start", "end", "time"} {
+			if raw := v.Get(arg); raw != "" {
+				if ts, err := time.Parse(time.RFC3339, raw); err != nil || ts.Before(start) || ts.After(end) {
+					t.Errorf("%s: %s=%s is outside the window", g.Name, arg, raw)
+				}
+			}
 		}
 		if _, err := url.ParseQuery(v.Encode()); err != nil {
 			t.Error(err)

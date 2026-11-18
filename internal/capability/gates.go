@@ -3,7 +3,6 @@ package capability
 import (
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/probes"
 )
@@ -152,24 +151,20 @@ type Probe struct {
 	CrashSafe [2]string
 }
 
-// Values are the args of the probe's request at time now: an empty one-second window, one row at most.
-func (p *Probe) Values(now time.Time) url.Values {
+// Values are the args of the probe's request: the fixed one-second window of the probes package (long before any
+// retention: the probe reads no stored row), one row at most.
+func (p *Probe) Values() url.Values {
 	v := url.Values{}
 	v.Set("query", p.Query)
+	v.Set("start", probes.WindowStart)
+	v.Set("end", probes.WindowEnd)
 	switch p.Path {
 	case pathStatsQuery:
-		v.Set("time", strconv.FormatInt(now.UnixNano(), 10))
+		v.Set("time", probes.WindowEnd)
 	case pathStatsQueryRange:
-		v.Set("start", strconv.FormatInt(now.Add(-time.Second).UnixNano(), 10))
-		v.Set("end", strconv.FormatInt(now.UnixNano(), 10))
 		v.Set("step", p.Step)
 	case pathQuery:
-		v.Set("start", strconv.FormatInt(now.Add(-time.Second).UnixNano(), 10))
-		v.Set("end", strconv.FormatInt(now.UnixNano(), 10))
 		v.Set("limit", "1")
-	default:
-		v.Set("start", strconv.FormatInt(now.Add(-time.Second).UnixNano(), 10))
-		v.Set("end", strconv.FormatInt(now.UnixNano(), 10))
 	}
 	return v
 }

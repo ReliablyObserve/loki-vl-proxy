@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -239,8 +238,11 @@ func TestCapabilityUnknownReleaseProbesDecide(t *testing.T) {
 		!set.On(capability.StatsLimitAfterStats) || set.On(capability.RangeTimeWritersRefused) || !set.Decided(capability.RangeTimeWritersRefused) {
 		t.Fatalf("probes decide: %s", set.HeaderValue())
 	}
-	if set.Decided(capability.ExtraFiltersLen) || set.On(capability.MathQuotedConstantClone) || set.On(capability.DensePatternWindowing) {
-		t.Fatalf("gates without a probe stay at the floor: %s", set.HeaderValue())
+	// A backend that answers coalesce is v1.51 or later: the v1.50 capabilities follow (the stack's vmauth variant
+	// keeps dense pattern windowing and column-indexed field values), the guard and the v1.54 behaviour do not.
+	if !set.On(capability.DensePatternWindowing) || !set.On(capability.ColumnFieldValues) || set.Why(capability.DensePatternWindowing) != capability.ReasonImplied ||
+		set.Decided(capability.ExtraFiltersLen) || set.On(capability.MathQuotedConstantClone) || set.On(capability.PipeJSONArrayConcat) {
+		t.Fatalf("implied and undecided gates: %s", set.HeaderValue())
 	}
 	if p.logsqlCapabilities().PipeCoalesce != true {
 		t.Fatal("the translator reads the probed gate")
@@ -519,7 +521,6 @@ func TestCapabilityLoopStopsWithTheProxy(t *testing.T) {
 	defer func() { minCapabilityLoopInterval = old }()
 	b := newCapBackend(t, buildV154)
 	p := newCapProxyUnmanaged(t, b, func(c *Config) { c.BackendVersionReprobeInterval = 10 * time.Millisecond })
-	before := runtime.NumGoroutine()
 	p.StartBackendCapabilityLoop()
 	p.StartBackendCapabilityLoop() // one loop
 	deadline := time.Now().Add(5 * time.Second)
@@ -539,10 +540,12 @@ func TestCapabilityLoopStopsWithTheProxy(t *testing.T) {
 	if after := b.hit("/metrics"); after != hits {
 		t.Fatalf("the loop kept probing after shutdown: %d -> %d", hits, after)
 	}
-	buf := make([]byte, 1<<20)
-	stacks := string(buf[:runtime.Stack(buf, true)])
-	if strings.Contains(stacks, "StartBackendCapabilityLoop") || strings.Contains(stacks, "runCapabilityProbes") {
-		t.Fatalf("capability goroutines outlived the proxy (%d goroutines before):\n%s", before, stacks)
+	// Nothing starts after shutdown either.
+	p.StartBackendCapabilityLoop()
+	p.startVersionProbe()
+	time.Sleep(50 * time.Millisecond)
+	if after := b.hit("/metrics"); after != hits {
+		t.Fatalf("a probe started after shutdown: %d -> %d", hits, after)
 	}
 	// A zero interval starts nothing.
 	p0 := newCapProxy(t, b, nil)

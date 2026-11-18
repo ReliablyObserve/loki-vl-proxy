@@ -234,6 +234,10 @@ func (s *strictVL) serveStatsByTime(w http.ResponseWriter, r *http.Request, m []
 }
 
 func (s *strictVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if isCapabilityProbe(r) {
+		s.next.ServeHTTP(w, r) // the proxy's own feature probe: not a read of the scenario
+		return
+	}
 	_ = r.ParseForm()
 	if r.URL.Path == "/select/logsql/query" {
 		if m := statsByTimeRE.FindStringSubmatch(r.FormValue("query")); m != nil {

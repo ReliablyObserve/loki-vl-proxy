@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
-	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
@@ -48,7 +47,7 @@ func TestProbesCrashSafe(t *testing.T) {
 				if p.CrashSafe[0] != "v1.49.0" {
 					t.Errorf("%s: the probe must name the floor among the releases it was proven on: %v", g.Name, p.CrashSafe)
 				}
-				req, _ := http.NewRequest(http.MethodGet, srv.URL+p.Path+"?"+p.Values(time.Now()).Encode(), nil)
+				req, _ := http.NewRequest(http.MethodGet, srv.URL+p.Path+"?"+p.Values().Encode(), nil)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					t.Errorf("%s on %s: VictoriaLogs dropped the connection (a crash): %v", g.Name, release, err)
