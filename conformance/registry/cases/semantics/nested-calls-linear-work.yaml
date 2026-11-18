@@ -21,8 +21,8 @@ why: |
   the one the text gives, and a query Loki's lexer refuses is canonicalized the way before. The answers do not change:
   recorded before the change (canonicalize_nested_golden.json), and the two ways compared by a fuzz target.
 
-  At the time of this change the validation, the parse and the request spelling of the same queries still read
-  nested calls again per level; those are separate steps of the same work.
+  The validation, the parse and the request spelling of the same queries read each nested call once too, and their
+  errors carry Loki's text (semantics/nested-calls-read-once).
 request:
   method: GET
   path: /loki/api/v1/query_range

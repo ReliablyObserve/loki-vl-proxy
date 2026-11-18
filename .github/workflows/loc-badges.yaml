@@ -70,4 +70,14 @@ jobs:
 
           git add .github/badges/loc-code.json .github/badges/loc-tests.json
           git diff --cached --quiet || git commit -m "chore: update LOC badge data [skip ci]"
-          git push origin badges
+          # Pull Count Badges and LOC Badges both run on a push to main and both push this branch. They write
+          # different files, so the run that loses the race replays its commit on the other's and pushes again.
+          for attempt in 1 2 3 4 5; do
+            if git push origin badges; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+            git pull --rebase origin badges
+          done
+          echo "badges branch: push still rejected after 5 attempts" >&2
+          exit 1
