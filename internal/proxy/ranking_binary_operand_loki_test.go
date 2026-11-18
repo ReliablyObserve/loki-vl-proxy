@@ -70,7 +70,7 @@ func rankingBinaryOperandQueries(op string) []string {
 // operands, at a step equal to and shorter than the range, and with a label_replace inside the operand applied once
 // (the handlers applied it again over the answer: pod="x-x-p1"). Loki's answers are recorded from its engine over the same lines
 // (test/oracle/loki engine; LVP_RUN_ORACLES=1 records again); the Loki streams carry the service_name Loki gives them.
-// Each request runs against the emulated VictoriaLogs v1.49.0 and v1.53.0.
+// Each request runs against the emulated VictoriaLogs v1.49.0 and v1.54.0.
 //
 // conformance: semantics/rank-binary-operand-label-replace-once, loki_api_v1_query_range, loki_api_v1_query
 func TestRankingOverBinaryOperandMatchesRecordedLoki(t *testing.T) {
@@ -105,7 +105,7 @@ func TestRankingOverBinaryOperandMatchesRecordedLoki(t *testing.T) {
 		}
 	}
 	answers := lokiEngineAnswers(t, "ranking_binary_operand", []oraclerun.EngineDataSet{set})
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	for _, version := range []string{"v1.49.0", "v1.54.0"} {
 		emu := &vlemu.Emulator{T: t, Rows: rows, Version: version}
 		backend := httptest.NewServer(emu.Handler())
 		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})

@@ -170,7 +170,7 @@ func planText(t *testing.T, q string) string {
 		return ""
 	}
 	queryplan.Resolve(p)
-	op, err := lower.PlanQuery(q, p, lower.Profile{Caps: logsql.CapabilitiesFor("1.53.0"), Label: func(s string) string { return s }})
+	op, err := lower.PlanQuery(q, p, lower.Profile{Caps: logsql.CapabilitiesFor("1.54.0"), Label: func(s string) string { return s }})
 	if err != nil {
 		return ""
 	}

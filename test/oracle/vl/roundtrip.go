@@ -15,12 +15,13 @@ import (
 // it without the panic of Query.Clone. The handler (app/vlselect/logsql/logsql.go ProcessQueryRequest and
 // parseCommonArgs) parses the query (ParseQueryAtTimestamp), adds the request's _time:[start, end] filter
 // (AddTimeFilter) and, for a limit, `| sort by (_time desc)` when the query can return the last N results and
-// `| offset 0 limit <limit>`; vlstorage.RunQuery (app/vlstorage/main.go) then asks GetLastNResultsQuery for the
-// optimized query, which clones the query (lib/logstorage/parser.go Query.Clone): the query is printed with String
-// and parsed again, and a text that does not parse again is logger.Panicf ("BUG: cannot parse"), which ends the
-// VictoriaLogs process. Every other clone (the binary search of the last N rows, CloneWithTimeFilter of
-// hits and stats_query_range, the cluster's remote query) prints and parses the same way, so the command also
-// clones the query before and after the limit pipes, and checks that the printed text reads back to itself.
+// `| offset 0 limit <limit>`; vlstorage.RunQuery (app/vlstorage/main.go) then asks GetLastNResultsQuery
+// (GetTimeSortedNResultsQuery from v1.54.0) for the optimized query, which clones the query
+// (lib/logstorage/parser.go Query.Clone): the query is printed with String and parsed again, and a text that does
+// not parse again is logger.Panicf ("BUG: cannot parse"), which ends the VictoriaLogs process. Every other clone
+// (the binary search of the last N rows, CloneWithTimeFilter of hits and stats_query_range, the cluster's remote
+// query) prints and parses the same way, so the command also clones the query before and after the limit pipes, and
+// checks that the printed text reads back to itself.
 //
 // The steps are the handler's, in its order, through lib/logstorage's exported API; a panic of VictoriaLogs' code is
 // recovered and recorded, never passed on.
@@ -108,18 +109,63 @@ func roundtripOne(x RoundtripInput) (v RoundtripVerdict) {
 	if !cloneReadsBack(q, timestamp, &v) {
 		return v
 	}
-	if q.CanReturnLastNResults() {
-		q.AddPipeSortByTimeDesc()
-	}
+	addLimitSort(q)
 	q.AddPipeOffsetLimit(0, roundtripLimit)
 	if !cloneReadsBack(q, timestamp, &v) {
 		return v
 	}
-	if qOpt, _, _ := q.GetLastNResultsQuery(); qOpt != nil && !cloneReadsBack(qOpt, timestamp, &v) {
+	if qOpt := sortedNResultsQuery(q); qOpt != nil && !cloneReadsBack(qOpt, timestamp, &v) {
 		return v
 	}
 	v.OK = true
 	return v
+}
+
+// The handler's limit steps changed names in VictoriaLogs v1.54.0 (sort_direction, #924): v1.49.0 to v1.53.x ask
+// CanReturnLastNResults, add `| sort by (_time desc)` with AddPipeSortByTimeDesc and optimize with
+// GetLastNResultsQuery; v1.54.0 asks CanReturnTimeSortedNResults, adds the sort with AddPipeSortByTime(isDesc) and
+// optimizes with GetTimeSortedNResultsQuery. One source builds against either module file, so the steps are called
+// through the method set the pinned version has; the proxy sends no sort_direction, so isDesc is the default true.
+type (
+	lastNQuery interface {
+		CanReturnLastNResults() bool
+		AddPipeSortByTimeDesc()
+		GetLastNResultsQuery() (*logstorage.Query, uint64, uint64)
+	}
+	timeSortedNQuery interface {
+		CanReturnTimeSortedNResults() bool
+		AddPipeSortByTime(isDesc bool)
+		GetTimeSortedNResultsQuery() (*logstorage.Query, uint64, uint64, bool)
+	}
+)
+
+// addLimitSort adds the handler's `| sort by (_time desc)` when the query can return its newest rows that way.
+func addLimitSort(q *logstorage.Query) {
+	switch x := any(q).(type) {
+	case timeSortedNQuery:
+		if x.CanReturnTimeSortedNResults() {
+			x.AddPipeSortByTime(true)
+		}
+	case lastNQuery:
+		if x.CanReturnLastNResults() {
+			x.AddPipeSortByTimeDesc()
+		}
+	default:
+		panic("oracle: the pinned VictoriaLogs has neither limit API")
+	}
+}
+
+// sortedNResultsQuery is the optimized query vlstorage.RunQuery runs for a limited query, nil when there is none.
+func sortedNResultsQuery(q *logstorage.Query) *logstorage.Query {
+	switch x := any(q).(type) {
+	case timeSortedNQuery:
+		qOpt, _, _, _ := x.GetTimeSortedNResultsQuery()
+		return qOpt
+	case lastNQuery:
+		qOpt, _, _ := x.GetLastNResultsQuery()
+		return qOpt
+	}
+	return nil
 }
 
 // sameBytes reports two texts made of the same bytes, as a reordering of the same filters is.

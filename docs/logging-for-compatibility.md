@@ -46,6 +46,7 @@ Verified against VictoriaLogs v1.50.0 (`app/vlinsert/loki`, `app/vlinsert/insert
 | Loki push API — JSON line with `_msg_field=<key>` | That key's value | Every other JSON key |
 | Loki push API — empty line | The `-defaultMsgValue` placeholder | Stream labels and structured metadata |
 | OTel OTLP (`/insert/opentelemetry/v1/logs`) | `body` string | Attributes; a map `body` without a message field stores the placeholder |
+| OTel OTLP with the `VL-Msg-Field` header | From VictoriaLogs v1.54.0 the named attribute's value; before v1.54.0 either the body or that attribute, the other one lost | From v1.54.0 the body is kept in a `body` field, which the proxy reads like any other stored field |
 | VL JSON insert (`/insert/jsonline`) | Explicit `_msg` field value, or the placeholder when absent | Every other key |
 
 Loki returns the pushed line byte for byte, so only the rows marked ✓ can give identical lines and identical line filters.

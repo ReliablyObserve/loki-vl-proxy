@@ -62,6 +62,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer than the 4 KiB the short memos keep is validated, respelled and parsed once per request, in a memo bounded at
   4 MiB per generation (two generations).
 
+### Changed
+
+- VictoriaLogs v1.54.0 replaces v1.53.0 as the newest tested release and the pull-request CI pin: the tested versions
+  are now v1.49.0 and v1.54.0 (every v1.5x release stays supported, the floor stays v1.49.0). The compose stacks,
+  examples and benchmark pins run `victoriametrics/victoria-logs:v1.54.0`, and every comparison with VictoriaLogs' own
+  parser and storage (the parse, store and clone round-trip oracles, the Loki differentials and the recorded
+  VictoriaLogs verdicts) is recorded again on v1.54.0. No proxy request depends on a v1.54.0 feature, so answers on
+  v1.49.0 through v1.53.x do not change. What v1.54.0 changes for proxy users: a live tail whose query matches more
+  than 10,000 rows in one refresh's read is ended by VictoriaLogs; the proxy serves such a tail refused at its start from its
+  polling tail in the default `-tail.mode=auto` and closes one ended mid-stream with Loki's internal error, never
+  VictoriaLogs' text (registry `vl-live-tail-row-rate-limit`). A read of the newest rows with a limit no longer misses or
+  repeats rows that share a timestamp, and a cluster with partial responses on returns a storage node's error
+  instead of an incomplete answer (`vl-limit-read-timestamp-ties`). `extra_filters` and `extra_stream_filters` count
+  against VictoriaLogs' `-search.maxQueryLen`; the proxy's own filters stay far below it (`vl-extra-filters-max-query-len`).
+  The root and example compose files check VictoriaLogs with its new `-healthcheck` flag; the matrix stacks keep
+  `-version`, which v1.49.0 also has.
+
 ## [2.339.0] - 2026-11-18
 
 ### Changed

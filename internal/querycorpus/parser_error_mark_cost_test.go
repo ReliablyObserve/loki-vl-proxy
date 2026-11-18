@@ -15,7 +15,7 @@ import (
 )
 
 // TestParserErrorMarkVictoriaLogsCost times the JSON metrics the parser error check marks, through the proxy's real
-// handlers in front of real VictoriaLogs (the serve oracle, v1.53.0 and v1.49.0) holding LVP_VL_COST_ROWS valid JSON
+// handlers in front of real VictoriaLogs (the serve oracle, v1.54.0 and v1.49.0) holding LVP_VL_COST_ROWS valid JSON
 // lines over the hour before metricEnd: the time a cold request takes, VictoriaLogs' work included, median of
 // LVP_VL_COST_RUNS runs per query and request kind. Run it on two builds (a base without the mark, the branch) and
 // compare the medians: it measures the cost the mark asks of VictoriaLogs on the success path (no line is marked).

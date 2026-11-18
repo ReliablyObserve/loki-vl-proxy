@@ -925,6 +925,9 @@
     "semantics/tail-delivers-rows-visible-out-of-order | compare:observed",
     "semantics/tail-delivers-rows-visible-out-of-order | gap:fixed",
     "semantics/tail-delivers-rows-visible-out-of-order | query",
+    "semantics/tail-ends-on-vl-row-rate-limit | compare:observed",
+    "semantics/tail-ends-on-vl-row-rate-limit | gap:open",
+    "semantics/tail-ends-on-vl-row-rate-limit | query",
     "semantics/tail-history-limit-above-max-entries | compare:observed",
     "semantics/tail-history-limit-above-max-entries | query",
     "semantics/tail-history-start-limit | compare:observed",
@@ -2246,6 +2249,10 @@
     "internal/proxy/tail_settle_test.go | semantics/tail-delivers-rows-visible-out-of-order",
     "internal/proxy/tail_settle_test.go | semantics/tail-survives-backend-outage",
     "internal/proxy/tail_settle_test.go | tail-reads-settled-rows",
+    "internal/proxy/tail_vl_row_rate_test.go | loki_api_v1_tail",
+    "internal/proxy/tail_vl_row_rate_test.go | semantics/error-layer-internal-go-text",
+    "internal/proxy/tail_vl_row_rate_test.go | semantics/tail-ends-on-vl-row-rate-limit",
+    "internal/proxy/tail_vl_row_rate_test.go | vl-live-tail-row-rate-limit",
     "internal/proxy/tenant_auth_parity_test.go | semantics/tenant-header-loki-answers",
     "internal/proxy/tenant_auth_parity_test.go | tenant-auth-follows-loki",
     "internal/proxy/tenant_auth_parity_test.go | tenant-numeric-routing",
@@ -3297,12 +3304,12 @@
       "any": 50,
       "api": 120,
       "drilldown": 56,
-      "explore": 205,
+      "explore": 206,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 772,
+      "go": 773,
       "playwright": 3
     },
     "page_kinds": {
@@ -3322,7 +3329,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 460
+    "wired_items": 462
   },
   "gates": [
     "A/B shape selection",

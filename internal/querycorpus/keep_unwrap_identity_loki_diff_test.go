@@ -16,7 +16,7 @@ import (
 
 // The Loki differential of the series an unwrapped range function reads when a keep or a drop stage stands before
 // the unwrap: real Loki (the engine oracle, test/oracle/loki) and real VictoriaLogs (the serve oracle,
-// test/oracle/vl, v1.53.0 and v1.49.0) over the same data, through the proxy's real query and query_range handlers,
+// test/oracle/vl, v1.54.0 and v1.49.0) over the same data, through the proxy's real query and query_range handlers,
 // as the metric differential runs them (plan_loki_vl_metric_diff_test.go).
 //
 // A Loki series is the set of labels a sample carries after the pipeline: a keep deletes every label it does not
