@@ -355,7 +355,8 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 		if aligned, ok := e.alignedStatsRange(r); ok {
 			top.aligned = &aligned
 		}
-		if phaseStep > 0 { // the subquery repeats the read's window filter
+		if phaseAnchor, phaseStep, phaseLower, phaseUpper := windowPhase(pipes[:first]); phaseStep > 0 {
+			// The subquery repeats the read's window filter.
 			top.rowKept = func(ts int64) bool {
 				return WindowPhaseKeeps(ts, phaseAnchor, phaseStep, phaseLower, phaseUpper, e.FloatPhase)
 			}
@@ -562,12 +563,28 @@ func firstStatsPipe(pipes []string) int {
 	return -1
 }
 
+// windowPhase is the window phase filter of the pipes before the first stats pipe (a window shorter than the step):
+// its anchor, step and bounds, or a zero step when the pipes have none.
+func windowPhase(before []string) (anchor, step, lower, upper int64) {
+	for _, pipe := range before {
+		if m := PhaseMathRE.FindStringSubmatch(pipe); m != nil {
+			anchor, _ = strconv.ParseInt(m[1], 10, 64)
+			step, _ = strconv.ParseInt(m[2], 10, 64)
+		}
+		if m := PhaseFilterRE.FindStringSubmatch(pipe); m != nil {
+			lower, _ = strconv.ParseInt(m[1], 10, 64)
+			upper, _ = strconv.ParseInt(m[2], 10, 64)
+		}
+	}
+	return anchor, step, lower, upper
+}
+
 // statsRecs are the rows the request selects as the pipes before the first stats pipe (before) leave them.
 func (e *Emulator) statsRecs(r *http.Request, before []string) []emuRec {
 	// The pipes before the first stats pipe select rows: the unwrap gate and
 	// parsers keep every generated row (all values are numbers), and the window
 	// phase filter of a window shorter than the step keeps the lines inside one.
-	var phaseAnchor, phaseStep, phaseLower, phaseUpper int64
+	phaseAnchor, phaseStep, phaseLower, phaseUpper := windowPhase(before)
 	// fieldOps are the pipes before the first stats pipe that change fields, in
 	// order: the translator's detected_level chain ends by writing the field (the
 	// emulator applies Loki's rule to the row instead of running its pipes), and
@@ -595,14 +612,6 @@ func (e *Emulator) statsRecs(r *http.Request, before []string) []emuRec {
 			// The series hash of a parser's dynamic identity: the identity pipes before it are not run.
 			ordered := packed
 			fieldOps = append(fieldOps, func(f map[string]string) { f[seriesHashField] = e.seriesHash(f, ordered) })
-		}
-		if m := PhaseMathRE.FindStringSubmatch(pipe); m != nil {
-			phaseAnchor, _ = strconv.ParseInt(m[1], 10, 64)
-			phaseStep, _ = strconv.ParseInt(m[2], 10, 64)
-		}
-		if m := PhaseFilterRE.FindStringSubmatch(pipe); m != nil {
-			phaseLower, _ = strconv.ParseInt(m[1], 10, 64)
-			phaseUpper, _ = strconv.ParseInt(m[2], 10, 64)
 		}
 	}
 	var recs []emuRec
