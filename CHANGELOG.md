@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.352.0] - 2026-11-19
+
 ### Changed
 
 - Log queries read their `| drop` and `| keep` post-processing and the line-field exposure of the Loki-compatible profile from the query's memoised parse, the stages of its plan, instead of parsing the query again for each response (and no longer fall back to the string translator's text walk; every query that reaches a log response parses). The compiled drop, keep and label filter conditions moved from the string translator to `internal/translate`. Answers, VictoriaLogs requests and cache keys do not change.
