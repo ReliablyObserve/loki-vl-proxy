@@ -471,7 +471,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 7848,
+    "native": 10088,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 90,
@@ -495,10 +495,12 @@
       "LabelReplace operand BinOp": 20,
       "LabelReplace operand VectorAgg": 60,
       "LabelReplace service_name grouping": 40,
-      "LogSelect (route rule)": 2400,
       "LogSelect keep order": 10,
       "LogSelect level filter after stage": 20,
       "LogSelect line format function": 10,
+      "LogSelect route reserved field": 60,
+      "LogSelect route translator text": 50,
+      "LogSelect route working parser probe": 50,
       "LogSelect unpack line": 10,
       "RangeAgg LogSelect level filter after stage": 10,
       "RangeAgg LogSelect line format function": 10,

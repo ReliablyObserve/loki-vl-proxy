@@ -2056,6 +2056,7 @@
     "internal/proxy/plan_defect_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/proxy/plan_defect_test.go | semantics/vl-refusal-is-plan-defect",
     "internal/proxy/plan_predicate_parity_test.go | architecture-syntax-package-layering",
+    "internal/proxy/plan_route_log_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_route_metric_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_route_parity_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_served_test.go | architecture-syntax-package-layering",
@@ -3380,7 +3381,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 790,
+      "go": 791,
       "playwright": 3
     },
     "page_kinds": {

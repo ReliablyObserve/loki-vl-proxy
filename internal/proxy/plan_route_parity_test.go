@@ -379,6 +379,8 @@ func nativeRoute(q string, p *queryplan.Plan, rp routeProfile, data bool, _ rout
 	switch p.Root.(type) {
 	case *queryplan.RangeAgg, *queryplan.VectorAgg, *queryplan.BinOp:
 		return metricRoute(q, p, rp, data)
+	case *queryplan.LogSelect:
+		return logRoute(q, p, rp, data)
 	}
 	if _, err := lower.Plan(p, lower.Profile{}); err != nil {
 		return routeRecord{}, err
