@@ -23,6 +23,7 @@ var entryPoints = []struct {
 	{"ParseAndValidate", func(q string) { _ = ParseAndValidate(q) }},
 	{"ParseLogQuery", func(q string) { _, _ = ParseLogQuery(q) }},
 	{"ValidateLogQL", func(q string) { _ = ValidateLogQL(q) }},
+	{"ValidateLogQLPhasesWithin", func(q string) { _, _, _, _ = ValidateLogQLPhasesWithin(q, &tripBudget{tripAt: 3}) }},
 	{"ValidateMatchersQuery", func(q string) { _ = ValidateMatchersQuery(q) }},
 	{"ValidateLogSelectorQuery", func(q string) { _ = ValidateLogSelectorQuery(q) }},
 	{"ValidateSeriesMatchers", func(q string) { _ = ValidateSeriesMatchers([]string{q}) }},
@@ -233,7 +234,10 @@ func FuzzParseTerminates(f *testing.F) {
 		`topk(-1, rate({a="b"}[5m]))`, `bottomk(1 + 2, rate({a="b"}[5m]))`, `topk(rate({a="b"}[5m]), 2)`, `topk({a="b"}, 2)`, `topk(-1)`, `topk(((((-1`, `sort(topk(- -1, rate({a="b"}[5m])))`,
 		`sum(1, rate({a="b"}[5m])) )`, `sort_desc(0x1, sum(1, topk(0, rate({a="b"}[5m]))))`, `approx_topk by (a) (2, rate({a="b"}[5m]))`,
 		`quantile_over_time(-1, {a="b"} | unwrap c [5m])`, `{a=~"(b" "x"}`, `{a="b"} | c > 1PB | pattern "<_>" | unpack a`,
-		`label_replace(count_over_time({a="b"} | pattern "<_>" [5m]), "x", "$1", "a", "(.*)") )`} {
+		`label_replace(count_over_time({a="b"} | pattern "<_>" [5m]), "x", "$1", "a", "(.*)") )`,
+		// deep shapes the planning budget stops part way (ValidateLogQLPhasesWithin)
+		strings.Repeat("(", 1500) + "1" + strings.Repeat(")", 1500), strings.Repeat("1+", 1500) + "1",
+		strings.Repeat("label_replace(", 60) + `rate({a="b"}[1m])` + strings.Repeat(`, "d", "$1", "s", "(.*)")`, 60)} {
 		f.Add(q)
 	}
 	f.Fuzz(func(t *testing.T, q string) {

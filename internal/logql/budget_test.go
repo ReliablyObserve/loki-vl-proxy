@@ -2,7 +2,9 @@ package logql
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
@@ -82,6 +84,15 @@ func TestValidateUnderBudgetStopsAnywhere(t *testing.T) {
 			}
 		})
 	}
+	// A malformed query of more steps than the first question can run out of budget before the parser reaches its
+	// error: it is then a trip, not Loki's rejection (the limit's boundary, which an operator sets below the default).
+	long := strings.Repeat("sum(", 400) + `rate({a="b"}[1m])` + strings.Repeat(")", 400) + " by ("
+	if _, tripped := checkUnderBudget(t, long, 1); !tripped {
+		t.Error("a long malformed query was answered past a budget out from its first question")
+	}
+	if _, msg, _ := ValidateLogQLPhases(long); msg == "" {
+		t.Error("the long malformed query is accepted")
+	}
 	// Loki's rejection of a short query is made whatever the budget says.
 	for _, q := range []string{`sum(rate({a="b"}[1m])) by (`, `{a="b"} | json |= `, `label_replace(rate({a="b"}[1m]), "d", "$1", "s", "(")`} {
 		if _, tripped := checkUnderBudget(t, q, 1); tripped {
@@ -104,6 +115,43 @@ func TestValidateUnderBudgetStopsSoon(t *testing.T) {
 			t.Errorf("%s: asked %d times after the budget ran out", name, b.calls)
 		}
 	}
+}
+
+// Validations under budgets run at the same time, each with a budget check of its own taken from the pool and given
+// back: every one answers what it answers alone, at every trip point.
+//
+// conformance: query-complexity-limits
+func TestValidateUnderBudgetConcurrent(t *testing.T) {
+	shapes := budgetDeepShapes()
+	type want struct {
+		msg, build string
+		exhausted  bool
+	}
+	alone := map[string]want{}
+	key := func(name string, tripAt int) string { return name + "/" + strconv.Itoa(tripAt) }
+	for name, q := range shapes {
+		for _, tripAt := range []int{0, 1, 3, 7} {
+			_, msg, build, exhausted := ValidateLogQLPhasesWithin(q, &tripBudget{tripAt: tripAt})
+			alone[key(name, tripAt)] = want{msg, build, exhausted}
+		}
+	}
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 3; i++ {
+				for name, q := range shapes {
+					tripAt := []int{0, 1, 3, 7}[(g+i)%4]
+					_, msg, build, exhausted := ValidateLogQLPhasesWithin(q, &tripBudget{tripAt: tripAt})
+					if got := (want{msg, build, exhausted}); got != alone[key(name, tripAt)] {
+						t.Errorf("%s trip at %d: %+v at the same time as others, %+v alone", name, tripAt, got, alone[key(name, tripAt)])
+					}
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
 }
 
 // For any query and any question the budget runs out at, the validation answers a trip and nothing else, or the

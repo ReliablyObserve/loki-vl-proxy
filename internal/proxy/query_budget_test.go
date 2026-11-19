@@ -605,6 +605,34 @@ func TestPlanBudgetStopsTheParse(t *testing.T) {
 	}
 }
 
+// On a request, the route's own validator (validateTimed) hands the request's budget to the parser too: a query too
+// long for the validation cache and with no call to respell (not validated at the gate) is asked about while it is
+// parsed. A clock that counts its readings sees the parse's questions on top of the ones a short query costs.
+//
+// conformance: query-complexity-limits
+func TestPlanBudgetReachesTheRouteValidatorsParse(t *testing.T) {
+	emptyValidationCaches(t)
+	var reads atomic.Int64
+	rig := newComplexityRig(t, ExecutionLimitsConfig{MaxQueryPlanTime: time.Hour}, func(p *Proxy) {
+		p.planClock = func() time.Time { reads.Add(1); return time.Now() }
+	})
+	count := func(query string) int64 {
+		before := reads.Load()
+		if status, body := rig.get(t, "/loki/api/v1/query_range", rangeParams(query)); status != http.StatusOK {
+			t.Fatalf("%.60q: %d %s", query, status, body)
+		}
+		return reads.Load() - before
+	}
+	short := count(`{a="route-parse-short"} | json`)
+	long := `{a="route-parse-long"}` + strings.Repeat(" | json", 1500)
+	if len(long) <= validationCacheMaxQueryBytes || strings.IndexByte(long, '(') >= 0 {
+		t.Fatal("the long query must skip the gate's validation")
+	}
+	if got := count(long); got < short+3 {
+		t.Fatalf("the long query read the clock %d times, the short one %d: its parse did not ask the budget", got, short)
+	}
+}
+
 // A selector route's query is left to its validators at the gate (no parse and no cache slot added to them); the
 // budget still bounds the route before its first VictoriaLogs call.
 //
