@@ -2189,6 +2189,10 @@
     "internal/proxy/selector_value_test.go | loki_api_v1_query_range",
     "internal/proxy/selector_value_test.go | semantics/selector-values-are-strings",
     "internal/proxy/selector_value_test.go | status-400",
+    "internal/proxy/series_fold_read_test.go | semantics/error-layer-silent-success",
+    "internal/proxy/series_fold_read_test.go | semantics/unwrap-conversion-error",
+    "internal/proxy/series_fold_read_test.go | semantics/unwrap-identity-nan-partials",
+    "internal/proxy/series_fold_read_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/series_limit_loki_cut_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/series_limit_loki_cut_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
     "internal/proxy/series_limit_loki_cut_test.go | loki_api_v1_query",
@@ -2645,9 +2649,9 @@
     "internal/querycorpus/rank_step_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/series_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/series_agg_grid_test.go | semantics/stddev-stdvar-nested-or-binary",
+    "internal/querycorpus/series_fold_bounds_vl_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/series_fold_loki_diff_test.go | metric-series-identity",
     "internal/querycorpus/series_fold_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
-    "internal/querycorpus/series_fold_scope_vl_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/shadow_rejected_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/shadow_rejected_loki_test.go | semantics/parse-error-text-parity",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
@@ -2728,6 +2732,7 @@
     "internal/queryplan/lower/route_query_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/route_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/series_fold_test.go | semantics/unwrap-conversion-error",
     "internal/queryplan/lower/series_fold_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
@@ -3380,7 +3385,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 790,
+      "go": 791,
       "playwright": 3
     },
     "page_kinds": {

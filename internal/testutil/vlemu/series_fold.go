@@ -1,197 +1,314 @@
 package vlemu
 
 import (
+	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// The fold of a parser's series that lie in one bucket (the proxy's lower.SeriesFold). A subquery classes each
-// series hash over the rows the read selects: "s" spanning (its first and last line, moved apart by the subquery's
-// margin, in different buckets of the read's grid, or a line whose value holds "nan" or "inf"), "m" several lines in
-// one bucket, none for one line. Before the bucket stats
-// pipe each row gets its series' class (__lvp_c) and, where the read folds them there, the hash of a series of one
-// line is blanked; after it the hash of a series of several lines in one bucket is blanked and a second stats pipe
-// adds the blanked rows up. The emulator runs the subquery's meaning, without its pipes, over the rows the request
-// selects (VictoriaLogs scopes a subquery to the read's time range).
+// The fold of a parser's series that lie in one bucket (the proxy's lower.SeriesFold), one scan of
+// /select/logsql/query: the bucket stats by the bucket on the read's grid, the read's grouping and the series hash;
+// each row's value in its bucket; the series' buckets; a series in one bucket whose value is finite (and not a NaN
+// line's) folded into a row per bucket and group with the outer aggregation's merge of the folded values and their
+// count, every other series' bucket rows passed through as they are. The emulator runs the fold's meaning, not its
+// pipes, and answers rows as /select/logsql/query does (one JSON object per line, empty fields left out).
 
-// seriesFoldSpanField is the field every subquery of a folded read is cut to (cutSeriesFold).
-const seriesFoldSpanField = "__lvp_span"
+// seriesFoldRowsField is the field the series stats of a folded read collect each series' bucket rows into.
+const seriesFoldRowsField = "__lvp_rows"
 
 var (
-	// math floor((__lvp_t1 - <x> + <margin>) / <step>) - floor((__lvp_t0 - <x> - <margin>) / <step>): the subquery's
-	// grid, its times measured from x.
-	seriesFoldGridRE = regexp.MustCompile(`math floor\(\(__lvp_t1 - (-?\d+) \+ (\d+)\) / (\d+)\) - floor\(\(__lvp_t0 - (-?\d+) - (\d+)\) / (\d+)\) as __lvp_nb`)
-	// format [if (<condition>)] "<template>" as <field>, the fold's own pipes.
-	seriesFoldFormatRE = regexp.MustCompile(`^format (?:if \((.*)\) )?"(.*)" as (\w+)$`)
-	// math <a> / <b> as <c> and math <a> * <b> as <c>: the value of a series in a bucket.
-	emuMathOpRE = regexp.MustCompile(`^math (\w+) ([/*]) (\w+) as (\w+)$`)
-	// <field>:<op><value> terms of a fold condition: :="v", :in(__lvp_span), :<inf, :>-inf, :* (each may be negated).
-	seriesFoldTermRE = regexp.MustCompile(`^(-?)(\w+):(=".*"|in\(` + seriesFoldSpanField + `\)|<inf|>-inf|\*)$`)
+	// stats by (_time:<step> offset <offset>, <grouping>) <functions>: the fold's bucket stats.
+	seriesFoldBucketRE = regexp.MustCompile(`^stats by \(_time:(\S+) offset (\S+), ([^)]*)\) (.+)$`)
+	// math <a> [/ or * <b>] as __lvp_fold: a row's value in its bucket.
+	seriesFoldValueRE = regexp.MustCompile(`^math (\w+)(?: ([/*]) (\w+))? as __lvp_fold$`)
+	// stats by (_time, <grouping>) <functions>: the fold's last stats pipe.
+	seriesFoldLastRE = regexp.MustCompile(`^stats by \(_time, ([^)]*)\) (.+)$`)
+	// <outer>(__lvp_fold) as __lvp_fold: the merge of the folded values.
+	seriesFoldOuterRE = regexp.MustCompile(`\b(sum|max|min)\(__lvp_fold\) as __lvp_fold\b`)
+	// any(<column>) as <column>: a column the last stats pipe passes through.
+	seriesFoldAnyRE = regexp.MustCompile(`\bany\((\w+)\) as (\w+)`)
 )
 
-// emuSeriesFold is a folded read: the subquery's grid (its origin x, margin and step) and the series classes over
-// the read's rows.
-type emuSeriesFold struct {
-	x, margin, bucket int64
-	classes           map[string]string
+// isSeriesFold reports a folded read.
+func isSeriesFold(query string) bool {
+	return strings.Contains(query, ") as "+seriesFoldRowsField)
 }
 
-// cutSeriesFold cuts every subquery of a folded read out of its query, each written as in(__lvp_span), and returns
-// the subquery's bucket grid; nil when the query does not fold.
-func cutSeriesFold(e *Emulator, query string) (string, *emuSeriesFold) {
-	const head = ":in("
-	var fold *emuSeriesFold
-	for from := 0; ; {
-		at := strings.Index(query[from:], head)
-		if at < 0 {
-			return query, fold
+// serveSeriesFold answers a folded read.
+func (e *Emulator) serveSeriesFold(w http.ResponseWriter, r *http.Request) {
+	query := r.FormValue("query")
+	pipes := strings.Split(query, " | ")
+	first := firstStatsPipe(pipes)
+	if first < 0 {
+		e.T.Fatalf("emulator: folded read without its bucket stats: %s", query)
+	}
+	bm := seriesFoldBucketRE.FindStringSubmatch(pipes[first])
+	vm, lm, om := []string(nil), seriesFoldLastRE.FindStringSubmatch(pipes[len(pipes)-1]), seriesFoldOuterRE.FindStringSubmatch(pipes[len(pipes)-1])
+	for _, pipe := range pipes[first+1:] {
+		if m := seriesFoldValueRE.FindStringSubmatch(pipe); m != nil {
+			vm = m
+			break
 		}
-		open := from + at + len(head)
-		from = open
-		depth, end := 1, -1
-		for i := open; i < len(query) && end < 0; i++ {
-			switch query[i] {
-			case '"':
-				for i++; i < len(query) && query[i] != '"'; i++ {
-					if query[i] == '\\' {
-						i++
-					}
-				}
-			case '(':
-				depth++
-			case ')':
-				if depth--; depth == 0 {
-					end = i
-				}
+	}
+	if bm == nil || vm == nil || lm == nil || om == nil {
+		e.T.Fatalf("emulator: folded read %s", query)
+	}
+	step, err1 := time.ParseDuration(bm[1])
+	offset, err2 := time.ParseDuration(bm[2])
+	if err1 != nil || err2 != nil || step <= 0 {
+		e.T.Fatalf("emulator: folded read grid %q %q", bm[1], bm[2])
+	}
+	by, labels := splitFields(bm[3]), splitFields(lm[1])
+	var columns []string
+	for _, m := range seriesFoldAnyRE.FindAllStringSubmatch(lm[2], -1) {
+		columns = append(columns, m[2])
+	}
+	s, off := int64(step), int64(offset)
+	rows := e.statsGroups(query, by, bm[4], e.statsRecs(r, pipes[:first]), func(t int64) int64 { return FloorDiv(t+off, s)*s - off })
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
+	e.Widest = max(e.Widest, writeSeriesFold(w, rows, by, labels, columns, vm, om[1]))
+}
+
+// writeSeriesFold answers the fold of rows (the bucket stats' rows: their bucket time and fields) as
+// /select/logsql/query does, and returns the number of groups it answered (less the flag); vm is the value's math pipe
+// (seriesFoldValueRE), outer the merge of the folded values.
+func writeSeriesFold(w http.ResponseWriter, rows []emuRec, by, labels, columns []string, vm []string, outer string) int {
+
+	// Each row's value, whether it folds, and its series' buckets.
+	value := func(f map[string]string) float64 {
+		a, _ := strconv.ParseFloat(f[vm[1]], 64)
+		if vm[2] == "" {
+			return a
+		}
+		b, _ := strconv.ParseFloat(f[vm[3]], 64)
+		if vm[2] == "/" {
+			return a / b
+		}
+		return a * b
+	}
+	seriesKey := func(f map[string]string) string {
+		var b strings.Builder
+		for _, field := range by {
+			if field != "__lvp_bad" {
+				b.WriteString(f[field] + "\x00")
 			}
 		}
-		if end < 0 {
-			e.T.Fatalf("emulator: unclosed in( in %s", query)
-		}
-		m := seriesFoldGridRE.FindStringSubmatch(query[open:end])
-		if m == nil {
-			continue // a list of values, or a subquery cut already
-		}
-		x, err1 := strconv.ParseInt(m[1], 10, 64)
-		margin, err2 := strconv.ParseInt(m[2], 10, 64)
-		bucket, err3 := strconv.ParseInt(m[3], 10, 64)
-		if err1 != nil || err2 != nil || err3 != nil || bucket <= 0 || m[1] != m[4] || m[2] != m[5] || m[3] != m[6] {
-			e.T.Fatalf("emulator: subquery grid %q", m[0])
-		}
-		fold = &emuSeriesFold{x: x, margin: margin, bucket: bucket}
-		query = query[:open] + seriesFoldSpanField + query[end:]
+		return b.String()
 	}
-}
+	buckets := map[string]int{}
+	for _, rec := range rows {
+		buckets[seriesKey(rec.f)]++
+	}
 
-// classify reads the series classes of rows (their fields and times; raw the unwrapped value of each).
-func (s *emuSeriesFold) classify(rows []emuRec, raw []string) {
-	type seen struct {
-		first, last int64
-		lines       int
-		odd         bool
+	type outRow struct {
+		t      int64
+		labels map[string]string
+		cols   map[string]string
+		fold   float64
+		n      int
 	}
-	by := map[string]*seen{}
-	for i, rec := range rows {
-		sid := rec.f[seriesHashField]
-		st := by[sid]
-		if st == nil {
-			st = &seen{first: rec.t, last: rec.t}
-			by[sid] = st
+	out := map[string]*outRow{}
+	var order []string
+	for _, rec := range rows {
+		v := value(rec.f)
+		folds := buckets[seriesKey(rec.f)] == 1 && rec.f["__lvp_bad"] != "2" && !math.IsNaN(v) && !math.IsInf(v, 0)
+		lv := map[string]string{}
+		id := strconv.FormatInt(rec.t, 10)
+		for _, l := range labels {
+			lv[l] = rec.f[l]
+			if folds && l == seriesHashField {
+				lv[l] = ""
+			}
+			id += "\x00" + lv[l]
 		}
-		st.first, st.last = min(st.first, rec.t), max(st.last, rec.t)
-		st.lines++
-		v := strings.ToLower(raw[i])
-		st.odd = st.odd || strings.Contains(v, "nan") || strings.Contains(v, "inf")
-	}
-	s.classes = map[string]string{}
-	for sid, st := range by {
-		span := FloorDiv(st.last-s.x+s.margin, s.bucket) != FloorDiv(st.first-s.x-s.margin, s.bucket)
+		o := out[id]
+		if o == nil {
+			o = &outRow{t: rec.t, labels: lv, cols: map[string]string{}}
+			out[id] = o
+			order = append(order, id)
+		}
+		o.n++
+		if !folds {
+			for _, c := range columns {
+				o.cols[c] = rec.f[c]
+			}
+			o.fold = math.NaN()
+			continue
+		}
 		switch {
-		case span || st.odd:
-			s.classes[sid] = "s"
-		case st.lines > 1:
-			s.classes[sid] = "m"
+		case o.n == 1:
+			o.fold = v
+		case outer == "max":
+			o.fold = math.Max(o.fold, v)
+		case outer == "min":
+			o.fold = math.Min(o.fold, v)
+		default:
+			o.fold += v
 		}
 	}
+	sort.Strings(order)
+	widest := map[string]bool{}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	for _, id := range order {
+		o := out[id]
+		fields := map[string]string{"_time": time.Unix(0, o.t).UTC().Format(time.RFC3339Nano)}
+		var key []string
+		for _, l := range labels {
+			if o.labels[l] != "" {
+				fields[l] = o.labels[l]
+			}
+			if l != "__lvp_bad" {
+				key = append(key, o.labels[l])
+			}
+		}
+		widest[strings.Join(key, "\x00")] = true
+		for c, v := range o.cols {
+			if v != "" {
+				fields[c] = v
+			}
+		}
+		fields["__lvp_fold"] = strconv.FormatFloat(o.fold, 'f', -1, 64)
+		fields["__lvp_fc"] = strconv.Itoa(o.n)
+		line, _ := json.Marshal(fields)
+		_, _ = w.Write(append(line, '\n'))
+	}
+	return len(widest)
 }
 
-// keys is the subquery's answer: "s<hash>" and "m<hash>" by class.
-func (s *emuSeriesFold) keys() map[string]bool {
-	out := map[string]bool{}
-	for sid, c := range s.classes {
-		out[c+sid] = true
+// splitFields splits a grouping list ("a, b") into its fields.
+func splitFields(list string) []string {
+	var out []string
+	for _, f := range strings.Split(list, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
 	}
 	return out
 }
 
-// foldPipe runs one pipe of the fold over recs and reports whether it was one.
-func (s *emuSeriesFold) foldPipe(pipe string, recs []emuRec) bool {
-	if m := emuMathOpRE.FindStringSubmatch(pipe); m != nil {
-		for _, rec := range recs {
-			a, _ := strconv.ParseFloat(rec.f[m[1]], 64)
-			b, _ := strconv.ParseFloat(rec.f[m[3]], 64)
-			v := a * b
-			if m[2] == "/" {
-				v = a / b
+// SeriesFoldCalls are the folded reads the emulator received (EndpointCalls leaves /select/logsql/query's stats reads
+// out).
+func (e *Emulator) SeriesFoldCalls() []string {
+	e.Mu.Lock()
+	defer e.Mu.Unlock()
+	var out []string
+	for _, c := range e.Calls {
+		if c.Path == "/select/logsql/query" && isSeriesFold(c.Query) {
+			out = append(out, c.Query)
+		}
+	}
+	return out
+}
+
+// FoldOverStats answers the folded reads sent to a fake VictoriaLogs that answers stats_query_range only (a test's
+// own handler): each folded read is sent to inner as the stats_query_range read of every series (the base query
+// and its bucket stats, on the read's grid), and its answer folded as the emulator folds rows. Every other request
+// goes to inner as it is.
+func FoldOverStats(inner http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query := r.Form.Get("query")
+		if r.URL.Path != "/select/logsql/query" || !isSeriesFold(query) {
+			inner.ServeHTTP(w, r)
+			return
+		}
+		pipes := strings.Split(query, " | ")
+		first := firstStatsPipe(pipes)
+		var bm, vm []string
+		if first >= 0 {
+			bm = seriesFoldBucketRE.FindStringSubmatch(pipes[first])
+			for _, pipe := range pipes[first+1:] {
+				if m := seriesFoldValueRE.FindStringSubmatch(pipe); m != nil {
+					vm = m
+					break
+				}
 			}
-			rec.f[m[4]] = strconv.FormatFloat(v, 'f', -1, 64)
 		}
-		return true
-	}
-	m := seriesFoldFormatRE.FindStringSubmatch(pipe)
-	if m == nil || !seriesFoldFormat(m[1], m[3]) {
-		return false
-	}
-	keys := s.keys()
-	for _, rec := range recs {
-		if m[1] != "" && !s.holds(m[1], rec.f, keys) {
-			continue
+		lm, om := seriesFoldLastRE.FindStringSubmatch(pipes[len(pipes)-1]), seriesFoldOuterRE.FindStringSubmatch(pipes[len(pipes)-1])
+		if bm == nil || vm == nil || lm == nil || om == nil {
+			http.Error(w, "fake: folded read "+query, http.StatusBadRequest)
+			return
 		}
-		v := m[2]
-		for _, ref := range regexp.MustCompile(`<(\w+)>`).FindAllStringSubmatch(v, -1) {
-			v = strings.ReplaceAll(v, ref[0], rec.f[ref[1]])
+		form := url.Values{}
+		for k, v := range r.Form {
+			form[k] = v
 		}
-		rec.f[m[3]] = v
-	}
-	return true
-}
-
-// holds reports whether the fields f match the condition cond, a list of the terms seriesFoldTermRE reads.
-func (s *emuSeriesFold) holds(cond string, f map[string]string, keys map[string]bool) bool {
-	for _, term := range strings.Fields(cond) {
-		m := seriesFoldTermRE.FindStringSubmatch(term)
-		if m == nil {
-			panic("emulator: fold condition " + cond)
+		form.Set("query", strings.Join(pipes[:first], " | ")+" | stats by ("+bm[3]+") "+bm[4])
+		form.Set("step", bm[1])
+		form.Set("offset", bm[2])
+		req := httptest.NewRequest(http.MethodPost, "/select/logsql/stats_query_range", strings.NewReader(form.Encode()))
+		req.Header = r.Header.Clone()
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		inner.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			w.WriteHeader(rec.Code)
+			_, _ = w.Write(rec.Body.Bytes())
+			return
 		}
-		v := f[m[2]]
-		var ok bool
-		switch op := m[3]; {
-		case op == "*":
-			ok = v != ""
-		case op == "<inf" || op == ">-inf":
-			x, err := strconv.ParseFloat(v, 64)
-			ok = err == nil && !math.IsNaN(x) && (op == "<inf" && !math.IsInf(x, 1) || op == ">-inf" && !math.IsInf(x, -1))
-		case strings.HasPrefix(op, "in("):
-			ok = keys[v]
-		default:
-			want, _ := strconv.Unquote(op[1:])
-			ok = v == want
+		var answer struct {
+			Data struct {
+				Result []struct {
+					Metric map[string]string `json:"metric"`
+					Values [][2]any          `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
 		}
-		if ok == (m[1] == "-") {
-			return false
+		if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+			http.Error(w, "fake: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
-	}
-	return true
-}
-
-// seriesFoldFormat reports a format pipe of the fold: one that writes its keys, the class, the mark or the hash, or
-// writes a column of a blanked row.
-func seriesFoldFormat(cond, field string) bool {
-	switch field {
-	case "__lvp_ks", "__lvp_km", "__lvp_c", "__lvp_fb", seriesHashField:
-		return true
-	}
-	return cond == `__lvp_fb:="1"` || cond == `__lvp_sid:=""`
+		by := splitFields(bm[3])
+		rowAt := map[string]*emuRec{}
+		var rows []emuRec
+		var order []string
+		for _, s := range answer.Data.Result {
+			for _, p := range s.Values {
+				secs, _ := p[0].(float64)
+				v, _ := p[1].(string)
+				t := int64(math.Round(secs * 1e9))
+				id := strconv.FormatInt(t, 10)
+				for _, f := range by {
+					id += "\x00" + s.Metric[f]
+				}
+				rec := rowAt[id]
+				if rec == nil {
+					rec = &emuRec{t: t, f: map[string]string{}}
+					for _, f := range by {
+						rec.f[f] = s.Metric[f]
+					}
+					if rec.f[seriesHashField] == "" {
+						// A fake that does not group by the series hash answers a series per group: its hash is the
+						// group's labels (less the flag).
+						sid := "fake"
+						for _, f := range by {
+							if f != "__lvp_bad" && f != seriesHashField {
+								sid += "\x00" + s.Metric[f]
+							}
+						}
+						rec.f[seriesHashField] = sid
+					}
+					rowAt[id] = rec
+					order = append(order, id)
+				}
+				rec.f[s.Metric["__name__"]] = v
+			}
+		}
+		for _, id := range order {
+			rows = append(rows, *rowAt[id])
+		}
+		var columns []string
+		for _, m := range seriesFoldAnyRE.FindAllStringSubmatch(lm[2], -1) {
+			columns = append(columns, m[2])
+		}
+		writeSeriesFold(w, rows, by, splitFields(lm[1]), columns, vm, om[1])
+	})
 }

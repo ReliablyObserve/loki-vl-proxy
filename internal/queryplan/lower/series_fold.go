@@ -1,14 +1,11 @@
 package lower
 
 import (
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // The bucket read of a parser's series identity over a range longer than the step, folded in VictoriaLogs.
@@ -16,59 +13,54 @@ import (
 // On such a range the window evaluator takes the range function's partial aggregates per series and per anchored
 // bucket (Profile IdentityAhead: the stats group by the series hash) and merges each series' buckets into Loki's
 // windows (t-range, t]. With a key of its own on every line (a request id) every line is a series, and the answer
-// holds a row per line. Most such series lie wholly in one bucket, and a window holds either all of a series' lines
-// in the read or none of them (a window is a run of whole buckets, and every window the read answers lies in it): the
-// series' value in every window that holds it is its value in that bucket, so the vector aggregation over the series
-// needs only each bucket's sum (or extreme) of those values and their count, not the series one by one.
+// would hold a row per line. Most such series lie wholly in one bucket, and a window holds either all of a series'
+// lines in the read or none of them (a window is a run of whole buckets, and every window the read answers lies in
+// it): the series' value in every window that holds it is its value in that bucket, so the vector aggregation over
+// the series needs only each bucket's sum (or extreme) of those values and their count, not the series one by one.
 //
-// SeriesFold writes that fold around the bucket stats pipe, in one stats_query_range (VictoriaLogs adds the bucket to
-// every stats pipe). A subquery over the same rows (VictoriaLogs scopes it to the read's time range and filters, and
-// runs it once however often the text holds it) classes each series hash: spanning (lines in more than one bucket of
-// the read's grid, or a line whose value may read as NaN or an infinity), several lines in one bucket, or neither (no
-// entry: one line). It groups the rows by the hash alone and tells a series' buckets apart from its first and last
-// line's times (classes). Before the bucket stats pipe each row gets its series' class, and the hash of a series of one
-// line is blanked where the bucket stats already fold it (Singletons): its value is its line's. After it, each
-// row's value is taken from its bucket partials, the hash of every other series that does not span buckets is
-// blanked (unless its value is not finite), and a second stats pipe adds up, per bucket and group, the values of the blanked
-// series (or takes their extreme) into the value column and their count into the count column. A spanning series
-// keeps its hash and its partials, unchanged.
+// SeriesFold writes that fold after the read's base query, in one scan of /select/logsql/query (the proxy aligns the
+// read's bounds to its grid as stats_query_range does; that endpoint adds the bucket to every stats pipe, so no stats
+// pipe of it can group a series across buckets):
+//
+//   - the bucket stats, grouped by the bucket (_time on the read's grid), the read's grouping and the series hash: the
+//     function's partials per series and bucket;
+//   - each row's value in its bucket, and whether it is finite (a series holding a NaN line, __lvp_bad 2, never is);
+//   - a stats pipe by the read's grouping and the hash: the buckets of each series, its first bucket and value, and
+//     its bucket rows as JSON;
+//   - a series in one bucket whose value is finite is folded: its hash is blanked and its value and a count of one go
+//     into the fold's own columns. Every other series' bucket rows are read back from the JSON (unroll), their partials
+//     unchanged;
+//   - the last stats pipe, by the bucket, the grouping and the hash: the partials of each series that keeps its hash
+//     passed through (any: one row per group), the outer aggregation's merge of the folded values (SeriesFoldField) and
+//     their count (SeriesFoldSeriesCount).
+//
+// The series hash is computed once, in the scan. The unwrap check's counting form adds the conversion flag to the
+// bucket stats and the last stats pipe only (SeriesFoldKeepsFlag): the series' rows carry it through the JSON.
 
-// SeriesFoldField is the field that holds a row's value in its bucket, which the blanked series add up.
+// SeriesFoldField is the column of a folded group's merged values (and, on each row, its value in its bucket).
 const SeriesFoldField = "__lvp_fold"
 
-// SeriesFoldCount is the count column the fold adds when the bucket stats have none (max and min over time under an
-// avg): the number of series a blanked group adds up, one for a series that keeps its hash.
+// SeriesFoldSeriesCount is the column of a folded group's series count.
+const SeriesFoldSeriesCount = "__lvp_fc"
+
+// SeriesFoldCount is the count column the proxy reads a folded group's series count into when the bucket stats have
+// none (max and min over time under an avg).
 const SeriesFoldCount = "__lvp_n"
 
-// SeriesFoldClass is the field the fold writes a row's series class into, which the bucket stats group by.
-const SeriesFoldClass = "__lvp_c"
+// SeriesFoldRows is the field holding a series' bucket rows as JSON.
+const SeriesFoldRows = "__lvp_rows"
 
-// The fold's own fields: the subquery's counts and its key, a row's keys, and the mark of a row blanked after the
-// bucket stats.
+// The fold's own fields: a series' bucket count and first bucket, a row's finiteness, and the mark of a folded series.
 const (
 	seriesFoldBuckets = "__lvp_nb"
-	seriesFoldFirst   = "__lvp_t0"
-	seriesFoldLast    = "__lvp_t1"
-	seriesFoldOdd     = "__lvp_odd"
-	seriesFoldKey     = "__lvp_k"
-	seriesFoldSpanKey = "__lvp_ks"
-	seriesFoldOneKey  = "__lvp_km"
+	seriesFoldFirst   = "__lvp_b"
+	seriesFoldFinite  = "__lvp_ok"
 	seriesFoldBlank   = "__lvp_fb"
-)
-
-// SeriesFoldSingletons is how the bucket stats fold the series of one line, blanked before them.
-type SeriesFoldSingletons int
-
-const (
-	// SingletonsNone keeps every hash through the bucket stats (max and min over time: the bucket's extreme of the
-	// blanked lines is not the sum of their values).
-	SingletonsNone SeriesFoldSingletons = iota
-	// SingletonsKept: the value and count columns of a blanked group already hold the sum of its lines' values and
-	// their count (avg over time: a line's average is its value).
-	SingletonsKept
-	// SingletonsZero: the value of a series of one line is 0 and the count column holds their count (stddev and
-	// stdvar over time).
-	SingletonsZero
+	// seriesFoldFlag is the unwrap check's conversion flag (__lvp_bad, 2 for a NaN line).
+	seriesFoldFlag = "__lvp_bad"
+	// seriesFoldMaxFloat bounds a finite value: VictoriaLogs' range filters read "+Inf" below inf and "-Inf" above
+	// -inf, and NaN within neither bound.
+	seriesFoldMaxFloat = "1.7976931348623157e308"
 )
 
 // SeriesFold describes the fold of one bucket read.
@@ -79,200 +71,164 @@ type SeriesFold struct {
 	// functions.
 	By    []string
 	Stats []logsql.StatsFuncAlias
-	// Columns are the bucket stats' results, read again as numbers before the second stats pipe.
+	// Columns are the bucket stats' results.
 	Columns []string
 	// Value is the math expression of a series' value in a bucket over Columns (`__lvp_sum / __sample_count`).
 	Value string
-	// ValueColumn is the column a blanked group's value goes into; CountColumn the one its series count goes into,
-	// empty when the bucket stats count nothing (SeriesFoldCount is added when Outer is avg).
-	ValueColumn, CountColumn string
-	// Singletons is how the bucket stats fold the series of one line.
-	Singletons SeriesFoldSingletons
-	// Field is the unwrapped field as VictoriaLogs names it: a line whose value holds "nan" or "inf" in any case keeps
-	// its series' hash.
-	Field string
-	// Bucket and Offset are the read's step and offset as sent to stats_query_range: the subquery tells the buckets
-	// of a series apart on the same grid.
+	// Bucket and Offset are the read's step and offset (the grid of stats_query_range's buckets).
 	Bucket, Offset string
-	// From is the read's start in Unix nanoseconds: the subquery measures times from a bucket edge at or before it.
-	From int64
 }
 
-// seriesFoldMargin is how far, in nanoseconds, the subquery widens a series' first and last line's times before it
-// compares their buckets. VictoriaLogs' math reads a time as a float64, which holds a time of these years to 256 ns (512
-// ns from 2043): a series whose lines lie within the margin of a bucket edge is taken to span buckets, which keeps its
-// hash (the exact read of a series), never folds a series that spans.
-const seriesFoldMargin = 4096
-
-// SeriesFoldRead is the fold of a read whose query before the unwrap gate (the series hash its last pipe) is
-// identity: the pipes that follow the read's base query, the bucket stats pipe (grouped by the fold's grouping plus
-// the class) among them.
+// SeriesFoldRead is the fold of a read: the pipes that follow the read's base query.
 type SeriesFoldRead struct {
 	Pipes []logsql.Pipe
 }
 
-// Pipes is the fold of a read over identity.
-func (f SeriesFold) Pipes(identity string) (SeriesFoldRead, bool) {
-	var outer func(string) logsql.StatsFunc
+// seriesFoldFinitePipe marks a row whose value in its bucket is finite and not a NaN line's.
+var seriesFoldFinitePipe = logsql.PipeFormat{Template: "1", ResultField: seriesFoldFinite, If: logsql.AllOf{
+	logsql.Exclude{Expr: logsql.FieldFilter{Field: seriesFoldFlag, Op: logsql.FieldOpExact, Value: "2"}},
+	logsql.FieldFilter{Field: SeriesFoldField, Op: logsql.FieldOpLTE, Value: seriesFoldMaxFloat},
+	logsql.FieldFilter{Field: SeriesFoldField, Op: logsql.FieldOpGTE, Value: "-" + seriesFoldMaxFloat},
+}}
+
+// seriesFoldUnroll reads the bucket rows of a series that keeps its hash back as rows.
+var seriesFoldUnroll = logsql.PipeUnroll{Fields: []string{SeriesFoldRows}}
+
+// folded selects the rows of a folded series.
+var folded = logsql.FieldFilter{Field: seriesFoldBlank, Op: logsql.FieldOpExact, Value: "1"}
+
+// Pipes is the fold of a read.
+func (f SeriesFold) Pipes() (SeriesFoldRead, bool) {
+	var outer logsql.StatsFunc
 	switch f.Outer {
 	case logql.VectorSum, logql.VectorAvg:
-		outer = func(c string) logsql.StatsFunc { return logsql.Sum{Field: c} }
+		outer = logsql.Sum{Field: SeriesFoldField}
 	case logql.VectorMax:
-		outer = func(c string) logsql.StatsFunc { return logsql.Max{Field: c} }
+		outer = logsql.Max{Field: SeriesFoldField}
 	case logql.VectorMin:
-		outer = func(c string) logsql.StatsFunc { return logsql.Min{Field: c} }
+		outer = logsql.Min{Field: SeriesFoldField}
 	default:
 		return SeriesFoldRead{}, false
 	}
-	if identity == "" || f.Value == "" || f.ValueColumn == "" || len(f.By) == 0 || len(f.Stats) == 0 || f.Bucket == "" ||
-		f.Singletons != SingletonsNone && f.CountColumn == "" {
+	if f.Value == "" || len(f.By) == 0 || len(f.Stats) == 0 || len(f.Columns) == 0 || f.Bucket == "" || !hasSeriesField(f.By) {
 		return SeriesFoldRead{}, false
-	}
-	sub, ok := f.classes(identity)
-	if !ok {
-		return SeriesFoldRead{}, false
-	}
-	before := []logsql.Pipe{
-		logsql.PipeFormat{Template: "s<" + dynamicSeriesField + ">", ResultField: seriesFoldSpanKey},
-		logsql.PipeFormat{Template: "m<" + dynamicSeriesField + ">", ResultField: seriesFoldOneKey},
-		logsql.PipeFormat{Template: "s", ResultField: SeriesFoldClass, If: logsql.InQuery{Field: seriesFoldSpanKey, Query: sub}},
-		logsql.PipeFormat{Template: "m", ResultField: SeriesFoldClass, If: logsql.InQuery{Field: seriesFoldOneKey, Query: sub}},
-	}
-	if f.Singletons != SingletonsNone {
-		// A series of one line: the bucket stats fold it with the others of its group.
-		before = append(before, logsql.PipeFormat{Template: "", ResultField: dynamicSeriesField,
-			If: logsql.Exclude{Expr: logsql.FieldFilter{Field: SeriesFoldClass, Op: logsql.FieldOpAny}}})
 	}
 	keys := make([]logsql.GroupKey, 0, len(f.By)+1)
+	keys = append(keys, logsql.GroupKey{Field: "_time", Bucket: f.Bucket, Offset: f.Offset})
 	for _, b := range f.By {
 		keys = append(keys, logsql.GroupKey{Field: b})
 	}
-	bucketStats := logsql.PipeStats{By: append(keys, logsql.GroupKey{Field: SeriesFoldClass}), Funcs: f.Stats}
-	after := make([]logsql.Pipe, 0, 2*len(f.Columns)+11)
-	after = append(after, bucketStats)
-	// A stats result is text to the pipes after it, which VictoriaLogs' stats read with a parser that refuses an
-	// infinity and long numbers: math gives them numbers again.
-	for _, c := range f.Columns {
-		after = append(after, logsql.PipeMath{Expr: c, Alias: c})
-	}
-	if f.Singletons == SingletonsZero {
-		after = append(after, logsql.PipeFormat{Template: "0", ResultField: f.ValueColumn, If: blanked},
-			logsql.PipeMath{Expr: f.ValueColumn, Alias: f.ValueColumn})
-	}
-	after = append(after,
+	rows := append([]string{"_time", seriesFoldFlag}, f.Columns...)
+	pipes := make([]logsql.Pipe, 0, len(f.Columns)+12)
+	pipes = append(pipes,
+		logsql.PipeStats{By: keys, Funcs: f.Stats},
 		logsql.PipeMath{Expr: f.Value, Alias: SeriesFoldField},
-		// A series in one bucket (of several lines, or of one where the bucket stats keep it), whose value is finite:
-		// blanked after the bucket stats.
-		logsql.PipeFormat{Template: "1", ResultField: seriesFoldBlank, If: logsql.AllOf{
-			logsql.Exclude{Expr: blanked},
-			logsql.Exclude{Expr: logsql.FieldFilter{Field: SeriesFoldClass, Op: logsql.FieldOpExact, Value: "s"}},
-			logsql.FieldFilter{Field: SeriesFoldField, Op: logsql.FieldOpLT, Value: "inf"},
-			logsql.FieldFilter{Field: SeriesFoldField, Op: logsql.FieldOpGT, Value: "-inf"},
+		seriesFoldFinitePipe,
+		logsql.PipeStats{By: keys[1:], Funcs: []logsql.StatsFuncAlias{
+			{Func: logsql.Count{}, Alias: seriesFoldBuckets},
+			{Func: logsql.Min{Field: "_time"}, Alias: seriesFoldFirst},
+			{Func: logsql.Min{Field: seriesFoldFlag}, Alias: seriesFoldFlag},
+			{Func: logsql.Min{Field: seriesFoldFinite}, Alias: seriesFoldFinite},
+			{Func: logsql.Min{Field: SeriesFoldField}, Alias: SeriesFoldField},
+			{Func: logsql.JSONValues{Field: strings.Join(rows, ", ")}, Alias: SeriesFoldRows},
 		}},
-		logsql.PipeFormat{Template: "<" + SeriesFoldField + ">", ResultField: f.ValueColumn, If: blankedAfter},
-		logsql.PipeMath{Expr: f.ValueColumn, Alias: f.ValueColumn},
+		logsql.PipeFormat{Template: "1", ResultField: seriesFoldBlank, If: logsql.AllOf{
+			logsql.FieldFilter{Field: seriesFoldBuckets, Op: logsql.FieldOpExact, Value: "1"},
+			logsql.FieldFilter{Field: seriesFoldFinite, Op: logsql.FieldOpExact, Value: "1"},
+		}},
+		logsql.PipeFormat{Template: "", ResultField: SeriesFoldRows, If: folded},
+		seriesFoldUnroll,
+		logsql.PipeUnpackJSON{From: SeriesFoldRows},
+		logsql.PipeFormat{Template: "<" + seriesFoldFirst + ">", ResultField: "_time", If: folded},
+		logsql.PipeFormat{Template: "", ResultField: SeriesFoldField, If: logsql.Exclude{Expr: folded}},
 	)
-	if f.CountColumn != "" {
-		after = append(after,
-			logsql.PipeFormat{Template: "1", ResultField: f.CountColumn, If: blankedAfter},
-			logsql.PipeMath{Expr: f.CountColumn, Alias: f.CountColumn})
-	}
-	after = append(after, logsql.PipeFormat{Template: "", ResultField: dynamicSeriesField, If: blankedAfter})
-	funcs := make([]logsql.StatsFuncAlias, 0, len(f.Columns)+1)
 	for _, c := range f.Columns {
-		fn := logsql.StatsFunc(logsql.Sum{Field: c})
-		if c == f.ValueColumn {
-			fn = outer(c)
-		}
-		funcs = append(funcs, logsql.StatsFuncAlias{Func: fn, Alias: c})
+		pipes = append(pipes, logsql.PipeFormat{Template: "", ResultField: c, If: folded})
 	}
-	if f.CountColumn == "" && f.Outer == logql.VectorAvg {
-		funcs = append(funcs, logsql.StatsFuncAlias{Func: logsql.Count{}, Alias: SeriesFoldCount})
+	pipes = append(pipes, logsql.PipeFormat{Template: "", ResultField: dynamicSeriesField, If: folded})
+	last := make([]logsql.GroupKey, 0, len(keys))
+	last = append(append(last, logsql.GroupKey{Field: "_time"}), keys[1:]...)
+	funcs := make([]logsql.StatsFuncAlias, 0, len(f.Columns)+2)
+	for _, c := range f.Columns {
+		funcs = append(funcs, logsql.StatsFuncAlias{Func: logsql.Any{Field: c}, Alias: c})
 	}
-	return SeriesFoldRead{Pipes: append(append(before, after...), logsql.PipeStats{By: keys[:len(f.By)], Funcs: funcs})}, true
+	funcs = append(funcs, logsql.StatsFuncAlias{Func: outer, Alias: SeriesFoldField}, logsql.StatsFuncAlias{Func: logsql.Count{}, Alias: SeriesFoldSeriesCount})
+	return SeriesFoldRead{Pipes: append(pipes, logsql.PipeStats{By: last, Funcs: funcs})}, true
 }
 
-// blanked selects the rows of the series whose hash the fold blanked; blankedAfter the ones it blanks after the
-// bucket stats.
+// hasSeriesField reports whether by holds the series hash.
+func hasSeriesField(by []string) bool {
+	for _, b := range by {
+		if b == dynamicSeriesField {
+			return true
+		}
+	}
+	return false
+}
+
+// SeriesFoldKeepsFlag reports a pipe of the fold (as the unwrap check splits a query: no leading "| ") that the
+// counting form passes as it is: the series stats (the flag rides in each series' bucket rows, so grouping by it would
+// fold the finite buckets of a series with a NaN line), the finiteness mark that reads the flag, and the unroll of the
+// bucket rows.
+func SeriesFoldKeepsFlag(pipe string) bool {
+	if strings.HasSuffix(pipe, seriesFoldRowsSuffix) && strings.Contains(pipe, "json_values(") {
+		return true
+	}
+	return pipe == seriesFoldFiniteText || pipe == seriesFoldUnrollText
+}
+
+// The texts SeriesFoldKeepsFlag compares a pipe with (without the leading "| "), written once.
 var (
-	blanked      = logsql.FieldFilter{Field: dynamicSeriesField, Op: logsql.FieldOpExact, Value: ""}
-	blankedAfter = logsql.FieldFilter{Field: seriesFoldBlank, Op: logsql.FieldOpExact, Value: "1"}
+	seriesFoldRowsSuffix = ") as " + SeriesFoldRows
+	seriesFoldFiniteText = seriesFoldFinitePipe.String()[2:]
+	seriesFoldUnrollText = seriesFoldUnroll.String()[2:]
 )
 
-// classes is the subquery of the series classes: "s<hash>" for a series with lines in more than one bucket of the
-// read's grid or a line whose value may read as NaN or an infinity, "m<hash>" for one of several lines in one bucket.
-// It groups by the hash alone (one group per series, not one per series and bucket) and reads each series' first and
-// last line's times; a series spans when their buckets differ, the first time moved back and the last moved on by
-// seriesFoldMargin. The bucket of a time t is floor((t + offset) / step) (VictoriaLogs' _time:step offset grouping);
-// both are measured from x, a bucket edge at or before the read's start less the offset, so the difference math takes
-// is of two times of the same magnitude. A row whose bucket count is not a number is taken to span.
-func (f SeriesFold) classes(identity string) (string, bool) {
-	step, err1 := time.ParseDuration(f.Bucket)
-	var offset time.Duration
-	var err2 error
-	if f.Offset != "" {
-		offset, err2 = time.ParseDuration(f.Offset)
+// SeriesFoldBase is the base query of a folded read over base, a read's query up to the bucket stats with the series
+// hash ahead (Profile IdentityAhead): the parser's unpack writes its keys under the identity's prefix and copies them
+// out (the same fields and values: VictoriaLogs' unpack writes a block per set of keys, and a copy writes the keys a
+// block holds), so the identity reads the prefixed keys without unpacking the line again. base is returned as it is
+// when it does not hold exactly one plain unpack of the plan's parser and one unpack of the identity after it, or when
+// a pipe between them reads the line or writes a prefixed key.
+func SeriesFoldBase(p *queryplan.Plan, base string) string {
+	if p == nil || !DynamicIdentityAhead(p) {
+		return base
 	}
-	if err1 != nil || err2 != nil || step <= 0 {
-		return "", false
+	parser, ok := dynamicIdentity(p.Root.(*queryplan.VectorAgg), p.Root.(*queryplan.VectorAgg).In.(*queryplan.RangeAgg))
+	if !ok {
+		return base
 	}
-	s, off := int64(step), int64(offset)
-	edge := (f.From + off) / s * s
-	if edge > f.From+off {
-		edge -= s
+	plain, prefixed, second := logsql.PipeUnpackJSON{}.String(), logsql.PipeUnpackJSON{ResultPrefix: dynamicPrefix}.String(), dynamicUnpackJSON
+	if parser.Type == logql.ParserLogfmt {
+		plain, prefixed, second = logsql.PipeUnpackLogfmt{}.String(), logsql.PipeUnpackLogfmt{ResultPrefix: dynamicPrefix}.String(), dynamicUnpackLogfmt
 	}
-	x := strconv.FormatInt(edge-off, 10)
-	odd := logsql.FieldFilter{Field: logsql.QuoteFieldName(f.Field), Op: logsql.FieldOpRegexp, Value: "(?i)(nan|inf)"}
-	gt := func(field, v string) logsql.FieldFilter {
-		return logsql.FieldFilter{Field: field, Op: logsql.FieldOpGT, Value: v}
+	plain, second = " "+plain, " "+second
+	at, n := pipeAt(base, plain)
+	next, m := pipeAt(base, second)
+	if n != 1 || m != 1 || next <= at {
+		return base
 	}
-	lte := func(field, v string) logsql.FieldFilter {
-		return logsql.FieldFilter{Field: field, Op: logsql.FieldOpLTE, Value: v}
+	between := base[at+len(plain) : next]
+	if strings.Contains(between, "_msg") || strings.Contains(between, dynamicPrefix) {
+		return base
 	}
-	margin, size := strconv.Itoa(seriesFoldMargin), strconv.FormatInt(s, 10)
-	pipes := []logsql.Pipe{
-		logsql.PipeStats{By: []logsql.GroupKey{{Field: dynamicSeriesField}},
-			Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: SeriesFoldCount}, {Func: logsql.Min{Field: "_time"}, Alias: seriesFoldFirst},
-				{Func: logsql.Max{Field: "_time"}, Alias: seriesFoldLast}, {Func: logsql.Count{}, If: odd, Alias: seriesFoldOdd}}},
-		logsql.PipeFilter{Expr: logsql.OrExpr{Left: gt(SeriesFoldCount, "1"), Right: gt(seriesFoldOdd, "0"), Lower: true}},
-		logsql.PipeMath{Expr: "floor((" + seriesFoldLast + " - " + x + " + " + margin + ") / " + size + ") - floor((" + seriesFoldFirst + " - " + x +
-			" - " + margin + ") / " + size + ")", Alias: seriesFoldBuckets},
-		logsql.PipeFormat{Template: "s<" + dynamicSeriesField + ">", ResultField: seriesFoldKey,
-			If: logsql.OrExpr{Left: logsql.Exclude{Expr: lte(seriesFoldBuckets, "0")}, Right: gt(seriesFoldOdd, "0"), Lower: true}},
-		logsql.PipeFormat{Template: "m<" + dynamicSeriesField + ">", ResultField: seriesFoldKey,
-			If: logsql.AllOf{lte(seriesFoldBuckets, "0"), lte(seriesFoldOdd, "0")}},
-		logsql.PipeFields{Labels: []string{seriesFoldKey}},
-	}
-	var b strings.Builder
-	b.WriteString(identity)
-	for _, p := range pipes {
-		b.WriteByte(' ')
-		b.WriteString(p.String())
-	}
-	return b.String(), true
+	copied := " " + prefixed + " " + logsql.PipeCopy{Pairs: [][2]string{{dynamicPrefix + "*", "*"}}}.String()
+	return base[:at] + copied + between + base[next+len(second):]
 }
 
-// SeriesFoldIdentity is the subquery's reading of a read's query before the unwrap gate: ungated, less the pipes
-// that derive service_name for a clause (translate.ServiceNameGroupingPipes under caps) when no stage of the query
-// reads a label after its parser (the series hash does not read service_name, so the classes are the same, and
-// VictoriaLogs runs one pipe per spelling of the service fewer per line). A query with a label filter keeps them.
-func SeriesFoldIdentity(p *queryplan.Plan, caps logsql.Capabilities, ungated string) string {
-	if p == nil || !DynamicUnwrapIdentity(p) {
-		return ungated
-	}
-	for _, st := range p.Root.(*queryplan.VectorAgg).In.(*queryplan.RangeAgg).In.Stages {
-		if _, ok := st.(*queryplan.LabelFilter); ok {
-			return ungated
+// pipeAt is the index of the first pipe of text written as pipe (" | name ..."), followed by another pipe, and the
+// number of such pipes.
+func pipeAt(text, pipe string) (at, n int) {
+	at = -1
+	for i := 0; ; i++ {
+		j := strings.Index(text[i:], pipe+" |")
+		if j < 0 {
+			return at, n
 		}
-	}
-	service := " " + translate.ServiceNameGroupingPipes(caps)
-	if service == " " {
-		return ungated
-	}
-	for i := 0; i+len(service) <= len(ungated); i++ {
-		if ungated[i:i+len(service)] == service {
-			return ungated[:i] + ungated[i+len(service):]
+		if n == 0 {
+			at = i + j
 		}
+		n++
+		i += j
 	}
-	return ungated
 }

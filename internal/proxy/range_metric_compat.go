@@ -1665,7 +1665,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// same groups (rowBucketPick).
 	statsQuery := baseQuery + by + statsAggFunc + rowBucketPick(statsAggFunc, by)
 	// A parser's series identity folds the series that lie in one bucket (series_fold_read.go).
-	statsQuery, fold := seriesFoldFrom(ctx).foldedQuery(statsQuery, baseQuery, groupBy, statsAggFunc, start, hitStep)
+	ctx, statsQuery, fold := seriesFoldFrom(ctx).foldedQuery(ctx, statsQuery, baseQuery, groupBy, statsAggFunc, start, hitStep)
 
 	params := url.Values{}
 	params.Set("query", statsQuery)

@@ -108,6 +108,14 @@ func NewCoalescerDisabled() *Coalescer {
 type coalescedResponse struct {
 	status int
 	body   []byte
+	// value is what a response whose body is a SharedValuer shares instead of its bytes.
+	value any
+}
+
+// SharedValuer is a response body that carries a read-only value its readers share instead of bytes: the coalescer
+// hands the value to every waiter (DoValueWithGuardCtx) and reads no body. The value must not be changed once shared.
+type SharedValuer interface {
+	SharedValue() any
 }
 
 // flight is one shared upstream call and the result its waiters read once done
@@ -127,7 +135,7 @@ type flight struct {
 // The key should uniquely identify the request (e.g., method + path + query).
 // When the coalescer is disabled, fn is called directly for every request.
 func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
-	status, headers, body, _, err := c.do(context.Background(), key, func(context.Context) (*http.Response, error) { return fn() })
+	status, headers, body, _, _, err := c.do(context.Background(), key, func(context.Context) (*http.Response, error) { return fn() })
 	return status, headers, body, err
 }
 
@@ -143,17 +151,17 @@ const maxInheritedRetries = 2
 // still alive, the failure is not this caller's: it starts the call again
 // (joining a newer one when another caller already did), so a follower never
 // answers with the leader's cancellation or timeout.
-func (c *Coalescer) do(ctx context.Context, key string, fn func(context.Context) (*http.Response, error)) (int, http.Header, []byte, bool, error) {
+func (c *Coalescer) do(ctx context.Context, key string, fn func(context.Context) (*http.Response, error)) (int, http.Header, []byte, any, bool, error) {
 	if c.disabled {
-		status, headers, body, err := c.callDirect(func() (*http.Response, error) { return fn(ctx) })
-		return status, headers, body, false, err
+		status, headers, body, value, err := c.callDirectValue(func() (*http.Response, error) { return fn(ctx) })
+		return status, headers, body, value, false, err
 	}
 	for attempt := 0; ; attempt++ {
-		status, headers, body, shared, inherited, err := c.doOnce(ctx, key, fn)
+		status, headers, body, value, shared, inherited, err := c.doOnce(ctx, key, fn)
 		if inherited && attempt < maxInheritedRetries && ctx.Err() == nil {
 			continue
 		}
-		return status, headers, body, shared, err
+		return status, headers, body, value, shared, err
 	}
 }
 
@@ -161,11 +169,11 @@ func (c *Coalescer) do(ctx context.Context, key string, fn func(context.Context)
 // caller only followed that failed because the shared context ended (the
 // first caller's deadline, or every waiter leaving): not a failure of the
 // backend, and not this caller's.
-func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Context) (*http.Response, error)) (status int, headers http.Header, body []byte, shared, inherited bool, err error) {
+func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Context) (*http.Response, error)) (status int, headers http.Header, body []byte, value any, shared, inherited bool, err error) {
 
 	// A caller that has already left starts no shared call: nobody would wait for it.
 	if err := ctx.Err(); err != nil {
-		return 0, nil, nil, false, false, err
+		return 0, nil, nil, nil, false, false, err
 	}
 	started := time.Now()
 	executed := false
@@ -187,7 +195,7 @@ func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Cont
 	case <-f.done:
 	case <-ctx.Done():
 		f.shared.Leave()
-		return 0, nil, nil, false, false, ctx.Err()
+		return 0, nil, nil, nil, false, false, ctx.Err()
 	}
 
 	c.flightMu.Lock()
@@ -202,14 +210,14 @@ func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Cont
 	if f.err != nil {
 		inherited = !executed && f.ctxEnded &&
 			(errors.Is(f.err, context.Canceled) || errors.Is(f.err, context.DeadlineExceeded))
-		return 0, nil, nil, shared, inherited, f.err
+		return 0, nil, nil, nil, shared, inherited, f.err
 	}
 	if shared {
 		c.CoalescedTotal.Add(1)
 		c.ActiveShared.Add(1)
 		defer c.ActiveShared.Add(-1)
 	}
-	return f.resp.status, nil, f.resp.body, shared, false, nil
+	return f.resp.status, nil, f.resp.body, f.resp.value, shared, false, nil
 }
 
 // run executes the shared call and publishes its result to every waiter.
@@ -232,6 +240,10 @@ func (c *Coalescer) run(key string, f *flight, fn func(context.Context) (*http.R
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if v, ok := resp.Body.(SharedValuer); ok {
+		f.resp = &coalescedResponse{status: resp.StatusCode, value: v.SharedValue()}
+		return
+	}
 
 	// Limit response body to 256MB to prevent unbounded memory allocation
 	body, err := readBodyPooled(resp.Body, bodyReadLimit(resp.Body))
@@ -245,16 +257,25 @@ func (c *Coalescer) run(key string, f *flight, fn func(context.Context) (*http.R
 // callDirect calls fn without deduplication — used when coalescer is disabled.
 // Headers are not cloned since all current callers discard the header return value.
 func (c *Coalescer) callDirect(fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
+	status, headers, body, _, err := c.callDirectValue(fn)
+	return status, headers, body, err
+}
+
+// callDirectValue is callDirect that also returns the value a SharedValuer body carries (and reads no body then).
+func (c *Coalescer) callDirectValue(fn func() (*http.Response, error)) (int, http.Header, []byte, any, error) {
 	resp, err := fn()
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if v, ok := resp.Body.(SharedValuer); ok {
+		return resp.StatusCode, nil, nil, v.SharedValue(), nil
+	}
 	body, err := readBodyPooled(resp.Body, bodyReadLimit(resp.Body))
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
-	return resp.StatusCode, nil, body, nil
+	return resp.StatusCode, nil, body, nil, nil
 }
 
 // DoWithGuard is like Do but couples the circuit breaker with request coalescing.
@@ -278,23 +299,30 @@ func (c *Coalescer) DoWithGuard(key string, guard func() bool, fn func() (*http.
 // only if no other caller still waits for it. fn gets the context of the shared
 // call, which carries ctx's values (and deadline) but not its cancellation.
 func (c *Coalescer) DoWithGuardCtx(ctx context.Context, key string, guard func() bool, fn func(context.Context) (*http.Response, error)) (int, http.Header, []byte, error) {
+	status, headers, body, _, err := c.DoValueWithGuardCtx(ctx, key, guard, fn)
+	return status, headers, body, err
+}
+
+// DoValueWithGuardCtx is DoWithGuardCtx that also returns the value of a response whose body is a SharedValuer (the
+// body bytes are nil then): every waiter gets the same value, which none may change.
+func (c *Coalescer) DoValueWithGuardCtx(ctx context.Context, key string, guard func() bool, fn func(context.Context) (*http.Response, error)) (int, http.Header, []byte, any, error) {
 	if c.disabled {
 		if !guard() {
-			return 0, nil, nil, ErrGuardRejected
+			return 0, nil, nil, nil, ErrGuardRejected
 		}
-		return c.callDirect(func() (*http.Response, error) { return fn(ctx) })
+		return c.callDirectValue(func() (*http.Response, error) { return fn(ctx) })
 	}
 
 	c.inflightMu.Lock()
 	count := c.inflight[key]
 	if count == 0 && !guard() {
 		c.inflightMu.Unlock()
-		return 0, nil, nil, ErrGuardRejected
+		return 0, nil, nil, nil, ErrGuardRejected
 	}
 	c.inflight[key]++
 	c.inflightMu.Unlock()
 
-	status, headers, body, _, err := c.do(ctx, key, fn)
+	status, headers, body, value, _, err := c.do(ctx, key, fn)
 
 	c.inflightMu.Lock()
 	c.inflight[key]--
@@ -303,7 +331,7 @@ func (c *Coalescer) DoWithGuardCtx(ctx context.Context, key string, guard func()
 	}
 	c.inflightMu.Unlock()
 
-	return status, headers, body, err
+	return status, headers, body, value, err
 }
 
 // RequestKey builds a cache/coalescing key from an HTTP request.

@@ -1940,7 +1940,7 @@ type FieldMin struct{ Field string }
 func (f FieldMin) String() string { return "field_min(" + f.Field + ")" }
 func (f FieldMin) statsFunc()     {}
 
-// JSONValues collects field values as a JSON array.
+// JSONValues collects field values as a JSON array (several fields: the list, "a, b", as the field: their rows as JSON objects).
 type JSONValues struct{ Field string }
 
 func (j JSONValues) String() string { return "json_values(" + j.Field + ")" }
