@@ -1,6 +1,6 @@
 {
- "commit": "5093c05fabce",
- "date": "2026-11-18",
+ "commit": "de01e2d8a275",
+ "date": "2026-11-19",
  "errors": {
   "recorded": {
    "comparable_rows": 248,
@@ -16,10 +16,10 @@
   },
   "replay_ok": true
  },
- "loki": "3.7.9",
+ "loki": "3.7.10",
  "perf_weekly": {
   "date": "2026-11-16",
-  "loki_version": "3.7.9",
+  "loki_version": "3.7.10",
   "pairs": 525,
   "faster": 353,
   "par": 153,
@@ -66,20 +66,20 @@
  },
  "red": true,
  "registry": {
-  "cases": 417,
+  "cases": 445,
   "by_status": {
    "documented": 15,
-   "fixed": 158,
-   "no gap": 92,
-   "open": 142,
+   "fixed": 169,
+   "no gap": 106,
+   "open": 145,
    "owner-kept": 7,
    "upstream": 3
   },
   "open_by_impact": {
-   "api-only": 20,
+   "api-only": 21,
    "drilldown-visible": 14,
-   "edge": 45,
-   "explore-visible": 62,
+   "edge": 46,
+   "explore-visible": 63,
    "grafana-datasource": 1
   }
  },
@@ -90,11 +90,11 @@
    "rejected": 8842
   },
   "differences_by_kind": {
-   "VictoriaLogs rejects the translator text": 393,
+   "VictoriaLogs rejects the translator text": 383,
    "accepted, translation fails": 32,
    "error text differs": 24,
    "error text differs, rejected at translation": 12,
-   "proxy accepts, Loki rejects": 32,
+   "proxy accepts, Loki rejects": 23,
    "proxy rejects, Loki accepts": 10,
    "tree fact differs: binary operation": 17,
    "tree fact differs: has a log pipeline": 3,
@@ -102,9 +102,9 @@
    "tree fact differs: outermost operation": 4
   },
   "live_check": {
-   "conclusion": "success",
-   "date": "2026-11-18",
-   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44223484610",
+   "conclusion": "failure",
+   "date": "2026-11-19",
+   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44481529770",
    "workflow": "query-corpus.yaml"
   },
   "recorded_file": "conformance/registry/grammar-sweep.json"
@@ -112,6 +112,6 @@
  "verified": true,
  "victorialogs": [
   "v1.49.0",
-  "v1.53.0"
+  "v1.54.0"
  ]
 }
