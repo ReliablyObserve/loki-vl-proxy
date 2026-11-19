@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.353.0] - 2026-11-19
+
 ### Fixed
 
 - A metric query with a selector matcher or a label filter on a label called `_time`, `_stream`, `_stream_id` (in any letter case) or `_msg`, before any parser, now answers like Loki: it counts the lines of the streams that carry that label. An example is `sum(count_over_time({app="a"} | _time="10" [5m]))`. The proxy used to send VictoriaLogs a field filter on the name. VictoriaLogs rejected that filter (`_time:="10"`), or read it as its own time range (`| _time>5s`) or line filter (`_msg:="x"`). Such queries are now served from the query plan, which filters the stream tag, as log queries already were.
