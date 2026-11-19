@@ -1275,3 +1275,10 @@ func applyConstantBinaryOp(left, right float64, op string) (float64, bool) {
 		return 0, false
 	}
 }
+
+// isStatsQuery reports whether a translated query is a stats query (translator.DecodeStats), for the paths that
+// still rewrite the query as text before reading it.
+func isStatsQuery(logsqlQuery string) bool {
+	_, ok := translator.DecodeStats(logsqlQuery)
+	return ok
+}

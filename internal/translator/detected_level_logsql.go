@@ -99,10 +99,4 @@ func JoinDetectedLevelFilters(plans []DetectedLevelFilterPlan, existingFields []
 // DetectedLevelProbeBase returns the rows a probe of the level fields of base may read.
 func DetectedLevelProbeBase(base string) string { return translate.DetectedLevelProbeBase(base) }
 
-// Operator and Operand are the condition as translate.LevelCondition reads it.
-func (dc DropCondition) Operator() string { return dc.Op }
-
-// Operand is the value the condition compares with.
-func (dc DropCondition) Operand() string { return dc.Value }
-
 func logsqlFieldName(name string) string { return translate.LogsQLFieldName(name) }

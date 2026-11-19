@@ -27,7 +27,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 var (
@@ -88,8 +88,8 @@ type logQueryShape struct {
 	captureFields map[string]bool
 	// lineFields are the fields the pipeline writes, left out of rebuilt lines.
 	lineFields     map[string]bool
-	dropConditions []translator.DropCondition
-	keepConditions []translator.DropCondition
+	dropConditions []translate.DropCondition
+	keepConditions []translate.DropCondition
 	bareDropFields []string
 	bareKeepFields []string
 	// pipeline is the parsed pipeline (parsed only).
