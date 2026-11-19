@@ -535,8 +535,11 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 	// The live shadow of the whole query (-translate-shadow-sample) sees the operand's request as sent.
 	p.shadowProxyEvaluated(r.Context(), originalQuery, postAgg, translatedInner)
-	translatedInner, markerOp, withoutLabels := splitPostProcessing(translatedInner)
-	replaces := planLabelReplaces(postAgg.inner)
+	translatedInner, markerOp, withoutLabels, labelReplaced := splitPostProcessing(translatedInner)
+	var replaces []physical.LabelReplace
+	if labelReplaced {
+		replaces = planLabelReplaces(postAgg.inner)
+	}
 	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	transforms, regexErr := newLabelTransforms(replaces)
 	if regexErr != nil {
@@ -695,8 +698,11 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 	// The live shadow of the whole query (-translate-shadow-sample) sees the operand's request as sent.
 	p.shadowProxyEvaluated(r.Context(), originalQuery, postAgg, translatedInner)
-	translatedInner, markerOp, withoutLabels := splitPostProcessing(translatedInner)
-	replaces := planLabelReplaces(postAgg.inner)
+	translatedInner, markerOp, withoutLabels, labelReplaced := splitPostProcessing(translatedInner)
+	var replaces []physical.LabelReplace
+	if labelReplaced {
+		replaces = planLabelReplaces(postAgg.inner)
+	}
 	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	transforms, regexErr := newLabelTransforms(replaces)
 	if regexErr != nil {

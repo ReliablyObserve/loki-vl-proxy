@@ -919,15 +919,16 @@ type labelTransforms struct {
 }
 
 // splitPostProcessing reads the `without` marker the translator left in a query through the physical-plan codec. It
-// returns the clean query (every marker removed) and the operator and labels of the `without` fold the proxy applies
-// (empty and nil without one). The label_replace calls the proxy applies are read from the query's plan
-// (planLabelReplaces), not from their markers.
-func splitPostProcessing(translated string) (clean, markerOp string, withoutLabels []string) {
+// returns the clean query (every marker removed), the operator and labels of the `without` fold the proxy applies
+// (empty and nil without one), and whether the translation carries label_replace calls. The calls the proxy applies
+// are read from the query's plan (planLabelReplaces), not from their markers: a translation without any asks for no
+// plan.
+func splitPostProcessing(translated string) (clean, markerOp string, withoutLabels []string, labelReplaced bool) {
 	clean, post := translator.SplitPost(translated)
 	if post.Folds() {
 		markerOp, withoutLabels = post.Without.Op, post.Without.Labels
 	}
-	return clean, markerOp, withoutLabels
+	return clean, markerOp, withoutLabels, len(post.LabelReplace) > 0
 }
 
 // planLabelReplaces are the label_replace calls at the root of query, innermost first, read from its resolved plan
