@@ -110,3 +110,28 @@ decisions:
     quality: 'A query whose parsed tree holds the construct a fence guards carries the fence in every spelling the parser reads; no key written by an older binary for a spelling it fenced becomes unreachable.'
     performance:
       - 'internal/proxy/response_key_fences_bench_test.go BenchmarkResponseKeyFences: the fence chain of 10 query shapes at the compat query_range and inner query_range sites; no shape slower than main (selector 158 -> 98 ns, rate by 350 -> 245 ns, json metric 7.6 -> 4.0 us)'
+  - id: plan-fences-read-the-resolved-variable-text
+    chosen: 'The fences that read the query plan (rank over binary, the without () binary operand, the dynamic unwrap identity, the count over stdvar_over_time) read the plan of the query with its Grafana range variables resolved (fenceVariablesResolved: the handlers'' own resolveGrafanaRangeTemplateTokens, no window or step), and the plan''s opaque node names its call (queryplan.Opaque.Func) so a label_replace the parser could not type is read as one'
+    over:
+      - 'reading the plan of the text as sent (a label_replace call that holds `[$__interval]` is an opaque node there, with no function name and no inner expression, and what it wraps is hidden: the keys of its ranking, without () operand, unwrap identity and count over stdvar answers did not carry the fence the `[1m]` spelling carries)'
+      - 'resolving the variables in the key builder once for every fence (it would move what the text screens and the already resolving JSON and logfmt fences read, for a defect of the plan-reading fences only)'
+      - 'changing the dynamic query text the handlers read (series_fold_read and the dynamic identity helpers read it unresolved, so it would change served answers, not only keys)'
+    why: |
+      The parser keeps a label_replace call whose first argument holds a
+      Grafana range variable as text it cannot type, and the handlers resolve
+      the variable before they answer, so the answer is the typed call's. The
+      fences read the plan of the unresolved text. A query with such a call
+      was served (200 through the routes) and cached, and the key lacked the
+      fence of its `[1m]` twin, so an answer cached before the matching fix
+      could be served again for up to the history cache TTL, to the same
+      tenant. The fuzz target found it through a seed whose range the parser
+      cannot read (`[$0]`, which Loki rejects), then through its variable
+      twins. The resolution runs after each fence's text screen and only for a
+      query that holds a variable (`$__` or `${`; a `$1` reference is none), so
+      no other query's key or cost changes.
+    evidence: 'internal/proxy (2026-11-18): TestResponseKeyFencesFireOnTheSpellingsTheParserReads (rows for each variable spelling and its must-not-fire twins; 9 of them and 8 fuzz seeds fail on main), FuzzResponseKeyFencesMatchParsedTree (seed ce0a2477f0b9df0a kept, 120 s clean), BenchmarkResponseKeyFences and BenchmarkRankOverBinaryFence base vs PR'
+    code: [internal/proxy/response_key_fences.go, internal/proxy/rank_binary_fence.go, internal/proxy/binary_empty_without.go, internal/proxy/unwrap_count_variance.go, internal/queryplan/nodes.go, internal/queryplan/build.go]
+    tests: [TestResponseKeyFencesFireOnTheSpellingsTheParserReads, TestResponseKeyFencesKeepTheirOldKeys, FuzzResponseKeyFencesMatchParsedTree]
+    quality: 'A query whose label_replace call holds a Grafana range variable carries the fences its resolved spelling carries; every query without a variable keeps its key.'
+    performance:
+      - 'internal/proxy BenchmarkResponseKeyFences and BenchmarkRankOverBinaryFence (2026-11-18, Apple M5 Pro, GOMAXPROCS=4, count 6 and 10): no allocation or byte change on any shape without a variable; the shapes that hold a variable and pass a fence screen resolve it (a ranking over a binary label_replace: 0.42 to 1.06 microseconds, 2 to 11 allocations; an unwrap identity under label_replace: 4.2 to 4.9 microseconds, 18 to 29 allocations), work the fence did not do before and needs for the key'

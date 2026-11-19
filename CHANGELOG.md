@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.341.1] - 2026-11-18
+
+### Fixed
+
+- The response key fences that read a query's plan (the ranking, `stddev` or `stdvar` over a binary operation, the
+  `sum`/`avg`/`min`/`max` `without ()` binary operand, the dynamic unwrap identity and the count over `stdvar_over_time`
+  fences) now read a `label_replace` call that holds a Grafana range variable (`[$__interval]`, `[$__auto]`,
+  `[$__range]`, `${__rate_interval}`) as the handlers read it. The parser keeps such a call as text and the handlers
+  resolve the variable before they answer, so the fences did not fire for what the call wraps: the keys of
+  `topk(1, label_replace(rate({...}[$__interval]), "pod", "x-$1", "pod", "(.*)") * 2)`,
+  `sort(label_replace(rate({...}[$__range]) * 2, ...))`,
+  `label_replace(sum without () (count_over_time({...}[$__interval])) / 2, ...)`,
+  `label_replace(sum by (x) (avg_over_time({...} | json | unwrap n [$__range])), ...)` and
+  `label_replace(count by (x) (stdvar_over_time({...} | unwrap n [$__auto])), ...)` did not carry the fence their
+  `[1m]` spellings carry, so an answer cached before the matching fix (semantics/rank-over-binary-operation,
+  semantics/rank-binary-operand-label-replace-once, semantics/binary-operand-without-empty-collapses,
+  semantics/unwrap-per-series-identity-raw-rows, semantics/count-over-stdvar-answers-variance) could be served again
+  under the same key for these spellings, for up to the history cache TTL (24h), to the same tenant. Their keys now
+  carry the fences. A `label_replace` the parser could not type is also read as one by the plan the fences read.
+
+## [2.341.0] - 2026-11-18
+
 ### Added
 
 - Operator limits on query complexity: `-max-query-ast-nodes` and `-max-query-nesting-depth` (Helm `extraArgs`,
