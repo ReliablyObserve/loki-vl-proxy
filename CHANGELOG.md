@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A metric query with a selector matcher or a label filter on a label called `_time`, `_stream`, `_stream_id` (in any letter case) or `_msg`, before any parser, now answers like Loki: it counts the lines of the streams that carry that label. An example is `sum(count_over_time({app="a"} | _time="10" [5m]))`. The proxy used to send VictoriaLogs a field filter on the name. VictoriaLogs rejected that filter (`_time:="10"`), or read it as its own time range (`| _time>5s`) or line filter (`_msg:="x"`). Such queries are now served from the query plan, which filters the stream tag, as log queries already were.
+  - A grouping, `drop`, `keep` or `unwrap` of such a name, and a log query that has such a filter and a parser or another stage, still get the old text.
+  - The response cache fence for these queries moves to `@reserved-field-labels-v2:`. Answers cached before the change are not served after it; each such query's key misses once.
+- A log query with a parser or another stage and a label filter value that holds a `\x00`, `\x01` or `\x02` byte now keeps the lines Loki keeps. An example is `{app="a"} | o="\x02\x00\x02" | json`. The string translator cut such a value at the bytes it uses as stage markers and filtered on another value. These queries are now served from the query plan, which keeps the value, as filter-only queries already were.
+  - A new response cache fence, `@marker-bytes-label-value-v1:`, is read from the query's plan. Answers cached before the change are not served after it.
+  - A metric query with such a value still gets the old text.
+
 ### Changed
 
 - Log queries read their `| drop` and `| keep` post-processing and the line-field exposure of the Loki-compatible profile from the query's memoised parse, the stages of its plan, instead of parsing the query again for each response (and no longer fall back to the string translator's text walk; every query that reaches a log response parses). The compiled drop, keep and label filter conditions moved from the string translator to `internal/translate`. Answers, VictoriaLogs requests and cache keys do not change.

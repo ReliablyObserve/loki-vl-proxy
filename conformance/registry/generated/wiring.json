@@ -576,6 +576,7 @@
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/query_semantics_matrix_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/reserved_field_labels_test.go",
       "test/e2e-compat/reserved_field_name_case_test.go",
       "test/e2e-compat/selector_value_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
@@ -2422,6 +2423,7 @@
     "semantics/translator-writes-reserved-field-names": [
       "internal/logsql/reserved_fields_test.go",
       "internal/proxy/plan_served_test.go",
+      "internal/proxy/query_lowering_test.go",
       "internal/proxy/reserved_field_test.go",
       "internal/queryplan/lower/exotic_field_names_test.go",
       "internal/queryplan/lower/reserved_field_test.go",
@@ -4547,6 +4549,7 @@
       "semantics/keep-before-unwrap-series-identity",
       "semantics/translator-reads-marker-bytes-in-quoted-value",
       "semantics/translator-reads-quoted-text-as-syntax",
+      "semantics/translator-writes-reserved-field-names",
       "semantics/translator-writes-signed-number-with-blank"
     ],
     "internal/proxy/query_plan_budget_corpus_test.go": [
@@ -6492,6 +6495,7 @@
       "semantics/repeated-label-filter-replaced-across-label-format"
     ],
     "test/e2e-compat/reserved_field_labels_test.go": [
+      "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/translator-writes-reserved-field-names"
     ],

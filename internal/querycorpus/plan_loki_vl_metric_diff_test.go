@@ -236,17 +236,14 @@ func metricDiffQueries(t *testing.T) metricScope {
 
 // metricPlanGate is the plan's delegation of a query the handlers read by its text another way, as the route parity
 // prediction has it (internal/proxy predictMetricRoute): a range aggregation at the root spelled otherwise than
-// "<op>(", a text the handlers' request rewrite changes (a comment, a keyword in upper case), a filter on a field
-// VictoriaLogs keeps for itself, or a plan the lowering does not write.
+// "<op>(", a text the handlers' request rewrite changes (a comment, a keyword in upper case), or a plan the lowering
+// does not write.
 func metricPlanGate(q string, p *queryplan.Plan, prof lower.Profile) error {
 	if ra, ok := p.Root.(*queryplan.RangeAgg); ok && !strings.HasPrefix(strings.TrimSpace(q), string(ra.Op)+"(") {
 		return &lower.NotLoweredError{Construct: "RangeAgg route spelling"}
 	}
 	if logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(q))) != q {
 		return &lower.NotLoweredError{Construct: lower.Construct(p.Root) + " route rewrite"}
-	}
-	if lower.ReadsReservedField(p, prof) {
-		return &lower.NotLoweredError{Construct: lower.Construct(p.Root) + " route reserved field"}
 	}
 	_, err := lower.PlanQuery(q, p, prof)
 	return err

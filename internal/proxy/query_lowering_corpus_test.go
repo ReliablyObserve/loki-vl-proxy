@@ -57,7 +57,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			// No translation cache: every row is translated, not read back.
 			on.translationCache, off.translationCache = nil, nil
 			ctx := context.Background()
-			differs, keep, dynamic, countVariance, spelled := 0, 0, 0, 0, 0
+			differs, keep, dynamic, countVariance, spelled, reserved := 0, 0, 0, 0, 0, 0
 			for _, row := range corpus {
 				if strings.HasPrefix(strings.TrimSpace(row), "{") {
 					continue
@@ -80,6 +80,16 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					countVariance++
 					if strings.HasPrefix(got, "__binary__") || !strings.HasSuffix(got, "count()") {
 						t.Errorf("%q: served %q, not the count of the series", q, got)
+					}
+					continue
+				}
+				// A filter on a label named like a field VictoriaLogs reserves: the plan filters the stream tag where the
+				// translator writes a field filter, held to Loki by TestReservedFieldLabelsMatchLoki and the metric Loki
+				// differential (semantics/translator-writes-reserved-field-names).
+				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.ReadsReservedField(plan, lower.Profile{}) && gotErr == nil {
+					reserved++
+					if got == want {
+						t.Errorf("%q: served the translator's text %q", q, got)
 					}
 					continue
 				}
@@ -135,6 +145,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			total["keep identity rows"] += keep
 			total["dynamic identity rows"] += dynamic
 			total["count over stdvar rows"] += countVariance
+			total["reserved field rows"] += reserved
 			for _, c := range metricFlipCandidates {
 				n := counts["flipped "+c]
 				total[c] += n
@@ -238,6 +249,12 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// log query flip whatever the metric constructs: FuzzLogFlipGate holds it, with its recorded divergences (here
 		// the signed number written with a blank, semantics/translator-writes-signed-number-with-blank).
 		if strings.HasPrefix(logqlpkg.CanonicalizeLogRanges(q), "{") {
+			return
+		}
+		// A filter on a label named like a field VictoriaLogs reserves is served from the plan, which filters the stream
+		// tag where the translator writes a field filter (semantics/translator-writes-reserved-field-names): held to Loki
+		// by its differentials, not to the translator's text.
+		if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.ReadsReservedField(plan, lower.Profile{}) {
 			return
 		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)

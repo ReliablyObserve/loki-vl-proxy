@@ -42,6 +42,11 @@ var translateMissShapes = []struct {
 		return `{app="api"} |= "error ` + i + `" | logfmt | detected_level="error"`
 	}},
 	{"service_name filter (turned away)", func(i string) string { return `{app="api"} |= "error ` + i + `" | service_name="api"` }},
+	// The translator-only known divergences the plan serves: a marker byte in a label filter value behind a parser, a
+	// reserved field name under a metric query; and a backslash escape the screens read through.
+	{"marker bytes after parser", func(i string) string { return `{app="api"} |= "e` + i + `" | o="\x02\x00\x02" | json | k="v"` }},
+	{"reserved field metric", func(i string) string { return `sum(count_over_time({app="api"} |= "e` + i + `" | _time="10" [5m]))` }},
+	{"escaped regexp metric", func(i string) string { return `sum(rate({app="api"} |~ "\\d+ ` + i + `" [5m]))` }},
 	{"pattern parser", func(i string) string {
 		return `{app="api"} |= "` + i + `" | pattern "<_> <m> <_>" | m="GET"`
 	}},

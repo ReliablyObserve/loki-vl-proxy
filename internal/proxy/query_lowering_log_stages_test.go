@@ -93,6 +93,12 @@ func TestQueryPlanLowering_LogCorpusTextParity(t *testing.T) {
 				if !strings.HasPrefix(strings.TrimSpace(q), "{") {
 					continue
 				}
+				if plan := resolvedPlan(q); plan != nil && misreadFilterValue(plan.Root, misreadMarker) {
+					// A label filter value with the translator's marker bytes: the plan keeps the value, the
+					// translator cuts it (semantics/translator-reads-marker-bytes-in-quoted-value, held to Loki by
+					// TestMarkerBytesInLabelValueMeanWhatLokiMeans), so the texts differ by design.
+					continue
+				}
 				got, gotErr := on.translateLogResponseQuery(ctx, q)
 				want, wantErr := off.translateLogResponseQuery(ctx, respaced(q))
 				if got != want || (gotErr == nil) != (wantErr == nil) {

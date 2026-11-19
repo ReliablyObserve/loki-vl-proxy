@@ -103,8 +103,15 @@ func TestScreenMetric(t *testing.T) {
 		{`sum(count_over_time({app="api"} | logfmt | status = 500 [5m]))`, ""},
 		{`sum(count_over_time({app="a"} | n > - .5 [5m]))`, ""},
 		{`sum(count_over_time({app="a"} | n > +2 [5m]))`, ""},
-		{`count_over_time({app="a"} | _time="x" [5m])`, ""},
-		{`count_over_time({_STREAM="x"}[5m])`, ""},
+		// A selector matcher or label filter on a name VictoriaLogs reserves is the stream tag the plan filters, served
+		// (semantics/translator-writes-reserved-field-names); in a clause, a drop or an unwrap it is turned away.
+		{`count_over_time({app="a"} | _time="x" [5m])`, "RangeAgg"},
+		{`count_over_time({_STREAM="x"}[5m])`, "RangeAgg"},
+		{`sum(count_over_time({app="a"} | x="y", _msg!="z" [5m]))`, "VectorAgg"},
+		{`sum by (_time) (count_over_time({app="a"}[5m]))`, ""},
+		{`count_over_time({app="a"} | drop _time [5m])`, ""},
+		{`count_over_time({app="a"} | keep _stream [5m])`, ""},
+		{`sum_over_time({app="a"} | unwrap _time [5m])`, ""},
 		{`sum by (s) (rate({app="a"} | json | unwrap duration(_Stream) [5m]))`, ""},
 		{"count_over_time({app=\"x\"} | s=`a detected_level b` [5m])", ""},
 		{`count_over_time({app="x"} | s="service_name" [5m])`, ""},
@@ -195,6 +202,7 @@ func FuzzScreenMetric(f *testing.F) {
 		`sum by (a_b) (rate({app="a"} | json | a_b != "" [5m]))`, `sum by (x_extracted) (count_over_time({a="b"} | logfmt | x_extracted="y" [1m]))`,
 		`sum by (a_b) (count_over_time({app="a"} | json a_b="[\"a\"]" | a_b != "" [1m]))`,
 		`max by (service_name) (max_over_time({e="p"} | json | unwrap duration_ms | __error__="" [1m]))`,
+		`count_over_time({app="a"} | _time="x" [5m])`, `sum by (_time) (count_over_time({_MSG="a"} | drop _stream [5m]))`,
 	} {
 		f.Add(q)
 	}

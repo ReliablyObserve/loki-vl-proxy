@@ -183,11 +183,6 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	if err != nil {
 		return routeRecord{}, err
 	}
-	// The handlers send the string translator's filter on a label called _time, _stream, _stream_id or _msg
-	// (semantics/translator-writes-reserved-field-names): the plan's stream filter is the fix, not their request.
-	if lower.ReadsReservedField(p, routeLoweringProfile()) {
-		return routeRecord{}, routeTextDelegation(p, "reserved field")
-	}
 	req := lower.RouteRequest{Instant: rp.instant, End: routeEnd}
 	sent := time.Duration(0)
 	if !rp.instant {
