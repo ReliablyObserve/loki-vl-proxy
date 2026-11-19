@@ -46,18 +46,37 @@ func ValidateLogQLExpr(query string) (Expr, string) {
 // Loki refuses to build, reported only when msg is "". With a build error the parsed expression is returned, so a
 // caller can run checks Loki makes over the tree before it builds (the query plan's) and answer in Loki's order.
 func ValidateLogQLPhases(query string) (expr Expr, msg, build string) {
-	expr, msg, unknown := validateLogQLTree(query)
-	if msg != "" || expr == nil {
-		return nil, msg, ""
+	expr, msg, build, _ = ValidateLogQLPhasesWithin(query, nil)
+	return expr, msg, build
+}
+
+// ValidateLogQLPhasesWithin is ValidateLogQLPhases under a planning budget (nil for none): the parser, every parser
+// it makes for a call it reads again, and the passes over the tree ask the budget as they go (after budgetFirstCheck
+// steps, then every budgetCheckEvery), and stop once it has run out. exhausted then reports the trip, and nothing
+// else is answered: a validation cut short is no verdict on the query, and no error it ran into is Loki's. A query
+// of fewer steps than budgetFirstCheck is never cut short, so its verdict is always made.
+func ValidateLogQLPhasesWithin(query string, budget Budget) (expr Expr, msg, build string, exhausted bool) {
+	b := newBudgetCheck(budget)
+	defer b.release()
+	expr, msg, unknown := validateLogQLTree(query, b)
+	if b.exhausted() {
+		return nil, "", "", true
 	}
-	if build = semanticPass(expr, query, true); build != "" {
-		return expr, "", build
+	if msg != "" || expr == nil {
+		return nil, msg, "", false
+	}
+	build = semanticPass(expr, query, true, b)
+	if b.exhausted() {
+		return nil, "", "", true
+	}
+	if build != "" {
+		return expr, "", build, false
 	}
 	if unknown != "" {
 		// A name the translation cannot carry: the proxy's own refusal, after every check Loki makes.
-		return nil, unknown, ""
+		return nil, unknown, "", false
 	}
-	return expr, "", ""
+	return expr, "", "", false
 }
 
 // validateLogQL is ValidateLogQL that also returns the parsed expression (nil
@@ -74,7 +93,7 @@ func validateLogQL(query string) (Expr, string) {
 // validateLogQLTree is validateLogQL without the pipeline build: the parser, its actions, the lexer and the checks
 // over the parsed tree. unknown is the refusal of a name the translation cannot carry, for the caller to report
 // after the build.
-func validateLogQLTree(query string) (expr Expr, msg, unknown string) {
+func validateLogQLTree(query string, budget *budgetCheck) (expr Expr, msg, unknown string) {
 	if msg := InputSizeError(query); msg != "" {
 		return nil, msg, ""
 	}
@@ -90,7 +109,7 @@ func validateLogQLTree(query string) (expr Expr, msg, unknown string) {
 	// counts in the line and column of an error, a trailing character that is not white space to Loki (a
 	// vertical tab) is a token, and a 0b literal after leading white space is read as after any white space.
 	// An empty query and one of white space only are errors of the parser, at the end of the text.
-	expr, unknownName, plainUnwrap, err := parseExpressionTree(query)
+	expr, unknownName, plainUnwrap, err := parseExpressionTree(query, budget)
 	if err != nil {
 		return nil, formatParseError(err, query), ""
 	}
@@ -99,12 +118,12 @@ func validateLogQLTree(query string) (expr Expr, msg, unknown string) {
 	}
 
 	// A call kept as text the parser could not type is Loki's syntax error, which ends its parse where it stands.
-	if msg := untypedCallsError(expr, query); msg != "" {
+	if msg := untypedCallsError(expr, query, budget); msg != "" {
 		return nil, msg, ""
 	}
 	// Semantic pass over the typed AST. Loki raises its parser actions while it reads the query, ahead of every
 	// check over the parsed tree, in the order of the text.
-	if msg := semanticPass(expr, query, false); msg != "" {
+	if msg := semanticPass(expr, query, false, budget); msg != "" {
 		if action := firstActionError(expr); action != "" {
 			return nil, action, ""
 		}

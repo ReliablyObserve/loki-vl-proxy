@@ -30,11 +30,15 @@ func validateQueryPhases(query string) (expr logqlpkg.Expr, msg string, phase qu
 	return expr, msg, phase
 }
 
-// validateQueryPhasesWithin is validateQueryPhases that stops its walk of the tree when budget (nil: none) is
-// exhausted, and says so: the query is then neither accepted nor rejected. The parser and its semantic pass are not
-// interrupted.
+// validateQueryPhasesWithin is validateQueryPhases that stops when budget (nil: none) is exhausted, and says so: the
+// query is then neither accepted nor rejected. The parser (and every parser it makes for a call it reads again), its
+// passes over the tree and the walk of the tree checks ask the budget as they go (logql.ValidateLogQLPhasesWithin,
+// queryplan.ValidateWithin); a query too short to reach the parser's first question is always answered.
 func validateQueryPhasesWithin(query string, budget queryplan.Budget) (expr logqlpkg.Expr, msg string, phase queryPhase, exhausted bool) {
-	expr, msg, build := logqlpkg.ValidateLogQLPhases(query)
+	expr, msg, build, exhausted := logqlpkg.ValidateLogQLPhasesWithin(query, budget)
+	if exhausted {
+		return nil, "", phaseNone, true
+	}
 	if msg != "" || expr == nil {
 		return expr, msg, phaseParse, false
 	}

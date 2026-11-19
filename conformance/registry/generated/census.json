@@ -1311,6 +1311,7 @@
     "internal/logql/argument_reader_test.go | semantics/nested-calls-read-once",
     "internal/logql/blank_after_keyword_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/logql/blank_after_keyword_loki_test.go | semantics/translator-reads-only-space-between-tokens",
+    "internal/logql/budget_test.go | query-complexity-limits",
     "internal/logql/canonical_nested_test.go | semantics/nested-calls-linear-work",
     "internal/logql/canonical_spelling_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/logql/canonical_spelling_test.go | semantics/translator-reads-parenthesized-metric-as-text",
@@ -3391,7 +3392,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 795,
+      "go": 796,
       "playwright": 3
     },
     "page_kinds": {

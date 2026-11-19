@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `-max-query-plan-time` now also stops a query's parse and its semantic pass while they run, not only the work after them. The parser, every parser it starts for a call it reads again (`label_replace`, `vector`), and the walk over the parsed tree ask the budget every 256 tokens or nodes, once they are 1,024 tokens or nodes in. When the budget runs out, the request gets the same neutral 400 as before (`query planning took longer than the limit`, the flag named in the log line only) and nothing of its validation is stored. A query shorter than that first check is never cut short, so Loki's rejection of a malformed query is always the answer. Nothing changes for a request whose planning stays within the budget.
+
 ## [2.352.0] - 2026-11-19
 
 ### Changed

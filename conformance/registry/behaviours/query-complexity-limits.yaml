@@ -20,9 +20,10 @@ proxy: |
   operator lowers them, once the query has been parsed and ahead of the response cache, and they bound what the
   proxy does after the parse, not the parse. -max-query-plan-time (default 10 s) bounds the proxy's own parse,
   validation and lowering time of one request, not admission waits, cache reads or VictoriaLogs calls; it is checked
-  after the validation, in the walk of the tree checks (every 256 nodes), at every node of the lowering and before the
-  first VictoriaLogs call. The parser, its semantic pass and the string translator are not interrupted while they
-  run: their time counts once they return, at the next check. A refusal is a neutral 400 through the error layer
+  while the query is validated (in the parser, the parsers it makes for the calls it reads again and its semantic pass,
+  every 256 tokens or nodes after the first 1,024, so a shorter query's verdict is always made; in the walk of the tree
+  checks every 256 nodes), after the validation, at every node of the lowering and before the first VictoriaLogs call.
+  The string translator is not interrupted while it runs: its time counts once it returns, at the next check. A refusal is a neutral 400 through the error layer
   (`query too complex: too many nodes`, `query too complex: nesting too deep`,
   `query planning took longer than the limit`), carrying no number, the flag, value and counts in the request error
   log line only, counted by loki_vl_proxy_query_complexity_rejections_total{limit}. A limit verdict is never stored:
@@ -50,7 +51,7 @@ decisions:
       - 'no limit at all (nothing for an operator to bound hostile or generated queries with)'
     why: 'Loki refuses nothing below 128 KB, so an intended proxy-only difference must be off unless an operator asks for it: the node and depth defaults derive from the query length limit, which no query that passed it can exceed, and the planning budget default sits above the slowest planning work measured on anything Loki accepts. Operators who want a stricter bound lower the flags. Loki answers in full where the proxy refuses, so this is a recorded difference in the error layer, with no recorded Loki answer to compare (Loki never refuses these queries). The default budget comes down once a follow-up moves the translation of nested vector aggregations onto the query plan.'
     evidence: 'Loki 3.7.9 parser oracle, 2026-11-18: accepted 65,000 nested parentheses, 26,000 nested sum(, 65,000 binary operands, 20,000 nested (... + 1) and 3,000 | json stages; 13 s CPU, 560 MB RSS for the batch. Proxy planning work, as of 2026-11-18, commit 8e80a32b7, Apple M5 Pro, GOMAXPROCS=4, go test -v -run TestPlanBudgetDefaultNeverTripsOnTheCorpus ./internal/proxy (LVP_PLAN_TIME_DEEP=1 for the deep shapes): plan corpus 2,708 queries, 0.4 ms slowest (1.2 ms under -race); 65,000 parentheses validate 3-16 ms and translate 15-19 ms; 65,000 binary operands 24-32 ms and 21-27 ms; 3,000 json stages 0.3 ms and 0.8-2.5 ms; 26,000 nested sum( validate 4 ms and translate 3.3 s on a quiet host, 6.2 s at a load average of 40 (the string translator), 5.0 s under -race. The largest valid corpus query has 21 nodes and 8 levels. Error answers: msg-limit-query-complexity and msg-limit-plan-time have no recorded Loki answer (conformance/registry/error-coverage-spec.json no_recorded_answer).'
-    code: [internal/logql/complexity.go, internal/proxy/query_complexity.go, internal/proxy/query_budget.go, internal/lokierr/messages.go]
+    code: [internal/logql/complexity.go, internal/logql/budget.go, internal/proxy/query_complexity.go, internal/proxy/query_budget.go, internal/lokierr/messages.go]
     tests:
       - TestComplexityCountsNodesAndDepth
       - FuzzComplexityBoundedByLength
@@ -66,6 +67,10 @@ decisions:
       - TestPlanBudgetRefusalsAfterTheGateAreTheNeutral400
       - TestPlanBudgetEdges
       - TestPlanBudgetDefaultNeverTripsOnTheCorpus
+      - TestPlanBudgetStopsTheParse
+      - TestValidateUnderBudgetStopsAnywhere
+      - TestValidateUnderBudgetStopsSoon
+      - FuzzValidateUnderBudget
       - TestValidateWithinBudget
       - TestLoweringStopsWhenItsBudgetIsExhausted
       - TestRecordQueryComplexityRejection

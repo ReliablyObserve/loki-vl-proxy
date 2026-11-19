@@ -47,9 +47,9 @@ type parenSpan struct {
 // quietParser is a parser of src from offset pos whose scanner notes no lexer error, for a text read again: a call
 // kept as text (typeOpaqueCall), the call a validation reads again (opaqueFirstArgument, labelReplaceArgumentsError,
 // vectorArgumentError) or a call left open (unterminatedCallError). base is the offset of src in the query the parse
-// started from. Every such parser is made here.
-func quietParser(src string, pos, base int) *parser {
-	return &parser{sc: scanner{src: src, pos: pos, quiet: true}, base: base}
+// started from; budget is the validation's planning budget (nil for none). Every such parser is made here.
+func quietParser(src string, pos, base int, budget *budgetCheck) *parser {
+	return &parser{sc: scanner{src: src, pos: pos, quiet: true, budget: budget}, base: base}
 }
 
 // parenJumpsOff turns the jumps off (tests compare a parse with and without them).

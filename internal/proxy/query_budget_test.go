@@ -576,6 +576,35 @@ func TestPlanBudgetNeverReplacesLokisRejection(t *testing.T) {
 	}
 }
 
+// The budget stops the parser and its semantic pass too, not only the walk of the tree checks: a query long enough to
+// reach the parser's first question (1,024 tokens) is asked about while it is parsed, and a trip there leaves nothing
+// behind, as one in the walk does. A query of 1,500 json stages is one node to the walk, which asks once.
+//
+// conformance: query-complexity-limits
+func TestPlanBudgetStopsTheParse(t *testing.T) {
+	emptyValidationCaches(t)
+	q := `{a="parse-budget"}` + strings.Repeat(" | json", 1500)
+	never := &countBudget{tripAt: 1 << 30}
+	if _, tripped := cachedQueryValidationWithin(q, never); tripped {
+		t.Fatal("a budget that never runs out tripped")
+	}
+	if never.calls <= 2 {
+		t.Fatalf("the validation asked the budget %d times: the parse did not ask it", never.calls)
+	}
+	emptyValidationCaches(t)
+	q2 := `{a="parse-budget-trip"}` + strings.Repeat(" | json", 1500)
+	b := &countBudget{tripAt: 1}
+	v, tripped := cachedQueryValidationWithin(q2, b)
+	if !tripped || b.calls != 1 || v != (queryValidation{}) {
+		t.Fatalf("tripped %v after %d questions with %+v, want a trip at the parser's first question and nothing else", tripped, b.calls, v)
+	}
+	_, cached := validationCache.Load(q2)
+	_, memoised := planMemoLoad(q2)
+	if cached || memoised {
+		t.Errorf("a parse the budget stopped left a validation (cached %v, plan memo %v)", cached, memoised)
+	}
+}
+
 // A selector route's query is left to its validators at the gate (no parse and no cache slot added to them); the
 // budget still bounds the route before its first VictoriaLogs call.
 //

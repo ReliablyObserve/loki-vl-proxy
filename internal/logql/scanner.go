@@ -209,6 +209,9 @@ type scanner struct {
 	// hasNUL is set when the text holds a NUL byte, which Loki's lexer rejects: the position bookkeeping for
 	// it (prevStart, afterComment) is only kept then.
 	hasNUL bool
+	// budget is the planning budget of the validation the scanner reads for (ValidateLogQLPhasesWithin), nil for
+	// none: once it runs out the scanner answers the end of its text.
+	budget *budgetCheck
 }
 
 // scanExtra is the rarely used state of a scanner.
@@ -348,6 +351,11 @@ func (s *scanner) skipWS() (spaced bool) {
 
 // next reads the next token and notes the errors Loki's lexer would report on the way.
 func (s *scanner) next() Token {
+	if s.budget != nil && s.budget.step() {
+		s.pos = len(s.src)
+		s.start = int32(s.pos)
+		return Token{Typ: TokEOF}
+	}
 	spaced := s.skipWS()
 	if !s.hasNUL {
 		return s.scanToken(spaced)

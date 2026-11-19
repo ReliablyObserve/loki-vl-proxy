@@ -78,14 +78,22 @@ func parseExpression(input string) (expr Expr, unknown, plainUnwrap *ParseError,
 }
 
 // parseExpressionTree is parseExpression that keeps the errors of Loki's checks over the parsed tree the parser met
-// (a vector operation's parameter) on their nodes, for the semantic pass to report in the order of its walk.
-func parseExpressionTree(input string) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
-	return parseExpressionOpts(input, false, true)
+// (a vector operation's parameter) on their nodes, for the semantic pass to report in the order of its walk, under the
+// validation's planning budget (nil for none).
+func parseExpressionTree(input string, budget *budgetCheck) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
+	return parseExpressionWithin(input, false, true, budget)
 }
 
 // parseExpressionOpts is parseExpression; untypedTemplates leaves the line_format templates untyped, and keepTree
 // keeps the tree check errors on their nodes (parseExpressionTree).
 func parseExpressionOpts(input string, untypedTemplates, keepTree bool) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
+	return parseExpressionWithin(input, untypedTemplates, keepTree, nil)
+}
+
+// parseExpressionWithin is parseExpressionOpts under a planning budget (nil for none) that every parser of the parse
+// shares: once it runs out each one reads the end of its text, and the caller reads the trip from the budget (the
+// result is then no verdict on the query).
+func parseExpressionWithin(input string, untypedTemplates, keepTree bool, budget *budgetCheck) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
 	querycorpus.Record(querycorpus.LogQL, input)
 	// Loki rejects a query this long before lexing it; doing the same bounds how deep a query can nest, and so
 	// the recursion of every parse, for whatever query length the handlers accept.
@@ -93,6 +101,7 @@ func parseExpressionOpts(input string, untypedTemplates, keepTree bool) (expr Ex
 		return nil, nil, nil, &ParseError{Msg: msg}
 	}
 	p := &parser{sc: newScanner(input), untypedTemplates: untypedTemplates}
+	p.sc.budget = budget
 	p.advance()
 	expr, err = p.parseExpr()
 	if err == nil && p.cur.Typ != TokEOF {
@@ -204,13 +213,14 @@ var opaqueMetricFunctions = map[string]bool{"label_replace": true, "vector": tru
 // with the same parser: label_replace(<expr>, "dst", "replacement", "src",
 // "regex") and vector(<number>), as Loki's grammar writes them. Any other call, or one that does not read so,
 // keeps only its text; validation reports why.
-func typeOpaqueCall(o *OpaqueMetricExpr) { typeOpaqueCallWith(o, nil, 0, false) }
+func typeOpaqueCall(o *OpaqueMetricExpr) { typeOpaqueCallWith(o, nil, 0, false, nil) }
 
 // typeOpaqueCallWith is typeOpaqueCall for a call whose text starts at offset base of the text calls was recorded
 // from (quiet_calls.go): the calls nested in it are not scanned again. Its parser notes the log queries it reads
-// (noteChecked) in calls when shared, in lists of its own otherwise, which it returns.
-func typeOpaqueCallWith(o *OpaqueMetricExpr, calls *quietCalls, base int, shared bool) typedCallNotes {
-	p := quietParser(o.Raw, 0, base)
+// (noteChecked) in calls when shared, in lists of its own otherwise, which it returns. budget is the planning budget of
+// the parser that met the call (nil for none).
+func typeOpaqueCallWith(o *OpaqueMetricExpr, calls *quietCalls, base int, shared bool, budget *budgetCheck) typedCallNotes {
+	p := quietParser(o.Raw, 0, base, budget)
 	p.calls, p.sharedNotes = calls, shared
 	typeOpaqueCallIn(p, o)
 	return typedCallNotes{first: p.checkedLogQueries, count: p.checkedLogQueryCount, more: p.moreCheckedLogQueries,
@@ -626,7 +636,7 @@ func (p *parser) unterminatedCallError(name string, start int) error {
 	if p.canon != nil || p.spell != nil || p.flagSpans != nil {
 		return own
 	}
-	q := quietParser(p.sc.src, start, p.base)
+	q := quietParser(p.sc.src, start, p.base, p.sc.budget)
 	q.advance()
 	err := q.openCallError(name)
 	if err == nil {
@@ -666,7 +676,7 @@ func (p *parser) openCallError(name string) error {
 		if err != nil {
 			return err
 		}
-		if call, msg := firstUntypedCallError(inner, p.sc.src); call != nil {
+		if call, msg := firstUntypedCallError(inner, p.sc.src, p.sc.budget); call != nil {
 			return &ParseError{Msg: msg} // a call in the argument Loki cannot read
 		}
 		return p.labelReplaceStringsError()
@@ -1367,14 +1377,14 @@ func (p *parser) noteChecked(lq *LogQuery) {
 // level of a nesting. A call it cannot type, or without a sample expression, leaves the lists as they were.
 func (p *parser) typeCall(o *OpaqueMetricExpr, start int) {
 	if o.Func != "label_replace" {
-		typeOpaqueCallWith(o, p.calls, p.base+start, false) // a number or nothing: no log query to note
+		typeOpaqueCallWith(o, p.calls, p.base+start, false, p.sc.budget) // a number or nothing: no log query to note
 		return
 	}
 	cur := p.curLogQuery
 	if p.calls == nil {
 		// A parser that reads no call quietly (the parse of the whole query): the call's parser notes in lists of its
 		// own, which join this parser's after the log query read before the call.
-		r := typeOpaqueCallWith(o, nil, p.base+start, false)
+		r := typeOpaqueCallWith(o, nil, p.base+start, false, p.sc.budget)
 		if o.Inner == nil {
 			return
 		}
@@ -1401,7 +1411,7 @@ func (p *parser) typeCall(o *OpaqueMetricExpr, start int) {
 		p.noteChecked(cur) // it stands before the call
 		p.curLogQuery = nil
 	}
-	r := typeOpaqueCallWith(o, c, p.base+start, true)
+	r := typeOpaqueCallWith(o, c, p.base+start, true, p.sc.budget)
 	if o.Inner == nil {
 		c.notes = c.notes[:mark]
 		p.curLogQuery = cur
