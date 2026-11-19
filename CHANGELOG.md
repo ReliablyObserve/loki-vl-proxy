@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     on v1.54.0 and v1.49.0, and the whole request 0.52-0.67x. The read's answer is 1.3-5x larger (up to 0.6 MB for
     24 hours), so a read reaches the stats answer bound sooner and is then read in smaller time chunks.
   - A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
+- The decoder of a folded series-identity answer reads each row in small steps (the same rows, values and bounds); two unused helpers are removed. No answer or request changes.
+
 
 ## [2.350.0] - 2026-11-19
 

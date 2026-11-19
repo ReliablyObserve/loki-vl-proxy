@@ -254,14 +254,8 @@ func (c *Coalescer) run(key string, f *flight, fn func(context.Context) (*http.R
 	f.resp = &coalescedResponse{status: resp.StatusCode, body: body}
 }
 
-// callDirect calls fn without deduplication — used when coalescer is disabled.
-// Headers are not cloned since all current callers discard the header return value.
-func (c *Coalescer) callDirect(fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
-	status, headers, body, _, err := c.callDirectValue(fn)
-	return status, headers, body, err
-}
-
-// callDirectValue is callDirect that also returns the value a SharedValuer body carries (and reads no body then).
+// callDirectValue calls fn without deduplication (the coalescer disabled) and returns the value a SharedValuer body
+// carries (reading no body then). Headers are not cloned since all current callers discard the header return value.
 func (c *Coalescer) callDirectValue(fn func() (*http.Response, error)) (int, http.Header, []byte, any, error) {
 	resp, err := fn()
 	if err != nil {
