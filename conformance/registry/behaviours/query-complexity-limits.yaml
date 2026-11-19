@@ -20,10 +20,12 @@ proxy: |
   operator lowers them, once the query has been parsed and ahead of the response cache, and they bound what the
   proxy does after the parse, not the parse. -max-query-plan-time (default 10 s) bounds the proxy's own parse,
   validation and lowering time of one request, not admission waits, cache reads or VictoriaLogs calls; it is checked
-  while the query is validated (in the parser, the parsers it makes for the calls it reads again and its semantic pass,
-  every 256 steps (tokens read, tree nodes walked) after the first 1,024, so the verdict on a query of fewer steps is always made and a longer malformed query can be cut short before its error; in the walk of the tree
-  checks every 256 nodes), after the validation, at every node of the lowering and before the first VictoriaLogs call.
-  The string translator is not interrupted while it runs: its time counts once it returns, at the next check. A refusal is a neutral 400 through the error layer
+  while the query is validated (the parser, the parsers it makes for the calls it reads again and its semantic pass
+  ask every 256 steps after the first 1,024; once it has run out the parse still reads to its end, so a syntax error
+  is answered with Loki's error, and the checks over the tree stop; the walk of the tree checks asks every 256 nodes),
+  after the validation, at every node of the lowering, right after the string translator returns and before the first
+  VictoriaLogs call. The string translator is not interrupted while it runs: its time counts once it returns, at the
+  next check. A refusal is a neutral 400 through the error layer
   (`query too complex: too many nodes`, `query too complex: nesting too deep`,
   `query planning took longer than the limit`), carrying no number, the flag, value and counts in the request error
   log line only, counted by loki_vl_proxy_query_complexity_rejections_total{limit}. A limit verdict is never stored:
@@ -67,16 +69,17 @@ decisions:
       - TestPlanBudgetRefusalsAfterTheGateAreTheNeutral400
       - TestPlanBudgetEdges
       - TestPlanBudgetDefaultNeverTripsOnTheCorpus
-      - TestPlanBudgetStopsTheParse
+      - TestPlanBudgetAskedWhileParsing
       - TestValidateUnderBudgetStopsAnywhere
       - TestValidateUnderBudgetStopsSoon
       - FuzzValidateUnderBudget
       - TestValidateUnderBudgetConcurrent
       - TestPlanBudgetReachesTheRouteValidatorsParse
+      - TestPlanBudgetAnswersDeepShapesSoon
       - TestValidateWithinBudget
       - TestLoweringStopsWhenItsBudgetIsExhausted
       - TestRecordQueryComplexityRejection
       - TestQueryComplexityFlags
     quality: 'No query Loki accepts is refused at the defaults (node and depth limits derived from the length limit, held by a fuzz target; planning budget above the slowest measured work). A refusal names no flag or number to the client, leaves nothing cached and costs no VictoriaLogs call.'
-    performance: 'A request whose query is in the validation and request-text caches pays one map lookup more (the gate), and no walk while the limits are above the query length; a miss validates once as before (benchstat, base against head, interleaved, count 10: BenchmarkQueryRequestValidation and BenchmarkTranslateQueryMissInRequest). Asking the budget inside the parse and the semantic pass (BenchmarkValidateUnderPlanSegment, internal/proxy; BenchmarkValidateUnderBudget, internal/logql): a validation miss under a request segment costs +2.7% for a dashboard query and +5% for 800 nested sum( (allocations identical; the check is pooled), owner OK pending.'
+    performance: 'A request whose query is in the validation and request-text caches pays one map lookup more (the gate), and no walk while the limits are above the query length; a miss validates once as before (benchstat, base against head, interleaved, count 10: BenchmarkQueryRequestValidation and BenchmarkTranslateQueryMissInRequest). Asking the budget inside the parse and the semantic pass (BenchmarkValidateUnderPlanSegment, internal/proxy; BenchmarkValidateUnderBudget, internal/logql): a validation miss under a request segment costs +2.7% for a dashboard query and +5% for 800 nested sum( (allocations identical; the check is pooled), accepted by the owner.'
     pending: true

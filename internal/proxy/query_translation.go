@@ -548,7 +548,17 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		if keepLine {
 			translate = translator.TranslateLogQueryKeepingLine
 		}
+		// The string translator is not interrupted while it runs; the planning budget is asked once it returns, before
+		// its text is cached or read by the handlers: a translation over the budget is refused here, not after the
+		// handlers' readers of the translated text.
+		seg := p.beginPlan(ctx, p.limits())
 		translated, err := translate(canon, labelFn, streamFieldsMap, caps)
+		if seg.Exhausted() {
+			tripErr := p.planTrip(ctx, "translation", seg)
+			seg.end(false)
+			return translationResult{err: tripErr}, nil
+		}
+		seg.end(false)
 		// The lowering shadow (-translate-shadow-sample) sees the options the translator saw and its answer, once
 		// the answer is final; it runs in the background and changes nothing here.
 		if err != nil {

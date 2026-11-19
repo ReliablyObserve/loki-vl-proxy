@@ -34,9 +34,43 @@ func budgetDeepShapes() map[string]string {
 	return shapes
 }
 
+// syntaxError is the syntax verdict of q: the parser's, the lexer's or a call Loki's parser cannot read, "" for a
+// query that parses (the checks over the tree are not run).
+func syntaxError(q string) string {
+	if msg := InputSizeError(q); msg != "" {
+		return msg
+	}
+	if isWildcard(q) {
+		return ""
+	}
+	expr, _, plainUnwrap, err := parseExpressionTree(q, nil)
+	if err != nil {
+		return formatParseError(err, q)
+	}
+	if plainUnwrap != nil {
+		return plainUnwrap.Msg
+	}
+	return untypedCallsError(expr, q, nil)
+}
+
+// budgetMalformedShapes are deep queries with a syntax error past the budget's first question: at the end, in the
+// middle, in a call kept as text, and a lexer error.
+func budgetMalformedShapes() map[string]string {
+	sums := strings.Repeat("sum(", 800) + `rate({a="b"}[1m])` + strings.Repeat(")", 800)
+	return map[string]string{
+		"open grouping":      sums + " by (",
+		"middle":             strings.Repeat("1+", 1500) + "* *" + strings.Repeat("+1", 1500),
+		"json stages":        `{a="b"}` + strings.Repeat(" | json", 1500) + " | json x=",
+		"label_replace args": strings.Repeat("label_replace(", 300) + `rate({a="b"}[1m])` + strings.Repeat(`, "d", "$1", "s", "(.*)")`, 299) + `, "d", "$1", "s")`,
+		"unclosed":           strings.Repeat("(", 3000) + "1" + strings.Repeat(")", 2999),
+		"bad number":         strings.Repeat("1+", 1500) + "0x1g",
+	}
+}
+
 // checkUnderBudget validates q with a budget that runs out at its tripAt-th question (never for 0) and holds the
-// result to the unbudgeted validation: a trip answers nothing else, and a validation the budget does not cut short is
-// the unbudgeted one, byte for byte. It returns the questions asked and whether the budget tripped.
+// result to the unbudgeted validation: a trip answers nothing else and only for a query that parses (a syntax error is
+// Loki's answer whatever the clock says), and a validation the budget does not cut short is the unbudgeted one, byte
+// for byte. It returns the questions asked and whether the budget tripped.
 func checkUnderBudget(t testing.TB, q string, tripAt int) (asked int, tripped bool) {
 	t.Helper()
 	b := &tripBudget{tripAt: tripAt}
@@ -44,6 +78,9 @@ func checkUnderBudget(t testing.TB, q string, tripAt int) (asked int, tripped bo
 	if exhausted {
 		if expr != nil || msg != "" || build != "" {
 			t.Fatalf("%.120q tripped at question %d and still answered %v %q %q", q, tripAt, expr, msg, build)
+		}
+		if syntax := syntaxError(q); syntax != "" {
+			t.Fatalf("%.120q tripped at question %d where Loki answers its syntax error %q", q, tripAt, syntax)
 		}
 		return b.calls, true
 	}
@@ -54,11 +91,11 @@ func checkUnderBudget(t testing.TB, q string, tripAt int) (asked int, tripped bo
 	return b.calls, false
 }
 
-// The validation asks the budget as it parses, reads calls again and walks the tree, and stops once it runs out:
-// over the plan corpus and the deep shapes, a budget that runs out at any question (every one from the first until the
-// validation completes) is reported as a trip and answers nothing else, and one that never runs out answers what the
-// validation without a budget answers. A query of fewer steps than the first question is never cut short: its verdict
-// (Loki's rejection included) is always made.
+// The validation asks the budget as it parses, reads calls again and walks the tree: over the plan corpus and the deep
+// shapes, a budget that runs out at any question (every one from the first until the validation completes) is reported
+// as a trip that answers nothing else, only for a query that parses: a syntax error is Loki's answer at every trip
+// point (the parse reads to its end). A budget that never runs out answers what the validation without a budget
+// answers. A query of fewer steps than the first question is never cut short.
 //
 // conformance: query-complexity-limits
 func TestValidateUnderBudgetStopsAnywhere(t *testing.T) {
@@ -77,21 +114,30 @@ func TestValidateUnderBudgetStopsAnywhere(t *testing.T) {
 			if tripped || asked == 0 {
 				t.Fatalf("a budget that never runs out was asked %d times (tripped %v)", asked, tripped)
 			}
+			// A shape Loki rejects for its syntax (the innermost call of three arguments) keeps its error at every trip
+			// point; every other one is stopped.
+			syntax := syntaxError(q)
 			for k := 1; k <= asked; k++ {
-				if _, tripped := checkUnderBudget(t, q, k); !tripped {
-					t.Fatalf("a budget out at question %d of %d did not stop the validation", k, asked)
+				if _, tripped := checkUnderBudget(t, q, k); tripped == (syntax != "") {
+					t.Fatalf("a budget out at question %d of %d: tripped %v, syntax error %q", k, asked, tripped, syntax)
 				}
 			}
 		})
 	}
-	// A malformed query of more steps than the first question can run out of budget before the parser reaches its
-	// error: it is then a trip, not Loki's rejection (the limit's boundary, which an operator sets below the default).
-	long := strings.Repeat("sum(", 400) + `rate({a="b"}[1m])` + strings.Repeat(")", 400) + " by ("
-	if _, tripped := checkUnderBudget(t, long, 1); !tripped {
-		t.Error("a long malformed query was answered past a budget out from its first question")
-	}
-	if _, msg, _ := ValidateLogQLPhases(long); msg == "" {
-		t.Error("the long malformed query is accepted")
+	// A malformed query whose syntax error lies past the first question gets Loki's error at every trip point: the
+	// parse reads to its end whatever the budget says.
+	for name, q := range budgetMalformedShapes() {
+		t.Run("malformed "+name, func(t *testing.T) {
+			if syntaxError(q) == "" {
+				t.Fatal("the shape parses")
+			}
+			asked, _ := checkUnderBudget(t, q, 0)
+			for k := 1; k <= asked+1; k++ {
+				if _, tripped := checkUnderBudget(t, q, k); tripped {
+					t.Fatalf("tripped at question %d of %d", k, asked)
+				}
+			}
+		})
 	}
 	// Loki's rejection of a short query is made whatever the budget says.
 	for _, q := range []string{`sum(rate({a="b"}[1m])) by (`, `{a="b"} | json |= `, `label_replace(rate({a="b"}[1m]), "d", "$1", "s", "(")`} {
@@ -101,12 +147,15 @@ func TestValidateUnderBudgetStopsAnywhere(t *testing.T) {
 	}
 }
 
-// The deep shapes stop soon after the budget runs out: a budget out at its first question leaves the parse at the
-// first check, a few hundred tokens past the first 1,024, whatever the query's size.
+// A budget out at its first question is asked once: the parse reads on without asking again, and the checks over the
+// tree stop, for every deep shape that parses.
 //
 // conformance: query-complexity-limits
 func TestValidateUnderBudgetStopsSoon(t *testing.T) {
 	for name, q := range budgetDeepShapes() {
+		if syntaxError(q) != "" {
+			continue
+		}
 		b := &tripBudget{tripAt: 1}
 		if _, _, _, exhausted := ValidateLogQLPhasesWithin(q, b); !exhausted {
 			t.Errorf("%s: not stopped", name)
@@ -154,8 +203,8 @@ func TestValidateUnderBudgetConcurrent(t *testing.T) {
 	wg.Wait()
 }
 
-// For any query and any question the budget runs out at, the validation answers a trip and nothing else, or the
-// unbudgeted validation's answer; it never panics.
+// For any query and any question the budget runs out at, the validation answers a trip and nothing else (only for a
+// query whose syntax Loki accepts), or the unbudgeted validation's answer; it never panics.
 func FuzzValidateUnderBudget(f *testing.F) {
 	for _, q := range budgetDeepShapes() {
 		if len(q) < 4096 {

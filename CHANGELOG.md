@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `-max-query-plan-time` now also stops a query's parse and its semantic pass while they run, not only the work after them. The parser, every parser it starts for a call it reads again (`label_replace`, `vector`), and the walk over the parsed tree ask the budget every 256 tokens or nodes, once they are 1,024 tokens or nodes in. When the budget runs out, the request gets the same neutral 400 as before (`query planning took longer than the limit`, the flag named in the log line only) and nothing of its validation is stored. A query whose validation takes fewer steps (tokens read and tree nodes walked) than that first check is never cut short, so its verdict, Loki's rejection included, is always made. A longer malformed query can now run out of budget before its parse reaches the error, and then gets the neutral 400 instead of Loki's rejection; at the default 10 s budget no measured query comes near that. The validation of a long query that the request's time-bounds check makes is now under the budget too (it was the one validation of a request that was not). Nothing changes for a request whose planning stays within the budget.
+- `-max-query-plan-time` now also stops a query's checks over its parsed tree while they run, and refuses a query right after the string translator returns, not only before the first VictoriaLogs call. Before, a request over the budget could still spend seconds in the handlers' readers of the translated text.
+  - The parser, every parser it starts for a call it reads again (`label_replace`, `vector`) and the walks over the parsed tree count their steps (tokens read, tree nodes walked). They ask the budget at step 1,024 and every 256 steps after.
+  - Once the budget has run out, the parse still reads to its end. A syntax error (the parser's, the lexer's, or a call Loki's parser cannot read) is answered with Loki's error whatever the clock says; the query length limit bounds that parse.
+  - For a query that parses, the checks over the tree and the pipeline build stop, and the request gets the same neutral 400 as before (`query planning took longer than the limit`, the flag named in the log line only). Nothing of its validation is stored.
+  - The validation a request's time-bounds check makes for a query too long for the validation cache is now under the budget too. It was the one validation of a request that was not.
+  - With a 2 ms budget, a 120 KB `1+1+…` chain is now refused in 56 ms instead of 1.1 s, and 25,000 nested `sum(` in 1.8 s instead of 4.2 s. The string translator's own time is not interrupted.
+  - Nothing changes for a request whose planning stays within the budget.
 
 ### Fixed
 

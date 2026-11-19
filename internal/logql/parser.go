@@ -91,8 +91,8 @@ func parseExpressionOpts(input string, untypedTemplates, keepTree bool) (expr Ex
 }
 
 // parseExpressionWithin is parseExpressionOpts under a planning budget (nil for none) that every parser of the parse
-// shares: once it runs out each one reads the end of its text, and the caller reads the trip from the budget (the
-// result is then no verdict on the query).
+// shares: each token read is a step of it. The parse reads to its end whatever the budget says, so its syntax errors
+// are found; the caller reads a trip from the budget.
 func parseExpressionWithin(input string, untypedTemplates, keepTree bool, budget *budgetCheck) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
 	querycorpus.Record(querycorpus.LogQL, input)
 	// Loki rejects a query this long before lexing it; doing the same bounds how deep a query can nest, and so

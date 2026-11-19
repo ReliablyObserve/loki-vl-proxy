@@ -16,13 +16,15 @@ import (
 // VictoriaLogs call are not counted. The time is kept in the request's telemetry (the validation time here and the
 // flow's translateDur), so a request whose queries are all answered from the caches spends none.
 //
-// It is checked while a query is validated: in the parser, every parser it makes for a call it reads again and its
-// passes over the tree, every 256 tokens or nodes after the first 1,024 (logql.ValidateLogQLPhasesWithin: a shorter
-// query's verdict is always made), and in the walk of its tree checks every 256 nodes (queryplan.ValidateWithin); then
-// after the validation, at every node of the lowering (lower.Profile.Budget), and before the request's first
-// VictoriaLogs call (native tail's own stream call, made after its websocket upgrade, is not one of them). The string
-// translator is not interrupted where the lowering leaves a query to it, nor are the request's spelling rewrites around
-// the validation: their time counts once they return, at the next check. A request over the budget answers a neutral 400
+// It is checked while a query is validated: the parser, every parser it makes for a call it reads again and the passes
+// over the tree count their steps and ask every 256 after the first 1,024 (logql.ValidateLogQLPhasesWithin). Once it
+// has run out the parse still reads to its end, so a syntax error is answered as Loki answers it, and the checks over
+// the tree stop. It is also checked in the walk of the tree checks every 256 nodes (queryplan.ValidateWithin), after
+// the validation, at every node of the lowering (lower.Profile.Budget), right after the string translator returns
+// (before its text is cached or read by the handlers), and before the request's first VictoriaLogs call (native
+// tail's own stream call, made after its websocket upgrade, is not one of them). The string translator is not
+// interrupted while it runs, nor are the request's spelling rewrites around the validation or the handlers' readers of
+// the query text before the translation: their time counts at the next check. A request over the budget answers a neutral 400
 // through the error layer, the flag in the log line only, and leaves nothing behind: its validation is not stored
 // (validationCache, plan memo), its translation is not stored, and the answer is classified like any request limit,
 // never held.

@@ -28,7 +28,8 @@ func validateSemantics(expr Expr, raw string) string {
 // query that parsed still carries, a range aggregation's grouping and unwrap, binary operands, a vector operation's
 // parameter, label_replace, the empty-compatible selector), or with build the pipeline build of every log query.
 // budget is the validation's planning budget (nil for none): once it runs out the walk stops and answers "", and the
-// caller reads the trip from the budget.
+// caller reads the trip from the budget. The untyped-call check (untypedCallsError) is not stopped: a call Loki's parser
+// cannot read is a syntax error, which is Loki's answer whatever the clock says; budget only counts its tokens.
 func semanticPass(expr Expr, raw string, build bool, budget *budgetCheck) string {
 	w := semanticWalk{raw: raw, build: build, budget: budget}
 	return w.pass(expr)
@@ -183,9 +184,6 @@ func untypedCallsError(expr Expr, query string, budget *budgetCheck) string {
 // firstUntypedCallError is the first label_replace or vector call of expr, in the order of the text, that the
 // parser could not type and that Loki rejects, with its error.
 func firstUntypedCallError(expr Expr, query string, budget *budgetCheck) (*OpaqueMetricExpr, string) {
-	if budget.step() {
-		return nil, ""
-	}
 	switch x := expr.(type) {
 	case *RangeAggregation:
 		return firstUntypedCallError(x.Inner, query, budget)

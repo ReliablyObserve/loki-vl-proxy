@@ -576,12 +576,13 @@ func TestPlanBudgetNeverReplacesLokisRejection(t *testing.T) {
 	}
 }
 
-// The budget stops the parser and its semantic pass too, not only the walk of the tree checks: a query long enough to
-// reach the parser's first question (1,024 tokens) is asked about while it is parsed, and a trip there leaves nothing
-// behind, as one in the walk does. A query of 1,500 json stages is one node to the walk, which asks once.
+// The budget is asked while a query is parsed, not only in the walk of the tree checks: a query long enough to reach
+// the first question (1,024 steps) is asked about during its validation, and a trip there (on a query that parses)
+// leaves nothing behind, as one in the walk does. A query of 1,500 json stages is one node to the walk, which asks
+// once.
 //
 // conformance: query-complexity-limits
-func TestPlanBudgetStopsTheParse(t *testing.T) {
+func TestPlanBudgetAskedWhileParsing(t *testing.T) {
 	emptyValidationCaches(t)
 	q := `{a="parse-budget"}` + strings.Repeat(" | json", 1500)
 	never := &countBudget{tripAt: 1 << 30}
@@ -601,7 +602,7 @@ func TestPlanBudgetStopsTheParse(t *testing.T) {
 	_, cached := validationCache.Load(q2)
 	_, memoised := planMemoLoad(q2)
 	if cached || memoised {
-		t.Errorf("a parse the budget stopped left a validation (cached %v, plan memo %v)", cached, memoised)
+		t.Errorf("a validation the budget stopped left a result (cached %v, plan memo %v)", cached, memoised)
 	}
 }
 
@@ -630,6 +631,50 @@ func TestPlanBudgetReachesTheRouteValidatorsParse(t *testing.T) {
 	}
 	if got := count(long); got < short+3 {
 		t.Fatalf("the long query read the clock %d times, the short one %d: its parse did not ask the budget", got, short)
+	}
+}
+
+// Through the whole handler chain, a 2 ms budget answers the deep shapes with its 400 soon, makes no VictoriaLogs
+// call, and stops before the handlers' readers of the translated text: the shapes the validation, the lowering and
+// the time-bounds check stop answer within a small bound, and one the string translator writes (nested vector
+// aggregations, which it is not interrupted in) is refused by the check right after the translation.
+//
+// conformance: query-complexity-limits
+func TestPlanBudgetAnswersDeepShapesSoon(t *testing.T) {
+	emptyValidationCaches(t)
+	rig := newComplexityRig(t, ExecutionLimitsConfig{MaxQueryPlanTime: 2 * time.Millisecond}, nil)
+	for _, tc := range []struct {
+		name, query string
+		bound       time.Duration
+		readers     bool // the handlers' readers of the translated text would run before the first VictoriaLogs call
+	}{
+		{"parentheses", strings.Repeat("(", 60000) + "1" + strings.Repeat(")", 60000), 250 * time.Millisecond, false},
+		{"binary", strings.Repeat("1+", 60000) + "1", 250 * time.Millisecond, false},
+		{"json stages", `{a="b"}` + strings.Repeat(" | json", 18000), 250 * time.Millisecond, false},
+		{"label_replace", strings.Repeat("label_replace(", 2500) + `rate({a="b"}[1m])` + strings.Repeat(`, "d", "$1", "s", "(.*)")`, 2500), 2 * time.Second, false},
+		{"nested sums", strings.Repeat("sum(", 6000) + `rate({a="b"}[1m])` + strings.Repeat(")", 6000), 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, logged := rig.backend.hits.Load(), len(rig.logs.String())
+			start := time.Now()
+			status, body := rig.get(t, "/loki/api/v1/query_range", rangeParams(tc.query))
+			took := time.Since(start)
+			if status != http.StatusBadRequest || !strings.Contains(body, "query planning took longer than the limit") {
+				t.Fatalf("answered %d %.200s", status, body)
+			}
+			if tc.bound > 0 && took > tc.bound {
+				t.Errorf("answered in %v, over %v", took, tc.bound)
+			}
+			if calls := rig.backend.hits.Load() - before; calls != 0 {
+				t.Errorf("%d VictoriaLogs calls", calls)
+			}
+			// A shape whose translation the handlers read with their text readers is refused by an earlier check (the
+			// validation, the lowering or the one right after the translator), never by the check before the first
+			// VictoriaLogs call, which the readers would have reached first.
+			if tc.readers && strings.Contains(rig.logs.String()[logged:], "before the first VictoriaLogs call check") {
+				t.Error("the trip was noticed only before the first VictoriaLogs call: the handlers' readers ran")
+			}
+		})
 	}
 }
 

@@ -210,7 +210,8 @@ type scanner struct {
 	// it (prevStart, afterComment) is only kept then.
 	hasNUL bool
 	// budget is the planning budget of the validation the scanner reads for (ValidateLogQLPhasesWithin), nil for
-	// none: once it runs out the scanner answers the end of its text.
+	// none: each token is a step of it. The scanner reads on once it has run out, so the parse finds its syntax
+	// errors.
 	budget *budgetCheck
 }
 
@@ -351,10 +352,8 @@ func (s *scanner) skipWS() (spaced bool) {
 
 // next reads the next token and notes the errors Loki's lexer would report on the way.
 func (s *scanner) next() Token {
-	if s.budget != nil && s.budget.step() {
-		s.pos = len(s.src)
-		s.start = int32(s.pos)
-		return Token{Typ: TokEOF}
+	if s.budget != nil {
+		s.budget.step()
 	}
 	spaced := s.skipWS()
 	if !s.hasNUL {
