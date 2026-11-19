@@ -150,7 +150,8 @@ func routeCallShapes(calls []string) []string {
 	return uniqueSorted(out)
 }
 
-// metricRoute predicts the route of a range or vector aggregation root.
+// metricRoute predicts the route of a metric query: a range or vector aggregation, a binary operation, a ranking or a
+// label_replace at the root.
 func metricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool) (routeRecord, error) {
 	return predictMetricRoute(q, p, rp, data, nil)
 }
@@ -241,6 +242,30 @@ type routeOperandText struct {
 // otherwise) is delegated as "route offset text", and a vector(n) operand the handlers do not read as one (its
 // printed text, binaryVectorLiteral) as "route vector operand text".
 func routeOperandTexts(q string, p *queryplan.Plan) ([]routeOperandText, error) {
+	switch v := p.Root.(type) {
+	case *queryplan.Rank, *queryplan.LabelReplace:
+		// The handlers evaluate the operand as the query it is: the operand of the ranking they evaluate, sliced out
+		// of the query (parseInstantMetricPostAggQuery), or the expression under the label_replace calls
+		// (stripLabelTransforms). A delegation of the operand's text is the operand's.
+		if _, err := lower.Plan(p, routeLoweringProfile()); err != nil {
+			return nil, err
+		}
+		kind, text, operand := "LabelReplace", stripLabelTransforms(q), lower.LabelReplaceOperand(v)
+		if r, ok := v.(*queryplan.Rank); ok {
+			postAgg, ok := parseInstantMetricPostAggQuery(q)
+			if !ok {
+				return nil, routeTextDelegation(p, "operand text")
+			}
+			kind, text = "Rank", postAgg.inner
+			_, operand = lower.RankedOperand(r)
+		}
+		texts, err := routeOperandTexts(text, routeOperandPlan(p, operand))
+		var nl *lower.NotLoweredError
+		if errors.As(err, &nl) {
+			err = &lower.NotLoweredError{Construct: kind + " operand " + nl.Construct}
+		}
+		return texts, err
+	}
 	b, ok := p.Root.(*queryplan.BinOp)
 	if !ok {
 		if !offsetReadsAsPlan(q, p) {
@@ -276,6 +301,56 @@ func routeOperandTexts(q string, p *queryplan.Plan) ([]routeOperandText, error) 
 		out = append(out, routeOperandText{text, &operand})
 	}
 	return out, nil
+}
+
+// routeEvaluatedRows are up to n corpus rows of each kind of ranking or label_replace root the rule routes: a
+// ranking, one read as a ranked grid on tumbling windows, a ranking over rankings or folds, a label_replace, and a
+// ranking over a label_replace.
+func routeEvaluatedRows(t *testing.T, n int) []routeRow {
+	t.Helper()
+	var out []routeRow
+	count := map[string]int{}
+	for _, row := range routeRows(t, filepath.Join("..", ".."), 0) {
+		kind := ""
+		switch v := row.plan.Root.(type) {
+		case *queryplan.Rank:
+			kind = "rank"
+			if rank, operand := lower.RankedOperand(v); rank != v {
+				kind = "rank under levels"
+			} else if _, ok := operand.(*queryplan.LabelReplace); ok {
+				kind = "rank over label_replace"
+			}
+		case *queryplan.LabelReplace:
+			kind = "label_replace"
+		default:
+			continue
+		}
+		if _, err := lower.RouteQuery(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true, End: routeEnd}); err != nil {
+			continue
+		}
+		step := lower.RouteRequest{End: routeEnd, Step: row.rangeDur, Span: time.Hour}
+		if q, err := lower.RouteQuery(row.plan, routeLoweringProfile(), step); err == nil && q.Operands()[0].RankedGrid {
+			kind = "ranked grid"
+		}
+		if count[kind] == n {
+			continue
+		}
+		count[kind]++
+		out = append(out, row)
+	}
+	for _, k := range []string{"rank", "ranked grid", "rank under levels", "rank over label_replace", "label_replace"} {
+		if count[k] == 0 {
+			t.Fatalf("no corpus row of kind %s", k)
+		}
+	}
+	return out
+}
+
+// routeOperandPlan is p with the root n: an operand evaluated as the query it is, under the plan's inputs.
+func routeOperandPlan(p *queryplan.Plan, n queryplan.Node) *queryplan.Plan {
+	operand := *p
+	operand.Root = n
+	return &operand
 }
 
 // routeOffsets is the number of range aggregations under n that carry an offset clause.
@@ -327,6 +402,9 @@ func routeOperandRun(q string, p *queryplan.Plan, route lower.MetricRoute, rp ro
 	var phase string
 	switch route.Window {
 	case lower.WindowTumbling:
+		if route.RankedGrid {
+			return routeRankedGrid(route, start, end), nil, nil
+		}
 		// Lines after the last whole window belong to no sample.
 		end = start.Add(end.Sub(start) / route.Range * route.Range)
 		fetchStart = start.Add(-route.Range)
@@ -366,6 +444,38 @@ func routeOperandRun(q string, p *queryplan.Plan, route lower.MetricRoute, rp ro
 		calls = append(calls, "/select/logsql/query?"+probe.Encode())
 	}
 	return calls, steps, nil
+}
+
+// routeRankedGrid is the request of a ranked grid route (lower.MetricRoute.RankedGrid) between start and end: one
+// stats pipe over the lowered query's filters and pipes, by the window (its buckets start one nanosecond after each
+// window's start) and the labels of the operand's grouping, through /select/logsql/query.
+func routeRankedGrid(route lower.MetricRoute, start, end time.Time) []string {
+	base, by := route.Text, ""
+	if at := strings.Index(base, "| stats "); at >= 0 {
+		if rest := base[at+len("| stats "):]; strings.HasPrefix(rest, "by (") {
+			by = ", " + rest[len("by ("):strings.Index(rest, ")")]
+		}
+		base = strings.TrimRight(base[:at], " ")
+	}
+	anchor := start.Add(-route.Range)
+	size := int64(route.Range)
+	offset := (size - ((anchor.UnixNano()+1)%size+size)%size) % size
+	window := "_time:" + strconv.FormatInt(size, 10) + "ns"
+	if offset != 0 {
+		window += " offset " + strconv.FormatInt(offset, 10) + "ns"
+	}
+	agg := "count() as c"
+	if route.Op == logql.RangeBytesOverTime || route.Op == logql.RangeBytesRate {
+		agg = "sum_len(_msg) as c, count() as __sample_count"
+	}
+	steps := int64(end.Sub(start) / route.Range)
+	form := url.Values{
+		"query":   {routeQueryShape(base + " | stats by (" + window + by + ") " + agg)},
+		"start":   {strconv.FormatInt(anchor.UnixNano()+1, 10)},
+		"end":     {strconv.FormatInt(anchor.UnixNano()+(steps+1)*size+1, 10)},
+		"timeout": {routeTimeout},
+	}
+	return []string{"/select/logsql/query?" + form.Encode()}
 }
 
 // routeStatsQuery is the stats request of route for the query q, as far as its shape goes: the lowered text with the
@@ -543,6 +653,7 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 	rows = append(rows, routeVectorUnwrapRows(t, 6)...)
 	rows = append(rows, routeOffsetRows(t, 6)...)
 	rows = append(rows, routeBinaryRows(t, 6)...)
+	rows = append(rows, routeEvaluatedRows(t, 6)...)
 	native := func(mutate func(*lower.MetricRoute)) routePrediction {
 		return func(q string, p *queryplan.Plan, rp routeProfile, data bool, _ routeRecord) (routeRecord, error) {
 			return predictMetricRoute(q, p, rp, data, mutate)
@@ -635,6 +746,12 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 		{"sum of all streams flipped", func(r *lower.MetricRoute) {
 			if r.Window == lower.WindowBuckets || r.Window == lower.WindowPhase {
 				r.SumAll = !r.SumAll
+			}
+		}},
+		{"ranked grid read as stats buckets", func(r *lower.MetricRoute) { r.RankedGrid = false }},
+		{"stats buckets read as a ranked grid", func(r *lower.MetricRoute) {
+			if r.Window == lower.WindowTumbling && r.LabelGrouped && !r.Counted {
+				r.RankedGrid = true
 			}
 		}},
 	} {
