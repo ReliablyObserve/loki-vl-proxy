@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query and query_range handlers read the `label_replace` calls they apply to an answer from the query's parsed plan, not from the markers the string translator leaves in its text. Answers do not change: on every corpus query the calls are the same, in the same order.
+  - The `absent_over_time` check that every range request runs reads the calls from the query's parse, once. It split them off the text one at a time before, reading the rest again for each: a 2,500-call `label_replace` nest took 106 ms there and now takes 34 µs.
+  - The plan's route rule covers a ranking (`topk`, `bottomk`, `sort`, `sort_desc`) and a `label_replace` at the root: the route of their operand, and for a `topk` or `bottomk` over a line count or a byte sum grouped by labels on a range equal to the step, the one grid of rows the handlers read. The handlers' routes are unchanged.
 - `-max-query-plan-time` now also stops a query's checks over its parsed tree while they run, and refuses a query right after the string translator returns, not only before the first VictoriaLogs call. Before, a request over the budget could still spend seconds in the handlers' readers of the translated text.
   - The parser, every parser it starts for a call it reads again (`label_replace`, `vector`) and the walks over the parsed tree count their steps (tokens read, tree nodes walked). They ask the budget at step 1,024 and every 256 steps after.
   - Once the budget has run out, the parse still reads to its end. A syntax error (the parser's, the lexer's, or a call Loki's parser cannot read) is answered with Loki's error whatever the clock says; the query length limit bounds that parse.
