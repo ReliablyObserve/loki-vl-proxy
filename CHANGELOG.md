@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [2.351.0] - 2026-11-19
 
+### Changed
 - `query_range` with a range longer than the step for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`,
   `max_over_time`, `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` (no
   `| keep`) costs VictoriaLogs about 40% less time and answers about 40% faster. An example is
