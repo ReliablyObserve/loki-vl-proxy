@@ -100,6 +100,47 @@ func (s *seriesFoldRead) matrix(raw []byte) ([]byte, error) {
 // writer bounded it: past twice the stats body bound by its estimate, or past the bound, the read fails with
 // errBodyTooLarge.
 func (s *seriesFoldRead) decode(r io.Reader) (*seriesFoldAnswer, error) {
+	d, err := s.newFoldDecoder()
+	if err != nil {
+		return nil, err
+	}
+	// The rows are read as they arrive: a malformed row fails the read once the whole answer is read, so an answer
+	// past the body bound fails with that bound, as when the answer was read whole first.
+	var failed error
+	if err := eachFoldLine(r, func(line []byte) {
+		if failed == nil {
+			failed = d.row(line)
+		}
+	}); err != nil {
+		return nil, err
+	}
+	if failed != nil {
+		return nil, failed
+	}
+	return d.finish()
+}
+
+// foldDecoder is the state of one decode: the answer it builds and the scratch it reuses from row to row.
+type foldDecoder struct {
+	s                       *seriesFoldRead
+	a                       *seriesFoldAnswer
+	labels, columns, values [][]byte
+	sid, valueColumn        int
+	countIndex              int
+	byKey                   map[string]int
+	times                   map[string]int64
+	fields                  []seriesFoldField
+	flat                    []seriesFoldFlatPoint
+	key, rowKey, scratch    []byte
+	arena                   seriesFoldArena
+}
+
+// errFoldRowUnreadable is a row that is not an object of strings with its bucket.
+var errFoldRowUnreadable = &statsBucketsUnreadableError{"folded read: a row that is not an object of strings with its bucket"}
+
+// newFoldDecoder is the decoder of s's answer: its labels are the grouping (unquoted) less the bucket, then the
+// unwrap check's flag (the counting form groups by it too; the answer holds it when a row does).
+func (s *seriesFoldRead) newFoldDecoder() (*foldDecoder, error) {
 	if s == nil {
 		return nil, &statsBucketsUnreadableError{"folded read without its grouping"}
 	}
@@ -114,107 +155,20 @@ func (s *seriesFoldRead) decode(r io.Reader) (*seriesFoldAnswer, error) {
 	if sid < 0 {
 		return nil, &statsBucketsUnreadableError{"folded read without its series hash"}
 	}
-	// The unwrap check's counting form groups by its flag too: every row then names it. The flag is the last label;
-	// the answer holds it when a row does.
 	labels = append(labels, seriesFoldFlagName)
 	columns := make([][]byte, len(s.columns))
 	for i, c := range s.columns {
 		columns[i] = []byte(c)
 	}
-	valueColumn, countColumn, countIndex := slices.Index(s.columns, s.valueColumn), s.countColumn, s.countIndex()
-	a := &seriesFoldAnswer{labels: labels, plain: true}
-	var (
-		byKey   = map[string]int{}
-		times   = map[string]int64{}
-		fields  []seriesFoldField
-		values  = make([][]byte, len(labels))
-		flat    []seriesFoldFlatPoint
-		key     []byte
-		rowKey  []byte
-		scratch = make([]byte, 0, 64)
-		arena   seriesFoldArena
-		failed  error
-	)
-	field := func(name []byte) []byte {
-		for _, f := range fields {
-			if bytes.Equal(f.key, name) {
-				return f.value
-			}
-		}
-		return nil
-	}
-	// add files a point under its column, name and the row's label values (rowKey, built once per row).
-	add := func(column int, name string, ts int64, value []byte) {
-		key = append(key[:0], byte(column>>24), byte(column>>16), byte(column>>8), byte(column))
-		key = append(append(key, name...), rowKey...)
-		i, ok := byKey[string(key)]
-		if !ok {
-			i = len(a.results)
-			byKey[string(key)] = i
-			kept := make([][]byte, len(values))
-			for j, v := range values {
-				kept[j] = arena.copy(v)
-			}
-			a.results = append(a.results, &seriesFoldSeries{column: column, name: name, labels: kept})
-		}
-		a.plain = a.plain && plainNumberText(value)
-		flat = append(flat, seriesFoldFlatPoint{series: i, point: seriesFoldPoint{ts: ts, value: arena.copy(value)}})
-	}
-	unreadable := &statsBucketsUnreadableError{"folded read: a row that is not an object of strings with its bucket"}
-	row := func(line []byte) error {
-		if line = bytes.TrimSpace(line); len(line) == 0 {
-			return nil
-		}
-		// The row's structure is read by ObjectEach (a value that is not a string fails the read below); the string
-		// contents are copied as written and checked once, in the stats_query_range answer they are written into.
-		if line[0] != '{' || line[len(line)-1] != '}' {
-			return unreadable
-		}
-		fields = fields[:0]
-		allStrings := true
-		if err := jsonparser.ObjectEach(line, func(k, v []byte, t jsonparser.ValueType, _ int) error {
-			allStrings = allStrings && t == jsonparser.String
-			fields = append(fields, seriesFoldField{k, v})
-			return nil
-		}); err != nil || !allStrings {
-			return unreadable
-		}
-		at := field(seriesFoldTimeKey)
-		ts, ok := times[string(at)]
-		if !ok {
-			if ts, ok = parseVLTimeNanos(string(at)); !ok {
-				return unreadable
-			}
-			times[string(at)] = ts
-		}
-		rowKey = rowKey[:0]
-		for i, l := range labels {
-			values[i] = field(l)
-			if bytes.IndexByte(values[i], '\\') >= 0 {
-				a.plain = false
-			}
-			rowKey = appendSeriesFoldKeyValue(append(rowKey, 0), values[i], &scratch)
-		}
-		if values[len(values)-1] != nil {
-			a.hasFlag = true
-		}
-		if len(values[sid]) == 0 {
-			add(valueColumn, s.valueColumn, ts, field(seriesFoldValueKey))
-			if countColumn != "" {
-				add(countIndex, countColumn, ts, field(seriesFoldCountKey))
-			}
-			return nil
-		}
-		for i, c := range columns {
-			add(i, s.columns[i], ts, field(c))
-		}
-		if s.added {
-			add(len(s.columns), lower.SeriesFoldCount, ts, seriesFoldOne)
-		}
-		return nil
-	}
-	// The rows are read as they arrive: a malformed row fails the read once the whole answer is read, so an answer
-	// past the body bound fails with that bound, as when the answer was read whole first.
+	return &foldDecoder{
+		s: s, a: &seriesFoldAnswer{labels: labels, plain: true}, labels: labels, columns: columns,
+		values: make([][]byte, len(labels)), sid: sid, valueColumn: slices.Index(s.columns, s.valueColumn),
+		countIndex: s.countIndex(), byKey: map[string]int{}, times: map[string]int64{}, scratch: make([]byte, 0, 64),
+	}, nil
+}
+
+// eachFoldLine hands each line of r to fn, a line longer than the read buffer whole; it answers r's error.
+func eachFoldLine(r io.Reader, fn func([]byte)) error {
 	br := bufio.NewReaderSize(r, 64<<10)
 	var long []byte
 	for {
@@ -228,23 +182,120 @@ func (s *seriesFoldRead) decode(r io.Reader) (*seriesFoldAnswer, error) {
 			line = long
 		}
 		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, err
+			return err
 		}
-		if failed == nil && len(line) > 0 {
-			failed = row(line)
+		if len(line) > 0 {
+			fn(line)
 		}
 		if err != nil {
-			break
+			return nil
 		}
 	}
-	if failed != nil {
-		return nil, failed
+}
+
+// field is the value of the row's field name, or nil.
+func (d *foldDecoder) field(name []byte) []byte {
+	for _, f := range d.fields {
+		if bytes.Equal(f.key, name) {
+			return f.value
+		}
 	}
-	a.order(flat, times)
+	return nil
+}
+
+// add files a point under its column, name and the row's label values (rowKey, built once per row).
+func (d *foldDecoder) add(column int, name string, ts int64, value []byte) {
+	d.key = append(d.key[:0], byte(column>>24), byte(column>>16), byte(column>>8), byte(column))
+	d.key = append(append(d.key, name...), d.rowKey...)
+	i, ok := d.byKey[string(d.key)]
+	if !ok {
+		i = len(d.a.results)
+		d.byKey[string(d.key)] = i
+		kept := make([][]byte, len(d.values))
+		for j, v := range d.values {
+			kept[j] = d.arena.copy(v)
+		}
+		d.a.results = append(d.a.results, &seriesFoldSeries{column: column, name: name, labels: kept})
+	}
+	d.a.plain = d.a.plain && plainNumberText(value)
+	d.flat = append(d.flat, seriesFoldFlatPoint{series: i, point: seriesFoldPoint{ts: ts, value: d.arena.copy(value)}})
+}
+
+// readFields reads a row's fields: an object of strings. The row's structure is read by ObjectEach (a value that is
+// not a string fails the read); the string contents are copied as written and checked once, in the
+// stats_query_range answer they are written into.
+func (d *foldDecoder) readFields(line []byte) error {
+	if line[0] != '{' || line[len(line)-1] != '}' {
+		return errFoldRowUnreadable
+	}
+	d.fields = d.fields[:0]
+	allStrings := true
+	if err := jsonparser.ObjectEach(line, func(k, v []byte, t jsonparser.ValueType, _ int) error {
+		allStrings = allStrings && t == jsonparser.String
+		d.fields = append(d.fields, seriesFoldField{k, v})
+		return nil
+	}); err != nil || !allStrings {
+		return errFoldRowUnreadable
+	}
+	return nil
+}
+
+// row files one row of the answer: a folded group (an empty series hash) answers its merged value and series count
+// in the value and count columns; a group that keeps its hash answers the bucket stats' results (and a count of one
+// when the fold adds the count column).
+func (d *foldDecoder) row(line []byte) error {
+	if line = bytes.TrimSpace(line); len(line) == 0 {
+		return nil
+	}
+	if err := d.readFields(line); err != nil {
+		return err
+	}
+	at := d.field(seriesFoldTimeKey)
+	ts, ok := d.times[string(at)]
+	if !ok {
+		if ts, ok = parseVLTimeNanos(string(at)); !ok {
+			return errFoldRowUnreadable
+		}
+		d.times[string(at)] = ts
+	}
+	d.rowKey = d.rowKey[:0]
+	for i, l := range d.labels {
+		d.values[i] = d.field(l)
+		if bytes.IndexByte(d.values[i], '\\') >= 0 {
+			d.a.plain = false
+		}
+		d.rowKey = appendSeriesFoldKeyValue(append(d.rowKey, 0), d.values[i], &d.scratch)
+	}
+	if d.values[len(d.values)-1] != nil {
+		d.a.hasFlag = true
+	}
+	s := d.s
+	if len(d.values[d.sid]) == 0 {
+		d.add(d.valueColumn, s.valueColumn, ts, d.field(seriesFoldValueKey))
+		if s.countColumn != "" {
+			d.add(d.countIndex, s.countColumn, ts, d.field(seriesFoldCountKey))
+		}
+		return nil
+	}
+	for i, c := range d.columns {
+		d.add(i, s.columns[i], ts, d.field(c))
+	}
+	if s.added {
+		d.add(len(s.columns), lower.SeriesFoldCount, ts, seriesFoldOne)
+	}
+	return nil
+}
+
+// finish orders the answer and bounds it as its writer bounds a stats_query_range answer: past twice the stats body
+// bound by its estimate, or past the bound, it fails with errBodyTooLarge. It counts the clean and flagged results
+// the unwrap check reads.
+func (d *foldDecoder) finish() (*seriesFoldAnswer, error) {
+	a := d.a
+	a.order(d.flat, d.times)
 	if a.estimate() > 2*maxStatsBucketResponseBytes {
 		return nil, errBodyTooLarge
 	}
-	if a.matrixLen = a.length(times); len(a.results) > 0 && int64(a.matrixLen-len(seriesFoldMatrixTail)) > maxStatsBucketResponseBytes {
+	if a.matrixLen = a.length(d.times); len(a.results) > 0 && int64(a.matrixLen-len(seriesFoldMatrixTail)) > maxStatsBucketResponseBytes {
 		return nil, errBodyTooLarge
 	}
 	for _, ss := range a.results {
@@ -264,7 +315,7 @@ func (s *seriesFoldRead) decode(r io.Reader) (*seriesFoldAnswer, error) {
 // exponent, NaN and Inf), or empty: no byte the stats_query_range answer would escape or split a point at.
 func plainNumberText(v []byte) bool {
 	for _, c := range v {
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '.' || c == '-' || c == '+') {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '.' && c != '-' && c != '+' {
 			return false
 		}
 	}
@@ -441,11 +492,6 @@ func writeSeriesFoldMatrix(a *seriesFoldAnswer, dropFlag bool) []byte {
 		out = append(out, "]}"...)
 	}
 	return append(out, seriesFoldMatrixTail...)
-}
-
-// strippedLen is the length of the answer's matrix once the unwrap check cut its clean flags out (dropFlag).
-func (a *seriesFoldAnswer) strippedLen() int {
-	return a.matrixLen - a.cleanFlags*(1+len(unwrapKeptFlag))
 }
 
 // countIndex is the column of the count a folded group answers.
