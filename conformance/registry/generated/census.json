@@ -2774,6 +2774,9 @@
     "internal/translate/detected_level_normalize_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_stream_picks_test.go | semantics/detected-level-one-value-per-stream",
     "internal/translate/detected_level_stream_picks_test.go | severity-detected-level-derivation",
+    "internal/translate/drop_condition_test.go | architecture-syntax-package-layering",
+    "internal/translate/drop_condition_test.go | profiles/label-filter-regexp-anchoring",
+    "internal/translate/drop_condition_test.go | semantics/ip-filter-json-stats-pushdown",
     "internal/translate/extract_stages_test.go | architecture-syntax-package-layering",
     "internal/translate/ip_condition_test.go | semantics/ip-filter-json-stats-pushdown",
     "internal/translate/ip_label_filter_test.go | semantics/ip-label-filter-invalid-pattern",
@@ -3388,7 +3391,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 794,
+      "go": 795,
       "playwright": 3
     },
     "page_kinds": {

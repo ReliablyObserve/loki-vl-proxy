@@ -2,8 +2,12 @@ package proxy
 
 import (
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
@@ -115,4 +119,105 @@ func TestLogDropKeepReadsLikeTheTranslator(t *testing.T) {
 		t.Fatalf("compared %d accepted queries, %d with drop or keep stages: the corpus lost its rows", accepted, nonEmpty)
 	}
 	t.Logf("%d accepted queries compared (%d with drop or keep stages); %d rejected ones read otherwise", accepted, nonEmpty, rejectedDiffer)
+}
+
+// translatorLineFieldExposure and translatorBackendLogQuery are lineFieldExposure and backendLogQuery reading a parse
+// of their own, as they did before they read the query's memoised parse.
+func translatorLineFieldExposure(p *Proxy, query string) *lineFieldExposure {
+	if !p.lokiCompatibleProfile() {
+		return nil
+	}
+	lq, err := parseLogQLQuery(noFlowCtx, query)
+	if err != nil {
+		return nil
+	}
+	exposure := pipelineAddsLabels(lq.Pipeline)
+	p.withPlaceholderLine(&exposure, lq.Pipeline)
+	return &exposure
+}
+
+func translatorBackendLogQuery(p *Proxy, query string) (string, bool) {
+	if !strings.Contains(query, "line_format") || !p.lokiCompatibleProfile() {
+		return query, false
+	}
+	lq, err := parseLogQLQuery(noFlowCtx, query)
+	if err != nil {
+		return query, false
+	}
+	formats := 0
+	for _, stage := range lq.Pipeline {
+		if _, ok := stage.(*logqlpkg.LineFormatStage); ok {
+			formats++
+		}
+	}
+	if formats == 0 {
+		return query, false
+	}
+	if stripped, ok := stripUnreadLineFormat(query, lq.Pipeline); ok {
+		return stripped, false
+	}
+	return query, true
+}
+
+// The line-field exposure and the line_format decision of a log query (lineFieldExposure, backendLogQuery) read the
+// query's memoised parse: on every plan-corpus log query the validation accepts, and on long queries whose parse the
+// validation keeps in the plan memo, in the Loki-compatible profile with and without
+// -json-line-fields-as-line-keys, they equal what a parse of their own gave.
+//
+// conformance: architecture-syntax-package-layering
+func TestLogLineFieldExposureReadsLikeItsOwnParse(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	qs, err := plancorpus.Queries(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pad := `|= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `"`
+	qs = append(qs,
+		`{app="x"} | logfmt | line_format "{{.msg}}" | drop caller`,
+		`{app="x"} | json | line_format "{{.level}} {{.msg}}" |= "error"`,
+		`{app="x"} | line_format "{{.a}}" | line_format "{{.b}}"`,
+		`{app="x"} | json | label_format lvl=level | line_format "{{.lvl}}" | keep lvl`,
+		`{app="x"} `+pad+` | logfmt | line_format "{{.msg}}" | drop caller`,
+		`{app="x"} `+pad+` | json | line_format "{{.level}}" |= "error" | level=~"warn|error"`,
+	)
+	for _, keys := range []bool{false, true} {
+		cfg := Config{BackendURL: "http://unused", Cache: cache.NewDisabled(), LogLevel: "error",
+			LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated, JSONLineFieldsAsLineKeys: keys}
+		p, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !p.lokiCompatibleProfile() {
+			t.Fatal("not the Loki-compatible profile")
+		}
+		var compared, formats, long int
+		for _, raw := range qs {
+			q := RequestQueryText(raw)
+			if cachedQueryValidation(q).msg != "" {
+				continue
+			}
+			if _, err := parseLogQLQuery(noFlowCtx, q); err != nil {
+				continue
+			}
+			compared++
+			if got, want := p.lineFieldExposure(q), translatorLineFieldExposure(p, q); !reflect.DeepEqual(got, want) {
+				t.Errorf("keys=%v %.200s: exposure %+v, own parse %+v", keys, q, got, want)
+			}
+			gotQuery, gotKeep := p.backendLogQuery(q)
+			wantQuery, wantKeep := translatorBackendLogQuery(p, q)
+			if gotQuery != wantQuery || gotKeep != wantKeep {
+				t.Errorf("keys=%v %.200s: backend query %.200q %v, own parse %.200q %v", keys, q, gotQuery, gotKeep, wantQuery, wantKeep)
+			}
+			if strings.Contains(q, "line_format") {
+				formats++
+			}
+			if longQuery(q) {
+				long++
+			}
+		}
+		if compared < 100 || formats < 6 || long < 2 {
+			t.Fatalf("keys=%v: compared %d log queries, %d with line_format, %d long: the corpus lost its rows", keys, compared, formats, long)
+		}
+		t.Logf("keys=%v: %d log queries compared, %d with line_format", keys, compared, formats)
+	}
 }

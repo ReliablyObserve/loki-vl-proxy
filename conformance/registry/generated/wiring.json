@@ -109,6 +109,7 @@
       "internal/queryplan/lower/vector_agg_nested_test.go",
       "internal/queryplan/lower/vector_agg_test.go",
       "internal/queryplan/physical/eval_test.go",
+      "internal/translate/drop_condition_test.go",
       "internal/translate/extract_stages_test.go",
       "internal/translate/label_filter_test.go",
       "internal/translate/line_format_test.go",
@@ -1079,6 +1080,7 @@
       "test/e2e-compat/stage_field_exposure_test.go"
     ],
     "profiles/label-filter-regexp-anchoring": [
+      "internal/translate/drop_condition_test.go",
       "internal/translator/label_matcher_anchoring_test.go",
       "internal/translator/label_matcher_regexp_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
@@ -1632,6 +1634,7 @@
       "internal/logql/label_filter_expr_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/ordered_json_ip_filter_test.go",
+      "internal/translate/drop_condition_test.go",
       "internal/translate/ip_condition_test.go",
       "internal/translator/ip_label_filter_test.go",
       "test/e2e-compat/ip_label_filter_test.go"
@@ -5756,6 +5759,11 @@
       "semantics/detected-level-one-value-per-stream",
       "severity-detected-level-derivation"
     ],
+    "internal/translate/drop_condition_test.go": [
+      "architecture-syntax-package-layering",
+      "profiles/label-filter-regexp-anchoring",
+      "semantics/ip-filter-json-stats-pushdown"
+    ],
     "internal/translate/extract_stages_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -6764,7 +6772,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 797,
+  "tests_with_markers": 798,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
