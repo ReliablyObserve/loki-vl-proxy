@@ -111,14 +111,33 @@ var servedDivergences = map[string]string{
 	knownKeepIdentity:    "TestKeepUnwrapIdentityMatchLoki (internal/querycorpus)",
 	knownDynamicIdentity: "TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus)",
 	knownCountVariance:   "TestStddevStdvarMatchLoki, TestExtractionListIdentityMatchLoki (internal/querycorpus)",
-	"semantics/translator-writes-reserved-field-names": "TestReservedFieldLabelsMatchLoki (internal/queryplan/lower)",
+	"semantics/translator-writes-reserved-field-names":        "TestReservedFieldLabelsMatchLoki (internal/queryplan/lower), TestPlanMatchesLokiOnMetricQueries (internal/querycorpus)",
+	"semantics/translator-reads-quoted-text-as-syntax":        "TestPlanMatchesLokiOnLogQueries (internal/querycorpus)",
+	"semantics/translator-writes-signed-number-with-blank":    "TestPlanMatchesLokiOnLogQueries, TestOddSpellingsMatchLoki (internal/querycorpus)",
+	"semantics/translator-reads-marker-bytes-in-quoted-value": "TestMarkerBytesInLabelValueMeanWhatLokiMeans (internal/queryplan/lower)",
+	// A served row with the unspaced parser is held, on top, to the translator's text for the parser written with the
+	// blank (spacedParserText), which Loki reads as the same parser.
+	knownUnspacedParser: "TestUnspacedParserMatchesLoki (internal/queryplan/lower)",
 }
+
+// knownUnspacedParser is the recorded known divergence of a regexp or pattern parser written with no blank before its
+// expression.
+const knownUnspacedParser = "semantics/translator-copies-unspaced-parser"
 
 // spellingDifferential holds the rows translatorspelling.Case names (a spelling the translator reads otherwise than
 // the plan, which reads the tree) to Loki: the proxy serves the plan's text for them. The other rows of those cases
 // (semantics/translator-reads-quoted-text-as-syntax: a log query's label filter value) have no differential yet and
 // stay delegated.
 const spellingDifferential = "TestPlanSpellingsMatchLoki (internal/proxy)"
+
+// spacedParserText reports whether text is the string translator's text under prof for expr printed back
+// (logql.Expr.String writes every parser with a blank before its expression): Loki reads a regexp or pattern parser
+// written with no blank as the one with the blank (semantics/translator-copies-unspaced-parser), so the plan's text for
+// the unspaced spelling must be the translator's for the spaced one.
+func spacedParserText(prof planProfile, expr logql.Expr, text string) bool {
+	spaced, ok := prof.translate(expr.String())
+	return ok && lower.QuoteKeywordFieldText(spaced) == text
+}
 
 // encodeOrEmpty is the text of op, or "" for none.
 func encodeOrEmpty(op physical.Op) string {
@@ -229,7 +248,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				caseID, ok = "semantics/translator-reads-marker-bytes-in-quoted-value", true
 			}
 			if !ok && translatorCopiesUnspacedParser(q) {
-				caseID, ok = "semantics/translator-copies-unspaced-parser", true
+				caseID, ok = knownUnspacedParser, true
 			}
 			if !ok && emptyWithoutDiffers(q, plan, prof) {
 				// A `without ()` operand: Loki keeps every series of it, the translator writes it ungrouped, and the
@@ -283,6 +302,9 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 					// The string translator's text, or the plan's where it writes the translator's reading (a
 					// parser's series identity under a binary operation, which lowerMetric writes with the stream's
 					// series): the row stays the divergence.
+				case caseID == knownUnspacedParser && !spacedParserText(prof, expr, text):
+					fail(fmt.Sprintf("%s: %q: the proxy serves %q, the translator writes another text for the parser with the blank", prof.name, q, text))
+					continue
 				case text == translator.EncodePhysical(got):
 					sec.Native++
 					sec.NativeLokiHeld++

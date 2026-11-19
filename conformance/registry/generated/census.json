@@ -2099,6 +2099,7 @@
     "internal/proxy/query_lowering_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/proxy/query_lowering_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
     "internal/proxy/query_lowering_test.go | semantics/translator-reads-quoted-text-as-syntax",
+    "internal/proxy/query_lowering_test.go | semantics/translator-writes-reserved-field-names",
     "internal/proxy/query_lowering_test.go | semantics/translator-writes-signed-number-with-blank",
     "internal/proxy/query_plan_budget_corpus_test.go | query-complexity-limits",
     "internal/proxy/query_range_steps_harden_test.go | quality/query-range-settled-steps",
@@ -3113,6 +3114,8 @@
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-name-parse-error",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-names-accepted-outside-loki-profile",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/label-browse-params-ignored",
+    "test/e2e-compat/marker_bytes_label_value_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/marker_bytes_label_value_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
     "test/e2e-compat/marker_text_test.go | loki_api_v1_query",
     "test/e2e-compat/marker_text_test.go | loki_api_v1_query_range",
     "test/e2e-compat/marker_text_test.go | semantics/marker-text-in-query-strings",
@@ -3206,6 +3209,7 @@
     "test/e2e-compat/range_metric_offset_series_limit_test.go | window-bounds-and-step-alignment",
     "test/e2e-compat/repeated_label_filters_test.go | loki_api_v1_query_range",
     "test/e2e-compat/repeated_label_filters_test.go | semantics/repeated-label-filter-replaced-across-label-format",
+    "test/e2e-compat/reserved_field_labels_test.go | loki_api_v1_query",
     "test/e2e-compat/reserved_field_labels_test.go | loki_api_v1_query_range",
     "test/e2e-compat/reserved_field_labels_test.go | semantics/translator-writes-reserved-field-names",
     "test/e2e-compat/reserved_field_name_case_test.go | loki_api_v1_query",
@@ -3391,7 +3395,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 795,
+      "go": 796,
       "playwright": 3
     },
     "page_kinds": {

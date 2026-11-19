@@ -24,8 +24,8 @@ const (
 	// carries the logfmt presence fence, right after the JSON ones.
 	responseKeyInnerQueryRange
 	// responseKeyLogWindowShape feeds the log window fragment fingerprint,
-	// which only the keep projection, keyword label, reserved field case and reserved
-	// field label fences reach. It reads no request.
+	// which only the keep projection, keyword label, reserved field case, reserved
+	// field label and marker byte fences reach. It reads no request.
 	responseKeyLogWindowShape
 )
 
@@ -52,6 +52,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		if words.reservedLabel {
 			b.add(reservedFieldLabelResponseVersion)
 		}
+		b.add(markerBytesFence(query, words.markerQuoted))
 		return b.String()
 	}
 	other := spelledOtherwise(query)
@@ -78,6 +79,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	if words.reservedLabel {
 		b.add(reservedFieldLabelResponseVersion)
 	}
+	b.add(markerBytesFence(query, words.markerQuoted))
 	if keep && containsWord(query, "unwrap", other) {
 		b.add(keepUnwrapIdentityResponseVersion)
 	}

@@ -80,8 +80,9 @@ func LogStagesOf(names []string) LogStages {
 //   - a label filter with an equality on a number, duration or byte size after a json or logfmt parser
 //     (WritesNumericEquality), or a comparison with a signed number;
 //   - a word VictoriaLogs reserves as a field name before a parser (ReadsReservedField);
-//   - a quoted string with detected_level or service_name in it, a byte from \x00 to \x02, or an escape that could
-//     write one;
+//   - a quoted string with detected_level or service_name in it, a byte from \x00 to \x02 or an escape that could
+//     write one in a stream selector, or an escape the parser does not read (a pipeline's strings may hold the
+//     translator's marker bytes: the plan keeps them, semantics/translator-reads-marker-bytes-in-quoted-value);
 //   - a comment, a grouping word, and text it does not read.
 //
 // Like ScreenMetric it only turns queries away: the typed gate on the plan and the lowering decide every query it

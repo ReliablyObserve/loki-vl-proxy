@@ -159,7 +159,6 @@ var loweringParityQueries = []struct {
 	{"sum over a stddev", `sum(stddev by (app) (count_over_time({app="a"}[5m])))`, false, "", ""},
 	{"label_replace around topk", `label_replace(topk(2, sum by (app) (count_over_time({app="a"}[5m]))), "x", "$1", "app", "(.*)")`, false, "", ""},
 	{"numeric equality after a parser", `sum(count_over_time({app="a"} | json | status == 500 [5m]))`, false, "", ""},
-	{"reserved field label", `sum(count_over_time({app="a"} | _time="x" [5m]))`, false, "", ""},
 	{"unwrap of a reserved field in another case", `sum(sum_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, false, "", ""},
 	{"keep before unwrap under a label_replace", `label_replace(first_over_time({app="a"} | json | keep app, n | unwrap n [5m]), "x", "$1", "app", "(.*)")`, false, "", ""},
 	{"vector", `vector(1)`, false, "", ""},
@@ -534,7 +533,6 @@ func TestQueryPlanLowering_ServesMetricConstructs(t *testing.T) {
 		{`vector(1) + sum(rate({app="a"}[5m]))`, ""},
 		// The plan writes Loki's reading, the translator another text.
 		{`sum(count_over_time({app="a"} | json | status == 500 [5m]))`, ""},
-		{`sum(count_over_time({app="a"} | _time="x" [5m]))`, ""},
 		{`sum(sum_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, ""},
 		{`sum by (app) (max_over_time({app="a"} | json | keep app, n | unwrap n [5m])) / 2`, ""},
 		{`rate({app="a"}[5m])`, "RangeAgg"},
@@ -599,7 +597,7 @@ func TestQueryPlanLowering_WritesTranslatorTextGate(t *testing.T) {
 		`sum without (x) (rate({a="b"}[5m])) > 1`:                                                       false,
 		`sum(rate({a="b"}[5m])) * vector(2)`:                                                            false,
 		`count_over_time({a="b"} | logfmt | n == 2 [5m])`:                                               false,
-		`count_over_time({a="b"} | _stream="x" [5m])`:                                                   false,
+		`count_over_time({a="b"} | _stream="x" [5m])`:                                                   true,
 		`sum(max_over_time({a="b"} | json | unwrap _Stream_ID [5m]))`:                                   false,
 		`label_replace(max_over_time({a="b"} | json | keep n | unwrap n [5m]), "x", "$1", "a", "(.*)")`: false,
 		"count_over_time({a=\"b\"} | s=`a detected_level b` [5m])":                                      false,
@@ -655,6 +653,49 @@ func TestQueryPlanLowering_MetricFlipScreenAndPanic(t *testing.T) {
 	}
 }
 
+// The recorded known divergences the proxy serves from the plan, where the string translator writes another text: a
+// metric query with a label filter or a selector matcher on a name VictoriaLogs reserves (the plan filters the stream
+// tag, the translator a field VictoriaLogs rejects or reads as its own filter), and a log query with a stage and a
+// label filter value that holds the translator's marker bytes (the plan keeps the value, the translator cuts it). The
+// requests to VictoriaLogs differ from the translator's by design; the Loki differentials hold the answers
+// (TestReservedFieldLabelsMatchLoki, TestPlanMatchesLokiOnMetricQueries, TestMarkerBytesInLabelValueMeanWhatLokiMeans).
+// The other kinds stay with the translator: a label filter value that holds detected_level or service_name or a signed
+// number, after a stage of a log query or in a metric query, and a marker byte in a metric query.
+//
+// conformance: semantics/translator-writes-reserved-field-names, semantics/translator-reads-marker-bytes-in-quoted-value
+func TestQueryPlanLowering_ServesTranslatorOnlyDivergences(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	prof := routeLoweringProfile()
+	for _, tc := range []struct {
+		query, served string // served is the plan's text the proxy sends; empty for the translator's
+	}{
+		{`count_over_time({app="a"} | _time="x" [5m])`, `app:="a" {_time="x"} | stats count()`},
+		{`sum(count_over_time({app="a", _msg="x"}[5m]))`, `app:="a" {_msg="x"} | stats count()`},
+		{`sum(rate({app="a"} | _TIME > 5 [5m]))`, `| copy _TIME as __lxrf_TIME | filter __lxrf_TIME:>5 | delete __lxrf_TIME |`},
+		{`{app="a"} | o="\x02\x00\x02" | json`, "app:=\"a\" o:=\"\x02\x00\x02\" | unpack_json"},
+		// Turned away: a reserved name in a clause, a drop, a log query with a stage; the other misread kinds.
+		{`sum by (_time) (count_over_time({app="a"}[5m]))`, ""},
+		{`count_over_time({app="a"} | drop _time [5m])`, ""},
+		{`count_over_time({app="a"} | drop a | _time="x" [5m])`, ""},
+		{`count_over_time({app="a"} | pattern "<_time>" | _time="x" [5m])`, ""},
+		{`sum(count_over_time({app="a"} | keep a | _msg="x" [5m])) / sum(count_over_time({app="c"}[5m]))`, ""},
+		{`{app="a"} | _time="x" | json`, ""},
+		{`{app="a"} | s="detected_level" | json`, ""},
+		{`{app="a"} | n > - 5 | json`, ""},
+		{`count_over_time({app="a"} | o="\x02\x00\x02" | json [5m])`, ""},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			got, ok := p.PlanServedText(tc.query, prof)
+			if want := tc.served != ""; ok != want {
+				t.Fatalf("served from the plan %v (%s), want %v", ok, got, want)
+			}
+			if ok && !strings.Contains(got, tc.served) {
+				t.Errorf("served %q, want %q", got, tc.served)
+			}
+		})
+	}
+}
+
 // The label filter values the string translator reads as syntax, at every node of a plan: the gate reads the decoded
 // value of each leaf, and a value that is only text is left to the flip.
 // conformance: semantics/translator-reads-quoted-text-as-syntax, semantics/translator-reads-marker-bytes-in-quoted-value, semantics/translator-writes-signed-number-with-blank
@@ -673,12 +714,34 @@ func TestQueryPlanLowering_MisreadFilterValue(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
-		if got := misreadFilterValue(plan.Root); got != want {
+		if got := misreadFilterValue(plan.Root, misreadAny); got != want {
 			t.Errorf("misreadFilterValue(%s) = %v, want %v", q, got, want)
 		}
 	}
-	if misreadLeaf(nil) {
+	if misreadLeaf(nil) != 0 {
 		t.Error("a nil filter is misread")
+	}
+	// Each kind on its own: the log gate serves the marker kind and turns the other two away.
+	for q, want := range map[string]misreadKind{
+		`{a="b"} | s="detected_level"`:             misreadText,
+		`{a="b"} | v="\x02\x00\x02" | json`:        misreadMarker,
+		`{a="b"} | n >= - 1`:                       misreadSign,
+		`{a="b"} | s="service_name\x01" or n < +2`: misreadText | misreadMarker | misreadSign,
+		`{a="b"} | s="x" | n > 1`:                  0,
+	} {
+		plan, err := loweringPlan(context.Background(), q)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		var got misreadKind
+		for _, k := range []misreadKind{misreadText, misreadMarker, misreadSign} {
+			if misreadFilterValue(plan.Root, k) {
+				got |= k
+			}
+		}
+		if got != want {
+			t.Errorf("%s: misread kinds %b, want %b", q, got, want)
+		}
 	}
 }
 

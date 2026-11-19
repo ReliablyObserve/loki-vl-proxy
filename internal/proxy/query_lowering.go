@@ -400,10 +400,14 @@ func dynamicIdentityScreen(query string) bool {
 //     vector(n) operand).
 //   - The recorded known divergences the plan writes as Loki reads them, where the translator writes another text:
 //     a keep before an unwrap anywhere but where the proxy serves its identity (lower.WritesKeepUnwrapIdentity), a
-//     a numeric equality after a parser (semantics/label-filter-numeric-equality), a label named like a field
-//     VictoriaLogs reserves (semantics/translator-writes-reserved-field-names), and an unwrap of one in another case,
-//     which the lowering writes in the outbound guard's form (semantics/reserved-field-name-case-outbound).
+//     a numeric equality after a parser (semantics/label-filter-numeric-equality), and an unwrap of a field
+//     VictoriaLogs reserves in another case, which the lowering writes in the outbound guard's form
+//     (semantics/reserved-field-name-case-outbound).
 //   - A label filter value the translator reads as syntax (misreadFilterValue).
+//
+// A label named like a field VictoriaLogs reserves is served from the plan, which filters the stream tag where the
+// translator writes a field filter VictoriaLogs rejects or reads as its own (semantics/translator-writes-reserved-field-names;
+// TestReservedFieldLabelsMatchLoki and the metric Loki differential hold the answers).
 //
 // Serving these from the plan changes the text VictoriaLogs sees or its cache key, so they stay with the string
 // translator until a flip carries their own proof. A label named like a LogsQL keyword is the one difference left:
@@ -411,34 +415,47 @@ func dynamicIdentityScreen(query string) bool {
 // (semantics/translator-writes-keyword-field-names-bare), as the corpus shadow and the log query flip already hold.
 func writesTranslatorText(plan *queryplan.Plan, prof lower.Profile) bool {
 	return !holdsEvaluatedLayer(plan.Root) && !lower.RoutedBinary(plan.Root) && !lower.WritesKeepUnwrapIdentity(plan) &&
-		!lower.WritesNumericEquality(plan) && !lower.ReadsReservedField(plan, prof) &&
-		!lower.UnwrapsReservedFieldOtherCase(plan) && !misreadFilterValue(plan.Root)
+		!lower.WritesNumericEquality(plan) && !lower.UnwrapsReservedFieldOtherCase(plan) &&
+		!misreadFilterValue(plan.Root, misreadAny)
 }
 
-// misreadFilterValue reports a plan with a label filter whose value the string translator reads as syntax, where Loki
-// and the plan read the value: one that holds detected_level or service_name (the translator unpacks the line,
-// semantics/translator-reads-quoted-text-as-syntax), one that holds a \x00, \x01 or \x02 byte (its stage markers,
-// semantics/translator-reads-marker-bytes-in-quoted-value), and a signed number, which the translator copies with
-// the blank a query may write after the sign (semantics/translator-writes-signed-number-with-blank). It reads the
-// values the parser decoded, never query text.
-func misreadFilterValue(n queryplan.Node) bool {
+// misreadKind is a kind of label filter value the string translator reads as syntax (misreadFilterValue).
+type misreadKind uint8
+
+const (
+	// misreadText is a value that holds detected_level or service_name: the translator unpacks the line
+	// (semantics/translator-reads-quoted-text-as-syntax).
+	misreadText misreadKind = 1 << iota
+	// misreadMarker is a value that holds a \x00, \x01 or \x02 byte, the translator's stage markers
+	// (semantics/translator-reads-marker-bytes-in-quoted-value).
+	misreadMarker
+	// misreadSign is a signed number, which the translator copies with the blank a query may write after the sign
+	// (semantics/translator-writes-signed-number-with-blank).
+	misreadSign
+
+	misreadAny = misreadText | misreadMarker | misreadSign
+)
+
+// misreadFilterValue reports a plan with a label filter whose value the string translator reads as syntax, of one of
+// the kinds, where Loki and the plan read the value. It reads the values the parser decoded, never query text.
+func misreadFilterValue(n queryplan.Node, kinds misreadKind) bool {
 	switch v := n.(type) {
 	case *queryplan.LogSelect:
 		for _, st := range v.Stages {
-			if lf, ok := st.(*queryplan.LabelFilter); ok && misreadLeaf(lf.Expr) {
+			if lf, ok := st.(*queryplan.LabelFilter); ok && misreadLeaf(lf.Expr)&kinds != 0 {
 				return true
 			}
 		}
 	case *queryplan.RangeAgg:
-		return v.In != nil && misreadFilterValue(v.In)
+		return v.In != nil && misreadFilterValue(v.In, kinds)
 	case *queryplan.VectorAgg:
-		return misreadFilterValue(v.In)
+		return misreadFilterValue(v.In, kinds)
 	case *queryplan.Rank:
-		return misreadFilterValue(v.In)
+		return misreadFilterValue(v.In, kinds)
 	case *queryplan.LabelReplace:
-		return misreadFilterValue(v.In)
+		return misreadFilterValue(v.In, kinds)
 	case *queryplan.BinOp:
-		return misreadFilterValue(v.L) || misreadFilterValue(v.R)
+		return misreadFilterValue(v.L, kinds) || misreadFilterValue(v.R, kinds)
 	}
 	return false
 }
@@ -451,20 +468,29 @@ func dynamicIdentityOp(op string) bool {
 // dynamicIdentityFuncs are the range functions of a dynamic identity, as a query names them.
 var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"}
 
-// misreadLeaf reports a leaf of e whose value misreadFilterValue names.
-func misreadLeaf(e *logqlpkg.LabelFilterExpr) bool {
+// misreadLeaf is the kinds of the values of the leaves of e that misreadFilterValue names.
+func misreadLeaf(e *logqlpkg.LabelFilterExpr) misreadKind {
 	if e == nil {
-		return false
+		return 0
 	}
 	if !e.IsLeaf() {
-		return misreadLeaf(e.Left) || misreadLeaf(e.Right)
+		return misreadLeaf(e.Left) | misreadLeaf(e.Right)
 	}
 	switch e.Kind {
 	case logqlpkg.LabelFilterValueNumber, logqlpkg.LabelFilterValueDuration, logqlpkg.LabelFilterValueBytes:
-		return e.Value != "" && (e.Value[0] == '-' || e.Value[0] == '+')
+		if e.Value != "" && (e.Value[0] == '-' || e.Value[0] == '+') {
+			return misreadSign
+		}
+		return 0
 	}
-	return strings.Contains(e.Value, "detected_level") || strings.Contains(e.Value, "service_name") ||
-		strings.ContainsAny(e.Value, "\x00\x01\x02")
+	var k misreadKind
+	if strings.Contains(e.Value, "detected_level") || strings.Contains(e.Value, "service_name") {
+		k |= misreadText
+	}
+	if strings.ContainsAny(e.Value, "\x00\x01\x02") {
+		k |= misreadMarker
+	}
+	return k
 }
 
 // holdsEvaluatedLayer reports a plan with a ranking, a stddev or a stdvar anywhere in it.
@@ -486,12 +512,14 @@ func holdsEvaluatedLayer(n queryplan.Node) bool {
 // (the flipped ones, and the regexp and pattern parsers of a query with an unspaced one), at least one, and none of
 // the recorded known divergences, where the plan writes the query as Loki reads it and the
 // string translator writes another text (writesTranslatorText names them): a numeric equality after a parser, a label
-// named like a field VictoriaLogs reserves, a label filter value the translator reads as syntax. Those stay with the
-// string translator until a flip carries their own proof.
+// named like a field VictoriaLogs reserves, a label filter value that holds detected_level or service_name or a signed
+// number the translator copies with a blank. Those stay with the string translator until a flip carries their own
+// proof. A value that holds the translator's stage marker bytes is served from the plan, which keeps the value
+// (TestMarkerBytesInLabelValueMeanWhatLokiMeans holds the answers to Loki's).
 func servesLogStages(plan *queryplan.Plan, prof lower.Profile, allowed lower.LogStages) bool {
 	stages, ok := lower.PlanLogStages(plan)
 	return ok && stages != 0 && stages&^allowed == 0 && !lower.WritesNumericEquality(plan) &&
-		!lower.ReadsReservedField(plan, prof) && !misreadFilterValue(plan.Root)
+		!lower.ReadsReservedField(plan, prof) && !misreadFilterValue(plan.Root, misreadText|misreadSign)
 }
 
 // filterOnly reports a log query whose stages are line filters and label filters only: the queries served from the

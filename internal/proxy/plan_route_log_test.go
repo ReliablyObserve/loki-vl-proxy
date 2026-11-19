@@ -45,16 +45,13 @@ func logRoute(q string, p *queryplan.Plan, rp routeProfile, data bool) (routeRec
 	if !screened || stages != 0 && !servesLogStages(p, routeLoweringProfile(), allowed) {
 		return routeRecord{}, routeTextDelegation(p, "translator text")
 	}
-	// A label filter on a name VictoriaLogs reserves (_time, _stream, _stream_id, _msg) in any case: the handlers
-	// leave it to the string translator's text (semantics/translator-writes-reserved-field-names).
-	if filtersReservedName(sel) {
-		return routeRecord{}, routeTextDelegation(p, "reserved field")
-	}
 	op, err := lower.Plan(p, routeLoweringProfile())
 	if err != nil {
 		return routeRecord{}, err
 	}
-	vl, ok := op.(physical.VLQuery)
+	// Every VictoriaLogs query passes the outbound guard (guardOutboundQuery): a label named like a field VictoriaLogs
+	// reserves in another case, which a parser extracted, is copied aside before it is filtered.
+	vl, ok := lower.GuardOutbound(op).(physical.VLQuery)
 	if !ok {
 		return routeRecord{}, errRouteRulePending
 	}
@@ -88,31 +85,6 @@ func logRoute(q string, p *queryplan.Plan, rp routeProfile, data bool) (routeRec
 func hasParser(sel *queryplan.LogSelect, typ logqlpkg.ParserType) bool {
 	for _, st := range sel.Stages {
 		if ps, ok := st.(*logqlpkg.ParserStage); ok && ps.Type == typ {
-			return true
-		}
-	}
-	return false
-}
-
-// filtersReservedName reports a label filter in the pipeline whose name is one VictoriaLogs reserves, in any case.
-func filtersReservedName(sel *queryplan.LogSelect) bool {
-	var reserved func(e *logqlpkg.LabelFilterExpr) bool
-	reserved = func(e *logqlpkg.LabelFilterExpr) bool {
-		if e == nil {
-			return false
-		}
-		if !e.IsLeaf() {
-			return reserved(e.Left) || reserved(e.Right)
-		}
-		for _, name := range [...]string{"_time", "_stream", "_stream_id", "_msg"} {
-			if strings.EqualFold(e.Name, name) {
-				return true
-			}
-		}
-		return false
-	}
-	for _, st := range sel.Stages {
-		if lf, ok := st.(*logqlpkg.LabelFilterStage); ok && reserved(lf.Expr) {
 			return true
 		}
 	}
