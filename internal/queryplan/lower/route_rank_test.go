@@ -198,3 +198,65 @@ func TestRouteQueryOfAnOperandIsTheOperandAlone(t *testing.T) {
 		t.Fatalf("routed corpus rows: %v", routed)
 	}
 }
+
+// The route rule of a ranking or a label_replace at the root never panics, and either names the delegation or
+// routes the query as its operand alone (but for the grid and the fold a ranking changes), a query the lowering
+// writes.
+func FuzzRouteEvaluated(f *testing.F) {
+	f.Add(`topk(3, sum by (app) (count_over_time({app="a"}[5m])))`, int64(5*time.Minute), int64(time.Hour), false)
+	f.Add(`bottomk by (app) (1, sum by (app, env) (bytes_rate({app="a"}[1m])))`, int64(time.Minute), int64(time.Hour), false)
+	f.Add(`sort_desc(sum without (pod) (count_over_time({app="a"}[5m])))`, int64(5*time.Minute), int64(time.Hour), false)
+	f.Add(`topk(2, topk(3, stddev by (app) (rate({app="a"}[5m]))))`, int64(0), int64(0), true)
+	f.Add(`topk(2, count_over_time({app="a"}[5m]))`, int64(5*time.Minute), int64(time.Hour), false)
+	f.Add(`label_replace(sum by (app) (rate({app="a"}[5m])), "b", "$1", "app", "(.*)")`, int64(time.Minute), int64(24*time.Hour), false)
+	f.Add(`label_replace(sum by (app) (rate({app="a"}[5m])) / sum by (app) (rate({app="b"}[5m])), "b", "$1", "app", "(.*)")`, int64(0), int64(0), true)
+	f.Add(`label_replace(topk(2, rate({app="a"}[5m])), "b", "$1", "app", "(.*)")`, int64(0), int64(0), true)
+	f.Fuzz(func(t *testing.T, q string, step, span int64, instant bool) {
+		if len(q) > 512 {
+			return
+		}
+		p := evaluatedPlan(q)
+		if p == nil {
+			return
+		}
+		req := RouteRequest{Instant: instant, Step: time.Duration(step), Span: time.Duration(span), End: routeTestEnd}
+		got, err := RouteQuery(p, Profile{}, req)
+		if err != nil {
+			if !errors.Is(err, ErrNotLowered) {
+				t.Fatalf("%q: %v is not a delegation", q, err)
+			}
+			return
+		}
+		if _, err := Plan(p, Profile{}); err != nil {
+			t.Fatalf("%q: routed, but Plan: %v", q, err)
+		}
+		operand := LabelReplaceOperand(p.Root)
+		r, ranks := p.Root.(*queryplan.Rank)
+		if ranks {
+			_, operand = RankedOperand(r)
+		}
+		sub := *p
+		sub.Root = operand
+		alone, err := RouteQuery(&sub, Profile{}, req)
+		if err != nil || alone.Binary != got.Binary || len(alone.Operands()) != len(got.Operands()) {
+			t.Fatalf("%q: routed %+v, its operand alone %+v, %v", q, got.Operands(), alone.Operands(), err)
+		}
+		for i, o := range got.Operands() {
+			a := alone.Operands()[i]
+			if ranks {
+				if a.Fold == FoldPushed {
+					a.Fold = FoldRows
+				}
+				if o.RankedGrid && (a.Window != WindowTumbling || !a.LabelGrouped) {
+					t.Fatalf("%q: a ranked grid on %+v", q, a)
+				}
+				a.RankedGrid = o.RankedGrid
+			} else if o.RankedGrid {
+				t.Fatalf("%q: a ranked grid under no ranking", q)
+			}
+			if o != a {
+				t.Fatalf("%q: operand %d routed as %+v, alone as %+v", q, i, o, a)
+			}
+		}
+	})
+}
