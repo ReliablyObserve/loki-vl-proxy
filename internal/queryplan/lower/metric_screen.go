@@ -29,8 +29,9 @@ import (
 //     and a json extraction expression the lowering does not write (parser extracted label, json extraction);
 //   - a label filter with an equality on a number, duration or byte size after a json or logfmt parser
 //     (WritesNumericEquality), or a comparison with a signed number;
-//   - a word VictoriaLogs reserves as a field name (_time, _msg, _stream, _stream_id in any letter case) before a parser
-//     (ReadsReservedField);
+//   - a word VictoriaLogs reserves as a field name (_time, _msg, _stream, _stream_id in any letter case) before a parser,
+//     other than as a selector matcher's or a label filter's name before any other stage (the stream tag the plan
+//     filters, ReadsReservedField);
 //   - a quoted string with detected_level or service_name in it, a byte from \x00 to \x02, or an escape that could
 //     write one (the values the string translator reads as syntax);
 //   - a comment, or text it does not read.
@@ -188,6 +189,9 @@ type metricScan struct {
 	flags, keepStage, keepName, keepMatcher, template bool
 	// parserArg is set by a regexp or pattern parser in a log query, until its quoted expression is read.
 	parserArg bool
+	// stageStart is set by a pipe that opens a stage, until its first word; labelFilter is set by a stage whose first
+	// word names no stage (a label filter), until the next pipe; stageSeen by any stage that is not a label filter.
+	stageStart, labelFilter, stageSeen bool
 }
 
 // pipeline reports a position in a log pipeline: inside a range function, or anywhere in a log query.
@@ -233,9 +237,11 @@ func (s *metricScan) step(q string, i int) (int, bool) {
 		return i, true
 	case c == '|':
 		// A pipe, or a line filter (|=, |~, |>).
-		if i+1 < len(q) && (q[i+1] == '=' || q[i+1] == '~' || q[i+1] == '>') {
+		lineFilter := i+1 < len(q) && (q[i+1] == '=' || q[i+1] == '~' || q[i+1] == '>')
+		if lineFilter {
 			i++
 		}
+		s.stageStart, s.labelFilter = !lineFilter, false
 		s.operand, s.names = false, false
 		s.existsThen = s.existsThen || s.exists
 		s.jsonArgs = false
@@ -276,8 +282,11 @@ func (s *metricScan) parserFlag(q string, i int) (int, bool) {
 // quoted reads the quoted string opening at q[i].
 func (s *metricScan) quoted(q string, i int) (int, bool) {
 	j := skipQuoted(q, i)
-	// The derived label names count in a log pipeline's strings: a label filter value the translator unpacks.
-	if j >= len(q) || misreadQuoted(q[i+1:j], q[i], s.pipeline() && s.brace == 0) || s.template && !plainTemplate(q[i+1:j]) {
+	// The derived label names count in a log pipeline's strings: a label filter value the translator unpacks. The
+	// translator's marker bytes count everywhere but in a log query's pipeline, whose values the plan keeps and the proxy
+	// serves (semantics/translator-reads-marker-bytes-in-quoted-value).
+	inPipeline := s.pipeline() && s.brace == 0
+	if j >= len(q) || misreadQuoted(q[i+1:j], q[i], inPipeline, !s.log || !inPipeline) || s.template && !plainTemplate(q[i+1:j]) {
 		return j, false
 	}
 	if s.parserArg {
@@ -408,7 +417,11 @@ func (s *metricScan) top() bool { return s.paren == 0 && s.brace == 0 && s.brack
 // word reads the word q[i:j] and reports false for one ScreenMetric turns away.
 func (s *metricScan) word(q string, i, j int) bool {
 	w := q[i:j]
-	if done, ok := s.label(w); done {
+	if s.stageStart {
+		s.stageStart, s.labelFilter = false, !stageWord(w)
+		s.stageSeen = s.stageSeen || !s.labelFilter
+	}
+	if done, ok := s.label(q, w, j); done {
 		return ok
 	}
 	if done, ok := s.keyword(q, w, j); done {
@@ -448,12 +461,16 @@ func (s *metricScan) word(q string, i, j int) bool {
 
 // label reads a word that is a duration, a label name of a selector or a clause, or the label an unwrap names; done
 // is false for another word.
-func (s *metricScan) label(w string) (done, ok bool) {
+func (s *metricScan) label(q, w string, j int) (done, ok bool) {
 	switch {
 	case s.bracket > 0:
 		return true, true // a duration or a step: [5m], [1h:1m]
 	case reservedWord(w) && !s.parsed:
-		return true, false
+		// A name VictoriaLogs reserves, before any parser. In a metric query, a selector matcher or a label filter on
+		// it before any other stage is the stream tag the plan filters (ReadsReservedField), which the proxy serves
+		// (semantics/translator-writes-reserved-field-names); anywhere else (a clause, an unwrap, a drop or keep, a
+		// filter after another stage, a log query's pipeline) the screen turns it away.
+		return true, !s.log && (s.brace > 0 || s.labelFilter && !s.stageSeen && comparisonFollows(q, j))
 	case s.brace > 0:
 		return true, true // a selector's label name
 	case s.clauseAt > 0 && s.paren == s.clauseAt:
@@ -543,6 +560,15 @@ func (s *metricScan) call(w string) bool {
 		s.needsUnwrap = true
 	}
 	return true
+}
+
+// stageWord reports a word that opens a stage of a log pipeline other than a label filter.
+func stageWord(w string) bool {
+	switch w {
+	case "json", "logfmt", "regexp", "pattern", "unpack", "line_format", "label_format", "decolorize", "drop", "keep", "unwrap":
+		return true
+	}
+	return false
 }
 
 // vectorWord reports the name of a vector aggregation the plan lowers.
@@ -645,19 +671,21 @@ func emptyClause(q string, j int) bool {
 }
 
 // misreadQuoted reports the content of a quoted string the string translator reads as syntax: detected_level or
-// service_name in it (when names is set), a byte from \x00 to \x02, or (in a double-quoted string) an escape that decodes to one or that
-// the parser does not read.
-func misreadQuoted(v string, quote byte, names bool) bool {
+// service_name in it (when names is set), a byte from \x00 to \x02 or (in a double-quoted string) an escape that
+// decodes to one (when markers is set), or an escape the parser does not read.
+func misreadQuoted(v string, quote byte, names, markers bool) bool {
 	if names && (strings.Contains(v, translate.DetectedLevelLabel) || strings.Contains(v, "service_name")) {
 		return true
 	}
 	for i := 0; i < len(v); i++ {
 		switch c := v[i]; {
 		case c <= 2:
-			return true
+			if markers {
+				return true
+			}
 		case c == '\\' && quote == '"':
-			n, ok := escapeLength(v, i+1)
-			if !ok {
+			n, marker, ok := escapeLength(v, i+1)
+			if !ok || marker && markers {
 				return true
 			}
 			i += n
@@ -666,16 +694,16 @@ func misreadQuoted(v string, quote byte, names bool) bool {
 	return false
 }
 
-// escapeLength reads the escape after a backslash at v[i:] and returns its length; false for one that is not an
-// escape of a Go string or that decodes to a byte from \x00 to \x02.
-func escapeLength(v string, i int) (int, bool) {
+// escapeLength reads the escape after a backslash at v[i:] and returns its length and whether it decodes to a byte
+// from \x00 to \x02; ok is false for one that is not an escape of a Go string.
+func escapeLength(v string, i int) (n int, marker, ok bool) {
 	if i >= len(v) {
-		return 0, false
+		return 0, false, false
 	}
 	digits, base := 0, 16
 	switch e := v[i]; {
 	case strings.IndexByte(`abfnrtv\'"`, e) >= 0:
-		return 1, true
+		return 1, false, true
 	case e == 'x':
 		digits = 2
 	case e == 'u':
@@ -685,10 +713,10 @@ func escapeLength(v string, i int) (int, bool) {
 	case e >= '0' && e <= '7':
 		digits, base, i = 3, 8, i-1
 	default:
-		return 0, false
+		return 0, false, false
 	}
 	if i+1+digits > len(v) {
-		return 0, false
+		return 0, false, false
 	}
 	value := 0
 	for _, d := range []byte(v[i+1 : i+1+digits]) {
@@ -698,16 +726,16 @@ func escapeLength(v string, i int) (int, bool) {
 		case base == 16 && (d|0x20) >= 'a' && (d|0x20) <= 'f':
 			value = value*16 + int(d|0x20-'a') + 10
 		default:
-			return 0, false
+			return 0, false, false
 		}
 		if value > 2 {
-			value = 3 // large enough: only a value up to 2 is turned away
+			value = 3 // large enough: only a value up to 2 is a marker
 		}
 	}
 	if base == 8 {
-		return digits, value > 2
+		return digits, value <= 2, true
 	}
-	return 1 + digits, value > 2
+	return 1 + digits, value <= 2, true
 }
 
 // reservedWord reports a word VictoriaLogs reserves as a field name, in any letter case.

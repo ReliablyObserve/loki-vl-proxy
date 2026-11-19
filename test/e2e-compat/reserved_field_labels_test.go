@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -84,9 +85,9 @@ func logStreamsByLabels(payload map[string]interface{}) []string {
 // field it is: the proxy answers the selector matchers, the label filters and the comparisons on them like Loki,
 // where it answered VictoriaLogs' parse error (_time:="st"), a time range (`| _time>=5s` was every line of the last
 // 5s) or the line filter (_msg:="m"). Both sides hold the fixture before anything is compared, and Loki's answer is
-// pinned to the streams the fixture has.
+// pinned to the streams the fixture has. A count of the lines under such a filter is Loki's too.
 //
-// conformance: semantics/translator-writes-reserved-field-names, loki_api_v1_query_range
+// conformance: semantics/translator-writes-reserved-field-names, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_ReservedFieldLabelsLikeLoki(t *testing.T) {
 	headers := map[string]string{"X-Scope-OrgID": "0"}
 	svc, start, end := reservedFieldFixture(t)
@@ -140,6 +141,34 @@ func TestCompat_ReservedFieldLabelsLikeLoki(t *testing.T) {
 		}
 		if ps != ls || strings.Join(pStreams, "\n") != strings.Join(lStreams, "\n") {
 			t.Errorf("%s:\n proxy %d %q (%s)\n Loki  %d %q", tc.query, ps, pStreams, pb, ls, lStreams)
+		}
+	}
+
+	// A metric query with such a matcher or label filter counts the lines of the streams Loki keeps, where the proxy
+	// sent VictoriaLogs the field filter (a parse error, a time range or the line filter).
+	at := strconv.FormatInt(end.UnixNano(), 10)
+	for _, tc := range []struct {
+		query string
+		want  string // Loki's count over the fixture
+	}{
+		{`sum(count_over_time(` + selector + `} | _time="10" [5m]))`, "1"},
+		{`sum(count_over_time(` + selector + `, _time=~"1.*|7s"}[5m]))`, "2"},
+		{`sum(count_over_time(` + selector + `, _time=~"[0-9]+"} | _time > 5 [5m]))`, "1"},
+		{`sum(count_over_time(` + selector + `} | _msg!="m" [5m]))`, "6"},
+		{`sum(count_over_time(` + selector + `} | _TIME=~"u.*" or _time="st" [5m]))`, "2"},
+	} {
+		instant := url.Values{"query": {tc.query}, "time": {at}}
+		ls, lb, lp := doJSONGET(t, lokiURL+"/loki/api/v1/query?"+instant.Encode(), headers)
+		ps, pb, pp := doJSONGET(t, proxyURL+"/loki/api/v1/query?"+instant.Encode(), headers)
+		if ls != http.StatusOK {
+			t.Fatalf("%s: Loki answered %d %s", tc.query, ls, lb)
+		}
+		lokiResult := extractArray(extractMap(lp, "data"), "result")
+		if len(lokiResult) != 1 || lokiResult[0].(map[string]interface{})["value"].([]interface{})[1] != tc.want {
+			t.Fatalf("%s: Loki answered %s, the fixture holds %s", tc.query, lb, tc.want)
+		}
+		if ps != http.StatusOK || !reflect.DeepEqual(extractArray(extractMap(pp, "data"), "result"), lokiResult) {
+			t.Errorf("instant %s:\n proxy %d %s\n Loki  %s", tc.query, ps, pb, lb)
 		}
 	}
 }

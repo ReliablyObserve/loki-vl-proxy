@@ -116,7 +116,7 @@ gap:
   effort: S
   area: 'internal/translator (writes the field filter); fixed when the query plan serves the remaining queries. internal/logsql ReservedFieldName and KeywordFieldName, internal/translate ReservedFieldStreamFilter, internal/queryplan/lower reserved_field.go'
   loki: '_time, _stream, _stream_id and _msg are plain labels; the oracle answers 200 and filters the label'
-  proxy: 'filter-only log queries filter the stream tag (the plan); metric queries, and label filters after a parser, drop, keep or label_format, still get the translator''s field filter'
+  proxy: 'filter-only log queries and metric queries whose matcher or label filter on the name comes before any parser filter the stream tag (the plan); a log query with such a filter and a stage, and a grouping, drop, keep or unwrap of the name, still get the translator''s text'
   planned_test: 'TestPlanTextsSurviveVictoriaLogsClone (internal/queryplan/lower, every text the plan writes for these names read back by VictoriaLogs'' clone, v1.49.0 and v1.53.0); TestCompat_ReservedFieldLabelsLikeLoki (test/e2e-compat, group semantics: a stream pushed alike to Loki and VictoriaLogs with a label _time, _stream_id or _msg, and the selector matchers, label filters and comparisons on it, against Loki); TestReservedFieldLabelsMatchLoki and TestReadsReservedField (internal/queryplan/lower), TestReservedFieldLabelFenceDoesNotServeAnOldCachedAnswer (internal/proxy)'
   visual: none
   visual_reason: 'no Grafana panel names a label _time or _stream; found by reading what VictoriaLogs does with these names'

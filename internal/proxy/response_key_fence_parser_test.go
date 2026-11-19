@@ -369,6 +369,11 @@ func fenceWants(query string) map[string]bool {
 			}
 		}
 		want["count-stdvar-series"] = lower.WritesCountVarianceSeries(plan)
+		// A log query with a stage and a label filter value that holds a \x00, \x01 or \x02 byte, read from the values
+		// the parser decoded.
+		if sel, ok := plan.Root.(*queryplan.LogSelect); ok {
+			want["marker-bytes-label-value"] = !filterOnly(sel) && misreadFilterValue(sel, misreadMarker)
+		}
 	}
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	// A label_replace call keeps a Grafana range variable through the parser as text it cannot type; the handlers
@@ -475,6 +480,8 @@ var fenceSpellingBases = []string{
 	`label_replace(sum without () (count_over_time({app="a"}[$__auto])) / 2, "p", "$1", "p", "(.*)")`,
 	`label_replace(sum by (x) (avg_over_time({app="a"} | json | unwrap n [$__range])), "p", "$1", "p", "(.*)")`,
 	`label_replace(count by (x) (stdvar_over_time({app="a"} | unwrap n [$__interval])), "p", "$1", "p", "(.*)")`,
+	// A label filter value with the translator's marker bytes, before a parser (semantics/translator-reads-marker-bytes-in-quoted-value).
+	`{app="a"} | o="\x02\x00\x02" | json | K_extracted!~"p|q"`, "{app=\"a\"} | o=`\x02b\x02` | logfmt",
 }
 
 // TestResponseKeyFencesFireOnEverySpelling re-spells each base query many ways and requires every fence whose
@@ -721,11 +728,12 @@ func fenceFires(name, query string) bool {
 		"rank-over-binary-lr": func() string {
 			return rankOverBinaryLabelReplaceFence(query)
 		},
-		"binary-empty-without":    func() string { return emptyWithoutOperandResponseKeyVersion(query) },
-		"unwrap-blank-spelling":   func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
-		"unwrap-conversion-blank": func() string { return unwrapConversionBlankResponseKeyVersion(query) },
-		"extraction-list-windows": func() string { return listedWindowsResponseKeyVersion(r, query) },
-		"count-stdvar-series":     func() string { return countVarianceResponseKeyVersion(query) },
+		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
+		"unwrap-blank-spelling":    func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
+		"unwrap-conversion-blank":  func() string { return unwrapConversionBlankResponseKeyVersion(query) },
+		"extraction-list-windows":  func() string { return listedWindowsResponseKeyVersion(r, query) },
+		"count-stdvar-series":      func() string { return countVarianceResponseKeyVersion(query) },
+		"marker-bytes-label-value": func() string { return markerBytesLabelValueResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -863,6 +871,17 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"count-stdvar-series", `count(stdvar_over_time({a="b"} | unwrap n [5m]))`, false},
 		{"count-stdvar-series", `count without (x) (stdvar_over_time({a="b"} | unwrap n [5m]))`, false},
 		{"count-stdvar-series", `count by (x) (count_over_time({a="b"} |= "stdvar_over_time unwrap" [5m]))`, false},
+		{"marker-bytes-label-value", `{app="x"} | o="\x02\x00\x02" | json | K_extracted!~"p|q"`, true},
+		{"marker-bytes-label-value", "{app=\"x\"} | o=`\x02b\x02` | logfmt", true},
+		{"marker-bytes-label-value", `{app="x"} | o="\u0002" | JSON`, true},
+		{"marker-bytes-label-value", `{app="x"} | o!="a\002b" | json | k="v"`, true},
+		{"marker-bytes-label-value", "{app=\"x\"} |#c\n o=\"\\x01\" | Json", true},
+		{"marker-bytes-label-value", `({app="x"} | o="\U00000001" | json)`, true},
+		{"marker-bytes-label-value", `{app="x"} | o="\x02\x00\x02"`, false},
+		{"marker-bytes-label-value", `{app="x"} |~ "\\x02\\d+" | json | o="\\x01"`, false},
+		{"marker-bytes-label-value", `{app="x"} | o="\x03" | json`, false},
+		{"marker-bytes-label-value", `{app="x"} |= "\x02" | json`, false},
+		{"marker-bytes-label-value", `count_over_time({app="x"} | o="\x02" | json [5m])`, false},
 		// Longer than the plan memo holds: the plan is built for the fence, uncached.
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} |= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `" | JSON | UNWRAP n [5m]))`, true},
 		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m])) / sum by (x) (rate({a="c"}[1m])))`, true},

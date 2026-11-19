@@ -106,7 +106,13 @@ func TestScreenLogStages(t *testing.T) {
 		{`{app="api"} | unwrap d`, 0},
 		{`{app="api"} | detected_level="error" # a comment`, 0},
 		{`{app="api"} | detected_level="error" | s="a detected_level b"`, 0},
-		{`{app="api"} | detected_level="error" | s="\x01"`, 0},
+		// The translator's marker bytes in a pipeline value: the plan keeps them (semantics/translator-reads-marker-bytes-in-quoted-value);
+		// in a stream selector they stay turned away, as does an escape the parser does not read.
+		{`{app="api"} | detected_level="error" | s="\x01"`, LogLevelFilter},
+		{"{app=\"api\"} | json | s=`\x02b\x02`", LogJSON},
+		{`{app="api"} | json | s="\u0002" | t="\002"`, LogJSON},
+		{`{app="api", s="\x02"} | json`, 0},
+		{`{app="api"} | json | s="\q"`, 0},
 		{`{app="api"} | detected_level="error" | n > -5`, 0},
 		{`{app="api"} | detected_level="error" | _time="x"`, 0},
 		{`{app="api"} | detected_level="error" | by="x"`, 0},

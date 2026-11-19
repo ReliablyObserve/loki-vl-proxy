@@ -85,7 +85,7 @@ gap:
   effort: S
   area: 'internal/translator (the stage marks are bytes of the query text); fixed when the query plan serves queries with a parser'
   loki: 'a label filter value is a string literal; its bytes are compared as they are'
-  proxy: 'a value that holds two \x02 bytes behind a parser is cut: the filter is written on the value without them'
+  proxy: 'a log query (with a parser or another stage, as filter-only ones already were) is served from the query plan, which keeps the value; a metric query with such a value is still written by the translator, which cuts it'
   planned_test: 'TestMarkerBytesInLabelValueMeanWhatLokiMeans (internal/queryplan/lower) holds the plan to Loki''s recorded answers; an e2e row against Loki when the plan serves queries with a parser'
   visual: none
   visual_reason: 'crafted control bytes; no Grafana panel sends them'

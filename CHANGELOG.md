@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `-max-query-plan-time` now also stops a query's parse and its semantic pass while they run, not only the work after them. The parser, every parser it starts for a call it reads again (`label_replace`, `vector`), and the walk over the parsed tree ask the budget every 256 tokens or nodes, once they are 1,024 tokens or nodes in. When the budget runs out, the request gets the same neutral 400 as before (`query planning took longer than the limit`, the flag named in the log line only) and nothing of its validation is stored. A query shorter than that first check is never cut short, so Loki's rejection of a malformed query is always the answer. Nothing changes for a request whose planning stays within the budget.
 
+### Fixed
+
+- A metric query with a selector matcher or a label filter on a label called `_time`, `_stream`, `_stream_id` (in any letter case) or `_msg`, before any parser, now answers like Loki: it counts the lines of the streams that carry that label. An example is `sum(count_over_time({app="a"} | _time="10" [5m]))`. The proxy used to send VictoriaLogs a field filter on the name. VictoriaLogs rejected that filter (`_time:="10"`), or read it as its own time range (`| _time>5s`) or line filter (`_msg:="x"`). Such queries are now served from the query plan, which filters the stream tag, as log queries already were.
+  - A grouping, `drop`, `keep` or `unwrap` of such a name, and a log query that has such a filter and a parser or another stage, still get the old text.
+  - The response cache fence for these queries moves to `@reserved-field-labels-v2:`. Answers cached before the change are not served after it; each such query's key misses once.
+- A log query with a parser or another stage and a label filter value that holds a `\x00`, `\x01` or `\x02` byte now keeps the lines Loki keeps. An example is `{app="a"} | o="\x02\x00\x02" | json`. The string translator cut such a value at the bytes it uses as stage markers and filtered on another value. These queries are now served from the query plan, which keeps the value, as filter-only queries already were.
+  - A new response cache fence, `@marker-bytes-label-value-v1:`, is read from the query's plan. Answers cached before the change are not served after it.
+  - A metric query with such a value still gets the old text.
+
 ## [2.352.0] - 2026-11-19
 
 ### Changed

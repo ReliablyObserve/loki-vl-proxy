@@ -431,10 +431,11 @@ type wordFences struct {
 	keywordFire      bool // a label spelled Ip, IP or Label_replace, no parenthesis after it
 	keywordCandidate bool // a keyword word where no keyword stands: the parser decides
 	stddev           bool // the word stddev or stdvar in any case (rankOverBinaryResponseKeyVersion)
+	markerQuoted     bool // a quoted string that holds a byte from \x00 to \x02, raw or escaped (markerBytesFence)
 }
 
 // scanFenceWords reads the words of query once, outside quoted text, for the reserved field case and label fences
-// and the keyword label fence, without allocating. A comment runs to the end of its line: its quote characters open
+// and the keyword label fence, and the quoted text for the marker byte fence, without allocating. A comment runs to the end of its line: its quote characters open
 // no quoted text, and its words are read like any other.
 func scanFenceWords(query string) (w wordFences) {
 	commentEnd := 0
@@ -442,7 +443,9 @@ func scanFenceWords(query string) (w wordFences) {
 		c := query[i]
 		switch {
 		case (c == '"' || c == '`') && i >= commentEnd:
-			i = skipQuoted(query, i) + 1
+			end, marker := skipQuotedMarker(query, i)
+			w.markerQuoted = w.markerQuoted || marker
+			i = end + 1
 		case c == '#' && i >= commentEnd:
 			commentEnd = skipComment(query, i)
 			i++
