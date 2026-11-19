@@ -1,0 +1,45 @@
+id: semantics/rank-over-stream-first-aggregation-range
+title: topk and bottomk over a max, min, avg or count by labels on query_range rank the streams' series, not the groups (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki ranks the series of the aggregation under topk or bottomk: for
+  `bottomk(5, max by (env) (count_over_time({app="api"}[1h])))` the series
+  of `max by (env)`, one per value of env (`{}` when the lines carry no env).
+  The proxy's ranked range route reads the operand's per-bucket stats grouped
+  by the stream first (a max, min, avg or count by labels counts each stream
+  before it combines them) and ranks those per-stream series without the
+  combining level, so the answer holds stream labels (app, cluster,
+  detected_level, service_name) Loki's has not. Found by the metric
+  differential when the plan's route rule began to route rankings at the
+  root (TestPlanMatchesLokiOnMetricQueries, recorded Loki and VictoriaLogs
+  v1.49.0 and v1.54.0 answers): step < range and step > range differ; the
+  instant request matches Loki, and a range equal to the step is read as raw
+  rows (delegated, `Rank route ranked rows`). The handlers' route is unchanged
+  by that change: this is how they answer on main.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'bottomk(5, max by (env) (count_over_time({app="api"}[1h])))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    The series of max by (env), ranked per step, as Loki answers them.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy metric_agg.go proxyRankedTopKRange and sliding_window_stats.go writeRankedRangeFromBuckets: the ranked range route over an operand whose first stats pipe groups by the stream'
+  loki: 'the series of the aggregation under the ranking (internal/querycorpus loki-metric-differential-known.json, recorded Loki answers)'
+  proxy: 'the per-stream series of the operand, with stream labels'
+  planned_test: 'TestPlanMatchesLokiOnMetricQueries (internal/querycorpus): the known class goes once the plan serves the combining level under the ranking'
+  clusters: []

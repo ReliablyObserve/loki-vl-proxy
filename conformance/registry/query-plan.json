@@ -255,8 +255,8 @@
     }
   },
   "loki_metric_differential": {
-    "queries": 814,
-    "entries": 31882,
+    "queries": 1052,
+    "entries": 40772,
     "excluded": {
       "the plan does not route it: BinOp bool": 9,
       "the plan does not route it: BinOp constant operands": 9,
@@ -275,8 +275,13 @@
       "the plan does not route it: BinOp scalar operands": 2,
       "the plan does not route it: BinOp set operator": 8,
       "the plan does not route it: LabelReplace operand BinOp": 2,
+      "the plan does not route it: LabelReplace operand RangeAgg route unwrap pipeline": 1,
       "the plan does not route it: LabelReplace operand VectorAgg": 6,
-      "the plan does not route it: LabelReplace route operand": 126,
+      "the plan does not route it: LabelReplace operand VectorAgg route evaluated level": 1,
+      "the plan does not route it: LabelReplace operand VectorAgg route pipeline": 2,
+      "the plan does not route it: LabelReplace operand VectorAgg route unwrap pipeline": 1,
+      "the plan does not route it: LabelReplace operand VectorAgg route unwrap rate": 19,
+      "the plan does not route it: LabelReplace route ranking operand": 2,
       "the plan does not route it: LabelReplace service_name grouping": 4,
       "the plan does not route it: RangeAgg LogSelect level filter after stage": 1,
       "the plan does not route it: RangeAgg LogSelect line format function": 1,
@@ -295,7 +300,15 @@
       "the plan does not route it: RangeAgg route unwrap rate_counter": 7,
       "the plan does not route it: RangeAgg route unwrap stdvar": 5,
       "the plan does not route it: Rank operand BinOp": 8,
-      "the plan does not route it: Rank route operand": 188,
+      "the plan does not route it: Rank operand RangeAgg route pipeline": 1,
+      "the plan does not route it: Rank operand RangeAgg route unwrap pipeline": 12,
+      "the plan does not route it: Rank operand RangeAgg route unwrap rate": 5,
+      "the plan does not route it: Rank operand RangeAgg route unwrap stdvar": 2,
+      "the plan does not route it: Rank operand VectorAgg route evaluated level": 2,
+      "the plan does not route it: Rank operand VectorAgg route level filter": 1,
+      "the plan does not route it: Rank operand VectorAgg route pipeline": 3,
+      "the plan does not route it: Rank operand VectorAgg route unwrap pipeline": 14,
+      "the plan does not route it: Rank operand VectorAgg route unwrap rate": 10,
       "the plan does not route it: Rank route rewrite": 2,
       "the plan does not route it: SeriesAgg operand BinOp": 1,
       "the plan does not route it: VectorAgg LogSelect json extraction": 2,
@@ -323,127 +336,185 @@
     "profiles": {
       "v1.49 loki profile": {
         "instant": {
-          "runs": 814,
-          "plan_runs": 814,
-          "plan_matches_loki": 814,
-          "plan_matches_loki_empty": 400,
-          "translator_matches_loki": 814,
-          "float_tolerance": 1
+          "runs": 1052,
+          "plan_runs": 1052,
+          "plan_matches_loki": 1049,
+          "plan_matches_loki_empty": 453,
+          "translator_matches_loki": 1049,
+          "float_tolerance": 1,
+          "plan_differs_by_class": {
+            "adds a series Loki does not have": 3,
+            "misses a series Loki has": 3
+          },
+          "translator_differs_by_class": {
+            "adds a series Loki does not have": 3,
+            "misses a series Loki has": 3
+          }
         },
         "step\u003crange": {
-          "runs": 814,
-          "plan_runs": 775,
+          "runs": 1052,
+          "plan_runs": 1013,
           "not_plan": {
             "the route rule delegates the request": 39
           },
-          "plan_matches_loki": 767,
-          "plan_matches_loki_empty": 249,
-          "translator_matches_loki": 806,
+          "plan_matches_loki": 994,
+          "plan_matches_loki_empty": 300,
+          "translator_matches_loki": 1033,
           "float_tolerance": 0,
           "plan_differs_by_class": {
-            "adds a series Loki does not have": 8,
+            "adds a point Loki does not have": 10,
+            "adds a series Loki does not have": 9,
+            "misses a point Loki has": 10,
             "misses a series Loki has": 2,
-            "series: adds a label": 6
+            "series: adds a label": 7,
+            "series: adds detected_level": 1
           },
           "translator_differs_by_class": {
-            "adds a series Loki does not have": 8,
+            "adds a point Loki does not have": 10,
+            "adds a series Loki does not have": 9,
+            "misses a point Loki has": 10,
             "misses a series Loki has": 2,
-            "series: adds a label": 6
+            "series: adds a label": 7,
+            "series: adds detected_level": 1
           }
         },
         "step=range": {
-          "runs": 814,
-          "plan_runs": 812,
+          "runs": 1052,
+          "plan_runs": 1042,
           "not_plan": {
-            "the route rule delegates the request": 2
+            "the route rule delegates the request": 10
           },
-          "plan_matches_loki": 812,
-          "plan_matches_loki_empty": 270,
-          "translator_matches_loki": 814,
-          "float_tolerance": 3
+          "plan_matches_loki": 1034,
+          "plan_matches_loki_empty": 321,
+          "translator_matches_loki": 1041,
+          "float_tolerance": 3,
+          "plan_differs_by_class": {
+            "adds a point Loki does not have": 8,
+            "misses a point Loki has": 8
+          },
+          "translator_differs_by_class": {
+            "adds a point Loki does not have": 10,
+            "adds a series Loki does not have": 1,
+            "misses a point Loki has": 10,
+            "series: adds a label": 1,
+            "series: adds detected_level": 1
+          }
         },
         "step\u003erange": {
-          "runs": 814,
-          "plan_runs": 797,
+          "runs": 1052,
+          "plan_runs": 1035,
           "not_plan": {
             "the route rule delegates the request": 17
           },
-          "plan_matches_loki": 789,
-          "plan_matches_loki_empty": 261,
-          "translator_matches_loki": 806,
+          "plan_matches_loki": 1018,
+          "plan_matches_loki_empty": 312,
+          "translator_matches_loki": 1035,
           "float_tolerance": 0,
           "plan_differs_by_class": {
-            "adds a series Loki does not have": 8,
-            "misses a series Loki has": 2,
-            "series: adds a label": 6
+            "adds a point Loki does not have": 7,
+            "adds a series Loki does not have": 10,
+            "misses a series Loki has": 10,
+            "series: adds a label": 7,
+            "series: adds detected_level": 1
           },
           "translator_differs_by_class": {
-            "adds a series Loki does not have": 8,
-            "misses a series Loki has": 2,
-            "series: adds a label": 6
+            "adds a point Loki does not have": 7,
+            "adds a series Loki does not have": 10,
+            "misses a series Loki has": 10,
+            "series: adds a label": 7,
+            "series: adds detected_level": 1
           }
         }
       },
       "v1.54 loki profile": {
         "instant": {
-          "runs": 814,
-          "plan_runs": 814,
-          "plan_matches_loki": 814,
-          "plan_matches_loki_empty": 400,
-          "translator_matches_loki": 814,
-          "float_tolerance": 1
+          "runs": 1052,
+          "plan_runs": 1052,
+          "plan_matches_loki": 1049,
+          "plan_matches_loki_empty": 453,
+          "translator_matches_loki": 1049,
+          "float_tolerance": 1,
+          "plan_differs_by_class": {
+            "adds a series Loki does not have": 3,
+            "misses a series Loki has": 3
+          },
+          "translator_differs_by_class": {
+            "adds a series Loki does not have": 3,
+            "misses a series Loki has": 3
+          }
         },
         "step\u003crange": {
-          "runs": 814,
-          "plan_runs": 775,
+          "runs": 1052,
+          "plan_runs": 1013,
           "not_plan": {
             "the route rule delegates the request": 39
           },
-          "plan_matches_loki": 767,
-          "plan_matches_loki_empty": 249,
-          "translator_matches_loki": 806,
+          "plan_matches_loki": 994,
+          "plan_matches_loki_empty": 300,
+          "translator_matches_loki": 1033,
           "float_tolerance": 0,
           "plan_differs_by_class": {
-            "adds a series Loki does not have": 8,
+            "adds a point Loki does not have": 10,
+            "adds a series Loki does not have": 9,
+            "misses a point Loki has": 10,
             "misses a series Loki has": 2,
-            "series: adds a label": 6
+            "series: adds a label": 7,
+            "series: adds detected_level": 1
           },
           "translator_differs_by_class": {
-            "adds a series Loki does not have": 8,
+            "adds a point Loki does not have": 10,
+            "adds a series Loki does not have": 9,
+            "misses a point Loki has": 10,
             "misses a series Loki has": 2,
-            "series: adds a label": 6
+            "series: adds a label": 7,
+            "series: adds detected_level": 1
           }
         },
         "step=range": {
-          "runs": 814,
-          "plan_runs": 812,
+          "runs": 1052,
+          "plan_runs": 1042,
           "not_plan": {
-            "the route rule delegates the request": 2
+            "the route rule delegates the request": 10
           },
-          "plan_matches_loki": 812,
-          "plan_matches_loki_empty": 270,
-          "translator_matches_loki": 814,
-          "float_tolerance": 3
+          "plan_matches_loki": 1034,
+          "plan_matches_loki_empty": 321,
+          "translator_matches_loki": 1041,
+          "float_tolerance": 3,
+          "plan_differs_by_class": {
+            "adds a point Loki does not have": 8,
+            "misses a point Loki has": 8
+          },
+          "translator_differs_by_class": {
+            "adds a point Loki does not have": 10,
+            "adds a series Loki does not have": 1,
+            "misses a point Loki has": 10,
+            "series: adds a label": 1,
+            "series: adds detected_level": 1
+          }
         },
         "step\u003erange": {
-          "runs": 814,
-          "plan_runs": 797,
+          "runs": 1052,
+          "plan_runs": 1035,
           "not_plan": {
             "the route rule delegates the request": 17
           },
-          "plan_matches_loki": 789,
-          "plan_matches_loki_empty": 261,
-          "translator_matches_loki": 806,
+          "plan_matches_loki": 1018,
+          "plan_matches_loki_empty": 312,
+          "translator_matches_loki": 1035,
           "float_tolerance": 0,
           "plan_differs_by_class": {
-            "adds a series Loki does not have": 8,
-            "misses a series Loki has": 2,
-            "series: adds a label": 6
+            "adds a point Loki does not have": 7,
+            "adds a series Loki does not have": 10,
+            "misses a series Loki has": 10,
+            "series: adds a label": 7,
+            "series: adds detected_level": 1
           },
           "translator_differs_by_class": {
-            "adds a series Loki does not have": 8,
-            "misses a series Loki has": 2,
-            "series: adds a label": 6
+            "adds a point Loki does not have": 7,
+            "adds a series Loki does not have": 10,
+            "misses a series Loki has": 10,
+            "series: adds a label": 7,
+            "series: adds detected_level": 1
           }
         }
       }

@@ -1,4 +1,21 @@
 {
+  "q-01bec46db2fd": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "adds a series Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series",
+      "misses a series Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "bottomk (1, sum by (app, env) (count_over_time({app=~\".+\"}[5m])))"
+  },
+  "q-0c8d51075dfb": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series",
+      "misses a series Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "bottomk(1, sum by (app, env) (count_over_time({app=~\".+\"}[5m])))"
+  },
   "q-0ed90399228e": {
     "classes": {
       "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
@@ -13,12 +30,53 @@
     },
     "q": "min(min(count_over_time({app=\"uw\"} [90s])) without (svc)) by (pod, rack, baz)"
   },
+  "q-258573212faa": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "topk by (env) (1, sum by (app, env) (bytes_over_time({app=~\".+\"}[3m])))"
+  },
+  "q-381e78b44169": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series",
+      "misses a series Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "bottomk by (env) (1, sum by (app, env) (rate({app=~\".+\"}[5m])))"
+  },
   "q-4422191ce85f": {
     "classes": {
       "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
       "series: adds a label": "semantics/outer-by-over-without-reads-level-as-label"
     },
     "q": "max by (pod, zone, rack, pod_name) (count without (baz) (rate({app=\"uw\"} [30s])))"
+  },
+  "q-4c463098fc89": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "adds a series Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series",
+      "misses a series Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "bottomk(1, sum by (app, env) (rate({app=~\".+\"}[5m]))) by (env)"
+  },
+  "q-5512c6abb2f1": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "adds a series Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series",
+      "misses a series Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "topk by (env) (1, sum by (app, env) (count_over_time({app=~\".+\"}[5m])))"
+  },
+  "q-603234d66702": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/rank-over-stream-first-aggregation-range",
+      "series: adds a label": "semantics/rank-over-stream-first-aggregation-range",
+      "series: adds detected_level": "semantics/rank-over-stream-first-aggregation-range"
+    },
+    "q": "bottomk(5, max by (env) (count_over_time({app=\"api\"}[1h])))"
   },
   "q-7bbe2c221d60": {
     "classes": {
@@ -27,12 +85,28 @@
     },
     "q": "min(sum(rate({app=\"uw\"} [30s])) without (baz, rack)) by (pod, baz, pod_name)"
   },
+  "q-80d49a5d0d40": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "topk(1, sum by (app, env) (bytes_over_time({app=~\".+\"}[3m])))"
+  },
   "q-872928f309ed": {
     "classes": {
       "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
       "series: adds a label": "semantics/outer-by-over-without-reads-level-as-label"
     },
     "q": "avg(min(count(rate({app=\"uw\"} [30s])) without (baz, container, pod_name)) by (pod, rack, baz, pod_name)) by (pod, svc, rack, baz, pod_name, app)"
+  },
+  "q-94c7ebd117ba": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "adds a series Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series",
+      "misses a series Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "bottomk(1, sum by (app, env) (count_over_time({app=~\".+\"}[5m]))) by (env)"
   },
   "q-9b8f814f7928": {
     "classes": {
@@ -41,12 +115,28 @@
     },
     "q": "avg by (pod, zone, baz) (count without (rack, node) (rate({app=\"uw\"} [1m])))"
   },
+  "q-b9c27a794c57": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series",
+      "misses a series Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "bottomk by( ) (1, rate({env=\"production\"}[5m]))"
+  },
   "q-c3df1d1f4321": {
     "classes": {
       "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
       "misses a series Loki has": "semantics/outer-by-over-without-reads-level-as-label"
     },
     "q": "avg(avg(rate({app=\"uw\"} [90s])) without (pod)) by (zone, rack, app)"
+  },
+  "q-d03c698e84a6": {
+    "classes": {
+      "adds a point Loki does not have": "semantics/topk-bottomk-range-series",
+      "misses a point Loki has": "semantics/topk-bottomk-range-series",
+      "misses a series Loki has": "semantics/topk-bottomk-range-series"
+    },
+    "q": "topk(1, rate({env=\"production\"}[5m])) by( )"
   },
   "q-f86c9dcfccd5": {
     "classes": {
