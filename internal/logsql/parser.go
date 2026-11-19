@@ -2072,7 +2072,7 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 	if (name == "field_max" || name == "field_min") && len(args) < 2 {
 		return nil, fmt.Errorf("logsql: stats func %q: needs the field to compare and the fields to return", name)
 	}
-	if (name == "count_uniq" || name == "count_uniq_hash" || name == "field_max" || name == "field_min") && len(args) > 1 {
+	if (name == "count_uniq" || name == "count_uniq_hash" || name == "field_max" || name == "field_min" || name == "json_values") && len(args) > 1 {
 		// the unique combinations of several fields: the list is kept as the field
 		args = []string{strings.Join(args, ", ")}
 	}

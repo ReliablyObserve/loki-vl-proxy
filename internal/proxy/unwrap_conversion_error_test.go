@@ -18,6 +18,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -296,7 +297,7 @@ func newConversionFakeVL(t *testing.T, fake *conversionFakeVL) *httptest.Server 
 	// The lookup is the counting gate with the flagged rows kept: the first format
 	// names the field and the syntax the gate keeps, which tells the conversion.
 	lookupRE := regexp.MustCompile(`\| format if \("([^"]+)":~("(?:[^"\\]|\\.)*")\) "0" as __lvp_bad.* \| filter __lvp_bad:="1"(?: .*)? \| limit 3$`)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(vlemu.FoldOverStats(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		query := r.Form.Get("query")
 		fake.mu.Lock()
@@ -345,7 +346,7 @@ func newConversionFakeVL(t *testing.T, fake *conversionFakeVL) *httptest.Server 
 				}
 			}
 		}
-	}))
+	})))
 	t.Cleanup(srv.Close)
 	return srv
 }

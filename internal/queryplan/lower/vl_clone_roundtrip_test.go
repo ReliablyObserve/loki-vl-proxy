@@ -14,6 +14,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -163,15 +164,16 @@ func vlClonePlanQueries() []string {
 }
 
 // seriesFoldCloneTexts are the folded bucket reads of the proxy's window evaluator (SeriesFold) over a text the
-// lowering writes with the series hash ahead of the gate: the base query before its first stats pipe, the bucket
-// stats of avg over time grouped as that pipe groups, and the fold of a sum and of a max on an aligned grid and on
-// one offset by a fraction of the bucket. None for a text without the hash ahead of a gate.
-func seriesFoldCloneTexts(text string) []string {
+// lowering writes with the series hash ahead of the gate for p: the base query before its first stats pipe (as
+// SeriesFoldBase writes it, unpacking the line once), the bucket stats of avg over time grouped as that pipe groups,
+// and the fold of a sum and of a max on an aligned grid and on one offset by a fraction of the bucket. None for a text
+// without the hash ahead of a gate.
+func seriesFoldCloneTexts(p *queryplan.Plan, text string) []string {
 	first := strings.Index(text, " | stats by (")
 	if first < 0 {
 		return nil
 	}
-	ungated, field, ok := translate.SplitUnwrapGate(text[:first])
+	ungated, _, ok := translate.SplitUnwrapGate(text[:first])
 	if !ok || !strings.HasSuffix(ungated, "| hash(__lvp_sid) as __lvp_sid") {
 		return nil
 	}
@@ -182,12 +184,11 @@ func seriesFoldCloneTexts(text string) []string {
 		for _, outer := range []logql.VectorOp{logql.VectorSum, logql.VectorMax} {
 			read, ok := SeriesFold{Outer: outer, By: strings.Split(by, ", "), Columns: []string{"__lvp_sum", "__sample_count"},
 				Stats: []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: "__lvp_v"}, Alias: "__lvp_sum"}, {Func: logsql.Count{}, Alias: "__sample_count"}},
-				Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Singletons: SingletonsKept,
-				Field: field, Bucket: grid[0], Offset: grid[1], From: 1767225617000000000}.Pipes(ungated)
+				Value: "__lvp_sum / __sample_count", Bucket: grid[0], Offset: grid[1]}.Pipes()
 			if !ok {
 				continue
 			}
-			b := text[:first]
+			b := SeriesFoldBase(p, text[:first])
 			for _, p := range read.Pipes {
 				b += " " + p.String()
 			}
@@ -217,7 +218,7 @@ func vlClonePlanTexts() []string {
 					n := len(texts)
 					collectVLTexts(reflect.ValueOf(&op), &texts)
 					for _, t := range texts[n:] {
-						texts = append(texts, seriesFoldCloneTexts(t)...)
+						texts = append(texts, seriesFoldCloneTexts(p, t)...)
 					}
 				}
 			}

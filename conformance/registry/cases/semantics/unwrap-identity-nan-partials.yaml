@@ -35,6 +35,13 @@ why: |
   by and avg over the deviation of an infinity after a parser of every key now match Loki too
   (TestUnwrapDynamicValueFormsMatchLoki, removed from its known differences).
 
+  The fold is read in one scan of /select/logsql/query since #1647 (lower.SeriesFold): only a series
+  whose value is finite folds, and a series that keeps its hash passes the last stats pipe through
+  `any()`, which keeps a NaN partial, so no mark is written before that pipe
+  (TestSeriesFoldCountingForm, TestUnwrapNaNMarkUnderSeriesIdentity). The range up to the step keeps
+  the mark. TestUnwrapIdentityNaNPartialsMatchLoki checks that every run longer than the step is read
+  folded, in one read, and answers Loki's NaN (recorded on VictoriaLogs v1.54.0 and v1.49.0).
+
   Not covered here: an extraction list's identity (no series hash; its outer sum still leaves a NaN
   series out, kept as known differences of TestUnwrapDynamicValueFormsMatchLoki), and infinities of
   both signs followed by a number in one bucket, where VictoriaLogs' sum restarts inside the bucket
@@ -61,7 +68,7 @@ gap:
   area: "internal/proxy (unwrap_conversion_error.go: the counting gate's rewrite of a parser's series identity)"
   loki: "sum and avg over the series are NaN where a series is NaN"
   proxy: "sum and avg over the series are NaN where a series is NaN"
-  planned_test: "TestUnwrapIdentityNaNPartialsMatchLoki (internal/querycorpus), TestUnwrapNaNMarkUnderSeriesIdentity (internal/proxy)"
+  planned_test: "TestUnwrapIdentityNaNPartialsMatchLoki (internal/querycorpus), TestUnwrapNaNMarkUnderSeriesIdentity and TestSeriesFoldCountingForm (internal/proxy)"
   visual: none
   visual_reason: 'generator data holds no infinity; the difference shows only on values of inf, proven by the recorded differential'
   clusters: []

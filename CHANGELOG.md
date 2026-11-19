@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `query_range` with a range longer than the step for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`,
+  `max_over_time`, `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` (no
+  `| keep`) costs VictoriaLogs about 40% less time and answers about 40% faster. An example is
+  `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms [5m]))` under Grafana's `$__auto` step. Answers
+  and statuses are the same on every measured request, and each request still makes one VictoriaLogs call.
+  - VictoriaLogs scans the lines once instead of twice: the subquery that listed the series spanning buckets is gone.
+  - Each line is unpacked once instead of twice, and its series hash is computed once.
+  - The read now groups by the series and then by its buckets in one query, so it is sent to `/select/logsql/query`
+    with the bounds `stats_query_range` would read. The proxy reads the rows back into the same buckets.
+  - A read whose text would pass VictoriaLogs' query length still reads every series through `stats_query_range`, as
+    before.
+  - Over 6 and 24 hours of lines that each carry a request id, VictoriaLogs takes 0.51-0.69x the time it took before
+    on v1.54.0 and v1.49.0, and the whole request 0.52-0.67x. The read's answer is 1.3-5x larger (up to 0.6 MB for
+    24 hours), so a read reaches the stats answer bound sooner and is then read in smaller time chunks.
+  - A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
+
+## [2.350.0] - 2026-11-19
+
+### Changed
+
 - **Breaking:** a Logs Drilldown answer over the series limit (`-max-stats-query-series`, or the tenant's
   `max_query_series`) is now cut as deployed Loki cuts it, by default. Loki's query frontend splits a range request at
   the multiples of `split_queries_by_interval` (1h by default) inside it, and its engine cuts each split on its own:

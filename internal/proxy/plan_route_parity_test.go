@@ -130,7 +130,8 @@ func (s *routeStub) body(path, query string) string {
 			if m := routeStatsBy.FindStringSubmatch(query[i:]); m != nil {
 				for _, f := range strings.Split(m[1], ",") {
 					f = strings.TrimSpace(f)
-					if name, _, ok := strings.Cut(f, ":"); ok && name == "_time" {
+					if name, _, _ := strings.Cut(f, ":"); name == "_time" {
+						// The bucket, grouped on a step (_time:5m) or as it is (a folded read's last stats pipe).
 						row["_time"] = ts.Format(time.RFC3339Nano)
 					} else if f != "" {
 						row[strings.Trim(f, `"`)] = "a"

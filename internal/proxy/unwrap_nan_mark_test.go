@@ -9,9 +9,9 @@ import (
 
 // Under a parser's series identity, the counting gate's rewrite flags as nan (2) the rows whose value a later stats
 // pipe sums or averages is NaN: VictoriaLogs' sum keeps NaN as its empty value, so a series of NaN left the outer sum
-// at a range up to the step, and a series that keeps its hash came out of the fold's second stats pipe as 0. The
-// nan group makes the series NaN where it sits, as Loki's sum and average are. Max and min, the first stats pipe and
-// a query without the series hash are written as before.
+// at a range up to the step. The nan group makes the series NaN where it sits, as Loki's sum and average are. Max and
+// min, the first stats pipe, a folded read's last stats pipe (its kept partials pass through any, which keeps a NaN)
+// and a query without the series hash are written as before.
 //
 // conformance: semantics/unwrap-identity-nan-partials, semantics/unwrap-gate-parsefloat-divergences
 func TestUnwrapNaNMarkUnderSeriesIdentity(t *testing.T) {
@@ -37,9 +37,12 @@ func TestUnwrapNaNMarkUnderSeriesIdentity(t *testing.T) {
 		{"sum of the squared deviations",
 			hash + " | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats sum(__lvp_inner_var)",
 			mark("__lvp_inner_var")},
-		{"the fold's second stats pipe",
+		{"two sums over a second stats pipe",
 			hash + " | stats by (__lvp_sid, __lvp_c) sum(__lvp_v) as __lvp_sum, count() as __sample_count | math __lvp_sum as __lvp_sum | math __sample_count as __sample_count | math __lvp_sum / __sample_count as __lvp_fold | stats by (__lvp_sid) sum(__lvp_sum) as __lvp_sum, sum(__sample_count) as __sample_count",
 			mark("__lvp_sum", "__sample_count")},
+		{"the folded read's last stats pipe: the folded values are finite, the kept partials pass through any",
+			hash + " | stats by (__lvp_sid) sum(__lvp_v) as __lvp_sum, count() as __sample_count | math __lvp_sum / __sample_count as __lvp_fold | stats by (_time, __lvp_sid) any(__lvp_sum) as __lvp_sum, any(__sample_count) as __sample_count, sum(__lvp_fold) as __lvp_fold, count() as __lvp_fc",
+			""},
 		{"max over the series", hash + " | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats max(__lvp_inner)", ""},
 		{"one stats pipe", hash + " | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner", ""},
 		{"no series hash", " | stats by (_stream) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)", ""},

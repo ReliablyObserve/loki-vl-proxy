@@ -320,7 +320,8 @@ func unwrapCountingRewrite(query string, accept func(field, conv string) (errors
 	return base + unwrapCountedGateMode(field, conv, errors) + rest, base, field, conv, errors, true
 }
 
-// unwrapGroupStatsByFlag adds the flag to the grouping of every stats pipe of rest (the pipes after the gate).
+// unwrapGroupStatsByFlag adds the flag to the grouping of every stats pipe of rest (the pipes after the gate) but a
+// folded read's series stats.
 // ok is false for a pipe that could drop or reorder a flagged group (anything but stats and the row-wise pipes,
 // unwrapRowPipe), or when no stats pipe follows. Under a parser's series identity (the series hash in rest), a stats
 // pipe that follows another one flags as nan the rows whose value one of its sums or averages reads is NaN
@@ -337,6 +338,9 @@ func unwrapGroupStatsByFlag(rest string) (string, bool) {
 	for _, pipe := range pipes {
 		b.WriteString(" | ")
 		switch {
+		case lower.SeriesFoldKeepsFlag(pipe):
+			// A folded read's series stats and the pipes around them: each series' rows carry the flag (lower.SeriesFold).
+			b.WriteString(pipe)
 		case strings.HasPrefix(pipe, "stats "):
 			by, funcs, ok := splitStatsPipe(pipe)
 			if !ok {
@@ -370,7 +374,10 @@ func unwrapGroupStatsByFlag(rest string) (string, bool) {
 // value: a sum over a row of NaN answers 0 or NaN by how the block holds the column (a float column's sum skips
 // NaN), so a series whose value is NaN (lines of an infinity of each sign in one bucket, the deviation of a value and
 // an infinity) left the outer sum, or a series that keeps its hash came out of the fold's second stats pipe as 0,
-// where Loki's sum and average are NaN. The nan group then makes the series NaN where it sits (unwrapNaN).
+// where Loki's sum and average are NaN. The nan group then makes the series NaN where it sits (unwrapNaN). A folded
+// read's merge of the folded values (lower.SeriesFoldField) is never marked: only a finite value folds, the field is
+// blank on the rows of a series that keeps its hash, and those rows' partials pass the last stats pipe through any,
+// which keeps a NaN.
 func unwrapNaNMark(funcs string) string {
 	fs, ok := statsFunctions(funcs)
 	if !ok {
@@ -378,7 +385,7 @@ func unwrapNaNMark(funcs string) string {
 	}
 	var conds []string
 	for _, f := range fs {
-		if (f.fn == "sum" || f.fn == "avg") && f.arg != "" && !strings.ContainsAny(f.arg, " ,()\"\\") && !slices.Contains(conds, "-"+f.arg+":<=inf") {
+		if (f.fn == "sum" || f.fn == "avg") && f.arg != "" && f.arg != lower.SeriesFoldField && !strings.ContainsAny(f.arg, " ,()\"\\") && !slices.Contains(conds, "-"+f.arg+":<=inf") {
 			conds = append(conds, "-"+f.arg+":<=inf")
 		}
 	}

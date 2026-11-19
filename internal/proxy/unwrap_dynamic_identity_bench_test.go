@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // BenchmarkDynamicIdentityRoutes measures sum, sum by and max by over a function taken per series after a json
@@ -39,7 +43,7 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 		rangeBody   = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"x","__lvp_bad":"0","__lvp_v":"3"},"values":[[1799999700,"3"],[1800000000,"4"],[1800000300,"5"],[1800000600,"6"]]}]}}`
 		instantBody = `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"x","__lvp_bad":"0","__lvp_v":"3"},"value":[1800000600,"3"]}]}}`
 	)
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	stats := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/query":
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -51,6 +55,30 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(rangeBody))
 		}
+	})
+	// A folded read (lower.SeriesFold, /select/logsql/query) is answered with the fold of the stub's own stats answer,
+	// built once, so the proxy reads the same small answer the stats_query_range read gets, not the row stub.
+	var (
+		foldOnce sync.Once
+		foldBody []byte
+	)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			body, _ := io.ReadAll(r.Body)
+			if bytes.Contains(body, []byte(lower.SeriesFoldRows)) {
+				foldOnce.Do(func() {
+					req := httptest.NewRequest(http.MethodPost, r.URL.Path, bytes.NewReader(body))
+					req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					rec := httptest.NewRecorder()
+					vlemu.FoldOverStats(stats).ServeHTTP(rec, req)
+					foldBody = bytes.Clone(rec.Body.Bytes())
+				})
+				w.Header().Set("Content-Type", "application/x-ndjson")
+				_, _ = w.Write(foldBody)
+				return
+			}
+		}
+		stats.ServeHTTP(w, r)
 	}))
 	defer backend.Close()
 	c := cache.New(time.Millisecond, 10)
