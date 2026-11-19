@@ -979,6 +979,8 @@
     "semantics/translator-reads-blank-grouping-as-none | compare:observed",
     "semantics/translator-reads-blank-grouping-as-none | gap:open",
     "semantics/translator-reads-blank-grouping-as-none | query",
+    "semantics/translator-reads-detected-level-in-a-longer-name | compare:observed",
+    "semantics/translator-reads-detected-level-in-a-longer-name | gap:open",
     "semantics/translator-reads-marker-bytes-in-quoted-value | compare:observed",
     "semantics/translator-reads-marker-bytes-in-quoted-value | gap:open",
     "semantics/translator-reads-marker-bytes-in-quoted-value | query",
@@ -2067,6 +2069,7 @@
     "internal/proxy/query_lowering_corpus_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/query_lowering_log_stages_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-copies-unspaced-parser",
+    "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-reads-detected-level-in-a-longer-name",
     "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/query_lowering_shared_parse_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_shared_parse_test.go | observability-query-flow",
@@ -3345,7 +3348,7 @@
   "counts": {
     "case_consumers": {
       "any": 50,
-      "api": 122,
+      "api": 123,
       "drilldown": 56,
       "explore": 207,
       "grafana-datasource": 3,
@@ -3372,7 +3375,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 99,
-    "wired_items": 467
+    "wired_items": 468
   },
   "gates": [
     "A/B shape selection",

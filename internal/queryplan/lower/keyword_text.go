@@ -26,6 +26,15 @@ func QuoteKeywordFieldText(text string) string {
 			i = endOfQuote(text, i)
 		case c == '-' || c == '!':
 			// A negation: the name is read from the next byte.
+		case c == ':' && startsFieldName(text, i) && i+1 < len(text) && text[i+1] == ':' && opensFilter(text[i+2:]):
+			// A field named `:` written bare (`::="x"`): the colon is the name, the next one the filter's.
+			if b == nil {
+				b = &strings.Builder{}
+				b.Grow(len(text) + 8)
+			}
+			b.WriteString(text[last:i])
+			b.WriteString(logsql.QuoteFieldName(":"))
+			last = i + 1
 		case startsFieldName(text, i):
 			j := i
 			for j < len(text) && !isNameDelimiter(text[j]) {
