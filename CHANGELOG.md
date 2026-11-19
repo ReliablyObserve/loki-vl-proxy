@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- A label filter on a label named `:` (`| json | A="" :=""`) after an unwrap is written quoted to VictoriaLogs (`":":=""`); the bare `::=""` it was written as is a query VictoriaLogs rejects.
-
 ### Changed
 
 - **Breaking:** a Logs Drilldown answer over the series limit (`-max-stats-query-series`, or the tenant's
@@ -37,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Drilldown answers the limit cut. Checked against Loki 3.7.10: its engine's recorded answers (the cut, its rule over
   series that come and go, and each split asked alone), and an isolated stack with `max_query_series` 3 (splits,
   sharding on and off, the results cache off, instants with and without the instant split).
+
+## [2.341.2] - 2026-11-19
+
+### Fixed
+
+- A label filter on a label named `:` (`| json | A="" :=""`) after an unwrap is written quoted to VictoriaLogs (`":":=""`); the bare `::=""` it was written as is a query VictoriaLogs rejects.
 
 ## [2.341.1] - 2026-11-18
 
