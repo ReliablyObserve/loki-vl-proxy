@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.351.1] - 2026-11-19
+
 ### Changed
 
 - The decoder of a folded series-identity answer reads each row in small steps (the same rows, values and bounds); two unused helpers are removed. No answer or request changes.
