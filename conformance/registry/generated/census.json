@@ -1374,6 +1374,7 @@
     "internal/logql/terminates_test.go | semantics/logql-unicode-runes",
     "internal/logql/topk_param_loki_test.go | semantics/topk-first-argument-error-text",
     "internal/logql/unicode_runes_loki_test.go | semantics/logql-unicode-runes",
+    "internal/logql/unwrap_parens_test.go | query-complexity-limits",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/logql/whitespace_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/logql/zero_range_comments_loki_test.go | semantics/comment-between-function-and-parenthesis-accepted",
@@ -3396,7 +3397,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 797,
+      "go": 798,
       "playwright": 3
     },
     "page_kinds": {

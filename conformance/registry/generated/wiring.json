@@ -1257,6 +1257,7 @@
       "cmd/proxy/query_complexity_flags_test.go",
       "internal/logql/budget_test.go",
       "internal/logql/complexity_test.go",
+      "internal/logql/unwrap_parens_test.go",
       "internal/metrics/query_complexity_test.go",
       "internal/proxy/query_budget_test.go",
       "internal/proxy/query_complexity_test.go",
@@ -3311,6 +3312,9 @@
     ],
     "internal/logql/unicode_runes_loki_test.go": [
       "semantics/logql-unicode-runes"
+    ],
+    "internal/logql/unwrap_parens_test.go": [
+      "query-complexity-limits"
     ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
@@ -6786,7 +6790,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 800,
+  "tests_with_markers": 801,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

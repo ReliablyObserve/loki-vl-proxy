@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - For a query that parses, the checks over the tree and the pipeline build stop, and the request gets the same neutral 400 as before (`query planning took longer than the limit`, the flag named in the log line only). Nothing of its validation is stored.
   - The validation a request's time-bounds check makes for a query too long for the validation cache is now under the budget too. It was the one validation of a request that was not.
   - With a 2 ms budget, a 120 KB `1+1+…` chain is now refused in 56 ms instead of 1.1 s, and 25,000 nested `sum(` in 1.8 s instead of 4.2 s. The string translator's own time is not interrupted.
+  - `UnwrapParens`, which the post-aggregation route and the lowering's operand screen read a query with, matches the parentheses around a query in one pass instead of one pass per layer: 10,000 nested parentheses take 77 µs instead of 49 ms, with the same answer (held to the old reading on the plan corpus and by a fuzz target).
   - Nothing changes for a request whose planning stays within the budget.
 
 ## [2.353.0] - 2026-11-19
