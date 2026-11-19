@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A label filter on a label named `:` (`| json | A="" :=""`) after an unwrap is written quoted to VictoriaLogs (`":":=""`); the bare `::=""` it was written as is a query VictoriaLogs rejects.
+
 ## [2.341.1] - 2026-11-18
 
 ### Fixed
@@ -108,7 +112,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version in response headers or /metrics payload"). Keep startup working by turning strict off, by exposing
   VictoriaLogs' own `/metrics` through `vmauth` (a route to `/metrics` of VictoriaLogs), or by letting a response
   header that names VictoriaLogs carry the release.
-- A label filter on a label named `:` (`| json | A="" :=""`) after an unwrap is written quoted to VictoriaLogs (`":":=""`); the bare `::=""` it was written as is a query VictoriaLogs rejects.
 
 ### Changed
 
