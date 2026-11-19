@@ -3,6 +3,7 @@ package logql
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // The text scanners the proxy's post-aggregation route (a ranking, a stddev or stdvar, evaluated by the proxy over
@@ -41,13 +42,60 @@ func AggregationArgs(query, name string) (string, bool) {
 	return rest[1:close], true
 }
 
-// UnwrapParens strips the parentheses that wrap the whole of s.
+// UnwrapParens strips the parentheses that wrap the whole of s. It reads s once: the parentheses of the leading run
+// (each layer opens there, after the ones before it and white space) are matched in one pass, the way ClosingParen
+// matches each, so a query nested n levels costs linear time, not n passes over it.
 func UnwrapParens(s string) string {
 	s = strings.TrimSpace(s)
-	for strings.HasPrefix(s, "(") && ClosingParen(s, 0) == len(s)-1 {
-		s = strings.TrimSpace(s[1 : len(s)-1])
+	if !strings.HasPrefix(s, "(") {
+		return s
 	}
-	return s
+	// A query in a few parentheses keeps its bookkeeping on the stack.
+	var closesBuf, openBuf [16]int
+	closes := leadingParenCloses(s, closesBuf[:0], openBuf[:0])
+	start, end := 0, len(s) // the text left is s[start:end]
+	for start < end && s[start] == '(' && closes[start] == end-1 {
+		inner := s[start+1 : end-1]
+		lead := len(inner) - len(strings.TrimLeftFunc(inner, unicode.IsSpace))
+		start, end = start+1+lead, start+1+lead+len(strings.TrimSpace(inner))
+	}
+	return s[start:end]
+}
+
+// leadingParenCloses is, for each "(" of the run of parentheses and white space s starts with, the index of the ")"
+// that closes it (ClosingParen), -1 for one never closed and for the other positions of the run. Quoted and raw
+// strings are skipped as ClosingParen skips them. closes and open are buffers to fill from (their length is 0).
+func leadingParenCloses(s string, closes, open []int) []int {
+	run := len(s) - len(strings.TrimLeftFunc(s, func(r rune) bool { return r == '(' || unicode.IsSpace(r) }))
+	for i := 0; i < run; i++ {
+		closes = append(closes, -1)
+	}
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '"', '`':
+			quote := s[i]
+			for i++; i < len(s) && s[i] != quote; i++ {
+				if quote == '"' && s[i] == '\\' {
+					i++
+				}
+			}
+		case '(':
+			open = append(open, i)
+		case ')':
+			if len(open) == 0 {
+				continue
+			}
+			o := open[len(open)-1]
+			open = open[:len(open)-1]
+			if o < run {
+				closes[o] = i
+			}
+			if len(open) == 0 {
+				return closes // every parenthesis of the run is closed or never will be
+			}
+		}
+	}
+	return closes
 }
 
 // ClosingParen returns the index of the ")" that closes the "(" at s[open], skipping quoted strings and raw

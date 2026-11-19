@@ -323,7 +323,8 @@ func cachedQueryValidation(query string) queryValidation {
 }
 
 // cachedQueryValidationWithin is cachedQueryValidation under a planning budget (nil: none). When the budget runs
-// out, in the walk of the tree or by the time the validation of an accepted query is complete, it reports exhausted
+// out in the semantic pass (past the first 1,024 steps of the validation; a syntax error is still answered), in the
+// walk of the tree or by the time the validation of an accepted query is complete, it reports exhausted
 // and stores nothing: the verdict of a budget belongs to one request and one proxy, and the next request validates again.
 // Only config-independent facts about the query enter validationCache, longQueryMemo and the plan memo.
 func cachedQueryValidationWithin(query string, budget queryplan.Budget) (queryValidation, bool) {

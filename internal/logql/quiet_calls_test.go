@@ -147,7 +147,7 @@ func typedCallRereadDiffers(expr Expr, q string) string {
 		if !x.Typed {
 			return ""
 		}
-		inner, msg := untypedCall(q, x)
+		inner, msg := untypedCall(q, x, nil)
 		if msg != "" {
 			return "a typed call read again has an error: " + msg
 		}

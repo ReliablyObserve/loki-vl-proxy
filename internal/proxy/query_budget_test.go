@@ -576,6 +576,105 @@ func TestPlanBudgetNeverReplacesLokisRejection(t *testing.T) {
 	}
 }
 
+// The budget is asked while a query is parsed, not only in the walk of the tree checks: a query long enough to reach
+// the first question (1,024 steps) is asked about during its validation, and a trip there (on a query that parses)
+// leaves nothing behind, as one in the walk does. A query of 1,500 json stages is one node to the walk, which asks
+// once.
+//
+// conformance: query-complexity-limits
+func TestPlanBudgetAskedWhileParsing(t *testing.T) {
+	emptyValidationCaches(t)
+	q := `{a="parse-budget"}` + strings.Repeat(" | json", 1500)
+	never := &countBudget{tripAt: 1 << 30}
+	if _, tripped := cachedQueryValidationWithin(q, never); tripped {
+		t.Fatal("a budget that never runs out tripped")
+	}
+	if never.calls <= 2 {
+		t.Fatalf("the validation asked the budget %d times: the parse did not ask it", never.calls)
+	}
+	emptyValidationCaches(t)
+	q2 := `{a="parse-budget-trip"}` + strings.Repeat(" | json", 1500)
+	b := &countBudget{tripAt: 1}
+	v, tripped := cachedQueryValidationWithin(q2, b)
+	if !tripped || b.calls != 1 || v != (queryValidation{}) {
+		t.Fatalf("tripped %v after %d questions with %+v, want a trip at the parser's first question and nothing else", tripped, b.calls, v)
+	}
+	_, cached := validationCache.Load(q2)
+	_, memoised := planMemoLoad(q2)
+	if cached || memoised {
+		t.Errorf("a validation the budget stopped left a result (cached %v, plan memo %v)", cached, memoised)
+	}
+}
+
+// On a request, the route's own validator (validateTimed) hands the request's budget to the parser too: a query too
+// long for the validation cache and with no call to respell (not validated at the gate) is asked about while it is
+// parsed. A clock that counts its readings sees the parse's questions on top of the ones a short query costs.
+//
+// conformance: query-complexity-limits
+func TestPlanBudgetReachesTheRouteValidatorsParse(t *testing.T) {
+	emptyValidationCaches(t)
+	var reads atomic.Int64
+	rig := newComplexityRig(t, ExecutionLimitsConfig{MaxQueryPlanTime: time.Hour}, func(p *Proxy) {
+		p.planClock = func() time.Time { reads.Add(1); return time.Now() }
+	})
+	count := func(query string) int64 {
+		before := reads.Load()
+		if status, body := rig.get(t, "/loki/api/v1/query_range", rangeParams(query)); status != http.StatusOK {
+			t.Fatalf("%.60q: %d %s", query, status, body)
+		}
+		return reads.Load() - before
+	}
+	short := count(`{a="route-parse-short"} | json`)
+	long := `{a="route-parse-long"}` + strings.Repeat(" | json", 1500)
+	if len(long) <= validationCacheMaxQueryBytes || strings.IndexByte(long, '(') >= 0 {
+		t.Fatal("the long query must skip the gate's validation")
+	}
+	if got := count(long); got < short+3 {
+		t.Fatalf("the long query read the clock %d times, the short one %d: its parse did not ask the budget", got, short)
+	}
+}
+
+// Through the whole handler chain, a 2 ms budget answers the deep shapes with its 400, makes no VictoriaLogs call, and
+// stops before the handlers' readers of the translated text: the trip is noticed by the validation, the lowering or
+// the check right after the string translator (which it is not interrupted in: nested vector aggregations), never
+// only by the check before the first VictoriaLogs call, which the readers would have reached first. The time guard
+// is loose (a CI runner under -race is many times slower than a laptop): the checks are what is pinned.
+//
+// conformance: query-complexity-limits
+func TestPlanBudgetAnswersDeepShapesSoon(t *testing.T) {
+	emptyValidationCaches(t)
+	rig := newComplexityRig(t, ExecutionLimitsConfig{MaxQueryPlanTime: 2 * time.Millisecond}, nil)
+	for _, tc := range []struct{ name, query string }{
+		{"parentheses", strings.Repeat("(", 60000) + "1" + strings.Repeat(")", 60000)},
+		{"binary", strings.Repeat("1+", 60000) + "1"},
+		{"json stages", `{a="b"}` + strings.Repeat(" | json", 18000)},
+		{"label_replace", strings.Repeat("label_replace(", 2500) + `rate({a="b"}[1m])` + strings.Repeat(`, "d", "$1", "s", "(.*)")`, 2500)},
+		{"nested sums", strings.Repeat("sum(", 6000) + `rate({a="b"}[1m])` + strings.Repeat(")", 6000)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, logged := rig.backend.hits.Load(), len(rig.logs.String())
+			start := time.Now()
+			status, body := rig.get(t, "/loki/api/v1/query_range", rangeParams(tc.query))
+			if took := time.Since(start); took > 10*time.Second {
+				t.Errorf("answered in %v", took)
+			}
+			if status != http.StatusBadRequest || !strings.Contains(body, "query planning took longer than the limit") {
+				t.Fatalf("answered %d %.200s", status, body)
+			}
+			if calls := rig.backend.hits.Load() - before; calls != 0 {
+				t.Errorf("%d VictoriaLogs calls", calls)
+			}
+			logs := rig.logs.String()[logged:]
+			if strings.Contains(logs, "before the first VictoriaLogs call check") {
+				t.Error("the trip was noticed only before the first VictoriaLogs call: the handlers' readers ran")
+			}
+			if !strings.Contains(logs, "by the validation check") && !strings.Contains(logs, "by the lowering check") && !strings.Contains(logs, "by the translation check") {
+				t.Errorf("no trip line names the validation, lowering or translation check: %.300s", logs)
+			}
+		})
+	}
+}
+
 // A selector route's query is left to its validators at the gate (no parse and no cache slot added to them); the
 // budget still bounds the route before its first VictoriaLogs call.
 //

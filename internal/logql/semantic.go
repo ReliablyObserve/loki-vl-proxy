@@ -18,17 +18,20 @@ const errEmptyCompatibleMatchers = `parse error : queries require at least one r
 // if the expression is valid. Loki checks the whole parsed tree before it builds
 // any pipeline, so the checks of the tree answer ahead of every build error.
 func validateSemantics(expr Expr, raw string) string {
-	if msg := semanticPass(expr, raw, false); msg != "" {
+	if msg := semanticPass(expr, raw, false, nil); msg != "" {
 		return msg
 	}
-	return semanticPass(expr, raw, true)
+	return semanticPass(expr, raw, true, nil)
 }
 
 // semanticPass walks the AST for the checks of one of Loki's phases: those over the parsed tree (the actions a
 // query that parsed still carries, a range aggregation's grouping and unwrap, binary operands, a vector operation's
 // parameter, label_replace, the empty-compatible selector), or with build the pipeline build of every log query.
-func semanticPass(expr Expr, raw string, build bool) string {
-	w := semanticWalk{raw: raw, build: build}
+// budget is the validation's planning budget (nil for none): once it runs out the walk stops and answers "", and the
+// caller reads the trip from the budget. The untyped-call check (untypedCallsError) is not stopped: a call Loki's parser
+// cannot read is a syntax error, which is Loki's answer whatever the clock says; budget only counts its tokens.
+func semanticPass(expr Expr, raw string, build bool, budget *budgetCheck) string {
+	w := semanticWalk{raw: raw, build: build, budget: budget}
 	return w.pass(expr)
 }
 
@@ -39,10 +42,15 @@ type semanticWalk struct {
 	// regexOK is the last label_replace regex that compiled (the empty one compiles): a nesting repeats its calls,
 	// and Loki's verdict on a regex is the same at every level.
 	regexOK string
+	// budget counts a step per node and per token of the calls read again (nil for none).
+	budget *budgetCheck
 }
 
 // pass is semanticPass over expr.
 func (w *semanticWalk) pass(expr Expr) string {
+	if w.budget.step() {
+		return ""
+	}
 	raw, build := w.raw, w.build
 	switch x := expr.(type) {
 	case *LogQuery:
@@ -74,7 +82,7 @@ func (w *semanticWalk) pass(expr Expr) string {
 			}
 			inner := x.Inner
 			if inner == nil && !x.Typed {
-				inner, _ = opaqueFirstArgument(raw, x)
+				inner, _ = opaqueFirstArgument(raw, x, w.budget)
 			}
 			if inner != nil {
 				return w.pass(inner)
@@ -88,7 +96,7 @@ func (w *semanticWalk) pass(expr Expr) string {
 			// (TestTypedCallSkipsItsReread). Only a call it could not type is read again here, for Loki's error; a typed
 			// one read again would read every call nested in it again, at every level of the nesting.
 			var msg string
-			if inner, msg = untypedCall(raw, x); msg != "" {
+			if inner, msg = untypedCall(raw, x, w.budget); msg != "" {
 				return msg
 			}
 		}
@@ -157,15 +165,15 @@ func binaryLogOperandError(op, side string, operand Expr) string {
 // only the errors of the matchers and stages Loki built before it (an action, firstActionError) answer ahead of
 // it: those of the log queries before the call, then those of its own sample expression. It is "" when every call
 // was typed, the walk then visits each node once.
-func untypedCallsError(expr Expr, query string) string {
-	call, msg := firstUntypedCallError(expr, query)
+func untypedCallsError(expr Expr, query string, budget *budgetCheck) string {
+	call, msg := firstUntypedCallError(expr, query, budget)
 	if call == nil {
 		return ""
 	}
 	if action, _ := actionErrorBefore(expr, call); action != "" {
 		return action
 	}
-	if inner, _ := opaqueFirstArgument(query, call); inner != nil {
+	if inner, _ := opaqueFirstArgument(query, call, budget); inner != nil {
 		if action := firstActionError(inner); action != "" {
 			return action
 		}
@@ -175,25 +183,25 @@ func untypedCallsError(expr Expr, query string) string {
 
 // firstUntypedCallError is the first label_replace or vector call of expr, in the order of the text, that the
 // parser could not type and that Loki rejects, with its error.
-func firstUntypedCallError(expr Expr, query string) (*OpaqueMetricExpr, string) {
+func firstUntypedCallError(expr Expr, query string, budget *budgetCheck) (*OpaqueMetricExpr, string) {
 	switch x := expr.(type) {
 	case *RangeAggregation:
-		return firstUntypedCallError(x.Inner, query)
+		return firstUntypedCallError(x.Inner, query, budget)
 	case *VectorAggregation:
-		return firstUntypedCallError(x.Inner, query)
+		return firstUntypedCallError(x.Inner, query, budget)
 	case *BinOpExpr:
-		if call, msg := firstUntypedCallError(x.Left, query); call != nil {
+		if call, msg := firstUntypedCallError(x.Left, query, budget); call != nil {
 			return call, msg
 		}
-		return firstUntypedCallError(x.Right, query)
+		return firstUntypedCallError(x.Right, query, budget)
 	case *OpaqueMetricExpr:
 		if x.Typed {
-			return firstUntypedCallError(x.Inner, query)
+			return firstUntypedCallError(x.Inner, query, budget)
 		}
 		if x.Func == "approx_topk" {
 			return nil, "" // never typed: the pass over the tree reads it, in its order
 		}
-		if _, msg := untypedCall(query, x); msg != "" {
+		if _, msg := untypedCall(query, x, budget); msg != "" {
 			return x, msg
 		}
 	}
@@ -229,18 +237,18 @@ func actionErrorBefore(expr Expr, stop Expr) (string, bool) {
 // untypedCall reads a call the parser keeps as text and could not type (approx_topk, or a call Loki rejects): its
 // sample expression, if it has one, and Loki's error for it, if any: a vector call whose argument is not a number, a
 // first argument that does not parse, label_replace strings that are not four well formed strings.
-func untypedCall(raw string, x *OpaqueMetricExpr) (Expr, string) {
+func untypedCall(raw string, x *OpaqueMetricExpr, budget *budgetCheck) (Expr, string) {
 	var lokiErr *ParseError
 	if x.Func == "vector" {
-		if err := vectorArgumentError(raw, x); errors.As(err, &lokiErr) {
+		if err := vectorArgumentError(raw, x, budget); errors.As(err, &lokiErr) {
 			return nil, lokiErr.Msg
 		}
 	}
-	inner, err := opaqueFirstArgument(raw, x)
+	inner, err := opaqueFirstArgument(raw, x, budget)
 	if errors.As(err, &lokiErr) {
 		return nil, lokiErr.Msg
 	}
-	if err := labelReplaceArgumentsError(raw, x); err != nil {
+	if err := labelReplaceArgumentsError(raw, x, budget); err != nil {
 		return nil, err.Error()
 	}
 	return inner, ""
@@ -258,9 +266,9 @@ func callText(query string, x *OpaqueMetricExpr) (src string, pos int) {
 
 // vectorArgumentError reports the parse error Loki raises for a vector call whose argument is not a number it
 // can read: `vector(x)`, `vector(5x)`, `vector(0x1)`. It is nil for a valid call.
-func vectorArgumentError(query string, call *OpaqueMetricExpr) error {
+func vectorArgumentError(query string, call *OpaqueMetricExpr, budget *budgetCheck) error {
 	src, pos := callText(query, call)
-	p := quietParser(src, pos, 0)
+	p := quietParser(src, pos, 0, budget)
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil
@@ -292,9 +300,9 @@ func (p *parser) vectorArgumentError() error {
 // Loki reports for the whole query. It returns a nil Expr when the call has no
 // parseable expression argument, and the parse error when that argument is
 // itself rejected.
-func opaqueFirstArgument(query string, call *OpaqueMetricExpr) (Expr, error) {
+func opaqueFirstArgument(query string, call *OpaqueMetricExpr, budget *budgetCheck) (Expr, error) {
 	src, pos := callText(query, call)
-	p := quietParser(src, pos, 0)
+	p := quietParser(src, pos, 0, budget)
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil, nil
@@ -319,9 +327,9 @@ func opaqueFirstArgument(query string, call *OpaqueMetricExpr) (Expr, error) {
 // expression, a string whose
 // escapes are invalid (the LogQL lexer unquotes it) included, at the line and column of the query. It is nil for
 // any other call.
-func labelReplaceArgumentsError(query string, call *OpaqueMetricExpr) error {
+func labelReplaceArgumentsError(query string, call *OpaqueMetricExpr, budget *budgetCheck) error {
 	src, pos := callText(query, call)
-	p := quietParser(src, pos, 0)
+	p := quietParser(src, pos, 0, budget)
 	p.advance()
 	if p.cur.Typ != TokIdent || p.cur.Val != "label_replace" {
 		return nil

@@ -338,6 +338,15 @@ func (p *Proxy) requestTimeBounds(endpoint string, next http.HandlerFunc) http.H
 		return next
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
+		// The bounds read the query's validation: a query the cache does not hold (too long to cache, or the cache is
+		// full) is validated here under the request's planning budget, as the route's validator would, and that
+		// validation is what every later reader finds (validateTimed). A trip answers the budget's 400.
+		if q := r.FormValue("query"); q != "" {
+			if _, err := p.validateTimed(r.Context(), q); err != nil {
+				p.failQueryLimit(w, r, err)
+				return
+			}
+		}
 		if msg := requestTimeBoundsError(endpoint, r, time.Now()); msg != "" {
 			p.writeError(w, http.StatusBadRequest, msg)
 			p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)

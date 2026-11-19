@@ -46,18 +46,43 @@ func ValidateLogQLExpr(query string) (Expr, string) {
 // Loki refuses to build, reported only when msg is "". With a build error the parsed expression is returned, so a
 // caller can run checks Loki makes over the tree before it builds (the query plan's) and answer in Loki's order.
 func ValidateLogQLPhases(query string) (expr Expr, msg, build string) {
-	expr, msg, unknown := validateLogQLTree(query)
-	if msg != "" || expr == nil {
-		return nil, msg, ""
+	expr, msg, build, _ = ValidateLogQLPhasesWithin(query, nil)
+	return expr, msg, build
+}
+
+// ValidateLogQLPhasesWithin is ValidateLogQLPhases under a planning budget (nil for none): the parser, every parser
+// it makes for a call it reads again, and the passes over the tree count their steps (tokens read, nodes walked) and
+// ask the budget after budgetFirstCheck steps, then every budgetCheckEvery. Once it has run out the parse still reads
+// to its end and the untyped-call check runs, so a syntax error (the parser's, the lexer's, a call Loki's parser
+// cannot read) is answered as Loki answers it whatever the clock says; the checks over the parsed tree and the
+// pipeline build stop, and a query that parses is answered with exhausted and nothing else: a validation cut short
+// is no verdict. An error a check over the tree found before the budget ran out is Loki's answer too. A query of
+// fewer steps than budgetFirstCheck is never cut short.
+func ValidateLogQLPhasesWithin(query string, budget Budget) (expr Expr, msg, build string, exhausted bool) {
+	b := newBudgetCheck(budget)
+	defer b.release()
+	expr, msg, unknown := validateLogQLTree(query, b)
+	if msg != "" {
+		return nil, msg, "", false
 	}
-	if build = semanticPass(expr, query, true); build != "" {
-		return expr, "", build
+	if b.exhausted() {
+		return nil, "", "", true
+	}
+	if expr == nil {
+		return nil, "", "", false
+	}
+	build = semanticPass(expr, query, true, b)
+	if b.exhausted() {
+		return nil, "", "", true
+	}
+	if build != "" {
+		return expr, "", build, false
 	}
 	if unknown != "" {
 		// A name the translation cannot carry: the proxy's own refusal, after every check Loki makes.
-		return nil, unknown, ""
+		return nil, unknown, "", false
 	}
-	return expr, "", ""
+	return expr, "", "", false
 }
 
 // validateLogQL is ValidateLogQL that also returns the parsed expression (nil
@@ -74,7 +99,7 @@ func validateLogQL(query string) (Expr, string) {
 // validateLogQLTree is validateLogQL without the pipeline build: the parser, its actions, the lexer and the checks
 // over the parsed tree. unknown is the refusal of a name the translation cannot carry, for the caller to report
 // after the build.
-func validateLogQLTree(query string) (expr Expr, msg, unknown string) {
+func validateLogQLTree(query string, budget *budgetCheck) (expr Expr, msg, unknown string) {
 	if msg := InputSizeError(query); msg != "" {
 		return nil, msg, ""
 	}
@@ -90,7 +115,7 @@ func validateLogQLTree(query string) (expr Expr, msg, unknown string) {
 	// counts in the line and column of an error, a trailing character that is not white space to Loki (a
 	// vertical tab) is a token, and a 0b literal after leading white space is read as after any white space.
 	// An empty query and one of white space only are errors of the parser, at the end of the text.
-	expr, unknownName, plainUnwrap, err := parseExpressionTree(query)
+	expr, unknownName, plainUnwrap, err := parseExpressionTree(query, budget)
 	if err != nil {
 		return nil, formatParseError(err, query), ""
 	}
@@ -99,12 +124,12 @@ func validateLogQLTree(query string) (expr Expr, msg, unknown string) {
 	}
 
 	// A call kept as text the parser could not type is Loki's syntax error, which ends its parse where it stands.
-	if msg := untypedCallsError(expr, query); msg != "" {
+	if msg := untypedCallsError(expr, query, budget); msg != "" {
 		return nil, msg, ""
 	}
 	// Semantic pass over the typed AST. Loki raises its parser actions while it reads the query, ahead of every
 	// check over the parsed tree, in the order of the text.
-	if msg := semanticPass(expr, query, false); msg != "" {
+	if msg := semanticPass(expr, query, false, budget); msg != "" {
 		if action := firstActionError(expr); action != "" {
 			return nil, action, ""
 		}
