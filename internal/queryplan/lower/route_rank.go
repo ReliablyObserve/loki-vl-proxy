@@ -2,9 +2,11 @@ package lower
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 // The route rule of a ranking and of a label_replace at the root. The handlers evaluate both over the route of their
@@ -46,6 +48,22 @@ func LabelReplaceOperand(n queryplan.Node) queryplan.Node {
 		}
 		n = lr.In
 	}
+}
+
+// LabelReplaces are the label_replace calls at the root of n, innermost first (the order the handlers apply them in,
+// physical.LabelMap), and the expression they wrap: none and n itself when its root is not one.
+func LabelReplaces(n queryplan.Node) ([]physical.LabelReplace, queryplan.Node) {
+	var specs []physical.LabelReplace
+	for {
+		lr, ok := n.(*queryplan.LabelReplace)
+		if !ok {
+			break
+		}
+		specs = append(specs, physical.LabelReplace{DstLabel: lr.Dst, Replacement: lr.Replacement, SrcLabel: lr.Src, Regex: lr.Regex})
+		n = lr.In
+	}
+	slices.Reverse(specs)
+	return specs, n
 }
 
 // routeEvaluated is the route of a plan whose root is a ranking or a label_replace: the route of the operand, its

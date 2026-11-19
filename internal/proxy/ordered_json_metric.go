@@ -156,11 +156,11 @@ func (p *Proxy) handleOrderedJSONMetricUnderTransform(w http.ResponseWriter, r *
 	if _, ok := compileOrderedJSONMetric(inner); !ok {
 		return false
 	}
-	translated, err := p.translateQueryWithContext(r.Context(), query)
-	if err != nil {
+	// A query the translation refuses is left to the general path, which reports it.
+	if _, err := p.translateQueryWithContext(r.Context(), query); err != nil {
 		return false
 	}
-	transforms, invalid := parseLabelTransformMarkers(translated)
+	transforms, invalid := labelTransformsOf(query)
 	if invalid != nil || len(transforms.replaces) == 0 {
 		return false
 	}

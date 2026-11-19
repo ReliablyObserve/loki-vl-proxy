@@ -15,6 +15,8 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -913,23 +915,37 @@ func replaceLabel(in map[string]string, re *regexp.Regexp, spec translator.Label
 // labelTransforms are the label_replace calls of a query, in
 // the order they apply: the innermost first.
 type labelTransforms struct {
-	replaces []translator.LabelReplaceSpec
+	replaces []physical.LabelReplace
 }
 
-// splitPostProcessing reads the markers the translator left in a query through the physical-plan codec. It returns
-// the clean query, the operator and labels of the `without` fold the proxy applies (empty and nil without one) and
-// the label_replace calls, innermost first.
-func splitPostProcessing(translated string) (clean, markerOp string, withoutLabels []string, replaces []translator.LabelReplaceSpec) {
+// splitPostProcessing reads the `without` marker the translator left in a query through the physical-plan codec. It
+// returns the clean query (every marker removed) and the operator and labels of the `without` fold the proxy applies
+// (empty and nil without one). The label_replace calls the proxy applies are read from the query's plan
+// (planLabelReplaces), not from their markers.
+func splitPostProcessing(translated string) (clean, markerOp string, withoutLabels []string) {
 	clean, post := translator.SplitPost(translated)
 	if post.Folds() {
 		markerOp, withoutLabels = post.Without.Op, post.Without.Labels
 	}
-	return clean, markerOp, withoutLabels, post.LabelReplace
+	return clean, markerOp, withoutLabels
+}
+
+// planLabelReplaces are the label_replace calls at the root of query, innermost first, read from its resolved plan
+// (lower.LabelReplaces): the physical.LabelMap the proxy applies to the answer of the expression they wrap. A query
+// whose root is another expression has none here (an operand of a binary operation or of an aggregation applies its
+// own).
+func planLabelReplaces(query string) []physical.LabelReplace {
+	p := resolvedPlan(query)
+	if p == nil {
+		return nil
+	}
+	specs, _ := lower.LabelReplaces(p.Root)
+	return specs
 }
 
 // newLabelTransforms holds the label_replace calls of a query. It returns Loki's parse error when a
 // label_replace regexp does not compile, and nil otherwise.
-func newLabelTransforms(replaces []translator.LabelReplaceSpec) (labelTransforms, *lokierr.Error) {
+func newLabelTransforms(replaces []physical.LabelReplace) (labelTransforms, *lokierr.Error) {
 	for _, spec := range replaces {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			return labelTransforms{}, labelReplaceRegexError(err)
@@ -938,10 +954,9 @@ func newLabelTransforms(replaces []translator.LabelReplaceSpec) (labelTransforms
 	return labelTransforms{replaces: replaces}, nil
 }
 
-// parseLabelTransformMarkers reads the label_replace markers the translator left in a query.
-func parseLabelTransformMarkers(translated string) (labelTransforms, *lokierr.Error) {
-	_, _, _, replaces := splitPostProcessing(translated)
-	return newLabelTransforms(replaces)
+// labelTransformsOf holds the label_replace calls at the root of query (planLabelReplaces).
+func labelTransformsOf(query string) (labelTransforms, *lokierr.Error) {
+	return newLabelTransforms(planLabelReplaces(query))
 }
 
 // apply runs the transforms over a matrix or vector answer.

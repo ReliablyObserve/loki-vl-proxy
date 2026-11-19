@@ -49,7 +49,7 @@ func BenchmarkSplitPostProcessing(b *testing.B) {
 		b.Run(set.name+"/new", func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				_, _, _, _ = splitPostProcessing(in[i%len(in)])
+				_, _, _ = splitPostProcessing(in[i%len(in)])
 			}
 		})
 	}

@@ -2984,7 +2984,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Extract without() labels and label_replace markers for post-processing.
-	logsqlQuery, markerOp, withoutLabels, labelReplaceSpecs := splitPostProcessing(logsqlQuery)
+	logsqlQuery, markerOp, withoutLabels := splitPostProcessing(logsqlQuery)
+	labelReplaceSpecs := planLabelReplaces(logqlQuery)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
@@ -3351,7 +3352,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract without() labels and label_replace markers for post-processing.
-	logsqlQuery, markerOp, withoutLabels, labelReplaceSpecs := splitPostProcessing(logsqlQuery)
+	logsqlQuery, markerOp, withoutLabels := splitPostProcessing(logsqlQuery)
+	labelReplaceSpecs := planLabelReplaces(logqlQuery)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
