@@ -4,17 +4,20 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	fj "github.com/valyala/fastjson"
@@ -23,14 +26,14 @@ import (
 // The folded bucket reads of a parser's series identity over a range longer than the step (lower.SeriesFold).
 //
 // A request marked identityAheadKey reads the range function's partials per series hash and per anchored bucket, in
-// the time chunks of listed_window_chunks.go. Each chunk is one stats_query_range call whose answer holds, per bucket
-// and group, the partials of every series with lines in more than one bucket of the read (their hash kept), and one
-// row of the series that lie wholly in that bucket, folded by VictoriaLogs: the sum (or extreme) of their values and
-// their count, under an empty hash. The window evaluator merges each kept series' buckets into its windows as before,
-// and adds a folded row's value to the outer aggregation of every window that holds its bucket, weighted by its count
+// the time chunks of listed_window_chunks.go. Each chunk is one scan of /select/logsql/query (seriesFoldPost) whose
+// answer, read back into the shape of a stats_query_range answer (seriesFoldRead.matrix), holds per bucket and group the
+// partials of every series with lines in more than one bucket of the read (their hash kept), and one row of the series
+// that lie wholly in that bucket, folded by VictoriaLogs: the sum (or extreme) of their values and their count, under
+// an empty hash. The window evaluator merges each kept series' buckets into its windows as before, and adds a folded
+// row's value to the outer aggregation of every window that holds its bucket, weighted by its count
 // (hitsRangeMetricSeries, foldAccumulator.addPartial). The answer is the per-series one: a window holds all of a
-// folded series' lines in the read or none, and each window lies in its chunk's read, which the subquery that tells
-// the series apart is scoped to (VictoriaLogs adds the read's time range and extra filters to every subquery).
+// folded series' lines in the read or none, and each window lies in its chunk's read.
 //
 // The answer then holds a row per bucket and group for the folded series, not one per line: a key of its own on
 // every line (a request id) costs about what the stream's series did. The buckets of these reads depend on the
@@ -43,11 +46,10 @@ type seriesFoldKey struct{}
 // seriesFoldRead is how a request's bucket reads fold the series that lie in one bucket.
 type seriesFoldRead struct {
 	outer logql.VectorOp
-	// identity is the bucket query before the unwrap gate, which ends with the series hash.
-	identity string
-	field    string
+	// plan is the request's plan: the folded read's base unpacks the line once (lower.SeriesFoldBase).
+	plan *queryplan.Plan
 	// columns are the bucket stats' results; value the math expression of a series' value in a bucket; valueColumn
-	// and countColumn the results a folded row's value and count are read from (countColumn may be
+	// and countColumn the results a folded row's value and count are read into (countColumn may be
 	// lower.SeriesFoldCount, which the fold adds).
 	columns                  []string
 	stats                    []logsql.StatsFuncAlias
@@ -56,8 +58,9 @@ type seriesFoldRead struct {
 	// stats are the bucket stats' functions (unwrapBucketAgg's, typed).
 	// added says the fold adds lower.SeriesFoldCount to the bucket stats' results.
 	added bool
-	// singletons is how the bucket stats fold the series of one line (lower.SeriesFoldSingletons).
-	singletons lower.SeriesFoldSingletons
+	// by is the grouping of one read's bucket stats (foldedQuery sets it on the read's own copy), the labels of its
+	// answer.
+	by []string
 }
 
 // seriesFoldOff reads the series of a parser's identity one by one, as before the fold (tests compare the two).
@@ -81,17 +84,12 @@ func (p *Proxy) withSeriesFold(r *http.Request, spec statsCompatSpec, manualFunc
 	if !strings.HasSuffix(ungated, seriesFoldHash) {
 		return r
 	}
-	identity := lower.SeriesFoldIdentity(resolvedPlan(dynamicQuery(r.FormValue("query"))), p.logsqlCapabilities(), ungated)
-	read := &seriesFoldRead{outer: chain[0].Op, identity: identity, field: spec.UnwrapField}
+	read := &seriesFoldRead{outer: chain[0].Op, plan: resolvedPlan(dynamicQuery(r.FormValue("query")))}
 	v := translate.UnwrapValueAlias
 	switch manualFunc {
 	case "avg":
 		read.columns, read.value, read.valueColumn, read.countColumn = []string{"__lvp_sum", "__sample_count"}, "__lvp_sum / __sample_count", "__lvp_sum", "__sample_count"
 		read.stats = []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: v}, Alias: "__lvp_sum"}, {Func: logsql.Count{}, Alias: "__sample_count"}}
-		if read.outer == logql.VectorSum || read.outer == logql.VectorAvg {
-			// The bucket stats add up the values of the series of one line: their sum, not their extreme.
-			read.singletons = lower.SingletonsKept
-		}
 	case "max", "min":
 		read.columns, read.value, read.valueColumn = []string{"c"}, "c", "c"
 		read.stats = []logsql.StatsFuncAlias{{Func: logsql.Max{Field: v}, Alias: "c"}}
@@ -106,7 +104,6 @@ func (p *Proxy) withSeriesFold(r *http.Request, spec statsCompatSpec, manualFunc
 		read.stats = []logsql.StatsFuncAlias{{Func: logsql.Avg{Field: v}, Alias: deviationMeanName}, {Func: logsql.Count{}, Alias: "__sample_count"},
 			{Func: logsql.Stddev{Field: v}, Alias: deviationBucketName}}
 		read.value, read.valueColumn, read.countColumn = deviationBucketName, deviationBucketName, "__sample_count"
-		read.singletons = lower.SingletonsZero
 		if manualFunc == "stdvar" {
 			read.value = deviationBucketName + " * " + deviationBucketName
 		}
@@ -132,14 +129,14 @@ func (s *seriesFoldRead) query(baseQuery string, groupBy []string, statsAggFunc 
 		return "", false
 	}
 	bucket, offset := slidingStatsGrid(start, hitStep)
-	read, ok := lower.SeriesFold{Outer: s.outer, By: groupBy, Stats: s.stats, Columns: s.columns, Value: s.value, ValueColumn: s.valueColumn,
-		CountColumn: s.countColumnIn(), Singletons: s.singletons, Field: s.field, Bucket: bucket, Offset: offset, From: start.UnixNano()}.Pipes(s.identity)
+	read, ok := lower.SeriesFold{Outer: s.outer, By: groupBy, Stats: s.stats, Columns: s.columns, Value: s.value, Bucket: bucket, Offset: offset}.Pipes()
 	if !ok {
 		return "", false
 	}
+	base := lower.SeriesFoldBase(s.plan, baseQuery)
 	var b strings.Builder
-	b.Grow(len(baseQuery) + 2*len(s.identity) + 2048)
-	b.WriteString(baseQuery)
+	b.Grow(len(base) + 2048)
+	b.WriteString(base)
 	for _, p := range read.Pipes {
 		b.WriteByte(' ')
 		b.WriteString(p.String())
@@ -148,12 +145,14 @@ func (s *seriesFoldRead) query(baseQuery string, groupBy []string, statsAggFunc 
 }
 
 // foldedQuery is statsQuery, or the folded query when s folds the read, and the fold it applies (nil when it reads
-// every series).
-func (s *seriesFoldRead) foldedQuery(statsQuery, baseQuery string, groupBy []string, statsAggFunc string, start time.Time, hitStep time.Duration) (string, *seriesFoldRead) {
+// every series); ctx then carries the read's own fold, its grouping set (seriesFoldPost reads the answer by it).
+func (s *seriesFoldRead) foldedQuery(ctx context.Context, statsQuery, baseQuery string, groupBy []string, statsAggFunc string, start time.Time, hitStep time.Duration) (context.Context, string, *seriesFoldRead) {
 	if folded, ok := s.query(baseQuery, groupBy, statsAggFunc, start, hitStep); ok {
-		return folded, s
+		read := *s
+		read.by = groupBy
+		return context.WithValue(ctx, seriesFoldKey{}, &read), folded, &read
 	}
-	return statsQuery, nil
+	return ctx, statsQuery, nil
 }
 
 // statsReadSlot takes a stats_query_range slot for a bucket read: a folded read takes it in the call its identical
@@ -200,14 +199,6 @@ func addFoldedSeries(sink *matrixFoldSink, series map[string]manualSeriesSamples
 // errSeriesFoldTooLong is a folded read whose query, as it would be sent, passes VictoriaLogs' default query length
 // (-search.maxQueryLen): the read is sent again reading every series (collectRangeMetricHitsAux).
 var errSeriesFoldTooLong = errors.New("folded series read longer than VictoriaLogs' query length")
-
-// countColumnIn is the count column among the bucket stats' results (none when the fold adds it).
-func (s *seriesFoldRead) countColumnIn() string {
-	if s.added {
-		return ""
-	}
-	return s.countColumn
-}
 
 // extraResults is the number of results per group the fold adds to the bucket stats'.
 func (s *seriesFoldRead) extraResults() int {
@@ -285,13 +276,14 @@ func (s *seriesFoldRead) readsRow(seriesMap map[string]manualSeriesSamples, seri
 // seriesFoldPost answers a folded bucket read (params rewritten for the request's unwrap check, sentParams as sent)
 // through one VictoriaLogs call shared by the identical reads in flight: the folded answer is the same for every
 // request of a tenant scope, so the call holds one stats_query_range slot (collectRangeMetricHitsAux takes none for
-// these reads) and its answer, read up to the stats body bound, is handed to each read, which strips its own unwrap
-// counter from it. Any number of identical cold requests make one call; the reads sharing it are not cut short by
-// one another's cancellation.
+// these reads) and its answer, read up to the stats body bound and read back into a stats_query_range answer
+// (seriesFoldRead.matrix), is handed to each read, which strips its own unwrap counter from it. Any number of identical
+// cold requests make one call; the reads sharing it are not cut short by one another's cancellation.
 func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentParams url.Values) (*http.Response, error) {
 	if len(params.Get("query")) > vlDefaultMaxQueryLen {
 		return nil, errSeriesFoldTooLong
 	}
+	fold := seriesFoldFrom(ctx)
 	key := "series-fold:" + p.contextScopeFingerprint(ctx) + ":" + params.Encode()
 	if full, _ := ctx.Value(levelFullChainKey{}).(bool); full {
 		key += ":full-chain"
@@ -302,12 +294,32 @@ func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentPar
 			return nil, err
 		}
 		defer release()
-		resp, err := p.vlPostSend(callCtx, path, params, sentParams, nil, nil)
+		resp, err := p.vlPostSend(callCtx, path, params, sentParams, nil, nil, true)
 		if err != nil {
 			return nil, err
 		}
 		// The coalescer reads the body once, up to the stats body bound.
 		resp.Body = &seriesFoldBody{ReadCloser: resp.Body, left: maxStatsBucketResponseBytes}
+		if resp.StatusCode != http.StatusOK {
+			return resp, nil
+		}
+		buf := seriesFoldBufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		_, err = buf.ReadFrom(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			putSeriesFoldBuf(buf)
+			return nil, err
+		}
+		// The matrix copies what it keeps of the rows: the buffer goes back to the pool.
+		matrix, err := fold.matrix(buf.Bytes())
+		putSeriesFoldBuf(buf)
+		if err != nil {
+			return nil, err
+		}
+		resp.Body, resp.ContentLength = io.NopCloser(bytes.NewReader(matrix)), int64(len(matrix))
+		resp.Header.Set("Content-Type", "application/json")
+		resp.Header.Del("Content-Length")
 		return resp, nil
 	})
 	if errors.Is(err, mw.ErrGuardRejected) {
@@ -323,6 +335,91 @@ func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentPar
 	}
 	return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(bytes.NewReader(body)), ContentLength: int64(len(body))}, nil
 }
+
+// seriesFoldBufPool holds the buffers folded answers are read into; putSeriesFoldBuf keeps none larger than
+// seriesFoldBufKeep, so a large answer's buffer is not held after its read.
+var seriesFoldBufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+const seriesFoldBufKeep = 4 << 20
+
+func putSeriesFoldBuf(buf *bytes.Buffer) {
+	if buf.Cap() <= seriesFoldBufKeep {
+		seriesFoldBufPool.Put(buf)
+	}
+}
+
+// seriesFoldQueryPath is the endpoint a folded read is sent to: its stats pipes group by the bucket themselves.
+const seriesFoldQueryPath = "/select/logsql/query"
+
+// SeriesFoldQueryParams are the parameters of a folded read sent to seriesFoldQueryPath for its stats_query_range
+// parameters: the bounds that endpoint reads (the exclusive end less a nanosecond, both aligned to the step's grid,
+// alignedStatsBounds), the end exclusive again, and no step or offset (the query's bucket stats carry the grid).
+func SeriesFoldQueryParams(params url.Values) (url.Values, error) {
+	start, end, err := alignedStatsBounds(params.Get("start"), params.Get("end"), params.Get("step"), params.Get("offset"))
+	if err != nil {
+		return nil, err
+	}
+	out := make(url.Values, len(params))
+	for k, v := range params {
+		if k != "step" && k != "offset" {
+			out[k] = v
+		}
+	}
+	out.Set("start", time.Unix(0, start).UTC().Format(time.RFC3339Nano))
+	out.Set("end", time.Unix(0, end+1).UTC().Format(time.RFC3339Nano))
+	return out, nil
+}
+
+// alignedStatsBounds are the inclusive bounds, in nanoseconds, stats_query_range reads for these parameters:
+// VictoriaLogs takes the end as exclusive (one nanosecond less), then moves the start down and the end up to the
+// edges of the buckets of step shifted by offset that hold them, the end one nanosecond before the next edge.
+func alignedStatsBounds(rawStart, rawEnd, rawStep, rawOffset string) (start, end int64, err error) {
+	var ok bool
+	if start, ok = parseVLTimeNanos(rawStart); !ok {
+		return 0, 0, fmt.Errorf("folded read start %q", rawStart)
+	}
+	if end, ok = parseVLTimeNanos(rawEnd); !ok {
+		return 0, 0, fmt.Errorf("folded read end %q", rawEnd)
+	}
+	step, err := time.ParseDuration(rawStep)
+	if err != nil || step <= 0 {
+		return 0, 0, fmt.Errorf("folded read step %q", rawStep)
+	}
+	var offset time.Duration
+	if rawOffset != "" {
+		if offset, err = time.ParseDuration(rawOffset); err != nil {
+			return 0, 0, fmt.Errorf("folded read offset %q", rawOffset)
+		}
+	}
+	s, off := int64(step), int64(offset)
+	end--
+	start += off
+	if start >= 0 {
+		start -= start % s
+	} else {
+		start -= s + start%s
+	}
+	start -= off
+	end += off
+	if end <= 0 {
+		end -= end % s
+	} else {
+		end += s - end%s
+	}
+	end -= off
+	return start, end - 1, nil
+}
+
+// parseVLTimeNanos reads a VictoriaLogs time parameter: RFC 3339 or Unix time.
+func parseVLTimeNanos(raw string) (int64, bool) {
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return t.UnixNano(), true
+	}
+	return parseFlexibleUnixNanos(raw)
+}
+
+// seriesFoldFlagKey is the unwrap check's flag as a key of a folded read's rows.
+var seriesFoldFlagKey = []byte(`"` + unwrapBadField + `":`)
 
 // seriesFoldBody is a folded answer's body as the coalescer reads it: past limit bytes the read fails with
 // errBodyTooLarge, so the shared call holds at most the stats body bound.

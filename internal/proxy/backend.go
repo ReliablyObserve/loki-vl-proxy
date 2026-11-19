@@ -537,22 +537,31 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		}
 		return resp, err
 	}
-	return p.vlPostSend(ctx, path, params, sentParams, stripUnwrapCounter, stripJSONMarks)
+	return p.vlPostSend(ctx, path, params, sentParams, stripUnwrapCounter, stripJSONMarks, false)
 }
 
 // vlPostSend sends a POST of params (rewritten for the unwrap and JSON parser error checks already; sentParams as the
 // caller sent them) to VictoriaLogs and reads its answer through the request's stripUnwrapCounter and stripJSONMarks,
-// when it has them.
+// when it has them. A folded read (series_fold_read.go) is a stats_query_range read to every step before the send,
+// and goes to /select/logsql/query with the bounds that endpoint would read (SeriesFoldQueryParams).
 func (p *Proxy) vlPostSend(ctx context.Context, path string, params, sentParams url.Values, stripUnwrapCounter func([]byte) ([]byte, error),
-	stripJSONMarks func([]byte) ([]byte, []jsonErrorHit, error)) (*http.Response, error) {
+	stripJSONMarks func([]byte) ([]byte, []jsonErrorHit, error), folded bool) (*http.Response, error) {
 	params, witness := p.pruneLevelChain(ctx, path, params)
 	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, params))))
-	u := backendRequestURL(p.backend, path)
-	querycorpus.RecordBackend(path, params.Get("query"))
-	if resp, err, ok := p.predictVLRefusal(ctx, http.MethodPost, path, params); ok {
+	sendPath, sendParams := path, params
+	if folded {
+		var err error
+		if sendParams, err = SeriesFoldQueryParams(params); err != nil {
+			return nil, err
+		}
+		sendPath = seriesFoldQueryPath
+	}
+	u := backendRequestURL(p.backend, sendPath)
+	querycorpus.RecordBackend(sendPath, sendParams.Get("query"))
+	if resp, err, ok := p.predictVLRefusal(ctx, http.MethodPost, sendPath, sendParams); ok {
 		return resp, err // VictoriaLogs refuses it on this release: not sent (vl_refusal.go)
 	}
-	body := params.Encode()
+	body := sendParams.Encode()
 	if p.log.Enabled(ctx, slog.LevelDebug) {
 		// Built only when written: the encoded form, its hash and the URL cost a request's worth of bytes.
 		p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", redactQuery(body, p.debugLogRawQueries))

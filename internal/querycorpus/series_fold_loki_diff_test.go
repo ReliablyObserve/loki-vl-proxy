@@ -30,9 +30,10 @@ import (
 //   - spanning (seriesFoldSpanFixture): every request id logged twice 70 s apart, so every series spans buckets;
 //     read once and in time chunks under a budget of 600 series, the chunked answer the one read's byte for byte.
 //   - Requests (seriesFoldRequests): an hour at steps of 60 s, 20 s, 7 s (buckets of one second) and 120 s (a range
-//     the step does not divide), and at 60 s with bounds off the minute grid (moved to it), each read in one
-//     stats_query_range call. A subquery grid offset from the minute (bounds the proxy does not align) is held by
-//     the emulator's differentials (internal/proxy TestDynamicIdentityWindowsMatchLokiReference, FuzzSeriesFold).
+//     the step does not divide), and at 60 s with bounds off the minute grid (moved to it), each read in one folded
+//     call. A grid offset from the minute (bounds the proxy does not align) is held by the emulator's differentials
+//     (internal/proxy TestDynamicIdentityWindowsMatchLokiReference, FuzzSeriesFold) and by
+//     TestSeriesFoldBoundsMatchStatsQueryRange.
 //
 // Every run must match Loki. The answers are recorded (seriesFoldAnswersPath; LVP_RUN_ORACLES=1 records them again,
 // with GOMODCACHE set to a fresh directory when the shared module cache holds other copies of VictoriaLogs).
@@ -209,8 +210,19 @@ func seriesFoldSpanFixture() metricFixture {
 	return f
 }
 
+// foldedReads counts the folded reads (of /select/logsql/query, lower.SeriesFold) among a run's VictoriaLogs requests.
+func foldedReads(sent []string) int {
+	n := 0
+	for _, k := range sent {
+		if strings.HasPrefix(k, "/select/logsql/query?") && strings.Contains(k, url.QueryEscape(") as "+lower.SeriesFoldRows)) {
+			n++
+		}
+	}
+	return n
+}
+
 // TestSeriesFoldMatchLoki replays the recorded answers through the handler: every run is Loki's answer, read in one
-// stats_query_range call that folds the series in one bucket.
+// folded call (of /select/logsql/query) that folds the series in one bucket, and no stats_query_range call.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
 func TestSeriesFoldMatchLoki(t *testing.T) {
@@ -243,18 +255,15 @@ func TestSeriesFoldMatchLoki(t *testing.T) {
 				for c, ex := range compareMetric(loki, run).classes {
 					t.Errorf("%s %s %s: %s: %s", prof.name, mr.kind, mq.q, c, ex)
 				}
-				folded := 0
-				for _, k := range run.sent {
-					if strings.HasPrefix(k, "/select/logsql/stats_query_range?") && strings.Contains(k, "__lvp_ks%3Ain%28") {
-						folded++
-					}
-				}
+				folded := foldedReads(run.sent)
 				calls := statsRangeCalls(run.sent)
 				switch chunked := mr.rowLimit > 0; {
-				case chunked && (calls < 2 || folded != calls):
-					t.Errorf("%s %s %s: %d stats_query_range reads (%d folded), want folded chunks", prof.name, mr.kind, mq.q, calls, folded)
-				case !chunked && (calls != 1 || folded != 1):
-					t.Errorf("%s %s %s: %d stats_query_range reads (%d folded), want one folded read", prof.name, mr.kind, mq.q, calls, folded)
+				case calls != 0:
+					t.Errorf("%s %s %s: %d stats_query_range reads besides the folded ones", prof.name, mr.kind, mq.q, calls)
+				case chunked && folded < 2:
+					t.Errorf("%s %s %s: %d folded reads, want folded chunks", prof.name, mr.kind, mq.q, folded)
+				case !chunked && folded != 1:
+					t.Errorf("%s %s %s: %d folded reads, want one", prof.name, mr.kind, mq.q, folded)
 				}
 				// A chunked run answers the one read's answer byte for byte.
 				result := listedChunksResult(t, run.body)

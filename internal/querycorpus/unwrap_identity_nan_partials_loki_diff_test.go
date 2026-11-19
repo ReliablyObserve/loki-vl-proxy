@@ -15,7 +15,7 @@ import (
 
 // The Loki differential of a parser's series identity over series whose value is NaN without a line of nan: lines
 // of an infinity of each sign (their sum and mean are NaN), and a value with an infinity (their deviation is NaN).
-// Real Loki (the engine oracle, test/oracle/loki) and real VictoriaLogs (the serve oracle, test/oracle/vl, v1.53.0
+// Real Loki (the engine oracle, test/oracle/loki) and real VictoriaLogs (the serve oracle, test/oracle/vl, v1.54.0
 // and v1.49.0) over the same data, through the proxy's real query_range handler.
 //
 //   - Data: nanv, a request id on every line every ten seconds plus such series now and then (and a line of nan); nan1
@@ -28,8 +28,10 @@ import (
 // avg over the mixed set is left out: its windows hold a series of +Inf among finite ones, and Loki's mean of the
 // series is NaN or +Inf by the order it visits them in (recorded both ways at the two steps).
 //
-// VictoriaLogs' sum keeps NaN as its empty value: an outer sum over a series of NaN left it out, and the fold's
-// second stats pipe answered 0 for a series that keeps its hash, where Loki answers NaN. Every run must match Loki.
+// VictoriaLogs' sum keeps NaN as its empty value: an outer sum over a series of NaN left it out, where Loki answers
+// NaN. On a range longer than the step the read is folded (one /select/logsql/query read, lower.SeriesFold): a NaN
+// series never folds, and its partials pass the last stats pipe through any, which keeps the NaN. Every run must
+// match Loki.
 // The answers are recorded (nanPartialsAnswersPath; LVP_RUN_ORACLES=1 records them again, with GOMODCACHE set to a
 // fresh directory when the shared module cache holds other copies of VictoriaLogs).
 
@@ -177,6 +179,10 @@ func TestUnwrapIdentityNaNPartialsMatchLoki(t *testing.T) {
 				}
 				for c, ex := range compareMetric(loki, run).classes {
 					t.Errorf("%s %s %s: %s: %s", prof.name, mr.kind, mq.q, c, ex)
+				}
+				// A range longer than the step is read folded, in one read; one up to the step reads the stats.
+				if folded, want := foldedReads(run.sent), strings.Contains(mq.q, "[5m]") || mr.route.Step < time.Minute; (folded == 1) != want {
+					t.Errorf("%s %s %s: %d folded reads, want folded %v", prof.name, mr.kind, mq.q, folded, want)
 				}
 			}
 		}

@@ -15,7 +15,7 @@ func TestParseStatsFunctionsRoundTrip(t *testing.T) {
 		"first(x)", "last(x)", "any(x)", "rate()", "rate_sum(x)",
 		"count_uniq(x)", "count_uniq(a, b)", "count_uniq_hash(x)", "field_max(x, a, b)", "field_min(x, a)",
 		"quantile(0.99, x)", "quantile(0, x)", "quantile(1, x)",
-		"json_values(x)", "json_values_sorted(x)", "json_values_topk(x, 3)",
+		"json_values(x)", "json_values(_time, a, b)", "json_values_sorted(x)", "json_values_topk(x, 3)",
 		"uniq_values(x, 4)", "values(x, 2)",
 		"row_any(a, b)", "row_min(_time, a, b)", "row_max(_time, a)", "row_min(_time)",
 	} {

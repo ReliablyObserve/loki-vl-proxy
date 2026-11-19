@@ -15,6 +15,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // statsQueryRecorder records the LogsQL text of every stats call it passes on.
@@ -68,7 +69,7 @@ func TestDynamicIdentityBinaryOperandsReadTheHash(t *testing.T) {
 		avgApp = `sum by (app) (avg_over_time({app="api"} | json | unwrap n [5m]))`
 		countA = `sum by (app) (count_over_time({app="api"}[5m]))`
 	)
-	rec := &statsQueryRecorder{inner: binaryOperandStatsStub()}
+	rec := &statsQueryRecorder{inner: vlemu.FoldOverStats(binaryOperandStatsStub())}
 	srv := httptest.NewServer(rec)
 	t.Cleanup(srv.Close)
 	p, err := New(Config{BackendURL: srv.URL, Cache: cache.New(time.Minute, 1000), LogLevel: "error"})
