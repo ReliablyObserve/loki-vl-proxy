@@ -7,7 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-
 ### Changed
 
 - **Breaking:** a Logs Drilldown answer over the series limit (`-max-stats-query-series`, or the tenant's
@@ -139,7 +138,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A label filter on a label named `:` (`| json | A="" :=""`) after an unwrap is written quoted to VictoriaLogs (`":":=""`); the bare `::=""` it was written as is a query VictoriaLogs rejects.
 
 ### Changed
-
 
 - Only a version that names VictoriaLogs counts as its release: the `victoria-logs-<date>-<time>-tags-vX.Y.Z[-enterprise[-fips]]-<n>-g<hash>`
   build string of its `/metrics` (`vm_app_version`, `victorialogs_build_info`) or a `VictoriaLogs/vX.Y.Z` style
