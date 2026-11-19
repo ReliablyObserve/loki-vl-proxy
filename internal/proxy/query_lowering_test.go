@@ -684,14 +684,15 @@ func TestQueryPlanLowering_ServesTranslatorOnlyDivergences(t *testing.T) {
 		{`{app="a"} | n > - 5 | json`, ""},
 		{`count_over_time({app="a"} | o="\x02\x00\x02" | json [5m])`, ""},
 	} {
-		got, ok := p.PlanServedText(tc.query, prof)
-		if want := tc.served != ""; ok != want {
-			t.Errorf("%s: served from the plan %v (%s), want %v", tc.query, ok, got, want)
-			continue
-		}
-		if ok && !strings.Contains(got, tc.served) {
-			t.Errorf("%s: served %q, want %q", tc.query, got, tc.served)
-		}
+		t.Run(tc.query, func(t *testing.T) {
+			got, ok := p.PlanServedText(tc.query, prof)
+			if want := tc.served != ""; ok != want {
+				t.Fatalf("served from the plan %v (%s), want %v", ok, got, want)
+			}
+			if ok && !strings.Contains(got, tc.served) {
+				t.Errorf("served %q, want %q", got, tc.served)
+			}
+		})
 	}
 }
 
