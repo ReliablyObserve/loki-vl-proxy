@@ -676,6 +676,9 @@ func TestQueryPlanLowering_ServesTranslatorOnlyDivergences(t *testing.T) {
 		// Turned away: a reserved name in a clause, a drop, a log query with a stage; the other misread kinds.
 		{`sum by (_time) (count_over_time({app="a"}[5m]))`, ""},
 		{`count_over_time({app="a"} | drop _time [5m])`, ""},
+		{`count_over_time({app="a"} | drop a | _time="x" [5m])`, ""},
+		{`count_over_time({app="a"} | pattern "<_time>" | _time="x" [5m])`, ""},
+		{`sum(count_over_time({app="a"} | keep a | _msg="x" [5m])) / sum(count_over_time({app="c"}[5m]))`, ""},
 		{`{app="a"} | _time="x" | json`, ""},
 		{`{app="a"} | s="detected_level" | json`, ""},
 		{`{app="a"} | n > - 5 | json`, ""},

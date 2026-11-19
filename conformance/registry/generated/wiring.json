@@ -708,6 +708,7 @@
       "test/e2e-compat/logfmt_risk_candidates_test.go",
       "test/e2e-compat/logql_unicode_runes_test.go",
       "test/e2e-compat/logql_whitespace_test.go",
+      "test/e2e-compat/marker_bytes_label_value_test.go",
       "test/e2e-compat/marker_text_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
       "test/e2e-compat/metric_range_extent_large_answer_test.go",
@@ -2370,7 +2371,8 @@
     ],
     "semantics/translator-reads-marker-bytes-in-quoted-value": [
       "internal/proxy/query_lowering_test.go",
-      "internal/queryplan/lower/marker_bytes_test.go"
+      "internal/queryplan/lower/marker_bytes_test.go",
+      "test/e2e-compat/marker_bytes_label_value_test.go"
     ],
     "semantics/translator-reads-only-space-between-tokens": [
       "internal/logql/blank_after_keyword_loki_test.go",
@@ -6349,6 +6351,10 @@
       "profiles/dotted-names-accepted-outside-loki-profile",
       "profiles/label-browse-params-ignored"
     ],
+    "test/e2e-compat/marker_bytes_label_value_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/translator-reads-marker-bytes-in-quoted-value"
+    ],
     "test/e2e-compat/marker_text_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -6776,7 +6782,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 798,
+  "tests_with_markers": 799,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

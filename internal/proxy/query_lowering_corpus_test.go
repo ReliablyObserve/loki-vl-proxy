@@ -185,6 +185,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 		`topk(2, sum by (app) (rate({app="a"}[5m])))`, `stddev(count_over_time({app="a"}[5m]))`,
 		`sum without (pod) (rate({app="a"}[5m])) / 2`, `sum(count_over_time({app="a"} | json | n == 5 [5m]))`,
 		`sum(count_over_time({app="a"} | _time="x" [5m]))`, `max_over_time({app="a"} | logfmt | unwrap d [5m]) by (app)`,
+		`count_over_time({app="a"} | drop a | _time="x" [5m])`, `count_over_time({app="a"} | pattern "<_time>" | _time="x" [5m])`,
 		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`, `sum by (app) (bytes_over_time(({app="a"} |~ "x")[5m]))`,
 		// The recorded divergences of log queries, inside a metric operand.
 		"count_over_time({app=\"x\"} | s=`a detected_level b` [5m])",

@@ -3114,6 +3114,8 @@
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-name-parse-error",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-names-accepted-outside-loki-profile",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/label-browse-params-ignored",
+    "test/e2e-compat/marker_bytes_label_value_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/marker_bytes_label_value_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
     "test/e2e-compat/marker_text_test.go | loki_api_v1_query",
     "test/e2e-compat/marker_text_test.go | loki_api_v1_query_range",
     "test/e2e-compat/marker_text_test.go | semantics/marker-text-in-query-strings",
@@ -3393,7 +3395,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 795,
+      "go": 796,
       "playwright": 3
     },
     "page_kinds": {

@@ -30,7 +30,8 @@ import (
 //   - a label filter with an equality on a number, duration or byte size after a json or logfmt parser
 //     (WritesNumericEquality), or a comparison with a signed number;
 //   - a word VictoriaLogs reserves as a field name (_time, _msg, _stream, _stream_id in any letter case) before a parser,
-//     other than as a selector matcher's or a label filter's name (the stream tag the plan filters, ReadsReservedField);
+//     other than as a selector matcher's or a label filter's name before any other stage (the stream tag the plan
+//     filters, ReadsReservedField);
 //   - a quoted string with detected_level or service_name in it, a byte from \x00 to \x02, or an escape that could
 //     write one (the values the string translator reads as syntax);
 //   - a comment, or text it does not read.
@@ -189,8 +190,8 @@ type metricScan struct {
 	// parserArg is set by a regexp or pattern parser in a log query, until its quoted expression is read.
 	parserArg bool
 	// stageStart is set by a pipe that opens a stage, until its first word; labelFilter is set by a stage whose first
-	// word names no stage (a label filter), until the next pipe.
-	stageStart, labelFilter bool
+	// word names no stage (a label filter), until the next pipe; stageSeen by any stage that is not a label filter.
+	stageStart, labelFilter, stageSeen bool
 }
 
 // pipeline reports a position in a log pipeline: inside a range function, or anywhere in a log query.
@@ -418,6 +419,7 @@ func (s *metricScan) word(q string, i, j int) bool {
 	w := q[i:j]
 	if s.stageStart {
 		s.stageStart, s.labelFilter = false, !stageWord(w)
+		s.stageSeen = s.stageSeen || !s.labelFilter
 	}
 	if done, ok := s.label(q, w, j); done {
 		return ok
@@ -465,10 +467,10 @@ func (s *metricScan) label(q, w string, j int) (done, ok bool) {
 		return true, true // a duration or a step: [5m], [1h:1m]
 	case reservedWord(w) && !s.parsed:
 		// A name VictoriaLogs reserves, before any parser. In a metric query, a selector matcher or a label filter on
-		// it is the stream tag the plan filters (ReadsReservedField), which the proxy serves
+		// it before any other stage is the stream tag the plan filters (ReadsReservedField), which the proxy serves
 		// (semantics/translator-writes-reserved-field-names); anywhere else (a clause, an unwrap, a drop or keep, a
-		// log query's pipeline) the screen turns it away.
-		return true, !s.log && (s.brace > 0 || s.labelFilter && comparisonFollows(q, j))
+		// filter after another stage, a log query's pipeline) the screen turns it away.
+		return true, !s.log && (s.brace > 0 || s.labelFilter && !s.stageSeen && comparisonFollows(q, j))
 	case s.brace > 0:
 		return true, true // a selector's label name
 	case s.clauseAt > 0 && s.paren == s.clauseAt:
