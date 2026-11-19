@@ -11,7 +11,7 @@ description: |
   v1.49/v1.50, which read it as a filter pipe and answer it, so it is never
   predicted.
 proxy_usage: |
-  logsql.GatePipeCoalesce; the translator already gates coalesce on
+  the gate vl.pipe_coalesce (internal/capability); the translator already gates coalesce on
   logsql.Capabilities.PipeCoalesce, so the prediction is a guard for a text that
   slips past it.
 fallback: |

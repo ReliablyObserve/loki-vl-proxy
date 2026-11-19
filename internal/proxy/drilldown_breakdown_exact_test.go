@@ -132,7 +132,7 @@ func TestDrilldownBreakdown_OverLimitFollowsLoki(t *testing.T) {
 	step := 5 * time.Minute
 	start := base.Add(2*time.Minute + 123*time.Millisecond)
 	end := start.Add(20 * time.Minute)
-	cfg := Config{TenantLimits: map[string]map[string]any{"tenant-a": {"max_query_series": 2.0}}}
+	cfg := Config{TenantLimits: map[string]map[string]any{"tenant-a": {"max_query_series": 2.0}}, DrilldownSeriesLimitMode: drilldownSeriesLimitBusiest}
 	for _, shape := range drilldownBreakdownShapes {
 		t.Run(shape.name, func(t *testing.T) {
 			params := tumblingRangeParams(shape.query, start, end, step)

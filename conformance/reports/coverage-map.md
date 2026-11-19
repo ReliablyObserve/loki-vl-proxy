@@ -86,4 +86,4 @@ Where the proxy computes a result instead of passing a VictoriaLogs answer throu
 | Version-gated capability | Since | Used in |
 |---|---|---:|
 | DensePatternWindowing | v1.50 | 0 |
-| PipeCoalesce | v1.51 | 3 |
+| PipeCoalesce | v1.51 | 2 |

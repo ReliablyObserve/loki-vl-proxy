@@ -105,16 +105,36 @@ buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `
 - Every other client gets Loki's `400` as soon as the response holds more
   series than the limit.
 - A Drilldown single-field breakdown over the limit is asked again with an
-  `in()` subquery that ranks the field's values by line count in the request's
-  time range and keeps the `limit + 1` busiest. VictoriaLogs reads the lines
-  twice for that call (the ranking and the buckets), but its response holds at
-  most `limit + 1` series however many values the field has; the proxy
-  remembers the breakdown for five minutes and ranks straight away. Drilldown
-  gets the `limit` busiest series and Loki's warning. Loki keeps the first
-  series it meets instead of the busiest, so for series of equal volume the
-  kept set can differ; each kept series is exact. A breakdown that cannot be
-  ranked this way (the underscore label style's dotted fields, which group by
-  both spellings) is read whole and capped the same way.
+  `in()` subquery that ranks the field's values in the request's time range
+  and keeps `limit + 1` of them. VictoriaLogs reads the lines twice for that
+  call (the ranking and the buckets), but its response holds at most
+  `limit + 1` series however many values the field has; the proxy remembers
+  the breakdown for five minutes and ranks straight away. Drilldown gets
+  `limit` series and Loki's warning, chosen by `-drilldown-series-limit-mode`:
+  - `loki` (the default) answers as deployed Loki does. Loki's query frontend
+    splits the request at the multiples of `split_queries_by_interval` inside it
+    (`-drilldown-series-limit-split-interval`, 1h; a step on a boundary starts
+    the later split) and each split keeps the series met first in it, every one
+    ending at the step where the series met so far in the split pass the limit.
+    The splits are concatenated, so an answer over several hours holds up to the
+    limit per hour, often only the first steps of each hour. VictoriaLogs ranks
+    the values by their first line in every split in one read (`sort ...
+    partition by (_time) limit`). Loki orders the series new in one step at
+    random, so among those the kept set can differ; every kept point is Loki's.
+    Loki's results cache can also add the cut points of earlier requests, which
+    the proxy cannot know. An instant answer keeps the busiest series and, when
+    its range is longer than `split_instant_metric_queries_by_interval`
+    (`-drilldown-series-limit-instant-split-interval`, 1h), carries no warning,
+    as deployed Loki's split instant answer does.
+  - `busiest` ranks by line count and keeps the busiest series over the whole
+    range.
+  Both intervals take Loki's per-tenant names in `-tenant-limits`. Every
+  response cache (the proxy's own, the served cache and its peers) keeps the
+  answer as sent, cut included, so a repeat is the first answer. A multi-tenant
+  answer is cut where the merged answer passes the limit in each split.
+  A breakdown that cannot be ranked this way (the underscore label style's
+  dotted fields, which group by both spellings) is read whole and capped the
+  same way.
 - Drilldown breakdowns share `-stats-query-range-concurrency` slots; a slot is
   free again after `-stats-query-range-inter-query-delay-ms`, which does not
   delay the answer.

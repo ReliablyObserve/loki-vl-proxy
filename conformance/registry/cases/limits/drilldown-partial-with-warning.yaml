@@ -44,12 +44,14 @@ compare:
     field: data.result[].values[][1]
     reason: |
       Every returned series must equal Loki's for the same labels: the result is
-      partial in how many series it holds, never in what each one says. The proxy
-      keeps the busiest series by total count where Loki keeps the first series it
-      encounters, so the set may differ; each kept series is compared against
-      Loki's answer for the same label set, at the times Loki answers: Loki's
-      range answer ends at the step where the limit trips
-      (limits/drilldown-series-limit-range-cut-at-trip-step).
+      partial in how many series it holds, never in what each one says. Loki keeps
+      the first series it meets and ends a range answer at the step where the
+      first series past the limit appears; the proxy does the same by default
+      (-drilldown-series-limit-mode=loki; limits/drilldown-series-limit-range-cut-at-trip-step),
+      where series new in the same step may be kept in another order than Loki's
+      (Loki's order there is not fixed). With
+      -drilldown-series-limit-mode=busiest the proxy keeps the busiest series over
+      the whole range, compared at the times Loki answers.
 applies_to:
   loki: ">=3.0.0"
   victorialogs: ">=v1.44.0"

@@ -52,9 +52,7 @@ func newLoweringProfileProxy(t testing.TB, name string, config func(*Config), ve
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	if version != "" {
-		p.backendVersionMu.Lock()
-		p.backendVersionSemver = version
-		p.backendVersionMu.Unlock()
+		p.setReleaseForTest(version)
 	}
 	p.translationCache = nil
 	return p
@@ -236,7 +234,7 @@ func TestQueryPlanLowering_LogScreenCorpus(t *testing.T) {
 // after a parser keyword is Loki's blank, which the translator copies into a pipe VictoriaLogs rejects
 // (semantics/translator-reads-only-space-between-tokens).
 //
-// conformance: architecture-syntax-package-layering, semantics/translator-reads-only-space-between-tokens
+// conformance: architecture-syntax-package-layering, semantics/translator-reads-only-space-between-tokens, semantics/translator-reads-detected-level-in-a-longer-name
 func FuzzLogFlipGate(f *testing.F) {
 	for _, q := range []string{
 		`{app="a"} | detected_level="error"`, `{service_name="a"} |= "x" | detected_level=~"error|warn" | status >= 500`,
@@ -303,8 +301,30 @@ func logFlipGateHolds(on, off *Proxy, q string) string {
 		unflipped, _ := off.translateLogResponseQuery(ctx, q)
 		respelled = got == unflipped
 	}
+	// The string translator reads a label filter before a parser whose name holds detected_level (`Adetected_level`)
+	// as Loki's detected_level and unpacks the line as logfmt first; the plan filters the label the query names, as
+	// Loki does (semantics/translator-reads-detected-level-in-a-longer-name).
+	if name := translatorUnpackedLevelName(want); name != "" && name != "detected_level" &&
+		got == strings.Replace(want, " | unpack_logfmt | filter ", " ", 1) {
+		want = got
+	}
 	if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
 		return fmt.Sprintf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
+	}
+	return ""
+}
+
+// translatorUnpackedLevelName is the label the string translator's text filters right after the unpack_logfmt it adds
+// before a label filter that names detected_level, or "" when the text has no such unpack.
+func translatorUnpackedLevelName(text string) string {
+	const lead = " | unpack_logfmt | filter "
+	i := strings.Index(text, lead)
+	if i < 0 {
+		return ""
+	}
+	rest := text[i+len(lead):]
+	if j := strings.Index(rest, ":"); j > 0 && strings.Contains(rest[:j], "detected_level") {
+		return rest[:j]
 	}
 	return ""
 }

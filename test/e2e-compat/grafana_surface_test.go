@@ -135,20 +135,20 @@ func TestProxyCompatibilitySurface(t *testing.T) {
 		if profile == "" {
 			t.Fatalf("expected backend_capability_profile via vmauth proxy path, got %v", resp)
 		}
-		source, _ := resp["backend_version_source"].(string)
-		if source == "" {
-			t.Fatalf("expected backend_version_source via vmauth proxy path, got %v", resp)
-		}
-
-		expectedTag := expectedVLVersionPrefixFromEnv()
-		if expectedTag == "" {
-			return
-		}
+		// vmauth answers /metrics with its own VictoriaMetrics build and passes no VictoriaLogs version header, so
+		// behind it the VictoriaLogs release is unknown: the capability layer decides the gates from its feature
+		// probes and drilldown-limits names a probed profile with no release (vmauth's own version is never read as
+		// VictoriaLogs'). A deployment that routes VictoriaLogs' /metrics through vmauth reports the release, which
+		// must then be the stack's.
 		semver, _ := resp["backend_version_semver"].(string)
 		if semver == "" {
-			t.Fatalf("expected backend_version_semver via vmauth proxy path for VICTORIALOGS_IMAGE=%q, got %v", expectedTag, resp)
+			if !strings.HasPrefix(profile, "vl-probed-") {
+				t.Fatalf("expected a probed capability profile via vmauth proxy path with no release, got %v", resp)
+			}
+			return
 		}
-		if !strings.HasPrefix(semver, expectedTag+".") {
+		expectedTag := expectedVLVersionPrefixFromEnv()
+		if expectedTag != "" && !strings.HasPrefix(semver, expectedTag+".") {
 			t.Fatalf("expected backend semver prefix %q via vmauth proxy path, got %q", expectedTag+".", semver)
 		}
 	})

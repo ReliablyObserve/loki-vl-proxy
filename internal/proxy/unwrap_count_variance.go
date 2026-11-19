@@ -22,7 +22,7 @@ func countVarianceResponseKeyVersion(query string) string {
 	if !containsWord(query, "stdvar_over_time", other) || !containsWord(query, "count", other) || !containsWord(query, "unwrap", other) {
 		return ""
 	}
-	if plan := resolvedPlan(query); plan != nil && lower.WritesCountVarianceSeries(plan) {
+	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && lower.WritesCountVarianceSeries(plan) {
 		return countVarianceResponseVersion
 	}
 	return ""

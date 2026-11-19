@@ -30,7 +30,9 @@ import (
 // default 1000) and otherwise assert plain parity with Loki.
 func TestRangeMetricCompatibilityOffsetAndSeriesLimit(t *testing.T) {
 	app := fmt.Sprintf("e2e-align-limit-%d", time.Now().UnixNano())
-	base := time.Now().UTC().Truncate(10 * time.Minute).Add(-80 * time.Minute)
+	// The start of the previous hour: every window here (up to base+45m) lies inside one hour, so it is one split of
+	// Loki's query frontend (split_queries_by_interval, 1h), which applies the series limit to each split.
+	base := time.Now().UTC().Truncate(time.Hour).Add(-time.Hour)
 	const span = time.Hour
 	const widePods = 1020
 

@@ -1,5 +1,5 @@
 id: limits/drilldown-series-limit-range-cut-at-trip-step
-title: A Logs Drilldown range answer over the series limit ends at the step where the limit trips on Loki; the proxy answers the whole range (open)
+title: A Logs Drilldown range answer over the series limit ends at the step where the limit trips, as on Loki (fixed; -drilldown-series-limit-mode=busiest keeps the whole range)
 pending: true
 proves:
   - series-limits-and-partial-results
@@ -19,8 +19,20 @@ why: |
   point each. The proxy keeps the busiest series over the whole range with
   Loki's warning; every point Loki answers for a series both keep is the
   proxy's point at that time (TestDrilldownSeriesLimitMatchesLoki pins Loki's
-  cut to the trip step). Matching Loki would turn a Drilldown breakdown over
-  the limit into an almost empty chart: kept until the owner decides.
+  cut to the trip step).
+
+  Deployed Loki puts its query frontend in front of the engine: it splits a
+  range request at the multiples of split_queries_by_interval (1h) inside it
+  and each split is cut on its own, so a request over several hours answers
+  one cut per hour (an isolated Loki 3.7.10 stack, limit 3, results cache
+  off: 6 series over 1h across an hour boundary, 21 over 6h).
+
+  Fixed (owner decisions 2026-11-18): -drilldown-series-limit-mode, default
+  loki, answers as deployed Loki does: per split of
+  -drilldown-series-limit-split-interval (1h), the series met first,
+  every one ending at the step where the series met so far in the split
+  pass the limit; the splits concatenated with one warning. busiest keeps
+  the busiest series over the whole range.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -38,13 +50,16 @@ compare:
   expect: |
     Every kept series ends at the trip step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1672"
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy series limit (Drilldown partial answers)'
   loki: 'a partial range answer ends at the step where a series past max_query_series appears (engine oracle, Loki 3.7.9 and 3.7.10)'
-  proxy: 'the busiest series over the whole range'
-  planned_test: 'TestDrilldownSeriesLimitMatchesLoki (internal/proxy)'
+  proxy: 'Loki''s cut by default; the busiest series over the whole range with -drilldown-series-limit-mode=busiest'
+  planned_test: 'TestDrilldownSeriesLimitMatchesLoki, TestDrilldownSeriesLimitSplitsMatchLoki, TestSeriesLimit_LokiModeEveryRangeRoute (internal/proxy)'
+  visual: none
+  visual_reason: 'owner-reviewed 2026-11-18: the CI visual stack runs Loki and the proxies with max_query_series 1000000, so no page trips the limit there; the Fix-proof is an isolated stack with the limit at 3 on Loki and both proxies (dd-label-pod-over-series-limit, PR #1672)'
 applies_to:
   loki: ">=3.0.0"
   victorialogs: ">=v1.49.0"

@@ -31,7 +31,11 @@ linters:
     # and the proxy. logql may use logsql; logsql may use neither. Both may use
     # the stdlib and internal/querycorpus (a stdlib-only leaf). The physical-plan
     # operators sit beside them: the stdlib and logsql only, so the translator
-    # and the logical plan can both build on them. Test files are
+    # and the logical plan can both build on them. The capability table
+    # (capability) is a leaf below logsql: the stdlib, the client profile
+    # leaf (clientprofile, stdlib only) and the text of its probes (logsql/probes,
+    # stdlib only), so the refusal prediction and the
+    # capabilities view read its gates and nothing above it is imported. Test files are
     # out of scope: a test in package logql cannot import the translator anyway.
     # The logical plan (queryplan) sits above logql and below the translator and
     # the proxy: it reads the LogQL AST and nothing else. The lowering (lower)
@@ -58,6 +62,30 @@ linters:
           allow:
             - $gostd
             - github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/capability
+        capability:
+          list-mode: strict
+          files:
+            - "**/internal/capability/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/clientprofile
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/probes
+        probes:
+          list-mode: strict
+          files:
+            - "**/internal/logsql/probes/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+        clientprofile:
+          list-mode: strict
+          files:
+            - "**/internal/clientprofile/*.go"
+            - "!$test"
+          allow:
+            - $gostd
         queryplan:
           list-mode: strict
           files:

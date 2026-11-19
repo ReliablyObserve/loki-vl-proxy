@@ -217,7 +217,7 @@ The following are disabled by default and should stay restricted:
 
 - `/debug/queries` (`-server.enable-query-analytics`)
 - `/debug/pprof/*` (`-server.enable-pprof`)
-- `/admin/cache/flush` (registered with `-server.register-instrumentation=true`)
+- `/admin/cache/flush` and `GET /admin/capabilities` (the VictoriaLogs releases seen and every capability gate; registered with `-server.register-instrumentation=true`, admin-token protected like the flush, and showing no secret, backend address or tenant)
 
 Enable only for controlled troubleshooting windows. Without `-server.admin-auth-token`, admin/debug routes are served only on `-admin-listen` (default `127.0.0.1:3101`), and the proxy refuses to start when these routes are enabled on a non-loopback address without a token. With a token, they move onto the main listener and require `Authorization: Bearer <token>` or `X-Admin-Token`. The chart keeps `admin-listen` on loopback and never publishes it through the Service.
 

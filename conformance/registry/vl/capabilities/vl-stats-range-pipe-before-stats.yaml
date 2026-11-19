@@ -17,7 +17,9 @@ description: |
   collapse_nums writing _time; v1.49 to v1.52.x answer those, bucketing by the
   overwritten _time (oracle v1.49.0 vs v1.53.0, both directions).
 proxy_usage: |
-  logsql.GateRangeTimeWriters; a pipe no rule reads predicts nothing.
+  the behaviour gate vl.range_time_writers_refused (internal/capability): a probe
+  (`* | math 1 as _time | stats count() as c` on stats_query_range) decides it when no
+  release is readable. A pipe no rule reads predicts nothing.
 fallback: |
   None: such a query is a translation defect, answered as Loki's 500.
 proves: []

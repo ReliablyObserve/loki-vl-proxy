@@ -1360,6 +1360,9 @@ func (p PipeMath) pipe() {}
 type PipeSort struct {
 	By    []SortField
 	Limit int // 0 = no limit
+	// Partition applies the limit to each group of rows with the same values of these fields (VictoriaLogs v1.1.0
+	// and later): sort by (r) partition by (g) limit 3.
+	Partition []string
 }
 
 func (p PipeSort) String() string {
@@ -1372,6 +1375,9 @@ func (p PipeSort) String() string {
 		}
 	}
 	s := "| sort by (" + strings.Join(parts, ", ") + ")"
+	if len(p.Partition) > 0 {
+		s += " partition by (" + strings.Join(p.Partition, ", ") + ")"
+	}
 	if p.Limit > 0 {
 		s += fmt.Sprintf(" limit %d", p.Limit)
 	}

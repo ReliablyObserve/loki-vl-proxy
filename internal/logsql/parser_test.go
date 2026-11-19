@@ -340,3 +340,24 @@ func TestParseIPv6Range(t *testing.T) {
 		})
 	}
 }
+
+// A sort pipe's partition by (...) is read before or after its limit, as VictoriaLogs reads both, and printed
+// before it; the text reads back to itself.
+func TestParsePipeSortPartition(t *testing.T) {
+	want := logsql.PipeSort{By: []logsql.SortField{{Field: "r"}, {Field: "f"}}, Partition: []string{"_time"}, Limit: 4}
+	for _, in := range []string{
+		`* | sort by (r, f) partition by (_time) limit 4`,
+		`* | sort by (r, f) limit 4 partition by (_time)`,
+	} {
+		q, err := logsql.Parse(in)
+		if err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		if got, ok := q.Pipes[0].(logsql.PipeSort); !ok || got.String() != want.String() || len(got.Partition) != 1 || got.Limit != 4 {
+			t.Errorf("%s: %#v", in, q.Pipes[0])
+		}
+	}
+	if _, err := logsql.Parse(`* | sort by (r) partition (_time)`); err == nil {
+		t.Error("partition without by must be refused")
+	}
+}

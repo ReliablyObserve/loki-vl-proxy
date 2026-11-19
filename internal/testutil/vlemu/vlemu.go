@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 )
 
 // Row is one generated log line.
@@ -68,6 +70,10 @@ type Emulator struct {
 	// stream labelled severity or LEVEL decides it there, and the chain reads a
 	// stream's level field before the same name stored on the row.
 	DeriveFields func(stream, fields map[string]string) string
+	// AlignStatsRange reads a stats_query_range request over its time range aligned to the step grid, as
+	// VictoriaLogs does (start down, end up; app/vlselect alignStartEndToStep), its subqueries included; otherwise
+	// over [start, end) as sent.
+	AlignStatsRange bool
 	// RowStreamFields writes the stream fields into every raw row
 	// (/select/logsql/query) as top-level fields, as VictoriaLogs answers them
 	// (a Loki-push row with stream {app="a",level="ERROR"} comes back with
@@ -143,12 +149,19 @@ func (e *Emulator) Handler() http.Handler {
 			_, _ = w.Write([]byte("ok"))
 		case "/metrics":
 			if e.Version != "" {
-				_, _ = fmt.Fprintf(w, "vm_app_version{short_version=%q,version=%q} 1\n", e.Version, e.Version)
+				// VictoriaLogs' build string, as its /metrics reports it.
+				_, _ = fmt.Fprintf(w, "vm_app_version{short_version=%q,version=%q} 1\n", e.Version, "victoria-logs-20260101-000000-tags-"+e.Version+"-0-gabcdef0123")
 			}
 		case "/select/logsql/stats_query_range", "/select/logsql/stats_query":
+			if e.answerCapabilityProbe(w, r) {
+				return // the proxy's own feature probe: neither recorded nor counted as a query
+			}
 			e.Record(r.URL.Path, r.FormValue("query"))
 			e.ServeStats(w, r)
 		case "/select/logsql/query":
+			if e.answerCapabilityProbe(w, r) {
+				return
+			}
 			e.Record(r.URL.Path, r.FormValue("query"))
 			if isSeriesFold(r.FormValue("query")) {
 				e.serveSeriesFold(w, r)
@@ -159,6 +172,24 @@ func (e *Emulator) Handler() http.Handler {
 			_, _ = w.Write([]byte(`{"values":[]}`))
 		}
 	})
+}
+
+// alignedStatsRange is the time range [lo, hi] a stats_query_range request reads with AlignStatsRange.
+func (e *Emulator) alignedStatsRange(r *http.Request) ([2]int64, bool) {
+	if !e.AlignStatsRange || r.URL.Path != "/select/logsql/stats_query_range" || r.FormValue("start") == "" || r.FormValue("end") == "" {
+		return [2]int64{}, false
+	}
+	step, err := time.ParseDuration(r.FormValue("step"))
+	if err != nil || step <= 0 {
+		return [2]int64{}, false
+	}
+	offset := time.Duration(0)
+	if raw := r.FormValue("offset"); raw != "" {
+		if offset, err = time.ParseDuration(raw); err != nil {
+			return [2]int64{}, false
+		}
+	}
+	return AlignedStatsRange(vlTimeNs(e, r.FormValue("start")), vlTimeNs(e, r.FormValue("end")), int64(step), int64(offset)), true
 }
 
 func vlTimeNs(e *Emulator, raw string) int64 {
@@ -186,6 +217,9 @@ func (e *Emulator) SelectRows(r *http.Request) []Row {
 	end := int64(math.MaxInt64)
 	if raw := r.FormValue("end"); raw != "" {
 		end = vlTimeNs(e, raw)
+	}
+	if aligned, ok := e.alignedStatsRange(r); ok {
+		start, end = aligned[0], aligned[1]+1
 	}
 	var out []Row
 	for _, row := range e.Rows {
@@ -318,6 +352,14 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 	}
 	recs := e.statsRecs(r, pipes[:first])
 	if top != nil {
+		if aligned, ok := e.alignedStatsRange(r); ok {
+			top.aligned = &aligned
+		}
+		if phaseStep > 0 { // the subquery repeats the read's window filter
+			top.rowKept = func(ts int64) bool {
+				return WindowPhaseKeeps(ts, phaseAnchor, phaseStep, phaseLower, phaseUpper, e.FloatPhase)
+			}
+		}
 		recs = top.keep(e, r, recs)
 	}
 	var by, names []string
@@ -830,4 +872,33 @@ func jsonObjectInOrder(s string) (map[string]any, []string, bool) {
 		}
 	}
 	return obj, order, true
+}
+
+// answerCapabilityProbe answers the proxy's feature probes (capability.Gates) as the emulated release does: a run for a
+// gate the release carries, VictoriaLogs' refusal for one it lacks. An emulator that names no release gives no
+// verdict (503), as an unreachable backend does.
+func (e *Emulator) answerCapabilityProbe(w http.ResponseWriter, r *http.Request) bool {
+	for _, g := range capability.Gates() {
+		pr := g.Probe
+		if pr == nil || r.URL.Path != pr.Path || r.FormValue("query") != pr.Query {
+			continue
+		}
+		rel := capability.ParseRelease(e.Version)
+		if !rel.Known {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return true
+		}
+		verdict := capability.VerdictOff
+		if g.In(rel) {
+			verdict = capability.VerdictOn
+		}
+		if verdict == pr.Accepted {
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+			return true
+		}
+		w.WriteHeader(pr.RefusalStatus[0])
+		_, _ = w.Write([]byte(pr.RefusalText[0] + " (emulated refusal)"))
+		return true
+	}
+	return false
 }

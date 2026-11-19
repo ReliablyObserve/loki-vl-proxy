@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/refusalcases"
 )
@@ -15,7 +16,7 @@ import (
 func TestPredictRefusalTable(t *testing.T) {
 	for _, c := range refusalcases.Cases() {
 		t.Run(c.Release+"/"+c.Name, func(t *testing.T) {
-			r, ok := logsql.PredictRefusal(c.In, logsql.ParseVersion(c.Release))
+			r, ok := logsql.PredictRefusal(c.In, capability.ForRelease(capability.ParseRelease(c.Release)))
 			if !ok {
 				if c.Rule != "" {
 					t.Fatalf("no prediction, want %s", c.Rule)
@@ -54,7 +55,7 @@ func FuzzPredictRefusal(f *testing.F) {
 			return
 		}
 		start := time.Now()
-		r, ok := logsql.PredictRefusal(logsql.RefusalInput{Path: path, Query: query, Limit: limit, MaxQueryLen: 16384}, logsql.ParseVersion(release))
+		r, ok := logsql.PredictRefusal(logsql.RefusalInput{Path: path, Query: query, Limit: limit, MaxQueryLen: 16384}, capability.ForRelease(capability.ParseRelease(release)))
 		if time.Since(start) > 2*time.Second {
 			t.Fatalf("slow prediction on %q", query)
 		}

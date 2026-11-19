@@ -889,6 +889,12 @@ func TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries(t *testing.T) {
 	step := time.Duration(stepSeconds) * time.Second
 	start := now.Add(-rangeWindow).Truncate(step)
 	end := now.Truncate(step).Add(step)
+	// Loki's query frontend applies the series limit to each split of split_queries_by_interval (1h, its default),
+	// so a window across an hour boundary would hold two splits under the limit. Keep it inside one hour.
+	if hour := end.Add(-time.Nanosecond).Truncate(time.Hour); start.Before(hour) {
+		end = hour
+		start = end.Add(-rangeWindow)
+	}
 
 	t.Logf("seeding service=%s with %d unique trace_ids over %s", serviceName, numUniqueTraceIDs, rangeWindow)
 

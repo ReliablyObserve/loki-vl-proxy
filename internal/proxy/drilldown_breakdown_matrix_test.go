@@ -68,7 +68,7 @@ func TestDrilldownBreakdown_OverLimitMatrix(t *testing.T) {
 	step := 5 * time.Minute
 	for _, shape := range drilldownBreakdownShapes {
 		for limit := 1; limit < len(shape.busiest); limit++ {
-			cfg := Config{TenantLimits: map[string]map[string]any{"tenant-a": {"max_query_series": float64(limit)}}}
+			cfg := Config{TenantLimits: map[string]map[string]any{"tenant-a": {"max_query_series": float64(limit)}}, DrilldownSeriesLimitMode: drilldownSeriesLimitBusiest}
 			stack := newDrilldownBreakdownStack(t, cfg, lines)
 			for _, offset := range []time.Duration{0, 123 * time.Millisecond, 150 * time.Second} {
 				start := base.Add(2*time.Minute + offset)

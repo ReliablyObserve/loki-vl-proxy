@@ -503,14 +503,35 @@ func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale 
 		if err := seriesLimitReached(ctx, maxSeries); err != nil {
 			return nil, err
 		}
-		totals := make([]float64, len(s.keys))
-		for _, rec := range s.records {
-			if rec.grid != slidingGridC {
-				totals[rec.series] += slidingWindowValue(withBytes, rec.count, rec.bytes)
+		if scope := seriesLimitScopeFrom(ctx); scope != nil && scope.lokiCut {
+			// Loki's partial answer: per split, the series met first (their windows' steps); cutLokiSplits keeps
+			// Loki's series and steps on the finished answer.
+			keys := make([]string, len(selected))
+			index := make(map[string]int32, len(selected))
+			for i, series := range selected {
+				keys[i] = strconv.Itoa(int(series))
+				index[keys[i]] = series
 			}
+			kept := seriesKeptForLimit(ctx, keys, nil, func(k string, yield func(int64)) {
+				series := index[k]
+				slidingWindows(s.records[offsets[series]:offsets[series+1]], withBytes, scale, steps, s.windowGrid, func(seg slidingSegment) {
+					scope.firstStepsInSplits(start.Add(time.Duration(seg.from)*step).UnixNano(), start.Add(time.Duration(seg.to-1)*step).UnixNano(), yield)
+				})
+			}, maxSeries)
+			selected = selected[:0]
+			for _, k := range kept {
+				selected = append(selected, index[k])
+			}
+		} else {
+			totals := make([]float64, len(s.keys))
+			for _, rec := range s.records {
+				if rec.grid != slidingGridC {
+					totals[rec.series] += slidingWindowValue(withBytes, rec.count, rec.bytes)
+				}
+			}
+			sort.SliceStable(selected, func(i, j int) bool { return totals[selected[i]] > totals[selected[j]] })
+			selected = selected[:maxSeries]
 		}
-		sort.SliceStable(selected, func(i, j int) bool { return totals[selected[i]] > totals[selected[j]] })
-		selected = selected[:maxSeries]
 	}
 	out := make([]slidingOutputSeries, 0, len(selected))
 	for n, series := range selected {

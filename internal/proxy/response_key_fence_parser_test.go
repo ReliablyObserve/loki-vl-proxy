@@ -371,6 +371,20 @@ func fenceWants(query string) map[string]bool {
 		want["count-stdvar-series"] = lower.WritesCountVarianceSeries(plan)
 	}
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	// A label_replace call keeps a Grafana range variable through the parser as text it cannot type; the handlers
+	// resolve it before they read the query, so the ranking over a binary operand is read from the resolved text too.
+	if resolved != query {
+		if rf, rexpr, ok := factsOf(resolved); ok {
+			want["rank-over-binary"] = want["rank-over-binary"] || rf.rankOverBinary
+			want["rank-over-binary-lr"] = want["rank-over-binary-lr"] || rf.rankOverBinaryLabelReplace
+			want["binary-empty-without"] = want["binary-empty-without"] || rf.emptyWithoutOperand
+			if plan, err := queryplan.Build(rexpr, queryplan.Inputs{}); err == nil {
+				queryplan.Resolve(plan)
+				want["unwrap-dynamic-identity"] = want["unwrap-dynamic-identity"] || lower.WritesDynamicUnwrapIdentity(plan)
+				want["count-stdvar-series"] = want["count-stdvar-series"] || lower.WritesCountVarianceSeries(plan)
+			}
+		}
+	}
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
 		want["ordered-json-vector"] = containsOrderedJSONVectorExpr(rexpr)
 	}
@@ -456,6 +470,11 @@ var fenceSpellingBases = []string{
 	`topk(2, label_replace(sum by (x) (rate({app="a"}[1m])), "y", "x-$1", "x", "(.*)") * 2)`,
 	`sum without () (count_over_time({app="a"} | json [5m])) / 2`,
 	`max without () (rate({app="a"}[5m])) > on(app) group_left sum by (app) (rate({app="a"}[5m]))`,
+	`topk(1, label_replace(rate({app="a"}[$__interval]) * 2, "p", "x-$1", "p", "(.*)"))`,
+	`sort(label_replace(rate({app="a"}[${__range}]), "p", "$1", "p", "(.*)") / 2)`,
+	`label_replace(sum without () (count_over_time({app="a"}[$__auto])) / 2, "p", "$1", "p", "(.*)")`,
+	`label_replace(sum by (x) (avg_over_time({app="a"} | json | unwrap n [$__range])), "p", "$1", "p", "(.*)")`,
+	`label_replace(count by (x) (stdvar_over_time({app="a"} | unwrap n [$__interval])), "p", "$1", "p", "(.*)")`,
 }
 
 // TestResponseKeyFencesFireOnEverySpelling re-spells each base query many ways and requires every fence whose
@@ -870,6 +889,27 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"rank-over-binary-lr", `label_replace(topk(1, rate({a="b"}[1m]) * 2), "p", "$1", "p", "(.*)")`, false},
 		{"rank-over-binary-lr", `topk(1, label_replace(rate({a="b"}[1m]), "p", "$1", "p", "(.*)"))`, false},
 		{"rank-over-binary-lr", `topk(1, rate({a="b"}[1m]) * 2)`, false},
+		// A Grafana range variable in label_replace's first argument is text the parser cannot type; the handlers
+		// resolve it first, so these read as the `[1m]` rows above.
+		{"rank-over-binary-lr", `topk(1, label_replace(rate({a="b"}[$__interval]), "p", "x-$1", "p", "(.*)") * 2)`, true},
+		{"rank-over-binary-lr", `TOPK(1, LABEL_REPLACE(rate({a="b"}[$__auto]), "p", "x-$1", "p", "(.*)") * 2)`, true},
+		{"rank-over-binary-lr", `stddev(label_replace(rate({a="b"}[${__rate_interval}]), "p", "$1", "p", "(.*)") / 2)`, true},
+		{"rank-over-binary-lr", `sort(label_replace(rate({a="b"}[$__range]) * 2, "p", "$1", "p", "(.*)"))`, true},
+		{"rank-over-binary", `sort(label_replace(rate({a="b"}[$__range]) * 2, "p", "$1", "p", "(.*)"))`, true},
+		{"rank-over-binary", `topk(1, label_replace(rate({a="b"}[$__interval]), "p", "$1", "p", "(.*)") * 2)`, true},
+		{"rank-over-binary-lr", `topk(1, label_replace(rate({a="b"}[$__interval]), "p", "$1", "p", "(.*)"))`, false},
+		{"rank-over-binary", `topk(1, label_replace(rate({a="b"}[$__interval]), "p", "$1", "p", "(.*)"))`, false},
+		{"rank-over-binary-lr", `topk(1, rate({a="b"}[$__interval]) * 2)`, false},
+		// The plan-reading fences read what a label_replace call with a variable wraps, as the handlers do.
+		{"binary-empty-without", `label_replace(sum without () (count_over_time({a="b"}[$__interval])) / 2, "x", "$1", "a", "(.*)")`, true},
+		{"binary-empty-without", `label_replace(sum without (pod) (count_over_time({a="b"}[$__interval])) / 2, "x", "$1", "a", "(.*)")`, false},
+		{"unwrap-dynamic-identity", `label_replace(sum by (x) (avg_over_time({a="b"} | json | unwrap n [$__range])), "x", "$1", "a", "(.*)")`, true},
+		{"unwrap-dynamic-identity", `label_replace(sum by (x) (avg_over_time({a="b"} | json | keep x | unwrap n [$__range])), "x", "$1", "a", "(.*)")`, false},
+		{"count-stdvar-series", `label_replace(count by (x) (stdvar_over_time({a="b"} | unwrap n [$__auto])), "x", "$1", "a", "(.*)")`, true},
+		{"count-stdvar-series", `label_replace(sum by (x) (stdvar_over_time({a="b"} | unwrap n [$__auto])), "x", "$1", "a", "(.*)")`, false},
+		// The parser keeps a label_replace call whose range it cannot read as text, and Loki rejects the query (the
+		// fuzz finding of FuzzResponseKeyFencesMatchParsedTree, kept as a seed): the tree still holds the call.
+		{"rank-over-binary-lr", `topk(2, label_replace(rate({a="b"}[$0]), "p", "x", "p", "(.*)") % 1)`, true},
 	} {
 		if got := fenceFires(tc.fence, tc.query); got != tc.want {
 			t.Errorf("%s: %+q fires %v, want %v", tc.fence, tc.query, got, tc.want)
@@ -1009,4 +1049,25 @@ func exprHoldsLabelReplace(e logqlpkg.Expr) bool {
 		return e.Func == "label_replace" || e.Inner != nil && exprHoldsLabelReplace(e.Inner)
 	}
 	return false
+}
+
+// BenchmarkRankOverBinaryFence times the rank over binary fences (the range site's and the instant site's label_replace
+// fence) on a query that is no ranking (the text screen turns it away), a ranking that holds no binary operation, a
+// ranking over a binary operation with a typed label_replace, and the same with a Grafana range variable, which the
+// fence resolves before it reads the plan.
+func BenchmarkRankOverBinaryFence(b *testing.B) {
+	for _, tc := range []struct{ name, query string }{
+		{"no-ranking", `sum by (a) (rate({app="a"}[5m]))`},
+		{"ranking-no-binary", `topk(2, sum by (a) (rate({app="a"}[5m])))`},
+		{"binary-label-replace", `topk(1, label_replace(rate({app="a"}[1m]), "p", "x-$1", "p", "(.*)") * 2)`},
+		{"binary-label-replace-variable", `topk(1, label_replace(rate({app="a"}[$__interval]), "p", "x-$1", "p", "(.*)") * 2)`},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = rankOverBinaryFence(tc.query)
+				_ = rankOverBinaryLabelReplaceFence(tc.query)
+			}
+		})
+	}
 }

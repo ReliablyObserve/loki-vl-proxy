@@ -17,7 +17,7 @@ Ranked by which clients depend on it.
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
 | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | — | 0 / 6 | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
-| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 9 / 12 | 28 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
+| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 9 / 12 | 29 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | — | 0 / 5 | 1 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 
 ## In progress
@@ -44,7 +44,7 @@ Proven in part; the rest is named in the item's cases.
 | `peer-cache-read-hedge` — A peer-cache read never waits on a paused or hung replica longer than the read hedge delay | — | 0 / 0 | 3 | Unit-proven with paused peer stubs and on the three-replica in-process ring (internal/cache/peer_hedge_test.go, peer_rep |
 | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 0 / 0 | 6 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
 | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
-| `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 4 / 5 | 28 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
+| `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 8 / 9 | 32 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 / 0 | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
 | `severity-detected-level-derivation` — detected_level is derived on the read path | — | 5 / 12 | 23 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |
 | `severity-exposure-surfaces` — Where detected_level and level must appear | — | 0 / 6 | 5 | Log responses, /tail, /patterns and /detected_fields carry the derived detected_level; categorize-labels puts it and a s |
@@ -61,7 +61,7 @@ Held by at least one test that declares it.
 | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | — | 0 / 0 | 1 | internal/proxy/credential_passthrough_test.go: basic auth, forwarded OAuth (access and ID token), a custom header, cooki |
 | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | — | 0 / 0 | 2 | internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled with an empty or blank delete token (an admin |
 | `error-coalescing-and-error-cache` — Identical requests share one run, and failed answers are held for their class's TTL | — | 9 / 9 | 7 | Unit and race tests drive real requests through the proxy's routes against a stub VictoriaLogs: TestErrorFlights_Concurr |
-| `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | — | 0 / 0 | 1 | internal/proxy/instrumentation_secrets_test.go configures an admin token, a delete token, a peer token and peers, backen |
+| `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | — | 0 / 0 | 2 | internal/proxy/instrumentation_secrets_test.go configures an admin token, a delete token, a peer token and peers, backen |
 | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 5 / 5 | 13 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
 | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | — | 1 / 1 | 5 | internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from Loki 3.7.9 with auth_enabled: true (13 read |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 1 / 1 | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |

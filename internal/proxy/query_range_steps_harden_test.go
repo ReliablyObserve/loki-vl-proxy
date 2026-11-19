@@ -125,7 +125,7 @@ func TestQueryRangeStepsLokiDifferential(t *testing.T) {
 							on := newExtentTestProxy(t, onSrv.URL, true, 64<<20)
 							off := newExtentTestProxy(t, offSrv.URL, false, 64<<20)
 							for _, p := range []*Proxy{on, off} {
-								p.backendVersionSemver = "" // newExtentTestProxy stored v1.50.0
+								p.setReleaseForTest("") // newExtentTestProxy stored v1.50.0
 								p.storeBackendVersion(version, version)
 							}
 							step := int64(c.step)
@@ -200,7 +200,7 @@ func TestQueryRangeStepsRejectedValueReachedByMovedWindow(t *testing.T) {
 				on := newExtentTestProxy(t, onSrv.URL, true, 64<<20)
 				off := newExtentTestProxy(t, offSrv.URL, false, 64<<20)
 				for _, p := range []*Proxy{on, off} {
-					p.backendVersionSemver = ""
+					p.setReleaseForTest("")
 					p.storeBackendVersion(version, version)
 				}
 				c := owCase{fn: "sum_over_time", parser: parser, shape: owShapes[0], window: window, step: 10 * time.Second, rows: rows}

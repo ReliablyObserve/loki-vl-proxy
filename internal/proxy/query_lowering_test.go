@@ -236,9 +236,7 @@ func testLoweringRouteParity(t *testing.T, extra, logs []string) {
 				}
 				t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 				if prof.version != "" {
-					p.backendVersionMu.Lock()
-					p.backendVersionSemver = prof.version
-					p.backendVersionMu.Unlock()
+					p.setReleaseForTest(prof.version)
 				}
 				withFlipped(p, extra...)
 				withFlippedLogStages(p, logs...)

@@ -225,9 +225,7 @@ func TestOrderedJSONExtractedMetricPushdownOnSupportedBackends(t *testing.T) {
 			p := newFilterPushdownProxy(t, srv.URL)
 			fake.stored = p.labelTranslator.ToVL
 			// newSlidingTestProxy stored v1.50.0 first and the first version wins.
-			p.backendVersionMu.Lock()
-			p.backendVersionSemver = version
-			p.backendVersionMu.Unlock()
+			p.setReleaseForTest(version)
 			plan, ok := compileOrderedJSONMetric(query)
 			if !ok || !plan.pushdown {
 				t.Fatalf("expected a pushdown plan, got ok=%v", ok)

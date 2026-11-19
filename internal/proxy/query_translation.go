@@ -46,11 +46,15 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, req: r})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
 		ctx = clientprofile.With(ctx, grafanaProfile)
+		p.caps.ObserveClient(grafanaProfile.client)
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
 		if p.debugVLCallsHeader {
-			sc.beforeHeader = rt.setVLCallsHeaders
+			sc.beforeHeader = func(h http.Header) {
+				rt.setVLCallsHeaders(h)
+				p.setCapabilitiesHeader(ctx, h)
+			}
 		}
 		next.ServeHTTP(sc, reqWithTelemetry)
 
@@ -1390,7 +1394,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		if err := seriesLimitReached(ctx, limit); err != nil {
 			return nil, err
 		}
-		seriesByKey = busiestBareParserSeries(seriesByKey, limit)
+		seriesByKey = busiestBareParserSeries(ctx, seriesByKey, limit)
 	}
 
 	result := make([]bareParserMetricSeries, 0, len(seriesByKey))
@@ -1466,23 +1470,31 @@ func (p *Proxy) addBareParserMetricFields(metric map[string]string, entry map[st
 	}
 }
 
-// busiestBareParserSeries keeps the limit series with the highest summed
-// sample value, the ranking capSeriesByTotalCount applies on the other paths.
-func busiestBareParserSeries(series map[string]*bareParserMetricSeries, limit int) map[string]*bareParserMetricSeries {
-	// One sample carrying each series' total ranks it the same way.
-	totals := make(map[string]manualSeriesSamples, len(series))
-	for key, entry := range series {
+// busiestBareParserSeries keeps the limit series a Drilldown partial answer keeps (seriesKeptForLimit): the highest
+// summed sample value, the ranking capSeriesByTotalCount applies on the other paths, or in the Loki series-limit
+// mode the first met.
+func busiestBareParserSeries(ctx context.Context, series map[string]*bareParserMetricSeries, limit int) map[string]*bareParserMetricSeries {
+	keys := make([]string, 0, len(series))
+	for key := range series {
+		keys = append(keys, key)
+	}
+	kept := seriesKeptForLimit(ctx, keys, func(key string) float64 {
 		var total float64
-		for _, sample := range entry.samples {
+		for _, sample := range series[key].samples {
 			total += sample.value
 		}
-		totals[key] = manualSeriesSamples{Samples: []rangeMetricSample{{value: total}}}
+		return total
+	}, func(key string, yield func(int64)) {
+		scope := seriesLimitScopeFrom(ctx)
+		for _, sample := range series[key].samples {
+			scope.lineMet(sample.tsNanos, yield) // a line: met by every step its range reaches
+		}
+	}, limit)
+	out := make(map[string]*bareParserMetricSeries, len(kept))
+	for _, key := range kept {
+		out[key] = series[key]
 	}
-	kept := make(map[string]*bareParserMetricSeries, limit)
-	for key := range capSeriesByTotalCount(totals, limit) {
-		kept[key] = series[key]
-	}
-	return kept
+	return out
 }
 
 // fetchBareParserMetricSeriesViaHits is the fast path for count_over_time / rate
@@ -1565,8 +1577,9 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 		series[key] = entry
 	}
 	// Loki's error above the series limit, or the busiest series with Loki's
-	// warning for Logs Drilldown, as the stats bucket path does.
-	series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx))
+	// warning for Logs Drilldown, as the stats bucket path does. The samples are
+	// still labelled by their bucket's start.
+	series, err = capBucketSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx))
 	return series, true, err
 }
 
@@ -1720,7 +1733,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 		}
 		seriesMap[seriesKey] = entry
 	}
-	seriesMap, err = capSeriesForRequest(ctx, seriesMap, limit)
+	seriesMap, err = capBucketSeriesForRequest(ctx, seriesMap, limit) // samples labelled by their bucket's start
 	return seriesMap, true, err
 }
 

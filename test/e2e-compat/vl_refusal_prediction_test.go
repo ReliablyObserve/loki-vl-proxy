@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/refusalcases"
 )
@@ -25,8 +26,8 @@ import (
 // conformance: vl-query-too-long, vl-pipe-before-release, vl-stats-missing-stats-pipe, vl-stats-range-pipe-before-stats, vl-stats-pipe-after-stats
 func TestVLCapability_RefusalPredictionsMatchVictoriaLogs(t *testing.T) {
 	release := stackVLRelease(t)
-	v := logsql.ParseVersion(release)
-	if !v.Known {
+	v := capability.ForRelease(capability.ParseRelease(release))
+	if !v.Release().Known {
 		t.Fatalf("no VictoriaLogs release in %s/metrics", vlURL)
 	}
 	predicted, sent := 0, 0

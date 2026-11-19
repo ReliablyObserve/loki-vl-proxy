@@ -24,6 +24,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -1243,6 +1244,9 @@ const vlDefaultMaxQueryLen = 16384
 // in when they rank. The series of the kept values are exact.
 func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
 	field := quoteLogsQLIdent(spec.GroupBy[0])
+	if scope := seriesLimitScopeFrom(ctx); scope != nil && scope.lokiCut {
+		return p.collectFirstMetRangeMetricHits(ctx, scope, spec, field, statsAggFunc, windowStart, end, step)
+	}
 	// The tenant's limit, not the raw-row budget of a request that folds its
 	// series: this ranks values and sends the limit to VictoriaLogs.
 	limit := p.requestQueryLimits(ctx).MaxQuerySeries
@@ -1292,6 +1296,36 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 		filter = "(" + filter + " or " + field + `:"")`
 	}
 	return p.collectRangeMetricHits(ctx, spec.BaseQuery+" | filter "+filter, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+}
+
+// collectFirstMetRangeMetricHits is collectTopValueRangeMetricHits in the Loki series-limit mode, in one call: the
+// bucket read keeps the lines whose field is one of the values met first in a bucket of the request's ranking grid
+// (firstMetRanking, an in() subquery VictoriaLogs runs over the read's own time range, as the ranked read of a range
+// == step answer does), so no list of values has to fit VictoriaLogs' query length, and lines without the field
+// rank as the empty value. The finished answer is cut as Loki cuts it (cutLokiSplits), which keeps the warning only
+// where a split passes the limit.
+func (p *Proxy) collectFirstMetRangeMetricHits(ctx context.Context, scope *seriesLimitScope, spec statsCompatSpec, field, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
+	limit := p.requestQueryLimits(ctx).MaxQuerySeries
+	// The lines a split's steps read begin a range before each step, a step when the range is shorter (only the
+	// windows' lines are read then).
+	lookback := scope.startNs - windowStart.UnixNano()
+	if scope.rangeNs > 0 {
+		lookback = max(scope.rangeNs, scope.stepNs)
+	}
+	if scope.rankingFallsBack(lookback) {
+		// No ranking per step: the whole answer passed the byte bounds, so this is their limit error.
+		return nil, newManualMetricResponseTooLarge(int64(p.limits().BufferedBackendBodyBytes))
+	}
+	// VictoriaLogs aligns a stats_query_range read's start down to its bucket grid, a bucket before windowStart
+	// here, and the subquery reads the same aligned range: its lines before the request's reads would rank first in
+	// the first bucket, so the subquery keeps only the lines the steps read, (windowStart, end].
+	lines := logsql.PipeFilter{Expr: logsql.TimeFilter{Range: "[" + windowStart.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano) + ", " + end.UTC().Format(time.RFC3339Nano) + "]"}}
+	ranking := spec.BaseQuery + " " + lines.String() + scope.firstMetRanking(field, "__lvp_rank", true, limit+1, lookback, logsql.PipeFields{Labels: []string{field}})
+	if err := seriesLimitReached(tenantSeriesLimitContext(ctx), limit); err != nil {
+		return nil, err
+	}
+	read := logsql.PipeFilter{Expr: logsql.InQuery{Field: field, Query: ranking}}
+	return p.collectRangeMetricHits(ctx, spec.BaseQuery+" "+read.String(), spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
 }
 
 // requestKeepsPartialSeries reports whether the request answers a series limit
@@ -1806,7 +1840,7 @@ func capHitSeries(ctx context.Context, series map[string]manualSeriesSamples, li
 	if aux != "" || statsGroupsGuarded(ctx) {
 		return series, nil
 	}
-	return capSeriesForRequest(ctx, series, limit)
+	return capBucketSeriesForRequest(ctx, series, limit)
 }
 
 // dropZeroSeries removes the groups that counted nothing.
@@ -2762,7 +2796,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if maxSeries > 0 && len(series) > maxSeries {
+	if maxSeries > 0 && len(series) > maxSeries && !keepsSuperset(ctx) {
 		return nil, newSeriesLimitError(ctx, maxSeries)
 	}
 	keys := make([]string, 0, len(series))

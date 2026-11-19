@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -73,9 +73,6 @@ var compatCaptureBufPool = sync.Pool{
 		return &pooledCompatCaptureBuf{data: make([]byte, 0, defaultCompatCaptureBufSize)}
 	},
 }
-
-var backendSemverPattern = regexp.MustCompile(`v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?`)
-var backendMetricsQuotedVersionPattern = regexp.MustCompile(`(?:^|[,{])(?:short_version|version)="(v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?)"`)
 
 const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v2:"
 
@@ -241,6 +238,12 @@ type Config struct {
 	BackendAllowUnsupportedVersion bool
 	// BackendVersionCheckTimeout bounds startup backend version checks.
 	BackendVersionCheckTimeout time.Duration
+	// BackendVersionReprobeInterval is how often the capability loop reads the VictoriaLogs release and probes the
+	// gates again (StartBackendCapabilityLoop); zero starts no loop. A release not yet known is retried on traffic
+	// every five minutes whatever this is.
+	BackendVersionReprobeInterval time.Duration
+	// BackendFeatureProbesDisabled turns the gates' feature probes off: the gates are decided from the release alone.
+	BackendFeatureProbesDisabled bool
 	// BackendVersionStrict, when true, promotes /health unreachability, non-2xx
 	// responses, and missing/sub-min backend semver to a hard startup error
 	// from ValidateBackendVersionCompatibility. Default false preserves the
@@ -545,6 +548,18 @@ type Config struct {
 	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
 	// max_query_series behaviour. 0 means use the built-in default (1000).
 	MaxStatsQuerySeries int
+	// DrilldownSeriesLimitMode is how a Logs Drilldown range answer over the series limit is cut: "loki" (the
+	// default, also for ""): the first series met, ending at the step where the first series past the limit
+	// appears, as Loki answers; "busiest": the busiest series over the whole range.
+	DrilldownSeriesLimitMode string
+	// DrilldownSeriesLimitSplitInterval mirrors Loki's split_queries_by_interval for the Loki series-limit mode:
+	// Loki's query frontend splits a range request at the multiples of the interval and cuts each split's answer
+	// on its own. 0 cuts the request as one split.
+	DrilldownSeriesLimitSplitInterval time.Duration
+	// DrilldownSeriesLimitInstantSplitInterval mirrors Loki's split_instant_metric_queries_by_interval: a Drilldown
+	// instant answer over the limit whose range is longer than it carries no partial-result warning, as deployed
+	// Loki's split instant answer does not. 0 always warns.
+	DrilldownSeriesLimitInstantSplitInterval time.Duration
 	// ExecutionLimits bounds per-request work and the bytes a request may pull
 	// out of VictoriaLogs. Zero values select the built-in defaults.
 	ExecutionLimits ExecutionLimitsConfig
@@ -758,7 +773,6 @@ type Proxy struct {
 	errorCachePeerSync     bool
 	vlRefusalPrediction    bool
 	buildVersion           string
-	vlReleaseSeen          atomic.Pointer[logsql.Version]
 	vlMaxQueryLen          atomic.Pointer[vlQueryLen]
 	refusalQueries         refusalQuerySet
 	refusalSeenUntil       atomic.Int64
@@ -838,6 +852,9 @@ type Proxy struct {
 	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
 	labelFilterRefillMaxPages             int           // extra pages read to fill a filtered log page (0=none)
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=1000)
+	drilldownSeriesLimitMode              string        // -drilldown-series-limit-mode: loki (default) or busiest
+	drilldownSeriesLimitSplit             time.Duration // -drilldown-series-limit-split-interval: Loki's split_queries_by_interval; 0 = one split
+	drilldownSeriesLimitInstantSplit      time.Duration // -drilldown-series-limit-instant-split-interval: Loki's split_instant_metric_queries_by_interval; 0 = always warn
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
 	metadataScanLimiter                   *metadataScanLimiter
@@ -900,84 +917,83 @@ type Proxy struct {
 	statsExtentStores *statsExtentStoreGroup
 	// statsExtentPending holds the extent stores in progress per extent key,
 	// which a lookup of the same key waits for (stats_extent_cache.go).
-	statsExtentPending                   statsExtentPendingStores
-	parseRiskProbeCacheTTL               time.Duration
-	levelLessBases                       levelLessMemory // per-stream reads lately seen holding a stream without a level label
-	parseRiskProbeSettle                 time.Duration
-	queryRangeWindowTimeout              time.Duration
-	queryRangePartialResponses           bool
-	queryRangeBackgroundWarm             bool
-	queryRangeBackgroundWarmMaxWindows   int
-	recentTailRefreshEnabled             bool
-	recentTailRefreshWindow              time.Duration
-	recentTailRefreshMaxStaleness        time.Duration
-	warmupMaxJitter                      time.Duration
-	labelsCacheWarm                      bool
-	labelRefreshGroup                    singleflight.Group
-	parserProbeGroup                     singleflight.Group
-	translationGroup                     singleflight.Group
-	streamFieldNamesCache                *cache.Cache // short-lived internal cache for stream_field_names routing decisions
-	labelValuesIndexedCache              bool
-	labelValuesHotLimit                  int
-	labelValuesIndexMaxEntries           int
-	labelValuesIndexPersistPath          string
-	labelValuesIndexPersistInterval      time.Duration
-	labelValuesIndexStartupStale         time.Duration
-	labelValuesIndexPeerWarmTimeout      time.Duration
-	patternsPersistPath                  string
-	patternsPersistInterval              time.Duration
-	patternsStartupStale                 time.Duration
-	patternsPeerWarmTimeout              time.Duration
-	patternsWarmReady                    atomic.Bool
-	patternsPersistStarted               atomic.Bool
-	patternsPersistDirty                 atomic.Bool
-	patternsPersistStop                  chan struct{}
-	patternsPersistDone                  chan struct{}
-	patternsSnapshotMu                   sync.RWMutex
-	patternsSnapshotEntries              map[string]patternSnapshotEntry
-	patternsSnapshotPatternCount         int64
-	patternsSnapshotPayloadBytes         int64
-	patternsPersistDigest                [sha256.Size]byte
-	patternsPersistDigestReady           bool
-	backendVersionMu                     sync.RWMutex
-	backendVersionRaw                    string
-	backendVersionSemver                 string
-	backendCapabilityProfile             string
-	backendSupportsStreamMetadata        bool
-	backendSupportsDensePatternWindowing bool
-	backendSupportsColumnFieldValues     bool
-	backendVersionProbedAt               atomic.Int64 // Unix ns of the last metrics version probe
-	backendVersionLogged                 bool
-	labelValuesIndexWarmReady            atomic.Bool
-	labelValuesIndexPersistStarted       atomic.Bool
-	labelValuesIndexPersistDirty         atomic.Bool
-	labelValuesIndexPersistStop          chan struct{}
-	labelValuesIndexPersistDone          chan struct{}
-	keepWarmStop                         chan struct{}
-	keepWarmWG                           sync.WaitGroup // startup warm-up and keep-warm loop; Shutdown waits for them
-	labelValuesIndexMu                   sync.RWMutex
-	labelValuesIndex                     map[string]*labelValuesIndexState
-	labelValuesIndexPersistDigest        [sha256.Size]byte
-	labelValuesIndexPersistDigestReady   bool
-	readCacheKeyMemoMu                   sync.RWMutex
-	readCacheKeyMemo                     map[canonicalReadCacheMemoKey]string
-	logSampleN                           uint64 // 0 = log all; N>1 = log 1 in N successful requests
-	logSampleCount                       atomic.Uint64
-	requestSampler                       *observability.RequestSampler
-	cacheTTLLabels                       time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
-	cacheTTLLabelValues                  time.Duration // per-instance TTL for label_values endpoint
-	metadataNegativeCacheTTL             time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
-	debugLogRawQueries                   bool          // when true, debug logs include raw LogQL/LogsQL and backend params
-	debugVLCallsHeader                   bool          // when true, read responses carry the request's VictoriaLogs calls (vl_calls_header.go)
-	slowQueryThreshold                   time.Duration
-	slowUpstreamThreshold                time.Duration
-	slowQueryLogRawQueries               bool
-	slowLogLevel                         slog.Level
-	slowLogOff                           bool
-	logUser                              logUserHeader // -log-user-header and its trusted peers
-	metadataCacheFreshness               time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
-	maxStatsCacheFreshness               time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
-	metadataDefaultLookback              time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
+	statsExtentPending                 statsExtentPendingStores
+	parseRiskProbeCacheTTL             time.Duration
+	levelLessBases                     levelLessMemory // per-stream reads lately seen holding a stream without a level label
+	parseRiskProbeSettle               time.Duration
+	queryRangeWindowTimeout            time.Duration
+	queryRangePartialResponses         bool
+	queryRangeBackgroundWarm           bool
+	queryRangeBackgroundWarmMaxWindows int
+	recentTailRefreshEnabled           bool
+	recentTailRefreshWindow            time.Duration
+	recentTailRefreshMaxStaleness      time.Duration
+	warmupMaxJitter                    time.Duration
+	labelsCacheWarm                    bool
+	labelRefreshGroup                  singleflight.Group
+	parserProbeGroup                   singleflight.Group
+	translationGroup                   singleflight.Group
+	streamFieldNamesCache              *cache.Cache // short-lived internal cache for stream_field_names routing decisions
+	labelValuesIndexedCache            bool
+	labelValuesHotLimit                int
+	labelValuesIndexMaxEntries         int
+	labelValuesIndexPersistPath        string
+	labelValuesIndexPersistInterval    time.Duration
+	labelValuesIndexStartupStale       time.Duration
+	labelValuesIndexPeerWarmTimeout    time.Duration
+	patternsPersistPath                string
+	patternsPersistInterval            time.Duration
+	patternsStartupStale               time.Duration
+	patternsPeerWarmTimeout            time.Duration
+	patternsWarmReady                  atomic.Bool
+	patternsPersistStarted             atomic.Bool
+	patternsPersistDirty               atomic.Bool
+	patternsPersistStop                chan struct{}
+	patternsPersistDone                chan struct{}
+	patternsSnapshotMu                 sync.RWMutex
+	patternsSnapshotEntries            map[string]patternSnapshotEntry
+	patternsSnapshotPatternCount       int64
+	patternsSnapshotPayloadBytes       int64
+	patternsPersistDigest              [sha256.Size]byte
+	patternsPersistDigestReady         bool
+	caps                               *capability.Layer // every gate: the VictoriaLogs release(s), probes, client profile
+	backendReprobeInterval             time.Duration
+	backendFeatureProbesDisabled       bool
+	backendVersionProbedAt             atomic.Int64 // Unix ns of the last probe round a traffic trigger started
+	capProbing                         atomic.Bool  // a probe round is running
+	capLoopStarted                     atomic.Bool
+	labelValuesIndexWarmReady          atomic.Bool
+	labelValuesIndexPersistStarted     atomic.Bool
+	labelValuesIndexPersistDirty       atomic.Bool
+	labelValuesIndexPersistStop        chan struct{}
+	labelValuesIndexPersistDone        chan struct{}
+	keepWarmStop                       chan struct{}
+	keepWarmMu                         sync.Mutex // guards keepWarmClosed against the wait group's Add (joinKeepWarm)
+	keepWarmClosed                     bool
+	keepWarmWG                         sync.WaitGroup // startup warm-up and keep-warm loop; Shutdown waits for them
+	labelValuesIndexMu                 sync.RWMutex
+	labelValuesIndex                   map[string]*labelValuesIndexState
+	labelValuesIndexPersistDigest      [sha256.Size]byte
+	labelValuesIndexPersistDigestReady bool
+	readCacheKeyMemoMu                 sync.RWMutex
+	readCacheKeyMemo                   map[canonicalReadCacheMemoKey]string
+	logSampleN                         uint64 // 0 = log all; N>1 = log 1 in N successful requests
+	logSampleCount                     atomic.Uint64
+	requestSampler                     *observability.RequestSampler
+	cacheTTLLabels                     time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
+	cacheTTLLabelValues                time.Duration // per-instance TTL for label_values endpoint
+	metadataNegativeCacheTTL           time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
+	debugLogRawQueries                 bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	debugVLCallsHeader                 bool          // when true, read responses carry the request's VictoriaLogs calls (vl_calls_header.go)
+	slowQueryThreshold                 time.Duration
+	slowUpstreamThreshold              time.Duration
+	slowQueryLogRawQueries             bool
+	slowLogLevel                       slog.Level
+	slowLogOff                         bool
+	logUser                            logUserHeader // -log-user-header and its trusted peers
+	metadataCacheFreshness             time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
+	maxStatsCacheFreshness             time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
+	metadataDefaultLookback            time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
 	// drilldownScanTimeout caps the time a single detected_fields /
 	// detected_field_values request will spend scanning logs with a parser
 	// filter. VL has no internal timeout, so without this cap a Drilldown
@@ -1126,6 +1142,16 @@ func newCoalescer(disabled bool) *mw.Coalescer {
 
 //nolint:gocyclo // constructor wires many optional config knobs (URLs, levels, multi-tenant, caches, ruler/alerts, telemetry); complexity is inherent to top-level assembly.
 func New(cfg Config) (*Proxy, error) {
+	switch cfg.DrilldownSeriesLimitMode {
+	case "", drilldownSeriesLimitLoki, drilldownSeriesLimitBusiest:
+	default:
+		return nil, fmt.Errorf("invalid -drilldown-series-limit-mode: %q (must be %q or %q)", cfg.DrilldownSeriesLimitMode, drilldownSeriesLimitLoki, drilldownSeriesLimitBusiest)
+	}
+	if cfg.DrilldownSeriesLimitSplitInterval < 0 || cfg.DrilldownSeriesLimitInstantSplitInterval < 0 {
+		return nil, fmt.Errorf("invalid -drilldown-series-limit-split-interval=%s / -drilldown-series-limit-instant-split-interval=%s (must be >= 0; 0 does not split)",
+			cfg.DrilldownSeriesLimitSplitInterval, cfg.DrilldownSeriesLimitInstantSplitInterval)
+	}
+
 	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.DeleteAPIAuthToken); err != nil {
 		return nil, err
 	}
@@ -1504,6 +1530,9 @@ func New(cfg Config) (*Proxy, error) {
 		orderedJSONMaxBytes:                   cfg.OrderedJSONMetricMaxBytes,
 		labelFilterRefillMaxPages:             max(cfg.LabelFilterRefillMaxPages, 0),
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
+		drilldownSeriesLimitMode:              cfg.DrilldownSeriesLimitMode,
+		drilldownSeriesLimitSplit:             cfg.DrilldownSeriesLimitSplitInterval,
+		drilldownSeriesLimitInstantSplit:      cfg.DrilldownSeriesLimitInstantSplitInterval,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
 		labelWarmBackoff:                      newLabelWarmBackoff(),
@@ -1627,6 +1656,9 @@ func New(cfg Config) (*Proxy, error) {
 		labelValuesIndexPersistStop:           make(chan struct{}),
 		labelValuesIndexPersistDone:           make(chan struct{}),
 		keepWarmStop:                          make(chan struct{}),
+		caps:                                  capability.New(capability.Options{}),
+		backendReprobeInterval:                max(cfg.BackendVersionReprobeInterval, 0),
+		backendFeatureProbesDisabled:          cfg.BackendFeatureProbesDisabled,
 		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
 		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
 		coldRouter:                            coldRouter,
@@ -1662,6 +1694,14 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	p.metrics.SetCoalescerStatsProvider(coalescerStats)
 	p.metrics.SetErrorFlightStatsProvider(p.errorFlightStats)
+	// A release leaves the capability window six re-probe intervals (and a probe round) after it was last seen: behind a
+	// load balancer each read reaches one random member, and a window this wide keeps the chance that an older member
+	// is missed by every read of it small. With no periodic round the layer's default window stands.
+	if p.backendReprobeInterval > 0 {
+		p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
+	}
+	p.caps.Subscribe(p.onCapabilityChange)
+	p.metrics.SetCapabilityStatsProvider(p.capabilityStats)
 	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {
 		// This coalescer's integrated call sites wrap raw VL HTTP operations;
 		// it does not represent resident Loki response-cache entries.
@@ -1812,48 +1852,42 @@ func New(cfg Config) (*Proxy, error) {
 		// fields are similarly held by pointer.  Map and channel fields are reference
 		// types in Go and are shared directly.
 		State: &State{
-			configMu:                             &p.configMu,
-			tenantMap:                            p.tenantMap,
-			labelTranslator:                      p.labelTranslator,
-			queryRangeAdaptiveMu:                 &p.queryRangeAdaptiveMu,
-			queryRangeParallelCurrent:            &p.queryRangeParallelCurrent,
-			queryRangeLatencyEWMA:                &p.queryRangeLatencyEWMA,
-			queryRangeErrorEWMA:                  &p.queryRangeErrorEWMA,
-			queryRangeAdaptiveLastAdjust:         &p.queryRangeAdaptiveLastAdjust,
-			patternsSnapshotMu:                   &p.patternsSnapshotMu,
-			patternsSnapshotEntries:              p.patternsSnapshotEntries,
-			patternsSnapshotPatternCount:         &p.patternsSnapshotPatternCount,
-			patternsSnapshotPayloadBytes:         &p.patternsSnapshotPayloadBytes,
-			patternsPersistDigest:                &p.patternsPersistDigest,
-			patternsPersistDigestReady:           &p.patternsPersistDigestReady,
-			patternsWarmReady:                    &p.patternsWarmReady,
-			patternsPersistStarted:               &p.patternsPersistStarted,
-			patternsPersistDirty:                 &p.patternsPersistDirty,
-			patternsPersistStop:                  p.patternsPersistStop,
-			patternsPersistDone:                  p.patternsPersistDone,
-			backendVersionMu:                     &p.backendVersionMu,
-			backendVersionRaw:                    &p.backendVersionRaw,
-			backendVersionSemver:                 &p.backendVersionSemver,
-			backendCapabilityProfile:             &p.backendCapabilityProfile,
-			backendSupportsStreamMetadata:        &p.backendSupportsStreamMetadata,
-			backendSupportsDensePatternWindowing: &p.backendSupportsDensePatternWindowing,
-			backendVersionLogged:                 &p.backendVersionLogged,
-			labelValuesIndexMu:                   &p.labelValuesIndexMu,
-			labelValuesIndex:                     p.labelValuesIndex,
-			labelValuesIndexPersistDigest:        &p.labelValuesIndexPersistDigest,
-			labelValuesIndexPersistDigestReady:   &p.labelValuesIndexPersistDigestReady,
-			labelValuesIndexWarmReady:            &p.labelValuesIndexWarmReady,
-			labelValuesIndexPersistStarted:       &p.labelValuesIndexPersistStarted,
-			labelValuesIndexPersistDirty:         &p.labelValuesIndexPersistDirty,
-			labelValuesIndexPersistStop:          p.labelValuesIndexPersistStop,
-			labelValuesIndexPersistDone:          p.labelValuesIndexPersistDone,
-			keepWarmStop:                         p.keepWarmStop,
-			readCacheKeyMemoMu:                   &p.readCacheKeyMemoMu,
-			readCacheKeyMemo:                     p.readCacheKeyMemo,
-			labelRefreshGroup:                    &p.labelRefreshGroup,
-			logSampleCount:                       &p.logSampleCount,
-			metricsConcurrencyLimiter:            p.metricsConcurrencyLimiter,
-			coldRouter:                           p.coldRouter,
+			configMu:                           &p.configMu,
+			tenantMap:                          p.tenantMap,
+			labelTranslator:                    p.labelTranslator,
+			queryRangeAdaptiveMu:               &p.queryRangeAdaptiveMu,
+			queryRangeParallelCurrent:          &p.queryRangeParallelCurrent,
+			queryRangeLatencyEWMA:              &p.queryRangeLatencyEWMA,
+			queryRangeErrorEWMA:                &p.queryRangeErrorEWMA,
+			queryRangeAdaptiveLastAdjust:       &p.queryRangeAdaptiveLastAdjust,
+			patternsSnapshotMu:                 &p.patternsSnapshotMu,
+			patternsSnapshotEntries:            p.patternsSnapshotEntries,
+			patternsSnapshotPatternCount:       &p.patternsSnapshotPatternCount,
+			patternsSnapshotPayloadBytes:       &p.patternsSnapshotPayloadBytes,
+			patternsPersistDigest:              &p.patternsPersistDigest,
+			patternsPersistDigestReady:         &p.patternsPersistDigestReady,
+			patternsWarmReady:                  &p.patternsWarmReady,
+			patternsPersistStarted:             &p.patternsPersistStarted,
+			patternsPersistDirty:               &p.patternsPersistDirty,
+			patternsPersistStop:                p.patternsPersistStop,
+			patternsPersistDone:                p.patternsPersistDone,
+			capabilities:                       p.caps,
+			labelValuesIndexMu:                 &p.labelValuesIndexMu,
+			labelValuesIndex:                   p.labelValuesIndex,
+			labelValuesIndexPersistDigest:      &p.labelValuesIndexPersistDigest,
+			labelValuesIndexPersistDigestReady: &p.labelValuesIndexPersistDigestReady,
+			labelValuesIndexWarmReady:          &p.labelValuesIndexWarmReady,
+			labelValuesIndexPersistStarted:     &p.labelValuesIndexPersistStarted,
+			labelValuesIndexPersistDirty:       &p.labelValuesIndexPersistDirty,
+			labelValuesIndexPersistStop:        p.labelValuesIndexPersistStop,
+			labelValuesIndexPersistDone:        p.labelValuesIndexPersistDone,
+			keepWarmStop:                       p.keepWarmStop,
+			readCacheKeyMemoMu:                 &p.readCacheKeyMemoMu,
+			readCacheKeyMemo:                   p.readCacheKeyMemo,
+			labelRefreshGroup:                  &p.labelRefreshGroup,
+			logSampleCount:                     &p.logSampleCount,
+			metricsConcurrencyLimiter:          p.metricsConcurrencyLimiter,
+			coldRouter:                         p.coldRouter,
 		},
 	}
 
@@ -2056,6 +2090,8 @@ func (p *Proxy) rejectAdmission(w http.ResponseWriter, r *http.Request, err *lok
 func (p *Proxy) Shutdown(ctx context.Context) error {
 	p.loweringShadow.close(ctx)
 	p.statsExtentStores.close()
+	p.keepWarmMu.Lock()
+	p.keepWarmClosed = true // after this no goroutine joins the wait group (joinKeepWarm)
 	if p.keepWarmStop != nil {
 		select {
 		case <-p.keepWarmStop:
@@ -2063,6 +2099,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 			close(p.keepWarmStop)
 		}
 	}
+	p.keepWarmMu.Unlock()
 	waitKeepWarm(ctx, &p.keepWarmWG)
 	p.stopStreamLabelNames()
 	p.stopMetadataEdgeRefreshes(ctx)
@@ -2291,6 +2328,8 @@ func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
 		// Useful for benchmarking (ensures each run starts cold) and debugging.
 		// Protected by the admin auth token.
 		mux.Handle("/admin/cache/flush", p.adminMiddleware(http.HandlerFunc(p.handleCacheFlush)))
+		// Capability status — GET /admin/capabilities: the VictoriaLogs releases seen, the gates and what decided them.
+		mux.Handle("/admin/capabilities", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.handleCapabilities))))
 	}
 	if p.enableQueryAnalytics {
 		mux.Handle("/debug/queries", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.queryTracker.Handler))))
@@ -2841,13 +2880,21 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	r, seriesScope := withSeriesLimitScope(r)
+	r, seriesScope := p.withSeriesLimitScope(r)
 	// Only sample responses are rewritten: buffering a log query here would
 	// defeat -stream-response.
+	var rangeRewriter *metricResponseRewriter
 	if logQLProducesSamples(logqlQuery) && (rangeOffset != 0 || seriesScope.drilldown) {
-		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope}
-		w = rewriter
-		defer rewriter.finish()
+		rangeRewriter = &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope, partial: p.drilldownPartialCounter(r.Context())}
+		w = rangeRewriter
+		defer rangeRewriter.finish()
+	}
+	// The response cache keeps the answer as sent (the rewriter's, after the Loki cut), so a repeat is the cold
+	// answer byte for byte.
+	storeRangeAnswer := func(body []byte) {
+		rangeRewriter.storeAnswer(body, seriesScope, func(answer []byte) {
+			p.setLocalReadCacheWithTTL(cacheKey, answer, queryRangeResponseCacheTTL)
+		})
 	}
 
 	// Enforce max query length AFTER offset is applied (start/end reflect shifted range).
@@ -2884,7 +2931,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if orderedCapture != nil {
 		if orderedHandled && r.Context().Err() == nil && !unwrapAnswerFailed(r.Context(), unwrapLookup) && !unwrapAnswerUncertain(r.Context(), unwrapLookup) && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
 			if body := orderedCapture.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
+				storeRangeAnswer(body)
 			}
 		}
 		orderedCapture.Release()
@@ -3078,12 +3125,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cacheOut)
 		}
 		if cacheable && sc.code == http.StatusOK {
-			p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), cacheOut...), seriesScope), queryRangeResponseCacheTTL)
+			storeRangeAnswer(cacheOut)
 		}
 	} else if cacheTap != nil {
 		if cacheable && sc.code == http.StatusOK {
 			if body := cacheTap.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
+				storeRangeAnswer(body)
 			}
 		}
 		cacheTap.Release()
@@ -3125,7 +3172,31 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 // compression varies independently.
 func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
 	profile := grafanaRuntimeProfile(r, "", r.URL.Path)
-	return strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
+	key := strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
+	if isGrafanaDrilldownRequest(r) {
+		// A Drilldown answer over the series limit depends on -drilldown-series-limit-mode: an answer cut one way
+		// is never served for the other, on this replica or on a peer.
+		key += "/sl-" + p.drilldownSeriesLimitModeOrDefault()
+		if p.drilldownSeriesLimitModeOrDefault() == drilldownSeriesLimitLoki {
+			// The answer over the limit depends on the split intervals the tenant resolves to too.
+			limits := p.queryLimitsFor(r.Header.Get("X-Scope-OrgID"))
+			key += "-" + limits.SplitQueriesByInterval.String() + "-" + limits.SplitInstantMetricQueriesByInterval.String()
+		}
+	}
+	return key
+}
+
+// drilldownPartialCounter counts a Drilldown answer cut by the series limit, by the mode that cut it.
+func (p *Proxy) drilldownPartialCounter(ctx context.Context) func(string) {
+	return func(mode string) { p.observeInternalOperation(ctx, "drilldown_series_limit", mode, 0) }
+}
+
+// drilldownSeriesLimitModeOrDefault is -drilldown-series-limit-mode, "" read as the default (loki).
+func (p *Proxy) drilldownSeriesLimitModeOrDefault() string {
+	if p.drilldownSeriesLimitMode == "" {
+		return drilldownSeriesLimitLoki
+	}
+	return p.drilldownSeriesLimitMode
 }
 
 // detectedLevelCacheKey versions cached log responses by the detected_level
@@ -3226,9 +3297,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	// The series limit applies to instant queries too, so Drilldown gets its
 	// partial-result warning and every other client Loki's error.
-	r, instantScope := withSeriesLimitScope(r)
+	r, instantScope := p.withSeriesLimitScope(r)
 	if logQLProducesSamples(logqlQuery) && (instantOffset != 0 || instantScope.drilldown) {
-		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: instantOffset, scope: instantScope}
+		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: instantOffset, scope: instantScope, partial: p.drilldownPartialCounter(r.Context())}
 		w = rewriter
 		defer rewriter.finish()
 	}

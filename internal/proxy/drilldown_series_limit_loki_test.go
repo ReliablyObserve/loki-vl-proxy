@@ -26,12 +26,14 @@ import (
 // instant, and compare each answer with Loki's recorded answer to the same request (the Loki engine oracle with the
 // request's X-Query-Tags in the query context; LVP_RUN_ORACLES=1 records again).
 //
-// Two differences are recorded, not fixed: which series are kept (registry limits/drilldown-breakdown-keeps-busiest:
-// Loki keeps the first series its evaluation meets, the proxy the busiest), and how far a range answer reaches
-// (registry limits/drilldown-series-limit-range-cut-at-trip-step: Loki stops evaluating at the step where a series
-// past the limit first appears, so every series it keeps ends there; the proxy answers the whole range). Every
-// point Loki answers for a series the proxy also keeps is the proxy's point at that time, and the test pins Loki's
-// cut to that step so a Loki that changes it fails here.
+// In the default -drilldown-series-limit-mode=loki the proxy answers as Loki does (registry
+// limits/drilldown-series-limit-range-cut-at-trip-step): a range answer keeps the series met first and ends at the
+// step where the first series past the limit appears (Loki stops evaluating there), the same points as Loki's. Loki
+// orders the series new in one step at random, so which of those it keeps may differ; where every series is new at a
+// different step (staggered) the kept set is Loki's. In -drilldown-series-limit-mode=busiest the proxy keeps the
+// busiest series over the whole range (registry limits/drilldown-breakdown-keeps-busiest): every point Loki answers
+// for a series both keep is the proxy's. Either way the test pins Loki's cut to the trip step, so a Loki that changes
+// it fails here.
 
 const (
 	drilldownSeriesLimit     = 3
@@ -200,15 +202,16 @@ func TestDrilldownSeriesLimitMatchesLoki(t *testing.T) {
 	loki := lokiEngineAnswers(t, "drilldown_series_limit", sets)
 
 	wantWarning := fmt.Sprintf("maximum number of series (%d) reached for a single query; returning partial results", drilldownSeriesLimit)
-	truncated, sharedSeries, cut := 0, 0, 0
-	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+	truncated, sharedSeries, cut, sameSet := 0, 0, 0, 0
+	for _, run := range []struct{ version, mode string }{{"v1.49.0", "loki"}, {"v1.54.0", "loki"}, {"v1.49.0", "busiest"}, {"v1.54.0", "busiest"}} {
+		version, mode := run.version, run.mode
 		proxies := map[string]*Proxy{}
 		for _, c := range order {
 			emu := &vlemu.Emulator{T: t, Rows: drilldownSeriesLimitRows(c.pods, c.staggered), Field: "amount", Version: version}
 			backend := httptest.NewServer(emu.Handler())
 			t.Cleanup(backend.Close)
 			p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0",
-				BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: drilldownSeriesLimit})
+				BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: drilldownSeriesLimit, DrilldownSeriesLimitMode: mode})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -218,7 +221,7 @@ func TestDrilldownSeriesLimitMatchesLoki(t *testing.T) {
 			proxies[c.dataSet()] = p
 		}
 		for _, c := range cases {
-			t.Run(version+"/"+c.id, func(t *testing.T) {
+			t.Run(mode+"/"+version+"/"+c.id, func(t *testing.T) {
 				la := loki[c.id]
 				if la.Status != http.StatusOK {
 					t.Fatalf("Loki answered %d %s", la.Status, la.Error)
@@ -272,13 +275,34 @@ func TestDrilldownSeriesLimitMatchesLoki(t *testing.T) {
 					}
 					cut++
 				}
+				lokiMode := mode == "loki" && !c.instant
+				if lokiMode && partial {
+					// Loki's cut, on the proxy's answer too.
+					lastProxy := int64(0)
+					for _, points := range got.series.Points {
+						for ms := range points {
+							lastProxy = max(lastProxy, ms/1000)
+						}
+					}
+					if lastProxy != lastLoki {
+						t.Errorf("proxy's partial range answer ends at %d, Loki's at %d", lastProxy, lastLoki)
+					}
+				}
+				if lokiMode && c.staggered && partial && strings.HasPrefix(c.query, "sum by") {
+					for key := range want.series.Points {
+						if _, ok := got.series.Points[key]; !ok {
+							t.Errorf("Loki keeps %s, the proxy does not (series met at different steps keep Loki's set)", key)
+						}
+					}
+					sameSet++
+				}
 				for key, points := range got.series.Points {
 					wp, ok := want.series.Points[key]
 					if !ok {
-						continue // a kept set that differs: documented (limits/drilldown-breakdown-keeps-busiest)
+						continue // a kept set that differs: busiest mode, or series new in Loki's trip step
 					}
 					sharedSeries++
-					if !partial && len(points) != len(wp) {
+					if (!partial || lokiMode) && len(points) != len(wp) {
 						t.Errorf("series %s: proxy %d points, Loki %d", key, len(points), len(wp))
 					}
 					for ms, v := range wp {
@@ -290,7 +314,7 @@ func TestDrilldownSeriesLimitMatchesLoki(t *testing.T) {
 			})
 		}
 	}
-	if truncated == 0 || sharedSeries == 0 || cut == 0 {
-		t.Fatalf("the cases must cover partial answers, cut ranges and shared series: %d partial, %d cut, %d shared", truncated, cut, sharedSeries)
+	if truncated == 0 || sharedSeries == 0 || cut == 0 || sameSet == 0 {
+		t.Fatalf("the cases must cover partial answers, cut ranges, Loki's kept sets and shared series: %d partial, %d cut, %d sets, %d shared", truncated, cut, sameSet, sharedSeries)
 	}
 }

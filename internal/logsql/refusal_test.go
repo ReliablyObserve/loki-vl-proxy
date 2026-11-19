@@ -4,21 +4,28 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 )
+
+// setOf is the capability set of a release alone ("" is an unknown release).
+func setOf(release string) capability.Set {
+	return capability.ForRelease(capability.ParseRelease(release))
+}
 
 // Nothing is predicted for an unknown release, a path no rule covers, a query the proxy's parser does not read, or
 // a pipe no rule knows.
 //
 // conformance: vl-query-too-long, vl-stats-range-pipe-before-stats
 func TestPredictRefusalAbstains(t *testing.T) {
-	v53 := ParseVersion("v1.53.0")
+	v53 := setOf("v1.53.0")
 	cases := []struct {
 		name string
 		in   RefusalInput
-		v    Version
+		v    capability.Set
 	}{
-		{"unknown release", RefusalInput{Path: PathQuery, Query: strings.Repeat("x", 20000), MaxQueryLen: 16384}, Version{}},
-		{"unknown release, a stats shape", RefusalInput{Path: PathStatsQueryRange, Query: `* | sort by (a) | stats count()`}, Version{}},
+		{"unknown release", RefusalInput{Path: PathQuery, Query: strings.Repeat("x", 20000), MaxQueryLen: 16384}, setOf("")},
+		{"unknown release, a stats shape", RefusalInput{Path: PathStatsQueryRange, Query: `* | sort by (a) | stats count()`}, setOf("")},
 		{"unread path", RefusalInput{Path: "/select/logsql/hits", Query: strings.Repeat("x", 20000), MaxQueryLen: 16384}, v53},
 		{"unknown limit", RefusalInput{Path: PathQuery, Query: strings.Repeat("x", 20000)}, v53},
 		{"length on tail", RefusalInput{Path: PathTail, Query: strings.Repeat("x", 20000), MaxQueryLen: 16384}, v53},
@@ -35,40 +42,16 @@ func TestPredictRefusalAbstains(t *testing.T) {
 	}
 }
 
-// A release line gate reads a later patch of an older line apart from the line's first release.
-//
-// conformance: vl-math-quoted-constant-clone-crash
-func TestRefusalGatesByReleaseLine(t *testing.T) {
-	g := GateMathQuotedConstantClone
-	for v, want := range map[string]bool{
-		"v1.49.0": false, "v1.50.2": false, "v1.51.1": false, "v1.52.0": false, "v1.52.1": false, "v1.52.2": false,
-		"v1.53.0": true, "v1.54.0": true, "v2.0.0": true, "garbage": false,
-	} {
-		if got := g.In(ParseVersion(v)); got != want {
-			t.Errorf("%s: %v, want %v", v, got, want)
-		}
-	}
-	if lts := (Gate{From: [3]int{1, 53, 0}, Lines: map[[2]int]int{{1, 52}: 1}}); lts.In(ParseVersion("v1.52.0")) || !lts.In(ParseVersion("v1.52.1")) || lts.In(ParseVersion("v1.51.9")) {
-		t.Fatal("a line entry gates the line from its patch on")
-	}
-	if GateExtraFiltersLen.In(ParseVersion("v1.53.0")) || !GateExtraFiltersLen.In(ParseVersion("v1.54.0")) || GateExtraFiltersLen.In(ParseVersion("v1.52.2")) {
-		t.Fatal("extra filters length gate")
-	}
-	if v := ParseVersion("1.52.1"); !v.Known || v.String() != "v1.52.1" || (Version{}).String() != "unknown" {
-		t.Fatalf("version %+v", v)
-	}
-}
-
 // An unknown release guards the clone crash (VictoriaLogs may lack the fix) and predicts nothing else.
 //
 // conformance: vl-math-quoted-constant-clone-crash
 func TestPredictRefusalUnknownReleaseGuardsCrash(t *testing.T) {
 	in := RefusalInput{Path: PathQuery, Query: `* | math "2025-01-01T00:00:00Z" as x`, Limit: true}
-	if r, ok := PredictRefusal(in, Version{}); !ok || !r.Crash {
+	if r, ok := PredictRefusal(in, setOf("")); !ok || !r.Crash {
 		t.Fatalf("unknown release: %+v %v", r, ok)
 	}
 	in.Query = `* | math "2025-01-01T00:00:00Z" as x | ("`
-	if _, ok := PredictRefusal(in, Version{}); ok {
+	if _, ok := PredictRefusal(in, setOf("")); ok {
 		t.Fatal("a text the parser does not read predicts nothing")
 	}
 }
@@ -78,19 +61,19 @@ func TestPredictRefusalUnknownReleaseGuardsCrash(t *testing.T) {
 // conformance: vl-extra-filters-too-long
 func TestPredictRefusalExtraFilters(t *testing.T) {
 	in := RefusalInput{Path: PathStatsQueryRange, Query: `* | stats count() as c`, MaxQueryLen: 100, ExtraStreamFilters: []string{`{tenant="` + strings.Repeat("a", 120) + `"}`}}
-	if _, ok := PredictRefusal(in, ParseVersion("v1.53.0")); ok {
+	if _, ok := PredictRefusal(in, setOf("v1.53.0")); ok {
 		t.Fatal("v1.53 does not bound extra_stream_filters")
 	}
-	r, ok := PredictRefusal(in, ParseVersion("v1.54.0"))
+	r, ok := PredictRefusal(in, setOf("v1.54.0"))
 	if !ok || r.Rule != RuleExtraFiltersTooLong || r.Status != http.StatusUnprocessableEntity || !strings.Contains(r.Message, "`extra_stream_filters` arg length cannot exceed -search.maxQueryLen=100") {
 		t.Fatalf("got %+v %v", r, ok)
 	}
 	in.ExtraStreamFilters, in.ExtraFilters = nil, []string{strings.Repeat("x", 101)}
-	if r, ok := PredictRefusal(in, ParseVersion("v1.54.0")); !ok || !strings.Contains(r.Message, "`extra_filters`") {
+	if r, ok := PredictRefusal(in, setOf("v1.54.0")); !ok || !strings.Contains(r.Message, "`extra_filters`") {
 		t.Fatalf("got %+v %v", r, ok)
 	}
 	in.Query = `* | stats count() as c | limit 1` // the query's own refusal comes first
-	if r, _ := PredictRefusal(in, ParseVersion("v1.54.0")); r.Rule != RuleExtraFiltersTooLong {
+	if r, _ := PredictRefusal(in, setOf("v1.54.0")); r.Rule != RuleExtraFiltersTooLong {
 		t.Fatalf("extra filters are read before the stats shape, got %s", r.Rule)
 	}
 }
@@ -109,7 +92,7 @@ func TestRefusalScreenAgreesWithRules(t *testing.T) {
 		"hash(a) as _time", "len(a) as _time", "coalesce (a, b) as _time", "drop_empty_fields", "decolorize",
 	}
 	for _, rel := range []string{"v1.49.0", "v1.52.1", "v1.53.0", "v1.54.0"} {
-		v := ParseVersion(rel)
+		v := setOf(rel)
 		for _, path := range []string{PathStatsQuery, PathStatsQueryRange} {
 			for _, a := range pipes {
 				for _, b := range pipes {
@@ -120,8 +103,8 @@ func TestRefusalScreenAgreesWithRules(t *testing.T) {
 						if err != nil {
 							continue
 						}
-						want, wok := predictStatsRefusal(q, path == PathStatsQueryRange, v)
-						if !GatePipeCoalesce.In(v) && strings.Contains(text, "coalesce") {
+						want, wok := predictStatsRefusal(q, path == PathStatsQueryRange, viewOf(v))
+						if !v.On(capability.PipeCoalesce) && strings.Contains(text, "coalesce") {
 							continue // refused earlier as an unknown pipe
 						}
 						if ok != wok || got.Rule != want.Rule {
@@ -144,7 +127,7 @@ func TestRefusalPipeWords(t *testing.T) {
 	if _, ok := pipeWords(strings.Repeat("| filter x ", 5), out[:]); ok {
 		t.Fatal("five pipes must not fit four")
 	}
-	if statsShapeMayRefuse(strings.Repeat("| filter x ", 70)+"| stats count()", true, ParseVersion("v1.53.0")) {
+	if statsShapeMayRefuse(strings.Repeat("| filter x ", 70)+"| stats count()", true, viewOf(setOf("v1.53.0"))) {
 		t.Fatal("more pipes than the screen keeps must leave the decision to the parser")
 	}
 	if !mathHasQuotedNumber(`'2025-01-01T00:00:00Z' + a`) || mathHasQuotedNumber(`'1s' + a`) || mathHasQuotedNumber(`"unterminated`) || mathHasQuotedNumber(`"a\"b" + 1`) || quotedNumber("0x1f") {
@@ -153,7 +136,7 @@ func TestRefusalPipeWords(t *testing.T) {
 }
 
 func BenchmarkPredictRefusalSuccessPath(b *testing.B) {
-	v := ParseVersion("v1.53.0")
+	v := setOf("v1.53.0")
 	in := RefusalInput{Path: PathStatsQueryRange, MaxQueryLen: 16384,
 		Query: `{app="api"} _time:[1700000000, 1700003600) | unpack_json fields (level, status) | filter status:>=500 | stats by (_time:1m, level) count() as c`}
 	b.ReportAllocs()
@@ -169,7 +152,7 @@ func BenchmarkPredictRefusalSuccessPath(b *testing.B) {
 //
 // conformance: vl-stats-range-pipe-before-stats, vl-stats-pipe-after-stats
 func TestRefusalFrontAndAfterPipes(t *testing.T) {
-	v49, v53 := ParseVersion("v1.49.0"), ParseVersion("v1.53.0")
+	v49, v53 := viewOf(setOf("v1.49.0")), viewOf(setOf("v1.53.0"))
 	type want struct{ refused49, refused53, known bool }
 	cases := []struct {
 		p    Pipe
@@ -225,7 +208,7 @@ func TestRefusalFrontAndAfterPipes(t *testing.T) {
 		{PipeHash{}, false, true, false, "v1.53.0"},
 		{PipeUpdate{}, false, false, false, "v1.53.0"},
 	} {
-		allowed, known := afterStatsPipeAllowed(c.p, c.rangeQuery, ParseVersion(c.release))
+		allowed, known := afterStatsPipeAllowed(c.p, c.rangeQuery, viewOf(setOf(c.release)))
 		if allowed != c.allowed || known != c.known {
 			t.Errorf("after stats %T range=%v %s: %v/%v", c.p, c.rangeQuery, c.release, allowed, known)
 		}

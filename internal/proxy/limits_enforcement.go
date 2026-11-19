@@ -28,6 +28,10 @@ const (
 	limitMaxQueryLookback        = "max_query_lookback"
 	limitMaxQueryRange           = "max_query_range"
 	limitQueryTimeout            = "query_timeout"
+	// The query frontend's split intervals, which the Loki series-limit mode mirrors for a Logs Drilldown answer
+	// over the limit (-drilldown-series-limit-split-interval, -drilldown-series-limit-instant-split-interval).
+	limitSplitQueriesByInterval            = "split_queries_by_interval"
+	limitSplitInstantMetricQueriesInterval = "split_instant_metric_queries_by_interval"
 )
 
 const (
@@ -68,6 +72,11 @@ type queryLimits struct {
 	// Otherwise query_timeout is -backend-timeout, which bounds each
 	// VictoriaLogs call.
 	QueryTimeoutOverride bool
+	// SplitQueriesByInterval and SplitInstantMetricQueriesByInterval are Loki's query frontend split intervals for
+	// range and instant metric queries (split_queries_by_interval, split_instant_metric_queries_by_interval); 0 =
+	// no split.
+	SplitQueriesByInterval              time.Duration
+	SplitInstantMetricQueriesByInterval time.Duration
 }
 
 // tenantQueryLimits resolves the limits of one tenant.
@@ -80,6 +89,8 @@ func (p *Proxy) tenantQueryLimits(orgID string) queryLimits {
 	if p == nil {
 		return limits
 	}
+	limits.SplitQueriesByInterval = p.drilldownSeriesLimitSplit
+	limits.SplitInstantMetricQueriesByInterval = p.drilldownSeriesLimitInstantSplit
 	limits.MaxQueryLength = p.defaultMaxQueryLength
 	p.configMu.RLock()
 	tenant := p.tenantLimits[orgID]
@@ -118,6 +129,8 @@ func (p *Proxy) tenantQueryLimits(orgID string) queryLimits {
 	duration(limitMaxQueryLength, &limits.MaxQueryLength)
 	duration(limitMaxQueryLookback, &limits.MaxQueryLookback)
 	duration(limitMaxQueryRange, &limits.MaxQueryRange)
+	duration(limitSplitQueriesByInterval, &limits.SplitQueriesByInterval)
+	duration(limitSplitInstantMetricQueriesInterval, &limits.SplitInstantMetricQueriesByInterval)
 	if v, ok := lookup(limitQueryTimeout); ok {
 		if d, err := tenantLimitDuration(v); err == nil && d > 0 {
 			limits.QueryTimeout = d
@@ -153,6 +166,8 @@ func (p *Proxy) queryLimitsFor(orgID string) queryLimits {
 		combined.MaxQueryRange = smallestNonZero(combined.MaxQueryRange, limits.MaxQueryRange)
 		combined.QueryTimeout = smallestNonZero(combined.QueryTimeout, limits.QueryTimeout)
 		combined.QueryTimeoutOverride = combined.QueryTimeoutOverride || limits.QueryTimeoutOverride
+		combined.SplitQueriesByInterval = smallestNonZero(combined.SplitQueriesByInterval, limits.SplitQueriesByInterval)
+		combined.SplitInstantMetricQueriesByInterval = smallestNonZero(combined.SplitInstantMetricQueriesByInterval, limits.SplitInstantMetricQueriesByInterval)
 	}
 	return combined
 }
@@ -387,7 +402,7 @@ func validateTenantLimitOverrides(defaults map[string]any, tenants map[string]ma
 				if n < 0 {
 					return fmt.Errorf("%s %s: must be 0 (unlimited) or a positive integer, got %d", scope, key, n)
 				}
-			case limitMaxQueryLength, limitMaxQueryLookback, limitMaxQueryRange:
+			case limitMaxQueryLength, limitMaxQueryLookback, limitMaxQueryRange, limitSplitQueriesByInterval, limitSplitInstantMetricQueriesInterval:
 				if _, err := tenantLimitDuration(value); err != nil {
 					return fmt.Errorf("%s %s: %v", scope, key, err)
 				}

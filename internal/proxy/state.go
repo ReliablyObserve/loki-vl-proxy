@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -49,14 +50,8 @@ type State struct {
 	patternsPersistStop    chan struct{}
 	patternsPersistDone    chan struct{}
 
-	// backendVersionMu guards the discovered backend version fields.
-	backendVersionMu                     *sync.RWMutex
-	backendVersionRaw                    *string
-	backendVersionSemver                 *string
-	backendCapabilityProfile             *string
-	backendSupportsStreamMetadata        *bool
-	backendSupportsDensePatternWindowing *bool
-	backendVersionLogged                 *bool
+	// capabilities decides every gate from the discovered VictoriaLogs release(s) (internal/capability).
+	capabilities *capability.Layer
 
 	// labelValuesIndexMu guards the per-tenant label-values indexed cache.
 	labelValuesIndexMu *sync.RWMutex

@@ -1,0 +1,17 @@
+id: column-field-values
+kind: version_gated_capability
+since: v1.50
+generated:
+  used_in: 0
+
+description: |
+  From v1.50 stream fields are stored in the column index, so field_values answers
+  what stream_field_values answers (the values of a stream label) about 20 times
+  faster.
+proxy_usage: |
+  Label value lookups of the Drilldown handlers read field_values instead of
+  stream_field_values when the gate vl.column_field_values is on
+  (supportsColumnIndexedFields in internal/proxy/backend.go, drilldown.go).
+fallback: |
+  stream_field_values on v1.49 and on a release not yet known: the same values, slower.
+proves: []
