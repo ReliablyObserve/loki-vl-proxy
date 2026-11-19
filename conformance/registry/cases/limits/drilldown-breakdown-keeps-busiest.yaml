@@ -5,9 +5,11 @@ proves:
 consumer: drilldown
 why: |
   Above max_query_series Loki returns the first series its evaluation meets
-  with a partial-result warning; the proxy keeps the busiest series ranked by
-  VictoriaLogs (KNOWN_ISSUES). Every kept series has Loki's values; the kept
-  set can differ for equal volumes.
+  with a partial-result warning. The proxy keeps the busiest series ranked by
+  VictoriaLogs only with -drilldown-series-limit-mode=busiest; the default
+  (loki) keeps the first met, as Loki does
+  (limits/drilldown-series-limit-range-cut-at-trip-step). Every kept series has
+  Loki's values.
 request:
   method: GET
   path: /loki/api/v1/query_range

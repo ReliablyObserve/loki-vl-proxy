@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A label filter on a label named `:` (`| json | A="" :=""`) after an unwrap is written quoted to VictoriaLogs (`":":=""`); the bare `::=""` it was written as is a query VictoriaLogs rejects.
 
+### Changed
+
+- **Breaking:** a Logs Drilldown answer over the series limit (`-max-stats-query-series`, or the tenant's
+  `max_query_series`) is now cut as deployed Loki cuts it, by default. Loki's query frontend splits a range request at
+  the multiples of `split_queries_by_interval` (1h by default) inside it, and its engine cuts each split on its own:
+  the series met first in the split, every one ending at the step where the series met so far pass the limit; the
+  splits are concatenated, with Loki's partial-result warning. Before, the proxy kept the busiest series over the
+  whole range, so a Drilldown breakdown over the limit now shows what Loki shows: often only the first steps of each
+  hour, and a single step per hour when every series starts at once (a breakdown of busy streams). New flags:
+  `-drilldown-series-limit-mode` (`loki`, the default, or `busiest`; set `-drilldown-series-limit-mode=busiest` to
+  restore the earlier behaviour), `-drilldown-series-limit-split-interval` (Loki's `split_queries_by_interval`,
+  default 1h, 0 = one split) and `-drilldown-series-limit-instant-split-interval` (Loki's
+  `split_instant_metric_queries_by_interval`, default 1h): an instant answer over the limit keeps the busiest series,
+  and, as deployed Loki's, carries no warning when its range is longer than that interval. Both intervals take
+  Loki's per-tenant names in `-tenant-limits`. VictoriaLogs still answers a breakdown over the limit in one ranked
+  read (`sort ... partition by (_time) limit`: limit+1 values per bucket of a grid with an edge at every split's first
+  step, which holds every split's first-met series wherever the request starts); an answer too large for one read
+  ranks in one call instead of two, and a step that does not divide the split interval (7s against 1h) reads the
+  whole answer instead of ranking per step. A multi-tenant answer is cut where the
+  merged answer passes the limit in each split, and every response cache keeps the answer as sent, so a repeat is the
+  first answer byte for byte. Answers cached before the change are not served (the mode and the intervals are part
+  of a Drilldown request's cache key). The new
+  `loki_vl_proxy_internal_operation_total{operation="drilldown_series_limit",outcome="loki"|"busiest"}` counts the
+  Drilldown answers the limit cut. Checked against Loki 3.7.10: its engine's recorded answers (the cut, its rule over
+  series that come and go, and each split asked alone), and an isolated stack with `max_query_series` 3 (splits,
+  sharding on and off, the results cache off, instants with and without the instant split).
+
 ## [2.341.1] - 2026-11-18
 
 ### Fixed

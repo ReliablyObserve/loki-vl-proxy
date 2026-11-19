@@ -196,6 +196,7 @@ func TestOrderedJSONResultCachePreservesSeriesWarning(t *testing.T) {
 	shape := dlvBaselineShapes[1]
 	backend, _ := newDLVBaselineBackend(t, shape, base)
 	p := newDLVBaselineProxy(t, backend.URL, false)
+	p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest // these checks hold the busiest-series mode
 	p.maxStatsQuerySeries = 1
 	origins := traceVLCallOrigins(p)
 	target, headers := dlvBaselineRequest(shape, base.Add(time.Minute), base.Add(3*time.Minute))

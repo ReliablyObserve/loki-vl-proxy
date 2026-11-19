@@ -301,7 +301,7 @@ func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
 		backend := httptest.NewServer(emu.Handler())
 		defer backend.Close()
 		tenants := map[string]TenantMapping{"t1": {AccountID: "1", ProjectID: "0"}, "t2": {AccountID: "2", ProjectID: "0"}}
-		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: seriesCap, TenantMap: tenants})
+		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: seriesCap, TenantMap: tenants, DrilldownSeriesLimitMode: drilldownSeriesLimitBusiest})
 		if err != nil {
 			t.Fatal(err)
 		}

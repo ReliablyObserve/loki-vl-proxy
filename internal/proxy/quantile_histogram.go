@@ -201,7 +201,7 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 		if err := seriesLimitReached(ctx, limit); err != nil {
 			return nil, err
 		}
-		series = capQuantileSeries(series, limit)
+		series = capQuantileSeries(ctx, series, limit)
 	}
 	return series, nil
 }
@@ -247,19 +247,27 @@ func sortQuantileSamples(samples []quantileSample, start time.Time, bucket time.
 	return out
 }
 
-// capQuantileSeries keeps the limit series with the most rows, like
-// capSeriesByTotalCount, for a Drilldown request that keeps partial results.
-func capQuantileSeries(series map[string]quantileSeries, limit int) map[string]quantileSeries {
-	totals := make(map[string]manualSeriesSamples, len(series))
-	for key, s := range series {
+// capQuantileSeries keeps the limit series a Drilldown partial answer keeps (seriesKeptForLimit): the most rows,
+// or in the Loki series-limit mode the first met.
+func capQuantileSeries(ctx context.Context, series map[string]quantileSeries, limit int) map[string]quantileSeries {
+	keys := make([]string, 0, len(series))
+	for key := range series {
+		keys = append(keys, key)
+	}
+	kept := seriesKeptForLimit(ctx, keys, func(key string) float64 {
 		var rows float64
-		for _, sample := range s.Samples {
+		for _, sample := range series[key].Samples {
 			rows += sample.count
 		}
-		totals[key] = manualSeriesSamples{Samples: []rangeMetricSample{{value: rows}}}
-	}
-	capped := make(map[string]quantileSeries, limit)
-	for key := range capSeriesByTotalCount(totals, limit) {
+		return rows
+	}, func(key string, yield func(int64)) {
+		scope := seriesLimitScopeFrom(ctx)
+		for _, sample := range series[key].Samples {
+			scope.lineMet(sample.ts+1, yield) // labelled by the bucket's start: its lines are met after it
+		}
+	}, limit)
+	capped := make(map[string]quantileSeries, len(kept))
+	for _, key := range kept {
 		capped[key] = series[key]
 	}
 	return capped

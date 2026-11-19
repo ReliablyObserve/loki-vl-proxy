@@ -1771,15 +1771,41 @@ func (p *parser) parsePipeSort() (Pipe, error) {
 		return nil, err
 	}
 
+	// limit N and partition by (...) come in either order (VictoriaLogs reads both).
 	limit := 0
-	if p.peek().Typ == TokIdent && p.peek().Val == "limit" {
-		p.advance()
-		limit, err = p.parseInt()
-		if err != nil {
+	var partition []string
+	for p.peek().Typ == TokIdent && (p.peek().Val == "limit" && limit == 0 || p.peek().Val == "partition" && partition == nil) {
+		if p.advance().Val == "limit" {
+			if limit, err = p.parseInt(); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if byTok, err := p.expect(TokIdent); err != nil || byTok.Val != "by" {
+			return nil, fmt.Errorf("logsql: expected 'by' after partition")
+		}
+		if _, err := p.expect(TokLParen); err != nil {
+			return nil, err
+		}
+		partition = []string{}
+		for p.peek().Typ != TokRParen && p.peek().Typ != TokEOF {
+			name, err := p.expectName()
+			if err != nil {
+				return nil, err
+			}
+			partition = append(partition, name)
+			if p.peek().Typ == TokComma {
+				p.advance()
+			}
+		}
+		if _, err := p.expect(TokRParen); err != nil {
 			return nil, err
 		}
 	}
-	return PipeSort{By: fields, Limit: limit}, nil
+	if len(partition) == 0 {
+		partition = nil
+	}
+	return PipeSort{By: fields, Limit: limit, Partition: partition}, nil
 }
 
 // parsePipeStats parses: stats [by (f1, f2)] func(...) as alias [, ...]

@@ -153,6 +153,11 @@ func TestPipeString(t *testing.T) {
 			"| sort by (_time desc)",
 		},
 		{
+			"sort_partition_limit",
+			logsql.PipeSort{By: []logsql.SortField{{Field: "r"}, {Field: "f"}}, Partition: []string{"_time"}, Limit: 4},
+			"| sort by (r, f) partition by (_time) limit 4",
+		},
+		{
 			"sort_multi_field",
 			logsql.PipeSort{By: []logsql.SortField{{Field: "app"}, {Field: "_time", Desc: true}}},
 			"| sort by (app, _time desc)",

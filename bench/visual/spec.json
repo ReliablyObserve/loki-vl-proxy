@@ -328,6 +328,7 @@
     "semantics/detected-fields-no-logfmt-token-fields"
    ]
   },
+  {"id": "dd-label-pod-over-series-limit", "kind": "drilldown", "path": "service/{service}/label/pod", "service": true, "serviceName": "api-gateway", "ranges": ["1h"], "covers": ["series-limits-and-partial-results", "limits/drilldown-partial-with-warning", "limits/drilldown-series-limit-range-cut-at-trip-step", "loki_api_v1_query_range"]},
   {
    "id": "lvl-dd-logs-pill-multi-json",
    "kind": "drilldown",

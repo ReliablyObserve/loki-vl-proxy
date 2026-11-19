@@ -548,6 +548,18 @@ type Config struct {
 	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
 	// max_query_series behaviour. 0 means use the built-in default (1000).
 	MaxStatsQuerySeries int
+	// DrilldownSeriesLimitMode is how a Logs Drilldown range answer over the series limit is cut: "loki" (the
+	// default, also for ""): the first series met, ending at the step where the first series past the limit
+	// appears, as Loki answers; "busiest": the busiest series over the whole range.
+	DrilldownSeriesLimitMode string
+	// DrilldownSeriesLimitSplitInterval mirrors Loki's split_queries_by_interval for the Loki series-limit mode:
+	// Loki's query frontend splits a range request at the multiples of the interval and cuts each split's answer
+	// on its own. 0 cuts the request as one split.
+	DrilldownSeriesLimitSplitInterval time.Duration
+	// DrilldownSeriesLimitInstantSplitInterval mirrors Loki's split_instant_metric_queries_by_interval: a Drilldown
+	// instant answer over the limit whose range is longer than it carries no partial-result warning, as deployed
+	// Loki's split instant answer does not. 0 always warns.
+	DrilldownSeriesLimitInstantSplitInterval time.Duration
 	// ExecutionLimits bounds per-request work and the bytes a request may pull
 	// out of VictoriaLogs. Zero values select the built-in defaults.
 	ExecutionLimits ExecutionLimitsConfig
@@ -840,6 +852,9 @@ type Proxy struct {
 	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
 	labelFilterRefillMaxPages             int           // extra pages read to fill a filtered log page (0=none)
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=1000)
+	drilldownSeriesLimitMode              string        // -drilldown-series-limit-mode: loki (default) or busiest
+	drilldownSeriesLimitSplit             time.Duration // -drilldown-series-limit-split-interval: Loki's split_queries_by_interval; 0 = one split
+	drilldownSeriesLimitInstantSplit      time.Duration // -drilldown-series-limit-instant-split-interval: Loki's split_instant_metric_queries_by_interval; 0 = always warn
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
 	metadataScanLimiter                   *metadataScanLimiter
@@ -1127,6 +1142,16 @@ func newCoalescer(disabled bool) *mw.Coalescer {
 
 //nolint:gocyclo // constructor wires many optional config knobs (URLs, levels, multi-tenant, caches, ruler/alerts, telemetry); complexity is inherent to top-level assembly.
 func New(cfg Config) (*Proxy, error) {
+	switch cfg.DrilldownSeriesLimitMode {
+	case "", drilldownSeriesLimitLoki, drilldownSeriesLimitBusiest:
+	default:
+		return nil, fmt.Errorf("invalid -drilldown-series-limit-mode: %q (must be %q or %q)", cfg.DrilldownSeriesLimitMode, drilldownSeriesLimitLoki, drilldownSeriesLimitBusiest)
+	}
+	if cfg.DrilldownSeriesLimitSplitInterval < 0 || cfg.DrilldownSeriesLimitInstantSplitInterval < 0 {
+		return nil, fmt.Errorf("invalid -drilldown-series-limit-split-interval=%s / -drilldown-series-limit-instant-split-interval=%s (must be >= 0; 0 does not split)",
+			cfg.DrilldownSeriesLimitSplitInterval, cfg.DrilldownSeriesLimitInstantSplitInterval)
+	}
+
 	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.DeleteAPIAuthToken); err != nil {
 		return nil, err
 	}
@@ -1505,6 +1530,9 @@ func New(cfg Config) (*Proxy, error) {
 		orderedJSONMaxBytes:                   cfg.OrderedJSONMetricMaxBytes,
 		labelFilterRefillMaxPages:             max(cfg.LabelFilterRefillMaxPages, 0),
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
+		drilldownSeriesLimitMode:              cfg.DrilldownSeriesLimitMode,
+		drilldownSeriesLimitSplit:             cfg.DrilldownSeriesLimitSplitInterval,
+		drilldownSeriesLimitInstantSplit:      cfg.DrilldownSeriesLimitInstantSplitInterval,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
 		labelWarmBackoff:                      newLabelWarmBackoff(),
@@ -2852,13 +2880,21 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	r, seriesScope := withSeriesLimitScope(r)
+	r, seriesScope := p.withSeriesLimitScope(r)
 	// Only sample responses are rewritten: buffering a log query here would
 	// defeat -stream-response.
+	var rangeRewriter *metricResponseRewriter
 	if logQLProducesSamples(logqlQuery) && (rangeOffset != 0 || seriesScope.drilldown) {
-		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope}
-		w = rewriter
-		defer rewriter.finish()
+		rangeRewriter = &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope, partial: p.drilldownPartialCounter(r.Context())}
+		w = rangeRewriter
+		defer rangeRewriter.finish()
+	}
+	// The response cache keeps the answer as sent (the rewriter's, after the Loki cut), so a repeat is the cold
+	// answer byte for byte.
+	storeRangeAnswer := func(body []byte) {
+		rangeRewriter.storeAnswer(body, seriesScope, func(answer []byte) {
+			p.setLocalReadCacheWithTTL(cacheKey, answer, queryRangeResponseCacheTTL)
+		})
 	}
 
 	// Enforce max query length AFTER offset is applied (start/end reflect shifted range).
@@ -2895,7 +2931,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if orderedCapture != nil {
 		if orderedHandled && r.Context().Err() == nil && !unwrapAnswerFailed(r.Context(), unwrapLookup) && !unwrapAnswerUncertain(r.Context(), unwrapLookup) && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
 			if body := orderedCapture.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
+				storeRangeAnswer(body)
 			}
 		}
 		orderedCapture.Release()
@@ -3089,12 +3125,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cacheOut)
 		}
 		if cacheable && sc.code == http.StatusOK {
-			p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), cacheOut...), seriesScope), queryRangeResponseCacheTTL)
+			storeRangeAnswer(cacheOut)
 		}
 	} else if cacheTap != nil {
 		if cacheable && sc.code == http.StatusOK {
 			if body := cacheTap.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
+				storeRangeAnswer(body)
 			}
 		}
 		cacheTap.Release()
@@ -3136,7 +3172,31 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 // compression varies independently.
 func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
 	profile := grafanaRuntimeProfile(r, "", r.URL.Path)
-	return strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
+	key := strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
+	if isGrafanaDrilldownRequest(r) {
+		// A Drilldown answer over the series limit depends on -drilldown-series-limit-mode: an answer cut one way
+		// is never served for the other, on this replica or on a peer.
+		key += "/sl-" + p.drilldownSeriesLimitModeOrDefault()
+		if p.drilldownSeriesLimitModeOrDefault() == drilldownSeriesLimitLoki {
+			// The answer over the limit depends on the split intervals the tenant resolves to too.
+			limits := p.queryLimitsFor(r.Header.Get("X-Scope-OrgID"))
+			key += "-" + limits.SplitQueriesByInterval.String() + "-" + limits.SplitInstantMetricQueriesByInterval.String()
+		}
+	}
+	return key
+}
+
+// drilldownPartialCounter counts a Drilldown answer cut by the series limit, by the mode that cut it.
+func (p *Proxy) drilldownPartialCounter(ctx context.Context) func(string) {
+	return func(mode string) { p.observeInternalOperation(ctx, "drilldown_series_limit", mode, 0) }
+}
+
+// drilldownSeriesLimitModeOrDefault is -drilldown-series-limit-mode, "" read as the default (loki).
+func (p *Proxy) drilldownSeriesLimitModeOrDefault() string {
+	if p.drilldownSeriesLimitMode == "" {
+		return drilldownSeriesLimitLoki
+	}
+	return p.drilldownSeriesLimitMode
 }
 
 // detectedLevelCacheKey versions cached log responses by the detected_level
@@ -3237,9 +3297,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	// The series limit applies to instant queries too, so Drilldown gets its
 	// partial-result warning and every other client Loki's error.
-	r, instantScope := withSeriesLimitScope(r)
+	r, instantScope := p.withSeriesLimitScope(r)
 	if logQLProducesSamples(logqlQuery) && (instantOffset != 0 || instantScope.drilldown) {
-		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: instantOffset, scope: instantScope}
+		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: instantOffset, scope: instantScope, partial: p.drilldownPartialCounter(r.Context())}
 		w = rewriter
 		defer rewriter.finish()
 	}
