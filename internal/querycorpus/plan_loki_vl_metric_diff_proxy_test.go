@@ -209,6 +209,9 @@ func runMetricHandler(t *testing.T, prof diffProfile, mr metricRequest, front *m
 		// some of them name (a top-values `| limit 501`); they stay valid only
 		// at that limit, whatever the proxy's built-in default is.
 		MaxStatsQuerySeries: 500,
+		// The recordings hold the queries' requests only: the gates come from the recorded release, not from
+		// feature probes, which would add requests the oracles were never asked.
+		BackendFeatureProbesDisabled: true,
 	})
 	if err != nil {
 		t.Fatal(err)
