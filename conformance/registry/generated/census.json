@@ -1838,6 +1838,7 @@
     "internal/proxy/line_format_error_test.go | semantics/line-format-template-error-keeps-entry",
     "internal/proxy/listed_window_chunks_test.go | metric-series-identity",
     "internal/proxy/listed_window_chunks_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/proxy/log_drop_keep_test.go | architecture-syntax-package-layering",
     "internal/proxy/logfmt_risk_candidates_test.go | loki_api_v1_query_range",
     "internal/proxy/logfmt_risk_candidates_test.go | parser-logfmt",
     "internal/proxy/logfmt_risk_candidates_test.go | quality/logfmt-parse-risk-candidates",
@@ -2773,7 +2774,11 @@
     "internal/translate/detected_level_normalize_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_stream_picks_test.go | semantics/detected-level-one-value-per-stream",
     "internal/translate/detected_level_stream_picks_test.go | severity-detected-level-derivation",
+    "internal/translate/drop_condition_test.go | architecture-syntax-package-layering",
+    "internal/translate/drop_condition_test.go | profiles/label-filter-regexp-anchoring",
+    "internal/translate/drop_condition_test.go | semantics/ip-filter-json-stats-pushdown",
     "internal/translate/extract_stages_test.go | architecture-syntax-package-layering",
+    "internal/translate/ip_condition_test.go | semantics/ip-filter-json-stats-pushdown",
     "internal/translate/ip_label_filter_test.go | semantics/ip-label-filter-invalid-pattern",
     "internal/translate/ip_label_filter_test.go | semantics/ip-label-filter-missing-label",
     "internal/translate/ip_label_prefilter_test.go | semantics/ip-label-filter-embedded-address",
@@ -3386,7 +3391,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 792,
+      "go": 795,
       "playwright": 3
     },
     "page_kinds": {

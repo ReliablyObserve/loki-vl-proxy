@@ -106,7 +106,7 @@ flowchart TD
 
 3. **Translation** (`TranslateLogQLWithCapabilities` and `logql.Translate`) — two paths described in detail below.
 
-4. **Drop/Keep extraction** (`stream_processing.go`) — calls `logql.ParseAndValidate()` to extract `| drop` / `| keep` matchers for post-processing VL response streams.
+4. **Drop/Keep extraction** (`stream_processing.go`) — reads the `| drop` / `| keep` stages of the query's memoised parse (the stages the plan's `LogSelect` holds) and compiles their matchers into `translate.DropCondition`s for post-processing VL response streams. The line-field exposure of the Loki-compatible profile (`loki_profile.go`) reads the same parse.
 
 ## AST Node Hierarchy
 

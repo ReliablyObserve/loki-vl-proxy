@@ -167,51 +167,12 @@ func parseLabelReplaceMarkersFrom(query string, from int) (string, []LabelReplac
 	return clean.String(), specs
 }
 
-// DropCondition represents a matcher-form conditional drop from `| drop field=value`.
-// Only entries where the field value satisfies the condition have the field removed.
-type DropCondition struct {
-	Field string
-	Op    string // "=", "!=", "=~", "!~"
-	Value string
-	re    *regexp.Regexp // non-nil for =~ and !~
-	ip    *ipCondition   // non-nil for a label filter `field = ip("...")` (NewIPLabelFilterCondition)
-}
+// DropCondition is translate.DropCondition.
+type DropCondition = translate.DropCondition
 
-// Matches reports whether val satisfies the drop condition.
-func (dc DropCondition) Matches(val string) bool {
-	if dc.ip != nil {
-		return dc.ip.matches(val, dc.Op == "!=")
-	}
-	switch dc.Op {
-	case "=":
-		return val == dc.Value
-	case "!=":
-		return val != dc.Value
-	case "=~":
-		if dc.re == nil {
-			return false
-		}
-		return dc.re.MatchString(val)
-	case "!~":
-		if dc.re == nil {
-			return false
-		}
-		return !dc.re.MatchString(val)
-	}
-	return false
-}
-
-// NewDropCondition creates a DropCondition with the regex compiled for =~ and !~ operators.
+// NewDropCondition is translate.NewDropCondition.
 func NewDropCondition(field, op, value string) (DropCondition, error) {
-	dc := DropCondition{Field: field, Op: op, Value: value}
-	if op == "=~" || op == "!~" {
-		re, err := regexp.Compile("^(?:" + value + ")$")
-		if err != nil {
-			return dc, fmt.Errorf("invalid regex %q in drop/keep condition: %w", value, err)
-		}
-		dc.re = re
-	}
-	return dc, nil
+	return translate.NewDropCondition(field, op, value)
 }
 
 // dropKeepResult holds the parsed contents of all | drop and | keep pipeline stages.
@@ -368,12 +329,9 @@ func splitDropSpec(spec string) (bareFields []string, conditions []DropCondition
 			}
 			continue
 		}
-		dc := DropCondition{Field: field, Op: op, Value: val}
-		if op == "=~" || op == "!~" {
-			if re, err := regexp.Compile(val); err == nil {
-				dc.re = re
-			}
-		}
+		// The condition's regexp is compiled as NewDropCondition compiles it
+		// (anchored); an invalid one is kept and matches nothing, as before.
+		dc, _ := NewDropCondition(field, op, val)
 		conditions = append(conditions, dc)
 	}
 	return

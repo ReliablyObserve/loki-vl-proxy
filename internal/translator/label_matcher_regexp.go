@@ -1,12 +1,6 @@
 package translator
 
-import (
-	"fmt"
-	"regexp"
-	"strconv"
-
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
-)
+import "github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 
 // selectorRegexpFieldFilter is the LogsQL filter for a stream-selector
 // matcher `label=~pattern`: a Prometheus label matcher, compiled as
@@ -29,49 +23,14 @@ func LabelFilterRegexpFieldFilter(field, value string, negate bool) string {
 	return labelFilterRegexpFieldFilter(field, value, negate)
 }
 
-// NewLabelFilterCondition is the DropCondition of a label filter
-// `| field op value`: its regexp matches what Loki's label filter matches
-// (lokiLabelFilterPattern), where NewDropCondition compiles a drop or keep
-// matcher's.
+// NewLabelFilterCondition is translate.NewLabelFilterCondition.
 func NewLabelFilterCondition(field, op, value string) (DropCondition, error) {
-	dc := DropCondition{Field: field, Op: op, Value: value}
-	if op == "=~" || op == "!~" {
-		re, err := regexp.Compile(translate.AnchorLabelFilterPattern(lokiLabelFilterPattern(value)))
-		if err != nil {
-			return dc, fmt.Errorf("invalid regex %q in label filter: %w", value, err)
-		}
-		dc.re = re
-	}
-	return dc, nil
+	return translate.NewLabelFilterCondition(field, op, value)
 }
 
-// NewIPLabelFilterCondition is the DropCondition of a label filter
-// `| field = ip("pattern")` (negate: `!=`). Its Value is that LogQL text, so
-// code that tells a condition from the empty-value ones keeps working; Matches
-// answers what the LogsQL of IPFilter answers on VictoriaLogs for the value, so
-// the rows a plan reads itself, its stats pushdown and the log query agree.
+// NewIPLabelFilterCondition is translate.NewIPLabelFilterCondition.
 func NewIPLabelFilterCondition(field, pattern string, negate bool) (DropCondition, error) {
-	op := "="
-	if negate {
-		op = "!="
-	}
-	dc := DropCondition{Field: field, Op: op, Value: "ip(" + strconv.Quote(pattern) + ")"}
-	ip, ok := newIPCondition(pattern)
-	if !ok {
-		return dc, fmt.Errorf("invalid ip pattern %q in label filter", pattern)
-	}
-	dc.ip = ip
-	return dc, nil
-}
-
-// IPFilter is the LogsQL filter of an ip() label condition on field (the
-// label's name, quoted the way LogsQL needs it); ok is false for any other
-// condition.
-func (dc DropCondition) IPFilter(field string) (filter string, ok bool) {
-	if dc.ip == nil {
-		return "", false
-	}
-	return ipLabelFilter(field, dc.ip.raw, dc.Op == "!=")
+	return translate.NewIPLabelFilterCondition(field, pattern, negate)
 }
 
 // wholeValueRegexpFilter selects a row when the field's whole value matches

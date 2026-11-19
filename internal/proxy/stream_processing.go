@@ -24,24 +24,24 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
-// extractDropKeepFromAST extracts drop/keep conditions from the original LogQL query via the typed AST.
-// Falls back to the regex-based translator functions for metric expressions or parse failures.
+// extractDropKeepFromAST is the keep/drop post-processing of a log query: the
+// conditional drop and keep matchers and the bare names of its drop and keep
+// stages, read from the query's typed stages (its memoised parse,
+// parsedLogQuery, which the plan's LogSelect holds as its stages). A query that
+// is not a log query, or one the parser rejects, has none: the request
+// validation answers a query the parser rejects before any log response is
+// read, and a metric query has no log pipeline of its own to post-process.
 func extractDropKeepFromAST(query string) (
-	dropConds []translator.DropCondition,
-	keepConds []translator.DropCondition,
+	dropConds []translate.DropCondition,
+	keepConds []translate.DropCondition,
 	bareDropFields []string,
 	bareKeepFields []string,
 ) {
-	lq, err := parseLogQLQuery(noFlowCtx, query)
+	lq, err := parsedLogQuery(query)
 	if err != nil {
-		// Metric expressions or unparseable queries: fall back to regex-based extraction.
-		dropConds = translator.ParseDropConditions(query)
-		keepConds = translator.ParseKeepConditions(query)
-		bareDropFields = translator.ParseBareDropFields(query)
-		bareKeepFields = translator.ParseBareKeepFields(query)
 		return
 	}
 	return dropKeepFromPipeline(lq.Pipeline)
@@ -49,8 +49,8 @@ func extractDropKeepFromAST(query string) (
 
 // dropKeepFromPipeline extracts drop/keep conditions from a parsed pipeline.
 func dropKeepFromPipeline(pipeline []logqlpkg.Stage) (
-	dropConds []translator.DropCondition,
-	keepConds []translator.DropCondition,
+	dropConds []translate.DropCondition,
+	keepConds []translate.DropCondition,
 	bareDropFields []string,
 	bareKeepFields []string,
 ) {
@@ -59,7 +59,7 @@ func dropKeepFromPipeline(pipeline []logqlpkg.Stage) (
 		case *logqlpkg.DropStage:
 			bareDropFields = append(bareDropFields, s.Labels...)
 			for _, m := range s.Matchers {
-				dc, e := translator.NewDropCondition(m.Name, m.Op, m.Value)
+				dc, e := translate.NewDropCondition(m.Name, m.Op, m.Value)
 				if e == nil {
 					dropConds = append(dropConds, dc)
 				}
@@ -67,7 +67,7 @@ func dropKeepFromPipeline(pipeline []logqlpkg.Stage) (
 		case *logqlpkg.KeepStage:
 			bareKeepFields = append(bareKeepFields, s.Labels...)
 			for _, m := range s.Matchers {
-				dc, e := translator.NewDropCondition(m.Name, m.Op, m.Value)
+				dc, e := translate.NewDropCondition(m.Name, m.Op, m.Value)
 				if e == nil {
 					keepConds = append(keepConds, dc)
 				}
@@ -869,7 +869,7 @@ func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposur
 	if _, onStream := streamLabels["level"]; onStream {
 		return level
 	}
-	line := row.GetStringBytes(translator.StoredLineField)
+	line := row.GetStringBytes(translate.StoredLineField)
 	if len(line) == 0 {
 		line = row.GetStringBytes("_msg")
 	}
@@ -904,7 +904,7 @@ func mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructure
 // derives stream identity here so they cannot drift.
 func resolveLogQueryStream(
 	desc cachedLogQueryStreamDescriptor,
-	dropConditions, keepConditions []translator.DropCondition,
+	dropConditions, keepConditions []translate.DropCondition,
 	bareDropFields, bareKeepFields []string,
 	parsedFields map[string]string,
 	mergeParsed bool,
@@ -1390,7 +1390,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 			msgRaw = val.GetStringBytes()
 			return
 		}
-		if key == translator.StoredLineField {
+		if key == translate.StoredLineField {
 			storedLine = val.GetStringBytes()
 			return
 		}
@@ -1419,7 +1419,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 	// metadata). The Loki-compatible profile reports only the line fields the
 	// pipeline's stages expose (lineFieldExposure) and leaves out the rest.
 	// A line_format VictoriaLogs ran rewrote _msg; the stored line it copied
-	// aside first (translator.StoredLineField) is the line Loki parsed.
+	// aside first (translate.StoredLineField) is the line Loki parsed.
 	if storedLine != nil {
 		msgRaw = storedLine
 	}
@@ -1507,7 +1507,7 @@ func keepEntryFields(keep []string, sm, pf map[string]string) {
 
 // applyDropConditions removes fields from sm/pf when the entry value matches a
 // `| drop field=value` condition. Bare-field drops are handled by VL `| delete`.
-func applyDropConditions(conds []translator.DropCondition, sm, pf map[string]string) {
+func applyDropConditions(conds []translate.DropCondition, sm, pf map[string]string) {
 	for _, dc := range conds {
 		if sm != nil {
 			if val, ok := sm[dc.Field]; ok && dc.Matches(val) {
@@ -1530,7 +1530,7 @@ func applyDropConditions(conds []translator.DropCondition, sm, pf map[string]str
 // drop conditions use Loki underscore names (e.g. "service_name"). The lt translator is used
 // to map condition field names back to their VL raw field names so both forms are matched and
 // deleted correctly. lt may be nil for passthrough style.
-func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabels, translatedLabels map[string]string, lt *LabelTranslator) (newKey string, newTranslated map[string]string, changed bool) {
+func applyDropConditionsToStreamLabels(conds []translate.DropCondition, rawLabels, translatedLabels map[string]string, lt *LabelTranslator) (newKey string, newTranslated map[string]string, changed bool) {
 	for _, dc := range conds {
 		if val, ok := rawLabels[dc.Field]; ok && dc.Matches(val) {
 			changed = true
@@ -1574,7 +1574,7 @@ func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabe
 // applyKeepConditionsToStreamLabels mirrors applyDropConditionsToStreamLabels
 // for matcher-form keep: `| keep field=value` keeps the stream label only when
 // the value matches, stripping it otherwise.
-func applyKeepConditionsToStreamLabels(conds []translator.DropCondition, rawLabels, translatedLabels map[string]string, lt *LabelTranslator) (newKey string, newTranslated map[string]string, changed bool) {
+func applyKeepConditionsToStreamLabels(conds []translate.DropCondition, rawLabels, translatedLabels map[string]string, lt *LabelTranslator) (newKey string, newTranslated map[string]string, changed bool) {
 	for _, dc := range conds {
 		field := dc.Field
 		if val, ok := rawLabels[field]; ok && !dc.Matches(val) {
@@ -1712,11 +1712,11 @@ func isSpecialKeepLabel(name string) bool {
 // Loki's `| keep field=value` keeps the label only for entries where field matches value;
 // non-matching entries have the field stripped. Fields not covered by any condition are
 // unchanged — VL's field projection already handles bare-name keeps.
-func applyKeepConditions(conds []translator.DropCondition, sm, pf map[string]string) {
+func applyKeepConditions(conds []translate.DropCondition, sm, pf map[string]string) {
 	if len(conds) == 0 {
 		return
 	}
-	condByField := make(map[string]translator.DropCondition, len(conds))
+	condByField := make(map[string]translate.DropCondition, len(conds))
 	for _, dc := range conds {
 		condByField[dc.Field] = dc
 	}
@@ -1948,7 +1948,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 		// A stream label level keeps its value: a parser stage overwrites the
 		// stored level field with the line's own.
 	} else if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
-		storedLine, _ := stringifyEntryValue(entry[translator.StoredLineField])
+		storedLine, _ := stringifyEntryValue(entry[translate.StoredLineField])
 		if storedLine == "" {
 			storedLine, _ = stringifyEntryValue(entry["_msg"])
 		}
@@ -1977,7 +1977,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	lr := lineRow{stream: labels}
 	var lineMissing bool
 	if exposure != nil {
-		if stored, ok := entry[translator.StoredLineField].(string); ok {
+		if stored, ok := entry[translate.StoredLineField].(string); ok {
 			msg = stored // the line before a line_format VictoriaLogs ran
 		}
 		if readsPlaceholderAsLine(exposure, msg) {
@@ -2662,11 +2662,4 @@ func appendJSONStringToBuffer(buf *bytes.Buffer, s string) {
 		buf.WriteString(s[start:])
 	}
 	buf.WriteByte('"')
-}
-
-// isStatsQuery reports whether a translated query is a stats query (translator.DecodeStats), for the paths that
-// still rewrite the query as text before reading it.
-func isStatsQuery(logsqlQuery string) bool {
-	_, ok := translator.DecodeStats(logsqlQuery)
-	return ok
 }

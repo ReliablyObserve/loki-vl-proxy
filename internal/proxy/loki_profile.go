@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
 )
@@ -356,7 +356,7 @@ func (p *Proxy) lineFieldExposure(query string) *lineFieldExposure {
 	if !p.lokiCompatibleProfile() {
 		return nil
 	}
-	lq, err := parseLogQLQuery(noFlowCtx, query)
+	lq, err := parsedLogQuery(query)
 	if err != nil {
 		return nil
 	}
@@ -381,7 +381,7 @@ func (p *Proxy) backendLogQuery(query string) (string, bool) {
 	if !strings.Contains(query, "line_format") || !p.lokiCompatibleProfile() {
 		return query, false
 	}
-	lq, err := parseLogQLQuery(noFlowCtx, query)
+	lq, err := parsedLogQuery(query)
 	if err != nil {
 		return query, false
 	}
@@ -548,12 +548,12 @@ func labelFilterConditions(expr *logqlpkg.LabelFilterExpr, before lineFieldExpos
 		if m.Kind == logqlpkg.LabelFilterValueIP {
 			// Any other spelling of an ip() filter is read as a matcher on the
 			// text `ip(pattern)`, which holds an address pattern.
-			if _, err := translator.NewIPLabelFilterCondition(m.Name, m.Value, false); err != nil {
+			if _, err := translate.NewIPLabelFilterCondition(m.Name, m.Value, false); err != nil {
 				return nil
 			}
 			value = "ip(" + m.Value + ")"
 		}
-		condition, err := translator.NewLabelFilterCondition(m.Name, m.Cmp, value)
+		condition, err := translate.NewLabelFilterCondition(m.Name, m.Cmp, value)
 		if err != nil {
 			return nil
 		}

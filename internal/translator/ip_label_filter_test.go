@@ -638,20 +638,6 @@ func TestNewIPLabelFilterCondition_Shape(t *testing.T) {
 	}
 }
 
-// parseVLIPv4 and the test emulation of VictoriaLogs' IPv4 reader are two
-// writings of the same rules, kept apart so the differential above checks one
-// against the other.
-// conformance: semantics/ip-filter-json-stats-pushdown
-func TestParseVLIPv4_MatchesEmulation(t *testing.T) {
-	for _, s := range []string{"1.2.3.4", "1.2.3.4a", "1.2.3.0004", "01.2.3.4", "1.2.3.04", "255.255.255.255", "256.1.1.1", "1.2.3.", "1..2.3", "a.b.c.d", "1.2.3.4.5", "1234.1.1.1", "1.2.3.123456789", "1.2.3.1234567890", "1.2.3.:", "1.2.3.0.", "1.2.3.0/", "1.2.3.9 ", "9.9.9.9 ", ""} {
-		want, wantOK := vlParseIPv4(s)
-		got, gotOK := parseVLIPv4(s)
-		if got != want || gotOK != wantOK {
-			t.Errorf("%q: %d, %v; emulation %d, %v", s, got, gotOK, want, wantOK)
-		}
-	}
-}
-
 // For any pattern and value, the condition answers like the filter it
 // mirrors.
 // conformance: semantics/ip-filter-json-stats-pushdown
