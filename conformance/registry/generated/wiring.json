@@ -2357,6 +2357,9 @@
       "internal/proxy/query_lowering_corpus_test.go",
       "internal/querycorpus/known_divergence_test.go"
     ],
+    "semantics/translator-reads-detected-level-in-a-longer-name": [
+      "internal/proxy/query_lowering_log_stages_test.go"
+    ],
     "semantics/translator-reads-marker-bytes-in-quoted-value": [
       "internal/proxy/query_lowering_test.go",
       "internal/queryplan/lower/marker_bytes_test.go"
@@ -3042,7 +3045,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 682,
+  "registry_items": 683,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4513,6 +4516,7 @@
     "internal/proxy/query_lowering_log_stages_test.go": [
       "architecture-syntax-package-layering",
       "semantics/translator-copies-unspaced-parser",
+      "semantics/translator-reads-detected-level-in-a-longer-name",
       "semantics/translator-reads-only-space-between-tokens"
     ],
     "internal/proxy/query_lowering_shared_parse_test.go": [
@@ -6840,5 +6844,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 468
+  "wired_items": 469
 }

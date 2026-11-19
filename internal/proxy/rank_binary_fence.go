@@ -24,7 +24,7 @@ func rankOverBinaryResponseKeyVersion(query string, ranked bool) string {
 	if !ranked {
 		return ""
 	}
-	if plan := resolvedPlan(query); plan != nil && rankOverBinary(plan.Root) {
+	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && rankOverBinary(plan.Root) {
 		if rankOverBinaryLabelReplace(plan.Root) {
 			return rankOverBinaryResponseVersion + rankOverBinaryLabelReplaceResponseVersion
 		}
@@ -44,7 +44,7 @@ func rankOverBinaryLabelReplaceResponseKeyVersion(query string, ranked bool) str
 	if !ranked {
 		return ""
 	}
-	if plan := resolvedPlan(query); plan != nil && rankOverBinaryLabelReplace(plan.Root) {
+	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && rankOverBinaryLabelReplace(plan.Root) {
 		return rankOverBinaryLabelReplaceResponseVersion
 	}
 	return ""
@@ -69,11 +69,14 @@ func rankOverBinaryLabelReplace(n queryplan.Node) bool {
 	return false
 }
 
-// holdsLabelReplace reports a label_replace call anywhere in the metric operators of n.
+// holdsLabelReplace reports a label_replace call anywhere in the metric operators of n: typed, or one the parser kept
+// as text (its arguments are not Loki's or hold text it cannot type) and the plan names (queryplan.Opaque.Func).
 func holdsLabelReplace(n queryplan.Node) bool {
 	switch v := n.(type) {
 	case *queryplan.LabelReplace:
 		return true
+	case *queryplan.Opaque:
+		return v.Func == "label_replace"
 	case *queryplan.VectorAgg:
 		return holdsLabelReplace(v.In)
 	case *queryplan.Rank:

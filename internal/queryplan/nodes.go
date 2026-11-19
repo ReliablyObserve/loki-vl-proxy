@@ -273,10 +273,13 @@ type VectorLit struct {
 
 // Opaque is a metric-level call logql keeps as text: approx_topk, and a
 // label_replace or vector call the parser could not type. It is a ratchet line,
-// never lowered.
+// never lowered. Func names the call (the tree's, not part of the key: Raw holds
+// the text), so a reader of the plan knows a label_replace that holds a Grafana
+// range variable or text the parser could not type.
 type Opaque struct {
-	Raw string
-	p   Props
+	Raw  string
+	Func string
+	p    Props
 }
 
 // Props implements Node.
