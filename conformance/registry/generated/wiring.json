@@ -28,6 +28,7 @@
       "internal/proxy/lowering_shadow_evaluated_test.go",
       "internal/proxy/lowering_shadow_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
+      "internal/proxy/plan_route_log_test.go",
       "internal/proxy/plan_route_metric_test.go",
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/plan_served_test.go",
@@ -4459,6 +4460,9 @@
     "internal/proxy/plan_predicate_parity_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/proxy/plan_route_log_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/plan_route_metric_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -6752,7 +6756,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 794,
+  "tests_with_markers": 795,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
