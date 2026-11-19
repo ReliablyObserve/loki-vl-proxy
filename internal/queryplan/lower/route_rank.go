@@ -13,21 +13,25 @@ import (
 // rule is the operand's route, with what the ranking changes in how its windows are read.
 
 // RankedOperand is the ranking the handlers evaluate over the series of a query whose root is the ranking r, and the
-// operand they evaluate it over. The handlers read the ranking layer from the vector aggregations at the root: the
-// innermost ranking under rankings and sum, avg, min, max or count layers (which fold what it keeps), or the root
-// ranking itself when another level stands between (a stddev, a stdvar).
+// operand they evaluate it over. The handlers read the vector aggregations at the root down to the first other node:
+// the innermost ranking among them is the one they evaluate when every layer above it is a ranking or a sum, avg,
+// min, max or count (which fold what it keeps); with another level above it (a stddev, a stdvar), the root ranking is.
 func RankedOperand(r *queryplan.Rank) (*queryplan.Rank, queryplan.Node) {
-	rank := r
+	// rank is the innermost ranking read so far, ok whether every layer above it folds; folds is whether every layer
+	// read so far does.
+	rank, ok, folds := r, true, true
 	for n := r.In; ; {
 		switch v := n.(type) {
 		case *queryplan.Rank:
-			rank, n = v, v.In
+			rank, ok, n = v, folds, v.In
 			continue
 		case *queryplan.VectorAgg:
-			if routeOps[v.Op] {
-				n = v.In
-				continue
-			}
+			folds, n = folds && routeOps[v.Op], v.In
+			continue
+		}
+		if !ok {
+			// A level the handlers do not fold stands above the innermost ranking: the root ranks.
+			rank = r
 		}
 		return rank, rank.In
 	}

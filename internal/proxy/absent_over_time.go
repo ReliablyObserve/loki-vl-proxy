@@ -14,7 +14,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 // absent_over_time (Loki v3.7.7).
@@ -50,7 +50,7 @@ type absentOverTimeCompatSpec struct {
 	rangeWindowStr string
 	aggs           []*logqlpkg.VectorAggregation
 	// labelReplaces are the label_replace calls around it, outermost first.
-	labelReplaces []translator.LabelReplaceSpec
+	labelReplaces []physical.LabelReplace
 	// err is Loki's parse error for a form it rejects; the handlers answer 400.
 	err string
 }
@@ -63,24 +63,24 @@ const (
 )
 
 // parseAbsentOverTimeCompatSpec reads absent_over_time(<log query>[range]),
-// alone or under vector aggregations and label_replace calls.
+// alone or under vector aggregations and label_replace calls. The query is
+// parsed once (the memoised parse, sharedLogQLExpr) and its label_replace calls
+// are read from the parsed tree, outermost first.
 func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool) {
 	query := strings.TrimSpace(logql)
-	var replaces []translator.LabelReplaceSpec
-	for {
-		inner, spec, ok := translator.SplitLabelReplace(query)
-		if !ok {
+	var replaces []physical.LabelReplace
+	expr, parsed := sharedLogQLExpr(query)
+	for parsed {
+		call, ok := expr.(*logqlpkg.OpaqueMetricExpr)
+		if !ok || call.Func != "label_replace" || !call.Typed || len(call.Args) != 4 {
 			break
 		}
-		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
-			return absentOverTimeCompatSpec{}, false // the label_replace handlers report it
-		}
-		replaces = append(replaces, spec)
-		query = strings.TrimSpace(inner)
+		replaces = append(replaces, physical.LabelReplace{DstLabel: call.Args[0], Replacement: call.Args[1], SrcLabel: call.Args[2], Regex: call.Args[3]})
+		expr = call.Inner
 	}
 	var aggs []*logqlpkg.VectorAggregation
 	var absent *logqlpkg.RangeAggregation
-	if expr, ok := sharedLogQLExpr(query); ok {
+	if parsed {
 		node := expr
 		for {
 			agg, ok := node.(*logqlpkg.VectorAggregation)
@@ -93,6 +93,11 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 		ra, ok := node.(*logqlpkg.RangeAggregation)
 		if !ok || ra.Op != logqlpkg.RangeAbsentOverTime {
 			return absentOverTimeCompatSpec{}, false
+		}
+		for _, spec := range replaces {
+			if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
+				return absentOverTimeCompatSpec{}, false // the label_replace handlers report it
+			}
 		}
 		if ra.Grouping != nil {
 			return absentOverTimeCompatSpec{err: errAbsentGrouping}, true

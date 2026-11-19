@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
@@ -1693,5 +1695,49 @@ func TestMetricRouteCatchesAWrongBinaryRoute(t *testing.T) {
 				t.Fatalf("a wrong route went unseen: %d predictions changed, %d runs mispredicted (%+v)", want, bad.Mismatches, bad)
 			}
 		})
+	}
+}
+
+// The operand the route rule reads under a ranking at the root (lower.RankedOperand) is the one the handlers slice out
+// of the query (parseInstantMetricPostAggQuery), on every corpus row with a ranking at the root and on the levels the
+// handlers read around it.
+//
+// conformance: architecture-syntax-package-layering
+func TestRankedOperandIsTheHandlersOperand(t *testing.T) {
+	qs, err := plancorpus.Queries(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	qs = append(qs,
+		`topk(2, topk(3, stddev by (app) (topk(4, rate({app="a"}[5m])))))`,
+		`topk(2, topk(3, stddev by (app) (rate({app="a"}[5m]))))`,
+		`topk(2, sum by (app) (stddev by (app, env) (rate({app="a"}[5m]))))`,
+		`bottomk(2, sum by (app) (topk(6, sum by (app, env) (rate({app="a"}[5m])))))`,
+		`sort_desc(max(topk(3, sort(rate({app="a"}[5m])))))`,
+	)
+	checked := 0
+	for _, q := range qs {
+		text := routeHandlerText(q)
+		p := resolvedPlan(text)
+		if p == nil {
+			continue
+		}
+		r, ok := p.Root.(*queryplan.Rank)
+		if !ok {
+			continue
+		}
+		postAgg, ok := parseInstantMetricPostAggQuery(text)
+		if !ok {
+			t.Fatalf("%q: the handlers do not read a ranking", text)
+		}
+		inner := resolvedPlan(postAgg.inner)
+		_, operand := lower.RankedOperand(r)
+		if inner == nil || !bytes.Equal(inner.Root.Props().Key, operand.Props().Key) {
+			t.Fatalf("%q: the handlers evaluate the ranking over %q, the rule over another operand", text, postAgg.inner)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("no ranking at the root")
 	}
 }

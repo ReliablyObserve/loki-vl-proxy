@@ -46,6 +46,10 @@ func TestRankedOperand(t *testing.T) {
 		{`topk(3, sort(rate({app="a"}[5m])))`, logql.VectorSort, 0, "RangeAgg"},
 		// a level the handlers do not fold stands between: the root ranks the level's answer
 		{`sort_desc(stddev by (app) (topk(2, rate({app="a"}[5m]))))`, logql.VectorSortDesc, 0, "VectorAgg"},
+		{`topk(2, topk(3, stddev by (app) (topk(4, rate({app="a"}[5m])))))`, logql.VectorTopK, 2, "Rank"},
+		{`topk(2, sum by (app) (stddev by (app, env) (rate({app="a"}[5m]))))`, logql.VectorTopK, 2, "VectorAgg"},
+		// a level below the innermost ranking is its operand's
+		{`topk(2, topk(3, stddev by (app) (rate({app="a"}[5m]))))`, logql.VectorTopK, 3, "VectorAgg"},
 		{`topk(3, label_replace(sum by (app) (rate({app="a"}[5m])), "b", "$1", "app", "(.*)"))`, logql.VectorTopK, 3, "LabelReplace"},
 	} {
 		p := evaluatedPlan(c.q)
