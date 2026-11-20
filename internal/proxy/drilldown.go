@@ -619,9 +619,12 @@ func defaultFieldDetectionQuery(query string) string {
 	//              auto-parse logfmt/unpack content, so stripping these stages leaves the field
 	//              filter referencing fields that VL cannot evaluate, returning zero results.
 	noUnwrap := stripUnwrapAndDropStages(query)
+	return primaryFieldDetectionQuery(noUnwrap, stripParserOnlyStages(noUnwrap))
+}
+
+func primaryFieldDetectionQuery(noUnwrap, noParser string) string {
 	// Strip only | json stages; keep | logfmt / | unpack.
 	noJSONParser := collapseSpaces(reJSONParserStage.ReplaceAllString(noUnwrap, " "))
-	noParser := stripParserOnlyStages(noUnwrap)
 	// If stripping all parsers removes something that | json didn't (i.e. logfmt/unpack present)
 	// AND there are downstream field comparisons that depend on those parsers, keep them.
 	if noParser != noJSONParser && hasFieldComparisonStages(noParser) {
@@ -635,8 +638,20 @@ func relaxedFieldDetectionQuery(query string) string {
 }
 
 func fieldDetectionQueryCandidates(query string) []string {
-	primary := defaultFieldDetectionQuery(query)
-	relaxed := relaxedFieldDetectionQuery(query)
+	return fieldDetectionCandidates(noFlowCtx, query, false)
+}
+
+func fieldDetectionCandidates(ctx context.Context, query string, sampled bool) []string {
+	input := stripMetricWrapper(query)
+	// A metric picker query still uses the stripped discovery candidates.
+	preserveJSON := sampled && input == strings.TrimSpace(query)
+	noUnwrap, preserved := fieldDetectionPipeline(ctx, input, preserveJSON)
+	if preserved {
+		return []string{query}
+	}
+	noParser := stripParserOnlyStages(noUnwrap)
+	primary := primaryFieldDetectionQuery(noUnwrap, noParser)
+	relaxed := defaultQuery(stripFieldComparisonStages(noParser))
 	if relaxed == "" || relaxed == primary {
 		return []string{primary}
 	}
@@ -750,16 +765,24 @@ func filterPipeline(lq *logqlpkg.LogQuery, keep func(logqlpkg.Stage) bool) *logq
 }
 
 func stripUnwrapAndDropStages(query string) string {
+	stripped, _ := fieldDetectionPipeline(noFlowCtx, query, false)
+	return stripped
+}
+
+func fieldDetectionPipeline(ctx context.Context, query string, preserveJSON bool) (string, bool) {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return query
+		return query, false
 	}
-	lq, err := parseLogQLQuery(noFlowCtx, query)
+	lq, err := parseLogQLQuery(ctx, query)
 	if err != nil {
 		// Fall back to regex on parse failure.
 		query = reDropStage.ReplaceAllString(query, " ")
 		query = reUnwrapStage.ReplaceAllString(query, " ")
-		return collapseSpaces(query)
+		return collapseSpaces(query), false
+	}
+	if preserveJSON && hasSampledJSONFilter(lq) {
+		return query, true
 	}
 	out := filterPipeline(lq, func(s logqlpkg.Stage) bool {
 		if ds, ok := s.(*logqlpkg.DropStage); ok && isErrorDropStage(ds) {
@@ -770,7 +793,7 @@ func stripUnwrapAndDropStages(query string) string {
 		}
 		return true
 	})
-	return out.String()
+	return out.String(), false
 }
 
 // stripIncompleteUnwrapStubs removes | unwrap pipeline stages that have no field name.
@@ -992,17 +1015,10 @@ func (p *Proxy) detectedFieldsLineLimit(r *http.Request) int {
 	return detectedFieldsSampleLimit
 }
 
-// sampledFieldsFilterQuery keeps a filter and the parser that supplies its
+// hasSampledJSONFilter keeps a filter and the parser that supplies its
 // fields together. In Loki-shaped ingestion a JSON body key can be absent
 // from VictoriaLogs' stored fields.
-func sampledFieldsFilterQuery(ctx context.Context, query string) (string, bool) {
-	if !strings.Contains(query, "|") {
-		return "", false
-	}
-	parsed, err := parseLogQLQuery(ctx, query)
-	if err != nil {
-		return "", false
-	}
+func hasSampledJSONFilter(parsed *logqlpkg.LogQuery) bool {
 	hasJSON := false
 	for _, stage := range parsed.Pipeline {
 		switch s := stage.(type) {
@@ -1010,11 +1026,11 @@ func sampledFieldsFilterQuery(ctx context.Context, query string) (string, bool) 
 			hasJSON = hasJSON || s.Type == logqlpkg.ParserJSON
 		case *logqlpkg.LabelFilterStage:
 			if hasJSON && s.Expr != nil {
-				return query, true
+				return true
 			}
 		}
 	}
-	return "", false
+	return false
 }
 
 // source paths (line scan, JSON/logfmt parse, type inference, sentinel
@@ -1050,15 +1066,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		scanLimit = detectedFieldsSampleLimit
 	}
 
-	var candidates []string
-	if sampled {
-		if filtered, ok := sampledFieldsFilterQuery(ctx, query); ok {
-			candidates = []string{filtered}
-		}
-	}
-	if len(candidates) == 0 {
-		candidates = fieldDetectionQueryCandidates(query)
-	}
+	candidates := fieldDetectionCandidates(ctx, query, sampled)
 	var lastErr error
 	var hadScanFailure, scanCompleted bool
 	var (
