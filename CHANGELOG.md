@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.355.0] - 2026-11-20
+
 ### Changed
 
 - The query and query_range handlers read the `label_replace` calls they apply to an answer from the query's parsed plan, not from the markers the string translator leaves in its text. Answers do not change: on every corpus query the calls are the same, in the same order.
