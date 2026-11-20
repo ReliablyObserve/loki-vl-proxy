@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"github.com/valyala/fastjson"
 	"io"
 	"slices"
 	"sort"
@@ -225,7 +226,10 @@ func (d *foldDecoder) add(column int, name string, ts int64, value []byte) {
 // not a string fails the read); the string contents are copied as written and checked once, in the
 // stats_query_range answer they are written into.
 func (d *foldDecoder) readFields(line []byte) error {
-	if line[0] != '{' || line[len(line)-1] != '}' {
+	// ObjectEach reads past what is not JSON (a trailing comma, bytes after the object, a raw control character or a
+	// bad escape in a string), so the row is validated first: a row the stats_query_range reader would refuse is
+	// unreadable here too.
+	if line[0] != '{' || line[len(line)-1] != '}' || fastjson.ValidateBytes(line) != nil {
 		return errFoldRowUnreadable
 	}
 	d.fields = d.fields[:0]
