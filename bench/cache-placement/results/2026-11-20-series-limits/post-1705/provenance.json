@@ -1,0 +1,41 @@
+{
+  "base_commit": "100e63e530fd08a985ad26ccf11aafeabaa1fb41",
+  "candidate_product_commit": "7cbff1ad5d9d7f5aac0177486926d30a5764eca9",
+  "candidate_source_files": [
+    {
+      "path": "internal/proxy/proxy.go",
+      "sha256": "5209688ca92c7fb41d3e7d23124f71bcecff6582fcdcca5184831bc79a458661"
+    },
+    {
+      "path": "internal/proxy/middleware.go",
+      "sha256": "8f4831fb339512eeba8b02051edf0b3c6eafed32cb3ceb88eb933b63033263b8"
+    },
+    {
+      "path": "internal/proxy/multitenant.go",
+      "sha256": "43e8dcba3eeaf310fc80ac392591ad72ecc94ddab9e103b2d6e2d1dfabe0a294"
+    }
+  ],
+  "runtime_image": "loki-vl-proxy:pr1708-7cbff1a",
+  "runtime_revision": "7cbff1ad5d9d7f5aac0177486926d30a5764eca9",
+  "benchmark": {
+    "threads": 2,
+    "memory_limit": "2GiB",
+    "samples_each": 8,
+    "sample_time": "300ms",
+    "order": "four main/PR/PR/main cycles, one sample per invocation",
+    "scope": "response-miss clears the Loki answer only; the fake backend and other caches are primed"
+  },
+  "stack": {
+    "project": "e2e-compat",
+    "context": "colima-lvp",
+    "proxy_variants": 13,
+    "backends_and_grafana_recreated": false,
+    "cache_volumes_preserved": true
+  },
+  "not_measured": [
+    "whole-process CPU/RSS",
+    "device IOPS/throughput",
+    "retained SSD/RAM occupancy",
+    "new fleet-loss/pressure performance"
+  ]
+}

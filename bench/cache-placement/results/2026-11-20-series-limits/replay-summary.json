@@ -1,0 +1,33 @@
+[
+  {
+    "target": "proxy",
+    "http_status": 200,
+    "seconds": 0.164608,
+    "frames": 3157,
+    "points": 3157,
+    "notices": [],
+    "answer_sha256": "41f1f0f325ff7dd62b12bd8f97a67f693c133e480544d7000eb76646bf78ee43"
+  },
+  {
+    "target": "loki",
+    "http_status": 200,
+    "seconds": 0.075171,
+    "frames": 3157,
+    "points": 3157,
+    "notices": [],
+    "answer_sha256": "41f1f0f325ff7dd62b12bd8f97a67f693c133e480544d7000eb76646bf78ee43"
+  },
+  {
+    "target": "proxy-repeat",
+    "http_status": 200,
+    "seconds": 0.068421,
+    "frames": 3157,
+    "points": 3157,
+    "notices": [],
+    "answer_sha256": "41f1f0f325ff7dd62b12bd8f97a67f693c133e480544d7000eb76646bf78ee43"
+  },
+  {
+    "proxy_equals_loki": true,
+    "repeat_equals_first": true
+  }
+]

@@ -206,7 +206,7 @@ func TestDetectedLevelCacheKeyVersion(t *testing.T) {
 	if got := stored.detectedLevelCacheKey(); got != "dl2-stored" {
 		t.Fatalf("stored-only key %q, want dl2-stored", got)
 	}
-	if !strings.Contains(scan.responseProfileCacheKey(httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil)), "/dl2/") {
+	if !strings.Contains(scan.responseProfileCacheKey(httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil), "query_range"), "/dl2/") {
 		t.Fatal("the response profile key does not carry the derivation version")
 	}
 }

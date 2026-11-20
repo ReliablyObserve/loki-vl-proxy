@@ -523,7 +523,7 @@ func TestDrilldownSeriesLimitSplitIntervalsPerTenant(t *testing.T) {
 			t.Errorf("%s [%s]: %s", tc.tenant, tc.window, body)
 		}
 	}
-	if a, b := p.responseProfileCacheKey(request("team-a", rangeTarget)), p.responseProfileCacheKey(request("team-b", rangeTarget)); a == b || !strings.Contains(a, "/sl-loki-1h0m0s-1h0m0s") {
+	if a, b := p.responseProfileCacheKey(request("team-a", rangeTarget), "query_range"), p.responseProfileCacheKey(request("team-b", rangeTarget), "query_range"); a == b || !strings.Contains(a, "/sl-loki-1h0m0s-1h0m0s") {
 		t.Errorf("the cache key must carry the tenant's intervals: %q %q", a, b)
 	}
 }

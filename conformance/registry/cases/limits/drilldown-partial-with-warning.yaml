@@ -25,6 +25,16 @@ why: |
   was evaluated from raw rows and got the plain client's 400; since the stats
   pushdown takes it, the raw evaluator still answers its instant form and
   the ordered `| json` metrics the pushdown cannot take.
+  Cached Loki answers carry the effective global or tenant max_query_series,
+  including the minimum across federated tenants. A raised limit cannot reuse
+  an older partial answer, and a lowered limit cannot reuse an unrestricted
+  answer, in RAM, on SSD after restart or through the shared response identity.
+  Equal effective limits still reuse answers. VL bucket identities and metadata
+  listings do not change with this Loki response policy.
+  The high-cardinality Fields UI regression checks both the deliberate 1000-series
+  partial mode and all 1010 fixture identities without warnings when the configured
+  limit admits them. Grafana's Show all button expands the frames it received;
+  it is not pagination and cannot fetch values omitted by a server-side limit.
 request:
   method: GET
   path: /loki/api/v1/query_range

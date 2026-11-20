@@ -1,0 +1,47 @@
+{
+  "url": "http://127.0.0.1:3002/a/grafana-lokiexplore-app/explore/env/production/fields?var-ds=PE5C64EEEB812BA91&from=1795178700000&to=1795179600000&var-filters=env%7C%3D%7C__CV%CE%A9__production%2Cproduction&var-metadata=&patterns=%5B%5D&var-fields=&var-levels=&var-jsonFields=&var-patterns=&var-lineFormat=&var-lineFilters=&var-all-fields=&displayedFields=%5B%5D&urlColumns=%5B%5D&visualizationType=%22logs%22&timezone=browser&var-labelBy=%24__all&var-fieldBy=%24__all",
+  "requests": 53,
+  "requestsBeforeClick": 53,
+  "clicked": true,
+  "errors": [],
+  "batch": [
+    {
+      "elapsed_ms": 291,
+      "status": 200,
+      "request": {
+        "queries": [
+          {
+            "editorMode": "code",
+            "queryType": "range",
+            "refId": "batch_id",
+            "supportingQueryType": "grafana-lokiexplore-app",
+            "legendFormat": "{{batch_id}}",
+            "expr": "sum by (batch_id) (count_over_time({env=\"production\"}      | json batch_id=\"[\\\"batch_id\\\"]\"  | drop __error__, __error_details__ | batch_id!=\"\"  [$__auto]))",
+            "datasource": {
+              "type": "loki",
+              "uid": "PE5C64EEEB812BA91"
+            },
+            "step": "",
+            "datasourceId": 9,
+            "intervalMs": 2000,
+            "maxDataPoints": 500
+          }
+        ],
+        "from": "1795178700000",
+        "to": "1795179600000"
+      },
+      "results": [
+        {
+          "id": "batch_id",
+          "status": 200,
+          "frames": 1000,
+          "points": 1000,
+          "notices": [
+            "maximum number of series (1000) reached for a single query; returning partial results"
+          ],
+          "executedQuery": "Expr: sum by (batch_id) (count_over_time({env=\"production\"}      | json batch_id=\"[\\\"batch_id\\\"]\"  | drop __error__, __error_details__ | batch_id!=\"\"  [2s]))\nStep: 2s"
+        }
+      ]
+    }
+  ]
+}

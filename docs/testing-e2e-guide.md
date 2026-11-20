@@ -33,22 +33,28 @@ CI runs each Go test group on its own fresh stack (see [E2E Compat Groups](#e2e-
 
 ### Interactive Fields limits
 
-The conformance stack deliberately allows 1,000,000 metric series, matching its
-reference Loki. That is unsuitable for browsing high-cardinality fields such as
-`trace_id`: the query can exceed the proxy's response budget, or produce tens
-of thousands of Grafana frames. For interactive use, explicitly apply Loki's
-stock 500-series limit to the patterns-autodetect datasource:
+The conformance stack allows 1,000,000 metric series, matching its reference
+Loki. Keep that default when checking whether the Fields tab loads every
+distinct value Loki returns. In an existing playground, inspect the running
+patterns-autodetect proxy's flags too: an old `PATTERNS_MAX_QUERY_SERIES`
+override survives until the container is recreated with the intended setting.
 
 ```bash
 cd test/e2e-compat
-PATTERNS_MAX_QUERY_SERIES=500 docker compose --profile ui up -d --no-build loki-vl-proxy-patterns-autodetect log-generator grafana
+PATTERNS_MAX_QUERY_SERIES=1000000 docker compose --profile ui up -d --no-build loki-vl-proxy-patterns-autodetect log-generator grafana
 ```
 
 Use the same `PROXY_IMAGE`, project name and override files as the existing
 stack when updating it. This command retains data volumes. The setting changes
 only the patterns-autodetect proxy; other variants and reference Loki retain
-their conformance limits. Do not use this override for parity runs that expect
-identical limits. An unset variable restores the 1,000,000-series CI default.
+their conformance limits. Do not use a lower override for parity runs that expect
+identical limits. An unset variable also selects the 1,000,000-series CI default.
+The vmauth variant deliberately keeps 1000 for bounded-result regression tests.
+
+An operator may explicitly lower the patterns limit, for example to 500, when
+partial results are acceptable. This reduces the frames Grafana must render;
+it cannot provide the complete high-cardinality result. Raising a series limit
+does not remove the separate response-byte, sample, concurrency or RAM/SSD bounds.
 
 Below the configured limit, responses remain complete. Above it, Drilldown gets
 partial series with Loki's warning; ordinary API clients get Loki's series-limit
@@ -56,8 +62,17 @@ error. By default (`-drilldown-series-limit-mode=loki`) the proxy keeps the
 series deployed Loki keeps: per split of `-drilldown-series-limit-split-interval`
 (Loki's `split_queries_by_interval`, 1h), the ones met first, ending at the step
 where the limit trips; with `busiest` it keeps the busiest series over the whole range. A warning is not proof that all values were loaded:
-filter the service, field value or time range to inspect a narrower population.
+filter the service, field value or time range to inspect a narrower population,
+or align the configured limit with the reference Loki. **Show all N expands the
+N frames already received; it does not paginate or fetch missing server results.**
 The public query `limit` parameter limits log lines, not metric series.
+
+Loki response identities include the effective global or tenant series limit,
+including the minimum across federated tenants. A new limit cannot reuse an old
+partial or unrestricted answer from RAM, SSD or another replica. Existing VL
+bucket data and metadata caches keep their identities. The Fields UI suite
+(`drilldown-field-bounds.spec.ts`, `@drilldown-core`) tests both explicit partial
+results and complete fixture identities at 15m, 3h, 24h and 48h.
 
 ## Stack Architecture
 

@@ -517,7 +517,8 @@ func (p *Proxy) buildResponseKey(head, endpoint string, r *http.Request, rawQuer
 	version := readCacheKeyVersion(endpoint)
 	tenant := r.Header.Get("X-Scope-OrgID")
 	fp := p.fingerprintFromCtx(r.Context(), r)
-	profile := p.responseProfileCacheKey(r)
+	var profileBuf [256]byte
+	profile := p.appendResponseProfileCacheKey(profileBuf[:0], r, endpoint)
 	var names string
 	if query != "" {
 		names = namesKey(r, query)
@@ -550,7 +551,7 @@ func (p *Proxy) buildResponseKey(head, endpoint string, r *http.Request, rawQuer
 		b.WriteString(fp)
 	}
 	b.WriteString(":profile:")
-	b.WriteString(profile)
+	b.Write(profile)
 	// queryStatsCompatFence: query and query_range values carry the
 	// entry-count trailer (query_stats_cache.go).
 	if queryKey {

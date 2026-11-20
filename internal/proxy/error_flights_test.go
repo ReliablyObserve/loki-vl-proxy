@@ -582,7 +582,7 @@ func TestErrorFlights_Metrics(t *testing.T) {
 // A failure read from the window's data (Loki's series limit) is held for the
 // data TTL, not the transient one, and answered again once it expires.
 //
-// conformance: semantics/error-cache-classes-and-ttl
+// conformance: semantics/error-cache-classes-and-ttl, limits/series-limit-error
 func TestErrorFlights_DataFailureHeldForDataTTL(t *testing.T) {
 	stub := newFlightStub(t, func(_ int64, w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -612,6 +612,22 @@ func TestErrorFlights_DataFailureHeldForDataTTL(t *testing.T) {
 	flightGet(h, context.Background(), target, "team-a")
 	if stub.calls.Load() == calls {
 		t.Fatal("after the data TTL the request must run again")
+	}
+	// A changed series policy must not reuse the held 400 or a cached 200
+	// from the other policy. The endpoint and the query remain identical.
+	p.maxStatsQuerySeries = 100
+	complete := flightGet(h, context.Background(), target, "team-a")
+	if complete.Code != http.StatusOK || !strings.Contains(complete.Body.String(), `"a3"`) {
+		t.Fatalf("raised limit reused a held failure: %d %s", complete.Code, complete.Body)
+	}
+	calls = stub.calls.Load()
+	if repeat := flightGet(h, context.Background(), target, "team-a"); repeat.Code != complete.Code || !bytes.Equal(stripQueryStats(repeat.Body.Bytes()), stripQueryStats(complete.Body.Bytes())) || stub.calls.Load() != calls {
+		t.Fatal("the complete answer changed its data or read the backend again at the same limit")
+	}
+	p.maxStatsQuerySeries = 1
+	limited := flightGet(h, context.Background(), target, "team-a")
+	if limited.Code != first.Code || limited.Body.String() != first.Body.String() {
+		t.Fatalf("lowered limit reused a complete answer: %d %s", limited.Code, limited.Body)
 	}
 }
 

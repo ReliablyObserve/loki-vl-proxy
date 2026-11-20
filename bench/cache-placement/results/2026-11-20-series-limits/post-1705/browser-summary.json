@@ -1,0 +1,162 @@
+{
+  "stats": {
+    "total": 6,
+    "expected": 6,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "ok": true
+  },
+  "cases": [
+    {
+      "title": "24h field cards load partial data with notices",
+      "duration_ms": 4176,
+      "fields": {
+        "batch_id": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true
+        },
+        "total": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true
+        },
+        "trace_id": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true
+        }
+      },
+      "screenshot": "partial-24h.png"
+    },
+    {
+      "title": "48h field cards load partial data with notices",
+      "duration_ms": 4174,
+      "fields": {
+        "batch_id": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true
+        },
+        "total": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true
+        },
+        "trace_id": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true
+        }
+      },
+      "screenshot": "partial-48h.png"
+    },
+    {
+      "title": "0.25h field cards load every value without truncation",
+      "duration_ms": 1945,
+      "fields": {
+        "total": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        },
+        "batch_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        },
+        "trace_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        }
+      },
+      "screenshot": "complete-0_25h.png"
+    },
+    {
+      "title": "3h field cards load every value without truncation",
+      "duration_ms": 2267,
+      "fields": {
+        "batch_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        },
+        "trace_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        },
+        "total": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        }
+      },
+      "screenshot": "complete-3h.png"
+    },
+    {
+      "title": "24h field cards load every value without truncation",
+      "duration_ms": 3530,
+      "fields": {
+        "batch_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        },
+        "total": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        },
+        "trace_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        }
+      },
+      "screenshot": "complete-24h.png"
+    },
+    {
+      "title": "48h field cards load every value without truncation",
+      "duration_ms": 3443,
+      "fields": {
+        "trace_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        },
+        "batch_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        },
+        "total": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true
+        }
+      },
+      "screenshot": "complete-48h.png"
+    }
+  ]
+}

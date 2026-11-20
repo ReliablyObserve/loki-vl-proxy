@@ -3165,29 +3165,62 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	for _, name := range []string{"start", "end", "step", "limit", "direction", "interval", "since", "time"} {
 		writePart(r.FormValue(name))
 	}
-	writePart(p.responseProfileCacheKey(r))
+	var profileBuf [256]byte
+	profile := p.appendResponseProfileCacheKey(profileBuf[:0], r, "query_range")
+	var digits [20]byte
+	key.Write(strconv.AppendInt(digits[:0], int64(len(profile)), 10))
+	key.WriteByte(':')
+	key.Write(profile)
 	writePart(p.fingerprintFromCtx(r.Context(), r))
 	writePart(p.responseNamesCacheKey(r, logqlQuery))
 	return key.String()
 }
 
 // responseProfileCacheKey covers negotiated tuple shape, the detected_level
-// derivation and the Grafana profile used by query dispatch. Content
+// derivation, effective metric series limit and Grafana dispatch profile. Content
 // compression varies independently.
-func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
+func (p *Proxy) responseProfileCacheKey(r *http.Request, endpoint string) string {
+	var buf [256]byte
+	return string(p.appendResponseProfileCacheKey(buf[:0], r, endpoint))
+}
+
+// appendResponseProfileCacheKey lets response-key builders write the profile
+// without allocating an intermediate string on every RAM or SSD hit.
+func (p *Proxy) appendResponseProfileCacheKey(dst []byte, r *http.Request, endpoint string) []byte {
 	profile := grafanaRuntimeProfile(r, "", r.URL.Path)
-	key := strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
-	if isGrafanaDrilldownRequest(r) {
-		// A Drilldown answer over the series limit depends on -drilldown-series-limit-mode: an answer cut one way
-		// is never served for the other, on this replica or on a peer.
-		key += "/sl-" + p.drilldownSeriesLimitModeOrDefault()
-		if p.drilldownSeriesLimitModeOrDefault() == drilldownSeriesLimitLoki {
-			// The answer over the limit depends on the split intervals the tenant resolves to too.
-			limits := p.queryLimitsFor(r.Header.Get("X-Scope-OrgID"))
-			key += "-" + limits.SplitQueriesByInterval.String() + "-" + limits.SplitInstantMetricQueriesByInterval.String()
+	parts := [...]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}
+	for i, part := range parts {
+		if i != 0 {
+			dst = append(dst, '/')
+		}
+		dst = append(dst, part...)
+	}
+	query := endpoint == "query" || endpoint == "query_range"
+	// The profile already classified the Source tag; do not parse it twice.
+	drilldown := profile.surface == "grafana_drilldown"
+	var mode string
+	if drilldown {
+		mode = p.drilldownSeriesLimitModeOrDefault()
+		dst = append(dst, "/sl-"...)
+		dst = append(dst, mode...)
+	}
+	if query || mode == drilldownSeriesLimitLoki {
+		limits := p.queryLimitsFor(r.Header.Get("X-Scope-Orgid"))
+		if mode == drilldownSeriesLimitLoki {
+			// The partial answer also depends on the tenant's split intervals.
+			dst = append(dst, '-')
+			dst = append(dst, limits.SplitQueriesByInterval.String()...)
+			dst = append(dst, '-')
+			dst = append(dst, limits.SplitInstantMetricQueriesByInterval.String()...)
+		}
+		if query {
+			// Only Loki answers depend on this limit. VL buckets remain reusable
+			// when the operator raises or lowers the global or tenant limit.
+			dst = append(dst, "/ms-"...)
+			dst = strconv.AppendInt(dst, int64(limits.MaxQuerySeries), 10)
 		}
 	}
-	return key
+	return dst
 }
 
 // drilldownPartialCounter counts a Drilldown answer cut by the series limit, by the mode that cut it.
