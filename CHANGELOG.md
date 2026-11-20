@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - VictoriaLogs reads the value as a number in its own way, so some values still differ from Loki: a size or a duration where Loki wants a number (and the other way round), hexadecimal and binary integers, and unit spellings Loki reads that VictoriaLogs does not (`us`, `1 KB`, `1kb`). On the recorded grid (81 queries over number, duration and size values, VictoriaLogs v1.49.0 and v1.54.0) 438 of 7,286 line decisions differ from Loki, down from 988.
   - A query that also compares a value with a signed number (`v = -5`) keeps the old text.
   - A new response cache fence, `@numeric-equality-v1:`, is read from the query's plan. Answers cached before the change are not served after it.
+- The series fold of a Drilldown or metric answer refuses a VictoriaLogs row that is not JSON (a trailing comma, bytes after the object, a raw control character or an invalid escape in a string) as unreadable, as the stats_query_range reader does, instead of copying it into an answer that is not JSON. Each row is validated before its fields are read (about 110–210 ns per row, no allocations).
 
 ## [2.355.0] - 2026-11-20
 
