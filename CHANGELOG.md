@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A label filter that compares a value after a `json` or `logfmt` parser for equality with a number, a duration or a byte size (`| json | status = 200`, `| logfmt | d != 5s`) now compares the value as a number, as Loki does. Before, the value had to be the literal's exact text: `200.0` or `2e2` did not match 200, and `!=` kept the lines without the label. Log queries and metric queries are both served this way.
+  - VictoriaLogs reads the value as a number in its own way, so some values still differ from Loki: a size or a duration where Loki wants a number (and the other way round), hexadecimal and binary integers, and unit spellings Loki reads that VictoriaLogs does not (`us`, `1 KB`, `1kb`). On the recorded grid (81 queries over number, duration and size values, VictoriaLogs v1.49.0 and v1.54.0) 438 of 7,286 line decisions differ from Loki, down from 988.
+  - A query that also compares a value with a signed number (`v = -5`) keeps the old text.
+  - A new response cache fence, `@numeric-equality-v1:`, is read from the query's plan. Answers cached before the change are not served after it.
+
 ## [2.355.0] - 2026-11-20
 
 ### Changed
@@ -15,13 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The `absent_over_time` check that every range request runs reads the calls from the query's parse, once. It split them off the text one at a time before, reading the rest again for each: a 2,500-call `label_replace` nest took 106 ms there and now takes 34 µs.
   - The plan's route rule covers a ranking (`topk`, `bottomk`, `sort`, `sort_desc`) and a `label_replace` at the root: the route of their operand, and for a `topk` or `bottomk` over a line count or a byte sum grouped by labels on a range equal to the step, the one grid of rows the handlers read. The handlers' routes are unchanged.
   - The Loki differential of metric queries now runs those rankings and `label_replace` calls too (1,052 queries, from 814), against recorded Loki and VictoriaLogs v1.49.0 and v1.54.0 answers. It found one difference the handlers already had: a `topk` or `bottomk` over a `max`, `min`, `avg` or `count` by labels on `query_range` ranks the streams' series instead of the groups (registry `semantics/rank-over-stream-first-aggregation-range`, open). The other differences it found are ties at the k-th place, where Loki's pick varies from one evaluation to the next.
-
-### Fixed
-
-- A label filter that compares a value after a `json` or `logfmt` parser for equality with a number, a duration or a byte size (`| json | status = 200`, `| logfmt | d != 5s`) now compares the value as a number, as Loki does. Before, the value had to be the literal's exact text: `200.0` or `2e2` did not match 200, and `!=` kept the lines without the label. Log queries and metric queries are both served this way.
-  - VictoriaLogs reads the value as a number in its own way, so some values still differ from Loki: a size or a duration where Loki wants a number (and the other way round), hexadecimal and binary integers, and unit spellings Loki reads that VictoriaLogs does not (`us`, `1 KB`, `1kb`). On the recorded grid (81 queries over number, duration and size values, VictoriaLogs v1.49.0 and v1.54.0) 438 of 7,286 line decisions differ from Loki, down from 988.
-  - A query that also compares a value with a signed number (`v = -5`) keeps the old text.
-  - A new response cache fence, `@numeric-equality-v1:`, is read from the query's plan. Answers cached before the change are not served after it.
 
 ## [2.354.0] - 2026-11-19
 
