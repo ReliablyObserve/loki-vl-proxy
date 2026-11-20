@@ -1,0 +1,74 @@
+=== RUN   TestNumericEqualityVictoriaLogsCost
+    numeric_equality_vlcost_test.go:220: VictoriaLogs v1.54.0, 600000 json rows over 24h, 9 runs each:
+          interleaved {app="nq"} | json | status = 200     1h0m0s baseline p50   7.854ms candidate p50    8.05ms (  +2.5%), count 15000
+          {app="nq"} | json | status = 200     1h0m0s  pair only p50   4.657ms  served p50   7.977ms  ( +71.3%)  counts 10000 / 15000
+          interleaved {app="nq"} | json | status = 200     6h0m0s baseline p50  58.108ms candidate p50  58.112ms (  +0.0%), count 90000
+          {app="nq"} | json | status = 200     6h0m0s  pair only p50  30.333ms  served p50  57.882ms  ( +90.8%)  counts 60000 / 90000
+          interleaved {app="nq"} | json | status = 200     24h0m0s baseline p50 186.682ms candidate p50 180.451ms (  -3.3%), count 360000
+          {app="nq"} | json | status = 200     24h0m0s  pair only p50 110.448ms  served p50 172.437ms  ( +56.1%)  counts 240000 / 360000
+          {app="nq"} | json | status = 200     empty selector: pair only p50     147µs  served p50     312µs
+          interleaved {app="nq"} | json | status != 200    1h0m0s baseline p50   7.295ms candidate p50   7.388ms (  +1.3%), count 10000
+          {app="nq"} | json | status != 200    1h0m0s  pair only p50   5.073ms  served p50   7.103ms  ( +40.0%)  counts 10000 / 10000
+          interleaved {app="nq"} | json | status != 200    6h0m0s baseline p50  55.404ms candidate p50  64.573ms ( +16.6%), count 60000
+          {app="nq"} | json | status != 200    6h0m0s  pair only p50  45.687ms  served p50  74.708ms  ( +63.5%)  counts 60000 / 60000
+          interleaved {app="nq"} | json | status != 200    24h0m0s baseline p50 165.019ms candidate p50 168.736ms (  +2.3%), count 240000
+          {app="nq"} | json | status != 200    24h0m0s  pair only p50 117.957ms  served p50 166.729ms  ( +41.3%)  counts 240000 / 240000
+          {app="nq"} | json | status != 200    empty selector: pair only p50     138µs  served p50     209µs
+          interleaved {app="nq"} | json | d = 5s           1h0m0s baseline p50  19.405ms candidate p50  19.037ms (  -1.9%), count 12498
+          {app="nq"} | json | d = 5s           1h0m0s  pair only p50  10.325ms  served p50  18.286ms  ( +77.1%)  counts 9372 / 12498
+          interleaved {app="nq"} | json | d = 5s           6h0m0s baseline p50  107.99ms candidate p50 107.824ms (  -0.2%), count 75000
+          {app="nq"} | json | d = 5s           6h0m0s  pair only p50  51.828ms  served p50  99.923ms  ( +92.8%)  counts 56250 / 75000
+          interleaved {app="nq"} | json | d = 5s           24h0m0s baseline p50 230.463ms candidate p50 223.604ms (  -3.0%), count 300000
+          {app="nq"} | json | d = 5s           24h0m0s  pair only p50 115.607ms  served p50 220.149ms  ( +90.4%)  counts 225000 / 300000
+          {app="nq"} | json | d = 5s           empty selector: pair only p50     118µs  served p50     238µs
+          interleaved {app="nq"} | json | size = 1KB       1h0m0s baseline p50    21.9ms candidate p50  16.043ms ( -26.7%), count 18749
+          {app="nq"} | json | size = 1KB       1h0m0s  pair only p50  10.078ms  served p50  16.193ms  ( +60.7%)  counts 12498 / 18749
+          interleaved {app="nq"} | json | size = 1KB       6h0m0s baseline p50 120.614ms candidate p50  84.703ms ( -29.8%), count 112501
+          {app="nq"} | json | size = 1KB       6h0m0s  pair only p50  49.098ms  served p50  89.004ms  ( +81.3%)  counts 75000 / 112501
+          interleaved {app="nq"} | json | size = 1KB       24h0m0s baseline p50 284.689ms candidate p50  200.67ms ( -29.5%), count 450004
+          {app="nq"} | json | size = 1KB       24h0m0s  pair only p50 123.403ms  served p50   198.7ms  ( +61.0%)  counts 300001 / 450004
+          {app="nq"} | json | size = 1KB       empty selector: pair only p50     113µs  served p50     416µs
+          fallback != on json: rows without the field   1h0m0s  raw rows read    5000, kept    2500, p50  14.433ms
+          fallback != on json: rows without the field   6h0m0s  raw rows read   30000, kept   15000, p50  72.283ms
+          fallback != on json: rows without the field   24h0m0s  raw rows read  120000, kept   60000, p50 212.647ms
+          fallback several-unit durations               1h0m0s  raw rows read    6250, kept    6250, p50  18.319ms
+          fallback several-unit durations               6h0m0s  raw rows read   37500, kept   37500, p50 104.038ms
+          fallback several-unit durations               24h0m0s  raw rows read  150000, kept  150000, p50 343.264ms
+    numeric_equality_vlcost_test.go:220: VictoriaLogs v1.49.0, 600000 json rows over 24h, 9 runs each:
+          interleaved {app="nq"} | json | status = 200     1h0m0s baseline p50   8.133ms candidate p50   7.775ms (  -4.4%), count 15000
+          {app="nq"} | json | status = 200     1h0m0s  pair only p50   4.778ms  served p50   8.367ms  ( +75.1%)  counts 10000 / 15000
+          interleaved {app="nq"} | json | status = 200     6h0m0s baseline p50  61.001ms candidate p50  58.624ms (  -3.9%), count 90000
+          {app="nq"} | json | status = 200     6h0m0s  pair only p50  32.213ms  served p50  59.635ms  ( +85.1%)  counts 60000 / 90000
+          interleaved {app="nq"} | json | status = 200     24h0m0s baseline p50 180.105ms candidate p50 184.819ms (  +2.6%), count 360000
+          {app="nq"} | json | status = 200     24h0m0s  pair only p50 110.908ms  served p50  178.79ms  ( +61.2%)  counts 240000 / 360000
+          {app="nq"} | json | status = 200     empty selector: pair only p50     132µs  served p50     272µs
+          interleaved {app="nq"} | json | status != 200    1h0m0s baseline p50   7.634ms candidate p50   7.509ms (  -1.6%), count 10000
+          {app="nq"} | json | status != 200    1h0m0s  pair only p50   5.132ms  served p50   7.421ms  ( +44.6%)  counts 10000 / 10000
+          interleaved {app="nq"} | json | status != 200    6h0m0s baseline p50  65.808ms candidate p50  64.696ms (  -1.7%), count 60000
+          {app="nq"} | json | status != 200    6h0m0s  pair only p50  44.701ms  served p50  74.791ms  ( +67.3%)  counts 60000 / 60000
+          interleaved {app="nq"} | json | status != 200    24h0m0s baseline p50 273.795ms candidate p50 268.908ms (  -1.8%), count 240000
+          {app="nq"} | json | status != 200    24h0m0s  pair only p50 174.914ms  served p50 259.976ms  ( +48.6%)  counts 240000 / 240000
+          {app="nq"} | json | status != 200    empty selector: pair only p50     145µs  served p50     236µs
+          interleaved {app="nq"} | json | d = 5s           1h0m0s baseline p50  20.147ms candidate p50  19.775ms (  -1.8%), count 12498
+          {app="nq"} | json | d = 5s           1h0m0s  pair only p50   11.19ms  served p50  20.635ms  ( +84.4%)  counts 9372 / 12498
+          interleaved {app="nq"} | json | d = 5s           6h0m0s baseline p50 101.894ms candidate p50  96.957ms (  -4.8%), count 75000
+          {app="nq"} | json | d = 5s           6h0m0s  pair only p50  53.649ms  served p50 100.239ms  ( +86.8%)  counts 56250 / 75000
+          interleaved {app="nq"} | json | d = 5s           24h0m0s baseline p50 374.778ms candidate p50 361.869ms (  -3.4%), count 300000
+          {app="nq"} | json | d = 5s           24h0m0s  pair only p50 187.052ms  served p50 370.834ms  ( +98.3%)  counts 225000 / 300000
+          {app="nq"} | json | d = 5s           empty selector: pair only p50     176µs  served p50     281µs
+          interleaved {app="nq"} | json | size = 1KB       1h0m0s baseline p50  23.132ms candidate p50  16.451ms ( -28.9%), count 18749
+          {app="nq"} | json | size = 1KB       1h0m0s  pair only p50   9.962ms  served p50  15.915ms  ( +59.8%)  counts 12498 / 18749
+          interleaved {app="nq"} | json | size = 1KB       6h0m0s baseline p50 118.791ms candidate p50  84.139ms ( -29.2%), count 112501
+          {app="nq"} | json | size = 1KB       6h0m0s  pair only p50  48.116ms  served p50  88.601ms  ( +84.1%)  counts 75000 / 112501
+          interleaved {app="nq"} | json | size = 1KB       24h0m0s baseline p50 475.354ms candidate p50 328.326ms ( -30.9%), count 450004
+          {app="nq"} | json | size = 1KB       24h0m0s  pair only p50 198.925ms  served p50 326.559ms  ( +64.2%)  counts 300001 / 450004
+          {app="nq"} | json | size = 1KB       empty selector: pair only p50     112µs  served p50     373µs
+          fallback != on json: rows without the field   1h0m0s  raw rows read    5000, kept    2500, p50  14.411ms
+          fallback != on json: rows without the field   6h0m0s  raw rows read   30000, kept   15000, p50  74.563ms
+          fallback != on json: rows without the field   24h0m0s  raw rows read  120000, kept   60000, p50 290.007ms
+          fallback several-unit durations               1h0m0s  raw rows read    6250, kept    6250, p50  17.865ms
+          fallback several-unit durations               6h0m0s  raw rows read   37500, kept   37500, p50 100.454ms
+          fallback several-unit durations               24h0m0s  raw rows read  150000, kept  150000, p50 418.699ms
+--- PASS: TestNumericEqualityVictoriaLogsCost (129.97s)
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus	130.415s

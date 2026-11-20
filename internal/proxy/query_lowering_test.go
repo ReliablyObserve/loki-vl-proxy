@@ -158,7 +158,6 @@ var loweringParityQueries = []struct {
 	// (writesTranslatorText).
 	{"sum over a stddev", `sum(stddev by (app) (count_over_time({app="a"}[5m])))`, false, "", ""},
 	{"label_replace around topk", `label_replace(topk(2, sum by (app) (count_over_time({app="a"}[5m]))), "x", "$1", "app", "(.*)")`, false, "", ""},
-	{"numeric equality after a parser", `sum(count_over_time({app="a"} | json | status == 500 [5m]))`, false, "", ""},
 	{"unwrap of a reserved field in another case", `sum(sum_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, false, "", ""},
 	{"keep before unwrap under a label_replace", `label_replace(first_over_time({app="a"} | json | keep app, n | unwrap n [5m]), "x", "$1", "app", "(.*)")`, false, "", ""},
 	{"vector", `vector(1)`, false, "", ""},
@@ -532,7 +531,6 @@ func TestQueryPlanLowering_ServesMetricConstructs(t *testing.T) {
 		{`sum without (pod) (rate({app="a"}[5m])) / 2`, ""},
 		{`vector(1) + sum(rate({app="a"}[5m]))`, ""},
 		// The plan writes Loki's reading, the translator another text.
-		{`sum(count_over_time({app="a"} | json | status == 500 [5m]))`, ""},
 		{`sum(sum_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, ""},
 		{`sum by (app) (max_over_time({app="a"} | json | keep app, n | unwrap n [5m])) / 2`, ""},
 		{`rate({app="a"}[5m])`, "RangeAgg"},
@@ -596,7 +594,7 @@ func TestQueryPlanLowering_WritesTranslatorTextGate(t *testing.T) {
 		`stddev(rate({a="b"}[5m])) / sum(rate({a="c"}[5m]))`:                                            false,
 		`sum without (x) (rate({a="b"}[5m])) > 1`:                                                       false,
 		`sum(rate({a="b"}[5m])) * vector(2)`:                                                            false,
-		`count_over_time({a="b"} | logfmt | n == 2 [5m])`:                                               false,
+		`count_over_time({a="b"} | logfmt | n == 2 [5m])`:                                               true,
 		`count_over_time({a="b"} | _stream="x" [5m])`:                                                   true,
 		`sum(max_over_time({a="b"} | json | unwrap _Stream_ID [5m]))`:                                   false,
 		`label_replace(max_over_time({a="b"} | json | keep n | unwrap n [5m]), "x", "$1", "a", "(.*)")`: false,

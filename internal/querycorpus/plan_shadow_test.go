@@ -117,7 +117,8 @@ var servedDivergences = map[string]string{
 	"semantics/translator-reads-marker-bytes-in-quoted-value": "TestMarkerBytesInLabelValueMeanWhatLokiMeans (internal/queryplan/lower)",
 	// A served row with the unspaced parser is held, on top, to the translator's text for the parser written with the
 	// blank (spacedParserText), which Loki reads as the same parser.
-	knownUnspacedParser: "TestUnspacedParserMatchesLoki (internal/queryplan/lower)",
+	knownUnspacedParser:                       "TestUnspacedParserMatchesLoki (internal/queryplan/lower)",
+	"semantics/label-filter-numeric-equality": "TestNumericEqualityAfterParserMatchesLoki (internal/queryplan/lower), TestPlanMatchesLokiOnLogQueries, TestPlanMatchesLokiOnMetricQueries (internal/querycorpus)",
 }
 
 // knownUnspacedParser is the recorded known divergence of a regexp or pattern parser written with no blank before its

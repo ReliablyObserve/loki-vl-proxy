@@ -99,8 +99,8 @@ func TestScreenMetric(t *testing.T) {
 		{`sum by (a_b) (count_over_time({app="a"} | json a_b="a.b" [1m]))`, "VectorAgg"},
 		{`sum by (app) (count_over_time({app="a"} | json | level_extracted="error" [1m]))`, "VectorAgg"},
 		// Label filters, values and names the translator reads unlike Loki.
-		{`sum(count_over_time({app="api"} |= "x" | json | status == 500 [5m]))`, ""},
-		{`sum(count_over_time({app="api"} | logfmt | status = 500 [5m]))`, ""},
+		{`sum(count_over_time({app="api"} |= "x" | json | status == 500 [5m]))`, "VectorAgg"},
+		{`sum(count_over_time({app="api"} | logfmt | status = 500 [5m]))`, "VectorAgg"},
 		{`sum(count_over_time({app="a"} | n > - .5 [5m]))`, ""},
 		{`sum(count_over_time({app="a"} | n > +2 [5m]))`, ""},
 		// A selector matcher or label filter on a name VictoriaLogs reserves is the stream tag the plan filters, served

@@ -1,0 +1,39 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+                                                                               │ /private/tmp/pr1705-translate-base.txt │ /private/tmp/pr1705-final-translation.log │
+                                                                               │                 sec/op                 │       sec/op         vs base              │
+TranslateQueryMissShapes/numeric_equality_after_parser-2                                                    20.29µ ± 1%          20.21µ ±  2%       ~ (p=0.937 n=6)
+TranslateQueryMissShapes/numeric_equality_metric-2                                                          21.28µ ± 2%          20.54µ ±  2%  -3.47% (p=0.002 n=6)
+TranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2                                       21.67µ ± 6%          20.71µ ±  1%  -4.46% (p=0.002 n=6)
+TranslateQueryMissShapes/vector_numeric_equality-2                                                          21.73µ ± 5%          23.10µ ±  9%       ~ (p=0.065 n=6)
+TranslateQueryMissShapesValidated/numeric_equality_after_parser-2                                           20.98µ ± 1%          20.56µ ±  1%  -2.01% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/numeric_equality_metric-2                                                 22.37µ ± 1%          21.11µ ± 11%       ~ (p=0.065 n=6)
+TranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2                              22.46µ ± 1%          20.88µ ±  4%  -7.01% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/vector_numeric_equality-2                                                 22.15µ ± 2%          22.53µ ±  6%  +1.71% (p=0.041 n=6)
+geomean                                                                                                     21.60µ               21.18µ        -1.95%
+
+                                                                               │ /private/tmp/pr1705-translate-base.txt │ /private/tmp/pr1705-final-translation.log │
+                                                                               │                  B/op                  │       B/op         vs base                │
+TranslateQueryMissShapes/numeric_equality_after_parser-2                                                   1.855Ki ± 0%        4.201Ki ± 0%  +126.39% (p=0.002 n=6)
+TranslateQueryMissShapes/numeric_equality_metric-2                                                         2.879Ki ± 0%        5.178Ki ± 0%   +79.85% (p=0.002 n=6)
+TranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2                                      3.059Ki ± 0%        4.200Ki ± 0%   +37.32% (p=0.002 n=6)
+TranslateQueryMissShapes/vector_numeric_equality-2                                                         2.783Ki ± 0%        5.904Ki ± 0%  +112.14% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/numeric_equality_after_parser-2                                          2.313Ki ± 0%        4.404Ki ± 0%   +90.38% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/numeric_equality_metric-2                                                3.537Ki ± 0%        5.381Ki ± 0%   +52.13% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2                             3.520Ki ± 0%        4.405Ki ± 0%   +25.17% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/vector_numeric_equality-2                                                3.424Ki ± 0%        6.108Ki ± 0%   +78.39% (p=0.002 n=6)
+geomean                                                                                                    2.861Ki             4.921Ki        +72.03%
+
+                                                                               │ /private/tmp/pr1705-translate-base.txt │ /private/tmp/pr1705-final-translation.log │
+                                                                               │               allocs/op                │     allocs/op       vs base               │
+TranslateQueryMissShapes/numeric_equality_after_parser-2                                                     32.00 ± 0%           43.00 ± 0%  +34.38% (p=0.002 n=6)
+TranslateQueryMissShapes/numeric_equality_metric-2                                                           45.00 ± 0%           54.00 ± 0%  +20.00% (p=0.002 n=6)
+TranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2                                        38.00 ± 0%           43.00 ± 0%  +13.16% (p=0.002 n=6)
+TranslateQueryMissShapes/vector_numeric_equality-2                                                           42.00 ± 0%           51.00 ± 0%  +21.43% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/numeric_equality_after_parser-2                                            41.00 ± 0%           48.00 ± 0%  +17.07% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/numeric_equality_metric-2                                                  56.00 ± 0%           59.00 ± 0%   +5.36% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2                               47.00 ± 0%           48.00 ± 0%   +2.13% (p=0.002 n=6)
+TranslateQueryMissShapesValidated/vector_numeric_equality-2                                                  53.00 ± 0%           56.00 ± 0%   +5.66% (p=0.002 n=6)
+geomean                                                                                                      43.64                49.95       +14.47%

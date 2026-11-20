@@ -21,6 +21,8 @@ func BenchmarkResponseKeyFences(b *testing.B) {
 		{"ip", `{app="a"} | json | addr = ip("10.0.0.0/8") | status = "500"`},
 		{"escaped_regexp", `{app="a"} |~ "\\d+ ms" | json | status = "500"`},
 		{"marker_bytes", `{app="a"} | o="\x02\x00\x02" | json`},
+		{"numeric_equality", `{app="a"} | json | status = 500`},
+		{"numeric_equality_metric", `sum(count_over_time({app="a"} | logfmt | status != 200 [5m]))`},
 		{"reserved_metric", `sum(count_over_time({app="a"} | _time="10" [5m]))`},
 		{"logfmt_presence", `sum(count_over_time({app="a"} | logfmt | msg != "" [5m]))`},
 		{"topk_json", `topk(3, sum by (x) (count_over_time({app="a"} | json x="x" [5m])))`},

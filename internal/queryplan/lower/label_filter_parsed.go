@@ -185,7 +185,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 	for i, key := range keys {
 		field := translate.SanitizeFieldIdentifier(key)
 		field = logsql.QuoteFieldName(field) // a dot or a hyphen, a key called not, in or the like, an exotic name
-		filters[i] = parsedFieldLeaf(field, e, lb.caps)
+		filters[i] = lb.parsedFieldLeaf(field, e)
 	}
 	// A numeric equality drops an entry without the label under both operators, as a comparison does.
 	matchesEmpty := !isNumericEquality(e) && translate.ParsedKeyMatchesEmpty(e.Value, op, isIP)
@@ -196,7 +196,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 	if base, collision := translate.ExtractedBase(label); collision && lb.keyParsers > 0 {
 		// A parsed label Loki renamed name_extracted where the stream has the label: its value is in a scratch
 		// field the parsers unpack the key into.
-		parsed := parsedFieldLeaf(translate.ExtractedScratch+"_"+base, e, lb.caps)
+		parsed := lb.parsedFieldLeaf(translate.ExtractedScratch+"_"+base, e)
 		if f, ok = translate.ExtractedFilter(base, parsed, f); !ok {
 			return logsql.FieldFilter{}, "LogSelect label filter _extracted"
 		}

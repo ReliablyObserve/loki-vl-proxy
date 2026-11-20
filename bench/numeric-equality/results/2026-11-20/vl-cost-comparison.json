@@ -1,0 +1,218 @@
+[
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | status = 200",
+    "window": "1h0m0s",
+    "base": "7.758ms",
+    "head": "8.114ms",
+    "delta": "+4.6",
+    "count": 15000
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | status = 200",
+    "window": "6h0m0s",
+    "base": "57.365ms",
+    "head": "56.709ms",
+    "delta": "-1.1",
+    "count": 90000
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | status = 200",
+    "window": "24h0m0s",
+    "base": "173.139ms",
+    "head": "169.307ms",
+    "delta": "-2.2",
+    "count": 360000
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | status != 200",
+    "window": "1h0m0s",
+    "base": "6.837ms",
+    "head": "6.864ms",
+    "delta": "+0.4",
+    "count": 10000
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | status != 200",
+    "window": "6h0m0s",
+    "base": "51.757ms",
+    "head": "52.337ms",
+    "delta": "+1.1",
+    "count": 60000
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | status != 200",
+    "window": "24h0m0s",
+    "base": "267.187ms",
+    "head": "267.105ms",
+    "delta": "-0.0",
+    "count": 240000
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | d = 5s",
+    "window": "1h0m0s",
+    "base": "18.17ms",
+    "head": "17.263ms",
+    "delta": "-5.0",
+    "count": 12498
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | d = 5s",
+    "window": "6h0m0s",
+    "base": "95.895ms",
+    "head": "92.625ms",
+    "delta": "-3.4",
+    "count": 75000
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | d = 5s",
+    "window": "24h0m0s",
+    "base": "376.887ms",
+    "head": "364.969ms",
+    "delta": "-3.2",
+    "count": 300000
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | size = 1KB",
+    "window": "1h0m0s",
+    "base": "21.672ms",
+    "head": "15.72ms",
+    "delta": "-27.5",
+    "count": 18749
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | size = 1KB",
+    "window": "6h0m0s",
+    "base": "120.346ms",
+    "head": "85.455ms",
+    "delta": "-29.0",
+    "count": 112501
+  },
+  {
+    "version": "v1.54.0",
+    "query": "{app=\"nq\"} | json | size = 1KB",
+    "window": "24h0m0s",
+    "base": "476.638ms",
+    "head": "331.596ms",
+    "delta": "-30.4",
+    "count": 450004
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | status = 200",
+    "window": "1h0m0s",
+    "base": "7.691ms",
+    "head": "7.443ms",
+    "delta": "-3.2",
+    "count": 15000
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | status = 200",
+    "window": "6h0m0s",
+    "base": "55.74ms",
+    "head": "50.318ms",
+    "delta": "-9.7",
+    "count": 90000
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | status = 200",
+    "window": "24h0m0s",
+    "base": "171.627ms",
+    "head": "163.908ms",
+    "delta": "-4.5",
+    "count": 360000
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | status != 200",
+    "window": "1h0m0s",
+    "base": "6.683ms",
+    "head": "6.728ms",
+    "delta": "+0.7",
+    "count": 10000
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | status != 200",
+    "window": "6h0m0s",
+    "base": "49.802ms",
+    "head": "50.944ms",
+    "delta": "+2.3",
+    "count": 60000
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | status != 200",
+    "window": "24h0m0s",
+    "base": "257.775ms",
+    "head": "262.269ms",
+    "delta": "+1.7",
+    "count": 240000
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | d = 5s",
+    "window": "1h0m0s",
+    "base": "16.978ms",
+    "head": "16.119ms",
+    "delta": "-5.1",
+    "count": 12498
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | d = 5s",
+    "window": "6h0m0s",
+    "base": "94.262ms",
+    "head": "91.161ms",
+    "delta": "-3.3",
+    "count": 75000
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | d = 5s",
+    "window": "24h0m0s",
+    "base": "367.077ms",
+    "head": "354.386ms",
+    "delta": "-3.5",
+    "count": 300000
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | size = 1KB",
+    "window": "1h0m0s",
+    "base": "21.945ms",
+    "head": "16.2ms",
+    "delta": "-26.2",
+    "count": 18749
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | size = 1KB",
+    "window": "6h0m0s",
+    "base": "116.592ms",
+    "head": "83.638ms",
+    "delta": "-28.3",
+    "count": 112501
+  },
+  {
+    "version": "v1.49.0",
+    "query": "{app=\"nq\"} | json | size = 1KB",
+    "window": "24h0m0s",
+    "base": "461.365ms",
+    "head": "325.413ms",
+    "delta": "-29.5",
+    "count": 450004
+  }
+]

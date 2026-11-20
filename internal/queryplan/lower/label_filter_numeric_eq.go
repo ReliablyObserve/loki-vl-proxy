@@ -2,7 +2,9 @@ package lower
 
 import (
 	"math"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -124,8 +126,17 @@ func numericEqualityBound(e *logql.LabelFilterExpr) (bound string, ok bool) {
 		if f == 0 {
 			return "0", true // -0
 		}
-		bound = strconv.FormatFloat(f, 'f', -1, 64)
-		return bound, len(bound) <= 32
+		// Eligibility checks need no owned string. Reuse an already canonical
+		// literal; only a changed spelling (2e2, 0200) needs an allocation.
+		var scratch [384]byte // the fixed representation of any finite float64
+		formatted := strconv.AppendFloat(scratch[:0], f, 'f', -1, 64)
+		if len(formatted) > 32 {
+			return "", false
+		}
+		if string(formatted) == e.Value {
+			return e.Value, true
+		}
+		return string(formatted), true
 	case logql.LabelFilterValueDuration:
 		d, err := time.ParseDuration(e.Value)
 		if err != nil || d < 0 || d >= maxExactBound {
@@ -163,12 +174,35 @@ func numericEqualityBound(e *logql.LabelFilterExpr) (bound string, ok bool) {
 // it) for a literal numericEqualityBound accepted: the entries whose value equals the bound as a number, or, for
 // !=, the entries that have a value and whose value does not.
 func numericEqualityFilter(field string, e *logql.LabelFilterExpr) logsql.FilterExpr {
+	return numericEqualityFilterMode(field, e, true)
+}
+
+func numericEqualityFilterMode(field string, e *logql.LabelFilterExpr, errors bool) logsql.FilterExpr {
+	var conversionError logsql.FilterExpr
+	if errors && e.Cmp != "!=" {
+		conversionError = numericEqualityErrors(field, e)
+	}
+	return numericEqualityFilterWithError(field, e, conversionError)
+}
+
+func numericEqualityFilterWithError(field string, e *logql.LabelFilterExpr, conversionError logsql.FilterExpr) logsql.FilterExpr {
 	bound, _ := numericEqualityBound(e)
-	equal := logsql.Group{Expr: logsql.AllOf{
+	// The range pair VictoriaLogs reads, kept to the values Loki reads in the literal's kind, and the spellings of the
+	// value in a unit VictoriaLogs does not read (label_filter_numeric_syntax.go).
+	var equal logsql.FilterExpr = logsql.Group{Expr: logsql.AllOf{
 		logsql.FieldFilter{Field: field, Op: logsql.FieldOpGTE, Value: bound},
 		logsql.FieldFilter{Field: field, Op: logsql.FieldOpLTE, Value: bound},
+		logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: numericSyntaxPattern(e)},
 	}}
+	if spellings := exactSpellingsPattern(e); spellings != "" {
+		equal = logsql.Group{Expr: logsql.AnyOf{equal, logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: spellings}}}
+	}
 	if e.Cmp != "!=" {
+		// A conversion failure is a retained line carrying LabelFilterErr in
+		// Loki, including for equality (recorded numeric-equality oracle).
+		if conversionError != nil {
+			return logsql.Group{Expr: logsql.OrExpr{Left: equal, Right: conversionError}}
+		}
 		return equal
 	}
 	return logsql.Group{Expr: logsql.AllOf{
@@ -177,14 +211,115 @@ func numericEqualityFilter(field string, e *logql.LabelFilterExpr) logsql.Filter
 	}}
 }
 
+// numericEqualityErrors selects non-empty values outside the literal kind's
+// conversion grammar. Non-finite floats convert successfully, so they are
+// excluded from the error branch even though they cannot equal a finite bound.
+// Overflow and present-empty values need separate classification.
+func numericEqualityErrors(field string, e *logql.LabelFilterExpr) logsql.FilterExpr {
+	pattern := numericSyntaxPattern(e)
+	if e.Kind == logql.LabelFilterValueNumber {
+		pattern = numberErrorFreeSyntax
+	}
+	return logsql.AllOf{
+		logsql.FieldFilter{Field: field, Op: logsql.FieldOpAny},
+		logsql.Exclude{Expr: logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: pattern}},
+	}
+}
+
+// numericGeneratedErrorFilter reads the conversion predicates evaluated before
+// this stage. Loki filters its generated error independently of a source
+// __error__ key. The supported pipeline never rewrites these fields, so the
+// predicates preserve stage order without overwriting any source label.
+func numericGeneratedErrorFilter(e *logql.LabelFilterExpr, seen logsql.AnyOf, alreadyFailed bool) (logsql.FilterExpr, bool, bool) {
+	matches := func(value string) bool {
+		switch e.Cmp {
+		case "=", "==":
+			return value == e.Value
+		case "!=":
+			return value != e.Value
+		case "=~", "!~":
+			matched, _ := regexp.MatchString("^(?:"+e.Value+")$", value)
+			return matched == (e.Cmp == "=~")
+		}
+		return false
+	}
+	clean, failed := matches(""), matches("LabelFilterErr")
+	if alreadyFailed || len(seen) == 0 {
+		if alreadyFailed && failed || !alreadyFailed && clean {
+			return logsql.Wildcard{}, clean, failed
+		}
+		return logsql.Exclude{Expr: logsql.Wildcard{}}, clean, failed
+	}
+	switch {
+	case clean && failed:
+		return logsql.Wildcard{}, clean, failed
+	case failed:
+		return logsql.Group{Expr: seen}, clean, failed
+	case clean:
+		return logsql.Exclude{Expr: logsql.Group{Expr: seen}}, clean, failed
+	default:
+		return logsql.Exclude{Expr: logsql.Wildcard{}}, clean, failed
+	}
+}
+
+func numericPipelineFiltersError(stages []logql.Stage) bool {
+	for _, stage := range stages {
+		if s, ok := stage.(*logql.LabelFilterStage); ok && s.Expr != nil && s.Expr.Name == "__error__" {
+			return true
+		}
+	}
+	return false
+}
+
 // parsedFieldLeaf is the filter of one leaf on a parsed key's field: the numeric comparison for a numeric
 // equality, else the filter of a leaf without a parser (translate.LabelFilterLeaf).
-func parsedFieldLeaf(field string, e *logql.LabelFilterExpr, caps logsql.Capabilities) logsql.FilterExpr {
+func (lb *leafBuilder) parsedFieldLeaf(field string, e *logql.LabelFilterExpr) logsql.FilterExpr {
 	if isNumericEquality(e) {
-		return numericEqualityFilter(field, e)
+		if lb.numericErrorMode {
+			lb.numericError = numericEqualityErrors(field, e)
+			return numericEqualityFilterWithError(field, e, lb.numericError)
+		}
+		return numericEqualityFilterMode(field, e, false)
 	}
-	f, _ := translate.LabelFilterLeaf(field, e.Cmp, e.Value, e.Kind == logql.LabelFilterValueIP, caps) // the operator is known
+	f, _ := translate.LabelFilterLeaf(field, e.Cmp, e.Value, e.Kind == logql.LabelFilterValueIP, lb.caps) // the operator is known
 	return f
+}
+
+// NumericEqualityErrorPipeline is the shared boundary for native error-row
+// classification and stored-row replay. Compound filters, extraction aliases,
+// sanitized key alternatives and formatting retain their previous path until
+// their error-side effects have their own recorded proof.
+func NumericEqualityErrorPipeline(stages []logql.Stage) bool {
+	parsers, numeric := 0, false
+	for _, stage := range stages {
+		switch s := stage.(type) {
+		case *logql.ParserStage:
+			parsers++
+			if parsers != 1 || (s.Type != logql.ParserJSON && s.Type != logql.ParserLogfmt) || s.Param != "" || len(s.Fields) != 0 {
+				return false
+			}
+		case *logql.LabelFilterStage:
+			e := s.Expr
+			if e == nil || !e.IsLeaf() {
+				return false
+			}
+			if isNumericEquality(e) {
+				if parsers == 0 || strings.ContainsAny(e.Name, "_.-") || !plainKey(e.Name) {
+					return false
+				}
+				if _, ok := numericEqualityBound(e); !ok {
+					return false
+				}
+				numeric = true
+			} else if e.Kind != logql.LabelFilterValueString || e.Name == "__error_details__" || (e.Name == "__error__" && !numeric) {
+				return false
+			}
+		case *logql.LineFilterStage:
+		default:
+			return false
+		}
+	}
+	return numeric
 }
 
 // leafFilter is the filter of a leaf on one field after a parser: the numeric comparison of a numeric equality after a
@@ -192,23 +327,23 @@ func parsedFieldLeaf(field string, e *logql.LabelFilterExpr, caps logsql.Capabil
 // translator writes them).
 func (lb *leafBuilder) leafFilter(e *logql.LabelFilterExpr, labelFn func(string) string) logsql.FilterExpr {
 	if lb.keyParsed {
-		return parsedLabelLeaf(e, labelFn, lb.caps)
+		return lb.parsedLabelLeaf(e, labelFn)
 	}
 	return labelFilterLeaf(e, labelFn, lb.caps)
 }
 
 // parsedLabelLeaf is labelFilterLeaf for a leaf after a json or logfmt parser: the label named like the selector
 // names it, and the numeric comparison for a numeric equality.
-func parsedLabelLeaf(e *logql.LabelFilterExpr, labelFn func(string) string, caps logsql.Capabilities) logsql.FilterExpr {
+func (lb *leafBuilder) parsedLabelLeaf(e *logql.LabelFilterExpr, labelFn func(string) string) logsql.FilterExpr {
 	if !isNumericEquality(e) {
-		return labelFilterLeaf(e, labelFn, caps)
+		return labelFilterLeaf(e, labelFn, lb.caps)
 	}
 	label := translate.SanitizeFieldIdentifier(e.Name)
 	if labelFn != nil {
 		label = translate.SanitizeFieldIdentifier(labelFn(label))
 	}
 	// A dot or a hyphen, a keyword, or a rune VictoriaLogs does not join into a word: quoted.
-	return numericEqualityFilter(logsql.QuoteFieldName(label), e)
+	return lb.parsedFieldLeaf(logsql.QuoteFieldName(label), e)
 }
 
 // WritesNumericEquality reports a plan with a numeric, duration or bytes equality label filter after a json or

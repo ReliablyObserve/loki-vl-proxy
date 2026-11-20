@@ -296,6 +296,18 @@ answer is held only for its class's TTL (`cache.Policy`). Keep it that way:
   the build, the VictoriaLogs release and the routing digest, never a
   per-process counter.
 
+## Progress and completion summaries
+
+Before opening each pull request, give the owner a Polish summary of its
+scope, main-versus-PR changes, executed checks and measurements, remaining
+gaps and review readiness. Distinguish measured results from expectations.
+Code, documentation and pull request text remain in English.
+
+At the end of the work, provide a second summary with the delivered outcome,
+evidence links, unfinished work, playground state and any processes still
+running. Never describe an unfinished check as passed or imply that no work
+is running without checking. These summaries do not add an approval gate.
+
 ## Cache change evidence in pull requests
 
 Every PR that changes cache behavior must put a readable **main versus PR**

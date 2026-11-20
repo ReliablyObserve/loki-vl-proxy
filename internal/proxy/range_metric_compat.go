@@ -1008,7 +1008,11 @@ func withWindowPhaseFilter(ctx context.Context, query string, start time.Time, s
 		b.WriteByte(' ')
 		b.WriteString(tail)
 	}
-	return b.String()
+	result := b.String()
+	if check := unwrapCheckFrom(ctx); check != nil {
+		check.numericDerivedQuery(query, result)
+	}
+	return result
 }
 
 // windowPhaseFilterMaxLen bounds windowPhaseFilter's text: its fixed words and four integers of at most 20 bytes.
@@ -1119,12 +1123,13 @@ const logfmtPresenceResponseVersion = "@logfmt-presence-v1:"
 // produced by older binaries whose burst coalescer checked only stored fields.
 // Scope the one-time cache miss to ungrouped logfmt presence counts.
 func logfmtPresenceResponseKeyVersion(r *http.Request, query string) string {
-	return logfmtPresenceFence(r, query, spelledOtherwise(query))
+	other := spelledOtherwise(query)
+	return logfmtPresenceFence(r, query, containsWord(query, "logfmt", other))
 }
 
 // logfmtPresenceFence is the fence of a query that spelledOtherwise reported on (other).
-func logfmtPresenceFence(r *http.Request, query string, other bool) string {
-	if !containsWord(query, "logfmt", other) || !emptyStringComparisonIn(query) {
+func logfmtPresenceFence(r *http.Request, query string, logfmtWord bool) string {
+	if !logfmtWord || !emptyStringComparisonIn(query) {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -2099,6 +2104,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		if marked {
 			jsonCheck.takeRawRowMark(v, ts)
 		}
+		unwrapCheckFrom(ctx).takeNumericErrorRow(baseQuery, ts, v)
 
 		sampleValue, ok := p.extractManualSampleValueFJ(v, field, unwrapConv)
 		if !ok {

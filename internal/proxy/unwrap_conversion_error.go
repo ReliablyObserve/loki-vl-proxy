@@ -41,6 +41,8 @@ import (
 // label, its conversion, the range, the stages before and after the unwrap, and the parser hints (the labels the
 // parsers extract; nil extracts every label).
 type unwrapErrorProbe struct {
+	numeric        bool // a numeric label-filter error, without an unwrap
+	numericSource  string
 	label          string
 	conv           string
 	window         time.Duration
@@ -82,8 +84,7 @@ func unwrapErrorProbes(expr logqlpkg.Expr) []unwrapErrorProbe {
 // the query on its conversion errors in a way the detection evaluates.
 func unwrapErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation) (unwrapErrorProbe, bool) {
 	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
-	if !ok || ra.Offset != "" {
-		// A range read at an offset is outside what the detection evaluates (registered).
+	if !ok {
 		return unwrapErrorProbe{}, false
 	}
 	at := -1
@@ -93,6 +94,15 @@ func unwrapErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorA
 		}
 	}
 	if at < 0 {
+		if !numericEqualityPipeline(lq.Pipeline) {
+			return unwrapErrorProbe{}, false
+		}
+		return unwrapErrorProbe{numeric: true, numericSource: lq.String(), label: errorLabel, conv: numericFilterConversion,
+			window: ra.RangeDuration, offset: ra.OffsetDuration, pipeline: lq.Pipeline,
+			hints: unwrapParserHints(ra, parent, lq.Pipeline, nil, "")}, true
+	}
+	if ra.Offset != "" {
+		// Offset unwrap conversions retain their registered detection boundary.
 		return unwrapErrorProbe{}, false
 	}
 	uw := lq.Pipeline[at].(*logqlpkg.UnwrapStage)
@@ -209,7 +219,7 @@ func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAgg
 			return nil
 		}
 		labels = ra.Grouping.Labels
-	case parent != nil && parent.Op == logqlpkg.VectorSum && (ra.Op == logqlpkg.RangeSumOverTime || ra.Op == logqlpkg.RangeRate):
+	case parent != nil && parent.Op == logqlpkg.VectorSum && (label == "" || ra.Op == logqlpkg.RangeSumOverTime || ra.Op == logqlpkg.RangeRate):
 		if parent.Grouping != nil {
 			if parent.Grouping.Without {
 				return nil
@@ -220,7 +230,9 @@ func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAgg
 		return nil
 	}
 	hints := make(map[string]bool, len(labels)+1)
-	hints[label] = true
+	if label != "" {
+		hints[label] = true
+	}
 	if base, ok := strings.CutSuffix(label, extractedSuffix); ok && base != "" {
 		// The parser extracts the key under its own name; the suffix comes from the collision.
 		hints[base] = true
@@ -1050,6 +1062,10 @@ type unwrapCheck struct {
 	// json is the request's JSON parser error detection, nil when the query
 	// has nothing to check (json_parser_error_check.go).
 	json *jsonErrorCheck
+	// numericFailure holds an unconfirmed numeric error flag. Such an answer
+	// must fail closed rather than cache a success with a flagged group missing.
+	numericFailure error
+	numericBases   map[string][]unwrapErrorProbe
 }
 
 // unwrapFirstWindow is the lookup of the first evaluation window: done closes when it answered, err is Loki's
@@ -1105,6 +1121,10 @@ func (c *unwrapCheck) countingStatsQuery(path string, params url.Values) (url.Va
 		errors := c.accepts(field, conv)
 		return errors, errors || conv == ""
 	})
+	if !ok && c.accepts(errorLabel, numericFilterConversion) {
+		rewritten, base, ok = numericFilterCountingQuery(query)
+		field, conv, errors = errorLabel, numericFilterConversion, true
+	}
 	if !ok {
 		return params, nil, false
 	}
@@ -1225,7 +1245,11 @@ func (c *unwrapCheck) startFirstWindow(h unwrapHit, early bool) *unwrapFirstWind
 		writer := c.writer
 		go func() {
 			if writer != nil {
-				for _, probe := range c.probesFor(h.field, h.conv) {
+				probes := c.probesFor(h.field, h.conv)
+				if h.conv == numericFilterConversion {
+					probes = c.numericProbesFor(h.base)
+				}
+				for _, probe := range probes {
 					from, _, _ := c.windows(probe)
 					firstEnd := c.start.Add(-probe.offset)
 					if err := c.lookupHit(writer.ctx, writer.p, probe, h, from, firstEnd); err != nil {
@@ -1344,12 +1368,19 @@ func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHi
 		}
 		c.looked[h] = true
 		looked := map[[2]time.Duration]bool{}
-		for _, probe := range c.probesFor(h.field, h.conv) {
+		probes := c.probesFor(h.field, h.conv)
+		if h.conv == numericFilterConversion {
+			probes = c.numericProbesFor(h.base)
+		}
+		for _, probe := range probes {
 			if looked[[2]time.Duration{probe.window, probe.offset}] {
 				continue // an identical aggregation (both operands of a binary operation) reads the same rows
 			}
 			looked[[2]time.Duration{probe.window, probe.offset}] = true
 			if c.lookups >= unwrapMaxLookups {
+				if probe.numeric {
+					c.failNumericProof(io.ErrUnexpectedEOF)
+				}
 				return nil
 			}
 			from, to, _ := c.windows(probe)
@@ -1376,8 +1407,18 @@ func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHi
 // lookupHit reads the flagged rows of the hit's query between from and to (inclusive) and returns Loki's error
 // for the first row Loki fails on.
 func (c *unwrapCheck) lookupHit(ctx context.Context, p *Proxy, probe unwrapErrorProbe, h unwrapHit, from, to time.Time) *orderedJSONPipelineError {
-	rows, err := p.unwrapLookupRows(ctx, unwrapLookupQuery(h.base, h.field, h.conv)+" | limit 3", from, to)
+	query := unwrapLookupQuery(h.base, h.field, h.conv)
+	if probe.numeric {
+		query = h.base + " " + numericErrorLookupPipe
+		if !c.instant && c.step > probe.window {
+			query = withWindowPhaseFilter(ctx, query, c.start.Add(-probe.offset), c.step, probe.window)
+		}
+	}
+	rows, err := p.unwrapLookupRows(ctx, query+" | limit 3", from, to)
 	if err != nil {
+		if probe.numeric {
+			c.failNumericProof(err)
+		}
 		return nil
 	}
 	_, _, last := c.windows(probe)
@@ -1390,15 +1431,19 @@ func (c *unwrapCheck) lookupHit(ctx context.Context, p *Proxy, probe unwrapError
 		visible = append(visible, row)
 	}
 	if len(visible) == 0 {
+		if probe.numeric {
+			c.failNumericProof(io.ErrUnexpectedEOF)
+		}
 		return nil
 	}
 	stored := make([]map[string]string, len(visible))
+	storeErrors := make([]error, len(visible))
 	var wg sync.WaitGroup
 	for i, row := range visible {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			stored[i], _ = p.unwrapStoredRow(ctx, probe, row)
+			stored[i], storeErrors[i] = p.unwrapStoredRow(ctx, probe, row)
 		}()
 	}
 	wg.Wait()
@@ -1409,6 +1454,15 @@ func (c *unwrapCheck) lookupHit(ctx context.Context, p *Proxy, probe unwrapError
 		if err := p.unwrapRowError(ctx, probe, row, h.field); err != nil {
 			return err
 		}
+	}
+	if probe.numeric {
+		for _, err := range storeErrors {
+			if err != nil {
+				c.failNumericProof(err)
+				return nil
+			}
+		}
+		c.failNumericProof(io.ErrUnexpectedEOF)
 	}
 	return nil
 }
@@ -1535,6 +1589,14 @@ func (p *Proxy) unwrapRowError(ctx context.Context, probe unwrapErrorProbe, row 
 	if err != nil {
 		return nil
 	}
+	if probe.numeric {
+		levels := p.newLogRowLevels()
+		stream := levels.stream([]byte(row["_stream"]))
+		name := detectedLevelName(stream.labels)
+		if base[name] == "" {
+			base[name] = levels.stringRow(stored, stream).String()
+		}
+	}
 	formatted := row[unwrapFormattedField]
 	if formatted == "" {
 		formatted = row["_msg"]
@@ -1565,7 +1627,16 @@ func dropIngestUnpackedFields(stored map[string]string) {
 // makes a sample of it, makes none, or the pipeline is not one the check reproduces.
 func unwrapLokiError(probe unwrapErrorProbe, base map[string]string, line, formatted string) *orderedJSONPipelineError {
 	labels, parsed, ok := unwrapLokiLabels(probe, base, line, formatted)
-	if !ok || labels == nil || labels["__preserve_error__"] != "" {
+	if !ok || labels == nil {
+		return nil
+	}
+	if probe.numeric {
+		if labels[errorLabel] != "" && labels["__preserve_error__"] != "true" {
+			return lokiPipelineErrorLabels(labels, true)
+		}
+		return nil
+	}
+	if labels["__preserve_error__"] != "" {
 		return nil
 	}
 	value := labels[probe.label]
@@ -1603,12 +1674,26 @@ func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, form
 	labels := cloneStringMap(base)
 	parsed := map[string]bool{}
 	preserve := probe.hints[errorLabel]
+	includeSourceErrors := probe.numeric || numericEqualityPipeline(probe.pipeline)
+	generatedError := ""
 	text := line
 	for _, st := range probe.pipeline {
 		switch s := st.(type) {
 		case *logqlpkg.ParserStage:
-			if !unwrapParseLine(s, text, labels, parsed, preserve) {
+			var generated *string
+			if includeSourceErrors {
+				generated = &generatedError
+			}
+			if !unwrapParseLine(s, text, labels, parsed, preserve, includeSourceErrors, generated) {
 				return nil, nil, false
+			}
+			if probe.numeric && probe.hints != nil {
+				for name := range parsed {
+					if !probe.hints[name] && (generatedError == "" || !numericErrorKey(name)) {
+						delete(labels, name)
+						delete(parsed, name)
+					}
+				}
 			}
 		case *logqlpkg.LineFormatStage:
 			text = formatted
@@ -1617,7 +1702,17 @@ func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, form
 				return nil, nil, false
 			}
 		case *logqlpkg.LabelFilterStage:
-			keep, known := unwrapLabelFilterKeeps(s, labels)
+			filterLabels := labels
+			if includeSourceErrors && s.Expr != nil && s.Expr.IsLeaf() && s.Expr.Name == errorLabel {
+				filterLabels = cloneStringMap(labels)
+				filterLabels[errorLabel] = generatedError
+			}
+			keep, known, conversionErr := unwrapLabelFilterResult(s, filterLabels)
+			if conversionErr != nil {
+				generatedError = "LabelFilterErr"
+				labels[errorLabel] = "LabelFilterErr"
+				labels[errorDetailsLabel] = conversionErr.Error()
+			}
 			if !known {
 				return nil, nil, false
 			}
@@ -1678,42 +1773,50 @@ func unwrapLabelFormat(stage *logqlpkg.LabelFormatStage, labels map[string]strin
 // comparison with a number, a duration or a byte size (a label missing is dropped, one that does not convert kept,
 // with Loki's error). known is false for any other filter.
 func unwrapLabelFilterKeeps(stage *logqlpkg.LabelFilterStage, labels map[string]string) (keep, known bool) {
+	keep, known, _ = unwrapLabelFilterResult(stage, labels)
+	return keep, known
+}
+
+// unwrapLabelFilterResult retains a conversion error separately from its keep
+// verdict. A failed conversion keeps the line; subsequent stages must see its
+// error during the bounded stored-row replay.
+func unwrapLabelFilterResult(stage *logqlpkg.LabelFilterStage, labels map[string]string) (keep, known bool, conversionErr error) {
 	if stage == nil {
-		return false, false
+		return false, false, nil
 	}
 	if compiled, valid := compileOrderedJSONStage(stage); valid && compiled.filter != nil {
-		return compiled.filter.Matches(labels[compiled.filter.Field]), true
+		return compiled.filter.Matches(labels[compiled.filter.Field]), true, nil
 	}
 	label, cmp, literal, ok := unwrapComparison(stage)
 	if !ok {
-		return false, false
+		return false, false, nil
 	}
 	conv, ok := unwrapComparisonConv(literal)
 	if !ok {
-		return false, false
+		return false, false, nil
 	}
 	bound, _ := convertUnwrap(literal, conv)
 	raw, present := labels[label]
 	if !present {
-		return false, true
+		return false, true, nil
 	}
 	value, err := convertUnwrap(raw, conv)
 	if err != nil {
-		return true, true
+		return true, true, err
 	}
 	switch cmp {
 	case ">":
-		return value > bound, true
+		return value > bound, true, nil
 	case ">=":
-		return value >= bound, true
+		return value >= bound, true, nil
 	case "<":
-		return value < bound, true
+		return value < bound, true, nil
 	case "<=":
-		return value <= bound, true
+		return value <= bound, true, nil
 	case "!=":
-		return value != bound, true
+		return value != bound, true, nil
 	}
-	return value == bound, true
+	return value == bound, true, nil
 }
 
 // unwrapComparisonConv is the conversion a comparison literal is read with: a number, a duration, a byte size.
@@ -1734,9 +1837,9 @@ func unwrapComparisonConv(literal string) (string, bool) {
 // TestUnwrapParsersMatchRecordedLoki): a name the stage extracts that a stored label already holds gets the
 // _extracted suffix, a name an earlier stage extracted is kept, and the stage's own first non-empty value of a
 // name wins (json, logfmt) or its last (unpack). ok is false for a stage the check does not reproduce.
-func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string]string, parsed map[string]bool, preserveError bool) bool {
+func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string]string, parsed map[string]bool, preserveError, includeSourceErrors bool, generated *string) bool {
 	add := func(name, value string, last bool) {
-		if name == "" || name == errorLabel || name == errorDetailsLabel {
+		if name == "" || (!includeSourceErrors && numericErrorKey(name)) {
 			return
 		}
 		if _, stored := labels[name]; stored && !parsed[name] {
@@ -1762,6 +1865,9 @@ func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string
 		})
 		if err != nil {
 			labels[errorLabel] = "JSONParserErr"
+			if generated != nil {
+				*generated = "JSONParserErr"
+			}
 			labels[errorDetailsLabel] = err.Error()
 			if preserveError {
 				labels["__preserve_error__"] = "true"
@@ -1870,15 +1976,25 @@ type unwrapLookupWriter struct {
 // check) and, when a conversion error can fail the query, the writer the handler writes to. A heavy range read of
 // a query that met a conversion error lately looks its first window up at once.
 func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Request, logql string, isRange bool) (*http.Request, *unwrapLookupWriter) {
-	if !strings.Contains(logql, "unwrap") || unwrapCheckFrom(r.Context()) != nil {
+	if strings.HasPrefix(strings.TrimSpace(logql), "{") {
+		return r, nil // log responses reconstruct marked labels; they have no metric-error writer
+	}
+	if (!strings.Contains(logql, "unwrap") && !strings.Contains(logql, "json") && !strings.Contains(logql, "logfmt")) || unwrapCheckFrom(r.Context()) != nil {
 		// An inner request (an operand, a fold's evaluation) reports to the check of the request it serves.
 		return r, nil
 	}
-	expr, err := parseLogQLExpr(r.Context(), logql)
-	if err != nil || !unwrapExprHasUnwrap(expr) {
+	expr, known := sharedLogQLExpr(logql)
+	var err error
+	if !known {
+		expr, err = parseLogQLExpr(r.Context(), logql)
+	}
+	if err != nil {
 		return r, nil
 	}
 	check := &unwrapCheck{probes: unwrapErrorProbes(expr), instant: !isRange, query: logql}
+	if len(check.probes) == 0 && !unwrapExprHasUnwrap(expr) {
+		return r, nil
+	}
 	if p.labelTranslator != nil {
 		check.vlName = p.labelTranslator.ToVL
 	}
@@ -1989,7 +2105,13 @@ func (l *unwrapLookupWriter) decide() {
 		l.err = l.check.json.confirm(l.ctx, l.p, l.check)
 	}
 	if l.err == nil {
-		if l.backendErr = l.check.json.backendFailure(); l.backendErr != nil {
+		l.check.mu.Lock()
+		l.backendErr = l.check.numericFailure
+		l.check.mu.Unlock()
+		if l.backendErr == nil {
+			l.backendErr = l.check.json.backendFailure()
+		}
+		if l.backendErr != nil {
 			// A JSON parser error lookup VictoriaLogs did not answer: Loki's failed-backend answer, through the
 			// error layer, with the client's context.
 			l.backendStatus = l.p.writeErr(l.out, l.parent, l.backendErr)

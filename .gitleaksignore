@@ -5,3 +5,7 @@
 
 # A test marker string named "secret" (the text a test asserts never reaches a client), not a credential.
 f274ee0f80db00f4112b3342bd623c5a71992cc5:internal/proxy/detected_level_levelless_test.go:generic-api-key:290
+# Verified public SHA-256 digests of response-fence source files, not credentials.
+# Exact historical commit/file/rule/line only; current metadata separates path and digest.
+b416200f324830b422af1d8c38143d03d2fe6796:bench/numeric-equality/results/2026-11-20/verification.json:generic-api-key:63
+b416200f324830b422af1d8c38143d03d2fe6796:bench/numeric-equality/results/2026-11-20/verification.json:generic-api-key:65

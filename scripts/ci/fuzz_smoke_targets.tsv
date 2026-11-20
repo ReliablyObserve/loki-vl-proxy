@@ -28,6 +28,7 @@ smoke	internal/proxy	FuzzUnwrapWindowForm	12s	-	the unwrap window forms, and a r
 smoke	internal/proxy	FuzzConvertUnwrap	12s	-	the unwrap conversion is ParseFloat's, ParseDuration's and humanize v1.0.1's ParseBytes', and the gate keeps every value it converts
 smoke	internal/proxy	FuzzLokiLogfmtPairs	12s	-	the logfmt reading terminates, yields valid keys and reads back the pairs it yields
 smoke	internal/proxy	FuzzResponseKeyFencesMatchParsedTree	12s	-	every response key fence fires for the construct the parsed tree holds, in any keyword case, comment and name spelling, and keeps the keys its older screen fired for
+smoke	internal/proxy	FuzzNumericEqualityFence	12s	-	the numeric equality response fence fires on every query whose plan writes a numeric, duration or bytes equality after a json or logfmt parser
 smoke	internal/proxy	FuzzTumblingStatsRangeParams	12s	-	the tumbling stats_query_range form built once equals the form built and overwritten
 smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
 smoke	internal/proxy	FuzzTenantHeader	12s	-	X-Scope-OrgID check: Loki's tenant ID rules, own-tenant routing
@@ -174,6 +175,7 @@ smoke	internal/queryplan/lower	FuzzParserLowering	12s	-	json, logfmt, drop and k
 smoke	internal/queryplan/lower	FuzzUnpackLowering	12s	-	an unpack under a range aggregation lowers to the query the string translator writes only where the result reads neither its labels nor its line
 smoke	internal/queryplan/lower	FuzzLabelFilterAfterParserLowering	12s	-	label filters after a json or logfmt parser lower to the query the string translator writes, byte for byte
 smoke	internal/queryplan/lower	FuzzNumericEqualityLowering	12s	-	numeric, duration and bytes equality after a json or logfmt parser lower to a numeric comparison on any literal, or leave it to the string translator
+smoke	internal/queryplan/lower	FuzzNumericEqualitySpellings	12s	-	factored duration and bytes equality spellings only accept values converting to the exact literal
 smoke	internal/queryplan/lower	FuzzExtractLowering	12s	-	regexp and pattern parsers and decolorize lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzFormatLowering	12s	-	line_format and label_format lower to the query the string translator writes
 smoke	internal/proxy	FuzzParseLokiTimeIntegerFastPath	12s	-	Loki time parse: integer fast path equals the layouts-first parse

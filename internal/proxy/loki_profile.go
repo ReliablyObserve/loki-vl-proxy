@@ -313,6 +313,9 @@ type lineFieldExposure struct {
 	// filters are the pipeline's label filters on a single label, each with
 	// what the stages before it expose (see dropsRow).
 	filters []lineFieldFilter
+	// numericPipeline replays conversion error labels from the stored line;
+	// VictoriaLogs has already selected the rows using the native predicate.
+	numericPipeline []logqlpkg.Stage
 	// kept is the label list of the | keep stages after the last parser
 	// (their intersection): every other label the parser added is gone from
 	// the entry (registry semantics/keep-leaves-labels-loki-drops), a name_extracted
@@ -505,6 +508,9 @@ func pipelineAddsLabels(pipeline []logqlpkg.Stage) lineFieldExposure {
 		}
 	}
 	exposure.names = pipelineLineFields(pipeline)
+	if numericEqualityPipeline(pipeline) {
+		exposure.numericPipeline = pipeline
+	}
 	return exposure
 }
 
@@ -762,6 +768,13 @@ func keepStageNames(s *logqlpkg.KeepStage, prior map[string]bool) map[string]boo
 // service_name included), which a field of another name may collide with
 // (OTel service.name against service_name).
 func (e *lineFieldExposure) entryLabelName(r *lineRow, key, value string, ex metadataFieldExposure, parsed, lineMissing bool, streamOnly, final map[string]string) (string, bool) {
+	// Parsed labels may contain consecutive or trailing underscores. The
+	// generic metadata normalizer folds those, but Loki's parser keeps them
+	// (recorded numeric-filter oracle and complete live response comparison).
+	if e != nil && len(e.numericPipeline) > 0 && parsed &&
+		(strings.Contains(key, "__") || strings.HasSuffix(key, "_")) && orderedJSONLabelName(key, true) == key {
+		ex.name = key
+	}
 	stream, onStream := streamOnly[key]
 	if e == nil || (!onStream && (key == "level" || ex.name == "level")) || ex.name == detectedLevelLabel {
 		_, exists := final[ex.name]
@@ -807,7 +820,8 @@ type lineRow struct {
 	labels map[string]bool // the JSON line's labels, walked once when a name needs it
 	// placeholder: the line was rebuilt from a placeholder row's fields
 	// (readsPlaceholderAsLine).
-	placeholder bool
+	placeholder  bool
+	numericError bool // the native classification marked a conversion-error row
 }
 
 // hiddenBefore reports whether name is a key of the row's line (a JSON key,
@@ -873,6 +887,23 @@ func (e *lineFieldExposure) finishRow(r *lineRow, lineMissing bool, parsed, meta
 	}
 	if len(e.labelFormats) > 0 {
 		e.fixLabelFormats(r, parsed, metadata)
+	}
+	if len(e.numericPipeline) > 0 && r.numericError {
+		base := cloneStringMap(r.stream)
+		if base == nil {
+			base = map[string]string{}
+		}
+		for name, value := range metadata {
+			base[name] = value
+		}
+		labels, _, known := unwrapLokiLabels(unwrapErrorProbe{numeric: true, pipeline: e.numericPipeline}, base, string(r.line), string(r.line))
+		if known && labels != nil {
+			for _, name := range []string{errorLabel, errorDetailsLabel} {
+				if value, present := labels[name]; present {
+					parsed[name] = value
+				}
+			}
+		}
 	}
 }
 
@@ -1089,7 +1120,7 @@ func (e *lineFieldExposure) filtersLineFields() bool {
 // response carries no categorized metadata: stage labels join the stream
 // labels, or a label filter may drop rows.
 func (e *lineFieldExposure) needsClassification() bool {
-	return e != nil && (len(e.names) > 0 || e.filtersLineFields())
+	return e != nil && (len(e.names) > 0 || len(e.numericPipeline) > 0 || e.filtersLineFields())
 }
 
 // streamLabelMerge returns which extracted labels join a log entry's stream

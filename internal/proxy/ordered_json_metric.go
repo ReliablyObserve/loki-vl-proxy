@@ -53,12 +53,13 @@ const bareJSONMetricResponseVersion = "@bare-json-metric-labels-v1:"
 // Fence cached bare JSON metric replies produced before stored JSON body
 // fields were distinguished from parser label collisions.
 func bareJSONMetricResponseKeyVersion(r *http.Request, query string) string {
-	return bareJSONMetricFence(r, query, spelledOtherwise(query))
+	other := spelledOtherwise(query)
+	return bareJSONMetricFence(r, query, containsWord(query, "json", other))
 }
 
 // bareJSONMetricFence is the fence of a query that spelledOtherwise reported on (other).
-func bareJSONMetricFence(r *http.Request, query string, other bool) string {
-	if !containsWord(query, "json", other) {
+func bareJSONMetricFence(r *http.Request, query string, jsonWord bool) string {
+	if !jsonWord {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -3088,9 +3089,13 @@ func lokiSeriesString(labels map[string]string) string {
 // lokiPipelineError is Loki v3.7.7's error for a metric sample that carries
 // __error__ (its pipeline error), with the sample's series.
 func lokiPipelineError(labels map[string]string) *orderedJSONPipelineError {
+	return lokiPipelineErrorLabels(labels, false)
+}
+
+func lokiPipelineErrorLabels(labels map[string]string, sourcePreserveLabel bool) *orderedJSONPipelineError {
 	series := make(map[string]string, len(labels))
 	for name, value := range labels {
-		if name != "__preserve_error__" {
+		if name != "__preserve_error__" || sourcePreserveLabel {
 			series[name] = value
 		}
 	}
@@ -3103,11 +3108,9 @@ func lokiPipelineError(labels map[string]string) *orderedJSONPipelineError {
 		errorType, lokiSeriesString(series), errorType)}
 }
 
-// lokiPipelineErrorType returns the Loki error type constant for an
-// __error__ value. The label is only ever set by the proxy's own parser — a
-// log line's "__error__" key is dropped, never extracted — so the value is
-// always one of Loki's constants; mapping it through them keeps the error text
-// built from fixed strings rather than from anything read off a log line.
+// lokiPipelineErrorType preserves the error kind Loki exposes. A numeric
+// pipeline can also retain a source __error__ key (recorded numeric-filter
+// oracle), so non-empty values are not limited to generated parser constants.
 func lokiPipelineErrorType(value string) string {
 	switch value {
 	case "LogfmtParserErr":
@@ -3118,8 +3121,10 @@ func lokiPipelineErrorType(value string) string {
 		return "LabelFilterErr"
 	case "TemplateFormatErr":
 		return "TemplateFormatErr"
-	default:
+	case "":
 		return "JSONParserErr"
+	default:
+		return value
 	}
 }
 

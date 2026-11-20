@@ -1,0 +1,118 @@
+{
+  "baseline": "eef311db6",
+  "candidate_parent": "9183da93d",
+  "candidate_lowering_sha256": "409561fe34f709992814bf2efd959769a25366c45324ba9534def0342cd4abc8",
+  "machine": "Apple M5 Pro arm64",
+  "gomaxprocs": 2,
+  "samples": 6,
+  "benchtime": "100ms",
+  "benchmark_source_sha256": "fd1cf45e96fe6949fa077020b76829b6c871285830808baa8f93cf3c8fc43f75",
+  "scope": "Unique translation-cache misses, with and without request validation; not full endpoint latency, CPU-time or RSS.",
+  "cost_warning": "Correct error retention and longer encoded queries add bytes and allocations relative to main. This is not a no-memory-regression result.",
+  "rows": [
+    {
+      "benchmark": "BenchmarkTranslateQueryMissShapes/numeric_equality_after_parser-2",
+      "main": {
+        "ns_op": 20286.0,
+        "bytes_op": 1900.0,
+        "allocs_op": 32.0
+      },
+      "candidate": {
+        "ns_op": 20213.5,
+        "bytes_op": 4301.5,
+        "allocs_op": 43.0
+      }
+    },
+    {
+      "benchmark": "BenchmarkTranslateQueryMissShapes/numeric_equality_metric-2",
+      "main": {
+        "ns_op": 21277.0,
+        "bytes_op": 2948.0,
+        "allocs_op": 45.0
+      },
+      "candidate": {
+        "ns_op": 20538.0,
+        "bytes_op": 5302.0,
+        "allocs_op": 54.0
+      }
+    },
+    {
+      "benchmark": "BenchmarkTranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2",
+      "main": {
+        "ns_op": 21671.0,
+        "bytes_op": 3132.0,
+        "allocs_op": 38.0
+      },
+      "candidate": {
+        "ns_op": 20705.5,
+        "bytes_op": 4301.0,
+        "allocs_op": 43.0
+      }
+    },
+    {
+      "benchmark": "BenchmarkTranslateQueryMissShapes/vector_numeric_equality-2",
+      "main": {
+        "ns_op": 21726.5,
+        "bytes_op": 2850.0,
+        "allocs_op": 42.0
+      },
+      "candidate": {
+        "ns_op": 23100.5,
+        "bytes_op": 6046.0,
+        "allocs_op": 51.0
+      }
+    },
+    {
+      "benchmark": "BenchmarkTranslateQueryMissShapesValidated/numeric_equality_after_parser-2",
+      "main": {
+        "ns_op": 20979.0,
+        "bytes_op": 2369.0,
+        "allocs_op": 41.0
+      },
+      "candidate": {
+        "ns_op": 20557.0,
+        "bytes_op": 4510.0,
+        "allocs_op": 48.0
+      }
+    },
+    {
+      "benchmark": "BenchmarkTranslateQueryMissShapesValidated/numeric_equality_metric-2",
+      "main": {
+        "ns_op": 22372.0,
+        "bytes_op": 3622.0,
+        "allocs_op": 56.0
+      },
+      "candidate": {
+        "ns_op": 21105.5,
+        "bytes_op": 5510.0,
+        "allocs_op": 59.0
+      }
+    },
+    {
+      "benchmark": "BenchmarkTranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2",
+      "main": {
+        "ns_op": 22458.5,
+        "bytes_op": 3604.0,
+        "allocs_op": 47.0
+      },
+      "candidate": {
+        "ns_op": 20884.0,
+        "bytes_op": 4511.0,
+        "allocs_op": 48.0
+      }
+    },
+    {
+      "benchmark": "BenchmarkTranslateQueryMissShapesValidated/vector_numeric_equality-2",
+      "main": {
+        "ns_op": 22150.5,
+        "bytes_op": 3506.0,
+        "allocs_op": 53.0
+      },
+      "candidate": {
+        "ns_op": 22529.0,
+        "bytes_op": 6254.5,
+        "allocs_op": 56.0
+      }
+    }
+  ]
+}

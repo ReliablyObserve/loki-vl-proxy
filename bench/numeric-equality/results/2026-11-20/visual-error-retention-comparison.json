@@ -1,0 +1,25 @@
+{
+  "page": "explore-numeric-equality-error-logs",
+  "settled": true,
+  "query_comparison": [
+    2,
+    1,
+    [
+      "query ('sum by (level, detected_level) (count_over_time({env=\"production\",app=\"api-gateway\",quer: series sets differ: 0 only left [], 3 only right ['(\\'log-volume-A\\', \\'\\', \\'{\"detected_level\": \"error\", \"level\": \"error\"}\\')', '(\\'log-volume-A\\', \\'\\', \\'{\"detected_level\": \"info\", \"level\": \"info\"}\\')']"
+    ],
+    1,
+    0,
+    []
+  ],
+  "full_comparison": [
+    4,
+    2,
+    [
+      "query ('sum by (level, detected_level) (count_over_time({env=\"production\",app=\"api-gateway\",quer: series sets differ: 0 only left [], 3 only right ['(\\'log-volume-A\\', \\'\\', \\'{\"detected_level\": \"error\", \"level\": \"error\"}\\')', '(\\'log-volume-A\\', \\'\\', \\'{\"detected_level\": \"info\", \"level\": \"info\"}\\')']",
+      "resource /api/datasources/uid/*/resources/index/stats?query=%7Benv%3D%22production%22%2Capp%3D%22ap: body: content differs (rows 0 vs 0)"
+    ],
+    3,
+    0,
+    []
+  ]
+}
