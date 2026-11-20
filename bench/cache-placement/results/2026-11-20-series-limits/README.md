@@ -1,5 +1,10 @@
 # Complete Fields results and cache policy isolation
 
+The current comparison with main after PR #1705 is in
+[the follow-up report](post-1705/README.md). The measurements below retain the
+original `eef311db6` base and original candidate source fingerprints; they
+are historical, not the updated-base performance result.
+
 The reported 15-minute Fields request returned 1000 partial `batch_id` frames
 through the playground's patterns datasource and 3157 complete frames through
 Loki. The running patterns proxy had an old 1000-series override. Compose on

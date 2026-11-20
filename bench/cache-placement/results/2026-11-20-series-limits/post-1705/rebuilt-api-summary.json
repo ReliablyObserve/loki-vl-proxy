@@ -1,0 +1,16 @@
+{
+  "proxy": {
+    "series": 37830,
+    "points": 37870,
+    "notices": [],
+    "sha256": "f74157c2c6fb86b382e8a89ae95135eebd43b5baddcde0c31ed91e5487c8947d",
+    "seconds": 1.3880023751407862
+  },
+  "loki": {
+    "series": 37830,
+    "points": 37870,
+    "notices": [],
+    "sha256": "f74157c2c6fb86b382e8a89ae95135eebd43b5baddcde0c31ed91e5487c8947d",
+    "seconds": 0.7801937088370323
+  }
+}

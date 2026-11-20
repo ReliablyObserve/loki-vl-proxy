@@ -1,0 +1,112 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/cold/native-2               	    3810	     93563 ns/op	  162868 B/op	     408 allocs/op
+BenchmarkOrderedJSONResultCache/warm/native-2               	   76228	      4508 ns/op	    7873 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/json-2                 	    2227	    159421 ns/op	  116137 B/op	    2117 allocs/op
+BenchmarkOrderedJSONResultCache/warm/json-2                 	   56029	      5705 ns/op	    8082 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/drilldown_json-2       	    1743	    179475 ns/op	  117327 B/op	    2136 allocs/op
+BenchmarkOrderedJSONResultCache/warm/drilldown_json-2       	   47832	      6918 ns/op	    9074 B/op	      48 allocs/op
+BenchmarkProxy_QueryRange_CacheHit-2                        	  273585	      1440 ns/op	     464 B/op	      10 allocs/op
+BenchmarkProxy_QueryRange_CompatCacheHit_DelayedBackend-2   	   84417	      4253 ns/op	    4448 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	4.655s
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/cold/native-2               	    3667	     93607 ns/op	  162843 B/op	     408 allocs/op
+BenchmarkOrderedJSONResultCache/warm/native-2               	   77924	      4427 ns/op	    7873 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/json-2                 	    1748	    175912 ns/op	  116131 B/op	    2117 allocs/op
+BenchmarkOrderedJSONResultCache/warm/json-2                 	   58298	      5875 ns/op	    8082 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/drilldown_json-2       	    1743	    172858 ns/op	  117269 B/op	    2136 allocs/op
+BenchmarkOrderedJSONResultCache/warm/drilldown_json-2       	   47164	      7036 ns/op	    9072 B/op	      48 allocs/op
+BenchmarkProxy_QueryRange_CacheHit-2                        	  271909	      1402 ns/op	     464 B/op	      10 allocs/op
+BenchmarkProxy_QueryRange_CompatCacheHit_DelayedBackend-2   	   82730	      3789 ns/op	    4448 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	4.177s
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/cold/native-2               	    3722	     92813 ns/op	  162870 B/op	     408 allocs/op
+BenchmarkOrderedJSONResultCache/warm/native-2               	   77901	      4462 ns/op	    7873 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/json-2                 	    2226	    163973 ns/op	  116104 B/op	    2117 allocs/op
+BenchmarkOrderedJSONResultCache/warm/json-2                 	   57512	      5744 ns/op	    8082 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/drilldown_json-2       	    2191	    163895 ns/op	  117272 B/op	    2136 allocs/op
+BenchmarkOrderedJSONResultCache/warm/drilldown_json-2       	   49384	      6943 ns/op	    9073 B/op	      48 allocs/op
+BenchmarkProxy_QueryRange_CacheHit-2                        	  269679	      1415 ns/op	     464 B/op	      10 allocs/op
+BenchmarkProxy_QueryRange_CompatCacheHit_DelayedBackend-2   	   87614	      4061 ns/op	    4448 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	5.048s
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/cold/native-2               	    3868	     94030 ns/op	  162839 B/op	     408 allocs/op
+BenchmarkOrderedJSONResultCache/warm/native-2               	   74592	      4511 ns/op	    7873 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/json-2                 	    2188	    171646 ns/op	  116121 B/op	    2117 allocs/op
+BenchmarkOrderedJSONResultCache/warm/json-2                 	   58682	      5664 ns/op	    8082 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/drilldown_json-2       	    1778	    171940 ns/op	  117306 B/op	    2136 allocs/op
+BenchmarkOrderedJSONResultCache/warm/drilldown_json-2       	   50155	      6904 ns/op	    9073 B/op	      48 allocs/op
+BenchmarkProxy_QueryRange_CacheHit-2                        	  257916	      1416 ns/op	     464 B/op	      10 allocs/op
+BenchmarkProxy_QueryRange_CompatCacheHit_DelayedBackend-2   	   85363	      3940 ns/op	    4448 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	5.047s
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/cold/native-2               	    3597	     97125 ns/op	  162865 B/op	     408 allocs/op
+BenchmarkOrderedJSONResultCache/warm/native-2               	   75208	      4443 ns/op	    7872 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/json-2                 	    2144	    160018 ns/op	  116106 B/op	    2117 allocs/op
+BenchmarkOrderedJSONResultCache/warm/json-2                 	   58189	      5754 ns/op	    8082 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/drilldown_json-2       	    2187	    165006 ns/op	  117303 B/op	    2136 allocs/op
+BenchmarkOrderedJSONResultCache/warm/drilldown_json-2       	   47060	      6995 ns/op	    9073 B/op	      48 allocs/op
+BenchmarkProxy_QueryRange_CacheHit-2                        	  279285	      1427 ns/op	     464 B/op	      10 allocs/op
+BenchmarkProxy_QueryRange_CompatCacheHit_DelayedBackend-2   	  115221	      4090 ns/op	    4448 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	5.141s
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/cold/native-2               	    3750	    100376 ns/op	  162855 B/op	     408 allocs/op
+BenchmarkOrderedJSONResultCache/warm/native-2               	   74691	      4390 ns/op	    7873 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/json-2                 	    2229	    172525 ns/op	  116120 B/op	    2117 allocs/op
+BenchmarkOrderedJSONResultCache/warm/json-2                 	   58606	      5753 ns/op	    8081 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/drilldown_json-2       	    1783	    169940 ns/op	  117310 B/op	    2136 allocs/op
+BenchmarkOrderedJSONResultCache/warm/drilldown_json-2       	   49508	      7047 ns/op	    9073 B/op	      48 allocs/op
+BenchmarkProxy_QueryRange_CacheHit-2                        	  284930	      1462 ns/op	     464 B/op	      10 allocs/op
+BenchmarkProxy_QueryRange_CompatCacheHit_DelayedBackend-2   	   86258	      4025 ns/op	    4448 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	4.738s
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/cold/native-2               	    3483	     92355 ns/op	  162824 B/op	     408 allocs/op
+BenchmarkOrderedJSONResultCache/warm/native-2               	   77346	      4417 ns/op	    7873 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/json-2                 	    2212	    164528 ns/op	  116104 B/op	    2117 allocs/op
+BenchmarkOrderedJSONResultCache/warm/json-2                 	   60112	      5689 ns/op	    8082 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/drilldown_json-2       	    2167	    162617 ns/op	  117287 B/op	    2136 allocs/op
+BenchmarkOrderedJSONResultCache/warm/drilldown_json-2       	   51202	      6797 ns/op	    9072 B/op	      48 allocs/op
+BenchmarkProxy_QueryRange_CacheHit-2                        	  283057	      1423 ns/op	     464 B/op	      10 allocs/op
+BenchmarkProxy_QueryRange_CompatCacheHit_DelayedBackend-2   	   89535	      4120 ns/op	    4448 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	5.079s
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/cold/native-2               	    3218	    101064 ns/op	  162852 B/op	     408 allocs/op
+BenchmarkOrderedJSONResultCache/warm/native-2               	   75171	      4415 ns/op	    7874 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/json-2                 	    1766	    171627 ns/op	  116144 B/op	    2117 allocs/op
+BenchmarkOrderedJSONResultCache/warm/json-2                 	   56584	      5703 ns/op	    8081 B/op	      35 allocs/op
+BenchmarkOrderedJSONResultCache/cold/drilldown_json-2       	    2220	    174058 ns/op	  117256 B/op	    2136 allocs/op
+BenchmarkOrderedJSONResultCache/warm/drilldown_json-2       	   49965	      6875 ns/op	    9072 B/op	      48 allocs/op
+BenchmarkProxy_QueryRange_CacheHit-2                        	  282973	      1422 ns/op	     464 B/op	      10 allocs/op
+BenchmarkProxy_QueryRange_CompatCacheHit_DelayedBackend-2   	   83706	      3930 ns/op	    4448 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	4.239s

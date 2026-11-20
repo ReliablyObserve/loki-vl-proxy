@@ -1,0 +1,40 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+                                                 │ /private/tmp/lvp-fields-diagnostics/post-1705/bench-paired-main.txt │ /private/tmp/lvp-fields-diagnostics/post-1705/bench-paired-pr.txt │
+                                                 │                               sec/op                                │                   sec/op                     vs base              │
+OrderedJSONResultCache/cold/native-2                                                                      94.29µ ±  6%                                   93.40µ ± 2%       ~ (p=0.721 n=8)
+OrderedJSONResultCache/warm/native-2                                                                      4.433µ ± 11%                                   4.483µ ± 4%       ~ (p=0.959 n=8)
+OrderedJSONResultCache/cold/json-2                                                                        163.6µ ±  7%                                   163.3µ ± 3%       ~ (p=0.442 n=8)
+OrderedJSONResultCache/warm/json-2                                                                        5.734µ ±  9%                                   5.774µ ± 4%       ~ (p=0.878 n=8)
+OrderedJSONResultCache/cold/drilldown_json-2                                                              164.4µ ± 10%                                   167.3µ ± 6%       ~ (p=0.645 n=8)
+OrderedJSONResultCache/warm/drilldown_json-2                                                              7.108µ ±  3%                                   6.993µ ± 2%  -1.61% (p=0.010 n=8)
+Proxy_QueryRange_CacheHit-2                                                                               1.455µ ± 11%                                   1.441µ ± 2%       ~ (p=0.505 n=8)
+Proxy_QueryRange_CompatCacheHit_DelayedBackend-2                                                          4.012µ ±  6%                                   4.051µ ± 3%       ~ (p=0.524 n=8)
+geomean                                                                                                   15.08µ                                         15.10µ       +0.11%
+
+                                                 │ /private/tmp/lvp-fields-diagnostics/post-1705/bench-paired-main.txt │ /private/tmp/lvp-fields-diagnostics/post-1705/bench-paired-pr.txt │
+                                                 │                                B/op                                 │                   B/op                     vs base                │
+OrderedJSONResultCache/cold/native-2                                                                      159.1Ki ± 0%                                159.0Ki ± 0%  -0.02% (p=0.002 n=8)
+OrderedJSONResultCache/warm/native-2                                                                      7.720Ki ± 0%                                7.688Ki ± 0%  -0.40% (p=0.000 n=8)
+OrderedJSONResultCache/cold/json-2                                                                        113.4Ki ± 0%                                113.4Ki ± 0%  -0.03% (p=0.000 n=8)
+OrderedJSONResultCache/warm/json-2                                                                        7.923Ki ± 0%                                7.892Ki ± 0%  -0.39% (p=0.000 n=8)
+OrderedJSONResultCache/cold/drilldown_json-2                                                              114.7Ki ± 0%                                114.6Ki ± 0%  -0.15% (p=0.000 n=8)
+OrderedJSONResultCache/warm/drilldown_json-2                                                              9.048Ki ± 0%                                8.876Ki ± 0%  -1.89% (p=0.000 n=8)
+Proxy_QueryRange_CacheHit-2                                                                                 496.0 ± 0%                                  464.0 ± 0%  -6.45% (p=0.000 n=8)
+Proxy_QueryRange_CompatCacheHit_DelayedBackend-2                                                          4.344Ki ± 0%                                4.344Ki ± 0%       ~ (p=1.000 n=8) ¹
+geomean                                                                                                   14.89Ki                                     14.71Ki       -1.19%
+¹ all samples are equal
+
+                                                 │ /private/tmp/lvp-fields-diagnostics/post-1705/bench-paired-main.txt │ /private/tmp/lvp-fields-diagnostics/post-1705/bench-paired-pr.txt │
+                                                 │                              allocs/op                              │                  allocs/op                   vs base              │
+OrderedJSONResultCache/cold/native-2                                                                        409.0 ± 0%                                    408.0 ± 0%  -0.24% (p=0.000 n=8)
+OrderedJSONResultCache/warm/native-2                                                                        36.00 ± 0%                                    35.00 ± 0%  -2.78% (p=0.000 n=8)
+OrderedJSONResultCache/cold/json-2                                                                         2.118k ± 0%                                   2.117k ± 0%  -0.05% (p=0.000 n=8)
+OrderedJSONResultCache/warm/json-2                                                                          36.00 ± 0%                                    35.00 ± 0%  -2.78% (p=0.000 n=8)
+OrderedJSONResultCache/cold/drilldown_json-2                                                               2.141k ± 0%                                   2.137k ± 0%  -0.19% (p=0.000 n=8)
+OrderedJSONResultCache/warm/drilldown_json-2                                                                53.00 ± 0%                                    49.00 ± 0%  -7.55% (p=0.000 n=8)
+Proxy_QueryRange_CacheHit-2                                                                                 11.00 ± 0%                                    10.00 ± 0%  -9.09% (p=0.000 n=8)
+Proxy_QueryRange_CompatCacheHit_DelayedBackend-2                                                            54.00 ± 0%                                    53.00 ± 0%  -1.85% (p=0.000 n=8)
+geomean                                                                                                     128.8                                         124.8       -3.12%
