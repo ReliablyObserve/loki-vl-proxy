@@ -267,11 +267,11 @@
       "stages": ["selector", "parser", "parsed_field_filter", "range_function", "aggregation"],
       "matrix_cases": ["json_parser_metric_range_outer_sum", "json_extraction_list_metric_projected_level", "json_rate_line_filter_outer_sum", "json_error_filter_rate_outer_sum"],
       "registry_items": ["loki/logql/parser-json"],
-      "registry_cases": ["semantics/pipeline-error-text-parity", "semantics/nested-aggregation-outer-by-native-routes", "semantics/non-sum-vector-aggregation-unreduced", "semantics/json-error-filter-metric-split-pushdown", "profiles/json-extraction-list-exposes-only-listed"],
+      "registry_cases": ["semantics/pipeline-error-text-parity", "semantics/nested-aggregation-outer-by-native-routes", "semantics/non-sum-vector-aggregation-unreduced", "semantics/json-error-filter-metric-split-pushdown", "profiles/json-extraction-list-exposes-only-listed", "limits/drilldown-partial-with-warning"],
       "live_test": "TestQuerySemanticsMatrix",
       "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
     ,
-      "related_tests": ["TestRangeMetricCompatibilityJSONErrorFilterSplit", "TestChaining_ParserErrorNestedAggregations", "TestHardeningLive_ParserErrorPipelineParity"]
+      "related_tests": ["TestRangeMetricCompatibilityJSONErrorFilterSplit", "TestChaining_ParserErrorNestedAggregations", "TestHardeningLive_ParserErrorPipelineParity", "TestOrderedJSONResultCacheSeparatesSeriesLimits", "TestResponseCache_ReplicasResolveSeriesLimitIdentity", "TestResponseCache_ReadRoutesUseDiskAfterRestart"]
     },
     {
       "id": "logfmt_parser_range_function_aggregation",

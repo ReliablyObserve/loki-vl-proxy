@@ -18,19 +18,26 @@ import (
 )
 
 func TestResponseCache_ReadRoutesUseDiskAfterRestart(t *testing.T) {
-	for _, tc := range []struct{ name, target string }{
-		{"instant", "/loki/api/v1/query?query=sum%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&time=1767225600"},
-		{"short_range", "/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D&start=1767225600&end=1767229200&limit=50"},
-		{"series", "/loki/api/v1/series?match%5B%5D=%7Bapp%3D%22api%22%7D&start=1767225600&end=1767229200"},
+	for _, tc := range []struct {
+		name, target, endpoint  string
+		firstLimit, secondLimit int
+	}{
+		{"instant", "/loki/api/v1/query?query=sum%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&time=1767225600", "query", 0, 0},
+		{"short_range", "/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D&start=1767225600&end=1767229200&limit=50", "query_range", 0, 0},
+		{"series", "/loki/api/v1/series?match%5B%5D=%7Bapp%3D%22api%22%7D&start=1767225600&end=1767229200", "series", 0, 0},
+		{"instant_raised", "/loki/api/v1/query?query=sum%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&time=1767225600", "query", 1, 100},
+		{"instant_lowered", "/loki/api/v1/query?query=sum%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&time=1767225600", "query", 100, 1},
+		{"range_raised", "/loki/api/v1/query_range?query=sum%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&start=1767225600&end=1767229200&step=60", "query_range", 1, 100},
+		{"range_lowered", "/loki/api/v1/query_range?query=sum%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&start=1767225600&end=1767229200&step=60", "query_range", 100, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "exact-response.db")
 			config := cache.DiskCacheConfig{Path: path, MaxBytes: 1 << 20, FlushInterval: time.Hour}
-			newProxy := func(disk *cache.DiskCache) (*Proxy, *cache.Cache, *cache.Cache) {
+			newProxy := func(disk *cache.DiskCache, limit int) (*Proxy, *cache.Cache, *cache.Cache) {
 				primary := cache.New(time.Minute, 1000)
 				primary.SetL2(disk)
 				edge := cache.New(time.Minute, 100)
-				p, err := New(Config{BackendURL: "http://unused", Cache: primary, CompatCache: edge, LogLevel: "error"})
+				p, err := New(Config{BackendURL: "http://unused", Cache: primary, CompatCache: edge, MaxStatsQuerySeries: limit, LogLevel: "error"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -46,14 +53,7 @@ func TestResponseCache_ReadRoutesUseDiskAfterRestart(t *testing.T) {
 				w := httptest.NewRecorder()
 				r := httptest.NewRequest(http.MethodGet, tc.target, nil)
 				r.Header.Set("X-Scope-OrgID", org)
-				endpoint := "query"
-				switch tc.name {
-				case "series":
-					endpoint = "series"
-				case "short_range":
-					endpoint = "query_range"
-				}
-				p.compatCacheMiddleware(endpoint, r.URL.Path, answer)(w, r)
+				p.compatCacheMiddleware(tc.endpoint, r.URL.Path, answer)(w, r)
 				return w
 			}
 
@@ -61,7 +61,7 @@ func TestResponseCache_ReadRoutesUseDiskAfterRestart(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			first, firstPrimary, firstEdge := newProxy(firstDisk)
+			first, firstPrimary, firstEdge := newProxy(firstDisk, tc.firstLimit)
 			want := request(first, "team-a")
 			if want.Code != http.StatusOK || calls != 1 {
 				t.Fatalf("initial reply: status=%d calls=%d", want.Code, calls)
@@ -82,19 +82,38 @@ func TestResponseCache_ReadRoutesUseDiskAfterRestart(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = secondDisk.Close() })
-			second, secondPrimary, secondEdge := newProxy(secondDisk)
+			second, secondPrimary, secondEdge := newProxy(secondDisk, tc.secondLimit)
 			t.Cleanup(func() { _ = second.Shutdown(context.Background()); secondPrimary.Close(); secondEdge.Close() })
 			got := request(second, "team-a")
-			if got.Code != http.StatusOK || got.Body.String() != want.Body.String() || calls != 1 || secondDisk.Hits.Load() == 0 {
+			wantCalls := 1
+			changed := tc.firstLimit != tc.secondLimit
+			if changed {
+				wantCalls++
+			}
+			if got.Code != http.StatusOK || got.Body.String() != want.Body.String() || calls != wantCalls || (secondDisk.Hits.Load() == 0) != changed {
 				t.Fatalf("restart did not reuse L2 reply: status=%d got=%s want=%s calls=%d disk_hits=%d", got.Code, got.Body, want.Body, calls, secondDisk.Hits.Load())
 			}
+			_ = request(second, "team-a")
+			if calls != wantCalls {
+				t.Fatal("a stable limit did not reuse its own response")
+			}
+			if changed {
+				// A rolling deployment can have both limits. The old entry remains
+				// usable under its own policy, without deleting shared SSD data.
+				second.maxStatsQuerySeries = tc.firstLimit
+				_ = request(second, "team-a")
+				if calls != wantCalls || secondDisk.Hits.Load() == 0 {
+					t.Fatal("the previous limit lost its reusable disk entry")
+				}
+				second.maxStatsQuerySeries = tc.secondLimit
+			}
 			otherTenant := request(second, "team-b")
-			if otherTenant.Code != http.StatusOK || calls != 2 || otherTenant.Body.String() == want.Body.String() {
+			if otherTenant.Code != http.StatusOK || calls != wantCalls+1 || otherTenant.Body.String() == want.Body.String() {
 				t.Fatalf("tenant reused another tenant's disk reply: status=%d calls=%d body=%s", otherTenant.Code, calls, otherTenant.Body)
 			}
 			second.ReloadTenantMap(map[string]TenantMapping{"team-a": {AccountID: "7", ProjectID: "0"}})
 			_ = request(second, "team-a")
-			if calls != 3 {
+			if calls != wantCalls+2 {
 				t.Fatalf("routing reload reused a stale shared reply: calls=%d", calls)
 			}
 		})
@@ -206,6 +225,79 @@ func TestResponseCache_PrimaryIncludesSemanticParameters(t *testing.T) {
 		if p.queryRangeCacheKey(r, `{app="a"}`) == key {
 			t.Errorf("key omits %s", field)
 		}
+	}
+}
+
+// conformance: limits/drilldown-partial-with-warning, limits/effective-limit-resolution, peer-cache-replication
+func TestResponseCache_ReplicasResolveSeriesLimitIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		first, second  Config
+		org            string
+		differentLimit bool
+	}{
+		{"same default", Config{}, Config{MaxStatsQuerySeries: 1000}, "team-a", false},
+		{"global", Config{MaxStatsQuerySeries: 1}, Config{MaxStatsQuerySeries: 100}, "team-a", true},
+		{"large global", Config{MaxStatsQuerySeries: 1}, Config{MaxStatsQuerySeries: int(^uint(0) >> 1)}, "team-a", true},
+		{"tenant default", Config{}, Config{TenantDefaultLimits: map[string]any{limitMaxQuerySeries: 100}}, "team-a", true},
+		{"tenant override", Config{}, Config{TenantLimits: map[string]map[string]any{"team-a": {limitMaxQuerySeries: 100}}}, "team-a", true},
+		{"other tenant", Config{}, Config{TenantLimits: map[string]map[string]any{"team-b": {limitMaxQuerySeries: 100}}}, "team-a", false},
+		{"same effective override", Config{MaxStatsQuerySeries: 100}, Config{TenantLimits: map[string]map[string]any{"team-a": {limitMaxQuerySeries: 100}}}, "team-a", false},
+		{"federated minimum changed", Config{TenantLimits: map[string]map[string]any{"team-a": {limitMaxQuerySeries: 10}}}, Config{TenantLimits: map[string]map[string]any{"team-a": {limitMaxQuerySeries: 20}}}, "team-a|team-b", true},
+		{"federated nonminimum changed", Config{TenantLimits: map[string]map[string]any{"team-a": {limitMaxQuerySeries: 10}, "team-b": {limitMaxQuerySeries: 20}}}, Config{TenantLimits: map[string]map[string]any{"team-a": {limitMaxQuerySeries: 10}, "team-b": {limitMaxQuerySeries: 30}}}, "team-a|team-b", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			newReplica := func(cfg Config) *Proxy {
+				cfg.BackendURL, cfg.LogLevel = "http://unused", "error"
+				p, err := New(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+				return p
+			}
+			first, second := newReplica(tc.first), newReplica(tc.second)
+			ctx := context.WithValue(context.Background(), orgIDKey, tc.org)
+			params := url.Values{
+				"query": {`app:="a" | stats by (pod) count()`},
+				"start": {"1700000000000000000"}, "end": {"1700003600000000000"}, "step": {"1m"},
+			}
+			a, okA := first.statsExtentRequestFor(ctx, params)
+			b, okB := second.statsExtentRequestFor(ctx, params)
+			if !okA || !okB || a.key != b.key {
+				t.Fatal("a Loki series limit invalidated reusable VL bucket identities")
+			}
+			for _, endpoint := range []string{"query", "query_range", "labels"} {
+				for _, tagged := range []bool{false, true} {
+					r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+endpoint+"?query=sum(count_over_time(%7Bapp%3D%22a%22%7D%5B1m%5D))&start=1&end=10&step=1", nil)
+					r.Header.Set("X-Scope-OrgID", tc.org)
+					if tagged {
+						r.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+					}
+					keys := func(p *Proxy) []string {
+						merged, ok := p.multiTenantCacheKey(r, endpoint)
+						if !ok {
+							t.Fatal("missing merged response identity")
+						}
+						flight := p.uncachedFlightKey(endpoint, r)
+						out := []string{p.responseKey(endpoint, r, r.URL.RawQuery), merged, flight.exactKey()}
+						if endpoint == "query_range" {
+							out = append(out, p.queryRangeCacheKey(r, r.FormValue("query")))
+						}
+						return out
+					}
+					a, b := keys(first), keys(second)
+					for i := range a {
+						if got := a[i] != b[i]; got != (tc.differentLimit && endpoint != "labels") {
+							t.Errorf("%s tagged=%v key=%d: limit separation=%v: %q %q", endpoint, tagged, i, got, a[i], b[i])
+						}
+					}
+					if first.scopeFingerprint(r.Context(), tc.org) != second.scopeFingerprint(r.Context(), tc.org) {
+						t.Fatal("a Loki series limit invalidated the VL routing namespace")
+					}
+				}
+			}
+		})
 	}
 }
 

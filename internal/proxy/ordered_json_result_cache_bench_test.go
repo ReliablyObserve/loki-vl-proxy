@@ -16,7 +16,11 @@ import (
 // Exercise the dispatch boundary as well as the cache: a cold native request
 // must not pay another retained response copy when it declines the JSON route.
 func BenchmarkOrderedJSONResultCache(b *testing.B) {
-	for _, pipeline := range []struct{ name, stage string }{{"native", ""}, {"json", "| json | drop __error__"}} {
+	for _, pipeline := range []struct{ name, stage, tags string }{
+		{"native", "", ""},
+		{"json", "| json | drop __error__", ""},
+		{"drilldown_json", "| json | drop __error__", "Source=grafana-lokiexplore-app"},
+	} {
 		for _, mode := range []string{"cold", "warm"} {
 			b.Run(mode+"/"+pipeline.name, func(b *testing.B) {
 				base := time.Unix(1700000400, 0).UTC()
@@ -36,10 +40,17 @@ func BenchmarkOrderedJSONResultCache(b *testing.B) {
 				query := `sum by (level) (count_over_time({app="api"} ` + pipeline.stage + ` [1m]))`
 				params := url.Values{"query": {query}, "start": {strconv.FormatInt(base.Add(time.Minute).Unix(), 10)}, "end": {strconv.FormatInt(base.Add(3*time.Minute).Unix(), 10)}, "step": {"60"}}
 				target := "/loki/api/v1/query_range?" + params.Encode()
-				key := p.queryRangeCacheKey(httptest.NewRequest(http.MethodGet, target, nil), query)
+				newRequest := func() *http.Request {
+					r := httptest.NewRequest(http.MethodGet, target, nil)
+					if pipeline.tags != "" {
+						r.Header.Set("X-Query-Tags", pipeline.tags)
+					}
+					return r
+				}
+				key := p.queryRangeCacheKey(newRequest(), query)
 				request := func() []byte {
 					w := httptest.NewRecorder()
-					p.handleQueryRange(w, httptest.NewRequest(http.MethodGet, target, nil))
+					p.handleQueryRange(w, newRequest())
 					if w.Code != http.StatusOK || w.Body.Len() == 0 {
 						b.Fatalf("status=%d body=%s", w.Code, w.Body)
 					}

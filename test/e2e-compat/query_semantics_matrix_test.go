@@ -781,6 +781,13 @@ func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Related proofs include focused proxy regressions; LiveTest above
+			// still has to name a live Loki comparison in this e2e module.
+			unitTests, err := filepath.Glob("../../internal/proxy/*_test.go")
+			if err != nil {
+				t.Fatal(err)
+			}
+			matches = append(matches, unitTests...)
 			found := false
 			for _, file := range matches {
 				contents, err := os.ReadFile(file)

@@ -1,0 +1,40 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+                                                 │ /private/tmp/lvp-fields-diagnostics/bench-final-main.txt │ /private/tmp/lvp-fields-diagnostics/bench-final-pr.txt │
+                                                 │                          sec/op                          │              sec/op               vs base              │
+OrderedJSONResultCache/cold/native-2                                                           90.79µ ±  5%                       90.30µ ±  3%       ~ (p=0.328 n=8)
+OrderedJSONResultCache/warm/native-2                                                           4.336µ ±  3%                       4.323µ ±  3%       ~ (p=0.798 n=8)
+OrderedJSONResultCache/cold/json-2                                                             157.1µ ± 15%                       158.0µ ±  2%       ~ (p=0.721 n=8)
+OrderedJSONResultCache/warm/json-2                                                             5.472µ ±  2%                       5.581µ ± 10%       ~ (p=0.069 n=8)
+OrderedJSONResultCache/cold/drilldown_json-2                                                   160.1µ ±  2%                       158.9µ ±  4%       ~ (p=0.878 n=8)
+OrderedJSONResultCache/warm/drilldown_json-2                                                   7.009µ ±  2%                       6.871µ ±  1%  -1.96% (p=0.047 n=8)
+Proxy_QueryRange_CacheHit-2                                                                    1.422µ ±  6%                       1.410µ ±  5%       ~ (p=0.266 n=8)
+Proxy_QueryRange_CompatCacheHit_DelayedBackend-2                                               4.095µ ±  3%                       4.129µ ±  5%       ~ (p=0.645 n=8)
+geomean                                                                                        14.73µ                             14.71µ        -0.12%
+
+                                                 │ /private/tmp/lvp-fields-diagnostics/bench-final-main.txt │ /private/tmp/lvp-fields-diagnostics/bench-final-pr.txt │
+                                                 │                           B/op                           │              B/op               vs base                │
+OrderedJSONResultCache/cold/native-2                                                           159.1Ki ± 0%                     159.0Ki ± 0%  -0.02% (p=0.000 n=8)
+OrderedJSONResultCache/warm/native-2                                                           7.719Ki ± 0%                     7.688Ki ± 0%  -0.40% (p=0.000 n=8)
+OrderedJSONResultCache/cold/json-2                                                             113.1Ki ± 0%                     113.1Ki ± 0%  -0.03% (p=0.000 n=8)
+OrderedJSONResultCache/warm/json-2                                                             7.923Ki ± 0%                     7.892Ki ± 0%  -0.39% (p=0.000 n=8)
+OrderedJSONResultCache/cold/drilldown_json-2                                                   114.4Ki ± 0%                     114.3Ki ± 0%  -0.15% (p=0.000 n=8)
+OrderedJSONResultCache/warm/drilldown_json-2                                                   9.047Ki ± 0%                     8.876Ki ± 0%  -1.89% (p=0.000 n=8)
+Proxy_QueryRange_CacheHit-2                                                                      496.0 ± 0%                       464.0 ± 0%  -6.45% (p=0.000 n=8)
+Proxy_QueryRange_CompatCacheHit_DelayedBackend-2                                               4.344Ki ± 0%                     4.344Ki ± 0%       ~ (p=1.000 n=8) ¹
+geomean                                                                                        14.88Ki                          14.70Ki       -1.19%
+¹ all samples are equal
+
+                                                 │ /private/tmp/lvp-fields-diagnostics/bench-final-main.txt │ /private/tmp/lvp-fields-diagnostics/bench-final-pr.txt │
+                                                 │                        allocs/op                         │            allocs/op              vs base              │
+OrderedJSONResultCache/cold/native-2                                                             409.0 ± 0%                         408.0 ± 0%  -0.24% (p=0.000 n=8)
+OrderedJSONResultCache/warm/native-2                                                             36.00 ± 0%                         35.00 ± 0%  -2.78% (p=0.000 n=8)
+OrderedJSONResultCache/cold/json-2                                                              2.117k ± 0%                        2.116k ± 0%  -0.05% (p=0.000 n=8)
+OrderedJSONResultCache/warm/json-2                                                               36.00 ± 0%                         35.00 ± 0%  -2.78% (p=0.000 n=8)
+OrderedJSONResultCache/cold/drilldown_json-2                                                    2.140k ± 0%                        2.136k ± 0%  -0.19% (p=0.000 n=8)
+OrderedJSONResultCache/warm/drilldown_json-2                                                     53.00 ± 0%                         49.00 ± 0%  -7.55% (p=0.000 n=8)
+Proxy_QueryRange_CacheHit-2                                                                      11.00 ± 0%                         10.00 ± 0%  -9.09% (p=0.000 n=8)
+Proxy_QueryRange_CompatCacheHit_DelayedBackend-2                                                 54.00 ± 0%                         53.00 ± 0%  -1.85% (p=0.000 n=8)
+geomean                                                                                          128.8                              124.8       -3.12%

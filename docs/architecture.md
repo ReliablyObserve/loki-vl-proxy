@@ -24,6 +24,14 @@ hit can supply an explicit evaluation/conversion step; it is not a cached Loki
 answer. Loki-shaped results must never be interpreted as VL results either.
 Existing cache families retain their own eligibility and placement rules.
 
+Loki `query` and `query_range` response identities include the effective
+`max_query_series`: the global flag, tenant/default overrides and the minimum
+across federated tenants. Replicas with different limits cannot share a
+partial or unrestricted response under the wrong policy, including a response
+read from SSD after restart. Equal resolved limits keep the same identity.
+This response policy does not enter the VL bucket namespace or metadata keys,
+so changing it preserves reusable backend data and label/field inventories.
+
 Complete eligible ordered JSON metric `query_range` replies use the existing
 Loki-facing local response cache when the compatibility cache is inactive and
 response streaming is disabled (`-stream-response=false`).

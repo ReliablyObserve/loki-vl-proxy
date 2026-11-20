@@ -431,7 +431,7 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 			// derivation and the Grafana client profile: a Logs Drilldown
 			// answer over the series limit is partial, every other client's
 			// is an error, so the two never share an entry.
-			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.responseProfileCacheKey(r))
+			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.responseProfileCacheKey(r, endpoint))
 		}
 		return key, true
 	}

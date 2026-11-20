@@ -1778,6 +1778,21 @@
    "core": true
   },
   {
+   "id": "dd-fields-batch-etl",
+   "kind": "drilldown",
+   "path": "service/{service}/fields",
+   "service": true,
+   "serviceName": "batch-etl",
+   "ranges": ["15m", "1h"],
+   "ci_ranges": ["15m"],
+   "covers": [
+    "limits/drilldown-partial-with-warning",
+    "series-limits-and-partial-results",
+    "loki_api_v1_detected_fields",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "dd-field-service_version",
    "kind": "drilldown",
    "path": "service/{service}/field/service_version",

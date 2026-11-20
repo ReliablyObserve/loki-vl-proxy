@@ -42,9 +42,9 @@ Proven in part; the rest is named in the item's cases.
 | `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-query-replies` — Completed query replies computed on one replica answer the same request on every replica | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-read-hedge` — A peer-cache read never waits on a paused or hung replica longer than the read hedge delay | — | 0 / 0 | 3 | Unit-proven with paused peer stubs and on the three-replica in-process ring (internal/cache/peer_hedge_test.go, peer_rep |
-| `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 0 / 0 | 6 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
+| `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 0 / 0 | 7 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
 | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
-| `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 8 / 9 | 32 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
+| `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 8 / 9 | 35 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 / 0 | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
 | `severity-detected-level-derivation` — detected_level is derived on the read path | — | 5 / 12 | 23 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |
 | `severity-exposure-surfaces` — Where detected_level and level must appear | — | 0 / 6 | 5 | Log responses, /tail, /patterns and /detected_fields carry the derived detected_level; categorize-labels puts it and a s |
@@ -66,7 +66,7 @@ Held by at least one test that declares it.
 | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | — | 1 / 1 | 5 | internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from Loki 3.7.9 with auth_enabled: true (13 read |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 1 / 1 | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |
 | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 1 / 1 | 15 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
-| `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 12 / 12 | 7 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
+| `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 12 / 12 | 8 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
 
 ## No state recorded
 

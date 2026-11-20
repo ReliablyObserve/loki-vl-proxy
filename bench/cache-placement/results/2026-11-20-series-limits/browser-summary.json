@@ -1,0 +1,186 @@
+{
+  "stats": {
+    "total": 6,
+    "expected": 6,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "ok": true
+  },
+  "cases": [
+    {
+      "title": "24h field cards load partial data with notices",
+      "duration_ms": 4177,
+      "outcome": "expected",
+      "fields": {
+        "batch_id": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true,
+          "identities_sha256": "06fe0d6f1da22cbb4092b9dfdac2b520c18afa8a1339527c212ba95f93e3e8e2"
+        },
+        "total": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true,
+          "identities_sha256": "69e868d965d98af66abf0d21e0663a5ca1143a23cbb80cee18e0403b6a53a729"
+        },
+        "trace_id": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true,
+          "identities_sha256": "59450ab0efd049ae041d29d235609b6ecdee8c8377e8380c6e150f7845a0e98b"
+        }
+      },
+      "screenshot": "partial-24h.png"
+    },
+    {
+      "title": "48h field cards load partial data with notices",
+      "duration_ms": 3586,
+      "outcome": "expected",
+      "fields": {
+        "total": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true,
+          "identities_sha256": "69e868d965d98af66abf0d21e0663a5ca1143a23cbb80cee18e0403b6a53a729"
+        },
+        "batch_id": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true,
+          "identities_sha256": "06fe0d6f1da22cbb4092b9dfdac2b520c18afa8a1339527c212ba95f93e3e8e2"
+        },
+        "trace_id": {
+          "frames": 1000,
+          "unique_identities": 1000,
+          "warning_frames": 1000,
+          "populated": true,
+          "identities_sha256": "59450ab0efd049ae041d29d235609b6ecdee8c8377e8380c6e150f7845a0e98b"
+        }
+      },
+      "screenshot": "partial-48h.png"
+    },
+    {
+      "title": "0.25h field cards load every value without truncation",
+      "duration_ms": 1943,
+      "outcome": "expected",
+      "fields": {
+        "total": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "6d172bf17b06e1de722e91b9dca129a1fb12894daa9c91358d53e2b056600cfc"
+        },
+        "trace_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "7fb8c79abb76ca0a553833cbdebc9c5cec2314ad7792b062bc79a60a385d9def"
+        },
+        "batch_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "271b96b772deb30d83e76eaf72373e91d262a8f5e2a8c9ac07b986d7dee5f840"
+        }
+      },
+      "screenshot": "complete-0_25h.png"
+    },
+    {
+      "title": "3h field cards load every value without truncation",
+      "duration_ms": 2286,
+      "outcome": "expected",
+      "fields": {
+        "batch_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "271b96b772deb30d83e76eaf72373e91d262a8f5e2a8c9ac07b986d7dee5f840"
+        },
+        "total": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "6d172bf17b06e1de722e91b9dca129a1fb12894daa9c91358d53e2b056600cfc"
+        },
+        "trace_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "7fb8c79abb76ca0a553833cbdebc9c5cec2314ad7792b062bc79a60a385d9def"
+        }
+      },
+      "screenshot": "complete-3h.png"
+    },
+    {
+      "title": "24h field cards load every value without truncation",
+      "duration_ms": 3269,
+      "outcome": "expected",
+      "fields": {
+        "total": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "6d172bf17b06e1de722e91b9dca129a1fb12894daa9c91358d53e2b056600cfc"
+        },
+        "batch_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "271b96b772deb30d83e76eaf72373e91d262a8f5e2a8c9ac07b986d7dee5f840"
+        },
+        "trace_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "7fb8c79abb76ca0a553833cbdebc9c5cec2314ad7792b062bc79a60a385d9def"
+        }
+      },
+      "screenshot": "complete-24h.png"
+    },
+    {
+      "title": "48h field cards load every value without truncation",
+      "duration_ms": 3298,
+      "outcome": "expected",
+      "fields": {
+        "trace_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "7fb8c79abb76ca0a553833cbdebc9c5cec2314ad7792b062bc79a60a385d9def"
+        },
+        "batch_id": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "271b96b772deb30d83e76eaf72373e91d262a8f5e2a8c9ac07b986d7dee5f840"
+        },
+        "total": {
+          "frames": 1010,
+          "unique_identities": 1010,
+          "warning_frames": 0,
+          "populated": true,
+          "identities_sha256": "6d172bf17b06e1de722e91b9dca129a1fb12894daa9c91358d53e2b056600cfc"
+        }
+      },
+      "screenshot": "complete-48h.png"
+    }
+  ]
+}

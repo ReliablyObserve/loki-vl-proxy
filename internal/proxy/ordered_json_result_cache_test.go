@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -212,6 +213,57 @@ func TestOrderedJSONResultCachePreservesSeriesWarning(t *testing.T) {
 	warm := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "warm"))
 	if warm.Code != cold.Code || !bytes.Equal(cold.Body.Bytes(), warm.Body.Bytes()) || origins.made("warm") != 0 {
 		t.Fatalf("cached capped result changed or lost its warning: cold=%s warm=%s", cold.Body, warm.Body)
+	}
+}
+
+// conformance: limits/drilldown-partial-with-warning, data-probing-and-freshness
+func TestOrderedJSONResultCacheSeparatesSeriesLimits(t *testing.T) {
+	for _, tenantLimit := range []bool{false, true} {
+		for _, limits := range [][2]int{{1, 100}, {100, 1}} {
+			t.Run(fmt.Sprintf("tenant=%v/%d-to-%d", tenantLimit, limits[0], limits[1]), func(t *testing.T) {
+				base := time.Unix(1700000400, 0).UTC()
+				shape := dlvBaselineShapes[1]
+				backend, fixture := newDLVBaselineBackend(t, shape, base)
+				p := newDLVBaselineProxy(t, backend.URL, false)
+				p.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest
+				origins := traceVLCallOrigins(p)
+				from, to := base.Add(time.Minute), base.Add(3*time.Minute)
+				target, headers := dlvBaselineRequest(shape, from, to)
+				headers["X-Query-Tags"] = "Source=grafana-lokiexplore-app"
+				want := dlvBaselineWant(fixture.rows, shape, from, to, "10", "alpha")
+				if len(want) < 2 {
+					t.Fatal("the fixture must cross the one-series limit")
+				}
+				for stage, limit := range limits {
+					if tenantLimit {
+						p.configMu.Lock()
+						p.tenantLimits = map[string]map[string]any{"team-a": {limitMaxQuerySeries: limit}}
+						p.configMu.Unlock()
+					} else {
+						p.maxStatsQuerySeries = limit
+					}
+					origin := fmt.Sprintf("stage-%d", stage)
+					got := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, origin))
+					if limit == 100 {
+						if matrix := dlvBaselineReadMatrix(t, got); !reflect.DeepEqual(matrix, want) {
+							t.Fatalf("raised limit reused a partial response: got %v, want %v", matrix, want)
+						}
+					} else {
+						var body struct {
+							Warnings []string
+							Data     struct{ Result []json.RawMessage }
+						}
+						if got.Code != http.StatusOK || json.Unmarshal(got.Body.Bytes(), &body) != nil || len(body.Warnings) != 1 || len(body.Data.Result) != 1 {
+							t.Fatalf("lowered limit reused an unrestricted response: %d %s", got.Code, got.Body)
+						}
+					}
+					repeat := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, origin+"-repeat"))
+					if !bytes.Equal(repeat.Body.Bytes(), got.Body.Bytes()) || origins.made(origin+"-repeat") != 0 {
+						t.Fatal("an unchanged effective limit must still reuse its own response")
+					}
+				}
+			})
+		}
 	}
 }
 

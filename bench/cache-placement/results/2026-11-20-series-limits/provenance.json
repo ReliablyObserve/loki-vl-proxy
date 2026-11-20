@@ -1,0 +1,50 @@
+{
+  "base_commit": "eef311db6845170474d6d200d818a58e811edc59",
+  "runtime_base_commit": "71829e8d04eea4787d9f7657a4d1b00a47807823",
+  "runtime_scope": "Existing playground retains PR 1705 plus the three cache source changes; the independent change is based on main.",
+  "runtime_cache_patch_sha256": "d9354a8fc82e35edbe19cdb818880979103ee3102e01d27dd42bf7250da1114b",
+  "candidate_source_files": [
+    {
+      "path": "internal/proxy/proxy.go",
+      "sha256": "be94e6cd213dd07c72b5cac8a68fe00788b5db315aa22f9661edb1e91efde4bc"
+    },
+    {
+      "path": "internal/proxy/middleware.go",
+      "sha256": "8f4831fb339512eeba8b02051edf0b3c6eafed32cb3ceb88eb933b63033263b8"
+    },
+    {
+      "path": "internal/proxy/multitenant.go",
+      "sha256": "43e8dcba3eeaf310fc80ac392591ad72ecc94ddab9e103b2d6e2d1dfabe0a294"
+    }
+  ],
+  "runtime_source_files": [
+    {
+      "path": "internal/proxy/proxy.go",
+      "sha256": "be94e6cd213dd07c72b5cac8a68fe00788b5db315aa22f9661edb1e91efde4bc"
+    },
+    {
+      "path": "internal/proxy/middleware.go",
+      "sha256": "8f4831fb339512eeba8b02051edf0b3c6eafed32cb3ceb88eb933b63033263b8"
+    },
+    {
+      "path": "internal/proxy/multitenant.go",
+      "sha256": "43e8dcba3eeaf310fc80ac392591ad72ecc94ddab9e103b2d6e2d1dfabe0a294"
+    }
+  ],
+  "stack": {
+    "project": "e2e-compat",
+    "context": "colima-lvp",
+    "grafana": "13.3.1",
+    "loki": "3.7.10",
+    "victorialogs": "1.54.0",
+    "proxy_variants": 13
+  },
+  "limits": {
+    "patterns_before": 1000,
+    "patterns_after": 1000000,
+    "reference_loki": 1000000,
+    "vmauth": 1000
+  },
+  "api_replay": "Identical saved 15-minute browser request, 2-second range window and step; normalized labels, timestamps and values are compared.",
+  "browser_capture": "One worker, installed Chrome, existing stack only; 1010 unique values per field and no fixture data reset."
+}

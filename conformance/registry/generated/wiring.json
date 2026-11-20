@@ -275,6 +275,8 @@
       "internal/proxy/drilldown_series_limit_mode_test.go",
       "internal/proxy/drilldown_series_limit_ranking_test.go",
       "internal/proxy/drilldown_series_limit_rule_loki_test.go",
+      "internal/proxy/ordered_json_result_cache_test.go",
+      "internal/proxy/response_cache_contract_test.go",
       "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sum_without_differential_test.go",
@@ -297,6 +299,7 @@
     ],
     "limits/effective-limit-resolution": [
       "internal/proxy/default_max_query_length_test.go",
+      "internal/proxy/response_cache_contract_test.go",
       "internal/proxy/tenant_query_limits_test.go"
     ],
     "limits/every-cap-is-a-flag": [
@@ -401,6 +404,7 @@
       "internal/proxy/capture_error_replay_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
+      "internal/proxy/error_flights_test.go",
       "internal/proxy/extraction_list_outside_without_test.go",
       "internal/proxy/ordered_json_step_wider_test.go",
       "internal/proxy/series_limit_routes_test.go",
@@ -1020,6 +1024,7 @@
       "internal/cache/peer_replication_test.go",
       "internal/proxy/patterns_persistence_test.go",
       "internal/proxy/peer_push_identity_test.go",
+      "internal/proxy/response_cache_contract_test.go",
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-stats-extent": [
@@ -3817,6 +3822,7 @@
       "semantics/error-coalescing-request-flights"
     ],
     "internal/proxy/error_flights_test.go": [
+      "limits/series-limit-error",
       "semantics/error-cache-byte-equal-answers",
       "semantics/error-cache-classes-and-ttl",
       "semantics/error-cache-operator-switches",
@@ -4322,6 +4328,7 @@
     "internal/proxy/ordered_json_result_cache_test.go": [
       "backend-deadlines-and-cancellation",
       "data-probing-and-freshness",
+      "limits/drilldown-partial-with-warning",
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
       "tenant-numeric-routing"
@@ -4700,6 +4707,11 @@
     "internal/proxy/reserved_field_test.go": [
       "cache-response-key-versions",
       "semantics/translator-writes-reserved-field-names"
+    ],
+    "internal/proxy/response_cache_contract_test.go": [
+      "limits/drilldown-partial-with-warning",
+      "limits/effective-limit-resolution",
+      "peer-cache-replication"
     ],
     "internal/proxy/response_key_fence_parser_test.go": [
       "cache-response-key-versions",
@@ -6802,7 +6814,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 804,
+  "tests_with_markers": 805,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

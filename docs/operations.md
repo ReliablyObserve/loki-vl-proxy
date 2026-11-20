@@ -174,6 +174,20 @@ To keep Loki's semantics for these queries, push with JSON message parsing disab
 
 `-max-stats-query-series` defaults to 1000, above Loki's `max_query_series` of 500, because the proxy answers faster than Loki; set it to 500 to match Loki. Keep it modest: with a raised cap, a metric query grouped by a per-request id answers one series per id, and Grafana renders hundreds of thousands of series for one panel.
 
+For complete Fields comparisons, match the effective series limits on both
+servers, including tenant overrides. A partial-result warning means values
+were omitted or the range was cut; Grafana's **Show all N** only expands the
+frames already received. It does not retrieve omitted values. The query's
+`limit` parameter controls log entries, not metric series.
+
+Query response cache keys include the resolved series limit, so a replica
+with a raised or lowered limit never serves an answer cached under the old
+limit, including from SSD after restart or a peer with different settings.
+Equal effective limits still share answers. Metadata listings and VictoriaLogs
+bucket caches remain reusable. During a rolling change, each limit can hold
+its own response until normal expiry or eviction; physical cache budgets do
+not increase.
+
 ---
 
 ## Capacity Planning
