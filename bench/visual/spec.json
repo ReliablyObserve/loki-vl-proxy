@@ -37,6 +37,24 @@
  },
  "pages": [
   {
+   "id": "explore-numeric-equality-error-logs",
+   "kind": "explore",
+   "query": "{env=\"production\",app=\"api-gateway\",query_semantics_run_id=\"\"} |= \"\\\"status\\\"\" | json | status=1s",
+   "ranges": [
+    "15m"
+   ],
+   "ci_ranges": [
+    "15m"
+   ],
+   "covers": [
+    "semantics/label-filter-numeric-equality",
+    "semantics/label-filter-numeric-error-label"
+   ],
+   "fixes": [
+    "semantics/label-filter-numeric-error-label"
+   ]
+  },
+  {
    "id": "explore-numeric-equality-logs",
    "kind": "explore",
    "query": "{env=\"production\",app=\"api-gateway\",query_semantics_run_id=\"\"} |= \"\\\"status\\\"\" | json | status=2e2",

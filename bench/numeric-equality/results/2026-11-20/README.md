@@ -152,5 +152,27 @@ exposes those test streams together, whereas the proxy isolates their numeric
 tenants from tenant 0. The first unscoped capture saw four Loki-only fixture
 timestamps; their marker and original line confirmed the different input data.
 The final capture uses the same shared dataset, without relaxing comparison.
-The two pages are linked to the existing cases in `bench/visual/spec.json`.
+The three pages are linked to the existing cases in `bench/visual/spec.json`.
 Local captures cover proxy/Loki; the CI harness captures main/PR/Loki.
+
+
+A third page, `explore-numeric-equality-error-logs`, uses `status=1s` on
+ordinary integer status values. The proxy and Loki retain the same 1,000 log
+entries with `LabelFilterErr` and conversion details; one further Playwright
+test passed, with no page/API errors. [Proxy screenshot](explore-numeric-equality-error-logs-pr.png)
+and [Loki screenshot](explore-numeric-equality-error-logs-loki.png) retain the
+visible difference in their volume panels.
+
+Grafana adds `| drop __error__` to this page's histogram query. That extra-stage
+combination remains outside the proved numeric-error pipeline: the proxy
+answers no histogram series while Loki answers three. The exact query and
+answers are kept in the raw captures and `visual-error-retention-comparison.json`.
+Thus only one of the two query payloads matches on this page. This is an open
+axis of `semantics/label-filter-numeric-error-label`, not a complete page-parity
+claim. No allowlist or comparison exemption was added. CI supplies the main
+capture at the same window and judges whether this is an improvement without
+a new difference; the local proxy/Loki pair alone cannot prove that judgment.
+
+The full root Go replay, `go test -short -count=1 -p 1 -timeout 45m ./...`,
+also passed: 36 package results, zero failures, with GOMAXPROCS=2 and
+GOMEMLIMIT=2GiB. Its output is retained in `full-root-go-short.txt.gz`.

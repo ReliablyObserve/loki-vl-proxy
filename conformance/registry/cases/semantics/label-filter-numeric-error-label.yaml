@@ -57,6 +57,17 @@ why: |
   this pipeline. The final API artifact is
   bench/numeric-equality/results/2026-11-20/candidate-e2e-final.txt.gz.
 
+  The Explore visual page explore-numeric-equality-error-logs now records
+  another concrete extra-stage axis on the shared generated data: status=1s
+  after json retains the same 1000 log entries and conversion-error metadata
+  as Loki. Grafana adds | drop __error__ to its automatic count histogram;
+  that pipeline remains outside NumericEqualityErrorPipeline and answers
+  no series where Loki answers three. Raw Grafana answers and the remaining
+  difference are retained in
+  bench/numeric-equality/results/2026-11-20/visual-error-retention-comparison.json.
+  This histogram axis is open; the visual page is partial evidence, not a
+  strict matrix contract closing it.
+
   This does not close overflow, present-empty, sanitized/extracted-key,
   adjacent-filter or general malformed-parser gaps. The 81-query storage
   oracle still counts 126/7286 differences (semantics/label-filter-numeric-equality).
