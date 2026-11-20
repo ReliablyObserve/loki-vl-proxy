@@ -267,24 +267,6 @@ func numericEqualityKind(field string) string {
 // is listed once, whichever literal or operator shows it. The answers are held to this list both ways: a difference
 // that is not listed fails, and so does a listed value that no longer differs.
 var numericEqualityDifferences = map[string]string{
-	// The value space VictoriaLogs reads in one: a number, a duration and a size are all numbers to it, and Loki marks
-	// a value of another kind with __error__ (the order comparisons share this).
-	"number 1KB": "a size read as a number", "number 1K": "a size read as a number", "number 1000B": "a size read as a number",
-	"number 1µs": "a duration read as a number", "number 1000ns": "a duration read as a number", "number 0s": "a duration read as a number",
-	"duration 1GB": "a size read as a duration", "duration 1G": "a size read as a duration", "duration 1000000000": "a number read as a duration",
-	"duration 100000000": "a number read as a duration", "duration 5000000000": "a number read as a duration",
-	"bytes 1µs": "a duration read as a size", "bytes 1000ns": "a duration read as a size", "bytes 10ns": "a duration read as a size",
-	// Values VictoriaLogs reads as a number that Loki marks with __error__.
-	"number 0xC8": "hexadecimal integer", "number 0b11001000": "binary integer", "number 0o310": "octal integer",
-	"bytes 1_000": "a size with a separator", "bytes 0x3e8": "a hexadecimal size", "bytes 1e3": "an exponent in a size",
-	// Spellings Loki reads that VictoriaLogs does not.
-	"duration 5000000us": "microseconds written us", "duration 100000us": "microseconds written us",
-	"duration 5000000μs": "microseconds written with the Greek mu", "duration +5s": "a signed duration",
-	"duration 05s": "a duration with a leading zero",
-	"bytes 1 KB":   "a size with a space", "bytes 1kb": "a size in lower case", "bytes 1Kb": "a size in mixed case", "bytes 1kB": "a size in mixed case",
-	"bytes 1k": "a size in lower case", "bytes 1000b": "a size in lower case", "bytes 10b": "a size in lower case", "bytes 1KB ": "a size with a trailing space",
-	"bytes 1,000": "a size with a thousands separator", "bytes 001KB": "a size with a leading zero", "bytes 1.5 MiB": "a size with a space",
-	"bytes 2 KB": "a size with a space",
 	// A present but empty value: Loki keeps it with __error__ under != in a json line, VictoriaLogs has no such field.
 	"number ": "an empty json value", "duration ": "an empty json value", "bytes ": "an empty json value",
 }

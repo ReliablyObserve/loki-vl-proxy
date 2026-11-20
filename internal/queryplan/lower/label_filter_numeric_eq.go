@@ -164,10 +164,16 @@ func numericEqualityBound(e *logql.LabelFilterExpr) (bound string, ok bool) {
 // !=, the entries that have a value and whose value does not.
 func numericEqualityFilter(field string, e *logql.LabelFilterExpr) logsql.FilterExpr {
 	bound, _ := numericEqualityBound(e)
-	equal := logsql.Group{Expr: logsql.AllOf{
+	// The range pair VictoriaLogs reads, kept to the values Loki reads in the literal's kind, and the spellings of the
+	// value in a unit VictoriaLogs does not read (label_filter_numeric_syntax.go).
+	var equal logsql.FilterExpr = logsql.Group{Expr: logsql.AllOf{
 		logsql.FieldFilter{Field: field, Op: logsql.FieldOpGTE, Value: bound},
 		logsql.FieldFilter{Field: field, Op: logsql.FieldOpLTE, Value: bound},
+		logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: numericSyntaxPattern(e)},
 	}}
+	if spellings := exactSpellingsPattern(e); spellings != "" {
+		equal = logsql.Group{Expr: logsql.AnyOf{equal, logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: spellings}}}
+	}
 	if e.Cmp != "!=" {
 		return equal
 	}

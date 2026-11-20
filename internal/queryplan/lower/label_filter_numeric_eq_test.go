@@ -59,11 +59,12 @@ func TestPlanLowersNumericEquality(t *testing.T) {
 	type c struct{ lit, bound string }
 	kinds := []struct {
 		name, field string
+		kind        logql.LabelFilterValueKind
 		lits        []c
 	}{
-		{"number", "m", []c{{"200", "200"}, {"200.5", "200.5"}, {"-3", "-3"}, {"2e2", "200"}, {"0", "0"}}},
-		{"duration", "d", []c{{"5s", "5000000000"}, {"1m30s", "90000000000"}, {"100ms", "100000000"}}},
-		{"bytes", "b", []c{{"1KB", "1000"}, {"1.5MiB", "1572864"}, {"10B", "10"}}},
+		{"number", "m", logql.LabelFilterValueNumber, []c{{"200", "200"}, {"200.5", "200.5"}, {"-3", "-3"}, {"2e2", "200"}, {"0", "0"}}},
+		{"duration", "d", logql.LabelFilterValueDuration, []c{{"5s", "5000000000"}, {"1m30s", "90000000000"}, {"100ms", "100000000"}}},
+		{"bytes", "b", logql.LabelFilterValueBytes, []c{{"1KB", "1000"}, {"1.5MiB", "1572864"}, {"10B", "10"}}},
 	}
 	unpack := map[string]string{"json": "unpack_json", "logfmt": "unpack_logfmt"}
 	for _, k := range kinds {
@@ -71,11 +72,7 @@ func TestPlanLowersNumericEquality(t *testing.T) {
 			for _, parser := range []string{"json", "logfmt"} {
 				for _, op := range []string{"=", "==", "!="} {
 					q := `{app="a"} | ` + parser + ` | ` + k.field + ` ` + op + ` ` + l.lit
-					pair := k.field + ":>=" + l.bound + " " + k.field + ":<=" + l.bound
-					want := `app:="a" | ` + unpack[parser] + ` | filter (` + pair + `)`
-					if op == "!=" {
-						want = `app:="a" | ` + unpack[parser] + ` | filter (` + k.field + `:* -(` + pair + `))`
-					}
+					want := `app:="a" | ` + unpack[parser] + ` | filter ` + numericEqualityText(k.field, op, k.kind, l.lit)
 					for _, prof := range []Profile{{}, {KeepLine: true}} {
 						op2, err := PlanQuery(q, planOf(t, q), prof)
 						if err != nil {
@@ -126,17 +123,32 @@ func assertNumericEqualityTree(t *testing.T, text, field, bound string, negated 
 			t.Errorf("%s: %#v is not %s %v %s", text, f, field, op, bound)
 		}
 	}
+	regexpOn := func(f logsql.FilterExpr) {
+		t.Helper()
+		if ff, ok := f.(logsql.FieldFilter); !ok || ff.Field != field || ff.Op != logsql.FieldOpRegexp || ff.Value == "" || ff.Negate {
+			t.Errorf("%s: %#v is not a regexp on %s", text, f, field)
+		}
+	}
+	// The equality is the two comparisons and the syntax guard, or that group or the spellings' regexp.
 	pair := func(f logsql.FilterExpr) {
 		t.Helper()
 		if g, ok := f.(logsql.Group); ok {
 			f = g.Expr
 		}
+		if or, ok := f.(logsql.OrExpr); ok {
+			regexpOn(or.Right)
+			f = or.Left
+			if g, ok := f.(logsql.Group); ok {
+				f = g.Expr
+			}
+		}
 		all, ok := f.(logsql.AllOf)
-		if !ok || len(all) != 2 {
-			t.Fatalf("%s: %#v is not two comparisons", text, f)
+		if !ok || len(all) != 3 {
+			t.Fatalf("%s: %#v is not two comparisons and a guard", text, f)
 		}
 		cmp(all[0], logsql.FieldOpGTE)
 		cmp(all[1], logsql.FieldOpLTE)
+		regexpOn(all[2])
 	}
 	if g, ok := filter.(logsql.Group); ok {
 		filter = g.Expr
@@ -166,16 +178,19 @@ func assertNumericEqualityTree(t *testing.T, text, field, bound string, negated 
 //
 // conformance: semantics/label-filter-numeric-equality
 func TestPlanLowersNumericEqualityAmongKeys(t *testing.T) {
+	num := func(field, op, lit string) string {
+		return numericEqualityText(field, op, logql.LabelFilterValueNumber, lit)
+	}
 	for _, c := range []struct{ q, prof, want string }{
 		{`{app="a"} | json | http_status == 200`, "none",
-			`app:="a" | unpack_json | filter ((http_status:>=200 http_status:<=200) OR ("http.status":>=200 "http.status":<=200) OR ("http-status":>=200 "http-status":<=200))`},
+			`app:="a" | unpack_json | filter (` + num("http_status", "==", "200") + ` OR ` + num(`"http.status"`, "==", "200") + ` OR ` + num(`"http-status"`, "==", "200") + `)`},
 		{`{app="a"} | json | http_status != 200`, "none",
-			`app:="a" | unpack_json | filter ((http_status:* -(http_status:>=200 http_status:<=200)) OR ("http.status":* -("http.status":>=200 "http.status":<=200)) OR ("http-status":* -("http-status":>=200 "http-status":<=200)))`},
-		{`{app="a"} | logfmt | k8s.pod == 5`, "none", `app:="a" | unpack_logfmt | filter ("k8s.pod":>=5 "k8s.pod":<=5)`},
+			`app:="a" | unpack_json | filter (` + num("http_status", "!=", "200") + ` OR ` + num(`"http.status"`, "!=", "200") + ` OR ` + num(`"http-status"`, "!=", "200") + `)`},
+		{`{app="a"} | logfmt | k8s.pod == 5`, "none", `app:="a" | unpack_logfmt | filter ` + num(`"k8s.pod"`, "==", "5")},
 		{`{app="a"} | json | a == 1 and b != 2 or c = 3`, "none",
-			`app:="a" | unpack_json | filter (((a:>=1 a:<=1) and (b:* -(b:>=2 b:<=2))) or (c:>=3 c:<=3))`},
-		{`{app="a"} | json | n >= 1 and n == 2`, "none", `app:="a" | unpack_json | filter (n:>=1 and (n:>=2 n:<=2))`},
-		{`{app="a"} | json | n == 2 | m != 3s`, "none", `app:="a" | unpack_json | filter (n:>=2 n:<=2) | filter (m:* -(m:>=3000000000 m:<=3000000000))`},
+			`app:="a" | unpack_json | filter ((` + num("a", "==", "1") + ` and ` + num("b", "!=", "2") + `) or ` + num("c", "=", "3") + `)`},
+		{`{app="a"} | json | n >= 1 and n == 2`, "none", `app:="a" | unpack_json | filter (n:>=1 and ` + num("n", "==", "2") + `)`},
+		{`{app="a"} | json | n == 2 | m != 3s`, "none", `app:="a" | unpack_json | filter ` + num("n", "==", "2") + ` | filter ` + numericEqualityText("m", "!=", logql.LabelFilterValueDuration, "3s")},
 		{`{app="a"} | n == 2 | json`, "none", `app:="a" n:="2" | unpack_json`},
 	} {
 		op, err := PlanQuery(c.q, planOf(t, c.q), Profile{})
@@ -334,4 +349,11 @@ func FuzzNumericEqualityLowering(f *testing.F) {
 			}
 		}
 	})
+}
+
+// numericEqualityText is the filter group the lowering writes for `field op lit` (numericEqualityFilter): the guarded
+// range pair, or that group or the spellings' regexp, negated on the entries with the field for !=. The patterns are
+// held to Loki by TestNumericEqualityAfterParserMatchesLoki and TestNumericSyntaxAndSpellings.
+func numericEqualityText(field, op string, kind logql.LabelFilterValueKind, lit string) string {
+	return numericEqualityFilter(field, &logql.LabelFilterExpr{Name: field, Cmp: op, Kind: kind, Value: lit}).String()
 }

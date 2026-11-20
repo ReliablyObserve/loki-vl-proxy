@@ -22,20 +22,22 @@ func TestNumericEqualityServedFromPlan(t *testing.T) {
 	on := newLoweringProfileProxy(t, "underscores", func(c *Config) { c.LabelStyle = LabelStyleUnderscores }, "")
 	off := newLoweringProfileProxy(t, "underscores", func(c *Config) { c.LabelStyle = LabelStyleUnderscores; c.DisableQueryPlanLowering = true }, "")
 	for _, c := range []struct{ q, served string }{
-		{`{app="a"} | json | status == 500`, `filter (status:>=500 status:<=500)`},
-		{`{app="a"} | logfmt | status = 500`, `filter (status:>=500 status:<=500)`},
+		{`{app="a"} | json | status == 500`, `status:>=500 status:<=500 status:~`},
+		{`{app="a"} | logfmt | status = 500`, `status:>=500 status:<=500 status:~`},
 		{`{app="a"} | json | status != 200 | status != 404`, `status:>=200 status:<=200`},
 		{`sum(count_over_time({app="a"} | json | status == 500 [5m]))`, `status:>=500 status:<=500`},
 		{`sum by (app) (rate({app="a"} | logfmt | d = 5s [1m]))`, `d:>=5000000000 d:<=5000000000`},
 	} {
-		got, err := on.translateLogResponseQuery(ctx, c.q)
-		if err != nil || !strings.Contains(got, c.served) {
-			t.Errorf("%q: served %q %v, want the plan's numeric comparison %q", c.q, got, err, c.served)
-		}
-		legacy, err := off.translateLogResponseQuery(ctx, c.q)
-		if err != nil || legacy == got || strings.Contains(legacy, c.served) {
-			t.Errorf("%q: with the lowering off %q %v, want the translator's text", c.q, legacy, err)
-		}
+		t.Run(c.q, func(t *testing.T) {
+			got, err := on.translateLogResponseQuery(ctx, c.q)
+			if err != nil || !strings.Contains(got, c.served) {
+				t.Errorf("served %q %v, want the plan's numeric comparison %q", got, err, c.served)
+			}
+			legacy, err := off.translateLogResponseQuery(ctx, c.q)
+			if err != nil || legacy == got || strings.Contains(legacy, c.served) {
+				t.Errorf("with the lowering off %q %v, want the translator's text", legacy, err)
+			}
+		})
 	}
 	// A signed number is a class of its own (semantics/translator-writes-signed-number-with-blank): not served here.
 	q := `{app="a"} | json | status == 500 | v = -5`

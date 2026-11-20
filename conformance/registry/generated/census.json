@@ -2719,6 +2719,7 @@
     "internal/queryplan/lower/keyword_field_names_test.go | semantics/translator-writes-keyword-field-names-bare",
     "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go | semantics/label-filter-numeric-equality",
     "internal/queryplan/lower/label_filter_numeric_eq_test.go | semantics/label-filter-numeric-equality",
+    "internal/queryplan/lower/label_filter_numeric_syntax_test.go | semantics/label-filter-numeric-equality",
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/log_screen_test.go | architecture-syntax-package-layering",
@@ -3149,6 +3150,8 @@
     "test/e2e-compat/non_sum_vector_aggregation_range_test.go | loki_api_v1_query_range",
     "test/e2e-compat/non_sum_vector_aggregation_range_test.go | metric-series-identity",
     "test/e2e-compat/non_sum_vector_aggregation_range_test.go | semantics/non-sum-vector-aggregation-unreduced",
+    "test/e2e-compat/numeric_equality_like_loki_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/numeric_equality_like_loki_test.go | semantics/label-filter-numeric-equality",
     "test/e2e-compat/operators_not_in_loki_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "test/e2e-compat/ordered_json_result_cache_test.go | loki_api_v1_query_range",
     "test/e2e-compat/ordered_json_result_cache_test.go | parser-error-and-label-collision",
@@ -3404,7 +3407,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 802,
+      "go": 804,
       "playwright": 3
     },
     "page_kinds": {
