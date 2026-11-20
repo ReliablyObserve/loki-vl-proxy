@@ -185,10 +185,9 @@ func lowersParse(query string) bool {
 }
 
 // turnedAwayByStages reports a parsed query the text screens turn away for a stage of its log query, read from the
-// tree in a few steps: a vector(n) call at the top or as a binary operand, a decolorize or unpack stage, a detected_level filter after a stage (after a json or logfmt
-// parser in a metric query), and an
-// equality on a number, duration or byte size after a json or logfmt parser (in a log query also an unwrap and a
-// service_name filter). The validation asks it before lowersParse, so a query it names costs no text scan; a query it
+// tree in a few steps: a vector(n) call at the top or as a binary operand, a decolorize or unpack stage, and a
+// detected_level filter after a stage (after a json or logfmt parser in a metric query; in a log query also an unwrap
+// and a service_name filter). An equality on a number after a parser is served from the plan. The validation asks it before lowersParse, so a query it names costs no text scan; a query it
 // misses is read by the screens as before. It never names a query the translation plans.
 func turnedAwayByStages(expr logqlpkg.Expr) bool {
 	logQuery := true
@@ -248,8 +247,7 @@ func pipelineTurnedAway(stages []logqlpkg.Stage, logQuery bool) bool {
 }
 
 // labelFilterTurnedAway reports a leaf of a label filter the screens turn away: detected_level after a stage (in a
-// metric query, after a json or logfmt parser), an
-// equality on a number, duration or byte size after a json or logfmt parser, and (in a log query) service_name.
+// metric query, after a json or logfmt parser) and (in a log query) service_name.
 func labelFilterTurnedAway(e *logqlpkg.LabelFilterExpr, staged, keyParsed, logQuery bool) bool {
 	if !e.IsLeaf() {
 		return labelFilterTurnedAway(e.Left, staged, keyParsed, logQuery) || labelFilterTurnedAway(e.Right, staged, keyParsed, logQuery)
@@ -257,11 +255,6 @@ func labelFilterTurnedAway(e *logqlpkg.LabelFilterExpr, staged, keyParsed, logQu
 	switch {
 	case e.Name == "detected_level" && (logQuery && staged || keyParsed), e.Name == "service_name" && logQuery:
 		return true
-	case keyParsed && (e.Cmp == "=" || e.Cmp == "==" || e.Cmp == "!="):
-		switch e.Kind {
-		case logqlpkg.LabelFilterValueNumber, logqlpkg.LabelFilterValueDuration, logqlpkg.LabelFilterValueBytes:
-			return true
-		}
 	}
 	return false
 }

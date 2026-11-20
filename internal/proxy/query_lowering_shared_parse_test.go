@@ -42,7 +42,8 @@ var (
 // conformance: architecture-syntax-package-layering, observability-query-flow
 func TestQueryPlanLowering_ReadsTheValidationsParse(t *testing.T) {
 	p := newLoweringProfileProxy(t, "underscores", func(c *Config) { c.LabelStyle = LabelStyleUnderscores }, "")
-	for _, q := range sharedParseServed {
+	// A numeric equality after a parser is served from the plan (semantics/label-filter-numeric-equality).
+	for _, q := range append([]string{`{app="a"} | json | status == 500`, `sum(count_over_time({app="a"} | json | status == 500 [5m]))`}, sharedParseServed...) {
 		if v := cachedQueryValidation(q); v.msg != "" {
 			t.Fatalf("%q: %s", q, v.msg)
 		}
@@ -172,7 +173,6 @@ func TestTurnedAwayByStagesNamesNoServedQuery(t *testing.T) {
 	}
 	for _, q := range []string{
 		`{app="a"} |= "x" | decolorize`, `{app="a"} | unpack | x="y"`, `{app="a"} | logfmt | detected_level="error"`,
-		`{app="a"} | json | status == 500`, `sum(count_over_time({app="a"} | json | status == 500 [5m]))`,
 		`{app="a"} | service_name="x"`, `vector(1)`, `vector(1) + sum(rate({app="a"}[5m]))`,
 	} {
 		expr, err := logqlpkg.Parse(q)
