@@ -1928,6 +1928,7 @@
     "internal/proxy/nested_vector_aggregation_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/nested_vector_fold_test.go | metric-series-identity",
     "internal/proxy/nested_vector_fold_test.go | semantics/nested-aggregation-outer-by-native-routes",
+    "internal/proxy/numeric_equality_served_test.go | semantics/label-filter-numeric-equality",
     "internal/proxy/offset_integration_test.go | semantics/offset-different-per-range-vector",
     "internal/proxy/ordered_json_conditional_unpack_test.go | parsed-label-series-identity",
     "internal/proxy/ordered_json_conditional_unpack_test.go | parser-json",
@@ -3403,7 +3404,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 801,
+      "go": 802,
       "playwright": 3
     },
     "page_kinds": {

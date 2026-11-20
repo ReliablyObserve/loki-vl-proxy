@@ -399,10 +399,13 @@ func dynamicIdentityScreen(query string) bool {
 //   - A binary operation the binary route evaluates operand by operand (lower.RoutedBinary: a without clause or a
 //     vector(n) operand).
 //   - The recorded known divergences the plan writes as Loki reads them, where the translator writes another text:
-//     a keep before an unwrap anywhere but where the proxy serves its identity (lower.WritesKeepUnwrapIdentity), a
-//     a numeric equality after a parser (semantics/label-filter-numeric-equality), and an unwrap of a field
-//     VictoriaLogs reserves in another case, which the lowering writes in the outbound guard's form
-//     (semantics/reserved-field-name-case-outbound).
+//     a keep before an unwrap anywhere but where the proxy serves its identity (lower.WritesKeepUnwrapIdentity), and
+//     an unwrap of a field VictoriaLogs reserves in another case, which the lowering writes in the outbound guard's
+//     form (semantics/reserved-field-name-case-outbound).
+//
+// A numeric, duration or bytes equality after a json or logfmt parser is served from the plan, which compares the
+// value as a number as Loki does where the translator writes the literal's exact text
+// (semantics/label-filter-numeric-equality; TestNumericEqualityAfterParserMatchesLoki holds the answers).
 //   - A label filter value the translator reads as syntax (misreadFilterValue).
 //
 // A label named like a field VictoriaLogs reserves is served from the plan, which filters the stream tag where the
@@ -415,8 +418,7 @@ func dynamicIdentityScreen(query string) bool {
 // (semantics/translator-writes-keyword-field-names-bare), as the corpus shadow and the log query flip already hold.
 func writesTranslatorText(plan *queryplan.Plan, prof lower.Profile) bool {
 	return !holdsEvaluatedLayer(plan.Root) && !lower.RoutedBinary(plan.Root) && !lower.WritesKeepUnwrapIdentity(plan) &&
-		!lower.WritesNumericEquality(plan) && !lower.UnwrapsReservedFieldOtherCase(plan) &&
-		!misreadFilterValue(plan.Root, misreadAny)
+		!lower.UnwrapsReservedFieldOtherCase(plan) && !misreadFilterValue(plan.Root, misreadAny)
 }
 
 // misreadKind is a kind of label filter value the string translator reads as syntax (misreadFilterValue).
@@ -511,15 +513,16 @@ func holdsEvaluatedLayer(n queryplan.Node) bool {
 // servesLogStages is the typed gate of a log query with stage families (lower.PlanLogStages): every family in allowed
 // (the flipped ones, and the regexp and pattern parsers of a query with an unspaced one), at least one, and none of
 // the recorded known divergences, where the plan writes the query as Loki reads it and the
-// string translator writes another text (writesTranslatorText names them): a numeric equality after a parser, a label
-// named like a field VictoriaLogs reserves, a label filter value that holds detected_level or service_name or a signed
-// number the translator copies with a blank. Those stay with the string translator until a flip carries their own
-// proof. A value that holds the translator's stage marker bytes is served from the plan, which keeps the value
-// (TestMarkerBytesInLabelValueMeanWhatLokiMeans holds the answers to Loki's).
+// string translator writes another text (writesTranslatorText names them): a label named like a field VictoriaLogs
+// reserves, a label filter value that holds detected_level or service_name or a signed number the translator copies
+// with a blank. Those stay with the string translator until a flip carries their own proof. A value that holds the
+// translator's stage marker bytes is served from the plan, which keeps the value
+// (TestMarkerBytesInLabelValueMeanWhatLokiMeans holds the answers to Loki's), and so is a numeric equality after a
+// parser (TestNumericEqualityAfterParserMatchesLoki).
 func servesLogStages(plan *queryplan.Plan, prof lower.Profile, allowed lower.LogStages) bool {
 	stages, ok := lower.PlanLogStages(plan)
-	return ok && stages != 0 && stages&^allowed == 0 && !lower.WritesNumericEquality(plan) &&
-		!lower.ReadsReservedField(plan, prof) && !misreadFilterValue(plan.Root, misreadText|misreadSign)
+	return ok && stages != 0 && stages&^allowed == 0 && !lower.ReadsReservedField(plan, prof) &&
+		!misreadFilterValue(plan.Root, misreadText|misreadSign)
 }
 
 // filterOnly reports a log query whose stages are line filters and label filters only: the queries served from the

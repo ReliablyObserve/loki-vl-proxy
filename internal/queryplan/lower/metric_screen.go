@@ -27,8 +27,7 @@ import (
 //     leaves the existence check the translator moves to it, parser label filter);
 //   - a label filter on an `_extracted` name after a json or logfmt parser with such a grouping or unwrapped label,
 //     and a json extraction expression the lowering does not write (parser extracted label, json extraction);
-//   - a label filter with an equality on a number, duration or byte size after a json or logfmt parser
-//     (WritesNumericEquality), or a comparison with a signed number;
+//   - a comparison with a signed number;
 //   - a word VictoriaLogs reserves as a field name (_time, _msg, _stream, _stream_id in any letter case) before a parser,
 //     other than as a selector matcher's or a label filter's name before any other stage (the stream tag the plan
 //     filters, ReadsReservedField);
@@ -622,8 +621,9 @@ func (s *metricScan) operator(q string, i int) (int, bool) {
 	return end, true
 }
 
-// comparison reports false for a label filter value ScreenMetric turns away: a signed number, or a number, duration
-// or byte size compared for equality after a json or logfmt parser.
+// comparison reports false for a label filter value ScreenMetric turns away: a signed number. A number, duration or
+// byte size compared for equality after a json or logfmt parser is served from the plan, which compares the value as
+// a number as Loki does (WritesNumericEquality, semantics/label-filter-numeric-equality).
 func (s *metricScan) comparison(q string, i int, op string) bool {
 	for i < len(q) && isBlank(q[i]) {
 		i++
@@ -638,8 +638,7 @@ func (s *metricScan) comparison(q string, i int, op string) bool {
 	if op == "!=" && s.parsed && i+1 < len(q) && (c == '"' || c == '`') && q[i+1] == c {
 		s.exists = true
 	}
-	numeric := c >= '0' && c <= '9' || c == '.'
-	return !numeric || !s.parsed || op != "=" && op != "==" && op != "!="
+	return true
 }
 
 // oddJSONPath reports a json extraction expression, as quoted, that the lowering leaves to the translator

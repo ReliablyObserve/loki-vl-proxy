@@ -1831,6 +1831,7 @@
       "test/e2e-compat/label_filter_number_literal_test.go"
     ],
     "semantics/label-filter-numeric-equality": [
+      "internal/proxy/numeric_equality_served_test.go",
       "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go",
       "internal/queryplan/lower/label_filter_numeric_eq_test.go"
     ],
@@ -4250,6 +4251,9 @@
     "internal/proxy/nested_vector_fold_test.go": [
       "metric-series-identity",
       "semantics/nested-aggregation-outer-by-native-routes"
+    ],
+    "internal/proxy/numeric_equality_served_test.go": [
+      "semantics/label-filter-numeric-equality"
     ],
     "internal/proxy/offset_integration_test.go": [
       "semantics/offset-different-per-range-vector"
@@ -6802,7 +6806,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 804,
+  "tests_with_markers": 805,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

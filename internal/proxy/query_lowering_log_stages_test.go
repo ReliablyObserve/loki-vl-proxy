@@ -99,6 +99,12 @@ func TestQueryPlanLowering_LogCorpusTextParity(t *testing.T) {
 					// TestMarkerBytesInLabelValueMeanWhatLokiMeans), so the texts differ by design.
 					continue
 				}
+				if plan := resolvedPlan(q); plan != nil && lower.WritesNumericEquality(plan) {
+					// A numeric equality after a parser: the plan compares the value as a number, the translator the
+					// literal's text (semantics/label-filter-numeric-equality, held to Loki by
+					// TestNumericEqualityAfterParserMatchesLoki), so the texts differ by design.
+					continue
+				}
 				got, gotErr := on.translateLogResponseQuery(ctx, q)
 				want, wantErr := off.translateLogResponseQuery(ctx, respaced(q))
 				if got != want || (gotErr == nil) != (wantErr == nil) {
@@ -295,6 +301,11 @@ func FuzzLogFlipGate(f *testing.F) {
 // empty when the flipped text is the translator's of the spelling it reads as Loki does, else the difference.
 func logFlipGateHolds(on, off *Proxy, q string) string {
 	ctx := context.Background()
+	// A numeric equality after a parser is served from the plan, which compares the value as a number where the
+	// translator writes the literal's text (semantics/label-filter-numeric-equality): held to Loki by its differential.
+	if plan := resolvedPlan(q); plan != nil && lower.WritesNumericEquality(plan) {
+		return ""
+	}
 	reads := spelledAsTranslatorReads(q)
 	got, gotErr := on.translateLogResponseQuery(ctx, q)
 	want, wantErr := off.translateLogResponseQuery(ctx, reads)
@@ -489,13 +500,13 @@ var parserFormatFamilies = []struct {
 		`{app="a"} | json m="a.b", n="c" | m="x"`, `{app="a"} | json | (status="500" or level!="info")`,
 		`{app="a"} | json | k8s.pod.name="p"`,
 	}, []string{
-		`{app="a"} | json | status == 500`, `{app="a"} | json | detected_level="error"`, `{app="a"} | json | service_name="x"`,
+		`{app="a"} | json | detected_level="error"`, `{app="a"} | json | service_name="x"`,
 		`{app="a"} | json | unpack`,
 	}},
 	{"Logfmt", []string{
 		`{app="a"} | logfmt`, `{app="a"} | logfmt | status >= 500 | path = "/api"`, `{app="a"} | logfmt --strict | level="error"`,
 		`{app="a"} | logfmt a="b" | a!="x"`,
-	}, []string{`{app="a"} | logfmt | status = 500`, `{app="a"} | logfmt | detected_level="x"`}},
+	}, []string{`{app="a"} | logfmt | detected_level="x"`}},
 	{"DropKeep", []string{
 		`{app="a"} | drop a, b`, `{app="a"} | keep c, d`, `{app="a"} | drop a="x", b`, `{app="a"} | keep a="x", b="y"`,
 		`{app="a"} |= "x" | drop detected_level`,

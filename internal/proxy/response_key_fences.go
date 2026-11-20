@@ -25,7 +25,7 @@ const (
 	responseKeyInnerQueryRange
 	// responseKeyLogWindowShape feeds the log window fragment fingerprint,
 	// which only the keep projection, keyword label, reserved field case, reserved
-	// field label and marker byte fences reach. It reads no request.
+	// field label, marker byte and numeric equality fences reach. It reads no request.
 	responseKeyLogWindowShape
 )
 
@@ -53,6 +53,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 			b.add(reservedFieldLabelResponseVersion)
 		}
 		b.add(markerBytesFence(query, words.markerQuoted))
+		b.add(numericEqualityResponseKeyVersion(query))
 		return b.String()
 	}
 	other := spelledOtherwise(query)
@@ -80,6 +81,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		b.add(reservedFieldLabelResponseVersion)
 	}
 	b.add(markerBytesFence(query, words.markerQuoted))
+	b.add(numericEqualityResponseKeyVersion(query))
 	if keep && containsWord(query, "unwrap", other) {
 		b.add(keepUnwrapIdentityResponseVersion)
 	}

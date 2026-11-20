@@ -186,8 +186,8 @@
         },
         "handler_serves": {
           "both": 203,
-          "plan": 14,
-          "translator": 4
+          "plan": 17,
+          "translator": 1
         }
       },
       "v1.54 loki profile": {
@@ -248,8 +248,8 @@
         },
         "handler_serves": {
           "both": 203,
-          "plan": 14,
-          "translator": 4
+          "plan": 17,
+          "translator": 1
         }
       }
     }
@@ -541,7 +541,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 12516,
+    "native": 12546,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 90,
@@ -574,7 +574,7 @@
       "LogSelect keep order": 10,
       "LogSelect level filter after stage": 20,
       "LogSelect line format function": 10,
-      "LogSelect route translator text": 40,
+      "LogSelect route translator text": 10,
       "LogSelect route working parser probe": 50,
       "LogSelect unpack line": 10,
       "RangeAgg LogSelect level filter after stage": 10,
@@ -679,7 +679,7 @@
     "calls": {
       "24h chunk/BinOp": "5f8d1c59d489ec6e",
       "24h chunk/LabelReplace": "0ce902c0c8a1708e",
-      "24h chunk/LogSelect": "cbeaa77e7ee4aa7a",
+      "24h chunk/LogSelect": "230723931f65799f",
       "24h chunk/RangeAgg": "ac8fa8c2a826e1c6",
       "24h chunk/Rank": "b65aa61583d498f0",
       "24h chunk/Scalar": "2c7012c3274c662d",
@@ -695,7 +695,7 @@
       "instant/VectorLit": "0dc325c3d1510308",
       "step\u003crange/BinOp": "f114775bceda1b8f",
       "step\u003crange/LabelReplace": "220b572776344233",
-      "step\u003crange/LogSelect": "2b3b4f455471f6c1",
+      "step\u003crange/LogSelect": "78445661eb4b14bd",
       "step\u003crange/RangeAgg": "d6951039546a5c06",
       "step\u003crange/Rank": "24425e5849bcd6e0",
       "step\u003crange/Scalar": "6db69b6718a0b07a",
@@ -703,7 +703,7 @@
       "step\u003crange/VectorLit": "58ad28055f0b3615",
       "step=range/BinOp": "630464c23bffd158",
       "step=range/LabelReplace": "19282eca994ae617",
-      "step=range/LogSelect": "2b3b4f455471f6c1",
+      "step=range/LogSelect": "78445661eb4b14bd",
       "step=range/RangeAgg": "8a5b6cfb95787f43",
       "step=range/Rank": "ec132d7069b51339",
       "step=range/Scalar": "6db69b6718a0b07a",
@@ -711,7 +711,7 @@
       "step=range/VectorLit": "58ad28055f0b3615",
       "step\u003erange/BinOp": "6d7ae57b7ca2df73",
       "step\u003erange/LabelReplace": "595d59c400c48fbe",
-      "step\u003erange/LogSelect": "2b3b4f455471f6c1",
+      "step\u003erange/LogSelect": "78445661eb4b14bd",
       "step\u003erange/RangeAgg": "3b18fa72730e5d52",
       "step\u003erange/Rank": "fb52a2fa6392232b",
       "step\u003erange/Scalar": "6db69b6718a0b07a",
@@ -964,9 +964,9 @@
   "shadow": {
     "rows": 24045,
     "profiles": 12,
-    "native": 22341,
+    "native": 22386,
     "native_proxy_evaluated": 4473,
-    "native_loki_held": 666,
+    "native_loki_held": 711,
     "mismatches": 0,
     "rejected": 345,
     "delegated_by_construct": {
@@ -1007,7 +1007,7 @@
       "VectorLit": 9,
       "known divergence semantics/keep-before-unwrap-series-identity": 9,
       "known divergence semantics/keep-drop-blank-name-prints-back": 9,
-      "known divergence semantics/label-filter-numeric-equality": 57,
+      "known divergence semantics/label-filter-numeric-equality": 12,
       "known divergence semantics/label-replace-around-ranking-and-vector": 18,
       "known divergence semantics/pattern-capture-before-bracket-text": 12,
       "known divergence semantics/stddev-stdvar-nested-or-binary": 90,

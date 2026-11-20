@@ -86,6 +86,6 @@ gap:
   effort: L
   area: 'internal/translator translateSingleLabelFilter (= and != with a number written as an exact text match); the plan (internal/queryplan/lower/label_filter_numeric_eq.go) writes the numeric comparison after a json or logfmt parser'
   loki: 'label filters against a number literal compare numerically'
-  proxy: 'exact text match for = and !=; ordering comparisons numeric; the plan compares numerically after a json or logfmt parser, not served yet'
-  planned_test: 'e2e vs Loki with 5 / 5.0 / non-numeric values (test/e2e-compat, group semantics) once the plan serves a parser query; recorded Loki and VictoriaLogs answers in internal/queryplan/lower TestNumericEqualityAfterParserMatchesLoki'
+  proxy: 'after a json or logfmt parser the plan is served: = and != compare the value as a number (VictoriaLogs range filters), except values VictoriaLogs reads as numbers that Loki marks with __error__, unit spellings it reads otherwise, and a query that also holds a signed number; before any parser, exact text match'
+  planned_test: 'recorded Loki and VictoriaLogs answers in internal/queryplan/lower TestNumericEqualityAfterParserMatchesLoki (the remaining values listed there); TestNumericEqualityServedFromPlan (internal/proxy); e2e vs Loki with 5 / 5.0 / non-numeric values (test/e2e-compat, group semantics)'
   clusters: []

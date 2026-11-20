@@ -369,6 +369,8 @@ func fenceWants(query string) map[string]bool {
 			}
 		}
 		want["count-stdvar-series"] = lower.WritesCountVarianceSeries(plan)
+		// A numeric, duration or bytes equality after a json or logfmt parser, which the plan compares as a number.
+		want["numeric-equality"] = lower.WritesNumericEquality(plan)
 		// A log query with a stage and a label filter value that holds a \x00, \x01 or \x02 byte, read from the values
 		// the parser decoded.
 		if sel, ok := plan.Root.(*queryplan.LogSelect); ok {
@@ -734,6 +736,7 @@ func fenceFires(name, query string) bool {
 		"extraction-list-windows":  func() string { return listedWindowsResponseKeyVersion(r, query) },
 		"count-stdvar-series":      func() string { return countVarianceResponseKeyVersion(query) },
 		"marker-bytes-label-value": func() string { return markerBytesLabelValueResponseKeyVersion(query) },
+		"numeric-equality":         func() string { return numericEqualityResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -878,6 +881,14 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"marker-bytes-label-value", "{app=\"x\"} |#c\n o=\"\\x01\" | Json", true},
 		{"marker-bytes-label-value", `({app="x"} | o="\U00000001" | json)`, true},
 		{"marker-bytes-label-value", `{app="x"} | o="\x02\x00\x02"`, false},
+		{"numeric-equality", `{app="x"} | json | status = 200`, true},
+		{"numeric-equality", `{app="x"} | JSON | status == 2e2`, true},
+		{"numeric-equality", `sum(count_over_time({app="x"} | logfmt | d != 5s [5m]))`, true},
+		{"numeric-equality", `{app="x"} | Logfmt | size = 1KB`, true},
+		{"numeric-equality", "{app=\"x\"} |#c\n json | status=200", true},
+		{"numeric-equality", `{app="x"} | json | status > 200`, false},
+		{"numeric-equality", `{app="x"} | json | status = "200"`, false},
+		{"numeric-equality", `{app="x"} | status = 200 | json`, false},
 		{"marker-bytes-label-value", `{app="x"} |~ "\\x02\\d+" | json | o="\\x01"`, false},
 		{"marker-bytes-label-value", `{app="x"} | o="\x03" | json`, false},
 		{"marker-bytes-label-value", `{app="x"} |= "\x02" | json`, false},
