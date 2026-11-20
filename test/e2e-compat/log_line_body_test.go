@@ -27,7 +27,7 @@ import (
 type logLineBodyRoute string
 
 const (
-	// routeGenerator mirrors test/e2e-compat/log-generator.py: JSON lines are
+	// routeGenerator preserves the legacy generator ingestion profile: JSON lines are
 	// pushed through VictoriaLogs' Loki endpoint with _msg set to the original
 	// line, so VictoriaLogs keeps the line in _msg and also stores every JSON
 	// key as a field. Other lines are pushed unchanged.
@@ -54,7 +54,7 @@ func (e logLineBodyEntry) rebuilt() bool {
 	return e.route != routeGenerator
 }
 
-// logLineBodyVLLine mirrors _inject_vl_msg in log-generator.py for a line
+// logLineBodyVLLine preserves legacy _msg injection for a line
 // already written with Python's json.dumps separators.
 func logLineBodyVLLine(t *testing.T, line string) string {
 	t.Helper()

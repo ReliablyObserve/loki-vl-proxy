@@ -1135,7 +1135,7 @@ func mergeDetectedFieldsResponses(recorders []*httptest.ResponseRecorder) ([]byt
 }
 
 func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []string) ([]byte, string, error) {
-	lineLimit := parseDetectedLineLimit(r)
+	lineLimit := p.detectedFieldsLineLimit(r)
 	type mergedField struct {
 		Label            string
 		Type             string

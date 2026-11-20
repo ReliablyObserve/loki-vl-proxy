@@ -760,6 +760,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
+	lineLimit := p.detectedFieldsLineLimit(r)
 	cacheKey := p.canonicalReadCacheKey("detected_fields", orgID, r)
 	detectedFieldsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_fields"])
 	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), "detected_fields", cacheKey); ok {
@@ -768,14 +769,13 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
 		if p.shouldRefreshLabelsInBackground(remaining, detectedFieldsTTL) {
-			p.refreshDetectedFieldsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), parseDetectedLineLimit(r), p.snapshotForwardedAuth(r))
+			p.refreshDetectedFieldsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit, p.snapshotForwardedAuth(r))
 		}
 		return
 	}
 	p.metrics.RecordCacheMiss()
 
 	r = p.withRequestScope(r)
-	lineLimit := parseDetectedLineLimit(r)
 	query := r.FormValue("query")
 	// Bound the slow log-scan path so a single Drilldown panel never blocks
 	// past drilldownScanTimeout. When that budget runs out we return an empty
@@ -805,10 +805,9 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	}
 	// Loki lists only the fields of the lines the query itself returns: a query that matches
 	// no line, or only lines without fields, has no fields. Only a scan that
-	// ran out of time falls back to a native-only index lookup on the bare
-	// stream selector, so the Drilldown fields panel is not left blank by the
-	// proxy's own deadline.
-	if len(fields) == 0 && scanTimedOut {
+	// ran out of time in an index-enriched metadata profile falls back to a
+	// native-only lookup on the bare stream selector.
+	if len(fields) == 0 && scanTimedOut && !p.fieldsSampleOnly(r.Context()) {
 		if relaxed := relaxedFieldDetectionQuery(query); relaxed != "" && relaxed != query {
 			if relaxedFields, _ := p.detectFieldsNativeOnly(r.Context(), relaxed, r.FormValue("start"), r.FormValue("end")); len(relaxedFields) > 0 {
 				fields = relaxedFields

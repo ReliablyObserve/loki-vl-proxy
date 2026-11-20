@@ -138,44 +138,16 @@ def push(payload: dict) -> bool:
         print(f"[WARN] Loki push failed: {e}", file=sys.stderr)
         return False
 
-def _inject_vl_msg(payload: dict) -> dict:
-    """Return a copy of payload with _msg set to the original JSON log line.
-
-    VictoriaLogs v1.50+ auto-parses JSON and uses _msg as the message field.
-    We set _msg = the original JSON string BEFORE adding it, so:
-    - VL stores _msg = full JSON (Grafana can prettify it)
-    - VL also indexes all other JSON fields (session_id, event, etc.) as VL fields
-    - Loki stores the outer JSON line as-is (which also contains _msg)
-    Non-JSON lines (logfmt, nginx) carry msg= or work as plain text already.
-    Handles both 2-tuple [ts, line] and 3-tuple [ts, line, metadata] values.
-    """
-    result = {"streams": []}
-    for s in payload["streams"]:
-        new_values = []
-        for entry in s["values"]:
-            ts, line = entry[0], entry[1]
-            metadata = entry[2] if len(entry) > 2 else None
-            if line.startswith("{"):
-                try:
-                    d = json.loads(line)
-                    if "_msg" not in d:
-                        d["_msg"] = line
-                        line = json.dumps(d)
-                except Exception:
-                    pass
-            if metadata is not None:
-                new_values.append([ts, line, metadata])
-            else:
-                new_values.append([ts, line])
-        result["streams"].append({"stream": s["stream"], "values": new_values})
-    return result
-
-
 def push_vl(payload: dict) -> bool:
-    """Push to VictoriaLogs (same JSON format as Loki push)."""
-    body = json.dumps(_inject_vl_msg(payload)).encode()
+    """Keep body keys distinct from labels and metadata, as in Loki.
+
+    Auto-parsing at ingest would expose JSON-only keys before a query's
+    parser and inflate Drilldown field breakdowns. Send the original line,
+    including any literal _msg key, through both live and backfill paths.
+    """
+    body = json.dumps(payload).encode()
     req = urllib.request.Request(
-        f"{VL_URL}/insert/loki/api/v1/push",
+        f"{VL_URL}/insert/loki/api/v1/push?disable_message_parsing=1",
         data=body,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -916,7 +888,7 @@ def backfill(seconds: int, interval: int):
         if len(pending) >= 400 or t >= end:
             payload = {"streams": pending}
             post_strict(f"{LOKI_URL}/loki/api/v1/push", payload)
-            post_strict(f"{VL_URL}/insert/loki/api/v1/push", _inject_vl_msg(payload))
+            post_strict(f"{VL_URL}/insert/loki/api/v1/push?disable_message_parsing=1", payload)
             lines += sum(len(s["values"]) for s in pending)
             pending = []
     _virtual_ns = None

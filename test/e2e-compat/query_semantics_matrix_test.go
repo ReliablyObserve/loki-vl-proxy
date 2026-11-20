@@ -125,16 +125,18 @@ type querySemanticsDepthPath struct {
 }
 
 type querySemanticsCase struct {
-	ID               string `json:"id"`
-	Family           string `json:"family"`
-	Endpoint         string `json:"endpoint"`
-	Query            string `json:"query"`
-	Step             string `json:"step"`
-	Expectation      string `json:"expectation"`
-	ExpectResultType string `json:"expect_result_type"`
-	Compare          string `json:"compare"`
-	RequireNonEmpty  bool   `json:"require_non_empty"`
-	KnownDeviation   string `json:"known_deviation,omitempty"`
+	ID               string   `json:"id"`
+	Family           string   `json:"family"`
+	Endpoint         string   `json:"endpoint"`
+	Query            string   `json:"query"`
+	Step             string   `json:"step"`
+	Expectation      string   `json:"expectation"`
+	ExpectResultType string   `json:"expect_result_type"`
+	Compare          string   `json:"compare"`
+	RequireNonEmpty  bool     `json:"require_non_empty"`
+	KnownDeviation   string   `json:"known_deviation,omitempty"`
+	LineLimit        int      `json:"line_limit,omitempty"`
+	ExpectedFields   []string `json:"expected_fields,omitempty"`
 }
 
 // querySemanticsLogEntries compares the full stream identity and every log
@@ -251,7 +253,7 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 			return fmt.Errorf("query semantics case must define id, endpoint, query, and expectation: %+v", tc)
 		}
 		switch tc.Endpoint {
-		case "query", "query_range":
+		case "query", "query_range", "detected_fields":
 		default:
 			return fmt.Errorf("unsupported query semantics endpoint %q in case %q", tc.Endpoint, tc.ID)
 		}
@@ -268,6 +270,10 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 		}
 		metric := tc.ExpectResultType == "matrix" || tc.ExpectResultType == "vector"
 		switch tc.Compare {
+		case "detected_field_sample":
+			if tc.Endpoint != "detected_fields" || tc.LineLimit <= 0 || len(tc.ExpectedFields) == 0 {
+				return fmt.Errorf("detected field case %q needs the sample endpoint, line limit and field labels", tc.ID)
+			}
 		case "log_entries":
 			if tc.ExpectResultType != "streams" {
 				return fmt.Errorf("log-entry case %q must expect streams", tc.ID)
@@ -331,12 +337,16 @@ func loadQuerySemanticsOperations(t *testing.T) querySemanticsOperations {
 func querySemanticsParams(tc querySemanticsCase, evaluation time.Time) url.Values {
 	params := url.Values{}
 	params.Set("query", tc.Query)
-	if tc.Endpoint == "query_range" {
+	if tc.Endpoint == "query_range" || tc.Endpoint == "detected_fields" {
 		params.Set("start", fmt.Sprintf("%d", evaluation.Add(-10*time.Minute).UnixNano()))
 		params.Set("end", fmt.Sprintf("%d", evaluation.UnixNano()))
-		params.Set("limit", "1000")
-		if tc.Step != "" {
-			params.Set("step", tc.Step)
+		if tc.Endpoint == "detected_fields" {
+			params.Set("line_limit", strconv.Itoa(tc.LineLimit))
+		} else {
+			params.Set("limit", "1000")
+			if tc.Step != "" {
+				params.Set("step", tc.Step)
+			}
 		}
 	} else {
 		params.Set("time", fmt.Sprintf("%d", evaluation.UnixNano()))
@@ -347,6 +357,29 @@ func querySemanticsParams(tc querySemanticsCase, evaluation time.Time) url.Value
 func querySemanticsGET(t *testing.T, baseURL, endpoint string, params url.Values, tenant string) (int, string, map[string]interface{}) {
 	t.Helper()
 	return doJSONGET(t, baseURL+"/loki/api/v1/"+endpoint+"?"+params.Encode(), tenantRequestHeaders(tenant))
+}
+
+func querySemanticsDetectedFields(t *testing.T, status int, body string) []string {
+	t.Helper()
+	var answer struct {
+		Fields []struct {
+			Label       string   `json:"label"`
+			Type        string   `json:"type"`
+			Cardinality int      `json:"cardinality"`
+			Parsers     []string `json:"parsers"`
+			JSONPath    []string `json:"jsonPath"`
+		} `json:"fields"`
+	}
+	if status != http.StatusOK || json.Unmarshal([]byte(body), &answer) != nil {
+		t.Fatalf("detected_fields status=%d: %s", status, body)
+	}
+	canonical := make([]string, 0, len(answer.Fields))
+	for _, field := range answer.Fields {
+		sort.Strings(field.Parsers)
+		canonical = append(canonical, fmt.Sprintf("%s:%s:%d:%v:%v", field.Label, field.Type, field.Cardinality, field.Parsers, field.JSONPath))
+	}
+	sort.Strings(canonical)
+	return canonical
 }
 
 func scopeQuerySemanticsQuery(query, runID string) (string, error) {
@@ -859,7 +892,7 @@ func TestQuerySemanticsMatrixCoversParserMetricDepths(t *testing.T) {
 
 var matrixRangeWindowRE = regexp.MustCompile(`\[[0-9]+(ms|s|m|h|d|w|y)\]`)
 
-// conformance: loki_api_v1_query, loki_api_v1_query_range, range_function-count-over-time, range_function-rate, parser-json, parser-logfmt, parser-pattern, parser-regexp
+// conformance: loki_api_v1_query, loki_api_v1_query_range, loki_api_v1_detected_fields, range_function-count-over-time, range_function-rate, parser-json, parser-logfmt, parser-pattern, parser-regexp
 func TestQuerySemanticsMatrix(t *testing.T) {
 	waitForReady(t, proxyURL+"/ready", 30*time.Second)
 	waitForReady(t, lokiURL+"/ready", 30*time.Second)
@@ -892,6 +925,21 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 			t.Logf("matrix_case id=%s comparison=%s known_deviation=%s", tc.ID, tc.Compare, tc.KnownDeviation)
 			proxyStatus, proxyBody, proxyResp := querySemanticsGET(t, proxyURL, tc.Endpoint, params, tenant)
 			lokiStatus, lokiBody, lokiResp := querySemanticsGET(t, lokiURL, tc.Endpoint, params, tenant)
+			if tc.Compare == "detected_field_sample" {
+				want := querySemanticsDetectedFields(t, lokiStatus, lokiBody)
+				var labels []string
+				for _, spec := range want {
+					label, _, _ := strings.Cut(spec, ":")
+					labels = append(labels, label)
+				}
+				if strings.Join(labels, ",") != strings.Join(tc.ExpectedFields, ",") {
+					t.Fatalf("Loki sample fields: got %v want %v", labels, tc.ExpectedFields)
+				}
+				if got := querySemanticsDetectedFields(t, proxyStatus, proxyBody); strings.Join(got, "\n") != strings.Join(want, "\n") {
+					t.Fatalf("proxy fields %v; Loki %v", got, want)
+				}
+				return
+			}
 			if tc.ExpectResultType != "streams" {
 				t.Log("matrix_backend proxy")
 				recordParserMatrixResponse(t, params, proxyStatus, []byte(proxyBody))

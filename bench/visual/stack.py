@@ -226,6 +226,27 @@ def seed_extraction_list_fixture(st, end):
             pass
 
 
+def seed_field_sample_fixture(st, end):
+    """Older metadata is outside the latest sample and the JSON key stays in the line."""
+    service = "visual-fields-sample"
+    values = []
+    for index in range(130):
+        stamp = str((end - 300 + index) * 1_000_000_000)
+        line = json.dumps({"sampled": "keep", "outcome": "success" if index % 2 else "retry"})
+        row = [stamp, line]
+        if index < 30:
+            row.append({"historical_only": "old"})
+        values.append(row)
+    labels = {"service_name": service, "app": service}
+    payload = json.dumps({"streams": [{"stream": labels, "values": values}]}).encode()
+    for url in (f"{st.loki}/loki/api/v1/push",
+                f"{st.vl}/insert/loki/api/v1/push?disable_message_parsing=1"):
+        request = urllib.request.Request(url, data=payload,
+                                         headers={"Content-Type": "application/json", "X-Scope-OrgID": "0"})
+        with urllib.request.urlopen(request, timeout=60):
+            pass
+
+
 def start_grafana(a, trees_pr, out):
     """Grafana (Docker) with the three datasources and the pinned plugins; returns once its API answers.
 
@@ -355,6 +376,7 @@ def up(a):
         seed_detected_level_stage_fixture(st, end)
         seed_bare_json_metric_fixture(st, end)
         seed_extraction_list_fixture(st, end)
+        seed_field_sample_fixture(st, end)
         ab.log(f"seeding Loki + VictoriaLogs: last {a.loki_hours}h")
         timed("seed_loki", st.seed, end - loki_start, end)
 

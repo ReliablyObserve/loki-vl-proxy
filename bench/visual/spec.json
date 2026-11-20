@@ -1832,6 +1832,29 @@
    "core": true
   },
   {
+   "id": "dd-fields-recent-sample",
+   "kind": "drilldown",
+   "path": "service/{service}/fields",
+   "service": true,
+   "serviceName": "visual-fields-sample",
+   "ranges": ["15m"],
+   "ci_ranges": ["15m"],
+   "covers": ["loki_api_v1_detected_fields", "loki_api_v1_query_range", "semantics/detected-fields-index-outside-sample"],
+   "fixes": ["semantics/detected-fields-index-outside-sample"]
+  },
+  {
+   "id": "dd-fields-json-sample-filter",
+   "kind": "drilldown",
+   "path": "service/{service}/fields",
+   "service": true,
+   "serviceName": "visual-fields-sample",
+   "fields": "sampled|=|keep",
+   "ranges": ["15m"],
+   "ci_ranges": ["15m"],
+   "covers": ["loki_api_v1_detected_fields", "parser-json", "semantics/detected-fields-json-body-filter", "drilldown/detected-labels-empty-for-visible-stream"],
+   "fixes": ["semantics/detected-fields-json-body-filter"]
+  },
+  {
    "id": "dd-fields-batch-etl",
    "kind": "drilldown",
    "path": "service/{service}/fields",

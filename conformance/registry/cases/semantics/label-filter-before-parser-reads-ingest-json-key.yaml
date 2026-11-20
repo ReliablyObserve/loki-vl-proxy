@@ -43,6 +43,23 @@ why: |
   (docs/operations.md, JSON lines pushed through VictoriaLogs' Loki API); a
   proxy-side rule that matches only known metadata keys belongs with the
   metadata-field profiles.
+
+  The UI generator now sends the original Loki push payload to VictoriaLogs
+  with disable_message_parsing=1 in both live and backfill mode. The focused
+  TestCompat_LokiPushLineFieldsLikeLoki checks the original line, parsed and
+  metadata categories, and per-field metrics before and after parsing on
+  first use, repeat and shifted windows against a real Loki. The existing
+  matrix covers the same before/after-parser pair on its isolated fixture.
+  The all-Fields UI test exercises eight fields across three services at 3h,
+  compares complete Grafana frames with Loki, and checks both datasources
+  after loading, repeating and refreshing the page. The UI job also fails on
+  any new Grafana cgroup OOM kill or killed-plugin log, including a child
+  that restarts before the final health check.
+
+  These checks prove the ingestion profile, not recovery of provenance
+  already lost in older indexed rows. The gap remains open for existing
+  auto-parsed data; changing ingestion does not repair historical data or
+  guarantee an unlimited number of client-side series fits Grafana memory.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -64,8 +81,8 @@ gap:
   status: open
   impact: drilldown-visible
   effort: L
-  area: 'internal/translator label filters before the first parser (field filters on stored fields); ingest: VictoriaLogs Loki push JSON message parsing'
+  area: 'internal/queryplan/lower label filters before the first parser (field filters on stored fields); ingest: VictoriaLogs Loki push JSON message parsing'
   loki: 'a label filter before a parser reads stream labels and structured metadata only (compose stack counts in this case)'
   proxy: 'a field filter that also matches keys VictoriaLogs parsed out of the JSON line at ingest'
-  planned_test: 'e2e vs Loki on a fixture pushed with and without disable_message_parsing (test/e2e-compat, group drilldown)'
+  planned_test: 'TestCompat_LokiPushLineFieldsLikeLoki proves disabled message parsing; legacy auto-parsed provenance remains open (log_line_body_test.go retains the legacy ingest fixture)'
   clusters: []

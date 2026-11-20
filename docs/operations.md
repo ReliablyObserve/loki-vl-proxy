@@ -183,6 +183,29 @@ frames already received. It does not retrieve omitted values. The query's
 Query response cache keys include the resolved series limit, so a replica
 with a raised or lowered limit never serves an answer cached under the old
 limit, including from SSD after restart or a peer with different settings.
+
+The UI log generator sends the original lines with
+`disable_message_parsing=1` in both live and backfill mode. This preserves
+Loki's distinction between JSON body keys and structured metadata. Existing
+rows written with message parsing enabled keep their old fields; restarting
+the generator does not change them.
+
+The Loki-compatible profile discovers fields from sampled log lines.
+Native and hybrid profiles can also expose fields known to the VictoriaLogs
+index. The compatibility stack defaults `PATTERNS_MAX_QUERY_SERIES` to
+1,000,000 so the proxy and its reference Loki can compare complete large
+answers. In the playground, a smaller override limits Grafana's frame
+count and enables partial-result notices on charts that reach the cap.
+Opening all high-cardinality fields can exhaust Grafana's datasource plugin
+memory even when VictoriaLogs and the proxy are healthy. Cache hits still
+return the full cached frame inputs to Grafana.
+
+If Grafana reports `Plugin unavailable`, inspect its datasource plugin logs
+and cgroup `memory.events` counter `oom_kill`. A killed child process can
+leave Grafana serving `/api/health`; a successful later datasource health
+request can also restart the plugin. The UI CI shard captures these counters
+before and after its tests and fails on a new kill, replacement or restart.
+Its memory peak is the container lifetime high-water, not per-query memory.
 Equal effective limits still share answers. Metadata listings and VictoriaLogs
 bucket caches remain reusable. During a rolling change, each limit can hold
 its own response until normal expiry or eviction; physical cache budgets do

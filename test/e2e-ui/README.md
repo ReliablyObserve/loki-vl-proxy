@@ -184,3 +184,18 @@ npm run test:debug
 # View HTML report
 npm run report
 ```
+
+## Fields resource regression
+
+`tests/drilldown-field-bounds.spec.ts` is selected by `@drilldown-core` in
+CI. It checks complete high-cardinality results, visible partial-result
+notices, and all eight fields across three services over 3h, including
+repeat and refresh. Seven fields must retain all 1,050 series. The test
+compares every Grafana frame with Loki, excludes a field found only outside
+the discovery sample, and confirms both datasources can query afterward.
+
+The UI job runs `scripts/ci/grafana_resource_guard.py before/after` around
+the shard. Artifacts retain cgroup OOM counters and memory snapshots; a
+killed datasource child fails the job even if Grafana stays ready or the
+plugin automatically recovers. This proves the bounded fixture, not an
+unlimited all-fields workload.

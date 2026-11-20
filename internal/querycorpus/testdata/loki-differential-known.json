@@ -94,6 +94,15 @@
     },
     "q": "{service_name=\"cache-redis\"} | logfmt | level!=\"debug\""
   },
+  "q-210bb14bbc1b": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"line-fields\"} | json | user=\"u1\""
+  },
   "q-2168f25d346a": {
     "classes": {
       "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
@@ -360,6 +369,15 @@
       "misses __error__": "semantics/parse-error-labels-on-log-lines"
     },
     "q": "{app=\"matrix-extraction-list\",case=\"json\"} | json msg=\"msg\" | msg=\"hello\""
+  },
+  "q-7605e50b9269": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\", env=\"production\", level=\"info\"} | json | user_id=\"usr_01\""
   },
   "q-76169a4a79c4": {
     "classes": {
