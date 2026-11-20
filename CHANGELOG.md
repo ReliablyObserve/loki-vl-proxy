@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.356.0] - 2026-11-20
+
 ### Fixed
 
 - A label filter that compares a value after a `json` or `logfmt` parser for equality with a number, a duration or a byte size (`| json | status = 200`, `| logfmt | d != 5s`) now compares the value as a number, as Loki does. Before, the value had to be the literal's exact text: `200.0` or `2e2` did not match 200, and `!=` kept the lines without the label. Log queries and metric queries are both served this way.
