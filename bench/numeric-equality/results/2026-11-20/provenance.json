@@ -1,0 +1,43 @@
+{
+  "baseline": "8dfb84cd4e6884da36cd6c2dc24be46ff44ab80c",
+  "comparison": "Factored vs unfactored regexps under the same current error-retention implementation. Not main-vs-PR or proxy-vs-Loki.",
+  "fixture": "600000 deterministic JSON rows over 24h, one stream, tenant 11",
+  "backend_versions": [
+    "v1.54.0",
+    "v1.49.0"
+  ],
+  "samples": 9,
+  "ordering": "alternating baseline/candidate",
+  "agreement": "count vectors equal for every timed baseline/candidate request; row-level oracle checked separately",
+  "unmeasured": [
+    "CPU time",
+    "RSS",
+    "disk IOPS",
+    "network bytes",
+    "end-to-end Loki latency"
+  ],
+  "files": {
+    "internal/queryplan/lower/label_filter_numeric_eq.go": "409561fe34f709992814bf2efd959769a25366c45324ba9534def0342cd4abc8",
+    "internal/queryplan/lower/label_filter_numeric_syntax.go": "f3752085061067cc803b4f55f7d3597b638d4856322d278cf70acd4921bf6362",
+    "internal/querycorpus/numeric_equality_vlcost_test.go": "8d89c91b751e7f117801c243d5100e3c3a7571c9cc80426d722619bb3be45a89"
+  },
+  "e2e_artifact_sha256": "16c6a97d6db98dffb351c68216cffdc8e6e135d0517faa658d3e74cd0cc41388",
+  "historical_regex_only": {
+    "baseline": "8dfb84cd4e6884da36cd6c2dc24be46ff44ab80c",
+    "comparison": "previous PR query text versus optimized query text; not main or Loki latency",
+    "files": {
+      "internal/queryplan/lower/label_filter_numeric_syntax.go": "53cbf77d168e91709c26100e14d5c166a594b66c24ced453767e09f6b816b2c7",
+      "internal/querycorpus/numeric_equality_vlcost_test.go": "8d89c91b751e7f117801c243d5100e3c3a7571c9cc80426d722619bb3be45a89"
+    }
+  },
+  "control": "Saved same-answer control query text from correctness-control-queries.json: unfactored unit regexps, presence-guard conversion-error classifier. Full count vectors checked before every timing.",
+  "current_cost_artifact": "vl-cost-correctness-control.txt",
+  "current_control_queries": "correctness-control-queries.json",
+  "api_contract": {
+    "total": 298,
+    "loki_equivalent": 292,
+    "accepted_default_identity_projections": 6,
+    "semantic_matrix_cases": 126
+  },
+  "current_measurement": "Final compact marker stages with the original field-presence grammar predicate. Source hashes identify the final code; earlier measurements remain separately named."
+}

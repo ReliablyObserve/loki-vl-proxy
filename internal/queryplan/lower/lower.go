@@ -160,7 +160,6 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 	if err != nil {
 		return logsql.Query{}, false, err
 	}
-	built := lf.filters
 	if len(lf.bases) > 0 {
 		if staged, err = extractedUnpacks(sel, staged, lf.bases); err != nil {
 			return logsql.Query{}, false, err
@@ -193,9 +192,12 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 			continue
 		}
 		if _, ok := st.(*queryplan.LabelFilter); ok {
-			f := built[i]
+			f := lf.filter(i)
 			if len(lf.pre) > 0 && len(lf.pre[i]) > 0 {
 				q.pipe(lf.pre[i]...)
+			}
+			if len(lf.numeric) > 0 && lf.numeric[i].conversionError != nil {
+				q.pipe(logsql.PipeFormat{Template: "LabelFilterErr", ResultField: "__error__", If: lf.numeric[i].conversionError})
 			}
 			if (q.lastPipe || afterParser) && translate.IsFieldFilterExpr(f) {
 				q.own(f)
@@ -320,6 +322,11 @@ func pipeRoom(sel *queryplan.LogSelect, staged [][]logsql.Pipe, lf filterStages,
 	for _, ps := range lf.pre {
 		room += len(ps)
 	}
+	for _, stage := range lf.numeric {
+		if stage.conversionError != nil {
+			room++
+		}
+	}
 	for _, st := range sel.Stages[first+1:] {
 		switch st.(type) {
 		case *queryplan.LineFilter, *queryplan.LabelFilter:
@@ -360,7 +367,10 @@ func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe)
 // label that translates to several parsed keys or to no field.
 func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stageDefs, levels bool) (filterStages, error) {
 	var res filterStages
-	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv}
+	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv, numericErrorMode: NumericEqualityErrorPipeline(sel.Stages)}
+	var seenNumericErrors logsql.AnyOf
+	trackNumericErrors := lb.numericErrorMode && numericPipelineFiltersError(sel.Stages)
+	numericAlreadyFailed := false
 	for i, st := range sel.Stages {
 		lb.names.note(defs, i)
 		if changesLabels(st) {
@@ -394,12 +404,27 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 				return filterStages{}, &NotLoweredError{Construct: c}
 			}
 		}
-		if res.filters == nil {
-			res.filters = make([]logsql.FilterExpr, len(sel.Stages))
+		res.initFilters(len(sel.Stages), lb.numericErrorMode)
+		var filter logsql.FilterExpr
+		if lb.numericErrorMode && lbl.Expr.Name == "__error__" {
+			var clean, failed bool
+			filter, clean, failed = numericGeneratedErrorFilter(lbl.Expr, seenNumericErrors, numericAlreadyFailed)
+			if clean != failed {
+				// A restrictive error filter proves the surviving rows clean
+				// or failed. Do not expand all prior predicates again later.
+				seenNumericErrors = nil
+				numericAlreadyFailed = failed
+			}
+		} else {
+			filter = labelFilter(lbl.Expr, &lb)
 		}
-		res.filters[i] = labelFilter(lbl.Expr, &lb)
 		if lb.bad != "" {
 			return filterStages{}, &NotLoweredError{Construct: lb.bad}
+		}
+		if lb.numericErrorMode {
+			res.numeric[i] = numericFilterStage{filter: filter, conversionError: lb.numericError}
+		} else {
+			res.filters[i] = filter
 		}
 		if len(lb.stageReserved) > 0 {
 			if res.pre == nil {
@@ -418,6 +443,12 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 			res.pre[i] = translate.ExtractedCoalesce(lb.stageBases, lb.keyParsers, &lb.streamCopied)
 			lb.stageBases = lb.stageBases[:0]
 		}
+		if lb.numericError != nil {
+			if trackNumericErrors && !numericAlreadyFailed {
+				seenNumericErrors = append(seenNumericErrors, lb.numericError)
+			}
+			lb.numericError = nil
+		}
 	}
 	res.bases = lb.bases
 	res.reserved = lb.reserved
@@ -428,6 +459,9 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 type filterStages struct {
 	// filters are the filter of each label filter stage (nil elsewhere).
 	filters []logsql.FilterExpr
+	// numeric keeps the filter and its marker together, without a separate
+	// per-stage pipe slice. Queries without numeric markers keep filters.
+	numeric []numericFilterStage
 	// pre are the pipes ahead of a stage that filters on name_extracted labels: the value of each from the first
 	// parser that extracted it.
 	pre [][]logsql.Pipe
@@ -438,6 +472,27 @@ type filterStages struct {
 	// guards keep the streams with the tag a stage of one such comparison needs (reservedGuard).
 	reserved []string
 	guards   []logsql.FilterExpr
+}
+
+type numericFilterStage struct {
+	filter, conversionError logsql.FilterExpr
+}
+
+func (f *filterStages) initFilters(n int, numeric bool) {
+	if f.filters == nil && f.numeric == nil {
+		if numeric {
+			f.numeric = make([]numericFilterStage, n)
+		} else {
+			f.filters = make([]logsql.FilterExpr, n)
+		}
+	}
+}
+
+func (f filterStages) filter(i int) logsql.FilterExpr {
+	if len(f.numeric) > 0 {
+		return f.numeric[i].filter
+	}
+	return f.filters[i]
 }
 
 // checkLabelFilterExpr names the construct of the first leaf the lowering does not write, "" when it writes all.
@@ -506,6 +561,8 @@ type leafBuilder struct {
 	// reserved the reserved fields a comparison read the tag of so far, stageReserved those first read by the stage.
 	staged                  bool
 	reserved, stageReserved []string
+	numericError            logsql.FilterExpr
+	numericErrorMode        bool
 }
 
 // labelFilter is the filter of a label filter stage that checkLabelFilters accepted: the leaf, or the and/or

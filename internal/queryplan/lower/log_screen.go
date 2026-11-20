@@ -77,8 +77,7 @@ func LogStagesOf(names []string) LogStages {
 //     its template, a line_format or label_format template that is more than text and {{.name}} fields
 //     (plainTemplate), and a keep of names and matchers together;
 //   - a filter on service_name (the lowering leaves it to the translator) and a level filter after a parser;
-//   - a label filter with an equality on a number, duration or byte size after a json or logfmt parser
-//     (WritesNumericEquality), or a comparison with a signed number;
+//   - a comparison with a signed number;
 //   - a word VictoriaLogs reserves as a field name before a parser (ReadsReservedField);
 //   - a quoted string with detected_level or service_name in it, a byte from \x00 to \x02 or an escape that could
 //     write one in a stream selector, or an escape the parser does not read (a pipeline's strings may hold the
@@ -201,7 +200,7 @@ func (s *metricScan) logKeyword(q, w string, j int) (done, ok bool) {
 	case "json", "logfmt", "drop", "keep", "label_format", "line_format":
 		// A stage of a family of its own. A parser's extraction list, a drop's or a keep's names and a label_format's
 		// sources are names with no comparison after them, up to the next pipe; a parser types the label filters after
-		// it (an equality on a number is turned away).
+		// it.
 		st := wordStage(w)
 		if s.allowed&st == 0 || st == LogLineFormat && unspacedParser(q, j) {
 			// A line_format written with no blank before its template is copied as written by the string translator.

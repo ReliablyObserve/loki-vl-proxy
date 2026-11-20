@@ -685,7 +685,7 @@ func (p *Proxy) vlGetCoalescedWithStatus(ctx context.Context, key, path string, 
 // vlPostCoalesced wraps vlPostInner with request coalescing and a CB guard.
 func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params url.Values) (int, []byte, error) {
 	key += ":scope:" + p.contextScopeFingerprint(ctx)
-	if c := unwrapCheckFrom(ctx); c != nil && (len(c.probes) > 0 || c.json != nil) {
+	if c := unwrapCheckFrom(ctx); c != nil && (len(c.probes) > 0 || c.json != nil) && !c.sharedNumericRawRead(path) {
 		// The answer is read by this request's unwrap conversion check; another
 		// request's call does not report its hits here. A check without a probe
 		// (it only counts the nan values) records nothing: the rewrite and the

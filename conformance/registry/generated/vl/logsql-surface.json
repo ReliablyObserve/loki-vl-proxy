@@ -212,6 +212,7 @@
       "used_in": [
         "internal/proxy/detected_level_presence.go",
         "internal/proxy/json_line_keys.go",
+        "internal/proxy/numeric_label_filter_error.go",
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",

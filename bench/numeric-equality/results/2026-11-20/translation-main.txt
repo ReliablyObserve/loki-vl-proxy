@@ -1,0 +1,54 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkTranslateQueryMissShapes/numeric_equality_after_parser-2         	   10000	     20449 ns/op	    1900 B/op	      32 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_after_parser-2         	   10000	     20186 ns/op	    1897 B/op	      32 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_after_parser-2         	   10000	     20230 ns/op	    1904 B/op	      32 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_after_parser-2         	   10000	     20171 ns/op	    1900 B/op	      32 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_after_parser-2         	   10000	     20402 ns/op	    1897 B/op	      32 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_after_parser-2         	   10000	     20342 ns/op	    1900 B/op	      32 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_metric-2               	   10000	     21264 ns/op	    2945 B/op	      45 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_metric-2               	   10000	     20989 ns/op	    2952 B/op	      45 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_metric-2               	   10000	     21808 ns/op	    2948 B/op	      45 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_metric-2               	   10000	     21602 ns/op	    2948 B/op	      45 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_metric-2               	   10000	     21290 ns/op	    2948 B/op	      45 allocs/op
+BenchmarkTranslateQueryMissShapes/numeric_equality_metric-2               	   10000	     21184 ns/op	    2948 B/op	      45 allocs/op
+BenchmarkTranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2         	   10000	     21450 ns/op	    3129 B/op	      38 allocs/op
+BenchmarkTranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2         	   10000	     22266 ns/op	    3129 B/op	      38 allocs/op
+BenchmarkTranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2         	   10000	     21346 ns/op	    3132 B/op	      38 allocs/op
+BenchmarkTranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2         	   10000	     22912 ns/op	    3132 B/op	      38 allocs/op
+BenchmarkTranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2         	   10000	     21343 ns/op	    3132 B/op	      38 allocs/op
+BenchmarkTranslateQueryMissShapes/parser_json_numeric_equality_(turned_away)-2         	   10000	     21892 ns/op	    3132 B/op	      38 allocs/op
+BenchmarkTranslateQueryMissShapes/vector_numeric_equality-2                            	   10000	     21422 ns/op	    2850 B/op	      42 allocs/op
+BenchmarkTranslateQueryMissShapes/vector_numeric_equality-2                            	   10000	     21685 ns/op	    2854 B/op	      42 allocs/op
+BenchmarkTranslateQueryMissShapes/vector_numeric_equality-2                            	   10000	     22521 ns/op	    2850 B/op	      42 allocs/op
+BenchmarkTranslateQueryMissShapes/vector_numeric_equality-2                            	   10000	     22912 ns/op	    2850 B/op	      42 allocs/op
+BenchmarkTranslateQueryMissShapes/vector_numeric_equality-2                            	   10000	     21768 ns/op	    2850 B/op	      42 allocs/op
+BenchmarkTranslateQueryMissShapes/vector_numeric_equality-2                            	   10000	     20734 ns/op	    2854 B/op	      42 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_after_parser-2             	   10000	     21114 ns/op	    2369 B/op	      41 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_after_parser-2             	   10000	     20916 ns/op	    2372 B/op	      41 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_after_parser-2             	   10000	     20951 ns/op	    2369 B/op	      41 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_after_parser-2             	   10000	     20895 ns/op	    2372 B/op	      41 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_after_parser-2             	   10000	     21007 ns/op	    2369 B/op	      41 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_after_parser-2             	   10000	     21087 ns/op	    2369 B/op	      41 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_metric-2                   	   10000	     22606 ns/op	    3624 B/op	      56 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_metric-2                   	   10000	     22635 ns/op	    3624 B/op	      56 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_metric-2                   	   10000	     22388 ns/op	    3624 B/op	      56 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_metric-2                   	   10000	     22327 ns/op	    3620 B/op	      56 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_metric-2                   	   10000	     22356 ns/op	    3617 B/op	      56 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/numeric_equality_metric-2                   	   10000	     22321 ns/op	    3617 B/op	      56 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2         	   10000	     22446 ns/op	    3604 B/op	      47 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2         	   10000	     22511 ns/op	    3604 B/op	      47 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2         	   10000	     22471 ns/op	    3604 B/op	      47 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2         	   10000	     22598 ns/op	    3604 B/op	      47 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2         	   10000	     22160 ns/op	    3601 B/op	      47 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/parser_json_numeric_equality_(turned_away)-2         	   10000	     22165 ns/op	    3604 B/op	      47 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/vector_numeric_equality-2                            	   10000	     22495 ns/op	    3510 B/op	      53 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/vector_numeric_equality-2                            	   10000	     22352 ns/op	    3506 B/op	      53 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/vector_numeric_equality-2                            	   10000	     22277 ns/op	    3510 B/op	      53 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/vector_numeric_equality-2                            	   10000	     22024 ns/op	    3506 B/op	      53 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/vector_numeric_equality-2                            	   10000	     21822 ns/op	    3506 B/op	      53 allocs/op
+BenchmarkTranslateQueryMissShapesValidated/vector_numeric_equality-2                            	   10000	     21682 ns/op	    3506 B/op	      53 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	11.543s

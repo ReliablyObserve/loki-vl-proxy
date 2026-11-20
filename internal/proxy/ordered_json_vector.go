@@ -17,12 +17,13 @@ const orderedJSONVectorResponseVersion = "@ordered-json-vector-v1:"
 // including local-memory copies installed by optional peer hot read-ahead.
 // Scope it to the newly owned expressions; unrelated response keys stay intact.
 func orderedJSONVectorResponseKeyVersion(r *http.Request, query string) string {
-	return orderedJSONVectorFence(r, query, spelledOtherwise(query))
+	other := spelledOtherwise(query)
+	return orderedJSONVectorFence(r, query, other, containsWord(query, "json", other))
 }
 
 // orderedJSONVectorFence is the fence of a query that spelledOtherwise reported on (other).
-func orderedJSONVectorFence(r *http.Request, query string, other bool) string {
-	if !orderedJSONVectorFenceCandidate(query, other) {
+func orderedJSONVectorFence(r *http.Request, query string, other, jsonWord bool) string {
+	if !jsonWord || !orderedJSONVectorFenceKeywords(query, other) {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -35,9 +36,11 @@ func orderedJSONVectorFence(r *http.Request, query string, other bool) string {
 // orderedJSONVectorFenceCandidate is orderedJSONVectorCandidate for the fence, with every word in any case: the
 // parser reads `| JSON`, `TOPK(` and `Sum by` as the lower case words. The handler's own screen is not changed here.
 func orderedJSONVectorFenceCandidate(query string, other bool) bool {
-	if !containsWord(query, "json", other) {
-		return false
-	}
+	return containsWord(query, "json", other) && orderedJSONVectorFenceKeywords(query, other)
+}
+
+// orderedJSONVectorFenceKeywords is orderedJSONVectorFenceCandidate past its json word.
+func orderedJSONVectorFenceKeywords(query string, other bool) bool {
 	if !other {
 		return orderedJSONVectorCandidate(query)
 	}

@@ -4,6 +4,17 @@ Each eligible product PR carries before/after Grafana screenshots of the panels 
 with Loki as the reference, plus a comparison of the panel data Grafana
 receives. This folder is the reusable tooling.
 
+The numeric-equality log and count pages exercise `status=2e2` after JSON:
+the numeric value is 200; these are clean-result regression views. The
+`explore-numeric-equality-error-logs` page uses `status=1s` on integer values
+to show conversion-error rows retained like Loki. Its automatic histogram
+adds `| drop __error__`, an extra-stage combination still tracked by the open
+numeric-error registry case; keep that difference visible.
+They exclude `query_semantics_run_id` streams, keeping isolated matrix fixtures
+out of the common visual dataset when the local Loki reference exposes those
+streams together. All three pages link the existing numeric-equality/error registry cases;
+CI captures main, PR and Loki through the same capture and comparison tooling.
+
 What runs, on an isolated stack (own compose project `vp`, own ports, never
 the e2e stack):
 

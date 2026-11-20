@@ -10,6 +10,15 @@ why: |
   (level) (max_over_time(... | unwrap status ...)): Loki 82683, proxy 503).
   Accepted deviation with -exact-parser-series-identity as the opt-in (state
   parsed-label-series-identity, waiver parsed-identity-dynamic-keys).
+
+  TestCompat_NumericEqualityLikeLoki also checks the exact default projection
+  under topk, sort and label_replace for json/logfmt rows with a source
+  __preserve_error__="true" and a numeric conversion error. Six comparisons
+  retain values and stream labels but omit the parsed n, row, error details
+  and preserve label. The test fails if this accepted projection changes or
+  becomes stale; it does not count these as exact Loki matches. Keep the
+  existing stats routes rather than forcing an unbounded raw-row read to
+  hide this separately controlled identity policy.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -33,7 +42,7 @@ gap:
   area: 'internal/translator parser series identity; -exact-parser-series-identity'
   loki: 'every extracted label joins the sample labels (series counts measured against Loki, in this case)'
   proxy: 'stream identity unless the flag is set'
-  planned_test: 'differential run cluster count (bench/parity)'
+  planned_test: 'differential run cluster count (bench/parity); TestCompat_NumericEqualityLikeLoki (six exact default identity projections, core CI)'
   clusters:
     - 03f3b6e5
     - 0c84c962

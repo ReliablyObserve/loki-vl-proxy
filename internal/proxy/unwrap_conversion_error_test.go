@@ -597,7 +597,7 @@ func TestUnwrapParseLineJSONNamesStayParsedForLaterStages(t *testing.T) {
 		{Type: logqlpkg.ParserRegexp, Param: `"(?P<level>l[a-z]+)"`},
 	}
 	for _, stage := range stages {
-		if !unwrapParseLine(stage, line, labels, parsed, false) {
+		if !unwrapParseLine(stage, line, labels, parsed, false, false, nil) {
 			t.Fatalf("stage %v was not reproduced", stage.Type)
 		}
 	}

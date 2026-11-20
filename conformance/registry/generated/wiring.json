@@ -720,6 +720,7 @@
       "test/e2e-compat/metric_range_extent_large_answer_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
+      "test/e2e-compat/numeric_equality_like_loki_test.go",
       "test/e2e-compat/ordered_json_result_cache_test.go",
       "test/e2e-compat/ordered_json_steps_cache_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
@@ -918,6 +919,9 @@
       "internal/proxy/compat_oversized_reply_test.go",
       "internal/proxy/ordered_json_metric_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go"
+    ],
+    "parsed-identity/dynamic-key-parsers": [
+      "test/e2e-compat/numeric_equality_like_loki_test.go"
     ],
     "parsed-identity/regexp-partial-match-series-count": [
       "internal/proxy/compat_oversized_reply_test.go"
@@ -1836,8 +1840,19 @@
       "test/e2e-compat/label_filter_number_literal_test.go"
     ],
     "semantics/label-filter-numeric-equality": [
+      "internal/proxy/numeric_equality_served_test.go",
+      "internal/proxy/numeric_label_filter_error_test.go",
+      "internal/querycorpus/numeric_equality_vlcost_test.go",
       "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go",
-      "internal/queryplan/lower/label_filter_numeric_eq_test.go"
+      "internal/queryplan/lower/label_filter_numeric_eq_test.go",
+      "internal/queryplan/lower/label_filter_numeric_syntax_test.go",
+      "test/e2e-compat/numeric_equality_like_loki_test.go"
+    ],
+    "semantics/label-filter-numeric-error-label": [
+      "internal/proxy/numeric_label_filter_error_test.go",
+      "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go",
+      "internal/queryplan/lower/label_filter_numeric_eq_test.go",
+      "test/e2e-compat/numeric_equality_like_loki_test.go"
     ],
     "semantics/label-filter-regex-parse-error": [
       "internal/logql/stage_parse_validate_loki_test.go"
@@ -2473,6 +2488,7 @@
     "semantics/unwrap-conversion-error": [
       "internal/proxy/backend_read_bounds_test.go",
       "internal/proxy/label_filter_readers_differential_test.go",
+      "internal/proxy/numeric_label_filter_error_test.go",
       "internal/proxy/query_range_steps_harden_test.go",
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/series_fold_read_test.go",
@@ -4257,6 +4273,14 @@
       "metric-series-identity",
       "semantics/nested-aggregation-outer-by-native-routes"
     ],
+    "internal/proxy/numeric_equality_served_test.go": [
+      "semantics/label-filter-numeric-equality"
+    ],
+    "internal/proxy/numeric_label_filter_error_test.go": [
+      "semantics/label-filter-numeric-equality",
+      "semantics/label-filter-numeric-error-label",
+      "semantics/unwrap-conversion-error"
+    ],
     "internal/proxy/offset_integration_test.go": [
       "semantics/offset-different-per-range-vector"
     ],
@@ -5418,6 +5442,9 @@
     "internal/querycorpus/metric_stages_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/numeric_equality_vlcost_test.go": [
+      "semantics/label-filter-numeric-equality"
+    ],
     "internal/querycorpus/odd_spellings_loki_test.go": [
       "semantics/parser-reads-unicode-blank-as-white-space",
       "semantics/translator-writes-exotic-field-names-bare",
@@ -5632,9 +5659,14 @@
       "semantics/translator-writes-keyword-field-names-bare"
     ],
     "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go": [
-      "semantics/label-filter-numeric-equality"
+      "semantics/label-filter-numeric-equality",
+      "semantics/label-filter-numeric-error-label"
     ],
     "internal/queryplan/lower/label_filter_numeric_eq_test.go": [
+      "semantics/label-filter-numeric-equality",
+      "semantics/label-filter-numeric-error-label"
+    ],
+    "internal/queryplan/lower/label_filter_numeric_syntax_test.go": [
       "semantics/label-filter-numeric-equality"
     ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
@@ -6423,6 +6455,12 @@
       "metric-series-identity",
       "semantics/non-sum-vector-aggregation-unreduced"
     ],
+    "test/e2e-compat/numeric_equality_like_loki_test.go": [
+      "loki_api_v1_query_range",
+      "parsed-identity/dynamic-key-parsers",
+      "semantics/label-filter-numeric-equality",
+      "semantics/label-filter-numeric-error-label"
+    ],
     "test/e2e-compat/operators_not_in_loki_test.go": [
       "semantics/proxy-accepts-operators-not-in-loki"
     ],
@@ -6814,7 +6852,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 805,
+  "tests_with_markers": 810,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6846,7 +6884,6 @@
     "loki_api_v1_push",
     "loki_api_v1_status_buildinfo",
     "metric-identity/structured-metadata-splits-series",
-    "parsed-identity/dynamic-key-parsers",
     "profiles/detected-fields-no-extracted-suffix",
     "profiles/existence-filter-on-sanitized-key",
     "profiles/grafana-stats-error-as-warning",
@@ -6873,7 +6910,6 @@
     "semantics/format-query-canonical-form-like-loki",
     "semantics/ip-filter-keeps-parser-error-lines",
     "semantics/json-empty-value-label-series",
-    "semantics/label-filter-numeric-error-label",
     "semantics/label-replace-around-ranking-and-vector",
     "semantics/last-over-time-line-filter-offset-points",
     "semantics/log-entries-differ-same-count",
@@ -6919,5 +6955,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 469
+  "wired_items": 471
 }

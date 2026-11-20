@@ -80,11 +80,11 @@ The corpus is the same size or larger than the one that read Loki's test files (
 | Loki's test files (retired) | 3,592 | 0 |
 | Loki's documentation examples | 0 | 162 (81 entries) |
 | grammar sweep | 0 | 4,946 (2,473 entries) |
-| repository cases | 3,362 | 3,894 (1,947 entries) |
+| repository cases | 3,362 | 3,902 (1,951 entries) |
 | seeded sweep from Loki's own labels, fields and metadata | 5,484 | built live, the same code |
 | Grafana's own requests | 493 | captured live, the same code |
 
-The sweep and repository rows are what `python3 bench/parity/corpus.py --out corpus.json --loki-docs v3.7.x --sweep` builds from the committed sources (the documentation rows need grafana.com, the seeded and Grafana rows a stack); `tests/test_sweep.py` rebuilds the sweep and repository figures and fails when this table disagrees with them. The sweep source keeps one accepted query per query shape (moved onto the seeded data), one rejected query per Loki error text (as written), and 1,473 entries composed from the sweep's own pipelines and the Explore and Logs Drilldown stages, where sending all 25,824 queries (about 56,000 requests, four times the whole earlier run) would add the same shapes many times over. The corpus figures are those of 2026-11-16. `tests/test_sweep.py` also holds what can be held without a stack: the sweep source alone sends at least as many requests
+The sweep and repository rows are what `python3 bench/parity/corpus.py --out corpus.json --loki-docs v3.7.x --sweep` builds from the committed sources (the documentation rows need grafana.com, the seeded and Grafana rows a stack); `tests/test_sweep.py` rebuilds the sweep and repository figures and fails when this table disagrees with them. The sweep source keeps one accepted query per query shape (moved onto the seeded data), one rejected query per Loki error text (as written), and 1,473 entries composed from the sweep's own pipelines and the Explore and Logs Drilldown stages, where sending all 25,824 queries (about 56,000 requests, four times the whole earlier run) would add the same shapes many times over. The corpus figures are those of 2026-11-20. `tests/test_sweep.py` also holds what can be held without a stack: the sweep source alone sends at least as many requests
 as the retired source did, the three offline sources together at least what the retired source and the repository
 cases sent, and every query shape (`cluster.py shape()`: the outer operation, the parser and the stages) of the 154
 clusters the retired source reached is reached again by the sweep and the repository cases (the sweep's compositions were built to reach them, and a shape is a necessary condition for finding a cluster, not proof of it). Which clusters a run finds

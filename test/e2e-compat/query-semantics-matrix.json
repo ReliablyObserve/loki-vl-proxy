@@ -152,6 +152,37 @@
       "require_non_empty": true
     },
     {
+      "id": "json_numeric_equality_range",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",level=\"info\",env=\"production\"} | json | status!=999999",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "json_numeric_equality_outer_sum",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (app) (count_over_time({app=\"api-gateway\",level=\"info\",env=\"production\"} | json | status!=999999 [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "logfmt_numeric_equality_range",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"payment-service\",env=\"production\"} | logfmt | max_conns!=999999",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
       "id": "json_pipeline_numeric_filter",
       "family": "parser_pipeline",
       "endpoint": "query_range",

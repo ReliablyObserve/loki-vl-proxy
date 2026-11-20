@@ -15,6 +15,16 @@ why: |
 
   The plan writes `unpack_json | filter __error__:!""`: VictoriaLogs unpacks the
   key like any other, and has no error label of its own.
+
+  The distinction is between generated error state and a source key, not a
+  blanket rule that the source key disappears. TestNumericLabelFilterErrorStageOrder
+  records that `json | n=200` retains a source __error__="custom_source_error";
+  `| __error__=""` keeps it and `| __error__!=""` drops it. A metric retaining
+  that source key fails with its custom error kind. The corresponding json
+  and logfmt HTTP cases are in TestCompat_NumericEqualityLikeLoki. Native
+  single-parser numeric equality filters now read the generated conversion
+  predicates independently of source keys. The bare-parser query above and
+  partial/malformed-parser cases remain separate open axes.
 request:
   method: GET
   path: /loki/api/v1/query_range
