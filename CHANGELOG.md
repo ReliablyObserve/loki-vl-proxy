@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.355.1] - 2026-11-20
+
 ### Fixed
 
 - The series fold of a Drilldown or metric answer refuses a VictoriaLogs row that is not JSON (a trailing comma, bytes after the object, a raw control character or an invalid escape in a string) as unreadable, as the stats_query_range reader does, instead of copying it into an answer that is not JSON. Each row is validated before its fields are read (about 110–210 ns per row, no allocations).
