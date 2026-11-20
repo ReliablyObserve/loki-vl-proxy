@@ -61,7 +61,7 @@
     "internal/queryplan/lower/label_filter_numeric_syntax_test.go": "4c5002b40e6bc5402c7443eb4b4eb77d79a0162fbfd9f85d02a9be472a29ff58",
     "internal/queryplan/lower/label_filter_parsed.go": "17156d757337c333f465f2b2c35d2b8f54e75335692cf70fa5ae2446e23342a8",
     "internal/queryplan/lower/lower.go": "f073b41d4f006a15702bd379f95f1c6b3935e0b356e191b131406d703da55a38",
-    "internal/testutil/translatorspelling/translatorspelling_test.go": "c65762c673cb70f9e9b5fbabdbf16dcc828eec71d2695b31c13f7f779bdf1552",
+    "internal/testutil/translatorspelling/translatorspelling_test.go": "0b2c64bec334b838b38b018a3c4feb63138ae4b8fa949d9f7784f35d5ca6e7b5",
     "test/e2e-compat/numeric_equality_like_loki_test.go": "702f31df4bbe82c14676a1002f7b6c1ac1c77b582876cfb286bd667d71789d1a",
     "internal/proxy/numeric_label_filter_error.go": "f35a7736cb8104f2870047cfd57ae06070171e3b495dcaa7383d87e8ef83cc25",
     "internal/proxy/numeric_label_filter_error_test.go": "ffe939648824ec84284f16d1b1e06a6c5d8ac4e671231eddb12e73f2a9f961b1"

@@ -55,7 +55,7 @@ func TestRespell(t *testing.T) {
 		`sum(quantile_over_time(5e-1, {a="b"} | unwrap n [5m])) / quantile_over_time(1.0, {a="b"} | unwrap n [5m])`: `sum(quantile_over_time(0.5, {a="b"} | unwrap n [5m])) / quantile_over_time(1, {a="b"} | unwrap n [5m])`,
 		`sum_over_time({app="a"} | unwrap bytes (n) [5m])`:                                                          `sum_over_time({app="a"} | unwrap bytes(n) [5m])`,
 		"max_over_time({app=\"a\"} | unwrap duration_seconds\t( d ) [5m])":                                          `max_over_time({app="a"} | unwrap duration_seconds(d) [5m])`,
-		`rate({app="a"}[5m]) / 2`: `rate({app="a"}[5m]) / 2`,
+		`rate({app="a"}[5m]) / 2`:                                                                                   `rate({app="a"}[5m]) / 2`,
 	} {
 		if got := Respell(in); got != want {
 			t.Errorf("Respell(%q) = %q, want %q", in, got, want)
