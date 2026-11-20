@@ -432,6 +432,8 @@ type wordFences struct {
 	keywordCandidate bool // a keyword word where no keyword stands: the parser decides
 	stddev           bool // the word stddev or stdvar in any case (rankOverBinaryResponseKeyVersion)
 	markerQuoted     bool // a quoted string that holds a byte from \x00 to \x02, raw or escaped (markerBytesFence)
+	parserWord       bool // the word json or logfmt in any case (numericEqualityFromScan)
+	equalityNumber   bool // an `=`, `==` or `!=` before a digit, a dot or a sign (equalityBeforeNumberAt)
 }
 
 // scanFenceWords reads the words of query once, outside quoted text, for the reserved field case and label fences
@@ -457,10 +459,16 @@ func scanFenceWords(query string) (w wordFences) {
 			if !w.stddev && ascii && j-i == 6 && (strings.EqualFold(query[i:j], "stddev") || strings.EqualFold(query[i:j], "stdvar")) {
 				w.stddev = true
 			}
+			if !w.parserWord && ascii && (j-i == 4 && strings.EqualFold(query[i:j], "json") || j-i == 6 && strings.EqualFold(query[i:j], "logfmt")) {
+				w.parserWord = true
+			}
 			if (!w.reservedCase || !w.reservedLabel) && strings.IndexByte(query[i:j], '_') >= 0 && comparisonFollows(query, j) {
 				w.readReservedName(afterNumberUnit(query, i, j))
 			}
 			i = j
+		case c == '=' && !w.equalityNumber:
+			w.equalityNumber = equalityBeforeNumberAt(query, i)
+			i++
 		default:
 			i++
 		}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // A numeric, duration or bytes equality in a label filter after a json or logfmt parser is served from the plan, in
@@ -43,4 +44,28 @@ func TestNumericEqualityServedFromPlan(t *testing.T) {
 	if got != legacy {
 		t.Errorf("%q: served %q, want the translator's %q", q, got, legacy)
 	}
+}
+
+// The numeric equality fence fires on every query whose plan writes a numeric equality after a parser, whatever the
+// spelling: its text screen (equalityBeforeNumber, a json or logfmt word) never turns one away.
+func FuzzNumericEqualityFence(f *testing.F) {
+	for _, q := range []string{
+		`{app="x"} | json | status = 200`, `{app="x"} | JSON | status == 2e2`, `{app="x"} | logfmt | d != 5s`,
+		`sum(count_over_time({app="x"} | logfmt | size = 1KB [5m]))`, "{app=\"x\"} |#c\n json | status=\t.5",
+		`{app="x"} | json | status >= 200`, `{app="x"} | json | a="=5" | b = -3`, `{app="x"} | logfmt | n==+1`,
+	} {
+		f.Add(q)
+	}
+	f.Fuzz(func(t *testing.T, q string) {
+		if len(q) > 512 {
+			return
+		}
+		plan := resolvedPlan(fenceVariablesResolved(dynamicQuery(q)))
+		if plan == nil || !lower.WritesNumericEquality(plan) {
+			return
+		}
+		if numericEqualityResponseKeyVersion(q) == "" {
+			t.Fatalf("%q: the plan writes a numeric equality, the fence does not fire", q)
+		}
+	})
 }

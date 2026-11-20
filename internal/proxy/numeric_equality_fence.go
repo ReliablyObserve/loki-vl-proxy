@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"strings"
-
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
@@ -13,18 +11,42 @@ import (
 const numericEqualityResponseVersion = "@numeric-equality-v1:"
 
 // numericEqualityResponseKeyVersion is the fence of a query whose plan writes such an equality
-// (lower.WritesNumericEquality), read from the query's resolved plan after a screen of the text: a json or logfmt
-// word and an equals sign. Every other query asks for no plan here.
+// (lower.WritesNumericEquality), read from the query's resolved plan after a screen of the text: outside quoted text,
+// an equality written before a number (equalityBeforeNumberAt) and the word json or logfmt. Every other query asks
+// for no plan here.
 func numericEqualityResponseKeyVersion(query string) string {
-	if strings.IndexByte(query, '=') < 0 {
+	return numericEqualityFromScan(query, scanFenceWords(query))
+}
+
+// numericEqualityFromScan is numericEqualityResponseKeyVersion with the words of the query read already.
+func numericEqualityFromScan(query string, words wordFences) string {
+	if !words.equalityNumber || !words.parserWord {
 		return ""
 	}
-	other := spelledOtherwise(query)
-	if !containsWord(query, "json", other) && !containsWord(query, "logfmt", other) {
-		return ""
-	}
-	if plan := resolvedPlan(fenceVariablesResolved(dynamicQuery(query))); plan != nil && lower.WritesNumericEquality(plan) {
+	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && lower.WritesNumericEquality(plan) {
 		return numericEqualityResponseVersion
 	}
 	return ""
+}
+
+// equalityBeforeNumberAt reports whether the `=` at query[i] is an `=`, `==` or `!=` followed, after any blanks, by a
+// digit, a dot or a sign: the spelling of every equality on a number, a duration or a byte size (and of some other
+// text, which the plan then reads). The second `=` of `==`, an ordering comparison (`>=`, `<=`) and a regexp matcher
+// (`=~`) are not one.
+func equalityBeforeNumberAt(query string, i int) bool {
+	if i > 0 && (query[i-1] == '<' || query[i-1] == '>' || query[i-1] == '=') {
+		return false
+	}
+	j := i + 1
+	if j < len(query) && query[j] == '=' {
+		j++
+	}
+	for j < len(query) && (query[j] == ' ' || query[j] == '\t' || query[j] == '\n' || query[j] == '\r' || query[j] == '\v' || query[j] == '\f') {
+		j++
+	}
+	if j >= len(query) {
+		return false
+	}
+	c := query[j]
+	return c >= '0' && c <= '9' || c == '.' || c == '-' || c == '+'
 }

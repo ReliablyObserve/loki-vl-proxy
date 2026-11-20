@@ -53,7 +53,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 			b.add(reservedFieldLabelResponseVersion)
 		}
 		b.add(markerBytesFence(query, words.markerQuoted))
-		b.add(numericEqualityResponseKeyVersion(query))
+		b.add(numericEqualityFromScan(query, words))
 		return b.String()
 	}
 	other := spelledOtherwise(query)
@@ -81,7 +81,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		b.add(reservedFieldLabelResponseVersion)
 	}
 	b.add(markerBytesFence(query, words.markerQuoted))
-	b.add(numericEqualityResponseKeyVersion(query))
+	b.add(numericEqualityFromScan(query, words))
 	if keep && containsWord(query, "unwrap", other) {
 		b.add(keepUnwrapIdentityResponseVersion)
 	}
