@@ -126,8 +126,17 @@ func numericEqualityBound(e *logql.LabelFilterExpr) (bound string, ok bool) {
 		if f == 0 {
 			return "0", true // -0
 		}
-		bound = strconv.FormatFloat(f, 'f', -1, 64)
-		return bound, len(bound) <= 32
+		// Eligibility checks need no owned string. Reuse an already canonical
+		// literal; only a changed spelling (2e2, 0200) needs an allocation.
+		var scratch [384]byte // the fixed representation of any finite float64
+		formatted := strconv.AppendFloat(scratch[:0], f, 'f', -1, 64)
+		if len(formatted) > 32 {
+			return "", false
+		}
+		if string(formatted) == e.Value {
+			return e.Value, true
+		}
+		return string(formatted), true
 	case logql.LabelFilterValueDuration:
 		d, err := time.ParseDuration(e.Value)
 		if err != nil || d < 0 || d >= maxExactBound {
@@ -192,7 +201,7 @@ func numericEqualityFilterWithError(field string, e *logql.LabelFilterExpr, conv
 		// A conversion failure is a retained line carrying LabelFilterErr in
 		// Loki, including for equality (recorded numeric-equality oracle).
 		if conversionError != nil {
-			return logsql.Group{Expr: logsql.AnyOf{equal, conversionError}}
+			return logsql.Group{Expr: logsql.OrExpr{Left: equal, Right: conversionError}}
 		}
 		return equal
 	}
@@ -207,16 +216,14 @@ func numericEqualityFilterWithError(field string, e *logql.LabelFilterExpr, conv
 // excluded from the error branch even though they cannot equal a finite bound.
 // Overflow and present-empty values need separate classification.
 func numericEqualityErrors(field string, e *logql.LabelFilterExpr) logsql.FilterExpr {
-	pattern := numberErrorFreeSyntax
-	switch e.Kind {
-	case logql.LabelFilterValueDuration:
-		pattern = durationErrorFreeSyntax
-	case logql.LabelFilterValueBytes:
-		pattern = sizeErrorFreeSyntax
+	pattern := numericSyntaxPattern(e)
+	if e.Kind == logql.LabelFilterValueNumber {
+		pattern = numberErrorFreeSyntax
 	}
-	// VL reads a missing field as empty. Including empty in the negated
-	// pattern excludes both, just like the previous field:* guard.
-	return logsql.Exclude{Expr: logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: pattern}}
+	return logsql.AllOf{
+		logsql.FieldFilter{Field: field, Op: logsql.FieldOpAny},
+		logsql.Exclude{Expr: logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: pattern}},
+	}
 }
 
 // numericGeneratedErrorFilter reads the conversion predicates evaluated before

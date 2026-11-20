@@ -47,6 +47,11 @@ why: |
   This upstream round-trip difference is kept separate from proxy row losses;
   the original pipeline answers are not replaced. Raw HTTP and public-API
   evidence: bench/numeric-equality/results/2026-11-20/live-grid.jsonl.gz.
+
+  The numeric-equality log and count pages in bench/visual/spec.json capture
+  the scoped change. The dated proof's visual-comparison.json holds three
+  matching Grafana query payloads against Loki, and reports ancillary resource
+  differences separately. The case remains open on its unproved axes.
 request:
   method: GET
   path: /loki/api/v1/query_range

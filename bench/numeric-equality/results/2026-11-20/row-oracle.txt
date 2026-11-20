@@ -1,6 +1,6 @@
 === RUN   TestNumericEqualityAfterParserMatchesLoki
     label_filter_numeric_eq_oracle_test.go:356: 81 queries x values x 2 versions = 7286 line decisions: the lowering differs from Loki on 126, the string translator on 2244
     label_filter_numeric_eq_oracle_test.go:358: open conversion-error row losses: 126; other row differences: 0; error-label parity is not measured by this storage-level test
---- PASS: TestNumericEqualityAfterParserMatchesLoki (10.80s)
+--- PASS: TestNumericEqualityAfterParserMatchesLoki (11.60s)
 PASS
-ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower	11.194s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower	12.036s

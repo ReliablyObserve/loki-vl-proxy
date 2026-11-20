@@ -43,20 +43,20 @@ serve oracle's local HTTP round trip.
 
 | Backend | Filter/window | Control p50 | Candidate p50 | Delta |
 |---|---|---:|---:|---:|
-| v1.54.0 | size=1KB / 1h | 21.900 ms | 16.043 ms | -26.7% |
-| v1.54.0 | size=1KB / 6h | 120.614 ms | 84.703 ms | -29.8% |
-| v1.54.0 | size=1KB / 24h | 284.689 ms | 200.670 ms | -29.5% |
-| v1.49.0 | size=1KB / 1h | 23.132 ms | 16.451 ms | -28.9% |
-| v1.49.0 | size=1KB / 6h | 118.791 ms | 84.139 ms | -29.2% |
-| v1.49.0 | size=1KB / 24h | 475.354 ms | 328.326 ms | -30.9% |
-| v1.54.0 | d=5s / 24h | 230.463 ms | 223.604 ms | -3.0% |
-| v1.49.0 | d=5s / 24h | 374.778 ms | 361.869 ms | -3.4% |
-| v1.54.0 | number=200 / 24h | 186.682 ms | 180.451 ms | -3.3% |
-| v1.49.0 | number=200 / 24h | 180.105 ms | 184.819 ms | +2.6% |
+| v1.54.0 | size=1KB / 1h | 21.672ms | 15.72ms | -27.5% |
+| v1.54.0 | size=1KB / 6h | 120.346ms | 85.455ms | -29.0% |
+| v1.54.0 | size=1KB / 24h | 476.638ms | 331.596ms | -30.4% |
+| v1.49.0 | size=1KB / 1h | 21.945ms | 16.2ms | -26.2% |
+| v1.49.0 | size=1KB / 6h | 116.592ms | 83.638ms | -28.3% |
+| v1.49.0 | size=1KB / 24h | 461.365ms | 325.413ms | -29.5% |
+| v1.54.0 | number=200 / 24h | 173.139ms | 169.307ms | -2.2% |
+| v1.54.0 | d=5s / 24h | 376.887ms | 364.969ms | -3.2% |
+| v1.49.0 | number=200 / 24h | 171.627ms | 163.908ms | -4.5% |
+| v1.49.0 | d=5s / 24h | 367.077ms | 354.386ms | -3.5% |
 
-`vl-cost-correctness-control.txt` retains all results, including an unchanged
-number-inequality control at 6h on v1.54.0: 55.404 → 64.573 ms (+16.6%) despite
-identical query text. This is variability, not evidence of a code regression.
+`vl-cost-correctness-control.txt` retains every current result. The prior
+measurement, `vl-cost-before-compact.txt`, includes an unchanged-query
+number-inequality outlier of +16.6%; timing variability is not hidden.
 Small number/duration changes are not claimed significant. The separate bare
 range pair returns different counts (24h size: 300,001 vs 450,004); its latency
 ratio compares different work. CPU time, peak RSS, disk IOPS, network bytes and
@@ -65,7 +65,7 @@ end-to-end main/Loki resource costs were not collected by this filter benchmark.
 Reproduce:
 ```sh
 GOMEMLIMIT=2GiB GOMAXPROCS=2 LVP_NUMEQ_VLCOST=1 \
-  LVP_NUMEQ_BASELINE_FILE=bench/numeric-equality/results/2026-11-20/correctness-control-queries.json \
+  LVP_NUMEQ_BASELINE_FILE="$PWD/bench/numeric-equality/results/2026-11-20/correctness-control-queries.json" \
   go test -count=1 -p 1 -timeout=20m -v \
   -run '^TestNumericEqualityVictoriaLogsCost$' ./internal/querycorpus
 ```
@@ -101,3 +101,56 @@ The 208 query-text construction sites remain unchanged: the error-counting and
 lookup pipes are encoded once from typed LogsQL nodes. Log-query oracle answers
 were recorded again against both backends; the added JSON numeric matrix query
 links its remaining parser-error/empty-label differences to the existing cases.
+
+## Translation misses against main
+
+Six samples per shape, 100ms each, Apple M5 Pro arm64, GOMAXPROCS=2.
+The same committed benchmark runs on main eef311db6 and the candidate. These
+rows include request validation and a different translation-cache key on each
+iteration. Raw samples and all eight shapes are retained in
+`translation-main.txt`, `translation-candidate.txt`, `translation-benchstat.txt`
+and `translation-comparison.json`.
+
+| Shape | Main / candidate time | Main / candidate B/op | Main / candidate allocs/op |
+|---|---:|---:|---:|
+| JSON numeric log filter | 20.98 / 20.56 us | 2,369 / 4,510 | 41 / 48 |
+| Logfmt numeric metric | 22.37 / 21.11 us | 3,622 / 5,510 | 56 / 59 |
+| JSON `==` log filter | 22.46 / 20.88 us | 3,604 / 4,511 | 47 / 48 |
+| JSON vector aggregation | 22.15 / 22.53 us | 3,506 / 6,254.5 | 53 / 56 |
+
+The longer encoded query and error-classification AST cost additional memory
+on a translation miss. This remains a resource tradeoff requiring review before
+merge; passing the ranking gate does not prove memory parity with main. The
+small timing changes do not establish end-to-end speed or CPU-time savings.
+Peak RSS, disk IOPS and network bytes were not measured by this microbenchmark.
+
+`allocation-diff.txt` is the sampled allocation-space profile difference for
+40,000 validated numeric log-filter misses on each build (65,536-byte sampling).
+The largest positive sites are query encoding (+38.68 MiB) and translation
+cache storage (+38.31 MiB): the longer query string and its cache payload.
+The profiles include equal benchmark setup and are not process RSS. Raw
+`translation-main.allocs.pprof` and `translation-candidate.allocs.pprof` retain
+the sampling evidence; timing tables above come from the separate unprofiled
+six-sample run.
+
+## Grafana capture
+
+The existing Playwright capture ran both numeric-equality pages on Grafana
+13.3.1 in the existing playground: two tests, four screenshots, no page/API
+errors or empty panels. The three query payloads (log entries, their histogram,
+and the count metric) match Loki, including timestamps, labels and values.
+`visual-comparison.json` also retains the ancillary index/stats and tenant-wide
+label-catalog differences; this is not a claim that every resource call matches.
+
+| Page | Proxy | Loki |
+|---|---|---|
+| Log entries and histogram | [Screenshot](explore-numeric-equality-logs-pr.png) | [Screenshot](explore-numeric-equality-logs-loki.png) |
+| Count metric | [Screenshot](explore-numeric-equality-count-pr.png) | [Screenshot](explore-numeric-equality-count-loki.png) |
+
+The selector excludes `query_semantics_run_id` fixtures: the local Loki reference
+exposes those test streams together, whereas the proxy isolates their numeric
+tenants from tenant 0. The first unscoped capture saw four Loki-only fixture
+timestamps; their marker and original line confirmed the different input data.
+The final capture uses the same shared dataset, without relaxing comparison.
+The two pages are linked to the existing cases in `bench/visual/spec.json`.
+Local captures cover proxy/Loki; the CI harness captures main/PR/Loki.

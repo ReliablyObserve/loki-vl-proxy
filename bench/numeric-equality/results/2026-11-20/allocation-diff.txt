@@ -1,0 +1,25 @@
+File: pr1705-head-profile.test
+Type: alloc_space
+Time: 2026-11-20 13:22:54 CET
+Showing nodes accounting for 82.64MB, 70.21% of 117.70MB total
+Dropped 112 nodes (cum <= 0.59MB)
+Showing top 18 nodes out of 102
+      flat  flat%   sum%        cum   cum%
+   38.68MB 32.86% 32.86%    38.68MB 32.86%  github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql.Query.String
+   38.31MB 32.55% 65.41%    39.52MB 33.57%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).cacheTranslation
+  -24.48MB 20.80% 44.62%   -24.48MB 20.80%  github.com/ReliablyObserve/Loki-VL-proxy/internal/translator.tryTranslateMetricQueryWithout
+   14.15MB 12.03% 56.64%    14.15MB 12.03%  github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan.Build
+   10.75MB  9.14% 65.78%    10.75MB  9.14%  github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower.numericEqualityFilterWithError
+   -6.44MB  5.47% 60.31%   -14.07MB 11.95%  github.com/ReliablyObserve/Loki-VL-proxy/internal/translator.translateLogQueryOpts
+   -6.25MB  5.31% 55.00%    -6.25MB  5.31%  regexp.(*Regexp).replaceAll
+    5.69MB  4.83% 59.83%     5.69MB  4.83%  github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower.numericEqualityErrors (inline)
+   -5.13MB  4.36% 55.47%   -11.38MB  9.67%  regexp.(*Regexp).ReplaceAllString
+    3.25MB  2.76% 58.24%     3.25MB  2.76%  github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower.(*filterStages).initFilters (inline)
+    2.77MB  2.36% 60.59%     2.77MB  2.36%  bytes.growSlice
+    2.75MB  2.34% 62.93%     2.75MB  2.34%  github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower.stagePipes
+    2.50MB  2.13% 65.06%    32.95MB 28.00%  github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower.logSelectQuery
+    2.31MB  1.97% 67.02%     2.31MB  1.97%  github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower.pipeRoom
+   -2.25MB  1.91% 65.11%    -2.25MB  1.91%  github.com/ReliablyObserve/Loki-VL-proxy/internal/translate.BuildFieldFilter (inline)
+    2.19MB  1.86% 66.97%     2.19MB  1.86%  github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower.selectQuery (inline)
+       2MB  1.70% 68.67%        2MB  1.70%  internal/sync.newEntryNode[go.shape.interface {},go.shape.interface {}]
+    1.81MB  1.54% 70.21%     1.81MB  1.54%  internal/sync.newIndirectNode[go.shape.interface {},go.shape.interface {}]

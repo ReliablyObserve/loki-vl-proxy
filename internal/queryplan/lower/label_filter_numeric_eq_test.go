@@ -2,7 +2,6 @@ package lower
 
 import (
 	"errors"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -161,16 +160,20 @@ func assertNumericEqualityTree(t *testing.T, text, field, bound string, negated 
 			t.Fatalf("%s: equality must retain a separate conversion-error branch", text)
 		}
 		pair(or.Left)
-		ex, ok := or.Right.(logsql.Exclude)
-		if !ok {
-			t.Fatalf("%s: error branch must reject the valid conversion grammar and empty values", text)
+		bad := or.Right
+		if g, ok := bad.(logsql.Group); ok {
+			bad = g.Expr
+		}
+		all, ok := bad.(logsql.AllOf)
+		if !ok || len(all) != 2 {
+			t.Fatalf("%s: error branch must require a present field and reject the valid conversion grammar", text)
+		}
+		ff, exists := all[0].(logsql.FieldFilter)
+		ex, excludes := all[1].(logsql.Exclude)
+		if !exists || ff.Field != field || ff.Op != logsql.FieldOpAny || !excludes {
+			t.Fatalf("%s: malformed conversion-error branch", text)
 		}
 		regexpOn(ex.Expr)
-		ff := ex.Expr.(logsql.FieldFilter)
-		acceptsEmpty, err := regexp.MatchString(ff.Value, "")
-		if err != nil || !acceptsEmpty {
-			t.Fatalf("%s: the negated grammar would retain missing or empty values: %v", text, err)
-		}
 		return
 	}
 	all, ok := filter.(logsql.AllOf)

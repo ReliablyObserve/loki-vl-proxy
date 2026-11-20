@@ -48,11 +48,7 @@ const (
 // commas are gone, then a unit of bytesUnitSize in any case (or none) between blanks.
 const sizeSyntax = `^,*(?:[0-9][0-9,]*(?:\.[0-9,]*)?|\.,*[0-9][0-9,]*)` + sizeBlanks + `(?i:(?:[kmgtp]i?)?b?)` + sizeBlanks + `$`
 
-const (
-	numberErrorFreeSyntax   = numberSyntax + `|^(?i:[+-]?inf(?:inity)?|nan)$|^$`
-	durationErrorFreeSyntax = durationSyntax + `|^$`
-	sizeErrorFreeSyntax     = sizeSyntax + `|^$`
-)
+const numberErrorFreeSyntax = numberSyntax + `|^(?i:[+-]?inf(?:inity)?|nan)$`
 
 // numericSyntaxPattern is the regexp of Loki's syntax for the kind of e's literal.
 func numericSyntaxPattern(e *logql.LabelFilterExpr) string {

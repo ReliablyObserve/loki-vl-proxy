@@ -1,0 +1,48 @@
+[
+  {
+    "page": "explore-numeric-equality-count",
+    "settled": true,
+    "query_comparison": [
+      1,
+      1,
+      [],
+      1,
+      0,
+      []
+    ],
+    "full_comparison": [
+      3,
+      1,
+      [
+        "resource /api/datasources/uid/*/resources/index/stats?query=%7Benv%3D%22production%22%2Capp%3D%22ap: body: content differs (rows 0 vs 0)",
+        "resource /api/datasources/uid/*/resources/labels?start=1795176120000000000&end=1795177020000000000: body: content differs (rows 16 vs 21)"
+      ],
+      3,
+      0,
+      []
+    ]
+  },
+  {
+    "page": "explore-numeric-equality-logs",
+    "settled": true,
+    "query_comparison": [
+      2,
+      2,
+      [],
+      2,
+      0,
+      []
+    ],
+    "full_comparison": [
+      4,
+      2,
+      [
+        "resource /api/datasources/uid/*/resources/index/stats?query=%7Benv%3D%22production%22%2Capp%3D%22ap: body: content differs (rows 0 vs 0)",
+        "resource /api/datasources/uid/*/resources/labels?start=1795176120000000000&end=1795177020000000000: body: content differs (rows 16 vs 21)"
+      ],
+      4,
+      0,
+      []
+    ]
+  }
+]

@@ -3420,7 +3420,7 @@
     },
     "page_kinds": {
       "drilldown": 19,
-      "explore": 132,
+      "explore": 134,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3523,6 +3523,8 @@
     "explore-nested-aggregation-outer-by",
     "explore-nested-json-filtered-count",
     "explore-nested-json-filtered-rate",
+    "explore-numeric-equality-count",
+    "explore-numeric-equality-logs",
     "explore-pattern-filter-anchored",
     "explore-plain-level-metric",
     "explore-rate-detected-level-unknown",
