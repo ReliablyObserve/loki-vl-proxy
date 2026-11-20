@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.354.0] - 2026-11-19
+
 ### Changed
 
 - `-max-query-plan-time` now also stops a query's checks over its parsed tree while they run, and refuses a query right after the string translator returns, not only before the first VictoriaLogs call. Before, a request over the budget could still spend seconds in the handlers' readers of the translated text.
