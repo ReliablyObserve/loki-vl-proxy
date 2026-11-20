@@ -86,3 +86,18 @@ without claiming which server hop rewrites it. Oracle expectations were not
 changed. The historical 21/81 plan/Loki row-set agreement is not current API
 coverage. Current live-grid artifacts, when present, are separately named
 `live-grid-final*`.
+
+## Corpus and allocation checks
+
+`route-call-comparison.json` compares main eef311db6 with this change on the
+existing route-parity harness. All 25,900 common request executions keep their
+HTTP status and VictoriaLogs call counts, both cold and on the exact repeat.
+Three added matrix queries contribute 30 new executions; no request was removed.
+This uses the harness's deterministic backend, not live latency measurements.
+
+The unchanged ranking-allocation gate passes after sharing immutable error
+predicates, omitting unused predicate history and precomputing grammar strings.
+The 208 query-text construction sites remain unchanged: the error-counting and
+lookup pipes are encoded once from typed LogsQL nodes. Log-query oracle answers
+were recorded again against both backends; the added JSON numeric matrix query
+links its remaining parser-error/empty-label differences to the existing cases.

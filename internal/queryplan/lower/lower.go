@@ -362,6 +362,7 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 	var res filterStages
 	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv, numericErrorMode: NumericEqualityErrorPipeline(sel.Stages)}
 	var seenNumericErrors logsql.AnyOf
+	trackNumericErrors := lb.numericErrorMode && numericPipelineFiltersError(sel.Stages)
 	numericAlreadyFailed := false
 	for i, st := range sel.Stages {
 		lb.names.note(defs, i)
@@ -431,18 +432,18 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 			res.pre[i] = translate.ExtractedCoalesce(lb.stageBases, lb.keyParsers, &lb.streamCopied)
 			lb.stageBases = lb.stageBases[:0]
 		}
-		if len(lb.numericErrors) > 0 {
+		if lb.numericError != nil {
 			if res.pre == nil {
 				res.pre = make([][]logsql.Pipe, len(sel.Stages))
 			}
-			if !numericAlreadyFailed {
-				seenNumericErrors = append(seenNumericErrors, lb.numericErrors...)
+			if trackNumericErrors && !numericAlreadyFailed {
+				seenNumericErrors = append(seenNumericErrors, lb.numericError)
 			}
 			res.pre[i] = append(res.pre[i], logsql.PipeFormat{
 				Template: "LabelFilterErr", ResultField: "__error__",
-				If: lb.numericErrors[0],
+				If: lb.numericError,
 			})
-			lb.numericErrors = nil
+			lb.numericError = nil
 		}
 	}
 	res.bases = lb.bases
@@ -532,7 +533,7 @@ type leafBuilder struct {
 	// reserved the reserved fields a comparison read the tag of so far, stageReserved those first read by the stage.
 	staged                  bool
 	reserved, stageReserved []string
-	numericErrors           []logsql.FilterExpr
+	numericError            logsql.FilterExpr
 	numericErrorMode        bool
 }
 

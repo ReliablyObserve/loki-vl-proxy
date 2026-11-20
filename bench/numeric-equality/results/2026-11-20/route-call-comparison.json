@@ -1,0 +1,250 @@
+{
+  "base_commit": "eef311db6",
+  "base_requests": 25900,
+  "pr_requests": 25930,
+  "common_requests": 25900,
+  "common_status_or_call_count_changes": [],
+  "removed_requests": 0,
+  "added_requests": [
+    {
+      "request": "24h chunk false \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "24h chunk false \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "24h chunk false \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "24h chunk true \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "24h chunk true \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "24h chunk true \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "instant false \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "instant false \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 400,
+        "cold": 0,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "instant false \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 400,
+        "cold": 0,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "instant true \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "instant true \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 400,
+        "cold": 0,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "instant true \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 400,
+        "cold": 0,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step<range false \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step<range false \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step<range false \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step<range true \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step<range true \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step<range true \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step=range false \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step=range false \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step=range false \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step=range true \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step=range true \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step=range true \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step>range false \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step>range false \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step>range false \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step>range true \"sum by (app) (count_over_time({app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999 [5m]))\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step>range true \"{app=\\\"api-gateway\\\",level=\\\"info\\\",env=\\\"production\\\"} | json | status!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    },
+    {
+      "request": "step>range true \"{app=\\\"payment-service\\\",env=\\\"production\\\"} | logfmt | max_conns!=999999\"",
+      "pr": {
+        "status": 200,
+        "cold": 1,
+        "repeat": 0
+      }
+    }
+  ]
+}

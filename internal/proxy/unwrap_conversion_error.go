@@ -1409,7 +1409,7 @@ func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHi
 func (c *unwrapCheck) lookupHit(ctx context.Context, p *Proxy, probe unwrapErrorProbe, h unwrapHit, from, to time.Time) *orderedJSONPipelineError {
 	query := unwrapLookupQuery(h.base, h.field, h.conv)
 	if probe.numeric {
-		query = h.base + ` | filter __error__:* -__preserve_error__:="true"`
+		query = h.base + " " + numericErrorLookupPipe
 		if !c.instant && c.step > probe.window {
 			query = withWindowPhaseFilter(ctx, query, c.start.Add(-probe.offset), c.step, probe.window)
 		}
@@ -1689,7 +1689,7 @@ func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, form
 			}
 			if probe.numeric && probe.hints != nil {
 				for name := range parsed {
-					if !probe.hints[name] && !(generatedError != "" && (name == errorLabel || name == errorDetailsLabel)) {
+					if !probe.hints[name] && (generatedError == "" || !numericErrorKey(name)) {
 						delete(labels, name)
 						delete(parsed, name)
 					}
@@ -1839,7 +1839,7 @@ func unwrapComparisonConv(literal string) (string, bool) {
 // name wins (json, logfmt) or its last (unpack). ok is false for a stage the check does not reproduce.
 func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string]string, parsed map[string]bool, preserveError, includeSourceErrors bool, generated *string) bool {
 	add := func(name, value string, last bool) {
-		if name == "" || (!includeSourceErrors && (name == errorLabel || name == errorDetailsLabel)) {
+		if name == "" || (!includeSourceErrors && numericErrorKey(name)) {
 			return
 		}
 		if _, stored := labels[name]; stored && !parsed[name] {

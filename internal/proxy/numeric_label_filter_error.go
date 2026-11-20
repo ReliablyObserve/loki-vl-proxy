@@ -7,12 +7,52 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	fj "github.com/valyala/fastjson"
 )
 
 // numericFilterConversion distinguishes label-filter probes from unwrap
 // conversions while sharing their bounded stats-hit confirmation path.
 const numericFilterConversion = "label_filter"
+
+// These trusted pipes share one typed condition and are encoded once. Request
+// rewrites append them without parsing or rebuilding the condition.
+var numericErrorCondition = logsql.AllOf{
+	logsql.FieldFilter{Field: errorLabel, Op: logsql.FieldOpAny},
+	logsql.Exclude{Expr: logsql.FieldFilter{Field: "__preserve_error__", Op: logsql.FieldOpExact, Value: "true"}},
+}
+
+var numericErrorLookupPipe = (logsql.PipeFilter{Expr: numericErrorCondition}).String()
+
+var numericErrorCountingPipes = (logsql.PipeFormat{Template: "0", ResultField: unwrapBadField}).String() + " " +
+	(logsql.PipeFormat{Template: "1", ResultField: unwrapBadField, If: numericErrorCondition}).String()
+
+func numericErrorKey(name string) bool {
+	return name == errorLabel || name == errorDetailsLabel
+}
+
+func numericErrorEntry(entry map[string]interface{}) bool {
+	return entry[errorLabel] != nil || entry[errorDetailsLabel] != nil
+}
+
+func (e *lineFieldExposure) numericErrorField(name string) bool {
+	return e != nil && len(e.numericPipeline) > 0 && numericErrorKey(name)
+}
+
+func (c *unwrapCheck) takeNumericErrorEntry(base string, ts int64, entry map[string]interface{}) {
+	if c != nil && asString(entry[errorLabel]) != "" && asString(entry["__preserve_error__"]) != "true" && c.accepts(errorLabel, numericFilterConversion) {
+		c.numericRowHit(base, ts)
+		delete(entry, errorLabel)
+	}
+}
+
+func (c *unwrapCheck) takeNumericErrorRow(base string, ts int64, row *fj.Value) {
+	if c != nil && len(row.GetStringBytes(errorLabel)) != 0 && string(row.GetStringBytes("__preserve_error__")) != "true" && c.accepts(errorLabel, numericFilterConversion) {
+		c.numericRowHit(base, ts)
+		row.Del(errorLabel)
+	}
+}
 
 func (c *unwrapCheck) failNumericProof(err error) {
 	c.mu.Lock()
@@ -237,8 +277,7 @@ func numericFilterCountingQuery(query string) (rewritten, base string, ok bool) 
 		if !grouped {
 			return query, "", false
 		}
-		return base + ` | format "0" as ` + unwrapBadField +
-			` | format if (__error__:* -__preserve_error__:="true") "1" as ` + unwrapBadField + rest, base, true
+		return base + " " + numericErrorCountingPipes + rest, base, true
 	}
 	return query, "", false
 }

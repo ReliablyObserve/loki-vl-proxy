@@ -1404,7 +1404,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 	deferred := deferredBuf[:0]
 	obj.Visit(func(k []byte, val *fj.Value) {
 		key := string(k)
-		if (key == errorLabel || key == errorDetailsLabel) && exposure != nil && len(exposure.numericPipeline) > 0 {
+		if exposure.numericErrorField(key) {
 			numericError = numericError || len(val.GetStringBytes()) > 0
 			return // reconstructed from the recorded conversion, without label-name sanitization
 		}
@@ -1996,7 +1996,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	// structured metadata.
 	// lr.line is set only for the exposure checks, so the conversion is
 	// paid there alone.
-	lr := lineRow{stream: labels, numericError: entry[errorLabel] != nil || entry[errorDetailsLabel] != nil}
+	lr := lineRow{stream: labels, numericError: numericErrorEntry(entry)}
 	var lineMissing bool
 	if exposure != nil {
 		if stored, ok := entry[translate.StoredLineField].(string); ok {
@@ -2019,7 +2019,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	}
 
 	for key, value := range entry {
-		if (key == errorLabel || key == errorDetailsLabel) && exposure != nil && len(exposure.numericPipeline) > 0 {
+		if exposure.numericErrorField(key) {
 			continue
 		}
 		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {

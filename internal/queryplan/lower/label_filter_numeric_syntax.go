@@ -48,6 +48,12 @@ const (
 // commas are gone, then a unit of bytesUnitSize in any case (or none) between blanks.
 const sizeSyntax = `^,*(?:[0-9][0-9,]*(?:\.[0-9,]*)?|\.,*[0-9][0-9,]*)` + sizeBlanks + `(?i:(?:[kmgtp]i?)?b?)` + sizeBlanks + `$`
 
+const (
+	numberErrorFreeSyntax   = numberSyntax + `|^(?i:[+-]?inf(?:inity)?|nan)$|^$`
+	durationErrorFreeSyntax = durationSyntax + `|^$`
+	sizeErrorFreeSyntax     = sizeSyntax + `|^$`
+)
+
 // numericSyntaxPattern is the regexp of Loki's syntax for the kind of e's literal.
 func numericSyntaxPattern(e *logql.LabelFilterExpr) string {
 	switch e.Kind {
@@ -85,6 +91,9 @@ func exactDecimal(v, unit int64) (intPart, frac string, ok bool) {
 // unit, for a duration or a size; "" for a number (VictoriaLogs reads every decimal spelling Loki reads) and for a
 // literal whose bound the lowering does not write.
 func exactSpellingsPattern(e *logql.LabelFilterExpr) string {
+	if e.Kind == logql.LabelFilterValueNumber {
+		return ""
+	}
 	bound, ok := numericEqualityBound(e)
 	if !ok {
 		return ""

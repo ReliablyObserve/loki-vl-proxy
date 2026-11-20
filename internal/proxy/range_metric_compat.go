@@ -2104,10 +2104,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		if marked {
 			jsonCheck.takeRawRowMark(v, ts)
 		}
-		if check := unwrapCheckFrom(ctx); check != nil && len(v.GetStringBytes(errorLabel)) != 0 && string(v.GetStringBytes("__preserve_error__")) != "true" && check.accepts(errorLabel, numericFilterConversion) {
-			check.numericRowHit(baseQuery, ts)
-			v.Del(errorLabel)
-		}
+		unwrapCheckFrom(ctx).takeNumericErrorRow(baseQuery, ts, v)
 
 		sampleValue, ok := p.extractManualSampleValueFJ(v, field, unwrapConv)
 		if !ok {

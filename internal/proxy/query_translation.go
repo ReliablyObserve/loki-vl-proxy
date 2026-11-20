@@ -1363,10 +1363,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			continue
 		}
 		jsonCheck.takeRawRowEntry(entry, tsNanos)
-		if check := unwrapCheckFrom(ctx); check != nil && asString(entry[errorLabel]) != "" && asString(entry["__preserve_error__"]) != "true" && check.accepts(errorLabel, numericFilterConversion) {
-			check.numericRowHit(logsqlQuery, tsNanos)
-			delete(entry, errorLabel)
-		}
+		unwrapCheckFrom(ctx).takeNumericErrorEntry(logsqlQuery, tsNanos, entry)
 		weight, ok := bareParserRawSampleWeight(entry, spec)
 		if !ok {
 			reportUnwrapRejectedEntry(ctx, entry, logsqlQuery, spec, tsNanos)
