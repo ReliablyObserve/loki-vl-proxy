@@ -3196,7 +3196,8 @@ func (p *Proxy) appendResponseProfileCacheKey(dst []byte, r *http.Request, endpo
 		dst = append(dst, part...)
 	}
 	query := endpoint == "query" || endpoint == "query_range"
-	drilldown := isGrafanaDrilldownRequest(r)
+	// The profile already classified the Source tag; do not parse it twice.
+	drilldown := profile.surface == "grafana_drilldown"
 	var mode string
 	if drilldown {
 		mode = p.drilldownSeriesLimitModeOrDefault()

@@ -89,6 +89,12 @@ func TestCapturedGrafanaRequestsCarryTheirClientProfile(t *testing.T) {
 		if (req.surface == "drilldown") != (legacy == "grafana_drilldown") {
 			t.Errorf("%s %s: typed surface %s, cache-key surface %q", req.file, req.flow, req.surface, legacy)
 		}
+		cacheRequest := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil)
+		cacheRequest.Header = req.header.Clone()
+		cacheProfile := p.responseProfileCacheKey(cacheRequest, "query_range")
+		if strings.Contains(cacheProfile, "/sl-") != (req.surface == "drilldown") {
+			t.Errorf("%s %s: cache limit mode %q does not match captured surface %s", req.file, req.flow, cacheProfile, req.surface)
+		}
 
 		rec := httptest.NewRecorder()
 		p.queryTracker.Handler(rec, httptest.NewRequest(http.MethodGet, "/debug/queries", nil))
