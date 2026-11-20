@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.357.0] - 2026-11-20
+
+### Fixed
+
+- Loki query response caches include the tenant's effective metric-series limit, including federated tenant minima. Raising a limit no longer replays an older partial Drilldown answer, and lowering it no longer replays an answer above the new limit, including after an SSD cache restart. VictoriaLogs bucket caches and metadata listings remain reusable. The existing Fields UI regression now also checks every distinct fixture value at 15 minutes, 3 hours, 24 hours and 48 hours under matching Loki/proxy limits.
+  - Build the response profile directly into its final key and reuse its Grafana client classification rather than parsing the Source tag again. Cache scope and response identity stay the same.
+
 ## [2.356.0] - 2026-11-20
 
 ### Fixed
