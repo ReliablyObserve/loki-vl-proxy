@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"strings"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
@@ -11,22 +13,40 @@ import (
 const numericEqualityResponseVersion = "@numeric-equality-v1:"
 
 // numericEqualityResponseKeyVersion is the fence of a query whose plan writes such an equality
-// (lower.WritesNumericEquality), read from the query's resolved plan after a screen of the text: outside quoted text,
-// an equality written before a number (equalityBeforeNumberAt) and the word json or logfmt. Every other query asks
-// for no plan here.
+// (lower.WritesNumericEquality), read from the query's resolved plan after a screen of the text: the word json or
+// logfmt, then an `=` followed by a number (equalityBeforeNumber). The response key chain reads the two words once
+// for every fence that reads them (numericEqualityAfterParser), so a query without either costs nothing here.
 func numericEqualityResponseKeyVersion(query string) string {
-	return numericEqualityFromScan(query, scanFenceWords(query))
+	other := spelledOtherwise(query)
+	if !containsWord(query, "json", other) && !containsWord(query, "logfmt", other) {
+		return ""
+	}
+	return numericEqualityAfterParser(query)
 }
 
-// numericEqualityFromScan is numericEqualityResponseKeyVersion with the words of the query read already.
-func numericEqualityFromScan(query string, words wordFences) string {
-	if !words.equalityNumber || !words.parserWord {
+// numericEqualityAfterParser is numericEqualityResponseKeyVersion of a query that holds the word json or logfmt.
+func numericEqualityAfterParser(query string) string {
+	if !equalityBeforeNumber(query) {
 		return ""
 	}
 	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && lower.WritesNumericEquality(plan) {
 		return numericEqualityResponseVersion
 	}
 	return ""
+}
+
+// equalityBeforeNumber reports an equalityBeforeNumberAt anywhere in query, quoted text and comments included.
+func equalityBeforeNumber(query string) bool {
+	for i := 0; i < len(query); i++ {
+		k := strings.IndexByte(query[i:], '=')
+		if k < 0 {
+			return false
+		}
+		if i += k; equalityBeforeNumberAt(query, i) {
+			return true
+		}
+	}
+	return false
 }
 
 // equalityBeforeNumberAt reports whether the `=` at query[i] is an `=`, `==` or `!=` followed, after any blanks, by a

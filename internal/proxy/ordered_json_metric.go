@@ -53,12 +53,13 @@ const bareJSONMetricResponseVersion = "@bare-json-metric-labels-v1:"
 // Fence cached bare JSON metric replies produced before stored JSON body
 // fields were distinguished from parser label collisions.
 func bareJSONMetricResponseKeyVersion(r *http.Request, query string) string {
-	return bareJSONMetricFence(r, query, spelledOtherwise(query))
+	other := spelledOtherwise(query)
+	return bareJSONMetricFence(r, query, containsWord(query, "json", other))
 }
 
 // bareJSONMetricFence is the fence of a query that spelledOtherwise reported on (other).
-func bareJSONMetricFence(r *http.Request, query string, other bool) string {
-	if !containsWord(query, "json", other) {
+func bareJSONMetricFence(r *http.Request, query string, jsonWord bool) string {
+	if !jsonWord {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))

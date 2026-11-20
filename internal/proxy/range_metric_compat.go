@@ -1119,12 +1119,13 @@ const logfmtPresenceResponseVersion = "@logfmt-presence-v1:"
 // produced by older binaries whose burst coalescer checked only stored fields.
 // Scope the one-time cache miss to ungrouped logfmt presence counts.
 func logfmtPresenceResponseKeyVersion(r *http.Request, query string) string {
-	return logfmtPresenceFence(r, query, spelledOtherwise(query))
+	other := spelledOtherwise(query)
+	return logfmtPresenceFence(r, query, containsWord(query, "logfmt", other))
 }
 
 // logfmtPresenceFence is the fence of a query that spelledOtherwise reported on (other).
-func logfmtPresenceFence(r *http.Request, query string, other bool) string {
-	if !containsWord(query, "logfmt", other) || !emptyStringComparisonIn(query) {
+func logfmtPresenceFence(r *http.Request, query string, logfmtWord bool) string {
+	if !logfmtWord || !emptyStringComparisonIn(query) {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))

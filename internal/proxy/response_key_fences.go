@@ -53,15 +53,17 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 			b.add(reservedFieldLabelResponseVersion)
 		}
 		b.add(markerBytesFence(query, words.markerQuoted))
-		b.add(numericEqualityFromScan(query, words))
+		b.add(numericEqualityResponseKeyVersion(query))
 		return b.String()
 	}
 	other := spelledOtherwise(query)
+	// The json and logfmt words are read once for the fences that read them.
+	jsonWord, logfmtWord := containsWord(query, "json", other), containsWord(query, "logfmt", other)
 	var b fenceChain
-	b.add(orderedJSONVectorFence(r, query, other))
-	b.add(bareJSONMetricFence(r, query, other))
+	b.add(orderedJSONVectorFence(r, query, other, jsonWord))
+	b.add(bareJSONMetricFence(r, query, jsonWord))
 	if site == responseKeyInnerQueryRange {
-		b.add(logfmtPresenceFence(r, query, other))
+		b.add(logfmtPresenceFence(r, query, logfmtWord))
 	}
 	b.add(detectedLevelMutationResponseKeyVersion(query))
 	if keep {
@@ -81,7 +83,9 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		b.add(reservedFieldLabelResponseVersion)
 	}
 	b.add(markerBytesFence(query, words.markerQuoted))
-	b.add(numericEqualityFromScan(query, words))
+	if jsonWord || logfmtWord {
+		b.add(numericEqualityAfterParser(query))
+	}
 	if keep && containsWord(query, "unwrap", other) {
 		b.add(keepUnwrapIdentityResponseVersion)
 	}
@@ -98,7 +102,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	}
 	b.add(countVarianceResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
-		b.add(logfmtPresenceFence(r, query, other))
+		b.add(logfmtPresenceFence(r, query, logfmtWord))
 	}
 	if site == responseKeyCompatQueryRange || site == responseKeyInnerQueryRange {
 		// Only the range handler's answers of a ranking over a binary operation changed.
