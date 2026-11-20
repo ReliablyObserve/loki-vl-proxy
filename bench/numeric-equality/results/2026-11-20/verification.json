@@ -1,0 +1,83 @@
+{
+  "scope": "Scoped local evidence; required current-head GitHub checks decide merge safety.",
+  "source_base_commit": "d4b3553f7bbab88b3d263fd9d9c5c27b37fb4bf0",
+  "numeric_api": {
+    "comparisons": 298,
+    "loki_equivalent": 292,
+    "exact_accepted_identity_projections": 6,
+    "passed": true
+  },
+  "semantic_matrix": {
+    "cases": 126,
+    "passed": true
+  },
+  "pipeline_oracle": {
+    "cases": 23,
+    "explicit_known_adjacent_filter_gaps": 2
+  },
+  "storage_oracle": {
+    "queries": 81,
+    "row_decisions": 7286,
+    "plan_differences": 126,
+    "translator_differences": 2244,
+    "restored_error_rows": 1160
+  },
+  "numeric_units": {
+    "passed": true,
+    "command": "go test -p 1 -count=1 -run '^TestNumeric' ./internal/proxy"
+  },
+  "conformance": {
+    "passed": true,
+    "command": "python3 scripts/ci/check_conformance.py"
+  },
+  "review": "Independent read-only review found no remaining concrete blocker after operand binding, phase-window binding and removal of the raw-route expansion.",
+  "resource_measurement_limits": [
+    "Filter cost is same-correctness factored vs unfactored; not main-vs-PR or Loki latency.",
+    "Peak RSS, CPU time, physical disk IOPS and network bytes not measured by the filter benchmark."
+  ],
+  "broad_validation": "Full-root Go, race, fuzz, lint and runtime CI results are separate; no pass for an unfinished check is claimed here.",
+  "deployment": {
+    "variants": 13,
+    "existing_project": "e2e-compat",
+    "other_containers_and_named_cache_volumes_preserved": true,
+    "candidate_metadata": "dev-pr1705-candidate, 8dfb84-numeric-errors-dirty"
+  },
+  "source_sha256": {
+    "internal/proxy/backend.go": "1f80be058ca5f9020ad2952faaeffa0e56d7a646ce4f3ef46d49174aa5f93b8f",
+    "internal/proxy/loki_profile.go": "72fd6541bca919cb795d39d259fe2ced4780e80802ae7e78dd4917dc63076b84",
+    "internal/proxy/numeric_equality_fence.go": "5aa70fdaacdcfbc0eb17ede99b79ef7c3ccc4bbfa32cec96490cedb4f9000798",
+    "internal/proxy/ordered_json_metric.go": "ec02175def0b1d94abb052b8644cb2910c84727860d34f1dcf3ba8f5c4f4da19",
+    "internal/proxy/ordered_json_metric_test.go": "7f378ff3edf5093e4e45c86e3c63cb2153b2c138eb2e757e0e2791d8a6179203",
+    "internal/proxy/query_translation.go": "d9d02b13148d448a17362d59a27e7370b2dbbb698f4d5884c4b5f7e2259ab028",
+    "internal/proxy/range_metric_compat.go": "a9bb565115355926b8c884e60773f3c4561ac8e74736a10e46399f0076919cd1",
+    "internal/proxy/stream_processing.go": "500a2e381e4e5c624e4b11aa4e873852cccf075d402c35831ce30962d4a2c741",
+    "internal/proxy/unwrap_conversion_error.go": "be0187dcb8e32098de67e7310502c81ba899b181f44dc3512faa568170b63cf4",
+    "internal/proxy/unwrap_conversion_error_test.go": "0800474d8bc43d54479c2d32989b4ad6601bdd94a8ab8a513379cc99240c592d",
+    "internal/querycorpus/numeric_equality_vlcost_test.go": "8d89c91b751e7f117801c243d5100e3c3a7571c9cc80426d722619bb3be45a89",
+    "internal/queryplan/lower/label_filter_numeric_eq.go": "3e0625e3bf538afc5f3e2464d251892bc4889f3764177f9fd49b8386a72b2c25",
+    "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go": "383197d889321f2437190b67fa897d4b37e6b92ba21aed87c5a4a61da414c550",
+    "internal/queryplan/lower/label_filter_numeric_eq_test.go": "c37be43554b4a6d8374ed927b40fdfa89a46bfa8b2d7785d5e1ad16bf5b4a033",
+    "internal/queryplan/lower/label_filter_numeric_syntax.go": "53cbf77d168e91709c26100e14d5c166a594b66c24ced453767e09f6b816b2c7",
+    "internal/queryplan/lower/label_filter_numeric_syntax_test.go": "4c5002b40e6bc5402c7443eb4b4eb77d79a0162fbfd9f85d02a9be472a29ff58",
+    "internal/queryplan/lower/label_filter_parsed.go": "17156d757337c333f465f2b2c35d2b8f54e75335692cf70fa5ae2446e23342a8",
+    "internal/queryplan/lower/lower.go": "f073b41d4f006a15702bd379f95f1c6b3935e0b356e191b131406d703da55a38",
+    "internal/testutil/translatorspelling/translatorspelling_test.go": "c65762c673cb70f9e9b5fbabdbf16dcc828eec71d2695b31c13f7f779bdf1552",
+    "test/e2e-compat/numeric_equality_like_loki_test.go": "702f31df4bbe82c14676a1002f7b6c1ac1c77b582876cfb286bd667d71789d1a",
+    "internal/proxy/numeric_label_filter_error.go": "f35a7736cb8104f2870047cfd57ae06070171e3b495dcaa7383d87e8ef83cc25",
+    "internal/proxy/numeric_label_filter_error_test.go": "ffe939648824ec84284f16d1b1e06a6c5d8ac4e671231eddb12e73f2a9f961b1"
+  },
+  "artifacts_sha256": {
+    "candidate-e2e-final.txt.gz": "60d40b333bd5681993b1d814f07b5eb87db2964309889b2106b2c9b9be3326ea",
+    "conformance-final.txt.gz": "c78437ecdfb3423adaf3c3c2d06c205fbea0160e76f161d3280f19325dcdb8c4",
+    "numeric-unit-final.txt.gz": "c7bbcb6a0991e45d8d18b032a4e217060d0defa54b215fac1ad7661dfdb27370",
+    "row-oracle.txt": "847276d7fef1320e1afd9a878ee164734afcd153fbf2c7fc4a5475747f0de058",
+    "README.md": "f810e6313ac97fe8ddca451619feeabf7f1ba48c4fe07209c326fbfb3ae2e111",
+    "baseline-queries.json": "36fd718462f9f75755845977161fc517c4514da6e9063e4398a4369e657964b9",
+    "live-grid-summary.json": "ea3420d590aaab9ea518b6c129959bd821ca82e6071ede032658bf67bf122299",
+    "vl-cost.txt": "c73cb594131d3312e749b0a9a6202fe4191f2b5af422966c4d112d2f621c45ac",
+    "vl-cost-correctness-control.txt": "376ce7f1071a0899b0397b655e04ee50e5e4b11ad43245645de8c1702daefc34",
+    "candidate-e2e.txt.gz": "b3f99017baafd57adee368540e98cf8c51bef08e766657202630e62eb280bbfc",
+    "correctness-control-queries.json": "98d06dd9f04fabb90b2d94069b5d85ef7d7e144d589329009c12b90f0923dc8e",
+    "live-grid.jsonl.gz": "b62fd8adfc2b1ea8b0dcee4e31b2363e78aeb77911cefc970d24e532f804f1f7"
+  }
+}

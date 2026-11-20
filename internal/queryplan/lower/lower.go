@@ -360,7 +360,9 @@ func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe)
 // label that translates to several parsed keys or to no field.
 func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stageDefs, levels bool) (filterStages, error) {
 	var res filterStages
-	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv}
+	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv, numericErrorMode: NumericEqualityErrorPipeline(sel.Stages)}
+	var seenNumericErrors logsql.AnyOf
+	numericAlreadyFailed := false
 	for i, st := range sel.Stages {
 		lb.names.note(defs, i)
 		if changesLabels(st) {
@@ -397,7 +399,18 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 		if res.filters == nil {
 			res.filters = make([]logsql.FilterExpr, len(sel.Stages))
 		}
-		res.filters[i] = labelFilter(lbl.Expr, &lb)
+		if lb.numericErrorMode && lbl.Expr.Name == "__error__" {
+			var clean, failed bool
+			res.filters[i], clean, failed = numericGeneratedErrorFilter(lbl.Expr, seenNumericErrors, numericAlreadyFailed)
+			if clean != failed {
+				// A restrictive error filter proves the surviving rows clean
+				// or failed. Do not expand all prior predicates again later.
+				seenNumericErrors = nil
+				numericAlreadyFailed = failed
+			}
+		} else {
+			res.filters[i] = labelFilter(lbl.Expr, &lb)
+		}
 		if lb.bad != "" {
 			return filterStages{}, &NotLoweredError{Construct: lb.bad}
 		}
@@ -417,6 +430,19 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 			}
 			res.pre[i] = translate.ExtractedCoalesce(lb.stageBases, lb.keyParsers, &lb.streamCopied)
 			lb.stageBases = lb.stageBases[:0]
+		}
+		if len(lb.numericErrors) > 0 {
+			if res.pre == nil {
+				res.pre = make([][]logsql.Pipe, len(sel.Stages))
+			}
+			if !numericAlreadyFailed {
+				seenNumericErrors = append(seenNumericErrors, lb.numericErrors...)
+			}
+			res.pre[i] = append(res.pre[i], logsql.PipeFormat{
+				Template: "LabelFilterErr", ResultField: "__error__",
+				If: lb.numericErrors[0],
+			})
+			lb.numericErrors = nil
 		}
 	}
 	res.bases = lb.bases
@@ -506,6 +532,8 @@ type leafBuilder struct {
 	// reserved the reserved fields a comparison read the tag of so far, stageReserved those first read by the stage.
 	staged                  bool
 	reserved, stageReserved []string
+	numericErrors           []logsql.FilterExpr
+	numericErrorMode        bool
 }
 
 // labelFilter is the filter of a label filter stage that checkLabelFilters accepted: the leaf, or the and/or

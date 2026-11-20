@@ -1287,14 +1287,28 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 	}
 
 	// The row's line is read (and its JSON keys parsed) only when a field named
-	// like a label of _stream is present: that is the one case that needs it.
+	// like a label of _stream is present, or a retained numeric error needs replay.
 	var row lineRow
 	lineMissing, rowReady := false, false
+	if exposure != nil && len(exposure.numericPipeline) > 0 && (entry[errorLabel] != nil || entry[errorDetailsLabel] != nil) {
+		msg, _ := stringifyEntryValue(entry["_msg"])
+		if stored, ok := entry[translate.StoredLineField].(string); ok {
+			msg = stored
+		}
+		if readsPlaceholderAsLine(exposure, msg) {
+			msg = storedLogLineFromEntry(msg, entry, streamLabels, exposure.placeholderLineFields, exposure.defaultMsg)
+		}
+		row = lineRow{line: []byte(msg), keys: jsonLineKeys([]byte(msg)), stream: streamLabels, numericError: true}
+		lineMissing, rowReady = isVLMissingMsg(msg, p.defaultMsgValue()), true
+	}
 	if exposure == nil {
 		finalLabels = streamLabels
 	}
 
 	for key, value := range entry {
+		if (key == errorLabel || key == errorDetailsLabel) && row.numericError {
+			continue // reconstructed from the stored line, with Loki's error details
+		}
 		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
 			continue
 		}
@@ -1323,6 +1337,9 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 		}
 	}
 
+	if row.numericError {
+		exposure.finishRow(&row, lineMissing, pfBuf, smBuf)
+	}
 	var sm, pf map[string]string
 	if len(smBuf) > 0 {
 		sm = smBuf
@@ -1379,6 +1396,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 	// Pass 1: collect non-stream fields and extract _msg raw bytes.
 	var pendingFields []pendingField
 	var msgRaw, storedLine []byte
+	numericError := false
 	// A stored field named like a stream label is an entry label of its own
 	// only when it differs from the stream label or a stage reads that key from
 	// the line (entryLabelName): it is decided once the line is known.
@@ -1386,6 +1404,10 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 	deferred := deferredBuf[:0]
 	obj.Visit(func(k []byte, val *fj.Value) {
 		key := string(k)
+		if (key == errorLabel || key == errorDetailsLabel) && exposure != nil && len(exposure.numericPipeline) > 0 {
+			numericError = numericError || len(val.GetStringBytes()) > 0
+			return // reconstructed from the recorded conversion, without label-name sanitization
+		}
 		if key == "_msg" {
 			msgRaw = val.GetStringBytes()
 			return
@@ -1429,7 +1451,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 	}
 	msgKeys := jsonLineKeys(msgRaw)
 	pendingFields = exposure.resolveStreamKeyFields(pendingFields, deferred, msgKeys, msgRaw)
-	row := lineRow{line: msgRaw, keys: msgKeys, stream: streamLabels, placeholder: placeholder}
+	row := lineRow{line: msgRaw, keys: msgKeys, stream: streamLabels, placeholder: placeholder, numericError: numericError}
 	var lineMissing bool
 	if exposure != nil {
 		lineMissing = isVLMissingMsgBytes(msgRaw, p.defaultMsgValue())
@@ -1974,7 +1996,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	// structured metadata.
 	// lr.line is set only for the exposure checks, so the conversion is
 	// paid there alone.
-	lr := lineRow{stream: labels}
+	lr := lineRow{stream: labels, numericError: entry[errorLabel] != nil || entry[errorDetailsLabel] != nil}
 	var lineMissing bool
 	if exposure != nil {
 		if stored, ok := entry[translate.StoredLineField].(string); ok {
@@ -1997,6 +2019,9 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	}
 
 	for key, value := range entry {
+		if (key == errorLabel || key == errorDetailsLabel) && exposure != nil && len(exposure.numericPipeline) > 0 {
+			continue
+		}
 		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
 			continue
 		}

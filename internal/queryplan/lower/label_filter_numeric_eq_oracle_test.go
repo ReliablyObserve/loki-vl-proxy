@@ -2,7 +2,9 @@ package lower
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -274,11 +276,13 @@ var numericEqualityDifferences = map[string]string{
 // The lowering of a numeric equality keeps the lines Loki keeps for every value of the grid that is not in
 // numericEqualityDifferences, on v1.49.0 and v1.54.0: Loki reads the value as a number, a Go duration or a bytes
 // size and compares it with the literal as numbers, and the lowering writes the pair of range filters VictoriaLogs
-// compares as numbers. A line Loki keeps with __error__ (a value that is none of these) is dropped under = and ==,
-// the numeric label filter's open difference (semantics/label-filter-numeric-error-label), and kept under !=, as Loki
-// keeps it. The string translator keeps other lines: the recorded answers count how many.
+// compares as numbers. Lines Loki keeps with __error__ also count in the
+// comparison. Their loss is the separate, open numeric-error-label difference;
+// it must never be subtracted from the reported full-answer difference count.
+// This storage-level comparison cannot prove error-label or metric-error parity;
+// the end-to-end test compares the API behaviour.
 //
-// conformance: semantics/label-filter-numeric-equality
+// conformance: semantics/label-filter-numeric-equality, semantics/label-filter-numeric-error-label
 func TestNumericEqualityAfterParserMatchesLoki(t *testing.T) {
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
 		recordNumericEqualityAnswers(t)
@@ -293,7 +297,8 @@ func TestNumericEqualityAfterParserMatchesLoki(t *testing.T) {
 		sets[s.app] = s
 	}
 	seen := map[string]bool{}
-	planWrong, translatorWrong, checked := 0, 0, 0
+	planWrong, translatorWrong, checked, lostErrorRows := 0, 0, 0, 0
+	lossSet := sha256.New()
 	for i, q := range queries {
 		a := answers[i]
 		if a.Q != q.Q {
@@ -315,23 +320,27 @@ func TestNumericEqualityAfterParserMatchesLoki(t *testing.T) {
 				if idx < len(s.values) {
 					value = s.values[idx]
 				}
-				// What Loki's pipeline does with the line, for the plan to match: = and == keep the lines that
-				// compare equal (a line kept with __error__ is not one), != keeps the others including those.
+				// Conversion errors remain visible lines in Loki, for every
+				// operator. A comparison must include them in its expected set.
 				kept := slices.Contains(a.Loki, idx)
-				want := kept && !slices.Contains(a.LokiErr, idx)
-				if q.Op == "!=" {
-					want = kept
-				}
+				want := kept
 				checked++
 				if slices.Contains(got.PlanRows, idx) != want {
 					planWrong++
 					key := numericEqualityKind(s.field) + " " + strings.TrimPrefix(value, "#")
-					_, listed := numericEqualityDifferences[key]
-					if !listed {
-						t.Errorf("%s on %s, line %d (%s): Loki keeps %v (error %v), VictoriaLogs %s returns %v for %s",
-							q.Q, v, idx, value, kept, slices.Contains(a.LokiErr, idx), v, slices.Contains(got.PlanRows, idx), got.Plan)
-					}
 					seen[key] = true
+					if kept && slices.Contains(a.LokiErr, idx) {
+						// Explicit known gap, still counted above. The e2e test
+						// remains strict and blocks shipping it as Loki-equal.
+						lostErrorRows++
+						fmt.Fprintf(lossSet, "%s\x00%s\x00%d\n", q.Q, v, idx)
+					} else {
+						_, listed := numericEqualityDifferences[key]
+						if !listed {
+							t.Errorf("%s on %s, line %d (%s): Loki keeps %v (error %v), VictoriaLogs %s returns %v for %s",
+								q.Q, v, idx, value, kept, slices.Contains(a.LokiErr, idx), v, slices.Contains(got.PlanRows, idx), got.Plan)
+						}
+					}
 				}
 				if slices.Contains(got.TranslatorRows, idx) != want {
 					translatorWrong++
@@ -346,6 +355,15 @@ func TestNumericEqualityAfterParserMatchesLoki(t *testing.T) {
 	}
 	t.Logf("%d queries x values x 2 versions = %d line decisions: the lowering differs from Loki on %d, the string translator on %d",
 		len(queries), checked, planWrong, translatorWrong)
+	t.Logf("open conversion-error row losses: %d; other row differences: %d; error-label parity is not measured by this storage-level test", lostErrorRows, planWrong-lostErrorRows)
+	// Pin the identities, not just the count: fixing one case must not hide a
+	// regression in another. Any change needs reviewed oracle evidence.
+	// Remaining rows: present-empty values, numeric overflow and labels whose
+	// sanitized/extracted identity is outside the served error-replay scope.
+	const knownLossSet = "cdc8ede0722c686d94dce0353e80e08efa2b314da1676436dd58a0bcb97fd330"
+	if got := fmt.Sprintf("%x", lossSet.Sum(nil)); got != knownLossSet {
+		t.Errorf("conversion-error loss set changed: %s (%d rows); review the exact query/version/row differences", got, lostErrorRows)
+	}
 	if translatorWrong <= planWrong {
 		t.Errorf("the string translator is as close to Loki as the lowering (%d, %d differences): the case is fixed or the grid proves nothing", translatorWrong, planWrong)
 	}

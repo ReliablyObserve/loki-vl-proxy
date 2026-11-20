@@ -3,7 +3,6 @@ package lower
 import (
 	"math"
 	"math/big"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,9 +29,12 @@ import (
 // needs (`1.0004KB`, which the size parser truncates to 1000), and a present but empty json value under !=, which
 // Loki keeps with __error__ and VictoriaLogs stores as no field.
 
-// Loki's syntax of each kind, anchored: what Go's float parsing, Go's duration parsing and the size parser read
-// without an error. A number may be a decimal or a hexadecimal float (with a p exponent), its digits separated by
-// underscores as in Go's literals; the special values inf and nan are left out, as they never equal a finite literal. The blanks of a size are the ones Go's TrimSpace removes.
+// Syntactic guards for a finite equality, not conversion-error classifiers:
+// syntactically valid text may still overflow a conversion. A number may be a
+// decimal or a hexadecimal float (with a p exponent), with underscores between
+// digits. Inf and NaN are left out because they never equal a finite literal.
+// The blanks of a size are the ones Go's TrimSpace removes. Retention and
+// annotation of conversion-error rows remain a separate compatibility gap.
 const (
 	numberSyntax = `^[+-]?(?:(?:` + decimalDigits + `(?:\.(?:` + decimalDigits + `)?)?|\.` + decimalDigits + `)(?:[eE][+-]?` + decimalDigits + `)?|0[xX](?:_?` + hexDigits + `(?:\.(?:` + hexDigits + `)?)?|\.` + hexDigits + `)[pP][+-]?` + decimalDigits + `)$`
 	// decimalDigits and hexDigits are runs of digits an underscore may separate, as in Go's number literals.
@@ -44,24 +46,7 @@ const (
 
 // sizeSyntax is the anchored syntax of a size: a number of digits, dots and commas the float parser reads once the
 // commas are gone, then a unit of bytesUnitSize in any case (or none) between blanks.
-var sizeSyntax = `^,*(?:[0-9],*)*(?:[0-9],*\.?|\.,*[0-9]),*(?:[0-9],*)*` + sizeBlanks + `(?i:` + strings.Join(sizeUnitNames(), "|") + `)?` + sizeBlanks + `$`
-
-// sizeUnitNames are the unit names of bytesUnitSize, longest first so the alternation reads the whole name.
-func sizeUnitNames() []string {
-	var names []string
-	for name := range bytesUnitSize {
-		if name != "" {
-			names = append(names, name)
-		}
-	}
-	sort.Slice(names, func(i, j int) bool {
-		if len(names[i]) != len(names[j]) {
-			return len(names[i]) > len(names[j])
-		}
-		return names[i] < names[j]
-	})
-	return names
-}
+const sizeSyntax = `^,*(?:[0-9][0-9,]*(?:\.[0-9,]*)?|\.,*[0-9][0-9,]*)` + sizeBlanks + `(?i:(?:[kmgtp]i?)?b?)` + sizeBlanks + `$`
 
 // numericSyntaxPattern is the regexp of Loki's syntax for the kind of e's literal.
 func numericSyntaxPattern(e *logql.LabelFilterExpr) string {
@@ -125,7 +110,6 @@ func durationSpellings(v int64) string {
 	sign := `\+?`
 	if v == 0 {
 		sign = `[-+]?`
-		alts = append(alts, "0")
 	}
 	for _, u := range durationUnits {
 		intPart, frac, ok := exactDecimal(v, u.ns)
@@ -151,15 +135,21 @@ func durationSpellings(v int64) string {
 	if len(alts) == 0 {
 		return ""
 	}
-	return "^" + sign + "(?:" + strings.Join(alts, "|") + ")$"
+	body := "0*(?:" + strings.Join(alts, "|") + ")"
+	if v == 0 {
+		// A bare zero is accepted, but a bare run of zeros is not a duration.
+		body = "(?:0|" + body + ")"
+	}
+	return "^" + sign + body + "$"
 }
 
 // sizeSpellings are the one-unit spellings of v bytes the size parser reads as v: the decimal v/unit with leading
 // and trailing zeros and commas anywhere in the number, the unit in any case between blanks.
 func sizeSpellings(v int64) string {
 	var alts []string
-	names := append(sizeUnitNames(), "")
-	for _, name := range names {
+	// Alias pairs share a scale, so share their mantissa and whitespace
+	// matcher too instead of evaluating the same branch twice in VictoriaLogs.
+	for _, name := range []string{"", "k", "ki", "m", "mi", "g", "gi", "t", "ti", "p", "pi"} {
 		size := bytesUnitSize[name]
 		if size != math.Trunc(size) {
 			continue
@@ -177,21 +167,19 @@ func sizeSpellings(v int64) string {
 		if err != nil || f*size >= maxExactBound || int64(f*size) != v {
 			continue
 		}
-		unit := ""
-		if name != "" {
-			unit = `(?i:` + name + `)`
-		}
+		unit := `(?i:` + name + `b?)`
 		alts = append(alts, "(?:"+mantissaPattern(intPart, frac, -1, true)+")"+sizeBlanks+unit)
 	}
 	if len(alts) == 0 {
 		return ""
 	}
-	return "^(?:" + strings.Join(alts, "|") + ")" + sizeBlanks + "$"
+	return "^[0,]*(?:" + strings.Join(alts, "|") + ")" + sizeBlanks + "$"
 }
 
-// mantissaPattern is the regexp of the decimal intPart.frac with any leading zeros, up to extraZeros trailing zeros
-// (any number for -1), and, with commas, a comma anywhere in the number (the size parser drops them). A zero integer
-// part may be left out when the fraction holds a digit.
+// mantissaPattern is the decimal intPart.frac with up to extraZeros trailing
+// zeros (any number for -1), and optionally commas between digits. Its caller
+// writes the common leading-zero/comma run once before the unit alternatives.
+// A zero integer part may be left out when the fraction holds a digit.
 func mantissaPattern(intPart, frac string, extraZeros int, commas bool) string {
 	gap, zeros := "", "0*"
 	if commas {
@@ -212,15 +200,14 @@ func mantissaPattern(intPart, frac string, extraZeros int, commas bool) string {
 			trailing = "(?:0,*){0," + strconv.Itoa(extraZeros) + "}"
 		}
 	}
-	lead := gap + zeros
 	switch {
 	case intPart == "0" && frac == "":
 		// Zero: at least one zero digit, then an optional fraction of zeros.
-		return lead + "0" + gap + `(?:\.` + gap + trailing + `)?|` + lead + `\.` + gap + "0" + gap + trailing
+		return "0" + gap + `(?:\.` + gap + trailing + `)?|\.` + gap + "0" + gap + trailing
 	case intPart == "0":
-		return lead + `\.` + gap + digits(frac) + trailing
+		return `\.` + gap + digits(frac) + trailing
 	case frac == "":
-		return lead + digits(intPart) + `(?:\.` + gap + trailing + `)?`
+		return digits(intPart) + `(?:\.` + gap + trailing + `)?`
 	}
-	return lead + digits(intPart) + `\.` + gap + digits(frac) + trailing
+	return digits(intPart) + `\.` + gap + digits(frac) + trailing
 }

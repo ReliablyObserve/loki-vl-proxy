@@ -72,7 +72,8 @@ func TestPlanLowersNumericEquality(t *testing.T) {
 			for _, parser := range []string{"json", "logfmt"} {
 				for _, op := range []string{"=", "==", "!="} {
 					q := `{app="a"} | ` + parser + ` | ` + k.field + ` ` + op + ` ` + l.lit
-					want := `app:="a" | ` + unpack[parser] + ` | filter ` + numericEqualityText(k.field, op, k.kind, l.lit)
+					e := &logql.LabelFilterExpr{Name: k.field, Cmp: op, Kind: k.kind, Value: l.lit}
+					want := `app:="a" | ` + unpack[parser] + ` ` + numericErrorMarkText(k.field, e) + ` | filter ` + numericEqualityFilter(k.field, e).String()
 					for _, prof := range []Profile{{}, {KeepLine: true}} {
 						op2, err := PlanQuery(q, planOf(t, q), prof)
 						if err != nil {
@@ -154,7 +155,25 @@ func assertNumericEqualityTree(t *testing.T, text, field, bound string, negated 
 		filter = g.Expr
 	}
 	if !negated {
-		pair(logsql.Group{Expr: filter})
+		or, ok := filter.(logsql.OrExpr)
+		if !ok {
+			t.Fatalf("%s: equality must retain a separate conversion-error branch", text)
+		}
+		pair(or.Left)
+		bad := or.Right
+		if g, ok := bad.(logsql.Group); ok {
+			bad = g.Expr
+		}
+		all, ok := bad.(logsql.AllOf)
+		if !ok || len(all) != 2 {
+			t.Fatalf("%s: error branch must require a present field and reject the valid conversion grammar", text)
+		}
+		ff, exists := all[0].(logsql.FieldFilter)
+		ex, excludes := all[1].(logsql.Exclude)
+		if !exists || ff.Field != field || ff.Op != logsql.FieldOpAny || !excludes {
+			t.Fatalf("%s: malformed conversion-error branch", text)
+		}
+		regexpOn(ex.Expr)
 		return
 	}
 	all, ok := filter.(logsql.AllOf)
@@ -190,7 +209,7 @@ func TestPlanLowersNumericEqualityAmongKeys(t *testing.T) {
 		{`{app="a"} | json | a == 1 and b != 2 or c = 3`, "none",
 			`app:="a" | unpack_json | filter ((` + num("a", "==", "1") + ` and ` + num("b", "!=", "2") + `) or ` + num("c", "=", "3") + `)`},
 		{`{app="a"} | json | n >= 1 and n == 2`, "none", `app:="a" | unpack_json | filter (n:>=1 and ` + num("n", "==", "2") + `)`},
-		{`{app="a"} | json | n == 2 | m != 3s`, "none", `app:="a" | unpack_json | filter ` + num("n", "==", "2") + ` | filter ` + numericEqualityText("m", "!=", logql.LabelFilterValueDuration, "3s")},
+		{`{app="a"} | json | n == 2 | m != 3s`, "none", `app:="a" | unpack_json ` + numericErrorMarkText("n", &logql.LabelFilterExpr{Kind: logql.LabelFilterValueNumber}) + ` | filter ` + numericEqualityFilter("n", &logql.LabelFilterExpr{Cmp: "==", Kind: logql.LabelFilterValueNumber, Value: "2"}).String() + ` ` + numericErrorMarkText("m", &logql.LabelFilterExpr{Kind: logql.LabelFilterValueDuration}) + ` | filter ` + numericEqualityFilter("m", &logql.LabelFilterExpr{Cmp: "!=", Kind: logql.LabelFilterValueDuration, Value: "3s"}).String()},
 		{`{app="a"} | n == 2 | json`, "none", `app:="a" n:="2" | unpack_json`},
 	} {
 		op, err := PlanQuery(c.q, planOf(t, c.q), Profile{})
@@ -355,5 +374,63 @@ func FuzzNumericEqualityLowering(f *testing.F) {
 // range pair, or that group or the spellings' regexp, negated on the entries with the field for !=. The patterns are
 // held to Loki by TestNumericEqualityAfterParserMatchesLoki and TestNumericSyntaxAndSpellings.
 func numericEqualityText(field, op string, kind logql.LabelFilterValueKind, lit string) string {
-	return numericEqualityFilter(field, &logql.LabelFilterExpr{Name: field, Cmp: op, Kind: kind, Value: lit}).String()
+	return numericEqualityFilterMode(field, &logql.LabelFilterExpr{Name: field, Cmp: op, Kind: kind, Value: lit}, false).String()
+}
+
+func numericErrorMarkText(field string, e *logql.LabelFilterExpr) string {
+	return `| format if (` + numericEqualityErrors(field, e).String() + `) "LabelFilterErr" as __error__`
+}
+
+// conformance: semantics/label-filter-numeric-error-label
+func TestNumericEqualityErrorScope(t *testing.T) {
+	for _, tc := range []struct {
+		pipeline string
+		marked   bool
+	}{
+		{`json | n=200`, true}, {`logfmt | n!=200 | __error__=""`, true},
+		{`json | row="a" | d=5s`, true}, {`json | b=1KB`, true},
+		{`json | n=200 or x="yes"`, false}, {`json n="v" | n=200`, false},
+		{`json | http_status=200`, false}, {`json | n=200 | drop __error__`, false},
+		{`json | __error__="" | n=200`, false}, {`json | n=200 | __error_details__!=""`, false},
+		{`json | n=200 | json`, false}, {`json | n=200 | line_format "{{.n}}"`, false},
+	} {
+		t.Run(tc.pipeline, func(t *testing.T) {
+			q := `{app="a"} | ` + tc.pipeline
+			op, err := PlanQuery(q, planOf(t, q), Profile{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := op.(physical.VLQuery).Text
+			if got := strings.Contains(text, `"LabelFilterErr" as __error__`); got != tc.marked {
+				t.Fatalf("error classification=%v, want %v: %s", got, tc.marked, text)
+			}
+			if tc.marked && strings.Contains(text, `format "" as __error__`) {
+				t.Fatal("a numeric filter must not clear a retained source error label")
+			}
+			if tc.marked && strings.Contains(tc.pipeline, "__error__=") && strings.Contains(text, `filter __error__`) {
+				t.Fatalf("error filter read a source field instead of generated state: %s", text)
+			}
+		})
+	}
+}
+
+// Repeated error filters are untrusted query input. Generated predicates may
+// grow with the input, but must not repeatedly expand every earlier stage.
+// conformance: semantics/label-filter-numeric-error-label
+func TestNumericErrorFilterPlanGrowsLinearly(t *testing.T) {
+	for _, filter := range []string{`__error__=""`, `__error__!=""`, `__error__=~".*"`} {
+		previous := 0
+		for _, n := range []int{8, 16, 32} {
+			q := `{app="a"} | json ` + strings.Repeat(`| n=200 | `+filter+` `, n)
+			op, err := PlanQuery(q, planOf(t, q), Profile{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			size := len(op.(physical.VLQuery).Text)
+			if previous > 0 && size > previous*3 {
+				t.Fatalf("doubling stages expanded output from %d to %d bytes (%s)", previous, size, filter)
+			}
+			previous = size
+		}
+	}
 }

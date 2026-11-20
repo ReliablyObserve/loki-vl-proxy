@@ -1,0 +1,42 @@
+{
+  "baseline": "8dfb84cd4e6884da36cd6c2dc24be46ff44ab80c",
+  "comparison": "Factored vs unfactored regexps under the same current error-retention implementation. Not main-vs-PR or proxy-vs-Loki.",
+  "fixture": "600000 deterministic JSON rows over 24h, one stream, tenant 11",
+  "backend_versions": [
+    "v1.54.0",
+    "v1.49.0"
+  ],
+  "samples": 9,
+  "ordering": "alternating baseline/candidate",
+  "agreement": "count vectors equal for every timed baseline/candidate request; row-level oracle checked separately",
+  "unmeasured": [
+    "CPU time",
+    "RSS",
+    "disk IOPS",
+    "network bytes",
+    "end-to-end Loki latency"
+  ],
+  "files": {
+    "internal/queryplan/lower/label_filter_numeric_eq.go": "3e0625e3bf538afc5f3e2464d251892bc4889f3764177f9fd49b8386a72b2c25",
+    "internal/queryplan/lower/label_filter_numeric_syntax.go": "53cbf77d168e91709c26100e14d5c166a594b66c24ced453767e09f6b816b2c7",
+    "internal/querycorpus/numeric_equality_vlcost_test.go": "8d89c91b751e7f117801c243d5100e3c3a7571c9cc80426d722619bb3be45a89"
+  },
+  "e2e_artifact_sha256": "b3f99017baafd57adee368540e98cf8c51bef08e766657202630e62eb280bbfc",
+  "historical_regex_only": {
+    "baseline": "8dfb84cd4e6884da36cd6c2dc24be46ff44ab80c",
+    "comparison": "previous PR query text versus optimized query text; not main or Loki latency",
+    "files": {
+      "internal/queryplan/lower/label_filter_numeric_syntax.go": "53cbf77d168e91709c26100e14d5c166a594b66c24ced453767e09f6b816b2c7",
+      "internal/querycorpus/numeric_equality_vlcost_test.go": "8d89c91b751e7f117801c243d5100e3c3a7571c9cc80426d722619bb3be45a89"
+    }
+  },
+  "control": "current label_filter_numeric_eq.go with numeric_syntax.go from 8dfb84cd4e6884da36cd6c2dc24be46ff44ab80c",
+  "current_cost_artifact": "vl-cost-correctness-control.txt",
+  "current_control_queries": "correctness-control-queries.json",
+  "api_contract": {
+    "total": 298,
+    "loki_equivalent": 292,
+    "accepted_default_identity_projections": 6,
+    "semantic_matrix_cases": 126
+  }
+}

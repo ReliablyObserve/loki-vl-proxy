@@ -1008,7 +1008,11 @@ func withWindowPhaseFilter(ctx context.Context, query string, start time.Time, s
 		b.WriteByte(' ')
 		b.WriteString(tail)
 	}
-	return b.String()
+	result := b.String()
+	if check := unwrapCheckFrom(ctx); check != nil {
+		check.numericDerivedQuery(query, result)
+	}
+	return result
 }
 
 // windowPhaseFilterMaxLen bounds windowPhaseFilter's text: its fixed words and four integers of at most 20 bytes.
@@ -2099,6 +2103,10 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		}
 		if marked {
 			jsonCheck.takeRawRowMark(v, ts)
+		}
+		if check := unwrapCheckFrom(ctx); check != nil && len(v.GetStringBytes(errorLabel)) != 0 && string(v.GetStringBytes("__preserve_error__")) != "true" && check.accepts(errorLabel, numericFilterConversion) {
+			check.numericRowHit(baseQuery, ts)
+			v.Del(errorLabel)
 		}
 
 		sampleValue, ok := p.extractManualSampleValueFJ(v, field, unwrapConv)

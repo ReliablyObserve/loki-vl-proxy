@@ -487,12 +487,13 @@ func TestOrderedJSONMetricStructuredMetadataAndParserCollisions(t *testing.T) {
 }
 
 // conformance: semantics/pipeline-error-text-parity
-func TestLokiPipelineErrorTypeIsAlwaysALokiConstant(t *testing.T) {
+func TestLokiPipelineErrorTypePreservesRetainedSourceValue(t *testing.T) {
 	for value, want := range map[string]string{
-		"JSONParserErr":   "JSONParserErr",
-		"LogfmtParserErr": "LogfmtParserErr",
-		"x'y\"z":          "JSONParserErr",
-		"":                "JSONParserErr",
+		"JSONParserErr":       "JSONParserErr",
+		"LogfmtParserErr":     "LogfmtParserErr",
+		"custom_source_error": "custom_source_error",
+		"x'y\"z":              "x'y\"z",
+		"":                    "JSONParserErr",
 	} {
 		if got := lokiPipelineErrorType(value); got != want {
 			t.Fatalf("lokiPipelineErrorType(%q) = %q, want %q", value, got, want)

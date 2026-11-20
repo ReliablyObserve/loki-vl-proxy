@@ -10,7 +10,7 @@ import (
 // filter after a json or logfmt parser (`| json | status = 200`) was served from the plan, which compares the value
 // as a number as Loki does: the string translator compared the literal's exact text, so `200.0` and `2e2` were
 // missed and, under `!=`, the entries without the label were kept (semantics/label-filter-numeric-equality).
-const numericEqualityResponseVersion = "@numeric-equality-v1:"
+const numericEqualityResponseVersion = "@numeric-equality-v2:"
 
 // numericEqualityResponseKeyVersion is the fence of a query whose plan writes such an equality
 // (lower.WritesNumericEquality), read from the query's resolved plan after a screen of the text: the word json or

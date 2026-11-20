@@ -1929,6 +1929,9 @@
     "internal/proxy/nested_vector_fold_test.go | metric-series-identity",
     "internal/proxy/nested_vector_fold_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/numeric_equality_served_test.go | semantics/label-filter-numeric-equality",
+    "internal/proxy/numeric_label_filter_error_test.go | semantics/label-filter-numeric-equality",
+    "internal/proxy/numeric_label_filter_error_test.go | semantics/label-filter-numeric-error-label",
+    "internal/proxy/numeric_label_filter_error_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/offset_integration_test.go | semantics/offset-different-per-range-vector",
     "internal/proxy/ordered_json_conditional_unpack_test.go | parsed-label-series-identity",
     "internal/proxy/ordered_json_conditional_unpack_test.go | parser-json",
@@ -2618,6 +2621,7 @@
     "internal/querycorpus/listed_window_chunks_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/logql_surface_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/numeric_equality_vlcost_test.go | semantics/label-filter-numeric-equality",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/translator-writes-exotic-field-names-bare",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/translator-writes-signed-number-with-blank",
@@ -2718,7 +2722,9 @@
     "internal/queryplan/lower/format_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/keyword_field_names_test.go | semantics/translator-writes-keyword-field-names-bare",
     "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go | semantics/label-filter-numeric-equality",
+    "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go | semantics/label-filter-numeric-error-label",
     "internal/queryplan/lower/label_filter_numeric_eq_test.go | semantics/label-filter-numeric-equality",
+    "internal/queryplan/lower/label_filter_numeric_eq_test.go | semantics/label-filter-numeric-error-label",
     "internal/queryplan/lower/label_filter_numeric_syntax_test.go | semantics/label-filter-numeric-equality",
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
@@ -3151,7 +3157,9 @@
     "test/e2e-compat/non_sum_vector_aggregation_range_test.go | metric-series-identity",
     "test/e2e-compat/non_sum_vector_aggregation_range_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "test/e2e-compat/numeric_equality_like_loki_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/numeric_equality_like_loki_test.go | parsed-identity/dynamic-key-parsers",
     "test/e2e-compat/numeric_equality_like_loki_test.go | semantics/label-filter-numeric-equality",
+    "test/e2e-compat/numeric_equality_like_loki_test.go | semantics/label-filter-numeric-error-label",
     "test/e2e-compat/operators_not_in_loki_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "test/e2e-compat/ordered_json_result_cache_test.go | loki_api_v1_query_range",
     "test/e2e-compat/ordered_json_result_cache_test.go | parser-error-and-label-collision",
@@ -3407,7 +3415,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 804,
+      "go": 806,
       "playwright": 3
     },
     "page_kinds": {
@@ -3420,14 +3428,14 @@
     "qsm_modes": {
       "any_non_empty": 5,
       "expect:client_error": 12,
-      "log_entries": 49,
-      "metric_points": 55,
+      "log_entries": 51,
+      "metric_points": 56,
       "ranked_values": 2
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 101,
-    "wired_items": 469
+    "unwired_items": 99,
+    "wired_items": 471
   },
   "gates": [
     "A/B shape selection",
@@ -3800,6 +3808,8 @@
     "json_extraction_list_metric_projected_level",
     "json_extraction_list_projected_level",
     "json_full_parser_projected_level",
+    "json_numeric_equality_outer_sum",
+    "json_numeric_equality_range",
     "json_parser_error_metric",
     "json_parser_metric_range_outer_sum",
     "json_pipeline_field_filter",
@@ -3821,6 +3831,7 @@
     "logfmt_extraction_list_metric_projected_level",
     "logfmt_extraction_list_projected_level",
     "logfmt_full_parser_projected_level",
+    "logfmt_numeric_equality_range",
     "logfmt_numeric_filter",
     "logfmt_parser_metric_range_filter",
     "logfmt_parser_metric_range_outer_sum",

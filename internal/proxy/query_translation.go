@@ -456,11 +456,19 @@ func (p *Proxy) translateBinOpSideText(ctx context.Context, expr logqlpkg.Expr, 
 // request: a log query goes through backendLogQuery first (see there).
 func (p *Proxy) translateLogResponseQuery(ctx context.Context, logql string) (string, error) {
 	query, keepLine := p.backendLogQuery(logql)
-	return p.translateQueryOpts(ctx, query, keepLine)
+	translated, err := p.translateQueryOpts(ctx, query, keepLine)
+	if check := unwrapCheckFrom(ctx); err == nil && check != nil {
+		translated = check.numericQuery(logql, translated)
+	}
+	return translated, err
 }
 
 func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (string, error) {
-	return p.translateQueryOpts(ctx, logql, false)
+	query, err := p.translateQueryOpts(ctx, logql, false)
+	if check := unwrapCheckFrom(ctx); err == nil && check != nil {
+		query = check.numericQuery(logql, query)
+	}
+	return query, err
 }
 
 // translateQueryOpts translates a query; keepLine translates a log query
@@ -1355,6 +1363,10 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			continue
 		}
 		jsonCheck.takeRawRowEntry(entry, tsNanos)
+		if check := unwrapCheckFrom(ctx); check != nil && asString(entry[errorLabel]) != "" && asString(entry["__preserve_error__"]) != "true" && check.accepts(errorLabel, numericFilterConversion) {
+			check.numericRowHit(logsqlQuery, tsNanos)
+			delete(entry, errorLabel)
+		}
 		weight, ok := bareParserRawSampleWeight(entry, spec)
 		if !ok {
 			reportUnwrapRejectedEntry(ctx, entry, logsqlQuery, spec, tsNanos)

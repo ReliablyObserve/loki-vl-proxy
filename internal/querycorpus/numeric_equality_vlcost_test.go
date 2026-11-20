@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +38,18 @@ import (
 func TestNumericEqualityVictoriaLogsCost(t *testing.T) {
 	if os.Getenv("LVP_NUMEQ_VLCOST") != "1" {
 		t.Skip("a measurement: LVP_NUMEQ_VLCOST=1 runs it")
+	}
+	// Optional saved queries from the build being compared. Unlike the range
+	// pair diagnostic, this comparison requires identical counts before timing.
+	var before map[string]map[string]string
+	if path := os.Getenv("LVP_NUMEQ_BASELINE_FILE"); path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &before); err != nil {
+			t.Fatal(err)
+		}
 	}
 	const n = 600_000
 	const tenant = 11
@@ -67,6 +80,8 @@ func TestNumericEqualityVictoriaLogsCost(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		stop := sync.OnceFunc(srv.Stop)
+		t.Cleanup(stop)
 		post := func(path string, form url.Values) (time.Duration, []byte) {
 			req, _ := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader(form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -77,8 +92,11 @@ func TestNumericEqualityVictoriaLogsCost(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("%s: %d %s", form.Get("query"), resp.StatusCode, body)
 			}
@@ -87,7 +105,11 @@ func TestNumericEqualityVictoriaLogsCost(t *testing.T) {
 		count := func(text string, window time.Duration) (time.Duration, string) {
 			d, body := post("/select/logsql/stats_query", url.Values{"query": {text + " | stats count() as c"},
 				"start": {metricEnd.Add(-window).Format(time.RFC3339Nano)}, "end": {metricEnd.Format(time.RFC3339Nano)}, "time": {metricEnd.Format(time.RFC3339)}})
-			return d, strings.TrimSpace(string(body))
+			c, err := numericCostCount(body)
+			if err != nil {
+				t.Fatalf("invalid count answer: %v: %s", err, body)
+			}
+			return d, c
 		}
 		const rounds = 9
 		median := func(f func() time.Duration) time.Duration {
@@ -115,11 +137,45 @@ func TestNumericEqualityVictoriaLogsCost(t *testing.T) {
 			served := op.(physical.VLQuery).Text
 			pairOnly := `app:="nq" | unpack_json | filter ` + qp.pair
 			for _, w := range windows {
+				if before != nil {
+					old := before[prof.version][q]
+					if old == "" {
+						t.Fatalf("baseline missing %s on %s", q, prof.version)
+					}
+					_, oldCount := count(old, w)
+					_, newCount := count(served, w)
+					if oldCount != newCount {
+						t.Fatalf("count changed for %s: %s -> %s", q, oldCount, newCount)
+					}
+					var oldTimes, newTimes []time.Duration
+					for round := 0; round < rounds; round++ {
+						texts := []string{old, served}
+						if round%2 != 0 {
+							texts[0], texts[1] = texts[1], texts[0]
+						}
+						for i, text := range texts {
+							d, gotCount := count(text, w)
+							if gotCount != oldCount {
+								t.Fatalf("unstable count for %s: %s -> %s", q, oldCount, gotCount)
+							}
+							if i == round%2 {
+								oldTimes = append(oldTimes, d)
+							} else {
+								newTimes = append(newTimes, d)
+							}
+						}
+					}
+					sort.Slice(oldTimes, func(i, j int) bool { return oldTimes[i] < oldTimes[j] })
+					sort.Slice(newTimes, func(i, j int) bool { return newTimes[i] < newTimes[j] })
+					d0, d1 := oldTimes[rounds/2], newTimes[rounds/2]
+					fmt.Fprintf(&b, "\n  interleaved %-36s %4s baseline p50 %9s candidate p50 %9s (%+6.1f%%), count %s", q, w,
+						d0.Round(time.Microsecond), d1.Round(time.Microsecond), 100*(float64(d1)-float64(d0))/float64(d0), newCount)
+				}
 				var c0, c1 string
 				d0 := median(func() time.Duration { d, c := count(pairOnly, w); c0 = c; return d })
 				d1 := median(func() time.Duration { d, c := count(served, w); c1 = c; return d })
 				fmt.Fprintf(&b, "\n  %-36s %4s  pair only p50 %9s  served p50 %9s  (%+6.1f%%)  counts %s / %s", q, w,
-					d0.Round(time.Microsecond), d1.Round(time.Microsecond), 100*(float64(d1)-float64(d0))/float64(d0), counted(c0), counted(c1))
+					d0.Round(time.Microsecond), d1.Round(time.Microsecond), 100*(float64(d1)-float64(d0))/float64(d0), c0, c1)
 			}
 			empty := strings.Replace(served, `app:="nq"`, `app:="none-xyz"`, 1)
 			emptyPair := strings.Replace(pairOnly, `app:="nq"`, `app:="none-xyz"`, 1)
@@ -162,15 +218,68 @@ func TestNumericEqualityVictoriaLogsCost(t *testing.T) {
 			}
 		}
 		t.Logf("VictoriaLogs %s, %d json rows over 24h, %d runs each:%s", prof.version, n, rounds, b.String())
-		srv.Stop()
+		stop()
 	}
 }
 
-// counted is the count of a stats_query answer.
-func counted(body string) string {
-	if i := strings.Index(body, `"c":"`); i >= 0 {
-		rest := body[i+5:]
-		return rest[:strings.IndexByte(rest, '"')]
+// numericCostCount reads the Prometheus vector returned by stats_query. Refuse
+// malformed, failed or partial answers instead of timing them as useful work.
+func numericCostCount(body []byte) (string, error) {
+	var answer struct {
+		Status   string   `json:"status"`
+		Warnings []string `json:"warnings"`
+		Data     struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Value []json.RawMessage `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
 	}
-	return "?"
+	if err := json.Unmarshal(body, &answer); err != nil {
+		return "", err
+	}
+	if answer.Status != "success" || answer.Data.ResultType != "vector" || len(answer.Warnings) != 0 || answer.Data.Result == nil || len(answer.Data.Result) > 1 {
+		return "", fmt.Errorf("expected one complete count vector")
+	}
+	if len(answer.Data.Result) == 0 {
+		return "0", nil
+	}
+	v := answer.Data.Result[0].Value
+	if len(v) != 2 {
+		return "", fmt.Errorf("expected a timestamp and count")
+	}
+	var count string
+	if err := json.Unmarshal(v[1], &count); err != nil {
+		return "", err
+	}
+	if _, err := strconv.ParseUint(count, 10, 64); err != nil {
+		return "", err
+	}
+	return count, nil
+}
+
+// conformance: semantics/label-filter-numeric-equality
+func TestNumericCostCount(t *testing.T) {
+	for _, c := range []struct{ name, body, want string }{
+		{"count", `{"status":"success","data":{"resultType":"vector","result":[{"value":[1,"1250"]}]}}`, "1250"},
+		{"empty", `{"status":"success","data":{"resultType":"vector","result":[]}}`, "0"},
+		{"error", `{"status":"error","error":"failed"}`, ""},
+		{"partial", `{"status":"success","warnings":["partial"],"data":{"resultType":"vector","result":[]}}`, ""},
+		{"malformed", `{"status":`, ""},
+		{"missing", `{}`, ""},
+		{"missing result", `{"status":"success","data":{"resultType":"vector"}}`, ""},
+		{"null result", `{"status":"success","data":{"resultType":"vector","result":null}}`, ""},
+		{"nan", `{"status":"success","data":{"resultType":"vector","result":[{"value":[1,"NaN"]}]}}`, ""},
+		{"negative", `{"status":"success","data":{"resultType":"vector","result":[{"value":[1,"-1"]}]}}`, ""},
+		{"missing sample", `{"status":"success","data":{"resultType":"vector","result":[{"value":[1]}]}}`, ""},
+		{"unquoted count", `{"status":"success","data":{"resultType":"vector","result":[{"value":[1,2]}]}}`, ""},
+		{"multiple", `{"status":"success","data":{"resultType":"vector","result":[{"value":[1,"2"]},{"value":[1,"3"]}]}}`, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := numericCostCount([]byte(c.body))
+			if got != c.want || (err != nil) != (c.want == "") {
+				t.Fatalf("got %q, %v; want %q", got, err, c.want)
+			}
+		})
+	}
 }

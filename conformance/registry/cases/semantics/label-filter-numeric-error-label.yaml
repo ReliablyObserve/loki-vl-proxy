@@ -1,5 +1,5 @@
 id: semantics/label-filter-numeric-error-label
-title: A numeric label filter drops lines whose value is not a number where Loki keeps them with __error__ (open)
+title: Numeric conversion errors outside the proved equality pipeline remain different (open)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -11,10 +11,55 @@ why: |
   whose value is not a number of that kind (`abc`, `5abc`, ` 5`, `0x5`
   under a float filter) and marks it with `__error__=LabelFilterErr`, so
   `| __error__=""` after the filter drops it and a query without that drops
-  nothing. The proxy drops those lines at the filter. Recorded with the Loki
+  nothing. Several proxy paths still drop those lines at the filter. Recorded with the Loki
   oracle (Loki's exported pipeline run on a label set and a line, Loki 3.7.9);
   found while recording numeric equality
   (semantics/label-filter-numeric-equality).
+
+  TestNumericLabelFilterErrorStageOrder records 23 full pipeline answers.
+  Bounded replay preserves conversion details, generated parser errors and
+  source error keys. There are two explicit differences in this helper.
+  The two remaining exact shapes are json followed by
+  __error__="" then n=200, and __error__="LabelFilterErr" then n=200.
+  With n="abc", Loki drops the first and keeps the second. An intervening
+  n="abc" string filter changes the first to a kept error row. Therefore a
+  global reordering of error filters is not equivalent to recorded Loki.
+  The differential executes all 23 cases and rejects unknown differences
+  or a stale known-difference entry.
+
+  Rebuilt candidate API proof on Loki 3.7.10 and VL 1.54.0:
+  TestCompat_NumericEqualityLikeLoki exercises 298 API comparisons over
+  json and logfmt. Eighteen compare full log entries. There are 168
+  conversion-error comparisons (six numeric filters under count, rate, sum,
+  grouped sum, topk, sort, scalar multiplication, set union, label_replace,
+  offsets and binary operands with the same pipeline but different hints).
+  Each selects one invalid-conversion row, making the failing series
+  deterministic. Another 84 compare source custom errors and preserve labels
+  under those wrappers; six retain the exact accepted default identity
+  projection of parsed-identity/dynamic-key-parsers. Another 28 compare
+  clean/error-filtered samples and step-greater-than-window gaps.
+  For a binary operation whose two operands fail with different parser hints,
+  either complete operand error is valid, as Loki's first failure can vary.
+  Exact "true" preserves an error sample; other preserve values do not.
+  Aggregations request only their parser hints, so the same source key may
+  be absent under sum while present in the bare metric. Bind confirmations
+  to the actual operand and retain that binding through phase-window filters.
+  Native classification is limited to a single plain json/logfmt parser and
+  simple numeric equality leaves on plain keys; it is shared with the
+  bounded confirmation path. Clean reads add no separate error scan.
+  A retained numeric error is counted in the existing stats read or noticed
+  in raw rows, then confirmed from stored rows; failed confirmation uses the
+  typed backend-error path rather than silently answering success. Rows in
+  gaps between evaluated windows consume no confirmation budget.
+  Source __error__ keys are retained but generated-error filters read the
+  preceding conversion predicates, without clobbering a source scratch key.
+  Consecutive/trailing underscores on valid parsed names are preserved in
+  this pipeline. The final API artifact is
+  bench/numeric-equality/results/2026-11-20/candidate-e2e-final.txt.gz.
+
+  This does not close overflow, present-empty, sanitized/extracted-key,
+  adjacent-filter or general malformed-parser gaps. The 81-query storage
+  oracle still counts 126/7286 differences (semantics/label-filter-numeric-equality).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -36,6 +81,6 @@ gap:
   effort: M
   area: 'internal/translator translateSingleLabelFilter / translate.LabelFilterLeaf (numeric filters drop non-numeric values)'
   loki: 'a numeric label filter keeps a non-numeric value with __error__=LabelFilterErr'
-  proxy: 'the VictoriaLogs numeric filter drops it'
-  planned_test: 'e2e vs Loki with numeric and non-numeric values, with and without | __error__="" (test/e2e-compat, group semantics); unit table from the Loki process oracle'
+  proxy: 'proved single-parser plain-key equality preserves nonempty conversion-error rows, labels and metric error bodies; other numeric operators and the documented empty/overflow/collision/stage-order axes remain open'
+  planned_test: 'TestNumericLabelFilterErrorStageOrder (23 recorded pipeline cases, two explicit gaps); TestNumericEqualityAfterParserMatchesLoki (full row decisions); TestNumericFilterRawHitsIgnoreWindowGaps; TestNumericParserHintsStayRequestLocal; TestNumericOperandBindingSurvivesWindowPhase; TestCompat_NumericEqualityLikeLoki (298 live comparisons including six accepted identity projections, core CI); matrix json_numeric_equality_range, json_numeric_equality_outer_sum, logfmt_numeric_equality_range'
   clusters: []
