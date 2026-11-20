@@ -93,6 +93,13 @@ type MetricRoute struct {
 	// Offset is the shift of the request's time, or of its start and end: the handlers strip the offset clause and
 	// read the windows Offset earlier, then stamp the samples at the times asked for.
 	Offset time.Duration
+	// LabelGrouped is a vector aggregation whose first stats pipe groups by labels alone, StreamGrouped one whose
+	// first stats pipe groups by the stream (the series of each stream are counted before they are combined).
+	LabelGrouped, StreamGrouped bool
+	// RankedGrid is the operand of a topk or bottomk at the root on tumbling windows, a line count or a byte sum
+	// grouped by labels: the ranking needs every series of each step, so the handlers read the windows as one grid of
+	// rows (a stats pipe by the window and the labels, through /select/logsql/query) instead of stats_query_range.
+	RankedGrid bool
 	// Text is the lowered stats query the route sends (the plan's text, before the route's own pipes).
 	Text string
 }
@@ -171,6 +178,7 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 		}
 		view = w
 		r.Text, r.LevelProbe, r.Ungrouped = text, view.chain, view.shape.ungrouped
+		r.LabelGrouped, r.StreamGrouped = view.shape.labels, view.shape.stream
 		r.Counted = unwrapStage(rng.In) != nil
 		// Series add up whatever their identity for the sum of the additive functions: the sum of an average, a
 		// minimum or a maximum of each series is not the one of the lines of all of them.
@@ -212,8 +220,8 @@ type QueryRoute struct {
 // Operands are the routes of the aggregations, in operand order.
 func (q *QueryRoute) Operands() []MetricRoute { return q.operands[:q.n] }
 
-// RouteQuery decides the route of a plan whose root is a range or vector aggregation (Route), or a binary operation
-// over such aggregations and numbers, for req. A binary operation the lowering does not write keeps the lowering's
+// RouteQuery decides the route of a plan whose root is a range or vector aggregation (Route), a binary operation
+// over such aggregations and numbers, or a ranking or a label_replace over any of them (routeEvaluated), for req. A binary operation the lowering does not write keeps the lowering's
 // delegation (set operators, a bool modifier, constant operands, an operand that is not an aggregation or a number);
 // one of its aggregation operands the rule does not route delegates it as "BinOp operand <what the operand's route
 // answers>" (the lowering's own name for an operand it cannot write is replaced by the operand's route reason). The
@@ -221,6 +229,14 @@ func (q *QueryRoute) Operands() []MetricRoute { return q.operands[:q.n] }
 // (TestRouteQueryIsWhatTheLoweringLowers).
 func RouteQuery(p *queryplan.Plan, prof Profile, req RouteRequest) (QueryRoute, error) {
 	var out QueryRoute
+	switch p.Root.(type) {
+	case *queryplan.Rank, *queryplan.LabelReplace:
+		// The lowering's own delegation of the whole query comes first, as for the other roots.
+		if _, err := Plan(p, prof); err != nil {
+			return out, err
+		}
+		return routeEvaluated(p, prof, req)
+	}
 	b, ok := p.Root.(*queryplan.BinOp)
 	if !ok {
 		r, err := Route(p, prof, req)
@@ -355,8 +371,14 @@ func builtText(b builtVector, err error, prof Profile) (string, statsView, error
 func (b builtVector) view() statsView {
 	chain, _ := b.derives()
 	v := statsView{log: b.log, chain: chain}
+	first := true
 	for _, p := range b.stats {
 		if st, ok := p.(logsql.PipeStats); ok {
+			if first {
+				v.shape.stream = slices.ContainsFunc(st.By, func(k logsql.GroupKey) bool { return k.Field == "_stream" })
+				v.shape.labels = len(st.By) > 0 && !v.shape.stream
+				first = false
+			}
 			v.shape.note(len(st.By))
 		}
 	}

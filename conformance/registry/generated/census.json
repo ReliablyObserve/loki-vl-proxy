@@ -831,6 +831,9 @@
     "semantics/rank-over-binary-operation | compare:observed",
     "semantics/rank-over-binary-operation | gap:fixed",
     "semantics/rank-over-binary-operation | query",
+    "semantics/rank-over-stream-first-aggregation-range | compare:observed",
+    "semantics/rank-over-stream-first-aggregation-range | gap:open",
+    "semantics/rank-over-stream-first-aggregation-range | query",
     "semantics/raw-nul-in-string-literal-accepted | compare:observed",
     "semantics/raw-nul-in-string-literal-accepted | gap:fixed",
     "semantics/raw-nul-in-string-literal-accepted | query",
@@ -1429,6 +1432,7 @@
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/middleware/coalescer_cancel_test.go | semantics/error-coalescing-no-inherited-cancel",
+    "internal/proxy/absent_label_replace_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/absent_over_time_differential_test.go | metric-series-identity",
     "internal/proxy/absent_over_time_differential_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/absent_over_time_differential_test.go | window-bounds-and-step-alignment",
@@ -1795,6 +1799,7 @@
     "internal/proxy/label_filter_readers_differential_test.go | semantics/detected-fields-empty-answer",
     "internal/proxy/label_filter_readers_differential_test.go | semantics/line-format-template-error-keeps-entry",
     "internal/proxy/label_filter_readers_differential_test.go | semantics/unwrap-conversion-error",
+    "internal/proxy/label_map_plan_test.go | architecture-syntax-package-layering",
     "internal/proxy/label_matcher_regexp_routes_test.go | loki_api_v1_detected_labels",
     "internal/proxy/label_matcher_regexp_routes_test.go | profiles/stream-selector-regexp-anchoring",
     "internal/proxy/label_metadata_freshness_test.go | loki_api_v1_series",
@@ -2735,6 +2740,7 @@
     "internal/queryplan/lower/reserved_field_test.go | semantics/translator-writes-reserved-field-names",
     "internal/queryplan/lower/route_bench_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/route_query_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/route_rank_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/route_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_fold_test.go | semantics/unwrap-conversion-error",
@@ -3392,12 +3398,12 @@
       "any": 50,
       "api": 124,
       "drilldown": 57,
-      "explore": 207,
+      "explore": 208,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 798,
+      "go": 801,
       "playwright": 3
     },
     "page_kinds": {
@@ -3416,7 +3422,7 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 100,
+    "unwired_items": 101,
     "wired_items": 469
   },
   "gates": [

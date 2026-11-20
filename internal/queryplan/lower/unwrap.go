@@ -271,6 +271,8 @@ type statsShape struct {
 	// grouped says a stats pipe groups by a key, and ungrouped that the last one groups by nothing (VictoriaLogs
 	// then answers one row even over no input).
 	grouped, ungrouped bool
+	// labels says the first stats pipe groups by labels alone, and stream that it groups by the stream.
+	labels, stream bool
 }
 
 // statsView is a lowered vector aggregation as the route rule reads it besides its text: the log query it
