@@ -51,7 +51,7 @@ def row_order(row):
     return f"{row['page']}{os.sep}{row['range']}"
 
 
-def merge(plan, k, shards_dir, out, base="", head=""):
+def merge(plan, k, shards_dir, out, base="", head="", build_head=""):
     """Write the merged run into `out`; returns (error or None)."""
     os.makedirs(out, exist_ok=True)
     expected = split(plan, k)
@@ -71,10 +71,27 @@ def merge(plan, k, shards_dir, out, base="", head=""):
         metas.append(meta)
         if read(os.path.join(d, "plan.json"), None) != expected[i]:
             problems.append(f"shard {i} ran a plan other than its share of the plan")
+        if plan.get("runtime_proof", {}).get("required"):
+            for key, wanted in (("base", base), ("head", head), ("build_head", build_head)):
+                actual = meta.get(key)
+                if (not isinstance(actual, str) or len(actual) != 40 or any(c not in "0123456789abcdef" for c in actual)
+                        or wanted and actual != wanted):
+                    problems.append(f"shard {i} missing or mismatched {key} revision")
+            seed = meta.get("seed") or {}
+            if (not seed.get("end") or (seed.get("hours") or 0) < expected[i]["fixture_hours"]
+                    or not seed.get("vl_lines") or not seed.get("loki_lines") or (seed.get("loki_hours") or 0) < 1.5):
+                problems.append(f"shard {i} lacks measured fixture history")
         err = read(os.path.join(d, "error.json"), None)
         if err:
             problems.append(f"shard {i}: {err.get('error', 'unknown')}"[:300])
-        shard_rows.append((i, read(os.path.join(d, "compare.json"), [])))
+        measured = read(os.path.join(d, "compare.json"), [])
+        if plan.get("runtime_proof", {}).get("required"):
+            wanted = sorted((p, r) for p, e in expected[i]["entries"].items() for r in e["ranges"])
+            if sorted((r["page"], r["range"]) for r in measured) != wanted:
+                problems.append(f"shard {i} comparison differs from its planned page/range cells")
+            if any("runtime_problems" not in r for r in measured if r["range"] != "live"):
+                problems.append(f"shard {i} lacks a required runtime assessment")
+        shard_rows.append((i, measured))
         pixels.update(read(os.path.join(d, "pixeldiff.json"), {}))
         for png in sorted(glob.glob(os.path.join(d, "montage", "*.png"))):
             if os.path.basename(png) in montages:
@@ -96,7 +113,15 @@ def merge(plan, k, shards_dir, out, base="", head=""):
             first = {(r["page"], r["range"]): r for r in read(os.path.join(d, "first-pass", "compare.json"), [])}
             if not first:
                 problems.append(f"shard {i} reloaded captures but kept no first pass")
-            shard = [first.get((r["page"], r["range"]), r) for r in shard]
+            restored = []
+            for observed in shard:
+                original = first.get((observed["page"], observed["range"]), observed)
+                failures = observed.get("runtime_problems") or []
+                if original is not observed and failures:
+                    original["runtime_recapture"] = {k: observed.get(k) for k in ("runtime_main", "runtime_pr", "runtime_loki", "settle_s")}
+                    original.setdefault("runtime_problems", []).extend(p for p in failures if p not in original.get("runtime_problems", []))
+                restored.append(original)
+            shard = restored
             first_px = read(os.path.join(d, "first-pass", "pixeldiff.json"), {})
             pixels.update(first_px)
             for png in glob.glob(os.path.join(d, "first-pass", "montage", "*.png")):
@@ -110,7 +135,7 @@ def merge(plan, k, shards_dir, out, base="", head=""):
     for name, png in sorted(montages.items()):
         os.makedirs(os.path.join(out, "montage"), exist_ok=True)
         shutil.copyfile(png, os.path.join(out, "montage", name))
-    for key in ("base", "head"):
+    for key in ("base", "head", "build_head"):
         if len({m.get(key) for m in metas if m}) > 1:
             problems.append(f"the shards were built from different {key} commits")
     # loki_lines is reported, not gated: the seed already waited for Loki to count what VictoriaLogs counts.
@@ -126,6 +151,8 @@ def merge(plan, k, shards_dir, out, base="", head=""):
             "plan_captures": plan["captures"], "recaptured": recaptured,
             "shards": [{"index": i, "captures": expected[i]["captures"], "elapsed_s": m.get("elapsed_s"), "phases_s": m.get("phases_s"),
                         "stack_up_phases_s": m.get("stack_up_phases_s"), "seed": m.get("seed")} for i, m in enumerate(metas)]}
+    if build_head or any(m.get("build_head") for m in live):
+        meta["build_head"] = next((m["build_head"] for m in live if m.get("build_head")), build_head)
     if has_flipped:
         meta["flipped"], meta["late_requests"] = sorted(flipped), sorted(late)
     dump_json(os.path.join(out, "plan.json"), plan)
@@ -147,8 +174,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--base", default="", help="base commit for meta.json when no shard wrote one")
     ap.add_argument("--head", default="", help="head commit for meta.json when no shard wrote one")
+    ap.add_argument("--build-head", default="", help="expected checked-out revision used to build the PR binary")
     a = ap.parse_args()
-    problems = merge(load_json(a.plan), a.of, a.shards, a.out, a.base, a.head)
+    problems = merge(load_json(a.plan), a.of, a.shards, a.out, a.base, a.head, a.build_head)
     for p in problems or []:
         print(f"merge: {p}")
     print(f"merge: {'FAILED' if problems else 'ok'} ({a.of} shard(s))")

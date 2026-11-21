@@ -35,6 +35,7 @@ as cold. A shape is slower or faster only when the p50 moves by more than
 import argparse
 import datetime
 import json
+import math
 import os
 import re
 import sys
@@ -120,7 +121,7 @@ def sum_cache(rows):
     return total or None
 
 
-def refresh_timings(raw):
+def refresh_timings(raw, reference="loki", candidate="pr", tolerance=0):
     """(shape, range) -> {target: p50 over the runs after the first} and the statuses of a refresh run."""
     grouped = {}
     for r in raw["rows"]:
@@ -134,6 +135,8 @@ def refresh_timings(raw):
             status[t] = "/".join(sorted({str(r["status"]) for r in rs}))
         metered = {t: reuse.median([r.get("reuse") for r in rs]) for t, rs in by_target.items()}
         out[key] = {"p50": p50, "status": status, "reuse": {t: d for t, d in metered.items() if d is not None}}
+        if raw.get("runtime_proof"):
+            out[key]["samples"] = request_samples(by_target, raw["runs"], reference, candidate, tolerance)
     return out
 
 
@@ -164,11 +167,55 @@ def timing_verdict(base, cand, noise, min_delta):
     return "same"
 
 
+def request_samples(by_target, runs, reference, candidate, tolerance=0):
+    """Check every measured request before aggregating. A later run cannot fill an earlier hole."""
+    refs = {r["run"]: r for r in by_target.get(reference, [])}
+    candidates = {r["run"]: r for r in by_target.get(candidate, [])}
+    evidence = {}
+    for target, rows in by_target.items():
+        good, starts, ends = [], [], []
+        resource_runs = 0
+        corrected_rejections = []
+        for r in rows:
+            seconds = r.get("seconds")
+            proof = r.get("answer_proof")
+            ref = (candidates if target == reference else refs).get(r["run"], {})
+            matched_error = (isinstance(proof, str) and proof.startswith("rejection:") and
+                             (proof, r["status"]) == (ref.get("answer_proof"), ref.get("status")))
+            cand = candidates.get(r["run"], {})
+            corrected = (target not in (reference, candidate) and isinstance(proof, str) and proof.startswith("rejection:")
+                         and r["status"] in (400, 422, 500)
+                         and all(s.get("status") == 200 and s.get("answer_proof") == "answer" and s.get("signature")
+                                 and not s.get("skipped") for s in (ref, cand))
+                         and parity(ref["signature"], cand["signature"], tolerance) != "differs")
+            if (not r.get("skipped") and type(seconds) in (int, float) and math.isfinite(seconds) and seconds >= 0
+                    and type(r.get("response_bytes")) is int and r["response_bytes"] > 0
+                    and type(r.get("history_start")) is int and type(r.get("end")) is int
+                    and (r["history_start"], r["end"]) == (ref.get("history_start"), ref.get("end"))
+                    and (proof == "answer" and r["status"] == 200 or matched_error or corrected)):
+                good.append(r["run"])
+                if corrected:
+                    corrected_rejections.append({"run": r["run"], "status": r["status"], "proof": proof,
+                                                 "signature": r["signature"]})
+                starts.append(r["history_start"])
+                ends.append(r["end"])
+            cost = r.get("reuse") or {}
+            resource_runs += int(cost.get("cpu_samples") == cost.get("rss_samples") == 2 and
+                                 all(type(cost.get(k)) in (int, float) and math.isfinite(cost[k]) and cost[k] >= 0
+                                     for k in ("cpu_seconds", "rss_max_sampled_bytes")))
+        evidence[target] = {"complete": sorted(good) == list(range(runs)) and len(rows) == runs,
+                            "measured": len(good), "resource_runs": resource_runs,
+                            "start": min(starts, default=None), "end": max(ends, default=None)}
+        if corrected_rejections:
+            evidence[target]["corrected_rejections"] = corrected_rejections
+    return evidence
+
+
 def summarize(args):
     raw = load(args.raw)
     rows = raw["rows"]
     refresh_raw = load(args.refresh) if getattr(args, "refresh", "") else None
-    refresh = refresh_timings(refresh_raw) if refresh_raw else {}
+    refresh = refresh_timings(refresh_raw, args.reference, args.candidate, args.tolerance) if refresh_raw else {}
     keys = []
     for r in rows:
         k = (r["shape"], r["range"])
@@ -186,6 +233,8 @@ def summarize(args):
         for r in rows:
             if (r["shape"], r["range"]) == (shape, rng):
                 by_target.setdefault(r["target"], []).append(r)
+        if raw.get("runtime_proof"):
+            entry["runtime_samples"] = {"matrix": request_samples(by_target, raw["runs"], args.reference, args.candidate, args.tolerance)}
         for t, rs in by_target.items():
             rs.sort(key=lambda r: r["run"])
             warm = [r["seconds"] for r in rs[1:]] or [rs[0]["seconds"]]
@@ -195,6 +244,9 @@ def summarize(args):
             if args.cold:
                 entry["p50"][t] = rs[0]["seconds"]
             entry["status"][t] = "/".join(sorted({str(r["status"]) for r in rs}))
+            sizes = [r["response_bytes"] for r in rs if isinstance(r.get("response_bytes"), (int, float))]
+            if sizes:
+                entry.setdefault("response_bytes", {})[t] = max(sizes)
             entry["vl_cpu_max"][t] = max((r["vl_cpu_max"] or 0) for r in rs)
             # The proxy's own counters (perf_matrix.py --proxy-metrics): the first run's cost, the later runs' median.
             if any(r.get("reuse") is not None for r in rs):
@@ -241,6 +293,9 @@ def summarize(args):
                                and bool(vs_ref) and all(v == "same" for v in vs_ref))
         if not b_ok and c_ok:
             verdict = "fixed"
+            evidence = entry.get("runtime_samples", {}).get("matrix", {}).get(args.baseline, {})
+            if evidence.get("complete") and len(evidence.get("corrected_rejections", [])) == raw.get("runs"):
+                entry["base_comparison_note"] = "Base-relative cost and speedup unavailable: base rejected the query."
         elif b_ok and c_matches_ref_error:
             verdict = "fixed"
             entry["note"] = "now rejected exactly as the reference rejects it"
@@ -264,6 +319,8 @@ def summarize(args):
                 # The fill is the settled window's cold cost; the repeat is what the cache is expected to answer alone.
                 slot["exact_fill"], slot["exact_repeat"] = e["fill"]["reuse"], e["repeat"]["reuse"]
         if (shape, rng) in refresh:
+            if refresh_raw.get("runtime_proof"):
+                entry.setdefault("runtime_samples", {})["refresh"] = refresh[(shape, rng)]["samples"]
             entry["refresh"], entry["refresh_status"] = refresh[(shape, rng)]["p50"], refresh[(shape, rng)]["status"]
             for t, d in refresh[(shape, rng)]["reuse"].items():
                 entry.setdefault("reuse", {}).setdefault(t, {})["refresh"] = d

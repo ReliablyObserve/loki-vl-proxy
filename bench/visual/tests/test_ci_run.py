@@ -3,8 +3,12 @@ import argparse
 import http.server
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 import threading
 import unittest
 
@@ -27,6 +31,63 @@ class FakeLoki(http.server.BaseHTTPRequestHandler):
 
 
 class CiRunTest(unittest.TestCase):
+    def test_runtime_boundary_precedes_recording_overhead(self):
+        source = Path(ci_run.HERE, "capture.spec.ts").read_text()
+        after_settle = source.split("const ok = await settle(page, pending);")[1]
+        drain = after_settle.index("await drain(reading)")
+        self.assertLess(after_settle.index("Date.now() - t0"), drain)
+        self.assertLess(after_settle.index("runtimeProof.finish("), drain)
+        self.assertLess(drain, after_settle.index("await page.screenshot"))
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for Chromium collector unit tests")
+    def test_redirect_hops_and_first_metadata_data_in_the_runtime_collector(self):
+        # Run the capture's collector against CDP events without Chromium, network or Playwright.
+        source = Path(ci_run.HERE, "capture.spec.ts").read_text().split("const BACKEND = ", 1)[1].split("// Logs Drilldown", 1)[0]
+        node = """const assert = require("node:assert/strict");
+const strip = require("node:module").stripTypeScriptTypes;
+if (!strip) process.exit(77);
+const source = require("node:fs").readFileSync(0, "utf8");
+const start = Function(strip(source) + ";return startRuntimeProof")();
+(async () => {
+  for (const response of [{data: ["service"]}, {fields: [{label: "service"}]}, {data: {result:[1]}}, {data: []}]) {
+    const cdp = new (require("node:events").EventEmitter)();
+    cdp.send = async () => ({metrics: [{name: "JSHeapUsedSize", value: 16}]});
+    cdp.detach = async () => {};
+    const page = {context: () => ({newCDPSession: async () => cdp}), isClosed: () => false, once: () => {}};
+    const proof = await start(page);
+    cdp.emit("Network.requestWillBeSent", {requestId: "1", request: {url: "/api/ds/query"}});
+    cdp.emit("Network.dataReceived", {requestId: "1", encodedDataLength: 20});
+    cdp.emit("Network.requestWillBeSent", {requestId: "1", request: {url: "/app"}, redirectResponse: {encodedDataLength: 70}});
+    cdp.emit("Network.loadingFinished", {requestId: "1", encodedDataLength: 120});
+    proof.recordData([{status: 200, response}]);
+    const measured = await proof.finish();
+    if (process.argv[1] === "redirect") {
+      assert.equal(measured.api_encoded_bytes, 70);
+      assert.equal(measured.page_encoded_bytes, 190);
+      assert.equal(measured.api_requests, 1);
+    } else {
+      assert.equal(measured.first_api_data_ms !== undefined, !(Array.isArray(response.data) && !response.data.length));
+    }
+  }
+})().catch(e => {console.error(e); process.exit(1);});"""
+        for case in ("redirect", "metadata"):
+            with self.subTest(case=case):
+                proc = subprocess.run(["node", "-e", node, case], input="const BACKEND = " + source,
+                                      text=True, capture_output=True)
+                if proc.returncode == 77:
+                    self.skipTest("Node 22.13+ supplies the TypeScript loader")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_warm_recapture_cannot_clear_first_pass_resource_regression(self):
+        first = [{"page": "dd-fields", "range": "1h", "runtime_problems": ["runtime regression: browser thread CPU 1 -> 2"],
+                  "runtime_main": {"browser_thread_seconds": 1}, "runtime_pr": {"browser_thread_seconds": 2}}]
+        second = [{"page": "dd-fields", "range": "1h", "runtime_problems": [],
+                   "runtime_main": {"browser_thread_seconds": 0.1}, "runtime_pr": {"browser_thread_seconds": 0.1}}]
+        got = ci_run.keep_runtime_observations(first, second)[0]
+        self.assertIn("first pass retained", got["runtime_problems"][0])
+        self.assertEqual(got["runtime_first_pass"]["runtime_pr"]["browser_thread_seconds"], 2)
+        self.assertEqual(got["runtime_pr"]["browser_thread_seconds"], 0.1)
+
     def test_wait_loki_metric_waits_through_empty_answers(self):
         FakeLoki.answers = [[], [{"values": [[1, "0"]]}], [{"values": [[1, "7"]]}]]
         srv = http.server.HTTPServer(("127.0.0.1", 0), FakeLoki)
@@ -60,7 +121,7 @@ class CiRunTest(unittest.TestCase):
         try:
             port = srv.server_address[1]
             state = {"end": 7200, "hours": 7, "loki_hours": 1.5}
-            self.assertEqual(ci_run.seed_fingerprint(state, port, port), {"end": 7200, "hours": 7, "vl_lines": 42, "loki_lines": 17})
+            self.assertEqual(ci_run.seed_fingerprint(state, port, port), {"end": 7200, "hours": 7, "loki_hours": 1.5, "vl_lines": 42, "loki_lines": 17})
             dead = ci_run.seed_fingerprint(state, 1, 1)
             self.assertEqual((dead["vl_lines"], dead["loki_lines"]), (None, None))
         finally:
@@ -135,7 +196,17 @@ class CiRunTest(unittest.TestCase):
             meta = {}
             saved = ci_run.run
             try:
-                ci_run.run = lambda cmd, **kw: calls.append((cmd, kw.get("env", {})))
+                def finish(cmd, **kw):
+                    env = kw.get("env", {})
+                    calls.append((cmd, env))
+                    self.assertNotEqual(env["VP_OUT"], out)
+                    for tree, ext in (("data", "json"), ("shots", "png")):
+                        dest = Path(env["VP_OUT"], tree, "explore-unwrap-missing-label", "15m")
+                        dest.mkdir(parents=True)
+                        for side in ("main", "pr", "loki"):
+                            (dest / f"{side}.{ext}").write_text("{}")
+                    return SimpleNamespace(returncode=0)
+                ci_run.run = finish
                 self.assertTrue(ci_run.recapture(a, out, plan, 1, 1, meta))
             finally:
                 ci_run.run = saved
@@ -146,6 +217,30 @@ class CiRunTest(unittest.TestCase):
         (cmd, env), = calls
         self.assertEqual(cmd, ["npx", "playwright", "test"])
         self.assertEqual((env["VP_QUIET_MS"], env["VP_SETTLE_MS"]), ("10000", "150000"))
+
+    def test_partial_retry_cannot_combine_new_main_with_stale_pr_and_loki(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as out:
+            page = self.LOADING_ROW["page"]
+            rng = "15m"
+            (Path(out) / "compare.json").write_text(json.dumps([self.LOADING_ROW]))
+            for tree, ext in (("data", "json"), ("shots", "png")):
+                dest = Path(out, tree, page, rng)
+                dest.mkdir(parents=True)
+                for side in ("main", "pr", "loki"):
+                    (dest / f"{side}.{ext}").write_text("first")
+            def partial(cmd, env, **kw):
+                dest = Path(env["VP_OUT"], "data", page, rng)
+                dest.mkdir(parents=True, exist_ok=True)
+                (dest / "main.json").write_text("retry")
+                return SimpleNamespace(returncode=0)
+            meta = {}
+            with patch.object(ci_run, "run", partial), self.assertRaisesRegex(RuntimeError, "incomplete"):
+                ci_run.recapture(SimpleNamespace(max_recapture=6, shard=None, workers=1), out,
+                                 {"entries": {page: {"kind": "explore", "ranges": [rng]}}}, 1, 1, meta)
+            self.assertFalse(meta.get("recaptured"))
+            self.assertEqual(Path(out, "data", page, rng, "main.json").read_text(), "first")
+            self.assertEqual(Path(out, "first-pass/data", page, rng, "pr.json").read_text(), "first")
 
     def test_the_recapture_runs_before_the_live_tail_pass_and_one_compare_sees_both(self):
         # The live generator writes into the streams the static windows read, and Loki's index/stats is an estimate from

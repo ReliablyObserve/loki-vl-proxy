@@ -25,6 +25,37 @@ bad_value{a="1"} x
 
 
 class ReuseTest(unittest.TestCase):
+    def test_cpu_requires_two_finite_monotonic_samples_and_preserves_zero(self):
+        for before, after in (({}, {"cpu_seconds": 90}), ({"cpu_seconds": 90}, {}),
+                              ({"cpu_seconds": 90}, {"cpu_seconds": 1}),
+                              ({"cpu_seconds": float("nan")}, {"cpu_seconds": 0})):
+            self.assertNotIn("cpu_seconds", reuse.delta(before, after))
+        zero = reuse.delta({"cpu_seconds": 5}, {"cpu_seconds": 5})
+        self.assertEqual(zero["cpu_seconds"], 0)
+        result = reuse.median([zero, None, {"cpu_seconds": 4, "cpu_samples": 2}])
+        self.assertEqual((result["cpu_seconds"], result["cpu_runs_measured"], result["metric_runs_expected"]), (2, 2, 3))
+        self.assertEqual(reuse.median([zero, {"cpu_samples": 1, "cpu_seconds": 90},
+                                    {"cpu_samples": 2, "cpu_seconds": -2}])["cpu_seconds"], 0)
+
+    def test_resident_memory_is_an_absolute_sample_not_a_counter_delta(self):
+        before = reuse.parse(METRICS + "process_resident_memory_bytes 104857600\n")
+        after = reuse.parse(METRICS + "process_resident_memory_bytes 94371840\n")
+        got = reuse.delta(before, after)
+        self.assertEqual(got, {"rss_before_bytes": 104857600, "rss_after_bytes": 94371840,
+                               "rss_max_sampled_bytes": 104857600, "rss_samples": 2, "cpu_samples": 2, "cpu_seconds": 0})
+        # An older proxy without the gauge has no memory measurement, rather than zero RSS.
+        self.assertNotIn("rss_max_sampled_bytes", reuse.delta({}, {}))
+        one = reuse.delta({}, after)
+        self.assertEqual(one["rss_samples"], 1)
+        self.assertNotIn("rss_before_bytes", one)
+        self.assertEqual(one["rss_max_sampled_bytes"], 94371840)
+
+    def test_missing_memory_samples_are_not_zero_in_a_repeat_median(self):
+        got = reuse.median([{"rss_max_sampled_bytes": 80, "rss_samples": 2}, {}, None])
+        self.assertEqual(got["rss_max_sampled_bytes"], 80)
+        self.assertEqual(got["metric_runs_expected"], 3)
+        self.assertEqual(got["rss_runs_measured"], 1)
+
     def test_parse_delta_ratio_median(self):
         s = reuse.parse(METRICS)
         self.assertEqual(s, {"vl_calls": 5.0, "vl_calls:/select/logsql/query": 3.0, "vl_calls:/select/logsql/stats_query_range": 2.0,

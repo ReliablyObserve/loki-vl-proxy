@@ -131,7 +131,31 @@ parent) and picks captures in two tiers:
   runs `plan.py --check`: every entry's `covers` must resolve, and a non-core entry
   must reach code. A change that touches no visual behavior runs the core set.
   A capture budget (36 page x range captures) first narrows the detailed entries
-  to 1h, then drops the last ones, and the comment says which.
+  to 1h, then drops the last ones, and the comment says which. AST/planner changes
+  must map to targeted scenes through this same registry mapping. Their required
+  scenes and declared ranges survive the soft capture budget; an unmapped source
+  fails selection rather than substituting only the general control set.
+
+The existing static captures also collect browser main-thread CPU, task time,
+sampled JS heap, API request count, encoded API bytes and the time of the first
+nonempty API answer. The latter is not chart paint. Settlement includes the
+existing quiet period and panel-module wait. Sampling ends when the settlement
+wait returns, before draining response readers, inspecting UI or taking screenshots.
+Redirects count each observed hop once. The first nonempty observation includes
+label, detected-field and query responses. The comment shows these measurements
+for up to twelve pairs in a collapsed table, with failure and targeted rows first.
+The comparison artifact retains all rows. One
+observation is not a p50/p95 distribution; sampled JS heap is not process RSS.
+When the base rejects a query and the PR returns the same successful answer as
+Loki, the report retains all three measurements and marks base-relative cost and
+settlement changes unavailable for the page.
+Required AST/planner captures fail on missing runtime/data evidence. They also
+fail when a PR exceeds both 25% and an absolute increase of 0.25 s thread CPU,
+32 MiB sampled heap, 64 KiB API wire or 0.5 s settlement. Both first-pass and
+recapture observations are retained for a resource finding: a warmer exact-window
+retry cannot clear a first-pass regression. Canceled/unfinished transfer prefixes
+are included in observed wire bytes, with their subcounts in the JSON artifact.
+The expected-visual-change label does not waive resource proof.
 
 Preview a selection: `python3 bench/visual/plan.py --base origin/main` or
 `--files internal/proxy/ordered_json_metric.go`.
@@ -140,13 +164,15 @@ Preview a selection: `python3 bench/visual/plan.py --base origin/main` or
 run (`stack.py up`: base build from the first parent, PR build from the checked-out
 merge commit, Loki and VictoriaLogs seeded once through the generator backfill, ending
 at a fixed minute, so base, PR and Loki see the same static window). VictoriaLogs
-holds 7h, Loki 1.5h: 15m and 1h are compared with Loki, 6h is base vs PR only. A
+holds at least 7h. Every shard uses the whole plan's widest range plus an hour
+for lookback and fixture rounding when it needs more history. Loki holds 1.5h: 15m and 1h are compared with Loki, 6h is base vs PR only. A
 warm-up page load of each kind comes first (a fresh Grafana loads the Drilldown app
 slowly), then the static captures and, for the ones whose data differed, a recapture,
 then, only when a Live tail entry was selected, the mirrored live generator and the tail
 captures (last: the generator writes into the streams the static windows read, and Loki's
-index/stats is an estimate from chunk metadata that moves while it writes). 24h and 7d stay out of PR CI
-(use the manual run).
+index/stats is an estimate from chunk metadata that moves while it writes).
+Retries use a fresh capture directory and require all expected sides before replacing a
+pair. The first-pass observations stay in the shard artifact.
 
 **Shards.** The workflow runs the capture in parallel jobs: `visual-plan` (the plan, the shard count and the
 one seed end), `visual-smoke-shard (N)` (one stack per shard, `ci_run.py --end <seed end> --shard N/K`), and

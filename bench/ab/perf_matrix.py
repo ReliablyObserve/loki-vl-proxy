@@ -65,6 +65,8 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from answers import error_text, query_rejection  # noqa: E402
+from selection import query_lookback  # noqa: E402
 import reuse  # noqa: E402
 import stack  # noqa: E402
 
@@ -144,6 +146,33 @@ def exact_repeat_end(end, shape, step):
 def shape_query(shape, step):
     """The shape's query with $__auto set to the range's step."""
     return shape.get("query", "").replace("$__auto", f"{step}s")
+
+
+def answer_proof(status, body, shape):
+    """An actual Loki answer, or a fingerprint of its semantic query rejection."""
+    try:
+        parsed = json.loads(body)
+    except (ValueError, UnicodeError):
+        parsed = None
+    if status != 200:
+        message = parsed.get("error") if isinstance(parsed, dict) else body.decode(errors="replace").strip()
+        if status in (400, 422, 500) and query_rejection(message):
+            return "rejection:" + hashlib.sha256(error_text(message).encode()).hexdigest()
+        return None
+    if not isinstance(parsed, dict) or parsed.get("status") == "error" or parsed.get("error"):
+        return None
+    data = parsed.get("data", parsed)
+    path = shape.get("path", "")
+    if path.endswith(("/detected_fields", "/detected_labels")):
+        field = "fields" if path.endswith("/detected_fields") else "detectedLabels"
+        valid = isinstance(data, list) or isinstance(data, dict) and (not data or isinstance(data.get(field), list))
+    elif path.endswith(("/labels", "/values", "/patterns")):
+        valid = isinstance(data, list)
+    elif path.endswith("/index/volume") and isinstance(data, dict) and "volumes" in data:
+        valid = isinstance(data["volumes"], list)
+    else:
+        valid = isinstance(data, dict) and isinstance(data.get("result"), list)
+    return "answer" if valid else None
 
 
 def request_url(base, shape, query, secs, step, run_end):
@@ -233,7 +262,7 @@ def query_key(shape):
     return (shape.get("path") or "", shape.get("query"))
 
 
-def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refresh_runs=0, margin=60):
+def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refresh_runs=0, margin=60, cells=None):
     """Non-overlapping window blocks, one per set, so no request repeats across sets.
 
     `sets` is [(set name, wanted shape names or empty for all)]. A set's block
@@ -259,7 +288,8 @@ def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refre
     plans, offset = [], 0
     for name, wanted in sets:
         shapes = [s for s in spec["sets"][name]["shapes"] if not wanted or s["name"] in wanted]
-        shift = max([shape_shift(s, r) for s in shapes for r in (["instant"] if s.get("instant") else ranges)]
+        shift = max([shape_shift(s, r) for s in shapes for r in
+                     (cells or {}).get(f"{name}/{s['name']}", ["instant"] if s.get("instant") else ranges)]
                     or [DEFAULT_SHIFT])
         # perf_matrix floors --end to the minute, so the plan records ends that are really sent.
         top = (end - offset) // 60 * 60
@@ -372,9 +402,9 @@ def signature(status, body, logs, ranked=False):
     """
     if status != 200:
         try:
-            return "ERR " + json.loads(body).get("error", "")[:90]
+            return "ERR " + error_text(json.loads(body).get("error", ""))[:90]
         except (ValueError, AttributeError):
-            return "ERR " + body[:90].decode(errors="replace")
+            return "ERR " + error_text(body.decode(errors="replace"))[:90]
     try:
         parsed = json.loads(body)
         # Loki answers detected_labels and detected_fields without a data wrapper.
@@ -503,6 +533,7 @@ def main():
     ap.add_argument("--quiet-cap-s", type=float, default=4.0, help="0 = no wait")
     ap.add_argument("--proxy-metrics", action="store_true",
                     help="read every proxy target's /metrics around each request: the cache reuse of the row (reuse.py)")
+    ap.add_argument("--range-plan", default="", help="existing selection.json with required per-shape runtime cells")
     ap.add_argument("--exact-repeat", action="store_true",
                     help="with --proxy-metrics: for every shape and range ask each proxy target the same request twice in a "
                          "row at a settled window (EXACT_REPEAT_AGE before the end) and keep what the second one cost, "
@@ -510,6 +541,10 @@ def main():
                          "calls expected. Recorded as exact_repeats in the raw file")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    range_plan = {}
+    if args.range_plan:
+        with open(args.range_plan) as f:
+            range_plan = json.load(f).get("runtime_proof", {}).get("cells", {})
     logs = dict(x.split("=", 1) for x in args.quiet_log)
 
     with open(args.shapes_file) as f:
@@ -555,6 +590,8 @@ def main():
         if exact and shape["name"] not in exact:
             continue
         shape_ranges = ["instant"] if shape.get("instant") else ranges
+        if range_plan:
+            shape_ranges = [r for r in shape_ranges if r in range_plan.get(f"{args.set}/{shape['name']}", [])]
         for rname in shape_ranges:
             pair += 1
             secs, step = range_defs.get(rname, (0, 0))
@@ -599,6 +636,10 @@ def main():
                            "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False),
                                                   query.lstrip().startswith(("topk", "bottomk"))),
                            "vl_cpu_max": None, "vl_cpu_avg": None, "at": int(t0)}
+                    row["response_bytes"] = len(body)
+                    if args.range_plan:
+                        row["answer_proof"] = answer_proof(status, body, shape)
+                        row["history_start"] = run_end - secs - query_lookback(query)
                     limit = ranked_max_points(query, secs, step, shape.get("instant", False))
                     if limit is not None:
                         row["ranked_max_points"] = limit
@@ -637,7 +678,7 @@ def main():
         row["vl_cpu_max"], row["vl_cpu_avg"] = sampler.between(t0, t0 + dt)
     restart1 = restarts()
     result = {"set": args.set, "description": shape_set.get("description", ""), "end": end, "runs": args.runs,
-               "targets": [t for t, _ in targets], "restart_before": restart0, "restart_after": restart1,
+               "runtime_proof": bool(args.range_plan), "targets": [t for t, _ in targets], "restart_before": restart0, "restart_after": restart1,
               "valid": not aborted and restart0 == restart1, "cpu_samples_missed": sampler.failed,
               "mode": "refresh" if args.refresh_s else "shifted", "refresh_s": args.refresh_s,
               "profile": args.profile, "not_like_for_like": args.not_like_for_like,

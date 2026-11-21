@@ -345,11 +345,19 @@ class ReportTests(unittest.TestCase):
                 "verdict.json": {"counts": {"faster": 999}}}},
             "visual": {"state": "completed", "conclusion": "failure", "artifacts": {
                 "verdict.json": {"captures": 3, "failures": ["bad <script>|row"],
-                                 "missing": ["fields 1h"], "improved": 0, "warnings": 1}}}}})
+                                 "missing": ["fields 1h"], "improved": 0, "warnings": 1,
+                                 "runtime_proof": {"measured_pairs": 2, "regressions": 1, "unproven": 1}}}}}})
         self.assertNotIn("999", report)
         self.assertIn("1 failures, 1 missing", report)
         self.assertIn("stale", report)
         self.assertNotIn("<script>", report)
+        self.assertIn("Grafana runtime: 2 base/PR pairs measured, 1 resource/time regressions, 1 incomplete proofs", report)
+
+    def test_required_api_runtime_gaps_are_visible_in_quality_report(self):
+        rendered = self.render(evidence={"sources": {"perf": {"state": "completed", "artifacts": {
+            "verdict.json": {"state": "failed", "runtime_proof": {"required": True, "complete": False, "problems": 2}}
+        }}}})
+        self.assertIn("Required API runtime proof incomplete (2 findings)", rendered)
 
     def test_ci_summary_and_failures_use_existing_run_scope(self):
         report = self.render(evidence={"sources": {"ci": {"state": "completed", "conclusion": "failure",

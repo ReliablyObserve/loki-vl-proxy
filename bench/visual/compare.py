@@ -24,11 +24,65 @@ from collections import defaultdict
 
 from vio import dump_json, load_json, write_text
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from bench.ab.answers import error_text, query_rejection  # noqa: E402
+
 
 # Request fields that differ between the three datasources or between page loads without changing the question.
 VOLATILE = {"datasource", "datasourceId", "requestId", "key", "uid", "queryCachingTTL"}
 # Frame meta that says how the answer was produced rather than what it is (stats, the executed query text).
 META_STABLE = ("type", "typeVersion", "preferredVisualisationType", "custom", "notices")
+
+
+def runtime_problems(main, pr, required=False, comparable=True):
+    """Existing captures supply runtime proof; absent measurements are never zero.
+
+    Resource/settlement changes beyond both noise guards enter the existing
+    re-capture and verdict path, rather than introducing another benchmark run.
+    """
+    if not required:
+        return []
+    fields = ("browser_thread_seconds", "browser_task_seconds", "js_heap_max_sampled_bytes",
+              "metric_samples", "api_requests", "api_encoded_bytes", "page_encoded_bytes")
+    problems = []
+    for side, capture in (("main", main), ("PR", pr)):
+        runtime = capture.get("runtime") or {}
+        settle = capture.get("settle_ms")
+        if isinstance(settle, bool) or not isinstance(settle, (int, float)) or not math.isfinite(settle) or settle < 0:
+            problems.append(f"runtime proof: {side} missing/invalid settle_ms")
+        if capture.get("settled") is not True:
+            problems.append(f"runtime proof: {side} did not settle")
+        banners = (capture.get("ui") or {}).get("banners", [])
+        if any(re.search(r"plugin (?:failed|unavailable|not found)|bad gateway|internal server error|"
+                         r"page state unreadable|cannot read propert|unexpected error", str(b), re.I) for b in banners):
+            problems.append(f"runtime proof: {side} Grafana UI infrastructure error")
+        nonempty = any(record.get("status") == 200 and has_data(record.get("response"))
+                       for record in capture.get("records", []))
+        for key in (*fields, *(("first_api_data_ms",) if nonempty else ())):
+            value = runtime.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                problems.append(f"runtime proof: {side} missing/invalid {key}")
+        first = runtime.get("first_api_data_ms")
+        if isinstance(first, (float, int)) and isinstance(settle, (float, int)) and first > settle:
+            problems.append(f"runtime proof: {side} first API data after settlement")
+        if runtime.get("metric_samples") in (0, 1) or runtime.get("js_heap_max_sampled_bytes") == 0:
+            problems.append(f"runtime proof: {side} browser heap was not sampled")
+        if runtime.get("api_requests") == 0 or runtime.get("sampling_error"):
+            problems.append(f"runtime proof: {side} capture did not measure API work successfully")
+    if problems or not comparable:
+        return problems
+    for key, minimum, label in (
+        ("browser_thread_seconds", 0.25, "browser thread CPU"),
+        ("js_heap_max_sampled_bytes", 32 << 20, "sampled browser heap"),
+        ("api_encoded_bytes", 64 << 10, "API encoded bytes"),
+    ):
+        before, after = main["runtime"][key], pr["runtime"][key]
+        if after > before * 1.25 and after - before > minimum:
+            problems.append(f"runtime regression: {label} {before:g} -> {after:g}")
+    before, after = main.get("settle_ms"), pr.get("settle_ms")
+    if isinstance(before, (int, float)) and isinstance(after, (int, float)) and after > before * 1.25 and after - before > 500:
+        problems.append(f"runtime regression: Grafana settlement {before:g} -> {after:g} ms")
+    return problems
 
 
 def strip(obj):
@@ -49,15 +103,6 @@ def signature(sch):
     fields = [(f.get("name"), f.get("type"), f.get("labels") or {}, (f.get("config") or {}).get("interval")) for f in sch["fields"]]
     meta = {k: (sch.get("meta") or {}).get(k) for k in META_STABLE if (sch.get("meta") or {}).get(k) is not None}
     return digest([fields, meta])
-
-
-# Loki's pipeline error names the first failing line its shards meet, so two answers of the same failing query
-# (Loki's, and a build that answers Loki's error) name different lines: the series is set aside, the rest compared.
-PIPELINE_ERROR_SERIES = re.compile(r"for series: '\{.*\}'\.", re.S)
-
-
-def error_text(text):
-    return PIPELINE_ERROR_SERIES.sub("for series: '{...}'.", str(text))
 
 
 # Grafana names each "Show context" query with a random suffix (log-row-context-query-_0.4374…), so the same
@@ -93,6 +138,84 @@ def frames_of(resp):
 CANCELLED = "request cancelled by the page"
 
 
+def query_key(r, q):
+    sq = {**q, "refId": stable_ref(q.get("refId"))}
+    return ("query", sq["refId"], q.get("expr"), q.get("queryType"), r["request"].get("from"),
+            r["request"].get("to"), digest(strip(sq)))
+
+
+def resource_key(r):
+    return ("resource", re.sub(r"(/api/datasources/(?:proxy/uid|uid|proxy))/[^/?]+", r"\1/*",
+                               r["url"].split("&_=")[0]))
+
+
+def has_data(body):
+    if isinstance(body, list):
+        return bool(body)
+    if not isinstance(body, dict):
+        return False
+    if "results" in body:
+        return any(not res.get("error") and any(any(col for col in frame.get("data", {}).get("values", []))
+                   for frame in res.get("frames", [])) for res in body["results"].values())
+    if body.get("status") == "error":
+        return False
+    data = body.get("data", body)
+    if isinstance(data, dict) and any(type(data.get(k)) in (int, float) and data[k] > 0 for k in ("entries", "streams")):
+        return True
+    if isinstance(data, list):
+        return bool(data)
+    return isinstance(data, dict) and any(isinstance(data.get(k), list) and data[k]
+                                          for k in ("result", "fields", "detectedLabels", "values", "series", "volumes"))
+
+
+def answer_evidence(capture):
+    """Classify each requested answer by its normalized identity, including error bodies on non-200s."""
+    rejected, problems, answered = defaultdict(list), [], set()
+    for record in capture.get("records", []):
+        if record.get("aborted"):
+            continue
+        status, body = record.get("status"), record.get("response")
+        if "/api/ds/query" in record["url"]:
+            queries = (record.get("request") or {}).get("queries", [])
+            results = body.get("results", {}) if isinstance(body, dict) else {}
+            answers = [(query_key(record, q), results.get(q.get("refId")), True) for q in queries]
+        else:
+            answers = [(resource_key(record), body, False)]
+        for key, result, query in answers:
+            response = result if result is not None else body
+            detail = (response.get("error") or response.get("message") or response.get("messageId")
+                      if isinstance(response, dict) else response if isinstance(response, str) else None)
+            code = result.get("status", status) if isinstance(result, dict) and query else status
+            explicit_error = any(isinstance(value, dict) and value.get("status") == "error" for value in (body, result))
+            if explicit_error or detail or code != 200 or status != 200:
+                if (code in (200, 400, 422, 500) and status in (200, 400, 422, 500)
+                        and query_rejection(detail)):
+                    rejected[key].append((status, code, error_text(detail)))
+                    answered.add(key)
+                else:
+                    problems.append("infrastructure error or unusable error response")
+            elif query and isinstance(result, dict) and isinstance(result.get("frames"), list):
+                answered.add(key)
+            elif not query and isinstance(body, (dict, list)):
+                if isinstance(body, dict):
+                    data = body.get("data", body)
+                    if not (isinstance(data, list) or isinstance(data, dict) and
+                            (any(isinstance(data.get(k), list) for k in ("result", "fields", "detectedLabels", "values", "volumes", "series"))
+                             or any(k in data for k in ("entries", "streams"))
+                             or "detected_" in record["url"] and set(data) <= {"limit"})):
+                        # Ancillary requests such as drilldown-limits do not establish the page's data answer.
+                        if re.search(r"/(?:labels?|detected_fields|detected_labels|values|index/stats|index/volume|patterns)(?:/|\?|$)",
+                                     record["url"]):
+                            problems.append("unusable API resource answer")
+                        continue
+                answered.add(key)
+            else:
+                problems.append("unusable API answer")
+    if not answered:
+        problems.append("no usable recorded API answer")
+    return {k: sorted(v) for k, v in rejected.items()}, answered, problems
+
+
 def records(path, raw=None, gaps=None):
     """(settled, {request key: [answer digests]}); raw, when given, gets the answers themselves in the same order.
 
@@ -113,9 +236,7 @@ def records(path, raw=None, gaps=None):
             reasons.append(str(r["body_unavailable"])[:160])
         if "/api/ds/query" in r["url"]:
             for q in (r["request"] or {}).get("queries", []):
-                sq = {**q, "refId": stable_ref(q.get("refId"))}
-                key = ("query", sq.get("refId"), q.get("expr"), q.get("queryType"), r["request"].get("from"), r["request"].get("to"),
-                       digest(strip(sq)))
+                key = query_key(r, q)
                 if missing_body:
                     keys.add(key)
                 recs[key].append({("capture", ""): ("capture", CANCELLED)} if cancelled else
@@ -125,7 +246,7 @@ def records(path, raw=None, gaps=None):
                 if raw is not None:
                     raw[key].append(((r["response"] or {}).get("results") or {}).get(q.get("refId")) if r["status"] == 200 else None)
         else:
-            key = ("resource", re.sub(r"/api/datasources/uid/[^/]+", "/api/datasources/uid/*", r["url"].split("&_=")[0]))
+            key = resource_key(r)
             body = r["response"]
             if raw is not None:
                 raw[key].append(body if r["status"] == 200 else None)
@@ -577,7 +698,15 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--loki-seconds", type=int, default=5400)
     a = ap.parse_args()
+    # A failed recapture must not leave the prior successful comparison to be gated.
+    for name in ("compare.json", "compare.md"):
+        path = os.path.join(a.out, name)
+        if os.path.exists(path):
+            os.unlink(path)
     spec = load_json(os.path.join(os.path.dirname(os.path.abspath(__file__)), "spec.json"))
+    plan_path = os.path.join(a.out, "plan.json")
+    plan = load_json(plan_path) if os.path.exists(plan_path) else {}
+    runtime_required = bool(plan.get("runtime_proof", {}).get("required"))
     rows, report = [], []
     allowed = spec.get("allowed_errors") or []  # substrings of error answers that are expected (documented in the README)
     for d in sorted(glob.glob(os.path.join(a.out, "data", "*", "*"))):
@@ -642,11 +771,62 @@ def main():
                          errors_pr=[e for e in errors(p, allowed) if not has_loki or e not in errors(l, allowed)],
                          errors_main=errors(m, allowed), errors_loki=errors(l, allowed) if has_loki else [],
                          loki_missing=bool(not has_loki and spec["ranges"][rng] <= a.loki_seconds)))
+        captures = {side: load_json(os.path.join(d, f"{side}.json"))
+                    for side in ("main", "pr", "loki") if os.path.exists(os.path.join(d, f"{side}.json"))}
+        row = rows[-1]
+        row["settle_s"] = {side: cap["settle_ms"] / 1000 for side, cap in captures.items()
+                           if isinstance(cap.get("settle_ms"), (int, float)) and not isinstance(cap["settle_ms"], bool)
+                           and math.isfinite(cap["settle_ms"]) and cap["settle_ms"] >= 0
+                           and (side != "loki" or row["loki_compared"])}
+        row["runtime_main"] = captures["main"].get("runtime")
+        row["runtime_pr"] = captures["pr"].get("runtime")
+        row["runtime_loki"] = captures.get("loki", {}).get("runtime") if row["loki_compared"] else None
+        row["runtime_problems"] = []
+        if runtime_required and (gap["main"]["keys"] or gap["pr"]["keys"]):
+            row["runtime_problems"].append("runtime proof: unreadable API bodies leave data completeness unproved")
+        if runtime_required and spec["ranges"][rng] <= a.loki_seconds:
+            if "loki" not in captures:
+                row["runtime_problems"].append("runtime proof: required smaller-range Loki reference is missing")
+            else:
+                row["runtime_problems"].extend("Loki reference: " + p for p in runtime_problems(captures["loki"], captures["loki"], required=True))
+                if not sl or not gap["loki"]["settled"] or gap["loki"]["keys"]:
+                    row["runtime_problems"].append("runtime proof: required Loki reference is incomplete or unreadable")
+        if runtime_required:
+            rejections, answered = {}, {}
+            for side, cap in captures.items():
+                rejections[side], answered[side], problems = answer_evidence(cap)
+                if side != "loki" or row["loki_compared"]:
+                    row["runtime_problems"].extend(f"runtime proof: {side} {message}" for message in set(problems))
+            if row["loki_compared"] and answered["pr"] - answered["loki"]:
+                row["runtime_problems"].append("runtime proof: required Loki reference lacks a corresponding API answer")
+            reference = rejections.get("loki", {})
+            # Rejecting a query and returning its successful result are different workloads.
+            # Compare PR and Loki on the actual request before accepting a correction.
+            corrected = set()
+            if row["loki_compared"]:
+                for key in rejections["main"].keys() & answered["pr"] & answered["loki"]:
+                    if key in rejections["pr"] or key in reference:
+                        continue
+                    _, _, different, _, _, _ = compare({key: p[key]}, {key: l[key]}, vs_loki=True, lenient=True)
+                    if not different:
+                        corrected.add(key)
+            for side in ("main", "pr"):
+                if any(reference.get(k) != v and (side != "main" or k not in corrected)
+                       for k, v in rejections[side].items()):
+                    row["runtime_problems"].append(f"runtime proof: {side} query rejection differs from Loki")
+            if row["loki_compared"] and any(rejections["pr"].get(k) != v for k, v in reference.items()):
+                row["runtime_problems"].append("runtime proof: required Loki reference rejection differs from PR")
+            if corrected:
+                row["corrected_base_rejections"] = [{"request": k, "errors": rejections["main"][k]}
+                                                    for k in sorted(corrected, key=str)]
+                row["base_comparison_note"] = "Base-relative resource and settlement changes unavailable: base rejected a query."
+            row["runtime_problems"].extend(runtime_problems(captures["main"], captures["pr"], required=True,
+                                                             comparable=not corrected))
     md = render_md(rows)
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)
     print("\n".join(md[:200]))
-    bad = [r for r in rows if r["main_pr_diffs"]]
+    bad = [r for r in rows if r["main_pr_diffs"] or r.get("runtime_problems")]
     sys.exit(1 if bad else 0)
 
 

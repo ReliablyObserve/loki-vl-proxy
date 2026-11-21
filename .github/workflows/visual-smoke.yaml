@@ -201,6 +201,7 @@ jobs:
           overwrite: true
           path: |
             ${{ env.OUT }}/montage/
+            ${{ env.OUT }}/first-pass/data/
             ${{ env.OUT }}/first-pass/montage/
             ${{ env.OUT }}/first-pass/compare.json
             ${{ env.OUT }}/first-pass/pixeldiff.json
@@ -274,7 +275,7 @@ jobs:
           mkdir -p "$OUT"
           # The whole plan, every shard's captures, and one check that each planned capture ran in exactly one shard.
           python3 bench/visual/merge.py --plan /tmp/visual-plan/plan.json --of "$SHARDS" --shards /tmp/visual-shards --out "$OUT" \
-            --base "$BASE" --head "$PR_HEAD"
+            --base "$BASE" --head "$PR_HEAD" --build-head "$GITHUB_SHA"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("shards:", [(s["index"], s["captures"], s.get("elapsed_s")) for s in d["shards"]])' "$OUT/meta.json"
 
       - name: Upload montages and results
@@ -537,7 +538,8 @@ jobs:
             const candidate = process.env.BASELINE === 'true'
               ? `\n\n<details open><summary>🧭 New baseline candidate</summary>\n\nThis pull request got the baseline run: every page of \`bench/visual/spec.json\` was captured at its own ranges. The full candidate is the \`visual-baseline-candidate\` artifact of ${runUrl}; only bounded inline review images were published, and the candidate was not accepted as a baseline.\n\n</details>\n`
               : '';
-            const text = body + candidate;
+            const artifacts = `\n\n[Complete visual measurements and verdict](${runUrl}#artifacts)\n`;
+            const text = body.slice(0, 64000 - candidate.length - artifacts.length) + candidate + artifacts;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
