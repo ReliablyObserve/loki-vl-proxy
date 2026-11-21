@@ -494,12 +494,10 @@ func TestAggregationOverBinaryMixedParsersAfterTheParserProbe(t *testing.T) {
 	}
 }
 
-// The parser probe leaves a binary, and an aggregation over one, to its
-// operands: each operand is its own handler's query and keeps its own parser
-// parser. A query of one operand that names both
-// parsers is still probed.
+// Each binary operand keeps its own parser. The ordered evaluator also keeps
+// both parsers on an admitted standalone mixed metric.
 //
-// conformance: semantics/aggregation-over-binary-dropped
+// conformance: semantics/aggregation-over-binary-dropped, semantics/two-parsers-keep-one
 func TestParserProbeLeavesBinariesToTheirOperands(t *testing.T) {
 	const (
 		amount = `sum by (job) (sum_over_time({app="uw"} | json | unwrap amount [5m]))`
@@ -514,7 +512,9 @@ func TestParserProbeLeavesBinariesToTheirOperands(t *testing.T) {
 		{`max(sum by (job) (` + amount + ` / ` + lines + `))`, true},
 		{`label_replace(sum by (job) (` + amount + ` / ` + lines + `), "dst", "$1", "job", "(.*)")`, true},
 		{`sum(` + amount + ` > bool 1) / ` + lines, true},
-		{`sum by (job) (count_over_time({app="uw"} | json | logfmt [5m]))`, false},
+		{`sum by (job) (count_over_time({app="uw"} | json | logfmt [5m]))`, true},
+		{`sum by (job) (count_over_time({app="uw"} | json | logfmt --strict [5m]))`, false},
+		{`sum by (job) (count_over_time({app="uw"} | json | logfmt --keep-empty [5m]))`, false},
 		{`count_over_time({app="uw"} | json | logfmt [5m])`, false},
 		{`topk(2, ` + amount + ` / ` + lines + `)`, false}, // no aggregation this path folds: unchanged routing
 	} {

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -125,18 +126,20 @@ type querySemanticsDepthPath struct {
 }
 
 type querySemanticsCase struct {
-	ID               string   `json:"id"`
-	Family           string   `json:"family"`
-	Endpoint         string   `json:"endpoint"`
-	Query            string   `json:"query"`
-	Step             string   `json:"step"`
-	Expectation      string   `json:"expectation"`
-	ExpectResultType string   `json:"expect_result_type"`
-	Compare          string   `json:"compare"`
-	RequireNonEmpty  bool     `json:"require_non_empty"`
-	KnownDeviation   string   `json:"known_deviation,omitempty"`
-	LineLimit        int      `json:"line_limit,omitempty"`
-	ExpectedFields   []string `json:"expected_fields,omitempty"`
+	ID                  string            `json:"id"`
+	Family              string            `json:"family"`
+	Endpoint            string            `json:"endpoint"`
+	Query               string            `json:"query"`
+	Step                string            `json:"step"`
+	Expectation         string            `json:"expectation"`
+	ExpectResultType    string            `json:"expect_result_type"`
+	Compare             string            `json:"compare"`
+	RequireNonEmpty     bool              `json:"require_non_empty"`
+	KnownDeviation      string            `json:"known_deviation,omitempty"`
+	LineLimit           int               `json:"line_limit,omitempty"`
+	ExpectedFields      []string          `json:"expected_fields,omitempty"`
+	ExpectedErrorLabels map[string]string `json:"expected_error_labels,omitempty"`
+	RequireEmptyGroup   bool              `json:"require_empty_group,omitempty"`
 }
 
 // querySemanticsLogEntries compares the full stream identity and every log
@@ -262,11 +265,20 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 		default:
 			return fmt.Errorf("unsupported query semantics expectation %q in case %q", tc.Expectation, tc.ID)
 		}
+		if len(tc.ExpectedErrorLabels) > 0 && tc.Compare != "pipeline_error" {
+			return fmt.Errorf("expected error labels in %q require a pipeline error", tc.ID)
+		}
 		if tc.Expectation != "success" {
+			if tc.Expectation == "client_error" && tc.Compare == "pipeline_error" && tc.KnownDeviation == "" {
+				continue
+			}
 			if tc.Compare != "" || tc.KnownDeviation != "" {
 				return fmt.Errorf("error outcome %q cannot declare a success comparison", tc.ID)
 			}
 			continue
+		}
+		if tc.RequireEmptyGroup && tc.Compare != "ordered_metric_points" {
+			return fmt.Errorf("case %q requires empty and named groups with an ordered metric comparison", tc.ID)
 		}
 		metric := tc.ExpectResultType == "matrix" || tc.ExpectResultType == "vector"
 		switch tc.Compare {
@@ -278,7 +290,7 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 			if tc.ExpectResultType != "streams" {
 				return fmt.Errorf("log-entry case %q must expect streams", tc.ID)
 			}
-		case "series_count", "metric_keys", "metric_points", "ranked_values", "any_non_empty":
+		case "series_count", "metric_keys", "metric_points", "ordered_metric_points", "ranked_values", "any_non_empty":
 			if !metric {
 				return fmt.Errorf("metric comparison %q must expect a matrix or vector", tc.ID)
 			}
@@ -517,6 +529,12 @@ func querySemanticsErrorType(resp map[string]interface{}) string {
 }
 
 func querySemanticsMetricKeySet(resp map[string]interface{}) []string {
+	keys := querySemanticsMetricKeyOrder(resp)
+	sort.Strings(keys)
+	return keys
+}
+
+func querySemanticsMetricKeyOrder(resp map[string]interface{}) []string {
 	data := extractMap(resp, "data")
 	results := extractArray(data, "result")
 	keys := make([]string, 0, len(results))
@@ -533,7 +551,6 @@ func querySemanticsMetricKeySet(resp map[string]interface{}) []string {
 		sort.Strings(parts)
 		keys = append(keys, strings.Join(parts, ","))
 	}
-	sort.Strings(keys)
 	return keys
 }
 
@@ -903,6 +920,24 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 	t.Logf("using isolated numeric tenant %s for query semantics fixtures", tenant)
 	ingestionAnchor = time.Now().Add(-3 * time.Minute)
 	ingestRichTestDataForTenant(t, tenant, ingestionAnchor)
+	// Distinct source streams collapse to the same kept labels. The separate
+	// one-row error fixture makes the complete failing series deterministic.
+	for _, pod := range []string{"a", "b"} {
+		pushStreamForTenant(t, ingestionAnchor, streamDef{
+			Labels: map[string]string{"app": "matrix-mixed-keep", "service_name": "matrix-mixed-keep", "x": "stored", "pod": pod, "query_semantics_run_id": tenant},
+			Lines:  []string{"{}"},
+		}, tenant)
+	}
+	pushStreamForTenant(t, ingestionAnchor, streamDef{
+		Labels: map[string]string{"app": "matrix-mixed-error", "service_name": "matrix-mixed-error", "query_semantics_run_id": tenant},
+		Lines:  []string{"tenant_id=amber"}, StructuredMetadata: map[string]string{"detected_level": "error", "region": "west"},
+	}, tenant)
+	// Only the first body has amount, and only the second has a colliding
+	// detected_level key. Neither stream labels nor stored VL fields supply a level.
+	pushStreamForTenant(t, ingestionAnchor, streamDef{
+		Labels: map[string]string{"app": "matrix-mixed-body-level", "service_name": "matrix-mixed-body-level", "query_semantics_run_id": tenant},
+		Lines:  []string{`level=error msg="r1" amount=1`, `level=error detected_level=shadow`},
+	}, tenant)
 	forceVLFlush(t)
 	waitForLokiMetricDataSelectorForTenant(t, `{app="api-gateway"}`, tenant)
 	matrix := loadQuerySemanticsMatrix(t)
@@ -966,7 +1001,16 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 				}
 
 				switch tc.Compare {
-				case "metric_points", "ranked_values":
+				case "metric_points", "ordered_metric_points", "ranked_values":
+					if tc.Compare == "ordered_metric_points" {
+						got, want := querySemanticsMetricKeyOrder(proxyResp), querySemanticsMetricKeyOrder(lokiResp)
+						if tc.RequireEmptyGroup && (len(want) < 2 || !slices.Contains(want, "")) {
+							t.Fatalf("expected Loki to return the empty set and named groups, got %q", want)
+						}
+						if !slices.Equal(got, want) {
+							t.Fatalf("metric series order %v, Loki %v", got, want)
+						}
+					}
 					responses := make([]map[string]map[string]string, 0, 2)
 					for _, backend := range []struct{ name, body string }{{"Loki", lokiBody}, {"proxy", proxyBody}} {
 						var response map[string]interface{}
@@ -1052,6 +1096,17 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 				}
 				if proxyStatus != lokiStatus {
 					t.Fatalf("expected matching 4xx status for %s, proxy=%d loki=%d proxyBody=%s lokiBody=%s", tc.ID, proxyStatus, lokiStatus, proxyBody, lokiBody)
+				}
+				if tc.Compare == "pipeline_error" {
+					got, want := strings.TrimSpace(proxyBody), strings.TrimSpace(lokiBody)
+					if !strings.HasPrefix(want, "pipeline error:") || got != want {
+						t.Fatalf("pipeline error %q, Loki %q", got, want)
+					}
+					for name, value := range tc.ExpectedErrorLabels {
+						if !strings.Contains(want, name+"="+strconv.Quote(value)) {
+							t.Fatalf("Loki error missing %s=%q: %s", name, value, want)
+						}
+					}
 				}
 				proxyPayloadStatus := querySemanticsStatusString(proxyResp)
 				lokiPayloadStatus := querySemanticsStatusString(lokiResp)

@@ -44,7 +44,7 @@ func orderedJSONVectorFenceKeywords(query string, other bool) bool {
 	if !other {
 		return orderedJSONVectorCandidate(query)
 	}
-	return nestedVectorKeywordsFold(query) || containsFold(query, "topk") || containsFold(query, "bottomk")
+	return nestedVectorKeywordsFold(query) || containsFold(query, "topk") || containsFold(query, "bottomk") || containsFold(query, "logfmt") && (containsFold(query, "sort") || containsFold(query, "keep"))
 }
 
 func affectedOrderedJSONVectorQuery(query string) bool {
@@ -83,13 +83,13 @@ func orderedJSONVectorPlan(query string) (*orderedJSONMetricPlan, []*logqlpkg.Ve
 }
 
 func orderedJSONVectorCandidate(query string) bool {
-	return strings.Contains(query, "json") && (translator.HasNestedVectorKeywords(query) || strings.Contains(query, "topk") || strings.Contains(query, "bottomk"))
+	return strings.Contains(query, "json") && (translator.HasNestedVectorKeywords(query) || strings.Contains(query, "topk") || strings.Contains(query, "bottomk") || strings.Contains(query, "logfmt") && (strings.Contains(query, "sort") || strings.Contains(query, "keep")))
 }
 
 // A parent expression can cache an answer evaluated through a nested operand.
 // Walk the AST rather than rendering it, which can lose ordered pipeline text.
 func containsOrderedJSONVectorExpr(expr logqlpkg.Expr) bool {
-	if _, _, ok := orderedJSONVectorExpr(expr); ok {
+	if _, _, ok := orderedJSONVectorExprFor(expr, false); ok {
 		return true
 	}
 	switch e := expr.(type) {
@@ -103,19 +103,46 @@ func containsOrderedJSONVectorExpr(expr logqlpkg.Expr) bool {
 }
 
 func orderedJSONVectorExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, []*logqlpkg.VectorAggregation, bool) {
+	return orderedJSONVectorExprFor(expr, true)
+}
+
+func orderedJSONVectorExprFor(expr logqlpkg.Expr, execute bool) (*orderedJSONMetricPlan, []*logqlpkg.VectorAggregation, bool) {
 	var outer []*logqlpkg.VectorAggregation
+	sorted := false
 	for {
 		agg, ok := expr.(*logqlpkg.VectorAggregation)
 		if !ok {
+			ra, bare := expr.(*logqlpkg.RangeAggregation)
+			if len(outer) == 0 || !bare || !mixedMetricRange(nil, true, ra) {
+				return nil, nil, false
+			}
+			if !execute {
+				return nil, outer, true
+			}
+			plan, ok := compileOrderedJSONMetricExpr(ra)
+			return plan, outer, ok
+		}
+		if len(outer) > 0 {
+			if !execute {
+				if ra, ok := agg.Inner.(*logqlpkg.RangeAggregation); ok && agg.Op == logqlpkg.VectorSum && mixedMetricRange(agg.Grouping, false, ra) {
+					return nil, outer, true
+				}
+			}
+			if plan, ok := compileOrderedJSONMetricExpr(expr); ok && plan.parser == "json" && (!sorted || plan.mixedParsers) {
+				return plan, outer, true
+			}
+		}
+		// A sum directly over a range supplies its own parser hints. It can
+		// only be the grouped leaf above or the direct metric handler's leaf.
+		if _, ranged := agg.Inner.(*logqlpkg.RangeAggregation); ranged && agg.Op == logqlpkg.VectorSum {
 			return nil, nil, false
 		}
-		if plan, ok := compileOrderedJSONMetricExpr(expr); ok && len(outer) > 0 && plan.parser == "json" {
-			return plan, outer, true
-		}
 		switch agg.Op {
+		case logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+			sorted = true
 		case logqlpkg.VectorSum, logqlpkg.VectorAvg, logqlpkg.VectorMin, logqlpkg.VectorMax, logqlpkg.VectorCount:
 		case logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
-			if !agg.HasParam || math.IsNaN(agg.Param) || math.IsInf(agg.Param, 0) || agg.Param >= float64(math.MaxInt) || agg.Param < float64(math.MinInt) {
+			if !orderedJSONRankSupported(agg) {
 				return nil, nil, false
 			}
 		default:
@@ -124,6 +151,10 @@ func orderedJSONVectorExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, []*logql
 		outer = append(outer, agg)
 		expr = agg.Inner
 	}
+}
+
+func orderedJSONRankSupported(agg *logqlpkg.VectorAggregation) bool {
+	return agg.HasParam && !math.IsNaN(agg.Param) && agg.Param < float64(math.MaxInt) && agg.Param >= float64(math.MinInt)
 }
 
 func (p *Proxy) handleOrderedJSONVectorMetric(w http.ResponseWriter, r *http.Request, requestStart time.Time, query string, isRange bool) bool {
@@ -160,9 +191,16 @@ func (p *Proxy) handleOrderedJSONVectorMetric(w http.ResponseWriter, r *http.Req
 	}()
 	body := buffered.body
 	if buffered.code == 0 || buffered.code == http.StatusOK {
+		sortMatrix := false
 		for index := len(outer) - 1; index >= 0; index-- {
 			agg := outer[index]
 			switch agg.Op {
+			case logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+				if isRange {
+					sortMatrix = true
+				} else {
+					body = applyInstantSortTopkAgg(body, instantMetricPostAgg{name: string(agg.Op)})
+				}
 			case logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
 				k := max(0, int(agg.Param))
 				if isRange {
@@ -177,6 +215,11 @@ func (p *Proxy) handleOrderedJSONVectorMetric(w http.ResponseWriter, r *http.Req
 					body = foldByGrouping(body, agg)
 				}
 			}
+		}
+		if sortMatrix && len(outer) > 1 {
+			// The mixed range serializer already placed a direct sort in label
+			// order. An intervening vector operator can rearrange its series.
+			body = sortSeriesByLabels(body, false)
 		}
 		var err error
 		body, err = p.capWithoutFold(r.Context(), body)

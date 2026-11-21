@@ -42,11 +42,12 @@ type pushdownRow struct {
 // copies a stored field, filter pipes compare stored or unpacked values and
 // stats buckets group by the named fields.
 type pushdownFakeVL struct {
-	mu     sync.Mutex
-	rows   []pushdownRow
-	stored func(string) string // Loki label -> stored spelling
-	stats  []string
-	guards []string
+	projectRaw bool // apply the fields pipe even when a raw read has no filter pipe
+	mu         sync.Mutex
+	rows       []pushdownRow
+	stored     func(string) string // Loki label -> stored spelling
+	stats      []string
+	guards     []string
 	// candidates holds the candidate probes of the logfmt parse-risk probe
 	// (isLogfmtCandidateProbe), which guards leaves out.
 	candidates []string
@@ -256,6 +257,14 @@ func (f *fakeLogsQLFilter) term() bool {
 
 func (f *fakeLogsQLFilter) factor() bool {
 	f.skipSpace()
+	if f.peek("NOT ") {
+		f.pos += len("NOT ")
+		return !f.factor()
+	}
+	if f.peek("~") {
+		f.pos++
+		return fakeRegexp(f.quoted()).MatchString(f.vals["_msg"])
+	}
 	if f.peek("-") || f.peek("!") {
 		f.pos++
 		return !f.factor()
@@ -1016,8 +1025,15 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(sb.String()))
 		case "/select/logsql/query":
-			start := parseFakeVLTime(t, r.Form.Get("start"))
-			end := parseFakeVLTime(t, r.Form.Get("end"))
+			start, end := int64(math.MinInt64), int64(math.MaxInt64)
+			// Only the legacy parser discovery sample may omit instant bounds.
+			probe := r.Form.Get("limit") == "25"
+			if v := r.Form.Get("start"); v != "" || !probe {
+				start = parseFakeVLTime(t, v)
+			}
+			if v := r.Form.Get("end"); v != "" || !probe {
+				end = parseFakeVLTime(t, v)
+			}
 			if isLevelPresenceQuery(query) {
 				fake.mu.Lock()
 				fake.presenceCalls = append(fake.presenceCalls, query)
@@ -1082,7 +1098,7 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 				for k, v := range row.vl {
 					encoded[k] = v
 				}
-				if !guard && strings.Contains(query, " | filter ") {
+				if !guard && (strings.Contains(query, " | filter ") || fake.projectRaw && strings.Contains(query, " | fields ")) {
 					// The raw rows of a split plan: what the pipes leave of
 					// each selected row.
 					values, kept := fake.applyPipes(t, query, row)

@@ -394,6 +394,7 @@ func fenceWants(query string) map[string]bool {
 	}
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
 		want["ordered-json-vector"] = containsOrderedJSONVectorExpr(rexpr)
+		want["mixed-parser-metric"] = containsMixedParserMetric(rexpr)
 	}
 	if spec, ok := parseBareParserMetricCompatSpec(resolved); ok && strings.Contains(spec.baseQuery, "| json") {
 		want["bare-json-metric"] = true
@@ -719,11 +720,17 @@ func fenceFires(name, query string) bool {
 		"reserved-field-case":      func() string { return reservedFieldCaseResponseKeyVersion(query) },
 		"reserved-field-labels":    func() string { return reservedFieldLabelResponseKeyVersion(query) },
 		"keyword-label-names":      func() string { return keywordLabelResponseKeyVersion(query) },
-		"ordered-json-vector":      func() string { return orderedJSONVectorResponseKeyVersion(r, query) },
-		"bare-json-metric":         func() string { return bareJSONMetricResponseKeyVersion(r, query) },
-		"logfmt-presence":          func() string { return logfmtPresenceResponseKeyVersion(r, query) },
-		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
-		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
+		"mixed-parser-metric": func() string {
+			if strings.Contains(responseKeyFences(r, query, responseKeyCompatQuery), mixedParserMetricResponseVersion) {
+				return mixedParserMetricResponseVersion
+			}
+			return ""
+		},
+		"ordered-json-vector":     func() string { return orderedJSONVectorResponseKeyVersion(r, query) },
+		"bare-json-metric":        func() string { return bareJSONMetricResponseKeyVersion(r, query) },
+		"logfmt-presence":         func() string { return logfmtPresenceResponseKeyVersion(r, query) },
+		"stream-level-series":     func() string { return streamLevelSeriesResponseKeyVersion(query) },
+		"unwrap-dynamic-identity": func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
 		"rank-over-binary": func() string {
 			return rankOverBinaryFence(query)
 		},
@@ -803,6 +810,18 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"keyword-label-names", "{a=\"b\"} | drop éKeep", false},
 		{"keyword-label-names", `{a="b"} | json | unwrap n`, false},
 		{"keyword-label-names", `{a="b"} | JSON | UNWRAP n`, false},
+		{"mixed-parser-metric", `max(sum by (x) (count_over_time({a="b"} | JSON x="[\"x\"]" | LOGFMT | drop __error__, __error_details__ | x!="" [5m])))`, true},
+		{"mixed-parser-metric", "sum by (x) (count_over_time({a=\"b\"} | json | Keep x | # parser\n logfmt [5m])) + 1", true},
+		{"mixed-parser-metric", `count_over_time({a="b"} | logfmt | json | keep x [5m])`, true},
+		{"mixed-parser-metric", `count_over_time({a="b"} | logfmt --strict | json | keep x [5m])`, false},
+		{"mixed-parser-metric", `sort_desc(sum by (x) (count_over_time({a="b"} | logfmt | json [5m])))`, true},
+		{"mixed-parser-metric", `sort(label_replace(sum by (x)(rate({a="b"} | json | logfmt [5m])), "copy", "$1", "x", "(.+)"))`, false},
+		{"mixed-parser-metric", `sort(label_replace(sum by (x)(rate({a="b"} | json | logfmt [5m])) + 1, "copy", "$1", "x", "(.+)"))`, true},
+		{"mixed-parser-metric", `label_replace(sort(sum by (x)(rate({a="b"} | json | logfmt [5m]))), "copy", "$1", "x", "(.+)")`, true},
+		{"mixed-parser-metric", `1 + sum by (x) (count_over_time({a="b"} | LOGFMT | JSON [5m]))`, true},
+		{"mixed-parser-metric", `sum by (x) (count_over_time({a="| logfmt"} | json [5m]))`, false},
+		{"mixed-parser-metric", `sum by (x) (count_over_time({a="b"} | logfmt --strict | json [5m]))`, false},
+		{"mixed-parser-metric", `{a="b"} | json | logfmt`, false},
 		{"ordered-json-vector", `bottomk(2, sum by (x) (count_over_time({a="b"} | json [5m])))`, true},
 		{"ordered-json-vector", `BOTTOMK(2, SUM BY (x) (COUNT_OVER_TIME({a="b"} | JSON [5m])))`, true},
 		{"ordered-json-vector", `sum by (x) (sum by (y) (count_over_time({a="b"} | json [5m])))`, true},

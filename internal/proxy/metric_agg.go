@@ -715,7 +715,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 
 	r = p.withRequestScope(r)
 	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
-	if holdsBinaryOperand(parsedInner) {
+	binaryOperand := holdsBinaryOperand(parsedInner)
+	if binaryOperand {
 		// The operands of a binary expression fold on their own.
 		withoutLabels = nil
 	}
@@ -790,10 +791,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		return
 	}
 
-	result := applyMatrixPostAggregation(bw.body, postAgg)
-	if rankFirst {
-		result = transforms.apply(result)
-	}
+	result, mixedSort := postAgg.rankRangeOperand(bw.body, parsedInner, binaryOperand, rankFirst, transforms)
 	if foldWithout {
 		var capErr error
 		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
@@ -815,6 +813,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
+	if mixedSort {
+		result = sortSeriesByLabels(result, false)
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -825,6 +826,22 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		p.metrics.RecordRequest("query_range", code, elapsed)
 		p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 	}
+}
+
+// rankRangeOperand applies the per-step aggregation and deferred label transforms.
+// It reports whether the final matrix needs label-set ordering after the outer folds.
+func (postAgg instantMetricPostAgg) rankRangeOperand(body []byte, parsedInner logqlpkg.Expr, binaryOperand, rankFirst bool, transforms labelTransforms) ([]byte, bool) {
+	// For a sorted mixed operand, Loki orders a range by its final label sets.
+	// Its instant value ordering does not rank or remove matrix series.
+	mixedSort := binaryOperand && (postAgg.name == "sort" || postAgg.name == "sort_desc") && containsMixedParserMetric(parsedInner)
+	result := body
+	if !mixedSort {
+		result = applyMatrixPostAggregation(result, postAgg)
+	}
+	if rankFirst {
+		result = transforms.apply(result)
+	}
+	return result, mixedSort
 }
 
 func (p *Proxy) proxyRankedTopKRange(sc *statusCapture, innerR *http.Request, stats physical.VLStats, postAgg instantMetricPostAgg) bool {

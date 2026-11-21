@@ -91,6 +91,12 @@ func keepSeriesGroupingRange(ra *logqlpkg.RangeAggregation) (logqlpkg.Expr, bool
 	if !ok {
 		return ra, false
 	}
+	// A synthetic sum would allow Loki's parser hints to skip a later
+	// parser once the kept labels have been extracted. The ordered metric
+	// evaluates the bare request with its original hints and cache identity.
+	if mixedMetricRange(nil, true, ra) {
+		return ra, false
+	}
 	if pipeline, cut := withoutBlankKeep(lq.Pipeline); cut {
 		// The aggregation and its log query in one allocation, apart from the parsed tree, which may be shared.
 		inner := &struct {

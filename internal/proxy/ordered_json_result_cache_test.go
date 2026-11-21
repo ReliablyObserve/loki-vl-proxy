@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ import (
 // conformance: loki_api_v1_query_range, parser-error-and-label-collision
 func TestOrderedJSONResultCacheExactRepeat(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
-	for _, shape := range dlvBaselineShapes {
+	for _, shape := range append(slices.Clone(dlvBaselineShapes), dlvBaselineShape{name: "mixed", pipeline: "| json | logfmt | drop __error__, __error_details__", tagged: true}) {
 		t.Run(shape.name, func(t *testing.T) {
 			backend, fixture := newDLVBaselineBackend(t, shape, base)
 			p := newDLVBaselineProxy(t, backend.URL, false)

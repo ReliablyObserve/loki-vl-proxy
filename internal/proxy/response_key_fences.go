@@ -6,6 +6,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
@@ -116,7 +118,66 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		// The compat edge looks its cache up before the handler validates the query.
 		b.add(runeResponseKeyVersion(query))
 	}
+	if jsonWord && logfmtWord {
+		resolved := fenceVariablesResolved(query)
+		if expr, ok := sharedLogQLExpr(resolved); ok && containsMixedParserMetric(expr) {
+			b.add(mixedParserMetricResponseVersion)
+		}
+	}
 	return b.String()
+}
+
+const mixedParserMetricResponseVersion = "@ordered-mixed-parser-metric-v1:"
+
+// The original range with a trailing keep and an explicitly grouped sum
+// produce different Loki parser hints. Both identities reach the same row
+// evaluator and keep their own response keys, including before offset handling.
+func mixedMetricRange(group *logqlpkg.Grouping, bare bool, ra *logqlpkg.RangeAggregation) bool {
+	if ra.Grouping != nil || ra.RangeDuration <= 0 {
+		return false
+	}
+	switch ra.Op {
+	case logqlpkg.RangeCountOverTime, logqlpkg.RangeRate, logqlpkg.RangeBytesOverTime, logqlpkg.RangeBytesRate:
+	default:
+		return false
+	}
+	log, ok := ra.Inner.(*logqlpkg.LogQuery)
+	return ok && mixedMetricStages(group, bare, log.Pipeline, queryplan.ParserSemantics(log.Pipeline))
+}
+
+// Follow the leaves evaluated by the ordered vector chain and the existing
+// operand and outer label_replace handlers. Ranking a transformed binary
+// dispatches the operand through its own HTTP handler.
+func containsMixedParserMetric(expr logqlpkg.Expr) bool {
+	switch n := expr.(type) {
+	case *logqlpkg.BinOpExpr:
+		return containsMixedParserMetric(n.Left) || containsMixedParserMetric(n.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return n.Typed && n.Func == "label_replace" && containsMixedParserMetric(n.Inner)
+	case *logqlpkg.RangeAggregation:
+		return mixedMetricRange(nil, true, n)
+	case *logqlpkg.VectorAggregation:
+		if ra, ok := n.Inner.(*logqlpkg.RangeAggregation); ok && n.Op == logqlpkg.VectorSum {
+			return mixedMetricRange(n.Grouping, false, ra)
+		}
+		_, transformed := n.Inner.(*logqlpkg.OpaqueMetricExpr)
+		switch n.Op {
+		case logqlpkg.VectorSum, logqlpkg.VectorMin, logqlpkg.VectorMax, logqlpkg.VectorAvg, logqlpkg.VectorCount:
+			return !transformed && containsMixedParserMetric(n.Inner)
+		case logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
+			if !orderedJSONRankSupported(n) {
+				return false
+			}
+		case logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+		default:
+			return false
+		}
+		// A ranking dispatches a transformed binary through its own query
+		// handler. A transform over a direct range has no such recursive route.
+		return (!transformed || holdsBinaryOperand(n.Inner)) && containsMixedParserMetric(n.Inner)
+	default:
+		return false
+	}
 }
 
 // fenceVariablesResolved is query with its Grafana range variables (`[$__interval]`, `[$__auto]`, `[$__range]`,

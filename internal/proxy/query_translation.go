@@ -751,7 +751,8 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 // aggregation over one, under any label transforms: its operands are
 // evaluated through their own handlers, each probing its own query, and the
 // binary reads them from the request, so each keeps its own parser as Loki
-// evaluates it (a step evaluator per side).
+// evaluates it (a step evaluator per side). A wrapper over an ordered mixed parser
+// metric also keeps its stages until its inner evaluator reads them.
 // Dropping one parser from the whole query would take it from the operand
 // that needs it, and the text rewrite of a metric query (removeParserStage)
 // cuts everything after a stage that is the last before its range.
@@ -761,7 +762,7 @@ func operandsKeepTheirParsers(logql string) bool {
 		return false
 	}
 	_, _, aggregated := binaryAggregationChain(expr)
-	return aggregated || isBinaryExpr(expr)
+	return aggregated || isBinaryExpr(expr) || containsMixedParserMetric(expr)
 }
 
 func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end string) string {
@@ -771,6 +772,9 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		return logql
 	}
 
+	// Mixed metric requests retain logfmt flags until typed admission above.
+	// The existing sampled fallback evaluates them as unflagged logfmt.
+	logql = logqlpkg.StripParserFlags(logql)
 	baseQuery := extractParserProbeQuery(logql)
 	if baseQuery == "" {
 		baseQuery = logql

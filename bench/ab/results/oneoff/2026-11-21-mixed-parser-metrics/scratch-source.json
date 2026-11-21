@@ -1,0 +1,7 @@
+{
+  "scope": "Final candidate versus the same source with only scratch reuse removed; not main versus PR.",
+  "candidate": "internal/proxy/ordered_json_metric.go",
+  "control": "The same candidate file with scratch-only.patch.gz (decompress before applying) reverted; no other product change.",
+  "candidate_sha256": "6fdc4978d68af221a562b524c9249894169afc1f3bc868b07ebd7f9393852ae2",
+  "control_sha256": "a48b6e577a1a8b70eee69e32dbd90fd22b02dc835d9458ea32627c753b80328c"
+}

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +22,7 @@ import (
 // conformance: loki_api_v1_query_range, window-bounds-and-step-alignment, quality/query-range-settled-steps
 func TestOrderedJSONSettledStepsReuse(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
-	for _, shape := range dlvBaselineShapes {
+	for _, shape := range append(slices.Clone(dlvBaselineShapes), dlvBaselineShape{name: "mixed", pipeline: "| logfmt | json | drop __error__, __error_details__ | keep detected_level", tagged: true}) {
 		t.Run(shape.name, func(t *testing.T) {
 			backend, fixture := newDLVBaselineBackend(t, shape, base)
 			var mu sync.Mutex
@@ -75,6 +76,56 @@ func TestOrderedJSONSettledStepsReuse(t *testing.T) {
 				t.Fatal("different phase did not evaluate its own window")
 			}
 		})
+	}
+}
+
+// A mixed range orders labels by name/value pairs. Groups that occur in
+// separate windows must keep that order when previously settled points join.
+// conformance: semantics/two-parsers-keep-one, quality/query-range-settled-steps
+func TestOrderedMixedSettledStepsSeriesOrder(t *testing.T) {
+	at := time.Unix(1700000400, 0).UTC()
+	var rows []pushdownRow
+	for i, group := range []map[string]string{{}, {"x": "a"}, {"x": "z"}, {"x": "a!"}, {"x": "aa", "y": "1"}} {
+		ts := at
+		if i >= 3 {
+			ts = at.Add(2 * time.Minute)
+		}
+		stream := map[string]string{"app": "api"}
+		for name, value := range group {
+			stream[name] = value
+		}
+		rows = append(rows, pushdownRow{ts: ts, stream: stream, msg: "{}"})
+	}
+	backend, fake := newPushdownFakeVL(t, rows, func(key string) string { return key })
+	on, off := newDLVBaselineProxy(t, backend.URL, false), newDLVBaselineProxy(t, backend.URL, false)
+	on.queryRangeExtentCache, on.queryRangeExtentCacheTTL = true, time.Hour
+	get := func(p *Proxy, end time.Time) *httptest.ResponseRecorder {
+		params := url.Values{"query": {`sum by (x,y) (count_over_time({app="api"} | logfmt | json | drop __error__ [1m]))`},
+			"start": {at.Format(time.RFC3339Nano)}, "end": {end.Format(time.RFC3339Nano)}, "step": {"60"}}
+		return doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	}
+	end := at.Add(2 * time.Minute)
+	want := get(off, end)
+	if want.Code != http.StatusOK || !strings.Contains(want.Body.String(), `"x":"aa","y":"1"`) {
+		t.Fatal("cold range", want.Body)
+	}
+	if first := get(on, at.Add(time.Minute)); first.Code != http.StatusOK {
+		t.Fatal(first.Body)
+	}
+	on.statsExtentStores.wait()
+	fake.mu.Lock()
+	before := fake.raw
+	fake.mu.Unlock()
+	got := get(on, end)
+	on.statsExtentStores.wait()
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if got.Code != want.Code || !bytes.Equal(got.Body.Bytes(), want.Body.Bytes()) {
+		t.Errorf("merged range %d %s, whole %d %s", got.Code, got.Body, want.Code, want.Body)
+	}
+	gaps := fake.rawQueries[before:]
+	if len(gaps) != 1 || gaps[0].start < at.Add(time.Minute).UnixNano() {
+		t.Errorf("expected only the final evaluation gap, got %+v", gaps)
 	}
 }
 

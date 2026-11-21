@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/metricparity"
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
 const recordedParserMatrixDir = "../../test/e2e-compat/testdata/parser-error-matrix/2026-11-01-exact-fence"
@@ -470,4 +471,355 @@ func TestOrderedJSONRecordedPipelineDiagnostic(t *testing.T) {
 			}
 		})
 	}
+}
+
+// conformance: semantics/two-parsers-keep-one
+func TestOrderedMixedParserRecordedMetrics(t *testing.T) {
+	at := time.Unix(1700000400, 0).UTC()
+	var rows []pushdownRow
+	for i, line := range []string{
+		`{"tenant_id":"blue","tenant_id":"duplicate","note":" tenant_id=shadow "}`,
+		`tenant_id=green tenant_id=other`, `tenant_id=""`, `{"other":"missing"}`,
+		`{"tenant_id":"before","truncated":`, `{"tenant\u005fid":"escaped"}`,
+		`{"tenant_id":"meta-collision"}`, `tenant_id=meta-collision`, `tenant_id=stream-collision`,
+	} {
+		row := pushdownRow{ts: at.Add(time.Duration(i) * time.Millisecond), msg: line, stream: map[string]string{"app": "api"}}
+		if i == 6 || i == 7 {
+			row.vl = map[string]string{"tenant_id": "meta"}
+			row.loki = row.vl
+		}
+		if i == 8 {
+			row.stream["tenant_id"] = "stream"
+		}
+		rows = append(rows, row)
+	}
+	base := func(group, pipe string) string {
+		return "sum by (" + group + ") (count_over_time({app=\"api\"} " + pipe + " [1m]))"
+	}
+	explicit := `| json tenant_id="[\"tenant_id\"]" | logfmt | drop __error__, __error_details__ | tenant_id!=""`
+	var queries []string
+	for _, pipe := range []string{explicit, `| json | logfmt | drop __error__, __error_details__`, `| logfmt | json | drop __error__, __error_details__`,
+		`| json | __error__="" | logfmt`, `| logfmt | keep tenant_id | json | __error__=""`,
+		`| json | drop tenant_id, __error__ | logfmt`, `| json | logfmt | __error__!="" | drop __error__`,
+	} {
+		queries = append(queries, base("tenant_id", pipe))
+	}
+	queries = append(queries, base("tenant_id_extracted", explicit))
+	child := queries[0]
+	// The unfiltered grouping includes both the empty set and named groups.
+	withEmptyGroup := queries[1]
+	transformedBinary := `label_replace(%s + 1,"copy","$1","tenant_id","(.+)")`
+	for _, rank := range []string{"sort", "sort_desc"} {
+		queries = append(queries, rank+"("+withEmptyGroup+")", rank+"("+fmt.Sprintf(transformedBinary, child)+")")
+	}
+	for _, fn := range []string{"rate", "bytes_over_time", "bytes_rate"} {
+		queries = append(queries, strings.Replace(child, "count_over_time", fn, 1))
+	}
+	for _, filter := range []string{`|= "no-such-value" or "green"`, `!= "no-such-value" or "green"`,
+		`|~ "no-such-value" or "gr[e]+n"`, `!~ "no-such-value" or "gr[e]+n"`} {
+		queries = append(queries, base("tenant_id", filter+` | json | logfmt | drop __error__, __error_details__`))
+	}
+	queries = append(queries, child+" + "+queries[2], queries[2]+" + "+child)
+	for _, wrapper := range []string{"sort(%s)", "sort_desc(%s)", "max(%s)", "topk(10,%s)", `label_replace(%s,"copy","$1","tenant_id","(.+)")`, "%s + 1", "1 + %s"} {
+		queries = append(queries, fmt.Sprintf(wrapper, child))
+	}
+	set := oraclerun.EngineDataSet{Streams: pushdownEngineStreams(rows)}
+	// A single non-JSON row makes the complete failing-series diagnostic deterministic.
+	metadata := map[string]string{"detected_level": "error", "region": "west"}
+	errorRows := []pushdownRow{{ts: at, msg: "tenant_id=amber", stream: map[string]string{"app": "api"}, loki: metadata, vl: metadata}}
+	// Loki's ingester attaches this level. The engine reads the ingest metadata
+	// while the VL evaluator receives only the original message and stream.
+	bodyLevel := map[string]string{"detected_level": "error"}
+	levelRows := []pushdownRow{{ts: at, msg: `level=error msg="r1" amount=1`, stream: map[string]string{"app": "lv"}, loki: bodyLevel}}
+	collisionRows := []pushdownRow{{ts: at, msg: `level=error detected_level=shadow`, stream: map[string]string{"app": "lv"}, loki: bodyLevel}}
+	levelSet := oraclerun.EngineDataSet{Streams: pushdownEngineStreams(levelRows)}
+	collisionSet := oraclerun.EngineDataSet{Streams: pushdownEngineStreams(collisionRows)}
+	// A common valid JSON/logfmt line distinguishes rewrite and fallback ownership
+	// without depending on the open strict-logfmt malformed-input behavior.
+	keepRows := []pushdownRow{
+		{ts: at, msg: "{}", stream: map[string]string{"app": "api", "x": "stored", "pod": "a"}},
+		{ts: at.Add(time.Millisecond), msg: "{}", stream: map[string]string{"app": "api", "x": "stored", "pod": "b"}},
+	}
+	keepSet := oraclerun.EngineDataSet{Streams: pushdownEngineStreams(keepRows)}
+	errorsSet := oraclerun.EngineDataSet{Streams: pushdownEngineStreams(errorRows)}
+	bad := base("tenant_id", `| logfmt | drop __error__ | json`)
+	for _, step := range []time.Duration{0, 30 * time.Second} {
+		add := func(set *oraclerun.EngineDataSet, query string) {
+			set.Requests = append(set.Requests, lokiMetricRequest(fmt.Sprintf("%s/%v", query, step), query, at.UnixNano(), at.Add(30*time.Second).UnixNano(), step))
+		}
+		for _, pipe := range []string{`| logfmt | json`, `| logfmt | keep detected_level | json`,
+			`| logfmt | keep app | json`, `| logfmt | drop detected_level | json`,
+			`| logfmt | json | drop __error__, __error_details__`} {
+			add(&levelSet, `sum by (missing) (count_over_time({app="lv"} `+pipe+` [1m]))`)
+		}
+		add(&collisionSet, `sum by (detected_level_extracted, missing) (count_over_time({app="lv"} | logfmt | json [1m]))`)
+		add(&collisionSet, `sum by (missing) (count_over_time({app="lv"} | logfmt | detected_level_extracted="shadow" | json [1m]))`)
+		for _, q := range queries {
+			add(&set, q)
+		}
+		for _, flag := range []string{"", " --strict", " --keep-empty"} {
+			add(&keepSet, `count_over_time({app="api"} | logfmt`+flag+` | json | keep x [1m])`)
+		}
+		bareKeep := `count_over_time({app="api"} | logfmt | json | keep x [1m])`
+		for _, fn := range []string{"rate", "bytes_over_time", "bytes_rate"} {
+			add(&keepSet, strings.Replace(bareKeep, "count_over_time", fn, 1))
+		}
+		for _, wrap := range []string{"sort(%s)", "sort_desc(%s)", "max(%s)", "topk(2,%s)", `label_replace(%s,"copy","$1","x","(.+)")`, "%s + 1", "1 + %s"} {
+			add(&keepSet, fmt.Sprintf(wrap, bareKeep))
+			add(&errorsSet, fmt.Sprintf(wrap, strings.Replace(bareKeep, "keep x", "keep tenant_id", 1)))
+		}
+		for _, rank := range []string{"sort", "sort_desc"} {
+			badInner := base("tenant_id, missing", `| logfmt | drop __error__ | json`)
+			add(&errorsSet, rank+"("+fmt.Sprintf(transformedBinary, badInner)+")")
+		}
+		for _, kept := range []string{"tenant_id", "missing"} {
+			add(&errorsSet, `count_over_time({app="api"} | logfmt | json | keep `+kept+` [1m])`)
+		}
+		for _, wrap := range []string{"%s", "sort(%s)", "sort_desc(%s)", "max(%s)", "topk(2,%s)", `label_replace(%s,"copy","$1","tenant_id","(.+)")`, "%s + 1", "1 + %s"} {
+			add(&errorsSet, fmt.Sprintf(wrap, bad))
+			add(&errorsSet, fmt.Sprintf(wrap, base("tenant_id, missing", `| logfmt | drop __error__ | json`)))
+		}
+	}
+	sets := []oraclerun.EngineDataSet{set, errorsSet, keepSet, levelSet, collisionSet}
+	answers := lokiEngineAnswers(t, "ordered_mixed_parser_metrics", sets)
+	for i, set := range sets {
+		fixture := rows
+		switch i {
+		case 1:
+			fixture = errorRows
+		case 2:
+			fixture = keepRows
+		case 3:
+			fixture = levelRows
+		case 4:
+			fixture = collisionRows
+		}
+		backend, fake := newPushdownFakeVL(t, fixture, func(s string) string { return s })
+		fake.projectRaw = true
+		p := newTestProxy(t, backend.URL)
+		for _, req := range set.Requests {
+			t.Run(req.ID, func(t *testing.T) {
+				route := "query_range"
+				if req.Instant {
+					route = "query"
+				}
+				want := answers[req.ID]
+				requestProxy := p
+				if strings.Contains(req.ID, "(label_replace(") {
+					// Exercise the cold parent and its recursive operand even when a
+					// previous fixture query warmed the exact inner expression.
+					requestProxy = newTestProxy(t, backend.URL)
+				}
+				sorted := strings.HasPrefix(req.ID, "sort")
+				fake.mu.Lock()
+				raw, stats := fake.raw, len(fake.stats)
+				fake.mu.Unlock()
+				got := doCompatProxyRequest(requestProxy, "/loki/api/v1/"+route+"?"+req.Form, nil)
+				if sorted {
+					fake.mu.Lock()
+					reads, buckets := fake.raw-raw, len(fake.stats)-stats
+					var probes int
+					for _, read := range fake.rawQueries[raw:] {
+						if strings.HasSuffix(read.query, "| sort by (_time desc)") {
+							probes++
+						}
+					}
+					fake.mu.Unlock()
+					if reads == 0 || buckets != 0 || probes != 0 {
+						t.Fatalf("sorted operand used %d raw reads, %d stats queries, %d parser probes", reads, buckets, probes)
+					}
+				}
+				if got.Code != want.Status {
+					t.Fatalf("status %d, Loki %d: %s / %s", got.Code, want.Status, got.Body, want.Error)
+				}
+				if want.Status == 400 {
+					if strings.TrimSpace(got.Body.String()) != strings.TrimSpace(want.Error) {
+						t.Fatalf("diagnostic %q, Loki %q", got.Body.String(), want.Error)
+					}
+					return
+				}
+				if want.Status != 200 {
+					t.Fatalf("unusable Loki answer %d: %s", want.Status, want.Error)
+				}
+				if err := recordedParserDifference(recordedParserCase{Status: 200, Response: want.Body}, got.Code, got.Body.Bytes()); err != nil {
+					t.Fatal(err)
+				}
+				// Instant ranks order values and leave equal-value ties unordered.
+				// Other vectors and every range matrix serialize in label order.
+				ranked := sorted || strings.HasPrefix(req.ID, "topk(") || strings.HasPrefix(req.ID, "bottomk(")
+				byValue := req.Instant && ranked
+				if actual, loki := recordedMixedOrder(t, got.Body.Bytes(), byValue), recordedMixedOrder(t, want.Body, byValue); !reflect.DeepEqual(actual, loki) {
+					t.Fatalf("series order %v, Loki %v", actual, loki)
+				}
+			})
+		}
+	}
+}
+
+// A mixed count/rate grouped only by detected_level may use stored-level
+// buckets when every selected row's source and precedence are unambiguous.
+// conformance: semantics/two-parsers-keep-one, loki_api_v1_query, loki_api_v1_query_range
+func TestOrderedMixedStoredLevelRecorded(t *testing.T) {
+	at := time.Unix(1700000400, 0).UTC()
+	// The first and last buckets read by VL may have no Loki point. Two
+	// stored groups fit the intermediate stats guard with a tenant limit of one.
+	makeRow := func(ts time.Time, level string) pushdownRow {
+		return pushdownRow{ts: ts, msg: "{}", stream: map[string]string{"app": "api", "level": level}, loki: map[string]string{"detected_level": level}}
+	}
+	edge := []pushdownRow{makeRow(at.Add(-time.Minute), "error"), makeRow(at.Add(-time.Minute+time.Millisecond), "info"),
+		makeRow(at, "info"), makeRow(at.Add(30*time.Second), "info"), makeRow(at.Add(30*time.Second+time.Millisecond), "error"), makeRow(at.Add(45*time.Second), "error")}
+	makeRank := func(instant bool) []pushdownRow {
+		rows := []pushdownRow{makeRow(at, "info"), makeRow(at.Add(-time.Second), "info")}
+		second := at
+		if !instant {
+			second = at.Add(20 * time.Second)
+		}
+		rows = append(rows, makeRow(second, "error"))
+		for range 5 {
+			rows = append(rows, makeRow(at.Add(-time.Minute), "error"))
+		}
+		return rows
+	}
+	fixtures := []struct {
+		name  string
+		stats bool
+		rows  []pushdownRow
+	}{
+		{"stored", true, []pushdownRow{
+			{ts: at, msg: "not-json", stream: map[string]string{"app": "api", "level": "INFO"}, loki: map[string]string{"detected_level": "info"}},
+			{ts: at.Add(time.Millisecond), msg: `{"detected_level":"debug"}`, stream: map[string]string{"app": "api"}, vl: map[string]string{"level": "err"}, loki: map[string]string{"level": "err", "detected_level": "error"}},
+		}},
+		{"stream", false, []pushdownRow{{ts: at, msg: "{}", stream: map[string]string{"app": "api", "detected_level": "INFO", "level": "warn"}}}},
+		{"metadata", false, []pushdownRow{{ts: at, msg: "{}", stream: map[string]string{"app": "api"}, vl: map[string]string{"level": "warn", "detected_level": "error"}, loki: map[string]string{"level": "warn", "detected_level": "error"}}}},
+		{"foreign", false, []pushdownRow{{ts: at, msg: "{}", stream: map[string]string{"app": "api", "severity": "error"}, vl: map[string]string{"level": "info"}, loki: map[string]string{"level": "info", "detected_level": "error"}}}},
+		{"body", false, []pushdownRow{{ts: at, msg: `{"level":"error"}`, stream: map[string]string{"app": "api"}, loki: map[string]string{"detected_level": "error"}}}},
+		{"unknown", false, []pushdownRow{{ts: at, msg: "error", stream: map[string]string{"app": "api"}, vl: map[string]string{"level": "notice"}, loki: map[string]string{"level": "notice", "detected_level": "notice"}}}},
+		{"edge-limit", true, edge}, {"rank-range-limit", true, makeRank(false)},
+		{"rank-instant-limit", true, makeRank(true)}, {"rank-instant-full", true, makeRank(true)},
+	}
+	var sets []oraclerun.EngineDataSet
+	for _, f := range fixtures {
+		set := oraclerun.EngineDataSet{Streams: pushdownEngineStreams(f.rows)}
+		limited := strings.HasSuffix(f.name, "-limit")
+		if limited {
+			set.MaxSeries = 1
+		}
+		for _, fn := range []string{"count_over_time", "rate"} {
+			for _, step := range []time.Duration{0, 30 * time.Second} {
+				if step == 0 && f.name == "rank-range-limit" || step != 0 && strings.HasPrefix(f.name, "rank-instant") {
+					continue
+				}
+				end := at.Add(30 * time.Second)
+				if limited || f.name == "rank-instant-full" {
+					end = at
+					if step != 0 {
+						end = at.Add(45 * time.Second)
+					}
+				}
+				q := `sum by (detected_level) (` + fn + `({app="api"} | json | logfmt | drop __error__, __error_details__ [1m]))`
+				req := lokiMetricRequest(fmt.Sprintf("%s/%s/%v", f.name, fn, step), q, at.UnixNano(), end.UnixNano(), step)
+				set.Requests = append(set.Requests, req)
+				if limited {
+					req.ID += "/drilldown"
+					req.QueryTags = drilldownSeriesLimitTags
+					set.Requests = append(set.Requests, req)
+				}
+			}
+		}
+		sets = append(sets, set)
+	}
+	answers := lokiEngineAnswers(t, "mixed_stored_level", sets)
+	for i, set := range sets {
+		f := fixtures[i]
+		backend, fake := newPushdownFakeVL(t, f.rows, func(s string) string { return s })
+		for _, req := range set.Requests {
+			t.Run(req.ID, func(t *testing.T) {
+				p := newTestProxy(t, backend.URL)
+				if set.MaxSeries > 0 {
+					p.maxStatsQuerySeries = set.MaxSeries
+				}
+				fake.mu.Lock()
+				raw, stats := fake.raw, len(fake.stats)
+				fake.mu.Unlock()
+				endpoint := "query_range"
+				if req.Instant {
+					endpoint = "query"
+				}
+				headers := map[string]string{"X-Query-Tags": req.QueryTags}
+				got := doCompatProxyRequest(p, "/loki/api/v1/"+endpoint+"?"+req.Form, headers)
+				want := answers[req.ID]
+				if set.MaxSeries == 1 {
+					checkMixedStoredLevelLimit(t, got.Code, got.Body.Bytes(), want)
+					if f.name == "rank-range-limit" && req.QueryTags != "" {
+						// The first visible group is also the busiest. The five error
+						// rows outside the left boundary must not change that ranking.
+						busiest := newTestProxy(t, backend.URL)
+						busiest.maxStatsQuerySeries = 1
+						busiest.drilldownSeriesLimitMode = drilldownSeriesLimitBusiest
+						partial := doCompatProxyRequest(busiest, "/loki/api/v1/"+endpoint+"?"+req.Form, headers)
+						checkMixedStoredLevelLimit(t, partial.Code, partial.Body.Bytes(), want)
+					}
+				} else if want.Status != 200 {
+					t.Fatalf("unexpected reference status %d: %s", want.Status, want.Error)
+				} else if err := recordedParserDifference(recordedParserCase{Status: want.Status, Response: want.Body}, got.Code, got.Body.Bytes()); err != nil {
+					t.Fatal(err)
+				}
+				fake.mu.Lock()
+				defer fake.mu.Unlock()
+				if f.stats && (len(fake.stats) == stats || fake.raw != raw) || !f.stats && fake.raw == raw {
+					t.Fatalf("expected stored stats %v, raw reads %d, stats %d", f.stats, fake.raw-raw, len(fake.stats)-stats)
+				}
+			})
+		}
+	}
+}
+
+func checkMixedStoredLevelLimit(t *testing.T, status int, body []byte, want lokiEngineAnswer) {
+	t.Helper()
+	if status != want.Status {
+		t.Fatalf("status %d, Loki %d: %s / %s", status, want.Status, body, want.Error)
+	}
+	switch status {
+	case http.StatusBadRequest:
+		if strings.TrimSpace(string(body)) != strings.TrimSpace(want.Error) {
+			t.Fatalf("limit error: %q, Loki %q", body, want.Error)
+		}
+	case http.StatusOK:
+		got := decodeDrilldownSeriesLimitAnswer(t, "proxy", body)
+		loki := decodeDrilldownSeriesLimitAnswer(t, "Loki", want.Body)
+		if !reflect.DeepEqual(got, loki) {
+			t.Fatalf("limit response: proxy %+v, Loki %+v", got, loki)
+		}
+	default:
+		t.Fatalf("unexpected reference status %d", status)
+	}
+}
+
+func recordedMixedSeriesOrder(t *testing.T, body []byte) []string {
+	t.Helper()
+	return recordedMixedOrder(t, body, true)
+}
+
+func recordedMixedOrder(t *testing.T, body []byte, byValue bool) []string {
+	t.Helper()
+	var reply struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string
+				Value  []json.RawMessage
+			}
+		}
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, s := range reply.Data.Result {
+		if byValue && len(s.Value) == 2 {
+			out = append(out, string(s.Value[1]))
+		} else {
+			out = append(out, canonicalLabelText(s.Metric))
+		}
+	}
+	return out
 }

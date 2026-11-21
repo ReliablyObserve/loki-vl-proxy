@@ -86,8 +86,14 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 		tier0    bool
 		offset   time.Duration
 		addition bool
-	}{{"query_range", false, 0, false}, {"query_range", true, 0, false}, {"query", true, 0, false}, {"query_range", false, time.Minute, false}, {"query_range", true, time.Minute, false}, {"query", true, time.Minute, false}, {"query_range", true, 0, true}, {"query", true, 0, true}} {
-		t.Run(setup.mode+"/tier0="+strconv.FormatBool(setup.tier0)+"/offset="+setup.offset.String()+"/addition="+strconv.FormatBool(setup.addition), func(t *testing.T) {
+		mixed    bool
+	}{
+		{"query_range", false, 0, false, false}, {"query_range", true, 0, false, false}, {"query", true, 0, false, false},
+		{"query_range", false, time.Minute, false, false}, {"query_range", true, time.Minute, false, false}, {"query", true, time.Minute, false, false},
+		{"query_range", true, 0, true, false}, {"query", true, 0, true, false},
+		{"query_range", false, 0, false, true}, {"query_range", true, 0, true, true}, {"query", true, 0, true, true},
+	} {
+		t.Run(setup.mode+"/tier0="+strconv.FormatBool(setup.tier0)+"/offset="+setup.offset.String()+"/addition="+strconv.FormatBool(setup.addition)+"/mixed="+strconv.FormatBool(setup.mixed), func(t *testing.T) {
 			backend, fixture := newDLVBaselineBackend(t, shape, base)
 			p := newDLVBaselineProxy(t, backend.URL, setup.tier0)
 			// The hazard probe runs beside the foreign-level probe, whose verdict
@@ -100,6 +106,9 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 			for n, identity := range []struct{ tenant, account, credential string }{{"team-a", "10", "alpha"}, {"team-b", "20", "alpha"}, {"team-a", "10", "beta"}} {
 				from, to := base.Add(time.Minute), base.Add(3*time.Minute)
 				query := `max(sum by(detected_level)(count_over_time({app="api"}|json|__error__=""[1m])))`
+				if setup.mixed {
+					query = strings.Replace(query, "|json|", "|json|logfmt|", 1)
+				}
 				if setup.offset != 0 {
 					query = strings.Replace(query, "[1m]", "[1m] offset "+strconv.FormatInt(int64(setup.offset/time.Second), 10)+"s", 1)
 				}
@@ -132,6 +141,12 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 				}
 				seen[key] = true
 				legacy := strings.Replace(key, orderedJSONVectorResponseVersion, "", 1)
+				if setup.mixed {
+					if !strings.Contains(key, mixedParserMetricResponseVersion) {
+						t.Fatal("missing mixed-parser response fence")
+					}
+					legacy = strings.Replace(legacy, mixedParserMetricResponseVersion, "", 1)
+				}
 				bad := []byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1700000460,"999999"]]}]}}`)
 				if setup.mode == "query" {
 					bad = []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1700000580,"999999"]}]}}`)
@@ -329,4 +344,55 @@ func (o *vlCallOrigins) made(origin string) int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.calls[origin]
+}
+
+// conformance: semantics/two-parsers-keep-one, cache-response-key-versions
+func TestOrderedMixedParserTrailingKeepOldCopies(t *testing.T) {
+	testOrderedMixedParserOldCopies(t, `count_over_time({app="api"} | logfmt | json | keep detected_level [1m])`)
+}
+
+// conformance: semantics/two-parsers-keep-one, cache-response-key-versions
+func TestOrderedMixedParserTransformedBinaryOldCopies(t *testing.T) {
+	const mixed = `sum by (message) (count_over_time({app="api"} | json message="[\"message\"]" | logfmt | drop __error__, __error_details__ | message!="" [1m]))`
+	testOrderedMixedParserOldCopies(t, `sort(label_replace(`+mixed+` + 1, "copy", "$1", "message", "(.+)"))`)
+}
+
+func testOrderedMixedParserOldCopies(t *testing.T, q string) {
+	t.Helper()
+	at := time.Unix(1700000400, 0).UTC()
+	for _, endpoint := range []string{"query", "query_range"} {
+		t.Run(endpoint, func(t *testing.T) {
+			backend, _ := newDLVBaselineBackend(t, dlvBaselineShape{}, at)
+			p := newDLVBaselineProxy(t, backend.URL, true)
+			origins := traceVLCallOrigins(p)
+			params := url.Values{"query": {q}, "limit": {"100"}}
+			if endpoint == "query" {
+				params.Set("time", strconv.FormatInt(at.Add(time.Minute).UnixNano(), 10))
+			} else {
+				params.Set("start", strconv.FormatInt(at.UnixNano(), 10))
+				params.Set("end", strconv.FormatInt(at.Add(time.Minute).UnixNano(), 10))
+				params.Set("step", "60")
+			}
+			headers := map[string]string{"X-Scope-OrgID": "team-a", "X-Auth-Token": "alpha"}
+			target := "/loki/api/v1/" + endpoint + "?" + params.Encode()
+			r := httptest.NewRequest(http.MethodGet, target, nil)
+			for k, v := range headers {
+				r.Header.Set(k, v)
+			}
+			key, ok := p.compatCacheKey(endpoint, r)
+			if !ok || !strings.Contains(key, mixedParserMetricResponseVersion) {
+				t.Fatalf("unfenced original request: %s", key)
+			}
+			stale := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"stale":"true"},"value":[1700000400,"999"]}]}}`)
+			p.compatCache.SetLocalOnlyWithTTL(strings.Replace(key, mixedParserMetricResponseVersion, "", 1), stale, 5*time.Minute)
+			cold := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold"))
+			if cold.Code != 200 || origins.made("cold") == 0 || bytes.Contains(cold.Body.Bytes(), []byte("stale")) {
+				t.Fatalf("original cache entry reused: %d %s", cold.Code, cold.Body)
+			}
+			warm := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "warm"))
+			if warm.Code != 200 || !bytes.Equal(cold.Body.Bytes(), warm.Body.Bytes()) || origins.made("warm") != 0 {
+				t.Fatalf("no exact original-key reuse: %d %s", warm.Code, warm.Body)
+			}
+		})
+	}
 }

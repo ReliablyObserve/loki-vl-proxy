@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Eligible grouped count, rate and byte metrics keep sequential JSON and logfmt stages in their written order instead of dropping a parser after a sample of the data. This includes Drilldown's supported single-key JSON extraction followed by logfmt and an error-label drop. Original trailing-keep hints, parser collisions, complete pipeline errors and sorted matrix order are retained under the supported wrappers. Old mixed-parser answers are fenced across response caches; settled-point fragments carry their own order provenance so a partial-window cache hit preserves cold series order. A guarded stored-level count/rate path retains native aggregation where parsing cannot affect the result. Log replies and unsupported mixed pipelines remain tracked separately.
+  - Reuse the raw reader's temporary JSON map for narrow rows and discard wider storage before its next decode. The existing 18,000-row benchmark uses about 16% fewer allocated bytes and 10% fewer allocations; this does not establish a production memory or latency gain.
+
 - In the Loki-compatible profile, Fields discovery uses the sampled log lines instead of adding fields from a second VictoriaLogs scan over the full window. Drilldown no longer starts breakdown queries for those unsampled fields. The query plan preserves a JSON parser before a label filter on the sampled lines so body-only keys can match. The sampled responses have their own cache namespace across RAM, disk and peers.
 
 ## [2.357.0] - 2026-11-20

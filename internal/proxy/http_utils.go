@@ -175,9 +175,25 @@ func handlerText(query string, maxQueryBytes int) string {
 // all is set (a route that reads a whole expression and has readers after this one that validate it): a selector
 // route's query is left to its validators, so the budget adds no parse and no cache entry to their routes.
 func handlerTextWithin(query string, maxQueryBytes int, p *Proxy, seg *planSegment, all bool) (string, bool) {
-	lower := logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(query)))
+	uncommented := logql.StripComments(query)
+	stripped := logql.StripParserFlags(uncommented)
+	lower := logql.LowercaseKeywords(stripped)
 	if queryLengthLimit(query, maxQueryBytes) != nil {
 		return lower, false // Loki's length error for the text as sent
+	}
+	// Preserve flags when removing them would admit the mixed metric. This
+	// hypothetical spelling must publish nothing: validation of the actual
+	// handler text below can still exhaust the same request budget.
+	if stripped != uncommented && strings.Contains(lower, "json") && strings.Contains(lower, "logfmt") {
+		budget := budgetOf(seg)
+		expr, msg, _, exhausted := validateQueryPhasesWithin(fenceVariablesResolved(lower), budget)
+		keepFlags := msg == "" && containsMixedParserMetric(expr)
+		if exhausted || msg == "" && budget != nil && budget.Exhausted() {
+			return lower, true
+		}
+		if keepFlags {
+			lower = logql.LowercaseKeywords(uncommented)
+		}
 	}
 	var validated queryValidation
 	budgeted := false

@@ -307,7 +307,9 @@ func mergeOrderedJSONRowSeries(merged, rows map[string]manualSeriesSamples, byte
 // detected_level: the derivation reads every stored level field (and the OTLP
 // severity fields), which no label of the plan names.
 func (p *Proxy) orderedJSONRowProjection(plan *orderedJSONMetricPlan) string {
-	if plan.required == nil || plan.derivesLevel {
+	// A surviving mixed-parser error carries the entire failing series;
+	// unrelated stored metadata and the ingest level are part of its message.
+	if plan.required == nil || plan.derivesLevel || plan.mixedErrorsCanSurvive {
 		return ""
 	}
 	fields := []string{"_time", "_stream", "_msg", "level"}
