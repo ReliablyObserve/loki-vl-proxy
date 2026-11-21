@@ -1,6 +1,6 @@
 {
- "commit": "7f6f98961833",
- "date": "2026-11-20",
+ "commit": "4a63b99e71e1",
+ "date": "2026-11-21",
  "errors": {
   "recorded": {
    "comparable_rows": 248,
@@ -103,8 +103,8 @@
   },
   "live_check": {
    "conclusion": "failure",
-   "date": "2026-11-20",
-   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44691564251",
+   "date": "2026-11-21",
+   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44856005054",
    "workflow": "query-corpus.yaml"
   },
   "recorded_file": "conformance/registry/grammar-sweep.json"
