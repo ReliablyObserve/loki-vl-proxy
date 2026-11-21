@@ -36,3 +36,7 @@ allocations 529.7k → 475.7k (-10.19%), p=.002, n=6. Allocation savings do not 
 Functional checks retained separately: 208 recorded Loki engine replies (including runtime errors), 14 complete
 instant/range API comparisons, 42 complete forward-window comparisons, and six native Fields tuple comparisons
 with the stock app against Loki and the candidate. These do not establish full visual parity or large-window UX.
+
+The full existing typed matrix subsequently passed against this deployed product image: 151/151 subtests,
+zero skipped or failed, 6.560 seconds. Five cases retain explicit known-deviation contracts; this is not a
+claim that those differences are closed. The full log and source/deployment receipt are retained here.

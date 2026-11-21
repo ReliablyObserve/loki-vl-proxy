@@ -1,0 +1,21 @@
+{
+  "candidate_commit": "725033c125d73ebfe82a758f89aa8f380951f9af",
+  "candidate_product_source": "ec3c812280d920d691ac3f48287d5d17d35f3b77854b5af5b7d90d7218844779",
+  "cases": 151,
+  "scope": "Existing stack; fresh isolated numeric tenant and fixture marker; primary playground unchanged.",
+  "command": [
+    "go",
+    "test",
+    "-tags=e2e",
+    "-p=1",
+    "-count=1",
+    "-timeout=8m",
+    "-v",
+    "-run",
+    "^TestQuerySemanticsMatrix$",
+    "./test/e2e-compat"
+  ],
+  "exit": 0,
+  "restore_exit": 0,
+  "elapsed_s": 9.653061209246516
+}
