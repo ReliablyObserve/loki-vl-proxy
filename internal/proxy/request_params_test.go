@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
@@ -73,6 +74,18 @@ const requestParamKnownDifferenceCeiling = 6
 // LVP_REQUEST_PARAM_UPDATE=1 prints the rows that differ.
 // conformance: semantics/error-request-validation-parity
 func TestRequestParamAnswers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Requests with an omitted end use the recorder's clock. Replaying
+		// them against today's clock eventually crosses the resolution or
+		// range limit even though neither request nor implementation changed.
+		// Advance before starting the HTTP servers and cache goroutines.
+		time.Sleep(time.Unix(1794570675, 0).Sub(time.Now()))
+		replayRequestParamAnswers(t)
+	})
+}
+
+func replayRequestParamAnswers(t *testing.T) {
+	t.Helper()
 	rows := readRequestParamAnswers(t)
 	addr := newLokiErrorReplayProxy(t)
 	var diffs, fixed []string
