@@ -40,5 +40,4 @@ gap:
   proxy: 'live entries only'
   planned_test: 'TestTailHistory_StartLimitLikeLoki (test/e2e-compat: Loki against the proxy, synthetic tail and native tail variants; group tail-multitenancy) + TestTailHistory_* (internal/proxy, every tail mode) + @explore-tail Playwright'
   note: 'Measured on main at fcaccfcc, before #652 rewrote the tail conversion; verified still present on c4ebcd98 (after #652).'
-  clusters:
-    - e02ddf41
+  clusters: []

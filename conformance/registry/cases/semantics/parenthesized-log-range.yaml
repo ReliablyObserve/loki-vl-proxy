@@ -37,9 +37,7 @@ gap:
   loki: 'parentheses around the selector and pipeline, or the whole range expression, an offset, an unwrap before or after the range, a pipeline after the range are accepted (test/e2e-compat parenthesized_range_or_filters_test.go)'
   proxy: 'parsed and rewritten to the plain range form (logql.CanonicalizeLogRanges)'
   planned_test: 'TestCompat_ParenthesizedLogRange (test/e2e-compat, group core)'
-  clusters:
-    - 26eda2af
-    - 27527d05
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
