@@ -13,6 +13,12 @@ why: |
   VictoriaLogs' unpack_json adds nothing for such a line and has no error
   marker, so the proxy returns the row without either label and a filter on
   `__error__` cannot select the rows Loki selects.
+
+  The expanded Fields matrix exercises these filters through the real
+  detected_fields API. The same expressions projected through query_range
+  still reproduce the open parsed-error label gap for malformed lines in
+  the log oracle on VL v1.49 and v1.54. The recorded cases are
+  q-7605e50b9269 and q-210bb14bbc1b in loki-differential-known.json.
 request:
   method: GET
   path: /loki/api/v1/query_range

@@ -1129,7 +1129,7 @@ jobs:
         run: ./scripts/ci/sync_observability_assets.sh --check
 
       - name: Unit tests (quality gate policy)
-        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_load_abab scripts.ci.tests.test_pr_evidence scripts.ci.tests.test_pr_quality_report scripts.ci.tests.test_quality_scope scripts.ci.tests.test_quality_comparison scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_job_selection scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope scripts.ci.tests.test_check_conformance_reports scripts.ci.tests.test_error_registry scripts.ci.tests.test_matrix_pins scripts.ci.tests.test_dashboard_cache_tiers scripts.ci.tests.test_e2e_selection scripts.ci.tests.test_fuzz_smoke scripts.ci.tests.test_changelog_release scripts.ci.tests.test_release_plan scripts.ci.tests.test_release_metadata scripts.ci.tests.test_release_replay scripts.ci.tests.test_release_pipeline_wiring scripts.ci.tests.test_preflight
+        run: python3 -m unittest scripts.ci.tests.test_grafana_resource_guard scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_load_abab scripts.ci.tests.test_pr_evidence scripts.ci.tests.test_pr_quality_report scripts.ci.tests.test_quality_scope scripts.ci.tests.test_quality_comparison scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_job_selection scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope scripts.ci.tests.test_check_conformance_reports scripts.ci.tests.test_error_registry scripts.ci.tests.test_matrix_pins scripts.ci.tests.test_dashboard_cache_tiers scripts.ci.tests.test_e2e_selection scripts.ci.tests.test_fuzz_smoke scripts.ci.tests.test_changelog_release scripts.ci.tests.test_release_plan scripts.ci.tests.test_release_metadata scripts.ci.tests.test_release_replay scripts.ci.tests.test_release_pipeline_wiring scripts.ci.tests.test_preflight
 
       # bench/ is a separate Go module, so the root ./... of the test job does not
       # cover it. Its tests include the drift guard that keeps the benchmark Loki
@@ -1484,6 +1484,10 @@ jobs:
             npx playwright install chromium
           fi
 
+      - name: Record Grafana resource baseline
+        id: grafana-resources
+        run: python3 scripts/ci/grafana_resource_guard.py before "$RUNNER_TEMP/grafana-resources"
+
       - name: Run Grafana UI e2e tests
         working-directory: test/e2e-ui
         env:
@@ -1511,6 +1515,10 @@ jobs:
           done <<< "$SHARD_COMMANDS"
           exit "$status"
 
+      - name: Check Grafana and datasource survived UI tests
+        if: ${{ always() && steps.grafana-resources.outcome == 'success' }}
+        run: python3 scripts/ci/grafana_resource_guard.py after "$RUNNER_TEMP/grafana-resources"
+
       - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
@@ -1519,6 +1527,7 @@ jobs:
           path: |
             test/e2e-ui/playwright-report
             test/e2e-ui/test-results
+            ${{ runner.temp }}/grafana-resources
           if-no-files-found: ignore
 
       - name: Tear down e2e stack

@@ -1,0 +1,56 @@
+[
+  {
+    "path": "/loki/api/v1/query_range",
+    "params": {
+      "direction": [
+        "backward"
+      ],
+      "end": [
+        "1795190040000000000"
+      ],
+      "query": [
+        "sum by (trace_id) (count_over_time({env=\"production\"} | trace_id!=\"\"       [2m]))"
+      ],
+      "start": [
+        "1795103640000000000"
+      ],
+      "step": [
+        "120000ms"
+      ]
+    },
+    "context_headers": {
+      "Referer": null,
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "X-Grafana-Dashboard-Uid": null,
+      "X-Grafana-Panel-Id": null,
+      "X-Grafana-From-Expr": null
+    }
+  },
+  {
+    "path": "/loki/api/v1/query_range",
+    "params": {
+      "direction": [
+        "backward"
+      ],
+      "end": [
+        "1795190040000000000"
+      ],
+      "query": [
+        "sum by (trace_id) (count_over_time({env=\"production\"} | trace_id!=\"\"       [2m]))"
+      ],
+      "start": [
+        "1795103640000000000"
+      ],
+      "step": [
+        "120000ms"
+      ]
+    },
+    "context_headers": {
+      "Referer": null,
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "X-Grafana-Dashboard-Uid": null,
+      "X-Grafana-Panel-Id": null,
+      "X-Grafana-From-Expr": null
+    }
+  }
+]

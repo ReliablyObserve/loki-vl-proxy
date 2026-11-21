@@ -80,7 +80,7 @@ The corpus is the same size or larger than the one that read Loki's test files (
 | Loki's test files (retired) | 3,592 | 0 |
 | Loki's documentation examples | 0 | 162 (81 entries) |
 | grammar sweep | 0 | 4,946 (2,473 entries) |
-| repository cases | 3,362 | 3,902 (1,951 entries) |
+| repository cases | 3,362 | 3,920 (1,960 entries) |
 | seeded sweep from Loki's own labels, fields and metadata | 5,484 | built live, the same code |
 | Grafana's own requests | 493 | captured live, the same code |
 

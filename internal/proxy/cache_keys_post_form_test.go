@@ -110,6 +110,63 @@ func previousPOSTReadCacheKey(endpoint, key string) string {
 	return key
 }
 
+func TestDetectedFieldsSampleCacheIsolatedFromIndexProfiles(t *testing.T) {
+	translator := NewLabelTranslator(LabelStyleUnderscores, nil)
+	sampled := &Proxy{labelTranslator: translator, metadataFieldMode: MetadataFieldModeTranslated}
+	for _, mode := range []MetadataFieldMode{MetadataFieldModeNative, MetadataFieldModeHybrid} {
+		indexed := &Proxy{labelTranslator: translator, metadataFieldMode: mode}
+		for _, endpoint := range []string{"detected_fields", "detected_field_values"} {
+			r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+endpoint+"?query=%7Bapp%3D%22api%22%7D", nil)
+			r.Header.Set("X-Scope-OrgID", "a|b")
+			scoped := sampled.canonicalReadCacheKey(endpoint, "a|b", r)
+			if scoped == indexed.canonicalReadCacheKey(endpoint, "a|b", r) {
+				t.Fatalf("%s: endpoint response key shared with %s", endpoint, mode)
+			}
+			if sampled.responseKey(endpoint, r, r.URL.RawQuery) == indexed.responseKey(endpoint, r, r.URL.RawQuery) {
+				t.Fatalf("%s: compatibility response key shared with %s", endpoint, mode)
+			}
+			if sampled.detectedFieldsCacheKey(r.Context(), r.FormValue("query"), "1", "2", 100) ==
+				indexed.detectedFieldsCacheKey(r.Context(), r.FormValue("query"), "1", "2", 100) {
+				t.Fatalf("%s: internal detection key shared with %s", endpoint, mode)
+			}
+		}
+	}
+}
+
+func TestDetectedFieldsExplicitSampleKeepsLimitCapAndWindowInCache(t *testing.T) {
+	translator := NewLabelTranslator(LabelStyleUnderscores, nil)
+	store := cache.New(time.Minute, 16)
+	t.Cleanup(store.Close)
+	sampled := &Proxy{labelTranslator: translator, metadataFieldMode: MetadataFieldModeTranslated, compatCache: store}
+	limited := &Proxy{labelTranslator: translator, metadataFieldMode: MetadataFieldModeTranslated, compatCache: store, execLimits: defaultExecutionLimits()}
+	limited.execLimits.DetectedScanLines = 100
+	const endpoint = "detected_fields"
+	request := func(limit, end string) *http.Request {
+		params := url.Values{"query": {`{app="api"}`}, "start": {"1700000000"}, "end": {end}, "line_limit": {limit}, "limit": {"1000"}}
+		return httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+endpoint+"?"+params.Encode(), nil)
+	}
+	full := request("130", "1700010800")
+	one := request("1", "1700010800")
+	shift := request("130", "1700010801")
+	for _, key := range []func(*Proxy, *http.Request) string{
+		func(p *Proxy, r *http.Request) string { return p.canonicalReadCacheKey(endpoint, "0", r) },
+		func(p *Proxy, r *http.Request) string {
+			k, ok := p.compatCacheKey(endpoint, r)
+			if !ok {
+				t.Fatal("expected a compatibility cache key")
+			}
+			return k
+		},
+	} {
+		ref := key(sampled, full)
+		for _, other := range []string{key(sampled, one), key(sampled, shift), key(limited, full)} {
+			if other == ref {
+				t.Fatalf("shared response key ignored the query's sample size, time bounds, or replica limit: %q", other)
+			}
+		}
+	}
+}
+
 func TestCanonicalReadCacheKeyPOSTMigrationRejectsPriorNamespace(t *testing.T) {
 	for _, endpoint := range []string{"labels", "label_values", "label_inventory", "index_stats", "volume", "volume_range", "detected_fields", "detected_field_values", "detected_labels"} {
 		t.Run(endpoint, func(t *testing.T) {

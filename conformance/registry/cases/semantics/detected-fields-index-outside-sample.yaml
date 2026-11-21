@@ -1,0 +1,33 @@
+id: semantics/detected-fields-index-outside-sample
+title: The Loki profile discovers fields from the sampled lines
+proves:
+  - loki_api_v1_detected_fields
+consumer: drilldown
+why: |
+  Loki did not list a field present only in the 30 older entries of a
+  130-entry stream at its default line_limit. The Loki-compatible proxy
+  listed it because VictoriaLogs field_names scanned the entire window.
+  On the same three-hour Logs Drilldown request the index added five
+  such cards, including an IP breakdown of 189,032 series.
+  The Loki profile now gets the list from the log sample. Its cached
+  answers use a separate namespace from index-enriched answers.
+  Setting line_limit to 130 includes the older field in both backends.
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{service_name="field-sample"} | json | logfmt | drop __error__, __error_details__'
+compare:
+  mode: structural
+  fields: [fields.label]
+  expect: The older field is absent with the default sample and present with line_limit=130.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: drilldown-visible
+  effort: S
+  area: internal/proxy/drilldown.go detectFields
+  loki: TestCompat_DetectedFieldsNoLogfmtTokenFields records the exact sampled field labels from real Loki.
+  proxy: 'Loki-profile field discovery uses only the sampled rows. The focused test retains the difference from native index discovery. The query matrix also covers detected_fields_recent_sample with line_limit=1.'
+  planned_test: 'TestCompat_DetectedFieldsNoLogfmtTokenFields, TestQuerySemanticsMatrix/detected_fields_recent_sample, TestDetectedFieldsSampleCacheIsolatedFromIndexProfiles'
+  clusters: []

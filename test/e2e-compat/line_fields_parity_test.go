@@ -24,37 +24,32 @@ var (
 
 // ensureLineFieldsFixture pushes the same Loki push payload (JSON lines plus
 // OTel structured metadata, as the UI log generator writes them) to Loki and
-// to VictoriaLogs' Loki push endpoint, which unpacks each JSON line into
-// stored fields next to the metadata. The VictoriaLogs copy carries the
-// original line under _msg, as the generator sends it. Loki is flushed, since
+// to VictoriaLogs' Loki push endpoint with message parsing disabled, as the
+// UI generator does. Body keys stay in the line, separate from metadata.
+// Loki is flushed, since
 // its index/stats counts flushed chunks only.
 func ensureLineFieldsFixture(t *testing.T) (string, time.Time) {
 	t.Helper()
 	lineFieldsFixtureOnce.Do(func() {
 		app := fmt.Sprintf("line-fields-%d", time.Now().UnixNano())
-		base := time.Now().Add(-40 * time.Second)
+		base := time.Now().Add(-10 * time.Minute).Truncate(time.Minute)
 		meta := map[string]string{"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "k8s.pod.name": "line-fields-pod-1"}
-		var lokiValues, vlValues []interface{}
+		var values []interface{}
 		for i, line := range []string{
 			`{"msg":"login ok","user":"u1","status":200}`,
 			`{"msg":"login failed","user":"u2","status":401}`,
 			`{"msg":"logout","user":"u1","status":200}`,
 		} {
 			ts := strconv.FormatInt(base.Add(time.Duration(i)*time.Second).UnixNano(), 10)
-			lokiValues = append(lokiValues, []interface{}{ts, line, meta})
-			var obj map[string]interface{}
-			_ = json.Unmarshal([]byte(line), &obj)
-			obj["_msg"] = line
-			vlLine, _ := json.Marshal(obj)
-			vlValues = append(vlValues, []interface{}{ts, string(vlLine), meta})
+			values = append(values, []interface{}{ts, line, meta})
 		}
 		labels := map[string]string{"app": app, "env": "line-fields"}
 		for _, target := range []struct {
 			url    string
 			values []interface{}
 		}{
-			{lokiURL + "/loki/api/v1/push", lokiValues},
-			{vlURL + "/insert/loki/api/v1/push", vlValues},
+			{lokiURL + "/loki/api/v1/push", values},
+			{vlURL + "/insert/loki/api/v1/push?disable_message_parsing=1", values},
 		} {
 			body, _ := json.Marshal(map[string]interface{}{"streams": []map[string]interface{}{{"stream": labels, "values": target.values}}})
 			resp, err := http.Post(target.url, "application/json", strings.NewReader(string(body)))
@@ -71,7 +66,7 @@ func ensureLineFieldsFixture(t *testing.T) (string, time.Time) {
 		if status, body := hardeningRequest(t, http.MethodPost, lokiURL+"/flush", "", nil); status >= 300 {
 			t.Fatalf("Loki flush: %d %s", status, body)
 		}
-		params := lineFieldsWindow(base.Add(10 * time.Second))
+		params := lineFieldsWindow(base.Add(2 * time.Minute))
 		params.Set("query", fmt.Sprintf(`{app=%q}`, app))
 		deadline := time.Now().Add(90 * time.Second)
 		for {
@@ -85,7 +80,7 @@ func ensureLineFieldsFixture(t *testing.T) (string, time.Time) {
 			}
 			time.Sleep(2 * time.Second)
 		}
-		lineFieldsFixtureApp, lineFieldsFixtureEnd = app, base.Add(10*time.Second)
+		lineFieldsFixtureApp, lineFieldsFixtureEnd = app, base.Add(2*time.Minute)
 	})
 	if lineFieldsFixtureApp == "" {
 		t.Fatal("line-fields fixture not ingested")
@@ -160,7 +155,7 @@ func metadataCategories(t *testing.T, base, query string, end time.Time) map[str
 //   - /labels for the stream is Loki's sorted list;
 //   - index/stats counts the window's entries and streams.
 //
-// conformance: profiles/parsed-fields-without-parser, profiles/detected-fields-structured-metadata-beside-json-line, loki_api_v1_query_range, loki_api_v1_detected_fields, loki_api_v1_labels, loki_api_v1_index_stats
+// conformance: profiles/parsed-fields-without-parser, profiles/detected-fields-structured-metadata-beside-json-line, semantics/detected-fields-json-body-filter, semantics/label-filter-before-parser-reads-ingest-json-key, loki_api_v1_query_range, loki_api_v1_detected_fields, loki_api_v1_labels, loki_api_v1_index_stats
 func TestCompat_LokiPushLineFieldsLikeLoki(t *testing.T) {
 	app, end := ensureLineFieldsFixture(t)
 	selector := fmt.Sprintf(`{app=%q}`, app)
@@ -168,6 +163,11 @@ func TestCompat_LokiPushLineFieldsLikeLoki(t *testing.T) {
 	lokiPlain := metadataCategories(t, lokiURL, selector, end)
 	lokiJSON := metadataCategories(t, lokiURL, selector+" | json", end)
 	lokiFields := matrixDetectedFields(t, lokiURL, selector)
+	filtered := selector + ` | json | user="u1"`
+	lokiFilteredFields := matrixDetectedFields(t, lokiURL, filtered)
+	if field := lokiFilteredFields["user"]; !reflect.DeepEqual(field.Parsers, []string{"json"}) {
+		t.Fatalf("Loki must find the body-only user in the filtered sample, got %+v", field)
+	}
 	for _, cats := range lokiPlain {
 		if len(cats[0]) == 0 || len(cats[1]) != 0 {
 			t.Fatalf("Loki fixture drifted: plain selector metadata %v parsed %v", cats[0], cats[1])
@@ -179,11 +179,75 @@ func TestCompat_LokiPushLineFieldsLikeLoki(t *testing.T) {
 		{"drilldown default (13110)", patternsAutodetectProxyURL},
 	} {
 		t.Run(target.name, func(t *testing.T) {
+			if got := matrixDetectedFields(t, target.url, filtered); !reflect.DeepEqual(got, lokiFilteredFields) {
+				t.Errorf("post-parser filter: proxy fields %+v; Loki %+v", got, lokiFilteredFields)
+			}
 			if got := metadataCategories(t, target.url, selector, end); !reflect.DeepEqual(got, lokiPlain) {
 				t.Errorf("plain selector: [structuredMetadata parsed] per line\nproxy %v\nloki  %v", got, lokiPlain)
 			}
 			if got := metadataCategories(t, target.url, selector+" | json", end); !reflect.DeepEqual(got, lokiJSON) {
 				t.Errorf("| json: [structuredMetadata parsed] per line\nproxy %v\nloki  %v", got, lokiJSON)
+			}
+
+			// Fields must not query body-only keys as metadata. Exercise the
+			// actual per-field metric before/after parsing, on a repeat and a
+			// moving window, rather than checking only detected_fields names.
+			for _, pipeline := range []string{` | user!=""`, ` | json | __error__="" | user!=""`, ` | trace_id!=""`} {
+				field := "user"
+				if strings.Contains(pipeline, "trace_id") {
+					field = "trace_id"
+				}
+				query := fmt.Sprintf("sum by (%s) (count_over_time(%s%s [5m]))", field, selector, pipeline)
+				for _, shift := range []time.Duration{0, 0, 30 * time.Second} {
+					params := lineFieldsWindow(end.Add(shift))
+					params.Set("query", query)
+					params.Set("step", "60s")
+					var answers [2]map[string]any
+					for i, base := range []string{lokiURL, target.url} {
+						status, body := rejectedQueryGet(t, base, "/loki/api/v1/query_range", params, "0", map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app"})
+						if status != http.StatusOK || json.Unmarshal(body, &answers[i]) != nil || answers[i]["status"] != "success" || answers[i]["warnings"] != nil {
+							t.Fatalf("%s %s: %d %.500s", base, query, status, body)
+						}
+					}
+					// Canonicalize series order without weakening label/value comparisons.
+					canonical := func(answer map[string]any) string {
+						data := answer["data"].(map[string]any)
+						var rows []string
+						for _, row := range data["result"].([]any) {
+							b, _ := json.Marshal(row)
+							rows = append(rows, string(b))
+						}
+						sort.Strings(rows)
+						return strings.Join(rows, "\n")
+					}
+					if got, want := canonical(answers[1]), canonical(answers[0]); got != want {
+						t.Fatalf("%s shifted %s: proxy %s; Loki %s", query, shift, got, want)
+					}
+					if pipeline == ` | user!=""` && canonical(answers[0]) != "" {
+						t.Fatal("body-only user unexpectedly passed Loki's pre-parser filter")
+					}
+					if pipeline != ` | user!=""` {
+						data := answers[0]["data"].(map[string]any)["result"].([]any)
+						want := map[string]string{"u1": "2", "u2": "1"}
+						if field == "trace_id" {
+							want = map[string]string{"4bf92f3577b34da6a3ce929d0e0e4736": "3"}
+						}
+						if len(data) != len(want) {
+							t.Fatalf("Loki fixture: %s returned %d series, want %d", query, len(data), len(want))
+						}
+						for _, row := range data {
+							series := row.(map[string]any)
+							label := series["metric"].(map[string]any)[field].(string)
+							found := false
+							for _, raw := range series["values"].([]any) {
+								found = found || raw.([]any)[1] == want[label]
+							}
+							if !found || want[label] == "" {
+								t.Fatalf("Loki fixture: %s missing full count %q for %s=%q", query, want[label], field, label)
+							}
+						}
+					}
+				}
 			}
 
 			fields := matrixDetectedFields(t, target.url, selector)

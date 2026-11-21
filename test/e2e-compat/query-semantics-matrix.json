@@ -3,6 +3,26 @@
   "oracle": "docker-compose Loki reference",
   "cases": [
     {
+      "id": "detected_fields_recent_sample",
+      "family": "field_discovery",
+      "endpoint": "detected_fields",
+      "query": "{app=\"api-gateway\", env=\"production\", level=\"info\"}",
+      "expectation": "success",
+      "compare": "detected_field_sample",
+      "line_limit": 1,
+      "expected_fields": ["detected_level", "duration_ms", "method", "path", "status"]
+    },
+    {
+      "id": "detected_fields_json_body_filter",
+      "family": "field_discovery",
+      "endpoint": "detected_fields",
+      "query": "{app=\"api-gateway\", env=\"production\", level=\"info\"} | json | user_id=\"usr_01\"",
+      "expectation": "success",
+      "compare": "detected_field_sample",
+      "line_limit": 1,
+      "expected_fields": ["detected_level", "duration_ms", "method", "path", "status", "trace_id", "user_id"]
+    },
+    {
       "id": "selector_exact_instant",
       "family": "selector",
       "endpoint": "query",
@@ -321,6 +341,28 @@
       "family": "metric_aggregation",
       "endpoint": "query_range",
       "query": "sum by (app) (count_over_time({app=\"api-gateway\",env=\"production\"} | json | status >= 500 [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "field_body_key_before_parser",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (user_id) (count_over_time({app=\"api-gateway\",env=\"production\"} | user_id!=\"\" [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": false
+    },
+    {
+      "id": "field_body_key_after_parser",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (user_id) (count_over_time({app=\"api-gateway\",env=\"production\"} | json user_id=\"user_id\" | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",

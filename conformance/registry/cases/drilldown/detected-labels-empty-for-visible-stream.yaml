@@ -1,0 +1,33 @@
+id: drilldown/detected-labels-empty-for-visible-stream
+title: detected_labels can be empty in Loki while a matching stream is visible
+proves:
+  - loki_api_v1_detected_labels
+consumer: drilldown
+why: |
+  In the 15-minute Fields visual run on Loki 3.7.10 and VictoriaLogs 1.54.0,
+  the captured detected_labels request returned an empty object from
+  Loki. Both proxy builds returned app and service_name with cardinality
+  one. The exact request reproduced the difference directly on both APIs.
+  Loki returned 130 log entries and the requested field breakdowns from
+  the same fixture. The conditions under which Loki omits the labels
+  still need a controlled lifecycle test.
+request:
+  method: GET
+  path: /loki/api/v1/detected_labels
+  params:
+    query: '{service_name="visual-fields-sample"}'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [detectedLabels.label]
+  expect: Compare the stream labels with Loki before and after a flush, over the same settled window.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: internal/proxy/patterns.go handleDetectedLabels
+  loki: Empty label list for the exact detected_labels request in the retained visual capture.
+  proxy: Returned app and service_name for the same request in both builds.
+  planned_test: 'bench/visual/spec.json dd-fields-json-sample-filter (existing fixture); add focused pre-flush and post-flush checks'
+  clusters: []

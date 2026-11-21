@@ -619,9 +619,12 @@ func defaultFieldDetectionQuery(query string) string {
 	//              auto-parse logfmt/unpack content, so stripping these stages leaves the field
 	//              filter referencing fields that VL cannot evaluate, returning zero results.
 	noUnwrap := stripUnwrapAndDropStages(query)
+	return primaryFieldDetectionQuery(noUnwrap, stripParserOnlyStages(noUnwrap))
+}
+
+func primaryFieldDetectionQuery(noUnwrap, noParser string) string {
 	// Strip only | json stages; keep | logfmt / | unpack.
 	noJSONParser := collapseSpaces(reJSONParserStage.ReplaceAllString(noUnwrap, " "))
-	noParser := stripParserOnlyStages(noUnwrap)
 	// If stripping all parsers removes something that | json didn't (i.e. logfmt/unpack present)
 	// AND there are downstream field comparisons that depend on those parsers, keep them.
 	if noParser != noJSONParser && hasFieldComparisonStages(noParser) {
@@ -635,8 +638,20 @@ func relaxedFieldDetectionQuery(query string) string {
 }
 
 func fieldDetectionQueryCandidates(query string) []string {
-	primary := defaultFieldDetectionQuery(query)
-	relaxed := relaxedFieldDetectionQuery(query)
+	return fieldDetectionCandidates(noFlowCtx, query, false)
+}
+
+func fieldDetectionCandidates(ctx context.Context, query string, sampled bool) []string {
+	input := stripMetricWrapper(query)
+	// A metric picker query still uses the stripped discovery candidates.
+	preserveJSON := sampled && input == strings.TrimSpace(query)
+	noUnwrap, preserved := fieldDetectionPipeline(ctx, input, preserveJSON)
+	if preserved {
+		return []string{query}
+	}
+	noParser := stripParserOnlyStages(noUnwrap)
+	primary := primaryFieldDetectionQuery(noUnwrap, noParser)
+	relaxed := defaultQuery(stripFieldComparisonStages(noParser))
 	if relaxed == "" || relaxed == primary {
 		return []string{primary}
 	}
@@ -750,16 +765,24 @@ func filterPipeline(lq *logqlpkg.LogQuery, keep func(logqlpkg.Stage) bool) *logq
 }
 
 func stripUnwrapAndDropStages(query string) string {
+	stripped, _ := fieldDetectionPipeline(noFlowCtx, query, false)
+	return stripped
+}
+
+func fieldDetectionPipeline(ctx context.Context, query string, preserveJSON bool) (string, bool) {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return query
+		return query, false
 	}
-	lq, err := parseLogQLQuery(noFlowCtx, query)
+	lq, err := parseLogQLQuery(ctx, query)
 	if err != nil {
 		// Fall back to regex on parse failure.
 		query = reDropStage.ReplaceAllString(query, " ")
 		query = reUnwrapStage.ReplaceAllString(query, " ")
-		return collapseSpaces(query)
+		return collapseSpaces(query), false
+	}
+	if preserveJSON && hasSampledJSONFilter(lq) {
+		return query, true
 	}
 	out := filterPipeline(lq, func(s logqlpkg.Stage) bool {
 		if ds, ok := s.(*logqlpkg.DropStage); ok && isErrorDropStage(ds) {
@@ -770,7 +793,7 @@ func stripUnwrapAndDropStages(query string) string {
 		}
 		return true
 	})
-	return out.String()
+	return out.String(), false
 }
 
 // stripIncompleteUnwrapStubs removes | unwrap pipeline stages that have no field name.
@@ -974,6 +997,42 @@ type detectNativeResult struct {
 	err    error
 }
 
+func (p *Proxy) fieldsSampleOnly(ctx context.Context) bool {
+	if p == nil || p.metadataFieldMode != MetadataFieldModeTranslated {
+		return false
+	}
+	translator := p.routingForContext(ctx).translator
+	return translator != nil && lokiProfile(translator.style, p.metadataFieldMode)
+}
+
+func (p *Proxy) detectedFieldsLineLimit(r *http.Request) int {
+	if !p.fieldsSampleOnly(r.Context()) {
+		return parseDetectedLineLimit(r)
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("line_limit"))); err == nil && n > 0 {
+		return n
+	}
+	return detectedFieldsSampleLimit
+}
+
+// hasSampledJSONFilter keeps a filter and the parser that supplies its
+// fields together. In Loki-shaped ingestion a JSON body key can be absent
+// from VictoriaLogs' stored fields.
+func hasSampledJSONFilter(parsed *logqlpkg.LogQuery) bool {
+	hasJSON := false
+	for _, stage := range parsed.Pipeline {
+		switch s := stage.(type) {
+		case *logqlpkg.ParserStage:
+			hasJSON = hasJSON || s.Type == logqlpkg.ParserJSON
+		case *logqlpkg.LabelFilterStage:
+			if hasJSON && s.Expr != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // source paths (line scan, JSON/logfmt parse, type inference, sentinel
 // stripping). Each branch handles a distinct parser-output edge case
 // (numeric vs string vs hybrid values; missing/extra parsers; capped scan).
@@ -988,25 +1047,26 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		return cachedFields, cachedValues, nil
 	}
 
-	// Start native field detection in parallel with the log scan to eliminate
-	// sequential round-trip overhead. Previously: 2× VL RTT. Now: 1× VL RTT.
-	// Native fields provide OTel/stream-label metadata; the log scan samples
-	// actual log lines to infer field names and types.
-	nativeCh := make(chan detectNativeResult, 1)
-	go func() {
-		fields, err := p.detectNativeFields(ctx, query, start, end)
-		nativeCh <- detectNativeResult{fields: fields, err: err}
-	}()
+	var nativeCh chan detectNativeResult
+	sampled := p.fieldsSampleOnly(ctx)
+	// The Loki-compatible profile discovers fields from sampled lines.
+	// A full-range index lookup can otherwise advertise a field that was
+	// never sampled, triggering an extra range query in Drilldown.
+	if !sampled {
+		nativeCh = make(chan detectNativeResult, 1)
+		go func() {
+			fields, err := p.detectNativeFields(ctx, query, start, end)
+			nativeCh <- detectNativeResult{fields: fields, err: err}
+		}()
+	}
 
-	// Use detectedFieldsSampleLimit as a safe conservative scan size.
-	// When native fields exist they would cap the scan at this limit anyway,
-	// and without native fields it is still enough for reliable field detection.
+	// Bound the sample used to infer field names and types.
 	scanLimit := lineLimit
-	if scanLimit > detectedFieldsSampleLimit {
+	if !sampled && scanLimit > detectedFieldsSampleLimit {
 		scanLimit = detectedFieldsSampleLimit
 	}
 
-	candidates := fieldDetectionQueryCandidates(query)
+	candidates := fieldDetectionCandidates(ctx, query, sampled)
 	var lastErr error
 	var hadScanFailure, scanCompleted bool
 	var (
@@ -1023,12 +1083,8 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		}
 
 		params := url.Values{}
-		// Detection only needs a sample of any matching lines for field
-		// extraction — order is irrelevant. The previous explicit
-		// `| sort by (_time desc)` forced VL to scan and order every matching
-		// line before returning the top N, which on heavy parser-filter
-		// queries (e.g. `| logfmt | level="error"`) blew past 10s.
-		// Without the sort VL can early-exit once it has N matches.
+		// The HTTP limit selects the latest matching lines. An explicit sort
+		// pipe would order the full range before limiting the result.
 		params.Set("query", logsqlQuery)
 		params.Set("limit", strconv.Itoa(scanLimit))
 		if start != "" {
@@ -1057,8 +1113,9 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		if resp.StatusCode >= http.StatusBadRequest {
 			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 			_ = resp.Body.Close()
-			// Collect native result before returning so the goroutine doesn't leak.
-			<-nativeCh
+			if nativeCh != nil {
+				<-nativeCh
+			}
 			return nil, nil, p.redactedBackendStatusError("", resp.StatusCode, errBody)
 		}
 		// Stream the NDJSON response line-by-line without buffering the full body.
@@ -1075,11 +1132,14 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		break
 	}
 
-	// Collect native fields result (always, to avoid goroutine leak).
-	//
-	// The native lookup is an enrichment next to the scan: it adds the stored fields the sampled lines do not hold.
-	// The scan is the required read and fails the request on any error (below), so a failed lookup leaves the
-	// scan's own fields.
+	if nativeCh == nil {
+		if !scanCompleted {
+			return nil, nil, lastErr
+		}
+		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, scanFieldList, scanFieldValues)
+		return scanFieldList, scanFieldValues, nil
+	}
+	// The native profiles enrich the sampled fields with the index.
 	nativeResult := <-nativeCh
 	nativeFields := nativeResult.fields
 	if nativeResult.err != nil {
@@ -2527,7 +2587,14 @@ type detectedLabelsCachePayload struct {
 }
 
 func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	key := "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	prefix := "detect_fields:"
+	if p.fieldsSampleOnly(ctx) {
+		prefix += sampledFieldCacheKeyVersion + ":"
+		query = strings.TrimSpace(query)
+	} else {
+		query = defaultFieldDetectionQuery(query)
+	}
+	key := prefix + getOrgID(ctx) + ":" + query + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp

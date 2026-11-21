@@ -1,5 +1,7 @@
 """Unit tests for test/e2e-compat/log-generator.py: timestamps of the lines of one push."""
 import importlib.util
+import copy
+import json
 import os
 import unittest
 from collections import Counter
@@ -75,6 +77,41 @@ class BackfillTimestampsTest(unittest.TestCase):
                 gen._virtual_ns = None
             stamps = [int(v[0]) for v in batch["values"]]
             self.assertEqual(stamps, [1_800_000_000_500_001_000, 1_800_000_000_500_002_000, 1_800_000_000_500_003_000])
+
+
+class LokiPushIdentityTest(unittest.TestCase):
+    def payload(self):
+        return {"streams": [{"stream": {"app": "identity"}, "values": [
+            ["1800000000000000000", '{"trace_id":"body","_msg":"literal"}'],
+            ["1800000000000001000", '{"trace_id":"body"}', {"trace_id": "metadata"}],
+            ["1800000000000002000", "level=info msg=done"],
+            ["1800000000000003000", "plain <text> café"],
+            ["1800000000000004000", '{"malformed":'],
+        ]}]}
+
+    def test_live_push_preserves_lines_labels_and_metadata(self):
+        gen = load()
+        payload = self.payload()
+        before = copy.deepcopy(payload)
+        with mock.patch.object(gen.urllib.request, "urlopen") as send:
+            self.assertTrue(gen.push_vl(payload))
+        request = send.call_args.args[0]
+        self.assertEqual(request.full_url, gen.VL_URL + "/insert/loki/api/v1/push?disable_message_parsing=1")
+        self.assertEqual(json.loads(request.data), before)
+        self.assertEqual(payload, before)
+
+    def test_backfill_sends_identical_original_payload_to_both_backends(self):
+        gen = load()
+        gen.BACKFILL_END = 1_800_000_000
+        payload = self.payload()
+        before = copy.deepcopy(payload)
+        with mock.patch.object(gen, "services_batch", return_value=payload["streams"]), \
+             mock.patch.object(gen, "post_strict") as send:
+            gen.backfill(1, 1)
+        self.assertEqual(len(send.call_args_list), 2)
+        self.assertEqual(send.call_args_list[0].args, (gen.LOKI_URL + "/loki/api/v1/push", before))
+        self.assertEqual(send.call_args_list[1].args, (gen.VL_URL + "/insert/loki/api/v1/push?disable_message_parsing=1", before))
+        self.assertEqual(payload, before)
 
 
 if __name__ == "__main__":

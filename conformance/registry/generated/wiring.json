@@ -450,6 +450,7 @@
       "test/e2e-compat/detected_fields_empty_answer_test.go",
       "test/e2e-compat/detected_fields_logfmt_tokens_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
+      "test/e2e-compat/query_semantics_matrix_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
     ],
     "loki_api_v1_detected_labels": [
@@ -1402,6 +1403,12 @@
       "internal/proxy/label_filter_readers_differential_test.go",
       "test/e2e-compat/detected_fields_empty_answer_test.go"
     ],
+    "semantics/detected-fields-index-outside-sample": [
+      "test/e2e-compat/detected_fields_logfmt_tokens_test.go"
+    ],
+    "semantics/detected-fields-json-body-filter": [
+      "test/e2e-compat/line_fields_parity_test.go"
+    ],
     "semantics/detected-fields-no-logfmt-token-fields": [
       "internal/proxy/detected_fields_logfmt_tokens_test.go",
       "test/e2e-compat/detected_fields_logfmt_tokens_test.go"
@@ -1820,7 +1827,8 @@
       "internal/proxy/ordered_json_filter_pushdown_test.go"
     ],
     "semantics/label-filter-before-parser-reads-ingest-json-key": [
-      "internal/proxy/compat_oversized_reply_test.go"
+      "internal/proxy/compat_oversized_reply_test.go",
+      "test/e2e-compat/line_fields_parity_test.go"
     ],
     "semantics/label-filter-expression-syntax": [
       "internal/logql/label_filter_expr_golden_test.go",
@@ -3086,7 +3094,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 684,
+  "registry_items": 689,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -6081,6 +6089,7 @@
     ],
     "test/e2e-compat/detected_fields_logfmt_tokens_test.go": [
       "loki_api_v1_detected_fields",
+      "semantics/detected-fields-index-outside-sample",
       "semantics/detected-fields-no-logfmt-token-fields"
     ],
     "test/e2e-compat/detected_level_corpus_test.go": [
@@ -6364,7 +6373,9 @@
       "loki_api_v1_labels",
       "loki_api_v1_query_range",
       "profiles/detected-fields-structured-metadata-beside-json-line",
-      "profiles/parsed-fields-without-parser"
+      "profiles/parsed-fields-without-parser",
+      "semantics/detected-fields-json-body-filter",
+      "semantics/label-filter-before-parser-reads-ingest-json-key"
     ],
     "test/e2e-compat/line_filter_error_runs_test.go": [
       "loki_api_v1_query",
@@ -6543,6 +6554,7 @@
       "window-bounds-and-step-alignment"
     ],
     "test/e2e-compat/query_semantics_matrix_test.go": [
+      "loki_api_v1_detected_fields",
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "parser-json",
@@ -6864,9 +6876,12 @@
     "data-density-and-chart-quality",
     "drilldown/detected-field-values",
     "drilldown/detected-fields-metadata-reported-as-json",
+    "drilldown/detected-fields-response-limit",
     "drilldown/detected-fields-type-inference",
+    "drilldown/detected-labels-empty-for-visible-stream",
     "drilldown/detected-labels-lists-stored-field",
     "drilldown/detected-labels-sampled-cardinality",
+    "drilldown/fields-overview-heavy-fanout",
     "drilldown/patterns-counts-tier-step-buckets",
     "drilldown/plugin-legend-sync-race",
     "drilldown/volume-detected-level-not-normalised",
@@ -6955,5 +6970,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 471
+  "wired_items": 473
 }

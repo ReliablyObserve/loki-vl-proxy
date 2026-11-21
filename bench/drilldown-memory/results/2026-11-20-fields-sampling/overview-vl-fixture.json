@@ -1,0 +1,92 @@
+[
+  {
+    "hours": 24,
+    "step": 300,
+    "fixture_hours": 35,
+    "batch_calls": 1,
+    "batch_bytes": 19828,
+    "batch_seconds": 0.0375,
+    "independent_calls": 4,
+    "independent_bytes": 20014,
+    "independent_seconds": 0.1152,
+    "fields": {
+      "batch_id": {
+        "batch_buckets": 288,
+        "batch_count": 2160,
+        "loki_count": 2160,
+        "vs_independent_buckets": 0,
+        "vs_loki_buckets": 0,
+        "loki_seconds": 0.015
+      },
+      "pipeline": {
+        "batch_buckets": 288,
+        "batch_count": 1620,
+        "loki_count": 1620,
+        "vs_independent_buckets": 0,
+        "vs_loki_buckets": 0,
+        "loki_seconds": 0.0106
+      },
+      "processed": {
+        "batch_buckets": 288,
+        "batch_count": 1728,
+        "loki_count": 1728,
+        "vs_independent_buckets": 0,
+        "vs_loki_buckets": 0,
+        "loki_seconds": 0.0125
+      },
+      "total": {
+        "batch_buckets": 288,
+        "batch_count": 2160,
+        "loki_count": 2160,
+        "vs_independent_buckets": 0,
+        "vs_loki_buckets": 0,
+        "loki_seconds": 0.0106
+      }
+    }
+  },
+  {
+    "hours": 48,
+    "step": 600,
+    "fixture_hours": 35,
+    "batch_calls": 1,
+    "batch_bytes": 15311,
+    "batch_seconds": 0.0292,
+    "independent_calls": 4,
+    "independent_bytes": 15497,
+    "independent_seconds": 0.1109,
+    "fields": {
+      "batch_id": {
+        "batch_buckets": 210,
+        "batch_count": 3150,
+        "loki_count": 3150,
+        "vs_independent_buckets": 0,
+        "vs_loki_buckets": 0,
+        "loki_seconds": 0.015
+      },
+      "pipeline": {
+        "batch_buckets": 210,
+        "batch_count": 2361,
+        "loki_count": 2361,
+        "vs_independent_buckets": 0,
+        "vs_loki_buckets": 0,
+        "loki_seconds": 0.0188
+      },
+      "processed": {
+        "batch_buckets": 210,
+        "batch_count": 2520,
+        "loki_count": 2520,
+        "vs_independent_buckets": 0,
+        "vs_loki_buckets": 0,
+        "loki_seconds": 0.0156
+      },
+      "total": {
+        "batch_buckets": 210,
+        "batch_count": 3150,
+        "loki_count": 3150,
+        "vs_independent_buckets": 0,
+        "vs_loki_buckets": 0,
+        "loki_seconds": 0.0095
+      }
+    }
+  }
+]

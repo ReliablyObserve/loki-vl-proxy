@@ -45,6 +45,29 @@ const logLineCacheKeyVersion = "line-v5"
 // entries written under URL-only POST identities.
 const detectedMetadataCacheKeyVersion = "@detected-level-form-v2"
 
+// The Loki profile's sampled answer must never share a cache entry with an
+// index-enriched answer from older binaries or other metadata profiles.
+const sampledFieldCacheKeyVersion = "@detected-fields-sample-v3"
+
+func (p *Proxy) sampledFieldCacheVersion(r *http.Request, endpoint string) string {
+	if (endpoint != "detected_fields" && endpoint != "detected_field_values") || !p.fieldsSampleOnly(r.Context()) {
+		return ""
+	}
+	if endpoint == "detected_fields" {
+		version := sampledFieldCacheKeyVersion + ":" + strconv.Itoa(min(p.detectedFieldsLineLimit(r), p.limits().DetectedScanLines))
+		if r.FormValue("line_limit") != "" {
+			version += ":exact"
+		}
+		return version
+	}
+	scanLimit := min(parseDetectedLineLimit(r), detectedFieldsSampleLimit)
+	return sampledFieldCacheKeyVersion + ":" + strconv.Itoa(min(scanLimit, p.limits().DetectedScanLines))
+}
+
+func (p *Proxy) exactFieldSampleWindow(endpoint string, r *http.Request) bool {
+	return endpoint == "detected_fields" && r.FormValue("line_limit") != "" && p.fieldsSampleOnly(r.Context())
+}
+
 // readCacheKeyVersion returns the key version segment for endpoint, if any.
 func readCacheKeyVersion(endpoint string) string {
 	switch endpoint {
@@ -87,8 +110,13 @@ func endpointForReadCacheKey(cacheKey string) string {
 func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, extraParts ...string) string {
 
 	var authScope string
+	var exactWindow bool
 	if r != nil {
 		authScope = p.fingerprintFromCtx(r.Context(), r)
+		if version := p.sampledFieldCacheVersion(r, endpoint); version != "" {
+			extraParts = append(extraParts, version)
+			exactWindow = p.exactFieldSampleWindow(endpoint, r)
+		}
 	}
 	if memoKey, ok := buildCanonicalReadCacheMemoKey(endpoint, orgID, r, extraParts); ok && p != nil {
 		memoKey.authScope = authScope
@@ -102,7 +130,7 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 		if authScope != "" {
 			extraParts = append(extraParts, "auth:"+authScope)
 		}
-		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, extraParts...)
+		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...)
 		p.readCacheKeyMemoMu.Lock()
 		if p.readCacheKeyMemo == nil || len(p.readCacheKeyMemo) >= maxReadCacheKeyMemoEntries {
 			p.readCacheKeyMemo = make(map[canonicalReadCacheMemoKey]string, 2048)
@@ -114,7 +142,7 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 	if authScope != "" {
 		extraParts = append(extraParts, "auth:"+authScope)
 	}
-	return computeCanonicalReadCacheKey(endpoint, orgID, r, extraParts...)
+	return computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...)
 }
 
 func buildCanonicalReadCacheMemoKey(endpoint, orgID string, r *http.Request, extraParts []string) (canonicalReadCacheMemoKey, bool) {
@@ -133,7 +161,7 @@ func buildCanonicalReadCacheMemoKey(endpoint, orgID string, r *http.Request, ext
 	return key, true
 }
 
-func computeCanonicalReadCacheKey(endpoint, orgID string, r *http.Request, extraParts ...string) string {
+func computeCanonicalReadCacheKey(endpoint, orgID string, r *http.Request, exactWindow bool, extraParts ...string) string {
 	params := r.URL.Query()
 	if r.Method == http.MethodPost {
 		// Match FormValue's body-before-URL precedence, including partial forms
@@ -144,7 +172,7 @@ func computeCanonicalReadCacheKey(endpoint, orgID string, r *http.Request, extra
 			params[name] = append([]string(nil), values...)
 		}
 	}
-	normalizeReadCacheParams(endpoint, params)
+	normalizeReadCacheParams(endpoint, params, exactWindow)
 	switch endpoint {
 	case "detected_fields", "detected_field_values", "detected_labels":
 		params.Set("limit", strconv.Itoa(parseDetectedLineLimit(r)))
@@ -234,7 +262,7 @@ func bucketTimestampString(ts string, bucket time.Duration) string {
 	return strconv.FormatInt((ns/b)*b, 10)
 }
 
-func normalizeReadCacheParams(endpoint string, params url.Values) {
+func normalizeReadCacheParams(endpoint string, params url.Values, exactWindow bool) {
 	if params == nil {
 		return
 	}
@@ -246,7 +274,7 @@ func normalizeReadCacheParams(endpoint string, params url.Values) {
 	// left unmodified — only metadata responses benefit from time-bucketed keys.
 	switch endpoint {
 	case "labels", "label_values", "detected_fields", "detected_field_values", "detected_labels":
-		if startNs, ok1 := parseLokiTimeToUnixNano(startRaw); ok1 {
+		if startNs, ok1 := parseLokiTimeToUnixNano(startRaw); ok1 && !exactWindow {
 			if endNs, ok2 := parseLokiTimeToUnixNano(endRaw); ok2 && endNs > startNs {
 				bs, be := bucketMetadataTime(startNs, endNs)
 				startRaw = strconv.FormatInt(bs, 10)
@@ -542,7 +570,7 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 		}
 	}
 	if values == nil && errVals == nil {
-		_, fieldValues, detectErr := p.detectFields(scanCtx, query, start, end, lineLimit)
+		_, fieldValues, detectErr := p.detectFields(scanCtx, query, start, end, min(lineLimit, detectedFieldsSampleLimit))
 		if detectErr != nil {
 			return p.detectedValuesReadFailed(ctx, scanCtx, detectErr, "detected_field_values_detect_fields")
 		}

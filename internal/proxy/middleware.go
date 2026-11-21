@@ -466,6 +466,9 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	// Only metadata has a deliberately approximate time policy. Final query
 	// responses must preserve exact bounds and the evaluation grid.
 	rawQuery := r.URL.RawQuery
+	if p.exactFieldSampleWindow(endpoint, r) {
+		return p.responseKey(endpoint, r, rawQuery), true
+	}
 	switch endpoint {
 	case "labels", "label_values", "detected_fields", "detected_field_values", "detected_labels":
 		endRaw := r.FormValue("end")
@@ -515,6 +518,9 @@ func (p *Proxy) buildResponseKey(head, endpoint string, r *http.Request, rawQuer
 		fences = responseKeyFences(r, query, site)
 	}
 	version := readCacheKeyVersion(endpoint)
+	if sampled := p.sampledFieldCacheVersion(r, endpoint); sampled != "" {
+		version = sampled
+	}
 	tenant := r.Header.Get("X-Scope-OrgID")
 	fp := p.fingerprintFromCtx(r.Context(), r)
 	var profileBuf [256]byte

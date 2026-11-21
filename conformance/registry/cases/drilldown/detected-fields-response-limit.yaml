@@ -1,0 +1,30 @@
+id: drilldown/detected-fields-response-limit
+title: Detected Fields applies the response field count separately from the sampled line count
+proves:
+  - loki_api_v1_detected_fields
+consumer: drilldown
+why: |
+  With the visual Fields sample and line_limit=100, limit=1, Loki
+  3.7.10 returned a single field and reported limit=1. The proxy
+  returned four fields and reported limit=1000. The line sample
+  controls the rows scanned, while the response limit controls the
+  fields reported.
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    line_limit: '100'
+    limit: '1'
+compare:
+  mode: observed
+  fields: [limit, fields]
+  expect: Compare the effective response cap, including field_limit alias behavior and requests with empty results.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: internal/proxy/label_handlers.go detectedFieldsPayload
+  loki: One field and limit=1 in the captured sample.
+  proxy: Four fields and limit=1000 on main.
+  planned_test: 'Extend TestCompat_DetectedFieldsNoLogfmtTokenFields with independent line_limit and response-limit axes.'
+  clusters: []
