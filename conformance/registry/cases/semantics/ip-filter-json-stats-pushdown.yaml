@@ -44,9 +44,7 @@ gap:
   loki: 'ip() on an absent label drops the line under = and !=; the address scan accepts the pattern forms (test/e2e-compat ip_label_filter_test.go)'
   proxy: 'no series: the filter compares the value with the text ip(...)'
   planned_test: 'TestCompat_IPLabelFilterJSONMetric (test/e2e-compat, group core)'
-  clusters:
-    - 4ebfd2c5
-    - e1528358
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

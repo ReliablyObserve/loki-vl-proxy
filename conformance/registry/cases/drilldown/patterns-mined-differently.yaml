@@ -51,7 +51,4 @@ gap:
   proxy: 'query-side mining'
   planned_test: 'TestPatternMinerMatchesLokisRecordedPatterns, TestPatternsLokiAnswerDependsOnTheOrderOfTiedLines (internal/proxy, recorded Loki answers); TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines (test/e2e-compat, live)'
   clusters:
-    - 2c8e8dca
     - 52dcf85a
-    - 556a81b7
-    - 7c1a4612

@@ -42,5 +42,4 @@ gap:
   loki: 'the recorded answer of the 2026-11-07 run (Grafana ds_query, 1h)'
   proxy: '360 points for level=info where Loki has 721'
   planned_test: 'TestCompat_UnwrapFirstLastRangeLevelBy with a line filter and an offset (test/e2e-compat, group semantics)'
-  clusters:
-    - 1ed3ce08
+  clusters: []
