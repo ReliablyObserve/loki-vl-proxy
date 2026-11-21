@@ -79,7 +79,7 @@ func TestRequestParamAnswers(t *testing.T) {
 		// them against today's clock eventually crosses the resolution or
 		// range limit even though neither request nor implementation changed.
 		// Advance before starting the HTTP servers and cache goroutines.
-		time.Sleep(time.Unix(1794570675, 0).Sub(time.Now()))
+		time.Sleep(time.Until(time.Unix(1794570675, 0)))
 		replayRequestParamAnswers(t)
 	})
 }
