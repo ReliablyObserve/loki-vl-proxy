@@ -1198,7 +1198,7 @@ jobs:
       matrix:
         group:
           - name: core
-            pattern: '^(TestSetup_IngestLogs|TestCompat_.*|TestExtended_.*|TestChaining_.*|TestAlertingCompat_.*|TestExplore_HTTPQueryRangeContracts|TestLokiFunctions_.*|TestGrafanaDatasourceCatalogAndHealth|TestProxyCompatibilitySurface|TestPinnedCompatibilityMatrixMatchesCompose)$'
+            pattern: '^(TestSetup_IngestLogs|TestCompat_.*|TestNumericLokiCancellationRetry|TestStageFixtureReadiness|TestExtended_.*|TestChaining_.*|TestAlertingCompat_.*|TestExplore_HTTPQueryRangeContracts|TestLokiFunctions_.*|TestGrafanaDatasourceCatalogAndHealth|TestProxyCompatibilitySurface|TestPinnedCompatibilityMatrixMatchesCompose)$'
           - name: drilldown
             pattern: '^(TestSetup_IngestLogs|TestDrilldown_.*|TestFeature_(IndexStats_.*|IndexVolume_.*|IndexVolumeRange_.*|DrilldownClusterLevelOrFilters|MultitenantDrilldownClusterLevelOrFilters)|TestProxy_DrilldownLimits_.*|TestE2ELock_DrilldownChunkedMerge_.*|TestDrilldownTrackScore|TestLokiTrackScore|TestVLTrackScore)$'
           - name: otel-edge
