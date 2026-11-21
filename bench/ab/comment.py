@@ -332,10 +332,10 @@ def resource_section(rows, base, candidate, targeted=()):
                                      f"{pair[0]}/{pair[1]['shape']}" not in targeted))
     lines = ["", "<details><summary>Observed API CPU, process memory and response size</summary>", "",
              "CPU is the process counter change around each request, including concurrent/background work. "
-             "Memory is the maximum of two boundary samples, not a true peak or a request allocation. "
-             "On Linux the process metric is RSS; non-Linux fallback builds expose Go MemStats.Sys under that metric name. "
-             "Response size is the largest body read by the harness across runs, not wire traffic. "
-             "Repeat values are medians of the existing repeat observations. Full cache tiers, backend reads and all rows are in summary JSON.", "",
+             + "Memory is the maximum of two boundary samples, not a true peak or a request allocation. "
+             + "On Linux the process metric is RSS; non-Linux fallback builds expose Go MemStats.Sys under that metric name. "
+             + "Response size is the largest body read by the harness across runs, not wire traffic. "
+             + "Repeat values are medians of the existing repeat observations. Full cache tiers, backend reads and all rows are in summary JSON.", "",
              "| shape / range | profile | mode | base CPU (s) | PR CPU (s) | base process memory (MiB) | PR process memory (MiB) | base max body (KiB) | PR max body (KiB) |",
              "|---|---|---|---:|---:|---:|---:|---:|---:|"]
     def number(value, scale=1):

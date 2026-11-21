@@ -7,7 +7,6 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from bench.visual.vio import error_text as error_text  # noqa: E402
 
 
 @lru_cache(maxsize=1)

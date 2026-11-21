@@ -517,8 +517,8 @@ def runtime_section(rows, targeted=(), failed=()):
              f"{summary['regressions']} with material regressions, {summary['unproven']} with incomplete proof.", "",
              "<details><summary>Runtime API and Grafana measurements</summary>", "",
              "One observation per capture; resource findings retain the first pass alongside the recapture. These are not p50/p95 estimates. "
-             "CPU is browser main-thread CPU; sampled JS heap is not total browser/Grafana RSS. Wire bytes include the "
-             "encoded API responses seen by Chromium. First API data is not chart paint. Missing measurements are unavailable.", "",
+             + "CPU is browser main-thread CPU; sampled JS heap is not total browser/Grafana RSS. Wire bytes include the "
+             + "encoded API responses seen by Chromium. First API data is not chart paint. Missing measurements are unavailable.", "",
              "| page / range | build | settle (s) | first API data (s) | browser thread CPU (s) | sampled JS heap (MiB) | API wire (KiB) | API requests | heap samples |",
              "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
     display = sorted(measured, key=lambda r: (not r.get("runtime_problems") and key(r) not in failed, r["page"] not in targeted))[:12]
@@ -543,8 +543,8 @@ def runtime_section(rows, targeted=(), failed=()):
                     for row in display if row.get("base_comparison_note")],
               f"Showing {len(display)} of {len(measured)} pairs. Every observation is in the comparison artifact.", "",
               "Material regressions require both >25% and an absolute increase: 0.25 s browser CPU, "
-              "32 MiB sampled JS heap, 64 KiB API wire, or 0.5 s settlement. A warmer exact-window recapture cannot clear a first-pass resource finding; "
-              "intended visual-change labels do not waive this gate.", "", "</details>"]
+              + "32 MiB sampled JS heap, 64 KiB API wire, or 0.5 s settlement. A warmer exact-window recapture cannot clear a first-pass resource finding; "
+              + "intended visual-change labels do not waive this gate.", "", "</details>"]
     return lines, summary
 
 

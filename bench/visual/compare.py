@@ -22,10 +22,10 @@ import re
 import sys
 from collections import defaultdict
 
-from vio import dump_json, load_json, write_text
+from vio import dump_json, error_text, load_json, write_text
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-from bench.ab.answers import error_text, query_rejection  # noqa: E402
+from bench.ab.answers import query_rejection  # noqa: E402
 
 
 # Request fields that differ between the three datasources or between page loads without changing the question.

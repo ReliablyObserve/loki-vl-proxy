@@ -65,8 +65,9 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from answers import error_text, query_rejection  # noqa: E402
+from answers import query_rejection  # noqa: E402
 from selection import query_lookback  # noqa: E402
+from bench.visual.vio import error_text  # noqa: E402
 import reuse  # noqa: E402
 import stack  # noqa: E402
 
