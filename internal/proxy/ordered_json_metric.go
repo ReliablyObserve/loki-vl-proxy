@@ -3489,16 +3489,20 @@ func (plan *orderedJSONMetricPlan) processWithStreamLabels(line string, base, st
 	return plan.processWithContext(context.Background(), line, base, streamLabels, base)
 }
 
-func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line string, base, streamLabels, rawFields map[string]string) (map[string]string, bool, error) {
-	var labels map[string]string
-	if key := plan.projectedLabel; key != "" {
-		labels = make(map[string]string, 1)
-		if value, present := base[key]; present {
-			labels[key] = value
-		}
-	} else {
-		labels = cloneStringMap(base)
+func (plan *orderedJSONMetricPlan) mutableLabels(base map[string]string) map[string]string {
+	key := plan.projectedLabel
+	if key == "" {
+		return cloneStringMap(base)
 	}
+	labels := make(map[string]string, 1)
+	if value, present := base[key]; present {
+		labels[key] = value
+	}
+	return labels
+}
+
+func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line string, base, streamLabels, rawFields map[string]string) (map[string]string, bool, error) {
+	labels := plan.mutableLabels(base)
 	bodyProjection, bodyProjectionReady := false, false
 	metadata := make(map[string]bool)
 	if !plan.mixedParsers {
@@ -3885,6 +3889,97 @@ func (p *Proxy) newOrderedJSONRowReader() (*orderedJSONRowReader, error) {
 // inclusive) and adds the samples of the evaluations at start, start+step, ...
 // up to end to reader.
 func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSONMetricPlan, reader *orderedJSONRowReader, query string, from, to, start, end time.Time, step time.Duration) error {
+	if plan.projectedLabel == "" || to.Before(from) || !time.Unix(0, from.UnixNano()).Equal(from) ||
+		!time.Unix(0, to.UnixNano()).Equal(to) || uint64(to.UnixNano())-uint64(from.UnixNano()) > math.MaxInt64 {
+		return p.readOrderedJSONMetricSpan(ctx, plan, reader, query, from, to, start, end, step)
+	}
+	// Upper-level/frontend splits already determine this requested span.
+	// A long but small answer needs one read; transport subdivision is only
+	// recovery from a typed decoded-body cap, not another eager split layer.
+	return p.readOrderedJSONMetricChunk(ctx, plan, reader, query, from, to, start, end, step)
+}
+
+// readOrderedJSONMetricChunk commits only a complete raw span. A decoded-body
+// cap retries smaller, disjoint spans; rows and bytes of every attempt remain
+// charged to the original request. No partial answer may seed its point cache.
+func (p *Proxy) readOrderedJSONMetricChunk(ctx context.Context, plan *orderedJSONMetricPlan, reader *orderedJSONRowReader, query string, from, to, start, end time.Time, step time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target := reader
+	if len(reader.series) != 0 {
+		staged := *reader
+		staged.series = make(map[string]manualSeriesSamples)
+		target = &staged
+	}
+	err := p.readOrderedJSONMetricSpan(ctx, plan, target, query, from, to, start, end, step)
+	if target != reader {
+		reader.rows, reader.read, reader.levels = target.rows, target.read, target.levels
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if err == nil {
+		if target != reader {
+			return p.mergeOrderedJSONMetricChunk(ctx, reader, target.series)
+		}
+		return nil
+	}
+	var capped *backendBodyTooLargeError
+	if !errors.As(err, &capped) || ctx.Err() != nil || !from.Before(to) ||
+		reader.rows > reader.limit || reader.read > reader.maxBytes {
+		return err
+	}
+	// The direct target was empty before the failed attempt. Otherwise its
+	// contributions are isolated in target, never in an earlier complete span.
+	if target == reader {
+		clear(reader.series)
+	} else {
+		target.series = nil
+	}
+	n := uint64(to.UnixNano()) - uint64(from.UnixNano())
+	if n >= math.MaxInt64 || n == 0 {
+		return err
+	}
+	size := time.Duration((n + listedChunkShrink) / listedChunkShrink)
+	parts := splitQueryRangeWindows(from.UnixNano(), to.UnixNano(), size, "forward")
+	if last := len(parts) - 1; last >= 0 && parts[last].endNs-parts[last].startNs >= int64(size) {
+		// The general splitter folds a final singleton into its preceding
+		// span. A retry must keep it separate, even for two adjacent ns.
+		parts[last].endNs--
+		parts = append(parts, queryRangeWindow{startNs: to.UnixNano(), endNs: to.UnixNano()})
+	}
+	if len(parts) < 2 || parts[len(parts)-1].endNs != to.UnixNano() {
+		return err
+	}
+	for _, part := range parts {
+		if err := p.readOrderedJSONMetricChunk(ctx, plan, reader, query, time.Unix(0, part.startNs), time.Unix(0, part.endNs), start, end, step); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Proxy) mergeOrderedJSONMetricChunk(ctx context.Context, reader *orderedJSONRowReader, series map[string]manualSeriesSamples) error {
+	for key, next := range series {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		entry, exists := reader.series[key]
+		if !exists {
+			if err := seriesLimitCollecting(ctx, len(reader.series), p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+				return err
+			}
+			reader.series[key] = next
+			continue
+		}
+		entry.Samples = append(entry.Samples, next.Samples...)
+		reader.series[key] = entry
+	}
+	return nil
+}
+
+func (p *Proxy) readOrderedJSONMetricSpan(ctx context.Context, plan *orderedJSONMetricPlan, reader *orderedJSONRowReader, query string, from, to, start, end time.Time, step time.Duration) error {
 	// The query argument limit asks VL to sort by timestamp. A final limit pipe
 	// bounds raw collection without that sort; local window evaluation sorts
 	// the complete accepted rows and rejects overflow instead of truncating.
@@ -3928,6 +4023,12 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 		// Unmarshal preserves keys that are absent from the next row.
 		clear(row)
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			// Scanner emits its final partial token before reporting a read
+			// error. Preserve a size cap or aborted body instead of mistaking
+			// the cut NDJSON row for invalid source JSON.
+			if readErr := scanner.Err(); readErr != nil {
+				return readErr
+			}
 			return fmt.Errorf("invalid backend metric row: %w", err)
 		}
 		ts, ok := parseFlexibleUnixNanos(row["_time"])

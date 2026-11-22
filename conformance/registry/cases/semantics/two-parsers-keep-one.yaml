@@ -66,6 +66,12 @@ why: |
   The typed admission in internal/queryplan/resolve.go and ordered execution in
   internal/proxy/ordered_json_metric.go are exercised by the existing API and
   native Explore catalogs through those same matrix case IDs.
+  TestOrderedRawMetricChunksMatchRecordedLoki compares the count, rate and byte
+  variants with four recorded engine answers when a compressed backend response
+  is cut inside a JSON row. Only a typed decoded-body cap retries disjoint time
+  spans; failed attempts remain charged to the same request budgets. Small
+  complete long-range responses still use one raw read. This does not remove
+  the cumulative raw-row/byte limits or prove large-window UI performance.
   Log replies, malformed strict logfmt, and other unsupported pipelines remain open.
   Concurrent parser probes are scoped by tenant and forwarded request identity.
   TestDrilldown_ParserProbeIsolatesRequestScopes verifies distinct tenant/auth
