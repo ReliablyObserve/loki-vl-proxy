@@ -3,6 +3,7 @@
 package e2e_compat
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -150,7 +151,7 @@ func testCompatNumericEqualityLikeLoki(t *testing.T, parser string) {
 	deadline := time.Now().Add(60 * time.Second)
 	for {
 		all := window(fmt.Sprintf(`{probe=%q}`, probe))
-		_, _, lp := queryRangeGET(t, lokiURL, all, headers)
+		_, _, lp := numericLokiRangeGET(t, all, headers)
 		_, _, pp := queryRangeGET(t, proxyURL, all, headers)
 		if len(lines(lp)) == i && len(lines(pp)) == i {
 			break
@@ -165,7 +166,7 @@ func testCompatNumericEqualityLikeLoki(t *testing.T, parser string) {
 	} {
 		t.Run(filter, func(t *testing.T) {
 			query := fmt.Sprintf(`{probe=%q} | %s | %s`, probe, parser, filter)
-			ls, lb, lp := queryRangeGET(t, lokiURL, window(query), headers)
+			ls, lb, lp := numericLokiRangeGET(t, window(query), headers)
 			ps, pb, pp := queryRangeGET(t, proxyURL, window(query), headers)
 			if ls != http.StatusOK || ps != http.StatusOK {
 				t.Fatalf("%q: Loki=%d %s proxy=%d %s", query, ls, lb, ps, pb)
@@ -187,7 +188,7 @@ func testCompatNumericEqualityLikeLoki(t *testing.T, parser string) {
 				params := url.Values{"query": {metric},
 					"start": {strconv.FormatInt(stamp.Add(10*time.Second).UnixNano(), 10)},
 					"end":   {strconv.FormatInt(stamp.Add(20*time.Second).UnixNano(), 10)}, "step": {"5"}}
-				ls, lb, _ := queryRangeGET(t, lokiURL, params, headers)
+				ls, lb, _ := numericLokiRangeGET(t, params, headers)
 				ps, pb, _ := queryRangeGET(t, proxyURL, params, headers)
 				if ls != http.StatusBadRequest || !strings.Contains(lb, "LabelFilterErr") {
 					t.Fatalf("Loki oracle did not expose the fixture's conversion error: %d %s", ls, lb)
@@ -206,7 +207,7 @@ func testCompatNumericEqualityLikeLoki(t *testing.T, parser string) {
 			t.Run(fmt.Sprintf("source-%s-shape-%d", source, index), func(t *testing.T) {
 				params := url.Values{"query": {query}, "start": {strconv.FormatInt(stamp.Add(10*time.Second).UnixNano(), 10)},
 					"end": {strconv.FormatInt(stamp.Add(20*time.Second).UnixNano(), 10)}, "step": {"5"}}
-				ls, lb, lp := queryRangeGET(t, lokiURL, params, headers)
+				ls, lb, lp := numericLokiRangeGET(t, params, headers)
 				ps, pb, pp := queryRangeGET(t, proxyURL, params, headers)
 				if ls != http.StatusOK && ls != http.StatusBadRequest || ps != ls {
 					t.Fatalf("source label status: Loki=%d %s proxy=%d %s", ls, lb, ps, pb)
@@ -278,7 +279,7 @@ func testCompatNumericEqualityLikeLoki(t *testing.T, parser string) {
 					params.Set("start", strconv.FormatInt(start.UnixNano(), 10))
 					params.Set("end", strconv.FormatInt(start.Add(time.Minute).UnixNano(), 10))
 				}
-				ls, lb, lp := queryRangeGET(t, lokiURL, params, headers)
+				ls, lb, lp := numericLokiRangeGET(t, params, headers)
 				ps, pb, pp := queryRangeGET(t, proxyURL, params, headers)
 				if tc.sourceError {
 					if ls != http.StatusBadRequest || ps != ls || strings.TrimSpace(pb) != strings.TrimSpace(lb) {
@@ -307,7 +308,7 @@ func testCompatNumericEqualityLikeLoki(t *testing.T, parser string) {
 			query := fmt.Sprintf(wrap, fmt.Sprintf(`count_over_time({probe=%q} | %s | n=200 [5s])`, probe+"-gap", parser))
 			params := url.Values{"query": {query}, "start": {strconv.FormatInt(evaluation.UnixNano(), 10)},
 				"end": {strconv.FormatInt(evaluation.Add(time.Minute).UnixNano(), 10)}, "step": {"60"}}
-			ls, lb, lp := queryRangeGET(t, lokiURL, params, headers)
+			ls, lb, lp := numericLokiRangeGET(t, params, headers)
 			ps, pb, pp := queryRangeGET(t, proxyURL, params, headers)
 			if ls != http.StatusOK || ps != ls {
 				t.Fatalf("window-gap error: Loki=%d %s proxy=%d %s", ls, lb, ps, pb)
@@ -318,6 +319,77 @@ func testCompatNumericEqualityLikeLoki(t *testing.T, parser string) {
 				t.Fatalf("window-gap samples: proxy=%v Loki=%v", got, want)
 			}
 		})
+	}
+}
+
+func TestNumericLokiCancellationRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		replies     []int
+		cancelAfter int
+		want        int
+	}{
+		{"transient cancellation then semantic error", []int{499, 400}, -1, 400},
+		{"repeated cancellation exhausted", []int{499, 499}, -1, 499},
+		{"parser error", []int{400}, -1, 400},
+		{"pipeline or limit error", []int{500}, -1, 500},
+		{"successful response", []int{200}, -1, 200},
+		{"canceled before request", nil, 0, 0},
+		{"canceled before retry", []int{499}, 1, 499},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			attempts := 0
+			if tc.cancelAfter == 0 {
+				cancel()
+			}
+			status, body, payload := retryNumericLoki499(ctx, t.Logf, func() (int, string, map[string]any) {
+				if attempts == len(tc.replies) {
+					t.Fatal("unexpected extra query")
+				}
+				code := tc.replies[attempts]
+				attempts++
+				if tc.cancelAfter == attempts {
+					cancel()
+				}
+				return code, fmt.Sprintf("original body %d", attempts), map[string]any{"attempt": attempts}
+			})
+			if status != tc.want || attempts != len(tc.replies) {
+				t.Fatalf("status %d after %d attempts, want %d after %d", status, attempts, tc.want, len(tc.replies))
+			}
+			if attempts > 0 && (body != fmt.Sprintf("original body %d", attempts) || payload["attempt"] != attempts) {
+				t.Fatalf("final response changed: %q %v", body, payload)
+			}
+		})
+	}
+}
+
+// Retry one canceled Loki reference read against the identical pinned window. The proxy is always read once.
+func numericLokiRangeGET(t *testing.T, params url.Values, headers map[string]string) (int, string, map[string]any) {
+	t.Helper()
+	status, body, payload := retryNumericLoki499(t.Context(), t.Logf, func() (int, string, map[string]any) {
+		return queryRangeGET(t, lokiURL, params, headers)
+	})
+	if status == 499 || status == 0 {
+		t.Fatalf("Loki reference unavailable for %q: status %d %s", params.Get("query"), status, body)
+	}
+	return status, body, payload
+}
+
+func retryNumericLoki499(ctx context.Context, logf func(string, ...any), query func() (int, string, map[string]any)) (int, string, map[string]any) {
+	for attempt := 1; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return 0, err.Error(), nil
+		}
+		status, body, payload := query()
+		if status != 499 {
+			return status, body, payload
+		}
+		logf("Loki reference attempt %d/2 returned HTTP 499: %.500s", attempt, body)
+		if attempt == 2 || ctx.Err() != nil {
+			return status, body, payload
+		}
 	}
 }
 

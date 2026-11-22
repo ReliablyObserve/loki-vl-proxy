@@ -718,11 +718,23 @@ def render(base, head, evidence):
         over = mapping(verdict.get("over_2x"))
         if over:
             focus += ["Above 2× Loki: " + ", ".join(f"{fmt(over[k])} {k.replace('_', ' ')}" for k in ("new", "worsened", "known", "cleared", "locked", "lost_below") if k in over) + (" (warning only; green check does not clear gaps). " if over.get("mode") == "warn" else ". ") + link(sources.get("perf", {}))]
-        if verdict.get("state") not in ("invalid", "error"):
+        proof = mapping(verdict.get("runtime_proof"))
+        if proof.get("required"):
+            complete = proof.get("complete") is True
+            signal = ("Required API runtime proof complete." if complete else
+                      f"Required API runtime proof incomplete ({fmt(proof.get('problems'))} findings).")
+            (focus if complete else urgent).append(signal + " " + link(sources.get("perf", {})))
+        if verdict.get("state") not in ("invalid", "error") and (not proof or proof.get("complete") is True):
             focus += [example + " " + link(sources.get("perf", {})) for example in perf_examples(perf)]
     vv = mapping(visual.get("verdict.json"))
     if vv:
         focus += [f"Visual proof: {fmt(vv.get('captures'))} captures, {len(vv.get('failures', []))} failures, {len(vv.get('missing', []))} missing, {fmt(vv.get('improved'))} improved, {fmt(vv.get('warnings'))} warnings. " + link(sources.get("visual", {}))]
+        runtime = mapping(vv.get("runtime_proof"))
+        if runtime:
+            signal = (f"Grafana runtime: {fmt(runtime.get('measured_pairs'))} base/PR pairs measured, "
+                      f"{fmt(runtime.get('regressions'))} resource/time regressions, "
+                      f"{fmt(runtime.get('unproven'))} incomplete proofs. " + link(sources.get("visual", {})))
+            (urgent if runtime.get("regressions") or runtime.get("unproven") else focus).append(signal)
     ci_summary = mapping(ci.get("ci-regression-summary.json"))
     ci_tests = mapping(ci_summary.get("tests"))
     if ci_tests:

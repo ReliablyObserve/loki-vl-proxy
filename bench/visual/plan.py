@@ -160,12 +160,30 @@ def ranges_of(entry, spec):
     return [LIVE] if entry["kind"] == "tail" else list(entry.get("ranges") or spec["ci_ranges"])
 
 
+def fixture_hours(plan, spec=None):
+    """Anchor every shard to the full plan, including explicit selector lookbacks and offsets."""
+    spec = spec or load_spec()
+    pages = {p["id"]: p for p in spec["pages"]}
+    bounds = [spec["ranges"][r] + max(3600, ab.query_lookback(pages.get(page, {}).get("query", "")) + 600)
+              for page, entry in plan["entries"].items() for r in entry["ranges"] if r != LIVE]
+    return max(bounds, default=3600) / 3600
+
+
+def runtime_proof_problems(result):
+    proof = result.get("runtime_proof", {})
+    if not proof.get("required"):
+        return []
+    return [f"AST/planner runtime proof: {path} has no registry-linked targeted Grafana scene; controls alone are insufficient"
+            for path in proof.get("unmapped", [])]
+
+
 def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cases=(), case_gaps=None):
     """cases: added, fixed or explicitly proved open cases (changed_cases); case_gaps: id -> gap fields."""
     spec = spec or load_spec()
     items = items if items is not None else ab.registry_items()
     case_gaps = case_gaps if case_gaps is not None else (load_cases() if cases else {})
     kinds = {f: ab.classify(f) for f in files}
+    targeted = {f: [] for f in files if ab.runtime_proof_path(f)}
     harness = [f for f in files if f in HARNESS_FILES or f.startswith(HARNESS_PREFIXES)]
     relevant = [f for f in files if kinds[f] != "ignored"] + [f for f in harness if kinds[f] == "ignored"]
     pages = {p["id"]: p for p in spec["pages"]}
@@ -197,6 +215,9 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
         specific = entry_files(p, items)
         for f in sorted(code & specific):
             add(p["id"], f)
+            if f in targeted and p["kind"] != "tail":
+                targeted[f].append(p["id"])
+    required_pages = {pid for ids in targeted.values() for pid in ids}
     for cid, c in out["fix_cases"].items():
         for pid in c["entries"]:
             add(pid, FIX + cid)
@@ -206,10 +227,12 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
     detailed = {pid for pid, r in why.items() if r != ["core set"]}
     for pid, reasons in why.items():
         entry = pages[pid]
-        rs = ranges_of(entry, spec) if pid in detailed and (pid in fix_pages or not entry.get("core")) else [spec["core_range"]]
+        rs = ranges_of(entry, spec) if pid in detailed and (pid in fix_pages or pid in required_pages or not entry.get("core")) else [spec["core_range"]]
         if all(r.startswith(FIX) for r in reasons):
             rs = [r for r in rs if r == LIVE or spec["ranges"][r] <= LOKI_PROOF_S] or [spec["core_range"]]
         out["entries"][pid] = {"ranges": rs, "why": reasons, "core": bool(entry.get("core")), "kind": entry["kind"]}
+        if pid in required_pages:
+            out["entries"][pid]["runtime_required"] = True
         if pid in fix_pages:
             out["entries"][pid]["fixes"] = [c for c, v in out["fix_cases"].items() if pid in v["entries"]]
     # Fix proofs first (never trimmed), then the spec order.
@@ -220,7 +243,7 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
     for pid, e in out["entries"].items():
         if not e.get("fixes") or e["ranges"] == [LIVE]:
             continue
-        if used and used + len(e["ranges"]) > FIX_CAPTURES:
+        if used and used + len(e["ranges"]) > FIX_CAPTURES and not e.get("runtime_required"):
             e["ranges"] = [spec["core_range"]]
             out["fix_trimmed"].append(pid)
         used += len(e["ranges"])
@@ -232,23 +255,26 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
     # last ones in spec order; the core set is never trimmed.
     if count() > max_captures:
         for pid, e in out["entries"].items():
-            if not e["core"] and not e.get("fixes") and e["ranges"] != [LIVE] and len(e["ranges"]) > 1:
+            if not e["core"] and not e.get("fixes") and not e.get("runtime_required") and e["ranges"] != [LIVE] and len(e["ranges"]) > 1:
                 e["ranges"] = [spec["core_range"]]
                 out["trimmed"].append(pid)
     for pid in reversed(list(out["entries"])):
         if count() <= max_captures:
             break
-        if not out["entries"][pid]["core"] and not out["entries"][pid].get("fixes") and out["entries"][pid]["ranges"] != [LIVE]:
+        if not out["entries"][pid]["core"] and not out["entries"][pid].get("fixes") and not out["entries"][pid].get("runtime_required") and out["entries"][pid]["ranges"] != [LIVE]:
             out["dropped"].append(pid)
             del out["entries"][pid]
     out["captures"] = count() + sum(1 for e in out["entries"].values() if e["ranges"] == [LIVE])
+    if targeted:
+        out["runtime_proof"] = {"required": True, "targeted": targeted,
+                                "unmapped": [f for f, entries in targeted.items() if not entries]}
     return out
 
 
 BASELINE_WHY = "baseline run: every page"
 
 
-def plan_all(spec=None, cases=(), case_gaps=None):
+def plan_all(spec=None, cases=(), case_gaps=None, files=(), items=None):
     """The baseline run's plan: every page of the spec at its own ranges, no budget and no trimming.
 
     Same shape as plan(), so ci_run.py and visual_comment.py need no special case; `baseline` marks it.
@@ -270,9 +296,17 @@ def plan_all(spec=None, cases=(), case_gaps=None):
             entries[pid].setdefault("fixes", []).append(cid)
     captures = sum(len([r for r in e["ranges"] if r != LIVE]) + (1 if e["ranges"] == [LIVE] else 0)
                    for e in entries.values())
-    return {"run": bool(entries), "baseline": True, "changed": 0, "relevant": [], "ignored": [],
+    result = {"run": bool(entries), "baseline": True, "changed": 0, "relevant": [], "ignored": [],
             "core_range": spec["core_range"], "entries": entries, "captures": captures, "trimmed": [], "dropped": [],
             "fix_cases": fix_cases, "fix_trimmed": []}
+    if files:
+        targeted = plan(files, spec=spec, items=items)
+        if "runtime_proof" in targeted:
+            result["runtime_proof"] = targeted["runtime_proof"]
+            for pid, entry in targeted["entries"].items():
+                if entry.get("runtime_required"):
+                    entries[pid]["runtime_required"] = True
+    return result
 
 
 def check(spec=None, items=None, cases=None):
@@ -339,11 +373,15 @@ def main():
         print(f"bench/visual plan: {'FAILED' if problems else 'ok'} ({len(problems)} problem(s))")
         return 1 if problems else 0
     if args.all:
-        result = plan_all(cases=changed_cases(args.base, args.head) if args.base else ())
+        files = args.files if args.files is not None else changed_files(args.base, args.head) if args.base else []
+        result = plan_all(cases=changed_cases(args.base, args.head) if args.base else (), files=files)
         if args.out:
             dump_json(args.out, result)
         print(json.dumps(result, indent=1))
-        return 0
+        problems = runtime_proof_problems(result)
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        return 1 if problems else 0
     base = args.base or "origin/main"
     files = args.files if args.files is not None else changed_files(base, args.head)
     cases = changed_cases(base, args.head) if args.files is None else []
@@ -351,7 +389,10 @@ def main():
     if args.out:
         dump_json(args.out, result)
     print(json.dumps(result, indent=1))
-    return 0
+    problems = runtime_proof_problems(result)
+    for problem in problems:
+        print(problem, file=sys.stderr)
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

@@ -257,17 +257,23 @@ class NoSampleTest(unittest.TestCase):
 
     def test_a_used_up_budget_restores_the_first_pass_cold_and_the_finding(self):
         out, first_cold = self.flagged_after_confirm()
+        out["rows"][0]["reuse"] = {"pr": {"cold": {"cpu_seconds": 0.01}}}
         with mock.patch.object(perf_matrix, "flush_cache"):
-            records = self.recold(out, first_cold, deadline=0)  # the deadline is long past
+            records = self.recold(out, first_cold, deadline=0,
+                                 first_resources={("X1", "1h"): {"pr": {"cpu_seconds": 2}}})
         self.assertEqual([(r["applied"], "budget" in r["why"]) for r in records], [(False, True)])
         self.assertEqual(cold_findings(out), [("worsened", "above 2× on base too")])
+        self.assertEqual(out["rows"][0]["reuse"]["pr"]["cold"]["cpu_seconds"], 2)
 
     def test_a_row_with_samples_is_not_restored(self):
         out, first_cold = self.flagged_after_confirm()
+        out["rows"][0]["reuse"] = {"pr": {"cold": {"cpu_seconds": 0.01}}}
         with mock.patch.object(perf_matrix, "flush_cache"):
             records = self.recold(out, first_cold)
         self.assertEqual([r["applied"] for r in records], [True])
         self.assertEqual(out["rows"][0]["cold"]["pr"], 3.8)
+        self.assertNotIn("cold", out["rows"][0]["reuse"]["pr"])
+        self.assertIn("not measured", out["rows"][0]["cold_resource_note"])
 
 
 class QuietTest(unittest.TestCase):

@@ -67,7 +67,6 @@ gap:
   clusters:
     - 3bf7d7dd
     - 877ff75b
-    - a4c74036
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

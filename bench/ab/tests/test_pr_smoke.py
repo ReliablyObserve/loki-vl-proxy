@@ -16,6 +16,45 @@ import pr_smoke  # noqa: E402
 END = 1_800_000_000
 
 
+class RuntimeProofTest(unittest.TestCase):
+    def test_required_api_cells_and_measurements_cannot_be_omitted(self):
+        from copy import deepcopy
+        name = next(sh["name"] for sh in pr_smoke.selection.load_shapes()["sets"]["control"]["shapes"] if pr_smoke.range_metric(sh))
+        sel = {"sets": {"control": [name]}, "runtime_proof": {"required": True, "cells": {f"control/{name}": ["1h"]}}}
+        revisions = {"base": "a" * 40, "head": "b" * 40}
+        meta = dict(revisions, runs=4, end=END, seed_s=7200)
+        cost = {"rss_max_sampled_bytes": 100, "rss_samples": 2, "cpu_samples": 2, "cpu_seconds": 0}
+        repeat = dict(cost, metric_runs_expected=3, rss_runs_measured=3, cpu_runs_measured=3)
+        times = dict(base=1, pr=2, loki=1)
+        samples = {t: dict(measured=4, complete=True, resource_runs=4, start=END-3600, end=END) for t in times}
+        row = dict(shape=name, range="1h", status={t: "200" for t in times}, cold=times, p50=times, response_bytes=times,
+                   parity_vs_reference="same", runtime_samples={"matrix": samples},
+                   reuse={t: {"cold": cost, "repeat": repeat} for t in ("base", "pr")})
+        summary = dict(set="control", baseline="base", candidate="pr", reference="loki", rows=[row], revision=revisions)
+        summaries = [dict(summary, profile=p) for p in pr_smoke.EXECUTION]
+        check = lambda values: pr_smoke.runtime_api_problems(values, sel, meta)
+        self.assertEqual(check(summaries), [])
+        self.assertTrue(check(summaries[1:]))
+        self.assertTrue(check([*summaries, summaries[0]]))
+        for mutation in ("revision", "reference", "body", "cpu", "start", "partial", "status"):
+            with self.subTest(mutation=mutation):
+                changed = deepcopy(summaries)
+                first = changed[0]["rows"][0]
+                if mutation == "revision": changed[0]["revision"] = {}
+                if mutation == "reference": del first["runtime_samples"]["matrix"]["loki"]
+                if mutation == "body": del first["response_bytes"]["base"]
+                if mutation == "cpu": first["reuse"]["pr"]["cold"]["cpu_seconds"] = -1
+                if mutation == "start": first["runtime_samples"]["matrix"]["pr"]["start"] = END-86400
+                if mutation == "partial": first["runtime_samples"]["matrix"]["pr"]["complete"] = False
+                if mutation == "status": del first["status"]["loki"]
+                self.assertTrue(check(changed))
+        self.assertEqual(pr_smoke.runtime_api_problems([], {}), [])
+        with mock.patch.object(pr_smoke.comment, "render", return_value=("### A/B", {"failed": False})):
+            _, verdict = pr_smoke.render_run(args(baseline_candidate=""), [], sel, meta, None, None, revisions["base"])
+        self.assertEqual((verdict["failed"], verdict["state"], verdict["exit"]), (True, "failed", 1))
+
+
+
 def read_json(path):
     with open(path) as f:
         return json.load(f)
@@ -35,6 +74,62 @@ def selection(*sets):
 
 
 class WindowPlanTest(unittest.TestCase):
+    def test_real_four_way_shards_have_stable_range_ties_and_historic_history(self):
+        import subprocess
+        script = """
+import json, pr_smoke
+spec = pr_smoke.selection.load_shapes()
+sel = pr_smoke.selection.select_all(spec)
+sel['runtime_proof'] = dict(required=True, cells=pr_smoke.selection.runtime_cells(sel['sets'], spec))
+print(json.dumps(pr_smoke.split_selection(sel, 4)))
+"""
+        def plan(seed):
+            return subprocess.check_output([sys.executable, "-c", script], cwd=pr_smoke.HERE,
+                                           env=dict(os.environ, PYTHONHASHSEED=str(seed)))
+        first = plan(0)
+        self.assertEqual(first, plan(1))
+        shard = next(s for s in json.loads(first) if "metadata-freshness" in s["sets"])
+        a = args(ranges=shard["runtime_proof"]["ranges"])
+        runs, _ = pr_smoke.plan_profiles("auto", shard, pr_smoke.selection.load_shapes(), True)
+        _, seed = pr_smoke.window_plan(a, shard, END, runs)
+        self.assertGreater(seed, 72 * 3600)
+        st = mock.Mock()
+        st.up.side_effect = RuntimeError("stop before starting a stack")
+        a = args(ranges=shard["runtime_proof"]["ranges"], profiles="auto", end=END, head=None,
+                 same_build=True, keep_stack=False)
+        with tempfile.TemporaryDirectory() as out, mock.patch.object(pr_smoke.time, "time", return_value=END), \
+                mock.patch.object(pr_smoke.stack, "stack_from", return_value=st), \
+                mock.patch.object(pr_smoke.stack, "teardown"), mock.patch.object(pr_smoke, "source_supports_align", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "stop before starting a stack"):
+                pr_smoke.measure(a, shard, out, "base")
+            self.assertEqual(st.mock_calls[:2], [mock.call.configure_history(out, pr_smoke.execution_order(runs), seed),
+                                                mock.call.up()])
+
+    def test_ordinary_controls_keep_cost_and_selected_historical_controls_get_input(self):
+        sel = selection("metadata-freshness")
+        names = sel["sets"]["metadata-freshness"]
+        sel["sets"]["metadata-freshness"] = [n for n in names if "two days ago" not in n]
+        plans, seed = pr_smoke.window_plan(args(), sel, END)
+        self.assertEqual(seed, 3600 + pr_smoke.blocks_span(plans) + 900)
+        sel["sets"]["metadata-freshness"] = [n for n in names if "two days ago" in n]
+        self.assertGreater(pr_smoke.window_plan(args(), sel, END)[1], 49 * 3600)
+
+    def test_historical_cells_fit_the_fixture_and_shards_drop_unrelated_ranges(self):
+        all_sets = selection('metadata-freshness', "control")
+        spec = read_json(os.path.join(pr_smoke.HERE, "shapes.json"))
+        historical = next(sh for sh in spec["sets"]['metadata-freshness']["shapes"] if sh.get("end_offset"))
+        name = historical["name"]
+        all_sets["sets"]['metadata-freshness'] = [name]
+        cells = {f"{next(iter(all_sets['sets']))}/{name}": ["1h", "6h", "24h"]}
+        cells.update({f"control/{n}": ["1h"] for n in all_sets["sets"]["control"]})
+        all_sets["runtime_proof"] = {"required": True, "cells": cells, "ranges": ["1h", "6h", "24h"]}
+        shards = pr_smoke.split_selection(all_sets, 2, min_cost=1)
+        short = next(s for s in shards if "control" in s["sets"])
+        self.assertEqual(short["runtime_proof"]["ranges"], ["1h"])
+        plans, seed = pr_smoke.window_plan(args(ranges=["1h","6h","24h"]), all_sets, END)
+        last = perf_matrix.run_end_for(plans[0]["confirm_end"], historical, "24h", 6, 7)
+        self.assertLessEqual(END - seed, last - 86400)
+
     def test_every_set_gets_its_own_block_and_the_seed_covers_all(self):
         sel = selection("control", "json-filter-pushdown", "metric-latency-gap")
         plans, seed_s = pr_smoke.window_plan(args(), sel, END)
@@ -461,12 +556,15 @@ class ConfirmColdTest(unittest.TestCase):
         return out["rows"][0], run
 
     def test_a_cache_served_confirm_cold_is_replaced_by_the_first_pass_for_every_target(self):
-        row, _ = self.confirm(self.moved(), self.redo(cold_cache_served=["loki"]))
+        row, _ = self.confirm(self.moved(reuse={"pr": {"cold": {"cpu_seconds": 2}}}),
+                              self.redo(cold_cache_served=["loki"], reuse={"pr": {"cold": {"cpu_seconds": 0.01}, "repeat": {"cpu_seconds": 0.005}}}))
         self.assertEqual(row["cold"], {"base": 0.5, "pr": 0.9, "loki": 0.2})
         self.assertNotIn("cold_cache_served", row)
         self.assertTrue(row["cold_from_first_pass"])
         self.assertTrue(row["confirmed"])
         self.assertEqual(row["verdict"], "same")  # only the cold columns come from the first pass
+        self.assertEqual(row["reuse"]["pr"]["cold"]["cpu_seconds"], 2)
+        self.assertEqual(row["reuse"]["pr"]["repeat"]["cpu_seconds"], 0.005)
 
     def test_a_first_pass_cold_that_was_served_keeps_its_mark_when_the_confirm_was_served_too(self):
         row, _ = self.confirm(self.moved(cold_cache_served=["loki"]), self.redo(cold_cache_served=["loki"]))
@@ -704,7 +802,7 @@ def write_shard(d, sets, verdict_exit=0, elapsed=300, restarts=("0", "0")):
 
 def merge_args(sel_path, dirs):
     return type("Args", (), dict(selection=sel_path, merge=dirs, over_2x_baseline="", over_2x_loki="fail",
-                                 baseline_candidate=""))()
+                                 baseline_candidate="", base="HEAD^1", head="HEAD", profiles="auto", runs=4, confirm_runs=7, refresh_s=0, refresh_runs=5))()
 
 
 class ShardTest(unittest.TestCase):
@@ -775,6 +873,41 @@ class MergeTest(unittest.TestCase):
         with open(os.path.join(self.out, "comment.md")) as f:
             text = f.read()
         return code, read_json(os.path.join(self.out, "verdict.json")), read_json(os.path.join(self.out, "meta.json")), text
+
+    def test_intermediate_confirm_cannot_replace_missing_final_summary(self):
+        path = os.path.join(self.tmp, "shard-1")
+        write_shard(path, ["control"])
+        canonical = os.path.join(path, "summary-control-loki-defaults.json")
+        os.rename(canonical, canonical.replace(".json", "-confirm.json"))
+        self.assertEqual(pr_smoke.read_shard(path)[0], [])
+        pr_smoke.write_summaries([shard_summary("control")], path)
+        self.assertEqual(len(pr_smoke.read_shard(path)[0]), 1)
+
+    def test_required_merge_rechecks_selection_and_revision_against_the_plan(self):
+        name = "logs plain"
+        sel = {"run": True, "sets": {"control": [name]}, "runtime_proof": {"required": True,
+               "cells": {f"control/{name}": ["1h"]}, "ranges": ["1h"]}}
+        with open(self.sel_path, "w") as f:
+            json.dump(sel, f)
+        path = os.path.join(self.tmp, "shard-1")
+        write_shard(path, ["control"])
+        with mock.patch.object(pr_smoke, "git", return_value="f" * 40):
+            code, verdict, _, _ = self.merge([path])
+        self.assertEqual(code, 1)
+        self.assertTrue(verdict["failed"])
+        problems = " ".join(verdict["runtime_problems"])
+        self.assertIn("revision mismatch", problems)
+        self.assertIn("different shard selection", problems)
+        self.assertIn("incomplete matrix request samples", problems)
+
+    def test_large_ordinary_ab_comment_fits_and_preserves_the_failed_headline(self):
+        long_text = "<!-- perf-ab-smoke -->\n### Failed\n" + "x" * 90000
+        with mock.patch.object(pr_smoke.comment, "render", return_value=(long_text, {"exit": 1})):
+            text, verdict = pr_smoke.render_run(args(baseline_candidate=""), [], {}, {}, None, None, "a")
+        self.assertLess(len(text), 65536)
+        self.assertIn("### Failed", text)
+        self.assertIn("artifact", text)
+        self.assertEqual(verdict["exit"], 1)
 
     def test_the_merged_verdict_is_the_one_run_verdict(self):
         a, b = os.path.join(self.tmp, "shard-1"), os.path.join(self.tmp, "shard-2")

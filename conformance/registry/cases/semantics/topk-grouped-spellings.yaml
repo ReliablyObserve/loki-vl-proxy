@@ -64,4 +64,3 @@ gap:
   note: 'Measured on origin/main cf738b80. The e2e is written and not yet run against Loki 3.7.7 and VictoriaLogs.'
   clusters:
     - 23526b6c
-    - 4f7b982a

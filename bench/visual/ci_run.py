@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
 import traceback
 import urllib.error
 import urllib.parse
@@ -38,6 +39,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from shards import fixture_hours
 from vio import dump_json, load_json  # noqa: E402
 from visual_comment import classify, loki_ui_for_gate, new_empty_panel  # noqa: E402
 
@@ -82,7 +84,7 @@ def seed_fingerprint(state, loki_port, vl_port):
     """Line counts of the seeded window on VictoriaLogs and on Loki: the shards of one run must hold the same data
     (merge.py compares them). None for a backend that does not answer; the comparison then skips it."""
     end, hours = state["end"], state.get("hours", 7)
-    out = {"end": end, "hours": hours}
+    out = {"end": end, "hours": hours, "loki_hours": state.get("loki_hours", 1.5)}
     try:
         lo, hi = (time.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", time.gmtime(x)) for x in (end - int(hours * 3600), end))
         query = urllib.parse.urlencode({"query": f'_time:({lo}, {hi}] | stats count() c'})
@@ -126,7 +128,7 @@ def recapture_flips(first, second):
     return sorted(flipped), sorted(late)
 
 
-def keep_first_pass(out, again):
+def keep_first_pass(out, again, montages=True):
     """Set aside the first-pass rows, scores and montages of the captures about to be loaded again.
 
     A run split into shards cannot know alone whether the whole run may reload (see recapture): merge.py reads
@@ -140,10 +142,12 @@ def keep_first_pass(out, again):
     dump_json(os.path.join(first, "compare.json"),
               [r for r in (load_json(path) if os.path.exists(path) else []) if (r["page"], r["range"]) in keep])
     for page, rng in keep:
-        src = os.path.join(out, "shots", page, rng)
-        if os.path.isdir(src):
-            shutil.copytree(src, os.path.join(first, "shots", page, rng), dirs_exist_ok=True)
-    run([PY, os.path.join(HERE, "montage.py"), first], log=os.path.join(out, "montage.log"), check=False)
+        for tree in ("shots", "data"):
+            src = os.path.join(out, tree, page, rng)
+            if os.path.isdir(src):
+                shutil.copytree(src, os.path.join(first, tree, page, rng), dirs_exist_ok=True)
+    if montages:
+        run([PY, os.path.join(HERE, "montage.py"), first], log=os.path.join(out, "montage.log"), check=False)
 
 
 def needs_second_look(r):
@@ -156,8 +160,24 @@ def needs_second_look(r):
     (explore-unwrap-missing-label at 15m on #1639 and #1650)."""
     if r["range"] == "live":
         return False
-    return bool(r["main_pr_diffs"] or not r.get("settled", True)
+    return bool(r["main_pr_diffs"] or r.get("runtime_problems") or not r.get("settled", True)
                 or new_empty_panel(r.get("ui_main") or {}, r.get("ui_pr") or {}, loki_ui_for_gate(r)))
+
+
+def keep_runtime_observations(first, second, recaptured=None):
+    """A warmed retry with a longer wait cannot clear an earlier resource regression."""
+    by = {(r["page"], r["range"]): r for r in first}
+    for row in second:
+        prior = by.get((row["page"], row["range"]), {})
+        problems = [p for p in prior.get("runtime_problems", ()) if p.startswith("runtime regression:")]
+        if not prior or (recaptured is not None and f"{row['page']} {row['range']}" not in recaptured):
+            continue
+        row["runtime_first_pass"] = {k: prior.get(k) for k in ("runtime_main", "runtime_pr", "runtime_loki", "settle_s")}
+        for problem in problems:
+            message = problem + "; first pass retained: exact-window recapture has warmer caches and a longer wait"
+            if message not in row.setdefault("runtime_problems", []):
+                row["runtime_problems"].append(message)
+    return second
 
 
 def recapture(a, out, plan, end, port, meta):
@@ -184,14 +204,29 @@ def recapture(a, out, plan, end, port, meta):
     if not again or n > a.max_recapture:
         meta["recaptured"] = []
         return False
-    if a.shard:
-        keep_first_pass(out, again)
+    keep_first_pass(out, again, montages=bool(a.shard))
     retry = os.path.join(out, "plan-recapture.json")
     dump_json(retry, {"entries": again})
-    env = dict(capture_env(a, out, end, port), VP_PLAN=retry, VP_QUIET_MS="10000", VP_SETTLE_MS="150000")
+    stage = tempfile.mkdtemp(prefix="recapture-", dir=out)
+    env = dict(capture_env(a, stage, end, port), VP_PLAN=retry, VP_QUIET_MS="10000", VP_SETTLE_MS="150000")
     t0 = time.time()
-    run(["npx", "playwright", "test"], cwd=HERE, env=env, log=os.path.join(out, "capture.log"), check=False)
+    result = run(["npx", "playwright", "test"], cwd=HERE, env=env, log=os.path.join(out, "capture.log"), check=False)
     phase(meta, "recapture", t0)
+    spec = load_json(os.path.join(HERE, "spec.json"))
+    files = [os.path.join(tree, page, rng, f"{ds['id']}.{ext}")
+             for page, entry in again.items() for rng in entry["ranges"] for ds in spec["datasources"]
+             if ds["id"] != "loki" or spec["ranges"][rng] <= spec.get("loki_capture_max_s", float("inf"))
+             for tree, ext in (("shots", "png"), ("data", "json"))]
+    missing = [name for name in files if not os.path.isfile(os.path.join(stage, name))
+               or os.path.getsize(os.path.join(stage, name)) == 0]
+    meta["playwright_recapture_exit"] = result.returncode
+    if result.returncode or missing:
+        meta["recaptured"] = []
+        raise RuntimeError(f"incomplete recapture: Playwright exit {result.returncode}; missing {missing[:6]}")
+    for name in files:
+        dest = os.path.join(out, name)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copyfile(os.path.join(stage, name), dest)
     meta["recaptured"] = [f"{p} {r}" for p, e in again.items() for r in e["ranges"]]
     return True
 
@@ -250,7 +285,7 @@ def main():
     ap.add_argument("--head-label", default="", help="PR head sha for the comment (default: HEAD)")
     ap.add_argument("--project", default="vp")
     ap.add_argument("--port-offset", type=int, default=0)
-    ap.add_argument("--hours", type=float, default=7, help="VictoriaLogs history; the widest CI range is 6h")
+    ap.add_argument("--hours", type=float, default=7, help="minimum VictoriaLogs history, expanded to cover the whole plan")
     ap.add_argument("--loki-hours", type=float, default=1.5)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--max-recapture", type=int, default=6, help="re-capture at most this many differing captures once")
@@ -261,8 +296,11 @@ def main():
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
     plan = load_json(a.plan)
+    a.hours = max(a.hours, plan.get("fixture_hours", 0), fixture_hours(plan))
     dump_json(os.path.join(out, "plan.json"), plan)
-    meta = {"base": git("rev-parse", a.base), "head": a.head_label or git("rev-parse", "HEAD"), "plan_captures": plan["captures"]}
+    build_head = git("rev-parse", "HEAD")
+    meta = {"base": git("rev-parse", a.base), "head": a.head_label or build_head,
+            "build_head": build_head, "plan_captures": plan["captures"]}
     if a.shard:
         meta["shard"] = a.shard
     t_all = time.time()
@@ -299,6 +337,7 @@ def main():
             # A changed value that disappears remains a non-deterministic data failure.
             compared = os.path.join(out, "compare.json")
             second = load_json(compared) if os.path.exists(compared) else []
+            dump_json(compared, keep_runtime_observations(first, second, set(meta.get("recaptured", []))))
             meta["flipped"], meta["late_requests"] = recapture_flips(first, second)
         run([PY, os.path.join(HERE, "montage.py"), out], log=os.path.join(out, "montage.log"))
         phase(meta, "compare", t0)

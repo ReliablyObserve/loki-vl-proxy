@@ -1,5 +1,6 @@
-"""File helpers shared by the visual-proof scripts: every file is closed again."""
+"""Text and artifact I/O helpers shared by visual proof and its trusted renderer."""
 import json
+import re
 
 
 def load_json(path):
@@ -15,3 +16,8 @@ def dump_json(path, obj, indent=1):
 def write_text(path, text):
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
+
+
+def error_text(message):
+    """Loki's pipeline reports whichever failing stream a shard met first."""
+    return re.sub(r"for series: '\{.*?\}'\.", "for series: '{...}'.", str(message).strip(), flags=re.S)
