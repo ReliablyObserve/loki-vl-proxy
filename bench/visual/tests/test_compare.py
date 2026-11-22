@@ -5,6 +5,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
+from pathlib import Path
+from unittest.mock import patch
+from contextlib import redirect_stdout
+from io import StringIO
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
@@ -23,6 +28,150 @@ def capture(values, ui=None, settled=True, uid="ds1", fields=None, status=200, e
 
 
 class CompareTest(unittest.TestCase):
+    def client_error_fixture(self):
+        proof = json.loads(Path(HERE, '../../ab/results/oneoff/2026-11-21-mixed-parser-metrics/grafana-uppercase-volume-proof.json').resolve().read_text())
+        page = proof['existing_contracts']['visual_scenes'][0]
+        observed = next(c for c in proof['ci']['captures'] if c['scene_id'] == page)
+        primary = next(q for q in observed['queries'] if q['ref_id'] == 'A')
+        supporting = next(q for q in observed['queries'] if q['ref_id'] == 'log-volume-A')
+        cap = capture([3, 4])
+        cap['records'][0]['request'] = deepcopy(primary['request'])
+        start = int(primary['request']['from'])
+        cap['records'][0]['response']['results']['A']['frames'][0]['data']['values'][0] = [start, start + 5000]
+        cap['records'].append(dict(url='/api/ds/query', method='POST', status=400,
+                                   request=deepcopy(supporting['request']), response=deepcopy(supporting['response'])))
+        cap['errors'] = [*deepcopy(observed['console_errors']), 'pageerror: Object']
+        cap['runtime'] = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                              js_heap_max_sampled_bytes=1000, api_requests=2, api_encoded_bytes=100,
+                              page_encoded_bytes=200, first_api_data_ms=300)
+        cap['client_exceptions'] = dict(version=1, complete=True, overflow=False, playwright_page_error_count=1,
+            events=[dict(event_id='runtime:1', exception_id=1, raw_error_index=len(cap['errors'])-1, kind='uncaught-object',
+                         class_name='Object', own_property_names=['message', 'refId', 'status'],
+                         ref_id='log-volume-A', status=400, message=supporting['response']['results']['log-volume-A']['error'],
+                         stack=[dict(url='/public/build/client.js', line=1, column=1)])])
+        case = dict(id=proof['registry_case'], gap=dict(status='upstream'), compare=dict(values=dict(
+            client_error_contract='loki-metric-supporting-error-v1')))
+        return page, dict(id=page, kind='explore', query=primary['expression'], covers=[case['id']]), dict(main=deepcopy(cap), pr=deepcopy(cap), loki=deepcopy(cap)), [(case, proof)]
+
+    def test_registry_client_error_requires_complete_loki_triplet(self):
+        page, entry, caps, contracts = self.client_error_fixture()
+        evidence = compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts)
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence.receipt['registry_case'], contracts[0][0]['id'])
+        self.assertEqual(evidence.receipt['state'], 'upstream_matches_loki')
+        self.assertTrue(caps['pr']['errors'])  # Evidence never deletes raw errors.
+        self.assertEqual(compare.runtime_problems(caps['main'], caps['pr'], required=True, client_error=evidence), [])
+        caps['pr']['errors'].append('pageerror: TypeError: real new failure')
+        self.assertTrue(compare.runtime_problems(caps['main'], caps['pr'], required=True, client_error=evidence))
+
+    def test_registry_client_error_retains_full_fresh_captures(self):
+        page, entry, caps, contracts = self.client_error_fixture()
+        with tempfile.TemporaryDirectory() as out:
+            directory = Path(out, 'data', page, '1h')
+            directory.mkdir(parents=True)
+            for side, cap in caps.items():
+                Path(directory, side + '.json').write_text(json.dumps(cap))
+            Path(out, 'plan.json').write_text(json.dumps({'runtime_proof': {'required': True}}))
+            import plan
+            with patch.object(sys, 'argv', ['compare.py', out]), patch.object(compare, 'client_error_contracts', return_value=contracts), \
+                    patch.object(plan, 'load_spec', return_value={'pages': [entry], 'ranges': {'1h': 3600}}), redirect_stdout(StringIO()), self.assertRaises(SystemExit) as result:
+                compare.main()
+            self.assertEqual(result.exception.code, 0)
+            rows = json.loads(Path(out, 'compare.json').read_text())
+            self.assertEqual(rows[0]['expected_client_errors'][0]['state'], 'upstream_matches_loki')
+            raw = json.loads(Path(out, 'expected-client-error-captures.json').read_text())
+            self.assertEqual(raw[0]['captures'], caps)
+            self.assertIn('upstream gap remains open', Path(out, 'compare.md').read_text())
+
+    def test_client_error_retention_budget_cannot_accept_without_proof(self):
+        page, entry, caps, contracts = self.client_error_fixture()
+        with patch.object(compare, 'CLIENT_ERROR_PROOF_BYTES', 1):
+            self.assertIsNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+
+    def test_client_error_requires_recorded_scope_even_if_all_three_change_together(self):
+        page, entry, baseline, contracts = self.client_error_fixture()
+        for changed in ('error', 'primary-expression', 'support-expression', 'support-type', 'interval', 'window'):
+            with self.subTest(changed=changed):
+                caps = deepcopy(baseline)
+                for cap in caps.values():
+                    if changed == 'error':
+                        cap['records'][1]['response']['results']['log-volume-A']['error'] = 'parse error: another shared failure'
+                        cap['client_exceptions']['events'][0]['message'] = 'parse error: another shared failure'
+                    elif changed.endswith('expression'):
+                        index = 0 if changed.startswith('primary') else 1
+                        cap['records'][index]['request']['queries'][0]['expr'] = 'vector(1)'
+                    elif changed == 'support-type':
+                        cap['records'][1]['request']['queries'][0]['queryType'] = 'instant'
+                    elif changed == 'interval':
+                        cap['records'][1]['request']['queries'][0]['intervalMs'] = 1
+                    else:
+                        for record in cap['records']:
+                            record['request']['to'] = str(int(record['request']['to']) + 3600000)
+                self.assertIsNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+
+    def test_client_error_allows_a_fresh_shifted_window_but_not_a_new_shape(self):
+        page, entry, caps, contracts = self.client_error_fixture()
+        for cap in caps.values():
+            for record in cap['records']:
+                for key in ('from', 'to'):
+                    record['request'][key] = str(int(record['request'][key]) + 3600000)
+            times = cap['records'][0]['response']['results']['A']['frames'][0]['data']['values'][0]
+            times[:] = [t + 3600000 for t in times]
+        self.assertIsNotNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+
+    def test_registry_client_error_is_not_a_generic_exception_allowlist(self):
+        page, entry, baseline, contracts = self.client_error_fixture()
+        event = lambda c: c['pr']['client_exceptions']['events'][0]
+        def primary(c): return c['pr']['records'][0]['response']['results']['A']
+        mutations = {
+            'missing Loki': lambda c: c.pop('loki'),
+            'old Object only': lambda c: c['pr'].pop('client_exceptions'),
+            'incomplete': lambda c: c['pr']['client_exceptions'].update(complete=False),
+            'overflow': lambda c: c['pr']['client_exceptions'].update(overflow=True),
+            'missing audit event': lambda c: c['pr']['client_exceptions'].update(playwright_page_error_count=0),
+            'different event identity': lambda c: event(c).update(event_id='runtime:2'),
+            'wrong raw index': lambda c: event(c).update(raw_error_index=0),
+            'TypeError': lambda c: event(c).update(class_name='TypeError'),
+            'unknown property': lambda c: event(c)['own_property_names'].append('newError'),
+            'wrong ref': lambda c: event(c).update(ref_id='another-query'),
+            'wrong exception message': lambda c: event(c).update(message='another error'),
+            'wrong exception status': lambda c: event(c).update(status=500),
+            'extra exception': lambda c: c['pr']['client_exceptions']['events'].append(deepcopy(event(c))),
+            'extra raw error': lambda c: c['pr']['errors'].append('pageerror: Object'),
+            'unknown console error': lambda c: c['pr']['errors'].append('new failure in client code'),
+            'raw error missing': lambda c: c['pr'].update(errors=[]),
+            'missing stack provenance': lambda c: event(c).update(stack=[]),
+            'changed value': lambda c: primary(c)['frames'][0]['data']['values'][1].__setitem__(0, 99),
+            'missing point': lambda c: primary(c)['frames'][0]['data']['values'][1].pop(),
+            'changed label': lambda c: primary(c)['frames'][0]['schema']['fields'][1].update(labels={'new': 'label'}),
+            'empty primary': lambda c: primary(c).update(frames=[]),
+            'primary failed': lambda c: c['pr']['records'][0].update(status=400),
+            'support failed differently': lambda c: c['pr']['records'][1].update(status=500),
+            'support error different': lambda c: c['pr']['records'][1]['response']['results']['log-volume-A'].update(error='parse error: another'),
+            'support extra field': lambda c: c['pr']['records'][1]['response']['results']['log-volume-A'].update(new=True),
+            'support wrong expression': lambda c: c['pr']['records'][1]['request']['queries'][0].update(expr='sum(vector(1))'),
+            'support wrong query type': lambda c: c['pr']['records'][1]['request']['queries'][0].update(queryType='instant'),
+            'support missing source type': lambda c: c['pr']['records'][1]['request']['queries'][0].pop('supportingQueryType'),
+            'support wrong interval': lambda c: c['pr']['records'][1]['request']['queries'][0].update(intervalMs=1),
+            'primary wrong expression': lambda c: c['pr']['records'][0]['request']['queries'][0].update(expr='vector(1)'),
+            'unreadable body': lambda c: c['pr']['records'][0].update(response=None),
+            'unsettled': lambda c: c['pr'].update(settled=False),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                caps = deepcopy(baseline)
+                mutate(caps)
+                self.assertIsNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+                self.assertTrue(compare.runtime_problems(caps['main'], caps['pr'], required=True))
+        self.assertIsNone(compare.client_error_evidence('other-scene', '1h', entry, baseline, contracts=contracts))
+        self.assertIsNone(compare.client_error_evidence(page, '24h', entry, baseline, contracts=contracts))
+        self.assertIsNone(compare.client_error_evidence(page, '1h', dict(entry, query='vector(1)'), baseline, contracts=contracts))
+        self.assertIsNone(compare.client_error_evidence(page, '1h', dict(entry, covers=[]), baseline, contracts=contracts))
+        self.assertIsNone(compare.client_error_evidence(page, '1h', entry, baseline, contracts=[]))
+        changed = deepcopy(contracts)
+        changed[0][0]['gap']['status'] = 'fixed'
+        self.assertIsNone(compare.client_error_evidence(page, '1h', entry, baseline, contracts=changed))
+
     def test_runtime_proof_keeps_real_javascript_page_errors(self):
         base = capture([1])
         base["runtime"] = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,

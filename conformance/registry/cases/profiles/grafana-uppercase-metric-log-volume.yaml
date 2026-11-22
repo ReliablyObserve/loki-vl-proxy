@@ -1,0 +1,63 @@
+id: profiles/grafana-uppercase-metric-log-volume
+title: Stock Explore generates an invalid log-volume query for uppercase metrics (upstream)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki accepts uppercase metric keywords; their API compatibility is covered
+  by semantics/proxy-accepts-operators-not-in-loki. Stock Grafana Explore
+  additionally treats some uppercase metrics as log expressions and asks for
+  log-volume-A, wrapping the metric in count_over_time. That supporting query
+  is invalid LogQL and both Loki and the proxy correctly reject it. This is a
+  different cause from the accepted-keyword API behavior and from the open
+  semantics/uppercase-topk-ranks-once ranking difference.
+
+  Visual smoke run 45041900087 (base 895c23078f, head 31faa7f29a) records
+  five existing 1h scenes on main, PR and Loki: explore-748-uppercase-sum,
+  explore-748-uppercase-offset, explore-748-uppercase-on,
+  explore-748-uppercase-json-unwrap and explore-748-uppercase-topk-rate.
+  All fifteen captures return 200 for the original primary request A and
+  identical 400 error DTOs for log-volume-A. The browser also reports an
+  unhandled plain object, recorded as pageerror: Object. Primary 200 statuses
+  alone do not prove equal point values or close the separate ranking gap.
+
+  Recorded requests, complete supporting error DTOs, primary response digests,
+  capture and artifact digests, exact source commits and version limits are in
+  bench/ab/results/oneoff/2026-11-21-mixed-parser-metrics/grafana-uppercase-volume-proof.json.
+  An unchanged uppercase-sum scene also reproduces on the existing Grafana
+  13.3.1 stack against proxy and Loki. CDP identifies the thrown object as
+  refId=log-volume-A, status=400 and the same parse error, rather than an
+  unrelated JavaScript failure. The served Loki module matches the bundled
+  module; no datasource patch or override is used.
+
+  The capture URL does not set supportingQueryType: the stock datasource adds
+  grafana-explore. The stock client's browser-wide LogsVolume preference is
+  separate from per-pane panelsState. No per-pane option preserving the
+  expression, range type, data and default view has been verified. The API
+  must not accept the malformed supporting query to work around the client.
+request:
+  scope: grafana-explore
+  entry: explore-748-uppercase-sum
+compare:
+  mode: observed
+  fields: [status, error_text, ui]
+  values:
+    client_error_contract: loki-metric-supporting-error-v1
+    client_error_proof: bench/ab/results/oneoff/2026-11-21-mixed-parser-metrics/grafana-uppercase-volume-proof.json
+  expect: |
+    The unchanged uppercase primary metric answers 200. The malformed
+    automatically generated log-volume-A answers Loki's 400 parse error,
+    with the identical complete error DTO. The client still reports its unhandled supplementary
+    error; that is not a successful runtime proof or a proxy API defect.
+gap:
+  status: upstream
+  impact: grafana-datasource
+  effort: M
+  area: 'stock Grafana Explore and Loki datasource metric classification and supplementary-query error handling'
+  loki: 'primary A is 200; malformed log-volume-A is 400; stock Explore throws the supporting error object (fifteen recorded CI captures and the local 13.3.1 reproduction)'
+  proxy: 'the same recorded primary status and supporting error DTO as Loki; no API workaround'
+  planned_test: 'existing bench/visual explore-748-uppercase-{sum,offset,on,json-unwrap,topk-rate} scenes; TestCompat_UppercaseKeywordsMatchLoki; TestValidateLogQL_LokiRejections'
+  visual: 'https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45041900087'
+  note: 'Only fresh structured exceptions whose primary points and supporting error DTO match main, PR and Loki can be reported as an expected upstream client error. Unknown/incomplete exceptions and the separate ranking gap remain failures.'
+  clusters: []

@@ -44,6 +44,12 @@ why: |
   allowed"); keyword-named labels in a selector (`{by="x"}`), whose proxy text
   is its own; and leading white space, which the proxy trims before it
   reports a column.
+
+  Separately, stock Explore generates an invalid log-volume supporting query
+  for some accepted uppercase metrics. Both Loki and the proxy reject that
+  generated query while serving the primary request. The recorded client
+  defect is profiles/grafana-uppercase-metric-log-volume; it does not reopen
+  this API acceptance fix or close semantics/uppercase-topk-ranks-once.
 request:
   method: GET
   path: /loki/api/v1/query_range

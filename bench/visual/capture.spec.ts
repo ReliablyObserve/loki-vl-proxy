@@ -168,12 +168,113 @@ async function settle(page: Page, pending: { n: number; last: number; seen?: num
 
 const BACKEND = /\/api\/ds\/query|\/api\/datasources\/uid\/[^/]+\/resources\/|\/api\/datasources\/proxy\//;
 
+// Raw pageerror text and the structured DTO share the actual CDP exceptionId. Playwright's Error loses the
+// identity and payload of a thrown plain object; its separate event count audits that CDP missed nothing.
+async function startClientExceptionProof(page: Page, cdp: any, errors: string[]) {
+  const state: any = { version: 1, complete: true, overflow: false, playwright_page_error_count: 0, events: [] };
+  const pending = new Set<Promise<void>>(), cancellations = new Set<() => void>();
+  const audit: string[] = [];
+  let enabled = false, finalizing = false, disposed = false, count = 0;
+  const bounded = async (work: Promise<any>) => {
+    let cancel: () => void = () => {};
+    const cancellation = new Promise((_, reject) => { cancel = () => reject(new Error("exception evidence canceled or timed out")); });
+    const timer = setTimeout(cancel, 2000);
+    cancellations.add(cancel);
+    try { return await Promise.race([work, cancellation]); }
+    finally { clearTimeout(timer); cancellations.delete(cancel); }
+  };
+  const onPageError = (e: Error) => {
+    state.playwright_page_error_count++;
+    if (audit.length < 4) audit.push(`pageerror: ${String(e.stack || e).slice(0, 1500)}`);
+    else { state.overflow = true; state.complete = false; }
+  };
+  const onConsole = (message: any) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (text.length > 1500 || errors.length >= 20) state.complete = false;
+    if (errors.length < 20) errors.push(text.slice(0, 1500));
+  };
+  const onException = (event: any) => {
+    const detail = event.exceptionDetails || {}, object = detail.exception || {};
+    const text = `pageerror: ${String(object.description || object.value || detail.text || "unknown exception")}`;
+    const index = errors.length;
+    if (index < 20) errors.push(text.slice(0, 1500));
+    else state.complete = false;
+    count++;
+    if (count > 4) { state.overflow = true; state.complete = false; return; }
+    const frames = detail.stackTrace?.callFrames || [];
+    const item: any = {
+      event_id: `runtime:${detail.exceptionId}`, exception_id: detail.exceptionId, raw_error_index: index,
+      kind: "uncaught", class_name: object.className || object.type || "unknown", own_property_names: [],
+      stack: frames.slice(0, 8).map((frame: any) => ({
+        url: String(frame.url || "").split("?")[0].slice(0, 2048),
+        line: frame.lineNumber + 1, column: frame.columnNumber + 1,
+      })),
+    };
+    state.events.push(item);
+    if (text.length > 1500 || frames.length > 8 || !Number.isInteger(detail.exceptionId) || finalizing) state.complete = false;
+    // Only inspect a small plain object with the observed DTO keys. No getters, functions, configuration or
+    // headers are evaluated or collected; unknown exceptions remain raw errors and cannot match a contract.
+    const preview = object.preview;
+    if (object.className !== "Object" || !object.objectId || !preview || preview.overflow !== false || preview.properties?.length !== 3 ||
+        JSON.stringify((preview.properties || []).map((p: any) => p.name).sort()) !== '["message","refId","status"]' || finalizing) return;
+    const work = (async () => {
+      try {
+        const properties = await bounded(cdp.send("Runtime.getProperties", { objectId: object.objectId, ownProperties: true }));
+        const own = properties.result || [];
+        if (own.length !== 3 || own.some((p: any) => !p.value || p.get || p.set)) { state.complete = false; return; }
+        item.own_property_names = own.map((p: any) => p.name).sort();
+        if (JSON.stringify(item.own_property_names) !== '["message","refId","status"]') return;
+        const values = Object.fromEntries(own.map((p: any) => [p.name, p.value.value]));
+        if (typeof values.refId !== "string" || Buffer.byteLength(values.refId) > 512 ||
+            typeof values.message !== "string" || Buffer.byteLength(values.message) > 4096 || !Number.isInteger(values.status)) {
+          state.complete = false; return;
+        }
+        Object.assign(item, {kind: "uncaught-object", ref_id: values.refId, status: values.status, message: values.message});
+      } catch { state.complete = false; }
+    })();
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+  };
+  page.on("pageerror", onPageError);
+  page.on("console", onConsole);
+  cdp.on("Runtime.exceptionThrown", onException);
+  try { await bounded(cdp.send("Runtime.enable")); enabled = true; }
+  catch { state.complete = false; }
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    if (!finalizing) state.complete = false;
+    page.off("pageerror", onPageError);
+    page.off("console", onConsole);
+    cdp.off("Runtime.exceptionThrown", onException);
+    for (const cancel of cancellations) cancel();
+  };
+  return {
+    dispose,
+    async finish() {
+      finalizing = true;
+      try { await bounded(Promise.all([...pending])); }
+      catch { state.complete = false; }
+      finally {
+        if (!enabled || count !== state.playwright_page_error_count) {
+          state.complete = false;
+          for (const text of audit) if (errors.length < 20) errors.push(text);
+        }
+        dispose();
+      }
+      return state;
+    },
+  };
+}
+
 // Collect during the existing capture, not another load. Heap maxima are
 // sampled; ThreadTime is the target main thread's CPU counter, not host CPU.
-async function startRuntimeProof(page: Page, began = Date.now()) {
+async function startRuntimeProof(page: Page, began = Date.now(), errors: string[] = []) {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
   await cdp.send("Network.enable");
+  const exceptions = await startClientExceptionProof(page, cdp, errors);
   const requests = new Map<string, { api: boolean; received: number }>();
   let apiRequests = 0, apiBytes = 0, pageBytes = 0, heap = 0, samples = 0;
   let abortedAPIBytes = 0, abortedAPIRequests = 0;
@@ -228,8 +329,24 @@ async function startRuntimeProof(page: Page, began = Date.now()) {
   const timer = setInterval(() => {
     if (!sampling) sampling = sample().catch((e) => { sampleError = String(e); }).finally(() => { sampling = undefined; });
   }, 250);
-  page.once("close", () => clearInterval(timer));
+  let disposed = false;
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    clearInterval(timer);
+    exceptions.dispose();
+    page.off("close", onClose);
+    cdp.removeAllListeners();
+    await cdp.detach().catch(() => {});
+  };
+  const onClose = () => { void dispose(); };
+  page.once("close", onClose);
   return {
+    dispose,
+    async finishClientExceptions() {
+      try { return await exceptions.finish(); }
+      finally { await dispose(); }
+    },
     recordData(records: any[], completedAt = Date.now()) {
       if (completedAt > stoppedAt) return;
       const present = records.some((r) => {
@@ -250,7 +367,6 @@ async function startRuntimeProof(page: Page, began = Date.now()) {
       clearInterval(timer);
       const boundary = sample().catch((e) => { sampleError = String(e); });
       await Promise.all([sampling, boundary]);
-      await cdp.detach().catch(() => {});
       const delta = (key: string) => Number.isFinite(before[key]) && Number.isFinite(after[key]) && after[key] >= before[key]
         ? after[key] - before[key] : undefined;
       const unfinished = [...requests.values()];
@@ -404,12 +520,12 @@ for (const p of spec.pages as PageSpec[]) {
         // "plugin unavailable"; the page load is repeated, never recorded as the datasource's answer.
         for (let attempt = 0; attempt < 3; attempt++) {
         const ctx = await browser.newContext();
+        let runtimeProof: Awaited<ReturnType<typeof startRuntimeProof>> | undefined;
+        try {
         const page = await ctx.newPage();
         const pending = { n: 0, last: Date.now(), seen: 0 };
         const records: any[] = [];
         const errors: string[] = [];
-        page.on("console", (m) => { if (m.type() === "error" && errors.length < 20) errors.push(m.text().slice(0, 1500)); });
-        page.on("pageerror", (e) => { if (errors.length < 20) errors.push(`pageerror: ${String(e.stack || e).slice(0, 1500)}`); });
         if (p.kind === "drilldown") await queriesAfterPanelModule(page);
         page.on("request", (rq) => {
           if (BACKEND.test(rq.url())) { pending.n++; pending.seen = (pending.seen || 0) + 1; pending.last = Date.now(); }
@@ -439,7 +555,7 @@ for (const p of spec.pages as PageSpec[]) {
         page.on("response", (rs) => {
           if (BACKEND.test(rs.request().url())) track(recordAnswer(rs, over).then(record => {
             records.push(record);
-            runtimeProof.recordData([record], completion.get(rs.request()));
+            runtimeProof?.recordData([record], completion.get(rs.request()));
           }));
         });
         // A request cancelled before its headers arrived never gets a `response` event.
@@ -447,7 +563,7 @@ for (const p of spec.pages as PageSpec[]) {
           if (BACKEND.test(rq.url())) track(rq.response().then((rs) => { if (!rs && cancelled(rq)) records.push(abortedRecord(rq)); }));
         });
         const t0 = Date.now();
-        const runtimeProof = await startRuntimeProof(page, t0);
+        runtimeProof = await startRuntimeProof(page, t0, errors);
         await page.goto(url(p, ds.uid, r), { waitUntil: "commit" });
         if (p.kind === "label-browser") {
           await page.getByRole("button", { name: /Label browser/i }).first().click({ timeout: 30_000 }).catch(() => {});
@@ -479,10 +595,15 @@ for (const p of spec.pages as PageSpec[]) {
         fs.mkdirSync(ddir, { recursive: true });
         await page.screenshot({ path: path.join(dir, `${ds.id}.png`) });
         const ui = await uiState(page);
+        const client_exceptions = await runtimeProof.finishClientExceptions();
         fs.writeFileSync(path.join(ddir, `${ds.id}.json`), JSON.stringify({ settled: ok, settle_ms: settleMs,
-          last_api_completion_ms: lastCompletionMs, attempts: attempt + 1, records, ui, errors, runtime }));
+          last_api_completion_ms: lastCompletionMs, attempts: attempt + 1, records, ui, errors, runtime, client_exceptions }));
         await ctx.close();
         break;
+        } finally {
+          await runtimeProof?.dispose();
+          await ctx.close();
+        }
         }
       }
     });

@@ -2140,6 +2140,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "operator-sum",
     "loki_api_v1_query_range"
@@ -2156,6 +2157,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "operator-topk",
     "range_function-rate",
@@ -2173,6 +2175,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "parser-json",
     "operator-sum",
@@ -2190,6 +2193,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "operator-sum",
     "loki_api_v1_query_range"
@@ -2222,6 +2226,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "operator-sum",
     "loki_api_v1_query_range"

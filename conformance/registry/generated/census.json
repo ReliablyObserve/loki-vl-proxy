@@ -195,6 +195,8 @@
     "profiles/grafana-stats-error-as-warning | compare:observed",
     "profiles/grafana-stats-error-as-warning | gap:documented",
     "profiles/grafana-stats-error-as-warning | query",
+    "profiles/grafana-uppercase-metric-log-volume | compare:observed",
+    "profiles/grafana-uppercase-metric-log-volume | gap:upstream",
     "profiles/json-extraction-list-exposes-only-listed | compare:exact",
     "profiles/json-extraction-list-exposes-only-listed | gap:fixed",
     "profiles/json-extraction-list-exposes-only-listed | query",
@@ -3444,7 +3446,7 @@
       "any": 50,
       "api": 124,
       "drilldown": 62,
-      "explore": 208,
+      "explore": 209,
       "grafana-datasource": 3,
       "operator": 4
     },

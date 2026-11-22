@@ -99,6 +99,61 @@ const textNode = parentElement => ({parentElement, textContent: parentElement.te
         self.assertLess(drain, after_settle.index("await page.screenshot"))
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for Chromium collector unit tests")
+    def test_exception_collector_binds_actual_events_and_fails_closed(self):
+        source = Path(ci_run.HERE, "capture.spec.ts").read_text().split("const BACKEND = ", 1)[1].split("// Logs Drilldown", 1)[0]
+        node = r'''const assert = require("node:assert/strict");
+const {EventEmitter} = require("node:events");
+const strip = require("node:module").stripTypeScriptTypes;
+if (!strip) process.exit(77);
+const source = require("node:fs").readFileSync(0, "utf8");
+const start = Function(strip(source) + ";return startRuntimeProof")();
+const props = [{name:'refId',value:{type:'string',value:'log-volume-A'}},
+               {name:'message',value:{type:'string',value:'parse error: unexpected SUM'}},
+               {name:'status',value:{type:'number',value:400}}];
+const event = id => ({exceptionDetails:{exceptionId:id,text:'Uncaught',
+  stackTrace:{callFrames:[{url:'http://localhost/public/build/client.js',lineNumber:1,columnNumber:2}]},
+  exception:{type:'object',className:'Object',description:'Object',objectId:'object-'+id,
+    preview:{overflow:false,properties:props.map(p=>({name:p.name,type:p.value.type,value:String(p.value.value)}))}}}});
+async function run(mode) {
+  const cdp = new EventEmitter(); let detached=0, propertyReads=0;
+  cdp.send = async (method, parameters) => {
+    if (method === 'Runtime.getProperties') {
+      propertyReads++; assert.equal(parameters.ownProperties,true);
+      if (mode === 'timeout') return new Promise(()=>{});
+      return {result: mode === 'accessor' ? [{name:'refId',get:{type:'function'}},...props.slice(1)] : props};
+    }
+    return {metrics:[{name:'JSHeapUsedSize',value:16}]};
+  };
+  cdp.detach = async () => {detached++;};
+  const page = new EventEmitter(); page.context = () => ({newCDPSession:async()=>cdp}); page.isClosed=()=>false;
+  const errors=[];
+  const proof = await start(page, Date.now(), errors);
+  if (mode === 'close') {page.emit('close'); await new Promise(r=>setImmediate(r)); assert.equal(detached,1); return;}
+  const count=mode==='overflow'?5:1;
+  for(let id=1;id<=count;id++) {cdp.emit('Runtime.exceptionThrown',event(id)); page.emit('pageerror',new Error('Object'));}
+  await proof.finish();
+  const state=await proof.finishClientExceptions();
+  assert.equal(detached,1); assert.equal(page.listenerCount('pageerror'),0);
+  assert.equal(cdp.listenerCount('Runtime.exceptionThrown'),0);
+  if(mode==='normal') {
+    assert.equal(state.complete,true);assert.equal(state.overflow,false);
+    assert.equal(state.events[0].event_id,'runtime:1');assert.equal(state.events[0].raw_error_index,0);
+    assert.equal(errors[0],'pageerror: Object');assert.equal(state.playwright_page_error_count,1);
+    assert.deepEqual(state.events[0].own_property_names,['message','refId','status']);
+    assert.equal(state.events[0].ref_id,'log-volume-A');assert.equal(state.events[0].status,400);
+  } else assert.equal(state.complete,false,mode);
+  if(mode==='overflow') {assert.equal(state.events.length,4);assert.equal(state.overflow,true);}
+  assert.ok(propertyReads<=4);
+}
+(async()=>{for(const mode of ['normal','accessor','overflow','timeout','close']) await run(mode);})()
+ .catch(e=>{console.error(e);process.exit(1)});'''
+        proc = subprocess.run(["node", "-e", node], input="const BACKEND = " + source,
+                              text=True, capture_output=True, timeout=20)
+        if proc.returncode == 77:
+            self.skipTest("Node 22.13+ supplies the TypeScript loader")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for Chromium collector unit tests")
     def test_redirect_hops_and_first_metadata_data_in_the_runtime_collector(self):
         # Run the capture's collector against CDP events without Chromium, network or Playwright.
         source = Path(ci_run.HERE, "capture.spec.ts").read_text().split("const BACKEND = ", 1)[1].split("// Logs Drilldown", 1)[0]
@@ -112,7 +167,8 @@ const start = Function(strip(source) + ";return startRuntimeProof")();
     const cdp = new (require("node:events").EventEmitter)();
     cdp.send = async () => ({metrics: [{name: "JSHeapUsedSize", value: 16}]});
     cdp.detach = async () => {};
-    const page = {context: () => ({newCDPSession: async () => cdp}), isClosed: () => false, once: () => {}};
+    const page = new (require("node:events").EventEmitter)();
+    page.context = () => ({newCDPSession: async () => cdp}); page.isClosed = () => false;
     const proof = await start(page);
     cdp.emit("Network.requestWillBeSent", {requestId: "1", request: {url: "/api/ds/query"}});
     cdp.emit("Network.dataReceived", {requestId: "1", encodedDataLength: 20});
@@ -120,6 +176,7 @@ const start = Function(strip(source) + ";return startRuntimeProof")();
     cdp.emit("Network.loadingFinished", {requestId: "1", encodedDataLength: 120});
     proof.recordData([{status: 200, response}]);
     const measured = await proof.finish();
+    await proof.finishClientExceptions();
     if (process.argv[1] === "redirect") {
       assert.equal(measured.api_encoded_bytes, 70);
       assert.equal(measured.page_encoded_bytes, 190);

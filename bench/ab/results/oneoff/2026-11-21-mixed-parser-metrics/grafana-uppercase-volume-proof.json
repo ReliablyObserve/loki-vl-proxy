@@ -1,0 +1,1927 @@
+{
+  "schema_version": 1,
+  "registry_case": "profiles/grafana-uppercase-metric-log-volume",
+  "response_digest_format": "SHA256 of UTF-8 JSON with sorted keys, compact separators and ensure_ascii=true; not an encoded-wire-body digest.",
+  "observation_date": "2026-11-22",
+  "scope": "Recorded client defect; no runtime-gate exception or API behavior change is authorized by this evidence.",
+  "ci": {
+    "run_id": 45041900087,
+    "base": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+    "head": "31faa7f29a46e5ebe691b3e9c908adeb3b6ea61b",
+    "run_url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45041900087",
+    "source_sha256": {
+      "bench/visual/spec.json": "664244aca01b3cc13a14b0f80e744149cac77359aa53fe475adfa973c18adffa",
+      "bench/visual/capture.spec.ts": "2639095ab0543556d5b5ad367622b4fb653566eefbfe782ac483b92b129c1c39",
+      "bench/visual/compare.py": "07329139b0390c50af5d277b5ec5aa9823c215055c3e0a97d55248c8a533f492"
+    },
+    "artifacts": [
+      {
+        "id": 14761974173,
+        "name": "visual-shard-0",
+        "zip_bytes": 671048,
+        "zip_sha256": "851f42d21bb09993f8184fab33316440c5042ac0639edf8f2efbfddf17f21d96",
+        "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45041900087/artifacts/14761974173"
+      },
+      {
+        "id": 14762765440,
+        "name": "visual-shard-2",
+        "zip_bytes": 980161,
+        "zip_sha256": "e1776e43921b768379abe1bf4d254c32788cc93c87dfc36524f7a08aea3e53b4",
+        "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45041900087/artifacts/14762765440"
+      },
+      {
+        "id": 14762162343,
+        "name": "visual-shard-3",
+        "zip_bytes": 860336,
+        "zip_sha256": "ed319bfe3724310e4b572e2793dc90d27aff56fc51918304964ca85ab0e17e8d",
+        "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45041900087/artifacts/14762162343"
+      },
+      {
+        "id": 14762520825,
+        "name": "visual-shard-4",
+        "zip_bytes": 753092,
+        "zip_sha256": "9a43f1126c0424e8ae5f441a1b4671034b58222fbaad706e80676573660e2287",
+        "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45041900087/artifacts/14762520825"
+      },
+      {
+        "id": 14762023927,
+        "name": "visual-shard-5",
+        "zip_bytes": 729393,
+        "zip_sha256": "70168f55889c320ae2c452ba70803d65d7137d3b76da2dbd9a99b1518ccf7a36",
+        "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45041900087/artifacts/14762023927"
+      }
+    ],
+    "client_module_cache_version": "13.2.5",
+    "version_limit": "The module cache version is observed in browser stacks; it is not proof of the Grafana container version or CI asset hash.",
+    "captures": [
+      {
+        "scene_id": "explore-748-uppercase-offset",
+        "range": "1h",
+        "side": "loki",
+        "artifact_path": "first-pass/data/explore-748-uppercase-offset/1h/loki.json",
+        "artifact_name": "visual-shard-0",
+        "capture_bytes": 105815,
+        "capture_sha256": "2d5452a4bb184c1620186b12d14baf08bb342c48664b9c58401bd742704d3cf9",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "e05cc08cfbd62cab925fb6fd759222a1794882b4c48d59932325218cab937046"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-offset",
+        "range": "1h",
+        "side": "main",
+        "artifact_path": "first-pass/data/explore-748-uppercase-offset/1h/main.json",
+        "artifact_name": "visual-shard-0",
+        "capture_bytes": 105761,
+        "capture_sha256": "cd98a22cf78f2237edf812371a8f9137ff68a68888f3bda0e59d7f4e323d7757",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "df10d5e9382e74e5ffefeb45a0d231a16208d4c9f78ce3a55320854459da47cd"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-offset",
+        "range": "1h",
+        "side": "pr",
+        "artifact_path": "first-pass/data/explore-748-uppercase-offset/1h/pr.json",
+        "artifact_name": "visual-shard-0",
+        "capture_bytes": 105756,
+        "capture_sha256": "d1c38973727d518f0e16bba9126d3a1baae319ae8cfe2f1c4da9eb1d5c61628e",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "f9d8c1aa9b24ec27a349922f6392cd9f3469d570c35aad406b289b0df0fb46f6"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-sum",
+        "range": "1h",
+        "side": "loki",
+        "artifact_path": "first-pass/data/explore-748-uppercase-sum/1h/loki.json",
+        "artifact_name": "visual-shard-2",
+        "capture_bytes": 105654,
+        "capture_sha256": "50ab823f36216bf85409f08cebf47278ea3b208903b108b1f44b75a381a87fcf",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "91627474c68dc62b4d1a84ce9543cfb328dc5de8500f05b26aea57283da0c83d"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-sum",
+        "range": "1h",
+        "side": "main",
+        "artifact_path": "first-pass/data/explore-748-uppercase-sum/1h/main.json",
+        "artifact_name": "visual-shard-2",
+        "capture_bytes": 105627,
+        "capture_sha256": "cb294ca449faa2e88418c93907daf2aac6110dc577690a2856b97e34e609c296",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "d8185fd4ca08a1f590e15bffbb87d4be1665e0617d6aa98018d5b95ffb9f8210"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-sum",
+        "range": "1h",
+        "side": "pr",
+        "artifact_path": "first-pass/data/explore-748-uppercase-sum/1h/pr.json",
+        "artifact_name": "visual-shard-2",
+        "capture_bytes": 105620,
+        "capture_sha256": "bb8495de04a5cc8cf7089c1abd881dd5d12746949002f8eb6370cfdf482e943b",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "50c2da465fca62446b299e4180c7e71285799f737948ac2dbf092353af45078f"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-topk-rate",
+        "range": "1h",
+        "side": "loki",
+        "artifact_path": "first-pass/data/explore-748-uppercase-topk-rate/1h/loki.json",
+        "artifact_name": "visual-shard-3",
+        "capture_bytes": 27769,
+        "capture_sha256": "ab83cc7eb669fd45f2e8001168a23b621880455c6508d38843c37a3fefb51576",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected topk, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "c6188a66a734ded21d89e5d0ac7ec66ac1d75a46418b271b70ac0fbd731ffdd6",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 8,
+            "response_sha256": "061eb1350589301495d3d31b296deb10d5c9e4eff819920ca73e36575057932e"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-topk-rate",
+        "range": "1h",
+        "side": "main",
+        "artifact_path": "first-pass/data/explore-748-uppercase-topk-rate/1h/main.json",
+        "artifact_name": "visual-shard-3",
+        "capture_bytes": 25460,
+        "capture_sha256": "bf55ba70ade25323fdb9eefcf0b5a81bb39c661a497707630fcf8d808a4f65e2",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected topk, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "c6188a66a734ded21d89e5d0ac7ec66ac1d75a46418b271b70ac0fbd731ffdd6",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 3,
+            "response_sha256": "343d3e8c685eaeb10a864bef3bad63338a6ee4b9bc8fb73d910928c40e41a429"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-topk-rate",
+        "range": "1h",
+        "side": "pr",
+        "artifact_path": "first-pass/data/explore-748-uppercase-topk-rate/1h/pr.json",
+        "artifact_name": "visual-shard-3",
+        "capture_bytes": 25454,
+        "capture_sha256": "2e591e34156eb97c74f9c6586e7046c6a494589c91b236472b5947f7fc121416",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected topk, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "c6188a66a734ded21d89e5d0ac7ec66ac1d75a46418b271b70ac0fbd731ffdd6",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 3,
+            "response_sha256": "ae527433a3349a2ea0a5361a4f8c03255740bb7d951da81af8eab4658dafc51d"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-json-unwrap",
+        "range": "1h",
+        "side": "loki",
+        "artifact_path": "first-pass/data/explore-748-uppercase-json-unwrap/1h/loki.json",
+        "artifact_name": "visual-shard-4",
+        "capture_bytes": 41692,
+        "capture_sha256": "cf62750f0a35dd596ec36d7068c3a2682777fa2bff9c063e044feffd1d421249",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 5,
+            "response_sha256": "d062f2a1b742888f568a20b4b7f7e5b6d4ca67a0ba2e2844f3eb4d0e7331472d"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-json-unwrap",
+        "range": "1h",
+        "side": "main",
+        "artifact_path": "first-pass/data/explore-748-uppercase-json-unwrap/1h/main.json",
+        "artifact_name": "visual-shard-4",
+        "capture_bytes": 41657,
+        "capture_sha256": "0d2e73198d604b89aa355c332de7d6af6f463f739426572645e40f20b07b3e4d",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 5,
+            "response_sha256": "844d72a3195ebfa850c0fb127a6daf52d5327252d738a81a7b4c339603ff60c4"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-json-unwrap",
+        "range": "1h",
+        "side": "pr",
+        "artifact_path": "first-pass/data/explore-748-uppercase-json-unwrap/1h/pr.json",
+        "artifact_name": "visual-shard-4",
+        "capture_bytes": 41651,
+        "capture_sha256": "c841b3816cadc582b60e2eae096ef55db23951345425c84de0316164156b3ee3",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 5,
+            "response_sha256": "991bfcc7328c35b152e9f8c52ff3955258cdb3e9e43c291d947cdcd4cc6889ef"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-on",
+        "range": "1h",
+        "side": "loki",
+        "artifact_path": "first-pass/data/explore-748-uppercase-on/1h/loki.json",
+        "artifact_name": "visual-shard-5",
+        "capture_bytes": 101028,
+        "capture_sha256": "f08266c0409dafc8ef698c5bb23e9a1637672d29e38bbae62243966670b2af08",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-loki"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 3,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "cec8e3a2a61e52800c11e39c6fe705da7bf6d742c7c8aacd19178f3a1d6a55ad"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-on",
+        "range": "1h",
+        "side": "main",
+        "artifact_path": "first-pass/data/explore-748-uppercase-on/1h/main.json",
+        "artifact_name": "visual-shard-5",
+        "capture_bytes": 100991,
+        "capture_sha256": "a57b5d30cc23498b3980fbd70a5f27d0433edcb3f85a4fb2909b5beb97705c22",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-main"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "dedf4868bbc8ce3c3a5c3bf4c6ffdfa8cd92d08c786a0ded5a38d42c404919fb"
+          }
+        ]
+      },
+      {
+        "scene_id": "explore-748-uppercase-on",
+        "range": "1h",
+        "side": "pr",
+        "artifact_path": "first-pass/data/explore-748-uppercase-on/1h/pr.json",
+        "artifact_name": "visual-shard-5",
+        "capture_bytes": 101005,
+        "capture_sha256": "f2267ec7da2c379e76a844370e4e3a34a8f2dd2a52948cceb9604f8c2b37476d",
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          "pageerror: Object"
+        ],
+        "console_errors": [
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Error: parse error at line 1, col 49: syntax error: unexpected sum, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+        ],
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "vp-pr"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 2,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795359960000",
+              "to": "1795363560000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 16,
+            "response_sha256": "611282ebb393890714153e3f18008919e6fdadd0389f786730e88f1fdbe74672"
+          }
+        ]
+      }
+    ]
+  },
+  "existing_contracts": {
+    "accepted_keywords_case": "semantics/proxy-accepts-operators-not-in-loki",
+    "separate_open_ranking_case": "semantics/uppercase-topk-ranks-once",
+    "api_tests": [
+      "TestCompat_UppercaseKeywordsMatchLoki",
+      "TestUppercaseKeywordsSendTheLowercaseBackendRequests"
+    ],
+    "parser_rejection_test": "TestValidateLogQL_LokiRejections",
+    "parser_rejection_scope": "The existing parser table rejects a range function over a metric expression; the exact generated count-over-metric error is also recorded in these native HTTP DTOs.",
+    "visual_scenes": [
+      "explore-748-uppercase-json-unwrap",
+      "explore-748-uppercase-offset",
+      "explore-748-uppercase-on",
+      "explore-748-uppercase-sum",
+      "explore-748-uppercase-topk-rate"
+    ],
+    "parity_limit": "HTTP 200 and frame counts do not prove primary value equality; datasets differ and the open ranking case remains open."
+  },
+  "local_validation": {
+    "method": "Unchanged existing uppercase-sum 1h scene on the one existing playground, proxy and Loki sequentially; no ingestion or datasource changes.",
+    "grafana": {
+      "database": "ok",
+      "version": "13.3.1",
+      "commit": "da3aa3ff574e7dbbf808c66b6daa744defed0441"
+    },
+    "loki": {
+      "version": "3.7.10",
+      "revision": "c792f585",
+      "branch": "release-3.7.x",
+      "buildUser": "root@buildkitsandbox",
+      "buildDate": "2026-11-13T00:21:56Z",
+      "goVersion": ""
+    },
+    "proxy_image_inspected_after_capture": "\"loki-vl-proxy:playground-3a808613394b\" \"sha256:fc115ac90b2b44492cf99aeb461e898b0546b799b60cfc3f26437b159b7a9155\"",
+    "proxy_source_limit": "The playground image tag names 3a808613394b; the Loki-compatible buildinfo route is not used as proxy source provenance.",
+    "loki_plugin_metadata_version": "13.2.5",
+    "served_module_sha256": "84b61b60810d1a7425a316e69c4105d2113b74928c74dce337f98d7bcfbb1ecb",
+    "module_provenance": "HTTP bytes match the bundled /usr/share/grafana/data/plugins-bundled/loki/module.js; no Loki plugin mount or volume override.",
+    "captures": [
+      {
+        "side": "pr",
+        "capture_bytes": 617441,
+        "capture_sha256": "1bc1b4bc9017a46dcaa735ff817c19b60ad277ff25277e9fb4b975c070214e0e",
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "PE5C64EEEB812BA91"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 9,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795360920000",
+              "to": "1795364520000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "PE5C64EEEB812BA91"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 9,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795360920000",
+              "to": "1795364520000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 60,
+            "response_sha256": "c65ff3e10ba9db2dbcabeb515b27a6b2c74637fd2ac698fd7dc3ab42d29e3cfe"
+          }
+        ],
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          {
+            "name": "",
+            "message": "Object",
+            "stack": "",
+            "ownProperties": [
+              "stack",
+              "message",
+              "log",
+              "name"
+            ]
+          }
+        ],
+        "runtime_exceptions": [
+          {
+            "details": {
+              "exceptionId": 1,
+              "text": "Uncaught",
+              "lineNumber": 30,
+              "columnNumber": 828374,
+              "scriptId": "5",
+              "url": "http://127.0.0.1:3002/public/build/69375.40e3294b3bba01ca.js",
+              "stackTrace": {
+                "callFrames": [
+                  {
+                    "functionName": "",
+                    "scriptId": "5",
+                    "url": "http://127.0.0.1:3002/public/build/69375.40e3294b3bba01ca.js",
+                    "lineNumber": 30,
+                    "columnNumber": 828374
+                  }
+                ]
+              },
+              "exception": {
+                "type": "object",
+                "className": "Object",
+                "description": "Object",
+                "objectId": "-6630980445604836137.3.8",
+                "preview": {
+                  "type": "object",
+                  "description": "Object",
+                  "overflow": false,
+                  "properties": [
+                    {
+                      "name": "refId",
+                      "type": "string",
+                      "value": "log-volume-A"
+                    },
+                    {
+                      "name": "message",
+                      "type": "string",
+                      "value": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or ("
+                    },
+                    {
+                      "name": "status",
+                      "type": "number",
+                      "value": "400"
+                    }
+                  ]
+                }
+              },
+              "executionContextId": 3
+            },
+            "properties": [
+              {
+                "name": "refId",
+                "value": {
+                  "type": "string",
+                  "value": "log-volume-A"
+                },
+                "writable": true,
+                "configurable": true,
+                "enumerable": true,
+                "isOwn": true
+              },
+              {
+                "name": "message",
+                "value": {
+                  "type": "string",
+                  "value": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or ("
+                },
+                "writable": true,
+                "configurable": true,
+                "enumerable": true,
+                "isOwn": true
+              },
+              {
+                "name": "status",
+                "value": {
+                  "type": "number",
+                  "value": 400,
+                  "description": "400"
+                },
+                "writable": true,
+                "configurable": true,
+                "enumerable": true,
+                "isOwn": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "side": "loki",
+        "capture_bytes": 617549,
+        "capture_sha256": "7fdf5c919858c15b2f5233b77f4da0eda8ca74318eca0bf14edb52fc77940059",
+        "queries": [
+          {
+            "ref_id": "log-volume-A",
+            "expression": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "log-volume-A",
+                  "expr": "sum by (level, detected_level) (count_over_time(SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "P158F1C6922A12716"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "supportingQueryType": "logsVolume",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 60000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795360920000",
+              "to": "1795364520000"
+            },
+            "http_status": 400,
+            "result_status": 400,
+            "frame_count": 0,
+            "response_sha256": "90ee16018db62f5c2015b1139aae47571e2a8bf48b9a5262c61b1c4dd9b4412f",
+            "response": {
+              "results": {
+                "log-volume-A": {
+                  "error": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or (",
+                  "errorSource": "downstream",
+                  "status": 400,
+                  "frames": []
+                }
+              }
+            }
+          },
+          {
+            "ref_id": "A",
+            "expression": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+            "request": {
+              "queries": [
+                {
+                  "refId": "A",
+                  "expr": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
+                  "queryType": "range",
+                  "datasource": {
+                    "type": "loki",
+                    "uid": "P158F1C6922A12716"
+                  },
+                  "editorMode": "code",
+                  "direction": "backward",
+                  "maxLines": 1000,
+                  "supportingQueryType": "grafana-explore",
+                  "step": "",
+                  "legendFormat": "",
+                  "datasourceId": 1,
+                  "intervalMs": 5000,
+                  "maxDataPoints": 980
+                }
+              ],
+              "from": "1795360920000",
+              "to": "1795364520000"
+            },
+            "http_status": 200,
+            "result_status": 200,
+            "frame_count": 60,
+            "response_sha256": "8c49ba2ae13f179bc36e80ba4a71429084637c574376968883791468e0ac257c"
+          }
+        ],
+        "ui": {
+          "noData": 0,
+          "banners": [],
+          "panelErrors": 0
+        },
+        "page_errors": [
+          {
+            "name": "",
+            "message": "Object",
+            "stack": "",
+            "ownProperties": [
+              "stack",
+              "message",
+              "log",
+              "name"
+            ]
+          }
+        ],
+        "runtime_exceptions": [
+          {
+            "details": {
+              "exceptionId": 1,
+              "text": "Uncaught",
+              "lineNumber": 30,
+              "columnNumber": 828374,
+              "scriptId": "9",
+              "url": "http://127.0.0.1:3002/public/build/69375.40e3294b3bba01ca.js",
+              "stackTrace": {
+                "callFrames": [
+                  {
+                    "functionName": "",
+                    "scriptId": "9",
+                    "url": "http://127.0.0.1:3002/public/build/69375.40e3294b3bba01ca.js",
+                    "lineNumber": 30,
+                    "columnNumber": 828374
+                  }
+                ]
+              },
+              "exception": {
+                "type": "object",
+                "className": "Object",
+                "description": "Object",
+                "objectId": "-1450054630570716015.3.8",
+                "preview": {
+                  "type": "object",
+                  "description": "Object",
+                  "overflow": false,
+                  "properties": [
+                    {
+                      "name": "refId",
+                      "type": "string",
+                      "value": "log-volume-A"
+                    },
+                    {
+                      "name": "message",
+                      "type": "string",
+                      "value": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or ("
+                    },
+                    {
+                      "name": "status",
+                      "type": "number",
+                      "value": "400"
+                    }
+                  ]
+                }
+              },
+              "executionContextId": 3
+            },
+            "properties": [
+              {
+                "name": "refId",
+                "value": {
+                  "type": "string",
+                  "value": "log-volume-A"
+                },
+                "writable": true,
+                "configurable": true,
+                "enumerable": true,
+                "isOwn": true
+              },
+              {
+                "name": "message",
+                "value": {
+                  "type": "string",
+                  "value": "parse error at line 1, col 49: syntax error: unexpected SUM, expecting NUMBER or { or ("
+                },
+                "writable": true,
+                "configurable": true,
+                "enumerable": true,
+                "isOwn": true
+              },
+              {
+                "name": "status",
+                "value": {
+                  "type": "number",
+                  "value": 400,
+                  "description": "400"
+                },
+                "writable": true,
+                "configurable": true,
+                "enumerable": true,
+                "isOwn": true
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "limit": "Single captures establish the malformed supporting request and thrown object, not performance percentiles or primary value parity."
+  },
+  "operator_constraints": {
+    "automatic_volume_documentation": "https://grafana.com/docs/grafana/latest/visualizations/explore/logs-integration/",
+    "url": "The harness URL does not set supportingQueryType; the stock datasource adds grafana-explore from the Explore application.",
+    "preference": "The stock client initializes supplementary LogsVolume enabled=true from a browser-wide grafana.explore.logs.enableLogsVolume preference, separately from per-pane panelsState.",
+    "unresolved": "No verified per-pane URL option preserves the expression, range type, data and default view while preventing only the malformed supporting request.",
+    "not_applied": [
+      "datasource patch",
+      "global volume disable",
+      "expression normalization",
+      "range removal",
+      "gate exception",
+      "visual-change-expected label"
+    ]
+  }
+}

@@ -40,3 +40,21 @@ with the stock app against Loki and the candidate. These do not establish full v
 The full existing typed matrix subsequently passed against this deployed product image: 151/151 subtests,
 zero skipped or failed, 6.560 seconds. Five cases retain explicit known-deviation contracts; this is not a
 claim that those differences are closed. The full log and source/deployment receipt are retained here.
+
+## Stock Explore uppercase-metric observation (2026-11-22)
+
+[`grafana-uppercase-volume-proof.json`](grafana-uppercase-volume-proof.json) records the separate client defect
+`profiles/grafana-uppercase-metric-log-volume`. It reuses five existing Visual smoke scenes: fifteen captures
+from run [45041900087](https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45041900087), with exact
+requests, complete supporting error DTOs, primary-body and artifact digests, and source/version limits.
+The original primary metric returns 200 on main, PR and Loki. Stock Explore also generates an invalid
+`log-volume-A` query that all three correctly reject with the same 400 response. Its unhandled error object
+is independently reproduced and identified with CDP on the existing Grafana 13.3.1 playground.
+
+The original observations alone are not primary-value parity or performance evidence. Visual smoke now
+classifies only a fresh, registry-scoped upstream client exception when main, PR and Loki have identical
+complete primary points, the recorded malformed supporting request and error DTO, and matching structured
+uncaught exceptions. It retains the complete input captures and reports the upstream gap as open. Missing,
+unknown or changed exceptions, data differences and resource regressions still fail. Historical Object-only
+captures do not qualify. The separate uppercase topk ranking gap remains open. No datasource patch, global
+volume disable, query normalization or omitted scene/range is authorized by this evidence.
