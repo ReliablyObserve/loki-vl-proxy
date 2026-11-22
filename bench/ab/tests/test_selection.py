@@ -118,7 +118,6 @@ class SelectTest(unittest.TestCase):
 
 class CheckTest(unittest.TestCase):
     def test_mixed_parser_runtime_queries_are_owned_by_quality_matrix(self):
-        import json
         matrix = json.loads(selection.read("test/e2e-compat/query-semantics-matrix.json"))
         cases = {c["id"]: c for c in matrix["cases"]}
         raw = json.loads(selection.read(selection.SHAPES))
