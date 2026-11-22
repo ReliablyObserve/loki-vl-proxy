@@ -120,6 +120,7 @@ SPEED_MIN_ROWS, SPEED_MIN_S = 20, 0.05
 RATCHET = "ratchet.json"
 ACCEPTANCE = "acceptance.json"
 sys.path.insert(0, HERE)
+import selection  # noqa: E402
 import over2x  # noqa: E402
 
 
@@ -170,7 +171,7 @@ def entry(summary, commit=""):
 
 def load_spec():
     with open(SHAPES) as f:
-        return json.load(f)
+        return selection.load_shapes(f.read())
 
 
 def full_ranges(spec, name):

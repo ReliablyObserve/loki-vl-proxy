@@ -564,6 +564,11 @@ list here.
 3. The pull request that adds it runs it (it is "added or edited"), and every
    later change to the code its items name runs it again.
 
+A shape may use `case_id` instead of `query` to reuse a successful
+`query_range` case in `test/e2e-compat/query-semantics-matrix.json`. The loader
+rejects an unknown case or a second query definition. This keeps the quality
+contract's expression and the measured expression identical.
+
 ### The daily report's perf smoke
 
 `.github/workflows/daily-report.yaml` runs `daily.py --smoke` once a day on

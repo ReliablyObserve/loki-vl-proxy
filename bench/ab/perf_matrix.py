@@ -66,7 +66,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from answers import query_rejection  # noqa: E402
-from selection import query_lookback  # noqa: E402
+from selection import load_shapes, query_lookback  # noqa: E402
 from bench.visual.vio import error_text  # noqa: E402
 import reuse  # noqa: E402
 import stack  # noqa: E402
@@ -549,7 +549,7 @@ def main():
     logs = dict(x.split("=", 1) for x in args.quiet_log)
 
     with open(args.shapes_file) as f:
-        spec = json.load(f)
+        spec = load_shapes(f.read())
     shape_set = spec["sets"][args.set]
     range_defs = spec["ranges"]
     ranges = [r for r in (args.ranges.split(",") if args.ranges else shape_set["ranges"]) if r]

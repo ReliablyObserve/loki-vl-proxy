@@ -3576,6 +3576,30 @@
      ]
     }
    ]
+  },
+  "mixed-parser-metrics": {
+   "description": "Ordered mixed-parser metrics, reusing the typed quality matrix queries.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "explicit JSON then logfmt grouped count",
+     "case_id": "mixed_parser_explicit_group",
+     "covers": [
+      "semantics/two-parsers-keep-one"
+     ]
+    },
+    {
+     "name": "logfmt then JSON grouped count",
+     "case_id": "mixed_parser_reverse_group",
+     "covers": [
+      "semantics/two-parsers-keep-one"
+     ]
+    }
+   ]
   }
  }
 }

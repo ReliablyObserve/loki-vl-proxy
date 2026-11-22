@@ -255,6 +255,15 @@ def sums(first_row, repeat_row):
 
 
 class ReuseFirstColdTest(unittest.TestCase):
+    def test_distinct_matrix_cases_never_share_a_loki_cold_reference(self):
+        shapes = pr_smoke.selection.load_shapes()["sets"]["mixed-parser-metrics"]["shapes"]
+        self.assertNotEqual(perf_matrix.query_key(shapes[0]), perf_matrix.query_key(shapes[1]))
+        rows = [{"set": "mixed-parser-metrics", "reference": "loki", "rows": [
+            cold_row(shapes[0]["name"], 0.27), cold_row(shapes[1]["name"], 0.003, served=True)]}]
+        result = pr_smoke.reuse_first_cold(rows)[0]["rows"][1]
+        self.assertEqual(result["cold"]["loki"], 0.003)
+        self.assertNotIn("loki_cold_reused_from", result)
+
     def test_a_cache_served_repeat_takes_the_first_sets_computed_cold(self):
         first, repeat = pr_smoke.reuse_first_cold(sums(cold_row(FIRST[1], 0.27), cold_row(REPEAT[1], 0.003, served=True)))
         self.assertEqual(first["rows"][0]["cold"]["loki"], 0.27)

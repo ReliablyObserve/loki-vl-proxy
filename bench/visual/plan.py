@@ -63,17 +63,19 @@ MAX_CAPTURES = 36  # static page x range captures (each is three datasources in 
 
 
 def load_spec(root=None):
-    return load_json(os.path.join(root or ab.ROOT, SPEC))
+    spec = load_json(os.path.join(root or ab.ROOT, SPEC))
+    ab.resolve_case_queries(spec["pages"], root=root)
+    return spec
 
 
 def spec_at(ref):
-    """The spec at a git ref; empty when the ref predates it or it does not parse."""
-    try:
-        text = subprocess.run(["git", "show", f"{ref}:{SPEC}"], cwd=ab.ROOT, capture_output=True, text=True,
-                              check=True).stdout
-        return json.loads(text)
-    except (subprocess.CalledProcessError, ValueError):
+    """Read scenes and their matrix queries from the same revision, failing closed."""
+    text = ab.read_at(ref, SPEC)
+    if text is None:
         return {"pages": []}
+    spec = json.loads(text)
+    ab.resolve_case_queries(spec["pages"], ref=ref)
+    return spec
 
 
 def case_gap(text):

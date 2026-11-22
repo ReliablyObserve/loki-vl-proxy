@@ -18,6 +18,7 @@ type PageSpec = {
   id: string;
   kind: "explore" | "label-browser" | "log-context" | "drilldown" | "tail";
   query?: string;
+  case_id?: string; // query owned by the existing typed quality matrix
   path?: string; // drilldown path below /explore, {service} {label} {field} expanded
   service?: boolean; // drilldown: filter by var-filters service_name
   serviceName?: string; // drilldown: that service instead of vars.service
@@ -26,6 +27,17 @@ type PageSpec = {
   ranges?: string[];
 };
 const spec = JSON.parse(fs.readFileSync(process.env.VP_SPEC || path.join(__dirname, "spec.json"), "utf8"));
+const casePages = (spec.pages as PageSpec[]).filter(p => p.case_id);
+if (casePages.length) {
+  const matrix = JSON.parse(fs.readFileSync(path.join(__dirname, "../../test/e2e-compat/query-semantics-matrix.json"), "utf8"));
+  for (const page of casePages) {
+    const c = matrix.cases.find((entry: { id: string }) => entry.id === page.case_id);
+    if (page.kind !== "explore" || page.query !== undefined || !c || c.endpoint !== "query_range" || c.expectation !== "success") {
+      throw new Error(`${page.case_id}: runtime scene needs an exclusive successful query_range matrix case`);
+    }
+    page.query = c.query;
+  }
+}
 const OUT = process.env.VP_OUT || "out";
 const END = parseInt(process.env.VP_END || "0") || Math.floor(Date.now() / 60000) * 60;
 const only = (v?: string) => (v ? new Set(v.split(",")) : null);

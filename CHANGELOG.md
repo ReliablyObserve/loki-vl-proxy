@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reduce temporary label copies for certified single-field mixed-parser metrics while retaining complete source-label validation and collision provenance. Runtime API and native Grafana proof selection reuses typed matrix case IDs across current and historical revisions; live metric comparisons retain every label and point without requiring series order that Loki does not specify.
+
 - Eligible grouped count, rate and byte metrics keep sequential JSON and logfmt stages in their written order instead of dropping a parser after a sample of the data. This includes Drilldown's supported single-key JSON extraction followed by logfmt and an error-label drop. Original trailing-keep hints, parser collisions, complete pipeline errors and sorted matrix order are retained under the supported wrappers. Old mixed-parser answers are fenced across response caches; settled-point fragments carry their own order provenance so a partial-window cache hit preserves cold series order. A guarded stored-level count/rate path retains native aggregation where parsing cannot affect the result. Log replies and unsupported mixed pipelines remain tracked separately.
   - Reuse the raw reader's temporary JSON map for narrow rows and discard wider storage before its next decode. The existing 18,000-row benchmark uses about 16% fewer allocated bytes and 10% fewer allocations; this does not establish a production memory or latency gain.
 

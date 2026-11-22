@@ -1,7 +1,12 @@
 """Unit tests for bench/ab/selection.py (python3 -m unittest discover -s bench/ab/tests)."""
 import os
 import sys
+import json
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import selection  # noqa: E402
@@ -112,6 +117,27 @@ class SelectTest(unittest.TestCase):
 
 
 class CheckTest(unittest.TestCase):
+    def test_mixed_parser_runtime_queries_are_owned_by_quality_matrix(self):
+        import json
+        matrix = json.loads(selection.read("test/e2e-compat/query-semantics-matrix.json"))
+        cases = {c["id"]: c for c in matrix["cases"]}
+        raw = json.loads(selection.read(selection.SHAPES))
+        loaded = selection.load_shapes()
+        for raw_shape, resolved in zip(raw["sets"]["mixed-parser-metrics"]["shapes"],
+                                       loaded["sets"]["mixed-parser-metrics"]["shapes"]):
+            self.assertNotIn("query", raw_shape)
+            self.assertEqual(resolved["query"], cases[raw_shape["case_id"]]["query"])
+        result = selection.select(["internal/queryplan/resolve.go"])
+        self.assertEqual(selection.runtime_proof_problems(result), [])
+        self.assertIn("mixed-parser-metrics", result["sets"])
+
+    def test_matrix_reference_rejects_unknown_or_duplicate_query(self):
+        for entry in ({"case_id": "does-not-exist"},
+                      {"case_id": "mixed_parser_explicit_group", "query": "other"}):
+            with self.assertRaises(ValueError):
+                selection.resolve_case_queries([entry])
+
+
     def test_unreachable_non_control_shape_fails(self):
         spec = {"ranges": SPEC["ranges"], "sets": {
             "control": SPEC["sets"]["control"],
@@ -161,6 +187,42 @@ class CheckTest(unittest.TestCase):
             self.assertNotIn('detected_level="unknown"', shape["query"], shape["name"])  # empty on the stored seed
             self.assertNotRegex(shape["query"], r"(?<![_a-z])level_extracted", shape["name"])  # empty on the line-only seed
         self.assertNotIn("level-filter-body-only", sets)  # would run empty in CI and the weekly run
+
+
+class HistoricalCaseTest(unittest.TestCase):
+    def test_each_revision_resolves_its_own_query_and_unknown_case_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def git(*args):
+                return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test",
+                                       "-c", "commit.gpgsign=false", *args], cwd=root, check=True,
+                                      capture_output=True, text=True).stdout.strip()
+            git("init")
+            matrix = root / "test/e2e-compat/query-semantics-matrix.json"
+            shapes = root / selection.SHAPES
+            matrix.parent.mkdir(parents=True)
+            shapes.parent.mkdir(parents=True)
+            raw = {"ranges": {}, "sets": {"mixed": {"shapes": [{"name": "one", "case_id": "one"}]}}}
+            shapes.write_text(json.dumps(raw))
+            def commit(query):
+                matrix.write_text(json.dumps({"cases": [{"id": "one", "query": query,
+                    "endpoint": "query_range", "expectation": "success"}]}))
+                git("add", ".")
+                git("commit", "-m", query)
+                return git("rev-parse", "HEAD")
+            old = commit('{app="old"}')
+            new = commit('{app="new"}')
+            matrix.write_text(json.dumps({"cases": []}))
+            with mock.patch.object(selection, "ROOT", directory):
+                self.assertEqual(selection.shapes_at(old)["mixed"]["shapes"][0]["query"], '{app="old"}')
+                self.assertEqual(selection.shapes_at(new)["mixed"]["shapes"][0]["query"], '{app="new"}')
+                self.assertEqual(selection.changed_shapes(old, head=new), [("mixed", "one")])
+                git("add", ".")
+                git("commit", "-m", "missing case")
+                with self.assertRaises(ValueError):
+                    selection.shapes_at("HEAD")
+                with self.assertRaises(subprocess.CalledProcessError):
+                    selection.shapes_at("not-a-revision")
 
 
 if __name__ == "__main__":

@@ -277,8 +277,8 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 			}
 			continue
 		}
-		if tc.RequireEmptyGroup && tc.Compare != "ordered_metric_points" {
-			return fmt.Errorf("case %q requires empty and named groups with an ordered metric comparison", tc.ID)
+		if tc.RequireEmptyGroup && tc.Compare != "ordered_metric_points" && tc.Compare != "metric_points" {
+			return fmt.Errorf("case %q requires empty and named groups with a full metric comparison", tc.ID)
 		}
 		metric := tc.ExpectResultType == "matrix" || tc.ExpectResultType == "vector"
 		switch tc.Compare {
@@ -613,6 +613,11 @@ func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
 		t.Errorf("valid metric contract rejected: %v", err)
 	}
+	metric.RequireEmptyGroup = true
+	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
+		t.Errorf("full metric contract with empty group rejected: %v", err)
+	}
+	metric.RequireEmptyGroup = false
 	metric.Compare = "ranked_values"
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
 		t.Errorf("valid tie-tolerant ranked metric contract rejected: %v", err)
@@ -1002,11 +1007,17 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 
 				switch tc.Compare {
 				case "metric_points", "ordered_metric_points", "ranked_values":
-					if tc.Compare == "ordered_metric_points" {
-						got, want := querySemanticsMetricKeyOrder(proxyResp), querySemanticsMetricKeyOrder(lokiResp)
-						if tc.RequireEmptyGroup && (len(want) < 2 || !slices.Contains(want, "")) {
+					// Range-series order is unspecified, even for sort. Preserve
+					// full label/point and empty-group checks independently.
+					// https://grafana.com/docs/loki/latest/query/metric_queries/#result-ordering
+					if tc.RequireEmptyGroup {
+						want := querySemanticsMetricKeyOrder(lokiResp)
+						if len(want) < 2 || !slices.Contains(want, "") {
 							t.Fatalf("expected Loki to return the empty set and named groups, got %q", want)
 						}
+					}
+					if tc.Compare == "ordered_metric_points" {
+						got, want := querySemanticsMetricKeyOrder(proxyResp), querySemanticsMetricKeyOrder(lokiResp)
 						if !slices.Equal(got, want) {
 							t.Fatalf("metric series order %v, Loki %v", got, want)
 						}

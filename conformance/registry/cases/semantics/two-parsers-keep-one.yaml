@@ -39,11 +39,11 @@ why: |
   checks the mixed-format fixture through the Drilldown HTTP profile.
   TestOrderedMixedParserTrailingKeepOldCopies and TestOrderedMixedParserTransformedBinaryOldCopies
   seed pre-change parent responses on instant and range requests. The typed matrix
-  exercises positive and negative literal and regexp alternatives, series order
+  exercises positive and negative literal and regexp alternatives, complete data
   under both sorts, bare keep and flags, and full failing-series metadata through
   direct and transformed-binary requests.
   The matrix also checks an ordinary instant vector containing both the empty
-  label set and a named group, in the order Loki returns. A separate fixture
+  label set and a named group, comparing every label and point. A separate fixture
   supplies level=error only in the line. Both endpoints compare Loki's full
   diagnostic, including detected_level and the body key's _extracted suffix
   when a preceding filter reads that collision. TestOrderedMixedParserRecordedMetrics
@@ -51,8 +51,11 @@ why: |
   TestRangeMetricCompatibilityDrilldownFieldBreakdown verifies the raw VL row
   lacks stored level fields and compares the full live Loki and proxy errors.
   TestOrderedMixedSettledStepsSeriesOrder keeps the complete cold series order
-  when a cached smaller range and a newly read gap are merged. The typed matrix's
-  ordered mixed-parser range contracts retain the same label-order requirement.
+  when a cached smaller range and a newly read gap are merged. Live comparisons
+  do not require incidental engine or frontend serialization order: Loki documents
+  range-series order as unspecified, including sort and sort_desc. Full identity,
+  values, timestamps and empty-group presence remain checked. See
+  https://grafana.com/docs/loki/latest/query/metric_queries/#result-ordering.
   TestOrderedMixedStoredLevelRecorded checks the guarded stored-level stats
   route, open/closed evaluation boundaries, tenant limits and partial rankings
   against recorded engine answers. Flag admission and delayed planning-budget
@@ -60,6 +63,9 @@ why: |
   The existing performance catalog references mixed_parser_explicit_group and
   mixed_parser_reverse_group by case_id, reusing their quality queries instead
   of maintaining another copy of either expression.
+  The typed admission in internal/queryplan/resolve.go and ordered execution in
+  internal/proxy/ordered_json_metric.go are exercised by the existing API and
+  native Explore catalogs through those same matrix case IDs.
   Log replies, malformed strict logfmt, and other unsupported pipelines remain open.
   Concurrent parser probes are scoped by tenant and forwarded request identity.
   TestDrilldown_ParserProbeIsolatesRequestScopes verifies distinct tenant/auth
@@ -113,3 +119,11 @@ gap:
   planned_test: 'TestCompat_TwoParsersOnMixedFormats (categorized log replies and strict logfmt)'
   clusters:
     - 3de57bdc
+
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

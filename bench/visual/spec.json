@@ -2286,6 +2286,38 @@
    "fixes": [
     "semantics/rank-over-binary-operation"
    ]
+  },
+  {
+   "id": "explore-mixed-parser-explicit-count",
+   "kind": "explore",
+   "case_id": "mixed_parser_explicit_group",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "covers": [
+    "semantics/two-parsers-keep-one"
+   ],
+   "fixes": [
+    "semantics/two-parsers-keep-one"
+   ]
+  },
+  {
+   "id": "explore-mixed-parser-reverse-count",
+   "kind": "explore",
+   "case_id": "mixed_parser_reverse_group",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "covers": [
+    "semantics/two-parsers-keep-one"
+   ],
+   "fixes": [
+    "semantics/two-parsers-keep-one"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

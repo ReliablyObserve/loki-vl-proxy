@@ -388,7 +388,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "ordered_metric_points",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -398,7 +398,7 @@
       "query": "sum by (amount) (count_over_time({app=\"matrix-mixed-body-level\"} | json | logfmt | drop __error__, __error_details__ [5m]))",
       "expectation": "success",
       "expect_result_type": "vector",
-      "compare": "ordered_metric_points",
+      "compare": "metric_points",
       "require_non_empty": true,
       "require_empty_group": true
     },
@@ -458,7 +458,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "ordered_metric_points",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -469,7 +469,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "ordered_metric_points",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -480,7 +480,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "ordered_metric_points",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {

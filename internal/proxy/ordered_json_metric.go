@@ -104,9 +104,12 @@ type orderedJSONMetricPlan struct {
 	reducesLabels         bool
 	noLabels              bool
 	preserveError         bool
-	required              map[string]bool
-	earlyFilters          []translator.DropCondition
-	withoutJSON           string
+	// projectedLabel is the sole observable mutable label of a certified
+	// explicit mixed-parser projection. The original base stays complete.
+	projectedLabel string
+	required       map[string]bool
+	earlyFilters   []translator.DropCondition
+	withoutJSON    string
 	// preLevelFilters are the label filters on detected_level before the
 	// parser of a JSON plan. fetchQuery keeps them for the raw-row fetch;
 	// pushdownQuery is the base of the stats pushdown without them (see
@@ -445,6 +448,7 @@ func compileOrderedJSONMetricExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, b
 	}
 	plan.parser = "json"
 	plan.setParserHints()
+	plan.setMixedProjectionLabel()
 	// None of the supported stages modifies the log line, so line filters
 	// commute with parsing/label mutations. Push them into VL to avoid scanning
 	// discarded lines while retaining their original position in local execution.
@@ -3301,6 +3305,34 @@ func (plan *orderedJSONMetricPlan) setParserHints() {
 	}
 }
 
+// setMixedProjectionLabel narrows only the mutable parser labels. Collision
+// provenance and raw metadata validation still use the complete original base.
+func (plan *orderedJSONMetricPlan) setMixedProjectionLabel() {
+	plan.projectedLabel = ""
+	if !plan.mixedParsers || !plan.aggregated || plan.grouping == nil || plan.grouping.Without ||
+		len(plan.grouping.Labels) != 1 || len(plan.required) != 1 || plan.mixedErrorsCanSurvive ||
+		plan.derivesLevel || len(plan.preLevelFilters) != 0 || plan.preserveError {
+		return
+	}
+	key := plan.grouping.Labels[0]
+	if key == "" || strings.HasPrefix(key, "__") || strings.HasSuffix(key, extractedSuffix) ||
+		key == "service_name" || key == detectedLevelLabel || !plan.required[key] || !plan.mixedProjectionStages(key) {
+		return
+	}
+	plan.projectedLabel = key
+}
+
+func (plan *orderedJSONMetricPlan) mixedProjectionStages(key string) bool {
+	if len(plan.stages) != 4 {
+		return false
+	}
+	first, second, drop, filter := plan.stages[0], plan.stages[1], plan.stages[2], plan.stages[3]
+	return first.parser && !first.logfmt && first.jsonField == key && second.parser && second.logfmt &&
+		!drop.keep && len(drop.match) == 0 && len(drop.fields) == 2 &&
+		drop.fields["__error__"] && drop.fields["__error_details__"] &&
+		filter.filter != nil && filter.filter.Field == key && filter.filter.Op == "!=" && filter.filter.Value == ""
+}
+
 type orderedJSONPipelineError struct{ message string }
 
 func (e *orderedJSONPipelineError) Error() string { return e.message }
@@ -3458,7 +3490,15 @@ func (plan *orderedJSONMetricPlan) processWithStreamLabels(line string, base, st
 }
 
 func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line string, base, streamLabels, rawFields map[string]string) (map[string]string, bool, error) {
-	labels := cloneStringMap(base)
+	var labels map[string]string
+	if key := plan.projectedLabel; key != "" {
+		labels = make(map[string]string, 1)
+		if value, present := base[key]; present {
+			labels[key] = value
+		}
+	} else {
+		labels = cloneStringMap(base)
+	}
 	bodyProjection, bodyProjectionReady := false, false
 	metadata := make(map[string]bool)
 	if !plan.mixedParsers {
@@ -3753,6 +3793,10 @@ func orderedJSONLabelName(name string, first bool) string {
 }
 
 func (plan *orderedJSONMetricPlan) groupLabels(labels map[string]string) map[string]string {
+	if key := plan.projectedLabel; key != "" && len(labels) == 1 && labels[key] != "" {
+		// This row already owns exactly its nonempty output identity.
+		return labels
+	}
 	if !plan.aggregated {
 		// Loki merges label-reducing pipelines with a vector aggregation,
 		// whose label builder omits empty values from the resulting series.

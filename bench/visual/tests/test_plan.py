@@ -42,6 +42,42 @@ def run(files, **kw):
 
 
 class PlanTest(unittest.TestCase):
+    def test_historical_scene_reads_its_matrix_at_the_same_revision(self):
+        import json
+        from unittest import mock
+        catalog = {"pages": [{"id": "mixed", "kind": "explore", "case_id": "one"}]}
+        def at(ref, path):
+            if path == plan.SPEC:
+                return json.dumps(catalog)
+            return json.dumps({"cases": [{"id": "one", "query": ref, "endpoint": "query_range",
+                                          "expectation": "success"}]})
+        with mock.patch.object(plan.ab, "read_at", side_effect=at):
+            old, new = plan.spec_at("old"), plan.spec_at("new")
+            self.assertEqual(old["pages"][0]["query"], "old")
+            self.assertEqual(new["pages"][0]["query"], "new")
+            self.assertEqual(plan.changed_entries(new, "new"), [])
+            self.assertEqual(plan.changed_entries(new, "old"), ["mixed"])
+        with mock.patch.object(plan.ab, "read_at", side_effect=lambda ref, path:
+                               json.dumps(catalog) if path == plan.SPEC else '{"cases": []}'):
+            with self.assertRaises(ValueError):
+                plan.spec_at("missing-case")
+
+    def test_mixed_parser_scene_uses_quality_matrix_and_proves_typed_admission(self):
+        import json
+        spec = plan.load_spec()
+        with open(os.path.join(plan.ab.ROOT, plan.SPEC)) as handle:
+            raw = json.load(handle)
+        for page in raw["pages"]:
+            if page.get("case_id", "").startswith("mixed_parser_"):
+                self.assertNotIn("query", page)
+                resolved = next(p for p in spec["pages"] if p["id"] == page["id"])
+                self.assertIn("| json", resolved["query"])
+                self.assertIn("| logfmt", resolved["query"])
+        out = plan.plan(["internal/queryplan/resolve.go"])
+        self.assertEqual(plan.runtime_proof_problems(out), [])
+        self.assertIn("explore-mixed-parser-explicit-count", out["entries"])
+        self.assertIn("explore-mixed-parser-reverse-count", out["entries"])
+
     def test_ast_targeted_proof_survives_capture_budget(self):
         items = dict(ITEMS, **{"parser-json": ({"internal/queryplan/lower/json.go"}, set())})
         out = plan.plan(["internal/queryplan/lower/json.go"], spec=SPEC, items=items, max_captures=1)

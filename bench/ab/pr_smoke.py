@@ -472,8 +472,7 @@ def split_selection(sel, n, spec=None, min_cost=SHARD_MIN_COST):
     so the split is the same for the same selection. A selection that does not run is one shard.
     """
     if spec is None:
-        with open(os.path.join(HERE, "shapes.json")) as f:
-            spec = json.load(f)
+        spec = selection.load_shapes()
     sets = sel.get("sets", {})
     if not sel.get("run") or not sets:
         return [sel]
@@ -704,8 +703,7 @@ def window_plan(args, sel, end, runs=None):
     sets or profiles; the seed covers the longest range, every block, and the [5m] lookback plus margin. A
     plan records its profile.
     """
-    with open(os.path.join(HERE, "shapes.json")) as f:
-        spec = json.load(f)
+    spec = selection.load_shapes()
     runs = runs if runs is not None else [("", name, shapes) for name, shapes in sel["sets"].items()]
     refresh_runs = args.refresh_runs if args.refresh_s else 0
     plans = perf_matrix.plan_windows(spec, [(name, shapes) for _, name, shapes in runs], args.ranges, args.runs,
@@ -755,8 +753,7 @@ def reuse_first_cold(summaries):
     the cache-served mark and records loki_cold_reused_from. Nothing else of the
     row changes. Instant queries have no results cache and are skipped.
     """
-    with open(os.path.join(HERE, "shapes.json")) as f:
-        spec = json.load(f)
+    spec = selection.load_shapes()
     first = {}
     for summary in summaries:
         shapes = {sh["name"]: sh for sh in spec["sets"].get(summary["set"], {}).get("shapes", [])}
@@ -841,8 +838,7 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
         clock = time.time()
 
     try:
-        with open(os.path.join(HERE, "shapes.json")) as f:
-            spec = json.load(f)
+        spec = selection.load_shapes()
         # Planned from source: the windows and the seed depend on it, and the builds are not there yet.
         planned_support = source_supports_align(args.head or None) or (
             not args.same_build and source_supports_align(base_sha))
