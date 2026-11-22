@@ -136,7 +136,7 @@ def flush_proxy(proxy):
     perf_matrix.flush_cache(url, token)
 
 
-def recold(summary, first_cold, pairs, proxies, spec, cold_end, n=COLD_SAMPLES, log=print, deadline=None):
+def recold(summary, first_cold, pairs, proxies, spec, cold_end, n=COLD_SAMPLES, log=print, deadline=None, first_resources=None):
     """Re-measure the cold of `pairs` (shape, range) in a summary; returns one record per pair for the run's meta.
 
     first_cold: {(shape, range): {target: the first pass's cold}}, taken before the confirm pass replaced rows.
@@ -161,6 +161,16 @@ def recold(summary, first_cold, pairs, proxies, spec, cold_end, n=COLD_SAMPLES, 
         changed = decide(row, first, got, base, cand)
         if not changed and first:
             row["cold"] = dict(first)
+        for target, cost in row.get("reuse", {}).items():
+            if changed:
+                # The flushed timing sampler does not take matching metric scrapes.
+                # Keep the earlier cost only as evidence with its explicit state.
+                prior = cost.pop("cold", None)
+                if prior is not None:
+                    cost["before_cold_resample"] = prior
+                row["cold_resource_note"] = "Flushed cold latency was resampled; matching CPU/memory was not measured."
+            elif first_resources is not None:
+                cost["cold"] = first_resources.get((shape_name, rng), {}).get(target)
         records.append({"set": summary["set"], "profile": summary.get("profile"), "shape": shape_name, "range": rng,
                         "applied": changed, "seconds": round(time.time() - t0, 1),
                         "samples": row.get("cold_samples") if changed else None,

@@ -1048,7 +1048,7 @@ class Pr989GateTest(unittest.TestCase):
                          {"new": 0, "worsened": 0, "known": 0, "first_measurement": 4})
         self.assertIn("#### 🟡 First measurement above 2× Loki: 4 (warning, does not fail)", text)
         self.assertNotIn("This fails `perf-smoke`", text)
-        self.assertIn("| first measurement | aligned | cold | X1 json filter level_extracted, by level | 1h |", text)
+        self.assertIn(r"| first measurement | aligned | cold | X1 json filter level\_extracted, by level | 1h |", text)
 
     def test_no_comparable_base_in_the_other_profile_either(self):
         # the other profile's base build is not like-for-like too; or it answered 500; or the PR ran another setting
@@ -1121,8 +1121,8 @@ class Pr989GateTest(unittest.TestCase):
         self.assertNotIn("This fails `perf-smoke`", text)
         # the rows stay listed, with the reason and the base they were judged by
         self.assertIn("8 shape×range above 2× Loki already", text)
-        self.assertIn("as slow on base in loki-defaults (base not like-for-like here)", text)
-        self.assertIn("proxy time within noise of base in loki-defaults (base not like-for-like here)", text)
+        self.assertIn(r"as slow on base in loki-defaults \(base not like-for-like here\)", text)
+        self.assertIn(r"proxy time within noise of base in loki-defaults \(base not like-for-like here\)", text)
         self.assertIn("| 5.21× (defaults) |", text)
 
     def test_the_comment_of_a_worsened_run_fails(self):

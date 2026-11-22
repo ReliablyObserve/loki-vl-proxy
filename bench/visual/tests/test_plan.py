@@ -42,6 +42,25 @@ def run(files, **kw):
 
 
 class PlanTest(unittest.TestCase):
+    def test_ast_targeted_proof_survives_capture_budget(self):
+        items = dict(ITEMS, **{"parser-json": ({"internal/queryplan/lower/json.go"}, set())})
+        out = plan.plan(["internal/queryplan/lower/json.go"], spec=SPEC, items=items, max_captures=1)
+        self.assertIn("runtime_proof", out)
+        self.assertTrue(out["runtime_proof"]["required"])
+        self.assertEqual(out["entries"]["json-volume"]["ranges"], ["15m", "1h", "6h"])
+        self.assertTrue(out["entries"]["json-volume"]["runtime_required"])
+        self.assertNotIn("json-volume", out["trimmed"] + out["dropped"])
+        self.assertEqual(plan.runtime_proof_problems(out), [])
+        baseline = plan.plan_all(spec=SPEC, files=["internal/queryplan/lower/json.go"], items=items)
+        self.assertEqual(baseline["runtime_proof"], out["runtime_proof"])
+        self.assertTrue(baseline["entries"]["json-volume"]["runtime_required"])
+
+    def test_ast_change_cannot_use_only_general_graphs(self):
+        out = run(["internal/logql/unmapped.go"])
+        self.assertIn("runtime_proof", out)
+        self.assertIn("internal/logql/unmapped.go", out["runtime_proof"]["unmapped"])
+        self.assertTrue(plan.runtime_proof_problems(out))
+
     def test_docs_ci_tests_skip_captures(self):
         out = run(["docs/testing.md", ".github/workflows/ci.yaml", "internal/proxy/x_test.go", "CHANGELOG.md"])
         self.assertFalse(out["run"])

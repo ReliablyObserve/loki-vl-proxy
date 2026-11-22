@@ -23,6 +23,14 @@
 - the committed benchmarks that measure it
 - no regression against base, including the work asked of VictoriaLogs; a touched component as slow as Loki or slower is brought to Loki's speed or better in this PR, or the numbers show why not
 
+## Runtime API and Grafana proof (Required for AST/planner changes)
+
+- [ ] Link the current-head registry-selected API A/B and native Explore/Logs Drilldown artifacts, main versus PR versus Loki, with targeted query/scene IDs and general regression controls.
+- [ ] List the relevant ranges and steps, including affected 12h–48h cases; when Loki cannot answer the whole request, link exact smaller-window oracle/golden comparisons of the complete evaluation grid and the smaller whole-request checks.
+- [ ] Show API latency/bytes/CPU/observed RAM and scoped VL/cache work, plus Grafana settlement time, browser thread work, sampled JS heap and network bytes. Name cold/repeat/refresh states and unavailable measurements.
+- [ ] Confirm complete data and expected errors; distinguish first useful output from finished rendering. Missing/truncated results, failed references and incomplete captures do not count as a speedup or passing parity.
+- [ ] State the actual user-facing gain and remaining regressions or gaps. Code-only/microbenchmark gains are insufficient; see AGENTS.md.
+
 ## Error answers (Required for product changes)
 
 - the error rows this PR adds or changes (status, errorType, text), base vs PR vs Loki (recorded answer or live), and the wrapper variants checked (`sort`, `topk`, `label_replace`, binary operations, nested aggregations, `offset`)

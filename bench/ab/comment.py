@@ -33,7 +33,9 @@ is above Loki (beyond noise) is listed as lost below-Loki: flagged, never failin
 """
 import argparse
 import json
+import math
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -69,7 +71,7 @@ def secs(v, status=None):
     # A non-200 answer still has a time: the time is shown, with the status code in parentheses.
     text = "—" if v is None else (f"{v * 1000:.0f} ms" if v < 1 else f"{v:.2f} s")
     if status and str(status) != "200":
-        return f"{text} (**{status}**)"
+        return f"{text} (**{cell(status)}**)"
     return text
 
 
@@ -103,7 +105,7 @@ def parity(row):
     if p == "same":
         return "✅ same"
     if p.startswith("same series"):
-        return "✅ " + p.replace("same series, sum ", "sum ")
+        return "✅ " + cell(p.replace("same series, sum ", "sum "))
     if p == "differs":
         if row.get("baseline_parity_vs_reference") == "differs":
             return "➖ differs (as base)"
@@ -122,7 +124,7 @@ def table(rows, b, c, r):
     for set_name, row in rows:
         mark = " ¹" if row.get("confirmed") else ""
         out.append(
-            f"| {ICON.get(row['verdict'], '⚪')} | {cell(row['shape'])} | {row['range']} | "
+            f"| {ICON.get(row['verdict'], '⚪')} | {cell(row['shape'])} | {cell(row['range'])} | "
             + (f"{SHORT.get(row.get('profile'), '—')} | " if prof else "")
             + f"{tag(row, b, secs(row['p50'].get(b), row['status'].get(b)))} | "
             f"{tag(row, c, secs(row['p50'].get(c), row['status'].get(c)))}{mark} | "
@@ -159,7 +161,7 @@ def cold_table(rows, b, c, r):
         # first set's computed cold, ¹ when it is the first pass's because the confirm pass was cache-served.
         served = (" †" if over2x.cold_served(row, r) else
                   " ↺" if row.get("loki_cold_reused_from") else " ¹" if row.get("cold_from_first_pass") else "")
-        line = (f"| {cell(row['shape'])} | {row['range']} | "
+        line = (f"| {cell(row['shape'])} | {cell(row['range'])} | "
                 + (f"{SHORT.get(row.get('profile'), '—')} | " if prof else "")
                 + f"{tag(row, b, secs(row['cold'].get(b), row['status'].get(b)))}{median_mark(row, b)} | "
                 f"{tag(row, c, secs(cc, row['status'].get(c)))}{median_mark(row, c)} | {secs(rc, row['status'].get(r))}{served} | "
@@ -174,8 +176,9 @@ def cold_table(rows, b, c, r):
     return out
 
 
-def cell(text):
-    return str(text).replace("|", "\\|")
+def cell(text, limit=180):
+    value = str(text).replace("\r", " ").replace("\n", " ")[:limit]
+    return re.sub(r"([\\`*_{}\[\]()#+!|<>~&$:@])", r"\\\1", value)
 
 
 def skipped(selection, meta):
@@ -191,7 +194,7 @@ def errored(selection, meta, message):
     """The run did not complete: say so in the same comment instead of leaving a stale table."""
     shapes = sum(len(v) for v in selection.get("sets", {}).values())
     lines = [MARKER, "### ⚠️ Performance A/B: did not complete", "",
-             f"The A/B run for {shapes} selected shape(s) stopped before a result: `{message[:300]}`. "
+             f"The A/B run for {shapes} selected shape(s) stopped before a result: {cell(message, 300)}. "
              "The job log and the uploaded `perf-ab-smoke` artifact have the details; re-run the job once the "
              "cause is fixed.", "",
              f"<sub>base `{meta.get('base', '?')[:10]}` → PR `{meta.get('head', '?')[:10]}`.</sub>"]
@@ -213,10 +216,10 @@ def over_2x_table(findings, with_note=False):
            "|---|---|---|---|---|--:|--:|--:|--:|--:|" + ("---|" if with_note else "")]
     for f in findings:
         mark = " ¹" if f.get("confirmed") else ""
-        out.append(f"| {f['kind'].replace('_', ' ')} | {SHORT.get(f.get('profile'), '—')} | {f['mode']} | {cell(f['shape'])} | {f['range']} | "
+        out.append(f"| {f['kind'].replace('_', ' ')} | {SHORT.get(f.get('profile'), '—')} | {f['mode']} | {cell(f['shape'])} | {cell(f['range'])} | "
                    f"{secs(f['proxy_s'])}{mark} | {secs(f['loki_s'])} | **{over2x.times(f['ratio'])}** | "
                    f"{base_cell(f)} | {over2x.times(f['baseline_ratio'])} |"
-                   + (f" {f.get('note', '')} |" if with_note else ""))
+                   + (f" {cell(f.get('note', ''))} |" if with_note else ""))
     return out
 
 
@@ -231,7 +234,7 @@ def over_2x_failing_table(merged):
         shown = {p: ("not run" if p not in m["ratios"] else over2x.times(m["ratios"][p])) for p in stack.PROFILES}
         for p in m["profiles"]:
             shown[p] = f"**{shown[p]}**"
-        out.append(f"| {m['kind']} | {m['mode']} | {cell(m['shape'])} | {m['range']} | {shown['aligned']} | "
+        out.append(f"| {m['kind']} | {m['mode']} | {cell(m['shape'])} | {cell(m['range'])} | {shown['aligned']} | "
                    f"{shown['loki-defaults']} | {secs(f['proxy_s'])}{mark} | {secs(f['loki_s'])} | "
                    f"{base_cell(f)} | {over2x.times(f['baseline_ratio'])} |")
     return out
@@ -259,7 +262,7 @@ def lost_below_section(lost):
            "Loki, the PR build is above it (flagged, not failing)</summary>", "",
            "| profile | mode | shape | range | PR | Loki | PR ÷ Loki | base ÷ Loki |", "|---|---|---|---|--:|--:|--:|--:|"]
     for f in lost:
-        out.append(f"| {SHORT.get(f.get('profile'), '—')} | {f['mode']} | {cell(f['shape'])} | {f['range']} | {secs(f['proxy_s'])} | {secs(f['loki_s'])} | "
+        out.append(f"| {SHORT.get(f.get('profile'), '—')} | {f['mode']} | {cell(f['shape'])} | {cell(f['range'])} | {secs(f['proxy_s'])} | {secs(f['loki_s'])} | "
                    f"{over2x.times(f['ratio'])} | {over2x.times(f['base_ratio'])} |")
     return out + ["", "</details>"]
 
@@ -320,6 +323,40 @@ def restarts_stamp(meta, summaries):
     return f"VictoriaLogs restarts {summaries[0].get('restart_before')}→{summaries[-1].get('restart_after')}"
 
 
+def resource_section(rows, base, candidate, targeted=()):
+    """Bounded display of existing per-request observations; full values stay in summary JSON."""
+    measured = [(name, r) for name, r in rows if r.get("reuse")]
+    if not measured:
+        return []
+    measured.sort(key=lambda pair: (pair[1].get("verdict") not in ("slower", "broken") and not new_difference(pair[1]),
+                                     f"{pair[0]}/{pair[1]['shape']}" not in targeted))
+    lines = ["", "<details><summary>Observed API CPU, process memory and response size</summary>", "",
+             "CPU is the process counter change around each request, including concurrent/background work. "
+             + "Memory is the maximum of two boundary samples, not a true peak or a request allocation. "
+             + "On Linux the process metric is RSS; non-Linux fallback builds expose Go MemStats.Sys under that metric name. "
+             + "Response size is the largest body read by the harness across runs, not wire traffic. "
+             + "Repeat values are medians of the existing repeat observations. Full cache tiers, backend reads and all rows are in summary JSON.", "",
+             "| shape / range | profile | mode | base CPU (s) | PR CPU (s) | base process memory (MiB) | PR process memory (MiB) | base max body (KiB) | PR max body (KiB) |",
+             "|---|---|---|---:|---:|---:|---:|---:|---:|"]
+    def number(value, scale=1):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            return "unavailable"
+        return f"{value / scale:.3f}"
+    for name, row in measured[:12]:
+        for mode in ("cold", "repeat"):
+            costs = [row.get("reuse", {}).get(t, {}).get(mode) or {} for t in (base, candidate)]
+            cpu = [number(c.get("cpu_seconds") if c.get("cpu_samples") == 2 else None) for c in costs]
+            mem = [number(c.get("rss_max_sampled_bytes"), 1024 ** 2) for c in costs]
+            sizes = [number(row.get("response_bytes", {}).get(t), 1024) for t in (base, candidate)]
+            lines.append(f"| {cell(name)}/{cell(row['shape'])} / {cell(row['range'])} | {cell(row.get('profile') or 'unavailable')} | {mode} | "
+                         + " | ".join([*cpu, *mem, *sizes]) + " |")
+    lines += ["", *[f"{cell(name)}/{cell(row['shape'])}: {cell(row[note])}"
+                      for name, row in measured[:12] for note in ("cold_resource_note", "base_comparison_note")
+                      if row.get(note)], "",
+              f"Showing {min(12, len(measured))} of {len(measured)} measured shape/range rows; all are in the artifacts.", "", "</details>"]
+    return lines
+
+
 def render(summaries, selection, meta, baseline=None, bounds=None):
     """baseline: the above-2× Loki list (over2x.read_baseline / baseline_at); None leaves that check out.
     bounds: the registry's perf: blocks at the base (over2x.bounds_at); None locks no row."""
@@ -354,8 +391,10 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     elif failed_2x:
         title, state = ("🔴 Performance A/B: locked row above its bound" if locked else
                         "🔴 Performance A/B: above 2× Loki"), "failed"
-    elif counts.get("faster") or counts.get("fixed"):
+    elif counts.get("faster"):
         title, state = "🟢 Performance A/B: faster, no regression", "passed"
+    elif counts.get("fixed"):
+        title, state = "🟢 Performance A/B: fixed answer, no regression", "passed"
     else:
         title, state = "⚪ Performance A/B: no change beyond noise", "passed"
 
@@ -370,6 +409,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     prof_info = profile_lines(meta, summaries) if any(s.get("profile") for s in summaries) else []
     if prof_info:
         lines += ["Loki profiles compared (like for like):", "", *prof_info, ""]
+    targeted = {key for keys in selection.get("runtime_proof", {}).get("targeted", {}).values() for key in keys}
+    lines += resource_section(rows, b, c, targeted)
     if baseline:  # the list this comparison read, by profile: a clean pull request still says which one it is
         lines += [f"Compared with the {over2x.count_line(list(baseline.values()))}.", ""]
     moved = [x for x in rows if x[1]["verdict"] not in ("same", "n/a") or new_difference(x[1])]
@@ -401,7 +442,7 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
         lines += ["", f"ᵐ median of the first pass's cold and {len(next(iter(sampled[0]['cold_samples'].values()))) - 1} "
                   "re-measured colds (caches flushed, logs quiet, the build asked first alternating), taken because the "
                   "first-pass cold was a new or worse above-2× finding: " + "; ".join(
-                      f"{cell(row['shape'])} {row['range']}: " + ", ".join(
+                      f"{cell(row['shape'])} {cell(row['range'])}: " + ", ".join(
                           f"{t} " + "/".join(f"{x:.2f}" for x in v) for t, v in row["cold_samples"].items())
                       for row in sampled[:5]) + (" …" if len(sampled) > 5 else "") + "."]
     if any(row.get("unlike") for _, row in rows):
@@ -441,7 +482,7 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
             for reason in reasons:
                 by_reason.setdefault(reason, []).append(key)
         for reason, keys in sorted(by_reason.items(), key=lambda kv: (-len(kv[1]), kv[0])):
-            lines.append(f"- `{reason}` → {len(keys)}: " + ", ".join(cell(k) for k in sorted(keys)[:8]) +
+            lines.append(f"- {cell(reason)} → {len(keys)}: " + ", ".join(cell(k) for k in sorted(keys)[:8]) +
                          (" …" if len(keys) > 8 else ""))
         lines += ["", "</details>"]
 

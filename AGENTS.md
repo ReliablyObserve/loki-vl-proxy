@@ -447,6 +447,42 @@ its timing tables against Loki and its load test on top of this. Commit the
 benchmark rather than a throwaway one, and name it in the registry decision.
 
 
+## AST/planner changes require runtime API and Grafana proof
+
+A microbenchmark alone does not prove an AST/planner optimization. Every
+product PR changing the parser, query plan or lowering includes current-head
+evidence from the existing registry-selected API A/B and native Grafana
+Explore/Logs Drilldown harnesses, against main and Loki. Keep the general
+regression controls and the PR-specific query/scene; controls alone cannot
+stand in for an affected construct. Release, documentation, CI, chart and
+test-only PRs keep their existing exemption from heavy product checks.
+
+- Cover the relevant ranges and steps, including large 12h/18h/24h/48h
+  windows when the change affects them. Preserve the function's lookback,
+  evaluation phase, inclusive end, empty results, labels and error answers.
+- When Loki cannot serve a large request, compare every evaluation point
+  with smaller Loki/oracle requests on the identical input and grid. Save
+  the answers in the existing golden-data catalog, check that partitions
+  have no holes/overlap, and retain a whole-request check at smaller ranges.
+- Report real API latency, response bytes, CPU and observed resident memory,
+  scoped VL calls/bytes and cache reuse where available. Report Grafana
+  settlement time, browser thread work, sampled JS heap and network bytes;
+  distinguish the first useful data from a finished complete view.
+- State the SHAs, versions, fixture/time coverage, steps, cold/repeat/refresh
+  state, sample counts and measurement limits. A failure, a truncated
+  response, a missing capture or an unavailable Loki reference is not a
+  speedup or a successful parity comparison. A sampled memory value is not
+  an exact allocation count or an unsampled peak.
+- CI must retain these measurements in the existing A/B/visual artifacts
+  and fail a required proof when its measurements or targeted coverage are
+  missing. Use the existing selectors, registry, capture/comparison code and
+  PR evidence pipeline; do not create another performance or quality catalog.
+
+An optimization is accepted for its demonstrated user-facing speed and
+resource cost as well as correctness. The existing no-regression and
+Loki-performance rules still apply; a local helper improvement cannot close
+a real Grafana performance gap without its runtime proof.
+
 ## Test coverage of at least 90% (hard rule)
 
 Total Go test coverage (the `coverage_pct` of the PR quality report, the README badge) is always at or above 90%.

@@ -35,6 +35,7 @@ Prints JSON: {"run": bool, "sets": {set: [shape, ...]}, "why": {...}, ...}.
 import argparse
 import glob
 import json
+import math
 import os
 import re
 import subprocess
@@ -60,12 +61,53 @@ TOKEN = re.compile(r"[A-Za-z0-9_./:-]+")
 RUNTIME_ALL = ("go.mod", "go.sum")
 # These paths contribute controls when the PR also changes the product.
 HARNESS = (
-    "bench/ab/perf_matrix.py", "bench/ab/report.py", "bench/ab/stack.py", "bench/ab/selection.py",
+    "bench/ab/answers.py", "bench/ab/perf_matrix.py", "bench/ab/report.py", "bench/ab/stack.py", "bench/ab/selection.py",
     "bench/ab/pr_smoke.py", "bench/ab/comment.py", "bench/ab/docker-compose.ab.yml",
     "bench/ab/docker-compose.ab-loki-defaults.yml",
     "test/e2e-compat/docker-compose.yml", "test/e2e-compat/loki-local-config.yaml",
     "test/e2e-compat/log-generator.py", ".github/workflows/perf-ab.yaml",
 )
+
+RUNTIME_PROOF_PREFIXES = ("internal/logql/", "internal/logsql/", "internal/queryplan/", "internal/translate/")
+RUNTIME_PROOF_FILES = {"internal/proxy/query_translation.go", "internal/proxy/query_lowering.go",
+                       "internal/proxy/query_plan.go", "internal/translator/ast_translate.go"}
+
+
+def runtime_proof_path(path):
+    return classify(path) == "code" and (path.startswith(RUNTIME_PROOF_PREFIXES) or path in RUNTIME_PROOF_FILES)
+
+
+def runtime_proof_problems(result):
+    proof = result.get("runtime_proof", {})
+    if not proof.get("required"):
+        return []
+    return [f"AST/planner runtime proof: {path} has no registry-linked targeted API shape; controls alone are insufficient"
+            for path in proof.get("unmapped", [])]
+
+
+def query_lookback(query):
+    """History read before the request start by the catalog's range selectors and offsets."""
+    units = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800, "y": 31536000}
+    duration = r"(?:[0-9]+(?:ms|[smhdwy]))+"
+    def longest(pattern):
+        return max((sum(int(n) * units[u] for n, u in re.findall(r"([0-9]+)(ms|[smhdwy])", d))
+                    for d in re.findall(pattern, query)), default=0)
+    return math.ceil(longest(r"\[(" + duration + r")\]") + longest(r"\boffset\s+(" + duration + ")"))
+
+
+def runtime_cells(sets, spec):
+    """The selected shapes' declared cells, never a cross-product of unrelated ranges."""
+    cells = {}
+    for name, names in sets.items():
+        group = spec["sets"][name]
+        for shape in group["shapes"]:
+            if shape["name"] not in names:
+                continue
+            ranges = ["instant"] if shape.get("instant") else [
+                r for r in shape.get("ranges", group.get("ranges", ["1h"]))
+                if r in spec["ranges"] and spec["ranges"][r][0] <= 48 * 3600]
+            cells[f"{name}/{shape['name']}"] = ranges or ["1h"]
+    return cells
 
 
 def read(path):
@@ -180,6 +222,7 @@ def select(files, base=None, spec=None, items=None, head=None):
             chosen[(set_name, shape_name)].append(why)
 
     kinds = {f: classify(f) for f in files}
+    targeted = {f: [] for f in files if runtime_proof_path(f)}
     relevant = [f for f, k in kinds.items() if k != "ignored"]
     evidence = product_evidence(files)
     if not evidence:
@@ -193,6 +236,8 @@ def select(files, base=None, spec=None, items=None, head=None):
             specific, generic = shape_files(shape, items)
             for f in sorted(code & specific):
                 add(set_name, shape["name"], f)
+                if f in targeted:
+                    targeted[f].append(f"{set_name}/{shape['name']}")
             if set_name == CONTROL and shape.get("smoke"):
                 for f in sorted(code & generic):
                     add(set_name, shape["name"], f"{f} (endpoint handler)")
@@ -211,7 +256,7 @@ def select(files, base=None, spec=None, items=None, head=None):
         names = [s["name"] for s in shape_set["shapes"] if (set_name, s["name"]) in chosen]
         if names:
             sets[set_name] = names
-    return {
+    result = {
         "run": bool(sets),
         "changed": len(files),
         "relevant": relevant,
@@ -219,12 +264,22 @@ def select(files, base=None, spec=None, items=None, head=None):
         "sets": sets,
         "why": {f"{s}/{n}": r for (s, n), r in chosen.items()},
     }
+    if targeted:
+        cells = runtime_cells(sets, spec)
+        measured = {r for ranges in cells.values() for r in ranges if r != "instant"}
+        result["runtime_proof"] = {
+            "required": True, "targeted": targeted,
+            "unmapped": [f for f, shapes in targeted.items() if not shapes],
+            "ranges": sorted(measured, key=lambda r: (spec["ranges"][r][0], r)) or ["1h"],
+            "cells": cells,
+        }
+    return result
 
 
 BASELINE_WHY = "baseline run: every shape of every set"
 
 
-def select_all(spec=None):
+def select_all(spec=None, files=(), items=None):
     """The baseline run's selection: every shape of every set, in shapes.json order.
 
     Same shape as select(): the run is never empty, so the job measures and
@@ -232,7 +287,7 @@ def select_all(spec=None):
     """
     spec = spec or load_shapes()
     sets = {name: [s["name"] for s in v["shapes"]] for name, v in spec["sets"].items() if v["shapes"]}
-    return {
+    result = {
         "run": bool(sets),
         "baseline": True,
         "changed": 0,
@@ -241,6 +296,14 @@ def select_all(spec=None):
         "sets": sets,
         "why": {f"{name}/{shape}": [BASELINE_WHY] for name, shapes in sets.items() for shape in shapes},
     }
+    if files:
+        targeted = select(files, spec=spec, items=items)
+        if "runtime_proof" in targeted:
+            result["runtime_proof"] = targeted["runtime_proof"]
+            result["runtime_proof"]["cells"] = runtime_cells(sets, spec)
+            measured = {r for ranges in result["runtime_proof"]["cells"].values() for r in ranges if r != "instant"}
+            result["runtime_proof"]["ranges"] = sorted(measured, key=lambda r: (spec["ranges"][r][0], r)) or ["1h"]
+    return result
 
 
 def check(spec=None, items=None):
@@ -287,13 +350,17 @@ def main():
         print(f"bench/ab selection: {'FAILED' if problems else 'ok'} ({len(problems)} problem(s))")
         return 1 if problems else 0
     if args.all:
-        result = select_all()
+        files = args.files if args.files is not None else changed_files(args.base, args.head) if args.base else []
+        result = select_all(files=files)
         text = json.dumps(result, indent=1)
         if args.out:
             with open(args.out, "w") as f:
                 f.write(text + "\n")
         print(text)
-        return 0
+        problems = runtime_proof_problems(result)
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        return 1 if problems else 0
     base = args.base or "origin/main"
     files = args.files if args.files is not None else changed_files(base, args.head)
     result = select(files, base=base, head=None if args.head == "HEAD" else args.head)
@@ -302,7 +369,10 @@ def main():
         with open(args.out, "w") as f:
             f.write(text + "\n")
     print(text)
-    return 0
+    problems = runtime_proof_problems(result)
+    for problem in problems:
+        print(problem, file=sys.stderr)
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

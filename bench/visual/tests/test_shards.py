@@ -30,6 +30,17 @@ class ShardsTest(unittest.TestCase):
                 self.assertEqual(sorted(c for p in parts for c in shards.planned(p)), sorted(shards.planned(full)))
                 self.assertEqual(sum(p["captures"] for p in parts), full["captures"])
 
+    def test_long_range_sets_common_fixture_for_short_shards_too(self):
+        full = make({"short": entry(["1h"]), "long": entry(["24h"])})
+        for shard in shards.split(full, 2):
+            self.assertGreater(shard["fixture_hours"], 24)
+            self.assertEqual(shard["fixture_hours"], shards.fixture_hours(full))
+
+    def test_fixture_includes_catalog_query_lookback_and_offset(self):
+        plan = make({"long": entry(["24h"])})
+        spec = {"ranges": {"24h": 86400}, "pages": [{"id": "long", "query": "sum(rate({a=1}[5h] offset 1h))"}]}
+        self.assertGreaterEqual(planner.fixture_hours(plan, spec), 30)
+
     def test_the_live_pages_share_one_shard_and_a_page_keeps_all_its_ranges(self):
         full = planner.plan_all()
         parts = shards.split(full, 6)

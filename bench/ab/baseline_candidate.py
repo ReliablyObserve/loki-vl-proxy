@@ -40,6 +40,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import over2x  # noqa: E402
+from comment import cell  # noqa: E402
 
 ROOT = over2x.ROOT
 ACCEPTANCE_REL = "bench/ab/history/acceptance.json"
@@ -110,7 +111,7 @@ def render(day, committed, added, removed, rows, reasons=(), elapsed_s=0):
     """The comment section."""
     lines = ["", "<details open><summary>🧭 New baseline candidate</summary>", "",
              "This pull request got the baseline run" + (": " + "; ".join(reasons) if reasons else "") +
-             f". Every shape of every set was measured at the smoke's ranges (1h, 4 runs). Nothing was committed. The " +
+             f". Every shape of every set was measured at its selected ranges and profiles. Nothing was committed. The " +
              f"`{ARTIFACT}` artifact of this run holds `over-2x-loki.json`, which a person can copy over " +
              "`bench/ab/history/over-2x-loki.json` to accept it, and `acceptance-day.json`, a report: the committed " +
              "`acceptance.json` is rebuilt from the daily history, so the next weekly run after the merge writes the real " +
@@ -126,7 +127,7 @@ def render(day, committed, added, removed, rows, reasons=(), elapsed_s=0):
             if not d:
                 continue
             old = old_day.get(mode, {})
-            lines.append(f"| {profile} | {mode} | {d['rows']} | {d['below']} | {d['close']} | {d['between']} | "
+            lines.append(f"| {cell(profile)} | {mode} | {d['rows']} | {d['below']} | {d['close']} | {d['between']} | "
                          f"{d['above']} | {d['share_below']:.1f}% | "
                          + (f"{old['share_below']:.1f}% ({committed.get('date', '?')})" if old else "—") + " |")
     lines += ["", "The committed column is the newest weekly run (7 runs, ranges up to 24h): the direction is comparable, " +
@@ -137,7 +138,7 @@ def render(day, committed, added, removed, rows, reasons=(), elapsed_s=0):
     for title, keys in (("Added", added), ("Not above 2× in this run", removed)):
         if keys:
             lines += ["", f"{title}:"]
-            lines += [f"- {k[0]} / `{k[1]}` / {k[2]} / {k[3]} / {k[4]}" for k in keys[:LISTED]]
+            lines += ["- " + " / ".join(cell(v) for v in k) for k in keys[:LISTED]]
             if len(keys) > LISTED:
                 lines.append(f"- … and {len(keys) - LISTED} more (in `over-2x-loki.json`)")
     if elapsed_s:
@@ -195,7 +196,8 @@ def fit(text, limit=COMMENT_LIMIT):
                 blocks.append((len(body), start, end))
             pos = end
         if not blocks:
-            return text[:limit]
+            note = "\n\nComplete measurements are in the `perf-ab-smoke` artifact.\n"
+            return text[:max(0, limit - len(note))].rsplit("\n", 1)[0] + note[:limit]
         size, start, end = max(blocks)
         text = (text[:start] + f"<details><summary>{size} characters omitted to fit the comment limit; every row is "
                 f"in the `summary-<set>.json` files of the `perf-ab-smoke` artifact</summary></details>" + text[end:])

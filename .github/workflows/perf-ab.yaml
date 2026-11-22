@@ -79,7 +79,7 @@ jobs:
           BASE="$(git rev-parse HEAD^1)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           if [ "$BASELINE" = "true" ]; then
-            python3 bench/ab/selection.py --all --out "$OUT/selection.json" > /dev/null
+            python3 bench/ab/selection.py --all --base "$BASE" --out "$OUT/selection.json" > /dev/null
           else
             python3 bench/ab/selection.py --base "$BASE" --out "$OUT/selection.json" > /dev/null
           fi
@@ -142,8 +142,9 @@ jobs:
           BASE: ${{ needs.perf-plan.outputs.base }}
         run: |
           set +e
+          PROOF_RANGES="$(python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); print(",".join(p.get("runtime_proof", {}).get("ranges") or ["1h"]))' "/tmp/ab-plan/shard-${SHARD}.json")" || exit 1
           python3 bench/ab/pr_smoke.py --base "$BASE" --selection "/tmp/ab-plan/shard-${SHARD}.json" --out "$OUT" \
-            --over-2x-loki fail --profiles auto
+            --over-2x-loki fail --profiles auto --ranges "$PROOF_RANGES"
           echo "pr_smoke.py exited $?"
 
       - name: Upload the shard's outputs
@@ -271,8 +272,10 @@ jobs:
             // No rendered comment means the job died before pr_smoke.py could
             // write one (timeout, runner loss): never leave the previous
             // commit's table standing as if it were this commit's.
-            const body = fs.existsSync(path) ? fs.readFileSync(path, 'utf8')
+            let body = fs.existsSync(path) ? fs.readFileSync(path, 'utf8')
               : `${marker}\n### ⚠️ Performance A/B: did not complete\n\nThe run for \`${context.sha.slice(0, 10)}\` stopped before it could report. See ${runUrl}.\n`;
+            const artifacts = `\n\n[Complete A/B measurements and verdict](${runUrl}#artifacts)\n`;
+            body = body.slice(0, 64000 - artifacts.length) + artifacts;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });

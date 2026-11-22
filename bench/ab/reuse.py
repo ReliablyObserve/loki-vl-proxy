@@ -10,6 +10,9 @@ the delta on the row (`reuse`). The keys are the ones test/caseverify reads:
   <layer>:<tier>:requests|hits    cache lookups and hits per semantic layer (loki: the Loki-facing answers,
                                   vl: the VictoriaLogs-facing results) and tier (l1_memory, l2_disk, l3_peer)
   cpu_seconds                     the proxy's CPU (process_cpu_seconds_total)
+  rss_before_bytes, rss_after_bytes, rss_max_sampled_bytes
+                                  absolute proxy RSS at the existing two scrapes, not a request allocation,
+                                  a counter delta or a continuously sampled peak; rss_samples records availability
   translations                    LogQL translations (loki_vl_proxy_translations_total)
 
 report.py puts the first run's delta (cold), the median of the later runs' (repeat: the same shape with its window
@@ -22,6 +25,7 @@ refreshes, other clients). A proxy that sends no header (an older build) leaves 
 delta, which includes its background work. The counters still give bytes, hit ratios and CPU. Not measured, for want
 of a metric: allocations per request, plan and translation cache hits, and the reuse of proxy-evaluated operators.
 """
+import math
 import re
 import statistics
 import urllib.request
@@ -45,13 +49,15 @@ def keys_of(name, labels):
         return [f"{labels.get('layer', '')}:{labels.get('tier', '')}:hits"]
     if name == "process_cpu_seconds_total":
         return ["cpu_seconds"]
+    if name == "process_resident_memory_bytes":
+        return ["rss_bytes"]
     if name == "loki_vl_proxy_translations_total":
         return ["translations"]
     return []
 
 
 def parse(text):
-    """The Prometheus text exposition as a snapshot: counters summed per key."""
+    """The Prometheus text exposition as a snapshot: counters and the process RSS gauge."""
     out = {}
     for line in text.splitlines():
         if not line or line.startswith("#"):
@@ -63,6 +69,8 @@ def parse(text):
             value = float(m.group(4))
         except ValueError:
             continue
+        if not math.isfinite(value):
+            continue
         labels = dict(LABEL.findall(m.group(3) or ""))
         for key in keys_of(m.group(1), labels):
             out[key] = out.get(key, 0.0) + value
@@ -70,8 +78,24 @@ def parse(text):
 
 
 def delta(before, after):
-    """after less before, the keys that moved only."""
-    return {k: round(v - before.get(k, 0.0), 6) for k, v in after.items() if v - before.get(k, 0.0) != 0}
+    """Counter changes, plus available absolute RSS samples from the same two scrapes."""
+    out = {k: round(v - before.get(k, 0.0), 6) for k, v in after.items()
+           if k not in ("rss_bytes", "cpu_seconds") and v - before.get(k, 0.0) != 0}
+    rss = []
+    for name, snapshot in (("before", before), ("after", after)):
+        value = snapshot.get("rss_bytes")
+        if value is not None and math.isfinite(value) and value >= 0:
+            out[f"rss_{name}_bytes"] = value
+            rss.append(value)
+    if rss:
+        out.update(rss_max_sampled_bytes=max(rss), rss_samples=len(rss))
+    cpu = [s.get("cpu_seconds") for s in (before, after)]
+    valid = [v for v in cpu if isinstance(v, (int, float)) and math.isfinite(v) and v >= 0]
+    if valid:
+        out["cpu_samples"] = len(valid)
+    if len(valid) == 2 and valid[1] >= valid[0]:
+        out["cpu_seconds"] = round(valid[1] - valid[0], 6)
+    return out
 
 
 def hit_ratio(d):
@@ -94,13 +118,23 @@ def scrape(base, timeout=10):
 
 
 def median(deltas):
-    """The per-key median of several deltas (a key missing from one delta counts as zero there)."""
-    deltas = [d for d in deltas if d is not None]
+    """Counter medians include unchanged zeroes; absent RSS samples remain unmeasured."""
+    original = list(deltas)
+    deltas = [d for d in original if d is not None]
     if not deltas:
         return None
-    keys = sorted({k for d in deltas for k in d})
-    out = {k: round(statistics.median(d.get(k, 0.0) for d in deltas), 6) for k in keys}
-    return {k: v for k, v in out.items() if v != 0}
+    cpu = [d["cpu_seconds"] for d in deltas if d.get("cpu_samples") == 2 and
+           type(d.get("cpu_seconds")) in (int, float) and math.isfinite(d["cpu_seconds"]) and d["cpu_seconds"] >= 0]
+    keys = sorted({k for d in deltas for k in d} - {"cpu_seconds"})
+    out = {k: round(statistics.median(d[k] for d in deltas if k in d), 6) if k.startswith("rss_") or k.startswith("cpu_")
+           else round(statistics.median(d.get(k, 0.0) for d in deltas), 6) for k in keys}
+    if cpu:
+        out["cpu_seconds"] = round(statistics.median(cpu), 6)
+    if any("rss_samples" in d or "cpu_samples" in d for d in deltas):
+        out.update(metric_runs_expected=len(original),
+                   rss_runs_measured=sum(d.get("rss_samples") == 2 for d in deltas),
+                   cpu_runs_measured=len(cpu))
+    return {k: v for k, v in out.items() if v != 0 or k.startswith(("cpu_", "rss_"))}
 
 
 def calls_of(value):

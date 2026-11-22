@@ -55,6 +55,37 @@ def timed(seconds, cache=None, targets=("main", "branch", "loki"), runs=3, **ext
 
 
 class PointCountParityTest(unittest.TestCase):
+    def test_measured_semantic_base_rejection_requires_successful_matching_current_answers(self):
+        raw = timed({k: [0.1, 0.03] for k in ("main", "branch", "loki")}, runtime_proof=True)
+        for row in raw["rows"]:
+            row.update(history_start=700, response_bytes=100, answer_proof="answer")
+            if row["target"] == "main":
+                row.update(status=400, signature="ERR parse error", answer_proof="rejection:fingerprint")
+        entry = summarize(raw)
+        self.assertTrue(entry["runtime_samples"]["matrix"]["main"]["complete"])
+        self.assertEqual((entry["verdict"], entry["speedup"], entry["status"]["main"]), ("fixed", None, "400"))
+        self.assertIn("base rejected", entry["base_comparison_note"])
+        self.assertEqual(entry["runtime_samples"]["matrix"]["main"]["corrected_rejections"][0],
+                         {"run": 0, "status": 400, "proof": "rejection:fingerprint", "signature": "ERR parse error"})
+        raw["rows"][1]["signature"] = "wrong answer"
+        self.assertFalse(summarize(raw)["runtime_samples"]["matrix"]["main"]["complete"])
+        raw["rows"][1]["signature"] = "x"
+        raw["rows"][2]["answer_proof"] = None
+        self.assertFalse(summarize(raw)["runtime_samples"]["matrix"]["main"]["complete"])
+
+    def test_runtime_samples_check_all_bodies_statuses_and_run_ids_before_reduction(self):
+        from copy import deepcopy
+        raw = timed({k: [0.1, 0.03] for k in ("main", "branch", "loki")}, runtime_proof=True)
+        for r in raw["rows"]:
+            r.update(history_start=700, response_bytes=100, answer_proof="answer")
+        self.assertTrue(summarize(raw)["runtime_samples"]["matrix"]["loki"]["complete"])
+        for change in ({"response_bytes": None}, {"seconds": -1}, {"run": 1}, {"history_start": 701}, {"status": 500}, {"skipped": "loki_timeout"}):
+            copy = deepcopy(raw)
+            copy["rows"][2].update(change)
+            measured = summarize(copy)
+            self.assertFalse(measured["runtime_samples"]["matrix"]["loki"]["complete"])
+            self.assertEqual(measured["response_bytes"]["loki"], 100)
+
     def test_equal_sum_cannot_hide_missing_points(self):
         for series in ("1", "ranked"):
             with self.subTest(series=series):

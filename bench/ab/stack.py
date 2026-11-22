@@ -27,6 +27,7 @@ import argparse
 import concurrent.futures
 import contextlib
 import json
+import math
 import os
 import re
 import shutil
@@ -68,6 +69,7 @@ GENERATOR = "test/e2e-compat/log-generator.py"
 # Data profile of the backfill. Fixed so every run measures the same density:
 # about 75 lines/s across the generator's services (the live generator's rate
 # on the e2e stack), one batch -- a new set of pod streams -- per 10 s.
+HISTORY_MARGIN_S = 2 * 3600  # covers stack startup, seed, both profiles and the CI job timeout
 BACKFILL_BATCH = 60
 BACKFILL_INTERVAL = 10
 SELECTOR = '{env="production"}'
@@ -150,6 +152,7 @@ class Stack:
                  no_level_label=False, profile="aligned"):
         self.project, self.loki_port, self.vl_port, self.root = project, loki_port, vl_port, root
         self.no_level_label = no_level_label  # seed rows whose level lives only in the line
+        self.history_overlays = {}
         self.extra_overlays = list(overlays)  # further compose files after OVERLAY (relative to root)
         self.profile = profile_check(profile)
         if self.extra_overlays and self.profile != "aligned":
@@ -170,7 +173,40 @@ class Stack:
     @property
     def overlays(self):
         """Compose files after OVERLAY: the profile's, then the extra ones."""
-        return [*PROFILE_OVERLAYS[self.profile], *self.extra_overlays]
+        return [*PROFILE_OVERLAYS[self.profile], *self.extra_overlays, *self.history_overlays.get(self.profile, ())]
+
+    def configure_history(self, out, profiles, oldest_age):
+        """Override only retention in this A/B project's resolved backend commands, across Loki restarts."""
+        days = max(1, math.ceil((oldest_age + HISTORY_MARGIN_S) / 86400))
+        original_profile = self.profile
+        try:
+            for profile in profiles:
+                self.profile = profile
+                self.history_overlays.pop(profile, None)
+                services = json.loads(self.compose("config", "--format", "json", "loki", "victorialogs",
+                                                   capture=True))["services"]
+                overlay = {}
+                for service, flags, duration in (
+                    ("loki", ("-store.retention", "-validation.reject-old-samples.max-age"), f"{days * 24}h"),
+                    ("victorialogs", ("-retentionPeriod",), f"{days}d"),
+                ):
+                    command = list(services[service]["command"])
+                    for flag in flags:
+                        current = next((x for x in command if x.startswith(flag + "=")), None)
+                        if current:
+                            value = current.split("=", 1)[1]
+                            match = re.fullmatch(r"(\d+)([hdw])", value)
+                            if match and int(match[1]) * {"h": 3600, "d": 86400, "w": 604800}[match[2]] >= days * 86400:
+                                continue
+                            command.remove(current)
+                        command.append(f"{flag}={duration}")
+                    overlay[service] = {"command": command}
+                path = os.path.abspath(os.path.join(out, f"fixture-retention-{profile}.json"))
+                with open(path, "w") as f:
+                    json.dump({"services": overlay}, f, indent=2)
+                self.history_overlays[profile] = [path]
+        finally:
+            self.profile = original_profile
 
     def compose(self, *args, capture=False):
         files = [x for f in (BASE_COMPOSE, OVERLAY, *self.overlays) for x in ("-f", f)]
