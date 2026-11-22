@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.358.0] - 2026-11-22
+
 ### Fixed
 
 - In the Loki-compatible profile, Fields discovery uses the sampled log lines instead of adding fields from a second VictoriaLogs scan over the full window. Drilldown no longer starts breakdown queries for those unsampled fields. The query plan preserves a JSON parser before a label filter on the sampled lines so body-only keys can match. The sampled responses have their own cache namespace across RAM, disk and peers.
