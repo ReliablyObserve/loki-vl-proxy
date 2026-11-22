@@ -39,4 +39,3 @@ gap:
   planned_test: 'TestCompat_LabelReplaceAroundRankingAndVector (test/e2e-compat, group semantics)'
   clusters:
     - 616dee70
-    - 76ff3326

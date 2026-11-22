@@ -34,5 +34,4 @@ gap:
   loki: 'numeric label filters and entry ordering across streams (differential run in this case)'
   proxy: 'different lines, same count'
   planned_test: 'TestCompat_NumericLabelFilterLines (test/e2e-compat, group semantics)'
-  clusters:
-    - 5da321bc
+  clusters: []

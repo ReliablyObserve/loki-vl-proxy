@@ -49,32 +49,4 @@ gap:
   proxy: '400'
   planned_test: 'TestRangeMetricCompatibilityLogfmtFlags and TestRangeMetricCompatibilityCommentsAndOffsets (test/e2e-compat, group semantics, against Loki); TestLogfmtFlagsLikeLoki, TestCommentsAndOffsetsLikeLoki (internal/logql, Loki''s recorded answers)'
   clusters:
-    - 02fa6772
-    - 048082ab
-    - 23cbc9b3
-    - 27e68f5e
     - 282fd2af
-    - 2c821f1e
-    - 415467bb
-    - 461b1df0
-    - 4bb05ffa
-    - 5c22832f
-    - '75526081'
-    - '82240823'
-    - 852cb577
-    - 892af37b
-    - 9532e4b1
-    - 994a7e47
-    - 9c93bc66
-    - 9e36e9cd
-    - a01f6b2f
-    - a5c93607
-    - b3444d76
-    - c0ccfa2d
-    - c118de71
-    - c138dca8
-    - c59b5392
-    - d2f9deab
-    - d34c2dbd
-    - e6626ac6
-    - ffabd46c
