@@ -676,6 +676,7 @@ func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
 func FuzzResponseKeyFencesMatchParsedTree(f *testing.F) {
 	// These tests check the fences against the parser, not the translation: their spellings stay out of the query corpus.
 	f.Cleanup(querycorpus.PauseRecording())
+	f.Add("{A=\"0\"}\t|\tJSON \t|a!=# `\n0", uint64(0))
 	for i, q := range fenceSpellingBases {
 		f.Add(q, uint64(0))
 		f.Add(q, uint64(i+1))
@@ -905,6 +906,14 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"numeric-equality", `sum(count_over_time({app="x"} | logfmt | d != 5s [5m]))`, true},
 		{"numeric-equality", `{app="x"} | Logfmt | size = 1KB`, true},
 		{"numeric-equality", "{app=\"x\"} |#c\n json | status=200", true},
+		{"numeric-equality", "{A=\"0\"}\t|\tJSON \t|a!=# `\n0", true},
+		{"numeric-equality", "{app=\"x\"} | json | status =# \"\n200", true},
+		{"numeric-equality", "{app=\"x\"} | JSON | status ==# `\n2e2", true},
+		{"numeric-equality", "{app=\"x\"} | logfmt | duration !=# `\n5s", true},
+		{"numeric-equality", "{app=\"x\"} | logfmt | size =# \"\n1KB", true},
+		{"numeric-equality", "{app=\"x\"} | json | status =# `\n\"200\"", false},
+		{"numeric-equality", "{app=\"x\"} | json | status ># `\n200", false},
+		{"numeric-equality", "{app=\"x\"} | json | status =# ` 200", false},
 		{"numeric-equality", `{app="x"} | json | status > 200`, false},
 		{"numeric-equality", `{app="x"} | json | status = "200"`, false},
 		{"numeric-equality", `{app="x"} | status = 200 | json`, false},
@@ -1025,6 +1034,44 @@ func textOutsideQuotes(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func TestNumericEqualityScreenCommentsAndOlderMatches(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  bool
+	}{
+		{"{A=\"0\"}\t|\tJSON \t|a!=# `\n0", true},
+		{"{app=\"#\"} | json | a =# `\n0", true},
+		{"{app=`#`} | json | a =# \"\n0", true},
+		{"{app=\"= 200\"}", true}, // Keep the older conservative screen's quoted matches.
+		{"# =\v200", true},        // Keep its comment and vertical-tab matches too.
+		{"{app=\"x\"} | json | a =#" + strings.Repeat(" =# ", 16384) + "\n\"0\"", false},
+		{"{app=\"x\"} | json | a =#" + strings.Repeat(" =# ", 16384) + "\n0", true},
+	} {
+		if got := equalityBeforeNumber(tc.query); got != tc.want {
+			t.Errorf("screen of %q = %t, want %t", tc.query, got, tc.want)
+		}
+		if allocs := testing.AllocsPerRun(10, func() { _ = equalityBeforeNumber(tc.query) }); allocs != 0 {
+			t.Errorf("screen allocates %v times", allocs)
+		}
+	}
+}
+
+func BenchmarkNumericEqualityCommentScreen(b *testing.B) {
+	for _, n := range []int{1024, 16384} {
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			query := "{app=\"x\"} | json | a =#" + strings.Repeat(" =# ", n) + "\n\"0\""
+			b.SetBytes(int64(len(query)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if equalityBeforeNumber(query) {
+					b.Fatal("quoted number is not a numeric equality")
+				}
+			}
+		})
+	}
 }
 
 // An unwrap written with other blanks than one space on each side of `| unwrap` is served from the plan with the
