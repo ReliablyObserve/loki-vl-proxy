@@ -23,10 +23,10 @@ import (
 // (semantics/detected-fields-extracted-suffix); the comparison leaves those
 // names out.
 //
-// conformance: semantics/detected-fields-no-logfmt-token-fields, loki_api_v1_detected_fields
+// conformance: semantics/detected-fields-no-logfmt-token-fields, semantics/detected-fields-index-outside-sample, loki_api_v1_detected_fields
 func TestCompat_DetectedFieldsNoLogfmtTokenFields(t *testing.T) {
 	svc := fmt.Sprintf("dd-tokens-%d", time.Now().UnixNano())
-	base := time.Now().Add(-90 * time.Second)
+	base := time.Now().Add(-3 * time.Minute)
 	lines := map[string][]string{}
 	for i := 0; i < 30; i++ {
 		// json.dumps spacing, as the Drilldown e2e generator writes it.
@@ -34,6 +34,12 @@ func TestCompat_DetectedFieldsNoLogfmtTokenFields(t *testing.T) {
 			[]string{"GET", "POST"}[i%2], i, []int{500, 502, 503}[i%3], 100+i, []string{"us-east-1", "eu-west-1"}[i%2]))
 		lines["logfmt"] = append(lines["logfmt"], fmt.Sprintf(`level=error msg="payment retry scheduled" tx_id=tx%d provider=stripe attempt=%d`, i, i%3))
 		lines["plain"] = append(lines["plain"], fmt.Sprintf(`2026-11-03 14:00:%02d UTC [%d] ERROR:  deadlock detected on relation "orders", 500, {retry}`, i%60, 1000+i))
+		lines["sample"] = append(lines["sample"], `{"sampled": "yes", "historical_only": "old"}`)
+	}
+	// Each backend samples the latest 100 lines for this single stream.
+	// VL's field_names still finds the older stored key across the full range.
+	for i := 0; i < 100; i++ {
+		lines["sample"] = append(lines["sample"], `{"sampled": "yes"}`)
 	}
 	for kind, values := range lines {
 		labels := map[string]string{"service_name": svc + "-" + kind, "level": "error", "env": "dd-tokens"}
@@ -84,14 +90,19 @@ func TestCompat_DetectedFieldsNoLogfmtTokenFields(t *testing.T) {
 		{"logfmt", `{service_name="%s"}` + tail + `| provider="stripe"`},
 		{"plain", `{service_name="%s"} | detected_level="error"` + tail},
 		{"plain", `{service_name="%s"} | detected_level="error"`},
+		{"sample", `{service_name="%s"}` + tail},
 	}
 	window := url.Values{
 		"start": {strconv.FormatInt(base.Add(-time.Minute).UnixNano(), 10)},
 		"end":   {strconv.FormatInt(time.Now().Add(time.Minute).UnixNano(), 10)},
 	}
-	labelsOf := func(t *testing.T, target, query string) []string {
+	labelsOf := func(t *testing.T, target, query string, lineLimit string) []string {
 		t.Helper()
 		params := url.Values{"query": {query}, "start": window["start"], "end": window["end"]}
+		if lineLimit != "" {
+			params.Set("line_limit", lineLimit)
+			params.Set("limit", "1000")
+		}
 		status, body := rejectedQueryGet(t, target, "/loki/api/v1/detected_fields", params, "0", nil)
 		var resp struct {
 			Fields []detectedFieldEntry `json:"fields"`
@@ -114,18 +125,37 @@ func TestCompat_DetectedFieldsNoLogfmtTokenFields(t *testing.T) {
 		var want []string
 		deadline := time.Now().Add(60 * time.Second)
 		for {
-			want = labelsOf(t, lokiURL, query)
+			want = labelsOf(t, lokiURL, query, "")
 			if len(want) > 1 || tc.kind == "plain" || time.Now().After(deadline) {
 				break
 			}
 			time.Sleep(2 * time.Second)
 		}
+		if tc.kind == "sample" && strings.Join(want, ",") != "detected_level,sampled" {
+			t.Fatalf("expected Loki to discover only the newest sampled fields, got %v", want)
+		}
 		for _, target := range []struct{ name, url string }{
 			{"parity (13100)", proxyURL},
 			{"drilldown default (13110)", patternsAutodetectProxyURL},
 		} {
-			if got := labelsOf(t, target.url, query); strings.Join(got, ",") != strings.Join(want, ",") {
+			if got := labelsOf(t, target.url, query, ""); strings.Join(got, ",") != strings.Join(want, ",") {
 				t.Errorf("%s %s:\nproxy %v\nloki  %v", target.name, query, got, want)
+			}
+		}
+	}
+	query := fmt.Sprintf(`{service_name="%s-sample"}`+tail, svc)
+	want := strings.Join(labelsOf(t, lokiURL, query, "130"), ",")
+	if want != "detected_level,historical_only,sampled" {
+		t.Fatalf("Loki did not include the older lines with line_limit=130: %s", want)
+	}
+	for _, target := range []string{proxyURL, patternsAutodetectProxyURL} {
+		for _, limit := range []string{"1", "130", "1"} {
+			expected := want
+			if limit == "1" {
+				expected = "detected_level,sampled"
+			}
+			if got := strings.Join(labelsOf(t, target, query, limit), ","); got != expected {
+				t.Errorf("%s line_limit=%s: proxy %s; Loki %s", target, limit, got, expected)
 			}
 		}
 	}

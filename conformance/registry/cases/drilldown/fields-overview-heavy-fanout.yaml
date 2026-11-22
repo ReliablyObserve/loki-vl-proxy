@@ -1,0 +1,57 @@
+id: drilldown/fields-overview-heavy-fanout
+title: The Fields grid fans out the same full breakdown queries used by the detail view
+proves:
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  In Grafana 13.3.1, the production Fields grid initiated 53 distinct
+  query targets at 24h and 48h, compared with three on the selected
+  trace_id view. The trace_id request had identical query, time bounds,
+  interval, maxDataPoints and supportingQueryType on the two views.
+  Replaying both 24-hour requests through the datasource produced the
+  same backend path, parameters, and Source tag. Grafana forwarded no
+  Referer, dashboard ID, panel ID, or expression origin. A proxy cannot
+  distinguish those requests using the captured metadata.
+
+  Complete high-cardinality matrices put memory pressure on the
+  datasource plugin before the chart is rendered. On the measured
+  three-hour incident the historical trace_id query alone took the
+  Grafana cgroup to 6.79 GiB before cancellation. See the retained
+  Fields sampling measurements and the separate ingest-provenance gap.
+
+  An overview optimization needs explicit view context. Its rendered
+  counts, legend and interaction must agree with Loki. Selecting a field,
+  zooming into a breakdown or opening Explore must keep the exact
+  result, warning and error contract.
+
+  In a real backend probe, a batched VictoriaLogs call replaced four
+  separate volume counts at both ranges. Every bucket matched Loki
+  on 35 hours of identically written fixture data. The historical
+  batch-ETL sample still differed from Loki in two buckets for each
+  of three populated fields. This is a backend count proof and the
+  grid integration remains open.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    start: 'now-24h'
+    step: '2m'
+  headers:
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: observed
+  fields: [data.resultType, 'data.result[].metric', 'data.result[].values', warnings]
+  expect: |
+    The live Fields grid and selected field look like Loki at 24h and
+    48h or longer. Compare the same resolved time grid and exact details,
+    then measure VictoriaLogs calls, decoded bytes, and datasource OOM
+    counters for the full browser workload.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: L
+  area: Grafana Fields overview requests and proxy query planning
+  loki: The same client submits the full grouped range query for the grid and the selected field.
+  proxy: The full responses fan out and can exhaust the datasource plugin before rendering high-cardinality fields.
+  planned_test: 'Expand the existing Fields bounds Playwright suite and link its visual-smoke entries after the overview contract is implemented.'
+  clusters: []

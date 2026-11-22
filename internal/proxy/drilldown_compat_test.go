@@ -899,8 +899,8 @@ func TestDrilldown_DetectedFields_TranslatedModeExposesOnlyAliases(t *testing.T)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"values":[{"value":"app","hits":1},{"value":"cluster","hits":1},{"value":"service.name","hits":1},{"value":"service.namespace","hits":1},{"value":"k8s.pod.name","hits":1}]}`))
+			t.Error("the Loki-compatible profile must not scan the full field index")
+			w.WriteHeader(http.StatusInternalServerError)
 		case "/select/logsql/query":
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"token validated","_stream":"{app=\"otel-auth-service\",cluster=\"us-east-1\",service.name=\"otel-auth-service\"}","app":"otel-auth-service","cluster":"us-east-1","service.name":"otel-auth-service","service.namespace":"auth","k8s.pod.name":"auth-svc-123"}` + "\n"))

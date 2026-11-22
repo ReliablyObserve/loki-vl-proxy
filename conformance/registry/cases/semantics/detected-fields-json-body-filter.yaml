@@ -1,0 +1,31 @@
+id: semantics/detected-fields-json-body-filter
+title: Field discovery preserves a JSON parser before a filter on a body field
+proves:
+  - loki_api_v1_detected_fields
+  - parser-json
+consumer: drilldown
+why: |
+  With JSON message parsing disabled on VictoriaLogs ingress, the
+  user label exists only after the query's parser. Loki discovers
+  fields on the matching lines. The proxy used to remove the parser,
+  so the same filter returned an empty field list. The Loki profile's
+  typed pipeline keeps the JSON parser before its label filter.
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{app="line-fields"} | json | user="u1"'
+compare:
+  mode: structural
+  fields: [fields.label, fields.parsers, fields.type, fields.cardinality, fields.jsonPath]
+  expect: A nonempty sample of the matching JSON lines with the same field labels, parser hints, types and counts as Loki.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: drilldown-visible
+  effort: S
+  area: internal/proxy/drilldown.go sampledFieldsFilterQuery
+  loki: TestCompat_LokiPushLineFieldsLikeLoki queries the same Loki-push payload on real Loki.
+  proxy: TestQuerySemanticsMatrix runs detected_fields_json_body_filter with line_limit=1 and checks the parsed field names and metadata against real Loki.
+  planned_test: 'TestCompat_LokiPushLineFieldsLikeLoki, TestQuerySemanticsMatrix/detected_fields_json_body_filter'
+  clusters: []

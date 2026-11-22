@@ -22,6 +22,7 @@ type PageSpec = {
   service?: boolean; // drilldown: filter by var-filters service_name
   serviceName?: string; // drilldown: that service instead of vars.service
   levels?: string; // drilldown: the level pill, as var-levels (detected_level|=|error)
+  fields?: string; // drilldown: a parsed field filter, as var-fields (method|=|GET)
   ranges?: string[];
 };
 const spec = JSON.parse(fs.readFileSync(process.env.VP_SPEC || path.join(__dirname, "spec.json"), "utf8"));
@@ -47,9 +48,9 @@ function url(p: PageSpec, uid: string, r: string): string {
   if (p.kind === "drilldown") {
     const q = new URLSearchParams({
       patterns: "[]", from, to, timezone: "browser", "var-lineFormat": "", "var-ds": uid,
-      "var-filters": p.service ? `service_name|=|${p.serviceName || vars.service}` : "", "var-fields": "",
+      "var-filters": p.service ? `service_name|=|${p.serviceName || vars.service}` : "", "var-fields": p.fields || "",
       "var-levels": p.levels || "",
-      "var-metadata": "", "var-jsonFields": "", "var-all-fields": "", "var-patterns": "",
+      "var-metadata": "", "var-jsonFields": "", "var-all-fields": p.fields || "", "var-patterns": "",
       "var-lineFilterV2": "", "var-lineFilters": "", "var-primary_label": "service_name|=~|.+",
       ...(p.service ? { displayedFields: "[]", urlColumns: "[]" } : {}),
     });
