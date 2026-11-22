@@ -85,7 +85,45 @@ async function uiState(page: Page) {
   return page.evaluate(() => {
     const text = document.body.innerText || "";
     const banner = /(Plugin (unavailable|failed|not found)|Failed to load|Unable to load|Something went wrong|An unexpected error|Error loading|Query error|Bad Gateway|Internal Server Error|Cannot read propert)[^\n]{0,80}/g;
-    const banners = [...new Set(text.match(banner) || [])].sort().slice(0, 8);
+    const visible = (e: Element) => e.getClientRects().length > 0;
+    const alerts = '[role="alert"], [data-testid="data-testid Alert error"], [data-testid="data-testid Error boundary"]';
+    const alertText = [...document.querySelectorAll(alerts)]
+      .filter(visible).map(e => e.textContent || "");
+    // A service's log samples can themselves say "Cannot read property" or "Plugin unavailable". They are data,
+    // not error banners. Read actual alerts first (even within panels), then retain the unstructured crash-page
+    // fallback only outside log rows. The native landing page uses data-log-index and log-line-body even when
+    // its syntax highlighting splits a message across spans. Other panel text and crash stacks remain eligible.
+    const results = alerts + ', [data-log-index], .log-line-body, .log-syntax-highlight, [data-testid*="log-row"], [data-testid*="Log row"], [data-testid*="log-line"], [data-testid*="Log line"], [class*="logs-row"], script, style';
+    const outside = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    const fragments: string[] = [];
+    let previousBlock: Element | null = null;
+    const blocks = 'address, article, aside, blockquote, div, details, dialog, dl, fieldset, figure, footer, form, h1, h2, h3, h4, h5, h6, header, li, main, nav, ol, p, pre, section, summary, table, td, th, tr, ul';
+    while (outside.nextNode()) {
+      const node = outside.currentNode;
+      if (node.nodeType === 1) {
+        if ((node as Element).tagName === "BR" && visible(node as Element)) {
+          fragments.push("\n");
+          previousBlock = null;
+        }
+        continue;
+      }
+      const parent = node.parentElement;
+      if (!parent) continue;
+      if (parent.closest(results)) {
+        fragments.push("\n");
+        previousBlock = null;
+        continue;
+      }
+      if (!visible(parent)) continue;
+      const block = parent.closest(blocks);
+      if (block !== previousBlock) fragments.push("\n");
+      fragments.push(node.textContent || "");
+      previousBlock = block;
+    }
+    // Inline markup can split a real banner ("Plugin " + <b>unavailable</b>). Keep its text together, but do not
+    // join separate block elements or bridge over discarded log rows to invent a failure phrase.
+    alertText.push(fragments.join(""));
+    const banners = [...new Set(alertText.flatMap(s => s.match(banner) || []))].sort().slice(0, 8);
     // The collapsed "Details" of an error boundary (Grafana's "Plugin failed to load") carry the error and its stack.
     const details = banners.length ? [...document.querySelectorAll("details")].map((d) => (d.textContent || "").trim()).filter(Boolean).join("\n").slice(0, 2000) : "";
     return {

@@ -31,6 +31,65 @@ class FakeLoki(http.server.BaseHTTPRequestHandler):
 
 
 class CiRunTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for capture DOM unit tests")
+    def test_ui_errors_are_not_log_sample_contents(self):
+        source = Path(ci_run.HERE, "capture.spec.ts").read_text().split("async function uiState(", 1)[1].split("// Grafana's", 1)[0]
+        node = r'''const assert = require("node:assert/strict");
+const strip = require("node:module").stripTypeScriptTypes;
+if (!strip) process.exit(77);
+const source = require("node:fs").readFileSync(0, "utf8");
+const uiState = Function(strip(source) + ";return uiState")();
+global.NodeFilter = {SHOW_TEXT: 4, SHOW_ELEMENT: 1};
+const element = (text, data = null, visible = true, block = {}) => ({
+  textContent: text, getClientRects: () => visible ? [1] : [],
+  closest: selectors => selectors.startsWith('address,') ? block :
+    data && selectors.split(',').some(s => s.trim() === data) ? {} : null
+});
+async function check({alerts = [], nodes = [], expected = [], panels = []}) {
+  const text = [...alerts, ...nodes.map(n => n.parentElement)].filter(Boolean).map(e => e.textContent).join("\n");
+  global.document = {
+    body: {innerText: text},
+    querySelectorAll: s => s.startsWith('[role="alert"]') ? alerts : s === "details" ? [] : panels,
+    createTreeWalker: () => {
+      let i = -1;
+      return {nextNode() { return ++i < nodes.length; }, get currentNode() { return nodes[i]; }};
+    }
+  };
+  const result = await uiState({evaluate: fn => Promise.resolve(fn())});
+  assert.deepEqual(result.banners, expected);
+  assert.equal(result.panelErrors, panels.filter(p => p.getClientRects().length).length);
+}
+const textNode = parentElement => ({parentElement, textContent: parentElement.textContent});
+(async () => {
+  await check({nodes: [textNode(element('{"error":"TypeError: Cannot read property", "level":"error"}', '[data-log-index]')),
+                      textNode(element('Plugin unavailable', '.log-line-body'))]});
+  await check({alerts: [element('Cannot read properties of undefined')],
+               expected: ['Cannot read properties of undefined']});
+  await check({alerts: [element('Plugin unavailable', false, false)]});
+  await check({nodes: [textNode(element('Plugin failed to load'))], expected: ['Plugin failed to load']});
+  await check({nodes: [textNode(element('An unexpected error occurred'))], expected: ['An unexpected error occurred']});
+  const block = {};
+  await check({nodes: [textNode(element('Plugin ', null, true, block)), textNode(element('unavailable', null, true, block))],
+               expected: ['Plugin unavailable']});
+  await check({nodes: [textNode(element('Plugin ', null, true, block)), textNode(element('hidden', null, false, block)),
+                      textNode(element('unavailable', null, true, block))], expected: ['Plugin unavailable']});
+  await check({nodes: [textNode(element('Plugin ', null, true, block)),
+                      {...element(''), nodeType: 1, tagName: 'BR', parentElement: null},
+                      textNode(element('unavailable', null, true, block))]});
+  await check({nodes: [textNode(element('Plugin ')), textNode(element('unavailable'))]});
+  await check({nodes: [textNode(element('Plugin ', null, true, block)), textNode(element('log', '[data-log-index]')),
+                      textNode(element('unavailable', null, true, block))]});
+  await check({nodes: [textNode(element('Cannot read properties of undefined', '[data-testid="data-testid Panel content"]'))],
+               expected: ['Cannot read properties of undefined']});
+  await check({alerts: [element('Query error: Data source became unavailable')],
+               expected: ['Query error: Data source became unavailable'], panels: [element('error')]});
+})().catch(e => {console.error(e); process.exit(1);});'''
+        proc = subprocess.run(["node", "-e", node], input="async function uiState(" + source,
+                              text=True, capture_output=True)
+        if proc.returncode == 77:
+            self.skipTest("Node 22.13+ supplies the TypeScript loader")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
     def test_runtime_boundary_precedes_recording_overhead(self):
         source = Path(ci_run.HERE, "capture.spec.ts").read_text()
         after_settle = source.split("const ok = await settle(page, pending);")[1]

@@ -23,6 +23,16 @@ def capture(values, ui=None, settled=True, uid="ds1", fields=None, status=200, e
 
 
 class CompareTest(unittest.TestCase):
+    def test_runtime_proof_keeps_real_javascript_page_errors(self):
+        base = capture([1])
+        base["runtime"] = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                               js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100,
+                               page_encoded_bytes=200, first_api_data_ms=300)
+        base["errors"] = ["pageerror: TypeError: Cannot read properties of undefined"]
+        self.assertIn("Grafana JavaScript page error", " ".join(compare.runtime_problems(base, base, required=True)))
+        base["errors"] = ["Error: pipeline error: 'JSONParserErr'"]
+        self.assertEqual(compare.runtime_problems(base, base, required=True), [])
+
     def test_failed_comparison_cannot_leave_a_stale_success_report(self):
         with tempfile.TemporaryDirectory() as out:
             d = os.path.join(out, "data", "page-a", "1h")

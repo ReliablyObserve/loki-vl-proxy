@@ -53,6 +53,8 @@ def runtime_problems(main, pr, required=False, comparable=True):
         if capture.get("settled") is not True:
             problems.append(f"runtime proof: {side} did not settle")
         banners = (capture.get("ui") or {}).get("banners", [])
+        if any(str(error).startswith("pageerror:") for error in capture.get("errors", [])):
+            problems.append(f"runtime proof: {side} Grafana JavaScript page error")
         if any(re.search(r"plugin (?:failed|unavailable|not found)|bad gateway|internal server error|"
                          r"page state unreadable|cannot read propert|unexpected error", str(b), re.I) for b in banners):
             problems.append(f"runtime proof: {side} Grafana UI infrastructure error")

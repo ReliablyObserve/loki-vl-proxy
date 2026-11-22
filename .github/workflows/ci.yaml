@@ -1147,6 +1147,10 @@ jobs:
 
       # Like the A/B harness: a change to bench/visual runs the visual-smoke workflow, not the Go jobs
       # that used to carry these tests, so they run here on every pull request.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with:
+          node-version: "22"
+
       - name: Visual-proof harness unit tests (plan, gate and comment, publish)
         run: python3 -m unittest discover -s bench/visual/tests
 
