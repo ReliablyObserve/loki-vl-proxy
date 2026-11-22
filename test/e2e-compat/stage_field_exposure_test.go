@@ -21,15 +21,56 @@ var (
 	stageFixtureEnd  time.Time
 )
 
+// Multiple streams deliberately share timestamps. Count the complete identity of each pushed row.
+type stageFixtureRow struct{ app, timestamp, line string }
+
+func stageFixtureRows(body []byte) map[stageFixtureRow]int {
+	var response dlStreamsResponse
+	if json.Unmarshal(body, &response) != nil || response.Status != "success" || response.Data.ResultType != "streams" || len(response.Warnings) != 0 {
+		return nil
+	}
+	rows := make(map[stageFixtureRow]int)
+	for _, stream := range response.Data.Result {
+		for _, value := range stream.Values {
+			row := stageFixtureRow{app: stream.Stream["app"]}
+			if len(value) < 2 || json.Unmarshal(value[0], &row.timestamp) != nil || json.Unmarshal(value[1], &row.line) != nil {
+				return nil
+			}
+			rows[row]++
+		}
+	}
+	return rows
+}
+
+func TestStageFixtureReadiness(t *testing.T) {
+	want := map[stageFixtureRow]int{{"probe-json", "42", "shared"}: 1, {"probe-logfmt", "42", "shared"}: 1}
+	for _, tc := range []struct {
+		name, jsonValues, logfmtValues string
+		ready                          bool
+	}{
+		{"both distinct streams", `[["42","shared",{"user":"u1"}]]`, `[["42","shared"]]`, true},
+		{"missing stream", `[["42","shared"]]`, `[]`, false},
+		{"duplicate hides missing stream", `[["42","shared"],["42","shared"]]`, `[]`, false},
+		{"different timestamp", `[["41","shared"]]`, `[["42","shared"]]`, false},
+		{"different line", `[["42","other"]]`, `[["42","shared"]]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"probe-json"},"values":%s},{"stream":{"app":"probe-logfmt"},"values":%s}]}}`, tc.jsonValues, tc.logfmtValues)
+			if got := reflect.DeepEqual(stageFixtureRows([]byte(body)), want); got != tc.ready {
+				t.Fatalf("fixture readiness = %v, want %v", got, tc.ready)
+			}
+		})
+	}
+}
+
 // ensureStageFixture pushes the same events to Loki and to VictoriaLogs'
-// Loki push endpoint as two streams: <app>-json holds JSON lines (one nested
+// Loki push endpoint as three streams: <app>-json holds JSON lines (one nested
 // object) with OTel structured metadata, the VictoriaLogs copy carrying the
 // line under _msg as the UI log generator sends it, so VictoriaLogs holds the
 // line and its keys as fields; <app>-logfmt holds logfmt lines with
 // structured metadata; <app>-mix holds older plain lines with user as
 // structured metadata and newer JSON lines holding user as a key. Both
-// backends are flushed and Loki's index must count
-// every entry before a comparison runs.
+// backends are flushed and Loki must return every pushed row before a comparison runs.
 func ensureStageFixture(t *testing.T) (string, time.Time) {
 	t.Helper()
 	stageFixtureOnce.Do(func() {
@@ -50,15 +91,19 @@ func ensureStageFixture(t *testing.T) (string, time.Time) {
 		}
 		// <app>-mix: three older plain lines with user as structured metadata,
 		// three newer JSON lines holding user as a key.
+		want := make(map[stageFixtureRow]int)
 		mix := map[string][]interface{}{}
 		for i := 0; i < 6; i++ {
 			ts := strconv.FormatInt(base.Add(time.Duration(i)*time.Second).UnixNano(), 10)
 			if i < 3 {
-				v := []interface{}{ts, fmt.Sprintf("plain line %d", i), map[string]string{"user": "u1"}}
+				line := fmt.Sprintf("plain line %d", i)
+				want[stageFixtureRow{app + "-mix", ts, line}]++
+				v := []interface{}{ts, line, map[string]string{"user": "u1"}}
 				mix["loki"], mix["vl"] = append(mix["loki"], v), append(mix["vl"], v)
 				continue
 			}
 			line := fmt.Sprintf(`{"msg":"json line %d","user":"u1"}`, i)
+			want[stageFixtureRow{app + "-mix", ts, line}]++
 			mix["loki"] = append(mix["loki"], []interface{}{ts, line})
 			mix["vl"] = append(mix["vl"], []interface{}{ts, fmt.Sprintf(`{"msg":"json line %d","user":"u1","_msg":%q}`, i, line)})
 		}
@@ -77,6 +122,7 @@ func ensureStageFixture(t *testing.T) (string, time.Time) {
 			var lokiValues, vlValues []interface{}
 			for i, line := range lines {
 				ts := strconv.FormatInt(base.Add(time.Duration(i)*time.Second).UnixNano(), 10)
+				want[stageFixtureRow{name, ts, line}]++
 				lokiValues = append(lokiValues, []interface{}{ts, line, meta})
 				vlLine := line
 				if strings.HasPrefix(line, "{") {
@@ -114,15 +160,16 @@ func ensureStageFixture(t *testing.T) (string, time.Time) {
 		end := base.Add(10 * time.Second)
 		params := lineFieldsWindow(end)
 		params.Set("query", fmt.Sprintf(`{app=~%q}`, app+"-.*"))
+		params.Set("limit", "100")
 		deadline := time.Now().Add(90 * time.Second)
 		for {
-			var stats struct{ Entries int }
-			status, body := rejectedQueryGet(t, lokiURL, "/loki/api/v1/index/stats", params, "0", nil)
-			if status == http.StatusOK && json.Unmarshal(body, &stats) == nil && stats.Entries == 12 {
+			status, body := rejectedQueryGet(t, lokiURL, "/loki/api/v1/query_range", params, "0", nil)
+			got := stageFixtureRows(body)
+			if status == http.StatusOK && reflect.DeepEqual(got, want) {
 				break
 			}
 			if time.Now().After(deadline) {
-				t.Fatalf("Loki index/stats never counted the flushed fixture: %d %s", status, body)
+				t.Fatalf("Loki query_range never returned the flushed fixture: status %d, got %v, want %v, body %.500s", status, got, want, body)
 			}
 			time.Sleep(2 * time.Second)
 		}

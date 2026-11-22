@@ -23,6 +23,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from plan import fixture_hours  # noqa: E402
 from vio import dump_json, load_json  # noqa: E402
 
 LIVE = "live"
@@ -73,9 +74,10 @@ def assign(plan, k):
 def split(plan, k):
     """The k shard plans: the plan with only the entries of the shard (same keys, so ci_run.py needs no special case)."""
     shards = []
+    hours = fixture_hours(plan)
     for i, pids in enumerate(assign(plan, k)):
         entries = {pid: plan["entries"][pid] for pid in pids}
-        shards.append({**plan, "entries": entries, "captures": capture_count(entries), "shard": {"index": i, "of": k}})
+        shards.append({**plan, "fixture_hours": hours, "entries": entries, "captures": capture_count(entries), "shard": {"index": i, "of": k}})
     return shards
 
 

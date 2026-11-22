@@ -36,6 +36,38 @@ def pick(files):
 
 
 class SelectTest(unittest.TestCase):
+    def test_ast_change_requires_targeted_multi_range_runtime_proof(self):
+        import copy
+        spec = copy.deepcopy(SPEC)
+        spec["ranges"]["6h"] = [21600, 30]
+        spec["sets"]["control"]["ranges"].append("6h")
+        items = dict(ITEMS, **{"parser-json": ({"internal/queryplan/lower/json.go"}, set())})
+        result = selection.select(["internal/queryplan/lower/json.go"], spec=spec, items=items)
+        proof = result["runtime_proof"]
+        self.assertTrue(proof["required"])
+        self.assertEqual(proof["ranges"], ["1h", "6h"])
+        self.assertEqual(proof["targeted"]["internal/queryplan/lower/json.go"], ["control/json volume"])
+        self.assertEqual(selection.runtime_proof_problems(result), [])
+        all_shapes = selection.select_all(spec=spec, files=["internal/queryplan/lower/json.go"], items=items)
+        self.assertEqual(all_shapes["runtime_proof"]["targeted"], proof["targeted"])
+        self.assertEqual(proof["cells"]["control/json volume"], ["1h", "6h"])
+
+    def test_real_proxy_and_ast_builder_paths_require_runtime_proof(self):
+        for path in ("internal/proxy/query_lowering.go", "internal/proxy/query_plan.go",
+                     "internal/translator/ast_translate.go"):
+            self.assertTrue(selection.runtime_proof_path(path), path)
+
+    def test_unmapped_ast_change_cannot_pass_with_controls_alone(self):
+        result = pick(["internal/logql/new_stage.go"])
+        self.assertTrue(result["run"])
+        self.assertIn("internal/logql/new_stage.go", result["runtime_proof"]["unmapped"])
+        self.assertTrue(selection.runtime_proof_problems(result))
+
+    def test_test_only_ast_change_does_not_require_heavy_runtime_proof(self):
+        result = pick(["internal/logql/parser_test.go", ".github/workflows/ci.yaml"])
+        self.assertFalse(result["run"])
+        self.assertFalse(result.get("runtime_proof", {}).get("required", False))
+
     def test_docs_ci_tests_chart_select_nothing(self):
         result = pick(["docs/a.md", ".github/workflows/ci.yaml", "internal/proxy/x_test.go",
                        "charts/loki-vl-proxy/values.yaml", "conformance/registry/cases/x.yaml", "CHANGELOG.md",

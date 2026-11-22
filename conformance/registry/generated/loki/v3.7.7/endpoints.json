@@ -176,17 +176,20 @@
       "path": "/loki/api/v1/delete",
       "sources": {
         "DELETE": [
-          "docs"
+          "docs",
+          "recorded:r1717"
         ],
         "GET": [
-          "docs"
+          "docs",
+          "recorded:r1715,r1716,r1735"
         ],
         "POST": [
           "docs",
-          "recorded:r1201"
+          "recorded:r1201,r1700,r1701"
         ],
         "PUT": [
-          "docs"
+          "docs",
+          "recorded:r1708"
         ]
       }
     },

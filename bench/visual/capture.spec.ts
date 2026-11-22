@@ -118,6 +118,107 @@ async function settle(page: Page, pending: { n: number; last: number; seen?: num
 
 const BACKEND = /\/api\/ds\/query|\/api\/datasources\/uid\/[^/]+\/resources\/|\/api\/datasources\/proxy\//;
 
+// Collect during the existing capture, not another load. Heap maxima are
+// sampled; ThreadTime is the target main thread's CPU counter, not host CPU.
+async function startRuntimeProof(page: Page, began = Date.now()) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Performance.enable");
+  await cdp.send("Network.enable");
+  const requests = new Map<string, { api: boolean; received: number }>();
+  let apiRequests = 0, apiBytes = 0, pageBytes = 0, heap = 0, samples = 0;
+  let abortedAPIBytes = 0, abortedAPIRequests = 0;
+  let firstData: number | undefined;
+  let stoppedAt = Infinity;
+  let before: Record<string, number> = {}, after: Record<string, number> = {};
+  cdp.on("Network.requestWillBeSent", ({ requestId, request, redirectResponse }) => {
+    if (stoppedAt !== Infinity) return;
+    const previous = requests.get(requestId);
+    if (previous && redirectResponse) {
+      const transferred = Math.max(previous.received, redirectResponse.encodedDataLength || 0);
+      pageBytes += transferred;
+      if (previous.api) apiBytes += transferred;
+    }
+    const api = BACKEND.test(request.url);
+    requests.set(requestId, { api, received: 0 });
+    if (api) apiRequests++;
+  });
+  cdp.on("Network.dataReceived", ({ requestId, encodedDataLength }) => {
+    if (stoppedAt !== Infinity) return;
+    const request = requests.get(requestId);
+    if (request) request.received += encodedDataLength;
+  });
+  cdp.on("Network.loadingFinished", ({ requestId, encodedDataLength }) => {
+    if (stoppedAt !== Infinity) return;
+    pageBytes += encodedDataLength;
+    if (requests.get(requestId)?.api) apiBytes += encodedDataLength;
+    requests.delete(requestId);
+  });
+  cdp.on("Network.loadingFailed", ({ requestId }) => {
+    if (stoppedAt !== Infinity) return;
+    const request = requests.get(requestId);
+    pageBytes += request?.received || 0;
+    if (request?.api) {
+      apiBytes += request.received;
+      abortedAPIBytes += request.received;
+      abortedAPIRequests++;
+    }
+    requests.delete(requestId);
+  });
+  const sample = async () => {
+    if (page.isClosed()) return;
+    const metrics = await cdp.send("Performance.getMetrics");
+    after = Object.fromEntries(metrics.metrics.map(({ name, value }) => [name, value]));
+    if (Number.isFinite(after.JSHeapUsedSize)) heap = Math.max(heap, after.JSHeapUsedSize);
+    samples++;
+  };
+  await sample();
+  before = after;
+  let sampling: Promise<void> | undefined;
+  let sampleError: string | undefined;
+  const timer = setInterval(() => {
+    if (!sampling) sampling = sample().catch((e) => { sampleError = String(e); }).finally(() => { sampling = undefined; });
+  }, 250);
+  page.once("close", () => clearInterval(timer));
+  return {
+    recordData(records: any[], completedAt = Date.now()) {
+      if (completedAt > stoppedAt) return;
+      const present = records.some((r) => {
+        if (r.status !== 200 || !r.response) return false;
+        const data = r.response.data ?? r.response;
+        if (r.response.status === "error") return false;
+        if (Array.isArray(data) && data.length) return true;
+        if (["entries", "streams"].some(key => Number.isFinite(data[key]) && data[key] > 0)) return true;
+        if (["result", "fields", "detectedLabels", "values", "series", "volumes"]
+          .some(key => Array.isArray(data[key]) && data[key].length)) return true;
+        return Object.values(r.response.results || {}).some((v: any) =>
+          !v.error && v.frames?.some((f: any) => f.data?.values?.some((x: any) => Array.isArray(x) && x.length)));
+      });
+      if (present) firstData = Math.min(firstData ?? Infinity, completedAt - began);
+    },
+    async finish(boundaryMs = Date.now()) {
+      stoppedAt = boundaryMs;
+      clearInterval(timer);
+      const boundary = sample().catch((e) => { sampleError = String(e); });
+      await Promise.all([sampling, boundary]);
+      await cdp.detach().catch(() => {});
+      const delta = (key: string) => Number.isFinite(before[key]) && Number.isFinite(after[key]) && after[key] >= before[key]
+        ? after[key] - before[key] : undefined;
+      const unfinished = [...requests.values()];
+      const unfinishedAPIBytes = unfinished.filter(r => r.api).reduce((n, r) => n + r.received, 0);
+      return {
+        browser_thread_seconds: delta("ThreadTime"), browser_task_seconds: delta("TaskDuration"),
+        js_heap_max_sampled_bytes: heap, metric_samples: samples, api_requests: apiRequests,
+        api_encoded_bytes: apiBytes + unfinishedAPIBytes,
+        page_encoded_bytes: pageBytes + unfinished.reduce((n, r) => n + r.received, 0),
+        api_aborted_encoded_bytes: abortedAPIBytes, api_aborted_requests: abortedAPIRequests,
+        api_unfinished_encoded_bytes: unfinishedAPIBytes,
+        get first_api_data_ms() { return firstData; },
+        ...(sampleError ? { sampling_error: sampleError } : {}),
+      };
+    },
+  };
+}
+
 // Logs Drilldown 2.5.2 crashes a breakdown page (Grafana: "Plugin failed to load") when a breakdown query is
 // answered before the page's first time-series panel module has loaded: on the panel's first render the app's
 // legend sync (ValueSummary.extendTimeSeriesLegendBus -> initLegendOptions) calls VizPanel.onFieldConfigChange,
@@ -206,11 +307,11 @@ const abortedRecord = (rq: Request) => ({ url: rq.url().replace(/^https?:\/\/[^/
 // nothing either: it is recorded as `aborted`, whether the cancel came before or after the headers, so that
 // whether it left a record does not depend on which of the two happened first. compare.py reads it as "cancelled
 // by the page".
-async function recordAnswer(rs: Response, records: any[], over: (rq: Request) => Promise<void>) {
+async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>) {
   const rq = rs.request();
   const url = rq.url().replace(/^https?:\/\/[^/]+/, "");
   await over(rq);
-  if (cancelled(rq)) { records.push(abortedRecord(rq)); return; }
+  if (cancelled(rq)) return abortedRecord(rq);
   let body: any = null;
   let unavailable = "";
   try { body = await rs.json(); } catch {
@@ -224,9 +325,9 @@ async function recordAnswer(rs: Response, records: any[], over: (rq: Request) =>
     }
   }
   const length = parseInt(rs.headers()["content-length"] || "", 10);
-  records.push({ url, method: rq.method(),
+  return { url, method: rq.method(),
     request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body,
-    ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}) } : {}) });
+    ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}) } : {}) };
 }
 
 for (const p of spec.pages as PageSpec[]) {
@@ -254,7 +355,7 @@ for (const p of spec.pages as PageSpec[]) {
         for (let attempt = 0; attempt < 3; attempt++) {
         const ctx = await browser.newContext();
         const page = await ctx.newPage();
-        const pending = { n: 0, last: Date.now() };
+        const pending = { n: 0, last: Date.now(), seen: 0 };
         const records: any[] = [];
         const errors: string[] = [];
         page.on("console", (m) => { if (m.type() === "error" && errors.length < 20) errors.push(m.text().slice(0, 1500)); });
@@ -276,17 +377,27 @@ for (const p of spec.pages as PageSpec[]) {
         const ended = new Map<Request, Promise<void>>();
         const over = (rq: Request) => ended.get(rq) ?? Promise.resolve();
         page.on("request", (rq) => { if (BACKEND.test(rq.url())) ended.set(rq, new Promise<void>((res) => ends.set(rq, res))); });
-        const end = (rq: Request) => ends.get(rq)?.();
+        const completion = new WeakMap<Request, number>();
+        const end = (rq: Request) => {
+          completion.set(rq, Date.now());
+          ends.get(rq)?.();
+        };
         page.on("requestfinished", end);
         page.on("requestfailed", end);
         const reading = new Set<Promise<void>>();
         const track = (work: Promise<void>) => { const job = work.finally(() => reading.delete(job)); reading.add(job); };
-        page.on("response", (rs) => { if (BACKEND.test(rs.request().url())) track(recordAnswer(rs, records, over)); });
+        page.on("response", (rs) => {
+          if (BACKEND.test(rs.request().url())) track(recordAnswer(rs, over).then(record => {
+            records.push(record);
+            runtimeProof.recordData([record], completion.get(rs.request()));
+          }));
+        });
         // A request cancelled before its headers arrived never gets a `response` event.
         page.on("requestfailed", (rq) => {
           if (BACKEND.test(rq.url())) track(rq.response().then((rs) => { if (!rs && cancelled(rq)) records.push(abortedRecord(rq)); }));
         });
         const t0 = Date.now();
+        const runtimeProof = await startRuntimeProof(page, t0);
         await page.goto(url(p, ds.uid, r), { waitUntil: "commit" });
         if (p.kind === "label-browser") {
           await page.getByRole("button", { name: /Label browser/i }).first().click({ timeout: 30_000 }).catch(() => {});
@@ -298,6 +409,9 @@ for (const p of spec.pages as PageSpec[]) {
           await openLogContext(page);
         }
         const ok = await settle(page, pending);
+        const settleMs = Date.now() - t0;
+        const lastCompletionMs = pending.last - t0;
+        const runtime = await runtimeProof.finish(t0 + settleMs);
         // settle() counts requests, not the reads of their bodies: wait for every read before the page is recorded.
         await drain(reading);
         const unavailable = records.some((x) => x.status === 500 && /plugin\.(unavailable|connectionUnavailable)/.test(JSON.stringify(x.response)));
@@ -315,7 +429,8 @@ for (const p of spec.pages as PageSpec[]) {
         fs.mkdirSync(ddir, { recursive: true });
         await page.screenshot({ path: path.join(dir, `${ds.id}.png`) });
         const ui = await uiState(page);
-        fs.writeFileSync(path.join(ddir, `${ds.id}.json`), JSON.stringify({ settled: ok, settle_ms: pending.last - t0, attempts: attempt + 1, records, ui, errors }));
+        fs.writeFileSync(path.join(ddir, `${ds.id}.json`), JSON.stringify({ settled: ok, settle_ms: settleMs,
+          last_api_completion_ms: lastCompletionMs, attempts: attempt + 1, records, ui, errors, runtime }));
         await ctx.close();
         break;
         }

@@ -1,4 +1,5 @@
 """Unit tests for stack.py: the seed's count query."""
+import json
 import os
 import re
 import stat
@@ -27,7 +28,9 @@ class CountQueryTest(unittest.TestCase):
 
 def _loki_command(path):
     """The `command:` list of the loki service in a compose file, as written."""
-    lines, out, in_loki, in_cmd = open(path).read().splitlines(), [], False, False
+    with open(path) as f:
+        lines = f.read().splitlines()
+    out, in_loki, in_cmd = [], False, False
     for line in lines:
         if re.match(r"^  \S", line):
             in_loki = line.strip() == "loki:"
@@ -74,6 +77,40 @@ limits_config:
   max_cache_freshness_per_query: 0s
   split_queries_by_interval: 1h
 """
+
+
+class FixtureRetentionTest(unittest.TestCase):
+    def test_every_profile_accepts_the_oldest_batch_through_the_measurement(self):
+        st = stack.Stack("proof", profile="loki-defaults")
+        # Resolve each profile's checked-in Loki command, as Compose does; include an older VL pin.
+        def resolved(*args, **kwargs):
+            path = stack.PROFILE_OVERLAYS[st.profile] or [stack.BASE_COMPOSE]
+            return json.dumps({"services": {"loki": {"command": _loki_command(os.path.join(stack.ROOT, path[-1]))},
+                                            "victorialogs": {"command": ["-storageDataPath=/vlogs", "-retentionPeriod=3d"]}}})
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(st, "compose", side_effect=resolved):
+            st.configure_history(tmp, ("loki-defaults", "aligned"), 73 * 3600)
+            self.assertEqual(st.profile, "loki-defaults")
+            for profile in stack.PROFILES:
+                st.profile = profile
+                with open(st.overlays[-1]) as f:
+                    services = json.load(f)["services"]
+                loki, vl = services["loki"]["command"], services["victorialogs"]["command"]
+                self.assertIn("-store.retention=96h", loki)
+                self.assertIn("-validation.reject-old-samples.max-age=96h", loki)
+                self.assertIn("-retentionPeriod=4d", vl)
+                self.assertIn("-storageDataPath=/vlogs", vl)
+                self.assertEqual("-querier.align-querier-with-step=false" in loki, profile == "loki-defaults")
+        # A profile whose config leaves the limits to binary defaults also gets an explicit fixture.
+        config = {"services": {"loki": {"command": ["-config.file=/etc/loki/config"]},
+                               "victorialogs": {"command": ["-retentionPeriod=7d"]}}}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(st, "compose", return_value=json.dumps(config)):
+            st.configure_history(tmp, ["aligned"], 71 * 3600)
+            st.profile = "aligned"
+            with open(st.overlays[-1]) as f:
+                services = json.load(f)["services"]
+            self.assertIn("-store.retention=96h", services["loki"]["command"])
+            self.assertIn("-validation.reject-old-samples.max-age=96h", services["loki"]["command"])
+            self.assertIn("-retentionPeriod=7d", services["victorialogs"]["command"])
 
 
 class LokiDefaultsOverlayTest(unittest.TestCase):

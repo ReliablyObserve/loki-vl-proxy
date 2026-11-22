@@ -1,7 +1,11 @@
 """Unit tests for the comparison gate and the PR comment (bench/visual/visual_comment.py)."""
 import argparse
+import json
 import os
 import re
+import shutil
+import subprocess
+from pathlib import Path
 import sys
 import tempfile
 import unittest
@@ -41,6 +45,60 @@ def fix_plan(rows, cases):
 
 
 class FixProofTest(unittest.TestCase):
+    def test_trusted_visual_only_checkout_renders_comment_and_montage_list(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            visual = root / "bench/visual"
+            shutil.copytree(Path(__file__).resolve().parents[1], visual, ignore=shutil.ignore_patterns("__pycache__"))
+            renderer = [sys.executable, "-E", str(visual / "visual_comment.py")]
+            help_output = subprocess.run([*renderer, "--help"], cwd=root, capture_output=True, text=True)
+            self.assertEqual(help_output.returncode, 0, help_output.stderr)
+            self.assertIn("--images", help_output.stdout)
+            out = root / "artifact"
+            out.mkdir()
+            for name, data in (("plan", plan(("explore-a", "1h"), core=["explore-a"])),
+                               ("meta", META), ("compare", [row()])):
+                (out / f"{name}.json").write_text(json.dumps(data))
+            proc = subprocess.run([*renderer, "--out", str(out), "--mode", "branch", "--repo", ARGS.repo,
+                                   "--pr", ARGS.pr, "--images", str(out / "images.json")],
+                                  cwd=root, capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(json.loads((out / "verdict.json").read_text())["exit"], 0)
+            self.assertEqual(json.loads((out / "images.json").read_text()), ["explore-a-1h.png"])
+            self.assertIn("explore-a-1h.png", (out / "comment.md").read_text())
+
+    def test_runtime_evidence_is_collapsed_and_keeps_the_measured_scope(self):
+        runtime = {"browser_thread_seconds": 0.4, "browser_task_seconds": 0.7,
+                   "js_heap_max_sampled_bytes": 32 * 1024 * 1024, "metric_samples": 8,
+                   "api_requests": 3, "api_encoded_bytes": 1024, "page_encoded_bytes": 4096,
+                   "first_api_data_ms": 120}
+        r = row(runtime_main=runtime, runtime_pr=runtime, runtime_loki=None,
+                settle_s={"main": 1.2, "pr": 1.1}, runtime_problems=[])
+        text, verdict = comment.render([r], {}, plan(("explore-a", "1h")), META,
+                                       argparse.Namespace(**vars(ARGS)))
+        self.assertIn("<details><summary>Runtime API and Grafana measurements", text)
+        self.assertIn("sampled JS heap", text)
+        self.assertIn("0.400", text)
+        self.assertIn("not chart paint", text)
+        self.assertIn("unavailable", text)
+        self.assertEqual(verdict["runtime_proof"]["measured_pairs"], 1)
+        self.assertEqual(verdict["runtime_proof"]["regressions"], 0)
+
+    def test_large_plan_bounded_publication_prioritizes_failed_and_targeted_pairs(self):
+        rows = [row(page=f"explore-{n:04d}", runtime_pr={"api_requests": 1}, runtime_main={"api_requests": 2})
+                for n in range(400)]
+        rows[-1]["runtime_problems"] = ["runtime proof: incomplete"]
+        p = plan(*[(r["page"], r["range"]) for r in rows])
+        p["entries"][rows[-2]["page"]]["runtime_required"] = True
+        text, verdict = comment.render(rows, {}, p, META, argparse.Namespace(**vars(ARGS)))
+        self.assertLess(len(text), 65536)
+        section = text.split("<details><summary>Runtime API and Grafana measurements")[1].split("</details>")[0]
+        self.assertIn("explore-0399", section)
+        self.assertIn("explore-0398", section)
+        self.assertNotIn("explore-0200", section)
+        self.assertEqual(verdict["runtime_proof"]["measured_pairs"], 400)
+        self.assertIn("artifact", text)
+
     def test_warning_overflow_keeps_every_fix_and_core_montage_published(self):
         fixes = [f"fix-{n}" for n in range(8)]
         cores = [f"core-{n}" for n in range(9)]
@@ -614,6 +672,13 @@ class QueryProofTest(unittest.TestCase):
 
 
 class GateTest(unittest.TestCase):
+    def test_runtime_proof_failure_cannot_be_waived_as_expected_visual_change(self):
+        a = argparse.Namespace(**dict(vars(ARGS), expected_change=True))
+        r = row(runtime_problems=["runtime proof: PR missing browser heap"], loki_main_n=2)
+        text, verdict = comment.render([r], {}, plan(("explore-a", "1h")), META, a)
+        self.assertEqual(verdict["exit"], 1)
+        self.assertIn("runtime proof", text)
+
     def verdict(self, rows, px=None, p=None):
         p = p or plan(*[(r["page"], r["range"]) for r in rows])
         return comment.render(rows, px or {}, p, META, ARGS)

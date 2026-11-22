@@ -50,6 +50,4 @@ gap:
   loki: 'a rejected conversion fails the query with a 400 (measured on an isolated stack, in this case)'
   proxy: '200 without the rows that do not convert'
   planned_test: 'TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out; TestCompat_UnwrapConversionErrorParity holds the label_replace form to Loki''s 400'
-  clusters:
-    - 4f45a29f
-    - a48d17e7
+  clusters: []

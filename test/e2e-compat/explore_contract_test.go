@@ -17,7 +17,7 @@ import (
 func doJSONGET(t *testing.T, rawURL string, headers map[string]string) (int, string, map[string]interface{}) {
 	t.Helper()
 
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, rawURL, nil)
 	if err != nil {
 		t.Fatalf("build request %s: %v", rawURL, err)
 	}

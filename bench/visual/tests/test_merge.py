@@ -72,6 +72,14 @@ class MergeTest(unittest.TestCase):
         return vc.render(rows if rows is not None else load_json(os.path.join(out, "compare.json")),
                          load_json(os.path.join(out, "pixeldiff.json")), plan, meta if meta is not None else load_json(os.path.join(out, "meta.json")), a)
 
+    def test_required_shard_reports_missing_source_and_fixture(self):
+        self.plan["runtime_proof"] = {"required": True}
+        _, problems = self.merged(1, meta_of={0: {"base": "", "head": "x" * 40, "seed": {"end": 1}}})
+        self.assertTrue(any("base revision" in p for p in problems))
+        self.assertTrue(any("head revision" in p for p in problems))
+        self.assertTrue(any("build_head revision" in p for p in problems))
+        self.assertTrue(any("fixture history" in p for p in problems))
+
     def test_the_rows_come_back_in_the_order_compare_py_writes_them(self):
         for k in (1, 2, 3, 5):
             with self.subTest(shards=k):
@@ -226,6 +234,25 @@ class MergeTest(unittest.TestCase):
         _, verdict = self.render(out)
         self.assertEqual(verdict["exit"], 1)
         self.assertGreaterEqual(len(verdict["failures"]), 7)
+
+    def test_over_cap_does_not_discard_a_resource_regression_observed_on_recapture(self):
+        _, first, _ = self.reloaded(per_shard=4)
+        chosen = next(r for r in first if r["main_pr_diffs"])
+        key = (chosen["page"], chosen["range"])
+        sd = os.path.join(self.tmp, "sd")
+        for i in range(2):
+            path = os.path.join(sd, f"{merge.PREFIX}{i}", "compare.json")
+            observed = load_json(path)
+            for r in observed:
+                if (r["page"], r["range"]) == key:
+                    r["runtime_problems"] = ["runtime regression: browser thread CPU 1 -> 2"]
+                    r["runtime_pr"] = {"browser_thread_seconds": 2}
+            dump_json(path, observed)
+        out = os.path.join(self.tmp, "runtime-merged")
+        self.assertIsNone(merge.merge(self.plan, 2, sd, out, "b" * 40, "h" * 40))
+        found = next(r for r in load_json(os.path.join(out, "compare.json")) if (r["page"], r["range"]) == key)
+        self.assertTrue(found["runtime_problems"])
+        self.assertEqual(found["runtime_recapture"]["runtime_pr"]["browser_thread_seconds"], 2)
 
     def test_the_montages_and_logs_of_every_shard_are_kept(self):
         out, _ = self.merged(3)

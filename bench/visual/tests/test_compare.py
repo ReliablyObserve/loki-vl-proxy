@@ -23,10 +23,29 @@ def capture(values, ui=None, settled=True, uid="ds1", fields=None, status=200, e
 
 
 class CompareTest(unittest.TestCase):
-    def run_compare(self, main, pr, loki=None, rng="1h"):
+    def test_failed_comparison_cannot_leave_a_stale_success_report(self):
+        with tempfile.TemporaryDirectory() as out:
+            d = os.path.join(out, "data", "page-a", "1h")
+            os.makedirs(d)
+            with open(os.path.join(d, "main.json"), "w") as f:
+                f.write("[]")  # a malformed top-level capture crashes before a fresh report is written
+            with open(os.path.join(d, "pr.json"), "w") as f:
+                json.dump(capture([1]), f)
+            stale = os.path.join(out, "compare.json")
+            with open(stale, "w") as f:
+                json.dump([{"page": "page-a", "range": "1h", "main_pr_diffs": []}], f)
+            result = subprocess.run([sys.executable, os.path.join(HERE, "..", "compare.py"), out], capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(os.path.exists(stale))
+
+    def run_compare(self, main, pr, loki=None, rng="1h", runtime_required=False):
         with tempfile.TemporaryDirectory() as out:
             d = os.path.join(out, "data", "page-a", rng)
             os.makedirs(d)
+            if runtime_required:
+                with open(os.path.join(out, "plan.json"), "w", encoding="utf-8") as f:
+                    json.dump({"runtime_proof": {"required": True},
+                               "entries": {"page-a": {"ranges": [rng], "runtime_required": True}}}, f)
             for name, cap in (("main", main), ("pr", pr), ("loki", loki)):
                 if cap is not None:
                     with open(os.path.join(d, f"{name}.json"), "w", encoding="utf-8") as f:
@@ -36,6 +55,146 @@ class CompareTest(unittest.TestCase):
                 self.last_md = f.read()
             with open(os.path.join(out, "compare.json"), encoding="utf-8") as f:
                 return proc.returncode, json.load(f)[0]
+
+    def test_required_catalogued_rejections_and_successful_correction(self):
+        runtime = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                       js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100,
+                       page_encoded_bytes=200, first_api_data_ms=25)
+        detail = ("maximum number of series (500) reached for a single query; consider reducing query cardinality by "
+                  "adding more specific stream selectors, reducing the time range, or aggregating results with "
+                  "functions like sum(), count() or topk()")
+        error = dict(capture([], status=400, error=detail), runtime=runtime)
+        self.assertEqual(self.run_compare(error, error, error, runtime_required=True)[0], 0)
+        for values in ([1], [], [0, 0]):
+            answer = dict(capture(values), runtime=dict(runtime, browser_thread_seconds=5))
+            _, row = self.run_compare(error, answer, answer, runtime_required=True)
+            self.assertEqual(row["runtime_problems"], [])
+            self.assertIn("unavailable", row["base_comparison_note"])
+            self.assertEqual(row["corrected_base_rejections"][0]["errors"], [[400, 400, detail]])
+            import visual_comment
+            self.assertEqual(visual_comment.assess(row, None)[::2], ([], "improved"))
+            case = "semantics/corrected-query"
+            plan = {"entries": {"page-a": {"ranges": ["1h"], "core": False, "why": [case]}},
+                    "fix_cases": {case: {"entries": ["page-a"]}}}
+            items, verdict = visual_comment.evaluate([row], {}, plan)
+            self.assertEqual((verdict["exit"], verdict["failures"]), (0, []))
+            self.assertEqual(visual_comment.fix_proofs(items, plan)[0][3], "fixed")
+            if not values:
+                without_proof = dict(row, corrected_base_rejections=[])
+                self.assertNotEqual(visual_comment.evaluate([without_proof], {}, plan)[1]["exit"], 0)
+        answer["runtime"] = dict(runtime, metric_samples=0)
+        self.assertTrue(self.run_compare(error, answer, answer, runtime_required=True)[1]["runtime_problems"])
+
+    def test_required_resource_keys_and_error_envelopes(self):
+        def resource(path, body):
+            cap = capture([])
+            cap["records"][0].update(url=path, response=body)
+            cap["runtime"] = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                                  js_heap_max_sampled_bytes=1000, api_requests=1,
+                                  api_encoded_bytes=100, page_encoded_bytes=200)
+            return cap
+        for route in ("/api/datasources/proxy/uid/{}/loki/api/v1/labels",
+                      "/api/datasources/proxy/{}/loki/api/v1/labels", "/api/datasources/uid/{}/resources/labels"):
+            caps = [resource(route.format(uid), {"data": []}) for uid in ("1", "2", "3")]
+            code, row = self.run_compare(*caps, runtime_required=True)
+            self.assertEqual((code, row["runtime_problems"]), (0, []))
+        malformed = resource("/api/datasources/uid/x/resources/labels", {"status": "error", "data": []})
+        self.assertTrue(self.run_compare(malformed, malformed, malformed, runtime_required=True)[1]["runtime_problems"])
+
+    def test_required_runtime_proof_rejects_screenshots_without_measurements(self):
+        problems = compare.runtime_problems(capture([1]), capture([1]), required=True)
+        self.assertTrue(problems)
+        self.assertIn("runtime", " ".join(problems))
+
+    def test_required_runtime_is_enforced_by_existing_comparison_cli(self):
+        code, row = self.run_compare(capture([1]), capture([1]), capture([1]), runtime_required=True)
+        self.assertEqual(code, 1)
+        self.assertTrue(row["runtime_problems"])
+        self.assertEqual(row["main_pr_diffs"], [])
+
+    def test_runtime_gate_distinguishes_noise_and_material_regressions(self):
+        from copy import deepcopy
+        base = capture([1])
+        base["runtime"] = {"browser_thread_seconds": 1.0, "browser_task_seconds": 1.2,
+                           "js_heap_max_sampled_bytes": 100 << 20, "metric_samples": 3, "first_api_data_ms": 300,
+                           "api_requests": 2, "api_encoded_bytes": 1 << 20, "page_encoded_bytes": 2 << 20}
+        pr = deepcopy(base)
+        self.assertEqual(compare.runtime_problems(base, pr, required=True), [])
+        pr["runtime"]["browser_thread_seconds"] = 1.1
+        self.assertEqual(compare.runtime_problems(base, pr, required=True), [])
+        pr["runtime"]["js_heap_max_sampled_bytes"] = 180 << 20
+        self.assertIn("heap", " ".join(compare.runtime_problems(base, pr, required=True)))
+        del pr["settle_ms"]
+        self.assertIn("settle_ms", " ".join(compare.runtime_problems(base, pr, required=True)))
+
+    def test_missing_runtime_is_not_measured_as_zero(self):
+        base = capture([1])
+        pr = capture([1])
+        self.assertEqual(compare.runtime_problems(base, pr, required=False), [])
+        base["runtime"] = {"browser_thread_seconds": float("nan")}
+        self.assertTrue(compare.runtime_problems(base, pr, required=True))
+
+    def test_required_loki_reference_must_be_readable_and_settled(self):
+        from copy import deepcopy
+        base = capture([1])
+        base["runtime"] = {"browser_thread_seconds": 1.0, "browser_task_seconds": 1.2,
+                           "js_heap_max_sampled_bytes": 100 << 20, "metric_samples": 3, "first_api_data_ms": 300,
+                           "api_requests": 2, "api_encoded_bytes": 1 << 20, "page_encoded_bytes": 2 << 20}
+        loki = deepcopy(base)
+        code, _ = self.run_compare(base, base, loki, runtime_required=True)
+        self.assertEqual(code, 0)
+        loki["settled"] = False
+        code, row = self.run_compare(base, base, loki, runtime_required=True)
+        self.assertEqual(code, 1)
+        self.assertIn("Loki reference is incomplete", " ".join(row["runtime_problems"]))
+        loki["settled"] = True
+        loki["records"][0]["response"] = None
+        self.assertEqual(self.run_compare(base, base, loki, runtime_required=True)[0], 1)
+
+    def test_required_loki_reference_failure_is_not_a_successful_comparison(self):
+        runtime = {"browser_thread_seconds": 1.0, "browser_task_seconds": 1.2,
+                   "js_heap_max_sampled_bytes": 100 << 20, "metric_samples": 3, "first_api_data_ms": 300,
+                   "api_requests": 2, "api_encoded_bytes": 1 << 20, "page_encoded_bytes": 2 << 20}
+        base, loki = capture([1]), capture([], error="Service unavailable")
+        base["runtime"] = loki["runtime"] = runtime
+        loki["records"][0]["status"] = 503
+        code, row = self.run_compare(base, base, loki, runtime_required=True)
+        self.assertEqual(code, 1)
+        self.assertIn("infrastructure error", " ".join(row["runtime_problems"]))
+        for body in ("upstream unavailable", ["not a query result"]):
+            loki["records"][0]["response"] = body
+            self.assertEqual(self.run_compare(base, base, loki, runtime_required=True)[0], 1)
+
+    def test_required_answers_distinguish_empty_errors_and_missing_data(self):
+        from copy import deepcopy
+        base = capture([])
+        base["runtime"] = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                               js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100, page_encoded_bytes=200)
+        def check(a, b, c, code):
+            result, row = self.run_compare(a, b, c, runtime_required=True)
+            self.assertEqual(result, code, row["runtime_problems"])
+        check(base, base, base, 0)
+        check(base, base, dict(base, records=[]), 1)
+        failed_ui = dict(base, ui={"banners": ["Plugin failed to load"]})
+        check(failed_ui, failed_ui, failed_ui, 1)
+        check(dict(base, settled=False), dict(base, settled=False), base, 1)
+        err = deepcopy(base)
+        err["records"][0].update(status=500, response={"messageId": "plugin.unavailable"})
+        check(err, err, err, 1)
+        err["records"][0].update(status=400, response={"results": {"A": {"error": "parse error: unexpected token"}}})
+        check(err, err, err, 0)
+        different = deepcopy(err)
+        different["records"][0]["response"]["results"]["A"]["error"] = "parse error: different token"
+        check(err, err, different, 1)
+        different = deepcopy(err)
+        different["records"][0]["request"]["queries"][0]["expr"] = "different()"
+        check(err, err, different, 1)
+        for response in ({"data": ["a"]}, {"fields": [{"label": "service"}]}, {"data": {"result": [1]}}):
+            resource = deepcopy(base)
+            resource["records"][0].update(url="/api/datasources/uid/x/resources/labels", response=response)
+            check(resource, resource, resource, 1)
+            resource["runtime"]["first_api_data_ms"] = 100
+            check(resource, resource, resource, 0)
 
     def test_show_context_queries_pair_up_despite_grafanas_random_ref_ids(self):
         def ctx(ref):

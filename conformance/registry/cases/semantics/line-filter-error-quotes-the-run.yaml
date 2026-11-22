@@ -81,7 +81,4 @@ gap:
   fixed_by: '#1242'
   visual: none
   visual_reason: 'a 400 parse error, which Grafana shows as the error text only; the e2e test compares the status and the body bytes with Loki for log and metric queries, query_range and query'
-  clusters:
-    - bfa1bb8f
-    - e17816bf
-    - 799eb1d6
+  clusters: []

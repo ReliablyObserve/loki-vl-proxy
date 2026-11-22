@@ -54,6 +54,13 @@ class RenderTest(unittest.TestCase):
         self.assertIn("| ✅ | fixed one | 1h | — (**502**) | 400 ms | ✅ fixed |", text)
         self.assertIn("0.50×", text)
 
+    def test_corrected_error_is_not_advertised_as_a_speedup(self):
+        fixed = row("fixed", "fixed", 0.1, 0.2, 0.2, status=("400", "200", "200"))
+        text, verdict = comment.render([summary([fixed])], SELECTION, META)
+        self.assertEqual(verdict["exit"], 0)
+        self.assertIn("fixed answer", text)
+        self.assertNotIn("Performance A/B: faster", text)
+
     def test_broken_slower_and_new_difference_fail(self):
         for r in (row("b", "broken", 0.2, None, 0.1, status=("200", "502", "200")),
                   row("s", "slower", 0.2, 0.9, 0.1, confirmed=True),
@@ -75,6 +82,16 @@ class RenderTest(unittest.TestCase):
         text, verdict = comment.render([summary([row("x", "same", 0.2, 0.2, 0.1)], valid=False)], SELECTION, META)
         self.assertEqual(verdict["exit"], 2)
         self.assertIn("invalid run", text)
+
+    def test_resource_table_escapes_bounds_and_identifies_profiles(self):
+        shape = "@team\n# [click](url) |" + "z" * 400
+        r = row(shape, "same", 1, 1, 1, reuse={"base": {"cold": {}}, "pr": {"cold": {}}})
+        value = "\n".join(comment.resource_section([("set", dict(r, profile=p)) for p in ("aligned", "loki-defaults")], "base", "pr"))
+        self.assertNotIn("@team\n", value)
+        self.assertIn(r"\@team", value)
+        self.assertNotIn("z" * 200, value)
+        for p in ("aligned", "loki-defaults"):
+            self.assertIn(f"| {p} | cold |", value)
 
     def test_rows_sorted_problems_first_and_pipes_escaped(self):
         rows = [row("a|b", "faster", 1.0, 0.3, 0.5), row("z", "broken", 0.2, None, 0.1, status=("200", "502", "200"))]
@@ -117,7 +134,7 @@ class RenderTest(unittest.TestCase):
 
     def test_selection_reasons_listed(self):
         text, _ = comment.render([summary([row("logs plain", "same", 0.2, 0.2, 0.1)])], SELECTION, META)
-        self.assertIn("`internal/proxy/x.go` → 1: control/json \\| volume", text)
+        self.assertIn("internal/proxy/x.go → 1: control/json \\| volume", text)
         self.assertIn("7.0 min", text)
 
 

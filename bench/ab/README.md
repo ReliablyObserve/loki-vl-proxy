@@ -590,6 +590,30 @@ translations. Summary rows carry them per target as `reuse`: the first run
 (cold), the median of the later runs (repeat: the window moved by a minute) and
 the refresh pass.
 
+The same metrics scrapes retain the proxy's absolute `process_resident_memory_bytes`
+as `rss_before_bytes`, `rss_after_bytes`, `rss_max_sampled_bytes` and `rss_samples`.
+The maximum is over the available boundary samples, not a continuously measured
+peak or per-request allocation. RSS is never subtracted like a counter. Missing
+RSS in an older build stays unavailable, including in repeat medians. No extra
+load is generated for these measurements.
+Required runtime proof checks each planned profile, set, shape, range and target.
+Every run must have a measured timing, readable response and seeded input history.
+Each required shard configures its isolated Loki retention, accepted sample age and
+VictoriaLogs retention from the age of its oldest fixture plus two hours. Its
+per-profile Compose overrides preserve the selected backend commands. Historical
+metadata controls also seed their actual offset windows. When the base rejects
+a query and the PR returns Loki's successful answer, the report retains the
+rejection timing and records base-relative cost and speedup as unavailable.
+Each proxy CPU delta needs two finite, nonnegative, monotonic counter values. A
+measured zero survives aggregation. Missing or reset counters leave CPU unavailable.
+The PR comment shows up to twelve shape/range/profile rows. Canonical final summaries
+carry all measurements and identify the base and head commits. The fan-in checks
+each shard against the selection and revisions before publishing its verdict.
+The flushed cold resampler measures timing only. A resampled cold timing therefore
+has unavailable paired resource cost and fails required resource proof.
+Linux exposes RSS; existing non-Linux proxy builds expose Go `MemStats.Sys`
+under the same process metric name, so their gauge is not measured resident memory.
+
 The VictoriaLogs calls of a request are the proxy's own count of that request
 when the build has it: `daily.py` starts a build that knows
 `-debug-vl-calls-header` with it (`stack.probe_calls_header_support`), and the

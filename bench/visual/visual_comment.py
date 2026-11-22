@@ -52,13 +52,13 @@ artifact link.
 """
 import argparse
 import html
+import math
 import os
 import re
 import sys
 
-from compare import error_text
 from publish import MAX_FILES
-from vio import dump_json, load_json, write_text
+from vio import dump_json, error_text, load_json, write_text
 
 MARKER = "<!-- visual-smoke -->"
 LABEL = "visual-change-expected"
@@ -130,7 +130,7 @@ def loki_rejects(row):
 
 def classify(row):
     """Base vs PR difference against Loki: 'improved', 'regressed', 'unsettled' (neither matches) or 'no-loki'."""
-    if not (row.get("loki_compared") and (row.get("points_loki", 0) > 0 or row.get("errors_loki"))):
+    if not (row.get("loki_compared") and (row.get("points_loki", 0) > 0 or row.get("errors_loki") or row.get("corrected_base_rejections"))):
         return "no-loki"
     base_matches = row.get("loki_main_n", 1) == 0
     pr_matches = not row.get("loki_diffs")
@@ -237,6 +237,8 @@ def carried(row, proven, resources=None):
 def assess(row, pixel, expected=False, flipped=(), proven=None, resources=None, late_requests=()):
     """(failures, warnings, status) of one capture; status is '', 'improved' or 'expected'."""
     fails, warns, status = [], [], ""
+    # Required runtime proof is independent of intended/improved data changes.
+    fails.extend(row.get("runtime_problems") or [])
     diffs = row["main_pr_diffs"]
     if diffs:
         kind = classify(row)
@@ -351,7 +353,7 @@ def fix_verdict(row):
     if loki_rejects(row):
         # Loki rejects the query and the PR answers its error: fixed when the base answered otherwise.
         return "not reproduced on base" if row.get("loki_main_n", 1) == 0 else "fixed"
-    if not (row.get("loki_compared") and row.get("points_loki", 0) > 0):
+    if not (row.get("loki_compared") and (row.get("points_loki", 0) > 0 or row.get("corrected_base_rejections"))):
         return "base failed" if base_failed(row) else "undecided"
     base_ok = row.get("loki_main_n", 1) == 0
     if not row.get("loki_diffs"):
@@ -497,6 +499,55 @@ def result_cell(i):
     return "✅"
 
 
+def runtime_section(rows, targeted=(), failed=()):
+    """Render only measurements from the existing captures, with missing values explicit."""
+    measured = [r for r in rows if r.get("runtime_main") or r.get("runtime_pr") or r.get("runtime_problems")]
+    if not measured:
+        return [], {"measured_pairs": 0, "regressions": 0, "unproven": 0}
+    summary = {"measured_pairs": sum(bool(r.get("runtime_main") and r.get("runtime_pr")) for r in measured),
+               "regressions": sum(any(p.startswith("runtime regression:") for p in r.get("runtime_problems", ())) for r in measured),
+               "unproven": sum(any(not p.startswith("runtime regression:") for p in r.get("runtime_problems", ())) for r in measured)}
+
+    def number(value, scale=1):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            return "unavailable"
+        return f"{value / scale:.3f}"
+
+    lines = ["", f"Runtime evidence: {summary['measured_pairs']} base/PR pairs measured, "
+             f"{summary['regressions']} with material regressions, {summary['unproven']} with incomplete proof.", "",
+             "<details><summary>Runtime API and Grafana measurements</summary>", "",
+             "One observation per capture; resource findings retain the first pass alongside the recapture. These are not p50/p95 estimates. "
+             + "CPU is browser main-thread CPU; sampled JS heap is not total browser/Grafana RSS. Wire bytes include the "
+             + "encoded API responses seen by Chromium. First API data is not chart paint. Missing measurements are unavailable.", "",
+             "| page / range | build | settle (s) | first API data (s) | browser thread CPU (s) | sampled JS heap (MiB) | API wire (KiB) | API requests | heap samples |",
+             "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+    display = sorted(measured, key=lambda r: (not r.get("runtime_problems") and key(r) not in failed, r["page"] not in targeted))[:12]
+    for row in display:
+        observations = [("capture", row)]
+        if row.get("runtime_first_pass"):
+            observations = [("first pass", row["runtime_first_pass"]), ("recapture", row)]
+        elif row.get("runtime_recapture"):
+            observations = [("first pass", row), ("recapture", row["runtime_recapture"])]
+        for state, observation in observations:
+            for side in ("main", "pr", "loki"):
+                runtime = observation.get("runtime_" + side) or {}
+                label = "main (query rejected)" if side == "main" and row.get("corrected_base_rejections") else side
+                lines.append(f"| {esc(row['page'], 100)} / {esc(row['range'], 16)} | {label} ({state}) | "
+                             f"{number((observation.get('settle_s') or {}).get(side))} | "
+                             f"{number(runtime.get('first_api_data_ms'), 1000)} | "
+                             f"{number(runtime.get('browser_thread_seconds'))} | "
+                             f"{number(runtime.get('js_heap_max_sampled_bytes'), 1024 ** 2)} | "
+                             f"{number(runtime.get('api_encoded_bytes'), 1024)} | "
+                             f"{number(runtime.get('api_requests'))} | {number(runtime.get('metric_samples'))} |")
+    lines += ["", *[f"{esc(row['page'], 100)} / {esc(row['range'], 16)}: {esc(row['base_comparison_note'], 160)}"
+                    for row in display if row.get("base_comparison_note")],
+              f"Showing {len(display)} of {len(measured)} pairs. Every observation is in the comparison artifact.", "",
+              "Material regressions require both >25% and an absolute increase: 0.25 s browser CPU, "
+              + "32 MiB sampled JS heap, 64 KiB API wire, or 0.5 s settlement. A warmer exact-window recapture cannot clear a first-pass resource finding; "
+              + "intended visual-change labels do not waive this gate.", "", "</details>"]
+    return lines, summary
+
+
 def render(rows, pixeldiff, plan, meta, a):
     expected = bool(getattr(a, "expected_change", False))
     items, verdict = evaluate(rows, pixeldiff, plan, expected, tuple(meta.get("flipped") or ()),
@@ -515,6 +566,10 @@ def render(rows, pixeldiff, plan, meta, a):
         icon = "✅"
         text = "passed" + (" with warnings" if verdict["warnings"] or verdict["expected"] else "")
     lines = header(icon, text, a, meta, plan)
+    runtime_lines, runtime_summary = runtime_section(rows, {p for p, e in plan["entries"].items() if e.get("runtime_required")},
+                                                     {key(i["row"]) for i in items if i["fails"]})
+    lines += runtime_lines
+    verdict["runtime_proof"] = runtime_summary
     if proofs:
         lines += fix_section(a, meta, proofs, plan.get("fix_trimmed") if isinstance(plan.get("fix_trimmed"), list) else (),
                              plan.get("core_range", "1h"))
@@ -558,7 +613,14 @@ def render(rows, pixeldiff, plan, meta, a):
     else:
         lines += ["", "Montages (base | PR | Loki): " + (f"[artifact]({a.artifact_url})" if a.artifact_url else "in the run's artifacts")
                   + ". They are not on the repository for this run."]
-    return "\n".join(lines) + "\n", verdict
+    text = "\n".join(lines) + "\n"
+    if len(text) > 60000:
+        link = getattr(a, "artifact_url", "") or getattr(a, "run_url", "")
+        pointer = f"[Complete comparison and montages]({link})" if link else "Complete comparison and montages are in the run artifacts."
+        text = text[:59000].rsplit("\n", 1)[0]
+        text += "\n</details>" * (text.count("<details") - text.count("</details>"))
+        text += "\n\n" + pointer + "\n"
+    return text, verdict
 
 
 def main():

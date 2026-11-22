@@ -49,7 +49,4 @@ gap:
   loki: 'without keeps every unnamed label, detected_level included (differential run of 2026-11-04, in this case)'
   proxy: 'detected_level="unknown" on the folded series'
   planned_test: 'TestCompat_WithoutFoldKeepsDetectedLevel (test/e2e-compat, group core)'
-  clusters:
-    - 0ca18300
-    - f2591a31
-    - f25c53a6
+  clusters: []

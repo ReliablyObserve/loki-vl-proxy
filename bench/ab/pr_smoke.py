@@ -77,6 +77,7 @@ sets and the merge leaves it as it is.
 """
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -106,6 +107,8 @@ def matrix_cmd(set_name, shapes, targets, args, end, st, runs, ranges, raw, extr
     cmd = [PY, os.path.join(HERE, "perf_matrix.py"), "--set", set_name, "--runs", str(runs),
            "--ranges", ",".join(ranges or args.ranges), "--end", str(end), "--timeout", str(args.timeout),
            "--container", st.vl_container, "--vl-health", f"{st.vl}/health", "--out", raw, *extra]
+    if getattr(args, "runtime_range_plan", ""):
+        cmd += ["--proxy-metrics", "--range-plan", args.runtime_range_plan]
     for name in shapes or []:
         cmd += ["--shape", name]
     for name, url in targets:
@@ -190,6 +193,8 @@ def confirm(summary, args, plan, st, out, targets, baseline=None, bounds=None, o
         if (row["shape"], row["range"]) in redo and (row["verdict"] in moved or row["shape"] in over):
             new = dict(redo[(row["shape"], row["range"])], confirmed=True,
                        **{k: row[k] for k in KEEP_ON_CONFIRM if k in row})
+            if row.get("runtime_samples"):
+                new["runtime_samples"] = {**row["runtime_samples"], "confirm": new.get("runtime_samples", {}).get("matrix", {})}
             ref = summary.get("reference", "loki")
             if ref in new.get("cold_cache_served", []):
                 # Loki's cache answered the re-run's cold from the first pass's overlapping extents (the windows
@@ -198,6 +203,11 @@ def confirm(summary, args, plan, st, out, targets, baseline=None, bounds=None, o
                 # carries a cache-served Loki cold next to proxy colds of another pass.
                 new.pop("cold_cache_served")
                 new["cold"] = row["cold"]
+                for target in set(new.get("reuse", {})) | set(row.get("reuse", {})):
+                    if "cold" in row.get("reuse", {}).get(target, {}):
+                        new.setdefault("reuse", {}).setdefault(target, {})["cold"] = row["reuse"][target]["cold"]
+                    elif target in new.get("reuse", {}):
+                        new["reuse"][target].pop("cold", None)
                 if "cold_cache_served" in row:
                     new["cold_cache_served"] = row["cold_cache_served"]
                 new["cold_from_first_pass"] = True
@@ -299,6 +309,16 @@ def main():
                                    head=args.head or None)
         with open(os.path.join(out, "selection.json"), "w") as f:
             json.dump(sel, f, indent=1)
+        if sel.get("runtime_proof", {}).get("required"):
+            args.runtime_range_plan = os.path.join(out, "selection.json")
+            args.ranges = sel["runtime_proof"]["ranges"]
+            meta["ranges"] = args.ranges
+            with open(os.path.join(HERE, "shapes.json")) as f:
+                ranges = json.load(f)["ranges"]
+            problem = perf_matrix.refresh_problem(args.refresh_s, args.refresh_runs,
+                                                   [ranges[r][1] for r in args.ranges if r in ranges])
+            if problem:
+                raise ValueError(problem)
         if not sel["run"]:
             text, verdict = comment.render([], sel, meta)
         else:
@@ -328,15 +348,97 @@ def baseline_and_bounds(args, base_sha):
     return baseline, bounds
 
 
-def render_run(args, summaries, sel, meta, baseline, bounds, base_sha):
+def runtime_api_problems(summaries, sel, meta=None, mode="auto", supported=True):
+    """Validate each planned profile/cell against its measured inputs before accepting the reduced values."""
+    proof = sel.get("runtime_proof", {})
+    if not proof.get("required"):
+        return []
+    meta = meta or {}
+    spec = selection.load_shapes()
+    runs, _ = plan_profiles(mode, sel, spec, supported)
+    cells = proof.get("cells", {})
+    expected = {(profile, name, shape, rng) for profile, name, shapes in runs
+                for shape in shapes for rng in cells.get(f"{name}/{shape}", [])}
+    problems = selection.runtime_proof_problems(sel)
+    if not expected or any(not cells.get(f"{name}/{shape}") for name, shapes in sel["sets"].items() for shape in shapes):
+        problems.append("runtime API proof: required cells were not fully declared")
+    seen = set()
+    revision = {k: meta.get(k) for k in ("base", "head")}
+    if not all(isinstance(v, str) and len(v) == 40 and all(c in "0123456789abcdef" for c in v) for v in revision.values()):
+        problems.append("runtime API proof: missing revision provenance")
+    end, seed = meta.get("end"), meta.get("seed_s")
+    def number(value):
+        return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    for summary in summaries:
+        if revision != summary.get("revision"):
+            problems.append(f"runtime API proof: {summary.get('set')} summary revision mismatch")
+        if [summary.get(k) for k in ("baseline", "candidate", "reference")] != ["base", "pr", "loki"]:
+            problems.append("runtime API proof: missing or unexpected measurement targets")
+        for row in summary.get("rows", []):
+            key = (summary.get("profile"), summary.get("set"), row.get("shape"), row.get("range"))
+            if key in seen or key not in expected:
+                problems.append(f"runtime API proof: unexpected or duplicate cell {key}")
+                continue
+            seen.add(key)
+            passes = {"matrix": meta.get("runs")}
+            if row.get("confirmed"):
+                passes["confirm"] = meta.get("confirm_runs")
+            if meta.get("refresh_s"):
+                passes["refresh"] = meta.get("refresh_runs")
+            for target in ("base", "pr", "loki"):
+                if row.get("status", {}).get(target) not in ("200", "400", "422", "500"):
+                    problems.append(f"runtime API proof: {key} {target} missing or unusable status")
+                for signal in ("cold", "p50", "response_bytes"):
+                    if not number(row.get(signal, {}).get(target)):
+                        problems.append(f"runtime API proof: {key} {target} missing {signal}")
+                for phase, count in passes.items():
+                    sample = row.get("runtime_samples", {}).get(phase, {}).get(target, {})
+                    if (not number(count) or count < 2 or sample.get("complete") is not True or sample.get("measured") != count
+                            or target != "loki" and sample.get("resource_runs") != count):
+                        problems.append(f"runtime API proof: {key} {target} incomplete {phase} request samples")
+                    if not (number(end) and number(seed) and number(sample.get("start")) and number(sample.get("end"))
+                            and end - seed <= sample["start"] <= sample["end"] <= end):
+                        problems.append(f"runtime API proof: {key} {target} {phase} missing seeded input history")
+                if target == "loki":
+                    if row.get("parity_vs_reference") in (None, "n/a"):
+                        problems.append(f"runtime API proof: {key} missing usable Loki comparison")
+                    continue
+                for phase in ("cold", "repeat"):
+                    cost = row.get("reuse", {}).get(target, {}).get(phase) or {}
+                    if (not number(cost.get("rss_max_sampled_bytes")) or not number(cost.get("cpu_seconds"))
+                            or cost.get("rss_samples") != 2 or cost.get("cpu_samples") != 2):
+                        problems.append(f"runtime API proof: {key} {target} {phase} missing CPU/RSS boundary samples")
+                    if phase == "repeat":
+                        count = passes.get("confirm", passes["matrix"])
+                        if not number(count) or any(cost.get(k) != count - 1 for k in
+                                                    ("metric_runs_expected", "rss_runs_measured", "cpu_runs_measured")):
+                            problems.append(f"runtime API proof: {key} {target} incomplete repeat measurements")
+    return problems + [f"runtime API proof: missing cell {key}" for key in sorted(expected - seen)]
+
+
+def render_run(args, summaries, sel, meta, baseline, bounds, base_sha, problems=None):
     """The comment and verdict of a measured run, with the baseline-candidate section on a baseline run."""
     text, verdict = comment.render(summaries, sel, meta, baseline, bounds)
+    if problems is None:
+        problems = runtime_api_problems(summaries, sel, meta, getattr(args, "profiles", "auto"),
+                                        any(meta.get("align_flag_supported", {}).values()))
+    if sel.get("runtime_proof", {}).get("required"):
+        verdict["runtime_proof"] = {"required": True, "complete": not problems, "problems": len(problems)}
+    if problems:
+        verdict.update(exit=1, state="failed", failed=True, runtime_problems=problems)
+        lines = text.splitlines()
+        for n, line in enumerate(lines):
+            if line.startswith("### "):
+                lines[n:n + 1] = ["### ❌ Performance A/B: required runtime proof failed", "",
+                                  *["- " + comment.cell(p) for p in problems[:12]]]
+                break
+        text = "\n".join(lines) + "\n"
     if args.baseline_candidate:
         section = baseline_candidate.write(
             args.baseline_candidate, summaries, baseline or {}, baseline_candidate.committed_day(base_sha),
             date=time.strftime("%Y-%m-%d", time.gmtime()), commit=meta["head"], elapsed_s=meta["elapsed_s"])
         text = baseline_candidate.fit(text, baseline_candidate.COMMENT_LIMIT - len(section)) + section
-    return text, verdict
+    return baseline_candidate.fit(text), verdict
 
 
 def finish_run(args, out, text, verdict, meta):
@@ -356,7 +458,9 @@ def set_costs(sel, spec):
     costs = {}
     for name, shapes in sel.get("sets", {}).items():
         by_name = {sh["name"]: sh for sh in spec["sets"][name]["shapes"]}
-        costs[name] = len(shapes) + sum(1 for n in shapes if range_metric(by_name[n]))
+        cells = sel.get("runtime_proof", {}).get("cells", {})
+        costs[name] = sum(max(1, len(cells.get(f"{name}/{n}", ["1h"]))) * (2 if range_metric(by_name[n]) else 1)
+                          for n in shapes)
     return costs
 
 
@@ -380,7 +484,16 @@ def split_selection(sel, n, spec=None, min_cost=SHARD_MIN_COST):
         i = min(range(k), key=lambda j: (loads[j], j))
         loads[i] += costs[name]
         members[i].add(name)
-    return [dict(sel, sets={name: shapes for name, shapes in sets.items() if name in m}) for m in members]
+    shards = []
+    for member in members:
+        shard = dict(sel, sets={name: shapes for name, shapes in sets.items() if name in member})
+        proof = sel.get("runtime_proof", {})
+        if proof.get("required"):
+            cells = {key: rng for key, rng in proof["cells"].items() if key.partition("/")[0] in member}
+            ranges = {r for values in cells.values() for r in values if r != "instant"}
+            shard["runtime_proof"] = dict(proof, cells=cells, ranges=sorted(ranges, key=lambda r: (spec["ranges"][r][0], r)) or ["1h"])
+        shards.append(shard)
+    return shards
 
 
 def split_main(args):
@@ -416,9 +529,12 @@ def read_shard(path):
             return None
     verdict, meta, sel = load("verdict.json"), load("meta.json") or {}, load("selection.json") or {}
     order = {name: i for i, name in enumerate(sel.get("sets", {}))}
-    summaries = [load(name) for name in sorted(os.listdir(path)) if name.startswith("summary-") and name.endswith(".json")] \
-        if os.path.isdir(path) else []
-    summaries = [s for s in summaries if s]
+    summaries = []
+    for name in order:
+        for profile in (*EXECUTION, None):
+            summary = load(f"summary-{name}{'-' + profile if profile else ''}.json")
+            if summary and summary.get("set") == name and summary.get("profile") == profile:
+                summaries.append(summary)
     summaries.sort(key=lambda s: (EXECUTION.index(s["profile"]) if s.get("profile") in EXECUTION else -1,
                                   order.get(s["set"], len(order))))
     return summaries, meta, verdict
@@ -461,7 +577,27 @@ def merge_main(args, out, meta, t0):
         if args.selection:
             with open(args.selection) as f:
                 sel = json.load(f)
-        shards = [(path, *read_shard(shard_dir(path, len(args.merge)))) for path in args.merge]
+        paths = [shard_dir(path, len(args.merge)) for path in args.merge]
+        shards = [(path, *read_shard(path)) for path in paths]
+        proof_problems = []
+        if sel.get("runtime_proof", {}).get("required"):
+            expected = split_selection(sel, len(shards))
+            revisions = {"head": git("rev-parse", args.head or "HEAD"),
+                         "base": git("rev-parse", args.base or "HEAD^1")}
+            supported = any(source_supports_align(v) for v in revisions.values())
+            if len(expected) != len(shards):
+                proof_problems.append("runtime API proof: unexpected shard count")
+            for shard, wanted in zip(shards, expected):
+                path, shard_summaries, shard_meta, _ = shard
+                selection_path = os.path.join(path, "selection.json")
+                with open(selection_path) as f:
+                    if json.load(f) != wanted:
+                        proof_problems.append(f"runtime API proof: {os.path.basename(path)} ran a different shard selection")
+                if any(shard_meta.get(k) != v for k, v in revisions.items()):
+                    proof_problems.append(f"runtime API proof: {os.path.basename(path)} revision mismatch")
+                if any(shard_meta.get(k) != getattr(args, k) for k in ("runs", "confirm_runs", "refresh_s", "refresh_runs")):
+                    proof_problems.append(f"runtime API proof: {os.path.basename(path)} measurement settings differ from plan")
+                proof_problems.extend(runtime_api_problems(shard_summaries, wanted, shard_meta, args.profiles, supported))
         metas = [m for _, _, m, _ in shards if m]
         if metas:
             meta.update(merge_meta(metas))
@@ -479,7 +615,7 @@ def merge_main(args, out, meta, t0):
         with open(os.path.join(out, "selection.json"), "w") as f:
             json.dump(sel, f, indent=1)
         baseline, bounds = baseline_and_bounds(args, meta["base"])
-        text, verdict = render_run(args, summaries, sel, meta, baseline, bounds, meta["base"])
+        text, verdict = render_run(args, summaries, sel, meta, baseline, bounds, meta["base"], problems=proof_problems)
     except Exception as e:  # noqa: BLE001 - any failure must still produce a comment and exit 3
         traceback.print_exc()
         meta.setdefault("elapsed_s", round(time.time() - t0))
@@ -573,10 +709,29 @@ def window_plan(args, sel, end, runs=None):
     runs = runs if runs is not None else [("", name, shapes) for name, shapes in sel["sets"].items()]
     refresh_runs = args.refresh_runs if args.refresh_s else 0
     plans = perf_matrix.plan_windows(spec, [(name, shapes) for _, name, shapes in runs], args.ranges, args.runs,
-                                     args.confirm_runs, end, args.refresh_s, refresh_runs)
+                                     args.confirm_runs, end, args.refresh_s, refresh_runs,
+                                     cells=sel.get("runtime_proof", {}).get("cells"))
     for plan, (profile, _, _) in zip(plans, runs):
         plan["profile"] = profile
-    return plans, max_range_secs(args) + blocks_span(plans) + 900
+    seed = max_range_secs(args) + blocks_span(plans) + 900
+    proof = sel.get("runtime_proof", {})
+    cells = proof.get("cells", {})
+    for plan, (_, name, names) in zip(plans, runs):
+        for shape in spec["sets"][name]["shapes"]:
+            if names and shape["name"] not in names:
+                continue
+            if not proof.get("required") and not shape.get("end_offset"):
+                continue
+            for rng in cells.get(f"{name}/{shape['name']}", ["instant"] if shape.get("instant") else args.ranges):
+                secs, step = spec["ranges"].get(rng, (0, 0))
+                lookback = perf_matrix.query_lookback(perf_matrix.shape_query(shape, step))
+                starts = [perf_matrix.run_end_for(plan["confirm_end"], shape, rng, args.confirm_runs - 1, args.confirm_runs)]
+                if refresh_runs:
+                    starts.append(perf_matrix.run_end_for(plan["refresh_end"], shape, rng, 0, refresh_runs, args.refresh_s))
+                if getattr(args, "cold_samples", 0) and not shape.get("end_offset"):
+                    starts.append(end - blocks_span(plans) - cold.SAMPLE_SHIFT * args.cold_samples)
+                seed = max(seed, end - min(starts) + secs + lookback + step)
+    return plans, seed
 
 
 def max_range_secs(args):
@@ -695,9 +850,13 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
         profiles = execution_order(runs)
         if profiles:
             st.profile = profiles[0]
-        st.up()
-        end = (args.end or int(time.time())) // 60 * 60
+        now = int(time.time())
+        end = (args.end or now) // 60 * 60
         plans, seed_s = window_plan(args, sel, end, runs)
+        history_age = seed_s + max(0, now - end)
+        if sel.get("runtime_proof", {}).get("required") or history_age + stack.HISTORY_MARGIN_S > 72 * 3600:
+            st.configure_history(out, profiles, history_age)
+        st.up()
         lap("stack_up")
         if meta is not None:
             meta["end"], meta["seed_s"], meta["windows"] = end, seed_s, plans
@@ -757,12 +916,14 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
                 # The cold cells the gate calls a finding on the first pass, and the first pass's colds: confirm()
                 # replaces the rows, and its run 0 is a warm time for the proxies (cold.py).
                 first_cold = {(r["shape"], r["range"]): dict(r["cold"]) for r in summary["rows"]}
+                first_resources = {(r["shape"], r["range"]): {t: cost.get("cold") for t, cost in r.get("reuse", {}).items()}
+                                   for r in summary["rows"]}
                 pairs = (cold.flagged(over2x.gate(summary, baseline, args.noise, args.min_delta, bounds, summaries))
                          if baseline is not None and cold_samples else [])
                 summary = confirm(summary, args, plan, st, out, targets, baseline, bounds, summaries)
                 if pairs:
                     records = cold.recold(summary, first_cold, pairs, by_name, spec, spare["cold_end"], cold_samples,
-                                          stack.log, time.time() + budget_left)
+                                          stack.log, time.time() + budget_left, first_resources=first_resources)
                     budget_left -= sum(r["seconds"] for r in records)
                     summary["cold_resampled"] = records
                     if meta is not None:
@@ -771,6 +932,8 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
                 # The set ran on its own block of windows: perf_evidence trusts its warm and refresh figures.
                 # summary-<set>-<profile>.json is rewritten with the marker and the confirmed rows, as the
                 # comment shows them.
+                if sel.get("runtime_proof", {}).get("required"):
+                    summary["revision"] = {k: meta[k] for k in ("base", "head")}
                 summary["isolated_windows"] = True
                 summary["proxy_align"] = align
                 summary["loki_restarted"] = restarted
