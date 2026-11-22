@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.358.0] - 2026-11-22
+
 ### Fixed
 
 - Reduce temporary label copies for certified single-field mixed-parser metrics while retaining complete source-label validation and collision provenance. Runtime API and native Grafana proof selection reuses typed matrix case IDs across current and historical revisions; live metric comparisons retain every label and point without requiring series order that Loki does not specify.
