@@ -192,7 +192,7 @@
       "compared_with_loki": 10,
       "endpoints": 10,
       "name": "Grafana Explore",
-      "open_differences": 63,
+      "open_differences": 111,
       "proven": 8,
       "routed": 10
     },
@@ -201,7 +201,7 @@
       "compared_with_loki": 11,
       "endpoints": 11,
       "name": "Logs Drilldown",
-      "open_differences": 17,
+      "open_differences": 18,
       "proven": 9,
       "routed": 11
     },
@@ -210,7 +210,7 @@
       "compared_with_loki": 6,
       "endpoints": 6,
       "name": "Grafana Loki datasource",
-      "open_differences": 1,
+      "open_differences": 2,
       "proven": 4,
       "routed": 6
     },
@@ -229,15 +229,15 @@
   ],
   "date": "2026-11-23",
   "differences": {
-    "open": 149,
+    "open": 199,
     "open_by_impact": {
       "api-only": 21,
-      "drilldown-visible": 17,
+      "drilldown-visible": 18,
       "edge": 47,
-      "explore-visible": 63,
-      "grafana-datasource": 1
+      "explore-visible": 111,
+      "grafana-datasource": 2
     },
-    "ranked": 174
+    "ranked": 225
   },
   "distribution": [
     {

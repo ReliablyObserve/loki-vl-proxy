@@ -32,3 +32,20 @@ compare:
   mode: exact
   fields: [status, error_text]
   expect: "Loki's status and pipeline error type for every rule, on query_range and query."
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing ordered stage execution and metric template-error propagation
+  loki: A template error produced after drop __error__ still fails a metric when a later JSON stage reads its formatted
+    line
+  proxy: The recorded count-by-level composition answers 200 where Loki answers 400 TemplateFormatErr on query and
+    query_range
+  planned_test: Extend the existing pipeline-error recorded table and registry-linked typed query matrix with a
+    full proxy/Loki comparison of the exact read-template composition
+  note: 'Recorded parity-discovery ref4a63b99e, run44910591975 artifact14714026577. Exact composition: count by
+    (level) (count_over_time({service_name="api-gateway"} | drop __error__ | line_format "{{ .a | mod 2 }}" | json
+    a [5m])). The existing 48 engine answers establish Loki rules, not a passing proxy implementation for this observation.'
+  clusters:
+    - 2d8304d5
+    - d08deb9f

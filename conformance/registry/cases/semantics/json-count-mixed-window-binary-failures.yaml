@@ -1,0 +1,70 @@
+id: semantics/json-count-mixed-window-binary-failures
+title: Mixed-window binary expressions with a parsed JSON count fail where Loki answers (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Binary metrics combine a one-hour parsed JSON count with a different-window rate/unwrap and matching modifiers.
+
+  Loki 200 versus proxy Internal Server Error for explicit mixed-window binary compositions (+, / with group_left, ^ ignoring, / bool on). Root cause and individual operator parity remain to be proven independently.
+
+  Observed in the existing parity-discovery snapshot at ref 4a63b99e,
+  recorded 2026-11-21T14:20:35Z, over [1795265520, 1795269120].
+  The request below retains its actual bounds and encoding. The complete
+  query examples and facets remain in conformance/registry/generated/
+  parity-discovery.json; gap.clusters identifies this case's exact rows.
+  This case owns 4 clusters, 4 distinct query strings
+  and 8 confirmed request records (encodings: categorize, plain).
+  Loki answers 200; observed proxy statuses: 500.
+  Counts describe recorded requests, not added fixtures or passing coverage.
+
+  The implementation cause is not established. Related fixed cases and
+  documented policies do not close these exact stage/order/content facets.
+  Ownership preserves a product difference; it neither waives a gate nor
+  claims a successful replay on a new data window.
+
+  Source evidence: GitHub Actions run 44910591975, parity-refresh artifact
+  14714026577 (original full request parameters and comparison facets):
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: rate({service_name="api-gateway"}[5m]) + count_over_time({service_name="api-gateway"} | json [1h])
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original dual-written parity-refresh data and source profile are available at the recorded request
+    bounds. A fresh empty time window is not equivalent evidence.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired api-gateway rows and JSON error samples covering the recorded one-hour lookback at 1795265520..1795269120 are required to reproduce the mixed-window binary evaluation; the verifier does not restore that historical input."
+compare:
+  mode: observed
+  fields:
+    - status
+    - error_text
+    - data
+  values:
+    status: 200
+  expect: Loki's successful response, including the complete log entries or metric/pattern result for the exact
+    source data. Preserve each recorded facet; HTTP 200 alone is insufficient.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Typed AST/planner and existing query execution paths; exact cause requires source-controlled diagnosis
+  loki: HTTP 200 with the successful response recorded for the exact query, source profile and bounds; all content/selection/status
+    facets remain acceptance criteria.
+  proxy: The original parity snapshot records the status/content difference above; no fix is claimed.
+  planned_test: Extend the existing registry-driven Loki/VictoriaLogs replay and API comparison with the recorded
+    request facets; preserve original data and full error/result evidence.
+  clusters:
+    - b4f9ee51
+    - cfd26b1b
+    - ca1b622a
+    - 1f565419

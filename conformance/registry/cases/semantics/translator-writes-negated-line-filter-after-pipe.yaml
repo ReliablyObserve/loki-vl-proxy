@@ -29,4 +29,20 @@ gap:
   planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
-  clusters: []
+  clusters:
+    - "068bf75d"
+    - "32ede53d"
+    - "38abbb68"
+    - "47ddd1a4"
+    - "686c64eb"
+    - "7f90d3f2"
+    - "8263c1bd"
+    - "8a50ef36"
+    - "b206eef4"
+    - "bad7316e"
+    - "bfe8f6cc"
+    - "d202e336"
+    - "d70a89be"
+    - "d94ea09d"
+    - "f3fa789c"
+    - "f4733727"

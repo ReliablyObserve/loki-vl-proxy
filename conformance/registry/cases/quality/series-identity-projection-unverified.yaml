@@ -1,0 +1,223 @@
+id: quality/series-identity-projection-unverified
+pending: true
+title: Metric identity-policy projection lacks full source, point, window and limit proof (open)
+proves:
+  - metric-series-identity
+consumer: explore
+evidence: needs recording
+why: |
+  The full differential run on 2026-11-21, source ref 4a63b99e, recorded
+  these 137 series clusters over 276 encoded requests. Both backends returned
+  200 and every retained facet is labels or series: Loki has labels absent
+  from the proxy and more series. None of these scoped requests has a
+  proxy-only label or the observed 10000-series plateau. The original
+  requests, exact bounds, statuses and all facets are in the parity-refresh
+  artifact of https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl); the committed summary is
+  conformance/registry/generated/parity-discovery.json, recorded at
+  2026-11-21T14:20:35Z over [1795265520, 1795269120]. Full response bodies
+  were not retained, so these observations do not prove point equality.
+
+  The observations resemble the existing stream-metadata identity policy
+  (metric-identity/structured-metadata-splits-series) and bare JSON/logfmt
+  identity policy (parsed-identity/dynamic-key-parsers). Those policies remain
+  defined by their own cases. This case grants no policy, owner-kept status
+  or waiver, and does not extend either accepted scope. Its open gap is that
+  the complete answer has not been proven to be exactly the permitted
+  projection: a missing series, changed point, wrong bound or hidden limit
+  cannot be excused by counting fewer labels alone.
+
+  Verification must use identical source rows and the actual effective
+  identity profile. Apply only the already-approved identity transformation
+  to the SOURCE before the range function, outer aggregation, evaluation
+  windows and series limits. A comparison that drops labels and sums Loki's
+  finished vectors is insufficient: the scoped queries include avg, min,
+  max, first, quantile and stddev over time, whose results generally cannot
+  be reconstructed from the finished series after identity was chosen.
+  Record source-count controls, every retained label and timestamp/value,
+  duplicate multiplicity, lookback boundaries, step alignment, empty/error
+  outcomes, warnings and effective caps. Compare plain and categorize-labels
+  requests over the recorded range and instant axes. The representative
+  request below is the original range request, not a substitute oracle.
+
+  Close this quality gap only after each scoped answer either passes that
+  full operation-aware projection proof or is reassigned to a separately
+  evidenced behavioral gap. Do not count these rows as Loki-equal, fixed or
+  owner-kept merely because this ownership entry exists. Requests with
+  proxy-only _msg, an additional 10000-series cut, non-200 status, other
+  differing facets or another policy profile are outside this case.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: sort(bytes_rate({service_name="api-gateway"} | json [5m]))
+    start: '1795265520'
+    end: '1795269120'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - labels
+    - values
+    - timestamps
+    - warnings
+    - limits
+  expect: |
+    Full permitted identity-policy projection evaluated from identical
+    source rows before nonlinear functions, windows and caps. Every retained
+    identity and point, error, warning and effective limit must be checked;
+    the current label/series summaries are not this proof.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: conformance identity-policy evidence; existing query-semantics matrix and metric differential fixtures
+  loki: full source labels and metric points must be retained as the reference before applying any separately approved
+    identity policy
+  proxy: 137 historical series clusters resemble existing identity policies but lack complete permitted-projection
+    proof
+  planned_test: Extend the existing TestQuerySemanticsMatrix and metric differential source fixtures with operation-aware
+    policy projection controls and replay every scoped query
+  clusters:
+    - 0103c797
+    - '019514e6'
+    - 05811ca3
+    - 05b58231
+    - 0b5db317
+    - 0b62de33
+    - 0c9bc09c
+    - 0d34ec71
+    - 0d7e8714
+    - 11a4de58
+    - 11cdce81
+    - '12936453'
+    - 13d6640f
+    - 1d0b0677
+    - 1ddebecb
+    - 1e65cf9a
+    - 1f97c879
+    - 23d9be19
+    - '26054340'
+    - 26df8a93
+    - 2a95bf37
+    - 2c5d373d
+    - 3029120b
+    - 34b89c64
+    - 35dc6929
+    - 377c2a49
+    - 38a4a77a
+    - 3979772e
+    - '39839467'
+    - 39dd1cd0
+    - 417d160d
+    - 41ad8a40
+    - 4410127c
+    - 443eac68
+    - 45ceae9c
+    - 460b9f67
+    - 4a288296
+    - 4b4af090
+    - 4b99708f
+    - 4d224d3c
+    - 530a7df0
+    - 561a3c58
+    - 569f0145
+    - '57862424'
+    - 57b0289a
+    - 5974ddfc
+    - 5b117706
+    - 5b515ed9
+    - 5d21e1f3
+    - 60a01518
+    - 60aa68c9
+    - 620a28d3
+    - 629133da
+    - 62fa7f88
+    - 64e7fc63
+    - 6afb002a
+    - 6b5959ba
+    - 6ec89c88
+    - 6f106073
+    - 72476d55
+    - 736291bc
+    - 752c987b
+    - 7911fd59
+    - 79d931b8
+    - 7a755bd8
+    - 7abb8a3f
+    - 7b1e2efd
+    - 7bbac250
+    - 7bc1cd31
+    - 813cfa9c
+    - 821541eb
+    - 831514c4
+    - 8437e715
+    - 855b5883
+    - 87b56b20
+    - 8a8bd0fc
+    - 90221eb1
+    - 949f7326
+    - 97ce897a
+    - 9b25b74e
+    - 9ba89657
+    - 9e36afe9
+    - a0e3d8d1
+    - a1b490eb
+    - a25d3275
+    - a2e4d0fd
+    - a42c7533
+    - a52bdb13
+    - a8024867
+    - a8bdeaa3
+    - b18d0d4f
+    - b3b28c70
+    - b3cc9d93
+    - b84f3e64
+    - b8b9ecbb
+    - b9226b44
+    - b9f109e4
+    - bb01b43f
+    - bbbfd2c5
+    - be6ef64a
+    - bf5ccc25
+    - c1112c58
+    - c15cc791
+    - c310da58
+    - c6315d91
+    - c6f1526b
+    - c7091162
+    - cacc7d25
+    - cd979bd6
+    - cef15902
+    - d19d81ca
+    - d1d02955
+    - d570bc29
+    - d751ecfa
+    - d8bbd6a1
+    - dbeb4c0c
+    - dc6eda30
+    - dcd90ee7
+    - ddd5297d
+    - dfdb5cfc
+    - e14a50b5
+    - e2bf760c
+    - e2edfe10
+    - e460776c
+    - e61822cb
+    - e85848c1
+    - e945e073
+    - ea227572
+    - ea5fd3c4
+    - ec505137
+    - ee214158
+    - f30fada1
+    - f6d13b78
+    - f7de4bac
+    - f8a4827d
+    - fa52605f
+    - fca718b0

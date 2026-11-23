@@ -1,0 +1,79 @@
+id: limits/metric-grpc-send-message-cap
+title: Metric responses hit a 64 MiB gRPC send limit where Loki answers (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Range metric replies across quantile, counter, parsed count and ranked rates hit the exact 64MiB gRPC send-message ceiling while Loki succeeds.
+
+  Loki 200 versus proxy 500 rpc error ResourceExhausted trying to send message larger than max (67108865 vs. 67108864). The transport-limit facet is exact; the producing process/response buffering stage remains unproved. It is neither a label-values limit nor the earlier fixed manual-evaluator byte limit.
+
+  Observed in the existing parity-discovery snapshot at ref 4a63b99e,
+  recorded 2026-11-21T14:20:35Z, over [1795265520, 1795269120].
+  The request below retains its actual bounds and encoding. The complete
+  query examples and facets remain in conformance/registry/generated/
+  parity-discovery.json; gap.clusters identifies this case's exact rows.
+  This case owns 13 clusters, 14 distinct query strings
+  and 28 confirmed request records (encodings: categorize, plain).
+  Loki answers 200; observed proxy statuses: 500.
+  Counts describe recorded requests, not added fixtures or passing coverage.
+
+  The implementation cause is not established. Related fixed cases and
+  documented policies do not close these exact stage/order/content facets.
+  Ownership preserves a product difference; it neither waives a gate nor
+  claims a successful replay on a new data window.
+
+  Source evidence: GitHub Actions run 44910591975, parity-refresh artifact
+  14714026577 (original full request parameters and comparison facets):
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: quantile_over_time(0.9, {namespace="prod"} | unwrap duration_ms [5m])
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original dual-written parity-refresh data and source profile are available at the recorded request
+    bounds. A fresh empty time window is not equivalent evidence.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired namespace=prod rows and source profile at 1795265520..1795269120 are required to reproduce the quantile response that reached the recorded 64 MiB transport ceiling; the verifier does not reconstruct that historical producing dataset."
+compare:
+  mode: observed
+  fields:
+    - status
+    - error_text
+    - data
+  values:
+    status: 200
+  expect: Loki's successful response, including the complete log entries or metric/pattern result for the exact
+    source data. Preserve each recorded facet; HTTP 200 alone is insufficient.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Typed AST/planner and existing query execution paths; exact cause requires source-controlled diagnosis
+  loki: HTTP 200 with the successful response recorded for the exact query, source profile and bounds; all content/selection/status
+    facets remain acceptance criteria.
+  proxy: The original parity snapshot records the status/content difference above; no fix is claimed.
+  planned_test: Extend the existing registry-driven Loki/VictoriaLogs replay and API comparison with the recorded
+    request facets; preserve original data and full error/result evidence.
+  clusters:
+    - 0fa8b6ae
+    - b116cb87
+    - 57cdbc65
+    - 2414e31b
+    - 595c93e8
+    - 8c0d3840
+    - 45e1994b
+    - 0d101aa6
+    - 4e85d5a9
+    - 59dd6571
+    - 18c865c5
+    - 14bc3949
+    - 60fdab25

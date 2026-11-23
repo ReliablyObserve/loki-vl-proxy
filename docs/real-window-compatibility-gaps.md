@@ -63,7 +63,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 - First request: **28 of 570** pairs are slower (5%): log queries **0 of 79**, Drilldown and Explore pages **9 of 118**, metric queries **16 of 366**.
 - Between 1× and 2× Loki: **22** rows on the first request, **2** on a repeat; above 2× Loki: **4** on the first request and **0** on a repeat (the 2026-11-23 distribution).
-- **3 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **3** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 110 covered registry items are locked at the 2× bound.
+- **3 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **3** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 111 covered registry items are locked at the 2× bound.
 - In the run shown, **2** of those rows measured above 2× Loki and **1** within 2×.
 - Largest gaps on that list in the run shown, first request: `LS8 json count by level_extracted, collision` over 6h, **0.51 s** against **0.18 s**; `LS8 json count by level_extracted, collision` over 1h, **0.10 s** against **0.04 s**.
 - Answers: **40 of 785** pairs return a different result from Loki, and **15** could not be compared.
@@ -154,8 +154,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 14 of 25 |
 | Behaviour and feature items | 11 proven, 23 partial, 3 gaps |
-| Known differences from Loki (ranked) | **174**: 149 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **81 of 149**: 63 Explore, 17 Logs Drilldown, 1 Grafana datasource; 21 API only, 47 edge cases |
+| Known differences from Loki (ranked) | **225**: 199 open, 16 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **131 of 199**: 111 Explore, 18 Logs Drilldown, 2 Grafana datasource; 21 API only, 47 edge cases |
 
 **Readiness by client**
 
@@ -163,16 +163,16 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 
 | Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |
 |---|---:|---:|---:|---:|---:|
-| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 63 |
-| Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 17 |
-| Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
+| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 111 |
+| Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 18 |
+| Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 2 |
 | Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 21 |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
 These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 
-The 5 open differences with the most impact (all explore-visible): `parsed-identity/bare-parser-metric-duplicates-extracted` (bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields), `semantics/parse-error-labels-on-log-lines` (A line a parser rejects carries __error__ and __error_details__ in Loki's log answer), `semantics/unwrap-per-series-identity-raw-rows` (A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series (open, partly fixed - avg to stdvar on query and on every range and step)), `semantics/topk-per-step-membership-differs` (topk on query_range keeps other series at some steps than Loki, for grouped and level-filtered operands (open, cause not isolated)), `quality/label-values-chunk-window` (loki lists label values of streams whose chunks overlap the window; the proxy only of streams with lines in it). Differences kept on purpose are listed as documented or owner-kept.
+The 5 open differences with the most impact (all explore-visible): `quality/series-identity-projection-unverified` (metric identity-policy projection lacks full source, point, window and limit proof), `semantics/unwrap-parserless-reads-stored-field` (an unwrap with no parser reads the field VictoriaLogs stored for the line where Loki has no label), `semantics/log-line-format-function-catalog-rejections` (log line_format rejects template functions accepted by Loki), `semantics/composed-parser-count-rate-bytes-vector-fold-values` (vector folds after parser and format compositions return different values), `parsed-identity/bare-parser-metric-duplicates-extracted` (bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields). Differences kept on purpose are listed as documented or owner-kept.
 
 Details, the per-workload tables and the method: [performance summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md#summary-versus-loki) · [performance guide](performance.md#current-position-versus-loki) · [ranked differences](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md) · [coverage map](compatibility-coverage.md) · [Known Issues](KNOWN_ISSUES.md).
 

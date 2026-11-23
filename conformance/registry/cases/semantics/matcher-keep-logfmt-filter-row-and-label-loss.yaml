@@ -1,0 +1,103 @@
+id: semantics/matcher-keep-logfmt-filter-row-and-label-loss
+title: Matcher keep followed by keep-empty logfmt and a label filter loses a parsed label and a retained line (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  This case records the exact ordered composition
+  {service_name="payment-service"} | keep a=~"x" | logfmt --keep-empty | a!="b"
+  on the existing source-controlled log differential fixture. Its query identity
+  is q-e767fb11fcd2 and its recorded fixture fingerprint is 2c0eb8c5ac88435e.
+  The cause is not isolated: the observations do not prove whether matcher keep,
+  metadata exposure, parser evaluation, or the later filter is responsible.
+
+  Two additional contract failures are demonstrated on both actual VictoriaLogs
+  versions, v1.49.0 and v1.54.0, against the pinned Loki v3.7.10 oracle:
+
+  - Fixture entry 35 is the well-formed line "a=bz msg=harvested". Loki keeps it
+    with parsed a="bz" and msg="harvested"; the proxy reply misses parsed a="bz".
+    This is a label parsed AFTER keep, not merely an old stream label that keep
+    should have removed.
+  - Fixture entry 36 is "metadata line 36" with the exact harvested metadata of
+    that fixture. Loki keeps it and parses the standalone token labels _36,
+    line and metadata with empty values. The proxy drops the line, in both the
+    plain and categorized comparison. This is entry membership, not just label
+    category or the value of an extra stream label.
+
+  The complete composition also exposes already separated facets. Entry 0 has
+  proxy-only stream labels (including cluster="c1" and service_name); entry 17,
+  "level=error msg=\"unterminated", has an extra proxy parsed msg value; entry 3
+  misses a parsed empty-value token label. Preserve these observations when
+  comparing the full answer. Investigation references are the existing OPEN
+  semantics/matcher-keep-stream-label-residual and semantics/logfmt-malformed-lines
+  cases. Neither reference alone proves the two new row/parsed-label failures
+  above; this case does not broaden their original cluster ownership or turn
+  their differences into accepted behavior.
+
+  Evidence archive locator: plan-loki-vl-diff.jsonl.gz;
+  q=q-e767fb11fcd2; fixture=2c0eb8c5ac88435e.
+
+  Evidence is the complete stored oracle record in
+  internal/querycorpus/testdata/plan-loki-vl-diff.jsonl.gz for this exact q and
+  fixture fingerprint. The recorded JSONL line (including its newline) has SHA256
+  d6b65b2a4746a8ab03ab4f3580a09688d6363bea12180ea821d6f274925ac015.
+  Its Loki per-entry selected/kept/parsed facts and complete VL recording are
+  retained together; this is not a claim that a raw HTTP transcript or a large
+  Grafana runtime test is included. The fresh record matches both actual VL
+  version profiles and the existing replay reports all nine difference classes
+  for this query under both the v1.49 and v1.54 Loki-profile runs.
+request:
+  scope: Existing source-controlled Loki and VictoriaLogs log differential fixture
+  entry: internal/querycorpus/plan_loki_vl_diff_test.go:TestPlanMatchesLokiOnLogQueries/q-e767fb11fcd2
+  params:
+    query: '{service_name="payment-service"} | keep a=~"x" | logfmt --keep-empty | a!="b"'
+  setup: |
+    Reuse buildDiffFixture and the recorded query/fixture identity above, including
+    all selected stream labels and harvested metadata, not just the two line
+    strings. Reuse the existing actual Loki oracle and both VictoriaLogs version
+    profiles, plus the current proxy plain and categorized reply comparison.
+  precondition: |
+    The exact recorded source fixture and metadata are available. Recreating only
+    a=bz or running the query against an empty service_name selector is not proof.
+  verify:
+    blocked_by: fixture
+    reason: Reuse the existing log differential fixture; the generic read-only stack case runner does not create it.
+compare:
+  mode: observed
+  fields:
+    - streams.entries
+    - streams.stream labels
+    - streams.parsed labels
+    - streams.structured metadata
+  expect: |
+    Preserve Loki's complete entry membership, line identity, label names and
+    values including empty values, and plain/categorized label exposure for this
+    exact fixture and query. In particular keep entry 36 and retain the parsed
+    a="bz" of entry 35. Compare all remaining recorded entries and facets too;
+    matching only those two examples or only a 200 status is insufficient.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing typed LogQL plan and ordered matcher-keep/logfmt/filter execution; responsible stage not isolated
+  loki: |
+    Keeps fixture entries 35 and 36. Entry 35 has parsed a="bz"; entry 36 retains
+    the parsed empty-value token labels. Full facts remain in the recorded oracle.
+  proxy: |
+    In the existing replay with either actual VL version, misses parsed a="bz"
+    on entry 35 and drops entry 36; the full composition also retains the explicit
+    stream-label, malformed-logfmt and empty-token facets described above.
+  planned_test: |
+    Extend the existing query-semantics matrix and shared fixture links, and reuse
+    TestPlanMatchesLokiOnLogQueries with this recorded q/fixture identity. Compare
+    full source-controlled plain and categorized answers against Loki for both
+    supported VL version profiles. Isolate stages with keep-only, parser-only and
+    pre/post-filter controls before assigning a cause or marking any facet fixed.
+    Do not introduce a second query catalog or a status-only comparison.
+  note: |
+    Observed ordered-composition contract, not an established common root cause.
+    No historical parity-discovery cluster is claimed. Existing OPEN cases are
+    references, not waivers; all unverified facets remain visible. Split this
+    case if source-controlled controls establish independent causes. No owner-kept
+    policy, fixed case, endpoint acceptance or general query-family waiver changes.

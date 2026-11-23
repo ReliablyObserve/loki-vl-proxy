@@ -57,4 +57,5 @@ gap:
   proxy: 'the quantile of the group of samples instead of the sum of the per-series quantiles'
   planned_test: 'TestCompat_UnwrapQuantileOuterSum (test/e2e-compat, group core) over sum by and sum without, logfmt and json, range and instant'
   note: 'Found while fixing semantics/unwrap-sum-without-collapses. Expected to be fixed by the quantile value-count pushdown branch (semantics/unwrap-quantile-response-limit); verify there, keep the row open until the e2e passes.'
-  clusters: []
+  clusters:
+    - "eec998fe"

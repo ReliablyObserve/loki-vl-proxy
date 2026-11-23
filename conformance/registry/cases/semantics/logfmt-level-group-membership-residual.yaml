@@ -1,0 +1,87 @@
+id: semantics/logfmt-level-group-membership-residual
+pending: true
+title: Bare logfmt metric level-group membership differs on the recorded service cohort (open, cause unisolated)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+evidence: needs recording
+why: |
+  sum by(level[,detected_level]) after bare logfmt must group the label each Loki entry
+  carries after that pipeline. A parsed level colliding with a stream level must not
+  silently replace the stream level.
+
+  The listed cache-redis/worker-service logfmt count or max-over-unwrapped-field queries
+  and production count by(level,detected_level); both endpoints, full published level
+  identities differ, including equal cardinality with different names.
+
+  Explicitly unisolated. The coherent contract is grouped level identity on this exact
+  parser/function cohort; no single root cause is asserted.
+
+  Not the JSON-only collision case, not a perf-only logfmt parse-probe case, not proof
+  that every difference comes from stream/body collision. Detection precedence and row
+  admission remain competing explanations.
+
+  Historical evidence: the full differential run of 2026-11-21 on source ref 4a63b99e,
+  Loki 3.7.10. Original exact requests, bounds, statuses and complete facet summaries
+  are retained in the parity-refresh artifact at
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl). The committed index is
+  conformance/registry/generated/parity-discovery.json, recorded at
+  2026-11-21T14:20:35Z. The request below is an actual request from that run. This case
+  does not claim a current-head reproduction or a current fix.
+
+  Full response bodies and golden point sets were not retained by that artifact.
+  Reproduction must prove the source controls and compare every returned label,
+  timestamp/value, duplicate, error and warning on identical data and evaluation axes.
+  Existing identity-policy deviations are not enlarged or waived here; differing row
+  admission, labels, caps or errors still need their own evidence. This remains OPEN and
+  pending, not a passing compatibility or performance result.
+
+  Closure controls: Preserved-line fixture with separate stream level,
+  structured-metadata level and line level, including collisions, then compare the
+  parser operand before the outer grouping. Check count and max unwrap under identical
+  data, level versus detected_level, instant/range, and retain full labels/error
+  metadata.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: sum by (level) (count_over_time({service_name="cache-redis"} | logfmt [1m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - labels
+    - values
+    - timestamps
+    - warnings
+  expect: sum by(level[,detected_level]) after bare logfmt must group the label each Loki entry carries after that
+    pipeline. A parsed level colliding with a stream level must not silently replace the stream level.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: ordered parser metrics and outer grouping by level/detected_level; source and parser label precedence
+  loki: sum by(level[,detected_level]) after bare logfmt must group the label each Loki entry carries after that
+    pipeline. A parsed level colliding with a stream level must not silently replace the stream level.
+  proxy: Explicitly unisolated. The coherent contract is grouped level identity on this exact parser/function cohort;
+    no single root cause is asserted.
+  planned_test: Extend the existing query-semantics matrix and recorded parser metric fixtures with stream/metadata/body
+    level controls before and after logfmt and the outer fold
+  clusters:
+    - 08bfab39
+    - 19e8f424
+    - 35e2a101
+    - 37898b71
+    - 5bd75aed
+    - e3b89503
+    - e7da85bf

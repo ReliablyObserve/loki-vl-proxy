@@ -1,0 +1,94 @@
+id: semantics/unwrap-wrapper-internal-line-series-identity
+pending: true
+title: Wrappers over JSON unwrap metrics add internal _msg series identity absent from Loki (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+evidence: needs recording
+why: |
+  A sort, sort_desc or label_replace wrapper over a JSON unwrap metric must preserve the
+  applicable operand identity contract and must not introduce the backend internal _msg
+  field as a label absent from Loki.
+
+  Only the listed 11 JSON unwrap wrapper observations. Every original encoded request
+  has an explicit proxy-only _msg facet alongside fewer series; default stream-only
+  identity does not authorize this backend-line label.
+
+  Unisolated wrapper/evaluator identity path. _msg and the series deficit are observed;
+  no claim that _msg alone causes all loss, or that accepted parsed/metadata identity
+  differences disappear.
+
+  Original operand controls also exist for two wrapper observations: max_over_time after
+  json plus the error-line filter (operand cluster 90221eb1) has 1372 proxy series and
+  no proxy-only _msg, while its sort wrapper has 10000; the status-filtered max operand
+  in 7b1e2efd has 597 proxy series without _msg, while its sort_desc wrapper has 1990.
+  Loki retains 12357 and 2128 respectively before and after wrapping. The other scoped
+  requests retain the explicit _msg facet, but do not have a matching recorded operand
+  control; no universal causal claim is made.
+
+  Historical evidence: the full differential run of 2026-11-21 on source ref 4a63b99e,
+  Loki 3.7.10. Original exact requests, bounds, statuses and complete facet summaries
+  are retained in the parity-refresh artifact at
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl). The committed index is
+  conformance/registry/generated/parity-discovery.json, recorded at
+  2026-11-21T14:20:35Z. The request below is an actual request from that run. This case
+  does not claim a current-head reproduction or a current fix.
+
+  Full response bodies and golden point sets were not retained by that artifact.
+  Reproduction must prove the source controls and compare every returned label,
+  timestamp/value, duplicate, error and warning on identical data and evaluation axes.
+  Existing identity-policy deviations are not enlarged or waived here; differing row
+  admission, labels, caps or errors still need their own evidence. This remains OPEN and
+  pending, not a passing compatibility or performance result.
+
+  Closure controls: Compare the complete operand, wrapped query and full label/point
+  sets with Loki, keeping the same axis and identity flags. Preserve
+  sorted/label_replace identity, warnings and limits; include positive same-identity and
+  no-internal-field controls.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: sort(stddev_over_time({service_name="api-gateway"} | json | unwrap duration_ms | __error__="" [5m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - labels
+    - values
+    - timestamps
+    - warnings
+  expect: A sort, sort_desc or label_replace wrapper over a JSON unwrap metric must preserve the applicable operand
+    identity contract and must not introduce the backend internal _msg field as a label absent from Loki.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: range metric wrapper and unwrap evaluators; backend internal line-field exposure in series labels
+  loki: A sort, sort_desc or label_replace wrapper over a JSON unwrap metric must preserve the applicable operand
+    identity contract and must not introduce the backend internal _msg field as a label absent from Loki.
+  proxy: Unisolated wrapper/evaluator identity path. _msg and the series deficit are observed; no claim that _msg
+    alone causes all loss, or that accepted parsed/metadata identity differences disappear.
+  planned_test: Extend the existing recorded metric and query-semantics matrix controls with exact operand-versus-wrapper
+    label and point comparisons
+  clusters:
+    - 0e042c19
+    - 436c775c
+    - '50312684'
+    - 65c6b60e
+    - '74800445'
+    - 7f7be137
+    - 89a2f6ce
+    - 9921ecf9
+    - ba60302b
+    - e1e0c1eb
+    - f8752d11

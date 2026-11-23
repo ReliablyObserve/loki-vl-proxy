@@ -57,4 +57,6 @@ gap:
   loki: 'the range aggregation groups its samples by its by, then the vector aggregation folds those series'
   proxy: 'the range aggregation''s series, the outer aggregation dropped (or applied to step buckets on a sliding window)'
   planned_test: 'TestStddevStdvarMatchLoki (internal/querycorpus) lists the shapes as known differences'
-  clusters: []
+  clusters:
+    - "6fb2ff5f"
+    - "e31c006f"

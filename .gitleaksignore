@@ -9,3 +9,6 @@ f274ee0f80db00f4112b3342bd623c5a71992cc5:internal/proxy/detected_level_levelless
 # Exact historical commit/file/rule/line only; current metadata separates path and digest.
 b416200f324830b422af1d8c38143d03d2fe6796:bench/numeric-equality/results/2026-11-20/verification.json:generic-api-key:63
 b416200f324830b422af1d8c38143d03d2fe6796:bench/numeric-equality/results/2026-11-20/verification.json:generic-api-key:65
+# Verified SHA-256 of scripts/ci/tests/test_commit_via_api.py, not a credential.
+# Current records separate path from digest; only this exact historical occurrence is ignored.
+7f3e9d2d6069f54ba097298e750573d9c9078f2f:bench/ab/results/oneoff/2026-11-23-mixed-native-raw-control/ci-original-window/unit-source-hashes.json:generic-api-key:80

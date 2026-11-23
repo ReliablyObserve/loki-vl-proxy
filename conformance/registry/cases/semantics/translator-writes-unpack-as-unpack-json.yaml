@@ -53,6 +53,24 @@ why: |
   the replaced line as Loki does. The proxy's own evaluation of an unwrapped
   value (internal/proxy ordered_json_metric.go) reads an unpack as a json
   parser; unwrap_conversion_error.go reads it as Loki does.
+
+  Twelve additional historical series facets exercise unsupported unpack compositions on
+  both endpoints: unpack before named JSON/unwrap, before raw unwrap with filters, after
+  line_format/label_format, and between keep and conditional drop. The original complete
+  requests/facets show either nonempty proxy samples where Loki has no series or extra
+  proxy groups after keep/unpack. This matches the open distinction between promoting
+  ordinary JSON/stored fields and Loki packed-entry labels, including the ordered unwrap
+  path described above. Parser order, replaced-line reads, prior formats, kept identity
+  and intermediate caps can contribute; ownership here is not a claim that unpack alone
+  explains every facet or that these combinations are fixed.
+
+  Historical ownership evidence for these additions is the parity-refresh artifact of
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl), source ref 4a63b99e, and the committed
+  conformance/registry/generated/parity-discovery.json. Full response bodies were not
+  retained. The case remains OPEN; these assignments grant no waiver, owner-kept
+  projection, current runtime pass or fixed status.
+
 corpus:
   size: 12
   dimensions:
@@ -94,4 +112,58 @@ gap:
   planned_test: 'TestUnpackFamiliesMatchLoki (internal/queryplan/lower) holds the families to Loki''s recorded answers; an e2e row against Loki on a packed stream when the plan serves queries with a parser'
   visual: none
   visual_reason: 'packed streams only exist where an agent packs them; no Grafana panel of the compose stack sends them'
-  clusters: []
+  clusters:
+    - "002a7567"
+    - "04e48111"
+    - "06b6d661"
+    - "0ae6df62"
+    - "0e3343f9"
+    - "0fc64a59"
+    - "23b88a62"
+    - "3612951c"
+    - "430fcfbe"
+    - "443c24d4"
+    - "4c38bc25"
+    - "4c86400f"
+    - "54575383"
+    - "5716ddcd"
+    - "623e34e9"
+    - "649a8d0f"
+    - "68c36d54"
+    - "6a57359e"
+    - "7481e4b9"
+    - "7f8f5939"
+    - "8451a546"
+    - "999d651c"
+    - "9a451dff"
+    - "9e061379"
+    - "a568294b"
+    - "a910d690"
+    - "aa28f086"
+    - "aad12f92"
+    - "ad4459e5"
+    - "b085fa1b"
+    - "b0f82dc6"
+    - "b5342a53"
+    - "be903d08"
+    - "be9d7d01"
+    - "d5bf6395"
+    - "e8c5bf3f"
+    - "ec56e575"
+    - "ecfa18ee"
+    - "f8517013"
+    - "f85704ad"
+    - "fb14616d"
+    - "fb9fde8f"
+    - '07f3d47b'
+    - '31ad26b3'
+    - '40431eed'
+    - '40fd67bb'
+    - '42907701'
+    - '4abe4525'
+    - '8016ce9d'
+    - 'e7d1f38f'
+    - 'f2294f1b'
+    - 'f5f3d3bc'
+    - 'faf50493'
+    - 'ff5a5d1e'

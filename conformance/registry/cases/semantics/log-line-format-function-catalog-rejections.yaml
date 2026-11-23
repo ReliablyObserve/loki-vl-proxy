@@ -1,0 +1,132 @@
+id: semantics/log-line-format-function-catalog-rejections
+title: Log line_format rejects template functions accepted by Loki (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Log query line_format uses Loki-accepted template functions or __line__/__timestamp__ but proxy rejects template construction.
+
+  Loki 200 versus proxy 400 invalid line template/function not defined (one truncated fromJson excerpt). This concerns the function catalog in log queries, not metric hint elision or per-entry runtime errors.
+
+  Observed in the existing parity-discovery snapshot at ref 4a63b99e,
+  recorded 2026-11-21T14:20:35Z, over [1795265520, 1795269120].
+  The request below retains its actual bounds and encoding. The complete
+  query examples and facets remain in conformance/registry/generated/
+  parity-discovery.json; gap.clusters identifies this case's exact rows.
+  This case owns 65 clusters, 67 distinct query strings
+  and 134 confirmed request records (encodings: categorize, plain).
+  Loki answers 200; observed proxy statuses: 400.
+  Counts describe recorded requests, not added fixtures or passing coverage.
+
+  The implementation cause is not established. Related fixed cases and
+  documented policies do not close these exact stage/order/content facets.
+  Ownership preserves a product difference; it neither waives a gate nor
+  claims a successful replay on a new data window.
+
+  Source evidence: GitHub Actions run 44910591975, parity-refresh artifact
+  14714026577 (original full request parameters and comparison facets):
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    direction: backward
+    end: '1795269120'
+    limit: '100'
+    query: '{service_name="payment-service"} | logfmt | line_format "{{.ip}} {{.status}} {{div .duration 1000}}"'
+    start: '1795265520'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original dual-written parity-refresh data and source profile are available at the recorded request
+    bounds. A fresh empty time window is not equivalent evidence.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired payment-service logfmt rows and ip/status/duration fields at 1795265520..1795269120 are required to compare the complete accepted-template output against the recorded rejection; the verifier does not restore that historical source."
+compare:
+  mode: observed
+  fields:
+    - status
+    - error_text
+    - data
+  values:
+    status: 200
+  expect: Loki's successful response, including the complete log entries or metric/pattern result for the exact
+    source data. Preserve each recorded facet; HTTP 200 alone is insufficient.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Typed AST/planner and existing query execution paths; exact cause requires source-controlled diagnosis
+  loki: HTTP 200 with the successful response recorded for the exact query, source profile and bounds; all content/selection/status
+    facets remain acceptance criteria.
+  proxy: The original parity snapshot records the status/content difference above; no fix is claimed.
+  planned_test: Extend the existing registry-driven Loki/VictoriaLogs replay and API comparison with the recorded
+    request facets; preserve original data and full error/result evidence.
+  clusters:
+    - a0484295
+    - e251b500
+    - 539de0e9
+    - 7c976f26
+    - 557038a4
+    - 37645cc4
+    - 92e5132d
+    - 97e38430
+    - 99c7b054
+    - b72c36d8
+    - 8fb60fcc
+    - 35080cd3
+    - 513c430d
+    - 3b5e8649
+    - 55b567d3
+    - '33557199'
+    - 80eff7a0
+    - 1d775f29
+    - 69e8d0f3
+    - fe8e017e
+    - d3ab0d83
+    - 50ea2bd3
+    - 19e4cf43
+    - 4b7ab3be
+    - 67b9fb1c
+    - 6d5f58a4
+    - c77f1ae6
+    - 6b35f25d
+    - 63d04fb2
+    - 27eec730
+    - d250a7fb
+    - 2702bbf0
+    - 8bd809ea
+    - 63e07006
+    - 22f50060
+    - 56f6a532
+    - 8adb6e08
+    - 1e585c76
+    - cbbf84ae
+    - d6617dec
+    - 4d4dfdf3
+    - 21b5ac5f
+    - 2efe596b
+    - 674a1103
+    - '50059086'
+    - 31c42616
+    - f2da37ce
+    - 0e9ef9b9
+    - bb5d7e94
+    - dbc866f4
+    - bdf180f8
+    - efec5211
+    - cfb0e6d0
+    - 1ebc702d
+    - d42eb8d7
+    - fda2afb9
+    - ebd53e43
+    - 52d4eae9
+    - cb8e41fc
+    - e0a07fe3
+    - 8383777c
+    - cc845915
+    - a81c3407
+    - 70521faf
+    - 2d2a5af9

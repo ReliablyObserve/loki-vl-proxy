@@ -1,0 +1,114 @@
+id: semantics/keep-composition-retains-discarded-identity-in-count-metrics
+pending: true
+title: Count, rate and byte metrics retain discarded identity across keep compositions (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+evidence: needs recording
+why: |
+  A keep deletes labels at its stage; a later drop, extraction-list parser or
+  label_format may change/add its own labels but must not resurrect the discarded source
+  stream labels when count/rate/bytes series are formed.
+
+  Plain count_over_time, rate or bytes_rate, optionally under an outer aggregation/sort,
+  with keep followed by drop, label_format, or a named parser. Includes matcher keeps
+  explicitly excluded by the closed trailing-bare-keep proof; no unwrap or unpack.
+
+  Loss of the intermediate kept label-set boundary is a hypothesis; the published counts
+  demonstrate a remaining composition observation, not a proved implementation cause.
+
+  This does not reopen the fixed trailing bare keep controls or duplicate the open
+  keep-before-parser UNWRAP case. The separate earlier-error-drop/outer-stddev
+  boundary is explicitly included below as an unproved OPEN composition axis.
+
+  Historical evidence: the full differential run of 2026-11-21 on source ref 4a63b99e,
+  Loki 3.7.10. Original exact requests, bounds, statuses and complete facet summaries
+  are retained in the parity-refresh artifact at
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl). The committed index is
+  conformance/registry/generated/parity-discovery.json, recorded at
+  2026-11-21T14:20:35Z. The request below is an actual request from that run. This case
+  does not claim a current-head reproduction or a current fix.
+
+  Full response bodies and golden point sets were not retained by that artifact.
+  Reproduction must prove the source controls and compare every returned label,
+  timestamp/value, duplicate, error and warning on identical data and evaluation axes.
+  Existing identity-policy deviations are not enlarged or waived here; differing row
+  admission, labels, caps or errors still need their own evidence. This remains OPEN and
+  pending, not a passing compatibility or performance result.
+
+  Closure controls: Two source streams differing only in a label removed by keep, then
+  one listed parser/format-created key; compare bare keep, each suffix stage and the
+  full composition. Assert source counts, exact retained label sets, every
+  timestamp/value, matcher-keep behavior and both endpoints.
+
+  An explicit additional OPEN axis is stddev by (level)
+  (count_over_time({namespace="prod"} | drop __error__, __error_details__ | keep a
+  [5m])) on instant and range requests. The original full facets show proxy-only level
+  and three proxy series versus one on Loki: keep a must not leave level in the operand.
+  In source ref 4a63b99e, keepSeriesGrouping declines a query containing __error before
+  its rewrite, so the earlier error-label drop places this form outside the admitted
+  safe rewrite. This observation does not reopen the already-proven trailing-keep
+  controls or mark them regressed without a current reproduction; it records this
+  distinct error-drop/outer-stddev admission boundary. Add source controls with and
+  without the earlier drop and outer stddev before attributing the implementation cause
+  or declaring a fix.
+
+  Historical ownership evidence for these additions is the parity-refresh artifact of
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl), source ref 4a63b99e, and the committed
+  conformance/registry/generated/parity-discovery.json. Full response bodies were not
+  retained. The case remains OPEN; these assignments grant no waiver, owner-kept
+  projection, current runtime pass or fixed status.
+
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: count_over_time({namespace="prod"} | keep x | drop y[5m])
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - labels
+    - values
+    - timestamps
+    - warnings
+  expect: A keep deletes labels at its stage; a later drop, extraction-list parser or label_format may change/add
+    its own labels but must not resurrect the discarded source stream labels when count/rate/bytes series are formed.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: typed query-plan series labels and count/rate/bytes metric identity after composed keep stages
+  loki: A keep deletes labels at its stage; a later drop, extraction-list parser or label_format may change/add
+    its own labels but must not resurrect the discarded source stream labels when count/rate/bytes series are formed.
+  proxy: Loss of the intermediate kept label-set boundary is a hypothesis; the published counts demonstrate a remaining
+    composition observation, not a proved implementation cause.
+  planned_test: Extend the existing query-semantics matrix and recorded metric fixtures with two source streams
+    collapsed by keep and each later parser/format/drop composition
+  clusters:
+    - 0f91b23c
+    - 28b7dc50
+    - 2b6b2b1a
+    - 3ea11a73
+    - 673be6b2
+    - 80c1cc10
+    - a1700f62
+    - a5352bff
+    - a7f515a0
+    - b8a20042
+    - bea5b177
+    - de670e13
+    - f9a42387
+    - '3eec6ba9'
+    - 'cbca3513'

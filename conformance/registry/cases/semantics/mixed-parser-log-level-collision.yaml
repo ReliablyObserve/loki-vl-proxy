@@ -1,0 +1,76 @@
+id: semantics/mixed-parser-log-level-collision
+title: Mixed JSON/logfmt log reply loses a level collision label (open)
+pending: true
+proves:
+  - parser-json
+  - parser-logfmt
+consumer: grafana-datasource
+why: |
+  Exact cache-redis log query JSON then logfmt then drop both error labels loses Loki
+  level_extracted while retaining the level-bearing row.
+
+  Existing mixed-parser owner may ultimately be sufficient, but read-only excerpts do
+  not prove whether parser removal or collision classification caused this isolated
+  level facet. Keep it open until the original line and parser-order route are checked.
+
+  Observed in the committed conformance/registry/generated/parity-discovery.json
+  snapshot at ref 4a63b99e, recorded 2026-11-21T14:20:35Z, window 1795265520..1795269120
+  (2026-11-21 12:52..13:52 UTC). The original CI evidence is GitHub Actions run
+  44910591975, artifact 14714026577:
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577.
+  2 actual request records from grafana report 200 on both sides; this case tracks their
+  label facets, not a status failure. Full query examples and per-cluster excerpts
+  remain in that committed snapshot; gap.clusters identifies every included observation.
+  The representative request below retains the original recorded parameters and response
+  encoding.
+
+  The retained discovery data contains observed facets and excerpts, not complete
+  response-body goldens. The cause remains unproved; the scope is the exact recorded
+  query families and label observations, not a waiver for all queries containing these
+  stages. A targeted fixture must capture the full Loki and proxy replies before
+  closure. Related existing cases are investigation references only:
+  semantics/two-parsers-keep-one. No fixed contract or owner-kept policy is widened.
+
+  The source is Grafana ds_query (origin dd-patterns 15m), with only the query string
+  retained as a request parameter. No backend start/end or synthetic Loki HTTP request
+  is inferred from the global discovery window.
+request:
+  scope: Grafana datasource ds_query via /api/ds/query
+  entry: '{service_name="cache-redis"}     | json  | logfmt | drop __error__, __error_details__  '
+  params:
+    query: '{service_name="cache-redis"}     | json  | logfmt | drop __error__, __error_details__  '
+  headers:
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original paired source rows, stored/stream metadata and source profile that produced the linked
+    snapshot observations; retain the original tenant/auth context and encoding. A fresh empty historical range
+    is not evidence of resolution.
+  verify:
+    blocked_by: fixture
+    reason: Recreate the recorded paired fixture and original request profile in the existing harness; full response
+      goldens and tenant/profile details must be captured before this open observation can be closed.
+compare:
+  mode: observed
+  fields:
+    - series labels
+    - metadata_categories
+  expect: |
+    Preserve Loki label names, presence (including empty labels), values and category
+    for the linked requests. Observed facets: category: loki-only parsed *_extracted;
+    labels: loki-only *_extracted. Keep full sample identity and points when a targeted
+    fixture is added; this observed record alone is not an exact full-response proof.
+gap:
+  status: open
+  impact: grafana-datasource
+  effort: M
+  area: Existing typed query planning, ordered stage execution and response label exposure; exact responsible route
+    not yet established
+  loki: Recorded source facets preserve the label names, values and categories shown in the linked Loki excerpts
+  proxy: 'Recorded source facets differ as follows: category: loki-only parsed *_extracted; labels: loki-only *_extracted'
+  planned_test: Reuse bench/parity and the existing test/e2e-compat query-semantics matrix/source fixtures; add
+    the targeted full-response Loki oracle facet under this case when the paired row and route are isolated. Reuse
+    the existing visual harness only for a confirmed Grafana-visible fixture; do not create another catalog.
+  note: 'Unknown cause; keep every linked mismatch visible and open. References for investigation only: semantics/two-parsers-keep-one.
+    Split this scoped family if source-controlled oracle evidence establishes independent causes. Snapshot ref4a63b99e;
+    run44910591975 artifact14714026577; full response bodies were not retained.'
+  clusters:
+    - 6d79474c

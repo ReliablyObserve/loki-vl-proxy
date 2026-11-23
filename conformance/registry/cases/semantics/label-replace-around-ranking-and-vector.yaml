@@ -59,7 +59,8 @@ gap:
   proxy: 'the ranking evaluated by its route, relabelled by the calls'
   planned_test: 'TestLabelReplaceAroundRankingMatchesLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestCompat_LabelReplaceAroundRanking (test/e2e-compat, group core); TestRouteQueryOfARankingOrLabelReplace (internal/queryplan/lower); TestLabelReplaceAroundRankingRoute (internal/proxy)'
   clusters:
-    - 616dee70
+    - "616dee70"
+    - "e99afbef"
 
 perf:
   max_ratio: 2.0
