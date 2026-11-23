@@ -50,18 +50,21 @@ func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
 	regex := func(field, pattern string, negate bool) logsql.FilterExpr {
 		return logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: pattern, Negate: negate}
 	}
+	// VictoriaLogs evaluates an AND in written order and stops at the first
+	// guard that rejects a row, so the order is a cost order: the cheap
+	// message-only checks first (a row that is not one flat printable JSON
+	// object with the target key never reaches a long regexp), then the
+	// stream descriptor (constant per stream and block), the extracted target,
+	// the longer message regexps, and last the guards that read the packed
+	// envelope. Every conjunct is unchanged; only their order differs.
 	safe := logsql.AllOf{
-		regex(mixedClassOriginalField, `^\{(?:`+packedPair+`(?:,`+packedPair+`)*)?\}$`, false),
-		mixedClassLiteralGuard(mixedClassOriginalField, `(?:^\{|,)"`+aliasedName+`":`, "__", `_":`),
-		mixedClassLiteralGuard(mixedClassOriginalField, `(?:^\{|,)"`+name+`":`, `"`+label+`":`),
-		mixedClassLiteralGuard(mixedClassOriginalField, `(?:^\{|,)`+scratchKey, "__vlmc_"),
-		regex(mixedClassStreamField, `^\{(?:`+streamPair+`(?:,`+streamPair+`)*)?\}$`, false),
-		mixedClassLiteralGuard(mixedClassStreamField, `(?:^\{|,)`+aliasedName+`=`, "__", "_="),
-		mixedClassLiteralGuard(mixedClassStreamField, `(?:^\{|,)`+name+`=`, label+"="),
 		regex("_msg", `^\{[\x20-\x7e]*\}$`, false),
 		regex("_msg", `[\\=]`, true),
 		logsql.LenRange{Field: "_msg", Min: "0", Max: mixedClassMaxBytes},
-		logsql.LenRange{Field: mixedClassOriginalField, Min: "0", Max: mixedClassMaxBytes},
+		regex("_msg", marker+`\s*"`+valueRun+`"`, false),
+		regex(mixedClassStreamField, `^\{(?:`+streamPair+`(?:,`+streamPair+`)*)?\}$`, false),
+		mixedClassLiteralGuard(mixedClassStreamField, `(?:^\{|,)`+aliasedName+`=`, "__", "_="),
+		mixedClassLiteralGuard(mixedClassStreamField, `(?:^\{|,)`+name+`=`, label+"="),
 		logsql.FieldFilter{Field: mixedClassValidField, Op: logsql.FieldOpAny},
 		logsql.FieldFilter{Field: mixedClassTargetPrefix + label, Op: logsql.FieldOpAny},
 		// VL stats grouping may canonicalize numeric-looking STRING values
@@ -69,7 +72,6 @@ func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
 		// original mixed evaluator keeps every other value in the complement.
 		regex(mixedClassTargetPrefix+label, `^[A-Za-z_][A-Za-z0-9_-]*$`, false),
 		regex(mixedClassTargetPrefix+label, `(?i)^(?:nan|inf|infinity|true|false|null)$`, true),
-		regex("_msg", marker+`\s*"`+valueRun+`"`, false),
 		regex("_msg", marker+`(?s:.*)`+marker, true),
 		mixedClassLiteralGuard("_msg", `"__vlmc_[A-Za-z0-9_]*"\s*:`, "__vlmc_"),
 		// This admission bound is deliberately stricter than Loki's accepted
@@ -85,6 +87,16 @@ func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
 		prefix := regexp.QuoteMeta(strings.Join(parts[:i], "_"))
 		safe = append(safe, regex("_msg", `"`+prefix+`"\s*:\s*\{`, true))
 	}
+	// The guards that read the packed envelope force pack_json for the block and
+	// are the most expensive, so they come last, after every message, stream and
+	// target guard (including the nested-prefix guards above).
+	safe = append(safe,
+		logsql.LenRange{Field: mixedClassOriginalField, Min: "0", Max: mixedClassMaxBytes},
+		regex(mixedClassOriginalField, `^\{(?:`+packedPair+`(?:,`+packedPair+`)*)?\}$`, false),
+		mixedClassLiteralGuard(mixedClassOriginalField, `(?:^\{|,)"`+aliasedName+`":`, "__", `_":`),
+		mixedClassLiteralGuard(mixedClassOriginalField, `(?:^\{|,)"`+name+`":`, `"`+label+`":`),
+		mixedClassLiteralGuard(mixedClassOriginalField, `(?:^\{|,)`+scratchKey, "__vlmc_"),
+	)
 	return &mixedJSONRowClass{
 		originalField: mixedClassOriginalField,
 		prepare: []logsql.Pipe{

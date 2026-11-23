@@ -148,13 +148,22 @@ func mixedClassLiteralPrefilters(label string) []struct {
 		index    int
 		literals []string
 	}{
-		{1, []string{"__", `_":`}},
-		{2, []string{`"` + label + `":`}},
-		{3, []string{"__vlmc_"}},
+		{18, []string{"__", `_":`}},
+		{19, []string{`"` + label + `":`}},
+		{20, []string{"__vlmc_"}},
 		{5, []string{"__", "_="}},
 		{6, []string{label + "="}},
-		{17, []string{"__vlmc_"}},
+		{12, []string{"__vlmc_"}},
 	}
+}
+
+// mixedClassGuardIndex maps a guard's index in the base list (the 21 fixed guards, envelope guards last at 16 to 20)
+// to its place when the label adds nested-prefix guards before the envelope guards.
+func mixedClassGuardIndex(guards logsql.AllOf, i int) int {
+	if i >= 16 {
+		return len(guards) - 21 + i
+	}
+	return i
 }
 
 func mixedClassPrefilteredGuard(guard logsql.FilterExpr, literals []string) logsql.FilterExpr {
@@ -180,7 +189,7 @@ func TestMixedJSONRowClassLiteralPrefilterImplications(t *testing.T) {
 		c, _ := newMixedJSONRowClass(label)
 		guards := c.safe.(logsql.AllOf)
 		for _, spec := range mixedClassLiteralPrefilters(label) {
-			original := mixedClassOriginalGuard(guards[spec.index])
+			original := mixedClassOriginalGuard(guards[mixedClassGuardIndex(guards, spec.index)])
 			if !original.Negate {
 				t.Fatalf("guard %d is not negated", spec.index)
 			}
@@ -218,7 +227,7 @@ func TestMixedJSONRowClassLiteralPrefilterImplications(t *testing.T) {
 			if matches == 0 {
 				t.Fatalf("label=%s guard=%d has no positive witness", label, spec.index)
 			}
-			candidate := mixedClassPrefilteredGuard(guards[spec.index], spec.literals).(logsql.NotExpr).Expr.(logsql.AllOf)
+			candidate := mixedClassPrefilteredGuard(guards[mixedClassGuardIndex(guards, spec.index)], spec.literals).(logsql.NotExpr).Expr.(logsql.AllOf)
 			want := original
 			want.Negate = false
 			if candidate[1] != want {
@@ -253,7 +262,7 @@ func TestMixedJSONRowClassRelevantAliasesRetainsSafety(t *testing.T) {
 	for _, key := range []string{"k", "user_id"} {
 		c, _ := newMixedJSONRowClass(key)
 		got := c.safe.(logsql.AllOf)
-		alias := got[19].(logsql.FieldFilter)
+		alias := got[14].(logsql.FieldFilter)
 		if alias.Field != "_msg" || alias.Op != logsql.FieldOpRegexp || !alias.Negate {
 			t.Fatal("missing production key-alias guard")
 		}
@@ -261,12 +270,12 @@ func TestMixedJSONRowClassRelevantAliasesRetainsSafety(t *testing.T) {
 			t.Fatal("production does not reuse existing alias guard")
 		}
 		for _, body := range []string{`{" ` + key + ` ":"alias","` + key + `":"blue"}`, `{"` + key + `":"blue"," ` + key + ` ":null}`, `{"":"empty","` + key + `":"blue"}`, `{"prefix":{" ":{}} ,"` + key + `":"blue"}`} {
-			if mixedClassRegexMatch(t, got[19], body) {
+			if mixedClassRegexMatch(t, got[14], body) {
 				t.Fatalf("relevant trim/blank alias admitted:%s", body)
 			}
 		}
 		for _, body := range []string{`{"other.key":"unrelated","` + key + `":"blue"}`, `{"` + key + `":"blue","1other":"unrelated"}`} {
-			if !mixedClassRegexMatch(t, got[19], body) {
+			if !mixedClassRegexMatch(t, got[14], body) {
 				t.Fatalf("irrelevant spelling still blocked:%s", body)
 			}
 		}
@@ -286,7 +295,7 @@ func TestMixedJSONRowClassLongAliasPatternFallsBack(t *testing.T) {
 	if !ok {
 		t.Fatal("ordinary bounded key rejected")
 	}
-	guard := c.safe.(logsql.AllOf)[19].(logsql.FieldFilter)
+	guard := c.safe.(logsql.AllOf)[14].(logsql.FieldFilter)
 	if guard.Value != mixedClassInvalidBodyKey || !guard.Negate {
 		t.Fatal("long alias expansion did not retain conservative key guard")
 	}
@@ -539,5 +548,41 @@ func assertMixedClassTypedFilters(t *testing.T, expr logsql.FilterExpr) {
 	case logsql.FieldFilter, logsql.LenRange:
 	default:
 		t.Fatalf("new class contains an untyped filter node: %T", expr)
+	}
+}
+
+// VictoriaLogs evaluates an AND in written order and stops at the first rejecting guard, so the class's conjuncts
+// are in cost order. The order never changes the class (AND commutes); it decides how many rows reach the long
+// regexps and the guards that force the packed envelope. This pins the cost order and that nothing was lost.
+// conformance: semantics/two-parsers-keep-one
+func TestMixedJSONRowClassGuardsAreInCostOrder(t *testing.T) {
+	for _, label := range []string{"user_id", "tenant", "a_b_c"} {
+		class, ok := newMixedJSONRowClass(label)
+		if !ok {
+			t.Fatalf("%s: class refused", label)
+		}
+		guards := class.safe.(logsql.AllOf)
+		// The first guard is the cheap flat-printable-object check on the message alone.
+		if got := guards[0].String(); !strings.HasPrefix(got, `_msg:~"^\\{[\\x20-\\x7e]*\\}$"`) {
+			t.Fatalf("%s: the first guard is %s", label, got)
+		}
+		firstEnvelope, lastOther := -1, -1
+		for i, g := range guards {
+			if strings.Contains(g.String(), mixedClassOriginalField) {
+				if firstEnvelope < 0 {
+					firstEnvelope = i
+				}
+			} else {
+				lastOther = i
+			}
+		}
+		// Every guard that reads the packed envelope comes after every guard that does not.
+		if firstEnvelope < 0 || firstEnvelope < lastOther {
+			t.Fatalf("%s: an envelope guard (index %d) precedes a message, stream or target guard (last at %d)", label, firstEnvelope, lastOther)
+		}
+		// Nothing was dropped: the fixed guards plus one nested-prefix guard per underscore span.
+		if want := 21 + strings.Count(label, "_"); len(guards) != want {
+			t.Fatalf("%s: %d guards, want %d", label, len(guards), want)
+		}
 	}
 }
