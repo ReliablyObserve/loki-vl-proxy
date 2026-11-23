@@ -63,6 +63,18 @@ why: |
   The existing performance catalog references mixed_parser_explicit_group and
   mixed_parser_reverse_group by case_id, reusing their quality queries instead
   of maintaining another copy of either expression.
+  The same catalogs link mixed_parser_explicit_rate_group and
+  mixed_parser_reverse_rate_group for grouped rate in both parser orders.
+  Their expressions differ from the count cases only in the range function;
+  every series label, timestamp and value remains compared against Loki.
+  Native Explore marks the rate scenes as the positive partial-fix proofs.
+  The count scenes remain mandatory source-linked runtime regression controls:
+  main and Loki already agree on the ordinary JSON generator cohort, so those
+  count captures do not establish a corrected output difference. The retained
+  rate comparison on a different production-scope selector motivates this
+  coverage, but does not certify these exact catalog expressions. Fresh
+  main/PR/Loki captures on identical CI inputs are still required. Neither
+  facet closes the remaining unsupported mixed-parser contracts.
   The typed admission in internal/queryplan/resolve.go and ordered execution in
   internal/proxy/ordered_json_metric.go are exercised by the existing API and
   native Explore catalogs through those same matrix case IDs.

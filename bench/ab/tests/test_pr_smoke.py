@@ -17,8 +17,7 @@ END = 1_800_000_000
 
 
 class RuntimeProofTest(unittest.TestCase):
-    def test_required_api_cells_and_measurements_cannot_be_omitted(self):
-        from copy import deepcopy
+    def fixture(self):
         name = next(sh["name"] for sh in pr_smoke.selection.load_shapes()["sets"]["control"]["shapes"] if pr_smoke.range_metric(sh))
         sel = {"sets": {"control": [name]}, "runtime_proof": {"required": True, "cells": {f"control/{name}": ["1h"]}}}
         revisions = {"base": "a" * 40, "head": "b" * 40}
@@ -32,6 +31,11 @@ class RuntimeProofTest(unittest.TestCase):
                    reuse={t: {"cold": cost, "repeat": repeat} for t in ("base", "pr")})
         summary = dict(set="control", baseline="base", candidate="pr", reference="loki", rows=[row], revision=revisions)
         summaries = [dict(summary, profile=p) for p in pr_smoke.EXECUTION]
+        return summaries, sel, meta, revisions
+
+    def test_required_api_cells_and_measurements_cannot_be_omitted(self):
+        from copy import deepcopy
+        summaries, sel, meta, revisions = self.fixture()
         check = lambda values: pr_smoke.runtime_api_problems(values, sel, meta)
         self.assertEqual(check(summaries), [])
         self.assertTrue(check(summaries[1:]))
@@ -52,6 +56,95 @@ class RuntimeProofTest(unittest.TestCase):
         with mock.patch.object(pr_smoke.comment, "render", return_value=("### A/B", {"failed": False})):
             _, verdict = pr_smoke.render_run(args(baseline_candidate=""), [], sel, meta, None, None, revisions["base"])
         self.assertEqual((verdict["failed"], verdict["state"], verdict["exit"]), (True, "failed", 1))
+
+    def test_resampled_cold_requires_original_and_every_matching_fresh_proof(self):
+        from copy import deepcopy
+        summaries, sel, meta, _ = self.fixture()
+        summaries = [deepcopy(summary) for summary in summaries]
+        meta["cold_samples"] = 2
+        shape = next(s for s in pr_smoke.selection.load_shapes()["sets"]["control"]["shapes"]
+                     if s["name"] == summaries[0]["rows"][0]["shape"])
+        secs, step = pr_smoke.selection.load_shapes()["ranges"]["1h"]
+        query = perf_matrix.shape_query(shape, step)
+        for summary in summaries:
+            row = summary["rows"][0]
+            row["baseline_parity_vs_reference"] = "same"
+            row["cold_samples"] = {t: [1, 2, 3] for t in ("base", "pr")}
+            row["cold"] = dict(base=2, pr=2, loki=1)
+            row["cold_resource_samples"] = {}
+            row["cold_resample_parity"] = {
+                "original_source": "first-pass", "reference_url_supplied": True,
+                "original_window": {"parity_vs_reference": "same", "baseline_parity_vs_reference": "differs"},
+                "targets": {"base": ["differs", "differs"], "pr": ["same", "same"]},
+            }
+            requests = {}
+            for target in ("base", "pr", "loki"):
+                receipts = []
+                for i in range(2):
+                    end = END - 120 - i * 60
+                    receipt = {"phase": "flushed-resample", "end": end,
+                               "history_start": end - secs - perf_matrix.query_lookback(query),
+                               "url": perf_matrix.request_url("http://" + target, shape, query, secs, step, end),
+                               "seconds": i + 2, "status": 200, "response_bytes": 100,
+                               "body_sha256": "c" * 64, "answer_proof": "answer", "signature": "series=1 points=1 sum=1"}
+                    if target == "loki":
+                        actual_query = query + " \t" * 64
+                        receipt.update(correctness_cache_control="no-cache", reference_skip="", original_query=query,
+                                       actual_query=actual_query, correctness_query_mode="space-tab-suffix-128",
+                                       cache={"result": {"entriesRequested": 1, "entriesFound": 0}},
+                                       cache_raw={"result": {"entriesRequested": 1, "entriesFound": 0}, "unknown": 1},
+                                       url=perf_matrix.request_url("http://loki", shape, actual_query, secs, step, end))
+                    else:
+                        receipt.update(vl_calls_header=2, reuse=dict(row["reuse"][target]["cold"]),
+                                       parity_vs_reference="differs" if target == "base" else "same",
+                                       parity_facets=[{"kind": "labels"}] if target == "base" else [])
+                    receipts.append(receipt)
+                requests[target] = receipts
+                if target != "loki":
+                    row["cold_resource_samples"][target] = [
+                        {"phase": "first-pass", "seconds": 1, "reuse": dict(row["reuse"][target]["cold"])}, *receipts]
+                    row["reuse"][target]["cold"].update(metric_runs_expected=3, cpu_runs_measured=3, rss_runs_measured=3)
+            summary["cold_resampled"] = [{"shape": row["shape"], "range": "1h", "applied": True, "requests": requests}]
+        check = lambda values: pr_smoke.runtime_api_problems(values, sel, meta)
+        self.assertEqual(check(summaries), [])  # a corrected baseline is not required to match Loki
+        for mutation in ("original-candidate", "original-base", "reference-count", "reference-header",
+                         "history", "query", "fresh-parity", "resource-count", "missing-sidecar",
+                         "missing-timings", "configured-count", "latency-median", "resource-median",
+                         "reference-prefix", "reference-suffix", "reference-length", "reference-cache",
+                         "partial-cache", "original-candidate-wrong", "cache-projection", "malformed-raw-cache"):
+            with self.subTest(mutation=mutation):
+                changed = deepcopy(summaries)
+                summary = changed[0]
+                row = summary["rows"][0]
+                request = summary["cold_resampled"][0]["requests"]
+                if mutation == "original-candidate":
+                    row["cold_resample_parity"]["original_window"]["parity_vs_reference"] = "n/a"
+                if mutation == "original-base":
+                    row["cold_resample_parity"]["original_window"]["baseline_parity_vs_reference"] = None
+                if mutation == "original-candidate-wrong":
+                    row["cold_resample_parity"]["original_window"]["parity_vs_reference"] = "differs"
+                if mutation == "reference-count": request["loki"].pop()
+                if mutation == "reference-header": request["loki"][0].pop("correctness_cache_control")
+                if mutation == "history": request["pr"][0]["history_start"] = END - 99999
+                if mutation == "query": request["pr"][0]["url"] += "&query=other"
+                if mutation == "fresh-parity": request["pr"][0]["parity_vs_reference"] = "differs"
+                if mutation == "resource-count": row["reuse"]["pr"]["cold"]["metric_runs_expected"] = 2
+                if mutation == "missing-sidecar": row.pop("cold_resample_parity")
+                if mutation == "missing-timings": row.pop("cold_samples")
+                if mutation == "latency-median": row["cold"]["pr"] = 0.1
+                if mutation == "resource-median": row["reuse"]["pr"]["cold"]["cpu_seconds"] = 99
+                if mutation == "reference-prefix": request["loki"][0]["actual_query"] = "other" + " " * 128
+                if mutation == "reference-suffix": request["loki"][0]["actual_query"] = query + " " * 127 + "\n"
+                if mutation == "reference-length": request["loki"][0]["actual_query"] = query + " " * 127
+                if mutation == "reference-cache": request["loki"][0].pop("cache")
+                if mutation == "partial-cache": request["loki"][0]["cache"] = {"result": {"entriesFound": 0}}
+                if mutation == "cache-projection": request["loki"][0]["cache"]["result"]["entriesRequested"] = 0
+                if mutation == "malformed-raw-cache": request["loki"][0]["cache_raw"]["volumeResult"] = "invalid"
+                if mutation == "configured-count":
+                    with mock.patch.dict(meta, cold_samples=3):
+                        self.assertTrue(check(changed), mutation)
+                else:
+                    self.assertTrue(check(changed), mutation)
 
 
 

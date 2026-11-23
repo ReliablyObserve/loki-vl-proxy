@@ -588,6 +588,28 @@
       "require_non_empty": true
     },
     {
+      "id": "mixed_parser_explicit_rate_group",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (user_id) (rate({app=\"api-gateway\",env=\"production\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "mixed_parser_reverse_rate_group",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (user_id) (rate({app=\"api-gateway\",env=\"production\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
       "id": "field_body_key_before_parser",
       "family": "metric_aggregation",
       "endpoint": "query_range",
@@ -2805,6 +2827,16 @@
       "id": "mixed_parser_reverse_group",
       "category": "metric_agg",
       "case_id": "mixed_parser_reverse_group"
+    },
+    {
+      "id": "mixed_parser_explicit_rate_group",
+      "category": "metric_agg",
+      "case_id": "mixed_parser_explicit_rate_group"
+    },
+    {
+      "id": "mixed_parser_reverse_rate_group",
+      "category": "metric_agg",
+      "case_id": "mixed_parser_reverse_rate_group"
     },
     {
       "id": "avg_by",

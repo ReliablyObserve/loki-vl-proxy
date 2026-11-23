@@ -299,6 +299,48 @@ class BaselinePlanTest(unittest.TestCase):
         self.assertEqual(got["entries"]["fix-page"]["fixes"], ["semantics/case-a"])
         self.assertEqual(got["captures"], plan.plan_all(SPEC)["captures"])
 
+    def test_mixed_rate_fix_facets_reuse_catalog_and_keep_count_runtime_controls(self):
+        root = plan.ab.ROOT
+        with open(os.path.join(root, "test/e2e-compat/query-semantics-matrix.json")) as handle:
+            matrix = json.load(handle)
+        with open(os.path.join(root, "test/e2e-compat/query-semantics-operations.json")) as handle:
+            inventory = json.load(handle)
+        cases = {case["id"]: case for case in matrix["cases"]}
+        performance = {case["case_id"] for case in matrix["performance_cases"]}
+        operations = {cid for operation in inventory["operations"] for cid in operation["cases"]}
+        paths = {path["id"]: path for path in inventory["depth_paths"]}
+        spec = plan.load_spec()
+        pages = {page["id"]: page for page in spec["pages"]}
+        registry_case = "semantics/two-parsers-keep-one"
+        for direction, parser in (("explicit", "json"), ("reverse", "logfmt")):
+            count_id = f"mixed_parser_{direction}_group"
+            rate_id = f"mixed_parser_{direction}_rate_group"
+            self.assertIn(rate_id, cases)
+            rate = cases[rate_id]
+            self.assertEqual(rate["query"], cases[count_id]["query"].replace("count_over_time(", "rate(", 1))
+            self.assertEqual(rate["compare"], "metric_points")
+            self.assertTrue(rate["require_non_empty"])
+            self.assertEqual(rate["endpoint"], "query_range")
+            self.assertEqual(rate["expectation"], "success")
+            self.assertIn(rate_id, performance)
+            self.assertIn(rate_id, operations)
+            self.assertIn(rate_id, paths[f"{parser}_parser_range_function_aggregation"]["matrix_cases"])
+            rate_page = pages[f"explore-mixed-parser-{direction}-rate"]
+            self.assertEqual(rate_page["case_id"], rate_id)
+            self.assertEqual(rate_page["query"], rate["query"])
+            self.assertEqual(rate_page["fixes"], [registry_case])
+            self.assertNotIn("fixes", pages[f"explore-mixed-parser-{direction}-count"])
+        result = plan.plan(["internal/queryplan/resolve.go"], spec=spec,
+                           cases=[registry_case], max_captures=1)
+        self.assertEqual(set(result["fix_cases"][registry_case]["entries"]),
+                         {"explore-mixed-parser-explicit-rate", "explore-mixed-parser-reverse-rate"})
+        for direction in ("explicit", "reverse"):
+            for function in ("count", "rate"):
+                pid = f"explore-mixed-parser-{direction}-{function}"
+                self.assertIn(pid, result["entries"])
+                self.assertTrue(result["entries"][pid]["runtime_required"])
+                self.assertNotIn(pid, result["dropped"])
+
     def test_every_page_at_its_own_ranges(self):
         got = plan.plan_all(SPEC)
         self.assertTrue(got["run"])

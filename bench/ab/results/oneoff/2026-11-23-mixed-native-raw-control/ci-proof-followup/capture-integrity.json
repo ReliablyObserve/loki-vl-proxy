@@ -1,0 +1,28 @@
+{
+  "capture_source_sha256": "58e06e039d1650bbf407be1bf77c4fda0c40a20f279c3a4c822d4832fa40f74b",
+  "test_source_sha256": "152af86addc3c162edb004e1c52fe529b75a24d5e60542254d76f9b3bd14eaf8",
+  "scope": "P2 capture integrity mechanism verification only, not real CI eviction recovery or product/performance acceptance.",
+  "unit_suite": {
+    "tests": 263,
+    "verdict": "PASS",
+    "seconds": 42.677,
+    "log_sha256": "24bfc5acc1bf47234f0e91c00b58c8d96b83eb857185c3523ac4d45fa451c8a6",
+    "warnings": "Existing fake-HTTP socket ResourceWarnings remain visible.",
+    "earlier_sandbox_blocked_run_retained": "visual-unit-p2-58e06e03.log"
+  },
+  "mechanism_proof": {
+    "result_file": "shipped-fallback-result-p2-58e06e03.json",
+    "sha256": "55402d38d151e62a42c3c4ecce739d5b6810b236fe7a4db6a9f001cb93510b1d",
+    "response_bytes": 2097152,
+    "full_body_sha256": "5647741dbfbb3844066fecb701b5b9de2781b5cef4e8e2b4f6a037455f255f80",
+    "api_requests": 1,
+    "cdp_body_reads": 1,
+    "max_sampled_process_tree_rss_bytes": 709246976,
+    "cleanup": {
+      "browser_closed": true,
+      "server_closed": true
+    },
+    "PW_failure_deliberately_injected": true
+  },
+  "outstanding": "Real Grafana/CI Fields6h proof remains outstanding."
+}

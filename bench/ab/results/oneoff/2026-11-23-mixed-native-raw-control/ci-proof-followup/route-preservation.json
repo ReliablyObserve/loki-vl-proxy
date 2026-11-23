@@ -1,0 +1,28 @@
+{
+  "before_runs": 27120,
+  "after_runs": 27140,
+  "changed": [],
+  "missing": [],
+  "added": [
+    "24h chunk false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "24h chunk false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "24h chunk true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "24h chunk true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "instant false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "instant false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "instant true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "instant true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step<range false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step<range false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step<range true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step<range true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step=range false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step=range false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step=range true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step=range true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step>range false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step>range false \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step>range true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | json user_id=\\\"[\\\\\\\"user_id\\\\\\\"]\\\" | logfmt | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\"",
+    "step>range true \"sum by (user_id) (rate({app=\\\"api-gateway\\\",env=\\\"production\\\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\\\"\\\" [5m]))\""
+  ]
+}

@@ -2303,15 +2303,41 @@
    ],
    "covers": [
     "semantics/two-parsers-keep-one"
-   ],
-   "fixes": [
-    "semantics/two-parsers-keep-one"
    ]
   },
   {
    "id": "explore-mixed-parser-reverse-count",
    "kind": "explore",
    "case_id": "mixed_parser_reverse_group",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "covers": [
+    "semantics/two-parsers-keep-one"
+   ]
+  },
+  {
+   "id": "explore-mixed-parser-explicit-rate",
+   "kind": "explore",
+   "case_id": "mixed_parser_explicit_rate_group",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "covers": [
+    "semantics/two-parsers-keep-one"
+   ],
+   "fixes": [
+    "semantics/two-parsers-keep-one"
+   ]
+  },
+  {
+   "id": "explore-mixed-parser-reverse-rate",
+   "kind": "explore",
+   "case_id": "mixed_parser_reverse_rate_group",
    "ranges": [
     "1h",
     "6h",

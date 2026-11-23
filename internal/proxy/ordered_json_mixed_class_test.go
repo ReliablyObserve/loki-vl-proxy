@@ -399,6 +399,56 @@ func TestMixedJSONRowClassLocalPredicates(t *testing.T) {
 	// proof that VL executes the preparation. Actual backend tests cover those.
 }
 
+// conformance: semantics/two-parsers-keep-one
+func TestMixedJSONRowClassLongKeyValidJSONDomain(t *testing.T) {
+	c, _ := newMixedJSONRowClass("k")
+	var guard logsql.FieldFilter
+	validityRetained := false
+	for _, filter := range mixedClassFieldFilters(t, c.safe) {
+		if filter.Field == "_msg" && filter.Op == logsql.FieldOpRegexp && strings.Contains(filter.Value, "{128}") {
+			guard = filter
+		}
+		if filter.Field == mixedClassValidField && filter.Op == logsql.FieldOpAny {
+			validityRetained = true
+		}
+	}
+	if guard.Value == "" || !guard.Negate || !validityRetained {
+		t.Fatal("long-key rejection must retain the positive backend JSON validity predicate")
+	}
+	current := regexp.MustCompile(guard.Value)
+	previous := regexp.MustCompile(`"[A-Za-z_][A-Za-z0-9_]{128}[A-Za-z0-9_]*"\s*:`)
+	for _, length := range []int{1, 128, 129} {
+		name := strings.Repeat("x", length)
+		for _, value := range []string{"plain", strings.Repeat("v", 129), "braces{,}commas", "tail,"} {
+			for _, fixture := range []struct {
+				value  any
+				reject bool
+			}{
+				{map[string]any{"k": "blue", name: value}, length > 128},
+				{map[string]any{"k": "blue", "other": map[string]any{name: value}}, length > 128},
+				{map[string]any{"k": "blue", "other": []any{value, map[string]any{name: value}}}, length > 128},
+				{map[string]any{"k": "blue", "other": []any{name, value}}, false},
+			} {
+				body, err := json.Marshal(fixture.value)
+				if err != nil || !json.Valid(body) || strings.ContainsAny(string(body), "\\=") {
+					t.Fatal("fixture is outside the positive validity/ASCII/no-backslash domain")
+				}
+				if current.Match(body) != fixture.reject || current.Match(body) != previous.Match(body) {
+					t.Fatalf("changed long-key rejection for valid JSON: %s", body)
+				}
+			}
+		}
+	}
+	// A malformed value followed by a colon is not a key. The broad
+	// expression matches it; the positive backend validity predicate must
+	// still reject the whole row. This local test is not a
+	// replacement for the actual VL partition/complete-envelope oracle.
+	malformed := `{"k":"blue","other":"` + strings.Repeat("v", 129) + `":0}`
+	if json.Valid([]byte(malformed)) || !previous.MatchString(malformed) {
+		t.Fatal("missing malformed-value counterexample to treating this predicate as a JSON validator")
+	}
+}
+
 func mixedClassFieldFilters(t *testing.T, expr logsql.FilterExpr) []logsql.FieldFilter {
 	t.Helper()
 	var out []logsql.FieldFilter

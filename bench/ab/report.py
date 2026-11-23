@@ -81,6 +81,37 @@ def cache_served(stats):
                for name, sub in (stats or {}).items() if name != "statsResult")
 
 
+def computed_correctness_cache(stats):
+    """Strict evidence for EXTRA correctness reads only; measured cache policies stay unchanged."""
+    if not isinstance(stats, dict) or not stats or "result" not in stats:
+        return False
+
+    def counter(value):
+        return type(value) is int and value >= 0 or (
+            type(value) is float and math.isfinite(value) and value >= 0 and value.is_integer())
+
+    for name, bucket in stats.items():
+        if not isinstance(name, str):
+            return False
+        if name == "statsResult" or name != "result" and not name.endswith("Result"):
+            continue  # planning cache hits are not result reuse
+        if (not isinstance(bucket, dict)
+                or not all(counter(bucket.get(key)) for key in ("entriesFound", "entriesRequested"))
+                or "bytesReceived" in bucket and not counter(bucket["bytesReceived"])
+                or bucket["entriesFound"] != 0 or bucket.get("bytesReceived", 0) != 0):
+            return False
+    return True
+
+
+def correctness_cache_projection(stats):
+    """Validate raw correctness evidence, then project only legacy result-cache fields."""
+    if not computed_correctness_cache(stats):
+        return None
+    return {name: {key: bucket[key] for key in ("entriesFound", "entriesRequested", "bytesReceived") if key in bucket}
+            for name, bucket in stats.items()
+            if (name == "result" or name.endswith("Result")) and isinstance(bucket, dict)}
+
+
 def cache_answered_whole(stats):
     """True when Loki's counters say its results cache held every entry the request asked for: the answer is
     Loki's cached extents put together for a moved window, not one Loki computed.

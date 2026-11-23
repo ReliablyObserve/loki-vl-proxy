@@ -168,6 +168,92 @@ async function settle(page: Page, pending: { n: number; last: number; seen?: num
 
 const BACKEND = /\/api\/ds\/query|\/api\/datasources\/uid\/[^/]+\/resources\/|\/api\/datasources\/proxy\//;
 
+// Independent CDP buffers retain proof bytes only inside Chrome. No body cache,
+// refetch, request interception or URL-only matching is used by the fallback.
+function startBodyFallback(cdp: any) {
+  const maxBody = 32 * 1024 * 1024;
+  const maxIdentity = 256 * 1024, maxMetadata = 4 * 1024 * 1024, maxRequests = 1024;
+  type Seen = { method: string; url: string; postData: string | null; status?: number; responseURLMatches?: boolean;
+    finished?: boolean; failed?: boolean; redirected?: boolean };
+  const seen = new Map<string, Seen>();
+  let metadata = 0, unavailable = "", disposed = false, active = 0;
+  const cancellations = new Set<() => void>();
+  const request = ({ requestId, request, redirectResponse }: any) => {
+    if (disposed || unavailable) return;
+    const previous = seen.get(requestId);
+    if (previous) { previous.redirected = true; return; }
+    if (!BACKEND.test(request.url)) return;
+    const postData = typeof request.postData === "string" ? request.postData : null;
+    if (typeof request.method !== "string" || typeof request.url !== "string" ||
+        (request.hasPostData && postData === null)) { unavailable = "request identity incomplete"; return; }
+    const parts = [request.method, request.url, postData || ""];
+    if (parts.some(part => part.length > maxIdentity)) { unavailable = "request identity limit"; return; }
+    const bytes = parts.reduce((sum, part) => sum + Buffer.byteLength(part), 0);
+    if (bytes > maxIdentity || metadata + bytes > maxMetadata || seen.size >= maxRequests) {
+      unavailable = "request identity limit"; return;
+    }
+    metadata += bytes;
+    seen.set(requestId, {method: request.method, url: request.url, postData, redirected: !!redirectResponse});
+  };
+  const response = ({ requestId, response }: any) => {
+    const item = seen.get(requestId);
+    if (item && !item.redirected) { item.status = response.status; item.responseURLMatches = response.url === item.url; }
+  };
+  const finished = ({ requestId }: any) => { const item = seen.get(requestId); if (item) item.finished = true; };
+  const failed = ({ requestId }: any) => { const item = seen.get(requestId); if (item) item.failed = true; };
+  const events: [string, (...args: any[]) => void][] = [
+    ["Network.requestWillBeSent", request], ["Network.responseReceived", response],
+    ["Network.loadingFinished", finished], ["Network.loadingFailed", failed],
+  ];
+  for (const [name, handler] of events) cdp.on(name, handler);
+  return {
+    async read(identity: {method: string; url: string; postData: string | null; status: number})
+      : Promise<{body?: Buffer; error?: string}> {
+      const no = (error: string) => ({error});
+      if (disposed) return no("collector disposed");
+      if (unavailable) return no(unavailable);
+      const matches = [...seen.entries()].filter(([, item]) => item.method === identity.method &&
+        item.url === identity.url && item.postData === identity.postData);
+      if (matches.length !== 1) return no(matches.length ? "ambiguous request identity" : "request identity missing");
+      const [requestId, item] = matches[0];
+      if (item.redirected) return no("redirected request");
+      if (item.status !== identity.status || !item.responseURLMatches) return no("response status/identity mismatch");
+      if (!item.finished || item.failed) return no("response incomplete or failed");
+      if (active >= 2) return no("concurrent body read limit");
+      active++;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let cancelRead: () => void = () => {};
+      try {
+        const deadline = new Promise<never>((_, reject) => {
+          cancelRead = () => reject(new Error("collector disposed"));
+          cancellations.add(cancelRead);
+          timer = setTimeout(() => { unavailable = "body read timed out"; reject(new Error(unavailable)); }, 2000);
+        });
+        const value = await Promise.race([cdp.send("Network.getResponseBody", {requestId}), deadline]);
+        if (disposed) return no("collector disposed");
+        if (typeof value?.body !== "string" || typeof value.base64Encoded !== "boolean") return no("body unavailable");
+        const encoding = value.base64Encoded ? "base64" : "utf8";
+        if (value.body.length > (value.base64Encoded ? Math.ceil(maxBody / 3) * 4 : maxBody) ||
+            Buffer.byteLength(value.body, encoding) > maxBody) return no("body byte limit");
+        const body = Buffer.from(value.body, encoding);
+        if (value.base64Encoded && body.toString("base64") !== value.body) return no("invalid body encoding");
+        return {body};
+      } catch {
+        return no(unavailable || (disposed ? "collector disposed" : "body unavailable"));
+      } finally {
+        clearTimeout(timer); cancellations.delete(cancelRead); active--;
+      }
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const cancel of cancellations) cancel();
+      for (const [name, handler] of events) cdp.off(name, handler);
+      seen.clear();
+    },
+  };
+}
+
 // Raw pageerror text and the structured DTO share the actual CDP exceptionId. Playwright's Error loses the
 // identity and payload of a thrown plain object; its separate event count audits that CDP missed nothing.
 async function startClientExceptionProof(page: Page, cdp: any, errors: string[]) {
@@ -273,7 +359,14 @@ async function startClientExceptionProof(page: Page, cdp: any, errors: string[])
 async function startRuntimeProof(page: Page, began = Date.now(), errors: string[] = []) {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
-  await cdp.send("Network.enable");
+  const bodyFallback = startBodyFallback(cdp);
+  try {
+    await cdp.send("Network.enable", {maxTotalBufferSize: 128 * 1024 * 1024, maxResourceBufferSize: 32 * 1024 * 1024});
+  } catch (error) {
+    bodyFallback.dispose();
+    await cdp.detach().catch(() => {});
+    throw error;
+  }
   const exceptions = await startClientExceptionProof(page, cdp, errors);
   const requests = new Map<string, { api: boolean; received: number }>();
   let apiRequests = 0, apiBytes = 0, pageBytes = 0, heap = 0, samples = 0;
@@ -335,6 +428,7 @@ async function startRuntimeProof(page: Page, began = Date.now(), errors: string[
     disposed = true;
     clearInterval(timer);
     exceptions.dispose();
+    bodyFallback.dispose();
     page.off("close", onClose);
     cdp.removeAllListeners();
     await cdp.detach().catch(() => {});
@@ -343,6 +437,7 @@ async function startRuntimeProof(page: Page, began = Date.now(), errors: string[
   page.once("close", onClose);
   return {
     dispose,
+    readBody: bodyFallback.read,
     async finishClientExceptions() {
       try { return await exceptions.finish(); }
       finally { await dispose(); }
@@ -473,26 +568,33 @@ const abortedRecord = (rq: Request) => ({ url: rq.url().replace(/^https?:\/\/[^/
 // nothing either: it is recorded as `aborted`, whether the cancel came before or after the headers, so that
 // whether it left a record does not depend on which of the two happened first. compare.py reads it as "cancelled
 // by the page".
-async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>) {
+async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>, readBody?: ReturnType<typeof startBodyFallback>["read"]) {
   const rq = rs.request();
   const url = rq.url().replace(/^https?:\/\/[^/]+/, "");
   await over(rq);
   if (cancelled(rq)) return abortedRecord(rq);
   let body: any = null;
   let unavailable = "";
-  try { body = await rs.json(); } catch {
-    try { body = await rs.text(); } catch {
-      // Chrome drops the body of a very large answer from the inspector's buffer ("evicted"): ask for the raw bytes
-      // once more, and when they are gone too say so in the record instead of leaving a bare null.
-      try {
-        const raw = (await rs.body()).toString("utf8");
-        try { body = JSON.parse(raw); } catch { body = raw; }
-      } catch (e) { body = null; unavailable = String((e as Error)?.message ?? e).split("\n")[0].slice(0, 160) || "body unavailable"; }
+  let source: string | undefined;
+  let bytes: Buffer | undefined;
+  try { bytes = await rs.body(); } catch (error) {
+    unavailable = String((error as Error)?.message ?? error).split("\n")[0].slice(0, 160) || "body unavailable";
+    if (cancelled(rq)) return abortedRecord(rq);
+    if (readBody && /evicted from inspector cache|No (?:resource|data) (?:found )?with given identifier/.test(unavailable)) {
+      const recovered = await readBody({method: rq.method(), url: rq.url(), postData: rq.postData(), status: rs.status()});
+      if (recovered.body) { bytes = recovered.body; source = "cdp-fallback"; }
+      else unavailable = `CDP fallback unavailable: ${recovered.error || "body missing"}; ${unavailable}`.slice(0, 160);
     }
+  }
+  if (cancelled(rq)) return abortedRecord(rq);
+  if (bytes) {
+    const raw = bytes.toString("utf8");
+    try { body = JSON.parse(raw); } catch { body = raw; }
   }
   const length = parseInt(rs.headers()["content-length"] || "", 10);
   return { url, method: rq.method(),
     request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body,
+    ...(source ? {body_source: source} : {}),
     ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}) } : {}) };
 }
 
@@ -553,7 +655,7 @@ for (const p of spec.pages as PageSpec[]) {
         const reading = new Set<Promise<void>>();
         const track = (work: Promise<void>) => { const job = work.finally(() => reading.delete(job)); reading.add(job); };
         page.on("response", (rs) => {
-          if (BACKEND.test(rs.request().url())) track(recordAnswer(rs, over).then(record => {
+          if (BACKEND.test(rs.request().url())) track(recordAnswer(rs, over, runtimeProof?.readBody).then(record => {
             records.push(record);
             runtimeProof?.recordData([record], completion.get(rs.request()));
           }));

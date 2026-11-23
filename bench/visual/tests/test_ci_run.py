@@ -99,6 +99,119 @@ const textNode = parentElement => ({parentElement, textContent: parentElement.te
         self.assertLess(drain, after_settle.index("await page.screenshot"))
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for Chromium collector unit tests")
+    def test_independent_body_collector_requires_unique_complete_identity(self):
+        source = Path(ci_run.HERE, "capture.spec.ts").read_text().split("const BACKEND = ", 1)[1].split("// Raw pageerror", 1)[0]
+        node = r"""const assert = require("node:assert/strict");
+const {EventEmitter} = require("node:events");
+const strip = require("node:module").stripTypeScriptTypes;
+if (!strip) process.exit(77);
+const start = Function(strip(require("node:fs").readFileSync(0,"utf8"))+";return startBodyFallback")();
+const identity = {method:"POST",url:"http://localhost/api/ds/query?requestId=1",postData:'{"queries":[{"expr":"rate({app=\\"api\\"}[5m])"}]}',status:200};
+function fixture() {
+  const cdp=new EventEmitter(); let calls=0;
+  cdp.send=async(method,args)=>{assert.equal(method,"Network.getResponseBody");assert.equal(args.requestId,"one");calls++;return{body:'{"data":[1]}',base64Encoded:false};};
+  return {cdp,collector:start(cdp),calls:()=>calls};
+}
+function add(cdp,id="one",over={}) {
+  cdp.emit("Network.requestWillBeSent",{requestId:id,request:{method:identity.method,url:identity.url,postData:identity.postData,...over}});
+  cdp.emit("Network.responseReceived",{requestId:id,response:{url:identity.url,status:200}});
+  cdp.emit("Network.loadingFinished",{requestId:id});
+}
+(async()=>{
+  let f=fixture();add(f.cdp);
+  let got=await f.collector.read(identity);assert.equal(got.body.toString(),'{"data":[1]}');assert.equal(f.calls(),1);f.collector.dispose();
+  for(const changed of [{method:"GET"},{url:identity.url+"&other=1"},{postData:identity.postData+" "},{status:201}]) {
+    f=fixture();add(f.cdp);got=await f.collector.read({...identity,...changed});
+    assert.equal(got.body,undefined);assert.match(got.error,/identity|status/);assert.equal(f.calls(),0);f.collector.dispose();
+  }
+  f=fixture();add(f.cdp);add(f.cdp,"two");got=await f.collector.read(identity);
+  assert.equal(got.body,undefined);assert.match(got.error,/ambiguous/);assert.equal(f.calls(),0);f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.emit("Network.requestWillBeSent",{requestId:"one",redirectResponse:{status:302},request:{method:"POST",url:identity.url,postData:identity.postData}});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/redirect/);assert.equal(f.calls(),0);f.collector.dispose();
+  f=fixture();add(f.cdp);
+  f.cdp.emit("Network.requestWillBeSent",{requestId:"one",redirectResponse:{status:302},request:{method:"POST",url:identity.url,postData:identity.postData}});
+  const longRedirectURL="http://localhost/redirect?value="+"x".repeat(4*1024*1024+1);
+  let redirectedMetadataReads=0;
+  f.cdp.emit("Network.responseReceived",{requestId:"one",response:{
+    get url(){redirectedMetadataReads++;return longRedirectURL;},
+    get status(){redirectedMetadataReads++;return 200;}
+  }});
+  assert.equal(redirectedMetadataReads,0,"redirect metadata must not be read or retained");
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/redirect/);assert.equal(f.calls(),0);f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.emit("Network.loadingFailed",{requestId:"one",canceled:true});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/failed|incomplete/);assert.equal(f.calls(),0);f.collector.dispose();
+  f=fixture();f.cdp.emit("Network.requestWillBeSent",{requestId:"one",request:{method:"POST",url:identity.url,hasPostData:true}});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.equal(f.calls(),0);f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.send=async()=>{throw Error("inspector unavailable");};
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/unavailable/);f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.send=async()=>({body:"x".repeat(32*1024*1024+1),base64Encoded:false});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/limit/);f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.send=async()=>({body:"%%%=",base64Encoded:true});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/encoding/);f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.send=async()=>({body:Buffer.from('{"data":[1]}').toString("base64"),base64Encoded:true});
+  got=await f.collector.read(identity);assert.equal(got.body.toString(),'{"data":[1]}');f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.send=async()=>({base64Encoded:false});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/unavailable/);f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.emit("Network.responseReceived",{requestId:"one",response:{url:identity.url+"&wrong=1",status:200}});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/identity/);assert.equal(f.calls(),0);f.collector.dispose();
+  f=fixture();add(f.cdp);f.cdp.emit("Network.requestWillBeSent",{requestId:"large",request:{method:"POST",url:identity.url,postData:"x".repeat(256*1024+1)}});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/limit/);assert.equal(f.calls(),0);f.collector.dispose();
+  f=fixture();for(let i=0;i<1025;i++)add(f.cdp,"request-"+i);
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/limit/);assert.equal(f.calls(),0);f.collector.dispose();
+  f=fixture();add(f.cdp);let release;
+  f.cdp.send=()=>new Promise(resolve=>{release=resolve;});
+  const first=f.collector.read(identity), second=f.collector.read(identity);
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/concurrent/);
+  f.collector.dispose();assert.match((await first).error,/disposed/);assert.match((await second).error,/disposed/);
+  f=fixture();add(f.cdp);f.collector.dispose();got=await f.collector.read(identity);
+  assert.equal(got.body,undefined);assert.match(got.error,/disposed/);assert.equal(f.calls(),0);
+  for(const event of ["Network.requestWillBeSent","Network.responseReceived","Network.loadingFinished","Network.loadingFailed"])assert.equal(f.cdp.listenerCount(event),0);
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+        proc = subprocess.run(["node", "--max-old-space-size=192", "-e", node], input="const BACKEND = " + source,
+                              text=True, capture_output=True, timeout=20)
+        if proc.returncode == 77:
+            self.skipTest("Node 22.13+ supplies the TypeScript loader")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for Chromium collector unit tests")
+    def test_answer_fallback_preserves_cancelled_and_unavailable_records(self):
+        source = Path(ci_run.HERE, "capture.spec.ts").read_text()
+        answer = source.split("const cancelled = ", 1)[1].split("for (const p of spec.pages", 1)[0]
+        node = r"""const assert=require("node:assert/strict");
+const strip=require("node:module").stripTypeScriptTypes;
+if(!strip)process.exit(77);
+const record=Function(strip(require("node:fs").readFileSync(0,"utf8"))+";return recordAnswer")();
+let calls=0, failure=null;
+const rq={url:()=>"http://localhost/api/ds/query?requestId=1",method:()=>"POST",postData:()=>'{"queries":[1]}',postDataJSON:()=>({queries:[1]}),failure:()=>failure};
+const response=body=>({request:()=>rq,status:()=>200,headers:()=>({"content-length":"12"}),body,
+  json:async()=>{throw Error("Request content was evicted from inspector cache");},text:async()=>{throw Error("Request content was evicted from inspector cache");}});
+const recover=async identity=>{calls++;assert.deepEqual(identity,{method:"POST",url:rq.url(),postData:rq.postData(),status:200});return{body:Buffer.from('{"data":[1]}')};};
+(async()=>{
+ const over=async()=>{};
+ let got=await record(response(async()=>{throw Error("Request content was evicted from inspector cache");}),over,recover);
+ assert.deepEqual(got.response,{data:[1]});assert.equal(got.body_source,"cdp-fallback");assert.equal(calls,1);
+ got=await record(response(async()=>Buffer.from('{"data":[2]}')),over,recover);
+ assert.deepEqual(got.response,{data:[2]});assert.equal(got.body_source,undefined);assert.equal(calls,1);
+ got=await record(response(async()=>Buffer.from("plain error")),over,recover);
+ assert.equal(got.response,"plain error");assert.equal(calls,1);
+ failure={errorText:"net::ERR_ABORTED"};
+ got=await record(response(async()=>{throw Error("Request content was evicted from inspector cache");}),over,recover);
+ assert.equal(got.status,0);assert.equal(got.aborted,"net::ERR_ABORTED");assert.equal(calls,1);
+ failure=null;
+ got=await record(response(async()=>{throw Error("Target page closed");}),over,recover);
+ assert.equal(got.response,null);assert.match(got.body_unavailable,/Target page closed/);assert.equal(calls,1);
+ got=await record(response(async()=>{throw Error("Request content was evicted from inspector cache");}),over,async()=>({error:"ambiguous request identity"}));
+ assert.equal(got.response,null);assert.match(got.body_unavailable,/ambiguous/);
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+        proc = subprocess.run(["node", "-e", node], input="const cancelled = " + answer,
+                              text=True, capture_output=True, timeout=20)
+        if proc.returncode == 77:
+            self.skipTest("Node 22.13+ supplies the TypeScript loader")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for Chromium collector unit tests")
     def test_exception_collector_binds_actual_events_and_fails_closed(self):
         source = Path(ci_run.HERE, "capture.spec.ts").read_text().split("const BACKEND = ", 1)[1].split("// Logs Drilldown", 1)[0]
         node = r'''const assert = require("node:assert/strict");

@@ -2141,6 +2141,7 @@
     "internal/proxy/ordered_json_metric_test.go | semantics/pipeline-error-text-parity",
     "internal/proxy/ordered_json_metric_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/ordered_json_mixed_class_oracle_test.go | semantics/two-parsers-keep-one",
+    "internal/proxy/ordered_json_mixed_class_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/ordered_json_mixed_stats_test.go | mixed-json-row-stats",
     "internal/proxy/ordered_json_mixed_stats_test.go | quality/query-range-extent-cache",
     "internal/proxy/ordered_json_mixed_stats_test.go | quality/query-range-settled-steps",
@@ -3610,12 +3611,12 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 810,
+      "go": 811,
       "playwright": 3
     },
     "page_kinds": {
       "drilldown": 22,
-      "explore": 137,
+      "explore": 139,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3625,7 +3626,7 @@
       "detected_field_sample": 2,
       "expect:client_error": 12,
       "log_entries": 51,
-      "metric_points": 163,
+      "metric_points": 165,
       "pipeline_error": 7,
       "ranked_values": 2
     },
@@ -3721,7 +3722,9 @@
     "explore-metric-parenthesized",
     "explore-metric-plain",
     "explore-mixed-parser-explicit-count",
+    "explore-mixed-parser-explicit-rate",
     "explore-mixed-parser-reverse-count",
+    "explore-mixed-parser-reverse-rate",
     "explore-nested-aggregation-outer-by",
     "explore-nested-json-filtered-count",
     "explore-nested-json-filtered-rate",
@@ -4058,6 +4061,7 @@
     "mixed_parser_body_level_error_range",
     "mixed_parser_error_metadata",
     "mixed_parser_explicit_group",
+    "mixed_parser_explicit_rate_group",
     "mixed_parser_instant_empty_group",
     "mixed_parser_keep_empty_keep",
     "mixed_parser_line_not_or",
@@ -4065,6 +4069,7 @@
     "mixed_parser_regex_not_or",
     "mixed_parser_regex_or",
     "mixed_parser_reverse_group",
+    "mixed_parser_reverse_rate_group",
     "mixed_parser_sort_desc_empty_group",
     "mixed_parser_sort_empty_group",
     "mixed_parser_sort_transformed_binary",

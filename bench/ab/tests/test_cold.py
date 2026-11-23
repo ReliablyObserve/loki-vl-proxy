@@ -161,8 +161,184 @@ SPEC = {"ranges": {"1h": [3600, 5]},
         "sets": {"control": {"shapes": [{"name": "X1", "query": 'sum(count_over_time({a="b"}[$__auto]))'},
                                         {"name": "H", "query": "x", "end_offset": 3600}]}}}
 
+ANSWER = b'{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"a"},"values":[[1,"1"]]}]}}'
+REFERENCE_ANSWER = ANSWER.replace(b'"resultType":"matrix"',
+                                  b'"stats":{"cache":{"result":{"entriesRequested":1,"entriesFound":0}}},"resultType":"matrix"')
+
+
+class ResampleResourcesTest(unittest.TestCase):
+    def exercise(self, missing=False, body=ANSWER, reference_body=REFERENCE_ANSWER, reference_status=200,
+                 base_body=None, original_parity="same", first_available=True):
+        summary0 = summary(row(shape="X1", pr=0.1, base=0.1, loki=0.1,
+                               pr_cold=9, base_cold=9), set_name="control")
+        original = {"cpu_seconds": 10, "cpu_samples": 2, "rss_samples": 2,
+                    "rss_max_sampled_bytes": 100}
+        summary0["rows"][0]["reuse"] = {t: {"cold": {"cpu_seconds": 77}} for t in ("base", "pr")}
+        summary0["rows"][0]["parity_vs_reference"] = original_parity
+        first = {("X1", "1h"): dict(summary0["rows"][0]["cold"])}
+        events = []
+        proxies = {t: FakeProxy(t, []) for t in ("base", "pr")}
+        steps = {t: 0 for t in proxies}
+
+        def scrape(url):
+            target = url.rsplit("/", 1)[-1]
+            index = steps[target]
+            steps[target] += 1
+            events.append(("metrics", target))
+            if missing and target == "pr" and index == 3:
+                return None
+            after, sample = index % 2, index // 2 + 1
+            return {"cpu_seconds": after * 2 * sample, "rss_bytes": 200 + index * 10,
+                    "vl_calls": after * 9, "vl_bytes": after * 100,
+                    "vl:l2_disk:requests": after * 4, "vl:l2_disk:hits": after * 3}
+
+        def request(url, *args):
+            target = url.split("/")[2]
+            events.append(("request", target))
+            if target == "loki":
+                self.assertEqual(args[0].get("Cache-Control"), "no-cache")
+                actual_query = perf_matrix.urllib.parse.parse_qs(perf_matrix.urllib.parse.urlsplit(url).query)["query"][0]
+                original_query = perf_matrix.shape_query(SPEC["sets"]["control"]["shapes"][0], 5)
+                self.assertTrue(actual_query.startswith(original_query))
+                self.assertEqual(len(actual_query), len(original_query) + 128)
+                self.assertFalse(set(actual_query[len(original_query):]) - {" ", "\t"})
+                return reference_status, reference_body, 1, 123, None
+            self.assertNotIn("Cache-Control", args[0])
+            return 200, base_body if target == "base" and base_body is not None else body, steps[target] // 2 + 1, 123, 2
+
+        with mock.patch.object(perf_matrix, "request_full", request), \
+                mock.patch.object(perf_matrix.reuse, "scrape", scrape), \
+                mock.patch.object(perf_matrix, "flush_cache"):
+            records = cold.recold(summary0, first, [("X1", "1h")], proxies, SPEC,
+                                  1_800_000_000, 3, log=lambda *_: None,
+                                  first_resources={("X1", "1h"): {t: dict(original) if first_available else None
+                                                                  for t in proxies}},
+                                  reference_url="http://loki")
+        return summary0["rows"][0], records, events
+
+    def test_existing_resample_requests_have_matching_resource_medians_and_provenance(self):
+        result, records, events = self.exercise()
+        self.assertTrue(records[0]["applied"])
+        for target in ("base", "pr"):
+            cost = result["reuse"][target]["cold"]
+            self.assertEqual(cost["cpu_seconds"], 5)
+            self.assertEqual(cost["cpu_runs_measured"], 4)
+            self.assertEqual(cost["rss_runs_measured"], 4)
+            self.assertEqual(cost["metric_runs_expected"], 4)
+            self.assertEqual(cost["cpu_samples"], 2)
+            self.assertEqual(cost["vl_calls"], 2)
+            self.assertEqual(result["reuse"][target]["before_cold_resample"]["cpu_seconds"], 77)
+            samples = result["cold_resource_samples"][target]
+            self.assertEqual(samples[0]["phase"], "first-pass")
+            self.assertEqual(samples[0]["reuse"]["cpu_seconds"], 10)
+            self.assertEqual([s["reuse"]["cpu_seconds"] for s in samples[1:]], [2, 4, 6])
+            self.assertTrue(all(s["response_bytes"] == len(ANSWER) and s["answer_proof"] == "answer"
+                                and s["status"] == 200 and s["signature"] for s in samples[1:]))
+            self.assertTrue(all(s["history_start"] == s["end"] - 3600 - 5 for s in samples[1:]))
+            self.assertNotIn("history_start", samples[0])
+        self.assertEqual([event for event in events if event[1] != "loki"],
+                         [(kind, target) for target in ("base", "pr", "pr", "base", "base", "pr")
+                          for kind in ("metrics", "request", "metrics")])
+        self.assertEqual(events.count(("request", "loki")), 3)
+        self.assertIn("component-wise", result["cold_resource_note"])
+
+    def test_one_missing_boundary_cannot_be_hidden_by_other_resource_samples(self):
+        result, _, _ = self.exercise(missing=True)
+        self.assertTrue(result["reuse"]["base"]["cold"]["cpu_samples"] == 2)
+        cost = result["reuse"]["pr"]["cold"]
+        self.assertNotEqual(cost.get("cpu_samples"), 2)
+        self.assertNotEqual(cost.get("rss_samples"), 2)
+        samples = result["cold_resource_samples"]["pr"][1:]
+        self.assertEqual([sample["vl_calls_header"] for sample in samples], [2, 2, 2])
+        self.assertIsNone(samples[1]["reuse"])
+
+    def test_missing_first_pass_resources_are_not_replaced_with_new_sample_costs(self):
+        result, records, _ = self.exercise(first_available=False)
+        self.assertTrue(records[0]["applied"])
+        for target in ("base", "pr"):
+            cost = result["reuse"][target]["cold"]
+            self.assertEqual(cost["metric_runs_expected"], 4)
+            self.assertEqual(cost["cpu_runs_measured"], 3)
+            self.assertEqual(cost["cpu_samples"], 0)
+            self.assertEqual(cost["rss_samples"], 0)
+
+    def test_empty_or_invalid_response_preserves_first_pass_cost_and_finding(self):
+        for body in (b"", b"not-json", b'{"status":"error","error":"failed"}',
+                     ANSWER.replace(b'"result":[{"metric":{"app":"a"},"values":[[1,"1"]]}]', b'"result":[]'),
+                     ANSWER.replace(b'"status":"success"', b'"status":"success","warnings":["partial"]')):
+            with self.subTest(body=body):
+                result, records, _ = self.exercise(body=body)
+                self.assertFalse(records[0]["applied"])
+                self.assertEqual(result["cold"]["pr"], 9)
+                self.assertEqual(result["reuse"]["pr"]["cold"]["cpu_seconds"], 10)
+
+    def test_reference_failure_or_partial_result_cannot_supply_parity(self):
+        for status, body in ((500, b"failed"), (200, b""),
+                             (200, ANSWER.replace(b'"status":"success"',
+                                                  b'"status":"success","warnings":["partial"]'))):
+            with self.subTest(status=status, body=body):
+                result, records, _ = self.exercise(reference_status=status, reference_body=body)
+                self.assertFalse(records[0]["applied"])
+                self.assertEqual(result["cold_resample_parity"]["targets"]["pr"], ["n/a"])
+
+    def test_equal_sum_wrong_label_is_detected_by_full_shared_comparison(self):
+        result, records, _ = self.exercise(body=ANSWER.replace(b'"app":"a"', b'"app":"wrong"'))
+        self.assertFalse(records[0]["applied"])
+        self.assertEqual(result["parity_vs_reference"], "differs")
+
+    def test_equal_sum_shifted_timestamp_is_detected_by_full_shared_comparison(self):
+        result, records, _ = self.exercise(body=ANSWER.replace(b'[[1,"1"]]', b'[[2,"1"]]'))
+        self.assertFalse(records[0]["applied"])
+        self.assertEqual(result["parity_vs_reference"], "differs")
+
+    def test_wholly_cached_loki_answer_is_not_a_computed_reference(self):
+        body = ANSWER.replace(b'"resultType":"matrix"',
+                              b'"stats":{"cache":{"result":{"entriesRequested":1,"entriesFound":1}}},"resultType":"matrix"')
+        result, records, _ = self.exercise(reference_body=body)
+        self.assertFalse(records[0]["applied"])
+        self.assertEqual(records[0]["requests"]["loki"][0]["reference_skip"], "cache-status-invalid-or-hit")
+
+    def test_partial_or_unknown_cache_cannot_claim_a_computed_reference(self):
+        for body in (ANSWER, REFERENCE_ANSWER.replace(b'"entriesRequested":1,"entriesFound":0', b''),
+                     REFERENCE_ANSWER.replace(b'"result":{"entriesRequested":1,"entriesFound":0}',
+                                              b'"result":{"entriesRequested":1,"entriesFound":0},"volumeResult":"invalid"'),
+                     REFERENCE_ANSWER.replace(b'"entriesRequested":1,"entriesFound":0', b'"entriesFound":0'),
+                     REFERENCE_ANSWER.replace(b'"entriesRequested":1,"entriesFound":0',
+                                              b'"entriesRequested":2,"entriesFound":1')):
+            with self.subTest(body=body):
+                _, records, _ = self.exercise(reference_body=body)
+                self.assertFalse(records[0]["applied"])
+
+    def test_storage_cache_hits_and_unknown_scalars_do_not_invalidate_computed_result(self):
+        body = REFERENCE_ANSWER.replace(
+            b'"result":{"entriesRequested":1,"entriesFound":0}',
+            b'"result":{"entriesRequested":1,"entriesFound":0},"chunk":{"entriesFound":1,"entriesRequested":1,"bytesReceived":9},"unknown":1')
+        _, records, _ = self.exercise(reference_body=body)
+        self.assertTrue(records[0]["applied"])
+        receipt = records[0]["requests"]["loki"][0]
+        self.assertEqual(receipt["cache_raw"]["unknown"], 1)
+        self.assertNotIn("chunk", receipt["cache"])
+        self.assertNotIn("unknown", receipt["cache"])
+
+    def test_corrected_candidate_does_not_require_baseline_to_match_loki(self):
+        result, records, _ = self.exercise(base_body=ANSWER.replace(b'"app":"a"', b'"app":"wrong"'))
+        self.assertTrue(records[0]["applied"])
+        self.assertEqual(result["cold_resample_parity"]["targets"]["base"], ["differs"] * 3)
+        self.assertEqual(result["cold_resample_parity"]["targets"]["pr"], ["same"] * 3)
+
+    def test_fresh_other_window_does_not_fill_missing_original_window_reference(self):
+        result, records, _ = self.exercise(original_parity="n/a")
+        self.assertTrue(records[0]["applied"])
+        self.assertEqual(result["parity_vs_reference"], "n/a")
+        self.assertEqual(result["cold_resample_parity"]["original_window"]["parity_vs_reference"], "n/a")
+
 
 class ResampleTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(perf_matrix.reuse, "scrape", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def run_resample(self, times, shape="X1", flush_fails=False, status=200):
         log = []
         proxies = {"base": FakeProxy("base", log), "pr": FakeProxy("pr", log)}
@@ -170,14 +346,14 @@ class ResampleTest(unittest.TestCase):
 
         def fake_request(url, headers, tenant, timeout):
             log.append(("request", url.split("/loki")[0].split("//")[1], url))
-            return status, b"", next(seconds), 0
+            return status, ANSWER, next(seconds), 0, None
 
         def fake_flush(url, token=""):
             if flush_fails:
                 raise SystemExit("cache flush: refused")
             log.append(("flush", url.split("/")[2], token))
 
-        with mock.patch.object(perf_matrix, "request", fake_request), mock.patch.object(perf_matrix, "flush_cache", fake_flush):
+        with mock.patch.object(perf_matrix, "request_full", fake_request), mock.patch.object(perf_matrix, "flush_cache", fake_flush):
             got = cold.resample(proxies, SPEC["sets"]["control"]["shapes"][0 if shape == "X1" else 1], "1h",
                                 SPEC["ranges"], 1_800_000_000, 3, "base", "pr")
         return got, log
@@ -215,9 +391,9 @@ class ResampleTest(unittest.TestCase):
         samples = {"base": iter([3.8, 3.7, 3.9]), "pr": iter([3.75, 3.8, 3.7])}
 
         def fake_request(url, headers, tenant, timeout):
-            return 200, b"", next(samples[url.split("//")[1].split("/")[0]]), 0
+            return 200, ANSWER, next(samples[url.split("//")[1].split("/")[0]]), 0, None
 
-        with mock.patch.object(perf_matrix, "request", fake_request), mock.patch.object(perf_matrix, "flush_cache"):
+        with mock.patch.object(perf_matrix, "request_full", fake_request), mock.patch.object(perf_matrix, "flush_cache"):
             records = cold.recold(s, first, [("X1", "1h")], proxies, SPEC, 1_800_000_000, 3, log=lambda *_: None)
         self.assertEqual([(r["shape"], r["applied"]) for r in records], [("X1", True)])
         self.assertEqual(s["rows"][0]["cold"]["pr"], 3.775)
@@ -227,6 +403,11 @@ class ResampleTest(unittest.TestCase):
 
 class NoSampleTest(unittest.TestCase):
     """A flagged row whose re-measure cannot run keeps the first pass's cold, not the confirm pass's cache answer."""
+
+    def setUp(self):
+        patcher = mock.patch.object(perf_matrix.reuse, "scrape", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def flagged_after_confirm(self):
         first = summary(row(shape="X1", pr=0.16, base=0.15, loki=0.09, pr_cold=5.32, base_cold=3.79, loki_cold=0.6),
@@ -244,7 +425,7 @@ class NoSampleTest(unittest.TestCase):
     def recold(self, out, first_cold, **kw):
         log = []
         proxies = {"base": FakeProxy("base", log), "pr": FakeProxy("pr", log)}
-        with mock.patch.object(perf_matrix, "request", lambda *a, **k: (200, b"", 3.8, 0)):
+        with mock.patch.object(perf_matrix, "request_full", lambda *a, **k: (200, ANSWER, 3.8, 0, None)):
             return cold.recold(out, first_cold, [("X1", "1h")], proxies, SPEC, 1_800_000_000, 3, log=lambda *_: None, **kw)
 
     def test_a_refused_flush_restores_the_first_pass_cold_and_the_finding(self):
@@ -272,8 +453,8 @@ class NoSampleTest(unittest.TestCase):
             records = self.recold(out, first_cold)
         self.assertEqual([r["applied"] for r in records], [True])
         self.assertEqual(out["rows"][0]["cold"]["pr"], 3.8)
-        self.assertNotIn("cold", out["rows"][0]["reuse"]["pr"])
-        self.assertIn("not measured", out["rows"][0]["cold_resource_note"])
+        self.assertIsNone(out["rows"][0]["reuse"]["pr"]["cold"])
+        self.assertIn("Missing boundaries remain incomplete", out["rows"][0]["cold_resource_note"])
 
 
 class QuietTest(unittest.TestCase):
@@ -545,7 +726,9 @@ class MeasureTest(unittest.TestCase):
                 mock.patch.object(pr_smoke.stack, "teardown"), mock.patch.object(pr_smoke.stack, "log"), \
                 mock.patch.object(pr_smoke, "run_matrix", side_effect=lambda *x, **kw: json.loads(json.dumps(next(replies)))), \
                 mock.patch.object(cold, "recold", wraps=cold.recold) as recold, \
-                mock.patch.object(perf_matrix, "request", lambda *x, **kw: (200, b"", 3.8, 0)), \
+                mock.patch.object(perf_matrix, "request_full", lambda *x, **kw:
+                                  (200, REFERENCE_ANSWER if x[0].startswith("http://loki/") else ANSWER, 3.8, 0, None)), \
+                mock.patch.object(perf_matrix.reuse, "scrape", return_value=None), \
                 mock.patch.object(perf_matrix, "flush_cache"), tempfile.TemporaryDirectory() as tmp:
             out = pr_smoke.measure(a, {"run": True, "sets": {"json-filter-pushdown": ["A explore volume, 2 filters, drop"]}},
                                    tmp, "base", baseline={}, bounds=NO_BOUNDS)
@@ -559,6 +742,8 @@ class MeasureTest(unittest.TestCase):
         outlier = self.shape_summary(pr=0.1, base=0.1, loki=0.09, pr_cold=5.0, base_cold=3.8, loki_cold=0.6)
         out, recold = self.measure([outlier, outlier])  # first pass, then the confirm pass if it asks for one
         recold.assert_called_once()
+        self.assertEqual(recold.call_args.kwargs["reference_url"], "http://loki")
+        self.assertIn(("A explore volume, 2 filters, drop", "1h"), recold.call_args.kwargs["first_semantics"])
         self.assertEqual(recold.call_args.args[2], [("A explore volume, 2 filters, drop", "1h")])
         r = out[0]["rows"][0]
         self.assertEqual(r["cold_samples"]["pr"], [5.0, 3.8, 3.8, 3.8])
