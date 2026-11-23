@@ -6,9 +6,12 @@
 # undefined reference fails here instead of in the job that starts the stack.
 # It never starts a container and needs no Docker daemon.
 #
-# The script also fails when a tracked docker-compose*.yml / compose*.yml file
-# is missing from the stack list below, so a new compose file cannot go
-# unchecked.
+# The script also fails when a tracked Compose file is missing from the stack
+# list below, so a new Compose file cannot go unchecked. Recognized basenames:
+# compose.yml / compose.yaml and compose.<overlay>.yml / compose-<overlay>.yaml
+# (either YAML extension, with an optional docker- prefix). Overlay names need
+# a dot or hyphen after compose; unrelated names such as composed-parser.yaml
+# are not Compose files.
 #
 # Usage: ./scripts/ci/validate_compose.sh
 
@@ -60,7 +63,7 @@ while IFS= read -r tracked; do
     echo "::error file=$tracked::tracked compose file is not listed in scripts/ci/validate_compose.sh"
     missing=1
   fi
-done < <(git ls-files | grep -E '(^|/)(docker-)?compose[^/]*\.ya?ml$' || true)
+done < <(git ls-files | grep -E '(^|/)(docker-)?compose([.-][^/]+)?\.ya?ml$' || true)
 
 # Every listed file must exist.
 for stack in "${STACKS[@]}"; do
