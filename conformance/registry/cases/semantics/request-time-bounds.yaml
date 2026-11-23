@@ -49,3 +49,19 @@ compare:
 applies_to:
   loki: ">=3.0.0"
   victorialogs: ">=v1.44.0"
+gap:
+  status: documented
+  impact: api-only
+  effort: M
+  area: Existing requestTimeBounds and int64-nanosecond request representation
+  loki: The recorded extreme negative-offset request answers 200; recorded Loki bounds can wrap or vary outside
+    the representable window
+  proxy: The published int64-nanosecond boundary deliberately refuses the moved window with its documented 400 before
+    backend work
+  planned_test: Existing request-time bounds tests and internal/proxy/testdata/loki_time_bounds.jsonl; retain the
+    published bound and exact error contract
+  note: This links observations to an existing published boundary, not a new policy. See docs/api-reference.md request
+    time bounds. Ref4a63b99e; run44910591975 artifact14714026577. The default limit and failure behavior are unchanged.
+  clusters:
+    - ea10cfb1
+    - f4da3005

@@ -36,15 +36,27 @@ gap:
   proxy: 'own / VictoriaLogs text, 422 for some'
   planned_test: 'TestCompat_ParseErrorText corpus (test/e2e-compat, bad_request_status_parity_test.go)'
   clusters:
-    - '15273179'
-    - 1597db8f
-    - 19bb4804
-    - 74f704b7
-    - 7d313786
-    - 8a28e9cd
-    - 9e2e6496
-    - c44d6ae3
-    - e4fdf6d3
-    - ee58e663
-    - f30a63d2
-    - 426d5c5b
+    - "15273179"
+    - "1534bc34"
+    - "1597db8f"
+    - "19bb4804"
+    - "32040d1c"
+    - "426d5c5b"
+    - "58289f91"
+    - "65c38ba5"
+    - "74f704b7"
+    - "76cc4a0b"
+    - "7d313786"
+    - "8a28e9cd"
+    - "8a9cc948"
+    - "9e2e6496"
+    - "bfba1ae7"
+    - "c44d6ae3"
+    - "cd3b52ba"
+    - "d35a7ea0"
+    - "d5738ed0"
+    - "e4fdf6d3"
+    - "ee58e663"
+    - "f30a63d2"
+    - "f9346b45"
+    - "ffab2f98"

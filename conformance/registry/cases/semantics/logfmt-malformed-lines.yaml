@@ -53,4 +53,6 @@ gap:
   loki: 'its logfmt parser: first value wins, malformed pairs skipped, --strict errors, --keep-empty empty labels'
   proxy: 'VictoriaLogs unpack_logfmt; the flags read and not applied'
   planned_test: 'an e2e test against Loki over malformed and empty-value lines, with and without the flags (group semantics)'
-  clusters: []
+  clusters:
+    - "813cff88"
+    - "d1875f75"

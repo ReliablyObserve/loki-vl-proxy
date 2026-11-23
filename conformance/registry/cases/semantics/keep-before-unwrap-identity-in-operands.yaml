@@ -44,4 +44,6 @@ gap:
   loki: 'the operand series are the kept labels less the unwrapped one'
   proxy: 'the stream (and each line) as the operand series'
   planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'
-  clusters: []
+  clusters:
+    - "581a8dcf"
+    - "88dbab17"

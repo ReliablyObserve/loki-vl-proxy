@@ -73,4 +73,5 @@ gap:
   loki: 'stddev and stdvar fold per group at each step, at any depth under another aggregation or binary'
   proxy: 'the translator text of the nested level: the group line counts, the total line count, or a dropped ranking'
   planned_test: 'TestCompat_StddevStdvarNestedAndBinary (test/e2e-compat, group core)'
-  clusters: []
+  clusters:
+    - "be6066e1"

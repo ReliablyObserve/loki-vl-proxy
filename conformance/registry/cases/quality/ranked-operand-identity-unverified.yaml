@@ -1,0 +1,99 @@
+id: quality/ranked-operand-identity-unverified
+pending: true
+title: Ranked metric operands lack matched identity, point and per-step membership proof (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+evidence: needs recording
+why: |
+  The full differential run on 2026-11-21, source ref 4a63b99e, records
+  these 18 topk range-query clusters over 36 encoded requests. Both backends
+  return 200. Their full retained facets include label and series differences
+  and, for one scoped cluster, matched-series timestamp differences. The
+  original requests, bounds, statuses and complete facets are in the
+  parity-refresh artifact at
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl); the committed index is
+  conformance/registry/generated/parity-discovery.json, recorded at
+  2026-11-21T14:20:35Z over [1795265520, 1795269120]. Full response bodies
+  and complete operand matrices were not retained.
+
+  A different retained set can come from different source or parsed identity,
+  different operand values, a legitimate tie at the ranking boundary, or an
+  actual ranking/window defect. The original result-series counts alone do
+  not distinguish those causes. A range answer is the union of winners over
+  evaluation steps, so it can legitimately contain more than k series.
+  The existing semantics/topk-per-step-membership-differs case remains the
+  behavioral gap for independently established per-step ranking differences;
+  this case records the separate missing proof of the ranked operands.
+
+  Capture and compare the FULL operand before topk on identical source data,
+  evaluation bounds, lookback, offsets and step grid. Retain source-count
+  controls and every identity, timestamp/value, empty/error, warning and
+  effective limit. If an already-approved identity policy is relevant, verify
+  that exact policy and apply it to the SOURCE before range functions and
+  ranking, not to the finished ranked answer. A nonlinear function over
+  merged source series cannot in general be checked by dropping labels and
+  summing Loki's finished vectors. This case neither extends those policies
+  nor grants owner-kept status, a waiver or an error allowance.
+
+  Only after the operands are established can the proof compare the winners
+  at EVERY evaluation step, their labels and values, ties at the boundary,
+  and the retained union across the window. Preserve actual Loki tie evidence;
+  do not impose a lexical label order or treat an arbitrary membership change
+  as a tie. Global series counts, equal totals or an overall value histogram
+  are not this proof. Do not attribute an operand mismatch to ranking, and
+  do not hide a ranking defect behind an unverified projection.
+
+  This case owns only the listed historical queries with their full facets,
+  including the timestamp facet; it is not a general bucket for topk errors.
+  Close it only after every scoped row has complete matched-operand and
+  per-step evidence or a separately evidenced behavioral owner. Registration
+  is not a current-head reproduction, a golden-data pass, a fix or proof that
+  these answers equal Loki. Existing data and performance checks still apply.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: "1795269120"
+    query: "topk(3, bytes_over_time({service_name=\"api-gateway\"} | json [5m]))"
+    start: "1795265520"
+    step: "60"
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, series, labels, values, timestamps, warnings, limits]
+  expect: |
+    Full matched operands before ranking, then every per-step winner and
+    timestamp/value, tie boundary and union under the actual identity profile,
+    source data and limits. The current facet summaries do not establish it.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'existing metric differential and query-semantics source fixtures; ranked operand identity and window proof'
+  loki: 'topk ranks operand samples at each evaluation step; the range union and any boundary tie must be checked from the complete operands'
+  proxy: '18 historical ranked-series clusters lack full matched-operand and per-step proof; their cause is not assigned to ranking or an accepted identity policy'
+  planned_test: 'Extend existing per-step topk and query-semantics fixtures with complete source-scoped operand captures, identity-policy controls and winner checks on every evaluation step'
+  clusters:
+    - '2393456e'
+    - '2f1a47cc'
+    - '305dfbdd'
+    - '3217342a'
+    - '3c222db7'
+    - '3ee7298b'
+    - '4ab15d8b'
+    - '7878082b'
+    - '872b9aab'
+    - '953c297b'
+    - 'a06ee367'
+    - 'a2fc2005'
+    - 'bc608192'
+    - 'd606a3db'
+    - 'e5d60333'
+    - 'f6380987'
+    - 'f80dea40'
+    - 'fd90364a'

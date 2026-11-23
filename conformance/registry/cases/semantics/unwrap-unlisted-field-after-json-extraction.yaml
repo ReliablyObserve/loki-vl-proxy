@@ -1,0 +1,101 @@
+id: semantics/unwrap-unlisted-field-after-json-extraction
+pending: true
+title: An unwrap after an unrelated JSON extraction list reads a body-only unlisted field (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+evidence: needs recording
+why: |
+  An unwrap can consume a stream/metadata label or a label a preceding stage actually
+  produced; an explicit json list extracting only a/b/c/d must not make a body-only
+  duration_ms sample available.
+
+  Count/rate and over-time metrics with explicit JSON extraction lists naming unrelated
+  keys, optionally followed by unrelated a/b formatting or captures, then unwrap
+  duration_ms; both instant and range. Published Loki has zero series, proxy nonempty.
+
+  Unlisted stored value use is the observed coherent hypothesis; exact source field
+  provenance and stage error behavior still need the controls below.
+
+  This is a sample-admission/use-of-unlisted-field axis, not reopening the fixed
+  output-label visibility proof for projected level, and not a claim that every
+  extraction list is wrong.
+
+  Historical evidence: the full differential run of 2026-11-21 on source ref 4a63b99e,
+  Loki 3.7.10. Original exact requests, bounds, statuses and complete facet summaries
+  are retained in the parity-refresh artifact at
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl). The committed index is
+  conformance/registry/generated/parity-discovery.json, recorded at
+  2026-11-21T14:20:35Z. The request below is an actual request from that run. This case
+  does not claim a current-head reproduction or a current fix.
+
+  Full response bodies and golden point sets were not retained by that artifact.
+  Reproduction must prove the source controls and compare every returned label,
+  timestamp/value, duplicate, error and warning on identical data and evaluation axes.
+  Existing identity-policy deviations are not enlarged or waived here; differing row
+  admission, labels, caps or errors still need their own evidence. This remains OPEN and
+  pending, not a passing compatibility or performance result.
+
+  Closure controls: One shared positive source row with duration_ms in JSON body only,
+  one in structured metadata, one listed by the parser; prove body-only is absent,
+  metadata/listed are admitted on Loki and proxy. Use the exact published queries and
+  full labels/points/errors on both endpoints; retain JSON/logfmt and malformed-line
+  controls.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: count by (level) (stddev_over_time({service_name="api-gateway"} | json a, b | decolorize | decolorize
+      | unwrap duration_ms | __error__="" [5m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - labels
+    - values
+    - timestamps
+    - warnings
+  expect: An unwrap can consume a stream/metadata label or a label a preceding stage actually produced; an explicit
+    json list extracting only a/b/c/d must not make a body-only duration_ms sample available.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: typed extraction-list projection and unwrap sample admission; stored-field provenance
+  loki: An unwrap can consume a stream/metadata label or a label a preceding stage actually produced; an explicit
+    json list extracting only a/b/c/d must not make a body-only duration_ms sample available.
+  proxy: Unlisted stored value use is the observed coherent hypothesis; exact source field provenance and stage
+    error behavior still need the controls below.
+  planned_test: Extend the existing query-semantics matrix and metric differential source fixtures with body-only,
+    structured-metadata and explicitly listed unwrap labels
+  clusters:
+    - 0a6de249
+    - 14a27e53
+    - '30826666'
+    - 30c02620
+    - 515af88f
+    - 53fbc6a6
+    - 62d63bf4
+    - 7b6cc453
+    - 7cf21a49
+    - 7fa06635
+    - 98e13ab6
+    - a29aefb6
+    - a2aeca89
+    - bb9126ed
+    - c805f97d
+    - d20d29e6
+    - d5e76ce9
+    - ddbd51ef
+    - ea2af38c
+    - f4a3efd1
