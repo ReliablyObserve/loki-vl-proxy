@@ -1,6 +1,6 @@
 {
- "commit": "ba4f5cefef2f",
- "date": "2026-11-22",
+ "commit": "895c23078f4a",
+ "date": "2026-11-23",
  "errors": {
   "recorded": {
    "comparable_rows": 248,
@@ -66,18 +66,18 @@
  },
  "red": true,
  "registry": {
-  "cases": 446,
+  "cases": 451,
   "by_status": {
    "documented": 15,
-   "fixed": 169,
+   "fixed": 171,
    "no gap": 106,
-   "open": 146,
+   "open": 149,
    "owner-kept": 7,
    "upstream": 3
   },
   "open_by_impact": {
    "api-only": 21,
-   "drilldown-visible": 14,
+   "drilldown-visible": 17,
    "edge": 46,
    "explore-visible": 64,
    "grafana-datasource": 1
@@ -103,8 +103,8 @@
   },
   "live_check": {
    "conclusion": "failure",
-   "date": "2026-11-22",
-   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44976218308",
+   "date": "2026-11-23",
+   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45100580831",
    "workflow": "query-corpus.yaml"
   },
   "recorded_file": "conformance/registry/grammar-sweep.json"
