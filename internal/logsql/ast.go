@@ -1287,10 +1287,15 @@ func (p PipeStats) appendTo(b []byte) []byte {
 		}
 		b = append(b, ')')
 	}
-	for i, fa := range p.Funcs {
-		if i == 0 {
-			b = append(b, ' ')
-		} else {
+	return AppendStatsFuncs(append(b, ' '), p.Funcs)
+}
+
+// AppendStatsFuncs appends the typed stats expressions, including conditions
+// and aliases, without a pipe keyword or grouping clause. Callers that pass
+// functions separately to an existing backend collector need no text parsing.
+func AppendStatsFuncs(b []byte, funcs []StatsFuncAlias) []byte {
+	for i, fa := range funcs {
+		if i > 0 {
 			b = append(b, ", "...)
 		}
 		b = appendStatsFunc(b, fa.Func)

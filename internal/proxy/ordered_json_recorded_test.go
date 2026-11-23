@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,10 +14,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/casefixtures"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/metricparity"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
@@ -474,6 +477,149 @@ func TestOrderedJSONRecordedPipelineDiagnostic(t *testing.T) {
 }
 
 // conformance: semantics/two-parsers-keep-one
+func TestOrderedMixedParserRawComplementRecordedMetrics(t *testing.T) {
+	at := time.Unix(1700000400, 0).UTC()
+	// The central quality matrix owns the expressions. Preserve the existing
+	// engine request IDs and time axes so the recorded protocol stays unchanged.
+	var matrix struct {
+		Cases []struct {
+			ID                 string `json:"id"`
+			Query              string `json:"query"`
+			Endpoint           string `json:"endpoint"`
+			Step               string `json:"step"`
+			SourceControl      string `json:"source_control"`
+			RequireEmptyResult bool   `json:"require_empty_result"`
+		} `json:"cases"`
+	}
+	data, err := os.ReadFile("../../test/e2e-compat/query-semantics-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &matrix); err != nil {
+		t.Fatal(err)
+	}
+	emptyContracts := make(map[string]bool)
+	var sets []oraclerun.EngineDataSet
+	var fixtures [][]pushdownRow
+	for _, witness := range casefixtures.OrderedMixedParserRawComplement() {
+		rows := []pushdownRow{{ts: at, msg: witness.Stream.Entries[0].Line, stream: witness.Stream.Labels}}
+		set := oraclerun.EngineDataSet{Streams: pushdownEngineStreams(rows)}
+		prefix := "mixed_raw_" + strings.ReplaceAll(witness.Name, "-", "_") + "__"
+		for _, tc := range matrix.Cases {
+			if !strings.HasPrefix(tc.ID, prefix) {
+				continue
+			}
+			suffix := strings.TrimPrefix(tc.ID, prefix)
+			id := witness.Name + "/" + strings.ReplaceAll(strings.ReplaceAll(suffix, "__", "/"), "group_away", "group-away")
+			var step time.Duration
+			end := at.Add(30 * time.Second)
+			if suffix == "source" {
+				end = at
+			} else if tc.SourceControl != prefix+"source" {
+				t.Fatalf("matrix case %s lost its own source control", tc.ID)
+			}
+			if tc.Endpoint == "query_range" {
+				step, err = time.ParseDuration(tc.Step + "s")
+				if err != nil || step <= 0 {
+					t.Fatalf("invalid matrix step in %s: %q", tc.ID, tc.Step)
+				}
+			} else if tc.Endpoint != "query" {
+				t.Fatalf("invalid matrix endpoint in %s: %q", tc.ID, tc.Endpoint)
+			}
+			set.Requests = append(set.Requests, lokiMetricRequest(id, tc.Query, at.UnixNano(), end.UnixNano(), step))
+			emptyContracts[id] = tc.RequireEmptyResult
+		}
+		if len(set.Requests) != 13 || set.Requests[0].ID != witness.Name+"/source" {
+			t.Fatalf("missing matrix raw facets for %s", witness.Name)
+		}
+		sets, fixtures = append(sets, set), append(fixtures, rows)
+	}
+	answers := lokiEngineAnswers(t, "ordered_mixed_parser_raw_complement", sets)
+	for i, set := range sets {
+		backend, fake := newPushdownFakeVL(t, fixtures[i], func(s string) string { return s })
+		fake.projectRaw = true
+		control := set.Requests[0]
+		var source struct {
+			Data struct {
+				Result []struct {
+					Value []json.RawMessage `json:"value"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(answers[control.ID].Body, &source); err != nil || answers[control.ID].Status != http.StatusOK || len(source.Data.Result) != 1 || len(source.Data.Result[0].Value) != 2 || string(source.Data.Result[0].Value[1]) != `"1"` {
+			t.Fatalf("recorded Loki source control is not one row: %s", answers[control.ID].Body)
+		}
+		for _, request := range set.Requests {
+			t.Run(request.ID, func(t *testing.T) {
+				route := "query_range"
+				if request.Instant {
+					route = "query"
+				}
+				p := newTestProxy(t, backend.URL)
+				got := doCompatProxyRequest(p, "/loki/api/v1/"+route+"?"+request.Form, nil)
+				want := answers[request.ID]
+				if want.Status != http.StatusOK {
+					t.Fatalf("unusable actual Loki oracle %d: %s", want.Status, want.Error)
+				}
+				// A recorded empty result is meaningful only after this exact
+				// dataset's positive source control. In particular bare JSON
+				// intentionally ignores object/array values in the reverse arm.
+				var expected, actual struct {
+					Status   string   `json:"status"`
+					Warnings []string `json:"warnings"`
+					Data     struct {
+						ResultType string            `json:"resultType"`
+						Result     []json.RawMessage `json:"result"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(want.Body, &expected); err != nil {
+					t.Fatal(err)
+				}
+				if expected.Status != "success" || expected.Data.Result == nil || expected.Data.ResultType != "vector" && expected.Data.ResultType != "matrix" {
+					t.Fatalf("invalid recorded Loki metric answer: %s", want.Body)
+				}
+				if (len(expected.Data.Result) == 0) != emptyContracts[request.ID] {
+					t.Fatalf("central matrix empty-result contract differs from recorded Loki for %s", request.ID)
+				}
+				if len(expected.Data.Result) == 0 {
+					if err := json.Unmarshal(got.Body.Bytes(), &actual); err != nil || got.Code != want.Status || actual.Status != expected.Status || actual.Data.ResultType != expected.Data.ResultType || actual.Data.Result == nil || len(actual.Data.Result) != 0 || len(actual.Warnings) != 0 || len(expected.Warnings) != 0 {
+						t.Fatalf("proxy differs from source-controlled recorded empty answer: proxy=%s Loki=%s", got.Body.Bytes(), want.Body)
+					}
+					return
+				}
+				if err := recordedParserDifference(recordedParserCase{Status: want.Status, Response: want.Body}, got.Code, got.Body.Bytes()); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
+// This is the proxy's resource policy, not a claim about Loki's own limit.
+func TestOrderedMixedExplicitProjectionValueBudgetPrecedesNormalization(t *testing.T) {
+	const limit = 64 << 10
+	for _, size := range []int{limit, limit + 1} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			plan, ok := compileOrderedJSONMetric(`sum by (k) (count_over_time({app="api"} | json k="[\"k\"]" | logfmt | drop __error__, __error_details__ | k!="" [1m]))`)
+			if !ok {
+				t.Fatal("explicit mixed plan was not compiled")
+			}
+			value := strings.Repeat("\ufffd", size/len("\ufffd")) + strings.Repeat("x", size%len("\ufffd"))
+			labels, keep, err := plan.process(`{"k":"`+value+`"}`, map[string]string{"app": "api"})
+			if size > limit {
+				if !errors.Is(err, errOrderedJSONComplexity) {
+					t.Fatalf("decoded value over the original byte budget was accepted: keep=%v err=%v", keep, err)
+				}
+				return
+			}
+			if err != nil || !keep || labels["k"] != lokiLabelValue(value) {
+				t.Fatalf("value at the byte budget was not normalized: keep=%v err=%v", keep, err)
+			}
+		})
+	}
+}
+
+// conformance: semantics/two-parsers-keep-one
 func TestOrderedMixedParserRecordedMetrics(t *testing.T) {
 	at := time.Unix(1700000400, 0).UTC()
 	var rows []pushdownRow
@@ -749,7 +895,30 @@ func TestOrderedMixedStoredLevelRecorded(t *testing.T) {
 				got := doCompatProxyRequest(p, "/loki/api/v1/"+endpoint+"?"+req.Form, headers)
 				want := answers[req.ID]
 				if set.MaxSeries == 1 {
-					checkMixedStoredLevelLimit(t, got.Code, got.Body.Bytes(), want)
+					if f.name == "rank-instant-limit" && req.Instant && req.QueryTags != "" {
+						// Both groups are first met at this instant. Loki's retained
+						// subset is unspecified, but every kept point must match its
+						// unlimited answer on exactly the same data and request.
+						fullID := strings.TrimSuffix(strings.Replace(req.ID, "rank-instant-limit", "rank-instant-full", 1), "/drilldown")
+						matched := false
+						for _, fullSet := range sets {
+							if fullSet.MaxSeries != 0 || !reflect.DeepEqual(fullSet.Streams, set.Streams) {
+								continue
+							}
+							for _, fullReq := range fullSet.Requests {
+								matched = matched || fullReq.ID == fullID && fullReq.Instant && fullReq.Form == req.Form
+							}
+						}
+						full, found := answers[fullID]
+						if !matched || !found {
+							t.Fatal("limited instant lacks its identical-input unlimited Loki reference")
+						}
+						if err := mixedStoredLevelInstantLimitDifference(got.Code, got.Body.Bytes(), want, full); err != nil {
+							t.Fatal(err)
+						}
+					} else {
+						checkMixedStoredLevelLimit(t, got.Code, got.Body.Bytes(), want)
+					}
 					if f.name == "rank-range-limit" && req.QueryTags != "" {
 						// The first visible group is also the busiest. The five error
 						// rows outside the left boundary must not change that ranking.
@@ -771,6 +940,118 @@ func TestOrderedMixedStoredLevelRecorded(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func mixedStoredLevelInstantLimitDifference(status int, body []byte, want, full lokiEngineAnswer) error {
+	if status != http.StatusOK || want.Status != http.StatusOK || full.Status != http.StatusOK {
+		return fmt.Errorf("limited instant or its unlimited reference failed: %d/%d/%d", status, want.Status, full.Status)
+	}
+	read := func(body []byte, partial bool) (lokiSeries, error) {
+		var head struct {
+			Status   string   `json:"status"`
+			Warnings []string `json:"warnings"`
+		}
+		if err := json.Unmarshal(body, &head); err != nil {
+			return lokiSeries{}, err
+		}
+		var warnings []string
+		if partial {
+			warnings = []string{"maximum number of series (1) reached for a single query; returning partial results"}
+		}
+		if head.Status != "success" || len(head.Warnings) != len(warnings) || !slices.Equal(head.Warnings, warnings) {
+			return lokiSeries{}, fmt.Errorf("unexpected instant status/warnings: %s", body)
+		}
+		series, err := decodeLokiSeries(body)
+		if err != nil {
+			return lokiSeries{}, err
+		}
+		if series.ResultType != "vector" || series.Scalar != nil || len(series.Labels) != len(series.Points) {
+			return lokiSeries{}, fmt.Errorf("invalid instant vector: %s", body)
+		}
+		for key, points := range series.Points {
+			if len(series.Labels[key]) == 0 || len(points) != 1 {
+				return lokiSeries{}, fmt.Errorf("invalid labelled instant point: %s", body)
+			}
+		}
+		return series, nil
+	}
+	unlimited, err := read(full.Body, false)
+	if err != nil {
+		return err
+	}
+	if len(unlimited.Points) != 2 {
+		return fmt.Errorf("unlimited reference must prove both groups")
+	}
+	for _, partial := range [][]byte{want.Body, body} {
+		series, err := read(partial, true)
+		if err != nil {
+			return err
+		}
+		if len(series.Points) != 1 {
+			return fmt.Errorf("limited instant must retain exactly one series")
+		}
+		for key, points := range series.Points {
+			if !reflect.DeepEqual(series.Labels[key], unlimited.Labels[key]) || !reflect.DeepEqual(points, unlimited.Points[key]) {
+				return fmt.Errorf("limited instant series differs from unlimited Loki: %s", partial)
+			}
+		}
+	}
+	return nil
+}
+
+// conformance: limits/drilldown-partial-with-warning, limits/drilldown-breakdown-keeps-busiest
+func TestOrderedMixedStoredLevelInstantLimitComparison(t *testing.T) {
+	const warning = `"maximum number of series (1) reached for a single query; returning partial results"`
+	const info = `{"metric":{"detected_level":"info"},"value":[1700000400,"2"]}`
+	const other = `{"metric":{"detected_level":"error"},"value":[1700000400,"1"]}`
+	reply := func(rows, warnings string) []byte {
+		return []byte(`{"status":"success","warnings":[` + warnings + `],"data":{"resultType":"vector","result":[` + rows + `]}}`)
+	}
+	full := lokiEngineAnswer{Status: 200, Body: reply(info+","+other, "")}
+	want := lokiEngineAnswer{Status: 200, Body: reply(other, warning)}
+	for _, row := range []string{info, other} {
+		if err := mixedStoredLevelInstantLimitDifference(200, reply(row, warning), want, full); err != nil {
+			t.Fatal(err)
+		}
+	}
+	valid := reply(info, warning)
+	for name, body := range map[string][]byte{
+		"wrong_value":      []byte(strings.Replace(string(valid), `"2"`, `"3"`, 1)),
+		"wrong_time":       []byte(strings.Replace(string(valid), `1700000400`, `1700000401`, 1)),
+		"unknown_identity": []byte(strings.Replace(string(valid), `"info"`, `"debug"`, 1)),
+		"unlabelled":       []byte(strings.Replace(string(valid), `{"detected_level":"info"}`, `{}`, 1)),
+		"extra_label":      []byte(strings.Replace(string(valid), `"info"}`, `"info","extra":"bad"}`, 1)),
+		"extra_series":     reply(info+","+other, warning),
+		"missing_series":   reply("", warning),
+		"duplicate_series": reply(info+","+info, warning),
+		"missing_warning":  reply(info, ""),
+		"wrong_warning":    reply(info, `"partial"`),
+		"extra_warning":    reply(info, warning+`,"partial"`),
+		"wrong_type":       []byte(strings.Replace(string(valid), `"vector"`, `"matrix"`, 1)),
+		"wrong_status":     []byte(strings.Replace(string(valid), `"success"`, `"error"`, 1)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := mixedStoredLevelInstantLimitDifference(200, body, want, full); err == nil {
+				t.Fatal("invalid limited instant accepted")
+			}
+			badReference := lokiEngineAnswer{Status: 200, Body: body}
+			if err := mixedStoredLevelInstantLimitDifference(200, valid, badReference, full); err == nil {
+				t.Fatal("invalid limited Loki reference accepted")
+			}
+		})
+	}
+	for _, bad := range []lokiEngineAnswer{
+		{Status: 400, Body: full.Body},
+		{Status: 200, Body: reply(info, "")},
+		{Status: 200, Body: reply(info+","+other, warning)},
+	} {
+		if err := mixedStoredLevelInstantLimitDifference(200, valid, want, bad); err == nil {
+			t.Fatal("invalid unlimited reference accepted")
+		}
+	}
+	if err := mixedStoredLevelInstantLimitDifference(400, valid, want, full); err == nil {
+		t.Fatal("failed proxy status accepted")
 	}
 }
 

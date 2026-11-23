@@ -44,6 +44,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_mixed_class.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_counts.go",
         "internal/translate/extracted_label.go",
@@ -165,6 +166,7 @@
       "used_in": [
         "internal/proxy/detected_level_presence.go",
         "internal/proxy/metric_binary.go",
+        "internal/proxy/ordered_json_mixed_stats.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_exact.go",
         "internal/proxy/range_metric_compat.go",
@@ -214,6 +216,7 @@
         "internal/proxy/json_line_keys.go",
         "internal/proxy/numeric_label_filter_error.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_mixed_stats.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_conversion_error.go",
@@ -341,8 +344,10 @@
       "name": "pack_json",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/proxy/ordered_json_mixed_class.go"
+      ]
     },
     {
       "kind": "pipe",
@@ -373,8 +378,10 @@
       "name": "rename",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/proxy/ordered_json_mixed_stats.go"
+      ]
     },
     {
       "kind": "pipe",
@@ -392,6 +399,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_mixed_class.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/translate/unwrap_gate.go",
         "internal/translator/without_pushdown.go"
@@ -558,6 +566,7 @@
         "internal/proxy/drilldown.go",
         "internal/proxy/metric_agg.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_mixed_class.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_samples.go",
@@ -652,6 +661,7 @@
         "internal/proxy/metric_binary.go",
         "internal/proxy/nested_vector_fold.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_mixed_stats.go",
         "internal/proxy/patterns_counts.go",
         "internal/proxy/patterns_exact.go",
         "internal/proxy/quantile_histogram.go",

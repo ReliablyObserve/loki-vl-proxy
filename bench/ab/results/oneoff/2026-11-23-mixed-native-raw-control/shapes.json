@@ -1,0 +1,64 @@
+{
+  "ranges": {
+    "1h": [
+      3600,
+      5
+    ],
+    "3h": [
+      10800,
+      5
+    ],
+    "6h": [
+      21600,
+      10
+    ],
+    "24h": [
+      86400,
+      60
+    ],
+    "7d": [
+      604800,
+      600
+    ],
+    "5m-200ms": [
+      300,
+      0.2
+    ],
+    "24h-20s": [
+      86400,
+      20
+    ]
+  },
+  "sets": {
+    "mixed-parser-metrics": {
+      "description": "Ordered mixed-parser metrics, reusing the typed quality matrix queries.",
+      "ranges": [
+        "1h",
+        "6h",
+        "24h"
+      ],
+      "shapes": [
+        {
+          "name": "explicit JSON then logfmt grouped count",
+          "covers": [
+            "semantics/two-parsers-keep-one"
+          ],
+          "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+          "derived_from_matrix_case_id": "mixed_parser_explicit_group",
+          "original_matrix_query": "sum by (user_id) (count_over_time({app=\"api-gateway\",env=\"production\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+          "local_scope": "Existing normal generator scope-01; broad workload remains failed and is not replaced by this result"
+        },
+        {
+          "name": "logfmt then JSON grouped count",
+          "covers": [
+            "semantics/two-parsers-keep-one"
+          ],
+          "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+          "derived_from_matrix_case_id": "mixed_parser_reverse_group",
+          "original_matrix_query": "sum by (user_id) (count_over_time({app=\"api-gateway\",env=\"production\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+          "local_scope": "Existing normal generator scope-01; broad workload remains failed and is not replaced by this result"
+        }
+      ]
+    }
+  }
+}

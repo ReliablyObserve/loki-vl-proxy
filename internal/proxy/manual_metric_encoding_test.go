@@ -101,3 +101,48 @@ func TestWholeSecondTimestampMatchesFormatFloat(t *testing.T) {
 		}
 	}
 }
+
+// The hits writer retains fixed-point timestamps and quoted sample text even
+// when a faster numeric writer declines a value. In particular, NaN/infinities,
+// signed zero, tiny values and large integers must not discard the array prefix.
+// conformance: numeric-and-response-formatting
+func TestHitsPointsRetainFixedFloatEncoding(t *testing.T) {
+	values := []float64{0, math.Copysign(0, -1), 1, -1, math.Pi, 1e-7, 1e21, 1 << 53, 1<<53 - 1,
+		math.SmallestNonzeroFloat64, math.MaxFloat64, math.NaN(), math.Inf(1), math.Inf(-1)}
+	rng := rand.New(rand.NewSource(1715))
+	for i := 0; i < 200; i++ {
+		values = append(values, math.Float64frombits(rng.Uint64()))
+	}
+	// Loki sample timestamps have millisecond precision, rounded down.
+	for _, timestamp := range []struct {
+		ns      int64
+		seconds float64
+	}{
+		{0, 0}, {1, 0}, {-1, -0.001},
+		{1700001000_000000000, 1700001000}, {1700001000_123456789, 1700001000.123},
+		{math.MaxInt64, 9223372036.854}, {math.MinInt64, -9223372036.855},
+	} {
+		ns := timestamp.ns
+		var got []byte
+		want := []byte{'['}
+		for i, value := range values {
+			var formatted int
+			got, formatted = appendHitsPoint(got, len(values), ns, value)
+			text := strconv.FormatFloat(value, 'f', -1, 64)
+			if formatted != len(text) {
+				t.Fatalf("timestamp %d sample %d: text bytes %d, want %d", ns, i, formatted, len(text))
+			}
+			if i > 0 {
+				want = append(want, ',')
+			}
+			want = append(want, '[')
+			want = strconv.AppendFloat(want, timestamp.seconds, 'f', -1, 64)
+			want = append(want, ',', '"')
+			want = append(want, text...)
+			want = append(want, '"', ']')
+			if !bytes.Equal(got, want) {
+				t.Fatalf("timestamp %d sample %d: fixed-point bytes changed", ns, i)
+			}
+		}
+	}
+}

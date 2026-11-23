@@ -1,0 +1,906 @@
+[
+ {
+  "page": "explore-mixed-general-count-control",
+  "range": "24h",
+  "requests": 3,
+  "series": 3,
+  "main_vs_pr": "3/3",
+  "pr_vs_loki": "1/3 identical, 2 unexplained",
+  "settled": true,
+  "settle_s": {
+   "main": 4.024,
+   "pr": 4.021,
+   "loki": 4.024
+  },
+  "main_pr_diffs": [],
+  "main_pr_qids": [],
+  "loki_qids": [
+   null,
+   null
+  ],
+  "main_pr_nondet": [],
+  "main_pr_config": [],
+  "loki_diffs": [
+   "resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7C: body: content differs (rows 0 vs 0)",
+   "resource /api/datasources/uid/*/resources/labels?start=1795292340000000000&end=1795378740000000000: body: content differs (rows 20 vs 30)"
+  ],
+  "loki_explained": [],
+  "loki_nondet": [],
+  "main_pr_bodies": [],
+  "loki_bodies": [
+   {
+    "request": "/api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7Cbilling%7Canalytics%7Cplatform)%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D&start=1795292340000000000&end=1795378740000000000",
+    "left": "{\"bytes\": 1466200, \"chunks\": 605, \"entries\": 14662, \"streams\": 605}",
+    "right": "{\"bytes\": 11942912, \"chunks\": 1120, \"entries\": 14555, \"streams\": 735}",
+    "numbers": "streams 605, chunks 605, entries 14662, bytes 1466200 vs streams 735, chunks 1120, entries 14555, bytes 11942912"
+   },
+   {
+    "request": "/api/datasources/uid/*/resources/labels?start=1795292340000000000&end=1795378740000000000",
+    "left": "{\"data\": [\"app\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\"], \"status\": \"success\"}",
+    "right": "{\"data\": [\"app\", \"case\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"fixture_step\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"k8s_cluster_name\", \"k8s_namespace_name\", \"k8s_pod_name\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"probe\", \"query_semantics_run_id\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\", \"x\", \"fixture_case\", \"k\"], \"status\": \"success\"}"
+   }
+  ],
+  "loki_compared": true,
+  "loki_main_n": 2,
+  "loki_new": [],
+  "points_main": 878,
+  "points_pr": 878,
+  "points_loki": 888,
+  "ui_main": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_pr": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_loki": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "settled_pr": true,
+  "settled_main": true,
+  "unreadable_main": 0,
+  "unreadable_pr": 0,
+  "unreadable_both": 0,
+  "unreadable_why": [],
+  "errors_pr": [],
+  "errors_main": [],
+  "errors_loki": [],
+  "loki_missing": false,
+  "runtime_main": {
+   "browser_thread_seconds": 0.594646,
+   "browser_task_seconds": 0.60885,
+   "js_heap_max_sampled_bytes": 54762848,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 5460,
+   "page_encoded_bytes": 4008952,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 746
+  },
+  "runtime_pr": {
+   "browser_thread_seconds": 0.58853,
+   "browser_task_seconds": 0.5955199999999999,
+   "js_heap_max_sampled_bytes": 55815584,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 5460,
+   "page_encoded_bytes": 4008987,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 734
+  },
+  "runtime_loki": {
+   "browser_thread_seconds": 0.578994,
+   "browser_task_seconds": 0.5885389999999999,
+   "js_heap_max_sampled_bytes": 53058340,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 5606,
+   "page_encoded_bytes": 4010015,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 731
+  },
+  "runtime_problems": []
+ },
+ {
+  "page": "explore-mixed-general-count-control",
+  "range": "6h",
+  "requests": 3,
+  "series": 3,
+  "main_vs_pr": "3/3",
+  "pr_vs_loki": "1/3 identical, 2 unexplained",
+  "settled": true,
+  "settle_s": {
+   "main": 4.015,
+   "pr": 4.017,
+   "loki": 4.026
+  },
+  "main_pr_diffs": [],
+  "main_pr_qids": [],
+  "loki_qids": [
+   null,
+   null
+  ],
+  "main_pr_nondet": [],
+  "main_pr_config": [],
+  "loki_diffs": [
+   "resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7C: body: content differs (rows 0 vs 0)",
+   "resource /api/datasources/uid/*/resources/labels?start=1795357140000000000&end=1795378740000000000: body: content differs (rows 20 vs 28)"
+  ],
+  "loki_explained": [],
+  "loki_nondet": [],
+  "main_pr_bodies": [],
+  "loki_bodies": [
+   {
+    "request": "/api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7Cbilling%7Canalytics%7Cplatform)%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D&start=1795357140000000000&end=1795378740000000000",
+    "left": "{\"bytes\": 772000, \"chunks\": 136, \"entries\": 7720, \"streams\": 136}",
+    "right": "{\"bytes\": 2617979, \"chunks\": 831, \"entries\": 3190, \"streams\": 597}",
+    "numbers": "streams 136, chunks 136, entries 7720, bytes 772000 vs streams 597, chunks 831, entries 3190, bytes 2617979"
+   },
+   {
+    "request": "/api/datasources/uid/*/resources/labels?start=1795357140000000000&end=1795378740000000000",
+    "left": "{\"data\": [\"app\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\"], \"status\": \"success\"}",
+    "right": "{\"data\": [\"app\", \"case\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"fixture_case\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"k\", \"k8s_cluster_name\", \"k8s_namespace_name\", \"k8s_pod_name\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"query_semantics_run_id\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\", \"x\"], \"status\": \"success\"}"
+   }
+  ],
+  "loki_compared": true,
+  "loki_main_n": 2,
+  "loki_new": [],
+  "points_main": 1101,
+  "points_pr": 1101,
+  "points_loki": 1109,
+  "ui_main": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_pr": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_loki": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "settled_pr": true,
+  "settled_main": true,
+  "unreadable_main": 0,
+  "unreadable_pr": 0,
+  "unreadable_both": 0,
+  "unreadable_why": [],
+  "errors_pr": [],
+  "errors_main": [],
+  "errors_loki": [],
+  "loki_missing": false,
+  "runtime_main": {
+   "browser_thread_seconds": 0.5838960000000001,
+   "browser_task_seconds": 0.5900219999999999,
+   "js_heap_max_sampled_bytes": 49607140,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 6019,
+   "page_encoded_bytes": 4010411,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 723
+  },
+  "runtime_pr": {
+   "browser_thread_seconds": 0.569527,
+   "browser_task_seconds": 0.576987,
+   "js_heap_max_sampled_bytes": 54333068,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 6019,
+   "page_encoded_bytes": 4009545,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 710
+  },
+  "runtime_loki": {
+   "browser_thread_seconds": 0.576595,
+   "browser_task_seconds": 0.583033,
+   "js_heap_max_sampled_bytes": 53000432,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 6143,
+   "page_encoded_bytes": 4010543,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 725
+  },
+  "runtime_problems": []
+ },
+ {
+  "page": "explore-mixed-parser-explicit-count",
+  "range": "1h",
+  "requests": 3,
+  "series": 1308,
+  "main_vs_pr": "3/3",
+  "pr_vs_loki": "1/3 identical, 2 unexplained",
+  "settled": true,
+  "settle_s": {
+   "main": 4.545,
+   "pr": 4.031,
+   "loki": 4.03
+  },
+  "main_pr_diffs": [],
+  "main_pr_qids": [],
+  "loki_qids": [
+   null,
+   null
+  ],
+  "main_pr_nondet": [],
+  "main_pr_config": [],
+  "loki_diffs": [
+   "resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7C: body: content differs (rows 0 vs 0)",
+   "resource /api/datasources/uid/*/resources/labels?start=1795375140000000000&end=1795378740000000000: body: content differs (rows 20 vs 28)"
+  ],
+  "loki_explained": [],
+  "loki_nondet": [],
+  "main_pr_bodies": [],
+  "loki_bodies": [
+   {
+    "request": "/api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7Cbilling%7Canalytics%7Cplatform)%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D&start=1795375140000000000&end=1795378740000000000",
+    "left": "{\"bytes\": 117900, \"chunks\": 84, \"entries\": 1179, \"streams\": 84}",
+    "right": "{\"bytes\": 984064, \"chunks\": 91, \"entries\": 1209, \"streams\": 82}",
+    "numbers": "streams 84, chunks 84, entries 1179, bytes 117900 vs streams 82, chunks 91, entries 1209, bytes 984064"
+   },
+   {
+    "request": "/api/datasources/uid/*/resources/labels?start=1795375140000000000&end=1795378740000000000",
+    "left": "{\"data\": [\"app\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\"], \"status\": \"success\"}",
+    "right": "{\"data\": [\"app\", \"case\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"fixture_case\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"k\", \"k8s_cluster_name\", \"k8s_namespace_name\", \"k8s_pod_name\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"query_semantics_run_id\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\", \"x\"], \"status\": \"success\"}"
+   }
+  ],
+  "loki_compared": true,
+  "loki_main_n": 2,
+  "loki_new": [],
+  "points_main": 71237,
+  "points_pr": 71237,
+  "points_loki": 71245,
+  "ui_main": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_pr": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_loki": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "settled_pr": true,
+  "settled_main": true,
+  "unreadable_main": 0,
+  "unreadable_pr": 0,
+  "unreadable_both": 0,
+  "unreadable_why": [],
+  "errors_pr": [],
+  "errors_main": [],
+  "errors_loki": [],
+  "loki_missing": false,
+  "runtime_main": {
+   "browser_thread_seconds": 0.703119,
+   "browser_task_seconds": 0.784893,
+   "js_heap_max_sampled_bytes": 67025824,
+   "metric_samples": 20,
+   "api_requests": 3,
+   "api_encoded_bytes": 84727,
+   "page_encoded_bytes": 4088899,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 863
+  },
+  "runtime_pr": {
+   "browser_thread_seconds": 0.63606,
+   "browser_task_seconds": 0.652216,
+   "js_heap_max_sampled_bytes": 73191816,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 84726,
+   "page_encoded_bytes": 4088822,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 765
+  },
+  "runtime_loki": {
+   "browser_thread_seconds": 0.6160049999999999,
+   "browser_task_seconds": 0.631602,
+   "js_heap_max_sampled_bytes": 63652524,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 84839,
+   "page_encoded_bytes": 4088906,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 751
+  },
+  "runtime_problems": []
+ },
+ {
+  "page": "explore-mixed-parser-explicit-count",
+  "range": "24h",
+  "requests": 3,
+  "series": 13855,
+  "main_vs_pr": "3/3",
+  "pr_vs_loki": "1/3 identical, 2 unexplained",
+  "settled": true,
+  "settle_s": {
+   "main": 4.518,
+   "pr": 5.02,
+   "loki": 4.517
+  },
+  "main_pr_diffs": [],
+  "main_pr_qids": [],
+  "loki_qids": [
+   null,
+   null
+  ],
+  "main_pr_nondet": [],
+  "main_pr_config": [],
+  "loki_diffs": [
+   "resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7C: body: content differs (rows 0 vs 0)",
+   "resource /api/datasources/uid/*/resources/labels?start=1795292340000000000&end=1795378740000000000: body: content differs (rows 20 vs 30)"
+  ],
+  "loki_explained": [],
+  "loki_nondet": [],
+  "main_pr_bodies": [],
+  "loki_bodies": [
+   {
+    "request": "/api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7Cbilling%7Canalytics%7Cplatform)%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D&start=1795292340000000000&end=1795378740000000000",
+    "left": "{\"bytes\": 1466200, \"chunks\": 605, \"entries\": 14662, \"streams\": 605}",
+    "right": "{\"bytes\": 11942912, \"chunks\": 1120, \"entries\": 14555, \"streams\": 735}",
+    "numbers": "streams 605, chunks 605, entries 14662, bytes 1466200 vs streams 735, chunks 1120, entries 14555, bytes 11942912"
+   },
+   {
+    "request": "/api/datasources/uid/*/resources/labels?start=1795292340000000000&end=1795378740000000000",
+    "left": "{\"data\": [\"app\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\"], \"status\": \"success\"}",
+    "right": "{\"data\": [\"app\", \"case\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"fixture_step\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"k8s_cluster_name\", \"k8s_namespace_name\", \"k8s_pod_name\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"probe\", \"query_semantics_run_id\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\", \"x\", \"fixture_case\", \"k\"], \"status\": \"success\"}"
+   }
+  ],
+  "loki_compared": true,
+  "loki_main_n": 2,
+  "loki_new": [],
+  "points_main": 73415,
+  "points_pr": 73415,
+  "points_loki": 73425,
+  "ui_main": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_pr": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_loki": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "settled_pr": true,
+  "settled_main": true,
+  "unreadable_main": 0,
+  "unreadable_pr": 0,
+  "unreadable_both": 0,
+  "unreadable_why": [],
+  "errors_pr": [],
+  "errors_main": [],
+  "errors_loki": [],
+  "loki_missing": false,
+  "runtime_main": {
+   "browser_thread_seconds": 0.718062,
+   "browser_task_seconds": 0.7253930000000001,
+   "js_heap_max_sampled_bytes": 95277500,
+   "metric_samples": 20,
+   "api_requests": 3,
+   "api_encoded_bytes": 493160,
+   "page_encoded_bytes": 4496860,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 730
+  },
+  "runtime_pr": {
+   "browser_thread_seconds": 0.710788,
+   "browser_task_seconds": 0.720356,
+   "js_heap_max_sampled_bytes": 98250944,
+   "metric_samples": 22,
+   "api_requests": 3,
+   "api_encoded_bytes": 493160,
+   "page_encoded_bytes": 4496860,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 732
+  },
+  "runtime_loki": {
+   "browser_thread_seconds": 0.727664,
+   "browser_task_seconds": 0.736943,
+   "js_heap_max_sampled_bytes": 75201232,
+   "metric_samples": 20,
+   "api_requests": 3,
+   "api_encoded_bytes": 493289,
+   "page_encoded_bytes": 4497421,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 733
+  },
+  "runtime_problems": []
+ },
+ {
+  "page": "explore-mixed-parser-explicit-count",
+  "range": "6h",
+  "requests": 3,
+  "series": 7136,
+  "main_vs_pr": "3/3",
+  "pr_vs_loki": "1/3 identical, 2 unexplained",
+  "settled": true,
+  "settle_s": {
+   "main": 4.521,
+   "pr": 4.523,
+   "loki": 4.517
+  },
+  "main_pr_diffs": [],
+  "main_pr_qids": [],
+  "loki_qids": [
+   null,
+   null
+  ],
+  "main_pr_nondet": [],
+  "main_pr_config": [],
+  "loki_diffs": [
+   "resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7C: body: content differs (rows 0 vs 0)",
+   "resource /api/datasources/uid/*/resources/labels?start=1795357140000000000&end=1795378740000000000: body: content differs (rows 20 vs 28)"
+  ],
+  "loki_explained": [],
+  "loki_nondet": [],
+  "main_pr_bodies": [],
+  "loki_bodies": [
+   {
+    "request": "/api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7Cbilling%7Canalytics%7Cplatform)%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D&start=1795357140000000000&end=1795378740000000000",
+    "left": "{\"bytes\": 772000, \"chunks\": 136, \"entries\": 7720, \"streams\": 136}",
+    "right": "{\"bytes\": 6394880, \"chunks\": 443, \"entries\": 7816, \"streams\": 214}",
+    "numbers": "streams 136, chunks 136, entries 7720, bytes 772000 vs streams 214, chunks 443, entries 7816, bytes 6394880"
+   },
+   {
+    "request": "/api/datasources/uid/*/resources/labels?start=1795357140000000000&end=1795378740000000000",
+    "left": "{\"data\": [\"app\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\"], \"status\": \"success\"}",
+    "right": "{\"data\": [\"app\", \"case\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"fixture_case\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"k\", \"k8s_cluster_name\", \"k8s_namespace_name\", \"k8s_pod_name\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"query_semantics_run_id\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\", \"x\"], \"status\": \"success\"}"
+   }
+  ],
+  "loki_compared": true,
+  "loki_main_n": 2,
+  "loki_new": [],
+  "points_main": 116049,
+  "points_pr": 116049,
+  "points_loki": 116057,
+  "ui_main": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_pr": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_loki": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "settled_pr": true,
+  "settled_main": true,
+  "unreadable_main": 0,
+  "unreadable_pr": 0,
+  "unreadable_both": 0,
+  "unreadable_why": [],
+  "errors_pr": [],
+  "errors_main": [],
+  "errors_loki": [],
+  "loki_missing": false,
+  "runtime_main": {
+   "browser_thread_seconds": 0.669164,
+   "browser_task_seconds": 0.681812,
+   "js_heap_max_sampled_bytes": 82711712,
+   "metric_samples": 20,
+   "api_requests": 3,
+   "api_encoded_bytes": 371670,
+   "page_encoded_bytes": 4375366,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 731
+  },
+  "runtime_pr": {
+   "browser_thread_seconds": 0.674153,
+   "browser_task_seconds": 0.6864169999999999,
+   "js_heap_max_sampled_bytes": 81051360,
+   "metric_samples": 20,
+   "api_requests": 3,
+   "api_encoded_bytes": 371670,
+   "page_encoded_bytes": 4375366,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 733
+  },
+  "runtime_loki": {
+   "browser_thread_seconds": 0.6624680000000001,
+   "browser_task_seconds": 0.670196,
+   "js_heap_max_sampled_bytes": 81452560,
+   "metric_samples": 20,
+   "api_requests": 3,
+   "api_encoded_bytes": 371772,
+   "page_encoded_bytes": 4375477,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 719
+  },
+  "runtime_problems": []
+ },
+ {
+  "page": "explore-mixed-parser-reverse-count",
+  "range": "1h",
+  "requests": 3,
+  "series": 1308,
+  "main_vs_pr": "3/3",
+  "pr_vs_loki": "1/3 identical, 2 unexplained",
+  "settled": true,
+  "settle_s": {
+   "main": 4.016,
+   "pr": 4.019,
+   "loki": 4.016
+  },
+  "main_pr_diffs": [],
+  "main_pr_qids": [],
+  "loki_qids": [
+   null,
+   null
+  ],
+  "main_pr_nondet": [],
+  "main_pr_config": [],
+  "loki_diffs": [
+   "resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7C: body: content differs (rows 0 vs 0)",
+   "resource /api/datasources/uid/*/resources/labels?start=1795375140000000000&end=1795378740000000000: body: content differs (rows 20 vs 28)"
+  ],
+  "loki_explained": [],
+  "loki_nondet": [],
+  "main_pr_bodies": [],
+  "loki_bodies": [
+   {
+    "request": "/api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7Cbilling%7Canalytics%7Cplatform)%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D&start=1795375140000000000&end=1795378740000000000",
+    "left": "{\"bytes\": 117900, \"chunks\": 84, \"entries\": 1179, \"streams\": 84}",
+    "right": "{\"bytes\": 436329, \"chunks\": 831, \"entries\": 531, \"streams\": 597}",
+    "numbers": "streams 84, chunks 84, entries 1179, bytes 117900 vs streams 597, chunks 831, entries 531, bytes 436329"
+   },
+   {
+    "request": "/api/datasources/uid/*/resources/labels?start=1795375140000000000&end=1795378740000000000",
+    "left": "{\"data\": [\"app\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\"], \"status\": \"success\"}",
+    "right": "{\"data\": [\"app\", \"case\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"fixture_case\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"k\", \"k8s_cluster_name\", \"k8s_namespace_name\", \"k8s_pod_name\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"query_semantics_run_id\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\", \"x\"], \"status\": \"success\"}"
+   }
+  ],
+  "loki_compared": true,
+  "loki_main_n": 2,
+  "loki_new": [],
+  "points_main": 71237,
+  "points_pr": 71237,
+  "points_loki": 71245,
+  "ui_main": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_pr": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_loki": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "settled_pr": true,
+  "settled_main": true,
+  "unreadable_main": 0,
+  "unreadable_pr": 0,
+  "unreadable_both": 0,
+  "unreadable_why": [],
+  "errors_pr": [],
+  "errors_main": [],
+  "errors_loki": [],
+  "loki_missing": false,
+  "runtime_main": {
+   "browser_thread_seconds": 0.608597,
+   "browser_task_seconds": 0.617456,
+   "js_heap_max_sampled_bytes": 72251628,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 84117,
+   "page_encoded_bytes": 4088186,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 725
+  },
+  "runtime_pr": {
+   "browser_thread_seconds": 0.6189089999999999,
+   "browser_task_seconds": 0.634783,
+   "js_heap_max_sampled_bytes": 71480160,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 84097,
+   "page_encoded_bytes": 4089038,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 729
+  },
+  "runtime_loki": {
+   "browser_thread_seconds": 0.604054,
+   "browser_task_seconds": 0.614295,
+   "js_heap_max_sampled_bytes": 63985168,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 84211,
+   "page_encoded_bytes": 4088725,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 720
+  },
+  "runtime_problems": []
+ },
+ {
+  "page": "explore-mixed-parser-reverse-count",
+  "range": "24h",
+  "requests": 3,
+  "series": 13855,
+  "main_vs_pr": "3/3",
+  "pr_vs_loki": "1/3 identical, 2 unexplained",
+  "settled": true,
+  "settle_s": {
+   "main": 4.52,
+   "pr": 4.514,
+   "loki": 4.518
+  },
+  "main_pr_diffs": [],
+  "main_pr_qids": [],
+  "loki_qids": [
+   null,
+   null
+  ],
+  "main_pr_nondet": [],
+  "main_pr_config": [],
+  "loki_diffs": [
+   "resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7C: body: content differs (rows 0 vs 0)",
+   "resource /api/datasources/uid/*/resources/labels?start=1795292340000000000&end=1795378740000000000: body: content differs (rows 20 vs 30)"
+  ],
+  "loki_explained": [],
+  "loki_nondet": [],
+  "main_pr_bodies": [],
+  "loki_bodies": [
+   {
+    "request": "/api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7Cbilling%7Canalytics%7Cplatform)%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D&start=1795292340000000000&end=1795378740000000000",
+    "left": "{\"bytes\": 1466200, \"chunks\": 605, \"entries\": 14662, \"streams\": 605}",
+    "right": "{\"bytes\": 11942912, \"chunks\": 1120, \"entries\": 14555, \"streams\": 735}",
+    "numbers": "streams 605, chunks 605, entries 14662, bytes 1466200 vs streams 735, chunks 1120, entries 14555, bytes 11942912"
+   },
+   {
+    "request": "/api/datasources/uid/*/resources/labels?start=1795292340000000000&end=1795378740000000000",
+    "left": "{\"data\": [\"app\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\"], \"status\": \"success\"}",
+    "right": "{\"data\": [\"app\", \"case\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"fixture_step\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"k8s_cluster_name\", \"k8s_namespace_name\", \"k8s_pod_name\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"probe\", \"query_semantics_run_id\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\", \"x\", \"fixture_case\", \"k\"], \"status\": \"success\"}"
+   }
+  ],
+  "loki_compared": true,
+  "loki_main_n": 2,
+  "loki_new": [],
+  "points_main": 73415,
+  "points_pr": 73415,
+  "points_loki": 73425,
+  "ui_main": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_pr": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_loki": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "settled_pr": true,
+  "settled_main": true,
+  "unreadable_main": 0,
+  "unreadable_pr": 0,
+  "unreadable_both": 0,
+  "unreadable_why": [],
+  "errors_pr": [],
+  "errors_main": [],
+  "errors_loki": [],
+  "loki_missing": false,
+  "runtime_main": {
+   "browser_thread_seconds": 0.730126,
+   "browser_task_seconds": 0.74373,
+   "js_heap_max_sampled_bytes": 83476496,
+   "metric_samples": 20,
+   "api_requests": 3,
+   "api_encoded_bytes": 487036,
+   "page_encoded_bytes": 4491593,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 733
+  },
+  "runtime_pr": {
+   "browser_thread_seconds": 0.7477739999999999,
+   "browser_task_seconds": 0.763435,
+   "js_heap_max_sampled_bytes": 74223892,
+   "metric_samples": 20,
+   "api_requests": 3,
+   "api_encoded_bytes": 487045,
+   "page_encoded_bytes": 4491177,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 740
+  },
+  "runtime_loki": {
+   "browser_thread_seconds": 0.710438,
+   "browser_task_seconds": 0.724966,
+   "js_heap_max_sampled_bytes": 85994236,
+   "metric_samples": 19,
+   "api_requests": 3,
+   "api_encoded_bytes": 487183,
+   "page_encoded_bytes": 4490864,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 715
+  },
+  "runtime_problems": []
+ },
+ {
+  "page": "explore-mixed-parser-reverse-count",
+  "range": "6h",
+  "requests": 3,
+  "series": 7136,
+  "main_vs_pr": "3/3",
+  "pr_vs_loki": "1/3 identical, 2 unexplained",
+  "settled": true,
+  "settle_s": {
+   "main": 4.026,
+   "pr": 4.02,
+   "loki": 4.015
+  },
+  "main_pr_diffs": [],
+  "main_pr_qids": [],
+  "loki_qids": [
+   null,
+   null
+  ],
+  "main_pr_nondet": [],
+  "main_pr_config": [],
+  "loki_diffs": [
+   "resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7C: body: content differs (rows 0 vs 0)",
+   "resource /api/datasources/uid/*/resources/labels?start=1795357140000000000&end=1795378740000000000: body: content differs (rows 20 vs 28)"
+  ],
+  "loki_explained": [],
+  "loki_nondet": [],
+  "main_pr_bodies": [],
+  "loki_bodies": [
+   {
+    "request": "/api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway-(storefront%7Cbilling%7Canalytics%7Cplatform)%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D&start=1795357140000000000&end=1795378740000000000",
+    "left": "{\"bytes\": 772000, \"chunks\": 136, \"entries\": 7720, \"streams\": 136}",
+    "right": "{\"bytes\": 2617979, \"chunks\": 831, \"entries\": 3190, \"streams\": 597}",
+    "numbers": "streams 136, chunks 136, entries 7720, bytes 772000 vs streams 597, chunks 831, entries 3190, bytes 2617979"
+   },
+   {
+    "request": "/api/datasources/uid/*/resources/labels?start=1795357140000000000&end=1795378740000000000",
+    "left": "{\"data\": [\"app\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\"], \"status\": \"success\"}",
+    "right": "{\"data\": [\"app\", \"case\", \"cluster\", \"component\", \"container\", \"db\", \"db_name\", \"env\", \"fixture_case\", \"generator_profile\", \"generator_run\", \"gpu\", \"instrumentation\", \"k\", \"k8s_cluster_name\", \"k8s_namespace_name\", \"k8s_pod_name\", \"level\", \"namespace\", \"owner_team\", \"pod\", \"query_semantics_run_id\", \"region\", \"role\", \"service_name\", \"version\", \"workload_scope\", \"x\"], \"status\": \"success\"}"
+   }
+  ],
+  "loki_compared": true,
+  "loki_main_n": 2,
+  "loki_new": [],
+  "points_main": 116049,
+  "points_pr": 116049,
+  "points_loki": 116057,
+  "ui_main": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_pr": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "ui_loki": {
+   "noData": 0,
+   "banners": [],
+   "panelErrors": 0
+  },
+  "settled_pr": true,
+  "settled_main": true,
+  "unreadable_main": 0,
+  "unreadable_pr": 0,
+  "unreadable_both": 0,
+  "unreadable_why": [],
+  "errors_pr": [],
+  "errors_main": [],
+  "errors_loki": [],
+  "loki_missing": false,
+  "runtime_main": {
+   "browser_thread_seconds": 0.664251,
+   "browser_task_seconds": 0.675381,
+   "js_heap_max_sampled_bytes": 81353460,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 366193,
+   "page_encoded_bytes": 4369893,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 738
+  },
+  "runtime_pr": {
+   "browser_thread_seconds": 0.650188,
+   "browser_task_seconds": 0.661955,
+   "js_heap_max_sampled_bytes": 80771412,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 366192,
+   "page_encoded_bytes": 4369869,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 725
+  },
+  "runtime_loki": {
+   "browser_thread_seconds": 0.658787,
+   "browser_task_seconds": 0.668769,
+   "js_heap_max_sampled_bytes": 78877916,
+   "metric_samples": 18,
+   "api_requests": 3,
+   "api_encoded_bytes": 366326,
+   "page_encoded_bytes": 4370861,
+   "api_aborted_encoded_bytes": 0,
+   "api_aborted_requests": 0,
+   "api_unfinished_encoded_bytes": 0,
+   "first_api_data_ms": 722
+  },
+  "runtime_problems": []
+ }
+]

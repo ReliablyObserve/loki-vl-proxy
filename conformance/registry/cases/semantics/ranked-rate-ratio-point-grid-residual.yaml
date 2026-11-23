@@ -1,0 +1,70 @@
+id: semantics/ranked-rate-ratio-point-grid-residual
+title: topk over a service rate ratio loses timestamped points (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Exact topk(2,sum-by-service rate / sum-by-service error-rate) query loses timestamped points in a matched notification-svc series on API and Grafana requests. This is a POINT-GRID facet, not a numeric-value difference. The exact registered rank-over-binary query is the source, but its fixed implementation does not certify this residual point-presence axis.
+
+  The exact implementation cause remains unknown. Existing fixed cases
+  and owner-kept identity policies are related controls, not evidence
+  that these combinations are correct or that their differences are allowed.
+
+  Recorded in conformance/registry/generated/parity-discovery.json at
+  ref 4a63b99e, recorded 2026-11-21T14:20:35Z, over
+  [1795265520, 1795269120]. The actual representative request below
+  retains its original bounds and categorize-labels encoding.
+  The scope contains 2 clusters and 3 confirmed
+  request records. Complete query examples and comparison facets remain
+  in that snapshot, indexed by gap.clusters; counts are observed request
+  counts, not passing coverage or newly added fixtures.
+
+  Representative recorded facet: {"service_name": "notification-svc"}: loki 13 points, proxy 9
+
+  The full response bodies and source-row identity trace are not present
+  in the discovery snapshot. Preserve that proof gap until replay or the
+  original response evidence establishes the complete contract.
+  Original requests/facets: GitHub Actions run 44910591975,
+  parity-refresh artifact 14714026577:
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: topk(2, sum by (service_name) (rate({env="production"}[1m])) / sum by (service_name) (rate({env="production"}
+      |= "error" [1m])))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: Original dual-written parity-refresh rows and source profile are available at these recorded bounds.
+    Empty results on a different window are not a proof.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired production rows, service identities and error-line membership at 1795265520..1795269120 are required to compare operands, point grids and ranking of the rate ratio; the verifier does not restore that historical source."
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - points
+  values:
+    status: 200
+  expect: Loki's complete series and exact timestamped point presence on the recorded evaluation grid; compare API
+    and Grafana timelines without treating missing points as a numeric tolerance.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing typed AST/planner evaluation; exact cause requires full source/result evidence
+  loki: HTTP 200 with the recorded values or timestamped points on the original source rows.
+  proxy: HTTP 200 with the recorded difference; no implementation fix or coverage closure is claimed.
+  planned_test: Expand existing registry-driven Loki/VictoriaLogs and API/Grafana comparisons for the recorded query
+    facets; retain complete answers and evaluation-grid evidence.
+  clusters:
+    - 770dd6ce
+    - 64c6e7ba

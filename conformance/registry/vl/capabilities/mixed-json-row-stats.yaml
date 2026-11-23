@@ -1,0 +1,28 @@
+id: mixed-json-row-stats
+kind: version_gated_capability
+since: v1.49
+
+description: |
+  The certified mixed JSON/logfmt categorical row-class statistics are validated
+  against actual VictoriaLogs v1.49.0 and v1.54.0. This is the tested floor of
+  the combined pipeline, not a claim that every constituent pipe debuted there.
+proxy_usage: |
+  capability.MixedJSONRowStats admits the typed count/rate range collector only
+  for a known validated release. The minimum observed fleet release controls
+  admission; unrelated feature probes cannot imply this gate. The existing
+  capability digest separates cache and in-flight work across gate changes.
+fallback: |
+  Unknown releases and releases below v1.49.0 retain the exact ordered raw-row
+  evaluator. Certified native rows and the disjoint original-row complement
+  retain the same global query budgets and label semantics. If either full
+  expanded backend query exceeds the known default LogsQL length limit, the
+  original raw route is selected before any class read.
+proves:
+  - internal/capability TestMixedJSONRowStatsRequiresKnownValidatedRelease
+  - internal/capability TestMixedJSONRowStatsUsesFleetMinimum
+  - internal/proxy TestOrderedMixedStatsCapabilityAdmission
+  - internal/proxy TestMixedJSONRowClassActualVictoriaLogsPartition (actual v1.49.0 and v1.54.0, full original-row complement and source aliases)
+  - internal/proxy TestMixedJSONRowClassRelevantAliasesActualVictoriaLogsAndLoki (actual v1.49.0 and v1.54.0, original envelopes, required-label aliases and full Loki metric replies)
+  - internal/proxy TestOrderedMixedStatsExpandedQueryBudgetBeforeBackend (both parser orders, exact backend query-length boundaries and no oversized class read)
+  - internal/proxy TestOrderedMixedStatsActualRangeMatchesRecordedLoki (actual v1.49.0 and v1.54.0 against recorded Loki)
+  - internal/proxy TestOrderedMixedStatsActualSourceAliasesMatchCanonicalLoki (actual v1.49.0 and v1.54.0)

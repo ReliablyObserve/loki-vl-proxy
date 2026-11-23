@@ -396,3 +396,58 @@ func testOrderedMixedParserOldCopies(t *testing.T, q string) {
 		})
 	}
 }
+
+// conformance: semantics/two-parsers-keep-one, cache-response-key-versions
+func TestOrderedJSONEvaluatorRejectsPreviousV1Copies(t *testing.T) {
+	const plain = `sum by (message) (count_over_time({app="api"} | json | drop __error__, __error_details__ | message!="" [1m]))`
+	const mixed = `sum by (message) (count_over_time({app="api"} | json message="[\"message\"]" | logfmt | drop __error__, __error_details__ | message!="" [1m]))`
+	for _, query := range []string{plain, mixed, "max(" + plain + ")"} {
+		for _, site := range []struct {
+			endpoint string
+			compat   bool
+		}{{"query", true}, {"query_range", true}, {"query_range", false}} {
+			t.Run(query+"/"+site.endpoint+"/"+strconv.FormatBool(site.compat), func(t *testing.T) {
+				at := time.Unix(1700000400, 0).UTC()
+				backend, _ := newDLVBaselineBackend(t, dlvBaselineShape{}, at)
+				p := newDLVBaselineProxy(t, backend.URL, true)
+				origins := traceVLCallOrigins(p)
+				params := url.Values{"query": {query}, "time": {strconv.FormatInt(at.Add(time.Minute).UnixNano(), 10)},
+					"start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.Add(time.Minute).UnixNano(), 10)}, "step": {"60"}}
+				target := "/loki/api/v1/" + site.endpoint + "?" + params.Encode()
+				headers := map[string]string{"X-Scope-OrgID": "team-a", "X-Auth-Token": "alpha"}
+				r := httptest.NewRequest(http.MethodGet, target, nil)
+				for k, v := range headers {
+					r.Header.Set(k, v)
+				}
+				key, store := p.queryRangeCacheKey(r, query), p.cache
+				if site.compat {
+					var ok bool
+					key, ok = p.compatCacheKey(site.endpoint, r)
+					if !ok {
+						t.Fatal("compat cache disabled")
+					}
+					store = p.compatCache
+				}
+				if !strings.Contains(key, orderedJSONEvaluatorResponseVersion) {
+					t.Fatalf("missing evaluator fence: %s", key)
+				}
+				// Preserve every prior v1 fence, including the mixed token;
+				// only the newly added semantic fence is absent in this copy.
+				legacy := strings.Replace(key, orderedJSONEvaluatorResponseVersion, "", 1)
+				if strings.Contains(query, "logfmt") && !strings.Contains(legacy, "@ordered-mixed-parser-metric-v1:") {
+					t.Fatal("legacy seed did not retain the actual previous mixed v1 identity")
+				}
+				stale := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"stale":"previous-v1"},"value":[1700000400,"999"]}]}}`)
+				store.SetLocalOnlyWithTTL(legacy, stale, 5*time.Minute)
+				cold := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold"))
+				if cold.Code != http.StatusOK || origins.made("cold") == 0 || bytes.Contains(cold.Body.Bytes(), []byte("previous-v1")) {
+					t.Fatalf("previous v1 cache bypassed evaluator: %d %s", cold.Code, cold.Body)
+				}
+				warm := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "warm"))
+				if warm.Code != http.StatusOK || !bytes.Equal(cold.Body.Bytes(), warm.Body.Bytes()) || origins.made("warm") != 0 {
+					t.Fatalf("new semantic identity did not retain exact reuse: %d %s", warm.Code, warm.Body)
+				}
+			})
+		}
+	}
+}

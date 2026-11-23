@@ -38,4 +38,5 @@ gap:
   proxy: '400 on query; 400 (topk, sort) or empty streams (vector) on query_range'
   planned_test: 'TestCompat_LabelReplaceAroundRankingAndVector (test/e2e-compat, group semantics)'
   clusters:
-    - 616dee70
+    - "616dee70"
+    - "e99afbef"

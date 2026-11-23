@@ -38,4 +38,6 @@ gap:
   loki: 'a drop deletes the label from every sample'
   proxy: 'a series per stream with the dropped label'
   planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'
-  clusters: []
+  clusters:
+    - "5f3ebd0b"
+    - "c5ea00ad"

@@ -5,7 +5,7 @@
     "lowering_marker_reads": 10,
     "parse_calls": 52,
     "string_reads": 47,
-    "text_built": 208,
+    "text_built": 203,
     "translator_string_ops": 677
   },
   "files": {
@@ -81,7 +81,7 @@
       "internal/proxy/nested_vector_fold.go": 1,
       "internal/proxy/ordered_json_metric.go": 86,
       "internal/proxy/ordered_json_unparsed_row.go": 2,
-      "internal/proxy/ordered_json_valid_split.go": 22,
+      "internal/proxy/ordered_json_valid_split.go": 17,
       "internal/proxy/quantile_histogram.go": 1,
       "internal/proxy/query_translation.go": 2,
       "internal/proxy/range_metric_compat.go": 13,

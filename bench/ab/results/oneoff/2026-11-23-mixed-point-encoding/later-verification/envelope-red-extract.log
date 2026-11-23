@@ -1,0 +1,8 @@
+--- FAIL: TestOrderedMixedStatsEnvelopeExpansionRetainsOriginalByteBudget (0.01s)
+    --- FAIL: TestOrderedMixedStatsEnvelopeExpansionRetainsOriginalByteBudget/|_json_k="[\"k\"]"_|_logfmt (0.00s)
+        ordered_json_mixed_stats_test.go:1360: known=true cap=295 original=276 envelope=314: status=500 body=rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (296 vs. 295)
+    --- FAIL: TestOrderedMixedStatsEnvelopeExpansionRetainsOriginalByteBudget/|_logfmt_|_json (0.00s)
+        ordered_json_mixed_stats_test.go:1360: known=true cap=295 original=276 envelope=314: status=500 body=rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (296 vs. 295)
+FAIL
+FAIL	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	0.672s
+FAIL

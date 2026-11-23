@@ -1,0 +1,393 @@
+{
+  "measured_at": "2026-11-23",
+  "scope": "Later verification after E247 API measurements. Artifact order is explicit; no backdated source attribution or new cold-performance measurement is implied.",
+  "published_head": "1394975520d86369b0d632473ec4e1800c55ff62",
+  "unpublished_changes": true,
+  "full_ci_status": "Latest published head has prior failing CI; these local checks do not replace a fresh full CI run.",
+  "dated_api_source_manifest_sha256": "e247c9ecbabe6ace0d3b3987002050f0924ec35063988f50f0b8bb921059e242",
+  "later_frozen_normal_source_manifest_sha256": "fb2b09872464d502a75ddc86fbec9207474bcfc3095f83cf96c3f9c60860e740",
+  "production_go_audit": {
+    "files": 426,
+    "all_match_current_checkout": true,
+    "source_receipt_sha256": "b8363aaf8fa014e876edd8c5e923e8b1c45da4d31e6e1fa400534dab1fc7545f"
+  },
+  "selected_current_source_hashes": [
+    {
+      "path": "internal/proxy/range_metric_compat.go",
+      "current_checkout_sha256": "59a888c7c5742eb283f6add6b2cc1587e1aa75a414ee3b5b38482cdcbe80452d",
+      "frozen_normal_sha256": "59a888c7c5742eb283f6add6b2cc1587e1aa75a414ee3b5b38482cdcbe80452d",
+      "matches_frozen_normal": true
+    },
+    {
+      "path": "internal/proxy/ordered_json_mixed_stats.go",
+      "current_checkout_sha256": "557bb063c671444713eed99126421bb28d41a05dd4b5157f75dbe91bfdd2fb7c",
+      "frozen_normal_sha256": "557bb063c671444713eed99126421bb28d41a05dd4b5157f75dbe91bfdd2fb7c",
+      "matches_frozen_normal": true
+    },
+    {
+      "path": "internal/proxy/ordered_json_mixed_stats_test.go",
+      "current_checkout_sha256": "475435dd91b337066bbdbc99fc01f367bb0ffe5e9251b6896cbcaeb866e4d5d9",
+      "frozen_normal_sha256": "475435dd91b337066bbdbc99fc01f367bb0ffe5e9251b6896cbcaeb866e4d5d9",
+      "matches_frozen_normal": true
+    }
+  ],
+  "full_unit_run_before_lint_extraction": {
+    "exit": 1,
+    "coverage_percent": 92.0,
+    "coverage_source_sha256": "174760aa6d660b72fd62dc3c4d710b527057e3fa1b1f16cc51763e3bc8dbd74a",
+    "coverage_total_line": "total:\t\t\t\t\t\t\t\t\t\t\t\t\t\t(statements)\t\t\t\t\t92.0%",
+    "failure_scope": "Only TestRepositoryBlockedCasesAreClassified: 25 new YAML cases lack classifier metadata. The original full run remains FAIL; the later dedicated caseverify rerun passes.",
+    "full_suite_rerun_after_fix": false
+  },
+  "reports": {
+    "unit.jsonl": {
+      "source_sha256": "f18786a4052d8fe71552e0e0228f238f48aac6dbcc9524afe5ae67127f742221",
+      "verdict_counts": {
+        "pass_packages": 43,
+        "pass_tests": 61456,
+        "skip_tests": 119,
+        "skip_packages": 1,
+        "fail_tests": 1,
+        "fail_packages": 1
+      },
+      "package_verdicts": [
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/cmd/configdoc",
+          "Elapsed": 0.123
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/cmd/healthcheck",
+          "Elapsed": 0.101
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/cmd/proxy",
+          "Elapsed": 1.004
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/cmd/rules-migrate",
+          "Elapsed": 0.349
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/cmd/validate_check",
+          "Elapsed": 0.108
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache",
+          "Elapsed": 15.733
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/capability",
+          "Elapsed": 0.637
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/clientprofile",
+          "Elapsed": 0.334
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/config",
+          "Elapsed": 0.465
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql",
+          "Elapsed": 11.452
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql",
+          "Elapsed": 0.465
+        },
+        {
+          "Action": "skip",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/probes",
+          "Elapsed": 0
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/refusalcases",
+          "Elapsed": 0.104
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr",
+          "Elapsed": 0.343
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit",
+          "Elapsed": 0.323
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics",
+          "Elapsed": 2.182
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware",
+          "Elapsed": 1.231
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/observability",
+          "Elapsed": 0.39
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+          "Elapsed": 867.066
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus",
+          "Elapsed": 229.868
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus",
+          "Elapsed": 0.578
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan",
+          "Elapsed": 2.335
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower",
+          "Elapsed": 16.196
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical",
+          "Elapsed": 0.344
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/rulesmigrate",
+          "Elapsed": 0.352
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping",
+          "Elapsed": 0.436
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace",
+          "Elapsed": 0.454
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/lokirecorded",
+          "Elapsed": 0.362
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/translatorspelling",
+          "Elapsed": 0.45
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu",
+          "Elapsed": 0.374
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/translate",
+          "Elapsed": 7.385
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator",
+          "Elapsed": 8.802
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/casefixtures",
+          "Elapsed": 8.682
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/casefixtures/cmd/seed",
+          "Elapsed": 0.192
+        },
+        {
+          "Action": "fail",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/caseverify",
+          "Elapsed": 0.676
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/ciworkflows",
+          "Elapsed": 0.444
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/dailyreport",
+          "Elapsed": 0.562
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-fleet",
+          "Elapsed": 0.32
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/errorrecord",
+          "Elapsed": 0.595
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/metricparity",
+          "Elapsed": 0.354
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun",
+          "Elapsed": 0.113
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/registry",
+          "Elapsed": 0.381
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/registry/cmd/regload",
+          "Elapsed": 0.099
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/testcache",
+          "Elapsed": 1.629
+        },
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/testcache/cmd/normalize-mtimes",
+          "Elapsed": 0.107
+        }
+      ],
+      "failures": [
+        {
+          "Test": "TestRepositoryBlockedCasesAreClassified",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/caseverify",
+          "Elapsed": 0.06
+        },
+        {
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/caseverify",
+          "Elapsed": 0.676
+        }
+      ],
+      "published_extract": "unit-verdicts.log",
+      "extract_sha256": "bb2bb5673bb7dfe799bf1fcb2326820390a47a7e98d54ac1b919d8842471005e",
+      "transformation": "Select terminal verdicts; unit log retains only the failing classifier diagnostic. Full JSON event stream is not copied."
+    },
+    "caseverify-fixed.jsonl": {
+      "source_sha256": "9c59f6f91818713a3ae1bc1833fef889ef169f6b42e6de41c919a6a622378e33",
+      "verdict_counts": {
+        "pass_tests": 105,
+        "pass_packages": 1
+      },
+      "package_verdicts": [
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/test/caseverify",
+          "Elapsed": 0.624
+        }
+      ],
+      "failures": [],
+      "published_extract": "caseverify-fixed-verdicts.log",
+      "extract_sha256": "2d88e5421de7254c758249b25f0cde7f82ead6a4b480b14436748129672a9e88",
+      "transformation": "Select terminal verdicts; unit log retains only the failing classifier diagnostic. Full JSON event stream is not copied."
+    },
+    "actual-loki-vl.jsonl": {
+      "source_sha256": "5446e7c9ca531d14f2bb369afcf9c7938c096a0fa9ffd22e5c3a8a3bf7b1858f",
+      "verdict_counts": {
+        "pass_tests": 26,
+        "pass_packages": 1
+      },
+      "package_verdicts": [
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+          "Elapsed": 89.26
+        }
+      ],
+      "failures": [],
+      "published_extract": "actual-loki-vl-verdicts.log",
+      "extract_sha256": "a68362cff49f2aca020252e005515dd0d26092be91533dd97bb0edf9055937f7",
+      "transformation": "Select terminal verdicts; unit log retains only the failing classifier diagnostic. Full JSON event stream is not copied."
+    },
+    "post-refactor-actual.jsonl": {
+      "source_sha256": "e59c778e3ba6a6d84a980a5cdd4ff39a6f8c4a9c792294c0c24c67c929237939",
+      "verdict_counts": {
+        "pass_tests": 6,
+        "pass_packages": 1
+      },
+      "package_verdicts": [
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+          "Elapsed": 49.81
+        }
+      ],
+      "failures": [],
+      "published_extract": "post-refactor-actual-verdicts.log",
+      "extract_sha256": "3995c508bd08f65ed06bd3e1ce06246ec5f6aa1f8caaaeb9d72c572e2f78b028",
+      "transformation": "Select terminal verdicts; unit log retains only the failing classifier diagnostic. Full JSON event stream is not copied."
+    },
+    "final-focused-race.jsonl": {
+      "source_sha256": "6ed3ac8af870e4ca6a6816d0fb0c62b68a969b970760df1c414fa5459d96bc71",
+      "verdict_counts": {
+        "pass_tests": 41,
+        "skip_tests": 2,
+        "pass_packages": 1
+      },
+      "package_verdicts": [
+        {
+          "Action": "pass",
+          "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+          "Elapsed": 2.209
+        }
+      ],
+      "failures": [],
+      "published_extract": "final-focused-race-verdicts.log",
+      "extract_sha256": "890541491b6bd49069519d553d64db9d3794971ea2bcd8007ac2c7d5c50d3713",
+      "transformation": "Select terminal verdicts; unit log retains only the failing classifier diagnostic. Full JSON event stream is not copied."
+    }
+  },
+  "reducer_extraction": {
+    "focused_source_log_sha256": "567044222bef7a39561902c8d5469149f9721f0b2507bfdfbfa299ae74ffd366",
+    "inline_helpers": [
+      "hitsWindowFunction",
+      "hitsSamplePrefix"
+    ],
+    "lint_issues": 0,
+    "benchmark_pairs_per_function": 6,
+    "count_median_delta_percent": 0.08211154698611889,
+    "rate_median_delta_percent": 0.9360097212553153,
+    "allocation_counts_unchanged": true,
+    "scope_note": "Small measured median increases, not a speedup claim. Benchmark excludes backend and HTTP costs."
+  },
+  "envelope": {
+    "red_source_sha256": "ddc381db4ae2b66a7f8547c63d9c31c4db1cca6feffda0fadb23b99623f1aeed",
+    "green_source_sha256": "12259ea947256a22f0324e22511f10ada50dabe8f7ba5f88208572bdbc251ddd",
+    "original_row_bytes": 276,
+    "wrapped_row_bytes": 314,
+    "accepted_original_byte_cap": 295,
+    "retained_rejecting_original_byte_cap": 275,
+    "scope_note": "Envelope expansion must not consume the original input-row byte budget; limits are retained."
+  },
+  "golden_catalog_receipt": "catalog-append-receipt.json",
+  "post_refactor_actual_scope": "Existing actual test rerun after helper extraction: fresh 82-record pinned-Loki oracle and real VictoriaLogs v1.49.0/v1.54.0 validation, including captured full48 source. Not a fresh Grafana or API cold benchmark."
+}

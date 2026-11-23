@@ -188,4 +188,18 @@ func BenchmarkRawRowContextCheck(b *testing.B) {
 			}
 		}
 	})
+	for _, function := range []string{"count_over_time", "rate"} {
+		b.Run("window-reducer/"+function, func(b *testing.B) {
+			at := time.Unix(1700002800, 0)
+			series := map[string]manualSeriesSamples{"one": {Metric: map[string]string{"k": "body"}, Samples: []rangeMetricSample{{ts: at.Add(-time.Second).UnixNano(), value: 1}}}}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := hitsRangeMetricSeriesBounded(function, series, at, at.Add(6*time.Hour), 100*time.Millisecond, 24*time.Hour, 1<<30, nil, ctx, maxMetricEvalSamples); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+
 }

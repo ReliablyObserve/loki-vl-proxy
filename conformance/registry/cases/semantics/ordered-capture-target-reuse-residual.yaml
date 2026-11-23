@@ -1,0 +1,97 @@
+id: semantics/ordered-capture-target-reuse-residual
+title: A later capture or listed parser changes a previously affected target (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Exact log pipelines reuse target a across regexp/pattern/listed JSON/logfmt,
+  label_format, drop or keep. Loki retains an earlier/empty capture or exposes a new
+  later capture, while the proxy overwrites it, loses it or chooses a different source
+  value. Scope is these explicit ordered-stage expressions and their a presence/value.
+
+  Multiple mechanisms remain possible: first extracted-key ownership, stage-local
+  delete/keep ordering, capture partial-match semantics or response exposure. No
+  assertion that all members have one root cause; split when line-level oracles isolate
+  distinct mechanisms.
+
+  Observed in the committed conformance/registry/generated/parity-discovery.json
+  snapshot at ref 4a63b99e, recorded 2026-11-21T14:20:35Z, window 1795265520..1795269120
+  (2026-11-21 12:52..13:52 UTC). The original CI evidence is GitHub Actions run
+  44910591975, artifact 14714026577:
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577.
+  30 actual request records from sweep report 200 on both sides; this case tracks their
+  label facets, not a status failure. Full query examples and per-cluster excerpts
+  remain in that committed snapshot; gap.clusters identifies every included observation.
+  The representative request below retains the original recorded parameters and response
+  encoding.
+
+  The retained discovery data contains observed facets and excerpts, not complete
+  response-body goldens. The cause remains unproved; the scope is the exact recorded
+  query families and label observations, not a waiver for all queries containing these
+  stages. A targeted fixture must capture the full Loki and proxy replies before
+  closure. Related existing cases are investigation references only:
+  semantics/two-parsers-keep-one, profiles/stage-field-exposure. No fixed contract or
+  owner-kept policy is widened.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    direction: backward
+    end: '1795269120'
+    limit: '100'
+    query: '{service_name="api-gateway"} | unpack | json a | pattern "<a> <_> <b>"'
+    start: '1795265520'
+  headers:
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original paired source rows, stored/stream metadata and source profile that produced the linked
+    snapshot observations; retain the original tenant/auth context and encoding. A fresh empty historical range
+    is not evidence of resolution.
+  verify:
+    blocked_by: moved_window
+    reason: Recreate the recorded paired fixture and original request profile in the existing harness; full response
+      goldens and tenant/profile details must be captured before this open observation can be closed.
+compare:
+  mode: observed
+  fields:
+    - streams.stream labels
+  expect: |
+    Preserve Loki label names, presence (including empty labels), values and category
+    for the linked requests. Observed facets: category: loki-only parsed
+    <line-or-metadata-key>; category: proxy-only structuredMetadata detected_level;
+    labels: loki-only <line-or-metadata-key>; labels: proxy-only
+    <stream-label>,detected_level,level,service_name; labels: value differs
+    <line-or-metadata-key>. Keep full sample identity and points when a targeted fixture
+    is added; this observed record alone is not an exact full-response proof.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing typed query planning, ordered stage execution and response label exposure; exact responsible route
+    not yet established
+  loki: Recorded source facets preserve the label names, values and categories shown in the linked Loki excerpts
+  proxy: 'Recorded source facets differ as follows: category: loki-only parsed <line-or-metadata-key>; category:
+    proxy-only structuredMetadata detected_level; labels: loki-only <line-or-metadata-key>; labels: proxy-only <stream-label>,detected_level,level,service_name;
+    labels: value differs <line-or-metadata-key>'
+  planned_test: Reuse bench/parity and the existing test/e2e-compat query-semantics matrix/source fixtures; add
+    the targeted full-response Loki oracle facet under this case when the paired row and route are isolated. Reuse
+    the existing visual harness only for a confirmed Grafana-visible fixture; do not create another catalog.
+  note: 'Unknown cause; keep every linked mismatch visible and open. References for investigation only: semantics/two-parsers-keep-one,
+    profiles/stage-field-exposure. Split this scoped family if source-controlled oracle evidence establishes independent
+    causes. Snapshot ref4a63b99e; run44910591975 artifact14714026577; full response bodies were not retained.'
+  clusters:
+    - e8db45f1
+    - f60e1e58
+    - 188373ac
+    - deb4c660
+    - 156d30d5
+    - 1594f309
+    - 3b6dcccc
+    - c2f780f6
+    - 22cd4383
+    - edad0e98
+    - 9ef65df2
+    - a05f489c
+    - afec3491
+    - c67f3b76
+    - e2103f88

@@ -27,6 +27,7 @@ With no release readable, a probe that finds a feature present also bounds the r
 | `vl.range_time_writers_refused` | behaviour | `v1.53.0` | `/select/logsql/stats_query_range` (proven crash-safe on v1.49.0 and v1.54.0) | the refusal prediction of a stats_query_range pipe that writes _time ahead of the last stats pipe | `vl/capabilities/vl-stats-range-pipe-before-stats` | VictoriaLogs v1.53.0 (canReturnLastNResults checks) |
 | `vl.math_quoted_constant_clone` | safety | `v1.53.0` | none | the crash guard: a math pipe with a quoted number is never sent to a release without the fix (the v1.52 line stays guarded: its fixed releases are enterprise-only images) | `vl/capabilities/vl-math-quoted-constant-clone-crash` | VictoriaLogs v1.53.0 (math quoted constants keep their quotes when printed) |
 | `vl.extra_filters_len` | behaviour | `v1.54.0` | none | the refusal prediction of extra_filters and extra_stream_filters longer than -search.maxQueryLen | `vl/capabilities/vl-extra-filters-too-long` | VictoriaLogs v1.54.0 (#1923) |
+| `vl.mixed_json_row_stats` | capability | `v1.49.0` | none | certified mixed JSON/logfmt count/rate statistics with the exact original-row complement (ordered_json_mixed_stats.go) | `vl/capabilities/mixed-json-row-stats` | actual VictoriaLogs v1.49.0 and v1.54.0 class-partition and recorded Loki range oracles |
 
 ## Digest and epoch
 

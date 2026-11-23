@@ -1,0 +1,90 @@
+id: limits/sort-byte-metric-additional-series-cut
+pending: true
+title: Sort wrappers cut byte metrics below their own operand series count (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+evidence: needs recording
+why: |
+  sort(bytes_over_time(...)) and sort_desc(bytes_rate(...)) must preserve the complete
+  series count of their own byte-metric operand on the same evaluation axis; sorting
+  changes ordering, not cardinality.
+
+  Two range-query observations over namespace=prod, [5m],
+  start1795265520/end1795269120/step60. The original run also contains the exact bare
+  byte operands on that same axis and encoding.
+
+  Additional wrapper ceiling/identity route unisolated. The operand already has accepted
+  metadata projection (53544 Loki versus11002 proxy); the wrapper drops the proxy
+  further to10000 while Loki remains53544. The additional loss is not explained by the
+  existing metadata policy.
+
+  No assertion that the response lacks a warning: full warning bodies were not retained.
+  No claim that every10000 result is the same defect.
+
+  The same original run contains bare bytes_over_time({namespace="prod"}[5m]) and
+  bytes_rate({namespace="prod"}[5m]) controls at start 1795265520, end 1795269120 and
+  step 60, in both encodings. Their clusters acdff84d and a6b8ae84 record 11002 proxy
+  series versus 53544 Loki series. The sort wrappers record 10000 proxy series versus
+  the same 53544 Loki series. The difference already present in the operands is not
+  attributed to sorting; this case owns only the additional wrapper loss.
+
+  Historical evidence: the full differential run of 2026-11-21 on source ref 4a63b99e,
+  Loki 3.7.10. Original exact requests, bounds, statuses and complete facet summaries
+  are retained in the parity-refresh artifact at
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl). The committed index is
+  conformance/registry/generated/parity-discovery.json, recorded at
+  2026-11-21T14:20:35Z. The request below is an actual request from that run. This case
+  does not claim a current-head reproduction or a current fix.
+
+  Full response bodies and golden point sets were not retained by that artifact.
+  Reproduction must prove the source controls and compare every returned label,
+  timestamp/value, duplicate, error and warning on identical data and evaluation axes.
+  Existing identity-policy deviations are not enlarged or waived here; differing row
+  admission, labels, caps or errors still need their own evidence. This remains OPEN and
+  pending, not a passing compatibility or performance result.
+
+  Closure controls: Keep the exact bare-byte operand cross-check and all labels/points,
+  both encodings, limits/warnings, and below/above10000 controls. Inspect the final
+  stage and internal stats limit before selecting a cap fix; no global limit bump
+  without proof.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: sort(bytes_over_time({namespace="prod"} [5m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - labels
+    - values
+    - timestamps
+    - warnings
+    - limits
+  expect: sort(bytes_over_time(...)) and sort_desc(bytes_rate(...)) must preserve the complete series count of their
+    own byte-metric operand on the same evaluation axis; sorting changes ordering, not cardinality.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: sort/sort_desc byte-metric evaluation and intermediate series limits
+  loki: sort(bytes_over_time(...)) and sort_desc(bytes_rate(...)) must preserve the complete series count of their
+    own byte-metric operand on the same evaluation axis; sorting changes ordering, not cardinality.
+  proxy: Additional wrapper ceiling/identity route unisolated. The operand already has accepted metadata projection
+    (53544 Loki versus11002 proxy); the wrapper drops the proxy further to10000 while Loki remains53544. The additional
+    loss is not explained by the existing metadata policy.
+  planned_test: Extend existing series-limit and metric differential fixtures with identical byte operands and sort
+    wrappers below and above 10000 source series
+  clusters:
+    - 33bdea6a
+    - b1aa534b

@@ -198,7 +198,7 @@ func ipFilterIn(query string, other bool) bool {
 	for i := 0; ; i++ {
 		p := indexByteFrom(query, i, '=')
 		if p < 0 {
-			return false
+			break
 		}
 		i = p
 		j := skipLexerBlanks(query, p+1)
@@ -214,6 +214,71 @@ func ipFilterIn(query string, other bool) bool {
 			return true
 		}
 	}
+	return ipLineAlternativeIn(query, other)
+}
+
+// ipLineAlternativeIn extends the older operator screen to an ip() in an or
+// alternative. It skips quoted text and comments, and retains only the IP
+// alternatives the parser retains: in a positive chain an IP followed by
+// another alternative is discarded (logql.lastOrGroup); negative chains keep
+// every alternative. The old screen above still preserves every older key.
+func ipLineAlternativeIn(query string, other bool) bool {
+	if !containsWord(query, "or", other) {
+		return false
+	}
+	line, negative := false, false
+	for i := 0; i < len(query); {
+		switch c := query[i]; {
+		case c == '"' || c == '`':
+			i = skipQuoted(query, i) + 1
+		case c == '#':
+			i = skipLexerBlanks(query, i)
+		case (c == '|' || c == '!') && i+1 < len(query) && strings.ContainsRune("=~>", rune(query[i+1])):
+			line, negative = true, c == '!'
+			i += 2
+		case c == '|':
+			line = false
+			i++
+		case isIdentRune(rune(c)) || c >= utf8.RuneSelf:
+			start := i
+			end := identEnd(query, i)
+			if end == i {
+				i++
+				continue
+			}
+			wordEnd, isOr := matchFoldAt(query[i:end], "or")
+			i = end
+			if !line || !isOr || wordEnd != end-start {
+				continue
+			}
+			j := skipLexerBlanks(query, end)
+			n, ok := matchFoldAt(query[j:], "ip")
+			if !ok {
+				continue
+			}
+			j = skipLexerBlanks(query, j+n)
+			if j >= len(query) || query[j] != '(' {
+				continue
+			}
+			j = skipLexerBlanks(query, j+1)
+			if j >= len(query) || query[j] != '"' && query[j] != '`' {
+				continue
+			}
+			j = skipLexerBlanks(query, skipQuoted(query, j)+1)
+			if j >= len(query) || query[j] != ')' {
+				continue
+			}
+			i = j + 1
+			j = skipLexerBlanks(query, i)
+			n, nextOr := matchFoldAt(query[j:], "or")
+			if negative || !nextOr || j+n != identEnd(query, j) {
+				return true
+			}
+		default:
+			i++
+		}
+	}
+	return false
 }
 
 // ipOperatorEndingAt reports that the `=` at query[p] ends the operator of an ip filter: `|=` or `!=` of a line

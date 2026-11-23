@@ -1,0 +1,7 @@
+PASS: TestOrderedMixedStatsActualRangeMatchesRecordedLoki/v1.49.0 (2.88 s)
+PASS: TestOrderedMixedStatsActualRangeMatchesRecordedLoki/v1.54.0 (2.83 s)
+PASS: TestOrderedMixedStatsActualRangeMatchesRecordedLoki/captured_full48/v1.49.0 (14 s)
+PASS: TestOrderedMixedStatsActualRangeMatchesRecordedLoki/captured_full48/v1.54.0 (14.3 s)
+PASS: TestOrderedMixedStatsActualRangeMatchesRecordedLoki/captured_full48 (28.3 s)
+PASS: TestOrderedMixedStatsActualRangeMatchesRecordedLoki (49.35 s)
+PASS: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy (49.81 s)

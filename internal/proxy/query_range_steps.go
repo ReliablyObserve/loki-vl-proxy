@@ -877,7 +877,10 @@ func parseQueryStepsAnswer(body []byte, grid queryStepsGrid, from, to int64) (*s
 	if !bytes.Contains([]byte(f.names[1]), []byte(`"matrix"`)) && !bytes.Contains([]byte(prefix), []byte(`"matrix"`)) {
 		return nil, false
 	}
-	out := []byte(prefix)
+	// The roundtrip must match this already-bounded body exactly. Reserve
+	// its known size instead of repeatedly copying a growing answer buffer.
+	out := make([]byte, 0, len(body))
+	out = append(out, prefix...)
 	for i, series := range f.series {
 		out = appendQueryStepsSeries(out, i, series)
 	}

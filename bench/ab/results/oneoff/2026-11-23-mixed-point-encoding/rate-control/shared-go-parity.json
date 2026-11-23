@@ -1,0 +1,64 @@
+{
+  "comparisons": 54,
+  "contract": "test/metricparity.DecodeSamples and Difference; every label and timestamp; existing floating-point tolerance",
+  "failures": [
+    "answer-0024.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+    "answer-0028.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+    "answer-0032.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+    "answer-0014.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+    "answer-0018.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+    "answer-0022.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+    "answer-0000.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+    "answer-0004.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+    "answer-0008.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+    "answer-0062.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+    "answer-0066.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+    "answer-0070.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+    "answer-0048.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+    "answer-0052.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+    "answer-0056.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+    "answer-0038.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+    "answer-0042.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+    "answer-0046.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy"
+  ],
+  "groups": 18,
+  "passed": false,
+  "responses": 72,
+  "per_target": {
+    "main": {
+      "comparisons": 18,
+      "failures": [
+        "answer-0024.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+        "answer-0028.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+        "answer-0032.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+        "answer-0014.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+        "answer-0018.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+        "answer-0022.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+        "answer-0000.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+        "answer-0004.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+        "answer-0008.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+        "answer-0062.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+        "answer-0066.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+        "answer-0070.json.gz: loki series {\"user_id\":\"usr_00056c6e712ed871\"} missing in proxy",
+        "answer-0048.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+        "answer-0052.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+        "answer-0056.json.gz: loki series {\"user_id\":\"usr_000c3103885ea966\"} missing in proxy",
+        "answer-0038.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+        "answer-0042.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy",
+        "answer-0046.json.gz: loki series {\"user_id\":\"usr_0051971db773d3df\"} missing in proxy"
+      ],
+      "matches_loki": false
+    },
+    "previous": {
+      "comparisons": 18,
+      "failures": [],
+      "matches_loki": true
+    },
+    "pr": {
+      "comparisons": 18,
+      "failures": [],
+      "matches_loki": true
+    }
+  },
+  "scope_note": "Global four-way verdict remains false: main answers incorrectly. This breakdown does not waive its 18 failures. Previous and candidate match all Loki labels, timestamps and values under the existing shared Go contract."
+}

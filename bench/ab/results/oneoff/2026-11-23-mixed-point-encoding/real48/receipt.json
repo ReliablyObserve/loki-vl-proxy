@@ -1,0 +1,421 @@
+{
+  "status": "PASS_COMPLETE_FIXED_24H_SOURCE_AND_LIVE_REPLIES",
+  "window_selected_before_outputs": {
+    "evaluation_start": 1795292280,
+    "end": 1795378680,
+    "lookback_start": 1795291980
+  },
+  "capture_source_rows": 14828,
+  "source_capture_sha256": "a3cda89d83b42bcb7cec28a5fdba1f00f53be8a9882723d1293784ad3e52a31e",
+  "requests": [
+    {
+      "id": "overlap24h-forward-count_over_time",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      },
+      "source_count_before": 14828,
+      "body_file": "overlap24h-forward-count_over_time.json.gz",
+      "body_sha256": "f8e907fe998324ec8e57707b34b94f3807426ca97923d0326782612966f580f8",
+      "bytes": 1416629,
+      "status": 200,
+      "source_count_after": 14828
+    },
+    {
+      "id": "overlap24h-forward-rate",
+      "params": {
+        "query": "sum by (user_id) (rate({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      },
+      "source_count_before": 14828,
+      "body_file": "overlap24h-forward-rate.json.gz",
+      "body_sha256": "c75270a50f5727fd6bc819a8b05e35590962e456b2fc5caa5fed7dbd2a5dc8f5",
+      "bytes": 2148217,
+      "status": 200,
+      "source_count_after": 14828
+    },
+    {
+      "id": "overlap24h-reverse-count_over_time",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      },
+      "source_count_before": 14828,
+      "body_file": "overlap24h-reverse-count_over_time.json.gz",
+      "body_sha256": "c9934a0db553f872b7b701d7026ff6b1ac0296925cc0d92777a49d5fb0616a5a",
+      "bytes": 1416629,
+      "status": 200,
+      "source_count_after": 14828
+    },
+    {
+      "id": "overlap24h-reverse-rate",
+      "params": {
+        "query": "sum by (user_id) (rate({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      },
+      "source_count_before": 14828,
+      "body_file": "overlap24h-reverse-rate.json.gz",
+      "body_sha256": "40aa646f0c54f1198ffed4c7cc5c6b6b8a9db00f34a3bee7a3a55e679aaf9556",
+      "bytes": 2148215,
+      "status": 200,
+      "source_count_after": 14828
+    }
+  ],
+  "global_manifest_status_unchanged": "FAIL_SOURCE_AUDIT",
+  "source_before": {
+    "result": "PASS_COMPLETE_SAME_INPUT",
+    "rows": 14828,
+    "pages": 8,
+    "bytes": 15283439,
+    "count_before": 14828,
+    "count_after": 14828,
+    "identity_counter_sha256": "a16370c2115eee1f885cd44711f05e91cdba326434a9a29740dea89d71563a74"
+  },
+  "source_after": {
+    "result": "PASS_COMPLETE_SAME_INPUT",
+    "rows": 14828,
+    "pages": 8,
+    "bytes": 15283440,
+    "count_before": 14828,
+    "count_after": 14828,
+    "identity_counter_sha256": "a16370c2115eee1f885cd44711f05e91cdba326434a9a29740dea89d71563a74"
+  },
+  "http_requests": [
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795291980000000000",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795298438056126364",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795312811454570687",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795344199170042778",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795360150172758662",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795365773959257097",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795371009856159424",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795376349165219693",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "sum by (user_id) (rate({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "sum by (user_id) (rate({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795291980000000000",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795298438056126364",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795312811454570687",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795344199170042778",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795360150172758662",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795365773959257097",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795371009856159424",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query_range",
+      "params": {
+        "query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "start": "1795376349165219693",
+        "end": "1795378680000000000",
+        "direction": "forward",
+        "limit": "2000"
+      }
+    },
+    {
+      "base": "http://127.0.0.1:13101",
+      "path": "/loki/api/v1/query",
+      "params": {
+        "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[86700s]))",
+        "time": "1795378680000000000"
+      }
+    }
+  ]
+}

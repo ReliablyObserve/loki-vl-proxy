@@ -19,6 +19,22 @@ why: |
   Fix to make: without a parser stage before the unwrap, the unwrapped label must
   be one of the stream labels or structured metadata of the line, not a stored
   field of the line body.
+
+  The full 2026-11-21 differential also records four parserless composites with !>
+  pattern LINE filters, decolorize and/or unrelated label_format/drop stages. A pattern
+  line filter produces no parsed labels; it is not the pattern parser. Every listed
+  composite still unwraps duration_ms without a preceding stage producing that label.
+  Both endpoints return 200; Loki has no metric series while the proxy retains one or
+  more. These are additional observed parserless sample-admission facets, not evidence
+  that the other stages, point values or limits have been fixed.
+
+  Historical ownership evidence for these additions is the parity-refresh artifact of
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl), source ref 4a63b99e, and the committed
+  conformance/registry/generated/parity-discovery.json. Full response bodies were not
+  retained. The case remains OPEN; these assignments grant no waiver, owner-kept
+  projection, current runtime pass or fixed status.
+
 request:
   method: GET
   path: /loki/api/v1/query
@@ -39,4 +55,77 @@ gap:
   loki: 'a label that no stage extracted does not exist: the unwrap makes a conversion error per line'
   proxy: 'the stored field of the line body'
   planned_test: 'a parser-less row of TestCompat_UnwrapMissingAndNonNumeric (test/e2e-compat) once fixed'
-  clusters: []
+  clusters:
+    - "00053a2e"
+    - "054562be"
+    - "0caad28b"
+    - "0d7e7b08"
+    - "10ea68dc"
+    - "188a6f9f"
+    - "19fc1dfe"
+    - "1e944738"
+    - "23de8403"
+    - "26a7df9b"
+    - "28d9d57b"
+    - "2d583cd7"
+    - "2ddf4f31"
+    - "2eb02792"
+    - "2f326de5"
+    - "301b8eb3"
+    - "32b65192"
+    - "35052e40"
+    - "3bbebb6d"
+    - "428bae72"
+    - "4403bbce"
+    - "444ba42b"
+    - "4b25addf"
+    - "52023de1"
+    - "56368fe3"
+    - "577fbcab"
+    - "5c8aa815"
+    - "6240ad4d"
+    - "681bcc92"
+    - "724f04a9"
+    - "7314ff41"
+    - "77fcddef"
+    - "78a422f3"
+    - "7b61ac93"
+    - "7e326842"
+    - "7f4204d8"
+    - "882d2be4"
+    - "8a9e23a3"
+    - "8bca5ed9"
+    - "8cbdb698"
+    - "8cc35d5b"
+    - "95b23894"
+    - "95b2d0c5"
+    - "984b3707"
+    - "9ecbc578"
+    - "9fe5844c"
+    - "a4651a6f"
+    - "a51b461e"
+    - "a5217a3f"
+    - "ab5e9b6b"
+    - "abb2d873"
+    - "b18c1e49"
+    - "b3d9b748"
+    - "b499246a"
+    - "b9cf1edf"
+    - "baea1688"
+    - "bd059634"
+    - "c2c44603"
+    - "cc359b13"
+    - "d3077c47"
+    - "d9b8b180"
+    - "e038537d"
+    - "e3b0c0b9"
+    - "eb18214d"
+    - "ec5c0272"
+    - "ef7a69ef"
+    - "f0704b1b"
+    - "f8a433b6"
+    - "faa982ec"
+    - '012ea5f4'
+    - '0531388e'
+    - 'd79c4072'
+    - 'fe9c7bc5'

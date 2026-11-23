@@ -1,0 +1,920 @@
+{
+  "passed_full_answers": true,
+  "requests": 432,
+  "four_way_groups": 108,
+  "failures": [],
+  "rows": [
+    {
+      "shape": "explicit JSON then logfmt grouped count",
+      "range": "1h",
+      "main": {
+        "cold_median_ms": 28.0,
+        "cold_all_ms": [
+          60.0,
+          36.0,
+          26.0,
+          27.0,
+          28.0,
+          28.0
+        ],
+        "refresh_median_ms": 20.0,
+        "cold_cpu_ms_median": 13.3655,
+        "cold_decoded_vl_bytes_median": 119213.0,
+        "max_sampled_rss_bytes": 173887488.0,
+        "cold_scoped_vl_calls": [
+          11,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "refresh_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "previous": {
+        "cold_median_ms": 43.0,
+        "cold_all_ms": [
+          74.0,
+          50.0,
+          39.0,
+          41.0,
+          44.0,
+          42.0
+        ],
+        "refresh_median_ms": 14.0,
+        "cold_cpu_ms_median": 28.9755,
+        "cold_decoded_vl_bytes_median": 111164.0,
+        "max_sampled_rss_bytes": 168284160.0,
+        "cold_scoped_vl_calls": [
+          6,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "pr": {
+        "cold_median_ms": 38.5,
+        "cold_all_ms": [
+          86.0,
+          41.0,
+          40.0,
+          36.0,
+          35.0,
+          37.0
+        ],
+        "refresh_median_ms": 14.0,
+        "cold_cpu_ms_median": 22.0785,
+        "cold_decoded_vl_bytes_median": 111164.0,
+        "max_sampled_rss_bytes": 188907520.0,
+        "cold_scoped_vl_calls": [
+          5,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "loki": {
+        "cold_median_ms": 12.0,
+        "cold_all_ms": [
+          169.0,
+          15.0,
+          12.0,
+          12.0,
+          12.0,
+          11.0
+        ],
+        "refresh_median_ms": 12.0,
+        "cold_cpu_ms_median": null,
+        "cold_decoded_vl_bytes_median": null,
+        "max_sampled_rss_bytes": null,
+        "cold_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "refresh_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "shape": "explicit JSON then logfmt grouped count",
+      "range": "6h",
+      "main": {
+        "cold_median_ms": 82.0,
+        "cold_all_ms": [
+          95.0,
+          85.0,
+          83.0,
+          76.0,
+          81.0,
+          81.0
+        ],
+        "refresh_median_ms": 55.0,
+        "cold_cpu_ms_median": 41.11449999999999,
+        "cold_decoded_vl_bytes_median": 651376.0,
+        "max_sampled_rss_bytes": 161280000.0,
+        "cold_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "refresh_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "previous": {
+        "cold_median_ms": 162.0,
+        "cold_all_ms": [
+          202.0,
+          167.0,
+          160.0,
+          161.0,
+          163.0,
+          160.0
+        ],
+        "refresh_median_ms": 34.0,
+        "cold_cpu_ms_median": 96.694,
+        "cold_decoded_vl_bytes_median": 608221.0,
+        "max_sampled_rss_bytes": 195305472.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "pr": {
+        "cold_median_ms": 159.0,
+        "cold_all_ms": [
+          166.0,
+          170.0,
+          152.0,
+          149.0,
+          157.0,
+          161.0
+        ],
+        "refresh_median_ms": 35.0,
+        "cold_cpu_ms_median": 75.4175,
+        "cold_decoded_vl_bytes_median": 608221.0,
+        "max_sampled_rss_bytes": 196804608.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "loki": {
+        "cold_median_ms": 36.5,
+        "cold_all_ms": [
+          207.0,
+          37.0,
+          35.0,
+          36.0,
+          35.0,
+          70.0
+        ],
+        "refresh_median_ms": 35.0,
+        "cold_cpu_ms_median": null,
+        "cold_decoded_vl_bytes_median": null,
+        "max_sampled_rss_bytes": null,
+        "cold_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "refresh_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "shape": "explicit JSON then logfmt grouped count",
+      "range": "24h",
+      "main": {
+        "cold_median_ms": 143.0,
+        "cold_all_ms": [
+          148.0,
+          138.0,
+          161.0,
+          151.0,
+          136.0,
+          137.0
+        ],
+        "refresh_median_ms": 68.0,
+        "cold_cpu_ms_median": 41.979,
+        "cold_decoded_vl_bytes_median": 1252421.0,
+        "max_sampled_rss_bytes": 162779136.0,
+        "cold_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "refresh_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          10,
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "previous": {
+        "cold_median_ms": 227.0,
+        "cold_all_ms": [
+          224.0,
+          225.0,
+          229.0,
+          250.0,
+          241.0,
+          221.0
+        ],
+        "refresh_median_ms": 34.0,
+        "cold_cpu_ms_median": 63.561,
+        "cold_decoded_vl_bytes_median": 1169012.0,
+        "max_sampled_rss_bytes": 195870720.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          7,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "pr": {
+        "cold_median_ms": 219.0,
+        "cold_all_ms": [
+          207.0,
+          216.0,
+          234.0,
+          238.0,
+          221.0,
+          217.0
+        ],
+        "refresh_median_ms": 34.5,
+        "cold_cpu_ms_median": 59.516999999999996,
+        "cold_decoded_vl_bytes_median": 1169012.0,
+        "max_sampled_rss_bytes": 237768704.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          5,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "loki": {
+        "cold_median_ms": 26.5,
+        "cold_all_ms": [
+          80.0,
+          25.0,
+          27.0,
+          26.0,
+          35.0,
+          26.0
+        ],
+        "refresh_median_ms": 28.5,
+        "cold_cpu_ms_median": null,
+        "cold_decoded_vl_bytes_median": null,
+        "max_sampled_rss_bytes": null,
+        "cold_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "refresh_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "shape": "logfmt then JSON grouped count",
+      "range": "1h",
+      "main": {
+        "cold_median_ms": 26.5,
+        "cold_all_ms": [
+          26.0,
+          26.0,
+          26.0,
+          30.0,
+          28.0,
+          27.0
+        ],
+        "refresh_median_ms": 19.5,
+        "cold_cpu_ms_median": 11.713999999999999,
+        "cold_decoded_vl_bytes_median": 119213.0,
+        "max_sampled_rss_bytes": 163201024.0,
+        "cold_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "refresh_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "previous": {
+        "cold_median_ms": 40.5,
+        "cold_all_ms": [
+          38.0,
+          42.0,
+          41.0,
+          40.0,
+          37.0,
+          43.0
+        ],
+        "refresh_median_ms": 14.0,
+        "cold_cpu_ms_median": 26.501,
+        "cold_decoded_vl_bytes_median": 111164.0,
+        "max_sampled_rss_bytes": 166174720.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "pr": {
+        "cold_median_ms": 35.0,
+        "cold_all_ms": [
+          38.0,
+          34.0,
+          35.0,
+          40.0,
+          35.0,
+          34.0
+        ],
+        "refresh_median_ms": 14.0,
+        "cold_cpu_ms_median": 18.201999999999998,
+        "cold_decoded_vl_bytes_median": 111164.0,
+        "max_sampled_rss_bytes": 165806080.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "loki": {
+        "cold_median_ms": 12.0,
+        "cold_all_ms": [
+          60.0,
+          12.0,
+          12.0,
+          15.0,
+          12.0,
+          11.0
+        ],
+        "refresh_median_ms": 12.0,
+        "cold_cpu_ms_median": null,
+        "cold_decoded_vl_bytes_median": null,
+        "max_sampled_rss_bytes": null,
+        "cold_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "refresh_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "shape": "logfmt then JSON grouped count",
+      "range": "6h",
+      "main": {
+        "cold_median_ms": 83.5,
+        "cold_all_ms": [
+          83.0,
+          82.0,
+          84.0,
+          114.0,
+          81.0,
+          84.0
+        ],
+        "refresh_median_ms": 52.5,
+        "cold_cpu_ms_median": 41.4165,
+        "cold_decoded_vl_bytes_median": 651376.0,
+        "max_sampled_rss_bytes": 170823680.0,
+        "cold_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "refresh_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "previous": {
+        "cold_median_ms": 157.5,
+        "cold_all_ms": [
+          157.0,
+          159.0,
+          156.0,
+          184.0,
+          154.0,
+          158.0
+        ],
+        "refresh_median_ms": 33.0,
+        "cold_cpu_ms_median": 91.79749999999999,
+        "cold_decoded_vl_bytes_median": 608221.0,
+        "max_sampled_rss_bytes": 193118208.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "pr": {
+        "cold_median_ms": 156.0,
+        "cold_all_ms": [
+          180.0,
+          148.0,
+          161.0,
+          152.0,
+          160.0,
+          144.0
+        ],
+        "refresh_median_ms": 33.0,
+        "cold_cpu_ms_median": 70.523,
+        "cold_decoded_vl_bytes_median": 608221.0,
+        "max_sampled_rss_bytes": 195309568.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "loki": {
+        "cold_median_ms": 35.0,
+        "cold_all_ms": [
+          96.0,
+          35.0,
+          33.0,
+          46.0,
+          35.0,
+          32.0
+        ],
+        "refresh_median_ms": 37.5,
+        "cold_cpu_ms_median": null,
+        "cold_decoded_vl_bytes_median": null,
+        "max_sampled_rss_bytes": null,
+        "cold_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "refresh_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "shape": "logfmt then JSON grouped count",
+      "range": "24h",
+      "main": {
+        "cold_median_ms": 140.0,
+        "cold_all_ms": [
+          142.0,
+          140.0,
+          139.0,
+          139.0,
+          140.0,
+          140.0
+        ],
+        "refresh_median_ms": 67.5,
+        "cold_cpu_ms_median": 38.9295,
+        "cold_decoded_vl_bytes_median": 1252421.0,
+        "max_sampled_rss_bytes": 173756416.0,
+        "cold_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "refresh_scoped_vl_calls": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "previous": {
+        "cold_median_ms": 227.5,
+        "cold_all_ms": [
+          225.0,
+          229.0,
+          294.0,
+          226.0,
+          230.0,
+          219.0
+        ],
+        "refresh_median_ms": 34.0,
+        "cold_cpu_ms_median": 60.863,
+        "cold_decoded_vl_bytes_median": 1169012.0,
+        "max_sampled_rss_bytes": 193875968.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "pr": {
+        "cold_median_ms": 222.0,
+        "cold_all_ms": [
+          221.0,
+          233.0,
+          217.0,
+          229.0,
+          223.0,
+          221.0
+        ],
+        "refresh_median_ms": 33.5,
+        "cold_cpu_ms_median": 60.1875,
+        "cold_decoded_vl_bytes_median": 1169012.0,
+        "max_sampled_rss_bytes": 219721728.0,
+        "cold_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "refresh_scoped_vl_calls": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "loki": {
+        "cold_median_ms": 26.0,
+        "cold_all_ms": [
+          210.0,
+          25.0,
+          26.0,
+          33.0,
+          26.0,
+          25.0
+        ],
+        "refresh_median_ms": 29.0,
+        "cold_cpu_ms_median": null,
+        "cold_decoded_vl_bytes_median": null,
+        "max_sampled_rss_bytes": null,
+        "cold_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "refresh_scoped_vl_calls": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    }
+  ]
+}

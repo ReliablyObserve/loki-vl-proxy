@@ -1,0 +1,179 @@
+{
+  "schema": 1,
+  "rows": 39321,
+  "decoded_bytes": 72557318,
+  "decoded_sha256": "a3cda89d83b42bcb7cec28a5fdba1f00f53be8a9882723d1293784ad3e52a31e",
+  "compressed_sha256": "323cd0988e816ab2a6b6d91070057f0b56664b62b0d63491056a8dc03b7a0e86",
+  "generator_sha256": "931837bae12e46a99c45f0b305f9aec285859144f5f0d8a166c314b71a8488c9",
+  "selector": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+  "source_start_ns": 1795205340000000000,
+  "source_end_ns": 1795378680000000000,
+  "ingest_profile": "Normal-generator API-gateway two-element Loki entries; VL disable_message_parsing=1; explicit service_name; no ambiguous OTel metadata",
+  "metadata_map": {
+    "error": "error",
+    "info": "info",
+    "warn": "warn"
+  },
+  "credential_like_field_names": {},
+  "body_key_names": [
+    "cache_status",
+    "client_version",
+    "country",
+    "customer_id",
+    "customer_tier",
+    "deployment_id",
+    "deployment_ring",
+    "device_type",
+    "duration_ms",
+    "error",
+    "feature_flag",
+    "ip",
+    "level",
+    "method",
+    "name",
+    "operation",
+    "path",
+    "payload_bytes",
+    "region",
+    "release_channel",
+    "request_id",
+    "retry_count",
+    "rollout_phase",
+    "service",
+    "service_family",
+    "span_id",
+    "status",
+    "tenant_id",
+    "trace_id",
+    "user_id",
+    "version",
+    "zone"
+  ],
+  "original_global_source_audit": "FAIL_SOURCE_AUDIT",
+  "original_global_48h_direct_verdict": "FAIL",
+  "fixed_overlap": {
+    "evaluation_start": 1795292280,
+    "end": 1795378680,
+    "lookback_start": 1795291980,
+    "rows": 14828,
+    "audit": "Complete before/after live original stream/time/line/category counters equal captured VL source; no inferred cutoff"
+  },
+  "full_requests": [
+    {
+      "id": "real48-count-0",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795205700",
+        "end": "1795378500",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "id": "real48-count-1",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795205820",
+        "end": "1795378620",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "id": "real48-count-2",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795205940",
+        "end": "1795378740",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "id": "real48-count-3",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795205700",
+        "end": "1795378500",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "id": "real48-count-4",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795205820",
+        "end": "1795378620",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "id": "real48-count-5",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795205940",
+        "end": "1795378740",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    }
+  ],
+  "overlap_requests": [
+    {
+      "id": "overlap24h-forward-count_over_time",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "id": "overlap24h-forward-rate",
+      "params": {
+        "query": "sum by (user_id) (rate({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | json user_id=\"[\\\"user_id\\\"]\" | logfmt | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "id": "overlap24h-reverse-count_over_time",
+      "params": {
+        "query": "sum by (user_id) (count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    },
+    {
+      "id": "overlap24h-reverse-rate",
+      "params": {
+        "query": "sum by (user_id) (rate({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"} | logfmt | json | drop __error__, __error_details__ | user_id!=\"\" [5m]))",
+        "start": "1795292280",
+        "end": "1795378680",
+        "step": "120",
+        "limit": "1000",
+        "direction": "backward"
+      }
+    }
+  ],
+  "loki_pin": "v3.7.10",
+  "candidate": "e247c9ecbabe6ace0d3b3987002050f0924ec35063988f50f0b8bb921059e242",
+  "candidate_port": "13150",
+  "proof_scope": "Engine is a semantic oracle on identical captured rows, not a live Loki performance or retention equality claim"
+}

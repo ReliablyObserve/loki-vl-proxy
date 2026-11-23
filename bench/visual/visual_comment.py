@@ -554,8 +554,8 @@ def runtime_section(rows, targeted=(), failed=()):
         lines += ["", f"Expected client errors matching Loki: {len(expected)} scene/range comparisons. The upstream gaps remain open.",
                   "", "<details><summary>Registry-backed client error evidence (not a client fix)</summary>", "",
                   "Each listed comparison has matching complete primary points on main, PR and Loki, the same malformed supporting request, "
-                  "the same 400 DTO and matching actual uncaught exception identities. Raw errors and complete input captures are retained in "
-                  "`expected-client-error-captures.json`. Other data, resource and visual gates still apply.", "",
+                  + "the same 400 DTO and matching actual uncaught exception identities. Raw errors and complete input captures are retained in "
+                  + "`expected-client-error-captures.json`. Other data, resource and visual gates still apply.", "",
                   "| page / range | upstream registry case | primary points main / PR / Loki |",
                   "|---|---|---|"]
         for row, evidence in expected[:12]:

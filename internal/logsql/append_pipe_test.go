@@ -42,6 +42,26 @@ func TestAppendPipeMatchesString(t *testing.T) {
 	}
 }
 
+// conformance: architecture-syntax-package-layering
+func TestAppendStatsFuncsPreservesTypedFunctionText(t *testing.T) {
+	for _, pipe := range statsPipesOf("app", "level", "__lvp_inner") {
+		stats, ok := pipe.(logsql.PipeStats)
+		if !ok {
+			continue
+		}
+		got := string(logsql.AppendStatsFuncs([]byte("prefix:"), stats.Funcs))
+		if len(stats.Funcs) == 0 {
+			if got != "prefix:" {
+				t.Fatalf("empty functions changed prefix: %q", got)
+			}
+			continue
+		}
+		if want := (logsql.PipeStats{Funcs: stats.Funcs}).String(); "| stats "+got[len("prefix:"):] != want {
+			t.Fatalf("function-only typed text differs: got %q want %q", got, want)
+		}
+	}
+}
+
 // FuzzAppendPipeMatchesString holds AppendPipe to String on stats and math pipes over any names.
 func FuzzAppendPipeMatchesString(f *testing.F) {
 	f.Add("app", "level", "__lvp_inner")

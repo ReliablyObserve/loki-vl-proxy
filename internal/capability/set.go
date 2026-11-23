@@ -181,7 +181,7 @@ func compute(r Release, probes verdicts) Set {
 			on, decided, why = byVersion, true, ReasonVersion
 		case probe != VerdictNone:
 			on, decided, why = probe == VerdictOn, true, ReasonProbe
-		case haveFloor && g.Kind == Capability && g.Flavours == 0 && cmp3(g.From[0], g.From[1], g.From[2], floor) <= 0:
+		case haveFloor && !g.RequiresKnownRelease && g.Kind == Capability && g.Flavours == 0 && cmp3(g.From[0], g.From[1], g.From[2], floor) <= 0:
 			on, decided, why = true, true, ReasonImplied
 		default:
 			on, decided, why = g.Default, false, ReasonDefault

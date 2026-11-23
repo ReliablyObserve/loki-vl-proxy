@@ -17,7 +17,7 @@ Ranked by which clients depend on it.
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
 | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | — | 0 / 6 | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
-| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 9 / 12 | 29 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
+| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 9 / 12 | 30 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | — | 0 / 5 | 1 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 
 ## In progress
@@ -44,7 +44,7 @@ Proven in part; the rest is named in the item's cases.
 | `peer-cache-read-hedge` — A peer-cache read never waits on a paused or hung replica longer than the read hedge delay | — | 0 / 0 | 3 | Unit-proven with paused peer stubs and on the three-replica in-process ring (internal/cache/peer_hedge_test.go, peer_rep |
 | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 0 / 0 | 7 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
 | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
-| `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 8 / 9 | 35 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
+| `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 8 / 9 | 36 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 / 0 | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
 | `severity-detected-level-derivation` — detected_level is derived on the read path | — | 5 / 12 | 23 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |
 | `severity-exposure-surfaces` — Where detected_level and level must appear | — | 0 / 6 | 5 | Log responses, /tail, /patterns and /detected_fields carry the derived detected_level; categorize-labels puts it and a s |
@@ -76,7 +76,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 |---|---|---:|---:|---|
 | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 108 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
-| `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 11 | — |
+| `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 12 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 5 | — |

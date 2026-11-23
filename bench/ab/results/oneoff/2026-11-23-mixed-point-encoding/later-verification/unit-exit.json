@@ -1,0 +1,11 @@
+{
+  "exit": 1,
+  "seconds": 1223.7350389957428,
+  "command": [
+    "bash",
+    "scripts/ci/go_test_unit.sh",
+    "-p=1"
+  ],
+  "fresh": true,
+  "coverage": true
+}

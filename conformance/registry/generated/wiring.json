@@ -152,6 +152,7 @@
       "internal/proxy/detected_level_stream_series_test.go",
       "internal/proxy/fail_fast_unicode_test.go",
       "internal/proxy/keyword_fold_runes_test.go",
+      "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/ordered_json_vector_cache_test.go",
       "internal/proxy/rank_binary_range_test.go",
       "internal/proxy/reserved_field_case_fence_test.go",
@@ -266,7 +267,8 @@
     ],
     "limits/drilldown-breakdown-keeps-busiest": [
       "internal/proxy/compat_oversized_reply_test.go",
-      "internal/proxy/drilldown_series_limit_mode_test.go"
+      "internal/proxy/drilldown_series_limit_mode_test.go",
+      "internal/proxy/ordered_json_recorded_test.go"
     ],
     "limits/drilldown-partial-with-warning": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
@@ -276,6 +278,7 @@
       "internal/proxy/drilldown_series_limit_mode_test.go",
       "internal/proxy/drilldown_series_limit_ranking_test.go",
       "internal/proxy/drilldown_series_limit_rule_loki_test.go",
+      "internal/proxy/ordered_json_recorded_test.go",
       "internal/proxy/ordered_json_result_cache_test.go",
       "internal/proxy/response_cache_contract_test.go",
       "internal/proxy/series_limit_loki_cut_test.go",
@@ -635,6 +638,7 @@
       "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/matrix_fold_sink_test.go",
       "internal/proxy/metadata_query_validation_test.go",
+      "internal/proxy/ordered_json_raw_chunks_test.go",
       "internal/proxy/ordered_json_recorded_test.go",
       "internal/proxy/ordered_json_result_cache_test.go",
       "internal/proxy/ordered_json_steps_cache_test.go",
@@ -845,6 +849,9 @@
       "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
+    ],
+    "mixed-json-row-stats": [
+      "internal/proxy/ordered_json_mixed_stats_test.go"
     ],
     "numeric-and-response-formatting": [
       "internal/proxy/manual_metric_encoding_test.go"
@@ -1212,6 +1219,7 @@
     "quality/query-range-extent-cache": [
       "internal/proxy/first_last_window_cache_test.go",
       "internal/proxy/manual_metric_encoding_test.go",
+      "internal/proxy/ordered_json_mixed_stats_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "internal/proxy/series_limit_loki_cut_test.go",
       "internal/proxy/stats_extent_cache_test.go",
@@ -1235,6 +1243,7 @@
     "quality/query-range-settled-steps": [
       "internal/proxy/detected_level_stream_series_test.go",
       "internal/proxy/first_last_window_cache_test.go",
+      "internal/proxy/ordered_json_mixed_stats_test.go",
       "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/quantile_histogram_test.go",
       "internal/proxy/quantile_slider_harden_test.go",
@@ -2482,6 +2491,9 @@
       "internal/proxy/binary_aggregation_test.go",
       "internal/proxy/drilldown_compat_test.go",
       "internal/proxy/ordered_json_metric_test.go",
+      "internal/proxy/ordered_json_mixed_class_oracle_test.go",
+      "internal/proxy/ordered_json_mixed_stats_test.go",
+      "internal/proxy/ordered_json_raw_chunks_test.go",
       "internal/proxy/ordered_json_recorded_test.go",
       "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/ordered_json_vector_cache_test.go",
@@ -3107,7 +3119,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 689,
+  "registry_items": 740,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4366,7 +4378,22 @@
       "semantics/pipeline-error-text-parity",
       "semantics/two-parsers-keep-one"
     ],
+    "internal/proxy/ordered_json_mixed_class_oracle_test.go": [
+      "semantics/two-parsers-keep-one"
+    ],
+    "internal/proxy/ordered_json_mixed_stats_test.go": [
+      "mixed-json-row-stats",
+      "quality/query-range-extent-cache",
+      "quality/query-range-settled-steps",
+      "semantics/two-parsers-keep-one"
+    ],
+    "internal/proxy/ordered_json_raw_chunks_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/two-parsers-keep-one"
+    ],
     "internal/proxy/ordered_json_recorded_test.go": [
+      "limits/drilldown-breakdown-keeps-busiest",
+      "limits/drilldown-partial-with-warning",
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/json-error-filter-metric-split-pushdown",
@@ -4396,6 +4423,7 @@
       "semantics/json-metric-step-wider-than-range"
     ],
     "internal/proxy/ordered_json_steps_cache_test.go": [
+      "cache-response-key-versions",
       "loki_api_v1_query_range",
       "quality/query-range-settled-steps",
       "semantics/two-parsers-keep-one",
@@ -6888,7 +6916,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 810,
+  "tests_with_markers": 813,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -6906,15 +6934,18 @@
     "drilldown/detected-labels-lists-stored-field",
     "drilldown/detected-labels-sampled-cardinality",
     "drilldown/fields-overview-heavy-fanout",
+    "drilldown/pattern-response-set-residual",
     "drilldown/patterns-counts-tier-step-buckets",
     "drilldown/plugin-legend-sync-race",
     "drilldown/volume-detected-level-not-normalised",
     "error-coalescing-and-error-cache",
     "limits/drilldown-7d-breakdown-response-limit",
     "limits/drilldown-series-limit-or-operand-past-trip-step",
+    "limits/metric-grpc-send-message-cap",
     "limits/parser-metric-raw-rows-body-cap",
     "limits/series-cap-and-byte-budget-interact",
     "limits/series-limit-error-per-split",
+    "limits/sort-byte-metric-additional-series-cut",
     "loki-error-phases",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_format_query",
@@ -6924,8 +6955,10 @@
     "loki_api_v1_status_buildinfo",
     "metric-identity/structured-metadata-splits-series",
     "profiles/detected-fields-no-extracted-suffix",
+    "profiles/empty-label-format-target-compositions",
     "profiles/existence-filter-on-sanitized-key",
     "profiles/grafana-stats-error-as-warning",
+    "profiles/grafana-uppercase-metric-log-volume",
     "profiles/json-extraction-list-missing-key",
     "profiles/json-number-label-text",
     "profiles/label-endpoints-window-and-data",
@@ -6933,36 +6966,77 @@
     "profiles/multi-tenant-volume-merge",
     "profiles/volume-bytes-accounting",
     "profiles/volume-detected-level-extension",
+    "quality/bare-parser-fold-projection-unverified",
     "quality/detected-metadata-proxy-cache",
     "quality/index-stats-bytes-and-chunks",
     "quality/label-values-chunk-window",
     "quality/labels-just-pushed-stream-before-window",
+    "quality/line-filtered-byte-fold-projection-unverified",
     "quality/parity-corpus-asymmetric-visual-fixtures",
+    "quality/parserless-unwrap-source-provenance-unverified",
+    "quality/pipeline-error-sample-diagnostics-unverified",
+    "quality/ranked-operand-identity-unverified",
+    "quality/series-identity-projection-unverified",
+    "quality/sorted-count-composition-cardinality-unverified",
     "quality/stats-volume-freshness",
+    "quality/unwrap-multi-contract-cluster-attribution",
+    "semantics/bare-selector-fixture-level-metadata",
     "semantics/binary-step-grid",
+    "semantics/composed-parser-count-rate-bytes-vector-fold-values",
+    "semantics/decolorize-derived-level-content",
     "semantics/detected-fields-extracted-suffix",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
+    "semantics/empty-line-format-unpack-content",
     "semantics/extracted-derived-labels-raw-evaluator",
     "semantics/extracted-ungrouped-metric-raw-rows",
     "semantics/extraction-list-empty-label",
     "semantics/format-query-canonical-form-like-loki",
     "semantics/ip-filter-keeps-parser-error-lines",
+    "semantics/json-count-mixed-window-binary-failures",
     "semantics/json-empty-value-label-series",
+    "semantics/keep-composition-retains-discarded-identity-in-count-metrics",
+    "semantics/label-format-function-composition-content-selection",
+    "semantics/label-format-function-literal-output",
     "semantics/label-replace-around-ranking-and-vector",
+    "semantics/label-replace-json-count-evaluation-failure",
     "semantics/last-over-time-line-filter-offset-points",
+    "semantics/level-grouped-deviation-label-residual",
+    "semantics/listed-label-log-stage-intersections",
+    "semantics/listed-parser-metric-sort-labels",
     "semantics/log-entries-differ-same-count",
+    "semantics/log-line-format-function-catalog-rejections",
+    "semantics/logfmt-drop-error-offset-count-failure",
+    "semantics/logfmt-keep-empty-json-token-labels",
+    "semantics/logfmt-level-filter-extra-entries",
+    "semantics/logfmt-level-group-membership-residual",
+    "semantics/logfmt-level-projection-sum-count-values",
     "semantics/logfmt-malformed-lines",
     "semantics/logfmt-over-json-line-reads-stored-fields",
+    "semantics/matcher-keep-logfmt-filter-row-and-label-loss",
+    "semantics/matcher-keep-stream-label-residual",
+    "semantics/metric-line-format-level-extracted",
+    "semantics/mixed-parser-log-level-collision",
     "semantics/nested-aggregation-query-length",
+    "semantics/ordered-capture-target-reuse-residual",
     "semantics/outer-by-over-without-reads-level-as-label",
     "semantics/parse-error-labels-on-log-lines",
+    "semantics/parsed-unwrap-vector-fold-values-residual",
     "semantics/pattern-capture-before-bracket-text",
+    "semantics/pattern-capture-label-residual",
+    "semantics/rank-label-replace-plain-stream-label",
     "semantics/rank-over-stream-first-aggregation-range",
+    "semantics/ranked-parser-metric-identity-residual",
+    "semantics/ranked-rate-ratio-point-grid-residual",
     "semantics/regexp-chain-led-by-ip",
+    "semantics/regexp-numeric-capture-name-label",
+    "semantics/regexp-unwrap-target-retained",
+    "semantics/rename-source-label-remains",
     "semantics/ruler-empty-list-status",
     "semantics/ruler-rules-unknown-type-like-loki",
     "semantics/ruler-store-failure-status",
+    "semantics/set-union-parserless-unwrap-average-values",
+    "semantics/sort-offset-ratio-evaluation-failure",
     "semantics/sort-over-keep-read-as-log-query",
     "semantics/stddev-stdvar-parsed-label-series-identity",
     "semantics/stream-label-selector-shadowed-by-ingest-json-key",
@@ -6972,6 +7046,8 @@
     "semantics/topk-per-step-membership-differs",
     "semantics/translator-folds-binary-by-operand-without",
     "semantics/translator-reads-vector-operand-as-text",
+    "semantics/typed-negative-filter-stage-composition-extra-entries",
+    "semantics/unpack-logfmt-negative-ip-filter-selection",
     "semantics/unwrap-avg-overflow",
     "semantics/unwrap-bytes-pushdown-near-2-64",
     "semantics/unwrap-conversion-error-parser-divergence",
@@ -6985,6 +7061,8 @@
     "semantics/unwrap-sliding-infinity-point",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/unwrap-token-in-parenthesized-range-expected-list",
+    "semantics/unwrap-unlisted-field-after-json-extraction",
+    "semantics/unwrap-wrapper-internal-line-series-identity",
     "semantics/uppercase-topk-ranks-once",
     "semantics/without-fold-detected-level-unknown",
     "service-name-derivation",
@@ -6993,5 +7071,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 474
+  "wired_items": 475
 }

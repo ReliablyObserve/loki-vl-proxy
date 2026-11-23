@@ -395,6 +395,7 @@ func fenceWants(query string) map[string]bool {
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
 		want["ordered-json-vector"] = containsOrderedJSONVectorExpr(rexpr)
 		want["mixed-parser-metric"] = containsMixedParserMetric(rexpr)
+		want["ordered-json-evaluator"] = refOrderedJSONEvaluatorMetric(rexpr)
 	}
 	if spec, ok := parseBareParserMetricCompatSpec(resolved); ok && strings.Contains(spec.baseQuery, "| json") {
 		want["bare-json-metric"] = true
@@ -432,6 +433,7 @@ var fenceSpellingBases = []string{
 	`sum by (a) (count_over_time({app="a"} | json | _TIME = "x" [5m]))`,
 	`{app="a"} | json | drop level="x" | keep _stream_id = "z"`,
 	`{app="a"} != ip("1.2.3.4") or ip("5.6.7.8")`,
+	`{namespace="prod"} | label_format a=` + "`{{.b}}`" + ` | a="" |= "a" or ip("1.1.1.1")`,
 	`{app="a"} | json | a=~"x" | b!~"y" | c>=1 | d<2 | e==3 | f!=4`,
 	`sum by (x) (avg by (y) (max by (z) (count_over_time({app="a"} | json [5m]))))`,
 	`bottomk(2, sum by (x) (count_over_time({app="a"} | json [5m])))`,
@@ -547,6 +549,7 @@ var fenceScreens = []struct {
 	old  func(string) bool
 	now  func(string) string
 }{
+	{"ordered-json-evaluator", func(string) bool { return false }, orderedJSONEvaluatorResponseKeyVersion},
 	{"keep-metadata-projection", refKeepMetadata, keepMetadataProjectionResponseKeyVersion},
 	{"keep-unwrap-identity", refKeepUnwrap, keepUnwrapIdentityResponseKeyVersion},
 	{"ip-label-filter", refIP, ipLabelFilterResponseKeyVersion},
@@ -710,6 +713,45 @@ func emptyWithoutOverFires(query string) bool {
 	return emptyWithoutOperandResponseKeyVersion(query) != "" && !fenceWants(query)["binary-empty-without"]
 }
 
+// The reference compiles an evaluator from independently parsed input. Its
+// allocations are intentional test work, not part of the production key path.
+func refOrderedJSONEvaluatorMetric(expr logqlpkg.Expr) bool {
+	candidate := expr
+	switch n := expr.(type) {
+	case *logqlpkg.RangeAggregation:
+		rangeCopy := *n
+		rangeCopy.Offset, rangeCopy.OffsetDuration = "", 0
+		candidate = &rangeCopy
+	case *logqlpkg.VectorAggregation:
+		if ra, ok := n.Inner.(*logqlpkg.RangeAggregation); ok {
+			rangeCopy, vectorCopy := *ra, *n
+			rangeCopy.Offset, rangeCopy.OffsetDuration = "", 0
+			vectorCopy.Inner = &rangeCopy
+			candidate = &vectorCopy
+		}
+	}
+	if plan, ok := compileOrderedJSONMetricExpr(candidate); ok && plan.parser == "json" {
+		return true
+	}
+	if n, ok := expr.(*logqlpkg.VectorAggregation); ok && n.Op == logqlpkg.VectorSum {
+		if _, directRange := n.Inner.(*logqlpkg.RangeAggregation); directRange {
+			// A written sum supplies the range's hints; an unsupported sum
+			// must not be reinterpreted as an independently owned bare range.
+			return false
+		}
+	}
+	switch n := expr.(type) {
+	case *logqlpkg.VectorAggregation:
+		return refOrderedJSONEvaluatorMetric(n.Inner)
+	case *logqlpkg.BinOpExpr:
+		return refOrderedJSONEvaluatorMetric(n.Left) || refOrderedJSONEvaluatorMetric(n.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return n.Typed && n.Func == "label_replace" && refOrderedJSONEvaluatorMetric(n.Inner)
+	default:
+		return false
+	}
+}
+
 // fenceFires reports whether the named fence is in the response key chain of query (a query_range request).
 func fenceFires(name, query string) bool {
 	r := fenceShapeRequest(query)
@@ -729,6 +771,7 @@ func fenceFires(name, query string) bool {
 		},
 		"ordered-json-vector":     func() string { return orderedJSONVectorResponseKeyVersion(r, query) },
 		"bare-json-metric":        func() string { return bareJSONMetricResponseKeyVersion(r, query) },
+		"ordered-json-evaluator":  func() string { return orderedJSONEvaluatorResponseKeyVersion(query) },
 		"logfmt-presence":         func() string { return logfmtPresenceResponseKeyVersion(r, query) },
 		"stream-level-series":     func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity": func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
@@ -762,6 +805,15 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		fence, query string
 		want         bool
 	}{
+		{"ordered-json-evaluator", `sum by(k)(count_over_time({a="b"}|json|drop __error__,__error_details__|k!=""[1m]))`, true},
+		{"ordered-json-evaluator", "SUM BY(k)(COUNT_OVER_TIME({a=\"b\"}| # parser\n JSON|DROP __error__,__error_details__|k!=\"\"[1m]))", true},
+		{"ordered-json-evaluator", `sum by(k)(rate({a="b"}|JSON[1m] offset 1h))`, true},
+		{"ordered-json-evaluator", `label_replace(max(sum by(k)(rate({a="b"}|json|logfmt[1m]))),"copy","$1","k","(.*)")`, true},
+		{"ordered-json-evaluator", `count_over_time({a="b"}|logfmt|json|keep k[1m])`, true},
+		{"ordered-json-evaluator", `sum by(k)(rate({a="b"}|logfmt[1m]))`, false},
+		{"ordered-json-evaluator", `{a="b"}|json`, false},
+		{"ordered-json-evaluator", `sum by(k)(sum_over_time({a="b"}|json|unwrap n[1m]))`, false},
+		{"ordered-json-evaluator", `sum by(k)(count_over_time({a="b"}|json k="k"[1m]))`, false},
 		{"keep-metadata-projection", `{a="b"} | keep level`, true},
 		{"keep-metadata-projection", `{a="b"} | KEEP level`, true},
 		{"keep-metadata-projection", `{a="b"} | Keep level`, true},
@@ -781,6 +833,14 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"ip-label-filter", `{a="b"} | x = IP("10.0.0.0/8")`, true},
 		{"ip-label-filter", `{a="b"} | x != Ip ("10.0.0.0/8")`, true},
 		{"ip-label-filter", `{a="b"} |= iP("10.0.0.1")`, true},
+		{"ip-label-filter", `{namespace="prod"} | label_format a=` + "`{{.b}}`" + ` | a="" |= "a" or ip("1.1.1.1")`, true},
+		{"ip-label-filter", `{a="b"} |= "a" or ip("10.0.0.1")`, true},
+		{"ip-label-filter", "{a=\"b\"} |= \"a\" OR # `\n İP (\"10.0.0.1\")", true},
+		{"ip-label-filter", `{a="b"} != "a" or ip("10.0.0.1") or "b"`, true},
+		{"ip-label-filter", `{a="b"} |= "a" or ip("10.0.0.1") or "b"`, false},
+		{"ip-label-filter", `{a="b"} |= "a" or ip("10.0.0.1") or ip("10.0.0.2")`, true},
+		{"ip-label-filter", `{a="b"} |= "or ip(\"10.0.0.1\")"`, false},
+		{"ip-label-filter", "{a=\"b\"} |= \"a\" # or ip(\"10.0.0.1\")", false},
 		{"ip-label-filter", `{a="b"} != IP("10.0.0.1") or ip("10.0.0.2")`, true},
 		{"ip-label-filter", "{a=\"b\"} | x = #c\nip(\"10.0.0.1\")", true},
 		{"ip-label-filter", "{a=\"b\"} | x #c\n= ip(\"10.0.0.1\")", true},

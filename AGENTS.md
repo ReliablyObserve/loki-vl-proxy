@@ -303,6 +303,11 @@ scope, main-versus-PR changes, executed checks and measurements, remaining
 gaps and review readiness. Distinguish measured results from expectations.
 Code, documentation and pull request text remain in English.
 
+After each corrective push, update the existing PR summary with the fix,
+new or corrected verification results, exact measured revisions and remaining
+blockers. Keep historical measurements labelled with their original scope;
+do not imply that a new commit has passed checks or measurements not yet run.
+
 At the end of the work, provide a second summary with the delivered outcome,
 evidence links, unfinished work, playground state and any processes still
 running. Never describe an unfinished check as passed or imply that no work

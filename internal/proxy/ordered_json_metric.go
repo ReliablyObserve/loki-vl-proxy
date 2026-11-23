@@ -246,10 +246,8 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 		case served:
 			p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorStats, rangeMetricReasonPushdown)
 			traceStep(r.Context(), slowTraceStep{kind: "operation", route: "json_metric_evaluator", outcome: rangeMetricEvaluatorStats + "/" + rangeMetricReasonPushdown})
-			if isRange && err == nil && (plan.split == jsonSplitStrict || plan.split == jsonSplitErrors) {
-				// The split's answer is exact per evaluation time, like a raw
-				// answer: its steps are kept under their own route.
-				armOrderedJSONSteps(r, query, "ordered-json-split", readAt)
+			if isRange && err == nil {
+				armOrderedJSONStatsSteps(r, query, plan, readAt)
 			}
 		case parseDisagreement:
 			reason = rangeMetricReasonProbe
@@ -292,6 +290,20 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 		p.queryTracker.Record(endpoint, query, time.Since(requestStart), status >= 400)
 	}
 	return true
+}
+
+func armOrderedJSONStatsSteps(r *http.Request, query string, plan *orderedJSONMetricPlan, readAt int64) {
+	if plan.mixedParsers {
+		if _, exactClass := plan.mixedStatsClass(); exactClass {
+			// The complete hybrid answer retains the original mixed
+			// evaluator's label order and per-step cache identity.
+			armOrderedJSONSteps(r, query, mixedRawStepsRoute, readAt)
+		}
+	}
+	if plan.split == jsonSplitStrict || plan.split == jsonSplitErrors {
+		// Split answers are exact per evaluation time, like raw answers.
+		armOrderedJSONSteps(r, query, "ordered-json-split", readAt)
+	}
 }
 
 // armOrderedJSONSteps keeps the steps of a complete ordered JSON answer
@@ -1542,6 +1554,11 @@ var errLevelNotStored = errors.New("rows without a stored level")
 // spelling, translator.BuildDetectedLevelChain), is a row only the chain and
 // its guards read exactly: the query is asked again with them.
 func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration, instant bool) (body []byte, served bool, parseDisagreement bool, err error) {
+	if !instant {
+		if body, served, err := p.orderedMixedJSONStatsRange(ctx, plan, start, end, step); served || err != nil {
+			return body, served, false, err
+		}
+	}
 	if !plan.pushdown || p.labelTranslator == nil {
 		return nil, false, false, nil
 	}
@@ -3654,6 +3671,15 @@ func (plan *orderedJSONMetricPlan) parseExplicitJSONField(name, line string, bas
 	if len(value) > 64<<10 {
 		return errOrderedJSONComplexity
 	}
+	if strings.ContainsRune(value, utf8.RuneError) {
+		// Loki's expression parser leaves object JSON as raw label text;
+		// strings and arrays normalize replacement characters instead.
+		// Keep the distinction until final metric labels are selected.
+		_, kind, _, err := jsonparser.Get([]byte(line), name)
+		if err == nil && kind != jsonparser.Object {
+			value = lokiLabelValue(value)
+		}
+	}
 	if stored, exists := base[name]; exists {
 		if _, stream := streamLabels[name]; stream || !projection || stored != value {
 			name += extractedSuffix
@@ -3676,9 +3702,11 @@ func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels map
 			return errOrderedJSONComplexity
 		}
 		return jsonparser.ObjectEach(data, func(key, value []byte, kind jsonparser.ValueType, _ int) error {
-			fields++
-			if fields > 1024 {
-				return errOrderedJSONComplexity
+			if plan.required == nil {
+				fields++
+				if fields > 1024 {
+					return errOrderedJSONComplexity
+				}
 			}
 			name := orderedJSONLabelName(string(key), prefix == "")
 			if name == "" && prefix == "" && kind != jsonparser.Object {
@@ -3689,22 +3717,19 @@ func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels map
 			} else if prefix != "" {
 				name = prefix + "_" + name
 			}
-			if len(name) > 1024 || len(value) > 64<<10 && kind != jsonparser.Object {
+			if !plan.wantsJSONField(name, kind, base) {
+				return nil
+			}
+			if plan.required != nil {
+				fields++
+			}
+			if fields > 1024 || len(name) > 1024 || len(value) > 64<<10 && kind != jsonparser.Object {
 				return errOrderedJSONComplexity
 			}
 			if kind == jsonparser.Object {
-				if plan.required != nil {
-					wanted := false
-					for label := range plan.required {
-						wanted = wanted || strings.HasPrefix(label, name)
-					}
-					if !wanted {
-						return nil
-					}
-				}
 				return walk(value, name, depth+1)
 			}
-			if kind != jsonparser.String && kind != jsonparser.Number && kind != jsonparser.Boolean {
+			if !orderedJSONScalarType(kind) {
 				return nil
 			}
 			decoded := orderedJSONScalar(value, kind)
@@ -3733,6 +3758,37 @@ func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels map
 		})
 	}
 	return plan.recordJSONError(labels, walk([]byte(line), "", 0))
+}
+
+// wantsJSONField applies required-label hints before decoded-value budgets.
+// Original collisions can make an otherwise unrelated key observable through
+// its _extracted name; object prefixes retain the existing walk semantics.
+func (plan *orderedJSONMetricPlan) wantsJSONField(name string, kind jsonparser.ValueType, base map[string]string) bool {
+	if plan.required == nil {
+		return true
+	}
+	if kind == jsonparser.Object {
+		for label := range plan.required {
+			if strings.HasPrefix(label, name) {
+				return true
+			}
+		}
+		return false
+	}
+	if plan.required[name] {
+		return true
+	}
+	_, collision := base[name]
+	return collision && plan.required[name+extractedSuffix]
+}
+
+func orderedJSONScalarType(kind jsonparser.ValueType) bool {
+	switch kind {
+	case jsonparser.String, jsonparser.Number, jsonparser.Boolean:
+		return true
+	default:
+		return false
+	}
 }
 
 func (plan *orderedJSONMetricPlan) recordJSONError(labels map[string]string, err error) error {
@@ -3864,6 +3920,13 @@ type orderedJSONRowReader struct {
 	rows, limit  int
 	read         int64
 	maxBytes     int64
+	// originalField is nonempty only for a classified raw-row envelope. Its
+	// contents are restored before timestamps, provenance and parser checks.
+	originalField string
+	// staticClassTransport is set only when the request builds the proven
+	// per-row class complement. Decoding an envelope alone proves no query
+	// invariance and must not enable retries for arbitrary reverse pipelines.
+	staticClassTransport bool
 }
 
 func (p *Proxy) newOrderedJSONRowReader() (*orderedJSONRowReader, error) {
@@ -3889,7 +3952,7 @@ func (p *Proxy) newOrderedJSONRowReader() (*orderedJSONRowReader, error) {
 // inclusive) and adds the samples of the evaluations at start, start+step, ...
 // up to end to reader.
 func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSONMetricPlan, reader *orderedJSONRowReader, query string, from, to, start, end time.Time, step time.Duration) error {
-	if plan.projectedLabel == "" || to.Before(from) || !time.Unix(0, from.UnixNano()).Equal(from) ||
+	if plan.projectedLabel == "" && !reader.staticClassTransport || to.Before(from) || !time.Unix(0, from.UnixNano()).Equal(from) ||
 		!time.Unix(0, to.UnixNano()).Equal(to) || uint64(to.UnixNano())-uint64(from.UnixNano()) > math.MaxInt64 {
 		return p.readOrderedJSONMetricSpan(ctx, plan, reader, query, from, to, start, end, step)
 	}
@@ -4031,6 +4094,13 @@ func (p *Proxy) readOrderedJSONMetricSpan(ctx context.Context, plan *orderedJSON
 			}
 			return fmt.Errorf("invalid backend metric row: %w", err)
 		}
+		if reader.originalField != "" {
+			var err error
+			row, err = restoreMixedClassRow(row, reader.originalField)
+			if err != nil {
+				return err
+			}
+		}
 		ts, ok := parseFlexibleUnixNanos(row["_time"])
 		if !ok {
 			return fmt.Errorf("invalid backend metric timestamp")
@@ -4057,6 +4127,19 @@ func (p *Proxy) readOrderedJSONMetricSpan(ctx context.Context, plan *orderedJSON
 			return lokiPipelineError(labels)
 		}
 		labels = plan.groupLabels(labels)
+		accepted := true
+		for _, value := range labels {
+			// Recorded Loki 3.7.10 drops a sample only when a replacement
+			// character survives in its final metric label values. A later
+			// drop or grouping that removes the label must keep the row.
+			if strings.ContainsRune(value, utf8.RuneError) {
+				accepted = false
+				break
+			}
+		}
+		if !accepted {
+			continue
+		}
 		key := canonicalLabelsKey(labels)
 		entry, exists := reader.series[key]
 		if !exists {

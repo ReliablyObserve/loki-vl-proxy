@@ -3,7 +3,10 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -242,6 +245,60 @@ func TestOrderedJSONSettledStepsFreshTailRevalidated(t *testing.T) {
 	want := dlvBaselineWant(fixture.snapshot(), shape, base.Add(2*time.Minute), base.Add(5*time.Minute), "10", "alpha")
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("fresh-tail backfill hidden: got%v want%v", got, want)
+	}
+}
+
+// conformance: quality/query-range-settled-steps, cache-response-key-versions
+func TestOrderedJSONSettledStepsRejectPreviousEvaluatorCopies(t *testing.T) {
+	base := time.Unix(1700000400, 0).UTC()
+	for _, shape := range []dlvBaselineShape{
+		dlvBaselineShapes[1],
+		{name: "mixed", pipeline: "| logfmt | json | drop __error__, __error_details__ | keep detected_level", tagged: true},
+	} {
+		t.Run(shape.name, func(t *testing.T) {
+			backend, fixture := newDLVBaselineBackend(t, shape, base)
+			p := newDLVBaselineProxy(t, backend.URL, false)
+			p.queryRangeExtentCache, p.queryRangeExtentCacheTTL = true, time.Hour
+			target, headers := dlvBaselineRequest(shape, base.Add(time.Minute), base.Add(4*time.Minute))
+			r := httptest.NewRequest(http.MethodGet, target, nil)
+			for k, v := range headers {
+				r.Header.Set(k, v)
+			}
+			query := r.FormValue("query")
+			grid, key, ok := p.queryStepsFor(r, query)
+			currentBase := p.queryStepsBaseKey(r, query)
+			if !ok || !strings.Contains(currentBase, orderedJSONEvaluatorResponseVersion) {
+				t.Fatalf("missing inherited evaluator fence: ok=%v key=%s", ok, currentBase)
+			}
+			oldBase := strings.Replace(currentBase, orderedJSONEvaluatorResponseVersion, "", 1)
+			sum := sha256.Sum256([]byte(oldBase))
+			parts := strings.Split(key, ":")
+			parts[len(parts)-2] = hex.EncodeToString(sum[:])
+			legacy := strings.Join(parts, ":")
+			stale := []byte(fmt.Sprintf(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"detected_level":"previous-v1"},"values":[[%d,"999"]]}]}}`, base.Add(time.Minute).Unix()))
+			fragment, ok := parseQueryStepsAnswer(stale, grid, grid.first, grid.last)
+			if !ok {
+				t.Fatal("invalid stale steps fixture")
+			}
+			fragment.names = append(fragment.names, "ordered-json-raw", "")
+			oldRequest := queryStepsExtent(grid, legacy)
+			p.storeQuerySteps(oldRequest, legacy, grid.last, nil, []*statsExtentFragment{fragment})
+			if chunks := p.loadStatsExtentChunks(r.Context(), oldRequest, grid.last); len(chunks) == 0 {
+				t.Fatal("previous-version fragment was not actually stored")
+			}
+			before := fixture.calls.Load()
+			cold := doCompatProxyRequest(p, target, headers)
+			p.statsExtentStores.wait()
+			if cold.Code != http.StatusOK || fixture.calls.Load() <= before || bytes.Contains(cold.Body.Bytes(), []byte("previous-v1")) {
+				t.Fatalf("previous evaluator steps were reused: %d %s", cold.Code, cold.Body)
+			}
+			before = fixture.calls.Load()
+			warm := doCompatProxyRequest(p, target, headers)
+			p.statsExtentStores.wait()
+			if warm.Code != http.StatusOK || !bytes.Equal(cold.Body.Bytes(), warm.Body.Bytes()) || fixture.calls.Load() != before {
+				t.Fatalf("new evaluator steps did not reuse: %d %s", warm.Code, warm.Body)
+			}
+		})
 	}
 }
 

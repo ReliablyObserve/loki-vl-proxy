@@ -118,4 +118,4 @@ jobs:
       - name: Hold the predicted VictoriaLogs refusals to VictoriaLogs
         env:
           LVP_RUN_ORACLES: "1"
-        run: go test ./internal/proxy -run '^TestVLRefusalPredictionMatchesVictoriaLogs$' -count=1 -v
+        run: go test ./internal/proxy -run '^(TestVLRefusalPredictionMatchesVictoriaLogs|TestMixedJSONRowClassActualVictoriaLogsPartition|TestMixedJSONRowClassRelevantAliasesActualVictoriaLogsAndLoki|TestOrderedMixedStatsActualRangeMatchesRecordedLoki|TestOrderedMixedStatsActualSourceAliasesMatchCanonicalLoki)$' -count=1 -v -timeout=10m

@@ -751,5 +751,72 @@
       "keeps a line Loki drops": "semantics/json-key-named-error-label"
     },
     "q": "{namespace=\"prod\"} | json | __error__!=\"\""
+  },
+  "q-339a4539295e": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/regexp-numeric-capture-name-label",
+      "categorized: parsed: adds a label Loki does not have": "semantics/regexp-numeric-capture-name-label",
+      "categorized: parsed: misses a parsed label": "semantics/regexp-numeric-capture-name-label",
+      "misses a parsed label": "semantics/regexp-numeric-capture-name-label"
+    },
+    "q": "{service_name=\"payment-service\"} | logfmt a, b=\"c\" | regexp \"(?P<1>x)\""
+  },
+  "q-6396ba5598db": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label": "semantics/pattern-capture-label-residual",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label": "semantics/pattern-capture-label-residual"
+    },
+    "q": "{service_name=\"api-gateway\"} | regexp \"(?P<a>x)\" | json a, b | pattern `<ip> - <_>`"
+  },
+  "q-6c7a5a2150f4": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/listed-label-log-stage-intersections",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/listed-label-log-stage-intersections",
+      "categorized: stream: adds a label Loki does not have": "semantics/matcher-keep-stream-label-residual",
+      "misses a parsed label with an empty value": "semantics/listed-label-log-stage-intersections"
+    },
+    "q": "{service_name=\"payment-service\"} | keep a=\"b\" | logfmt --keep-empty | logfmt a, b=\"c\""
+  },
+  "q-6d529d51c382": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/rename-source-label-remains",
+      "categorized: parsed: adds a label Loki does not have": "semantics/rename-source-label-remains",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: writes another value of a parsed label": "semantics/listed-label-log-stage-intersections",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "writes another value of a parsed label": "semantics/listed-label-log-stage-intersections"
+    },
+    "q": "{service_name=\"api-gateway\"} | json a, b | label_format a=b, c=d, e=f"
+  },
+  "q-d293dde69332": {
+    "classes": {
+      "categorized: parsed: misses a parsed label with an empty value": "profiles/empty-label-format-target-compositions",
+      "misses a parsed label with an empty value": "profiles/empty-label-format-target-compositions"
+    },
+    "q": "{namespace=\"prod\"} | label_format a=`{{.b}}` | a=\"\" |= \"a\" or ip(\"1.1.1.1\")"
+  },
+  "q-e416d5ff02cc": {
+    "classes": {
+      "categorized: keeps a line Loki drops": "semantics/typed-negative-filter-stage-composition-extra-entries",
+      "keeps a line Loki drops": "semantics/typed-negative-filter-stage-composition-extra-entries"
+    },
+    "q": "{namespace=\"prod\"} | a != 1KB | drop a!=\"b\""
+  },
+  "q-e767fb11fcd2": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/matcher-keep-logfmt-filter-row-and-label-loss",
+      "categorized: drops a line Loki keeps": "semantics/matcher-keep-logfmt-filter-row-and-label-loss",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: misses a parsed label": "semantics/matcher-keep-logfmt-filter-row-and-label-loss",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/logfmt-keep-empty-json-token-labels",
+      "categorized: stream: adds a label Loki does not have": "semantics/matcher-keep-stream-label-residual",
+      "drops a line Loki keeps": "semantics/matcher-keep-logfmt-filter-row-and-label-loss",
+      "misses a parsed label": "semantics/matcher-keep-logfmt-filter-row-and-label-loss",
+      "misses a parsed label with an empty value": "semantics/logfmt-keep-empty-json-token-labels"
+    },
+    "q": "{service_name=\"payment-service\"} | keep a=~\"x\" | logfmt --keep-empty | a!=\"b\""
   }
 }

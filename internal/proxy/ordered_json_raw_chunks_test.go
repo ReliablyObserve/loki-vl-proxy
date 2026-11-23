@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +26,153 @@ import (
 type orderedRawChunkAttempt struct {
 	from, to int64
 	bytes    int
+}
+
+func mixedEnvelopeChunkBody(t *testing.T, rows []pushdownRow, from, to int64) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	for _, row := range rows {
+		if row.ts.UnixNano() < from || row.ts.UnixNano() >= to {
+			continue
+		}
+		original, err := json.Marshal(map[string]string{"_time": row.ts.UTC().Format(time.RFC3339Nano), "_stream": `{app="api"}`, "_msg": row.msg, mixedClassOriginalField: "original collision"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.NewEncoder(&out).Encode(map[string]string{mixedClassOriginalField: string(original)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out.Bytes()
+}
+
+// This fixed unsafe fixture serves envelope transport only; it interprets no
+// SQL/parser/class predicates. Actual class membership has separate VL proofs.
+func newMixedEnvelopeChunkProxy(t *testing.T, rows []pushdownRow, encoding string, cap int64, afterRead ...func()) (*Proxy, func() []orderedRawChunkAttempt) {
+	t.Helper()
+	var mu sync.Mutex
+	var attempts []orderedRawChunkAttempt
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.URL.Path != "/select/logsql/query" {
+			t.Errorf("unexpected envelope transport path %s", r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		from, _ := parseFlexibleUnixNanos(r.Form.Get("start"))
+		to, _ := parseFlexibleUnixNanos(r.Form.Get("end"))
+		body := mixedEnvelopeChunkBody(t, rows, from, to)
+		mu.Lock()
+		attempts = append(attempts, orderedRawChunkAttempt{from, to, len(body)})
+		mu.Unlock()
+		for _, callback := range afterRead {
+			callback()
+		}
+		var out bytes.Buffer
+		var writer io.WriteCloser
+		if encoding == "gzip" {
+			writer = gzip.NewWriter(&out)
+		} else {
+			var err error
+			writer, err = zstd.NewWriter(&out, zstd.WithEncoderConcurrency(1))
+			if err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+		_, _ = writer.Write(body)
+		_ = writer.Close()
+		w.Header().Set("Content-Encoding", encoding)
+		_, _ = w.Write(out.Bytes())
+	}))
+	t.Cleanup(srv.Close)
+	p, err := New(Config{BackendURL: srv.URL, Cache: cache.NewDisabled(), BackendCompression: encoding, LogLevel: "error", MetadataInventoryParallelism: -1, ExecutionLimits: ExecutionLimitsConfig{BackendMaxBufferedResponseBytes: int(cap)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.storeBackendVersion("v1.54.0", "v1.54.0")
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	return p, func() []orderedRawChunkAttempt {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]orderedRawChunkAttempt(nil), attempts...)
+	}
+}
+
+func TestOrderedMixedClassCutEnvelopeRetriesBothOrders(t *testing.T) {
+	const cap = 512
+	decodedBackendBodyFloorOverride.Store(cap)
+	t.Cleanup(func() { decodedBackendBodyFloorOverride.Store(0) })
+	at := time.Unix(1700002800, 0)
+	rows := []pushdownRow{{ts: at, msg: "k=first padding=" + strings.Repeat("x", 180)}, {ts: at.Add(time.Nanosecond), msg: "k=second padding=" + strings.Repeat("y", 180)}}
+	for _, pipeline := range []string{`| json k="[\"k\"]" | logfmt`, `| logfmt | json`} {
+		for _, encoding := range []string{"gzip", "zstd"} {
+			t.Run(pipeline+encoding, func(t *testing.T) {
+				plan, _ := compileOrderedJSONMetric(`sum by(k)(count_over_time({app="api"} ` + pipeline + ` | drop __error__, __error_details__ | k!="" [1m]))`)
+				class, ok := plan.mixedStatsClass()
+				if !ok {
+					t.Fatal("fixture lost typed static class admission")
+				}
+				spans := [][2]time.Time{{at, at.Add(time.Nanosecond)}}
+				control, _ := newMixedEnvelopeChunkProxy(t, rows, encoding, 1<<20)
+				want, err := control.collectMixedClassRowSpans(context.Background(), plan, `app:="api"`, class, spans, at.Add(time.Nanosecond), at.Add(time.Nanosecond), time.Minute)
+				if err != nil {
+					t.Fatal(err)
+				}
+				p, attempts := newMixedEnvelopeChunkProxy(t, rows, encoding, cap)
+				got, err := p.collectMixedClassRowSpans(context.Background(), plan, `app:="api"`, class, spans, at.Add(time.Nanosecond), at.Add(time.Nanosecond), time.Minute)
+				if err != nil || !reflect.DeepEqual(got, want) || len(got) != 2 || len(attempts()) != 3 || attempts()[0].bytes <= cap {
+					t.Fatalf("lost/cut/duplicated envelope boundary: groups=%d error=%v attempts=%v", len(got), err, attempts())
+				}
+				if plan.projectedLabel == "" {
+					uncertified, calls := newMixedEnvelopeChunkProxy(t, rows, encoding, cap)
+					reader, _ := uncertified.newOrderedJSONRowReader()
+					reader.originalField = class.originalField // decoding alone is not certification
+					err := uncertified.readOrderedJSONMetricRows(context.Background(), plan, reader, "*", at, at.Add(time.Nanosecond), at.Add(time.Nanosecond), at.Add(time.Nanosecond), time.Minute)
+					var cut *backendBodyTooLargeError
+					if !errors.As(err, &cut) || len(calls()) != 1 {
+						t.Fatalf("ordinary reverse unexpectedly retried: %v %v", err, calls())
+					}
+				}
+				for _, budget := range []string{"bytes", "rows", "cancel", "indivisible"} {
+					t.Run(budget, func(t *testing.T) {
+						fixture := append([]pushdownRow(nil), rows...)
+						ctx, cancel := context.WithCancel(context.Background())
+						defer cancel()
+						var callbacks []func()
+						if budget == "cancel" {
+							callbacks = append(callbacks, cancel)
+						}
+						if budget == "indivisible" {
+							fixture[1].ts = at
+						}
+						limited, calls := newMixedEnvelopeChunkProxy(t, fixture, encoding, cap, callbacks...)
+						if budget == "rows" {
+							limited.rangeMetricRowLimit = 2
+						}
+						if budget == "bytes" {
+							limited.orderedJSONMaxBytes = int64(len(mixedEnvelopeChunkBody(t, fixture, at.UnixNano(), at.Add(2*time.Nanosecond).UnixNano())) + 1)
+						}
+						end := at.Add(time.Nanosecond)
+						if budget == "indivisible" {
+							end = at
+						}
+						got, err := limited.collectMixedClassRowSpans(ctx, plan, "*", class, [][2]time.Time{{at, end}}, end, end, time.Minute)
+						if err == nil || got != nil || len(calls()) > 3 {
+							t.Fatalf("budget/cancel returned a partial result or kept retrying: %v %v %v", got, err, calls())
+						}
+						if budget == "cancel" && !errors.Is(err, context.Canceled) {
+							t.Fatalf("lost cancellation: %v", err)
+						}
+						if budget == "indivisible" && len(calls()) != 1 {
+							t.Fatal("indivisible timestamp retried")
+						}
+					})
+				}
+			})
+		}
+	}
 }
 
 func newOrderedRawChunkProxy(t *testing.T, rows []pushdownRow, encoding string, cap int64, afterRead ...func()) (*Proxy, func() []orderedRawChunkAttempt) {
@@ -66,12 +217,92 @@ func newOrderedRawChunkProxy(t *testing.T, rows []pushdownRow, encoding string, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.storeBackendVersion("v1.54.0", "v1.54.0")
+	// This fake implements raw transport, not typed mixed-class stats. Its
+	// known older version selects the documented raw fallback without starting
+	// an unrelated background version probe against the transport fixture.
+	p.storeBackendVersion("v1.48.0", "v1.48.0")
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	return p, func() []orderedRawChunkAttempt {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]orderedRawChunkAttempt(nil), attempts...)
+	}
+}
+
+func TestOrderedMixedStatsCompressedBodyCapFallsBackToCompleteRaw(t *testing.T) {
+	const bodyCap = 512
+	decodedBackendBodyFloorOverride.Store(bodyCap)
+	t.Cleanup(func() { decodedBackendBodyFloorOverride.Store(0) })
+	at := time.Unix(1700002800, 0).UTC()
+	query := `sum by(k)(count_over_time({app="api"} | json k="[\"k\"]" | logfmt | drop __error__, __error_details__ | k!="" [1m]))`
+	plan, ok := compileOrderedJSONMetric(query)
+	if !ok {
+		t.Fatal("mixed plan missing")
+	}
+	metric := map[string]string{"k": "body"}
+	rows := map[string]manualSeriesSamples{canonicalLabelsKey(metric): {Metric: metric, Samples: []rangeMetricSample{{ts: at.UnixNano(), value: 1}}}}
+	want, err := buildOrderedJSONMetric(context.Background(), plan, rows, at, at.Add(30*time.Second), 30*time.Second, true, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, encoding := range []string{"gzip", "zstd"} {
+		t.Run(encoding, func(t *testing.T) {
+			var statsCalls, rawCalls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				var body string
+				switch r.URL.Path {
+				case statsQueryRangePath:
+					statsCalls.Add(1)
+					if !strings.Contains(r.FormValue("query"), "pack_json as "+mixedClassOriginalField) {
+						t.Error("known backend did not attempt typed class stats")
+					}
+					body = fmt.Sprintf(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","__vlmc_target_k":"body","padding":%q},"values":[[%d,"1"]]}]}}`, strings.Repeat("x", 2048), at.Add(-time.Minute).Unix())
+				case "/select/logsql/query":
+					rawCalls.Add(1)
+					if strings.Contains(r.FormValue("query"), "pack_json") {
+						t.Error("bounded stats failure did not return to the original raw route")
+					}
+					body = fmt.Sprintf(`{"_time":%q,"_stream":"{app=\"api\"}","_msg":"{\"k\":\"body\"}"}`+"\n", at.Format(time.RFC3339Nano))
+				default:
+					t.Errorf("unexpected backend path %s", r.URL.Path)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				var encoded bytes.Buffer
+				var writer io.WriteCloser
+				if encoding == "gzip" {
+					writer = gzip.NewWriter(&encoded)
+				} else {
+					var err error
+					writer, err = zstd.NewWriter(&encoded, zstd.WithEncoderConcurrency(1))
+					if err != nil {
+						t.Error(err)
+						w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+				}
+				_, _ = io.WriteString(writer, body)
+				_ = writer.Close()
+				w.Header().Set("Content-Encoding", encoding)
+				_, _ = w.Write(encoded.Bytes())
+			}))
+			t.Cleanup(srv.Close)
+			p, err := New(Config{BackendURL: srv.URL, Cache: cache.NewDisabled(), BackendCompression: encoding, LogLevel: "error", MetadataInventoryParallelism: -1, ExecutionLimits: ExecutionLimitsConfig{BackendMaxBufferedResponseBytes: bodyCap}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.storeBackendVersion("v1.54.0", "v1.54.0")
+			t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+			form := fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%s&end=%s&step=30", url.QueryEscape(query), at.Format(time.RFC3339Nano), at.Add(30*time.Second).Format(time.RFC3339Nano))
+			got := doCompatProxyRequest(p, form, nil)
+			if err := recordedParserDifference(recordedParserCase{Status: http.StatusOK, Response: want}, got.Code, got.Body.Bytes()); err != nil {
+				t.Fatal(err)
+			}
+			if statsCalls.Load() != 1 || rawCalls.Load() != 1 {
+				t.Fatalf("native overflow/raw fallback calls=%d/%d, want1/1", statsCalls.Load(), rawCalls.Load())
+			}
+		})
 	}
 }
 

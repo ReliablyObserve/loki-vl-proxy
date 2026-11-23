@@ -1,0 +1,4434 @@
+[
+  {
+    "round": 0,
+    "collector": {
+      "set": "mixed-parser-metrics",
+      "description": "Ordered mixed-parser metrics, reusing the typed quality matrix queries.",
+      "end": 1795378740,
+      "runs": 3,
+      "runtime_proof": true,
+      "targets": [
+        "main",
+        "previous",
+        "pr",
+        "loki"
+      ],
+      "restart_before": "0",
+      "restart_after": "0",
+      "valid": true,
+      "cpu_samples_missed": 0,
+      "mode": "refresh",
+      "refresh_s": 60,
+      "profile": "",
+      "not_like_for_like": [],
+      "quiet_wait_s": 0.0,
+      "exact_repeat_age_s": null,
+      "exact_repeats": [],
+      "timeouts": [],
+      "rows": [
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.037,
+          "signature": "series=1 points=721 sum=245.66",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389062,
+          "response_bytes": 24748,
+          "answer_proof": "answer",
+          "history_start": 1795374720,
+          "reuse": {
+            "loki:l1_memory:requests": 6.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 23.0,
+            "vl:l2_disk:requests": 22.0,
+            "translations": 2.0,
+            "vl_bytes": 3274.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 25174016.0,
+            "rss_after_bytes": 30998528.0,
+            "rss_max_sampled_bytes": 30998528.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.008246,
+            "vl_calls": 6.0
+          },
+          "vl_calls_header": 6,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.082,
+          "signature": "series=1331 points=73532 sum=245.66",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389062,
+          "response_bytes": 2799960,
+          "answer_proof": "answer",
+          "history_start": 1795374720,
+          "reuse": {
+            "loki:l1_memory:requests": 6.0,
+            "loki:l2_disk:requests": 3.0,
+            "vl:l1_memory:requests": 29.0,
+            "vl:l2_disk:requests": 25.0,
+            "translations": 1.0,
+            "vl_bytes": 113153.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "vl_calls:select_logsql_stream_field_names": 3.0,
+            "rss_before_bytes": 25694208.0,
+            "rss_after_bytes": 82460672.0,
+            "rss_max_sampled_bytes": 82460672.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.070303,
+            "vl_calls": 5.0
+          },
+          "vl_calls_header": 5,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 4,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.056,
+          "signature": "series=1331 points=73532 sum=245.66",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389062,
+          "response_bytes": 2799960,
+          "answer_proof": "answer",
+          "history_start": 1795374720,
+          "reuse": {
+            "loki:l1_memory:requests": 6.0,
+            "loki:l2_disk:requests": 3.0,
+            "vl:l1_memory:requests": 23.0,
+            "vl:l2_disk:requests": 22.0,
+            "translations": 1.0,
+            "vl_bytes": 111164.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 26251264.0,
+            "rss_after_bytes": 80138240.0,
+            "rss_max_sampled_bytes": 80138240.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.03537,
+            "vl_calls": 5.0
+          },
+          "vl_calls_header": 5,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 4,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.123,
+          "signature": "series=1331 points=73532 sum=245.66",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 2800063,
+          "answer_proof": "answer",
+          "history_start": 1795374720,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1192
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.02,
+          "signature": "series=1 points=721 sum=241.167",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 24770,
+          "answer_proof": "answer",
+          "history_start": 1795374780,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 2.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 2.0,
+            "vl_bytes": 184.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 33447936.0,
+            "rss_after_bytes": 35966976.0,
+            "rss_max_sampled_bytes": 35966976.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.0043,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1726
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.019,
+          "signature": "series=1324 points=72184 sum=241.167",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 2749690,
+          "answer_proof": "answer",
+          "history_start": 1795374780,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 5.0,
+            "vl:l2_disk:requests": 2.0,
+            "loki:l1_memory:hits": 3.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 5096.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "vl_calls:select_logsql_stream_field_names": 3.0,
+            "rss_before_bytes": 83329024.0,
+            "rss_after_bytes": 89157632.0,
+            "rss_max_sampled_bytes": 89157632.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.012959,
+            "vl_calls": 1.0,
+            "background_vl_calls": 3.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 4,
+              "bytesReceived": 56044
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10002
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.019,
+          "signature": "series=1324 points=72184 sum=241.167",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 2749690,
+          "answer_proof": "answer",
+          "history_start": 1795374780,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 7.0,
+            "vl:l2_disk:requests": 3.0,
+            "loki:l1_memory:hits": 3.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 5096.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "vl_calls:select_logsql_stream_field_names": 3.0,
+            "rss_before_bytes": 81014784.0,
+            "rss_after_bytes": 88686592.0,
+            "rss_max_sampled_bytes": 88686592.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.014321,
+            "vl_calls": 1.0,
+            "background_vl_calls": 3.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 4,
+              "bytesReceived": 56044
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10002
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.041,
+          "signature": "series=1324 points=72184 sum=241.167",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 2749789,
+          "answer_proof": "answer",
+          "history_start": 1795374780,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1374718
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 596
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.008,
+          "signature": "series=1 points=721 sum=237.943",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 24837,
+          "answer_proof": "answer",
+          "history_start": 1795374840,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 2.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 2.0,
+            "vl_bytes": 148.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 38273024.0,
+            "rss_after_bytes": 40706048.0,
+            "rss_max_sampled_bytes": 40706048.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.004207,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1760
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.023,
+          "signature": "series=1306 points=71217 sum=237.943",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 2712886,
+          "answer_proof": "answer",
+          "history_start": 1795374840,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 3.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 91029504.0,
+            "rss_after_bytes": 127901696.0,
+            "rss_max_sampled_bytes": 127901696.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.022733,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 4,
+              "bytesReceived": 57224
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10890
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.025,
+          "signature": "series=1306 points=71217 sum=237.943",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 2712884,
+          "answer_proof": "answer",
+          "history_start": 1795374840,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 3.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 90705920.0,
+            "rss_after_bytes": 121643008.0,
+            "rss_max_sampled_bytes": 121643008.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.025679,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 4,
+              "bytesReceived": 57224
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10890
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "1h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.033,
+          "signature": "series=1306 points=71217 sum=237.943",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 414.52,
+          "at": 1795389063,
+          "response_bytes": 2712996,
+          "answer_proof": "answer",
+          "history_start": 1795374840,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1394688
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 596
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.177,
+          "signature": "series=7182 points=232510 sum=775.937",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 212.91,
+          "at": 1795389064,
+          "response_bytes": 9015557,
+          "answer_proof": "answer",
+          "history_start": 1795356720,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 8.0,
+            "vl:l1_memory:requests": 7.0,
+            "vl:l2_disk:requests": 7.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 608221.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 122085376.0,
+            "rss_after_bytes": 164950016.0,
+            "rss_max_sampled_bytes": 164950016.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.095179,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 9,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 7,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.202,
+          "signature": "series=7182 points=232510 sum=775.937",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 212.91,
+          "at": 1795389064,
+          "response_bytes": 9015558,
+          "answer_proof": "answer",
+          "history_start": 1795356720,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 8.0,
+            "vl:l1_memory:requests": 7.0,
+            "vl:l2_disk:requests": 7.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 608221.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 130084864.0,
+            "rss_after_bytes": 169119744.0,
+            "rss_max_sampled_bytes": 169119744.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.142333,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 9,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 7,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.033,
+          "signature": "series=1 points=2161 sum=775.937",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 212.91,
+          "at": 1795389065,
+          "response_bytes": 68817,
+          "answer_proof": "answer",
+          "history_start": 1795356720,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 7.0,
+            "vl:l2_disk:requests": 7.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl_bytes": 13233.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 42872832.0,
+            "rss_after_bytes": 45977600.0,
+            "rss_max_sampled_bytes": 45977600.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.005639,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 7,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.193,
+          "signature": "series=7182 points=232510 sum=775.937",
+          "vl_cpu_max": 414.52,
+          "vl_cpu_avg": 212.91,
+          "at": 1795389065,
+          "response_bytes": 9015663,
+          "answer_proof": "answer",
+          "history_start": 1795356720,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 7,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 4172
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.047,
+          "signature": "series=7162 points=232173 sum=774.813",
+          "vl_cpu_max": 11.3,
+          "vl_cpu_avg": 11.3,
+          "at": 1795389065,
+          "response_bytes": 9001946,
+          "answer_proof": "answer",
+          "history_start": 1795356780,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 8.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 166580224.0,
+            "rss_after_bytes": 183152640.0,
+            "rss_max_sampled_bytes": 183152640.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.042128,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 9,
+              "bytesReceived": 286853
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 9848
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.042,
+          "signature": "series=7162 points=232173 sum=774.813",
+          "vl_cpu_max": 11.3,
+          "vl_cpu_avg": 11.3,
+          "at": 1795389065,
+          "response_bytes": 9001947,
+          "answer_proof": "answer",
+          "history_start": 1795356780,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 8.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 169123840.0,
+            "rss_after_bytes": 179167232.0,
+            "rss_max_sampled_bytes": 179167232.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.031092,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 9,
+              "bytesReceived": 286853
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 9848
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.014,
+          "signature": "series=1 points=2161 sum=774.813",
+          "vl_cpu_max": 11.3,
+          "vl_cpu_avg": 9.755,
+          "at": 1795389066,
+          "response_bytes": 68838,
+          "answer_proof": "answer",
+          "history_start": 1795356780,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 7.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 7.0,
+            "vl_bytes": 184.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 48095232.0,
+            "rss_after_bytes": 51060736.0,
+            "rss_max_sampled_bytes": 51060736.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003968,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 6921
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.08,
+          "signature": "series=7162 points=232173 sum=774.813",
+          "vl_cpu_max": 11.3,
+          "vl_cpu_avg": 9.755,
+          "at": 1795389066,
+          "response_bytes": 9002046,
+          "answer_proof": "answer",
+          "history_start": 1795356780,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 4481856
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 596
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.043,
+          "signature": "series=7134 points=231964 sum=774.117",
+          "vl_cpu_max": 11.3,
+          "vl_cpu_avg": 9.755,
+          "at": 1795389066,
+          "response_bytes": 8992618,
+          "answer_proof": "answer",
+          "history_start": 1795356840,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 8.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:health": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 183607296.0,
+            "rss_after_bytes": 186941440.0,
+            "rss_max_sampled_bytes": 186941440.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.036624,
+            "vl_calls": 1.0,
+            "background_vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 9,
+              "bytesReceived": 287693
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10733
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.045,
+          "signature": "series=7134 points=231964 sum=774.117",
+          "vl_cpu_max": 11.3,
+          "vl_cpu_avg": 9.755,
+          "at": 1795389066,
+          "response_bytes": 8992618,
+          "answer_proof": "answer",
+          "history_start": 1795356840,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 8.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 181362688.0,
+            "rss_after_bytes": 204685312.0,
+            "rss_max_sampled_bytes": 204685312.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.040306,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 9,
+              "bytesReceived": 287693
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10733
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.014,
+          "signature": "series=1 points=2161 sum=774.117",
+          "vl_cpu_max": 8.21,
+          "vl_cpu_avg": 8.21,
+          "at": 1795389067,
+          "response_bytes": 68854,
+          "answer_proof": "answer",
+          "history_start": 1795356840,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 7.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 7.0,
+            "vl_bytes": 148.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 53190656.0,
+            "rss_after_bytes": 56160256.0,
+            "rss_max_sampled_bytes": 56160256.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.004682,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 6954
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "6h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.15,
+          "signature": "series=7134 points=231964 sum=774.117",
+          "vl_cpu_max": 8.21,
+          "vl_cpu_avg": 8.21,
+          "at": 1795389067,
+          "response_bytes": 8992718,
+          "answer_proof": "answer",
+          "history_start": 1795356840,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 4492458
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 596
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.065,
+          "signature": "series=1 points=858 sum=245.243",
+          "vl_cpu_max": 8.21,
+          "vl_cpu_avg": 8.21,
+          "at": 1795389067,
+          "response_bytes": 29344,
+          "answer_proof": "answer",
+          "history_start": 1795291920,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 13.0,
+            "vl:l2_disk:requests": 13.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl_bytes": 10834.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 58757120.0,
+            "rss_after_bytes": 61669376.0,
+            "rss_max_sampled_bytes": 61669376.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.005466,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 13,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.22,
+          "signature": "series=13855 points=73498 sum=245.243",
+          "vl_cpu_max": 8.21,
+          "vl_cpu_avg": 8.21,
+          "at": 1795389067,
+          "response_bytes": 3512677,
+          "answer_proof": "answer",
+          "history_start": 1795291920,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 13.0,
+            "vl:l1_memory:requests": 13.0,
+            "vl:l2_disk:requests": 13.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 1169012.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 205340672.0,
+            "rss_after_bytes": 191197184.0,
+            "rss_max_sampled_bytes": 205340672.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.060197,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 14,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 13,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.224,
+          "signature": "series=13855 points=73498 sum=245.243",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 33.31,
+          "at": 1795389068,
+          "response_bytes": 3512678,
+          "answer_proof": "answer",
+          "history_start": 1795291920,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 13.0,
+            "vl:l1_memory:requests": 13.0,
+            "vl:l2_disk:requests": 13.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 1169012.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 187166720.0,
+            "rss_after_bytes": 201162752.0,
+            "rss_max_sampled_bytes": 201162752.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.061667,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 14,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 13,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.078,
+          "signature": "series=13855 points=73498 sum=245.243",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 33.31,
+          "at": 1795389068,
+          "response_bytes": 3512793,
+          "answer_proof": "answer",
+          "history_start": 1795291920,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 25,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 26,
+              "entriesRequested": 26,
+              "bytesReceived": 13831
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.033,
+          "signature": "series=1 points=858 sum=245.147",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 33.31,
+          "at": 1795389068,
+          "response_bytes": 29333,
+          "answer_proof": "answer",
+          "history_start": 1795291980,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 13.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 13.0,
+            "vl_bytes": 132.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 63774720.0,
+            "rss_after_bytes": 66514944.0,
+            "rss_max_sampled_bytes": 66514944.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003488,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 13,
+              "entriesRequested": 13,
+              "bytesReceived": 6479
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.037,
+          "signature": "series=13882 points=73469 sum=245.147",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 33.31,
+          "at": 1795389068,
+          "response_bytes": 3513140,
+          "answer_proof": "answer",
+          "history_start": 1795291980,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 13.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 191197184.0,
+            "rss_after_bytes": 171802624.0,
+            "rss_max_sampled_bytes": 191197184.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.037398,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 12,
+              "entriesRequested": 14,
+              "bytesReceived": 390483
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 14988
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.038,
+          "signature": "series=13882 points=73469 sum=245.147",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 33.31,
+          "at": 1795389069,
+          "response_bytes": 3513140,
+          "answer_proof": "answer",
+          "history_start": 1795291980,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 13.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 201170944.0,
+            "rss_after_bytes": 181211136.0,
+            "rss_max_sampled_bytes": 201170944.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.038585,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 12,
+              "entriesRequested": 14,
+              "bytesReceived": 390483
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 14988
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.039,
+          "signature": "series=13882 points=73469 sum=245.147",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 33.31,
+          "at": 1795389069,
+          "response_bytes": 3513239,
+          "answer_proof": "answer",
+          "history_start": 1795291980,
+          "cache": {
+            "result": {
+              "entriesFound": 25,
+              "entriesRequested": 25,
+              "bytesReceived": 1862641
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 709
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.034,
+          "signature": "series=1 points=858 sum=244.9",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 58.41,
+          "at": 1795389069,
+          "response_bytes": 29333,
+          "answer_proof": "answer",
+          "history_start": 1795292040,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 13.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 13.0,
+            "vl_bytes": 131.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 68653056.0,
+            "rss_after_bytes": 71356416.0,
+            "rss_max_sampled_bytes": 71356416.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003916,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 13,
+              "entriesRequested": 13,
+              "bytesReceived": 6490
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.036,
+          "signature": "series=13853 points=73395 sum=244.9",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 58.41,
+          "at": 1795389069,
+          "response_bytes": 3508749,
+          "answer_proof": "answer",
+          "history_start": 1795292040,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 13.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 171802624.0,
+            "rss_after_bytes": 171823104.0,
+            "rss_max_sampled_bytes": 171823104.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.029069,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 12,
+              "entriesRequested": 14,
+              "bytesReceived": 391343
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 15812
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.035,
+          "signature": "series=13853 points=73395 sum=244.9",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 58.41,
+          "at": 1795389069,
+          "response_bytes": 3508749,
+          "answer_proof": "answer",
+          "history_start": 1795292040,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 13.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 181760000.0,
+            "rss_after_bytes": 181944320.0,
+            "rss_max_sampled_bytes": 181944320.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.029271,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 12,
+              "entriesRequested": 14,
+              "bytesReceived": 391343
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 15812
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "explicit JSON then logfmt grouped rate",
+          "range": "24h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.039,
+          "signature": "series=13853 points=73395 sum=244.9",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 58.41,
+          "at": 1795389069,
+          "response_bytes": 3508850,
+          "answer_proof": "answer",
+          "history_start": 1795292040,
+          "cache": {
+            "result": {
+              "entriesFound": 25,
+              "entriesRequested": 25,
+              "bytesReceived": 1865689
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 709
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.036,
+          "signature": "series=1331 points=73532 sum=245.66",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 58.41,
+          "at": 1795389070,
+          "response_bytes": 2799957,
+          "answer_proof": "answer",
+          "history_start": 1795374720,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 3.0,
+            "vl:l1_memory:requests": 2.0,
+            "vl:l2_disk:requests": 2.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 111164.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 181952512.0,
+            "rss_after_bytes": 146427904.0,
+            "rss_max_sampled_bytes": 181952512.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.023593,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 4,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.038,
+          "signature": "series=1331 points=73532 sum=245.66",
+          "vl_cpu_max": 58.41,
+          "vl_cpu_avg": 58.41,
+          "at": 1795389070,
+          "response_bytes": 2799957,
+          "answer_proof": "answer",
+          "history_start": 1795374720,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 3.0,
+            "vl:l1_memory:requests": 2.0,
+            "vl:l2_disk:requests": 2.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 111164.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 171851776.0,
+            "rss_after_bytes": 155193344.0,
+            "rss_max_sampled_bytes": 171851776.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.02541,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 4,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.011,
+          "signature": "series=1 points=721 sum=245.66",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 24748,
+          "answer_proof": "answer",
+          "history_start": 1795374720,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 2.0,
+            "vl:l2_disk:requests": 2.0,
+            "loki:l1_memory:hits": 1.0,
+            "translations": 1.0,
+            "vl_bytes": 3274.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 73506816.0,
+            "rss_after_bytes": 76083200.0,
+            "rss_max_sampled_bytes": 76083200.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003494,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.066,
+          "signature": "series=1331 points=73532 sum=245.66",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 2800065,
+          "answer_proof": "answer",
+          "history_start": 1795374720,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1418
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.017,
+          "signature": "series=1324 points=72184 sum=241.167",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 2749691,
+          "answer_proof": "answer",
+          "history_start": 1795374780,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 3.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 146440192.0,
+            "rss_after_bytes": 124100608.0,
+            "rss_max_sampled_bytes": 146440192.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.013478,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 4,
+              "bytesReceived": 56044
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10002
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.017,
+          "signature": "series=1324 points=72184 sum=241.167",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 2749690,
+          "answer_proof": "answer",
+          "history_start": 1795374780,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 3.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 155209728.0,
+            "rss_after_bytes": 138784768.0,
+            "rss_max_sampled_bytes": 155209728.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.013578,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 4,
+              "bytesReceived": 56044
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10002
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.007,
+          "signature": "series=1 points=721 sum=241.167",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 24770,
+          "answer_proof": "answer",
+          "history_start": 1795374780,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 2.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 2.0,
+            "vl_bytes": 184.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 77996032.0,
+            "rss_after_bytes": 78860288.0,
+            "rss_max_sampled_bytes": 78860288.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.002956,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1726
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.033,
+          "signature": "series=1324 points=72184 sum=241.167",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 2749790,
+          "answer_proof": "answer",
+          "history_start": 1795374780,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1374655
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 709
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.015,
+          "signature": "series=1306 points=71217 sum=237.943",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 2712885,
+          "answer_proof": "answer",
+          "history_start": 1795374840,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 3.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 124104704.0,
+            "rss_after_bytes": 125300736.0,
+            "rss_max_sampled_bytes": 125300736.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.013086,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 4,
+              "bytesReceived": 57224
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10890
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.015,
+          "signature": "series=1306 points=71217 sum=237.943",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 2712884,
+          "answer_proof": "answer",
+          "history_start": 1795374840,
+          "reuse": {
+            "loki:l1_memory:requests": 5.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 3.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 138784768.0,
+            "rss_after_bytes": 138784768.0,
+            "rss_max_sampled_bytes": 138784768.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.009896,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 4,
+              "bytesReceived": 57224
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10890
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.008,
+          "signature": "series=1 points=721 sum=237.943",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389070,
+          "response_bytes": 24837,
+          "answer_proof": "answer",
+          "history_start": 1795374840,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 2.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 2.0,
+            "vl_bytes": 148.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 79118336.0,
+            "rss_after_bytes": 79499264.0,
+            "rss_max_sampled_bytes": 79499264.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.002997,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1760
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "1h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.03,
+          "signature": "series=1306 points=71217 sum=237.943",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389071,
+          "response_bytes": 2712985,
+          "answer_proof": "answer",
+          "history_start": 1795374840,
+          "cache": {
+            "result": {
+              "entriesFound": 2,
+              "entriesRequested": 2,
+              "bytesReceived": 1394624
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 709
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.021,
+          "signature": "series=1 points=2161 sum=775.937",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389071,
+          "response_bytes": 68818,
+          "answer_proof": "answer",
+          "history_start": 1795356720,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 7.0,
+            "vl:l2_disk:requests": 7.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl_bytes": 13233.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 79683584.0,
+            "rss_after_bytes": 80044032.0,
+            "rss_max_sampled_bytes": 80044032.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.004181,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 7,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.162,
+          "signature": "series=7182 points=232510 sum=775.937",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 97.35,
+          "at": 1795389071,
+          "response_bytes": 9015558,
+          "answer_proof": "answer",
+          "history_start": 1795356720,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 8.0,
+            "vl:l1_memory:requests": 7.0,
+            "vl:l2_disk:requests": 7.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 608221.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 138784768.0,
+            "rss_after_bytes": 171999232.0,
+            "rss_max_sampled_bytes": 171999232.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.086502,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 9,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 7,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.168,
+          "signature": "series=7182 points=232510 sum=775.937",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 136.29,
+          "at": 1795389071,
+          "response_bytes": 9015559,
+          "answer_proof": "answer",
+          "history_start": 1795356720,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 8.0,
+            "vl:l1_memory:requests": 7.0,
+            "vl:l2_disk:requests": 7.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 608221.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 125304832.0,
+            "rss_after_bytes": 172449792.0,
+            "rss_max_sampled_bytes": 172449792.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.083626,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 9,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 7,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.169,
+          "signature": "series=7182 points=232510 sum=775.937",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 136.29,
+          "at": 1795389072,
+          "response_bytes": 9015662,
+          "answer_proof": "answer",
+          "history_start": 1795356720,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 7,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 4963
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.014,
+          "signature": "series=1 points=2161 sum=774.813",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 72.47999999999999,
+          "at": 1795389072,
+          "response_bytes": 68838,
+          "answer_proof": "answer",
+          "history_start": 1795356780,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 7.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 7.0,
+            "vl_bytes": 184.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 80146432.0,
+            "rss_after_bytes": 80302080.0,
+            "rss_max_sampled_bytes": 80302080.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003741,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 6921
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.046,
+          "signature": "series=7162 points=232173 sum=774.813",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 72.47999999999999,
+          "at": 1795389072,
+          "response_bytes": 9001947,
+          "answer_proof": "answer",
+          "history_start": 1795356780,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 8.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 172625920.0,
+            "rss_after_bytes": 186355712.0,
+            "rss_max_sampled_bytes": 186355712.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.03572,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 9,
+              "bytesReceived": 286853
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 9848
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.045,
+          "signature": "series=7162 points=232173 sum=774.813",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 72.47999999999999,
+          "at": 1795389072,
+          "response_bytes": 9001947,
+          "answer_proof": "answer",
+          "history_start": 1795356780,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 8.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 173813760.0,
+            "rss_after_bytes": 158736384.0,
+            "rss_max_sampled_bytes": 173813760.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.046505,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 9,
+              "bytesReceived": 286853
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 9848
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.08,
+          "signature": "series=7162 points=232173 sum=774.813",
+          "vl_cpu_max": 136.29,
+          "vl_cpu_avg": 72.47999999999999,
+          "at": 1795389073,
+          "response_bytes": 9002054,
+          "answer_proof": "answer",
+          "history_start": 1795356780,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 4481684
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 823
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.013,
+          "signature": "series=1 points=2161 sum=774.117",
+          "vl_cpu_max": 8.67,
+          "vl_cpu_avg": 8.67,
+          "at": 1795389073,
+          "response_bytes": 68853,
+          "answer_proof": "answer",
+          "history_start": 1795356840,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 7.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 7.0,
+            "vl_bytes": 148.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 80564224.0,
+            "rss_after_bytes": 80642048.0,
+            "rss_max_sampled_bytes": 80642048.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003221,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 6954
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.045,
+          "signature": "series=7134 points=231964 sum=774.117",
+          "vl_cpu_max": 8.67,
+          "vl_cpu_avg": 8.67,
+          "at": 1795389073,
+          "response_bytes": 8992619,
+          "answer_proof": "answer",
+          "history_start": 1795356840,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 8.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 188387328.0,
+            "rss_after_bytes": 222216192.0,
+            "rss_max_sampled_bytes": 222216192.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.049837,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 9,
+              "bytesReceived": 287693
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10733
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.045,
+          "signature": "series=7134 points=231964 sum=774.117",
+          "vl_cpu_max": 8.67,
+          "vl_cpu_avg": 8.67,
+          "at": 1795389073,
+          "response_bytes": 8992618,
+          "answer_proof": "answer",
+          "history_start": 1795356840,
+          "reuse": {
+            "loki:l1_memory:requests": 10.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 8.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 158736384.0,
+            "rss_after_bytes": 192225280.0,
+            "rss_max_sampled_bytes": 192225280.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.039242,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 9,
+              "bytesReceived": 287693
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 10733
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "6h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.178,
+          "signature": "series=7134 points=231964 sum=774.117",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 117.47,
+          "at": 1795389074,
+          "response_bytes": 8992716,
+          "answer_proof": "answer",
+          "history_start": 1795356840,
+          "cache": {
+            "result": {
+              "entriesFound": 7,
+              "entriesRequested": 7,
+              "bytesReceived": 4492286
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 823
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.237,
+          "signature": "series=13855 points=73498 sum=245.243",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 117.47,
+          "at": 1795389074,
+          "response_bytes": 3512677,
+          "answer_proof": "answer",
+          "history_start": 1795291920,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 13.0,
+            "vl:l1_memory:requests": 13.0,
+            "vl:l2_disk:requests": 13.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 1169012.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 194367488.0,
+            "rss_after_bytes": 228667392.0,
+            "rss_max_sampled_bytes": 228667392.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.071596,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 14,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 13,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.227,
+          "signature": "series=13855 points=73498 sum=245.243",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 117.47,
+          "at": 1795389075,
+          "response_bytes": 3512678,
+          "answer_proof": "answer",
+          "history_start": 1795291920,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 13.0,
+            "vl:l1_memory:requests": 13.0,
+            "vl:l2_disk:requests": 13.0,
+            "loki:l1_memory:hits": 1.0,
+            "vl_bytes": 1169012.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 222265344.0,
+            "rss_after_bytes": 175448064.0,
+            "rss_max_sampled_bytes": 222265344.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.059175,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 14,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 13,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.056,
+          "signature": "series=1 points=858 sum=245.243",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 226.27,
+          "at": 1795389075,
+          "response_bytes": 29343,
+          "answer_proof": "answer",
+          "history_start": 1795291920,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 13.0,
+            "vl:l2_disk:requests": 13.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl_bytes": 10834.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 80506880.0,
+            "rss_after_bytes": 80592896.0,
+            "rss_max_sampled_bytes": 80592896.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003412,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 0,
+              "entriesRequested": 13,
+              "bytesReceived": 0
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 0,
+          "end": 1795378620,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.09,
+          "signature": "series=13855 points=73498 sum=245.243",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 226.27,
+          "at": 1795389075,
+          "response_bytes": 3512800,
+          "answer_proof": "answer",
+          "history_start": 1795291920,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 25,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 26,
+              "entriesRequested": 26,
+              "bytesReceived": 18598
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.036,
+          "signature": "series=13882 points=73469 sum=245.147",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 226.27,
+          "at": 1795389075,
+          "response_bytes": 3513140,
+          "answer_proof": "answer",
+          "history_start": 1795291980,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 13.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 228671488.0,
+            "rss_after_bytes": 144039936.0,
+            "rss_max_sampled_bytes": 228671488.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.036981,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 12,
+              "entriesRequested": 14,
+              "bytesReceived": 390483
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 14988
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.036,
+          "signature": "series=13882 points=73469 sum=245.147",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 226.27,
+          "at": 1795389075,
+          "response_bytes": 3513140,
+          "answer_proof": "answer",
+          "history_start": 1795291980,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 13.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 3050.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 175464448.0,
+            "rss_after_bytes": 167419904.0,
+            "rss_max_sampled_bytes": 175464448.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.035836,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 12,
+              "entriesRequested": 14,
+              "bytesReceived": 390483
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 14988
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.039,
+          "signature": "series=1 points=858 sum=245.147",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 226.27,
+          "at": 1795389076,
+          "response_bytes": 29333,
+          "answer_proof": "answer",
+          "history_start": 1795291980,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 13.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 13.0,
+            "vl_bytes": 132.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 80777216.0,
+            "rss_after_bytes": 80875520.0,
+            "rss_max_sampled_bytes": 80875520.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003089,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 13,
+              "entriesRequested": 13,
+              "bytesReceived": 6479
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 1,
+          "end": 1795378680,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.041,
+          "signature": "series=13882 points=73469 sum=245.147",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 226.27,
+          "at": 1795389076,
+          "response_bytes": 3513239,
+          "answer_proof": "answer",
+          "history_start": 1795291980,
+          "cache": {
+            "result": {
+              "entriesFound": 25,
+              "entriesRequested": 25,
+              "bytesReceived": 1862061
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 824
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "pr",
+          "status": 200,
+          "seconds": 0.035,
+          "signature": "series=13853 points=73395 sum=244.9",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 124.69,
+          "at": 1795389076,
+          "response_bytes": 3508749,
+          "answer_proof": "answer",
+          "history_start": 1795292040,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 13.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 144039936.0,
+            "rss_after_bytes": 144175104.0,
+            "rss_max_sampled_bytes": 144175104.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.037076,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 12,
+              "entriesRequested": 14,
+              "bytesReceived": 391343
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 15812
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "previous",
+          "status": 200,
+          "seconds": 0.039,
+          "signature": "series=13853 points=73395 sum=244.9",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 124.69,
+          "at": 1795389076,
+          "response_bytes": 3508749,
+          "answer_proof": "answer",
+          "history_start": 1795292040,
+          "reuse": {
+            "loki:l1_memory:requests": 15.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 1.0,
+            "loki:l1_memory:hits": 13.0,
+            "vl:l1_memory:hits": 1.0,
+            "vl_bytes": 560.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 167419904.0,
+            "rss_after_bytes": 172769280.0,
+            "rss_max_sampled_bytes": 172769280.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.036468,
+            "vl_calls": 1.0
+          },
+          "vl_calls_header": 1,
+          "cache": {
+            "result": {
+              "entriesFound": 12,
+              "entriesRequested": 14,
+              "bytesReceived": 391343
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 15812
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "main",
+          "status": 200,
+          "seconds": 0.033,
+          "signature": "series=1 points=858 sum=244.9",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 124.69,
+          "at": 1795389076,
+          "response_bytes": 29334,
+          "answer_proof": "answer",
+          "history_start": 1795292040,
+          "reuse": {
+            "loki:l1_memory:requests": 4.0,
+            "loki:l2_disk:requests": 1.0,
+            "vl:l1_memory:requests": 13.0,
+            "loki:l1_memory:hits": 2.0,
+            "vl:l1_memory:hits": 13.0,
+            "vl_bytes": 131.0,
+            "vl_calls:select_logsql_query": 1.0,
+            "vl_calls:select_logsql_stats_query_range": 1.0,
+            "rss_before_bytes": 81043456.0,
+            "rss_after_bytes": 81301504.0,
+            "rss_max_sampled_bytes": 81301504.0,
+            "rss_samples": 2,
+            "cpu_samples": 2,
+            "cpu_seconds": 0.003387,
+            "vl_calls": 2.0
+          },
+          "vl_calls_header": 2,
+          "cache": {
+            "result": {
+              "entriesFound": 0,
+              "entriesRequested": 2,
+              "bytesReceived": 0
+            },
+            "statsResult": {
+              "entriesFound": 13,
+              "entriesRequested": 13,
+              "bytesReceived": 6490
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        },
+        {
+          "shape": "logfmt then JSON grouped rate",
+          "range": "24h",
+          "run": 2,
+          "end": 1795378740,
+          "target": "loki",
+          "status": 200,
+          "seconds": 0.042,
+          "signature": "series=13853 points=73395 sum=244.9",
+          "vl_cpu_max": 226.27,
+          "vl_cpu_avg": 124.69,
+          "at": 1795389076,
+          "response_bytes": 3508857,
+          "answer_proof": "answer",
+          "history_start": 1795292040,
+          "cache": {
+            "result": {
+              "entriesFound": 25,
+              "entriesRequested": 25,
+              "bytesReceived": 1865109
+            },
+            "statsResult": {
+              "entriesFound": 1,
+              "entriesRequested": 1,
+              "bytesReceived": 824
+            },
+            "volumeResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "seriesResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "labelResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            },
+            "instantMetricResult": {
+              "entriesFound": 0,
+              "entriesRequested": 0,
+              "bytesReceived": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+]

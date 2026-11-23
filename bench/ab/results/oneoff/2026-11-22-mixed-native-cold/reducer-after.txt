@@ -1,0 +1,18 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkRawRowContextCheck/window-reducer/count_over_time-2         	      14	  16306161 ns/op	16015736 B/op	      11 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/count_over_time-2         	      14	  15792461 ns/op	16016108 B/op	      11 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/count_over_time-2         	      14	  15718131 ns/op	16015728 B/op	      11 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/count_over_time-2         	      14	  16325179 ns/op	16015728 B/op	      11 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/count_over_time-2         	      14	  15823673 ns/op	16015728 B/op	      11 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/count_over_time-2         	      14	  15986667 ns/op	16015728 B/op	      11 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/rate-2                    	      13	  16108660 ns/op	45425016 B/op	      15 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/rate-2                    	      14	  15470804 ns/op	45425008 B/op	      15 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/rate-2                    	      14	  15504583 ns/op	45425008 B/op	      15 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/rate-2                    	      15	  15399586 ns/op	45425008 B/op	      15 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/rate-2                    	      15	  15803500 ns/op	45425008 B/op	      15 allocs/op
+BenchmarkRawRowContextCheck/window-reducer/rate-2                    	      14	  15594024 ns/op	45425008 B/op	      15 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	3.131s

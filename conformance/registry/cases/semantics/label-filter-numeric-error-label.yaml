@@ -71,6 +71,23 @@ why: |
   This does not close overflow, present-empty, sanitized/extracted-key,
   adjacent-filter or general malformed-parser gaps. The 81-query storage
   oracle still counts 126/7286 differences (semantics/label-filter-numeric-equality).
+
+  The historical Grafana ds_query cluster d5264820 binds the already-open automatic
+  histogram axis above: status=1s after JSON followed by drop __error__, grouped by
+  level and detected_level. Both datasource requests return 200; the complete retained
+  facets show three Loki series versus an empty proxy answer and the missing
+  level/detected_level labels. Its origin is explore-numeric-equality-error-logs at 15m.
+  This assigns the existing explicitly documented extra-stage difference; the retained
+  request contains $__auto rather than an expanded API interval, so no unrecorded
+  evaluation grid or complete point golden is inferred.
+
+  Historical ownership evidence for these additions is the parity-refresh artifact of
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl), source ref 4a63b99e, and the committed
+  conformance/registry/generated/parity-discovery.json. Full response bodies were not
+  retained. The case remains OPEN; these assignments grant no waiver, owner-kept
+  projection, current runtime pass or fixed status.
+
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -94,4 +111,15 @@ gap:
   loki: 'a numeric label filter keeps a non-numeric value with __error__=LabelFilterErr'
   proxy: 'proved single-parser plain-key equality preserves nonempty conversion-error rows, labels and metric error bodies; other numeric operators and the documented empty/overflow/collision/stage-order axes remain open'
   planned_test: 'TestNumericLabelFilterErrorStageOrder (23 recorded pipeline cases, two explicit gaps); TestNumericEqualityAfterParserMatchesLoki (full row decisions); TestNumericFilterRawHitsIgnoreWindowGaps; TestNumericParserHintsStayRequestLocal; TestNumericOperandBindingSurvivesWindowPhase; TestCompat_NumericEqualityLikeLoki (298 live comparisons including six accepted identity projections, core CI); matrix json_numeric_equality_range, json_numeric_equality_outer_sum, logfmt_numeric_equality_range'
-  clusters: []
+  clusters:
+    - "005c9db4"
+    - "09c0093e"
+    - "42f795f6"
+    - "4ec9ecbf"
+    - "5daa1859"
+    - "67bcbdad"
+    - "687cfc78"
+    - "6def276a"
+    - "c48f928d"
+    - "ef9bfaad"
+    - 'd5264820'

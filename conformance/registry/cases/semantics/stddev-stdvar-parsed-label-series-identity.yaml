@@ -61,5 +61,24 @@ gap:
   proxy: 'operand series are the stream and level; parsed labels are missing'
   planned_test: 'TestCompat_StddevStdvarParserOperand (test/e2e-compat, group core)'
   clusters:
-    - 94ae39ab
-    - cb20568c
+    - "01a189af"
+    - "11addaf7"
+    - "247311c6"
+    - "304f261a"
+    - "3167dfc5"
+    - "31cc550a"
+    - "3e2590a6"
+    - "4ff656a8"
+    - "6e43b38d"
+    - "82f9eae2"
+    - "88ebcae9"
+    - "9011fc40"
+    - "9443d759"
+    - "94ae39ab"
+    - "979673df"
+    - "a529c1e0"
+    - "a634a62f"
+    - "bbdfb06e"
+    - "c25da66f"
+    - "cb20568c"
+    - "e4df1418"

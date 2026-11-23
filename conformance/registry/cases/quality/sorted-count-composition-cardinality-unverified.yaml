@@ -1,0 +1,52 @@
+id: quality/sorted-count-composition-cardinality-unverified
+title: Completeness of sorted count compositions at the recorded series plateau is unverified
+pending: true
+evidence: needs recording
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |-
+  Two exact sort(count_over_time(...)) range compositions return 10000 proxy series while Loki returns 53544 or 23628. One composes matcher drop, decolorize and line_format; the other composes logfmt and pattern. Instant or simpler-operand controls use a different time grid or pipeline and cannot prove the missing same-axis composed operand. The effective original limit and full response warnings were not captured. The observed plateau is not proof of which limit, identity policy or wrapper stage caused it. Closure requires the complete same-axis operand and wrapper, their limits and warnings and all series/points; the paired byte-sort counterexample in limits/sort-byte-metric-additional-series-cut remains separate.
+
+  Observed in conformance/registry/generated/parity-discovery.json at ref 4a63b99e, recorded 2026-11-21T14:20:35Z, window 1795265520..1795269120. Original request parameters and facets are retained by GitHub Actions run 44910591975, artifact 14714026577: https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577. The discovery snapshot and gap.clusters retain the exact query membership. Complete response-body goldens were not retained. This is an open proof obligation, not a fix, an extension of a default identity policy or a waiver for additional queries.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: sort(count_over_time({namespace="prod"} | drop a!="b" | decolorize | line_format "{{ .a | trunc 3 }}"
+      [5m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original paired source rows and profile at the recorded bounds. An empty historical response
+    is not a successful reproduction.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired namespace=prod rows and labels at 1795265520..1795269120 are required to verify drop, decolorize, line_format and sorted count cardinality; the verifier does not restore those historical inputs."
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - values
+    - points
+  values:
+    status: 200
+  expect: Compare the complete composed operand and its sorted result against Loki with matched limits, data and
+    grid; never equate a truncated result with a projection.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing source-controlled Loki comparison and registry-driven query execution
+  loki: The exact recorded request contract; full diagnostic or result evidence remains required
+  proxy: The linked recorded facets differ; the observations are not declared equivalent
+  planned_test: Extend the existing typed query matrix, recorded Loki oracle and bench/parity comparison for these
+    exact source-controlled facets; no separate catalog.
+  clusters:
+    - 132a4b83
+    - d59879aa

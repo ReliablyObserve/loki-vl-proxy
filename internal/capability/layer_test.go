@@ -679,3 +679,24 @@ func TestUpgradeRollbackUpgradeCycles(t *testing.T) {
 		}
 	}
 }
+
+// conformance: vl-capability-layer
+func TestMixedJSONRowStatsUsesFleetMinimum(t *testing.T) {
+	l := newTestLayer(newClock())
+	l.Observe("new:9428", rel("v1.54.0"))
+	if !l.Backend().On(MixedJSONRowStats) {
+		t.Fatal("known supported member must enable the gate")
+	}
+	digest := l.Backend().Digest()
+	l.Observe("old:9428", rel("v1.48.9"))
+	s := l.Backend()
+	if s.On(MixedJSONRowStats) || s.Release().String() != "v1.48.9" || s.Digest() == digest {
+		t.Fatalf("unsupported fleet minimum must disable the gate and fence keys: %s", s.HeaderValue())
+	}
+	floor := newTestLayer(newClock())
+	floor.Observe("new:9428", rel("v1.54.0"))
+	floor.Observe("floor:9428", rel("v1.49.0"))
+	if !floor.Backend().On(MixedJSONRowStats) {
+		t.Fatal("validated floor in a mixed fleet must remain enabled")
+	}
+}

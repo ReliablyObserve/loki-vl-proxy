@@ -1,0 +1,16 @@
+{
+  "runtime_proof": {
+    "cells": {
+      "mixed-parser-metrics/explicit JSON then logfmt grouped count": [
+        "12h",
+        "18h",
+        "48h"
+      ],
+      "mixed-parser-metrics/logfmt then JSON grouped count": [
+        "12h",
+        "18h",
+        "48h"
+      ]
+    }
+  }
+}

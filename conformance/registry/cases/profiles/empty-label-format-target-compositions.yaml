@@ -1,0 +1,60 @@
+id: profiles/empty-label-format-target-compositions
+title: Simple label_format targets lose empty parsed labels in stage compositions
+pending: true
+evidence: needs recording
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |-
+  Simple placeholder label_format targets such as a="{{.b}}" and the templated part of a mixed rename/template stage lose the empty target label that Loki exposes. The exact compositions include keep, drop, regexp, pattern, unpack, logfmt flags, decolorize and subsequent filtering. These are simple placeholders, not unsupported template functions. The isolated stage contracts of profiles/stage-field-exposure remain their own proved domain; these recorded compositions require full source-controlled verification and do not close or reopen all stage behavior.
+
+  Observed in conformance/registry/generated/parity-discovery.json at ref 4a63b99e, recorded 2026-11-21T14:20:35Z, window 1795265520..1795269120. Original request parameters and facets are retained by GitHub Actions run 44910591975, artifact 14714026577: https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577. The discovery snapshot and gap.clusters retain the exact query membership. Complete response-body goldens were not retained. This is an open proof obligation, not a fix, an extension of a default identity policy or a waiver for additional queries.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    direction: backward
+    end: '1795269120'
+    limit: '100'
+    query: '{namespace="prod"} | label_format a=`{{.b}}` | a="" |= "a" or ip("1.1.1.1")'
+    start: '1795265520'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original paired source rows and profile at the recorded bounds. An empty historical response
+    is not a successful reproduction.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired namespace=prod rows, including b labels and line/IP filter inputs, at 1795265520..1795269120 are required to reproduce the empty label_format target composition; the verifier does not restore those rows or their source profile."
+compare:
+  mode: observed
+  fields:
+    - streams.stream labels
+    - metadata_categories
+  values:
+    status: 200
+  expect: Retain the empty target label and its parsed category wherever Loki creates it, while preserving subsequent
+    stage behavior and all other fields.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing source-controlled Loki comparison and registry-driven query execution
+  loki: The exact recorded request contract; full diagnostic or result evidence remains required
+  proxy: The linked recorded facets differ; the observations are not declared equivalent
+  planned_test: Extend the existing typed query matrix, recorded Loki oracle and bench/parity comparison for these
+    exact source-controlled facets; no separate catalog.
+  clusters:
+    - 145e676b
+    - 15d3c56b
+    - 287aca29
+    - 3bbe04d2
+    - 448e174d
+    - 617a3782
+    - 81b2d1f9
+    - 8f7860de
+    - cee54e98
+    - e2cedc35
+    - f24e5aaf
+    - f480b645

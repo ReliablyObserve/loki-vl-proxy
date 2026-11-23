@@ -1,0 +1,53 @@
+id: quality/unwrap-multi-contract-cluster-attribution
+title: Three coarse unwrap value clusters contain distinct per-query contracts
+pending: true
+evidence: needs recording
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |-
+  These three recorded value clusters each combine different range-function contracts under a coarse outer-sum/parser shape. 111d6e07 includes first-over-time window behavior and quantile-per-series behavior. 2b4a20be and 2154d31e include keep-before-parser quantile identity and rate_counter extrapolation. A single implementation cause is not asserted. Related open contracts are semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-quantile-sum-by-group-quantile, semantics/keep-before-unwrap-series-identity and semantics/unwrap-rate-counter-window-extrapolation. Closure requires separate source-controlled facets for every distinct query or a more precise existing-cluster signature; fixing one member must not close its other function. Every related behavioral gap remains open.
+
+  Observed in conformance/registry/generated/parity-discovery.json at ref 4a63b99e, recorded 2026-11-21T14:20:35Z, window 1795265520..1795269120. Original request parameters and facets are retained by GitHub Actions run 44910591975, artifact 14714026577: https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577. The discovery snapshot and gap.clusters retain the exact query membership. Complete response-body goldens were not retained. This is an open proof obligation, not a fix, an extension of a default identity policy or a waiver for additional queries.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: sum by (level) (first_over_time({service_name="api-gateway"} | json |= "error" | unwrap duration_ms |
+      __error__="" [5m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original paired source rows and profile at the recorded bounds. An empty historical response
+    is not a successful reproduction.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired api-gateway rows, JSON fields and duration_ms values at 1795265520..1795269120 are required to separate the recorded first_over_time and grouped-sum facets; the verifier does not reconstruct that historical source."
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - values
+    - points
+  values:
+    status: 200
+  expect: Compare every query with its own full Loki answer, lookback and evaluation grid; no pooled result or one
+    fixed member proves the entire cluster.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing source-controlled Loki comparison and registry-driven query execution
+  loki: The exact recorded request contract; full diagnostic or result evidence remains required
+  proxy: The linked recorded facets differ; the observations are not declared equivalent
+  planned_test: Extend the existing typed query matrix, recorded Loki oracle and bench/parity comparison for these
+    exact source-controlled facets; no separate catalog.
+  clusters:
+    - 111d6e07
+    - 2154d31e
+    - 2b4a20be

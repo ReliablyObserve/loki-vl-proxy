@@ -1,0 +1,17 @@
+=== RUN   TestRepositoryBlockedCasesAreClassified
+    blocked_test.go:344: 25 blocked cases name no class: [drilldown/pattern-response-set-residual limits/metric-grpc-send-message-cap profiles/empty-label-format-target-compositions quality/bare-parser-fold-projection-unverified quality/line-filtered-byte-fold-projection-unverified quality/parserless-unwrap-source-provenance-unverified quality/pipeline-error-sample-diagnostics-unverified quality/sorted-count-composition-cardinality-unverified quality/unwrap-multi-contract-cluster-attribution semantics/composed-parser-count-rate-bytes-vector-fold-values semantics/decolorize-derived-level-content semantics/empty-line-format-unpack-content semantics/json-count-mixed-window-binary-failures semantics/label-format-function-composition-content-selection semantics/label-replace-json-count-evaluation-failure semantics/log-line-format-function-catalog-rejections semantics/logfmt-drop-error-offset-count-failure semantics/logfmt-level-filter-extra-entries semantics/logfmt-level-projection-sum-count-values semantics/pars
+ed-unwrap-vector-fold-values-residual semantics/ranked-rate-ratio-point-grid-residual semantics/set-union-parserless-unwrap-average-values semantics/sort-offset-ratio-evaluation-failure semantics/typed-negative-filter-stage-composition-extra-entries semantics/unpack-logfmt-negative-ip-filter-selection]
+    blocked_test.go:350: blocked by version: 1
+    blocked_test.go:350: blocked by unclassified: 25
+    blocked_test.go:350: blocked by load: 6
+    blocked_test.go:350: blocked by websocket: 3
+    blocked_test.go:350: blocked by moved_window: 20
+    blocked_test.go:350: blocked by fixture: 23
+    blocked_test.go:350: blocked by write: 3
+    blocked_test.go:350: blocked by placeholder_time: 6
+    blocked_test.go:350: blocked by volume: 8
+    blocked_test.go:350: blocked by grafana: 1
+    blocked_test.go:350: blocked by proxy_only: 3
+    blocked_test.go:350: blocked by fault: 3
+    blocked_test.go:352: sent to the default proxy: 333; to variants: 0
+--- FAIL: TestRepositoryBlockedCasesAreClassified (0.06s)

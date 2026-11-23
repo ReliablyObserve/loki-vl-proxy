@@ -16,6 +16,24 @@ why: |
   answers version="v1" and version="v2" where Loki answers version="v2"
   (the line's key is version_extracted in Loki). A `| logfmt` metric is exact:
   it goes through the translation that restores the stream value.
+
+  The seeded visual-bare-json-metric requests provide another concrete JSON metric
+  witness: sum by (level) (max_over_time({service_name="visual-bare-json-metric"} | json
+  | unwrap duration_ms | __error__="" [5m])) on both endpoints.
+  seed_bare_json_metric_fixture in bench/visual/stack.py writes a stream level=info with
+  JSON body levels debug/error and duration_ms. Original facets show Loki retaining the
+  info group while the proxy returns debug and error groups. This is the same open
+  stream-label precedence contract after JSON, not an extension to logfmt or an accepted
+  identity-policy projection. The retained artifact does not contain the full point
+  bodies or prove a current-head fix.
+
+  Historical ownership evidence for these additions is the parity-refresh artifact of
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl), source ref 4a63b99e, and the committed
+  conformance/registry/generated/parity-discovery.json. Full response bodies were not
+  retained. The case remains OPEN; these assignments grant no waiver, owner-kept
+  projection, current runtime pass or fixed status.
+
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -42,3 +60,5 @@ gap:
   clusters:
     - b9202c3b
     - d2261efa
+    - '6b0124a8'
+    - '91deb392'

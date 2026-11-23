@@ -31,5 +31,10 @@ gap:
   proxy: 'key missing'
   planned_test: 'TestCompat_JSONExtractionListMissingKey (test/e2e-compat, group semantics)'
   clusters:
-    - 3eddbf61
-    - fcc4cda7
+    - "2ccc257a"
+    - "3eddbf61"
+    - "4e8464eb"
+    - "bf7d2804"
+    - "d8d9de32"
+    - "fcc4cda7"
+    - "ffb450ac"

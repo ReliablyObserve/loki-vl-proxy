@@ -1,0 +1,90 @@
+id: quality/parserless-unwrap-source-provenance-unverified
+title: Source provenance before parserless unwrap and filters remains unverified
+pending: true
+evidence: needs recording
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |-
+  These exact parserless unwrap requests also contain predicates before unwrap. Both the filter input and the unwrapped value can depend on whether a field came from the line, stream or structured metadata. Loki returns no series where the proxy returns series. Existing open contracts semantics/unwrap-parserless-reads-stored-field and semantics/label-filter-before-parser-reads-ingest-json-key provide separate controls, but the retained excerpts cannot isolate the first differing stage. Closure requires identical raw rows with explicit field provenance and per-stage predicate/value checks; neither the filter nor unwrap may be credited without this evidence. This is a scoped proof gap, not permission to expose body keys before a parser.
+
+  Observed in conformance/registry/generated/parity-discovery.json at ref 4a63b99e, recorded 2026-11-21T14:20:35Z, window 1795265520..1795269120. Original request parameters and facets are retained by GitHub Actions run 44910591975, artifact 14714026577: https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577. The discovery snapshot and gap.clusters retain the exact query membership. Complete response-body goldens were not retained. This is an open proof obligation, not a fix, an extension of a default identity policy or a waiver for additional queries.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: sum by (level) (min_over_time({namespace="prod"} |= "error" | unwrap duration_ms | __error__="" [5m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original paired source rows and profile at the recorded bounds. An empty historical response
+    is not a successful reproduction.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired namespace=prod rows and physical duration_ms provenance at 1795265520..1795269120 are required to evaluate parserless unwrap on identical input; the verifier does not reconstruct the historical source profile."
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - values
+    - points
+  values:
+    status: 200
+  expect: Verify the exact source provenance, predicates and unwrap semantics against Loki on identical rows; preserve
+    empty results and all evaluated points.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing source-controlled Loki comparison and registry-driven query execution
+  loki: The exact recorded request contract; full diagnostic or result evidence remains required
+  proxy: The linked recorded facets differ; the observations are not declared equivalent
+  planned_test: Extend the existing typed query matrix, recorded Loki oracle and bench/parity comparison for these
+    exact source-controlled facets; no separate catalog.
+  clusters:
+    - 04e50ea4
+    - 0dc89e27
+    - 191a013a
+    - 19485fde
+    - 2872a06d
+    - '321884e3'
+    - 38f32821
+    - '42889312'
+    - 447535c9
+    - 4888bb57
+    - 4a2bb60b
+    - 5453db65
+    - 571087d4
+    - 609d5a42
+    - '63673761'
+    - 66877b58
+    - 69eb297e
+    - 6dacf9d7
+    - 6e77b90d
+    - 7b80aae2
+    - 7b9426cb
+    - 7c0e9fff
+    - 86a439c4
+    - 87a63e1a
+    - 8b1241d1
+    - 8d56b649
+    - 92271bff
+    - 92a30f4e
+    - 9e95665f
+    - aadcd0f8
+    - b30ec28f
+    - b761ca97
+    - c6c44dd9
+    - c9330257
+    - d0971fba
+    - de481374
+    - e1c9626d
+    - e29d0526
+    - f2a53f69
+    - fd6df443
+    - fdb045f4

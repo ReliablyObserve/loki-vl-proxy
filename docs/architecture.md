@@ -41,6 +41,24 @@ near-now maximum-staleness check apply independently. Full responses keep
 their local-only placement; this does not add VL raw-row caching, SSD/peer
 replication or reuse across different time windows.
 
+Certified single-key mixed JSON/logfmt count and rate ranges can instead read
+native VictoriaLogs count buckets. A typed row predicate partitions the source:
+categorical values with proved parser and label behavior are counted natively;
+other rows retain their complete original envelope and use the ordered evaluator.
+The same predicate supplies the exact raw complement, including source-field
+collisions. Both parser orders can share the native bucket read through the
+existing VL extent cache, including configured disk and peer tiers. Final Loki
+responses and settled points retain their separate identities. Raw envelopes are
+not added to that backend cache. Unknown or older backend releases, unsupported
+profiles and grids keep the existing raw path. Request-wide row, byte and sample
+bounds still apply; this is not a guarantee that every large request can finish.
+Body-key admission reuses the parser's required-label alias rules, including
+nested prefixes and blank names, while preserving complete source validation.
+The stats wire response uses a short grouping field only after projecting away
+source fields; original envelopes and client-visible label names are preserved.
+If either expanded backend query exceeds the known default LogsQL length cap,
+the request keeps the original raw route before starting either class read.
+
 These semantic layers may reuse the same bounded RAM pool, SSD engine/files,
 codecs, allocation pools and peer transport. RAM, SSD and peers describe storage
 tiers, not result semantics. Shared storage must preserve namespace and payload
