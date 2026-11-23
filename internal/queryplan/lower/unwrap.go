@@ -1026,7 +1026,8 @@ func narrowedFields(field string, by []string, empty bool, resolvable func(strin
 }
 
 // KeepDecidesUnwrapIdentity reports a range function over an unwrapped label, alone or under one vector
-// aggregation, whose series a keep before the unwrap decides (KeepUnwrapIdentity).
+// aggregation, and under any label_replace calls, whose series a keep before the unwrap decides
+// (KeepUnwrapIdentity).
 func KeepDecidesUnwrapIdentity(p *queryplan.Plan) bool {
 	_, ok := KeepUnwrapIdentity(p)
 	return ok
@@ -1037,10 +1038,15 @@ func KeepDecidesUnwrapIdentity(p *queryplan.Plan) bool {
 // names them, none for one series. Loki puts the samples of every line that keeps the same labels into one series,
 // where the string translator groups them by the stream (and each line, over a parser). The lowering then writes
 // the keep's labels as the series identity (semantics/keep-before-unwrap-series-identity), and the proxy serves the
-// query from it and evaluates the windows of those series.
+// query from it and evaluates the windows of those series. label_replace calls at the root rewrite the labels of
+// those series after they are evaluated (the proxy applies them to the answer), so they leave the identity as it is.
 func KeepUnwrapIdentity(p *queryplan.Plan) (labels []string, ok bool) {
-	ra, isRange := p.Root.(*queryplan.RangeAgg)
-	if va, isVec := p.Root.(*queryplan.VectorAgg); isVec {
+	root := p.Root
+	for lr, isLR := root.(*queryplan.LabelReplace); isLR; lr, isLR = root.(*queryplan.LabelReplace) {
+		root = lr.In
+	}
+	ra, isRange := root.(*queryplan.RangeAgg)
+	if va, isVec := root.(*queryplan.VectorAgg); isVec {
 		ra, isRange = va.In.(*queryplan.RangeAgg)
 	}
 	if !isRange || ra.In == nil || unwrapStage(ra.In) == nil || ra.Op == logql.RangeAbsentOverTime {

@@ -1,0 +1,40 @@
+id: semantics/keep-identity-outer-by-drops-kept-label
+title: A sum by over a range function whose keep holds a label the by clause drops answers the kept series unreduced on query and on a range longer than the step (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum by (app) (stddev_over_time({job="kj"} | json | keep app, pod, duration_ms | unwrap duration_ms [5m]))`:
+  the keep decides the series of the range function, one per app and pod
+  (semantics/keep-before-unwrap-series-identity), and Loki sums them by app.
+  On an instant query and on query_range with a range longer than the step,
+  the proxy reads the rows of the function (the raw-row evaluator) and answers
+  one series per app and pod: the outer sum by is not applied. A step equal to
+  or longer than the range is answered from VictoriaLogs' stats and matches.
+  Found by TestKeepUnwrapIdentityMatchLoki (Loki engine oracle, VictoriaLogs
+  v1.49.0 and v1.54.0), which lists the two runs under this case.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (app) (stddev_over_time({app="api-gateway"} | json | keep app, pod, duration_ms | unwrap duration_ms [5m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per app, the sum of the kept series' values, as Loki answers.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy (the raw-row evaluator of a range function over an unwrapped label under a vector aggregation whose series a keep decides)'
+  loki: 'the outer by clause folds the series the keep decides'
+  proxy: 'the series the keep decides, unreduced, on query and on query_range with a range longer than the step'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'
+  clusters: []
