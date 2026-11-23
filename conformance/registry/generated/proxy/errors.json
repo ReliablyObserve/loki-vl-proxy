@@ -940,12 +940,24 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r, regexErr",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_agg.go rankingRelabel",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r, queryRefusal(err)",
       "kind": "layer",
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerInstantMetricPostAggregation",
       "writer": "fail"
     },
     {
@@ -957,7 +969,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerInstantMetricPostAggregation",
       "writer": "fail"
     },
     {
@@ -969,7 +981,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerInstantMetricPostAggregation",
       "writer": "fail"
     },
     {
@@ -981,7 +993,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerInstantMetricPostAggregation",
       "writer": "fail"
     },
     {
@@ -993,7 +1005,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerInstantMetricPostAggregation",
       "writer": "fail"
     },
     {
@@ -1005,7 +1017,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerInstantMetricPostAggregation",
       "writer": "writeErr"
     },
     {
@@ -1017,7 +1029,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerInstantMetricPostAggregation",
       "writer": "fail"
     },
     {
@@ -1029,7 +1041,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerInstantMetricPostAggregation",
       "writer": "writeErr"
     },
     {
@@ -1041,7 +1053,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerRangeMetricPostAggregation",
       "writer": "fail"
     },
     {
@@ -1053,7 +1065,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerRangeMetricPostAggregation",
       "writer": "fail"
     },
     {
@@ -1065,7 +1077,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerRangeMetricPostAggregation",
       "writer": "writeErr"
     },
     {
@@ -1077,7 +1089,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
+      "where": "internal/proxy/metric_agg.go answerRangeMetricPostAggregation",
       "writer": "writeErr"
     },
     {
@@ -2793,11 +2805,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 192,
+        "count": 193,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 188,
+        "layer_sites": 189,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2805,6 +2817,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 225
+    "call_sites": 226
   }
 }

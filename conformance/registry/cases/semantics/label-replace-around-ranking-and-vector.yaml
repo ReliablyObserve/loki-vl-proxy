@@ -54,7 +54,7 @@ gap:
   fixed_by: TBD-PR
   impact: explore-visible
   effort: M
-  area: 'internal/proxy metric_agg.go (parseRankingUnderLabelReplace, relabelEvaluated), rank_binary_fence.go (labelReplaceRankingResponseVersion); internal/queryplan/lower route_rank.go (routeEvaluated)'
+  area: 'internal/proxy/metric_agg.go (rankingUnderLabelReplace, rankingRelabel, relabelEvaluated), internal/proxy/rank_binary_fence.go (labelReplaceRankingResponseVersion), internal/proxy/post_aggregation_physical.go (PostAggregationPhysical); internal/queryplan/lower/route_rank.go (routeEvaluated)'
   loki: 'label_replace transforms the series of any vector expression below it, vector() included'
   proxy: 'the ranking evaluated by its route, relabelled by the calls'
   planned_test: 'TestLabelReplaceAroundRankingMatchesLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestCompat_LabelReplaceAroundRanking (test/e2e-compat, group core); TestRouteQueryOfARankingOrLabelReplace (internal/queryplan/lower); TestLabelReplaceAroundRankingRoute (internal/proxy)'

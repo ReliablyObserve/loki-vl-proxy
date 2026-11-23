@@ -31,7 +31,7 @@ gap:
   status: open
   impact: edge
   effort: S
-  area: 'internal/proxy proxy.go (handleQueryRange routing of a label_replace whose inner expression is vector())'
+  area: 'internal/proxy/proxy.go (handleQueryRange routing of a label_replace whose inner expression is vector())'
   loki: 'label_replace transforms the series of vector(), one series of the number at every step'
   proxy: 'empty streams on query_range'
   planned_test: 'TestCompat_LabelReplaceAroundVector (test/e2e-compat, group semantics)'

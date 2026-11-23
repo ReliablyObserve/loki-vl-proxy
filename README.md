@@ -219,7 +219,7 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Routed endpoints answered natively by VictoriaLogs | 14 of 25 |
 | Behaviour and feature items | 11 proven, 23 partial, 3 gaps |
 | Known differences from Loki (ranked) | **174**: 149 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **82 of 149**: 64 Explore, 17 Logs Drilldown, 1 Grafana datasource; 21 API only, 46 edge cases |
+| Open differences visible in Grafana (registry impact) | **81 of 149**: 63 Explore, 17 Logs Drilldown, 1 Grafana datasource; 21 API only, 47 edge cases |
 
 **Readiness by client**
 
@@ -227,7 +227,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 
 | Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |
 |---|---:|---:|---:|---:|---:|
-| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 64 |
+| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 63 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 17 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
 | Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 21 |

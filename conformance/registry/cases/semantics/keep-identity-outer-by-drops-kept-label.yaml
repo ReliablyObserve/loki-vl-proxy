@@ -33,7 +33,7 @@ gap:
   status: open
   impact: explore-visible
   effort: M
-  area: 'internal/proxy (the raw-row evaluator of a range function over an unwrapped label under a vector aggregation whose series a keep decides)'
+  area: 'internal/proxy (the raw-row metric evaluator of an instant query and of a range longer than the step, under a vector aggregation whose series a keep decides)'
   loki: 'the outer by clause folds the series the keep decides'
   proxy: 'the series the keep decides, unreduced, on query and on query_range with a range longer than the step'
   planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'

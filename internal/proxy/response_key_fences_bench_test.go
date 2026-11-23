@@ -18,6 +18,7 @@ func BenchmarkResponseKeyFences(b *testing.B) {
 		{"rate_by", `sum by (level) (rate({app="a"} |= "error" [5m]))`},
 		{"json_metric", `sum by (a) (count_over_time({app="a"} | json | drop __error__ [$__auto]))`},
 		{"keep_unwrap", `sum by (x) (sum_over_time({app="a"} | json | keep x | unwrap n [5m]))`},
+		{"keep_unwrap_replace", `label_replace(sum by (x) (sum_over_time({app="a"} | json | keep x | unwrap n [5m])), "p", "x-$1", "x", "(.*)")`},
 		{"ip", `{app="a"} | json | addr = ip("10.0.0.0/8") | status = "500"`},
 		{"escaped_regexp", `{app="a"} |~ "\\d+ ms" | json | status = "500"`},
 		{"marker_bytes", `{app="a"} | o="\x02\x00\x02" | json`},
