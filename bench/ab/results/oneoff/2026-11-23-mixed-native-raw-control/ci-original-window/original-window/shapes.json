@@ -1,0 +1,1 @@
+{"ranges": {"1h": [3600, 5]}, "sets": {"control": {"description": "Existing live collector mechanism control", "shapes": [{"name": "collector native count control", "query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[1m]))"}]}}}

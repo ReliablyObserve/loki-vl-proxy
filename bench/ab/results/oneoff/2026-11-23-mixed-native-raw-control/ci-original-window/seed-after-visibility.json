@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "generated_rows": 36,
+  "loki_rows": 36,
+  "vl_rows": 36,
+  "source_receipt": "receipt.json",
+  "generator_to_loki_full_timestamps_lines": true,
+  "original_first_read_passed": false,
+  "limitation": "Immediate VL read was empty; later identical source query sees all rows. Initial failed receipt retained. No re-ingestion or flush retry. One small successful checkpoint does not prove full seed or memory bound."
+}

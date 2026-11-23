@@ -91,7 +91,8 @@ jobs:
         id: split
         run: |
           set -euo pipefail
-          SHARDS="$(python3 bench/ab/pr_smoke.py --split 4 --selection "$OUT/selection.json" --out "$OUT")"
+          MAX_SHARDS="$(python3 -c 'import json,sys; print(8 if json.load(open(sys.argv[1])).get("runtime_proof", {}).get("required") is True else 4)' "$OUT/selection.json")"
+          SHARDS="$(python3 bench/ab/pr_smoke.py --split "$MAX_SHARDS" --selection "$OUT/selection.json" --out "$OUT")"
           echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
           for f in "$OUT"/shard-*.json; do
             python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(sys.argv[1].rsplit("/", 1)[-1], {k: len(v) for k, v in d["sets"].items()})' "$f"
@@ -107,8 +108,8 @@ jobs:
     needs: [scope, perf-plan]
     if: ${{ !cancelled() && needs.perf-plan.result == 'success' && needs.perf-plan.outputs.run == 'true' }}
     runs-on: ubuntu-latest
-    # The baseline run measures every shape (about 35 minutes on one hosted runner before the split); a shard
-    # measures a quarter of a large selection, plus its own stack and seed.
+    # Required runtime proof permits up to eight shards; other selections permit four.
+    # The cost heuristic can use fewer. Every shard still pays for its own stack and seed.
     timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 60 || 45 }}
     permissions:
       contents: read

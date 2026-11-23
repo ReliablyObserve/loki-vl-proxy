@@ -1,6 +1,7 @@
 """Unit tests for pr_smoke.py: per-set windows, the confirm pass and the refresh pass."""
 import contextlib
 import io
+import hashlib
 import json
 import os
 import shutil
@@ -17,6 +18,73 @@ END = 1_800_000_000
 
 
 class RuntimeProofTest(unittest.TestCase):
+    def test_metadata_full_original_window_gate_and_documented_facets(self):
+        from copy import deepcopy
+        path = os.path.join(os.path.dirname(__file__), "fixtures", "loki-metadata-protocol.json")
+        with open(path) as source:
+            fixture = json.load(source)
+        bodies = {r["path"]: r["body"].encode() for r in fixture["responses"]}
+        shapes = [s for group in pr_smoke.selection.load_shapes()["sets"].values() for s in group["shapes"] if s.get("path")]
+        end = fixture["end"]
+        meta = {"end": end, "seed_s": 7200}
+        for shape in shapes + [{"path": "/loki/api/v1/index/stats"}]:
+            query = perf_matrix.shape_query(shape, 60)
+            body = bodies[shape["path"]]
+            urls = {t: "http://"+t for t in ("base", "pr", "loki")}
+            measured = {t: dict(status=200, end=end, history_start=end-3600-perf_matrix.query_lookback(query),
+                response_bytes=len(body), body_sha256=hashlib.sha256(body).hexdigest(), answer_proof="answer",
+                request_url=perf_matrix.request_url(urls[t], shape, query, 3600, 60, end)) for t in urls}
+            replies = {t: {"reply": (200, body, .1, end, None)} for t in urls}
+            proof = perf_matrix.first_window_correctness(replies, shape, "1h", query, 3600, 60, end, urls, "0", 30)
+            wrapper = {"proof": proof, "measured": measured, "target_urls": urls}
+            check = lambda item: pr_smoke.original_window_problems(item, shape, "1h", {"end": end}, meta)
+            self.assertEqual(check(wrapper), [], shape)
+            if shape["path"].endswith("volume"):
+                continue
+            for mutation in ("cache-present", "cache-status", "kind", "source", "body", "baseline-open", "candidate-open", "facets-null", "facet-nondict"):
+                changed = deepcopy(wrapper)
+                ref = changed["proof"]["reference"]
+                if mutation == "cache-present": ref["cache_absent"] = False
+                elif mutation == "cache-status": ref["cache_status"] = "miss"
+                elif mutation == "kind": ref["reference_kind"] = "computed-query"
+                elif mutation == "source": changed["target_urls"]["loki"] = "http://pr"
+                elif mutation == "body": ref["body_sha256"] = "bad"
+                elif mutation == "facets-null": changed["proof"]["targets"]["pr"]["facets"] = None
+                elif mutation == "facet-nondict": changed["proof"]["targets"]["pr"]["facets"] = ["bad"]
+                else:
+                    target = "base" if mutation == "baseline-open" else "pr"
+                    changed["proof"]["targets"][target].update(parity_vs_reference="differs", facets=[{"kind": "names", "detail": "missing label"}])
+                self.assertEqual(bool(check(changed)), mutation != "baseline-open", (shape, mutation))
+            if shape["path"] == "/loki/api/v1/labels":
+                for target in ("base", "pr"):
+                    actual = deepcopy(replies)
+                    actual[target]["reply"] = (200, b'{"status":"success","data":["wrong"]}', .1, end, None)
+                    changed = deepcopy(wrapper)
+                    changed["proof"] = perf_matrix.first_window_correctness(actual, shape, "1h", query, 3600, 60, end, urls, "0", 30)
+                    changed["measured"][target].update({key: changed["proof"]["targets"][target][key] for key in
+                                                       ("status", "response_bytes", "body_sha256", "answer_proof")})
+                    self.assertTrue(changed["proof"]["targets"][target]["facets"])
+                    self.assertEqual(bool(check(changed)), target == "pr", target)
+        from bench.parity import differ
+        for endpoint, facet in (("index/stats", differ.facet("stats", "bytes differ", "10 vs 20", differ.DOC_INDEX_STATS_BYTES)),
+                ("detected_labels", differ.facet("cardinality", "label cardinality differs", "a: 10 vs 20", differ.DOC_DETECTED_LABELS_CARDINALITY)),
+                ("detected_fields", differ.facet("field", "loki-only service *_extracted", "service_name_extracted", differ.DOC_DETECTED_FIELDS_SERVICE)),
+                ("index/volume", differ.facet("values", "values differ (2x)", "10 vs 20", differ.DOC_VOLUME_BYTES))):
+            shape = {"path": "/loki/api/v1/"+endpoint}
+            self.assertEqual(pr_smoke.report.correctness_parity(shape, [facet]), "documented")
+            for mutation in ("unknown", "untagged", "wrong-detail", "open"):
+                bad = dict(facet)
+                if mutation == "unknown": bad["documented"] = "not-a-registry-case"
+                elif mutation == "untagged": bad.pop("documented")
+                elif mutation == "wrong-detail": bad["detail"] = "series missing"
+                if mutation == "open":
+                    with mock.patch.dict(pr_smoke.report.correctness_parity.statuses, {facet["documented"]: "open"}):
+                        self.assertEqual(pr_smoke.report.correctness_parity(shape, [bad]), "differs")
+                else:
+                    self.assertEqual(pr_smoke.report.correctness_parity(shape, [bad]), "differs")
+        self.assertEqual(pr_smoke.report.correctness_parity({"path": "/loki/api/v1/patterns"},
+                         [{"kind": "patterns", "detail": "different patterns", "documented": "drilldown/patterns-mined-differently"}]), "differs")
+
     def fixture(self):
         name = next(sh["name"] for sh in pr_smoke.selection.load_shapes()["sets"]["control"]["shapes"] if pr_smoke.range_metric(sh))
         sel = {"sets": {"control": [name]}, "runtime_proof": {"required": True, "cells": {f"control/{name}": ["1h"]}}}
@@ -30,6 +98,20 @@ class RuntimeProofTest(unittest.TestCase):
                    parity_vs_reference="same", runtime_samples={"matrix": samples},
                    reuse={t: {"cold": cost, "repeat": repeat} for t in ("base", "pr")})
         summary = dict(set="control", baseline="base", candidate="pr", reference="loki", rows=[row], revision=revisions)
+        shape = next(s for s in pr_smoke.selection.load_shapes()["sets"]["control"]["shapes"] if s["name"] == name)
+        secs, step = pr_smoke.selection.load_shapes()["ranges"]["1h"]
+        query = perf_matrix.shape_query(shape, step)
+        body = json.dumps({"status": "success", "data": {"resultType": "matrix", "result": [
+            {"metric": {"app": "a"}, "values": [[END, "1"]]}], "stats": {"cache": {
+                "result": {"entriesFound": 0, "entriesRequested": 1}}}}}).encode()
+        measured = {t: dict(status=200, end=END, history_start=END-secs-perf_matrix.query_lookback(query),
+                           response_bytes=len(body), body_sha256=hashlib.sha256(body).hexdigest(), answer_proof="answer",
+                           request_url=perf_matrix.request_url("http://"+t, shape, query, secs, step, END)) for t in times}
+        response = {t: {"row": measured[t], "reply": (200, body, 0.1, END, None)} for t in times}
+        proof = perf_matrix.first_window_correctness(response, shape, "1h", query, secs, step, END,
+                                                     {t: "http://" + t for t in times}, "0", 30)
+        row["original_window_correctness"] = {"matrix": {"proof": proof, "measured": measured,
+                                              "target_urls": {t: "http://" + t for t in times}}}
         summaries = [dict(summary, profile=p) for p in pr_smoke.EXECUTION]
         return summaries, sel, meta, revisions
 
@@ -38,6 +120,31 @@ class RuntimeProofTest(unittest.TestCase):
         summaries, sel, meta, revisions = self.fixture()
         check = lambda values: pr_smoke.runtime_api_problems(values, sel, meta)
         self.assertEqual(check(summaries), [])
+        for mutation in ("missing-full-proof", "cached-full-proof", "candidate-as-reference",
+                         "all-loki-urls-are-pr", "declared-loki-is-pr", "malformed-port", "userinfo"):
+            changed = deepcopy(summaries)
+            row = changed[0]["rows"][0]
+            if mutation == "missing-full-proof": row.pop("original_window_correctness")
+            elif mutation == "cached-full-proof":
+                row["original_window_correctness"]["matrix"]["proof"]["reference"]["cache_raw"]["result"]["entriesFound"] = 1
+            elif mutation == "candidate-as-reference":
+                proof = row["original_window_correctness"]["matrix"]["proof"]
+                for receipt in (proof["reference"], proof["measured_reference"]):
+                    receipt["url"] = receipt["url"].replace("http://loki/", "http://pr/")
+            else:
+                wrapper = row["original_window_correctness"]["matrix"]
+                replacement = "http://loki:bad/" if mutation == "malformed-port" else "http://user:pass@loki/" if mutation == "userinfo" else "http://pr/"
+                for receipt in (wrapper["proof"]["reference"], wrapper["proof"]["measured_reference"]):
+                    receipt["url"] = receipt["url"].replace("http://loki/", replacement)
+                if mutation in ("all-loki-urls-are-pr", "declared-loki-is-pr"):
+                    wrapper["measured"]["loki"]["request_url"] = wrapper["measured"]["loki"]["request_url"].replace("http://loki/", replacement)
+                if mutation == "declared-loki-is-pr": wrapper["target_urls"]["loki"] = "http://pr"
+            self.assertTrue(check(changed), mutation)
+        alternate = deepcopy(summaries)
+        alternate[0]["rows"][0]["parity_vs_reference"] = "n/a"
+        self.assertEqual(check(alternate), [])  # exact original-window computed proof, not a spare window
+        alternate[0]["rows"][0]["original_window_correctness"]["matrix"]["proof"]["end"] -= 60
+        self.assertTrue(check(alternate))
         self.assertTrue(check(summaries[1:]))
         self.assertTrue(check([*summaries, summaries[0]]))
         for mutation in ("revision", "reference", "body", "cpu", "start", "partial", "status"):
@@ -56,6 +163,28 @@ class RuntimeProofTest(unittest.TestCase):
         with mock.patch.object(pr_smoke.comment, "render", return_value=("### A/B", {"failed": False})):
             _, verdict = pr_smoke.render_run(args(baseline_candidate=""), [], sel, meta, None, None, revisions["base"])
         self.assertEqual((verdict["failed"], verdict["state"], verdict["exit"]), (True, "failed", 1))
+
+    def test_source_endpoint_normalizes_default_ports_and_keeps_reverse_proxy_paths_distinct(self):
+        endpoint = perf_matrix.source_endpoint
+        self.assertEqual(endpoint("http://LOKI/a/"), endpoint("http://loki:80/a"))
+        self.assertNotEqual(endpoint("http://host/base"), endpoint("http://host/loki"))
+        self.assertNotEqual(endpoint("http://host:3100"), endpoint("http://host:3101"))
+        self.assertNotEqual(endpoint("http://host:0"), endpoint("http://host:80"))
+        for url in ("http://user:pass@loki/a", "http://loki:bad/a", "http://[bad"):
+            self.assertIsNone(endpoint(url))
+
+    def test_declared_reverse_proxy_prefix_is_a_valid_independent_reference_source(self):
+        from copy import deepcopy
+        values, sel, meta, _ = self.fixture()
+        values = [deepcopy(value) for value in values]
+        for summary in values:
+            wrapper = summary["rows"][0]["original_window_correctness"]["matrix"]
+            wrapper["target_urls"]["loki"] = "http://loki/prefix"
+            wrapper["measured"]["loki"]["request_url"] = wrapper["measured"]["loki"]["request_url"].replace("http://loki/", "http://loki/prefix/")
+            for receipt in (wrapper["proof"]["reference"], wrapper["proof"]["measured_reference"]):
+                if "/prefix/" not in receipt["url"]:
+                    receipt["url"] = receipt["url"].replace("http://loki/", "http://loki/prefix/")
+        self.assertEqual(pr_smoke.runtime_api_problems(values, sel, meta), [])
 
     def test_resampled_cold_requires_original_and_every_matching_fresh_proof(self):
         from copy import deepcopy
@@ -145,6 +274,30 @@ class RuntimeProofTest(unittest.TestCase):
                         self.assertTrue(check(changed), mutation)
                 else:
                     self.assertTrue(check(changed), mutation)
+
+    def test_confirm_and_refresh_full_proofs_are_required_even_when_signatures_match(self):
+        from copy import deepcopy
+        for phase in ("confirm", "refresh"):
+            with self.subTest(phase=phase):
+                values, sel, meta, _ = self.fixture()
+                values = [deepcopy(value) for value in values]
+                if phase == "confirm":
+                    meta["confirm_runs"] = 4
+                else:
+                    meta.update(refresh_s=60, refresh_runs=4, end=END + 180)
+                for summary in values:
+                    row = summary["rows"][0]
+                    if phase == "confirm":
+                        row["confirmed"] = True
+                    row["runtime_samples"][phase] = deepcopy(row["runtime_samples"]["matrix"])
+                    if phase == "refresh":
+                        history = row["original_window_correctness"]["matrix"]["proof"]["history_start"]
+                        for sample in row["runtime_samples"][phase].values():
+                            sample.update(start=history, end=END + 180)
+                    row["original_window_correctness"][phase] = deepcopy(row["original_window_correctness"]["matrix"])
+                self.assertEqual(pr_smoke.runtime_api_problems(values, sel, meta), [])
+                values[0]["rows"][0]["original_window_correctness"].pop(phase)
+                self.assertTrue(pr_smoke.runtime_api_problems(values, sel, meta))
 
 
 
@@ -300,6 +453,18 @@ class ArgsTest(unittest.TestCase):
 
 
 class ConfirmTest(unittest.TestCase):
+    def test_confirm_preserves_distinct_original_window_proofs(self):
+        old = {"set": "control", "valid": True, "rows": [{"shape": "s", "range": "1h", "verdict": "slower",
+               "parity_vs_reference": "n/a", "original_window_correctness": {"matrix": {"proof": "first"}}}]}
+        again = {"valid": True, "rows": [{"shape": "s", "range": "1h", "verdict": "same",
+                 "parity_vs_reference": "same", "original_window_correctness": {"matrix": {"proof": "confirm"}}}]}
+        with mock.patch.object(pr_smoke, "run_matrix", return_value=again), mock.patch.object(pr_smoke.stack, "log"):
+            result = pr_smoke.confirm(old, args(), {"confirm_end": END}, None, "/out", [])
+        row = result["rows"][0]
+        self.assertEqual(row["original_window_correctness"],
+                         {"matrix": {"proof": "first"}, "confirm": {"proof": "confirm"}})
+        self.assertEqual(row["parity_vs_reference"], "same")
+
     def test_confirm_uses_the_planned_end_and_keeps_the_refresh_columns(self):
         moved = {"set": "control", "valid": True, "rows": [
             {"shape": "s", "range": "1h", "verdict": "slower", "refresh": {"pr": 0.2}, "refresh_status": {"pr": "200"}},

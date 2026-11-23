@@ -868,8 +868,15 @@ def backfill(seconds: int, interval: int):
     simulated time. A failed push stops the backfill with a non-zero exit:
     one backend would then hold lines the other does not, so the only
     recovery is a fresh stack.
+    LOG_BACKFILL_FLUSH_STREAMS optionally triggers /flush after a stream-object
+    budget at successful dual-write boundaries; zero/unset disables it.
     """
     global _virtual_ns
+    # Optional seed pacing, not a memory bound: /flush only triggers chunk work.
+    flush_streams = int(os.getenv("LOG_BACKFILL_FLUSH_STREAMS", "0"))
+    if flush_streams < 0:
+        raise ValueError("LOG_BACKFILL_FLUSH_STREAMS must be nonnegative")
+    since_flush, checkpoints = 0, 0
     if BACKFILL_SEED:
         random.seed(BACKFILL_SEED)
     end = BACKFILL_END or int(time.time())
@@ -890,6 +897,14 @@ def backfill(seconds: int, interval: int):
             post_strict(f"{LOKI_URL}/loki/api/v1/push", payload)
             post_strict(f"{VL_URL}/insert/loki/api/v1/push?disable_message_parsing=1", payload)
             lines += sum(len(s["values"]) for s in pending)
+            since_flush += len(pending)
+            if flush_streams and since_flush >= flush_streams:
+                with urllib.request.urlopen(urllib.request.Request(f"{LOKI_URL}/flush", method="POST"), timeout=60):
+                    pass
+                checkpoints += 1
+                print(f"[INFO] backfill checkpoint={checkpoints} streams={since_flush} "
+                      f"end={min(t, end)} flush triggered", flush=True)
+                since_flush = 0
             pending = []
     _virtual_ns = None
     print(f"[INFO] backfill wrote {lines} lines over {seconds}s ending {end} "

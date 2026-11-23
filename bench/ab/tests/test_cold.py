@@ -168,7 +168,8 @@ REFERENCE_ANSWER = ANSWER.replace(b'"resultType":"matrix"',
 
 class ResampleResourcesTest(unittest.TestCase):
     def exercise(self, missing=False, body=ANSWER, reference_body=REFERENCE_ANSWER, reference_status=200,
-                 base_body=None, original_parity="same", first_available=True):
+                 base_body=None, original_parity="same", first_available=True, spec=None):
+        spec = SPEC if spec is None else spec
         summary0 = summary(row(shape="X1", pr=0.1, base=0.1, loki=0.1,
                                pr_cold=9, base_cold=9), set_name="control")
         original = {"cpu_seconds": 10, "cpu_samples": 2, "rss_samples": 2,
@@ -192,13 +193,13 @@ class ResampleResourcesTest(unittest.TestCase):
                     "vl_calls": after * 9, "vl_bytes": after * 100,
                     "vl:l2_disk:requests": after * 4, "vl:l2_disk:hits": after * 3}
 
-        def request(url, *args):
+        def request(url, *args, **kwargs):
             target = url.split("/")[2]
             events.append(("request", target))
             if target == "loki":
                 self.assertEqual(args[0].get("Cache-Control"), "no-cache")
                 actual_query = perf_matrix.urllib.parse.parse_qs(perf_matrix.urllib.parse.urlsplit(url).query)["query"][0]
-                original_query = perf_matrix.shape_query(SPEC["sets"]["control"]["shapes"][0], 5)
+                original_query = perf_matrix.shape_query(spec["sets"]["control"]["shapes"][0], 5)
                 self.assertTrue(actual_query.startswith(original_query))
                 self.assertEqual(len(actual_query), len(original_query) + 128)
                 self.assertFalse(set(actual_query[len(original_query):]) - {" ", "\t"})
@@ -209,7 +210,7 @@ class ResampleResourcesTest(unittest.TestCase):
         with mock.patch.object(perf_matrix, "request_full", request), \
                 mock.patch.object(perf_matrix.reuse, "scrape", scrape), \
                 mock.patch.object(perf_matrix, "flush_cache"):
-            records = cold.recold(summary0, first, [("X1", "1h")], proxies, SPEC,
+            records = cold.recold(summary0, first, [("X1", "1h")], proxies, spec,
                                   1_800_000_000, 3, log=lambda *_: None,
                                   first_resources={("X1", "1h"): {t: dict(original) if first_available else None
                                                                   for t in proxies}},
@@ -325,6 +326,26 @@ class ResampleResourcesTest(unittest.TestCase):
         self.assertTrue(records[0]["applied"])
         self.assertEqual(result["cold_resample_parity"]["targets"]["base"], ["differs"] * 3)
         self.assertEqual(result["cold_resample_parity"]["targets"]["pr"], ["same"] * 3)
+
+    def test_metadata_fixed_candidate_retains_baseline_mismatch_and_blocks_wrong_candidate(self):
+        import copy
+        spec = copy.deepcopy(SPEC)
+        spec["sets"]["control"]["shapes"][0] = {"name": "X1", "path": "/loki/api/v1/labels", "query": '{env="production"}'}
+        good, wrong = b'{"status":"success","data":["env"]}', b'{"status":"success","data":["wrong"]}'
+        result, records, _ = self.exercise(body=good, base_body=wrong, reference_body=good, spec=spec)
+        self.assertTrue(records[0]["applied"])
+        self.assertEqual(result["cold_resample_parity"]["targets"]["base"], ["differs"] * 3)
+        self.assertEqual(result["cold_resample_parity"]["targets"]["pr"], ["same"] * 3)
+        self.assertTrue(records[0]["requests"]["base"][0]["parity_facets"])
+        result["cold_resample_parity"]["original_source"] = "first-pass"
+        result["cold_resample_parity"]["original_window"] = {"parity_vs_reference": "same", "baseline_parity_vs_reference": "differs"}
+        shape = spec["sets"]["control"]["shapes"][0]
+        meta = {"end": 1_800_000_000, "seed_s": 7200, "cold_samples": 3}
+        self.assertEqual(pr_smoke.cold_proof_problems(result, {"cold_resampled": records}, shape, spec["ranges"], meta), [])
+        records[0]["requests"]["pr"][0].update(parity_vs_reference="differs", parity_facets=[{"kind": "names", "detail": "wrong label"}])
+        self.assertTrue(pr_smoke.cold_proof_problems(result, {"cold_resampled": records}, shape, spec["ranges"], meta))
+        _, records, _ = self.exercise(body=wrong, reference_body=good, spec=spec)
+        self.assertFalse(records[0]["applied"])
 
     def test_fresh_other_window_does_not_fill_missing_original_window_reference(self):
         result, records, _ = self.exercise(original_parity="n/a")

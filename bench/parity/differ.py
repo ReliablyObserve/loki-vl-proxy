@@ -48,7 +48,7 @@ DOCUMENTED = (DOC_INDEX_STATS_BYTES, DOC_INDEX_STATS_LOKI_CHUNKS, DOC_VOLUME_BYT
               DOC_DETECTED_FIELDS_SERVICE)
 # The owner's decision covers only the service name: detected_fields lists `service` / `service.name` where Loki
 # lists their `_extracted` collision. Every other `_extracted` field is an ordinary difference.
-SERVICE_EXTRACTED = ("service_extracted", "service_name_extracted")
+SERVICE_EXTRACTED = {"service_extracted": ("service",), "service_name_extracted": ("service", "service.name")}
 
 
 def label_class(name, stream_labels=()):
@@ -264,6 +264,51 @@ def raw_series_count(body):
     return len((body.get("data") or {}).get("result") or [])
 
 
+def valid_sample_value(value, nonnegative=False):
+    if not isinstance(value, str):
+        return False
+    if value in ("NaN", "+Inf", "-Inf"):
+        return not nonnegative
+    if not re.fullmatch(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", value):
+        return False
+    number = float(value)
+    return math.isfinite(number) and (not nonnegative or number >= 0)
+
+
+def valid_metric_result(body, nonnegative=False):
+    data = body.get("data")
+    if (not isinstance(data, dict) or data.get("resultType") not in ("matrix", "vector")
+            or not isinstance(data.get("result"), list)):
+        return False
+    try:
+        identities = set()
+        for row in data["result"]:
+            if (not isinstance(row, dict) or not isinstance(row.get("metric"), dict)
+                    or any(not isinstance(k, str) or not isinstance(v, str) for k, v in row["metric"].items())):
+                return False
+            identity = tuple(sorted(row["metric"].items()))
+            if identity in identities:
+                return False
+            identities.add(identity)
+            samples = row.get("values") if data["resultType"] == "matrix" else [row.get("value")]
+            if not isinstance(samples, list) or not samples:
+                return False
+            timestamps = set()
+            for point in samples:
+                if (not isinstance(point, list) or len(point) != 2 or type(point[0]) not in (int, float)
+                        or not math.isfinite(point[0]) or point[0] in timestamps
+                        or not valid_sample_value(point[1], nonnegative)):
+                    return False
+                timestamps.add(point[0])
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
+
+
+def valid_volume_result(body):
+    return valid_metric_result(body, nonnegative=True)
+
+
 def diff_series(loki, proxy, stream_labels=(), documented_values=None):
     out = []
     a, b = series_map(loki), series_map(proxy)
@@ -349,8 +394,23 @@ def data_list(body):
     return data if isinstance(data, list) else []
 
 
+def unique_rows(rows, key=None):
+    if not isinstance(rows, list):
+        return None
+    out = {}
+    for row in rows:
+        name = row.get(key) if key and isinstance(row, dict) else row if key is None else None
+        if not isinstance(name, str) or name in out:
+            return None
+        out[name] = row
+    return out
+
+
 def diff_labels(loki, proxy, stream_labels=()):
-    return name_set_diff("names", data_list(loki), data_list(proxy), stream_labels)
+    a, b = (unique_rows(body.get("data")) for body in (loki, proxy))
+    if a is None or b is None:
+        return [facet("shape", "invalid or duplicate label identity", "expected unique string labels")]
+    return name_set_diff("names", a, b, stream_labels)
 
 
 def diff_values(loki, proxy):
@@ -390,35 +450,51 @@ def diff_index_stats(loki, proxy):
 
 
 def diff_detected_fields(loki, proxy, stream_labels=()):
-    def fields(body):
-        return {f.get("label"): f for f in (body.get("fields") or [])}
-    a, b = fields(loki), fields(proxy)
+    limits = [{"limit": body["limit"]} if "limit" in body else {} for body in (loki, proxy)]
+    if any("limit" in value and (type(value["limit"]) is not int or value["limit"] < 0) for value in limits):
+        return [facet("shape", "invalid detected fields limit", "expected a nonnegative integer limit")]
+    a, b = (unique_rows([] if body == {} else body.get("fields"), "label") for body in (loki, proxy))
+    if a is None or b is None:
+        return [facet("shape", "invalid or duplicate field identity", "expected unique field labels")]
+    for row in [*a.values(), *b.values()]:
+        if ("type" in row and not isinstance(row["type"], str)
+                or "cardinality" in row and (type(row["cardinality"]) is not int or row["cardinality"] < 0)
+                or any(not isinstance(row.get(key, []), list) or any(not isinstance(v, str) for v in row[key])
+                       for key in ("parsers", "jsonPath") if row.get(key) is not None)):
+            return [facet("shape", "invalid detected field attributes", short(row.get("label")))]
     out = []
-    only_a = [k for k in set(a) - set(b)]
-    service = [k for k in only_a if k in SERVICE_EXTRACTED]
-    plain = [k for k in only_a if k not in SERVICE_EXTRACTED]
+    if limits[0] != limits[1]:
+        out.append(facet("field-limit", "detected fields limit differs", f"loki {limits[0]} proxy {limits[1]}"))
+    only_a, only_b = set(a) - set(b), set(b) - set(a)
+    pairs = [(old, names[0]) for old in sorted(only_a)
+             if len(names := [name for name in SERVICE_EXTRACTED.get(old, ()) if name in only_b]) == 1]
+    pairs = [(old, new) for old, new in pairs if sum(target == new for _, target in pairs) == 1]
+    service = [old for old, _ in pairs]
     if service:
         out.append(facet("field", "loki-only service *_extracted", f"{sorted(service)}", DOC_DETECTED_FIELDS_SERVICE))
-    out += name_set_diff("field", plain, [], stream_labels)
-    out += name_set_diff("field", [], set(b) - set(a), stream_labels)
-    for k in sorted(set(a) & set(b)):
-        x, y = a[k], b[k]
+    out += name_set_diff("field", only_a - set(service), [], stream_labels)
+    out += name_set_diff("field", [], only_b - {new for _, new in pairs}, stream_labels)
+    for k, target in sorted([(k, k) for k in set(a) & set(b)] + pairs):
+        x, y = a[k], b[target]
         if x.get("type") != y.get("type"):
             out.append(facet("field-type", f"type {x.get('type')} vs {y.get('type')}", f"{k}"))
         if sorted(x.get("parsers") or []) != sorted(y.get("parsers") or []):
             out.append(facet("field-parsers", f"parsers {sorted(x.get('parsers') or [])} vs "
                                               f"{sorted(y.get('parsers') or [])}", f"{k}"))
+        if (x.get("jsonPath") or []) != (y.get("jsonPath") or []):
+            out.append(facet("field-path", "JSON extraction path differs", f"{k}: {short(x.get('jsonPath'))} vs {short(y.get('jsonPath'))}"))
         ca, cb = x.get("cardinality") or 0, y.get("cardinality") or 0
         # Loki estimates cardinality with a HyperLogLog sketch: within 5% is the same answer.
-        if ca and abs(ca - cb) > max(1, 0.05 * ca):
+        if abs(ca - cb) > max(1, 0.05 * ca):
             out.append(facet("field-cardinality", size_class(ca, cb), f"{k}: loki {ca} proxy {cb}"))
     return dedupe(out)
 
 
 def diff_detected_labels(loki, proxy, stream_labels=()):
-    def labels(body):
-        return {x.get("label"): x.get("cardinality") for x in (body.get("detectedLabels") or [])}
-    a, b = labels(loki), labels(proxy)
+    rows = [unique_rows(body.get("detectedLabels"), "label") for body in (loki, proxy)]
+    if any(side is None for side in rows):
+        return [facet("shape", "invalid or duplicate detected label identity", "expected unique label identities")]
+    a, b = ({key: row.get("cardinality") for key, row in side.items()} for side in rows)
     out = name_set_diff("names", a, b, stream_labels)
     differ = [k for k in set(a) & set(b) if a[k] != b[k]]
     if differ:
@@ -429,12 +505,43 @@ def diff_detected_labels(loki, proxy, stream_labels=()):
 
 
 def diff_patterns(loki, proxy):
-    a = {p.get("pattern") for p in data_list(loki)}
-    b = {p.get("pattern") for p in data_list(proxy)}
-    if a == b:
-        return []
-    return [facet("patterns", size_class(len(a), len(b)) if len(a) != len(b) else "different patterns",
-                  f"loki {len(a)} proxy {len(b)}; loki-only {short(sorted(a - b)[:2], 160)}")]
+    sides = []
+    try:
+        for body in (loki, proxy):
+            rows, entries = body.get("data"), {}
+            if not isinstance(rows, list):
+                raise ValueError("pattern data is not a list")
+            for row in rows:
+                if (not isinstance(row, dict) or not isinstance(row.get("pattern"), str)
+                        or not isinstance(row.get("level"), str) or not isinstance(row.get("samples"), list)
+                        or not row["samples"]):
+                    raise ValueError("invalid pattern entry")
+                key, samples = (row["pattern"], row["level"]), {}
+                if key in entries:
+                    raise ValueError("duplicate pattern-level identity")
+                for pair in row["samples"]:
+                    if (not isinstance(pair, list) or len(pair) != 2
+                            or any(type(v) not in (int, float) or not math.isfinite(v) for v in pair)
+                            or pair[1] < 0 or pair[1] != int(pair[1])):
+                        raise ValueError("invalid pattern sample")
+                    if pair[0] in samples:
+                        raise ValueError("duplicate pattern timestamp")
+                    samples[pair[0]] = pair[1]
+                entries[key] = samples
+            sides.append(entries)
+    except (TypeError, ValueError, OverflowError) as error:
+        return [facet("patterns", "invalid pattern response", str(error))]
+    a, b = sides
+    out = []
+    if set(a) != set(b):
+        out.append(facet("patterns", size_class(len(a), len(b)) if len(a) != len(b) else "different patterns",
+                         f"loki {len(a)} proxy {len(b)}; loki-only {short(sorted(set(a) - set(b))[:2], 160)}"))
+    for key in sorted(set(a) & set(b)):
+        if set(a[key]) != set(b[key]):
+            out.append(facet("patterns", "sample timestamps differ", short(key)))
+        if any(a[key][t] != b[key][t] for t in set(a[key]) & set(b[key])):
+            out.append(facet("patterns", "sample counts differ", short(key)))
+    return dedupe(out)
 
 
 def diff_format_query(loki, proxy):
@@ -462,10 +569,16 @@ def diff(endpoint, loki_status, loki, proxy_status, proxy, stream_labels=(), lim
         return [facet("status", f"loki {loki_status} proxy {proxy_status}",
                       f"loki {short(error_text(loki) or '-', 160)} | proxy {short(error_text(proxy) or '-', 160)}")]
     if loki_status != 200:
+        out = []
         if norm_error(error_text(loki)) != norm_error(error_text(proxy)):
-            return [facet("error-text", f"{loki_status} with different text",
-                          f"loki {short(error_text(loki), 160)} | proxy {short(error_text(proxy), 160)}")]
-        return []
+            out.append(facet("error-text", f"{loki_status} with different text",
+                             f"loki {short(error_text(loki), 160)} | proxy {short(error_text(proxy), 160)}"))
+        types = [{key: body[key] for key in ("errorType",) if key in body} if isinstance(body, dict) else {}
+                 for body in (loki, proxy)]
+        if types[0] != types[1]:
+            out.append(facet("error-type", f"{loki_status} with different errorType",
+                             f"loki {short(types[0], 160)} | proxy {short(types[1], 160)}"))
+        return out
     if not isinstance(loki, dict) or not isinstance(proxy, dict):
         return [facet("shape", "answer not JSON on one side", f"loki {short(loki, 80)} | proxy {short(proxy, 80)}")]
     out = []
@@ -483,6 +596,10 @@ def diff(endpoint, loki_status, loki, proxy_status, proxy, stream_labels=(), lim
             if not same_sample(a, b):
                 out.append(facet("values", f"{ta} differs", f"loki {short(a, 80)} proxy {short(b, 80)}"))
     elif endpoint in ("volume", "volume_range"):
+        if not all(valid_volume_result(body) for body in (loki, proxy)):
+            return [facet("shape", "invalid metric volume answer", "expected a complete vector or matrix")]
+        if result_type(loki) != result_type(proxy):
+            return [facet("result-type", f"{result_type(loki)} vs {result_type(proxy)}", "")]
         out += diff_series(loki, proxy, stream_labels, documented_values=DOC_VOLUME_BYTES)
     elif endpoint == "labels":
         out += diff_labels(loki, proxy, stream_labels)

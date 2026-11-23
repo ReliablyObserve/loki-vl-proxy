@@ -16,8 +16,9 @@ The steps, in order:
      parallelism and memory, before starting heavy ingestion.
   3. `seed` runs test/e2e-compat/log-generator.py in backfill mode: the live
      generator's data profile, written for a fixed window ending at --end, to
-     both backends. It then flushes Loki and waits until Loki and
-     VictoriaLogs count the same lines in every 10-minute slice of the window
+     both backends, triggering periodic Loki flushes after acknowledged stream
+     budgets. This is seed pacing, not a memory bound. It then flushes Loki and
+     waits until Loki and VictoriaLogs count the same lines in every 10-minute slice of the window
      (Loki reads data older than query_ingesters_within from its store only,
      so an unflushed backfill would look missing on Loki).
   4. Each proxy build runs as a host process with the command line and
@@ -267,7 +268,8 @@ class Stack:
     def seed(self, seconds, end, timeout=900, batch=BACKFILL_BATCH, interval=BACKFILL_INTERVAL):
         env = dict(os.environ, LOKI_URL=self.loki, VL_URL=self.vl, LOG_BATCH=str(batch),
                    LOG_BACKFILL_SECONDS=str(seconds), LOG_BACKFILL_INTERVAL=str(interval),
-                   LOG_BACKFILL_END=str(end), LOG_BACKFILL_ONLY="1", LOG_BACKFILL_SEED=str(end))
+                   LOG_BACKFILL_END=str(end), LOG_BACKFILL_ONLY="1", LOG_BACKFILL_SEED=str(end),
+                   LOG_BACKFILL_FLUSH_STREAMS="10000")
         if self.no_level_label:
             env["LOG_NO_LEVEL_LABEL"] = "1"
         t0 = time.time()

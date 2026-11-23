@@ -1,0 +1,55 @@
+{
+  "source": "Actual Loki 3.7.10 normal-generator API responses; schema evidence only, not proxy parity",
+  "source_receipt_sha256": "b8476aa3bd1d5d5f8fc37dfea512caffc47e0407a0eb5f20ad9a82c55c00355c",
+  "end": 1795378740,
+  "responses": [
+    {
+      "path": "/loki/api/v1/labels",
+      "status": 200,
+      "sha256": "6b1eeda99d253964f54d7550291da4e81d2114890437fb7a36d9df7e53702851",
+      "body": "{\"status\":\"success\",\"data\":[\"app\",\"cluster\",\"container\",\"env\",\"generator_profile\",\"generator_run\",\"level\",\"namespace\",\"owner_team\",\"pod\",\"region\",\"service_name\",\"version\",\"workload_scope\"]}\n"
+    },
+    {
+      "path": "/loki/api/v1/label/env/values",
+      "status": 200,
+      "sha256": "17a25af7a777f04c3dccb9f112dfa3923cb5f0033850ed649d20677d9dd18e6a",
+      "body": "{\"status\":\"success\",\"data\":[\"production\"]}\n"
+    },
+    {
+      "path": "/loki/api/v1/label/service_name/values",
+      "status": 200,
+      "sha256": "2d98f2a72df25b341de992a8f47ed0c6ec5416139e97c29a07c08a3190123b94",
+      "body": "{\"status\":\"success\",\"data\":[\"api-gateway-storefront\"]}\n"
+    },
+    {
+      "path": "/loki/api/v1/index/volume",
+      "status": 200,
+      "sha256": "fdb9ca7d519c63c1aeb497a41f80784e4bf9c433ddd03c5f8b0c698938a05f9f",
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{\"app\":\"api-gateway-storefront\",\"env\":\"production\",\"workload_scope\":\"scope-01\"},\"value\":[1795378740,\"984064\"]}],\"stats\":{\"summary\":{\"bytesProcessedPerSecond\":0,\"linesProcessedPerSecond\":0,\"totalBytesProcessed\":0,\"totalLinesProcessed\":0,\"execTime\":0.004071785,\"queueTime\":0,\"subqueries\":0,\"totalEntriesReturned\":1,\"splits\":1,\"shards\":0,\"totalPostFilterLines\":0,\"totalStructuredMetadataBytesProcessed\":0},\"querier\":{\"store\":{\"totalChunksRef\":0,\"totalChunksDownloaded\":0,\"chunksDownloadTime\":0,\"queryReferencedStructuredMetadata\":false,\"queryUsedV2Engine\":false,\"chunk\":{\"headChunkBytes\":0,\"headChunkLines\":0,\"decompressedBytes\":0,\"decompressedLines\":0,\"compressedBytes\":0,\"totalDuplicates\":0,\"postFilterLines\":0,\"headChunkStructuredMetadataBytes\":0,\"decompressedStructuredMetadataBytes\":0},\"chunkRefsFetchTime\":0,\"congestionControlLatency\":0,\"pipelineWrapperFilteredLines\":0,\"dataobj\":{\"prePredicateDecompressedRows\":0,\"prePredicateDecompressedBytes\":0,\"prePredicateDecompressedStructuredMetadataBytes\":0,\"postPredicateRows\":0,\"postPredicateDecompressedBytes\":0,\"postPredicateStructuredMetadataBytes\":0,\"postFilterRows\":0,\"pagesScanned\":0,\"pagesDownloaded\":0,\"pagesDownloadedBytes\":0,\"pageBatches\":0,\"totalRowsAvailable\":0,\"totalPageDownloadTime\":0}},\"querierExecTime\":0},\"ingester\":{\"totalReached\":0,\"totalChunksMatched\":0,\"totalBatches\":0,\"totalLinesSent\":0,\"store\":{\"totalChunksRef\":0,\"totalChunksDownloaded\":0,\"chunksDownloadTime\":0,\"queryReferencedStructuredMetadata\":false,\"queryUsedV2Engine\":false,\"chunk\":{\"headChunkBytes\":0,\"headChunkLines\":0,\"decompressedBytes\":0,\"decompressedLines\":0,\"compressedBytes\":0,\"totalDuplicates\":0,\"postFilterLines\":0,\"headChunkStructuredMetadataBytes\":0,\"decompressedStructuredMetadataBytes\":0},\"chunkRefsFetchTime\":0,\"congestionControlLatency\":0,\"pipelineWrapperFilteredLines\":0,\"dataobj\":{\"prePredicateDecompressedRows\":0,\"prePredicateDecompressedBytes\":0,\"prePredicateDecompressedStructuredMetadataBytes\":0,\"postPredicateRows\":0,\"postPredicateDecompressedBytes\":0,\"postPredicateStructuredMetadataBytes\":0,\"postFilterRows\":0,\"pagesScanned\":0,\"pagesDownloaded\":0,\"pagesDownloadedBytes\":0,\"pageBatches\":0,\"totalRowsAvailable\":0,\"totalPageDownloadTime\":0}}},\"cache\":{\"chunk\":{\"entriesFound\":0,\"entriesRequested\":0,\"entriesStored\":0,\"bytesReceived\":0,\"bytesSent\":0,\"requests\":0,\"downloadTime\":0,\"queryLengthServed\":0},\"index\":{\"entriesFound\":0,\"entriesRequested\":0,\"entriesStored\":0,\"bytesReceived\":0,\"bytesSent\":0,\"requests\":0,\"downloadTime\":0,\"queryLengthServed\":0},\"result\":{\"entriesFound\":0,\"entriesRequested\":0,\"entriesStored\":0,\"bytesReceived\":0,\"bytesSent\":0,\"requests\":0,\"downloadTime\":0,\"queryLengthServed\":0},\"statsResult\":{\"entriesFound\":0,\"entriesRequested\":0,\"entriesStored\":0,\"bytesReceived\":0,\"bytesSent\":0,\"requests\":0,\"downloadTime\":0,\"queryLengthServed\":0},\"volumeResult\":{\"entriesFound\":0,\"entriesRequested\":1,\"entriesStored\":1,\"bytesReceived\":0,\"bytesSent\":0,\"requests\":2,\"downloadTime\":14584,\"queryLengthServed\":0},\"seriesResult\":{\"entriesFound\":0,\"entriesRequested\":0,\"entriesStored\":0,\"bytesReceived\":0,\"bytesSent\":0,\"requests\":0,\"downloadTime\":0,\"queryLengthServed\":0},\"labelResult\":{\"entriesFound\":0,\"entriesRequested\":0,\"entriesStored\":0,\"bytesReceived\":0,\"bytesSent\":0,\"requests\":0,\"downloadTime\":0,\"queryLengthServed\":0},\"instantMetricResult\":{\"entriesFound\":0,\"entriesRequested\":0,\"entriesStored\":0,\"bytesReceived\":0,\"bytesSent\":0,\"requests\":0,\"downloadTime\":0,\"queryLengthServed\":0}},\"index\":{\"totalChunks\":0,\"postFilterChunks\":0,\"shardsDuration\":0,\"usedBloomFilters\":false,\"totalStreams\":0,\"chunkRefsLookupTime\":0,\"bloomFilterTime\":0}}}}"
+    },
+    {
+      "path": "/loki/api/v1/detected_labels",
+      "status": 200,
+      "sha256": "61dd72899e0393c316646f94311f24205ebe40e2ac2e3a198c2b62d9723a3e23",
+      "body": "{\"detectedLabels\":[{\"label\":\"owner_team\",\"cardinality\":1},{\"label\":\"service_name\",\"cardinality\":1},{\"label\":\"generator_run\",\"cardinality\":32},{\"label\":\"namespace\",\"cardinality\":1},{\"label\":\"pod\",\"cardinality\":184},{\"label\":\"region\",\"cardinality\":1},{\"label\":\"env\",\"cardinality\":1},{\"label\":\"level\",\"cardinality\":3},{\"label\":\"workload_scope\",\"cardinality\":1},{\"label\":\"generator_profile\",\"cardinality\":1},{\"label\":\"app\",\"cardinality\":1},{\"label\":\"cluster\",\"cardinality\":1},{\"label\":\"version\",\"cardinality\":3},{\"label\":\"container\",\"cardinality\":1}]}\n"
+    },
+    {
+      "path": "/loki/api/v1/detected_fields",
+      "status": 200,
+      "sha256": "e79eef8e70c1403b096130326ad6c79b519df4b5d6369004b71eda1cb3930ebf",
+      "body": "{\"fields\":[{\"label\":\"customer_id\",\"type\":\"string\",\"cardinality\":78,\"parsers\":[\"json\"],\"jsonPath\":[\"customer_id\"]},{\"label\":\"feature_flag\",\"type\":\"string\",\"cardinality\":31,\"parsers\":[\"json\"],\"jsonPath\":[\"feature_flag\"]},{\"label\":\"country\",\"type\":\"string\",\"cardinality\":16,\"parsers\":[\"json\"],\"jsonPath\":[\"country\"]},{\"label\":\"path\",\"type\":\"string\",\"cardinality\":29,\"parsers\":[\"json\"],\"jsonPath\":[\"path\"]},{\"label\":\"service_family\",\"type\":\"string\",\"cardinality\":1,\"parsers\":[\"json\"],\"jsonPath\":[\"service_family\"]},{\"label\":\"region_extracted\",\"type\":\"string\",\"cardinality\":3,\"parsers\":[\"json\"],\"jsonPath\":[\"region\"]},{\"label\":\"rollout_phase\",\"type\":\"string\",\"cardinality\":2,\"parsers\":[\"json\"],\"jsonPath\":[\"rollout_phase\"]},{\"label\":\"version_extracted\",\"type\":\"string\",\"cardinality\":2,\"parsers\":[\"json\"],\"jsonPath\":[\"version\"]},{\"label\":\"request_id\",\"type\":\"string\",\"cardinality\":100,\"parsers\":[\"json\"],\"jsonPath\":[\"request_id\"]},{\"label\":\"span_id\",\"type\":\"string\",\"cardinality\":100,\"parsers\":[\"json\"],\"jsonPath\":[\"span_id\"]},{\"label\":\"user_id\",\"type\":\"string\",\"cardinality\":100,\"parsers\":[\"json\"],\"jsonPath\":[\"user_id\"]},{\"label\":\"customer_tier\",\"type\":\"string\",\"cardinality\":4,\"parsers\":[\"json\"],\"jsonPath\":[\"customer_tier\"]},{\"label\":\"tenant_id\",\"type\":\"string\",\"cardinality\":37,\"parsers\":[\"json\"],\"jsonPath\":[\"tenant_id\"]},{\"label\":\"retry_count\",\"type\":\"int\",\"cardinality\":5,\"parsers\":[\"json\"],\"jsonPath\":[\"retry_count\"]},{\"label\":\"payload_bytes\",\"type\":\"int\",\"cardinality\":99,\"parsers\":[\"json\"],\"jsonPath\":[\"payload_bytes\"]},{\"label\":\"release_channel\",\"type\":\"string\",\"cardinality\":1,\"parsers\":[\"json\"],\"jsonPath\":[\"release_channel\"]},{\"label\":\"method\",\"type\":\"string\",\"cardinality\":5,\"parsers\":[\"json\"],\"jsonPath\":[\"method\"]},{\"label\":\"duration_ms\",\"type\":\"int\",\"cardinality\":86,\"parsers\":[\"json\"],\"jsonPath\":[\"duration_ms\"]},{\"label\":\"device_type\",\"type\":\"string\",\"cardinality\":6,\"parsers\":[\"json\"],\"jsonPath\":[\"device_type\"]},{\"label\":\"level_extracted\",\"type\":\"string\",\"cardinality\":3,\"parsers\":[\"json\"],\"jsonPath\":[\"level\"]},{\"label\":\"operation\",\"type\":\"string\",\"cardinality\":24,\"parsers\":[\"json\"],\"jsonPath\":[\"operation\"]},{\"label\":\"status\",\"type\":\"int\",\"cardinality\":9,\"parsers\":[\"json\"],\"jsonPath\":[\"status\"]},{\"label\":\"cache_status\",\"type\":\"string\",\"cardinality\":5,\"parsers\":[\"json\"],\"jsonPath\":[\"cache_status\"]},{\"label\":\"trace_id\",\"type\":\"string\",\"cardinality\":100,\"parsers\":[\"json\"],\"jsonPath\":[\"trace_id\"]},{\"label\":\"deployment_ring\",\"type\":\"string\",\"cardinality\":2,\"parsers\":[\"json\"],\"jsonPath\":[\"deployment_ring\"]},{\"label\":\"service_name_extracted\",\"type\":\"string\",\"cardinality\":1,\"parsers\":[\"json\"],\"jsonPath\":[\"service\",\"name\"]},{\"label\":\"client_version\",\"type\":\"float\",\"cardinality\":24,\"parsers\":[\"json\"],\"jsonPath\":[\"client_version\"]},{\"label\":\"ip\",\"type\":\"string\",\"cardinality\":100,\"parsers\":[\"json\"],\"jsonPath\":[\"ip\"]},{\"label\":\"error\",\"type\":\"string\",\"cardinality\":6,\"parsers\":[\"json\"],\"jsonPath\":[\"error\"]},{\"label\":\"deployment_id\",\"type\":\"string\",\"cardinality\":2,\"parsers\":[\"json\"],\"jsonPath\":[\"deployment_id\"]},{\"label\":\"detected_level\",\"type\":\"string\",\"cardinality\":3,\"parsers\":null},{\"label\":\"zone\",\"type\":\"string\",\"cardinality\":1,\"parsers\":[\"json\"],\"jsonPath\":[\"zone\"]}],\"limit\":1000}\n"
+    },
+    {
+      "path": "/loki/api/v1/patterns",
+      "status": 200,
+      "sha256": "ae95db1547026a02f23a4c15794d18fecc43c2a4a38da3a12c77f822500559ce",
+      "body": "{\"status\":\"success\",\"data\":[]}\n"
+    },
+    {
+      "path": "/loki/api/v1/index/stats",
+      "status": 200,
+      "sha256": "27f3226b2519b76559f053012261c7e29ee5e04033c580b4e64f2381f8678486",
+      "body": "{\"streams\":82,\"chunks\":91,\"bytes\":984064,\"entries\":1209}\n"
+    }
+  ]
+}

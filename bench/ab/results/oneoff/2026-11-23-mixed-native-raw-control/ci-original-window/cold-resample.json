@@ -1,0 +1,234 @@
+{
+  "passed": true,
+  "elapsed_s": 7.425744916778058,
+  "scope": "One mechanics check on both existing playground peers (same old image). Local tiers flushed; peer replicas/OS/backend caches not reset. Not main-vs-PR latency evidence.",
+  "source_sha256": {
+    "bench/ab/answers.py": "f27d17868327b5a2a2d776060eefb4099fd1f3923ac54ced3cf8e8aa966cfe65",
+    "bench/ab/cold.py": "16ed8b001c0f448e4ce9f17d1606d85d5e2fd9d2cb2a8e206489f892a774985e",
+    "bench/ab/pr_smoke.py": "a4c679d13031d863e815b6f5b9b00fee2fbbda15ee3715bd45d114762a561738",
+    "bench/ab/report.py": "63a325e02a56600ef34445a8f2a18ff341dbb7add20834a67479aadd94ac3869",
+    "bench/ab/perf_matrix.py": "4b7ba103a17df464eac1666f639cf62b1b0a7f60e3dff8ae81733e9e0d1d137d",
+    "bench/ab/reuse.py": "94b30003d8267e500ea5d592a1397bd5fb4e1b10ea7899b3c01ae7ef12b1f5c4",
+    "bench/ab/stack.py": "515c01fe30c504d3b3e48bc2209d5facec5392ad5f3b7449d57a52c03bd44f1b",
+    "bench/parity/differ.py": "ccccef0c23c52164531fbe4a896f15e2880bf6be7f1053f8843dc7a5631f2618"
+  },
+  "images": {
+    "base": "loki-vl-proxy:playground-3a808613394b",
+    "pr": "loki-vl-proxy:playground-3a808613394b"
+  },
+  "result": {
+    "base": [
+      0.008
+    ],
+    "pr": [
+      0.002
+    ]
+  },
+  "requests": {
+    "base": [
+      {
+        "phase": "flushed-resample",
+        "end": 1795378740,
+        "history_start": 1795377780,
+        "at": 1795421744.589366,
+        "seconds": 0.008,
+        "status": 200,
+        "response_bytes": 3852,
+        "body_sha256": "7fdcb33736c27dfe9c1438ed90703259e1d41f6a347ea1acb0a6b1aedd59bfd7",
+        "answer_proof": "answer",
+        "signature": "series=1 points=14 sum=342",
+        "url": "http://127.0.0.1:13150/loki/api/v1/query_range?query=sum%28count_over_time%28%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D%5B1m%5D%29%29&start=1795377840&end=1795378740&step=60&limit=1000&direction=backward",
+        "vl_calls_header": null,
+        "reuse": {
+          "loki:l1_memory:requests": 3.0,
+          "loki:l2_disk:requests": 1.0,
+          "loki:l3_peer:requests": 1.0,
+          "vl:l1_memory:requests": 1.0,
+          "vl:l2_disk:requests": 1.0,
+          "vl:l3_peer:requests": 1.0,
+          "loki:l1_memory:hits": 1.0,
+          "vl_bytes": 357.0,
+          "vl_calls": 1.0,
+          "vl_calls:select_logsql_stats_query_range": 1.0,
+          "rss_before_bytes": 122494976.0,
+          "rss_after_bytes": 123531264.0,
+          "rss_max_sampled_bytes": 123531264.0,
+          "rss_samples": 2,
+          "cpu_samples": 2,
+          "cpu_seconds": 0.006403
+        },
+        "parity_vs_reference": "same",
+        "parity_facets": []
+      }
+    ],
+    "pr": [
+      {
+        "phase": "flushed-resample",
+        "end": 1795378740,
+        "history_start": 1795377780,
+        "at": 1795421746.7320461,
+        "seconds": 0.002,
+        "status": 200,
+        "response_bytes": 3840,
+        "body_sha256": "764c3312530f6dd9d64c12a82f8011444e137e428538da6031a54968f5b3dd5e",
+        "answer_proof": "answer",
+        "signature": "series=1 points=14 sum=342",
+        "url": "http://127.0.0.1:13151/loki/api/v1/query_range?query=sum%28count_over_time%28%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D%5B1m%5D%29%29&start=1795377840&end=1795378740&step=60&limit=1000&direction=backward",
+        "vl_calls_header": null,
+        "reuse": {
+          "loki:l1_memory:requests": 2.0,
+          "loki:l2_disk:requests": 1.0,
+          "loki:l3_peer:requests": 1.0,
+          "loki:l3_peer:hits": 1.0,
+          "rss_before_bytes": 129708032.0,
+          "rss_after_bytes": 129728512.0,
+          "rss_max_sampled_bytes": 129728512.0,
+          "rss_samples": 2,
+          "cpu_samples": 2,
+          "cpu_seconds": 0.008151
+        },
+        "parity_vs_reference": "same",
+        "parity_facets": []
+      }
+    ],
+    "loki": [
+      {
+        "phase": "flushed-resample",
+        "end": 1795378740,
+        "history_start": 1795377780,
+        "at": 1795421746.747723,
+        "seconds": 0.015,
+        "status": 200,
+        "response_bytes": 3936,
+        "body_sha256": "896e383f63b72a7828386604e975de55f887a89bc74e5cc540c3ba35dce4c8cc",
+        "answer_proof": "answer",
+        "original_query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[1m]))",
+        "actual_query": "sum(count_over_time({app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}[1m]))   \t    \t\t\t\t\t  \t     \t\t \t  \t\t \t\t\t   \t  \t\t\t\t \t  \t \t\t\t\t  \t  \t\t \t \t  \t  \t\t\t   \t         \t\t \t\t\t \t\t\t   \t \t  \t\t\t\t \t\t  \t \t\t \t\t\t\t  \t \t  ",
+        "correctness_query_mode": "space-tab-suffix-128",
+        "url": "http://127.0.0.1:13101/loki/api/v1/query_range?query=sum%28count_over_time%28%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D%5B1m%5D%29%29+++%09++++%09%09%09%09%09++%09+++++%09%09+%09++%09%09+%09%09%09+++%09++%09%09%09%09+%09++%09+%09%09%09%09++%09++%09%09+%09+%09++%09++%09%09%09+++%09+++++++++%09%09+%09%09%09+%09%09%09+++%09+%09++%09%09%09%09+%09%09++%09+%09%09+%09%09%09%09++%09+%09++&start=1795377840&end=1795378740&step=60&limit=1000&direction=backward",
+        "correctness_cache_control": "no-cache",
+        "cache_raw": {
+          "chunk": {
+            "entriesFound": 43,
+            "entriesRequested": 43,
+            "entriesStored": 0,
+            "bytesReceived": 309313,
+            "bytesSent": 0,
+            "requests": 4,
+            "downloadTime": 136219,
+            "queryLengthServed": 0
+          },
+          "index": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "result": {
+            "entriesFound": 0,
+            "entriesRequested": 1,
+            "entriesStored": 1,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 2,
+            "downloadTime": 7608,
+            "queryLengthServed": 0
+          },
+          "statsResult": {
+            "entriesFound": 1,
+            "entriesRequested": 1,
+            "entriesStored": 0,
+            "bytesReceived": 263,
+            "bytesSent": 0,
+            "requests": 1,
+            "downloadTime": 6515,
+            "queryLengthServed": 960000000000
+          },
+          "volumeResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "seriesResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "labelResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "instantMetricResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          }
+        },
+        "cache": {
+          "result": {
+            "entriesFound": 0,
+            "entriesRequested": 1,
+            "bytesReceived": 0
+          },
+          "statsResult": {
+            "entriesFound": 1,
+            "entriesRequested": 1,
+            "bytesReceived": 263
+          },
+          "volumeResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          },
+          "seriesResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          },
+          "labelResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          },
+          "instantMetricResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          }
+        },
+        "reference_kind": "computed-query",
+        "cache_status": "observed",
+        "cache_absent": false,
+        "signature": "series=1 points=14 sum=342",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    ]
+  }
+}

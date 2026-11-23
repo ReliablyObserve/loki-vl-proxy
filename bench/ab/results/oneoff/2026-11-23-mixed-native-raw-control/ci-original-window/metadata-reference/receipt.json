@@ -1,0 +1,433 @@
+{
+  "passed": true,
+  "source_sha256": {
+    "bench/ab/answers.py": "f27d17868327b5a2a2d776060eefb4099fd1f3923ac54ced3cf8e8aa966cfe65",
+    "bench/ab/perf_matrix.py": "4b7ba103a17df464eac1666f639cf62b1b0a7f60e3dff8ae81733e9e0d1d137d",
+    "bench/ab/report.py": "63a325e02a56600ef34445a8f2a18ff341dbb7add20834a67479aadd94ac3869",
+    "bench/ab/pr_smoke.py": "a4c679d13031d863e815b6f5b9b00fee2fbbda15ee3715bd45d114762a561738",
+    "bench/parity/differ.py": "ccccef0c23c52164531fbe4a896f15e2880bf6be7f1053f8843dc7a5631f2618"
+  },
+  "end": 1795378740,
+  "source_version": "Loki 3.7.10",
+  "scope": "Actual existing Loki metadata API schema and cache-observation mechanics; no proxy parity, current-image performance, or fleet acceptance.",
+  "observations": [
+    {
+      "path": "/loki/api/v1/labels",
+      "extra_reads": 0,
+      "reference": {
+        "phase": "original-window",
+        "end": 1795378740,
+        "history_start": 1795375140,
+        "at": 1795421746.849191,
+        "seconds": 0.015,
+        "status": 200,
+        "response_bytes": 190,
+        "body_sha256": "6b1eeda99d253964f54d7550291da4e81d2114890437fb7a36d9df7e53702851",
+        "answer_proof": "answer",
+        "original_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "actual_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "correctness_query_mode": "measured",
+        "url": "http://127.0.0.1:13101/loki/api/v1/labels?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+        "correctness_cache_control": null,
+        "cache_raw": null,
+        "cache": null,
+        "reference_kind": "metadata-api-response",
+        "cache_status": "unavailable",
+        "cache_absent": true,
+        "signature": "names=14 set=db49d1aef470",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    },
+    {
+      "path": "/loki/api/v1/label/env/values",
+      "extra_reads": 0,
+      "reference": {
+        "phase": "original-window",
+        "end": 1795378740,
+        "history_start": 1795375140,
+        "at": 1795421746.877523,
+        "seconds": 0.005,
+        "status": 200,
+        "response_bytes": 43,
+        "body_sha256": "17a25af7a777f04c3dccb9f112dfa3923cb5f0033850ed649d20677d9dd18e6a",
+        "answer_proof": "answer",
+        "original_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "actual_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "correctness_query_mode": "measured",
+        "url": "http://127.0.0.1:13101/loki/api/v1/label/env/values?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+        "correctness_cache_control": null,
+        "cache_raw": null,
+        "cache": null,
+        "reference_kind": "metadata-api-response",
+        "cache_status": "unavailable",
+        "cache_absent": true,
+        "signature": "names=1 set=ab8e18ef4ebe",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    },
+    {
+      "path": "/loki/api/v1/label/service_name/values",
+      "extra_reads": 0,
+      "reference": {
+        "phase": "original-window",
+        "end": 1795378740,
+        "history_start": 1795375140,
+        "at": 1795421746.8825972,
+        "seconds": 0.007,
+        "status": 200,
+        "response_bytes": 55,
+        "body_sha256": "2d98f2a72df25b341de992a8f47ed0c6ec5416139e97c29a07c08a3190123b94",
+        "answer_proof": "answer",
+        "original_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "actual_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "correctness_query_mode": "measured",
+        "url": "http://127.0.0.1:13101/loki/api/v1/label/service_name/values?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+        "correctness_cache_control": null,
+        "cache_raw": null,
+        "cache": null,
+        "reference_kind": "metadata-api-response",
+        "cache_status": "unavailable",
+        "cache_absent": true,
+        "signature": "names=1 set=06e67aa8ee30",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    },
+    {
+      "path": "/loki/api/v1/index/volume",
+      "extra_reads": 1,
+      "reference": {
+        "phase": "original-window",
+        "end": 1795378740,
+        "history_start": 1795375140,
+        "at": 1795421746.892732,
+        "seconds": 0.005,
+        "status": 200,
+        "response_bytes": 3672,
+        "body_sha256": "c0a5c64ddb880fe6c2cde502c3ae85cffa22bf5516f08662135b13b65d647cda",
+        "answer_proof": "answer",
+        "original_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "actual_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}\t \t\t\t  \t  \t \t \t\t\t \t  \t\t \t  \t\t\t \t    \t\t\t  \t\t\t  \t\t \t \t \t    \t \t  \t   \t  \t\t\t\t \t\t \t\t    \t\t     \t\t\t\t  \t \t\t \t\t\t\t \t\t\t\t\t \t\t \t\t   \t\t  \t\t ",
+        "correctness_query_mode": "space-tab-suffix-128",
+        "url": "http://127.0.0.1:13101/loki/api/v1/index/volume?start=1795375140000000000&end=1795378740000000000&limit=5000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D%09+%09%09%09++%09++%09+%09+%09%09%09+%09++%09%09+%09++%09%09%09+%09++++%09%09%09++%09%09%09++%09%09+%09+%09+%09++++%09+%09++%09+++%09++%09%09%09%09+%09%09+%09%09++++%09%09+++++%09%09%09%09++%09+%09%09+%09%09%09%09+%09%09%09%09%09+%09%09+%09%09+++%09%09++%09%09+",
+        "correctness_cache_control": "no-cache",
+        "cache_raw": {
+          "chunk": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "index": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "result": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "statsResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "volumeResult": {
+            "entriesFound": 0,
+            "entriesRequested": 1,
+            "entriesStored": 1,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 2,
+            "downloadTime": 5253,
+            "queryLengthServed": 0
+          },
+          "seriesResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "labelResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          },
+          "instantMetricResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "entriesStored": 0,
+            "bytesReceived": 0,
+            "bytesSent": 0,
+            "requests": 0,
+            "downloadTime": 0,
+            "queryLengthServed": 0
+          }
+        },
+        "cache": {
+          "result": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          },
+          "statsResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          },
+          "volumeResult": {
+            "entriesFound": 0,
+            "entriesRequested": 1,
+            "bytesReceived": 0
+          },
+          "seriesResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          },
+          "labelResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          },
+          "instantMetricResult": {
+            "entriesFound": 0,
+            "entriesRequested": 0,
+            "bytesReceived": 0
+          }
+        },
+        "reference_kind": "computed-query",
+        "cache_status": "observed",
+        "cache_absent": false,
+        "signature": "series=1 points=1 sum=984064",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    },
+    {
+      "path": "/loki/api/v1/detected_labels",
+      "extra_reads": 0,
+      "reference": {
+        "phase": "original-window",
+        "end": 1795378740,
+        "history_start": 1795375140,
+        "at": 1795421746.89852,
+        "seconds": 0.096,
+        "status": 200,
+        "response_bytes": 548,
+        "body_sha256": "5287fa72cb228f01b53bcb2c8a695127411d06a4402e517afc924fadd7a5c475",
+        "answer_proof": "answer",
+        "original_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "actual_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "correctness_query_mode": "measured",
+        "url": "http://127.0.0.1:13101/loki/api/v1/detected_labels?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+        "correctness_cache_control": null,
+        "cache_raw": null,
+        "cache": null,
+        "reference_kind": "metadata-api-response",
+        "cache_status": "unavailable",
+        "cache_absent": true,
+        "signature": "labels=14 set=db49d1aef470",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    },
+    {
+      "path": "/loki/api/v1/detected_fields",
+      "extra_reads": 0,
+      "reference": {
+        "phase": "original-window",
+        "end": 1795378740,
+        "history_start": 1795375140,
+        "at": 1795421746.99519,
+        "seconds": 0.04,
+        "status": 200,
+        "response_bytes": 3212,
+        "body_sha256": "ac350e7cae79e7f1a08aadfb51ae46ddd4593e92121bed66eabbc450651d8726",
+        "answer_proof": "answer",
+        "original_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "actual_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "correctness_query_mode": "measured",
+        "url": "http://127.0.0.1:13101/loki/api/v1/detected_fields?start=1795375140000000000&end=1795378740000000000&limit=1000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+        "correctness_cache_control": null,
+        "cache_raw": null,
+        "cache": null,
+        "reference_kind": "metadata-api-response",
+        "cache_status": "unavailable",
+        "cache_absent": true,
+        "signature": "fields=32 set=e3ffdcf62d08",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    },
+    {
+      "path": "/loki/api/v1/patterns",
+      "extra_reads": 0,
+      "reference": {
+        "phase": "original-window",
+        "end": 1795378740,
+        "history_start": 1795375140,
+        "at": 1795421747.035478,
+        "seconds": 0.002,
+        "status": 200,
+        "response_bytes": 31,
+        "body_sha256": "ae95db1547026a02f23a4c15794d18fecc43c2a4a38da3a12c77f822500559ce",
+        "answer_proof": "answer",
+        "original_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "actual_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "correctness_query_mode": "measured",
+        "url": "http://127.0.0.1:13101/loki/api/v1/patterns?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+        "correctness_cache_control": null,
+        "cache_raw": null,
+        "cache": null,
+        "reference_kind": "metadata-api-response",
+        "cache_status": "unavailable",
+        "cache_absent": true,
+        "signature": "names=0 set=e3b0c44298fc",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    },
+    {
+      "path": "/loki/api/v1/index/stats",
+      "extra_reads": 0,
+      "reference": {
+        "phase": "original-window",
+        "end": 1795378740,
+        "history_start": 1795375140,
+        "at": 1795421747.038199,
+        "seconds": 0.002,
+        "status": 200,
+        "response_bytes": 57,
+        "body_sha256": "27f3226b2519b76559f053012261c7e29ee5e04033c580b4e64f2381f8678486",
+        "answer_proof": "answer",
+        "original_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "actual_query": "{app=~\"api-gateway-(storefront|billing|analytics|platform)\",env=\"production\",workload_scope=\"scope-01\"}",
+        "correctness_query_mode": "measured",
+        "url": "http://127.0.0.1:13101/loki/api/v1/index/stats?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+        "correctness_cache_control": null,
+        "cache_raw": null,
+        "cache": null,
+        "reference_kind": "metadata-api-response",
+        "cache_status": "unavailable",
+        "cache_absent": true,
+        "signature": "series=0 points=0 sum=0",
+        "ranked_max_points": null,
+        "reference_skip": "",
+        "complete": true
+      }
+    }
+  ],
+  "requests": [
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/labels?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+      "status": 200,
+      "response_bytes": 190,
+      "body_file": "body-00.json.gz",
+      "body_sha256": "6b1eeda99d253964f54d7550291da4e81d2114890437fb7a36d9df7e53702851",
+      "seconds": 0.015244007110595703
+    },
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/label/env/values?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+      "status": 200,
+      "response_bytes": 43,
+      "body_file": "body-01.json.gz",
+      "body_sha256": "17a25af7a777f04c3dccb9f112dfa3923cb5f0033850ed649d20677d9dd18e6a",
+      "seconds": 0.0046939849853515625
+    },
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/label/service_name/values?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+      "status": 200,
+      "response_bytes": 55,
+      "body_file": "body-02.json.gz",
+      "body_sha256": "2d98f2a72df25b341de992a8f47ed0c6ec5416139e97c29a07c08a3190123b94",
+      "seconds": 0.006791830062866211
+    },
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/index/volume?start=1795375140000000000&end=1795378740000000000&limit=5000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+      "status": 200,
+      "response_bytes": 3686,
+      "body_file": "body-03.json.gz",
+      "body_sha256": "88f0fef3f28381f61d16f007c721a835d493176b1ec47837a23b345a188c70fd",
+      "seconds": 0.0023391246795654297
+    },
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/index/volume?start=1795375140000000000&end=1795378740000000000&limit=5000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D%09+%09%09%09++%09++%09+%09+%09%09%09+%09++%09%09+%09++%09%09%09+%09++++%09%09%09++%09%09%09++%09%09+%09+%09+%09++++%09+%09++%09+++%09++%09%09%09%09+%09%09+%09%09++++%09%09+++++%09%09%09%09++%09+%09%09+%09%09%09%09+%09%09%09%09%09+%09%09+%09%09+++%09%09++%09%09+",
+      "status": 200,
+      "response_bytes": 3672,
+      "body_file": "body-04.json.gz",
+      "body_sha256": "c0a5c64ddb880fe6c2cde502c3ae85cffa22bf5516f08662135b13b65d647cda",
+      "seconds": 0.00518798828125
+    },
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/detected_labels?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+      "status": 200,
+      "response_bytes": 548,
+      "body_file": "body-05.json.gz",
+      "body_sha256": "5287fa72cb228f01b53bcb2c8a695127411d06a4402e517afc924fadd7a5c475",
+      "seconds": 0.09592103958129883
+    },
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/detected_fields?start=1795375140000000000&end=1795378740000000000&limit=1000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+      "status": 200,
+      "response_bytes": 3212,
+      "body_file": "body-06.json.gz",
+      "body_sha256": "ac350e7cae79e7f1a08aadfb51ae46ddd4593e92121bed66eabbc450651d8726",
+      "seconds": 0.039856910705566406
+    },
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/patterns?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+      "status": 200,
+      "response_bytes": 31,
+      "body_file": "body-07.json.gz",
+      "body_sha256": "ae95db1547026a02f23a4c15794d18fecc43c2a4a38da3a12c77f822500559ce",
+      "seconds": 0.002444028854370117
+    },
+    {
+      "url": "http://127.0.0.1:13101/loki/api/v1/index/stats?start=1795375140000000000&end=1795378740000000000&query=%7Bapp%3D~%22api-gateway-%28storefront%7Cbilling%7Canalytics%7Cplatform%29%22%2Cenv%3D%22production%22%2Cworkload_scope%3D%22scope-01%22%7D",
+      "status": 200,
+      "response_bytes": 57,
+      "body_file": "body-08.json.gz",
+      "body_sha256": "27f3226b2519b76559f053012261c7e29ee5e04033c580b4e64f2381f8678486",
+      "seconds": 0.0016601085662841797
+    }
+  ]
+}

@@ -70,6 +70,24 @@ class BuildAndSeedResourcesTest(unittest.TestCase):
 
 
 class SeedFailureEvidenceTest(unittest.TestCase):
+    def test_seed_enables_stream_checkpoints_and_keeps_final_flush_and_count_gate(self):
+        st = stack.Stack("proof")
+        events = []
+        def generate(*args, **kwargs):
+            events.append("generator")
+            self.assertEqual(kwargs["env"].get("LOG_BACKFILL_FLUSH_STREAMS"), "10000")
+            self.assertEqual(kwargs["env"]["LOG_BACKFILL_SEED"], "123456")
+        def flush(request, timeout):
+            events.append("final-flush")
+            self.assertEqual(request.full_url, st.loki + "/flush")
+            return mock.MagicMock()
+        with mock.patch.object(stack.subprocess, "run", side_effect=generate), \
+                mock.patch.object(stack.urllib.request, "urlopen", side_effect=flush), \
+                mock.patch.object(st, "wait_equal_counts", side_effect=lambda *args: events.append(args)), \
+                mock.patch.object(stack, "log"):
+            st.seed(90000, 123456, 15000)
+        self.assertEqual(events, ["generator", "final-flush", (33456, 123456, 15000)])
+
     def test_capture_precedes_backend_teardown_and_preserves_completed_tree(self):
         st = stack.Stack("proof")
         events = []

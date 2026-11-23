@@ -32,7 +32,6 @@ import hashlib
 import json
 import math
 import os
-import secrets
 import sys
 import time
 
@@ -40,7 +39,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import over2x  # noqa: E402
 import perf_matrix  # noqa: E402
-import report  # noqa: E402
 import stack  # noqa: E402
 from bench.parity import differ  # noqa: E402
 
@@ -138,7 +136,7 @@ def resample(proxies, shape, rng, ranges, cold_end, n, base, cand, tenant="0", t
         def receipt(status, body, dt, started):
             proof = perf_matrix.answer_proof(status, body, shape)
             try:
-                decoded = json.loads(body)
+                decoded = perf_matrix.strict_json(body)
             except (ValueError, UnicodeError):
                 decoded = None
             valid = (status == 200 and bool(body) and proof == "answer" and math.isfinite(dt) and dt >= 0
@@ -149,7 +147,7 @@ def resample(proxies, shape, rng, ranges, cold_end, n, base, cand, tenant="0", t
                     "seconds": round(dt, 3), "status": status, "response_bytes": len(body),
                     "body_sha256": hashlib.sha256(body).hexdigest(), "answer_proof": proof,
                     "signature": perf_matrix.signature(status, body, shape.get("logs", False),
-                                                       query.lstrip().startswith(("topk", "bottomk")))}, decoded, valid
+                                                       query.lstrip().startswith(("topk", "bottomk"))) if proof else "unavailable"}, decoded, valid
 
         def request(proxy, end=end):
             if deadline is not None and time.time() >= deadline:
@@ -178,43 +176,21 @@ def resample(proxies, shape, rng, ranges, cold_end, n, base, cand, tenant="0", t
         if reference_url is not None:
             if deadline is not None and time.time() >= deadline:
                 return None
-            reference_query, query_mode = query, "unchanged-no-query"
-            if query and (not shape.get("path") or shape.get("query") or shape.get("instant")):
-                suffix = "".join("\t" if byte & (1 << bit) else " "
-                                 for byte in secrets.token_bytes(16) for bit in range(8))
-                reference_query, query_mode = query + suffix, "space-tab-suffix-128"
-            url = perf_matrix.request_url(reference_url, shape, reference_query, secs, step, end)
-            # Only this extra correctness read asks Loki to compute; measured
-            # default-profile requests keep their headers/timing policy intact.
-            reference_headers = {key: value for key, value in headers.items() if key.lower() != "cache-control"}
-            reference_headers["Cache-Control"] = "no-cache"
             request_timeout = min(timeout, max(0.001, deadline - time.time())) if deadline is not None else timeout
-            status, body, dt, started, _ = perf_matrix.request_full(url, reference_headers, tenant, request_timeout)
-            reference, decoded, valid = receipt(status, body, dt, started)
-            reference["url"] = url
-            reference["correctness_cache_control"] = "no-cache"
-            reference.update(original_query=query, actual_query=reference_query, correctness_query_mode=query_mode)
-            data = decoded.get("data") if isinstance(decoded, dict) else None
-            stats = data.get("stats") if isinstance(data, dict) else None
-            # Keep every reported bucket, including malformed ones: the measured
-            # normalizer drops non-object buckets, which cannot prove completeness.
-            reference["cache_raw"] = stats.get("cache") if isinstance(stats, dict) else None
-            reference["cache"] = report.correctness_cache_projection(reference["cache_raw"])
-            reference["ranked_max_points"] = perf_matrix.ranked_max_points(query, secs, step, shape.get("instant", False))
-            reference["reference_skip"] = (report.reference_skip(reference)
-                                           if reference["cache"] is not None
-                                           else "cache-status-invalid-or-hit")
+            reference, decoded = perf_matrix.correctness_reference(reference_url, shape, query, secs, step, end,
+                                                                   tenant, request_timeout, phase="flushed-resample")
+            valid = reference["complete"] and reference["status"] == 200 and not differ.vacuous(endpoint, 200, decoded, 200, decoded)
             if evidence is not None:
                 evidence.setdefault("loki", []).append(reference)
             if not valid or reference["reference_skip"]:
                 return None
             for target in (base, cand):
-                facets = differ.diff(endpoint, status, decoded, 200, replies[target],
+                facets = differ.diff(endpoint, reference["status"], decoded, 200, replies[target],
                                      limit=shape.get("limit", 0), direction=shape.get("direction", "backward"))
                 if evidence is not None:
-                    evidence[target][-1]["parity_vs_reference"] = "differs" if facets else "same"
+                    evidence[target][-1]["parity_vs_reference"] = perf_matrix.report.correctness_parity(shape, facets)
                     evidence[target][-1]["parity_facets"] = facets
-                if target == cand and facets:
+                if target == cand and perf_matrix.report.correctness_parity(shape, facets) == "differs":
                     return None
         for t, dt in one.items():
             got[t].append(dt)

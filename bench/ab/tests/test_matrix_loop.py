@@ -25,6 +25,221 @@ W9 = "W9 label_replace control, instant"
 URLS = {"release": "http://release", "main": "http://main", "loki": "http://loki"}
 
 
+class FirstWindowCorrectnessTest(unittest.TestCase):
+    def test_recorded_metadata_protocol_validates_all_current_path_shapes_without_extra_reads(self):
+        from selection import load_shapes
+        with open(os.path.join(os.path.dirname(FIXTURE), "loki-metadata-protocol.json")) as source:
+            fixture = json.load(source)
+        import hashlib
+        for row in fixture["responses"]:
+            self.assertEqual(hashlib.sha256(row["body"].encode()).hexdigest(), row["sha256"])
+        bodies = {r["path"]: r["body"].encode() for r in fixture["responses"]}
+        shapes = [s for group in load_shapes()["sets"].values() for s in group["shapes"] if s.get("path")]
+        self.assertEqual(len(shapes), 20)
+        for shape in shapes + [{"path": "/loki/api/v1/index/stats"}]:
+            with self.subTest(path=shape["path"], name=shape.get("name")):
+                body = bodies[shape["path"]]
+                self.assertEqual(perf_matrix.answer_proof(200, body, shape), "answer")
+                query = perf_matrix.shape_query(shape, 60)
+                with mock.patch.object(perf_matrix, "request_full", side_effect=AssertionError("extra metadata read")):
+                    proof = perf_matrix.first_window_correctness(
+                        {t: {"reply": (200, body, .1, 10000, None)} for t in ("base", "pr", "loki")},
+                        shape, "1h", query, 3600, 60, 10000, {t: "http://"+t for t in ("base", "pr", "loki")}, "0", 30)
+                self.assertTrue(proof["complete"], proof)
+                if shape["path"] != "/loki/api/v1/index/volume":
+                    self.assertEqual((proof["reference"]["reference_kind"], proof["reference"]["cache_status"]),
+                                     ("metadata-api-response", "unavailable"))
+
+    def test_metadata_cache_presence_and_schema_are_fail_closed(self):
+        valid = perf_matrix.answer_proof
+        invalid = [({"path": "/loki/api/v1/labels"}, {"data": [1]}),
+                   ({"path": "/loki/api/v1/detected_fields"}, {"data": {"fields": []}}),
+                   ({"path": "/loki/api/v1/detected_labels"}, {"detectedLabels": [{"label": "x", "cardinality": -1}]}),
+                   ({"path": "/loki/api/v1/index/stats"}, {"streams": 1}),
+                   ({"path": "/loki/api/v1/index/volume"}, {"volumes": []}),
+                   ({"path": "/loki/api/v1/labelsUnknown"}, {"data": []}),
+                   ({"path": "/loki/api/v1/patterns"}, {"data": [{"pattern": "x", "samples": [[1, -1]]}]})]
+        for shape, body in invalid:
+            self.assertIsNone(valid(200, json.dumps(body).encode(), shape), (shape, body))
+        shape = {"path": "/loki/api/v1/labels"}
+        for cache in (None, {}, {"result": {}}, {"result": {"entriesFound": 1, "entriesRequested": 1}}):
+            body = json.dumps({"data": ["a"], "stats": {"cache": cache}}).encode()
+            proof, _ = perf_matrix.correctness_reference("http://loki", shape, "", 3600, 60, 10000, "0", 30,
+                                                         measured=(200, body, .1, 10000, None))
+            self.assertFalse(proof["complete"], cache)
+
+    def test_metadata_identity_duplicates_cannot_collapse_into_equal_answers(self):
+        with open(os.path.join(os.path.dirname(FIXTURE), "loki-metadata-protocol.json")) as source:
+            fixture = json.load(source)
+        for row in fixture["responses"]:
+            key = "data" if row["path"].endswith(("/labels", "/values")) else "fields" if row["path"].endswith("/detected_fields") else "detectedLabels" if row["path"].endswith("/detected_labels") else None
+            if key is None:
+                continue
+            parsed = json.loads(row["body"])
+            shape = {"path": row["path"]}
+            self.assertTrue(parsed[key])
+            parsed[key].append(parsed[key][0])
+            self.assertIsNone(perf_matrix.answer_proof(200, json.dumps(parsed).encode(), shape), row["path"])
+            parsed[key] = []
+            self.assertEqual(perf_matrix.answer_proof(200, json.dumps(parsed).encode(), shape), "answer")
+
+    def test_recorded_empty_fields_and_shared_strict_metric_schema(self):
+        valid = perf_matrix.answer_proof
+        self.assertEqual(valid(200, b'{}', {"path": "/loki/api/v1/detected_fields"}), "answer")
+        for path in ("labels", "detected_labels", "patterns", "index/stats"):
+            self.assertIsNone(valid(200, b'{}', {"path": "/loki/api/v1/"+path}))
+        for value in ("1000", "+1000", "01000", "1e3", "NaN", "+Inf", "-Inf"):
+            body = {"data": {"resultType": "matrix", "result": [{"metric": {}, "values": [[1, value]]}]}}
+            self.assertEqual(valid(200, json.dumps(body).encode(), {}), "answer")
+        for value in ("1_000", " 1000 ", "0x1p2", "1e999"):
+            body = {"data": {"resultType": "matrix", "result": [{"metric": {}, "values": [[1, value]]}]}}
+            self.assertIsNone(valid(200, json.dumps(body).encode(), {}), value)
+            body["data"] = {"resultType": "scalar", "result": [1, value]}
+            self.assertIsNone(valid(200, json.dumps(body).encode(), {}), value)
+        for result in ([{"metric": {}, "values": [[1, "1"], [1, "1"]]}],
+                       [{"metric": {}, "value": [1, "1"]}, {"metric": {}, "value": [1, "1"]}]):
+            kind = "matrix" if "values" in result[0] else "vector"
+            self.assertIsNone(valid(200, json.dumps({"data": {"resultType": kind, "result": result}}).encode(), {}))
+
+    def test_actual_range_plan_loop_runs_original_and_refresh_proofs_after_timed_targets(self):
+        shape = {"name": "one", "query": 'sum(count_over_time({app="a"}[1m]))'}
+        spec = {"ranges": {"1h": [3600, 60]}, "sets": {"control": {"description": "unit", "shapes": [shape]}}}
+        for cached in (False, True):
+            for refresh in (0, 60):
+                with self.subTest(cached=cached, refresh=refresh), tempfile.TemporaryDirectory() as directory:
+                    calls = []
+
+                    def request(url, headers, tenant, timeout, **kwargs):
+                        target = urllib.parse.urlsplit(url).netloc
+                        params = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+                        query = params["query"][0]
+                        extra = query != shape["query"]
+                        calls.append((target, extra, int(params["end"][0])))
+                        self.assertEqual(headers.get("Cache-Control"), "no-cache" if extra else None)
+                        body = json.dumps({"status": "success", "data": {"resultType": "matrix", "result": [
+                            {"metric": {"app": "a"}, "values": [[int(params["end"][0]), "1"]]}], "stats": {
+                                "cache": {"result": {"entriesRequested": 1, "entriesFound": int(cached and not extra)}}}}}).encode()
+                        return 200, body, 0.1, 1000 + len(calls), None
+
+                    output, selection = os.path.join(directory, "raw.json"), os.path.join(directory, "selection.json")
+                    with open(selection, "w") as handle:
+                        json.dump({"runtime_proof": {"cells": {"control/one": ["1h"]}}}, handle)
+                    argv = ["perf_matrix.py", "--set", "control", "--ranges", "1h", "--runs", "2", "--end", "1800000000",
+                            "--range-plan", selection, "--out", output, "--refresh-s", str(refresh)]
+                    for target in ("base", "pr", "loki"):
+                        argv += ["--target", target + "=http://" + target]
+                    with mock.patch.object(sys, "argv", argv), mock.patch.object(perf_matrix, "load_shapes", return_value=spec), \
+                            mock.patch.object(perf_matrix, "request_full", request), mock.patch.object(perf_matrix, "CPUSampler", FakeSampler), \
+                            mock.patch.object(perf_matrix.subprocess, "check_output", return_value="0\n"), \
+                            mock.patch.object(perf_matrix.urllib.request, "urlopen") as health, contextlib.redirect_stdout(io.StringIO()):
+                        health.return_value.__enter__.return_value.status = 200
+                        perf_matrix.main()
+                    with open(output) as handle:
+                        raw = json.load(handle)
+                    proof = next(r for r in raw["rows"] if r["run"] == 0)["original_window_correctness"]
+                    self.assertTrue(proof["complete"], proof)
+                    self.assertEqual(proof["extra_reads"], int(cached))
+                    self.assertEqual(len(raw["rows"]), 6)  # correctness latency never becomes a timed row
+                    if cached:
+                        self.assertEqual({t for t, extra, _ in calls[:3]}, {"base", "pr", "loki"})
+                        self.assertEqual(calls[3], ("loki", True, calls[2][2]))
+                    if refresh:
+                        phase = report.refresh_timings(raw, "loki", "pr", 0)[("one", "1h")]
+                        self.assertTrue(phase["original_window_correctness"]["proof"]["complete"])
+
+    def test_computed_body_is_reused_and_cached_body_gets_one_same_window_read(self):
+        shape = {"query": 'sum(count_over_time({app="a"}[1m]))'}
+        body = b'{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"b"},"values":[[1000,"1"]]}],"stats":{"cache":{"result":{"entriesFound":0,"entriesRequested":1}}}}}'
+        targets = {name: "http://" + name for name in ("base", "pr", "loki")}
+        for cached in (False, True):
+            with self.subTest(cached=cached):
+                responses = {target: {"reply": (200, body, 0.01, 1001, None),
+                                      "row": {"status": 200, "end": 1000, "history_start": 640}}
+                             for target in targets}
+                if cached:
+                    responses["loki"]["reply"] = (200, body.replace(b'"entriesFound":0', b'"entriesFound":1'), 0.02, 1001, None)
+                with mock.patch.object(perf_matrix, "request_full", return_value=(200, body, 0.03, 1002, None)) as read:
+                    proof = perf_matrix.first_window_correctness(responses, shape, "1h", shape["query"],
+                                                                 300, 60, 1000, targets, "0", 30)
+                self.assertTrue(proof["complete"], proof)
+                self.assertEqual(proof["extra_reads"], int(cached))
+                self.assertEqual(read.call_count, int(cached))
+                self.assertEqual(proof["targets"]["pr"]["parity_vs_reference"], "same")
+                if cached:
+                    self.assertEqual(read.call_args.kwargs["max_body_bytes"], 32 * 1024 * 1024)
+                    params = urllib.parse.parse_qs(urllib.parse.urlsplit(read.call_args.args[0]).query)
+                    self.assertEqual((params["start"], params["end"]), (["700"], ["1000"]))
+                    self.assertEqual(len(params["query"][0]), len(shape["query"]) + 128)
+                changed = dict(responses)
+                changed["pr"] = {"reply": (200, body.replace(b'"a":"b"', b'"a":"wrong"'), 0.01, 1001, None)}
+                with mock.patch.object(perf_matrix, "request_full", return_value=(200, body, 0.03, 1002, None)):
+                    mismatch = perf_matrix.first_window_correctness(changed, shape, "1h", shape["query"],
+                                                                    300, 60, 1000, targets, "0", 30)
+                self.assertTrue(mismatch["complete"])
+                self.assertEqual(mismatch["targets"]["pr"]["parity_vs_reference"], "differs")
+
+    def test_missing_or_capped_proxy_body_cannot_produce_a_reference_proof(self):
+        with mock.patch.object(perf_matrix, "request_full") as read:
+            proof = perf_matrix.first_window_correctness({"pr": {"reply": None}}, {"query": "q"}, "1h", "q",
+                                                         300, 60, 1000, {"pr": "http://pr", "loki": "http://loki"}, "0", 30)
+        self.assertFalse(proof["complete"])
+        read.assert_not_called()
+
+    def test_semantic_rejection_contract_reuses_measured_reply_without_result_cache(self):
+        body = b'{"status":"error","errorType":"bad_data","error":"parse error: unexpected token"}'
+        replies = {t: {"reply": (400, body, 0.1, 1001, None)} for t in ("base", "pr", "loki")}
+        with mock.patch.object(perf_matrix, "request_full") as read:
+            proof = perf_matrix.first_window_correctness(replies, {"query": "bad"}, "1h", "bad", 300, 60,
+                                                         1000, {t: "http://" + t for t in replies}, "0", 30)
+        self.assertTrue(proof["complete"], proof)
+        self.assertEqual(proof["reference"]["status"], 400)
+        self.assertEqual(proof["targets"]["pr"]["parity_vs_reference"], "same")
+        read.assert_not_called()
+        replies["pr"]["reply"] = (400, body.replace(b'"bad_data"', b'"wrong"'), 0.1, 1001, None)
+        mismatch = perf_matrix.first_window_correctness(replies, {"query": "bad"}, "1h", "bad", 300, 60,
+                                                        1000, {t: "http://" + t for t in replies}, "0", 30)
+        self.assertEqual(mismatch["targets"]["pr"]["parity_vs_reference"], "differs")
+
+    def test_nonstandard_json_and_unknown_metric_schema_cannot_be_certified(self):
+        body = b'{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1000,"NaN"]]}],"stats":{"cache":{"result":{"entriesFound":0,"entriesRequested":1}}}}}'
+        for changed in (body.replace(b'"NaN"', b'NaN'), body.replace(b'"NaN"', b'Infinity'),
+                        body.replace(b'"success"', b'"unknown"'),
+                        body.replace(b'"NaN"', b'1e999'), body.replace(b'"matrix"', b'"unknown"')):
+            replies = {t: {"reply": (200, changed if t == "pr" else body, 0.1, 1001, None)} for t in ("base", "pr", "loki")}
+            with self.subTest(changed=changed), mock.patch.object(perf_matrix, "request_full") as read:
+                proof = perf_matrix.first_window_correctness(replies, {"query": "q"}, "1h", "q", 300, 60,
+                                                             1000, {t: "http://" + t for t in replies}, "0", 30)
+                self.assertFalse(proof["complete"])
+                read.assert_not_called()
+        for value in (b'"NaN"', b'"+Inf"', b'"-Inf"'):
+            valid = body.replace(b'"NaN"', value)
+            replies = {t: {"reply": (200, valid, 0.1, 1001, None)} for t in ("base", "pr", "loki")}
+            proof = perf_matrix.first_window_correctness(replies, {"query": "q"}, "1h", "q", 300, 60,
+                                                         1000, {t: "http://" + t for t in replies}, "0", 30)
+            self.assertTrue(proof["complete"])
+            self.assertEqual(proof["targets"]["pr"]["parity_vs_reference"], "same")
+
+    def test_proxy_retention_cap_causes_explicit_incomplete_without_extra_read(self):
+        replies = {t: {"reply": (200, b"x" * 17, 0.1, 1001, None)} for t in ("base", "pr", "loki")}
+        with mock.patch.object(perf_matrix, "CORRECTNESS_BODY_CAP", 16), mock.patch.object(perf_matrix, "request_full") as read:
+            proof = perf_matrix.first_window_correctness(replies, {"query": "q"}, "1h", "q", 300, 60,
+                                                         1000, {t: "http://" + t for t in replies}, "0", 30)
+        self.assertFalse(proof["complete"])
+        read.assert_not_called()
+
+    def test_stream_timestamp_and_supported_scalar_string_schemas_do_not_crash(self):
+        for kind, result in (("streams", [{"stream": {}, "values": [["abc", "line"]]}]),
+                             ("scalar", [1000, "1"]), ("string", [1000, "ok"])):
+            body = json.dumps({"status": "success", "data": {"resultType": kind, "result": result,
+                         "stats": {"cache": {"result": {"entriesFound": 0, "entriesRequested": 1}}}}}).encode()
+            replies = {t: {"reply": (200, body, 0.1, 1001, None)} for t in ("base", "pr", "loki")}
+            with self.subTest(kind=kind), mock.patch.object(perf_matrix, "request_full") as read:
+                proof = perf_matrix.first_window_correctness(replies, {"query": "q"}, "1h", "q", 300, 60,
+                                                             1000, {t: "http://" + t for t in replies}, "0", 30)
+                self.assertEqual(proof["complete"], kind != "streams")
+                read.assert_not_called()
+
+
 def recorded():
     with open(FIXTURE) as f:
         return json.load(f)
@@ -320,7 +535,8 @@ class ProfileRecordTest(unittest.TestCase):
 class NoSleepTest(unittest.TestCase):
     def test_runtime_answers_distinguish_empty_query_rejections_and_infrastructure(self):
         valid = perf_matrix.answer_proof
-        self.assertEqual(valid(200, b'{"data":{"result":[]}}', {}), "answer")
+        self.assertEqual(valid(200, b'{"data":{"resultType":"matrix","result":[]}}', {}), "answer")
+        self.assertIsNone(valid(200, b'{"data":{"result":[]}}', {}))
         self.assertEqual(valid(200, b'{"data":[]}', {"path": "/loki/api/v1/labels"}), "answer")
         self.assertIsNone(valid(200, b'{}', {}))
         self.assertIsNone(valid(500, b'plugin.unavailable', {}))

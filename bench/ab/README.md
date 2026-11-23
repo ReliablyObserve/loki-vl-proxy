@@ -20,7 +20,9 @@ The current result signatures compare aggregate fingerprints. Metric sum
 tolerance requires the same series signature and point count, including ranked
 answers; missing points are differences even when their sums match. These
 fingerprints do not establish equality of every label, timestamp, sample value
-or log line. Use the Loki compatibility tests for those comparisons.
+or log line. Required runtime cells additionally compare their complete first
+answers through the shared parity comparator, with independent confirmation
+and refresh receipts; ordinary reports retain the fingerprint contract.
 
 Results are compared with Loki only on the runs Loki computed. Each run moves the
 window back a minute, and from run 1 on Loki's results cache usually answers the
@@ -416,13 +418,15 @@ and `-probes.json`.
 1. The shared scope gate skips the job for docs, CI, tests, chart, registry or
    harness-only changes. On product PRs, `selection.py` maps the changed files
    to shapes (below).
-   - **Shards.** `perf-plan` selects the shapes, and `pr_smoke.py --split 4`
-     splits a large selection into up to four shards of about equal cost:
+   - **Shards.** `perf-plan` selects the shapes and calls `pr_smoke.py --split`
+     with a ceiling of eight when `runtime_proof.required` is true, otherwise
+     four. Large required selections can use up to eight shards of about equal cost:
      one pass per shape in loki-defaults, plus one per range-metric shape in
      aligned. Each set goes to exactly one shard, most costly first, to the
      least loaded shard. A selection that costs less than `SHARD_MIN_COST`
-     (40) per shard stays one shard, because a shard costs its own stack and
-     seed.
+     (40) per shard stays one shard, because each additional shard costs its own
+     stack and seed. More shards reduce per-runner query work; they do not remove
+     long-history seed requirements or establish that a run fits its time budget.
    - Each `perf-smoke-shard` runs steps 2 to 5 below for its sets, on its own
      runner and fresh stack, so a shape's three targets always share one
      stack.
@@ -433,12 +437,18 @@ and `-probes.json`.
    - Loki's cold reuse across sets (step 4) only applies within one Loki
      process, so each shard does it for its own sets.
 2. A fresh Loki and VictoriaLogs start from the e2e compose file with
-   `docker-compose.ab.yml` (own project, container names and ports). While
-   the log generator seeds a fixed 86-minute window into both (about 75 lines/s,
+   `docker-compose.ab.yml` (own project, container names and ports). The base
+   and PR binaries compile with bounded parallelism before ingestion. Then
+   the log generator seeds the planned window into both (about 75 lines/s,
    seeded random, lines on half-second timestamps) and waits until both count
    the same lines in every 10-minute slice (the window is the longest range plus
-   one block of windows per selected set, see above), the base (the merge commit's first
-   parent, built in a detached worktree) and the PR build compile.
+   one block of windows per selected set, see above). After 10,000 successfully
+   dual-written stream objects, the seeder triggers `/flush` at an existing
+   payload boundary. This does not change rows, labels or timestamps, and is
+   not a memory bound or proof that flushing has completed. A failed push or
+   flush stops the seed without replay; the final flush and per-slice count
+   checks still determine fixture readiness. Outside this seeder, the optional
+   `LOG_BACKFILL_FLUSH_STREAMS` is disabled unless set to a positive integer.
 3. Each build runs as a host process with its own tree's flags of the stack's
    `loki-vl-proxy-underscore` service. A port that is not free fails the run
    instead of measuring someone else's process.
@@ -447,6 +457,20 @@ and `-probes.json`.
    same step-aligned windows, each set in its own block of windows ending at or
    below the seeded data's end. No target gets a `Cache-Control` header; a query
    an earlier set already ran takes that set's computed Loki cold.
+   Required runtime cells retain complete first-pass bodies up to 32 MiB per
+   target and 96 MiB per cell. After timed targets finish, a cached Loki
+   answer can be supplemented by one computed correctness read at the exact
+   original window, using an equivalent whitespace suffix. Full labels,
+   timestamps, values and supported error replies are compared separately;
+   this extra read never replaces Loki's measured timings or cache labels.
+   Missing or oversized evidence remains incomplete. Confirmation and refresh
+   keep independent receipts for their own first windows.
+   Metadata APIs that genuinely omit cache statistics retain their complete
+   measured API response as an observation with cache status unavailable,
+   never as a computed cache miss. Present cache statistics remain validated;
+   volume cache hits still require the separate computed reference. Existing
+   narrowly documented registry deviations remain visible; any other candidate
+   difference blocks, while a corrected candidate may differ from main.
 5. A shape the first pass calls slower or faster is measured again with 7
    runs on windows the first pass did not use, inside the set's block, so the
    proxies' exact-URL caches cannot answer them; only a move that holds is
