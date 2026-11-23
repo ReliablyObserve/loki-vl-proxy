@@ -206,7 +206,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/binary-ignoring-matching` — `+ ignoring(label)` between two sums joins the wrong series (fixed) | #741 | 2 | 9 |
 | `semantics/topk-grouped-spellings` — topk/bottomk with by()/without() rank k series per group at every step, in every spelling Loki accepts (fixed) | #736 | 1 | 8 |
 | `semantics/unwrap-sample-validity` — unwrap emits no sample for a missing label or a value that does not convert, and converts like Loki (fixed) | #680 | 2 | 4 |
-| `semantics/label-replace-around-ranking-and-vector` — label_replace around topk, bottomk, sort or sort_desc answers the ranked series relabelled, like Loki (fixed; vector() is semantics/label... | TBD-PR | 1 | 1 |
+| `semantics/label-replace-around-ranking-and-vector` — label_replace around topk, bottomk, sort or sort_desc answers the ranked series relabelled, like Loki (fixed; vector() is semantics/label... | #1726 | 1 | 1 |
 | `profiles/json-extraction-list-exposes-only-listed` — Extraction lists (`\| json msg="msg"`, `\| logfmt op`) expose only selected fields (fixed) | cf203629987b042cb2edb5022c77d6cf1a121c45 | 0 | 0 |
 | `profiles/keep-removes-derived-service-name` — `\| keep` removes service_name the proxy derived for a stream without one (fixed) | 90dc4542842eb4c03fea851b52bbda94dce08910 | 0 | 0 |
 | `profiles/keep-structured-metadata-key` — `\| keep` retains a mapped structured-metadata key (fixed) | #971 | 0 | 0 |
@@ -238,7 +238,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/json-extracted-metric-pushdown` — A metric filtered or grouped on a name_extracted label after `\| json` is answered from VictoriaLogs stats (fixed) | #690 | 0 | 0 |
 | `semantics/json-metric-detected-level-derivation` — sum by (detected_level) over a JSON pipeline follows the level Loki's ingest gave each line, by level key in document order, by keyword s... | #760 | 0 | 0 |
 | `semantics/json-parser-error-under-wrappers` — A JSON parser error fails a metric under any function, as in Loki (fixed; strict logfmt open) | TBD-PR | 0 | 0 |
-| `semantics/keep-before-unwrap-identity-in-operands` — Under label_replace, a keep before an unwrap decides the operand's series like Loki (fixed) | TBD-PR | 0 | 0 |
+| `semantics/keep-before-unwrap-identity-in-operands` — Under label_replace, a keep before an unwrap decides the operand's series like Loki (fixed) | #1726 | 0 | 0 |
 | `semantics/keep-before-unwrap-series-identity` — A keep before an unwrap decides the series of first, last, quantile, stddev, stdvar, avg, max, sum and rate_counter over time (fixed) | this change | 0 | 0 |
 | `semantics/keep-leaves-labels-loki-drops` — `\| keep` leaves labels Loki drops: a parsed key renamed name_extracted, the stream labels under a vector aggregation (fixed) | #1100 | 0 | 0 |
 | `semantics/label-filter-expression-syntax` — Comma-joined and parenthesized label-filter expressions are rejected (open) | #995 | 0 | 0 |

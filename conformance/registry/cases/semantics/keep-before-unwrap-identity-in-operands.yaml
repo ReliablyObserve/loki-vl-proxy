@@ -49,7 +49,7 @@ compare:
     Loki's series (the kept labels), relabelled.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1726"
   impact: explore-visible
   effort: M
   area: 'internal/queryplan/lower/unwrap.go KeepUnwrapIdentity (the root, one vector aggregation over it, under label_replace calls); internal/proxy/response_key_fences.go (keepUnwrapIdentityLabelReplaceResponseVersion)'

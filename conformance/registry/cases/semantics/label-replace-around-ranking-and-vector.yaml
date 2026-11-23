@@ -51,7 +51,7 @@ compare:
     The ranked series with svc_short added, as Loki answers.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1726"
   impact: explore-visible
   effort: M
   area: 'internal/proxy/metric_agg.go (rankingUnderLabelReplace, rankingRelabel, relabelEvaluated), internal/proxy/rank_binary_fence.go (labelReplaceRankingResponseVersion), internal/proxy/post_aggregation_physical.go (PostAggregationPhysical); internal/queryplan/lower/route_rank.go (routeEvaluated)'
