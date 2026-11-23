@@ -195,10 +195,15 @@ func ipFilterIn(query string, other bool) bool {
 	if !containsWord(query, "ip", other) {
 		return false
 	}
+	return ipOperatorIn(query) || ipLineAlternativeIn(query, other)
+}
+
+// ipOperatorIn is the operator screen: an ip( after = or a line filter operator.
+func ipOperatorIn(query string) bool {
 	for i := 0; ; i++ {
 		p := indexByteFrom(query, i, '=')
 		if p < 0 {
-			break
+			return false
 		}
 		i = p
 		j := skipLexerBlanks(query, p+1)
@@ -214,7 +219,6 @@ func ipFilterIn(query string, other bool) bool {
 			return true
 		}
 	}
-	return ipLineAlternativeIn(query, other)
 }
 
 // ipLineAlternativeIn extends the older operator screen to an ip() in an or

@@ -231,48 +231,9 @@ VictoriaLogs JSON unpacking does not produce Loki error labels. Filtering those 
 
 Aggregation can suppress parsing or retain error labels. A blanket syntax rejection or malformed-JSON preflight does not implement this contract. The original strict canary passed 24/24 Loki checks and only 5/24 proxy checks. The ordered evaluator now preserves error state, aggregation hints, drop/keep ordering, structured-metadata collisions and Loki string decoding for eligible count/rate/byte metrics. Subsequent canaries also check both window boundaries and the proven native-aggregation optimization.
 
-Eligibility includes supported bare or sum-wrapped JSON count/rate/byte pipelines and the ordered mixed-parser metric subset below. Unwrap, compound or numeric predicates and other unsupported forms retain their separate paths. Passing this coverage does not claim identical parser-error semantics for every pipeline.
+Eligibility is deliberately limited to supported bare or sum-wrapped JSON count/rate/byte pipelines. Explicit JSON extraction, mixed parsers, unwrap, compound or numeric predicates and non-sum wrappers retain their existing paths. Passing this coverage does not claim those paths have identical parser-error semantics.
 
 Sources: the answers of a live Loki to the canary checks, and [VictoriaLogs JSON unpacking](https://github.com/VictoriaMetrics/VictoriaLogs/blob/v1.50.0/lib/logstorage/pipe_unpack_json.go).
-
-### Ordered JSON and logfmt metrics
-
-Supported grouped `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate`
-metrics retain both bare parser stages in their written order. The explicit
-JSON subset is one top-level key extracted under its own name, followed by
-logfmt, an unconditional drop of both error labels, and that key's nonempty
-filter. Supported bare ranges ending in `keep` retain their original hints:
-rewriting them to a written grouped sum can change which parser error survives.
-The existing vector evaluator handles eligible outer aggregations, ranking
-and transforms without discarding an inner error.
-
-`TestOrderedMixedParserRecordedMetrics` compares pinned Loki replies, including
-complete error diagnostics and label order for ordinary instant vectors and
-range matrices. Instant ranks retain value ordering with unordered ties.
-The error fixtures cover ingest levels derived only from the message, their
-collision suffixes and preceding keep/drop decisions when VictoriaLogs has no
-stored level. `TestReprintedQueryTranslatesLikeTheOriginal` also checks the
-owned rank requests before and after AST printing through both HTTP handlers,
-using recorded engine answers. The existing
-`TestRangeMetricCompatibilityDrilldownFieldBreakdown` covers mixed lines through
-the native Drilldown request profile and compares full body-derived-level errors
-with live Loki on both endpoints. The typed query matrix and registry item
-`semantics/two-parsers-keep-one` list the supported forms and remaining gaps.
-
-Mixed pipelines use the existing bounded row evaluator unless a guarded
-stored-level count/rate plan proves that parsing cannot affect its result, or
-the typed single-key count/rate class can partition native counts from an exact
-raw complement. The latter requires a known VictoriaLogs release at least
-v1.49.0, supported source-label mapping, a categorical target and a range at
-least as wide as the step. Its native buckets reuse the existing VL extent
-cache across both parser orders; raw rows preserve original fields before any
-scratch transformation. Original request bounds and step phase remain part of
-the evaluation. The actual VL 1.49/1.54 tests compare both paths with recorded
-Loki across windows, phases, source collisions and unsafe value types.
-The raw correctness path can read more bytes than a native aggregate. Exact
-responses and eligible same-phase settled points retain their existing reuse;
-this does not claim cross-field raw-input caching. Log replies, malformed
-strict logfmt and unsupported extraction or pipeline forms remain open.
 
 ## Resource and operational findings
 
