@@ -43,3 +43,5 @@ gap:
   planned_test: 'TestCompat_TwoParsersOnMixedFormats (test/e2e-compat, group semantics)'
   clusters:
     - 3de57bdc
+    - '197df8a8'
+    - 'd16e557c'

@@ -1,0 +1,69 @@
+id: semantics/set-union-parserless-unwrap-average-values
+title: Set union with parserless unwrap and a count average returns different values (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Set union of parserless sum_over_time(unwrap c,[5m]) and avg by(a,b)(count_over_time[1m]) yields different values for the shared empty-label result. Preserve both operand answers and OR left precedence; do not assert the unwrap or union alone is the cause.
+
+  The exact implementation cause remains unknown. Existing fixed cases
+  and owner-kept identity policies are related controls, not evidence
+  that these combinations are correct or that their differences are allowed.
+
+  Recorded in conformance/registry/generated/parity-discovery.json at
+  ref 4a63b99e, recorded 2026-11-21T14:20:35Z, over
+  [1795265520, 1795269120]. The actual representative request below
+  retains its original bounds and categorize-labels encoding.
+  The scope contains 2 clusters and 4 confirmed
+  request records. Complete query examples and comparison facets remain
+  in that snapshot, indexed by gap.clusters; counts are observed request
+  counts, not passing coverage or newly added fixtures.
+
+  Representative recorded facet: {} @1795267140.0: loki 3.8583959899749374 proxy 18.327380952380953
+
+  The full response bodies and source-row identity trace are not present
+  in the discovery snapshot. Preserve that proof gap until replay or the
+  original response evidence establishes the complete contract.
+  Original requests/facets: GitHub Actions run 44910591975,
+  parity-refresh artifact 14714026577:
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: sum_over_time({namespace="prod"} | unwrap c [5m]) or avg by (a, b) (count_over_time({namespace="prod"}[1m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: Original dual-written parity-refresh rows and source profile are available at these recorded bounds.
+    Empty results on a different window are not a proof.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired namespace=prod rows and physical c/a/b fields at 1795265520..1795269120 are required to reproduce parserless unwrap and the grouped-average set union; the verifier does not reconstruct that historical source profile."
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - values
+  values:
+    status: 200
+  expect: Loki's series and values for every recorded function/stage/order facet on the same source data and evaluation
+    grid. A matching status or one matching sample does not close this scope.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing typed AST/planner evaluation; exact cause requires full source/result evidence
+  loki: HTTP 200 with the recorded values or timestamped points on the original source rows.
+  proxy: HTTP 200 with the recorded difference; no implementation fix or coverage closure is claimed.
+  planned_test: Expand existing registry-driven Loki/VictoriaLogs and API/Grafana comparisons for the recorded query
+    facets; retain complete answers and evaluation-grid evidence.
+  clusters:
+    - c601dc87
+    - 62312da1

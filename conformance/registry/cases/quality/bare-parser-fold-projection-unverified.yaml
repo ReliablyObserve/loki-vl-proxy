@@ -1,0 +1,124 @@
+id: quality/bare-parser-fold-projection-unverified
+title: Bare-parser metric folds lack a source-controlled identity-projection proof (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Outer min/max/avg/count by level over JSON/logfmt count/rate/byte functions differ with optional line/status/level filters and without identity-transforming format/drop/keep stages. Existing owner-kept parser identity may explain some rows, but no sample-source proof establishes that; all rows remain OPEN exact-output contracts.
+
+  This is evidence debt against the existing identity policy, not a new
+  identity policy, waiver, or accepted difference. The raw Loki/proxy
+  numeric discrepancy does not establish whether the permitted projection
+  explains the result. Do not project the final aggregate and call it equal.
+
+  Required proof: obtain the identical source rows, with their original
+  stream labels, structured metadata, parsed keys and timestamps. Apply
+  only the already permitted identity projection to those source rows
+  BEFORE the range function, time-window selection and vector aggregation.
+  Then execute the same function/window/fold on both projected inputs.
+  Record the full and projected identities, counts and values. Any
+  remaining difference remains a product defect; no new axis is waived.
+
+  Recorded in conformance/registry/generated/parity-discovery.json at
+  ref 4a63b99e, recorded 2026-11-21T14:20:35Z, over
+  [1795265520, 1795269120]. The actual representative request below
+  retains its original bounds and categorize-labels encoding.
+  The scope contains 47 clusters and 94 confirmed
+  request records. Complete query examples and comparison facets remain
+  in that snapshot, indexed by gap.clusters; counts are observed request
+  counts, not passing coverage or newly added fixtures.
+
+  Representative recorded facet: {"level": "info"} @1795267140.0: loki 0.003333333333333333 proxy 0.15888888888888889
+
+  The full response bodies and source-row identity trace are not present
+  in the discovery snapshot. Preserve that proof gap until replay or the
+  original response evidence establishes the complete contract.
+  Original requests/facets: GitHub Actions run 44910591975,
+  parity-refresh artifact 14714026577:
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: avg by (level) (rate({service_name="payment-service"} | logfmt [5m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: Original dual-written parity-refresh rows and source profile are available at these recorded bounds.
+    Empty results on a different window are not a proof.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired payment-service rows and stream/parser label identities at 1795265520..1795269120 are required to verify projection before logfmt, rate and avg; the verifier does not reconstruct that historical source."
+compare:
+  mode: observed
+  fields:
+    - status
+    - series
+    - values
+  values:
+    status: 200
+  expect: Prove the output using the existing permitted projection of identical source rows before the range function,
+    time window and vector aggregation; preserve the raw observed difference. This is not permission for a new projection
+    or a waiver.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Source-controlled identity projection proof and existing typed AST/planner evaluation
+  loki: HTTP 200 with the recorded values or timestamped points on the original source rows.
+  proxy: HTTP 200 with the recorded difference; no implementation fix or coverage closure is claimed.
+  planned_test: Expand the existing registry-driven Loki/VictoriaLogs replay using identical source-row projections
+    before functions/windows/aggregations; retain full raw and projected comparisons.
+  clusters:
+    - 7940bebc
+    - 81b148b4
+    - 8dd281eb
+    - af7ff82e
+    - 44d836c7
+    - cac50550
+    - 81eb70c9
+    - bf10107e
+    - 251a0dcb
+    - 4ed255bb
+    - 563aad54
+    - 1b9477a1
+    - 6bf713e7
+    - d95eefdd
+    - 3f825e44
+    - 54951ad3
+    - 0033ff9d
+    - e0fd8813
+    - ddd9254f
+    - 41baccf2
+    - 11eac011
+    - d01532bd
+    - 691449d0
+    - 2c7205ea
+    - f82d9436
+    - 6704a4d3
+    - 5b487b5c
+    - 60852a03
+    - 1bcf3eda
+    - ef4ee698
+    - 371f97b3
+    - 3519d0db
+    - 6f95ffe9
+    - 3e1a8583
+    - fe69fff9
+    - 9319a2e9
+    - eb62a7ba
+    - da47faac
+    - 05f34fec
+    - 37ae7e6f
+    - fac0c9b6
+    - 34332a6e
+    - d1e155d4
+    - 7c35cef5
+    - 3d97d5d7
+    - 51e71d57
+    - ea5c58ab

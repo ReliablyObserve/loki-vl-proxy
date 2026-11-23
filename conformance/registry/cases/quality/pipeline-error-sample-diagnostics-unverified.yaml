@@ -1,0 +1,55 @@
+id: quality/pipeline-error-sample-diagnostics-unverified
+title: Full failing-sample diagnostics under ranking and vector folds remain unverified
+pending: true
+evidence: needs recording
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |-
+  These seven exact instant/range observations all return HTTP 400 on both sides, but the error-text facets differ. JSONParserErr appears under topk/sort; SampleExtractionErr appears under a grouped max of max_over_time. The excerpts cannot establish whether only the selected failing row differs or whether labels, categories or conversion details were lost. Loki can select another failing sample across shards; this alone cannot authorize accepting an arbitrary error. Closure requires complete DTOs and an independently recorded set of permissible failing samples on identical rows, with exact error kind, detail and label provenance. The existing documented failing-row selection behavior is not expanded.
+
+  Observed in conformance/registry/generated/parity-discovery.json at ref 4a63b99e, recorded 2026-11-21T14:20:35Z, window 1795265520..1795269120. Original request parameters and facets are retained by GitHub Actions run 44910591975, artifact 14714026577: https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975/artifacts/14714026577. The discovery snapshot and gap.clusters retain the exact query membership. Complete response-body goldens were not retained. This is an open proof obligation, not a fix, an extension of a default identity policy or a waiver for additional queries.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    end: '1795269120'
+    query: topk(3, rate({cluster="us-east-1"} | json [5m]))
+    start: '1795265520'
+    step: '60'
+  headers:
+    X-Scope-OrgID: '0'
+    X-Loki-Response-Encoding-Flags: categorize-labels
+  precondition: The original paired source rows and profile at the recorded bounds. An empty historical response
+    is not a successful reproduction.
+  verify:
+    blocked_by: fixture
+    reason: "The original paired cluster=us-east-1 rows, malformed JSON samples and label categories at 1795265520..1795269120 are required to validate complete failing-sample diagnostics; the verifier does not restore those historical inputs."
+compare:
+  mode: observed
+  fields:
+    - status
+    - errorType
+    - error_text
+  values:
+    status: 400
+  expect: HTTP 400 with Loki-compatible complete diagnostics for an independently proven failing sample; truncated
+    excerpts do not prove equivalence.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: Existing source-controlled Loki comparison and registry-driven query execution
+  loki: The exact recorded request contract; full diagnostic or result evidence remains required
+  proxy: The linked recorded facets differ; the observations are not declared equivalent
+  planned_test: Extend the existing typed query matrix, recorded Loki oracle and bench/parity comparison for these
+    exact source-controlled facets; no separate catalog.
+  clusters:
+    - 23d7dfae
+    - 7fc3e71e
+    - 8645a4a2
+    - 88232a18
+    - a84865e8
+    - d02d4633
+    - d86f9503

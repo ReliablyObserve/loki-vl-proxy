@@ -39,4 +39,6 @@ gap:
   loki: 'the listed label stays in the series with an empty value'
   proxy: 'the label is left out'
   planned_test: 'TestExtractionListIdentityMatchLoki (internal/querycorpus) lists the runs in extractionListKnownRuns'
-  clusters: []
+  clusters:
+    - "73c865b3"
+    - "8b9db0e8"

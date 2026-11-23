@@ -45,4 +45,5 @@ gap:
   planned_test: 'the VictoriaLogs oracle typed-selector check (internal/querycorpus, known-typed-divergences.json); an e2e row against Loki when the plan serves pattern stages'
   visual: none
   visual_reason: 'a crafted pattern; no Grafana panel sends it'
-  clusters: []
+  clusters:
+    - "04cce19e"

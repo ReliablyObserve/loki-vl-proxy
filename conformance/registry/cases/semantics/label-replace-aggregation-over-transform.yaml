@@ -38,4 +38,5 @@ gap:
   loki: 'a vector aggregation groups what label_replace yields'
   proxy: '400 from the proxy (instant) or from VictoriaLogs (range): the aggregation is not evaluated over the transformed series'
   planned_test: 'TestCompat_AggregationOverLabelReplace (test/e2e-compat, group semantics)'
-  clusters: []
+  clusters:
+    - "de40f093"
