@@ -3,6 +3,7 @@ package proxy
 import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // rankOverBinaryResponseVersion fences the query_range answers cached before a ranking, stddev or stdvar whose operand
@@ -20,17 +21,47 @@ const rankOverBinaryResponseVersion = "@rank-over-binary-v1:"
 // chain's scans read one, in every spelling the parser reads (topk, bottomk, sort and sort_desc are read by the
 // per-stream series scan, streamLevelSeriesScan; stddev and stdvar are words of scanFenceWords). The query's shared plan
 // decides.
+//
+// The same plan read fences a label_replace around a ranking (labelReplaceRankingResponseVersion).
 func rankOverBinaryResponseKeyVersion(query string, ranked bool) string {
 	if !ranked {
 		return ""
 	}
-	if plan := resolvedPlan(fenceVariablesResolved(query)); plan != nil && rankOverBinary(plan.Root) {
-		if rankOverBinaryLabelReplace(plan.Root) {
-			return rankOverBinaryResponseVersion + rankOverBinaryLabelReplaceResponseVersion
-		}
+	plan := resolvedPlan(fenceVariablesResolved(query))
+	if plan == nil {
+		return ""
+	}
+	// Constants only, so no fence is built at run time.
+	binary := rankOverBinary(plan.Root)
+	binaryLR := binary && rankOverBinaryLabelReplace(plan.Root)
+	switch relabelled := labelReplaceAroundRanking(plan.Root); {
+	case binaryLR && relabelled:
+		return rankOverBinaryResponseVersion + rankOverBinaryLabelReplaceResponseVersion + labelReplaceRankingResponseVersion
+	case binaryLR:
+		return rankOverBinaryResponseVersion + rankOverBinaryLabelReplaceResponseVersion
+	case binary && relabelled:
+		return rankOverBinaryResponseVersion + labelReplaceRankingResponseVersion
+	case binary:
 		return rankOverBinaryResponseVersion
+	case relabelled:
+		return labelReplaceRankingResponseVersion
 	}
 	return ""
+}
+
+// labelReplaceRankingResponseVersion fences the query_range answers cached before label_replace calls around a
+// ranking were evaluated as the ranking (semantics/label-replace-around-ranking-and-vector): the range handler sent the
+// string translator's text for the whole query, a phrase VictoriaLogs finds in no line, and answered an empty streams
+// answer. An instant answer was a 400, which is never cached.
+const labelReplaceRankingResponseVersion = "@label-replace-ranking-v1:"
+
+// labelReplaceAroundRanking reports label_replace calls at the root of n around a ranking the route evaluates as one
+// (parseRankingUnderLabelReplace: a chain of rankings and the aggregations above them, with no stddev or stdvar).
+func labelReplaceAroundRanking(n queryplan.Node) bool {
+	if _, ok := n.(*queryplan.LabelReplace); !ok {
+		return false
+	}
+	return rankingChain(lower.LabelReplaceOperand(n))
 }
 
 // rankOverBinaryLabelReplaceResponseVersion fences the answers cached before a label_replace inside the binary operand

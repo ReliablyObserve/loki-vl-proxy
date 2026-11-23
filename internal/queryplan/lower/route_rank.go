@@ -67,8 +67,9 @@ func LabelReplaces(n queryplan.Node) ([]physical.LabelReplace, queryplan.Node) {
 }
 
 // routeEvaluated is the route of a plan whose root is a ranking or a label_replace: the route of the operand, its
-// delegation named "<kind> operand <the operand's>". A label_replace around a ranking is read by the handlers as
-// another kind of query (LabelReplace route ranking operand).
+// delegation named "<kind> operand <the operand's>". A label_replace around a ranking is routed as the ranking (the
+// handlers apply the calls to its answer); one around a ranking nested with a stddev or stdvar is read by the
+// handlers as another kind of query (LabelReplace route ranking operand).
 func routeEvaluated(p *queryplan.Plan, prof Profile, req RouteRequest) (QueryRoute, error) {
 	var kind string
 	var operand queryplan.Node
@@ -79,8 +80,11 @@ func routeEvaluated(p *queryplan.Plan, prof Profile, req RouteRequest) (QueryRou
 		rank, operand = RankedOperand(v)
 	case *queryplan.LabelReplace:
 		kind, operand = "LabelReplace", LabelReplaceOperand(v)
-		if _, ok := operand.(*queryplan.Rank); ok {
-			return QueryRoute{}, routeError(kind, "ranking operand")
+		if r, ok := operand.(*queryplan.Rank); ok {
+			if chainHoldsSeriesAgg(r) {
+				return QueryRoute{}, routeError(kind, "ranking operand")
+			}
+			rank, operand = RankedOperand(r)
 		}
 	}
 	sub := *p
@@ -111,6 +115,24 @@ func routeEvaluated(p *queryplan.Plan, prof Profile, req RouteRequest) (QueryRou
 		}
 	}
 	return out, nil
+}
+
+// chainHoldsSeriesAgg reports a stddev or stdvar in the chain of rankings and vector aggregations at n.
+func chainHoldsSeriesAgg(n queryplan.Node) bool {
+	for {
+		switch v := n.(type) {
+		case *queryplan.Rank:
+			n = v.In
+			continue
+		case *queryplan.VectorAgg:
+			if v.Op == logql.VectorStddev || v.Op == logql.VectorStdvar {
+				return true
+			}
+			n = v.In
+			continue
+		}
+		return false
+	}
 }
 
 // ranksEveryStep reports whether the handlers rank every series of each step of the operand route r of a topk or

@@ -32,6 +32,7 @@ func BenchmarkResponseKeyFences(b *testing.B) {
 		{"topk_binary", `topk(3, sum by (x) (rate({app="a"}[5m])) / sum by (x) (rate({app="b"}[5m])))`},
 		{"sort_plain", `sort_desc(sum by (x) (rate({app="a"}[5m])))`},
 		{"replace_ref", `label_replace(sum by (x) (rate({app="a"}[5m])), "p", "x-$1", "p", "(.*)")`},
+		{"replace_ranking", `label_replace(topk(2, sum by (x) (rate({app="a"}[5m]))), "p", "x-$1", "x", "(.*)")`},
 		{"topk_replace_variable", `topk(3, label_replace(rate({app="a"}[$__interval]), "p", "x-$1", "p", "(.*)") * 2)`},
 		{"unwrap_replace_variable", `label_replace(sum by (x) (avg_over_time({app="a"} | json | unwrap n [$__range])), "p", "x-$1", "p", "(.*)")`},
 		{"dashboard", `sum by (namespace, pod) (rate({cluster="prod", namespace=~"team-.+", app!="noisy"} |= "level=error" != "healthcheck" | logfmt | status >= 500 | line_format "{{.method}} {{.path}}" [$__rate_interval])) / sum by (namespace, pod) (rate({cluster="prod", namespace=~"team-.+", app!="noisy"} [$__rate_interval]))`},
