@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.359.0] - 2026-11-23
+
 ### Fixed
 
 - A line filter that ends in an `ip(...)` alternative, such as `|= "a" or ip("10.0.0.1")`, now carries the same cache-key fence as every other `ip(...)` filter. Before, the fence screen read only `|= ip(...)`, `!= ip(...)` and label comparisons, so an answer cached under the older key could be replayed for a query whose `ip(...)` alternative is read differently. Only queries with an `ip(...)` in an `or` alternative get a new key; every other key is unchanged, and the screen skips quoted text and comments and keeps only the alternatives the parser keeps.
