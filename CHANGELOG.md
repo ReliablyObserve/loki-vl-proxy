@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A request to the live tail endpoint that is not a WebSocket upgrade is answered `426 Upgrade Required` (`text/plain`, body `Upgrade Required`) as Loki answers it, where it was `400 Bad Request`. The newer `gorilla/websocket` commit reports the missing upgrade with that status; the recorded Loki 3.7.9 error answer for this request now matches, so its row leaves the known-differences list (ceiling 7 to 6).
+
+## [2.359.0] - 2026-11-23
+
+### Fixed
+
 - A line filter that ends in an `ip(...)` alternative, such as `|= "a" or ip("10.0.0.1")`, now carries the same cache-key fence as every other `ip(...)` filter. Before, the fence screen read only `|= ip(...)`, `!= ip(...)` and label comparisons, so an answer cached under the older key could be replayed for a query whose `ip(...)` alternative is read differently. Only queries with an `ip(...)` in an `or` alternative get a new key; every other key is unchanged, and the screen skips quoted text and comments and keeps only the alternatives the parser keeps.
 - The compose-file check no longer treats a registry case file with `compose` at the start of its name (such as `composed-parser-...yaml`) as a Compose file, so a case with that spelling no longer fails `lint`.
 

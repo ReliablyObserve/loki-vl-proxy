@@ -13,9 +13,9 @@ The answers are those of Grafana Loki 3.7.10, recorded over HTTP on 2026-11-18. 
 
 | Score | Value | Meaning |
 |---|---|---|
-| Errors that match Loki | 97.2% (241/248) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
+| Errors that match Loki | 97.6% (242/248) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 58.9% (73/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
-| Cells that match | 101/124 | cells where every comparable row matches and no known leak remains |
+| Cells that match | 102/124 | cells where every comparable row matches and no known leak remains |
 | Messages recorded | 36/48 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
 141 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
@@ -42,7 +42,7 @@ Each cell shows whether the proxy matches (`match` or `differs`), the matching a
 | `rules` |  |  |  | match gate U | match gate U | gap | gap | match gate U |
 | `series` | match 2/2 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | match 5/5 UE | not comparable (6) | match gate U |
 | `tail` | match 4/4 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
-| `tail_upgrade` | match 4/4 UE | match 2/2 UE | gap |  |  | differs 1/2 UE | not comparable (2) |  |
+| `tail_upgrade` | match 4/4 UE | match 2/2 UE | gap |  |  | match 2/2 UE | not comparable (2) |  |
 | other routes (rules views, push, delete, shards, exemplars, aliases) |  |  |  |  |  | differs 6/11 UE |  |  |
 | unknown paths |  |  |  |  |  | match 23/23 UE |  |  |
 
@@ -122,7 +122,7 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `unmapped-push-snappy-corrupt` | 400 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `unmapped-ruler-local-store` | 400 | unmapped | 4 | - | recorded-not-comparable | - | - |
 | `unmapped-shard-aggregations-disabled` | 500 | unmapped | 1 | - | recorded-not-comparable | - | - |
-| `unmapped-upgrade-required` | 426 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `unmapped-upgrade-required` | 426 | unmapped | 1 | 1/1 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-url-escape` | 400 | form | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-url-semicolon` | 400 | form | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-write-not-supported` | 405 | route | 0 | - | documented | TestLokiPushRoute | - |
