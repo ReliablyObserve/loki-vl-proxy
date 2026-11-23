@@ -1,8 +1,8 @@
 {
-  "commit": "5b5c7965fc",
+  "commit": "895c23078f",
   "count": 5,
   "cpu": "AMD EPYC 7763 64-Core Processor",
-  "date": "2026-11-16",
+  "date": "2026-11-23",
   "go": "go1.27.4",
   "goarch": "amd64",
   "gomaxprocs": "4",
@@ -10,31 +10,31 @@
     {
       "allocs": 16,
       "benchmark": "BenchmarkTranslateLogQL_Simple",
-      "ns": 6129.0,
+      "ns": 6061.0,
       "runs": 5
     },
     {
       "allocs": 60,
       "benchmark": "BenchmarkTranslate_Rate",
-      "ns": 14546.0,
+      "ns": 14604.0,
       "runs": 5
     },
     {
       "allocs": 52,
       "benchmark": "BenchmarkTranslate_SumRate",
-      "ns": 13933.0,
+      "ns": 13866.0,
       "runs": 5
     },
     {
       "allocs": 28,
       "benchmark": "BenchmarkTranslate_IPFilter",
-      "ns": 10080.0,
+      "ns": 9995.0,
       "runs": 5
     },
     {
       "allocs": 95,
       "benchmark": "BenchmarkTranslate_BinaryRateDiv",
-      "ns": 30930.0,
+      "ns": 31256.0,
       "runs": 5
     }
   ]
