@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 func TestOrderedJSONMetricPipelineState(t *testing.T) {
@@ -611,5 +613,41 @@ func TestLokiPipelineErrorTypePreservesRetainedSourceValue(t *testing.T) {
 	msg := lokiPipelineError(map[string]string{"__error__": "JSONParserErr", "app": "a'b"}).Error()
 	if !strings.HasPrefix(msg, `pipeline error: 'JSONParserErr' for series: '{__error__="JSONParserErr", app="a'b"}'.`) {
 		t.Fatalf("unexpected message: %s", msg)
+	}
+
+	// These cases prove the diagnostic's HTTP transport boundaries. They do
+	// not establish Loki compatibility for hostile source error values.
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.NewDisabled(), LogLevel: "error", MetadataInventoryParallelism: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	for _, tc := range []struct {
+		name, source string
+	}{
+		{"quotes-and-backslash", "x'y\"z\\end"},
+		{"header-looking-newlines", "source\r\nX-Injected: yes\r\n\r\nbody"},
+		{"html", `<script>alert("source")</script>`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pipelineErr := lokiPipelineError(map[string]string{"__error__": tc.source, "app": tc.source})
+			rec := httptest.NewRecorder()
+			status := p.writeErr(rec, context.Background(), pipelineErr)
+			if status != http.StatusBadRequest || rec.Code != http.StatusBadRequest {
+				t.Fatalf("pipeline error status=%d, HTTP status=%d", status, rec.Code)
+			}
+			if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+				t.Fatalf("Content-Type=%q", got)
+			}
+			if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("X-Content-Type-Options=%q", got)
+			}
+			if _, present := rec.Header()[http.CanonicalHeaderKey("X-Injected")]; present {
+				t.Fatal("source error escaped the body into an HTTP header")
+			}
+			if got, want := rec.Body.String(), pipelineErr.Error(); got != want {
+				t.Fatalf("diagnostic body changed: got %q, want %q", got, want)
+			}
+		})
 	}
 }

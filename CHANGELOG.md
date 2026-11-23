@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Certified single-field mixed metrics retry disjoint raw time spans when a compressed VictoriaLogs body exceeds its decoded size cap. A cut JSON row retains the transport error instead of reporting malformed source data. Incomplete attempts never seed the point cache and all attempted rows and bytes remain charged to the original request budgets. Small complete long-range responses still need one raw read; cumulative request limits remain in force.
 - Numeric-equality response keys recognize comments between an operator and its numeric, duration or byte literal without losing older keys or repeatedly scanning the same comment. The empty-without key fence also checks a macro-expanded selector's validation before accepting its plan; already-expanded Grafana queries retain the existing validation path.
 
+### Security
+
+- Reviewed CodeQL `go/unsafe-quoting` alerts 705–707 on Loki pipeline diagnostics. The formatted text is an HTTP error body, never an executable query; the writer fixes `text/plain; charset=utf-8` and `nosniff` headers before writing it. Retain Loki-compatible quoting and cover hostile quote, header-looking and HTML values in the existing error-writer regression.
+
 ## [2.358.0] - 2026-11-22
 
 ### Fixed

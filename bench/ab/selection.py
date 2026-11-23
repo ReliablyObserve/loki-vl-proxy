@@ -115,13 +115,13 @@ def read(path):
         return f.read()
 
 
-def read_at(ref, path):
+def read_at(ref, path, root=None):
     """Read a repository file at its own revision; only an absent file is optional."""
-    listed = subprocess.run(["git", "ls-tree", "--name-only", ref, "--", path], cwd=ROOT,
+    listed = subprocess.run(["git", "ls-tree", "--name-only", ref, "--", path], cwd=root or ROOT,
                             capture_output=True, text=True, check=True).stdout
     if not listed.strip():
         return None
-    return subprocess.run(["git", "show", f"{ref}:{path}"], cwd=ROOT,
+    return subprocess.run(["git", "show", f"{ref}:{path}"], cwd=root or ROOT,
                           capture_output=True, text=True, check=True).stdout
 
 
@@ -132,7 +132,7 @@ def resolve_case_queries(entries, root=None, ref=None):
         return
     matrix_path = "test/e2e-compat/query-semantics-matrix.json"
     if ref:
-        text = read_at(ref, matrix_path)
+        text = read_at(ref, matrix_path, root=root) if root is not None else read_at(ref, matrix_path)
         if text is None:
             raise ValueError(f"{ref}: referenced typed matrix is missing")
         matrix = json.loads(text)

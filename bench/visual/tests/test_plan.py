@@ -1,4 +1,5 @@
 """Unit tests for bench/visual/plan.py (python3 -m unittest discover -s bench/visual/tests)."""
+import json
 import os
 import subprocess
 import sys
@@ -359,6 +360,98 @@ class ChangedCasesTest(unittest.TestCase):
 
     def changed(self):
         return sorted(plan.changed_cases("main", "HEAD", root=self.repo))
+
+    def scene(self, query='{app="a"}', fixes=None):
+        path = os.path.join(self.repo, "bench/visual/spec.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            json.dump({"pages": [{"id": "proof", "kind": "explore", "query": query,
+                                 "fixes": fixes if fixes is not None else ["a/open-one"]}]}, handle)
+
+    def inherit_scene(self):
+        self.scene()
+        self.commit("existing scene")
+        git(self.repo, "branch", "-f", "main", "HEAD")
+
+    def test_inherited_fix_claim_ignores_only_why_and_cluster_ownership(self):
+        self.inherit_scene()
+        self.write("a/open-one", "open", extra="  clusters:\n    - abcdef01\n")
+        with open(self.path("a/open-one")) as handle:
+            text = handle.read()
+        with open(self.path("a/open-one"), "w") as handle:
+            handle.write("why: |\n  Historical ownership evidence only.\n" + text)
+        self.commit("ownership metadata")
+        self.assertEqual(self.changed(), [])
+
+    def test_existing_fix_claim_still_requires_changed_contract_proof(self):
+        self.inherit_scene()
+        for field in ("request", "compare", "pending", "corpus"):
+            with self.subTest(field=field):
+                self.write("a/open-one", "open")
+                with open(self.path("a/open-one"), "a") as handle:
+                    handle.write(f"{field}: changed\n")
+                self.commit(field)
+                self.assertEqual(self.changed(), ["a/open-one"])
+
+    def test_new_fix_edge_requires_proof_without_case_yaml_change(self):
+        self.scene(fixes=[])
+        self.commit("unclaimed scene")
+        git(self.repo, "branch", "-f", "main", "HEAD")
+        self.scene()
+        self.commit("claim partial fix")
+        self.assertEqual(self.changed(), ["a/open-one"])
+
+    def test_changed_existing_fix_scene_requires_proof_without_case_yaml_change(self):
+        self.inherit_scene()
+        self.scene(query='{app="b"}')
+        self.commit("different captured query")
+        self.assertEqual(self.changed(), ["a/open-one"])
+
+    def test_covers_only_scene_edit_does_not_claim_new_fix(self):
+        self.inherit_scene()
+        path = os.path.join(self.repo, "bench/visual/spec.json")
+        with open(path) as handle:
+            spec = json.load(handle)
+        spec["pages"][0]["covers"] = ["another-item"]
+        with open(path, "w") as handle:
+            json.dump(spec, handle)
+        self.commit("link another control")
+        self.assertEqual(self.changed(), [])
+
+    def test_metadata_only_case_remains_a_source_selected_regression_control(self):
+        self.inherit_scene()
+        self.write("a/open-one", "open", extra="  clusters: [abcdef01]\n")
+        self.commit("historical ownership")
+        self.assertEqual(self.changed(), [])
+        result = plan.plan(["internal/proxy/case_only.go"], spec=SPEC, items=ITEMS,
+                           cases=self.changed(), case_gaps=GAPS)
+        self.assertIn("fix-page", result["entries"])
+        self.assertNotIn("fixes", result["entries"]["fix-page"])
+        self.assertEqual(result["entries"]["fix-page"]["why"], ["internal/proxy/case_only.go"])
+
+    def test_inherited_fix_scene_resolves_typed_queries_at_each_ref(self):
+        self.inherit_scene()
+        scene = os.path.join(self.repo, "bench/visual/spec.json")
+        matrix = os.path.join(self.repo, "test/e2e-compat/query-semantics-matrix.json")
+        os.makedirs(os.path.dirname(matrix), exist_ok=True)
+        with open(scene, "w") as handle:
+            json.dump({"pages": [{"id": "proof", "kind": "explore", "case_id": "typed",
+                                 "fixes": ["a/open-one"]}]}, handle)
+        case = {"id": "typed", "endpoint": "query_range", "expectation": "success", "query": '{app="a"}'}
+        with open(matrix, "w") as handle:
+            json.dump({"cases": [case]}, handle)
+        self.commit("typed proof")
+        git(self.repo, "branch", "-f", "main", "HEAD")
+        case["query"] = '{app="b"}'
+        with open(matrix, "w") as handle:
+            json.dump({"cases": [case]}, handle)
+        self.commit("typed query changed")
+        self.assertEqual(self.changed(), ["a/open-one"])
+        with open(matrix, "w") as handle:
+            json.dump({"cases": []}, handle)
+        self.commit("invalid reference")
+        with self.assertRaises(ValueError):
+            self.changed()
 
     def test_new_case_and_open_to_fixed_trigger(self):
         self.write("a/new-one", "open")
