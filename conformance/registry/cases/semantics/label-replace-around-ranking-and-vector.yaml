@@ -60,3 +60,11 @@ gap:
   planned_test: 'TestLabelReplaceAroundRankingMatchesLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestCompat_LabelReplaceAroundRanking (test/e2e-compat, group core); TestRouteQueryOfARankingOrLabelReplace (internal/queryplan/lower); TestLabelReplaceAroundRankingRoute (internal/proxy)'
   clusters:
     - 616dee70
+
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

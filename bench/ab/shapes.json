@@ -2808,6 +2808,23 @@
       "loki_api_v1_query"
      ],
      "instant": true
+    },
+    {
+     "name": "L9 label_replace around topk over sum by rate",
+     "query": "label_replace(topk(3, sum by (service_name) (rate({env=\"production\"}[5m]))), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-around-ranking-and-vector",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "L10 label_replace around topk over sum by rate, instant",
+     "query": "label_replace(topk(3, sum by (service_name) (rate({env=\"production\"}[5m]))), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-around-ranking-and-vector",
+      "loki_api_v1_query"
+     ],
+     "instant": true
     }
    ]
   },
