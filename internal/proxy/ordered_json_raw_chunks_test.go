@@ -264,6 +264,10 @@ func TestOrderedMixedStatsCompressedBodyCapFallsBackToCompleteRaw(t *testing.T) 
 						t.Error("bounded stats failure did not return to the original raw route")
 					}
 					body = fmt.Sprintf(`{"_time":%q,"_stream":"{app=\"api\"}","_msg":"{\"k\":\"body\"}"}`+"\n", at.Format(time.RFC3339Nano))
+				case "/select/logsql/field_names":
+					// The field-name certificate is not under test here; without a listing the full class runs.
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
 				default:
 					t.Errorf("unexpected backend path %s", r.URL.Path)
 					w.WriteHeader(http.StatusInternalServerError)

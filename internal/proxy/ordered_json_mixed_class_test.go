@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -583,6 +584,110 @@ func TestMixedJSONRowClassGuardsAreInCostOrder(t *testing.T) {
 		// Nothing was dropped: the fixed guards plus one nested-prefix guard per underscore span.
 		if want := 21 + strings.Count(label, "_"); len(guards) != want {
 			t.Fatalf("%s: %d guards, want %d", label, len(guards), want)
+		}
+	}
+}
+
+// The certified class drops the packed envelope from the native count and keeps it for the exact complement, and
+// its arithmetic keeps the packed envelope under the class's own bound for the widest field set it accepts.
+// conformance: semantics/two-parsers-keep-one
+func TestMixedJSONRowClassCertifiedStructureAndBound(t *testing.T) {
+	class, _ := newMixedJSONRowClass("user_id")
+	names := []string{"_msg", "_stream", "_stream_id", "_time", "app", "env"}
+	cert, ok := class.certified(names)
+	if !ok {
+		t.Fatal("clean names refused")
+	}
+	for _, pipe := range cert.nativePipes() {
+		if _, packed := pipe.(logsql.PipePackJSON); packed {
+			t.Fatal("the certified native count packs the envelope")
+		}
+	}
+	if _, packed := cert.rawPipes()[0].(logsql.PipePackJSON); !packed {
+		t.Fatal("the exact complement lost the packed original envelope")
+	}
+	if strings.Contains(cert.safe.String(), mixedClassOriginalField) {
+		t.Fatal("a certified guard reads the packed envelope")
+	}
+	// The full class is unchanged by deriving the certified one.
+	if !strings.Contains(class.safe.String(), mixedClassOriginalField) || len(class.nativePrepare) != len(class.prepare) {
+		t.Fatal("deriving the certified class changed the class")
+	}
+	// The widest accepted field set stays under the bound.
+	wide := []string{"_msg", "_stream", "_stream_id", "_time"}
+	for i := 0; i < mixedCertOtherFieldsMax; i++ {
+		wide = append(wide, strings.Repeat("a", mixedCertOtherNameMax-1)+strconv.Itoa(i))
+	}
+	if _, ok := class.certified(wide); !ok {
+		t.Fatal("the widest accepted set was refused")
+	}
+	if got := mixedClassCertifiedWorstPacked(wide[4:]); got > 4096 {
+		t.Fatalf("worst packed envelope %d exceeds the class bound", got)
+	}
+	// Refusals: an unclean name, too many fields, a name too long for the bound, the label itself.
+	for _, bad := range [][]string{
+		append(append([]string(nil), names...), "a__b"), append(append([]string(nil), names...), "trail_"),
+		append(append([]string(nil), names...), "user_id"), append(append([]string(nil), names...), "9lead"),
+		append(append([]string(nil), names...), strings.Repeat("a", mixedCertOtherNameMax+1)),
+		append(append([]string(nil), wide...), "extra1"),
+	} {
+		if _, ok := class.certified(bad); ok {
+			t.Fatalf("names accepted: %v", bad)
+		}
+	}
+	if !mixedClassNamesWithin([]string{"a"}, []string{"a", "b"}) || mixedClassNamesWithin([]string{"a", "c"}, []string{"a", "b"}) {
+		t.Fatal("name subset check")
+	}
+}
+
+// The field-name check replaces the envelope key guards for a whole window, so it must imply them: for every name
+// the check accepts, a packed row holding that name next to ordinary fields passes each envelope guard of the class.
+// conformance: semantics/two-parsers-keep-one
+func TestMixedClassFieldNamesCleanImpliesEnvelopeKeyGuards(t *testing.T) {
+	alphabet := []string{"a", "Z", "_", "1", "-", ".", " ", `"`, `\`, "é"}
+	var names []string
+	var gen func(prefix string, depth int)
+	gen = func(prefix string, depth int) {
+		if prefix != "" {
+			names = append(names, prefix)
+		}
+		if depth == 0 {
+			return
+		}
+		for _, a := range alphabet {
+			gen(prefix+a, depth-1)
+		}
+	}
+	gen("", 4)
+	names = append(names, "user_id", "user", "app", "_time", "_stream", "_stream_id", "_msg", "level", "__vlmc_valid",
+		"__vlmc_", "a_", "_a", "a__b", "a_b", strings.Repeat("a", 127), strings.Repeat("a", 128), strings.Repeat("a", 129))
+	for _, label := range []string{"user_id", "k", "batch_id"} {
+		class, ok := newMixedJSONRowClass(label)
+		if !ok {
+			t.Fatal(label)
+		}
+		guards := class.safe.(logsql.AllOf)
+		envelope := guards[len(guards)-4:] // grammar, alias, label, scratch (the length bound is not a regexp)
+		accepted := 0
+		for _, name := range names {
+			if !mixedClassFieldNameClean(label, name) {
+				continue
+			}
+			accepted++
+			for _, row := range []string{
+				`{"` + name + `":"v"}`,
+				`{"_msg":"{\"a\":\"b\"}","_stream":"{app=\"x\"}","_stream_id":"0001","_time":"2026-11-23T00:00:00Z","app":"x","` + name + `":"v"}`,
+				`{"app":"x","` + name + `":"a\"b\\c d"}`,
+			} {
+				for i, g := range envelope {
+					if !mixedClassRegexMatch(t, g, row) {
+						t.Fatalf("label=%s: the check accepts %q but envelope guard %d rejects %q", label, name, i, row)
+					}
+				}
+			}
+		}
+		if accepted < 100 {
+			t.Fatalf("label=%s: only %d names accepted; the test lost its coverage", label, accepted)
 		}
 	}
 }

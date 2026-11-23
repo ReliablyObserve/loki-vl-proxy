@@ -383,6 +383,11 @@ func TestOrderedMixedStatsExpandedQueryBudgetBeforeBackend(t *testing.T) {
 		t.Run(stages, func(t *testing.T) {
 			var requests atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/select/logsql/field_names" {
+					// The field-name certificate is not under test here; without a listing the full class runs.
+					http.Error(w, "no listing", http.StatusServiceUnavailable)
+					return
+				}
 				requests.Add(1)
 				if err := r.ParseForm(); err != nil {
 					t.Error(err)
@@ -1031,6 +1036,9 @@ func TestOrderedMixedStatsAuxSurvivesSmallDiskRestart(t *testing.T) {
 		case "/select/logsql/query":
 			rawCalls.Add(1)
 			_, _ = w.Write(append(outer, '\n'))
+		case "/select/logsql/field_names":
+			// The field-name certificate is not under test here; without a listing the full class runs.
+			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
 			t.Errorf("unexpected backend read %s", r.URL.Path)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -1160,6 +1168,9 @@ func TestOrderedMixedStatsHTTPRepeatAndShiftReuseOriginalSteps(t *testing.T) {
 							_ = json.NewEncoder(w).Encode(row)
 						}
 					}
+				case "/select/logsql/field_names":
+					// The field-name certificate is not under test here; without a listing the full class runs.
+					w.WriteHeader(http.StatusServiceUnavailable)
 				default:
 					t.Errorf("unexpected backend path %s", r.URL.Path)
 					w.WriteHeader(http.StatusInternalServerError)
@@ -1321,6 +1332,9 @@ func TestOrderedMixedStatsRangeUnionUsesOriginalReaderAndReducer(t *testing.T) {
 							t.Error("raw request lacks full static complement")
 						}
 						_, _ = w.Write(append(outer, '\n'))
+					case "/select/logsql/field_names":
+						// The field-name certificate is not under test here; without a listing the full class runs.
+						w.WriteHeader(http.StatusServiceUnavailable)
 					default:
 						t.Errorf("unexpected backend read %s", r.URL.Path)
 						w.WriteHeader(http.StatusInternalServerError)

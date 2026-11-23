@@ -22,8 +22,15 @@ const (
 // pipeline, source profile and alias configuration eligible. Prepared fields
 // and predicates are immutable after construction.
 type mixedJSONRowClass struct {
+	label string
+	// prepare is the complete preparation, with the packed original envelope the exact
+	// complement restores; nativePrepare is what the native count needs (the same, unless the
+	// class was derived for a window whose field names were checked: see certified).
 	prepare       []logsql.Pipe
+	nativePrepare []logsql.Pipe
 	safe          logsql.FilterExpr
+	// base is the guards before the five that read the packed envelope.
+	base          logsql.AllOf
 	originalField string
 }
 
@@ -90,6 +97,7 @@ func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
 	// The guards that read the packed envelope force pack_json for the block and
 	// are the most expensive, so they come last, after every message, stream and
 	// target guard (including the nested-prefix guards above).
+	base := append(logsql.AllOf(nil), safe...)
 	safe = append(safe,
 		logsql.LenRange{Field: mixedClassOriginalField, Min: "0", Max: mixedClassMaxBytes},
 		regex(mixedClassOriginalField, `^\{(?:`+packedPair+`(?:,`+packedPair+`)*)?\}$`, false),
@@ -97,21 +105,25 @@ func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
 		mixedClassLiteralGuard(mixedClassOriginalField, `(?:^\{|,)"`+name+`":`, `"`+label+`":`),
 		mixedClassLiteralGuard(mixedClassOriginalField, `(?:^\{|,)`+scratchKey, "__vlmc_"),
 	)
+	prepare := []logsql.Pipe{
+		// Snapshot first, including any preexisting field with this name.
+		// The raw consumer restores this envelope instead of deleting
+		// scratch fields and losing original collision/provenance data.
+		logsql.PipePackJSON{ResultField: mixedClassOriginalField},
+		logsql.PipeCopy{Pairs: [][2]string{{"_stream", mixedClassStreamField}, {"_msg", mixedClassBodyField}}},
+		// The same complete-object sentinel splice as jsonValidityPipes,
+		// expressed in the existing AST and applied to the message COPY.
+		logsql.PipeReplaceRegexp{Field: mixedClassBodyField, Regex: `^\{`, Replacement: `{"` + mixedClassValidField + `":1,`},
+		logsql.PipeUnpackJSON{From: mixedClassBodyField, Fields: []string{mixedClassValidField}},
+		logsql.PipeUnpackJSON{From: "_msg", Fields: []string{label}, ResultPrefix: mixedClassTargetPrefix},
+	}
 	return &mixedJSONRowClass{
+		label:         label,
 		originalField: mixedClassOriginalField,
-		prepare: []logsql.Pipe{
-			// Snapshot first, including any preexisting field with this name.
-			// The raw consumer restores this envelope instead of deleting
-			// scratch fields and losing original collision/provenance data.
-			logsql.PipePackJSON{ResultField: mixedClassOriginalField},
-			logsql.PipeCopy{Pairs: [][2]string{{"_stream", mixedClassStreamField}, {"_msg", mixedClassBodyField}}},
-			// The same complete-object sentinel splice as jsonValidityPipes,
-			// expressed in the existing AST and applied to the message COPY.
-			logsql.PipeReplaceRegexp{Field: mixedClassBodyField, Regex: `^\{`, Replacement: `{"` + mixedClassValidField + `":1,`},
-			logsql.PipeUnpackJSON{From: mixedClassBodyField, Fields: []string{mixedClassValidField}},
-			logsql.PipeUnpackJSON{From: "_msg", Fields: []string{label}, ResultPrefix: mixedClassTargetPrefix},
-		},
-		safe: safe,
+		prepare:       prepare,
+		nativePrepare: prepare,
+		base:          base,
+		safe:          safe,
 	}, true
 }
 
@@ -155,16 +167,16 @@ func mixedClassLiteralGuard(field, pattern string, literals ...string) logsql.Fi
 }
 
 func (c *mixedJSONRowClass) nativePipes() []logsql.Pipe {
-	return c.filteredPipes(c.safe)
+	return filteredMixedClassPipes(c.nativePrepare, c.safe)
 }
 
 func (c *mixedJSONRowClass) rawPipes() []logsql.Pipe {
-	return c.filteredPipes(logsql.NotExpr{Expr: c.safe})
+	return filteredMixedClassPipes(c.prepare, logsql.NotExpr{Expr: c.safe})
 }
 
-func (c *mixedJSONRowClass) filteredPipes(filter logsql.FilterExpr) []logsql.Pipe {
-	pipes := make([]logsql.Pipe, len(c.prepare)+1)
-	for i, pipe := range c.prepare {
+func filteredMixedClassPipes(prepare []logsql.Pipe, filter logsql.FilterExpr) []logsql.Pipe {
+	pipes := make([]logsql.Pipe, len(prepare)+1)
+	for i, pipe := range prepare {
 		switch node := pipe.(type) {
 		case logsql.PipeCopy:
 			node.Pairs = append([][2]string(nil), node.Pairs...)
@@ -176,7 +188,7 @@ func (c *mixedJSONRowClass) filteredPipes(filter logsql.FilterExpr) []logsql.Pip
 			pipes[i] = pipe
 		}
 	}
-	pipes[len(c.prepare)] = logsql.PipeFilter{Expr: cloneMixedClassFilter(filter)}
+	pipes[len(prepare)] = logsql.PipeFilter{Expr: cloneMixedClassFilter(filter)}
 	return pipes
 }
 

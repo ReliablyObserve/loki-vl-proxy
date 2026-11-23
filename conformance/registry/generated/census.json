@@ -2140,6 +2140,7 @@
     "internal/proxy/ordered_json_metric_test.go | parsed-identity/bare-parser-metric-duplicates-extracted",
     "internal/proxy/ordered_json_metric_test.go | semantics/pipeline-error-text-parity",
     "internal/proxy/ordered_json_metric_test.go | semantics/two-parsers-keep-one",
+    "internal/proxy/ordered_json_mixed_certificate_oracle_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/ordered_json_mixed_class_oracle_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/ordered_json_mixed_class_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/ordered_json_mixed_stats_test.go | mixed-json-row-stats",
@@ -3611,7 +3612,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 811,
+      "go": 812,
       "playwright": 3
     },
     "page_kinds": {

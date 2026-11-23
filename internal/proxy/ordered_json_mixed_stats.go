@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -114,14 +117,46 @@ func (p *Proxy) collectOrderedMixedJSONStats(ctx context.Context, plan *orderedJ
 	// after the original snapshot without overwriting source metadata.
 	fetchStart := start.Add(-plan.window)
 	key := plan.grouping.Labels[0]
-	query, agg := mixedJSONStatsQuery(base, class, key)
-	// The accepted LogQL selector can fit VL while the expanded classifier
-	// does not. Check both complete backend forms before choosing this route;
-	// the original raw reader remains available without the class expansion.
-	if len(appendMixedClassPipes(query, []logsql.Pipe{mixedJSONCountStats()})) > vlDefaultMaxQueryLen ||
-		len(mixedJSONRawQuery(base, class)) > vlDefaultMaxQueryLen {
+	// The window's stored field names settle, once, what the class would check on every row's packed
+	// envelope (see certified): when they do, the native count does not pack it. The call is read again
+	// after the scan, and a name that appeared meanwhile sends the request back to the class itself.
+	// A class whose expanded query exceeds the backend's limit falls back before any backend work.
+	if !mixedClassQueriesFit(base, class, key) {
 		return nil, false, nil
 	}
+	if names, listed := p.mixedClassWindowFieldNames(ctx, base, fetchStart, end, bucket); listed {
+		if certified, ok := class.certified(names); ok && mixedClassQueriesFit(base, certified, key) {
+			series, served, err := p.scanOrderedMixedJSONStats(ctx, plan, base, certified, key, fetchStart, start, end, step, bucket)
+			if err != nil {
+				return series, served, err
+			}
+			if served {
+				if again, ok := p.mixedClassWindowFieldNames(ctx, base, fetchStart, end, bucket); ok && mixedClassNamesWithin(again, names) {
+					return series, true, nil
+				}
+				p.observeInternalOperation(ctx, "mixed_class_certificate", "names_changed", 0)
+			}
+		}
+	}
+	return p.scanOrderedMixedJSONStats(ctx, plan, base, class, key, fetchStart, start, end, step, bucket)
+}
+
+// mixedClassQueriesFit reports whether both backend forms of the class, the native count and the exact complement,
+// fit the backend's query length limit.
+func mixedClassQueriesFit(base string, class *mixedJSONRowClass, key string) bool {
+	query, _ := mixedJSONStatsQuery(base, class, key)
+	return len(appendMixedClassPipes(query, []logsql.Pipe{mixedJSONCountStats()})) <= vlDefaultMaxQueryLen &&
+		len(mixedJSONRawQuery(base, class)) <= vlDefaultMaxQueryLen
+}
+
+// scanOrderedMixedJSONStats counts the rows of the class natively and merges the exact complement for the
+// buckets the native count could not take.
+func (p *Proxy) scanOrderedMixedJSONStats(ctx context.Context, plan *orderedJSONMetricPlan, base string, class *mixedJSONRowClass, key string, fetchStart, start, end time.Time, step, bucket time.Duration) (map[string]manualSeriesSamples, bool, error) {
+	query, agg := mixedJSONStatsQuery(base, class, key)
+	// The accepted LogQL selector can fit VL while the expanded classifier
+	// does not: the caller checks both complete backend forms before it chooses
+	// this route; the original raw reader remains available without the class
+	// expansion.
 	// The empty-target group is internal, not an extra user series. Preserve
 	// the existing intermediate group guard and defer the user limit to merge.
 	series, err := p.collectRangeMetricHits(guardStatsGroups(ctx), query, []string{mixedStatsGroupField}, []string{key}, false, agg, fetchStart, end, bucket)
@@ -139,6 +174,49 @@ func (p *Proxy) collectOrderedMixedJSONStats(ctx context.Context, plan *orderedJ
 	}
 	series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx))
 	return series, true, err
+}
+
+// mixedClassWindowFieldNames lists the stored field names of the rows the base query selects in the window the
+// native count reads (widened by a bucket at each end, as the stats call widens to its bucket edges). The call is
+// not coalesced with another request's: the second read after a scan must see the rows the scan saw.
+func (p *Proxy) mixedClassWindowFieldNames(ctx context.Context, base string, from, to time.Time, bucket time.Duration) ([]string, bool) {
+	params := url.Values{}
+	params.Set("query", base)
+	params.Set("start", from.Add(-bucket).UTC().Format(time.RFC3339Nano))
+	params.Set("end", to.Add(bucket).UTC().Format(time.RFC3339Nano))
+	resp, err := p.vlGet(ctx, "/select/logsql/field_names", params)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, mixedClassFieldNamesMaxBody+1))
+	if err != nil || len(body) > mixedClassFieldNamesMaxBody {
+		return nil, false
+	}
+	items, err := decodeVLValueHits(body)
+	if err != nil {
+		return nil, false
+	}
+	return listingValues(items), true
+}
+
+// mixedClassFieldNamesMaxBody bounds the listing read: a window with more field names than fit is not certified.
+const mixedClassFieldNamesMaxBody = 64 << 10
+
+func mixedClassNamesWithin(names, allowed []string) bool {
+	set := make(map[string]struct{}, len(allowed))
+	for _, name := range allowed {
+		set[name] = struct{}{}
+	}
+	for _, name := range names {
+		if _, ok := set[name]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // The class guarantees native targets are nonempty; statsGroupMetric removes
