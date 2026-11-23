@@ -147,34 +147,36 @@ newest weekly run did not re-measure (listed apart in performance.md).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there | Loki warm there | also slower warm |
 |---|---|---|---|---|---|---|
-| `explore-logs-volume-json` | 2 | 6.73s (A explore volume, 2 filters, drop, 24h) | 5.07s | 0.06s | 0.11s | — |
-| `parser-error-and-label-collision` | 7 | 6.73s (A explore volume, 2 filters, drop, 24h) | 5.07s | 0.06s | 0.11s | — |
-| `quality/probe-regexp-parse-cost` | 8 | 6.73s (A explore volume, 2 filters, drop, 24h) | 5.07s | 0.06s | 0.11s | — |
-| `semantics/json-filter-pushdown-translated-label` | 2 | 6.73s (A explore volume, 2 filters, drop, 24h) | 5.07s | 0.06s | 0.11s | — |
-| `semantics/json-filter-pushdown-underscore-label` | 3 | 6.73s (A explore volume, 2 filters, drop, 24h) | 5.07s | 0.06s | 0.11s | — |
-| `drilldown/patterns-full-range-counts` | 3 | 1.62s (DP2 patterns of an environment, 1h) | 0.27s | 0.15s | 0.28s | — |
-| `drilldown/patterns-one-series-per-level` | 3 | 1.62s (DP2 patterns of an environment, 1h) | 0.27s | 0.15s | 0.28s | — |
-| `operator-keep` | 2 | 1.47s (K6 count by kept key, json, 24h) | 0.93s | 0.06s | 0.01s | — |
-| `semantics/keep-leaves-labels-loki-drops` | 2 | 1.47s (K6 count by kept key, json, 24h) | 0.93s | 0.06s | 0.01s | — |
-| `quality/json-label-probe-gates` | 4 | 0.56s (LS8 json count by level_extracted, collision, 6h) | 0.17s | 0.07s | 0.01s | — |
-| `semantics/extracted-suffix-collision` | 4 | 0.56s (LS8 json count by level_extracted, collision, 6h) | 0.17s | 0.07s | 0.01s | — |
-| `semantics/json-extracted-metric-pushdown` | 3 | 0.56s (LS8 json count by level_extracted, collision, 6h) | 0.17s | 0.07s | 0.01s | — |
-| `drilldown-service-landing` | 2 | 0.32s (LF10 drilldown logs, level pill multi-select, json service, 24h) | 0.12s | 0.03s | 0.29s | — |
-| `severity-detected-level-derivation` | 6 | 0.32s (LF10 drilldown logs, level pill multi-select, json service, 24h) | 0.12s | 0.03s | 0.29s | — |
-| `severity/detected-level-filter-json-level` | 4 | 0.32s (LF10 drilldown logs, level pill multi-select, json service, 24h) | 0.12s | 0.03s | 0.29s | — |
-| `parsed-label-series-identity` | 1 | 0.35s (F field breakdown service_version (explore), 1h) | 0.25s | 0.04s | 0.08s | — |
-| `semantics/json-label-spelling-probe` | 1 | 0.35s (F field breakdown service_version (explore), 1h) | 0.25s | 0.04s | 0.08s | — |
-| `semantics/pattern-line-filter-anchoring` | 1 | 0.24s (A5 drilldown exclude, volume by detected_level, 24h) | 0.15s | 0.03s | 0.01s | — |
-| `loki-compatible-profile` | 1 | 0.14s (E7 json count by level_extracted, 1h) | 0.06s | 0.05s | 0.02s | — |
-| `profiles/structured-metadata-label-collision` | 1 | 0.14s (E7 json count by level_extracted, 1h) | 0.06s | 0.05s | 0.02s | — |
-| `quality/query-range-settled-steps` | 1 | 0.35s (E2 json duration_ms p95 by service, 6h) | 0.28s | 0.02s | 0.02s | — |
-| `semantics/unwrap-conversion-error` | 1 | 0.35s (E2 json duration_ms p95 by service, 6h) | 0.28s | 0.02s | 0.02s | — |
-| `semantics/json-detected-level-error-split` | 1 | 0.33s (DLV1 drilldown logs volume, json, 6h) | 0.25s | 0.04s | 0.03s | — |
-| `semantics/json-metric-detected-level-derivation` | 1 | 0.33s (DLV1 drilldown logs volume, json, 6h) | 0.25s | 0.04s | 0.03s | — |
-| `parser-logfmt` | 2 | 0.34s (LF20 logfmt count by detected_level, 24h) | 0.26s | 0.03s | 0.01s | — |
-| `semantics/ip-filter-json-stats-pushdown` | 1 | 0.13s (IP4 count, json ip=ip(CIDR), 1h) | 0.06s | 0.04s | 0.01s | — |
-| `semantics/ip-label-filter-missing-label` | 1 | 0.13s (IP4 count, json ip=ip(CIDR), 1h) | 0.06s | 0.04s | 0.01s | — |
-| `operator-drop` | 1 | 0.08s (LF29 logs, drop detected_level, 1h) | 0.01s | 0.04s | 0.01s | — |
-| `semantics/query-range-window-lead-window` | 1 | 0.08s (LF29 logs, drop detected_level, 1h) | 0.01s | 0.04s | 0.01s | — |
-| `severity-exposure-surfaces` | 1 | 0.08s (LF29 logs, drop detected_level, 1h) | 0.01s | 0.04s | 0.01s | — |
-| `severity/detected-level-stage-side-effects` | 1 | 0.08s (LF29 logs, drop detected_level, 1h) | 0.01s | 0.04s | 0.01s | — |
+| `explore-logs-volume-json` | 2 | 6.83s (A explore volume, 2 filters, drop, 24h) | 4.79s | 0.02s | 0.10s | — |
+| `parser-error-and-label-collision` | 10 | 6.83s (A explore volume, 2 filters, drop, 24h) | 4.79s | 0.02s | 0.10s | — |
+| `quality/probe-regexp-parse-cost` | 9 | 6.83s (A explore volume, 2 filters, drop, 24h) | 4.79s | 0.02s | 0.10s | — |
+| `semantics/json-filter-pushdown-translated-label` | 2 | 6.83s (A explore volume, 2 filters, drop, 24h) | 4.79s | 0.02s | 0.10s | — |
+| `semantics/json-filter-pushdown-underscore-label` | 3 | 6.83s (A explore volume, 2 filters, drop, 24h) | 4.79s | 0.02s | 0.10s | — |
+| `quality/json-label-probe-gates` | 5 | 6.27s (X1 json filter level_extracted, by level, 24h) | 4.76s | 0.01s | 0.04s | — |
+| `semantics/extracted-suffix-collision` | 5 | 6.27s (X1 json filter level_extracted, by level, 24h) | 4.76s | 0.01s | 0.04s | — |
+| `semantics/json-extracted-metric-pushdown` | 5 | 6.27s (X1 json filter level_extracted, by level, 24h) | 4.76s | 0.01s | 0.04s | — |
+| `drilldown/patterns-full-range-counts` | 3 | 1.31s (DP2 patterns of an environment, 1h) | 0.28s | 0.11s | 0.28s | — |
+| `drilldown/patterns-one-series-per-level` | 3 | 1.31s (DP2 patterns of an environment, 1h) | 0.28s | 0.11s | 0.28s | — |
+| `semantics/json-error-filter-metric-split-pushdown` | 1 | 1.45s (J3 json no-error count by parsed method, 24h) | 0.96s | 0.01s | 0.02s | — |
+| `semantics/ip-filter-json-stats-pushdown` | 3 | 1.06s (IP4 count, json ip=ip(CIDR), 24h) | 0.65s | 0.01s | 0.01s | — |
+| `semantics/ip-label-filter-missing-label` | 3 | 1.06s (IP4 count, json ip=ip(CIDR), 24h) | 0.65s | 0.01s | 0.01s | — |
+| `operator-keep` | 2 | 1.42s (K6 count by kept key, json, 24h) | 1.06s | 0.01s | 0.01s | — |
+| `semantics/keep-leaves-labels-loki-drops` | 2 | 1.42s (K6 count by kept key, json, 24h) | 1.06s | 0.01s | 0.01s | — |
+| `quality/query-range-settled-steps` | 3 | 1.28s (E2 json duration_ms p95 by service, 24h) | 0.96s | 0.01s | 0.01s | — |
+| `semantics/unwrap-conversion-error` | 2 | 1.28s (E2 json duration_ms p95 by service, 24h) | 0.96s | 0.01s | 0.01s | — |
+| `semantics/json-detected-level-error-split` | 1 | 1.19s (DLV7 plain json, detected_level, 30s range (shorter than the 24h step), 24h) | 0.87s | 0.01s | 0.01s | — |
+| `semantics/json-metric-detected-level-derivation` | 2 | 1.19s (DLV7 plain json, detected_level, 30s range (shorter than the 24h step), 24h) | 0.87s | 0.01s | 0.01s | — |
+| `semantics/json-metric-step-wider-than-range` | 1 | 1.19s (DLV7 plain json, detected_level, 30s range (shorter than the 24h step), 24h) | 0.87s | 0.01s | 0.01s | — |
+| `severity-detected-level-derivation` | 7 | 1.19s (DLV7 plain json, detected_level, 30s range (shorter than the 24h step), 24h) | 0.87s | 0.01s | 0.01s | — |
+| `parsed-label-series-identity` | 1 | 0.36s (F field breakdown service_version (explore), 1h) | 0.21s | 0.02s | 0.05s | — |
+| `semantics/json-label-spelling-probe` | 1 | 0.36s (F field breakdown service_version (explore), 1h) | 0.21s | 0.02s | 0.05s | — |
+| `metric-series-identity` | 2 | 0.55s (W3 sum without pod, rate, 24h) | 0.41s | 0.01s | 0.01s | — |
+| `semantics/unwrap-sum-without-collapses` | 1 | 0.55s (W3 sum without pod, rate, 24h) | 0.41s | 0.01s | 0.01s | — |
+| `parser-logfmt` | 2 | 0.35s (LF20 logfmt count by detected_level, 24h) | 0.25s | 0.01s | 0.01s | — |
+| `parser-json` | 1 | 0.34s (LF16 drilldown label breakdown, level filter, 24h) | 0.23s | 0.02s | 0.01s | — |
+| `semantics/detected-level-filter-before-parser-pushdown` | 1 | 0.34s (LF16 drilldown label breakdown, level filter, 24h) | 0.23s | 0.02s | 0.01s | — |
+| `drilldown-service-landing` | 2 | 0.13s (LF10 drilldown logs, level pill multi-select, json service, 1h) | 0.03s | 0.07s | 0.03s | — |
+| `severity/detected-level-filter-json-level` | 4 | 0.13s (LF10 drilldown logs, level pill multi-select, json service, 1h) | 0.03s | 0.07s | 0.03s | — |
+| `quality/unwrap-logfmt-narrowed-unpack` | 1 | 0.29s (G8 bytes() of a number, 24h) | 0.20s | 0.01s | 0.01s | — |
+| `semantics/unwrap-gate-parsefloat-divergences` | 1 | 0.29s (G8 bytes() of a number, 24h) | 0.20s | 0.01s | 0.01s | — |
+| `semantics/pattern-line-filter-anchoring` | 1 | 0.24s (A5 drilldown exclude, volume by detected_level, 24h) | 0.19s | 0.01s | 0.01s | — |
