@@ -1932,6 +1932,13 @@
   "shape": "DL1 drilldown field breakdown json-expr, level filter"
  },
  {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "1h",
+  "set": "metric-latency-gap",
+  "shape": "DL2 drilldown field breakdown, level + stream-label filter before json"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
@@ -3024,6 +3031,34 @@
   "shape": "E2 json duration_ms p95 by service"
  },
  {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "6h",
+  "set": "unwrap-conversion-error",
+  "shape": "E2 json duration_ms p95 by service"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "1h",
+  "set": "unwrap-conversion-error",
+  "shape": "E3 logfmt latency_ms rate, production"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "24h",
+  "set": "unwrap-conversion-error",
+  "shape": "E3 logfmt latency_ms rate, production"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "6h",
+  "set": "unwrap-conversion-error",
+  "shape": "E3 logfmt latency_ms rate, production"
+ },
+ {
   "added": "2026-10-29",
   "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
   "range": "1h",
@@ -3218,6 +3253,27 @@
   "range": "6h",
   "set": "unwrap-gate",
   "shape": "G1 logfmt amount sum_over_time, no filter"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G10 logfmt latency_ms sum_over_time, production"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G10 logfmt latency_ms sum_over_time, production"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "6h",
+  "set": "unwrap-gate",
+  "shape": "G10 logfmt latency_ms sum_over_time, production"
  },
  {
   "added": "2026-10-24",
@@ -3598,6 +3654,27 @@
   "shape": "U3 json duration_ms rate, error filter"
  },
  {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "1h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U4 logfmt latency_ms rate, production"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "24h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U4 logfmt latency_ms rate, production"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "6h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U4 logfmt latency_ms rate, production"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "instant",
@@ -3659,6 +3736,13 @@
   "range": "1h",
   "set": "unwrap-validity",
   "shape": "U12 json duration_ms over every service"
+ },
+ {
+  "added": "2026-11-23",
+  "commit": "895c23078f4afa12fe0a1200f8138a32f0b7f76a",
+  "range": "1h",
+  "set": "unwrap-validity",
+  "shape": "U13 logfmt latency_ms over every service"
  },
  {
   "added": "2026-10-29",

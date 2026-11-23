@@ -44,7 +44,7 @@ services:
 
   # ── loki-vl-proxy ──────────────────────────────────────────────────────────
   loki-vl-proxy:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.302.1
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.358.0
     ports:
       - "3100:3100"
     command:
