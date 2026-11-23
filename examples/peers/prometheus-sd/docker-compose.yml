@@ -42,7 +42,7 @@ services:
 
   # ── sd-server — nginx serving the static peer list ─────────────────────────
   sd-server:
-    image: nginx:1.31.7-alpine
+    image: nginx:1.31.8-alpine
     ports:
       - "8080:8080"
     volumes:
@@ -57,7 +57,7 @@ services:
 
   # ── proxy-a ────────────────────────────────────────────────────────────────
   proxy-a:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.302.1
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.358.0
     ports:
       - "3100:3100"
     command:
@@ -90,7 +90,7 @@ services:
 
   # ── proxy-b ────────────────────────────────────────────────────────────────
   proxy-b:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.302.1
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.358.0
     ports:
       - "3101:3100"
     command:
@@ -120,7 +120,7 @@ services:
 
   # ── proxy-c ────────────────────────────────────────────────────────────────
   proxy-c:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.302.1
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.358.0
     ports:
       - "3102:3100"
     command:
