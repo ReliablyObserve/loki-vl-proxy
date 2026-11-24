@@ -35,21 +35,27 @@ func numericEqualityAfterParser(query string) string {
 	return ""
 }
 
-// equalityBeforeNumber reports an equalityBeforeNumberAt anywhere in query, quoted text and comments included.
+// equalityBeforeNumber reports an equalityBeforeNumberAt anywhere in query, quoted text and comments included, or an
+// equality on a literal that only follows a comment (the comment pass runs only for a query holding a `#`).
 func equalityBeforeNumber(query string) bool {
+	if equalityBeforeNumberPlain(query) {
+		return true
+	}
+	return strings.IndexByte(query, '#') >= 0 && equalityBeforeNumberWithComments(query)
+}
+
+// equalityBeforeNumberPlain is the older screen, unchanged: every `=` followed, after blanks, by a literal.
+func equalityBeforeNumberPlain(query string) bool {
 	for i := 0; i < len(query); i++ {
 		k := strings.IndexByte(query[i:], '=')
 		if k < 0 {
-			break
+			return false
 		}
 		if i += k; equalityBeforeNumberAt(query, i) {
 			return true
 		}
 	}
-	if !strings.Contains(query, "#") {
-		return false
-	}
-	return equalityBeforeNumberWithComments(query)
+	return false
 }
 
 // equalityBeforeNumberWithComments reads comments only outside quoted text. The earlier pass retains every

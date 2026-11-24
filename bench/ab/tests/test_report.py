@@ -123,6 +123,56 @@ class PointCountParityTest(unittest.TestCase):
         raw["rows"][2]["answer_proof"] = None
         self.assertFalse(summarize(raw)["runtime_samples"]["matrix"]["main"]["complete"])
 
+    def failing_base(self, **changes):
+        """A base that answers every run with the server's internal error while the PR and Loki answer alike."""
+        raw = timed({k: [0.1, 0.03] for k in ("main", "branch", "loki")}, runtime_proof=True)
+        for row in raw["rows"]:
+            row.update(history_start=700, response_bytes=100, answer_proof="answer")
+            if row["target"] == "main":
+                row.update(status=500, signature="ERR Internal Server Error", answer_proof="failure:fingerprint")
+        return raw
+
+    def test_a_base_that_fails_the_same_way_on_every_run_is_a_fix_not_missing_evidence(self):
+        raw = self.failing_base()
+        entry = summarize(raw)
+        sample = entry["runtime_samples"]["matrix"]["main"]
+        self.assertTrue(sample["complete"])
+        self.assertEqual(len(sample["corrected_rejections"]), 3)
+        self.assertEqual((entry["verdict"], entry["status"]["main"]), ("fixed", "500"))
+        self.assertIn("internal error", entry["base_comparison_note"])
+
+    def test_a_base_failure_is_not_evidence_unless_it_is_deterministic_and_the_current_answers_agree(self):
+        from copy import deepcopy
+        base_rows = lambda raw: [r for r in raw["rows"] if r["target"] == "main"]
+        # one run of the base answered, the others failed: the base was unwell for a run, nothing is proved
+        raw = self.failing_base()
+        base_rows(raw)[1].update(status=200, signature="x", answer_proof="answer")
+        self.assertFalse(summarize(raw)["runtime_samples"]["matrix"]["main"]["complete"])
+        # the failure differs between runs
+        raw = self.failing_base()
+        base_rows(raw)[2]["answer_proof"] = "failure:another"
+        self.assertFalse(summarize(raw)["runtime_samples"]["matrix"]["main"]["complete"])
+        # a status that is not the server's 500, or no proof at all (an infrastructure body)
+        for change in ({"status": 502}, {"status": 503}, {"answer_proof": None}):
+            raw = self.failing_base()
+            base_rows(raw)[0].update(change)
+            self.assertFalse(summarize(raw)["runtime_samples"]["matrix"]["main"]["complete"], change)
+        # the PR and Loki must both have answered, and alike
+        for target, change in (("branch", {"signature": "wrong answer"}), ("loki", {"signature": "wrong answer"}),
+                               ("branch", {"status": 500, "answer_proof": "failure:fingerprint"}),
+                               ("loki", {"skipped": "loki_timeout"})):
+            raw = self.failing_base()
+            next(r for r in raw["rows"] if r["target"] == target and r["run"] == 0).update(change)
+            self.assertFalse(summarize(raw)["runtime_samples"]["matrix"]["main"]["complete"], (target, change))
+        # a failing PR is never a corrected base
+        raw = self.failing_base()
+        for row in raw["rows"]:
+            if row["target"] == "branch":
+                row.update(status=500, signature="ERR Internal Server Error", answer_proof="failure:fingerprint")
+        entry = summarize(raw)
+        self.assertFalse(entry["runtime_samples"]["matrix"]["branch"]["complete"])
+        self.assertNotEqual(entry["verdict"], "fixed")
+
     def test_runtime_samples_check_all_bodies_statuses_and_run_ids_before_reduction(self):
         from copy import deepcopy
         raw = timed({k: [0.1, 0.03] for k in ("main", "branch", "loki")}, runtime_proof=True)

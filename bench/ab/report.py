@@ -247,8 +247,12 @@ def request_samples(by_target, runs, reference, candidate, tolerance=0):
             matched_error = (isinstance(proof, str) and proof.startswith("rejection:") and
                              (proof, r["status"]) == (ref.get("answer_proof"), ref.get("status")))
             cand = candidates.get(r["run"], {})
-            corrected = (target not in (reference, candidate) and isinstance(proof, str) and proof.startswith("rejection:")
-                         and r["status"] in (400, 422, 500)
+            # A base that rejects the query, or fails on it with an internal error, while the candidate and the reference
+            # both answer alike: a fix towards the reference. An internal error is accepted below only as a whole
+            # (every run, one fingerprint), so a transient failure of the base is never mistaken for one.
+            corrected = (target not in (reference, candidate) and isinstance(proof, str)
+                         and (proof.startswith("rejection:") and r["status"] in (400, 422, 500)
+                              or proof.startswith("failure:") and r["status"] == 500)
                          and all(s.get("status") == 200 and s.get("answer_proof") == "answer" and s.get("signature")
                                  and not s.get("skipped") for s in (ref, cand))
                          and parity(ref["signature"], cand["signature"], tolerance) != "differs")
@@ -267,6 +271,10 @@ def request_samples(by_target, runs, reference, candidate, tolerance=0):
             resource_runs += int(cost.get("cpu_samples") == cost.get("rss_samples") == 2 and
                                  all(type(cost.get(k)) in (int, float) and math.isfinite(cost[k]) and cost[k] >= 0
                                      for k in ("cpu_seconds", "rss_max_sampled_bytes")))
+        failures = [c for c in corrected_rejections if c["proof"].startswith("failure:")]
+        if failures and (len(failures) != len(rows) or len({c["proof"] for c in failures}) != 1):
+            # Not one deterministic failure on every run: the base may only have been unwell for a run.
+            good = [run for run in good if run not in {c["run"] for c in failures}]
         evidence[target] = {"complete": sorted(good) == list(range(runs)) and len(rows) == runs,
                             "measured": len(good), "resource_runs": resource_runs,
                             "start": min(starts, default=None), "end": max(ends, default=None)}
@@ -369,7 +377,10 @@ def summarize(args):
             verdict = "fixed"
             evidence = entry.get("runtime_samples", {}).get("matrix", {}).get(args.baseline, {})
             if evidence.get("complete") and len(evidence.get("corrected_rejections", [])) == raw.get("runs"):
-                entry["base_comparison_note"] = "Base-relative cost and speedup unavailable: base rejected the query."
+                failed = any(c["proof"].startswith("failure:") for c in evidence["corrected_rejections"])
+                entry["base_comparison_note"] = ("Base-relative cost and speedup unavailable: base failed on the query with an internal error."
+                                                 if failed else
+                                                 "Base-relative cost and speedup unavailable: base rejected the query.")
         elif b_ok and c_matches_ref_error:
             verdict = "fixed"
             entry["note"] = "now rejected exactly as the reference rejects it"

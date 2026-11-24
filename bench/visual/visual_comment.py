@@ -239,6 +239,9 @@ def assess(row, pixel, expected=False, flipped=(), proven=None, resources=None, 
     fails, warns, status = [], [], ""
     # Required runtime proof is independent of intended/improved data changes.
     fails.extend(row.get("runtime_problems") or [])
+    if row.get("base_unusable"):
+        # The base could not answer this page, which the PR fixes: the PR side is proven complete, the comparison with the base is not.
+        warns.append("the base could not serve as the runtime baseline for this fix (" + "; ".join(row["base_unusable"]) + ")")
     diffs = row["main_pr_diffs"]
     if diffs:
         kind = classify(row)
