@@ -2491,6 +2491,7 @@
       "internal/proxy/binary_aggregation_test.go",
       "internal/proxy/drilldown_compat_test.go",
       "internal/proxy/ordered_json_metric_test.go",
+      "internal/proxy/ordered_json_mixed_cert_memo_test.go",
       "internal/proxy/ordered_json_mixed_certificate_oracle_test.go",
       "internal/proxy/ordered_json_mixed_class_oracle_test.go",
       "internal/proxy/ordered_json_mixed_class_test.go",
@@ -4378,6 +4379,9 @@
     "internal/proxy/ordered_json_metric_test.go": [
       "parsed-identity/bare-parser-metric-duplicates-extracted",
       "semantics/pipeline-error-text-parity",
+      "semantics/two-parsers-keep-one"
+    ],
+    "internal/proxy/ordered_json_mixed_cert_memo_test.go": [
       "semantics/two-parsers-keep-one"
     ],
     "internal/proxy/ordered_json_mixed_certificate_oracle_test.go": [
@@ -6924,7 +6928,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 815,
+  "tests_with_markers": 816,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

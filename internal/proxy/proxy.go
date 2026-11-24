@@ -933,7 +933,8 @@ type Proxy struct {
 	labelRefreshGroup                  singleflight.Group
 	parserProbeGroup                   singleflight.Group
 	translationGroup                   singleflight.Group
-	streamFieldNamesCache              *cache.Cache // short-lived internal cache for stream_field_names routing decisions
+	streamFieldNamesCache              *cache.Cache  // short-lived internal cache for stream_field_names routing decisions
+	mixedCertificates                  mixedCertMemo // derived mixed-parser certificates, re-checked by a fresh field-name listing after every scan
 	labelValuesIndexedCache            bool
 	labelValuesHotLimit                int
 	labelValuesIndexMaxEntries         int

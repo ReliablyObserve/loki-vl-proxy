@@ -125,21 +125,70 @@ func (p *Proxy) collectOrderedMixedJSONStats(ctx context.Context, plan *orderedJ
 	if !mixedClassQueriesFit(base, class, key) {
 		return nil, false, nil
 	}
-	if names, listed := p.mixedClassWindowFieldNames(ctx, base, fetchStart, end, bucket); listed {
-		if certified, ok := p.mixedClassCertificate(ctx, class, base, names, fetchStart, end, bucket); ok && mixedClassQueriesFit(base, certified, key) {
-			series, served, err := p.scanOrderedMixedJSONStats(ctx, plan, base, certified, key, fetchStart, start, end, step, bucket)
-			if err != nil {
+	// A certificate derived for this tenant, selector and window class is reused for a minute. The re-read after
+	// the scan is what keeps it sound: it lists the names of the rows the scan could see, and they must all be
+	// among the remembered ones, whatever the age of the entry.
+	memoKey := p.mixedCertMemoKey(ctx, base, class.label, fetchStart, end)
+	if entry, ok := p.mixedCertificates.get(memoKey, time.Now()); ok {
+		if entry.certified == nil {
+			p.observeInternalOperation(ctx, "mixed_class_certificate", "cache_hit_class", 0)
+			return p.scanOrderedMixedJSONStats(ctx, plan, base, class, key, fetchStart, start, end, step, bucket)
+		}
+		if mixedClassQueriesFit(base, entry.certified, key) {
+			if series, served, err, done := p.scanCertifiedMixedJSONStats(ctx, plan, base, entry.certified, entry.names, key, fetchStart, start, end, step, bucket); done {
+				if err == nil {
+					p.observeInternalOperation(ctx, "mixed_class_certificate", "cache_hit", 0)
+				}
 				return series, served, err
 			}
-			if served {
-				if again, ok := p.mixedClassWindowFieldNames(ctx, base, fetchStart, end, bucket); ok && mixedClassNamesWithin(again, names) {
-					return series, true, nil
+		}
+		p.mixedCertificates.drop(memoKey)
+		return p.scanOrderedMixedJSONStats(ctx, plan, base, class, key, fetchStart, start, end, step, bucket)
+	}
+	if names, listed := p.mixedClassWindowFieldNames(ctx, base, fetchStart, end, bucket); listed {
+		certified, ok := p.mixedClassCertificate(ctx, class, base, names, fetchStart, end, bucket)
+		if !ok || !mixedClassQueriesFit(base, certified, key) {
+			// The listing did settle that these names do not certify: remember it, so the next request goes
+			// straight to the class instead of listing and measuring again.
+			p.mixedCertificates.put(memoKey, mixedCertEntry{names: names}, time.Now())
+		} else {
+			if series, served, err, done := p.scanCertifiedMixedJSONStats(ctx, plan, base, certified, names, key, fetchStart, start, end, step, bucket); done {
+				if err == nil {
+					p.mixedCertificates.put(memoKey, mixedCertEntry{names: names, certified: certified}, time.Now())
 				}
-				p.observeInternalOperation(ctx, "mixed_class_certificate", "names_changed", 0)
+				return series, served, err
 			}
 		}
 	}
 	return p.scanOrderedMixedJSONStats(ctx, plan, base, class, key, fetchStart, start, end, step, bucket)
+}
+
+// scanCertifiedMixedJSONStats runs the native count with a certified class and then re-reads the window's field
+// names: done is true when its answer stands (served, or an error to report), false when a name outside the
+// certified ones appeared, so the caller must run the class itself.
+func (p *Proxy) scanCertifiedMixedJSONStats(ctx context.Context, plan *orderedJSONMetricPlan, base string, certified *mixedJSONRowClass, names []string, key string, fetchStart, start, end time.Time, step, bucket time.Duration) (series map[string]manualSeriesSamples, served bool, err error, done bool) {
+	series, served, err = p.scanOrderedMixedJSONStats(ctx, plan, base, certified, key, fetchStart, start, end, step, bucket)
+	if err != nil {
+		return series, served, err, true
+	}
+	if !served {
+		return series, served, nil, false
+	}
+	if again, ok := p.mixedClassWindowFieldNames(ctx, base, fetchStart, end, bucket); ok && mixedClassNamesWithin(again, names) {
+		return series, true, nil, true
+	}
+	p.observeInternalOperation(ctx, "mixed_class_certificate", "names_changed", 0)
+	return nil, false, nil, false
+}
+
+// mixedCertMemoKey keys a remembered certificate by tenant and auth scope, the selector's backend query, the class
+// label and the window class.
+func (p *Proxy) mixedCertMemoKey(ctx context.Context, base, label string, from, to time.Time) string {
+	params := url.Values{}
+	params.Set("query", base)
+	params.Set("label", label)
+	params.Set("window", mixedCertWindowClass(to.Sub(from)))
+	return p.metadataFieldNamesCacheKey(ctx, "mxc:", params)
 }
 
 // mixedClassQueriesFit reports whether both backend forms of the class, the native count and the exact complement,

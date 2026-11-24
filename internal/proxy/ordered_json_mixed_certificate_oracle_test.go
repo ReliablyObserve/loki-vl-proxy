@@ -90,9 +90,14 @@ func TestOrderedMixedStatsCertifiedClassMatchesFullClass(t *testing.T) {
 					failFieldNames := mode == "full"
 					var mu sync.Mutex
 					var stats []string
-					measured := 0
+					measured, listings := 0, 0
 					reverse := httputil.NewSingleHostReverseProxy(target)
 					front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						if strings.HasSuffix(r.URL.Path, "/field_names") {
+							mu.Lock()
+							listings++
+							mu.Unlock()
+						}
 						if failFieldNames && strings.HasSuffix(r.URL.Path, "/field_names") {
 							http.Error(w, "forced", http.StatusInternalServerError)
 							return
@@ -146,6 +151,33 @@ func TestOrderedMixedStatsCertifiedClassMatchesFullClass(t *testing.T) {
 					body, err := buildMixedJSONStatsMatrix(plan, series, start, end, step, p.limits().BufferedBackendBodyBytes)
 					if err != nil {
 						t.Fatal(err)
+					}
+					if mode == "certified" {
+						// The same request again: the certificate is remembered, so only the listing after the scan
+						// runs (a remembered unclean listing runs none), and the answer is the same bytes.
+						mu.Lock()
+						l0, m0 := listings, measured
+						mu.Unlock()
+						series, served, err := p.collectOrderedMixedJSONStats(context.Background(), plan, start, end, step)
+						if err != nil || !served {
+							t.Fatalf("repeat: served=%v error=%v", served, err)
+						}
+						again, err := buildMixedJSONStatsMatrix(plan, series, start, end, step, p.limits().BufferedBackendBodyBytes)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if string(again) != string(body) {
+							t.Fatalf("the remembered certificate answers differently:\n got  %s\n want %s", again, body)
+						}
+						mu.Lock()
+						wantListings := 1
+						if dataset.wantCertSkip {
+							wantListings = 0
+						}
+						if listings-l0 != wantListings || measured != m0 {
+							t.Fatalf("repeat made %d listings (want %d) and %d measurements (want 0)", listings-l0, wantListings, measured-m0)
+						}
+						mu.Unlock()
 					}
 					mu.Lock()
 					defer mu.Unlock()
