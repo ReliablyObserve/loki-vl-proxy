@@ -7,13 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.360.0] - 2026-11-24
-
 ### Fixed
-
-- `label_replace` around `topk`, `bottomk`, `sort` or `sort_desc` (alone, grouped, under `sum`, `avg`, `min`, `max` or `count`, or over a binary operation) answers the ranked series with the calls applied, as Loki does. Before, `query` answered a 400 and `query_range` an empty answer. Series that the calls give one label set keep every ranked sample of a step in one series, in the ranking's order, as Loki writes them. A regexp that does not compile answers Loki's 400 before any VictoriaLogs request. The cached `query_range` answers of these queries are not served again. `label_replace` around `vector()` and around a ranking nested with `stddev` or `stdvar` are not changed.
-
-- `label_replace` around a range function over an unwrapped label whose series a `keep` decides (`label_replace(first_over_time({app="a"} | json | keep app, n | unwrap n [5m]), ...)`) groups the samples by the labels the `keep` leaves, as Loki does, instead of one series per stream or line. The cached answers of a query with a `keep`, an `unwrap` and `label_replace` are not served again.
 
 - Separate source paths from their SHA-256 values in runtime-proof metadata to avoid a generic API-key false positive. The historical Gitleaks exception is limited to the verified source digest's exact commit, file, rule and line; future content remains scanned.
 
@@ -46,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Reviewed CodeQL `go/unsafe-quoting` alerts 705–707 on Loki pipeline diagnostics. The formatted text is an HTTP error body, never an executable query; the writer fixes `text/plain; charset=utf-8` and `nosniff` headers before writing it. Retain Loki-compatible quoting and cover hostile quote, header-looking and HTML values in the existing error-writer regression.
+
+## [2.360.0] - 2026-11-24
+
+### Fixed
+
+- `label_replace` around `topk`, `bottomk`, `sort` or `sort_desc` (alone, grouped, under `sum`, `avg`, `min`, `max` or `count`, or over a binary operation) answers the ranked series with the calls applied, as Loki does. Before, `query` answered a 400 and `query_range` an empty answer. Series that the calls give one label set keep every ranked sample of a step in one series, in the ranking's order, as Loki writes them. A regexp that does not compile answers Loki's 400 before any VictoriaLogs request. The cached `query_range` answers of these queries are not served again. `label_replace` around `vector()` and around a ranking nested with `stddev` or `stdvar` are not changed.
+
+- `label_replace` around a range function over an unwrapped label whose series a `keep` decides (`label_replace(first_over_time({app="a"} | json | keep app, n | unwrap n [5m]), ...)`) groups the samples by the labels the `keep` leaves, as Loki does, instead of one series per stream or line. The cached answers of a query with a `keep`, an `unwrap` and `label_replace` are not served again.
 
 ## [2.359.2] - 2026-11-24
 
