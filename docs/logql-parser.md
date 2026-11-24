@@ -353,6 +353,7 @@ The AST-to-AST translator (`logql.Translate`) maps LogQL pipeline stages to `log
 | `*=` / `!*=` matchers | Converted to `=~.*` / `!=.*` (LogsQL has no native glob) |
 | Label names with dots (`service.name`) | `LabelFn` rewrites to underscores if OTel mode enabled; otherwise passed through |
 | `\|~ ".+"` — always-true regex | Optimised away (no LogsQL equivalent needed) |
+| `\|~ "\\bword\\b"` — a literal between word boundaries (also `\|~ `` `\bfoo bar\b` ``, `\b(?:a\|b)\b` and their `!~` forms) | Sent as a VictoriaLogs phrase filter (`"word"`, `NOT "word"`, `("a" OR "b")`), which VictoriaLogs answers from its bloom filters; a regexp filter scans every line. Same lines whenever the literal starts and ends with an ASCII word character (the two boundary rules differ only at a non-ASCII letter or digit next to the word). `(?i)`, a non-word edge, quantifiers, classes and `or` chains stay regexps |
 | `rate()` / `bytes_rate()` over `__error__` | Rejected at semantic pass: 400 |
 | `quantile_over_time` φ < 0 | Rejected at semantic pass: 400 |
 | Unknown function (`label_replace`, custom) | `OpaqueMetricExpr`: raw text forwarded to VL unchanged |

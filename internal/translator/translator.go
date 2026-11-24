@@ -913,6 +913,8 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if len(alts) > 0 {
 				head, _ := strconv.Unquote(val)
 				parts = append(parts, translate.OrLineFilter(false, true, append([]translate.OrAlternative{{Text: head}}, alts...)))
+			} else if wf, ok := translate.WordBoundaryFilterText(val, false); ok {
+				parts = append(parts, wf)
 			} else {
 				parts = append(parts, "~"+val)
 			}
@@ -930,6 +932,8 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if len(alts) > 0 {
 				head, _ := strconv.Unquote(val)
 				parts = append(parts, translate.OrLineFilter(true, true, append([]translate.OrAlternative{{Text: head}}, alts...)))
+			} else if wf, ok := translate.WordBoundaryFilterText(val, true); ok {
+				parts = append(parts, wf)
 			} else {
 				parts = append(parts, "NOT ~"+val)
 			}

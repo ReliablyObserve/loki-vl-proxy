@@ -244,6 +244,12 @@ func LineFilter(st *logql.LineFilterStage) (f logsql.FilterExpr, ok bool) {
 		// Loki builds the chain from the text of each alternative: a positive ip() head matches as text.
 		pattern = OrLineFilterPattern(negate, regex, append([]OrAlternative{{Text: st.Value}}, alts...))
 	case regex:
+		if wf, ok := WordBoundaryFilter(st.Value); ok {
+			if negate {
+				return logsql.NotExpr{Expr: wf}, true
+			}
+			return wf, true
+		}
 		pattern = st.Value
 	default:
 		pattern = regexp.QuoteMeta(st.Value)

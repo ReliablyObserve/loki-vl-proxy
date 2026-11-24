@@ -203,3 +203,10 @@ func BenchmarkTranslateLogQL_RegexpMatchers(b *testing.B) {
 		TranslateLogQL(`{app=~"api-gateway|auth-service", env=~"prod", pod=~"api-.*"} | json | status=~"5.." | region=~"us-.*"`)
 	}
 }
+
+// A regexp line filter that is a word between boundaries, beside the regexp of BenchmarkTranslateLogQL_LineFilter.
+func BenchmarkTranslateLogQL_WordBoundaryLineFilter(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app="nginx"} |~ "\\bfailed\\b" !~ "\\bhealthcheck\\b"`)
+	}
+}
