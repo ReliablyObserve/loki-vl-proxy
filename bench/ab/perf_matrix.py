@@ -149,6 +149,9 @@ def shape_query(shape, step):
     return shape.get("query", "").replace("$__auto", f"{step}s")
 
 
+INTERNAL_SERVER_ERROR = "Internal Server Error"
+
+
 def answer_proof(status, body, shape):
     """An actual Loki answer, or a fingerprint of its semantic query rejection."""
     try:
@@ -159,6 +162,11 @@ def answer_proof(status, body, shape):
         message = parsed.get("error") if isinstance(parsed, dict) else body.decode(errors="replace").strip()
         if status in (400, 422, 500) and query_rejection(message):
             return "rejection:" + hashlib.sha256(error_text(message).encode()).hexdigest()
+        if status == 500 and isinstance(message, str) and message.strip() == INTERNAL_SERVER_ERROR:
+            # The Go server's own body for an unhandled failure of the target (http.Error with 500): not a Loki answer
+            # and not a rejection. Infrastructure bodies (a plugin or gateway text, an HTML page, a refused connection)
+            # are none of these and stay unproved. report.py accepts this only as a whole: every run, alone.
+            return "failure:" + hashlib.sha256(error_text(message).encode()).hexdigest()
         return None
     if not isinstance(parsed, dict) or parsed.get("status") == "error" or parsed.get("error"):
         return None
