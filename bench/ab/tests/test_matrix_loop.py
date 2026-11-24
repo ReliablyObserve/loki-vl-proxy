@@ -318,6 +318,20 @@ class ProfileRecordTest(unittest.TestCase):
 
 
 class NoSleepTest(unittest.TestCase):
+    def test_only_the_servers_own_internal_error_body_is_a_failure_proof(self):
+        valid = perf_matrix.answer_proof
+        proof = valid(500, b"Internal Server Error\n", {})
+        self.assertTrue(proof.startswith("failure:"))
+        self.assertEqual(proof, valid(500, b"Internal Server Error", {}))
+        self.assertEqual(proof, valid(500, b'{"error":"Internal Server Error"}', {}))  # the same failure in an error envelope
+        # not the body, not the status, or not plain: infrastructure and other answers stay unproved
+        for status, body in ((500, b"plugin.unavailable"), (500, b"Internal Server Error: upstream down"),
+                             (500, b"<html>502 Bad Gateway</html>"), (500, b""), (502, b"Internal Server Error"),
+                             (503, b"Internal Server Error"), (504, b"Internal Server Error"),
+                             (200, b"Internal Server Error"), (500, b'{"error":"Internal Server Error: upstream down"}'),
+                             (500, b"too many outstanding requests")):
+            self.assertIsNone(valid(status, body, {}), (status, body))
+
     def test_runtime_answers_distinguish_empty_query_rejections_and_infrastructure(self):
         valid = perf_matrix.answer_proof
         self.assertEqual(valid(200, b'{"data":{"result":[]}}', {}), "answer")
