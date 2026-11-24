@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.359.2] - 2026-11-24
+
 ### Fixed
 
 - A label filter that compares a value after a `json` or `logfmt` parser for equality with a number, a duration or a byte size now gets the same numeric-equality cache-key fence when a comment sits between the operator and the literal (`| json | status =# note⏎200`). The fence screen skipped blanks but not comments there, so such a query could replay an answer cached under the older key. Comments inside quoted text are not read, the older screen is unchanged, and only queries with a `#` after an equality operator and a numeric literal get a new key.
