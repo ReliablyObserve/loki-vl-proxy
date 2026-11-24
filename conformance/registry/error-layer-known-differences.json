@@ -1,6 +1,6 @@
 {
   "description": "Rows of internal/lokierr/testdata/loki_error_answers.jsonl (real Loki 3.7.9 error answers recorded over HTTP) whose proxy answer is not Loki's yet, compared by TestLokiErrorAnswersReplay on status, Content-Type, X-Content-Type-Options and body, byte for byte, against a proxy with its default configuration and Loki's max_query_length of the recorded stack, in front of a VictoriaLogs stand-in that answers every query call with an empty valid answer (so a request the proxy forwards instead of rejecting shows as a 200). The list may only shrink: a row that newly differs fails the test, a listed row that now matches fails until it is removed, and ceiling equals the number of rows. proxy is today's answer, for the reader; the test compares only whether a row matches Loki.",
-  "ceiling": 7,
+  "ceiling": 6,
   "rows": {
     "r1180": {
       "route": "/loki/api/v1/index/shards",
@@ -27,11 +27,6 @@
       "loki": "400 text/plain; charset=utf-8 \"snappy: corrupt input\\n\"",
       "proxy": "405 text/plain; charset=utf-8 \"write operations are not supported, this is a read-only proxy\\n\"",
       "reason": "documented limit: the proxy only reads, so a push cannot be accepted or checked; it answers 405 in the shape Loki writes its push errors in (semantics/push-route-read-only-answer)"
-    },
-    "r1451": {
-      "route": "tail_upgrade",
-      "loki": "426 text/plain; charset=utf-8 \"Upgrade Required\\n\"",
-      "proxy": "400 text/plain; charset=utf-8 \"Bad Request\\n\""
     },
     "r1561": {
       "route": "query_range",

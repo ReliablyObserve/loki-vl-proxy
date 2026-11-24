@@ -3687,21 +3687,19 @@
         "r1451"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1451"
-      ],
-      "matching_rows": 1,
+      "known_difference_ids": [],
+      "matching_rows": 2,
       "messages": [
         "tail-not-websocket",
         "unmapped-upgrade-required"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "tail_upgrade",
       "rows": 2,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3963,8 +3961,8 @@
     }
   ],
   "known_differences": {
-    "ceiling": 7,
-    "rows": 7
+    "ceiling": 6,
+    "rows": 6
   },
   "messages": {
     "aggregate-by": {
@@ -5327,7 +5325,7 @@
       ],
       "item": "unmapped-upgrade-required",
       "kind": "unmapped",
-      "matching_rows": 0,
+      "matching_rows": 1,
       "routes": [
         "tail_upgrade"
       ],
@@ -5336,7 +5334,7 @@
       ],
       "source": "recorded",
       "stage": null,
-      "state": "differs",
+      "state": "matches",
       "status": 426
     },
     "url-escape": {
@@ -5400,16 +5398,16 @@
   "summary": {
     "cells": 124,
     "cells_e2e": 73,
-    "cells_matching": 101,
+    "cells_matching": 102,
     "cells_recorded": 67,
     "check_order_rows": 33,
     "comparable_rows": 248,
     "coverage_ratio": 0.5887,
     "covered_cells": 73,
-    "differing_rows": 7,
+    "differing_rows": 6,
     "e2e_rows": 142,
-    "match_ratio": 0.9718,
-    "matching_rows": 241,
+    "match_ratio": 0.9758,
+    "matching_rows": 242,
     "messages": 48,
     "messages_documented": 12,
     "messages_recorded": 36,
