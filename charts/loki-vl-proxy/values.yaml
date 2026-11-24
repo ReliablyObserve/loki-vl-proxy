@@ -231,6 +231,7 @@ extraArgs:
   # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 400 (the log line names the flag; no truncated results). On extraction-list windows it bounds one time chunk's read: the request is read in more chunks instead
   # label-filter-refill-max-pages: "8"   # more pages (of limit rows) a log query reads when a Loki label filter dropped rows VictoriaLogs matched; 0 reads none
   # ordered-json-metric-max-bytes: "1073741824"  # safety cap on raw rows bytes read by the ordered JSON metric evaluator (0 = 1 GiB default, no upper bound); exceeding it returns HTTP 500 (the log line names the flag; no truncated results)
+  # ordered-json-metric-max-samples: "10000000"  # cap on the samples (points of all series) a proxy-evaluated metric answer holds (0 = 10,000,000); also lowered to a quarter of GOMEMLIMIT at ~96 bytes per sample, never below 1,000,000; exceeding it returns HTTP 500 (Loki's response-too-large text; the log line names the flag)
 
   # --- Frontend/client-facing compression ---
   # gzip for broad Loki/Grafana compatibility; route-aware policy raises the

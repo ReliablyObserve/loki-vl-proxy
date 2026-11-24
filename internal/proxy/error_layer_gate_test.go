@@ -1000,6 +1000,7 @@ func TestLimitAnswersAreLokisTextAndLogTheFlag(t *testing.T) {
 		{"manual metric response", newManualMetricResponseTooLarge(64), 500, fmt.Sprintf(grpcSizeText, 65, 64), "backend-max-buffered-response-bytes", "64", errManualMetricResponseTooLarge},
 		{"binary operand response", newBufferLimitError(flagBackendMaxBufferedResponseBytes, 17, 16, causeBinaryOperand), 500, fmt.Sprintf(grpcSizeText, 17, 16), "backend-max-buffered-response-bytes", "16", nil},
 		{"ordered JSON metric output", newBufferLimitError(flagOrderedJSONMetricMaxBytes, 2048, 1024, causeOrderedOutput), 500, fmt.Sprintf(grpcSizeText, 2048, 1024), "ordered-json-metric-max-bytes", "1024", nil},
+		{"ordered JSON metric samples", newBufferLimitError(flagOrderedJSONMetricMaxSamples, 10_000_001, 10_000_000, causeOrderedSamples), 500, fmt.Sprintf(grpcSizeText, 10_000_001, 10_000_000), "ordered-json-metric-max-samples", "10000000", nil},
 		{"label values", newLabelValuesTooLarge(2048, 1024), 500, fmt.Sprintf(grpcSizeText, 2048, 1024), "label-values-max-response-bytes", "1024", nil},
 		{"heavy queue", newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 4, queueWait: time.Second}), 429, queueText, "backend-max-concurrent-heavy-queries", "4", nil},
 		{"metadata scan queue", newHeavyQueueFull(&heavyQueryQueueFullError{limitFlag: metadataScanLimitFlag, work: metadataScanLimitWork, maxConcurrent: 3, queueWait: time.Second, adaptive: "adaptive limit 2"}), 429, queueText, "backend-max-concurrent-metadata-scans", "3", nil},

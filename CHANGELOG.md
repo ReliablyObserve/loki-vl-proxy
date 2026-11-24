@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `-ordered-json-metric-max-samples` (Helm `extraArgs`, default 10,000,000; `0` uses the default) sets the cap on the samples (points of all series) a proxy-evaluated metric answer holds. It was a compiled-in one million that answered 500 for any larger answer: a high-cardinality `sum by (user_id) (count_over_time(... | json | logfmt ...))` over 12h to 24h on one app (about 140k series of ten points, 1.3 million samples) is answered by Loki and was refused by the proxy with no flag to change it. The effective cap is also bounded by the process memory: at most a quarter of `GOMEMLIMIT` at about 96 bytes per sample (about 5.6 million under 2 GiB), and never below the old one million, so a small proxy is not asked to hold what it cannot. Past the cap the answer is Loki's response-too-large 500 and the request error log line names `limit_flag=-ordered-json-metric-max-samples` and its value. A negative value is rejected at startup naming the flag. The reference, limits registry and errors index are regenerated.
+
 ## [2.360.0] - 2026-11-24
 
 ### Fixed

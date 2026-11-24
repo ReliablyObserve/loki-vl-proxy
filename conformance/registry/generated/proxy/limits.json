@@ -339,6 +339,20 @@
       "sizing": "The default admits about one million rows of 1 KiB. Rows are streamed, so raising it costs VictoriaLogs scan work and network transfer rather than proxy memory; lower it to protect VictoriaLogs from long raw scans."
     },
     {
+      "flag": "ordered-json-metric-max-samples",
+      "helm_value": "extraArgs.ordered-json-metric-max-samples",
+      "type": "Int64",
+      "default": "10000000",
+      "unit": "samples",
+      "bounds": "samples (the points of all series) a proxy-evaluated metric answer holds, and the largest one it builds; the effective cap is the lower of this value and a quarter of GOMEMLIMIT at about 96 bytes per sample, never below 1,000,000",
+      "error": "500 `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)` (Loki's text for a response above its message size); the request error log line names `limit_flag=-ordered-json-metric-max-samples` and `limit_value`",
+      "metric": "loki_vl_proxy_requests_total{status=\"500\"}",
+      "alert": "none",
+      "loki_parity": "Loki holds no such cap: a metric answer of any size is returned unless it exceeds its gRPC message size, so a high-cardinality range of 12h to 24h (more than a million points) is answered by Loki and, below this cap, by the proxy",
+      "per_tenant": false,
+      "sizing": "The default of 10,000,000 admits about 140k series of 70 points. A request holds its samples at about 96 bytes each while it is evaluated, so the cap is also lowered to a quarter of the runtime memory limit: with GOMEMLIMIT=2GiB it is about 5.5 million. Size GOMEMLIMIT for the largest answers you expect, and lower the flag to protect a small proxy; -ordered-json-metric-max-bytes still bounds the response in bytes."
+    },
+    {
       "flag": "label-filter-refill-max-pages",
       "helm_value": "extraArgs.label-filter-refill-max-pages",
       "type": "Int",

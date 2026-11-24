@@ -676,7 +676,7 @@ func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh 
 	for _, s := range order {
 		if names[2] == "ordered-json-raw" {
 			points += len(s.points)
-			if points > maxMetricEvalSamples {
+			if int64(points) > p.maxMetricSamples() {
 				return nil, false
 			}
 		}
