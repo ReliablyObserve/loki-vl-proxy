@@ -61,7 +61,15 @@ func emptyWithoutOperandResponseKeyVersion(query string) string {
 	if v := cachedQueryValidation(query); v.msg != "" && !v.tree {
 		return ""
 	}
-	if plan := resolvedPlan(dynamicQuery(fenceVariablesResolved(query))); plan != nil && holdsEmptyWithoutOperand(plan.Root) {
+	resolved := fenceVariablesResolved(query)
+	if resolved != query {
+		// A range variable can leave a label_replace argument opaque to the first validation. The handlers
+		// validate its resolved text; read that same memo before treating its newly visible tree as runnable.
+		if v := cachedQueryValidation(resolved); v.msg != "" && !v.tree {
+			return ""
+		}
+	}
+	if plan := resolvedPlan(dynamicQuery(resolved)); plan != nil && holdsEmptyWithoutOperand(plan.Root) {
 		return emptyWithoutOperandResponseVersion
 	}
 	return ""

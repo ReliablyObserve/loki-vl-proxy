@@ -19,7 +19,7 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-60580%20passed-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-60581%20passed-brightgreen)](#tests)
 [![Coverage](https://img.shields.io/badge/coverage-92.1%25-brightgreen)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
@@ -84,15 +84,15 @@ The aim is a production workhorse for the whole query path: Grafana Explore, Log
 
 <!-- verified-numbers:start -->
 
-Verified 2026-11-23 on `895c23078f4a` (Loki 3.7.10, VictoriaLogs v1.49.0 and v1.54.0), 48 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
+Verified 2026-11-24 on `b283a405a88d` (Loki 3.7.10, VictoriaLogs v1.49.0 and v1.54.0), 48 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
 
-- Registry: 149 open, 171 fixed, 15 documented, 7 owner-kept, 3 upstream; open by impact: 64 explore-visible, 17 drilldown-visible, 1 grafana-datasource, 21 api-only, 46 edge.
-- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 186 match, 90 differ on equal data, 31 not comparable on that day's data, 81 blocked; v1.54.0: 188 match, 89 differ on equal data, 31 not comparable on that day's data, 80 blocked.
-- Errors: 241 of 248 recorded Loki answers match, 7 known differences, 0 known leaks; 0 of 0 rows answered as recorded by the live Loki.
-- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-23 (failure): 383 VictoriaLogs rejects the translator text, 32 accepted, translation fails, 24 error text differs, 23 proxy accepts, Loki rejects, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 10 proxy rejects, Loki accepts, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
-- Performance, weekly full run verified 2026-11-16 (Loki 3.7.10): 525 comparable shape x range pairs, 353 faster, 153 on par, 19 slower; 6 rows above 2x Loki.
-- Performance, daily smoke verified 2026-11-23: 217 rows, 0 above 2x Loki, 4 weekly ratchet rows lost.
-- Cache reuse, verified 2026-11-23: registry cases on v1.49.0: 247 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); registry cases on v1.54.0: 247 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); perf smoke: 8 of 217 rows repeat without calling VictoriaLogs.
+- Registry: 199 open, 171 fixed, 16 documented, 7 owner-kept, 3 upstream; open by impact: 112 explore-visible, 18 drilldown-visible, 2 grafana-datasource, 21 api-only, 46 edge.
+- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 188 match, 89 differ on equal data, 38 not comparable on that day's data, 120 blocked; v1.54.0: 186 match, 91 differ on equal data, 38 not comparable on that day's data, 120 blocked.
+- Errors: 242 of 248 recorded Loki answers match, 6 known differences, 0 known leaks; 0 of 0 rows answered as recorded by the live Loki.
+- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-24 (failure): 383 VictoriaLogs rejects the translator text, 32 accepted, translation fails, 24 error text differs, 23 proxy accepts, Loki rejects, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 10 proxy rejects, Loki accepts, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
+- Performance, weekly full run verified 2026-11-23 (Loki 3.7.10): 525 comparable shape x range pairs, 329 faster, 171 on par, 25 slower; 5 rows above 2x Loki.
+- Performance, daily smoke verified 2026-11-24: 217 rows, 1 above 2x Loki, 6 weekly ratchet rows lost.
+- Cache reuse, verified 2026-11-24: registry cases on v1.49.0: 254 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); registry cases on v1.54.0: 254 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); perf smoke: 14 of 217 rows repeat without calling VictoriaLogs.
 
 <!-- verified-numbers:end -->
 

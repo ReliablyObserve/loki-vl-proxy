@@ -604,6 +604,16 @@ per-profile Compose overrides preserve the selected backend commands. Historical
 metadata controls also seed their actual offset windows. When the base rejects
 a query and the PR returns Loki's successful answer, the report retains the
 rejection timing and records base-relative cost and speedup as unavailable.
+The same holds when the base fails on the query with the server's own internal error
+(a `500` whose body is exactly `Internal Server Error`, recorded as an `answer_proof` of
+`failure:<fingerprint>`): it counts as evidence only as a whole, that is, every run fails
+the same way, and in every run the PR and Loki answered with equal results. One run that
+answered, a different failure, any other status (`502`, `503`, `504`) or body (a plugin
+or gateway text, an HTML page), a PR that differs from Loki, or a failing PR leaves the
+samples incomplete, so a transient fault of the base is never read as a fix. A ranking
+that ties (several series with equal values) can make the PR and Loki pick different
+tied series over a range; choose a shape whose ranked values are distinct, or an
+instant query, when the shape must also match Loki's series.
 Each proxy CPU delta needs two finite, nonnegative, monotonic counter values. A
 measured zero survives aggregation. Missing or reset counters leave CPU unavailable.
 The PR comment shows up to twelve shape/range/profile rows. Canonical final summaries

@@ -38,18 +38,23 @@ class CompareTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(os.path.exists(stale))
 
-    def run_compare(self, main, pr, loki=None, rng="1h", runtime_required=False):
+    def run_compare(self, main, pr, loki=None, rng="1h", runtime_required=False, fix_cases=None, first_pass_loki=None):
         with tempfile.TemporaryDirectory() as out:
             d = os.path.join(out, "data", "page-a", rng)
             os.makedirs(d)
             if runtime_required:
                 with open(os.path.join(out, "plan.json"), "w", encoding="utf-8") as f:
-                    json.dump({"runtime_proof": {"required": True},
+                    json.dump({"runtime_proof": {"required": True}, "fix_cases": fix_cases or {},
                                "entries": {"page-a": {"ranges": [rng], "runtime_required": True}}}, f)
             for name, cap in (("main", main), ("pr", pr), ("loki", loki)):
                 if cap is not None:
                     with open(os.path.join(d, f"{name}.json"), "w", encoding="utf-8") as f:
                         json.dump(cap, f)
+            if first_pass_loki is not None:  # Loki's capture of the first pass of the run, kept next to a recapture
+                first = os.path.join(out, "first-pass", "data", "page-a", rng)
+                os.makedirs(first)
+                with open(os.path.join(first, "loki.json"), "w", encoding="utf-8") as f:
+                    json.dump(first_pass_loki, f)
             proc = subprocess.run([sys.executable, os.path.join(HERE, "..", "compare.py"), out], capture_output=True, text=True)
             with open(os.path.join(out, "compare.md"), encoding="utf-8") as f:
                 self.last_md = f.read()
@@ -447,8 +452,8 @@ class ExplainedVsLokiTest(unittest.TestCase):
     """Differences from Loki by design are listed as explained, everything else stays a difference."""
     run_compare = CompareTest.run_compare
 
-    def check(self, pr, loki):
-        _, row = self.run_compare(pr, pr, loki)
+    def check(self, pr, loki, first_pass_loki=None):
+        _, row = self.run_compare(pr, pr, loki, first_pass_loki=first_pass_loki)
         return row
 
     def test_detected_fields_envelope_and_extracted_suffix_are_explained(self):
@@ -556,6 +561,107 @@ class ExplainedVsLokiTest(unittest.TestCase):
         self.assertEqual(row["main_pr_bodies"][0]["numbers"].split(" vs ")[0], "streams 2, chunks 2, entries 2, bytes 200")
         _, row = self.run_compare(pr, pr, pr)
         self.assertEqual((row["main_pr_bodies"], row["loki_bodies"]), ([], []))
+
+    def test_index_stats_explains_whole_chunk_copies_only_when_loki_itself_moved(self):
+        # registry quality/index-stats-loki-chunk-accounting: every copy of a chunk Loki reads is added. Equal streams,
+        # and entries and chunks both an exact whole multiple (k >= 2) of the proxy's, is that signature, but it also fits a
+        # proxy that undercounts by 1/k. It is explained only when Loki's own earlier answer in the run (the first pass,
+        # kept next to the recapture) equalled the proxy's current streams, entries and chunks: Loki moved, the proxy did not.
+        pr = resources(("index/stats?q=1", {"streams": 490, "chunks": 490, "bytes": 1221200, "entries": 12212}))
+
+        def loki(**numbers):
+            body = {"streams": 490, "chunks": 980, "bytes": 8386560, "entries": 24424}
+            body.update(numbers)
+            return resources(("index/stats?q=1", body), uid="vp-loki")
+        first = resources(("index/stats?q=1", {"streams": 490, "chunks": 490, "bytes": 4193280, "entries": 12212}), uid="vp-loki")
+        row = self.check(pr, loki(), first_pass_loki=first)
+        self.assertEqual((row["loki_diffs"], len(row["loki_explained"])), ([], 1))
+        self.assertIn("every chunk 2 times", row["loki_explained"][0])
+        self.assertIn("earlier in this run Loki answered this request with the proxy's", row["loki_explained"][0])
+        row = self.check(pr, loki(chunks=1470, entries=36636), first_pass_loki=first)
+        self.assertEqual((row["loki_diffs"], len(row["loki_explained"])), ([], 1))
+        self.assertIn("every chunk 3 times", row["loki_explained"][0])
+        # no evidence that only Loki moved: no first pass, or a first pass that did not equal the proxy's numbers
+        self.assertEqual(len(self.check(pr, loki())["loki_diffs"]), 1)
+        undercount = resources(("index/stats?q=1", {"streams": 490, "chunks": 980, "bytes": 8386560, "entries": 24424}), uid="vp-loki")
+        self.assertEqual(len(self.check(pr, loki(), first_pass_loki=undercount)["loki_diffs"]), 1)
+        self.assertEqual(len(self.check(pr, loki(), first_pass_loki=resources(("index/stats?q=2", {"streams": 490, "chunks": 490, "entries": 12212}),
+                                                                           uid="vp-loki"))["loki_diffs"]), 1)
+        # the signature itself is strict, even with a first pass that equals the proxy's numbers
+        for name, numbers in (
+                ("entries doubled, chunks not", dict(chunks=490)),
+                ("entries not a multiple", dict(entries=24425)),
+                ("entries and chunks differ in multiple", dict(chunks=1470)),
+                ("streams differ", dict(streams=491)),
+                ("fewer entries than the proxy", dict(entries=6106, chunks=245)),
+                ("no entries on Loki", dict(entries=0, chunks=0))):
+            row = self.check(pr, loki(**numbers), first_pass_loki=first)
+            self.assertEqual((len(row["loki_diffs"]), row["loki_explained"]), (1, []), name)
+        # entries equal the proxy's: the older rule applies (only bytes and chunks differ), not the copies rule
+        row = self.check(pr, loki(entries=12212))
+        self.assertEqual((row["loki_diffs"], len(row["loki_explained"])), ([], 1))
+        self.assertNotIn("times", row["loki_explained"][0])
+        # a proxy that counts nothing is never a divisor of Loki's count
+        zero = resources(("index/stats?q=1", {"streams": 490, "chunks": 490, "bytes": 0, "entries": 0}))
+        zero_first = resources(("index/stats?q=1", {"streams": 490, "chunks": 490, "bytes": 0, "entries": 0}), uid="vp-loki")
+        row = self.check(zero, loki(), first_pass_loki=zero_first)
+        self.assertEqual((len(row["loki_diffs"]), row["loki_explained"]), (1, []))
+
+    def test_a_base_that_cannot_answer_a_fixed_page_does_not_fail_the_runtime_proof(self):
+        runtime = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                       js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100,
+                       page_encoded_bytes=200, first_api_data_ms=25)
+        fixes = {"semantics/case-a": {"entries": ["page-a"], "status": "fixed"}}
+        broken = dict(capture([], status=500, error="Internal Server Error"), runtime=runtime)
+        answer = dict(capture([1]), runtime=runtime)
+        # without a fix claim for the page the base's unusable answer is a failure, as before
+        _, row = self.run_compare(broken, answer, answer, runtime_required=True)
+        self.assertIn("main infrastructure error", " ".join(row["runtime_problems"]))
+        self.assertNotIn("base_unusable", row)
+        # a page the PR fixes: the base's own problems are set aside and recorded, the PR side stays fully proven
+        _, row = self.run_compare(broken, answer, answer, runtime_required=True, fix_cases=fixes)
+        self.assertEqual(row["runtime_problems"], [])
+        self.assertIn("main infrastructure error", " ".join(row["base_unusable"]))
+        self.assertIn("unusable as a baseline", row["base_comparison_note"])
+        import visual_comment
+        fails, warns, _ = visual_comment.assess(row, None)
+        self.assertIn("base could not serve as the runtime baseline", " ".join(warns))
+        # status other than fixed (an open case with partial proof) gets no allowance
+        _, row = self.run_compare(broken, answer, answer, runtime_required=True,
+                                  fix_cases={"semantics/case-a": {"entries": ["page-a"], "status": "open"}})
+        self.assertTrue(row["runtime_problems"])
+        # a PR that errors, never settled, differs from Loki, or regresses gets none either
+        pr_error = dict(capture([], status=500, error="Internal Server Error"), runtime=runtime)
+        _, row = self.run_compare(broken, pr_error, pr_error, runtime_required=True, fix_cases=fixes)
+        self.assertTrue(row["runtime_problems"])
+        unsettled = dict(answer, settled=False)
+        _, row = self.run_compare(broken, unsettled, answer, runtime_required=True, fix_cases=fixes)
+        self.assertTrue(row["runtime_problems"])
+        other = dict(capture([2]), runtime=runtime)
+        _, row = self.run_compare(broken, answer, other, runtime_required=True, fix_cases=fixes)
+        self.assertTrue(row["runtime_problems"])
+        slow = dict(answer, runtime=dict(runtime, browser_thread_seconds=9, js_heap_max_sampled_bytes=900 << 20))
+        _, row = self.run_compare(broken, slow, slow, runtime_required=True, fix_cases=fixes)
+        self.assertTrue(row["runtime_problems"], "a PR-side problem is never set aside")
+
+    def test_an_unreadable_base_body_is_set_aside_only_when_the_pr_body_is_readable(self):
+        runtime = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                       js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100,
+                       page_encoded_bytes=200, first_api_data_ms=25)
+        fixes = {"semantics/case-a": {"entries": ["page-a"], "status": "fixed"}}
+        answer = dict(capture([1]), runtime=runtime)
+        unreadable = dict(capture([1]), runtime=runtime)
+        unreadable["records"][0]["response"] = None  # a body the browser could not hand over (a very large answer)
+        _, row = self.run_compare(unreadable, answer, answer, runtime_required=True)
+        self.assertIn("unreadable API bodies", " ".join(row["runtime_problems"]))
+        _, row = self.run_compare(unreadable, answer, answer, runtime_required=True, fix_cases=fixes)
+        self.assertEqual(row["runtime_problems"], [])
+        self.assertTrue(row["base_unusable"])
+        # unreadable on the PR side as well: nothing is proven about the page, nothing is set aside
+        both = dict(capture([1]), runtime=runtime)
+        both["records"][0]["response"] = None
+        _, row = self.run_compare(unreadable, both, answer, runtime_required=True, fix_cases=fixes)
+        self.assertIn("unreadable API bodies", " ".join(row["runtime_problems"]))
 
     def test_kept_bodies_are_bounded(self):
         big = {"fields": [{"label": f"field_{i}", "type": "string", "cardinality": i} for i in range(500)]}
