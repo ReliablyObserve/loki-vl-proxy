@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.360.0] - 2026-11-24
+
 ### Fixed
 
 - `label_replace` around `topk`, `bottomk`, `sort` or `sort_desc` (alone, grouped, under `sum`, `avg`, `min`, `max` or `count`, or over a binary operation) answers the ranked series with the calls applied, as Loki does. Before, `query` answered a 400 and `query_range` an empty answer. Series that the calls give one label set keep every ranked sample of a step in one series, in the ranking's order, as Loki writes them. A regexp that does not compile answers Loki's 400 before any VictoriaLogs request. The cached `query_range` answers of these queries are not served again. `label_replace` around `vector()` and around a ranking nested with `stddev` or `stdvar` are not changed.
