@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 110 items are locked; 5 carry an effort exception.
+29 of 111 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -288,6 +288,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/label-filter-before-parser-pushdown` | 2 × 4 ranges | 8 same | worst 1.35s / 0.01s (24h) | 4.89s / 0.04s | same | locked 2026-10-27 |
 | `semantics/label-filter-expression-syntax` | 3 × 4 ranges | 12 same | worst 2.54s / 0.01s (24h) | 4.22s / 0.04s | same | not locked |
 | `semantics/label-inventory-exact-and-incremental` | 12 × 4 ranges | 48 same | worst 0.46s / 0.00s (24h) | 0.09s † / 0.09s | differs | locked 2026-10-27 |
+| `semantics/label-replace-around-ranking-and-vector` | — | not measured | | | | not locked |
 | `semantics/label-replace-instant-vector` | 1 × 1 ranges | 1 same | worst 0.00s / 0.00s (instant) | 0.01s / 0.01s | same | not locked |
 | `semantics/label-replace-new-label` | 6 × 4 ranges | 12 same | worst 1.09s / 0.01s (24h) | 1.13s / 0.02s | same | not locked |
 | `semantics/label-replace-range-binary-marker` | 1 × 3 ranges | 3 same | worst 0.13s / 0.04s (24h) | 0.42s † / 0.01s | same | not locked |

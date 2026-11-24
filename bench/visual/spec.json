@@ -1550,6 +1550,32 @@
    ]
   },
   {
+   "id": "explore-label-replace-around-topk",
+   "kind": "explore",
+   "query": "label_replace(topk(2, sum by (app) (rate({env=\"production\"}[5m]))), \"app_short\", \"$1\", \"app\", \"(.*)-.*\")",
+   "covers": [
+    "semantics/label-replace-around-ranking-and-vector",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/label-replace-around-ranking-and-vector"
+   ]
+  },
+  {
+   "id": "explore-label-replace-keep-unwrap",
+   "kind": "explore",
+   "query": "label_replace(first_over_time({app=\"api-gateway\"} | json | keep app, duration_ms | unwrap duration_ms [5m]), \"svc\", \"$1\", \"app\", \"(.*)\")",
+   "covers": [
+    "semantics/keep-before-unwrap-identity-in-operands",
+    "semantics/keep-before-unwrap-series-identity",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/keep-before-unwrap-identity-in-operands"
+   ]
+  },
+  {
    "id": "explore-unwrap-parser-series-identity",
    "kind": "explore",
    "query": "sum by (app) (avg_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [$__auto]))",

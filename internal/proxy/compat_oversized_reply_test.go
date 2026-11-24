@@ -70,7 +70,6 @@ func oversizedReplyRequests(now time.Time) []struct{ name, target string } {
 		{"limits/drilldown-breakdown-keeps-busiest", rangeQuery(`sum by (pod) (count_over_time({env="production"}[5m]))`, "60")},
 		{"parsed-identity/bare-parser-metric-duplicates-extracted", instant(bareParser, time.Time{})},
 		{"parsed-identity/bare-parser-metric-duplicates-extracted/pinned", instant(bareParser, now.Add(-30*time.Second))},
-		{"semantics/keep-before-unwrap-identity-in-operands", instant(`label_replace(first_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m]), "svc", "$1", "app", "(.*)")`, end.Add(30*time.Second))},
 		{"semantics/label-filter-before-parser-reads-ingest-json-key", rangeQuery(`sum by (trace_id) (count_over_time({env="production"} | trace_id!="" [20s]))`, "20s")},
 		{"semantics/quantile-over-time-out-of-range", instant(quantile, time.Time{})},
 		{"semantics/quantile-over-time-out-of-range/pinned", instant(quantile, now.Add(-30*time.Second))},
@@ -119,7 +118,7 @@ func vlCallsOf(t *testing.T, rec *httptest.ResponseRecorder) (int, string) {
 	return calls, rec.Header().Get(vlCacheResultHeader)
 }
 
-// conformance: limits/drilldown-breakdown-keeps-busiest, parsed-identity/bare-parser-metric-duplicates-extracted, semantics/keep-before-unwrap-identity-in-operands, semantics/label-filter-before-parser-reads-ingest-json-key, semantics/quantile-over-time-out-of-range, semantics/unpack-non-string-values, parsed-identity/regexp-partial-match-series-count, quality/edge-cache-oversized-reply
+// conformance: limits/drilldown-breakdown-keeps-busiest, parsed-identity/bare-parser-metric-duplicates-extracted, semantics/label-filter-before-parser-reads-ingest-json-key, semantics/quantile-over-time-out-of-range, semantics/unpack-non-string-values, parsed-identity/regexp-partial-match-series-count, quality/edge-cache-oversized-reply
 func TestOversizedReplyRepeatAsksVictoriaLogsNothing(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	rows := oversizedReplyRows(now)

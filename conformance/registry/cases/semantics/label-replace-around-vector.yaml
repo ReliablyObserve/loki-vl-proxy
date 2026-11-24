@@ -1,0 +1,40 @@
+id: semantics/label-replace-around-vector
+title: label_replace around vector() answers no series on the proxy and one on Loki (open)
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+evidence: needs recording
+why: |
+  Loki evaluates `label_replace(vector(1), "a", "$1", "b", "(.*)")`: the
+  label_replace evaluator transforms the one series vector() answers. The
+  proxy answers an empty `streams` answer on query_range (the vector() call
+  is not routed as a number under label_replace). Split from
+  semantics/label-replace-around-ranking-and-vector, whose rankings are fixed.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'label_replace(vector(1), "a", "$1", "b", "(.*)")'
+    start: 'now-15m'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    One series, the value 1 at every step, as Loki answers.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/proxy/proxy.go (handleQueryRange routing of a label_replace whose inner expression is vector())'
+  loki: 'label_replace transforms the series of vector(), one series of the number at every step'
+  proxy: 'empty streams on query_range'
+  planned_test: 'TestCompat_LabelReplaceAroundVector (test/e2e-compat, group semantics)'
+  visual: none
+  visual_reason: 'a constant under label_replace; no Grafana panel sends it'
+  clusters: []

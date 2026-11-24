@@ -112,7 +112,11 @@ func TestRouteQueryOfARankingOrLabelReplace(t *testing.T) {
 		{q: `label_replace(` + grouped + `, "b", "$1", "app", "(.*)")`, req: buckets, window: WindowBuckets},
 		{q: `label_replace(sum without (pod) (count_over_time({app="a"}[5m])), "b", "$1", "app", "(.*)")`, req: tumbling, window: WindowTumbling, fold: FoldPushed},
 		{q: `label_replace(sum by (app) (rate({app="a"}[5m])) / sum by (app) (rate({app="b"}[5m])), "b", "$1", "app", "(.*)")`, req: instant, window: WindowInstant, binary: true},
-		{q: `label_replace(topk(2, ` + grouped + `), "b", "$1", "app", "(.*)")`, req: instant, construct: "LabelReplace route ranking operand"},
+		// a label_replace around a ranking is routed as the ranking; nested with a stddev, not as one evaluation
+		{q: `label_replace(topk(2, ` + grouped + `), "b", "$1", "app", "(.*)")`, req: instant, window: WindowInstant},
+		{q: `label_replace(topk(2, ` + grouped + `), "b", "$1", "app", "(.*)")`, req: tumbling, window: WindowTumbling, grid: true},
+		{q: `label_replace(label_replace(sort_desc(` + grouped + `), "b", "$1", "app", "(.*)"), "c", "$1", "b", "(.*)")`, req: tumbling, window: WindowTumbling},
+		{q: `label_replace(topk(2, stddev by (app) (count_over_time({app="a"}[5m]))), "b", "$1", "app", "(.*)")`, req: instant, construct: "LabelReplace route ranking operand"},
 		// the operand's own delegation, named under the root
 		{q: `topk(2, sum by (app) (count_over_time({app="a"} | json [5m])))`, req: instant, construct: "Rank operand VectorAgg route pipeline"},
 		{q: `label_replace(rate({app="a"} | json [5m]), "b", "$1", "app", "(.*)")`, req: instant, construct: "LabelReplace operand RangeAgg route pipeline"},
