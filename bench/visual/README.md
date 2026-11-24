@@ -237,6 +237,27 @@ already handles proves nothing and the gate says so). A fix that changes which s
 hold, a single-version behaviour, nothing a panel renders), set in the case's gap block
 `visual: none` and `visual_reason: '<why>'` (an honest reason; `api-only` and `edge` impacts need nothing).
 
+**A base that cannot answer a page the PR fixes.** When the plan marks a page as the proof of a registry case this
+pull request turns to `fixed` (`fix_cases`), and the base build cannot serve that page (an oversize answer the browser
+cannot read, or an error answer that is no query rejection), the runtime proof has no usable base to measure
+against. `compare.py` then sets aside the problems that are about the main side (`runtime proof: main ...`, and
+unreadable bodies that are unreadable only on main) and records them in the row's `base_unusable` and
+`base_comparison_note`; the comment shows them as a warning. They are set aside only when the PR side is proven
+complete: it settled, no PR body is unreadable, it answered without an error, it shows no difference from Loki that
+the base lacks, and no other runtime problem remains (a PR-side problem, a missing Loki reference or a resource
+regression is never set aside). The page's own fix proof still decides whether the PR is right. A page of a case that
+is not `fixed` gets no allowance.
+
+**Loki's index/stats counts every copy of a chunk.** Besides the older rule (bytes and chunk count have no
+VictoriaLogs equivalent when streams and entries match), `index/stats` is explained when Loki read the same chunks
+from its ingesters and its store: streams equal, and entries and chunks both an exact whole multiple k (k at least 2)
+of the proxy's (registry `quality/index-stats-loki-chunk-accounting`, "every copy of a chunk Loki reads is added").
+That signature alone would also fit a proxy that undercounts by exactly 1/k, so it needs evidence that Loki moved and
+the proxy did not: Loki's own answer to the same request in the first pass of the run (kept in `first-pass/` next to
+a recapture) must have equalled the proxy's current streams, entries and chunks. Without that earlier answer, and
+for any other difference in streams or entries, including entries that are not a multiple of the proxy's, the
+difference stays counted. The proxy's own count is not changed: it still equals Loki's `count_over_time`.
+
 **Gate.** A base-vs-PR data difference is classified against Loki, where Loki holds
 data for the range (15m and 1h):
 
