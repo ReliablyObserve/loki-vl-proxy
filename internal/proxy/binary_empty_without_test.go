@@ -180,11 +180,16 @@ func TestEmptyWithoutFenceFollowsTheValidatedTree(t *testing.T) {
 		{`sum without () (count_over_time({app=~".*"}[5m])) / 2`, false},
 		{`sum without () (count_over_time({app="a"}[5m])) / `, false},
 		{`count without () (count_over_time({app="a"}[5m])) / 2`, false},
+		{"lABel_replACe(sum\rwithout\t() # \"\n(Count_over_t\u0130me({}[$__auto]))%00,\r\"\",\"\",\"\",\"\")\r", false},
+		{`label_replace(sum without () (count_over_time({app="a"}[$__auto])) % 0, "", "", "", "")`, true},
 	} {
 		if _, msg := logqlpkg.ValidateLogQLExpr(tc.query); tc.fires && msg != "" {
 			t.Fatalf("%q: the validation rejects a row that must fire: %s", tc.query, msg)
 		}
 		if got := emptyWithoutOperandResponseKeyVersion(tc.query) != ""; got != tc.fires {
+			resolved := fenceVariablesResolved(tc.query)
+			t.Logf("original validation: %+v; resolved validation: %+v; resolved query: %q; plan: %+v",
+				cachedQueryValidation(tc.query), cachedQueryValidation(resolved), resolved, resolvedPlan(dynamicQuery(resolved)))
 			t.Errorf("%q: the fence fires %v, want %v", tc.query, got, tc.fires)
 		}
 	}

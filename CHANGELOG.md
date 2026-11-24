@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A label filter that compares a value after a `json` or `logfmt` parser for equality with a number, a duration or a byte size now gets the same numeric-equality cache-key fence when a comment sits between the operator and the literal (`| json | status =# note⏎200`). The fence screen skipped blanks but not comments there, so such a query could replay an answer cached under the older key. Comments inside quoted text are not read, the older screen is unchanged, and only queries with a `#` after an equality operator and a numeric literal get a new key.
+- The binary `sum without ()` empty-operand cache-key fence no longer fires for a query whose range variable (`$__auto`) resolves to text the handlers reject: the fence now reads the same validation the handlers use for the resolved text, so it matches the tree that is actually run. A query whose resolved text is valid keeps its key; only a query the handlers reject (a spelling such as `label_replace(sum without()(...) % 0, ...)`) falls back to the older key.
+
 ## [2.359.1] - 2026-11-24
 
 ### Security
