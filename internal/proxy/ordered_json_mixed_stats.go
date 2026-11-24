@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -125,7 +126,7 @@ func (p *Proxy) collectOrderedMixedJSONStats(ctx context.Context, plan *orderedJ
 		return nil, false, nil
 	}
 	if names, listed := p.mixedClassWindowFieldNames(ctx, base, fetchStart, end, bucket); listed {
-		if certified, ok := class.certified(names); ok && mixedClassQueriesFit(base, certified, key) {
+		if certified, ok := p.mixedClassCertificate(ctx, class, base, names, fetchStart, end, bucket); ok && mixedClassQueriesFit(base, certified, key) {
 			series, served, err := p.scanOrderedMixedJSONStats(ctx, plan, base, certified, key, fetchStart, start, end, step, bucket)
 			if err != nil {
 				return series, served, err
@@ -201,6 +202,81 @@ func (p *Proxy) mixedClassWindowFieldNames(ctx context.Context, base string, fro
 		return nil, false
 	}
 	return listingValues(items), true
+}
+
+// mixedClassCertificate derives the certified class for the window: with the fixed bounds when they fit (no further
+// call), otherwise with the window's measured maximum lengths, which let a window with many stored fields, a long
+// message or a long stream descriptor be certified too. It reports false when neither fits or the measurement is
+// unavailable, and the request stays on the class itself.
+func (p *Proxy) mixedClassCertificate(ctx context.Context, class *mixedJSONRowClass, base string, names []string, from, to time.Time, bucket time.Duration) (*mixedJSONRowClass, bool) {
+	if certified, ok := class.certified(names); ok {
+		return certified, true
+	}
+	if !mixedClassFieldNamesClean(class.label, names) {
+		return nil, false
+	}
+	lengths, measured := p.mixedClassWindowFieldLengths(ctx, base, names, from, to, bucket)
+	if !measured {
+		return nil, false
+	}
+	return class.certifiedFor(names, lengths)
+}
+
+// mixedClassWindowFieldLengths measures the longest value of the message, the stream descriptor and every other
+// stored field of the window, over the rows the native count reads (the window widened as the field names call is).
+// The rows are read by VictoriaLogs' own column scan; the answer is one row of integers. A row stored after the
+// measurement that is longer than its bound fails that bound's guard and goes to the exact complement, so the
+// measurement can only change how much is counted natively, never the answer.
+func (p *Proxy) mixedClassWindowFieldLengths(ctx context.Context, base string, names []string, from, to time.Time, bucket time.Duration) (mixedClassLengths, bool) {
+	fields := []string{"_msg", "_stream"}
+	for _, name := range names {
+		if _, builtin := mixedCertBuiltin[name]; !builtin {
+			fields = append(fields, name)
+		}
+	}
+	if len(fields)-2 > mixedCertMeasuredFieldsMax {
+		return nil, false
+	}
+	pipes := make([]logsql.Pipe, 0, len(fields)+1)
+	stats := logsql.PipeStats{}
+	for i, field := range fields {
+		pipes = append(pipes, logsql.PipeLen{Field: field, Result: "mixed_len_" + strconv.Itoa(i)})
+		stats.Funcs = append(stats.Funcs, logsql.StatsFuncAlias{Func: logsql.Max{Field: "mixed_len_" + strconv.Itoa(i)}, Alias: "m" + strconv.Itoa(i)})
+	}
+	pipes = append(pipes, stats)
+	params := url.Values{}
+	params.Set("query", appendMixedClassPipes(base, pipes))
+	params.Set("start", from.Add(-bucket).UTC().Format(time.RFC3339Nano))
+	params.Set("end", to.Add(bucket).UTC().Format(time.RFC3339Nano))
+	resp, err := p.vlGet(ctx, "/select/logsql/query", params)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, mixedClassFieldNamesMaxBody+1))
+	if err != nil || len(body) > mixedClassFieldNamesMaxBody {
+		return nil, false
+	}
+	line := strings.TrimSpace(string(body))
+	if line == "" || strings.Contains(line, "\n") {
+		return nil, false
+	}
+	var row map[string]string
+	if json.Unmarshal([]byte(line), &row) != nil {
+		return nil, false
+	}
+	out := make(mixedClassLengths, len(fields))
+	for i, field := range fields {
+		n, err := strconv.Atoi(row["m"+strconv.Itoa(i)])
+		if err != nil || n < 0 {
+			return nil, false
+		}
+		out[field] = n
+	}
+	return out, true
 }
 
 // mixedClassFieldNamesMaxBody bounds the listing read: a window with more field names than fit is not certified.

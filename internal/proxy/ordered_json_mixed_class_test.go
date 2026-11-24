@@ -640,6 +640,110 @@ func TestMixedJSONRowClassCertifiedStructureAndBound(t *testing.T) {
 	}
 }
 
+// A window with many stored fields, a long message or a long stream descriptor is certified from the window's
+// measured maximum lengths: each guard's bound is the measured maximum rounded up, and the worst packed envelope
+// under those bounds stays within the class's own bound, so the certified count answers as the full class does.
+// conformance: semantics/two-parsers-keep-one
+func TestMixedClassMeasuredBoundsCertifyWideWindows(t *testing.T) {
+	class, _ := newMixedJSONRowClass("user_id")
+	// The shape of the real mixed workload: fourteen stored fields, messages near 860 bytes, streams near 400.
+	others := []string{"app", "cluster", "container", "env", "generator_profile", "generator_run", "level", "namespace",
+		"owner_team", "pod", "region", "service_name", "version", "workload_scope"}
+	names := append([]string{"_msg", "_stream", "_stream_id", "_time"}, others...)
+	lengths := mixedClassLengths{"_msg": 857, "_stream": 401}
+	for _, name := range others {
+		lengths[name] = 20
+	}
+	lengths["pod"] = 33
+	if _, ok := class.certified(names); ok {
+		t.Fatal("the fixed bounds were expected to refuse fourteen fields")
+	}
+	cert, ok := class.certifiedFor(names, lengths)
+	if !ok {
+		t.Fatal("the measured bounds refused a window that fits the budget")
+	}
+	safe := cert.safe.String()
+	for _, want := range []string{
+		"len_range(0, 864)", "len_range(0, 416)", // 857 and 401 rounded up to 16
+		"len_range(0, 48)", // pod: 33 rounded up
+		"len_range(0, 32)", // the rest: 20 rounded up
+	} {
+		if !strings.Contains(safe, want) {
+			t.Fatalf("the certified guards lack %s:\n%s", want, safe)
+		}
+	}
+	if strings.Contains(safe, mixedClassOriginalField) {
+		t.Fatal("a certified guard reads the packed envelope")
+	}
+	for _, pipe := range cert.nativePipes() {
+		if _, packed := pipe.(logsql.PipePackJSON); packed {
+			t.Fatal("the certified native count packs the envelope")
+		}
+	}
+	if _, packed := cert.rawPipes()[0].(logsql.PipePackJSON); !packed {
+		t.Fatal("the exact complement lost the packed original envelope")
+	}
+	bounds, _ := mixedCertBoundsFor(others, lengths)
+	if got := mixedClassCertifiedWorstPackedBounds(others, bounds); got > 4096 {
+		t.Fatalf("worst packed envelope %d exceeds the class bound", got)
+	}
+	// Rounding: up to the step, a zero length still bounds at one step, and an exact multiple stays.
+	for n, want := range map[int]int{0: 16, 1: 16, 16: 16, 17: 32, 857: 864, 401: 416} {
+		if got := mixedCertRound(n); got != want {
+			t.Fatalf("mixedCertRound(%d)=%d, want %d", n, got, want)
+		}
+	}
+	// A row longer than its bound is not a refusal of the window: its guard sends it to the exact complement.
+	if !strings.Contains(safe, `len_range(0, 864)`) {
+		t.Fatal("the message bound is not enforced per row")
+	}
+	// Refusals: a length missing for the message, the stream or another field; a negative length; a budget that the
+	// bounds exceed (a message of 2000 bytes escapes to 4000); more fields than the ceiling; an unclean name.
+	without := func(name string) mixedClassLengths {
+		out := mixedClassLengths{}
+		for k, v := range lengths {
+			if k != name {
+				out[k] = v
+			}
+		}
+		return out
+	}
+	for _, name := range []string{"_msg", "_stream", "pod"} {
+		if _, ok := class.certifiedFor(names, without(name)); ok {
+			t.Fatalf("a window with no measured length for %s was certified", name)
+		}
+	}
+	negative := without("")
+	negative["pod"] = -1
+	if _, ok := class.certifiedFor(names, negative); ok {
+		t.Fatal("a negative length was accepted")
+	}
+	long := without("")
+	long["_msg"] = 2000
+	if _, ok := class.certifiedFor(names, long); ok {
+		t.Fatal("a window whose worst packed envelope exceeds the bound was certified")
+	}
+	many := append([]string(nil), names[:4]...)
+	manyLengths := mixedClassLengths{"_msg": 100, "_stream": 100}
+	for i := 0; i <= mixedCertMeasuredFieldsMax; i++ {
+		name := "f" + strconv.Itoa(i)
+		many = append(many, name)
+		manyLengths[name] = 1
+	}
+	if _, ok := class.certifiedFor(many, manyLengths); ok {
+		t.Fatal("more fields than the ceiling were certified")
+	}
+	if _, ok := class.certifiedFor(append(append([]string(nil), names...), "a__b"), lengths); ok {
+		t.Fatal("an unclean name was certified from measured lengths")
+	}
+	// With no measurement the form is the fixed one, unchanged.
+	fixed, ok := class.certified(names[:6])
+	fromNil, okNil := class.certifiedFor(names[:6], nil)
+	if !ok || !okNil || fixed.safe.String() != fromNil.safe.String() {
+		t.Fatal("certified and certifiedFor(nil) differ")
+	}
+}
+
 // The field-name check replaces the envelope key guards for a whole window, so it must imply them: for every name
 // the check accepts, a packed row holding that name next to ordinary fields passes each envelope guard of the class.
 // conformance: semantics/two-parsers-keep-one

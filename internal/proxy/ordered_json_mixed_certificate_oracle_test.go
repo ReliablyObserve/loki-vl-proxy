@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -47,6 +49,20 @@ func TestOrderedMixedStatsCertifiedClassMatchesFullClass(t *testing.T) {
 		{0, `{"k":"body"}`, nil}, {5 * time.Second, `{"k":"blue"}`, nil}, {30 * time.Second, `{"k":"body"}`, nil}, {70 * time.Second, `{"k":"late"}`, nil},
 	}
 	unclean := append([]row{{-20 * time.Second, `{"k":"body"}`, [][2]string{{"a__b", "x"}}}}, clean...)
+	// A window with more stored fields than the fixed bounds allow (nine others besides meta and extra), a message
+	// near the long bound and a long other field: certified only from the measured maximum lengths.
+	var wide []row
+	for i, r := range clean {
+		extra := append([][2]string(nil), r.fields...)
+		for f := 1; f <= 9; f++ {
+			extra = append(extra, [2]string{"wide" + strconv.Itoa(f), strings.Repeat("v", 3*f) + strconv.Itoa(i)})
+		}
+		wide = append(wide, row{r.ts, r.msg, extra})
+	}
+	wide = append(wide,
+		row{-5 * time.Second, `{"k":"body","pad":"` + strings.Repeat("B", 900) + `"}`, nil},
+		row{-4 * time.Second, `{"k":"blue","q":"` + strings.Repeat(`\"`, 3) + `"}`, nil},
+		row{-3 * time.Second, `{"k":"body"}`, [][2]string{{"wide1", strings.Repeat("w", 47)}}})
 	query := `sum by(k)(count_over_time({app="mixed-cert"} | json k="[\"k\"]" | logfmt | drop __error__, __error_details__ | k!="" [1m]))`
 	start, end, step := at.Add(-2*time.Minute), at.Add(2*time.Minute), 15*time.Second
 	for _, version := range []struct{ name, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.54.0", ""}} {
@@ -54,7 +70,8 @@ func TestOrderedMixedStatsCertifiedClassMatchesFullClass(t *testing.T) {
 			name         string
 			rows         []row
 			wantCertSkip bool
-		}{{"clean", clean, false}, {"unclean-name", unclean, true}} {
+			wantMeasured bool
+		}{{"clean", clean, false, false}, {"unclean-name", unclean, true, false}, {"wide-measured", wide, false, true}} {
 			t.Run(version.name+"/"+dataset.name, func(t *testing.T) {
 				var store oraclerun.ServeDataSet
 				for _, r := range dataset.rows {
@@ -67,14 +84,39 @@ func TestOrderedMixedStatsCertifiedClassMatchesFullClass(t *testing.T) {
 				}
 				t.Cleanup(backend.Stop)
 				target, _ := url.Parse(backend.URL)
-				run := func(failFieldNames bool) ([]byte, []string) {
+				// mode: "certified" (the request as it runs), "full" (no field names: the full class) or "shrunk" (the measured
+				// lengths halved, so rows longer than their bounds go to the exact complement).
+				run := func(mode string) ([]byte, []string, int) {
+					failFieldNames := mode == "full"
 					var mu sync.Mutex
 					var stats []string
+					measured := 0
 					reverse := httputil.NewSingleHostReverseProxy(target)
 					front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						if failFieldNames && strings.HasSuffix(r.URL.Path, "/field_names") {
 							http.Error(w, "forced", http.StatusInternalServerError)
 							return
+						}
+						if strings.HasSuffix(r.URL.Path, "/select/logsql/query") && strings.Contains(r.URL.Query().Get("query"), "mixed_len_") {
+							mu.Lock()
+							measured++
+							mu.Unlock()
+							if mode == "shrunk" {
+								rec := httptest.NewRecorder()
+								reverse.ServeHTTP(rec, r)
+								var row map[string]string
+								if err := json.Unmarshal(bytes.TrimSpace(rec.Body.Bytes()), &row); err == nil {
+									for k, v := range row {
+										n, _ := strconv.Atoi(v)
+										row[k] = strconv.Itoa(n / 2)
+									}
+									out, _ := json.Marshal(row)
+									_, _ = w.Write(out)
+									return
+								}
+								_, _ = w.Write(rec.Body.Bytes())
+								return
+							}
 						}
 						if strings.HasSuffix(r.URL.Path, "/stats_query_range") {
 							raw, _ := io.ReadAll(r.Body)
@@ -107,12 +149,26 @@ func TestOrderedMixedStatsCertifiedClassMatchesFullClass(t *testing.T) {
 					}
 					mu.Lock()
 					defer mu.Unlock()
-					return body, append([]string(nil), stats...)
+					return body, append([]string(nil), stats...), measured
 				}
-				got, gotQueries := run(false)
-				want, wantQueries := run(true)
+				got, gotQueries, gotMeasured := run("certified")
+				want, wantQueries, _ := run("full")
 				if string(got) != string(want) {
 					t.Fatalf("the certified path answers differently from the full class:\n got  %s\n want %s", got, want)
+				}
+				if dataset.wantMeasured {
+					if gotMeasured == 0 {
+						t.Fatal("the wide window was not measured")
+					}
+					shrunk, shrunkQueries, _ := run("shrunk")
+					if string(shrunk) != string(want) {
+						t.Fatalf("halved measured bounds change the answer:\n got  %s\n want %s", shrunk, want)
+					}
+					if len(shrunkQueries) == 0 || strings.Contains(shrunkQueries[0], "| pack_json as "+mixedClassOriginalField) {
+						t.Fatalf("the shrunk run was not certified: %v", shrunkQueries)
+					}
+				} else if gotMeasured != 0 {
+					t.Fatalf("a window the fixed bounds certify (or an unclean one) was measured %d times", gotMeasured)
 				}
 				packs := func(qs []string) bool {
 					for _, q := range qs {

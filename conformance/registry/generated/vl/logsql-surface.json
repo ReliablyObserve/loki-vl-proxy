@@ -287,8 +287,10 @@
       "name": "len",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/proxy/ordered_json_mixed_stats.go"
+      ]
     },
     {
       "kind": "pipe",
@@ -761,6 +763,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/backend_response_guard.go",
+        "internal/proxy/ordered_json_mixed_stats.go",
         "internal/proxy/patterns_counts.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/series_fold_read.go",
