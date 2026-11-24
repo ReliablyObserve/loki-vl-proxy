@@ -163,6 +163,10 @@ def resource_key(r):
 
 
 CLIENT_ERROR_CONTRACT = "loki-metric-supporting-error-v1"
+# A query Loki rejects itself (a 400 on the primary and on its supporting log-volume query, the same on all three builds)
+# whose rejection the stock page throws uncaught; see _rejection_evidence.
+QUERY_REJECTION_CONTRACT = "loki-query-rejection-v1"
+CLIENT_ERROR_CONTRACTS = (CLIENT_ERROR_CONTRACT, QUERY_REJECTION_CONTRACT)
 CLIENT_ERROR_PROOF_BYTES = 16 << 20
 
 
@@ -187,8 +191,8 @@ def client_console_error(text):
 
 class _ExpectedClientError:
     """A receipt bound to complete captures, not an exception-message allowlist."""
-    def __init__(self, case_id, page, rng, captures, events, point_counts):
-        self.receipt = dict(registry_case=case_id, contract=CLIENT_ERROR_CONTRACT,
+    def __init__(self, case_id, page, rng, captures, events, point_counts, contract=CLIENT_ERROR_CONTRACT):
+        self.receipt = dict(registry_case=case_id, contract=contract,
                             state="upstream_matches_loki", scene=page, range=rng,
                             capture_sha256={side: capture_fingerprint(cap) for side, cap in captures.items()},
                             exceptions=events, primary_points=point_counts)
@@ -208,7 +212,7 @@ def client_error_contracts():
     for row in load_cases(str(root / "conformance/registry")):
         case = row["doc"]
         values = case.get("compare", {}).get("values", {})
-        if values.get("client_error_contract") != CLIENT_ERROR_CONTRACT or case.get("gap", {}).get("status") != "upstream":
+        if values.get("client_error_contract") not in CLIENT_ERROR_CONTRACTS or case.get("gap", {}).get("status") != "upstream":
             continue
         path = (root / values.get("client_error_proof", "")).resolve()
         if not path.is_relative_to(root / "bench/ab/results/oneoff") or not path.is_file() or path.stat().st_size > 256 << 10:
@@ -220,7 +224,41 @@ def client_error_contracts():
     return contracts
 
 
-def client_error_evidence(page, rng, entry, captures, contracts=None):
+def _thrown_supporting_events(captures):
+    """The one uncaught `{message, refId, status}` object of a log-volume-A rejection on every build, or None.
+
+    The event must be complete CDP evidence (version 1, no overflow, exactly one page error whose raw index and
+    identity agree) with a stack inside the stock client, so an old `pageerror: Object` string, a missing capture
+    or any other exception never qualifies."""
+    events = {}
+    for side, cap in captures.items():
+        state = cap.get("client_exceptions") or {}
+        if (cap.get("settled") is not True or state.get("complete") is not True
+                or state.get("version") != 1
+                or state.get("overflow") is not False or type(state.get("playwright_page_error_count")) is not int
+                or state["playwright_page_error_count"] != 1
+                or len(state.get("events", [])) != 1):
+            return None
+        event = state["events"][0]
+        raw = cap.get("errors", [])
+        index, exception_id = event.get("raw_error_index"), event.get("exception_id")
+        if (type(index) is not int or type(exception_id) is not int or exception_id <= 0
+                or event.get("event_id") != f"runtime:{exception_id}"
+                or [i for i, error in enumerate(raw) if isinstance(error, str) and error.startswith("pageerror:")] != [index]
+                or raw[index] != "pageerror: Object" or event.get("kind") != "uncaught-object"
+                or event.get("class_name") != "Object" or event.get("own_property_names") != ["message", "refId", "status"]
+                or event.get("ref_id") != "log-volume-A" or type(event.get("status")) is not int or event["status"] != 400
+                or not isinstance(event.get("message"), str) or len(event["message"].encode()) > 4096
+                or not 1 <= len(event.get("stack", [])) <= 8):
+            return None
+        if any(not isinstance(frame.get("url"), str) or "/public/" not in frame["url"]
+               or type(frame.get("line")) is not int or type(frame.get("column")) is not int for frame in event["stack"]):
+            return None
+        events[side] = event
+    return events
+
+
+def _supporting_error_evidence(page, rng, entry, captures, contracts=None):
     """Recognize only a recorded client failure whose complete primary answers equal Loki's.
 
     Old pageerror:Object strings, missing CDP evidence and any unknown event stay failures.
@@ -229,31 +267,9 @@ def client_error_evidence(page, rng, entry, captures, contracts=None):
     try:
         if set(captures) != {"main", "pr", "loki"} or entry.get("kind") != "explore":
             return None
-        events = {}
-        for side, cap in captures.items():
-            state = cap.get("client_exceptions") or {}
-            if (cap.get("settled") is not True or state.get("complete") is not True
-                    or state.get("version") != 1
-                    or state.get("overflow") is not False or type(state.get("playwright_page_error_count")) is not int
-                    or state["playwright_page_error_count"] != 1
-                    or len(state.get("events", [])) != 1):
-                return None
-            event = state["events"][0]
-            raw = cap.get("errors", [])
-            index, exception_id = event.get("raw_error_index"), event.get("exception_id")
-            if (type(index) is not int or type(exception_id) is not int or exception_id <= 0
-                    or event.get("event_id") != f"runtime:{exception_id}"
-                    or [i for i, error in enumerate(raw) if isinstance(error, str) and error.startswith("pageerror:")] != [index]
-                    or raw[index] != "pageerror: Object" or event.get("kind") != "uncaught-object"
-                    or event.get("class_name") != "Object" or event.get("own_property_names") != ["message", "refId", "status"]
-                    or event.get("ref_id") != "log-volume-A" or type(event.get("status")) is not int or event["status"] != 400
-                    or not isinstance(event.get("message"), str) or len(event["message"].encode()) > 4096
-                    or not 1 <= len(event.get("stack", [])) <= 8):
-                return None
-            if any(not isinstance(frame.get("url"), str) or "/public/" not in frame["url"]
-                   or type(frame.get("line")) is not int or type(frame.get("column")) is not int for frame in event["stack"]):
-                return None
-            events[side] = event
+        events = _thrown_supporting_events(captures)
+        if events is None:
+            return None
         contracts = client_error_contracts() if contracts is None else contracts
         for case, proof in contracts:
             if (case.get("gap", {}).get("status") != "upstream"
@@ -330,6 +346,83 @@ def client_error_evidence(page, rng, entry, captures, contracts=None):
         # A malformed/missing contract or capture does not turn an unproved exception into a match.
         return None
     return None
+
+
+
+def _rejection_evidence(page, rng, entry, captures, contracts=None):
+    """Recognize only a query Loki itself rejects, identically on all three builds, whose supporting rejection is thrown.
+
+    Both the primary query and the stock supporting log-volume query answer 400 with the recorded complete DTO on main,
+    PR and Loki, no frames are returned, the only page error is the CDP-identified uncaught object carrying the
+    supporting rejection verbatim, and the page spec, request shapes and console errors equal the recorded proof. Any
+    other status, DTO, event or extra request leaves the page error a failure."""
+    try:
+        if set(captures) != {"main", "pr", "loki"} or entry.get("kind") != "explore":
+            return None
+        events = _thrown_supporting_events(captures)
+        if events is None:
+            return None
+        contracts = client_error_contracts() if contracts is None else contracts
+        for case, proof in contracts:
+            if (case.get("gap", {}).get("status") != "upstream"
+                    or case.get("compare", {}).get("values", {}).get("client_error_contract") != QUERY_REJECTION_CONTRACT
+                    or proof.get("registry_case") != case.get("id") or case["id"] not in entry.get("covers", [])
+                    or entry.get("id") != page):
+                continue
+            expected = [c for c in proof["ci"]["captures"] if c["scene_id"] == page and c["range"] == rng]
+            if len(expected) != 3 or {c["side"] for c in expected} != {"main", "pr", "loki"}:
+                continue
+            answers = {}
+            for side, cap in captures.items():
+                recorded = next(c for c in expected if c["side"] == side)
+                want = {q["ref_id"]: q for q in recorded["queries"]}
+                if set(want) != {"A", "log-volume-A"} or entry.get("query") != want["A"]["expression"]:
+                    return None
+                console = [e for e in cap["errors"] if not e.startswith("pageerror:")]
+                if sorted(map(client_console_error, console)) != sorted(map(client_console_error, recorded.get("console_errors", []))):
+                    return None
+                seen, windows = {}, set()
+                for record in cap["records"]:
+                    if record.get("aborted") or record.get("response") is None:
+                        return None
+                    if "/api/ds/query" not in record["url"]:
+                        if record.get("status") != 200:
+                            return None
+                        continue
+                    queries = record["request"]["queries"]
+                    if len(queries) != 1 or queries[0].get("refId") not in want:
+                        return None
+                    query = queries[0]
+                    ref = query["refId"]
+                    if ref in seen or query["expr"] != want[ref]["expression"]:
+                        return None
+                    if client_request_shape(record["request"]) != client_request_shape(want[ref]["request"]):
+                        return None
+                    results = record["response"].get("results", {})
+                    if (record["status"] != 400 or record["response"] != want[ref]["response"] or set(results) != {ref}
+                            or results[ref].get("status") != 400 or results[ref].get("frames")):
+                        return None
+                    windows.add((record["request"]["from"], record["request"]["to"]))
+                    seen[ref] = record["response"]
+                if set(seen) != set(want) or len(windows) != 1:
+                    return None
+                supporting = seen["log-volume-A"]["results"]["log-volume-A"]
+                if events[side]["message"] != supporting.get("error") or events[side]["status"] != supporting.get("status"):
+                    return None
+                answers[side] = seen
+            if not (answers["main"] == answers["pr"] == answers["loki"]):
+                return None
+            evidence = _ExpectedClientError(case["id"], page, rng, captures, events, {}, contract=QUERY_REJECTION_CONTRACT)
+            return evidence if evidence.payload_bytes <= CLIENT_ERROR_PROOF_BYTES else None
+    except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RuntimeError):
+        return None
+    return None
+
+
+def client_error_evidence(page, rng, entry, captures, contracts=None):
+    """A recorded client failure that Loki's own page shows identically; None for anything unproved."""
+    return (_supporting_error_evidence(page, rng, entry, captures, contracts)
+            or _rejection_evidence(page, rng, entry, captures, contracts))
 
 
 def has_data(body):
@@ -903,8 +996,11 @@ def render_md(rows):
             md += [f"- PR vs Loki (explained): {x}" for x in r.get("loki_explained", [])[:12]] + [f"- PR vs Loki (history-dependent, not counted): {x}" for x in r.get("loki_nondet", [])[:4]]
             md += [f"- {side} index/stats: {b['numbers']}" for side, key in (("main vs PR", "main_pr_bodies"), ("PR vs Loki", "loki_bodies"))
                    for b in r.get(key, []) if "numbers" in b]
-            md += [f"- Expected upstream client error matches Loki: {e['registry_case']}; primary points match on all three builds, "
-                   "the supporting 400 DTO and actual uncaught exception match. The upstream gap remains open; raw captures are retained."
+            md += [f"- Expected upstream client error matches Loki: {e['registry_case']}; "
+                   + ("the primary and the supporting query are rejected with the identical 400 DTOs on all three builds and the "
+                      if e.get("contract") == QUERY_REJECTION_CONTRACT else
+                      "primary points match on all three builds, the supporting 400 DTO and ")
+                   + "actual uncaught exception match. The upstream gap remains open; raw captures are retained."
                    for e in r.get("expected_client_errors", [])]
     return md
 

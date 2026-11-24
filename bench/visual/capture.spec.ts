@@ -274,11 +274,15 @@ async function startClientExceptionProof(page: Page, cdp: any, errors: string[])
     if (audit.length < 4) audit.push(`pageerror: ${String(e.stack || e).slice(0, 1500)}`);
     else { state.overflow = true; state.complete = false; }
   };
+  // A console error of a plugin carries its stack (a rejected query shows its full series labels and several frames).
+  // The proof is incomplete only when a message does not fit this bound, not at the first 1500 characters: a page that
+  // throws no exception must not lose its proof to a long but fully retained console message.
+  const CONSOLE_TEXT_LIMIT = 8192;
   const onConsole = (message: any) => {
     if (message.type() !== "error") return;
     const text = message.text();
-    if (text.length > 1500 || errors.length >= 20) state.complete = false;
-    if (errors.length < 20) errors.push(text.slice(0, 1500));
+    if (text.length > CONSOLE_TEXT_LIMIT || errors.length >= 20) state.complete = false;
+    if (errors.length < 20) errors.push(text.slice(0, CONSOLE_TEXT_LIMIT));
   };
   const onException = (event: any) => {
     const detail = event.exceptionDetails || {}, object = detail.exception || {};

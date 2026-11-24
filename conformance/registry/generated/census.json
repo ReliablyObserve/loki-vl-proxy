@@ -203,6 +203,8 @@
     "profiles/existence-filter-on-sanitized-key | compare:observed",
     "profiles/existence-filter-on-sanitized-key | gap:open",
     "profiles/existence-filter-on-sanitized-key | query",
+    "profiles/grafana-rejected-query-uncaught-error | compare:observed",
+    "profiles/grafana-rejected-query-uncaught-error | gap:upstream",
     "profiles/grafana-shows-loki-error-text | compare:exact",
     "profiles/grafana-stats-error-as-warning | compare:observed",
     "profiles/grafana-stats-error-as-warning | gap:documented",
@@ -3621,7 +3623,7 @@
       "any": 50,
       "api": 124,
       "drilldown": 63,
-      "explore": 258,
+      "explore": 259,
       "grafana-datasource": 4,
       "operator": 4
     },
@@ -3647,7 +3649,7 @@
     },
     "shape_covers_distinct": 112,
     "shapes_path_only": 10,
-    "unwired_items": 151,
+    "unwired_items": 152,
     "wired_items": 477
   },
   "gates": [

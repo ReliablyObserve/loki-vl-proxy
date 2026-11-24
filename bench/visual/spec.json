@@ -2285,6 +2285,7 @@
    ],
    "covers": [
     "semantics/vector-aggregation-over-log-selector-status",
+    "profiles/grafana-rejected-query-uncaught-error",
     "status-400",
     "loki_api_v1_query_range"
    ]

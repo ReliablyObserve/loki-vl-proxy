@@ -1,0 +1,363 @@
+{
+ "ci": {
+  "artifacts": [
+   {
+    "id": 14953269468,
+    "name": "visual-shard-6",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45464738094/artifacts/14953269468",
+    "zip_bytes": 2447511,
+    "zip_sha256": "55e3cae3c34523e2978f4595778b15f30f0c08379cf34368b97b3ec8a37ebe68"
+   }
+  ],
+  "base": "74810c0a5709dc84c00e835e8d7752220bb8d223",
+  "captures": [
+   {
+    "artifact_name": "visual-shard-6",
+    "artifact_path": "first-pass/data/explore-topk-over-log-selector/1h/main.json",
+    "capture_bytes": 4840,
+    "capture_sha256": "f53faf623485fac50787a4c3a0e27a77635a29d14635ba50fc06f8cb6a0a3c7a",
+    "console_errors": [
+     "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+     "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+     "Error: parse error at line 1, col 45: syntax error: unexpected )\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967",
+     "Error: parse error at line 1, col 49: syntax error: unexpected topk, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+    ],
+    "page_errors": [
+     "pageerror: Object"
+    ],
+    "queries": [
+     {
+      "expression": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+      "ref_id": "A",
+      "request": {
+       "from": "1795542960000",
+       "queries": [
+        {
+         "datasource": {
+          "type": "loki",
+          "uid": "vp-main"
+         },
+         "datasourceId": 1,
+         "direction": "backward",
+         "editorMode": "code",
+         "expr": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+         "intervalMs": 5000,
+         "legendFormat": "",
+         "maxDataPoints": 980,
+         "maxLines": 1000,
+         "queryType": "range",
+         "refId": "A",
+         "step": "",
+         "supportingQueryType": "grafana-explore"
+        }
+       ],
+       "to": "1795546560000"
+      },
+      "response": {
+       "results": {
+        "A": {
+         "error": "parse error at line 1, col 45: syntax error: unexpected )",
+         "errorSource": "downstream",
+         "frames": [],
+         "status": 400
+        }
+       }
+      },
+      "status": 400
+     },
+     {
+      "expression": "sum by (level, detected_level) (count_over_time(topk(2, {app=\"api-gateway\",env=\"production\"})[$__auto]))",
+      "ref_id": "log-volume-A",
+      "request": {
+       "from": "1795542960000",
+       "queries": [
+        {
+         "datasource": {
+          "type": "loki",
+          "uid": "vp-main"
+         },
+         "datasourceId": 1,
+         "direction": "backward",
+         "editorMode": "code",
+         "expr": "sum by (level, detected_level) (count_over_time(topk(2, {app=\"api-gateway\",env=\"production\"})[$__auto]))",
+         "intervalMs": 60000,
+         "legendFormat": "",
+         "maxDataPoints": 980,
+         "queryType": "range",
+         "refId": "log-volume-A",
+         "step": "",
+         "supportingQueryType": "logsVolume"
+        }
+       ],
+       "to": "1795546560000"
+      },
+      "response": {
+       "results": {
+        "log-volume-A": {
+         "error": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+         "errorSource": "downstream",
+         "frames": [],
+         "status": 400
+        }
+       }
+      },
+      "status": 400
+     }
+    ],
+    "range": "1h",
+    "scene_id": "explore-topk-over-log-selector",
+    "side": "main",
+    "thrown": {
+     "message": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+     "own_property_names": [
+      "message",
+      "refId",
+      "status"
+     ],
+     "ref_id": "log-volume-A",
+     "status": 400
+    },
+    "ui": {
+     "banners": [],
+     "noData": 0,
+     "panelErrors": 1
+    }
+   },
+   {
+    "artifact_name": "visual-shard-6",
+    "artifact_path": "first-pass/data/explore-topk-over-log-selector/1h/pr.json",
+    "capture_bytes": 4834,
+    "capture_sha256": "f75b2fe78d3df897436f707e78d0d62ad8897e9f1ff6e7099d4ef8ce4defdf01",
+    "console_errors": [
+     "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+     "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+     "Error: parse error at line 1, col 45: syntax error: unexpected )\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967",
+     "Error: parse error at line 1, col 49: syntax error: unexpected topk, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+    ],
+    "page_errors": [
+     "pageerror: Object"
+    ],
+    "queries": [
+     {
+      "expression": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+      "ref_id": "A",
+      "request": {
+       "from": "1795542960000",
+       "queries": [
+        {
+         "datasource": {
+          "type": "loki",
+          "uid": "vp-pr"
+         },
+         "datasourceId": 2,
+         "direction": "backward",
+         "editorMode": "code",
+         "expr": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+         "intervalMs": 5000,
+         "legendFormat": "",
+         "maxDataPoints": 980,
+         "maxLines": 1000,
+         "queryType": "range",
+         "refId": "A",
+         "step": "",
+         "supportingQueryType": "grafana-explore"
+        }
+       ],
+       "to": "1795546560000"
+      },
+      "response": {
+       "results": {
+        "A": {
+         "error": "parse error at line 1, col 45: syntax error: unexpected )",
+         "errorSource": "downstream",
+         "frames": [],
+         "status": 400
+        }
+       }
+      },
+      "status": 400
+     },
+     {
+      "expression": "sum by (level, detected_level) (count_over_time(topk(2, {app=\"api-gateway\",env=\"production\"})[$__auto]))",
+      "ref_id": "log-volume-A",
+      "request": {
+       "from": "1795542960000",
+       "queries": [
+        {
+         "datasource": {
+          "type": "loki",
+          "uid": "vp-pr"
+         },
+         "datasourceId": 2,
+         "direction": "backward",
+         "editorMode": "code",
+         "expr": "sum by (level, detected_level) (count_over_time(topk(2, {app=\"api-gateway\",env=\"production\"})[$__auto]))",
+         "intervalMs": 60000,
+         "legendFormat": "",
+         "maxDataPoints": 980,
+         "queryType": "range",
+         "refId": "log-volume-A",
+         "step": "",
+         "supportingQueryType": "logsVolume"
+        }
+       ],
+       "to": "1795546560000"
+      },
+      "response": {
+       "results": {
+        "log-volume-A": {
+         "error": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+         "errorSource": "downstream",
+         "frames": [],
+         "status": 400
+        }
+       }
+      },
+      "status": 400
+     }
+    ],
+    "range": "1h",
+    "scene_id": "explore-topk-over-log-selector",
+    "side": "pr",
+    "thrown": {
+     "message": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+     "own_property_names": [
+      "message",
+      "refId",
+      "status"
+     ],
+     "ref_id": "log-volume-A",
+     "status": 400
+    },
+    "ui": {
+     "banners": [],
+     "noData": 0,
+     "panelErrors": 1
+    }
+   },
+   {
+    "artifact_name": "visual-shard-6",
+    "artifact_path": "first-pass/data/explore-topk-over-log-selector/1h/loki.json",
+    "capture_bytes": 4840,
+    "capture_sha256": "f9a80aa24c064315ccec170cb174eac692cc55e4cff12d56a457e0503c92d0c0",
+    "console_errors": [
+     "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+     "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+     "Error: parse error at line 1, col 45: syntax error: unexpected )\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967",
+     "Error: parse error at line 1, col 49: syntax error: unexpected topk, expecting number or { or (\n    at m (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:3:68069)\n    at O (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:173743)\n    at Object.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:174454)\n    at e.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799545)\n    at t._next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:799149)\n    at t.next (http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:798766)\n    at http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75687\n    at s._next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:75101)\n    at t.next (http://127.0.0.1:33002/public/plugins/loki/module.js?_cache=13.2.5:8:73145)\n    at http://127.0.0.1:33002/public/build/69375.40e3294b3bba01ca.js:31:815967"
+    ],
+    "page_errors": [
+     "pageerror: Object"
+    ],
+    "queries": [
+     {
+      "expression": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+      "ref_id": "A",
+      "request": {
+       "from": "1795542960000",
+       "queries": [
+        {
+         "datasource": {
+          "type": "loki",
+          "uid": "vp-loki"
+         },
+         "datasourceId": 3,
+         "direction": "backward",
+         "editorMode": "code",
+         "expr": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+         "intervalMs": 5000,
+         "legendFormat": "",
+         "maxDataPoints": 980,
+         "maxLines": 1000,
+         "queryType": "range",
+         "refId": "A",
+         "step": "",
+         "supportingQueryType": "grafana-explore"
+        }
+       ],
+       "to": "1795546560000"
+      },
+      "response": {
+       "results": {
+        "A": {
+         "error": "parse error at line 1, col 45: syntax error: unexpected )",
+         "errorSource": "downstream",
+         "frames": [],
+         "status": 400
+        }
+       }
+      },
+      "status": 400
+     },
+     {
+      "expression": "sum by (level, detected_level) (count_over_time(topk(2, {app=\"api-gateway\",env=\"production\"})[$__auto]))",
+      "ref_id": "log-volume-A",
+      "request": {
+       "from": "1795542960000",
+       "queries": [
+        {
+         "datasource": {
+          "type": "loki",
+          "uid": "vp-loki"
+         },
+         "datasourceId": 3,
+         "direction": "backward",
+         "editorMode": "code",
+         "expr": "sum by (level, detected_level) (count_over_time(topk(2, {app=\"api-gateway\",env=\"production\"})[$__auto]))",
+         "intervalMs": 60000,
+         "legendFormat": "",
+         "maxDataPoints": 980,
+         "queryType": "range",
+         "refId": "log-volume-A",
+         "step": "",
+         "supportingQueryType": "logsVolume"
+        }
+       ],
+       "to": "1795546560000"
+      },
+      "response": {
+       "results": {
+        "log-volume-A": {
+         "error": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+         "errorSource": "downstream",
+         "frames": [],
+         "status": 400
+        }
+       }
+      },
+      "status": 400
+     }
+    ],
+    "range": "1h",
+    "scene_id": "explore-topk-over-log-selector",
+    "side": "loki",
+    "thrown": {
+     "message": "parse error at line 1, col 49: syntax error: unexpected TOPK, expecting NUMBER or { or (",
+     "own_property_names": [
+      "message",
+      "refId",
+      "status"
+     ],
+     "ref_id": "log-volume-A",
+     "status": 400
+    },
+    "ui": {
+     "banners": [],
+     "noData": 0,
+     "panelErrors": 1
+    }
+   }
+  ],
+  "head": "9fb83ef96a170e137c2902e8724cbce488d01933",
+  "run_id": 45464738094,
+  "run_url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45464738094"
+ },
+ "observation_date": "2026-11-24",
+ "operator_constraints": {
+  "note": "Loki rejects topk over a bare log selector with a 400 parse error, and so does the proxy; the stock Grafana Explore additionally derives a log-volume query from the same expression, which Loki rejects too. Grafana throws that second rejection as an uncaught object. Nothing here is a proxy defect and no API workaround is applied."
+ },
+ "registry_case": "profiles/grafana-rejected-query-uncaught-error",
+ "response_digest_format": "the complete response JSON is recorded; the gate compares it for equality",
+ "schema_version": 1,
+ "scope": "Recorded client defect; no runtime-gate exception beyond the one page and range listed, no API behavior change."
+}

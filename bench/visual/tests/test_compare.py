@@ -53,6 +53,107 @@ class CompareTest(unittest.TestCase):
             client_error_contract='loki-metric-supporting-error-v1')))
         return page, dict(id=page, kind='explore', query=primary['expression'], covers=[case['id']]), dict(main=deepcopy(cap), pr=deepcopy(cap), loki=deepcopy(cap)), [(case, proof)]
 
+    def rejection_fixture(self):
+        proof = json.loads(Path(HERE, '../../ab/results/oneoff/2026-11-24-visual-client-errors/topk-over-log-selector-rejection-proof.json').resolve().read_text())
+        page = 'explore-topk-over-log-selector'
+        caps = {}
+        for recorded in (c for c in proof['ci']['captures'] if c['scene_id'] == page and c['range'] == '1h'):
+            records = [dict(url='/api/datasources/uid/vp-x/resources/labels?start=1&end=2', method='GET', status=200, response={'status': 'success', 'data': ['app']})]
+            for q in recorded['queries']:
+                records.append(dict(url='/api/ds/query?ds_type=loki', method='POST', status=q['status'], request=deepcopy(q['request']), response=deepcopy(q['response'])))
+            errors = [*deepcopy(recorded['console_errors']), 'pageerror: Object']
+            caps[recorded['side']] = dict(
+                settled=True, settle_ms=1000, records=records, errors=errors, ui=deepcopy(recorded['ui']),
+                runtime=dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2, js_heap_max_sampled_bytes=1000,
+                             api_requests=2, api_encoded_bytes=100, page_encoded_bytes=200, first_api_data_ms=300),
+                client_exceptions=dict(version=1, complete=True, overflow=False, playwright_page_error_count=1, events=[dict(
+                    event_id='runtime:1', exception_id=1, raw_error_index=len(errors) - 1, kind='uncaught-object', class_name='Object',
+                    own_property_names=['message', 'refId', 'status'], ref_id=recorded['thrown']['ref_id'], status=recorded['thrown']['status'],
+                    message=recorded['thrown']['message'], stack=[dict(url='/public/build/client.js', line=1, column=1)])]))
+        case = dict(id=proof['registry_case'], gap=dict(status='upstream'), compare=dict(values=dict(client_error_contract='loki-query-rejection-v1')))
+        entry = dict(id=page, kind='explore', query=proof['ci']['captures'][0]['queries'][0]['expression'], covers=[case['id']])
+        return page, entry, caps, [(case, proof)]
+
+    def test_query_rejection_contract_accepts_only_the_identical_recorded_rejections(self):
+        page, entry, caps, contracts = self.rejection_fixture()
+        evidence = compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts)
+        self.assertIsNotNone(evidence)
+        self.assertEqual((evidence.receipt['contract'], evidence.receipt['state']), ('loki-query-rejection-v1', 'upstream_matches_loki'))
+        self.assertTrue(caps['pr']['errors'])  # Evidence never deletes raw errors.
+        for side in ('main', 'pr', 'loki'):
+            self.assertEqual(compare.runtime_problems(caps[side], caps[side], required=True, client_error=evidence), [])
+        caps['pr']['errors'].append('pageerror: TypeError: real new failure')
+        self.assertTrue(compare.runtime_problems(caps['main'], caps['pr'], required=True, client_error=evidence))
+
+    def test_query_rejection_contract_is_not_a_generic_exception_allowlist(self):
+        page, entry, baseline, contracts = self.rejection_fixture()
+        def supporting(c, side='pr'): return next(r for r in c[side]['records'] if r.get('request', {}).get('queries', [{}])[0].get('refId') == 'log-volume-A')
+        def primary(c, side='pr'): return next(r for r in c[side]['records'] if r.get('request', {}).get('queries', [{}])[0].get('refId') == 'A')
+        event = lambda c, side='pr': c[side]['client_exceptions']['events'][0]
+        def all_sides(change):
+            def run(c):
+                for side in ('main', 'pr', 'loki'):
+                    change(c, side)
+            return run
+        mutations = {
+            'missing Loki': lambda c: c.pop('loki'),
+            'old Object only': lambda c: c['pr'].pop('client_exceptions'),
+            'incomplete capture': lambda c: c['pr']['client_exceptions'].update(complete=False),
+            'extra page error': lambda c: c['pr']['client_exceptions'].update(playwright_page_error_count=2),
+            'thrown for the primary': lambda c: event(c).update(ref_id='A'),
+            'other status thrown': lambda c: event(c).update(status=500),
+            'thrown message differs from the supporting DTO': lambda c: event(c).update(message='parse error: something else'),
+            'primary answered 200': lambda c: primary(c).update(status=200),
+            'supporting answered 500': lambda c: supporting(c).update(status=500),
+            'one side rejects differently': lambda c: primary(c)['response']['results']['A'].update(error='parse error: another failure'),
+            'frames returned': lambda c: primary(c)['response']['results']['A'].update(frames=[{'data': {'values': [[1], [1]]}}]),
+            'extra request': lambda c: c['pr']['records'].append(deepcopy(primary(c))),
+            'unknown query': lambda c: primary(c)['request']['queries'][0].update(refId='B'),
+            'resource failure': lambda c: c['pr']['records'][0].update(status=500),
+            'new console error': lambda c: c['pr']['errors'].insert(0, 'Error: something new'),
+            'cancelled request': lambda c: primary(c).update(aborted=True),
+            'primary expression changed': all_sides(lambda c, s: primary(c, s)['request']['queries'][0].update(expr='vector(1)')),
+            'supporting expression changed': all_sides(lambda c, s: supporting(c, s)['request']['queries'][0].update(expr='vector(1)')),
+            'query type changed': all_sides(lambda c, s: primary(c, s)['request']['queries'][0].update(queryType='instant')),
+            'DTO changed on every side': all_sides(lambda c, s: primary(c, s)['response']['results']['A'].update(error='parse error: a new shared failure')),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name):
+                caps = deepcopy(baseline)
+                mutate(caps)
+                self.assertIsNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+        # the contract is bound to its registry case, its page and its recorded range
+        case, proof = contracts[0]
+        for name, args in {
+            'not an upstream gap': (page, '1h', entry, [(dict(case, gap=dict(status='fixed')), proof)]),
+            'case not covered by the page': (page, '1h', dict(entry, covers=[]), contracts),
+            'other page': ('another-page', '1h', dict(entry, id='another-page'), contracts),
+            'other range': (page, '6h', entry, contracts),
+            'proof of another case': (page, '1h', entry, [(case, dict(proof, registry_case='profiles/other'))]),
+            'other contract kind': (page, '1h', entry, [(dict(case, compare=dict(values=dict(client_error_contract='loki-metric-supporting-error-v1'))), proof)]),
+        }.items():
+            with self.subTest(name):
+                self.assertIsNone(compare.client_error_evidence(args[0], args[1], args[2], deepcopy(baseline), contracts=args[3]))
+
+    def test_query_rejection_receipt_is_reported_without_claiming_primary_points(self):
+        page, entry, caps, contracts = self.rejection_fixture()
+        with tempfile.TemporaryDirectory() as out:
+            directory = Path(out, 'data', page, '1h')
+            directory.mkdir(parents=True)
+            for side, cap in caps.items():
+                Path(directory, side + '.json').write_text(json.dumps(cap))
+            Path(out, 'plan.json').write_text(json.dumps({'runtime_proof': {'required': True}}))
+            import plan
+            with patch.object(sys, 'argv', ['compare.py', out]), patch.object(compare, 'client_error_contracts', return_value=contracts), \
+                    patch.object(plan, 'load_spec', return_value={'pages': [entry], 'ranges': {'1h': 3600}}), redirect_stdout(StringIO()), self.assertRaises(SystemExit) as result:
+                compare.main()
+            self.assertEqual(result.exception.code, 0)
+            rows = json.loads(Path(out, 'compare.json').read_text())
+            self.assertEqual(rows[0]['expected_client_errors'][0]['contract'], 'loki-query-rejection-v1')
+            text = Path(out, 'compare.md').read_text()
+            self.assertIn('rejected with the identical 400 DTOs on all three builds', text)
+            self.assertNotIn('primary points match', text)
+
     def test_registry_client_error_requires_complete_loki_triplet(self):
         page, entry, caps, contracts = self.client_error_fixture()
         evidence = compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts)

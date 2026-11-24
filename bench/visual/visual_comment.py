@@ -556,15 +556,17 @@ def runtime_section(rows, targeted=(), failed=()):
     if expected:
         lines += ["", f"Expected client errors matching Loki: {len(expected)} scene/range comparisons. The upstream gaps remain open.",
                   "", "<details><summary>Registry-backed client error evidence (not a client fix)</summary>", "",
-                  "Each listed comparison has matching complete primary points on main, PR and Loki, the same malformed supporting request, "
-                  + "the same 400 DTO and matching actual uncaught exception identities. Raw errors and complete input captures are retained in "
+                  "Each listed comparison has, on main, PR and Loki, either matching complete primary points and the same malformed supporting request, "
+                  + "or the primary and its supporting query rejected by Loki itself, with the same 400 DTOs and matching actual uncaught exception identities. Raw errors and complete input captures are retained in "
                   + "`expected-client-error-captures.json`. Other data, resource and visual gates still apply.", "",
                   "| page / range | upstream registry case | primary points main / PR / Loki |",
                   "|---|---|---|"]
         for row, evidence in expected[:12]:
             counts = evidence.get("primary_points") or {}
+            rejected = evidence.get("contract") == "loki-query-rejection-v1"
             lines.append(f"| {esc(row['page'], 100)} / {esc(row['range'], 16)} | {esc(evidence['registry_case'], 120)} | "
-                         + " / ".join(esc(str(counts.get(side, "unavailable")), 24) for side in ("main", "pr", "loki")) + " |")
+                         + (" / ".join(["rejected (400)"] * 3) if rejected else
+                            " / ".join(esc(str(counts.get(side, "unavailable")), 24) for side in ("main", "pr", "loki"))) + " |")
         lines += ["", "Every receipt is in the comparison artifact; matching an upstream error does not mark its gap fixed.", "", "</details>"]
     return lines, summary
 

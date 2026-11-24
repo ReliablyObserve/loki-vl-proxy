@@ -3132,7 +3132,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 742,
+  "registry_items": 743,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -6991,6 +6991,7 @@
     "profiles/detected-fields-no-extracted-suffix",
     "profiles/empty-label-format-target-compositions",
     "profiles/existence-filter-on-sanitized-key",
+    "profiles/grafana-rejected-query-uncaught-error",
     "profiles/grafana-stats-error-as-warning",
     "profiles/grafana-uppercase-metric-log-volume",
     "profiles/json-extraction-list-missing-key",
