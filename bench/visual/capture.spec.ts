@@ -72,7 +72,7 @@ function url(p: PageSpec, uid: string, r: string): string {
 async function uiState(page: Page) {
   return page.evaluate(() => {
     const text = document.body.innerText || "";
-    const banner = /(Plugin (unavailable|failed|not found)|Failed to load|Unable to load|Something went wrong|An unexpected error|Error loading|Query error|Bad Gateway|Internal Server Error|Cannot read propert)[^\n]{0,80}/g;
+    const banner = /(Plugin (unavailable|failed|not found)|Failed to load|Unable to load|Something went wrong|An unexpected error|Error loading|Query error|Bad Gateway|Internal Server Error|Cannot read properties of)[^\n]{0,80}/g;
     const banners = [...new Set(text.match(banner) || [])].sort().slice(0, 8);
     // The collapsed "Details" of an error boundary (Grafana's "Plugin failed to load") carry the error and its stack.
     const details = banners.length ? [...document.querySelectorAll("details")].map((d) => (d.textContent || "").trim()).filter(Boolean).join("\n").slice(0, 2000) : "";

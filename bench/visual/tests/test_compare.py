@@ -156,6 +156,23 @@ class CompareTest(unittest.TestCase):
         loki["records"][0]["response"] = None
         self.assertEqual(self.run_compare(base, base, loki, runtime_required=True)[0], 1)
 
+    def test_a_seeded_log_line_that_names_a_script_error_is_not_a_ui_crash(self):
+        # The log generator seeds "TypeError: Cannot read property"; a page that lists it shows it on Loki's
+        # side as much as on the proxy's. Chrome's message for a crashed panel is "Cannot read properties of".
+        runtime = dict(browser_thread_seconds=1.0, browser_task_seconds=1.2, js_heap_max_sampled_bytes=100 << 20,
+                       metric_samples=3, first_api_data_ms=300, api_requests=2, api_encoded_bytes=1 << 20,
+                       page_encoded_bytes=2 << 20)
+
+        def page(banner):
+            return dict(capture([1], ui={"noData": 0, "banners": [banner], "panelErrors": 0}), runtime=runtime)
+
+        log_line = 'Cannot read property", "level": "error"} '
+        self.assertEqual(compare.runtime_problems(page(log_line), page(log_line), required=True), [])
+        crash = "Cannot read properties of undefined (reading 'defaults')"
+        problems = compare.runtime_problems(page(crash), page(crash), required=True)
+        self.assertEqual(sorted(problems), ["runtime proof: PR Grafana UI infrastructure error",
+                                            "runtime proof: main Grafana UI infrastructure error"])
+
     def test_required_loki_reference_failure_is_not_a_successful_comparison(self):
         runtime = {"browser_thread_seconds": 1.0, "browser_task_seconds": 1.2,
                    "js_heap_max_sampled_bytes": 100 << 20, "metric_samples": 3, "first_api_data_ms": 300,
