@@ -74,6 +74,28 @@ class CompareTest(unittest.TestCase):
         entry = dict(id=page, kind='explore', query=proof['ci']['captures'][0]['queries'][0]['expression'], covers=[case['id']])
         return page, entry, caps, [(case, proof)]
 
+    def test_a_rejection_the_page_asked_for_twice_is_the_rejection_asked_for_once(self):
+        # explore-unwrap-conversion-error at 15m: Grafana sent the rejected query twice on both proxies and once on Loki.
+        text = ("pipeline error: 'SampleExtractionErr' for series: '{app=\"%s\"}'.\nUse a label filter to intentionally skip "
+                "this error. (e.g | __error__!=\"SampleExtractionErr\").")
+
+        def capture(times, status=400, series="auth-service"):
+            query = dict(refId="A", expr="max_over_time({a=\"b\"} | json | unwrap x [1m])", queryType="range", maxLines=1,
+                         datasource=dict(uid="vp-x"), startNs="1", endNs="2")
+            record = dict(url="/api/ds/query?ds_type=loki", method="POST", status=status, request=dict(queries=[query], **{"from": "1", "to": "2"}),
+                          response=dict(results=dict(A=dict(status=status, error=text % series, frames=[]))))
+            return dict(records=[deepcopy(record) for _ in range(times)])
+
+        twice, once = compare.answer_evidence(capture(2)), compare.answer_evidence(capture(1))
+        self.assertEqual(twice[0], once[0])
+        self.assertEqual(twice[2], [])
+        # The series the error names is whichever stream a shard met first; the status and the rest of the text still count.
+        self.assertEqual(compare.answer_evidence(capture(2, series="frontend"))[0], once[0])
+        self.assertNotEqual(compare.answer_evidence(capture(2, status=422))[0], once[0])
+        changed = capture(1)
+        changed["records"][0]["response"]["results"]["A"]["error"] = text % "auth-service" + " (a different closing sentence)"
+        self.assertNotEqual(compare.answer_evidence(changed)[0], once[0])
+
     def test_query_rejection_contract_accepts_only_the_identical_recorded_rejections(self):
         page, entry, caps, contracts = self.rejection_fixture()
         evidence = compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts)

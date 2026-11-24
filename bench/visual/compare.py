@@ -489,7 +489,10 @@ def answer_evidence(capture):
                 problems.append("unusable API answer")
     if not answered:
         problems.append("no usable recorded API answer")
-    return {k: sorted(v) for k, v in rejected.items()}, answered, problems
+    # What a request was rejected with, not how often the page asked: Grafana re-issues a rejected query once more on
+    # one build and not on another from timing alone (explore-unwrap-conversion-error at 15m: twice on the proxies,
+    # once on Loki, the same 400 and text). A different status, code or text still differs.
+    return {k: sorted(set(v)) for k, v in rejected.items()}, answered, problems
 
 
 def records(path, raw=None, gaps=None):

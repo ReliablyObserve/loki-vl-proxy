@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- A `/labels` request for a window under one minute (Grafana's "Show context" sends the clicked row's instant as both bounds) lists the names Loki lists: the last three hours when its end is within three hours of now (Loki's ingester window, every stream it holds), the UTC day of its end otherwise, instead of only the streams with lines at the instant. The row's context query then carries the same structured-metadata filter (`| detected_level=...`) as on Loki; the visual seed answered 15 names where Loki answered 17. Windows of a minute or more are unchanged, and the older day shares one cached answer for all its points. Measured on Loki 3.7.10 (registry case `semantics/labels-point-window-is-the-index-day`; end-to-end test against real Loki).
+- The visual proof compares what a request was rejected with, not how many times the page asked: Grafana sends a rejected query once more on one build and not on another from timing alone (twice on both proxies, once on Loki, the same 400 and text). A different status, code or text still fails.
 
 - Separate source paths from their SHA-256 values in runtime-proof metadata to avoid a generic API-key false positive. The historical Gitleaks exception is limited to the verified source digest's exact commit, file, rule and line; future content remains scanned.
 

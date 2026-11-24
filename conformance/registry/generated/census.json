@@ -742,6 +742,8 @@
     "semantics/labels-end-inclusive-like-loki | perf",
     "semantics/labels-end-inclusive-like-loki | perf:locked",
     "semantics/labels-end-inclusive-like-loki | query",
+    "semantics/labels-point-window-is-the-index-day | compare:observed",
+    "semantics/labels-point-window-is-the-index-day | gap:fixed",
     "semantics/last-over-time-line-filter-offset-points | compare:observed",
     "semantics/last-over-time-line-filter-offset-points | gap:open",
     "semantics/last-over-time-line-filter-offset-points | query",
@@ -1980,6 +1982,7 @@
     "internal/proxy/label_matcher_regexp_routes_test.go | profiles/stream-selector-regexp-anchoring",
     "internal/proxy/label_metadata_freshness_test.go | loki_api_v1_series",
     "internal/proxy/label_metadata_freshness_test.go | semantics/metadata-answers-include-last-24h-like-loki",
+    "internal/proxy/label_point_window_test.go | semantics/labels-point-window-is-the-index-day",
     "internal/proxy/label_replace_duplicates_fold_test.go | loki_api_v1_query_range",
     "internal/proxy/label_replace_duplicates_fold_test.go | semantics/label-replace-duplicates-before-ranking",
     "internal/proxy/label_replace_ranking_test.go | quality/query-range-extent-cache",
@@ -3304,6 +3307,7 @@
     "test/e2e-compat/labels_alias_test.go | loki_api_v1_labels",
     "test/e2e-compat/labels_backfill_cached_bucket_test.go | quality/labels-backfill-into-cached-bucket",
     "test/e2e-compat/labels_backfill_cached_bucket_test.go | semantics/metadata-answers-include-last-24h-like-loki",
+    "test/e2e-compat/labels_point_window_test.go | semantics/labels-point-window-is-the-index-day",
     "test/e2e-compat/labels_zero_width_test.go | semantics/labels-end-inclusive-like-loki",
     "test/e2e-compat/line_fields_parity_test.go | loki_api_v1_detected_fields",
     "test/e2e-compat/line_fields_parity_test.go | loki_api_v1_index_stats",
@@ -3623,12 +3627,12 @@
       "any": 50,
       "api": 124,
       "drilldown": 63,
-      "explore": 259,
+      "explore": 260,
       "grafana-datasource": 4,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 816,
+      "go": 818,
       "playwright": 3
     },
     "page_kinds": {
@@ -3650,7 +3654,7 @@
     "shape_covers_distinct": 112,
     "shapes_path_only": 10,
     "unwired_items": 152,
-    "wired_items": 477
+    "wired_items": 478
   },
   "gates": [
     "A/B shape selection",

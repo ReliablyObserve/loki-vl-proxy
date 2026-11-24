@@ -1788,10 +1788,12 @@
    "covers": [
     "loki_api_v1_labels",
     "loki_api_v1_label_name_values",
-    "semantics/labels-end-inclusive-like-loki"
+    "semantics/labels-end-inclusive-like-loki",
+    "semantics/labels-point-window-is-the-index-day"
    ],
    "fixes": [
-    "semantics/labels-end-inclusive-like-loki"
+    "semantics/labels-end-inclusive-like-loki",
+    "semantics/labels-point-window-is-the-index-day"
    ]
   },
   {

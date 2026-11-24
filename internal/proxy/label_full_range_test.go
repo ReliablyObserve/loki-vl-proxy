@@ -23,6 +23,19 @@ type fullRangeVL struct {
 	mu    sync.Mutex
 	calls []string // path?start..end for every non-health call
 	count atomic.Int64
+	// earlyBefore, when set, places early_label at that instant: a window lists it when it starts before then,
+	// whatever its width (the inventory reads a day as hour buckets, none wider than an hour).
+	earlyBefore int64
+}
+
+// covers reports whether the window holds early_label: it reaches back age before its end, or, when the fake
+// places the label at an instant, it starts before that instant.
+func (f *fullRangeVL) covers(r *http.Request, age time.Duration) bool {
+	if f.earlyBefore != 0 {
+		startNs, ok := parseLokiTimeToUnixNano(r.URL.Query().Get("start"))
+		return ok && startNs < f.earlyBefore
+	}
+	return windowCovers(r, age)
 }
 
 // windowCovers reports whether [start, end] reaches back at least age before end.
@@ -47,13 +60,13 @@ func (f *fullRangeVL) server(t *testing.T) *httptest.Server {
 		case "/select/logsql/stream_field_names":
 			hits := []fieldHit{{"app", 10}}
 			// Stream label only present 1-2h before the range end.
-			if windowCovers(r, time.Hour) {
+			if f.covers(r, time.Hour) {
 				hits = append(hits, fieldHit{"early_label", 1})
 			}
 			writeVLFieldNames(w, hits)
 		case "/select/logsql/field_names":
 			hits := []fieldHit{{"app", 10}, {"_msg", 10}, {"_time", 10}, {"_stream", 10}, {"trace_id", 10}, {"service_name", 10}}
-			if windowCovers(r, time.Hour) {
+			if f.covers(r, time.Hour) {
 				hits = append(hits, fieldHit{"early_label", 1})
 			}
 			writeVLFieldNames(w, hits)
@@ -68,12 +81,12 @@ func (f *fullRangeVL) server(t *testing.T) *httptest.Server {
 				writeVLFieldValues(w, values)
 			case "service_name":
 				values := []fieldHit{{"recent-svc", 10}}
-				if windowCovers(r, time.Hour) {
+				if f.covers(r, time.Hour) {
 					values = append(values, fieldHit{"old-svc", 1})
 				}
 				writeVLFieldValues(w, values)
 			case "early_label":
-				if windowCovers(r, time.Hour) {
+				if f.covers(r, time.Hour) {
 					writeVLFieldValues(w, []fieldHit{{"early-value", 1}})
 					return
 				}

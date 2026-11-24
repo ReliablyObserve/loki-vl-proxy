@@ -1935,6 +1935,10 @@
       "internal/proxy/labels_inclusive_end_test.go",
       "test/e2e-compat/labels_zero_width_test.go"
     ],
+    "semantics/labels-point-window-is-the-index-day": [
+      "internal/proxy/label_point_window_test.go",
+      "test/e2e-compat/labels_point_window_test.go"
+    ],
     "semantics/last-over-time-vl149-row-max-wrong-row": [
       "internal/querycorpus/first_last_loki_diff_test.go"
     ],
@@ -3132,7 +3136,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 743,
+  "registry_items": 744,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4117,6 +4121,9 @@
     "internal/proxy/label_metadata_freshness_test.go": [
       "loki_api_v1_series",
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "internal/proxy/label_point_window_test.go": [
+      "semantics/labels-point-window-is-the-index-day"
     ],
     "internal/proxy/label_replace_duplicates_fold_test.go": [
       "loki_api_v1_query_range",
@@ -6450,6 +6457,9 @@
       "quality/labels-backfill-into-cached-bucket",
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
+    "test/e2e-compat/labels_point_window_test.go": [
+      "semantics/labels-point-window-is-the-index-day"
+    ],
     "test/e2e-compat/labels_zero_width_test.go": [
       "semantics/labels-end-inclusive-like-loki"
     ],
@@ -6950,7 +6960,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 819,
+  "tests_with_markers": 821,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7106,5 +7116,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 477
+  "wired_items": 478
 }
