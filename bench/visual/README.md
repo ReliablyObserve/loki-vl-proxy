@@ -251,10 +251,12 @@ is not `fixed` gets no allowance.
 **Loki's index/stats counts every copy of a chunk.** Besides the older rule (bytes and chunk count have no
 VictoriaLogs equivalent when streams and entries match), `index/stats` is explained when Loki read the same chunks
 from its ingesters and its store: streams equal, and entries and chunks both an exact whole multiple k (k at least 2)
-of the proxy's, which counts each line once (registry `quality/index-stats-loki-chunk-accounting`, "every copy of a
-chunk Loki reads is added"). Any other difference in streams or entries, including entries that are not a multiple
-of the proxy's, stays a counted difference. The proxy's own count is not changed: it still equals Loki's
-`count_over_time`.
+of the proxy's (registry `quality/index-stats-loki-chunk-accounting`, "every copy of a chunk Loki reads is added").
+That signature alone would also fit a proxy that undercounts by exactly 1/k, so it needs evidence that Loki moved and
+the proxy did not: Loki's own answer to the same request in the first pass of the run (kept in `first-pass/` next to
+a recapture) must have equalled the proxy's current streams, entries and chunks. Without that earlier answer, and
+for any other difference in streams or entries, including entries that are not a multiple of the proxy's, the
+difference stays counted. The proxy's own count is not changed: it still equals Loki's `count_over_time`.
 
 **Gate.** A base-vs-PR data difference is classified against Loki, where Loki holds
 data for the range (15m and 1h):

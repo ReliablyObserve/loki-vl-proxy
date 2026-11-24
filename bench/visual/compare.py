@@ -462,7 +462,7 @@ def stats_numbers(body):
 def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, bodies=None):
     """(requests, identical, differences, series, one-sided, explained) of two sides' records.
 
-    explain: (raw left, raw right) of the records, to ask explain_vs_loki why a difference is by design; such a
+    explain: (raw left, raw right[, Loki's first-pass answers by request]) of the records, to ask explain_vs_loki why a difference is by design; such a
     difference goes to `explained` with its reason instead of the differences.
     vs_loki: a topk or bottomk answer is compared by its ranked values per step (same_ranked), not its series.
     raw: (raw left, raw right) when explain is not given, for bodies.
@@ -498,7 +498,7 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, b
                                **({"numbers": f"{stats_numbers(ba)} vs {stats_numbers(bb)}"}
                                   if "/resources/index/stats" in k[1] else {})})
             text = f"{k[0]} {str(k[2:] or k[1])[:90]}: {why}"
-            reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j]) if explain and why != "capture body unreadable" else None
+            reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j], (explain[2].get(k) or ()) if len(explain) > 2 else ()) if explain and why != "capture body unreadable" else None
             if reason:
                 explained.append(tagged(f"{text} -- explained: {reason}", k))
             else:
@@ -558,24 +558,27 @@ def _detected_labels(a, b):
     return _join(cardinality, _envelope(a, b), "Loki lists labels in no fixed order" if order else "")
 
 
-def _index_stats(a, b):
+def _index_stats(a, b, earlier=()):
     """Loki's bytes (uncompressed chunk KB, registry quality/index-stats-bytes-and-chunks) and chunk count have no
     VictoriaLogs equivalent. Its streams and entries are
     estimates too (chunks pro-rated by time, sources summed: registry quality/index-stats-loki-chunk-accounting), but
     exact for the visual stack's flushed, uncached seed, so a difference there stays counted.
 
     One difference of that kind is named by the registry case itself: "every copy of a chunk Loki reads is added".
-    When the same chunks are read from the ingesters and from the store, Loki's streams stay equal while its entries
-    and its chunk count are both an exact whole multiple of the proxy's. That signature (equal streams, entries and
-    chunks all k times the proxy's, k at least 2) is Loki counting each chunk k times; any other difference in streams
-    or entries, including entries that are not a multiple, stays a counted difference."""
+    When Loki reads the same chunks from its ingesters and from its store, its entries and its chunk count are both an
+    exact whole multiple of the proxy's while its streams stay equal. That signature alone would also fit a proxy that
+    undercounts by exactly 1/k, so it is explained only with evidence that Loki's own count moved and the proxy's did
+    not: `earlier`, Loki's answers to the same request in the first pass of this run, must include one whose streams,
+    entries and chunks equal the proxy's current numbers. Without that evidence the difference stays counted, as does
+    any other difference in streams or entries, including entries that are not a multiple of the proxy's."""
     if {k: a.get(k) for k in ("streams", "entries")} != {k: b.get(k) for k in ("streams", "entries")}:
         copies = _chunk_copies(a, b)
-        if not copies:
+        agreed = any(isinstance(e, dict) and all(e.get(k) == a.get(k) for k in ("streams", "entries", "chunks")) for e in earlier)
+        if not copies or not agreed:
             return None
-        return (f"Loki read every chunk {copies} times (its ingesters and its store both answered): streams equal, entries and "
-                f"chunks exactly {copies}x the proxy's, which counts each line once (registry quality/index-stats-loki-chunk-accounting); "
-                "bytes have no VictoriaLogs equivalent")
+        return (f"Loki read every chunk {copies} times (its ingesters and its store both answered): earlier in this run Loki "
+                f"answered this request with the proxy's streams, entries and chunks, now entries and chunks are exactly "
+                f"{copies}x with streams equal (registry quality/index-stats-loki-chunk-accounting); bytes have no VictoriaLogs equivalent")
     return "bytes and chunks are Loki's chunk accounting, which VictoriaLogs has no equivalent of; streams and entries match"
 
 
@@ -656,15 +659,16 @@ def explain_one_sided(key):
     return None
 
 
-def explain_vs_loki(key, a, b):
-    """Why the PR's answer a differs from Loki's answer b by design, or None (a real difference)."""
+def explain_vs_loki(key, a, b, earlier=()):
+    """Why the PR's answer a differs from Loki's answer b by design, or None (a real difference). earlier: Loki's
+    answers to the same request in the first pass of this run (empty in the first pass itself)."""
     if not isinstance(a, dict) or not isinstance(b, dict):
         return None
     if key[0] == "query":
         return _log_frames(a, b)
     for fragment, rule in RESOURCE_RULES:
         if fragment in key[1]:
-            return rule(a, b)
+            return rule(a, b, earlier) if rule is _index_stats else rule(a, b)
     return None
 
 
@@ -743,8 +747,8 @@ def base_cannot_answer(row, gap, pr_judged):
         return []
     row["runtime_problems"] = []
     row["base_unusable"] = sorted(set(moved))
-    row["base_comparison_note"] = ("Base-relative resource and settlement changes unavailable: the base could not answer "
-                                   "this page, which the pull request fixes.")
+    row["base_comparison_note"] = ("The base's answer to this page, which the pull request fixes, is unusable as a baseline "
+                                   "for the page's data; the PR's resource use is still compared with the base's.")
     return moved
 
 
@@ -785,6 +789,12 @@ def main():
         sp, p = records(os.path.join(d, "pr.json"), raw["pr"], gap["pr"])
         settle = {n: round(load_json(os.path.join(d, f"{n}.json")).get("settle_ms", 0) / 1000, 1) for n in ("main", "pr")}
         has_loki = os.path.exists(os.path.join(d, "loki.json"))
+        # Loki's answers of the first pass of this run (a recapture is taken later, by which time Loki's own chunk
+        # accounting may have moved): evidence for _index_stats, empty when there was no earlier pass.
+        earlier = defaultdict(list)
+        first_loki = os.path.join(a.out, "first-pass", "data", page, rng, "loki.json")
+        if os.path.exists(first_loki):
+            records(first_loki, earlier, {})
         sl, l = records(os.path.join(d, "loki.json"), raw["loki"], gap["loki"]) if has_loki else (True, {})
         # A body the browser could not hand over (a very large answer) is a gap of the capture, not of the build. The PR
         # side is blamed for it only where the base read that request: a request unreadable on both sides is reported
@@ -797,9 +807,9 @@ def main():
         explained, lnondet = [], []
         if loki_ok:
             ln, lok, _, _, _, _ = compare(p, l, vs_loki=True)
-            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"]), vs_loki=True,
+            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"], earlier), vs_loki=True,
                                                         bodies=loki_bodies)
-            _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"]), vs_loki=True)
+            _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"], earlier), vs_loki=True)
             # A difference the base needs a by-design explanation for and the PR does not (the PR now answers like
             # Loki there) still counts against the base, so a fix towards Loki reads as improved.
             def what(x):  # the request and its reasons, without window timestamps

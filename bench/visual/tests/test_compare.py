@@ -38,7 +38,7 @@ class CompareTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(os.path.exists(stale))
 
-    def run_compare(self, main, pr, loki=None, rng="1h", runtime_required=False, fix_cases=None):
+    def run_compare(self, main, pr, loki=None, rng="1h", runtime_required=False, fix_cases=None, first_pass_loki=None):
         with tempfile.TemporaryDirectory() as out:
             d = os.path.join(out, "data", "page-a", rng)
             os.makedirs(d)
@@ -50,6 +50,11 @@ class CompareTest(unittest.TestCase):
                 if cap is not None:
                     with open(os.path.join(d, f"{name}.json"), "w", encoding="utf-8") as f:
                         json.dump(cap, f)
+            if first_pass_loki is not None:  # Loki's capture of the first pass of the run, kept next to a recapture
+                first = os.path.join(out, "first-pass", "data", "page-a", rng)
+                os.makedirs(first)
+                with open(os.path.join(first, "loki.json"), "w", encoding="utf-8") as f:
+                    json.dump(first_pass_loki, f)
             proc = subprocess.run([sys.executable, os.path.join(HERE, "..", "compare.py"), out], capture_output=True, text=True)
             with open(os.path.join(out, "compare.md"), encoding="utf-8") as f:
                 self.last_md = f.read()
@@ -447,8 +452,8 @@ class ExplainedVsLokiTest(unittest.TestCase):
     """Differences from Loki by design are listed as explained, everything else stays a difference."""
     run_compare = CompareTest.run_compare
 
-    def check(self, pr, loki):
-        _, row = self.run_compare(pr, pr, loki)
+    def check(self, pr, loki, first_pass_loki=None):
+        _, row = self.run_compare(pr, pr, loki, first_pass_loki=first_pass_loki)
         return row
 
     def test_detected_fields_envelope_and_extracted_suffix_are_explained(self):
@@ -557,36 +562,49 @@ class ExplainedVsLokiTest(unittest.TestCase):
         _, row = self.run_compare(pr, pr, pr)
         self.assertEqual((row["main_pr_bodies"], row["loki_bodies"]), ([], []))
 
-    def test_index_stats_explains_only_whole_chunk_copies_of_loki(self):
+    def test_index_stats_explains_whole_chunk_copies_only_when_loki_itself_moved(self):
         # registry quality/index-stats-loki-chunk-accounting: every copy of a chunk Loki reads is added. Equal streams,
-        # and entries and chunks both an exact whole multiple (k >= 2) of the proxy's, is that signature; nothing else is.
+        # and entries and chunks both an exact whole multiple (k >= 2) of the proxy's, is that signature, but it also fits a
+        # proxy that undercounts by 1/k. It is explained only when Loki's own earlier answer in the run (the first pass,
+        # kept next to the recapture) equalled the proxy's current streams, entries and chunks: Loki moved, the proxy did not.
         pr = resources(("index/stats?q=1", {"streams": 490, "chunks": 490, "bytes": 1221200, "entries": 12212}))
 
         def loki(**numbers):
             body = {"streams": 490, "chunks": 980, "bytes": 8386560, "entries": 24424}
             body.update(numbers)
             return resources(("index/stats?q=1", body), uid="vp-loki")
-        row = self.check(pr, loki())
+        first = resources(("index/stats?q=1", {"streams": 490, "chunks": 490, "bytes": 4193280, "entries": 12212}), uid="vp-loki")
+        row = self.check(pr, loki(), first_pass_loki=first)
         self.assertEqual((row["loki_diffs"], len(row["loki_explained"])), ([], 1))
         self.assertIn("every chunk 2 times", row["loki_explained"][0])
-        row = self.check(pr, loki(chunks=1470, entries=36636))
+        self.assertIn("earlier in this run Loki answered this request with the proxy's", row["loki_explained"][0])
+        row = self.check(pr, loki(chunks=1470, entries=36636), first_pass_loki=first)
         self.assertEqual((row["loki_diffs"], len(row["loki_explained"])), ([], 1))
         self.assertIn("every chunk 3 times", row["loki_explained"][0])
+        # no evidence that only Loki moved: no first pass, or a first pass that did not equal the proxy's numbers
+        self.assertEqual(len(self.check(pr, loki())["loki_diffs"]), 1)
+        undercount = resources(("index/stats?q=1", {"streams": 490, "chunks": 980, "bytes": 8386560, "entries": 24424}), uid="vp-loki")
+        self.assertEqual(len(self.check(pr, loki(), first_pass_loki=undercount)["loki_diffs"]), 1)
+        self.assertEqual(len(self.check(pr, loki(), first_pass_loki=resources(("index/stats?q=2", {"streams": 490, "chunks": 490, "entries": 12212}),
+                                                                           uid="vp-loki"))["loki_diffs"]), 1)
+        # the signature itself is strict, even with a first pass that equals the proxy's numbers
         for name, numbers in (
                 ("entries doubled, chunks not", dict(chunks=490)),
                 ("entries not a multiple", dict(entries=24425)),
                 ("entries and chunks differ in multiple", dict(chunks=1470)),
                 ("streams differ", dict(streams=491)),
                 ("fewer entries than the proxy", dict(entries=6106, chunks=245)),
-                ("no entries on the proxy side", dict(entries=0, chunks=0))):
-            row = self.check(pr, loki(**numbers))
+                ("no entries on Loki", dict(entries=0, chunks=0))):
+            row = self.check(pr, loki(**numbers), first_pass_loki=first)
             self.assertEqual((len(row["loki_diffs"]), row["loki_explained"]), (1, []), name)
         # entries equal the proxy's: the older rule applies (only bytes and chunks differ), not the copies rule
         row = self.check(pr, loki(entries=12212))
         self.assertEqual((row["loki_diffs"], len(row["loki_explained"])), ([], 1))
         self.assertNotIn("times", row["loki_explained"][0])
+        # a proxy that counts nothing is never a divisor of Loki's count
         zero = resources(("index/stats?q=1", {"streams": 490, "chunks": 490, "bytes": 0, "entries": 0}))
-        row = self.check(zero, loki())  # a proxy that counts nothing is never a divisor of Loki's count
+        zero_first = resources(("index/stats?q=1", {"streams": 490, "chunks": 490, "bytes": 0, "entries": 0}), uid="vp-loki")
+        row = self.check(zero, loki(), first_pass_loki=zero_first)
         self.assertEqual((len(row["loki_diffs"]), row["loki_explained"]), (1, []))
 
     def test_a_base_that_cannot_answer_a_fixed_page_does_not_fail_the_runtime_proof(self):
@@ -604,7 +622,7 @@ class ExplainedVsLokiTest(unittest.TestCase):
         _, row = self.run_compare(broken, answer, answer, runtime_required=True, fix_cases=fixes)
         self.assertEqual(row["runtime_problems"], [])
         self.assertIn("main infrastructure error", " ".join(row["base_unusable"]))
-        self.assertIn("unavailable", row["base_comparison_note"])
+        self.assertIn("unusable as a baseline", row["base_comparison_note"])
         import visual_comment
         fails, warns, _ = visual_comment.assess(row, None)
         self.assertIn("base could not serve as the runtime baseline", " ".join(warns))
