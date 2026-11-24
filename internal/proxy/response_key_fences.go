@@ -90,6 +90,9 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	}
 	if keep && containsWord(query, "unwrap", other) {
 		b.add(keepUnwrapIdentityResponseVersion)
+		if containsWord(query, "label_replace", other) {
+			b.add(keepUnwrapIdentityLabelReplaceResponseVersion)
+		}
 	}
 	b.add(dynamicUnwrapIdentityResponseKeyVersion(query))
 	streamLevel, ranked := streamLevelSeriesScan(query)
@@ -344,10 +347,20 @@ func (c *fenceChain) String() string {
 // the range function (semantics/keep-before-unwrap-series-identity): a series per stream, or per line, then.
 const keepUnwrapIdentityResponseVersion = "@keep-unwrap-identity-v1:"
 
+// keepUnwrapIdentityLabelReplaceResponseVersion fences, on top, the answers cached before the same identity was read
+// under label_replace calls at the root (semantics/keep-before-unwrap-identity-in-operands): they kept the stream's
+// series. A query with a keep and an unwrap that names label_replace carries it (a text screen: a call elsewhere in the
+// query is fenced too, one more cache miss), so no other keep and unwrap query's key changes.
+const keepUnwrapIdentityLabelReplaceResponseVersion = "@keep-unwrap-identity-label-replace-v1:"
+
 // keepUnwrapIdentityResponseKeyVersion is the fence of a query that holds a keep stage and an unwrap: a text screen,
 // so a query whose keep decides nothing is fenced too (one more cache miss), and no other query's key changes.
 func keepUnwrapIdentityResponseKeyVersion(query string) string {
-	if keepStageIn(query) && containsWord(query, "unwrap", spelledOtherwise(query)) {
+	other := spelledOtherwise(query)
+	if keepStageIn(query) && containsWord(query, "unwrap", other) {
+		if containsWord(query, "label_replace", other) {
+			return keepUnwrapIdentityResponseVersion + keepUnwrapIdentityLabelReplaceResponseVersion
+		}
 		return keepUnwrapIdentityResponseVersion
 	}
 	return ""

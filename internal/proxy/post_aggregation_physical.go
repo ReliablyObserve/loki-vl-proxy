@@ -44,6 +44,10 @@ func PostAggregationPhysical(query string, translate func(string) (string, error
 		return nil, "", true, err
 	}
 	op, err = postAggregationOp(postAgg, operandText)
+	if specs, ok := rankingUnderLabelReplace(query); ok && err == nil {
+		// label_replace calls around the ranking rewrite the labels of its answer.
+		op = physical.LabelMap{Replace: specs, In: op}
+	}
 	return op, operandText, true, err
 }
 

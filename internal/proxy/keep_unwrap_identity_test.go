@@ -31,6 +31,9 @@ func TestKeepIdentityServedFromPlan(t *testing.T) {
 		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`:                      "| stats by (app) row_min(",
 		`sum(quantile_over_time(0.9, {app="a"} | json | keep app, n | unwrap n [5m]))`:         "| stats by (app) quantile(0.9, __lvp_v) as __lvp_inner | stats sum(__lvp_inner)",
 		`sum by (app) (stddev_over_time({app="a"} | json | keep app, pod, n | unwrap n [5m]))`: "| stats by (app, pod) stddev(__lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)",
+		// label_replace calls at the root relabel the answer: the operand keeps the keep's identity.
+		`label_replace(first_over_time({app="a"} | json | keep app, n | unwrap n [5m]), "b", "$1", "app", "(.*)")`:                                                             "| stats by (app) row_min(",
+		`label_replace(label_replace(sum by (app) (stddev_over_time({app="a"} | json | keep app, pod, n | unwrap n [5m])), "b", "$1", "app", "(.*)"), "c", "$1", "b", "(.*)")`: "| stats by (app, pod) stddev(__lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)",
 	} {
 		got, err := on.translateQuery(q)
 		if err != nil {
@@ -143,20 +146,24 @@ func TestKeepIdentityHandlersFollowTheFlip(t *testing.T) {
 	}
 }
 
-// The answers cached before the fix are not served after it: a query with a keep and an unwrap carries the fence,
-// every other query keeps its key.
+// The answers cached before the fix are not served after it: a query with a keep and an unwrap carries the fence (and
+// one that names label_replace a second one), every other query keeps its key.
 //
 // conformance: semantics/keep-before-unwrap-series-identity
 func TestKeepIdentityCacheKeysFenced(t *testing.T) {
 	for q, want := range map[string]string{
-		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`: keepUnwrapIdentityResponseVersion,
-		`sum(rate({app="a"} | json | keep app [5m]))`:                     "",
-		`first_over_time({app="a"} | json | unwrap n [5m])`:               "",
+		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`:                                          keepUnwrapIdentityResponseVersion,
+		`label_replace(first_over_time({app="a"} | json | keep app, n | unwrap n [5m]), "b", "$1", "app", "(.*)")`: keepUnwrapIdentityResponseVersion + keepUnwrapIdentityLabelReplaceResponseVersion,
+		`LABEL_REPLACE(first_over_time({app="a"} | json | KEEP app, n | UNWRAP n [5m]), "b", "$1", "app", "(.*)")`: keepUnwrapIdentityResponseVersion + keepUnwrapIdentityLabelReplaceResponseVersion,
+		`sum(rate({app="a"} | json | keep app [5m]))`:                                                              "",
+		`first_over_time({app="a"} | json | unwrap n [5m])`:                                                        "",
 	} {
 		if got := keepUnwrapIdentityResponseKeyVersion(q); got != want {
 			t.Errorf("%s: fence %q, want %q", q, got, want)
 		}
-		if got := responseKeyFences(httptest.NewRequest("GET", "/loki/api/v1/query_range?step=60", nil), q, responseKeyInnerQueryRange); !strings.Contains(got, want) || want == "" && strings.Contains(got, keepUnwrapIdentityResponseVersion) {
+		got := responseKeyFences(httptest.NewRequest("GET", "/loki/api/v1/query_range?step=60", nil), q, responseKeyInnerQueryRange)
+		if !strings.Contains(got, want) || want == "" && strings.Contains(got, keepUnwrapIdentityResponseVersion) ||
+			strings.Contains(got, keepUnwrapIdentityLabelReplaceResponseVersion) != strings.Contains(want, keepUnwrapIdentityLabelReplaceResponseVersion) {
 			t.Errorf("%s: response key fences %q", q, got)
 		}
 	}

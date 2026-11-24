@@ -54,6 +54,9 @@ def runtime_problems(main, pr, required=False, comparable=True, client_error=Non
             problems.append(f"runtime proof: {side} missing/invalid settle_ms")
         if capture.get("settled") is not True:
             problems.append(f"runtime proof: {side} did not settle")
+        # Banners are matched on the page text, which includes rendered log lines. The crash of a panel in Chrome
+        # reads "Cannot read properties of undefined"; the generator's seeded line "TypeError: Cannot read
+        # property" is log content, and it is on Loki's page as much as on the proxy's.
         banners = (capture.get("ui") or {}).get("banners", [])
         exceptions = capture.get("client_exceptions")
         has_exception = (any(str(error).startswith("pageerror:") for error in capture.get("errors", []))
@@ -64,7 +67,7 @@ def runtime_problems(main, pr, required=False, comparable=True, client_error=Non
                                        or exceptions.get("overflow") is not False):
             problems.append(f"runtime proof: {side} JavaScript exception capture is incomplete")
         if any(re.search(r"plugin (?:failed|unavailable|not found)|bad gateway|internal server error|"
-                         r"page state unreadable|cannot read propert|unexpected error", str(b), re.I) for b in banners):
+                         r"page state unreadable|cannot read properties of|unexpected error", str(b), re.I) for b in banners):
             problems.append(f"runtime proof: {side} Grafana UI infrastructure error")
         nonempty = any(record.get("status") == 200 and has_data(record.get("response"))
                        for record in capture.get("records", []))

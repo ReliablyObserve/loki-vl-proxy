@@ -151,15 +151,14 @@ var loweringParityQueries = []struct {
 	// once its construct is flipped, and the whole query never is.
 	{"stddev", `stddev by (app) (count_over_time({app="a"}[5m]))`, false, "", "RangeAgg"},
 	{"topk", `topk(2, sum by (app) (count_over_time({app="a"}[5m])))`, false, "", "VectorAgg"},
+	{"label_replace around topk", `label_replace(topk(2, sum by (app) (count_over_time({app="a"}[1m]))), "x", "$1", "app", "(.*)")`, false, "", "VectorAgg"},
 	{"binary with a without operand", `sum without (pod) (rate({app="a"}[5m])) / 2`, false, "", "VectorAgg"},
 	{"binary with a vector operand", `vector(1) + sum(rate({app="a"}[5m]))`, false, "", "VectorAgg"},
 	// Metric queries no flip serves: the proxy sends the string translator's text for the whole query, and the plan
 	// holds an evaluated level, or writes Loki's reading where the translator writes another text
 	// (writesTranslatorText).
 	{"sum over a stddev", `sum(stddev by (app) (count_over_time({app="a"}[5m])))`, false, "", ""},
-	{"label_replace around topk", `label_replace(topk(2, sum by (app) (count_over_time({app="a"}[5m]))), "x", "$1", "app", "(.*)")`, false, "", ""},
 	{"unwrap of a reserved field in another case", `sum(sum_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, false, "", ""},
-	{"keep before unwrap under a label_replace", `label_replace(first_over_time({app="a"} | json | keep app, n | unwrap n [5m]), "x", "$1", "app", "(.*)")`, false, "", ""},
 	{"vector", `vector(1)`, false, "", ""},
 	{"invalid", `{app="a"} |= `, false, "", ""},
 	{"invalid regexp", `{app="a"} | path =~ "("`, false, "", ""},

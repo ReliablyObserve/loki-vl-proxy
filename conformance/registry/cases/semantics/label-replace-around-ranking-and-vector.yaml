@@ -1,5 +1,5 @@
 id: semantics/label-replace-around-ranking-and-vector
-title: label_replace around topk, sort or vector() fails on the proxy and answers on Loki (open)
+title: label_replace around topk, bottomk, sort or sort_desc answers the ranked series relabelled, like Loki (fixed; vector() is semantics/label-replace-around-vector)
 proves:
   - loki_api_v1_query
   - loki_api_v1_query_range
@@ -16,6 +16,26 @@ why: |
   are not routed as stats queries by the label_replace path (the other direction,
   a label_replace under topk or sort, is handled and compared by
   TestCompat_LabelReplaceNewLabel). The base commit answers the same.
+
+  Fixed for the rankings: the post-aggregation route reads label_replace calls
+  at the root from the query's plan, evaluates the ranking under them (alone,
+  grouped, under sum, avg, min, max or count, over a binary operation) as the
+  query it is, and applies the calls to its answer, innermost first. Series
+  the calls give one label set are one series of a range answer that holds
+  each ranked sample of a step, in the order the ranking answers them (the
+  highest first for topk and sort_desc, the lowest first for bottomk and
+  sort), as Loki writes them; an instant answer keeps them as samples of their
+  own. A regexp that does not compile answers Loki's 400 before any
+  VictoriaLogs request. A ranking nested with a stddev or stdvar under the
+  calls stays with semantics/stddev-stdvar-nested-or-binary. The route rule
+  routes the call as the ranking (lower routeEvaluated), and the corpus shadow
+  holds the lowering to the proxy's route. TestLabelReplaceAroundRankingMatchesLoki
+  holds 16 shapes to the Loki engine oracle on query and query_range (step
+  equal to, under and over the range, and an hour at Grafana's 15, 30 and 60
+  second steps), VictoriaLogs v1.49.0 and v1.54.0. The cached query_range
+  answers (an empty streams answer of the string translator's phrase) are
+  fenced (@label-replace-ranking-v1:). vector() under label_replace is
+  semantics/label-replace-around-vector (open).
 request:
   method: GET
   path: /loki/api/v1/query
@@ -30,13 +50,22 @@ compare:
   expect: |
     The ranked series with svc_short added, as Loki answers.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1726"
   impact: explore-visible
   effort: M
-  area: 'internal/proxy proxy.go (handleQuery, handleQueryRange routing of a label_replace whose inner expression is topk, sort or vector)'
+  area: 'internal/proxy/metric_agg.go (rankingUnderLabelReplace, rankingRelabel, relabelEvaluated), internal/proxy/rank_binary_fence.go (labelReplaceRankingResponseVersion), internal/proxy/post_aggregation_physical.go (PostAggregationPhysical); internal/queryplan/lower/route_rank.go (routeEvaluated)'
   loki: 'label_replace transforms the series of any vector expression below it, vector() included'
-  proxy: '400 on query; 400 (topk, sort) or empty streams (vector) on query_range'
-  planned_test: 'TestCompat_LabelReplaceAroundRankingAndVector (test/e2e-compat, group semantics)'
+  proxy: 'the ranking evaluated by its route, relabelled by the calls'
+  planned_test: 'TestLabelReplaceAroundRankingMatchesLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestCompat_LabelReplaceAroundRanking (test/e2e-compat, group core); TestRouteQueryOfARankingOrLabelReplace (internal/queryplan/lower); TestLabelReplaceAroundRankingRoute (internal/proxy)'
   clusters:
     - "616dee70"
     - "e99afbef"
+
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

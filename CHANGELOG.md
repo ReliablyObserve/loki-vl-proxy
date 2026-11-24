@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `label_replace` around `topk`, `bottomk`, `sort` or `sort_desc` (alone, grouped, under `sum`, `avg`, `min`, `max` or `count`, or over a binary operation) answers the ranked series with the calls applied, as Loki does. Before, `query` answered a 400 and `query_range` an empty answer. Series that the calls give one label set keep every ranked sample of a step in one series, in the ranking's order, as Loki writes them. A regexp that does not compile answers Loki's 400 before any VictoriaLogs request. The cached `query_range` answers of these queries are not served again. `label_replace` around `vector()` and around a ranking nested with `stddev` or `stdvar` are not changed.
+
+- `label_replace` around a range function over an unwrapped label whose series a `keep` decides (`label_replace(first_over_time({app="a"} | json | keep app, n | unwrap n [5m]), ...)`) groups the samples by the labels the `keep` leaves, as Loki does, instead of one series per stream or line. The cached answers of a query with a `keep`, an `unwrap` and `label_replace` are not served again.
+
 - Separate source paths from their SHA-256 values in runtime-proof metadata to avoid a generic API-key false positive. The historical Gitleaks exception is limited to the verified source digest's exact commit, file, rule and line; future content remains scanned.
 
 - Preserve original-window correctness evidence separately from benchmark timing when Loki's result cache answered the measured reference. Reuse complete measured proxy replies and compute at most one additional bounded Loki answer after timed requests; confirmation and refresh retain their own source windows. Metadata without cache counters stays an explicit API observation; full pattern samples, field paths, duplicate identities and malformed volumes are checked. Backfill can trigger Loki flush checkpoints after successful dual writes, without replaying writes, reducing fixture size or changing backend limits.

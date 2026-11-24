@@ -80,9 +80,12 @@ func evaluatedRoot(p *queryplan.Plan) (routed bool, divergence string) {
 	switch {
 	case deepest < 0:
 		return false, ""
+	case underLabelReplace && lastRank >= 0 && !anyStddev(chain):
+		// A label_replace around a ranking (and the sum, avg, min, max and count above it) is routed as the ranking,
+		// and the calls rewrite its answer.
+		return true, ""
 	case underLabelReplace && lastRank >= 0:
-		// The proxy does not route a label_replace around a ranking as one, and the translator's text for it drops
-		// the ranking.
+		// A label_replace around a ranking nested with a stddev or stdvar: the translator's text for it drops a level.
 		return false, knownLabelReplaceAroundRanking
 	case underLabelReplace:
 		return false, knownNestedEvaluation
@@ -178,7 +181,12 @@ func checkProxyEvaluated(q string, prof planProfile, got physical.Op) string {
 	case !physical.Equal(want, got):
 		return fmt.Sprintf("%s: %q:\n lowered %s %#v\n   proxy %s %#v", prof.name, q, translator.EncodePhysical(got), got, operand, want)
 	}
-	if _, in := physical.SplitEval(got); physical.Encode(in) != operand {
+	evaluated := got
+	if lm, ok := got.(physical.LabelMap); ok {
+		// label_replace calls around the evaluation: the operand's request is the one under them.
+		evaluated = lm.In
+	}
+	if _, in := physical.SplitEval(evaluated); physical.Encode(in) != operand {
 		return fmt.Sprintf("%s: %q:\n lowered text %s\n   proxy text %s", prof.name, q, physical.Encode(in), operand)
 	}
 	return ""

@@ -84,7 +84,7 @@ function url(p: PageSpec, uid: string, r: string): string {
 async function uiState(page: Page) {
   return page.evaluate(() => {
     const text = document.body.innerText || "";
-    const banner = /(Plugin (unavailable|failed|not found)|Failed to load|Unable to load|Something went wrong|An unexpected error|Error loading|Query error|Bad Gateway|Internal Server Error|Cannot read propert)[^\n]{0,80}/g;
+    const banner = /(Plugin (unavailable|failed|not found)|Failed to load|Unable to load|Something went wrong|An unexpected error|Error loading|Query error|Bad Gateway|Internal Server Error|Cannot read properties of)[^\n]{0,80}/g;
     const visible = (e: Element) => e.getClientRects().length > 0;
     const alerts = '[role="alert"], [data-testid="data-testid Alert error"], [data-testid="data-testid Error boundary"]';
     const alertText = [...document.querySelectorAll(alerts)]

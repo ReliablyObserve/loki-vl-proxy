@@ -69,12 +69,16 @@ var keepIdentityEdgeShapes = []string{
 	`%s{job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]) by (app)`,
 }
 
-// keepIdentityExtraQueries are the keep shapes as an operand: of a binary operation, a ranking, label_replace and a
-// sort, each operand translated on its own.
+// keepIdentityExtraQueries are the keep shapes as an operand: of a binary operation, a ranking, label_replace (one
+// call or two, over the function alone or under a vector aggregation) and a sort, each operand translated on its own.
 var keepIdentityExtraQueries = []string{
 	`first_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]) * 2`,
 	`topk(1, sum by (app) (quantile_over_time(0.9, {job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m])))`,
 	`label_replace(first_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]), "svc", "$1", "app", "(.*)")`,
+	`label_replace(quantile_over_time(0.9, {job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]), "svc", "$1", "app", "(.*)")`,
+	`label_replace(label_replace(sum by (app) (stddev_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m])), "svc", "$1", "app", "(.*)"), "app", "", "", "")`,
+	// A by clause that drops a kept label: the kept series are folded by the clause.
+	`sum by (app) (stddev_over_time({job="kj"} | json | keep app, pod, duration_ms | unwrap duration_ms [5m]))`,
 	`sort_desc(stddev_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]))`,
 	`stddev_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]) / avg_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m])`,
 	`sum(last_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m])) + sum(quantile_over_time(0.9, {job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]))`,
@@ -136,9 +140,10 @@ var keepIdentityKnown = func() map[string]map[string]string {
 	// rate_counter's series are right; its value differs from Loki's extrapolated rate in the sixth digit.
 	add("semantics/unwrap-rate-counter-window-extrapolation", all, keep("rate_counter"), "sum by (app) ("+keep("rate_counter")+")",
 		"sum("+keep("rate_counter")+")", "max by (app) ("+keep("rate_counter")+")")
-	// Under label_replace and in a binary operation between two such functions the operand keeps the stream's
-	// series (and label_replace's range answer hits the series limit, as before).
-	add("semantics/keep-before-unwrap-identity-in-operands", all, keepIdentityExtraQueries[2])
+	// The raw-row evaluator of an instant query and of a range longer than the step answers the kept series
+	// unreduced when the outer by clause drops a kept label.
+	add("semantics/keep-identity-outer-by-drops-kept-label", []string{"instant", "step<range"},
+		`sum by (app) (stddev_over_time({job="kj"} | json | keep app, pod, duration_ms | unwrap duration_ms [5m]))`)
 	return known
 }()
 
@@ -221,7 +226,7 @@ func keepIdentityFixture() metricFixture {
 // TestKeepUnwrapIdentityMatchLoki replays the recorded answers through the handlers and holds every run to Loki's
 // answer, or to its listed difference.
 //
-// conformance: semantics/keep-before-unwrap-series-identity, semantics/keep-before-parser-unwrap-identity, semantics/drop-before-unwrap-stream-label, semantics/unwrap-rate-counter-window-extrapolation, semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-first-last-per-line-range-longer-than-step, semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance, semantics/keep-before-unwrap-identity-in-operands
+// conformance: semantics/keep-before-unwrap-series-identity, semantics/keep-identity-outer-by-drops-kept-label, semantics/keep-before-parser-unwrap-identity, semantics/drop-before-unwrap-stream-label, semantics/unwrap-rate-counter-window-extrapolation, semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-first-last-per-line-range-longer-than-step, semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance, semantics/keep-before-unwrap-identity-in-operands
 func TestKeepUnwrapIdentityMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")

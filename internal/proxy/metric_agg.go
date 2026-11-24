@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -252,6 +255,12 @@ func postAggTranslatedText(postAgg instantMetricPostAgg) (text string, rewritten
 
 func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	logql = strings.TrimSpace(logql)
+	if strings.HasPrefix(logql, "label_replace") {
+		if _, ok := rankingUnderLabelReplace(logql); !ok {
+			return instantMetricPostAgg{}, false
+		}
+		return parseInstantMetricPostAggQuery(stripLabelTransforms(logql))
+	}
 	if postAgg, ok := parseAggregationOverRanking(logql); ok {
 		return postAgg, true
 	}
@@ -306,6 +315,50 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 		return instantMetricPostAgg{name: name, inner: inner, k: k}, true
 	}
 	return instantMetricPostAgg{}, false
+}
+
+// rankingUnderLabelReplace reads label_replace calls at the root of a query around a ranking the route evaluates as
+// one (semantics/label-replace-around-ranking-and-vector): Loki rewrites the labels of the series the ranking answers,
+// so the route evaluates the expression under the calls as the query it is (parseInstantMetricPostAggQuery) and the
+// handlers apply the calls to its answer (relabelEvaluated), innermost first, the order Loki applies them in. The
+// calls and the expression are read from the query's plan: a chain of rankings and of the sum, avg, min, max and
+// count the route folds above them, with no stddev or stdvar (a nest of levels the route does not evaluate as one,
+// semantics/stddev-stdvar-nested-or-binary). Any other expression under the calls keeps its own route. A query that
+// does not start with label_replace or names no ranking reads no plan.
+func rankingUnderLabelReplace(logql string) ([]physical.LabelReplace, bool) {
+	logql = strings.TrimSpace(logql)
+	if !strings.HasPrefix(logql, "label_replace") ||
+		!strings.Contains(logql, "topk") && !strings.Contains(logql, "bottomk") && !strings.Contains(logql, "sort") {
+		return nil, false
+	}
+	plan := resolvedPlan(logql)
+	if plan == nil {
+		return nil, false
+	}
+	specs, operand := lower.LabelReplaces(plan.Root)
+	if len(specs) == 0 || !rankingChain(operand) {
+		return nil, false
+	}
+	return specs, true
+}
+
+// rankingChain reports a chain of vector aggregations and rankings that holds a ranking and no stddev or stdvar.
+func rankingChain(n queryplan.Node) bool {
+	ranked := false
+	for {
+		switch v := n.(type) {
+		case *queryplan.Rank:
+			ranked, n = true, v.In
+			continue
+		case *queryplan.VectorAgg:
+			if v.Op == logqlpkg.VectorStddev || v.Op == logqlpkg.VectorStdvar {
+				return false
+			}
+			n = v.In
+			continue
+		}
+		return ranked
+	}
 }
 
 // parseTopKPostAgg splits topk and bottomk in every spelling Loki's grammar
@@ -524,6 +577,40 @@ func addStatsByStreamClause(logsqlQuery string, captureLabels []string) string {
 }
 
 func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
+	relabel, r, ok := p.rankingRelabel(w, r, "query", start, false, originalQuery)
+	if !ok {
+		return
+	}
+	p.answerInstantMetricPostAggregation(w, r, start, originalQuery, postAgg, relabel)
+}
+
+// rankingRelabel reads the label_replace calls around a ranking of query (rankingUnderLabelReplace) for the
+// post-aggregation handlers, with the request the ranking under them is evaluated with. A regexp that does not compile
+// is Loki's 400, answered before any VictoriaLogs request (recorded as endpoint's request unless silent), and ok is
+// false. An instant ranking is evaluated as the query it is under the calls (the routes below read the request's
+// query); a range ranking hands its operand to the routes itself.
+func (p *Proxy) rankingRelabel(w http.ResponseWriter, r *http.Request, endpoint string, start time.Time, silent bool, query string) (labelTransforms, *http.Request, bool) {
+	specs, relabelled := rankingUnderLabelReplace(query)
+	if !relabelled {
+		return labelTransforms{}, r, true
+	}
+	relabel, regexErr := newLabelTransforms(specs)
+	if regexErr != nil {
+		status := p.fail(w, r, regexErr)
+		if !silent {
+			p.metrics.RecordRequest(endpoint, unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		}
+		return labelTransforms{}, r, false
+	}
+	if endpoint == "query" {
+		r = cloneMetricQueryRequest(r, stripLabelTransforms(query))
+	}
+	return relabel, r, true
+}
+
+// answerInstantMetricPostAggregation is handleInstantMetricPostAggregation with the label_replace calls around the
+// ranking read (rankingRelabel), applied to the answer last.
+func (p *Proxy) answerInstantMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg, relabel labelTransforms) {
 	// Parse the inner LogQL expression to drive routing via typed AST.
 	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
 
@@ -673,6 +760,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
+	result = relabelEvaluated(result, relabel, true, postAgg)
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -687,6 +775,16 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 // fetching the full matrix from VL and ranking at each evaluation timestamp.
 func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
 	// A range the settled steps cache evaluates is recorded with its request.
+	relabel, r, ok := p.rankingRelabel(w, r, "query_range", start, queryStepsSilent(r.Context()), originalQuery)
+	if !ok {
+		return
+	}
+	p.answerRangeMetricPostAggregation(w, r, start, originalQuery, postAgg, relabel)
+}
+
+// answerRangeMetricPostAggregation is handleRangeMetricPostAggregation with the label_replace calls around the
+// ranking read (rankingRelabel), applied to the answer last.
+func (p *Proxy) answerRangeMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg, relabel labelTransforms) {
 	silent := queryStepsSilent(r.Context())
 	translatedInner, err := p.translatePostAggOperand(r.Context(), postAgg)
 	if err != nil {
@@ -813,6 +911,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
+	result = relabelEvaluated(result, relabel, false, postAgg)
+	// The calls above can rewrite labels: Loki orders a sorted mixed operand by the final label sets.
 	if mixedSort {
 		result = sortSeriesByLabels(result, false)
 	}
@@ -900,6 +1000,108 @@ func (p *Proxy) applyOuterPostAggregation(w http.ResponseWriter, r *http.Request
 		return nil, false
 	}
 	return capped, true
+}
+
+// relabelEvaluated applies the label_replace calls around an evaluated ranking (rankingUnderLabelReplace) to its
+// answer. A range answer's series are ordered by label set (sortSeriesByLabels), as the label_replace route orders
+// them after its calls; an instant answer keeps the ranking's order when a ranking is the top layer (Loki writes the
+// samples as the ranking answers them) and is ordered by label set under an aggregation. An answer without calls is
+// returned as it is.
+//
+// Series the calls give one label set are one series of a range answer, which holds each of their samples: at a step
+// where several were ranked, Loki writes them in the order its ranking answers them, the highest first for topk and
+// sort_desc, the lowest first for bottomk and sort (rankOrder), and so does the merged series here. An answer whose
+// calls merged no series is not read again.
+func relabelEvaluated(body []byte, relabel labelTransforms, instant bool, postAgg instantMetricPostAgg) []byte {
+	if len(relabel.replaces) == 0 {
+		return body
+	}
+	descending, ranked := rankOrder(postAgg)
+	series := bytes.Count(body, seriesLabelsKey)
+	body = sortSeriesByLabels(relabel.apply(body), instant && ranked)
+	if ranked && !instant && bytes.Count(body, seriesLabelsKey) < series {
+		body = orderSamplesAtEachStep(body, descending)
+	}
+	return body
+}
+
+// seriesLabelsKey is the key of a series' labels in an answer: a quote in a label is escaped, so it is never this text.
+var seriesLabelsKey = []byte(`"metric":`)
+
+// rankOrder is the order of the samples of one step in the answer of the top layer of postAgg, when it is a ranking:
+// descending for topk and sort_desc, ascending for bottomk and sort. ranked is false under another layer (an
+// aggregation's groups come in no order of their own).
+func rankOrder(postAgg instantMetricPostAgg) (descending, ranked bool) {
+	top := &postAgg
+	for top.outer != nil {
+		top = top.outer
+	}
+	switch top.name {
+	case "topk", "sort_desc":
+		return true, true
+	case "bottomk", "sort":
+		return false, true
+	}
+	return false, false
+}
+
+// orderSamplesAtEachStep orders the samples a series of a matrix answer holds at one timestamp by value (topKCompare,
+// NaN last), keeping the order of the timestamps. A series with one sample per timestamp, and any other answer, is
+// left as it is.
+func orderSamplesAtEachStep(body []byte, descending bool) []byte {
+	var top, data map[string]json.RawMessage
+	if json.Unmarshal(body, &top) != nil || json.Unmarshal(top["data"], &data) != nil {
+		return body
+	}
+	var resultType string
+	var series []map[string]json.RawMessage
+	if json.Unmarshal(data["resultType"], &resultType) != nil || resultType != "matrix" || json.Unmarshal(data["result"], &series) != nil {
+		return body
+	}
+	changed := false
+	for _, s := range series {
+		var points [][2]any
+		if json.Unmarshal(s["values"], &points) != nil {
+			continue
+		}
+		dup := false
+		for i := 1; i < len(points) && !dup; i++ {
+			a, _ := sampleTimeSeconds(points[i-1][0])
+			b, _ := sampleTimeSeconds(points[i][0])
+			dup = a == b
+		}
+		if !dup {
+			continue
+		}
+		value := func(p [2]any) float64 {
+			text, _ := p[1].(string)
+			v, err := strconv.ParseFloat(text, 64)
+			if err != nil {
+				return math.NaN()
+			}
+			return v
+		}
+		sort.SliceStable(points, func(i, j int) bool {
+			ti, _ := sampleTimeSeconds(points[i][0])
+			tj, _ := sampleTimeSeconds(points[j][0])
+			if ti != tj {
+				return ti < tj
+			}
+			return topKCompare(value(points[i]), value(points[j]), descending) < 0
+		})
+		s["values"], _ = json.Marshal(points)
+		changed = true
+	}
+	if !changed {
+		return body
+	}
+	data["result"], _ = json.Marshal(series)
+	top["data"], _ = json.Marshal(data)
+	out, err := json.Marshal(top)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // foldExcludeLabels lists the labels applyWithoutGrouping drops to fold the

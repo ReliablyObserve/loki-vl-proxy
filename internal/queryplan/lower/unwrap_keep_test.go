@@ -82,7 +82,10 @@ func TestKeepUnwrapIdentity(t *testing.T) {
 		{`stddev_over_time({app="a"} | json | keep app | json | unwrap n [5m])`, nil, false, false},
 		{`topk(1, stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`, nil, false, true},
 		{`stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]) * 2`, nil, false, true},
-		{`label_replace(stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]), "b", "$1", "app", "(.*)")`, nil, false, true},
+		{`label_replace(stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]), "b", "$1", "app", "(.*)")`, []string{"app"}, true, false},
+		{`label_replace(label_replace(sum by (app) (first_over_time({app="a"} | json | keep app, pod, n | unwrap n [5m])), "b", "$1", "app", "(.*)"), "c", "$1", "b", "(.*)")`, []string{"app", "pod"}, true, false},
+		{`label_replace(topk(1, stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m])), "b", "$1", "app", "(.*)")`, nil, false, true},
+		{`label_replace(stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]) * 2, "b", "$1", "app", "(.*)")`, nil, false, true},
 		{`count(absent_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`, nil, false, false},
 		{`{app="a"} | json | keep app`, nil, false, false},
 	} {

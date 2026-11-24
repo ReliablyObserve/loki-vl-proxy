@@ -1,5 +1,5 @@
 id: semantics/keep-before-unwrap-identity-in-operands
-title: Under label_replace, a keep before an unwrap still leaves the stream in the operand's series (open)
+title: Under label_replace, a keep before an unwrap decides the operand's series like Loki (fixed)
 pending: true
 proves:
   - metric-series-identity
@@ -23,6 +23,17 @@ why: |
   matches Loki since a binary operation over parser operands is no longer read
   as one bare parser metric by its text (semantics/json-parser-error-under-wrappers,
   TestKeepUnwrapIdentityMatchLoki lists no difference for it).
+
+  Fixed: the plan's series identity of a keep before the unwrap
+  (lower.KeepUnwrapIdentity) reads through label_replace calls at the root,
+  which rewrite the labels of the evaluated series and leave the identity as it
+  is, so the proxy serves the query from the plan, grouped by the labels the
+  keep leaves, and applies the calls to the answer. TestKeepUnwrapIdentityMatchLoki
+  holds the call around first_over_time and quantile_over_time, and two calls
+  around a sum by, to Loki on query and query_range (step equal to, under and
+  over the range), VictoriaLogs v1.49.0 and v1.54.0; the run that differed now
+  matches. The cached answers of a query with a keep, an unwrap and a
+  label_replace are fenced (@keep-unwrap-identity-label-replace-v1:).
 request:
   method: GET
   path: /loki/api/v1/query
@@ -37,13 +48,14 @@ compare:
   expect: |
     Loki's series (the kept labels), relabelled.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1726"
   impact: explore-visible
   effort: M
-  area: 'internal/queryplan/lower unwrap.go KeepUnwrapIdentity (the root, or one vector aggregation over it); the label_replace route translates its operand another way'
+  area: 'internal/queryplan/lower/unwrap.go KeepUnwrapIdentity (the root, one vector aggregation over it, under label_replace calls); internal/proxy/response_key_fences.go (keepUnwrapIdentityLabelReplaceResponseVersion)'
   loki: 'the operand series are the kept labels less the unwrapped one'
-  proxy: 'the stream (and each line) as the operand series'
-  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'
+  proxy: 'the labels the keep leaves as the operand series, relabelled by the calls'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus); TestKeepUnwrapIdentity (internal/queryplan/lower); TestKeepIdentityServedFromPlan, TestKeepIdentityCacheKeysFenced (internal/proxy)'
   clusters:
     - "581a8dcf"
     - "88dbab17"

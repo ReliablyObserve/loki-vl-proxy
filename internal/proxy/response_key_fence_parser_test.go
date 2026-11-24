@@ -50,6 +50,36 @@ type fenceFacts struct {
 	levelChain bool
 	// emptyWithoutOperand is a binary operation with an operand that is a sum, avg, min or max `without ()`.
 	emptyWithoutOperand bool
+	// labelReplaceRanking is label_replace calls at the root around a chain of rankings and vector aggregations that
+	// holds a ranking and no stddev or stdvar.
+	labelReplaceRanking bool
+}
+
+// labelReplaceAroundRankingExpr reads labelReplaceRanking from the tree.
+func labelReplaceAroundRankingExpr(e logqlpkg.Expr) bool {
+	under := false
+	for {
+		o, ok := e.(*logqlpkg.OpaqueMetricExpr)
+		if !ok || !strings.EqualFold(o.Func, "label_replace") || !o.Typed || o.Inner == nil {
+			break
+		}
+		e, under = o.Inner, true
+	}
+	ranked := false
+	for {
+		v, ok := e.(*logqlpkg.VectorAggregation)
+		if !ok {
+			break
+		}
+		switch v.Op {
+		case logqlpkg.VectorTopK, logqlpkg.VectorBottomK, logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+			ranked = true
+		case logqlpkg.VectorStddev, logqlpkg.VectorStdvar:
+			return false
+		}
+		e = v.Inner
+	}
+	return under && ranked
 }
 
 // keepsEveryOperandSeries reports a sum, avg, min or max with a `without` clause of no label, read from the tree.
@@ -228,6 +258,7 @@ func factsOf(query string) (facts fenceFacts, expr logqlpkg.Expr, ok bool) {
 		return facts, nil, false
 	}
 	facts.expr(expr)
+	facts.labelReplaceRanking = labelReplaceAroundRankingExpr(expr)
 	return facts, expr, true
 }
 
@@ -345,6 +376,7 @@ func fenceWants(query string) map[string]bool {
 		"rank-over-binary":         f.rankOverBinary,
 		"rank-over-binary-lr":      f.rankOverBinaryLabelReplace,
 		"binary-empty-without":     f.emptyWithoutOperand,
+		"label-replace-ranking":    f.labelReplaceRanking,
 		// An unwrap stage of the tree that the text does not write `| unwrap ` (outside quotes and comments): the
 		// printed tree writes each stage so.
 		"unwrap-blank-spelling": strings.Count(textOutsideQuotes(expr.String()), "| unwrap ") >
@@ -385,6 +417,7 @@ func fenceWants(query string) map[string]bool {
 			want["rank-over-binary"] = want["rank-over-binary"] || rf.rankOverBinary
 			want["rank-over-binary-lr"] = want["rank-over-binary-lr"] || rf.rankOverBinaryLabelReplace
 			want["binary-empty-without"] = want["binary-empty-without"] || rf.emptyWithoutOperand
+			want["label-replace-ranking"] = want["label-replace-ranking"] || rf.labelReplaceRanking
 			if plan, err := queryplan.Build(rexpr, queryplan.Inputs{}); err == nil {
 				queryplan.Resolve(plan)
 				want["unwrap-dynamic-identity"] = want["unwrap-dynamic-identity"] || lower.WritesDynamicUnwrapIdentity(plan)
@@ -447,6 +480,11 @@ var fenceSpellingBases = []string{
 	`{app="a"} | keep level`,
 	`{app="a"} | json | keep level, msg | unwrap n`,
 	`sum by (x) (sum_over_time({app="a"} | json | keep x | unwrap n [5m]))`,
+	`label_replace(first_over_time({app="a"} | json | keep x, n | unwrap n [5m]), "b", "$1", "x", "(.*)")`,
+	`label_replace(topk(2, sum by (x) (count_over_time({app="a"}[5m]))), "b", "$1", "x", "(.*)")`,
+	`label_replace(label_replace(sort_desc(sum by (x) (rate({app="a"}[5m]))), "b", "$1", "x", "(.*)"), "c", "", "", "")`,
+	`label_replace(sum(bottomk(1, count_over_time({app="a"}[5m]))), "b", "y", "", "")`,
+	`label_replace(topk(2, stddev by (x) (count_over_time({app="a"}[5m]))), "b", "$1", "x", "(.*)")`,
 	`{app="a"} | status = ip("10.0.0.0/8")`,
 	`{app="a"} |= ip("10.0.0.1")`,
 	`{app="a"} | json | a="b" | c="d"`,
@@ -667,6 +705,9 @@ func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
 		if emptyWithoutOverFires(q) {
 			t.Errorf("%q: the binary empty without fence fires and the parsed tree holds no such operand", q)
 		}
+		if labelReplaceRankingOverFires(q) {
+			t.Errorf("%q: the label_replace ranking fence fires and the parsed tree holds no label_replace around a ranking", q)
+		}
 	}
 	t.Logf("%d of %d corpus queries carry a fence their older screens did not fire, each justified by its parsed tree", changed, len(corpus))
 }
@@ -705,7 +746,18 @@ func FuzzResponseKeyFencesMatchParsedTree(f *testing.F) {
 		if emptyWithoutOverFires(query) {
 			t.Fatalf("%+q: the binary empty without fence fires and the parsed tree holds no such operand", query)
 		}
+		if labelReplaceRankingOverFires(query) {
+			t.Fatalf("%+q: the label_replace ranking fence fires and the parsed tree holds no label_replace around a ranking", query)
+		}
 	})
+}
+
+// labelReplaceRankingOverFires reports a query the validation accepts whose range key carries the label_replace
+// ranking fence while its parsed tree holds no label_replace around a ranking: the fence is new, and must fire nowhere
+// else. A query the validation rejects is answered before any cache is read.
+func labelReplaceRankingOverFires(query string) bool {
+	want := fenceWants(query)
+	return want != nil && strings.Contains(rankOverBinaryFence(query), labelReplaceRankingResponseVersion) && !want["label-replace-ranking"]
 }
 
 // emptyWithoutOverFires reports a query whose key carries the binary empty without fence while its parsed tree holds
@@ -782,6 +834,12 @@ func fenceFires(name, query string) bool {
 		},
 		"rank-over-binary-lr": func() string {
 			return rankOverBinaryLabelReplaceFence(query)
+		},
+		"label-replace-ranking": func() string {
+			if strings.Contains(rankOverBinaryFence(query), labelReplaceRankingResponseVersion) {
+				return labelReplaceRankingResponseVersion
+			}
+			return ""
 		},
 		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
 		"unwrap-blank-spelling":    func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
@@ -1031,6 +1089,16 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		// The parser keeps a label_replace call whose range it cannot read as text, and Loki rejects the query (the
 		// fuzz finding of FuzzResponseKeyFencesMatchParsedTree, kept as a seed): the tree still holds the call.
 		{"rank-over-binary-lr", `topk(2, label_replace(rate({a="b"}[$0]), "p", "x", "p", "(.*)") % 1)`, true},
+		// label_replace calls around a ranking, in the spellings the parser reads; not around another expression, under
+		// a ranking, or nested with a stddev.
+		{"label-replace-ranking", `label_replace(TOPK(2, sum by (x) (count_over_time({a="b"}[5m]))), "c", "$1", "x", "(.*)")`, true},
+		{"label-replace-ranking", "label_replace(sort_desc\t(sum by (x) (rate({a=\"b\"}[5m]))), \"c\", \"$1\", \"x\", \"(.*)\")", true},
+		{"label-replace-ranking", "label_replace(#c\nBottomK(1, count_over_time({a=\"b\"}[5m])), \"c\", \"y\", \"\", \"\")", true},
+		{"label-replace-ranking", `label_replace(label_replace(max(topk(2, count_over_time({a="b"}[$__interval]))), "c", "y", "", ""), "d", "$1", "c", "(.*)")`, true},
+		{"label-replace-ranking", `label_replace(sum by (x) (count_over_time({a="b"}[5m])), "c", "$1", "x", "(.*)")`, false},
+		{"label-replace-ranking", `topk(2, label_replace(sum by (x) (count_over_time({a="b"}[5m])), "c", "$1", "x", "(.*)"))`, false},
+		{"label-replace-ranking", `label_replace(stddev(topk(2, count_over_time({a="b"}[5m]))), "c", "$1", "x", "(.*)")`, false},
+		{"label-replace-ranking", `label_replace(topk(2, count_over_time({a="b"}[5m])) / 2, "c", "$1", "x", "(.*)")`, false},
 	} {
 		if got := fenceFires(tc.fence, tc.query); got != tc.want {
 			t.Errorf("%s: %+q fires %v, want %v", tc.fence, tc.query, got, tc.want)
@@ -1220,6 +1288,7 @@ func BenchmarkRankOverBinaryFence(b *testing.B) {
 		{"ranking-no-binary", `topk(2, sum by (a) (rate({app="a"}[5m])))`},
 		{"binary-label-replace", `topk(1, label_replace(rate({app="a"}[1m]), "p", "x-$1", "p", "(.*)") * 2)`},
 		{"binary-label-replace-variable", `topk(1, label_replace(rate({app="a"}[$__interval]), "p", "x-$1", "p", "(.*)") * 2)`},
+		{"label-replace-ranking", `label_replace(topk(2, sum by (a) (rate({app="a"}[5m]))), "p", "x-$1", "a", "(.*)")`},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()

@@ -771,6 +771,11 @@ def merge_main(args, out, meta, t0):
                 sel = json.load(f)
         paths = [shard_dir(path, len(args.merge)) for path in args.merge]
         shards = [(path, *read_shard(path)) for path in paths]
+        # A shard that did not finish (cancelled at the job limit, no verdict) has no meta or selection to prove
+        # against: say so before the proof reads them, instead of failing on the first missing key.
+        incomplete = [os.path.basename(os.path.normpath(path)) for path, _, _, v in shards if not v or v.get("exit") == 3]
+        if incomplete:
+            raise RuntimeError(f"shard(s) {', '.join(incomplete)} did not complete; see their logs and artifacts")
         proof_problems = []
         if sel.get("runtime_proof", {}).get("required"):
             expected = split_selection(sel, len(shards))
@@ -798,9 +803,6 @@ def merge_main(args, out, meta, t0):
                            if summaries else None,
                            **{k: m[k] for k in ("elapsed_s", "phases_s", "end", "seed_s", "windows") if k in m}}
                           for path, summaries, m, _ in shards]
-        incomplete = [os.path.basename(os.path.normpath(path)) for path, _, _, v in shards if not v or v.get("exit") == 3]
-        if incomplete:
-            raise RuntimeError(f"shard(s) {', '.join(incomplete)} did not complete; see their logs and artifacts")
         summaries = [s for _, shard_summaries, _, _ in shards for s in shard_summaries]
         # The merged outputs read like one run's: every shard's summaries and the whole selection.
         write_summaries(summaries, out)
