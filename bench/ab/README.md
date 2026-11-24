@@ -419,8 +419,8 @@ and `-probes.json`.
    harness-only changes. On product PRs, `selection.py` maps the changed files
    to shapes (below).
    - **Shards.** `perf-plan` selects the shapes and calls `pr_smoke.py --split`
-     with a ceiling of eight when `runtime_proof.required` is true, otherwise
-     four. Large required selections can use up to eight shards of about equal cost:
+     with a ceiling of twelve when `runtime_proof.required` is true, otherwise
+     four. Large required selections can use up to twelve shards of about equal cost:
      one pass per shape in loki-defaults, plus one per range-metric shape in
      aligned. Each set goes to exactly one shard, most costly first, to the
      least loaded shard. A selection that costs less than `SHARD_MIN_COST`

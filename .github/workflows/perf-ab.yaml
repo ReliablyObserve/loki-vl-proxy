@@ -91,7 +91,7 @@ jobs:
         id: split
         run: |
           set -euo pipefail
-          MAX_SHARDS="$(python3 -c 'import json,sys; print(8 if json.load(open(sys.argv[1])).get("runtime_proof", {}).get("required") is True else 4)' "$OUT/selection.json")"
+          MAX_SHARDS="$(python3 -c 'import json,sys; print(12 if json.load(open(sys.argv[1])).get("runtime_proof", {}).get("required") is True else 4)' "$OUT/selection.json")"
           SHARDS="$(python3 bench/ab/pr_smoke.py --split "$MAX_SHARDS" --selection "$OUT/selection.json" --out "$OUT")"
           echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
           for f in "$OUT"/shard-*.json; do
@@ -108,7 +108,8 @@ jobs:
     needs: [scope, perf-plan]
     if: ${{ !cancelled() && needs.perf-plan.result == 'success' && needs.perf-plan.outputs.run == 'true' }}
     runs-on: ubuntu-latest
-    # Required runtime proof permits up to eight shards; other selections permit four.
+    # Required runtime proof permits up to twelve shards (eight left the slowest ones at the 60 minute limit on a
+    # full baseline of 310 shapes); other selections permit four.
     # The cost heuristic can use fewer. Every shard still pays for its own stack and seed.
     timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 60 || 45 }}
     permissions:
