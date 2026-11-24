@@ -35,8 +35,17 @@ func numericEqualityAfterParser(query string) string {
 	return ""
 }
 
-// equalityBeforeNumber reports an equalityBeforeNumberAt anywhere in query, quoted text and comments included.
+// equalityBeforeNumber reports an equalityBeforeNumberAt anywhere in query, quoted text and comments included, or an
+// equality on a literal that only follows a comment (the comment pass runs only for a query holding a `#`).
 func equalityBeforeNumber(query string) bool {
+	if equalityBeforeNumberPlain(query) {
+		return true
+	}
+	return strings.IndexByte(query, '#') >= 0 && equalityBeforeNumberWithComments(query)
+}
+
+// equalityBeforeNumberPlain is the older screen, unchanged: every `=` followed, after blanks, by a literal.
+func equalityBeforeNumberPlain(query string) bool {
 	for i := 0; i < len(query); i++ {
 		k := strings.IndexByte(query[i:], '=')
 		if k < 0 {
@@ -49,7 +58,38 @@ func equalityBeforeNumber(query string) bool {
 	return false
 }
 
-// equalityBeforeNumberAt reports whether the `=` at query[i] is an `=`, `==` or `!=` followed, after any blanks, by a
+// equalityBeforeNumberWithComments reads comments only outside quoted text. The earlier pass retains every
+// older match, including numeric-looking text in strings and comments. After looking past blanks/comments for
+// a literal, this pass resumes at that literal, so no comment is scanned repeatedly.
+func equalityBeforeNumberWithComments(query string) bool {
+	for i := 0; i < len(query); i++ {
+		switch query[i] {
+		case '"', '`':
+			i = skipQuoted(query, i)
+		case '#':
+			i = skipComment(query, i) - 1
+		case '=':
+			if i > 0 && (query[i-1] == '<' || query[i-1] == '>' || query[i-1] == '=') {
+				continue
+			}
+			j := i + 1
+			if j < len(query) && query[j] == '=' {
+				j++
+			}
+			j = skipLexerBlanks(query, j)
+			if j < len(query) {
+				c := query[j]
+				if c >= '0' && c <= '9' || c == '.' || c == '-' || c == '+' {
+					return true
+				}
+			}
+			i = j - 1
+		}
+	}
+	return false
+}
+
+// equalityBeforeNumberAt reports whether the `=` at query[i] is an `=`, `==` or `!=` followed, after blanks, by a
 // digit, a dot or a sign: the spelling of every equality on a number, a duration or a byte size (and of some other
 // text, which the plan then reads). The second `=` of `==`, an ordering comparison (`>=`, `<=`) and a regexp matcher
 // (`=~`) are not one.

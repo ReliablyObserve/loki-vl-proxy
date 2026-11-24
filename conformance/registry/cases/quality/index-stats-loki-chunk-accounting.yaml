@@ -19,6 +19,15 @@ why: |
   only when Loki's count_over_time equals the proxy's entries, and a streams
   difference only when Loki's own /series count equals the proxy's streams
   (quality/index-stats-streams-differ).
+
+  The visual gate (bench/visual/compare.py) accepts the multi-copy form of this
+  accounting by its own evidence: Loki's streams equal the proxy's, its entries
+  and its chunk count are both an exact whole multiple k (k at least 2) of the
+  proxy's, and Loki's own earlier answer to the same request in the same run (the
+  first pass, kept next to a recapture) equalled the proxy's current streams,
+  entries and chunks. The proxy's count is unchanged, so Loki moved and the proxy
+  did not; without that earlier answer, or with any other difference in streams
+  or entries, the difference stays counted.
 request:
   method: GET
   path: /loki/api/v1/index/stats

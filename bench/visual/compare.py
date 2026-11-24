@@ -462,7 +462,7 @@ def stats_numbers(body):
 def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, bodies=None):
     """(requests, identical, differences, series, one-sided, explained) of two sides' records.
 
-    explain: (raw left, raw right) of the records, to ask explain_vs_loki why a difference is by design; such a
+    explain: (raw left, raw right[, Loki's first-pass answers by request]) of the records, to ask explain_vs_loki why a difference is by design; such a
     difference goes to `explained` with its reason instead of the differences.
     vs_loki: a topk or bottomk answer is compared by its ranked values per step (same_ranked), not its series.
     raw: (raw left, raw right) when explain is not given, for bodies.
@@ -498,7 +498,7 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, b
                                **({"numbers": f"{stats_numbers(ba)} vs {stats_numbers(bb)}"}
                                   if "/resources/index/stats" in k[1] else {})})
             text = f"{k[0]} {str(k[2:] or k[1])[:90]}: {why}"
-            reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j]) if explain and why != "capture body unreadable" else None
+            reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j], (explain[2].get(k) or ()) if len(explain) > 2 else ()) if explain and why != "capture body unreadable" else None
             if reason:
                 explained.append(tagged(f"{text} -- explained: {reason}", k))
             else:
@@ -558,14 +558,43 @@ def _detected_labels(a, b):
     return _join(cardinality, _envelope(a, b), "Loki lists labels in no fixed order" if order else "")
 
 
-def _index_stats(a, b):
+def _index_stats(a, b, earlier=()):
     """Loki's bytes (uncompressed chunk KB, registry quality/index-stats-bytes-and-chunks) and chunk count have no
     VictoriaLogs equivalent. Its streams and entries are
     estimates too (chunks pro-rated by time, sources summed: registry quality/index-stats-loki-chunk-accounting), but
-    exact for the visual stack's flushed, uncached seed, so a difference there stays counted."""
+    exact for the visual stack's flushed, uncached seed, so a difference there stays counted.
+
+    One difference of that kind is named by the registry case itself: "every copy of a chunk Loki reads is added".
+    When Loki reads the same chunks from its ingesters and from its store, its entries and its chunk count are both an
+    exact whole multiple of the proxy's while its streams stay equal. That signature alone would also fit a proxy that
+    undercounts by exactly 1/k, so it is explained only with evidence that Loki's own count moved and the proxy's did
+    not: `earlier`, Loki's answers to the same request in the first pass of this run, must include one whose streams,
+    entries and chunks equal the proxy's current numbers. Without that evidence the difference stays counted, as does
+    any other difference in streams or entries, including entries that are not a multiple of the proxy's."""
     if {k: a.get(k) for k in ("streams", "entries")} != {k: b.get(k) for k in ("streams", "entries")}:
-        return None
+        copies = _chunk_copies(a, b)
+        agreed = any(isinstance(e, dict) and all(e.get(k) == a.get(k) for k in ("streams", "entries", "chunks")) for e in earlier)
+        if not copies or not agreed:
+            return None
+        return (f"Loki read every chunk {copies} times (its ingesters and its store both answered): earlier in this run Loki "
+                f"answered this request with the proxy's streams, entries and chunks, now entries and chunks are exactly "
+                f"{copies}x with streams equal (registry quality/index-stats-loki-chunk-accounting); bytes have no VictoriaLogs equivalent")
     return "bytes and chunks are Loki's chunk accounting, which VictoriaLogs has no equivalent of; streams and entries match"
+
+
+def _chunk_copies(proxy, loki):
+    """k when Loki's entries and chunks are both exactly k times the proxy's (k >= 2) with equal streams, else 0."""
+    numbers = {}
+    for name, body in (("proxy", proxy), ("loki", loki)):
+        values = [body.get(key) for key in ("streams", "entries", "chunks")]
+        if not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in values):
+            return 0
+        numbers[name] = values
+    (ps, pe, pc), (ls, le, lc) = numbers["proxy"], numbers["loki"]
+    if ls != ps or le % pe or lc % pc:
+        return 0
+    k = le // pe
+    return k if k >= 2 and lc // pc == k else 0
 
 
 def _index_volume(a, b):
@@ -630,15 +659,16 @@ def explain_one_sided(key):
     return None
 
 
-def explain_vs_loki(key, a, b):
-    """Why the PR's answer a differs from Loki's answer b by design, or None (a real difference)."""
+def explain_vs_loki(key, a, b, earlier=()):
+    """Why the PR's answer a differs from Loki's answer b by design, or None (a real difference). earlier: Loki's
+    answers to the same request in the first pass of this run (empty in the first pass itself)."""
     if not isinstance(a, dict) or not isinstance(b, dict):
         return None
     if key[0] == "query":
         return _log_frames(a, b)
     for fragment, rule in RESOURCE_RULES:
         if fragment in key[1]:
-            return rule(a, b)
+            return rule(a, b, earlier) if rule is _index_stats else rule(a, b)
     return None
 
 
@@ -693,6 +723,35 @@ def render_md(rows):
     return md
 
 
+UNREADABLE_BODIES = "runtime proof: unreadable API bodies leave data completeness unproved"
+
+
+def base_cannot_answer(row, gap, pr_judged):
+    """Main-side runtime-proof problems of a page this pull request fixes, when the PR answers the page completely.
+
+    A fix for a request the base cannot answer (an oversize answer the browser cannot read, an error answer that is
+    no query rejection) has no usable base to measure against, and the page's own fix proof decides whether the PR is
+    right. The problems are set aside, and recorded in row["base_unusable"], only when every one of these holds: each
+    problem is about the main side; the PR settled; no body of the PR side is unreadable; the PR answered without an
+    error; the PR shows no difference from Loki that the base lacks (the rule that makes a regression) wherever Loki was
+    compared; and no other runtime problem remains (a PR-side
+    problem, a missing Loki reference, a resource regression). Returns the problems set aside."""
+    problems = row["runtime_problems"]
+    main_only_gap = bool(gap["main"]["keys"]) and not gap["pr"]["keys"]
+    moved = [x for x in problems if x.startswith("runtime proof: main ") or (x == UNREADABLE_BODIES and main_only_gap)]
+    if not moved or [x for x in problems if x not in moved]:
+        return []
+    if not pr_judged or gap["pr"]["keys"] or row.get("errors_pr"):
+        return []
+    if row.get("loki_compared") and row.get("loki_new"):
+        return []
+    row["runtime_problems"] = []
+    row["base_unusable"] = sorted(set(moved))
+    row["base_comparison_note"] = ("The base's answer to this page, which the pull request fixes, is unusable as a baseline "
+                                   "for the page's data; the PR's resource use is still compared with the base's.")
+    return moved
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
@@ -707,6 +766,10 @@ def main():
     plan_path = os.path.join(a.out, "plan.json")
     plan = load_json(plan_path) if os.path.exists(plan_path) else {}
     runtime_required = bool(plan.get("runtime_proof", {}).get("required"))
+    # Pages whose registry case this pull request turns to fixed (plan.py: fix_cases): a base that cannot answer them
+    # is the very defect being fixed.
+    fix_pages = {entry for case in (plan.get("fix_cases") or {}).values() if case.get("status") == "fixed"
+                 for entry in case.get("entries") or []}
     rows, report = [], []
     allowed = spec.get("allowed_errors") or []  # substrings of error answers that are expected (documented in the README)
     for d in sorted(glob.glob(os.path.join(a.out, "data", "*", "*"))):
@@ -726,6 +789,12 @@ def main():
         sp, p = records(os.path.join(d, "pr.json"), raw["pr"], gap["pr"])
         settle = {n: round(load_json(os.path.join(d, f"{n}.json")).get("settle_ms", 0) / 1000, 1) for n in ("main", "pr")}
         has_loki = os.path.exists(os.path.join(d, "loki.json"))
+        # Loki's answers of the first pass of this run (a recapture is taken later, by which time Loki's own chunk
+        # accounting may have moved): evidence for _index_stats, empty when there was no earlier pass.
+        earlier = defaultdict(list)
+        first_loki = os.path.join(a.out, "first-pass", "data", page, rng, "loki.json")
+        if os.path.exists(first_loki):
+            records(first_loki, earlier, {})
         sl, l = records(os.path.join(d, "loki.json"), raw["loki"], gap["loki"]) if has_loki else (True, {})
         # A body the browser could not hand over (a very large answer) is a gap of the capture, not of the build. The PR
         # side is blamed for it only where the base read that request: a request unreadable on both sides is reported
@@ -738,9 +807,9 @@ def main():
         explained, lnondet = [], []
         if loki_ok:
             ln, lok, _, _, _, _ = compare(p, l, vs_loki=True)
-            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"]), vs_loki=True,
+            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"], earlier), vs_loki=True,
                                                         bodies=loki_bodies)
-            _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"]), vs_loki=True)
+            _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"], earlier), vs_loki=True)
             # A difference the base needs a by-design explanation for and the PR does not (the PR now answers like
             # Loki there) still counts against the base, so a fix towards Loki reads as improved.
             def what(x):  # the request and its reasons, without window timestamps
@@ -822,6 +891,8 @@ def main():
                 row["base_comparison_note"] = "Base-relative resource and settlement changes unavailable: base rejected a query."
             row["runtime_problems"].extend(runtime_problems(captures["main"], captures["pr"], required=True,
                                                              comparable=not corrected))
+        if runtime_required and page in fix_pages:
+            base_cannot_answer(row, gap, sp_judged)
     md = render_md(rows)
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)
