@@ -468,7 +468,7 @@ class ScopeWiringTest(unittest.TestCase):
     def test_runtime_proof_selects_the_shard_ceiling_from_the_actual_workflow(self):
         plan = parse_jobs((WORKFLOWS / "perf-ab.yaml").read_text())["perf-plan"]["body"]
         selector = next(line.strip() for line in plan.splitlines() if line.strip().startswith("MAX_SHARDS="))
-        for selection, expected in (({"runtime_proof": {"required": True}}, "8"),
+        for selection, expected in (({"runtime_proof": {"required": True}}, "12"),
                                     ({"runtime_proof": {"required": False}}, "4"),
                                     ({"runtime_proof": {"required": 1}}, "4"),
                                     ({"runtime_proof": {}}, "4"), ({}, "4")):
