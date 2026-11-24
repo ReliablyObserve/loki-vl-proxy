@@ -205,7 +205,10 @@ func TestMixedJSONRowClassRelevantAliasesActualVictoriaLogsAndLoki(t *testing.T)
 				{"long-unrelated-after", `{` + literal + `,"` + strings.Repeat("a", 129) + `":"x"}`, false, nil},
 				{"long-nested-key", `{"other":{"` + strings.Repeat("a", 129) + `":"x"},` + literal + `}`, false, nil},
 				{"bounded-key", `{"` + strings.Repeat("a", 128) + `":"x",` + literal + `}`, true, nil},
-				{"long-array-value", `{` + literal + `,"other":["` + strings.Repeat("a", 129) + `","commas,{braces}"]}`, true, nil},
+				// A quoted run of 129 name characters is rejected wherever it is, a long value included: the row takes
+				// the exact complement instead of the native count (the 128-character "bounded-key" stays native).
+				{"long-array-value", `{` + literal + `,"other":["` + strings.Repeat("a", 129) + `","commas,{braces}"]}`, false, nil},
+				{"bounded-array-value", `{` + literal + `,"other":["` + strings.Repeat("a", 128) + `","commas,{braces}"]}`, true, nil},
 				{"long-malformed-value-colon", `{` + literal + `,"other":"` + strings.Repeat("a", 129) + `":0}`, false, nil},
 				{"source-target", `{` + literal + `}`, false, [][2]string{{key, "stored"}}},
 				{"source-scratch", `{` + literal + `}`, false, [][2]string{{mixedClassTargetPrefix + key, "poison"}}},
