@@ -415,7 +415,7 @@ func TestMixedJSONRowClassLongKeyValidJSONDomain(t *testing.T) {
 	var guard logsql.FieldFilter
 	validityRetained := false
 	for _, filter := range mixedClassFieldFilters(t, c.safe) {
-		if filter.Field == "_msg" && filter.Op == logsql.FieldOpRegexp && strings.Contains(filter.Value, "{128}") {
+		if filter.Field == "_msg" && filter.Op == logsql.FieldOpRegexp && strings.Contains(filter.Value, "{129}") {
 			guard = filter
 		}
 		if filter.Field == mixedClassValidField && filter.Op == logsql.FieldOpAny {
@@ -427,12 +427,31 @@ func TestMixedJSONRowClassLongKeyValidJSONDomain(t *testing.T) {
 	}
 	current := regexp.MustCompile(guard.Value)
 	previous := regexp.MustCompile(`"[A-Za-z_][A-Za-z0-9_]{128}[A-Za-z0-9_]*"\s*:`)
+	// The guard is a cheaper superset of the previous one: it rejects every key of 129 or more name
+	// characters, and also any other quoted run that long (a long value), which then takes the exact
+	// complement instead of the native count. The independent rule below is a scan, not a regexp.
+	quotedRun := func(body []byte) bool {
+		for i := 0; i < len(body); i++ {
+			if body[i] != '"' {
+				continue
+			}
+			n := 0
+			for j := i + 1; j < len(body) && (body[j] == '_' || body[j] >= '0' && body[j] <= '9' || body[j] >= 'A' && body[j] <= 'Z' || body[j] >= 'a' && body[j] <= 'z'); j++ {
+				n++
+			}
+			if n >= 129 {
+				return true
+			}
+		}
+		return false
+	}
 	for _, length := range []int{1, 128, 129} {
 		name := strings.Repeat("x", length)
-		for _, value := range []string{"plain", strings.Repeat("v", 129), "braces{,}commas", "tail,"} {
+		for _, value := range []string{"plain", strings.Repeat("v", 128), strings.Repeat("v", 129), "braces{,}commas", "tail,"} {
 			for _, fixture := range []struct {
-				value  any
-				reject bool
+				value any
+				// key: a key of 129 or more characters, which the previous guard also rejected.
+				key bool
 			}{
 				{map[string]any{"k": "blue", name: value}, length > 128},
 				{map[string]any{"k": "blue", "other": map[string]any{name: value}}, length > 128},
@@ -443,11 +462,21 @@ func TestMixedJSONRowClassLongKeyValidJSONDomain(t *testing.T) {
 				if err != nil || !json.Valid(body) || strings.ContainsAny(string(body), "\\=") {
 					t.Fatal("fixture is outside the positive validity/ASCII/no-backslash domain")
 				}
-				if current.Match(body) != fixture.reject || current.Match(body) != previous.Match(body) {
-					t.Fatalf("changed long-key rejection for valid JSON: %s", body)
+				if current.Match(body) != quotedRun(body) {
+					t.Fatalf("long-run rejection differs from the scan for valid JSON: %s", body)
+				}
+				if previous.Match(body) != fixture.key {
+					t.Fatalf("fixture's long-key expectation is wrong for valid JSON: %s", body)
+				}
+				if previous.Match(body) && !current.Match(body) {
+					t.Fatalf("the guard stopped rejecting a long key the previous guard rejected: %s", body)
 				}
 			}
 		}
+	}
+	// A 128-character value stays native; a 129-character one takes the exact complement.
+	if current.MatchString(`{"k":"blue","v":"`+strings.Repeat("v", 128)+`"}`) || !current.MatchString(`{"k":"blue","v":"`+strings.Repeat("v", 129)+`"}`) {
+		t.Fatal("the run bound moved: 128 name characters must stay native, 129 must not")
 	}
 	// A malformed value followed by a colon is not a key. The broad
 	// expression matches it; the positive backend validity predicate must

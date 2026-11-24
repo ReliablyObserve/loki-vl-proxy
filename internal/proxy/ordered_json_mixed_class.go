@@ -82,8 +82,12 @@ func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
 		regex("_msg", marker+`(?s:.*)`+marker, true),
 		mixedClassLiteralGuard("_msg", `"__vlmc_[A-Za-z0-9_]*"\s*:`, "__vlmc_"),
 		// This admission bound is deliberately stricter than Loki's accepted
-		// keys; longer names retain the original exact mixed execution.
-		regex("_msg", `"[A-Za-z_][A-Za-z0-9_]{128}[A-Za-z0-9_]*"\s*:`, true),
+		// keys; longer names retain the original exact mixed execution. The
+		// pattern is a cheaper superset of "a key of 129 or more name
+		// characters": any quoted run that long, so a row with a long value
+		// is rejected too and takes the exact complement, which only costs
+		// that row its native count.
+		regex("_msg", `"[A-Za-z0-9_]{129}`, true),
 		regex("_msg", mixedClassBodyAliasPattern(label), true),
 		// Reuse the existing closed JSON disagreement predicate as typed
 		// nodes, preserving the legacy spelling without a deferred-text site.
