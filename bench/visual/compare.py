@@ -562,10 +562,36 @@ def _index_stats(a, b):
     """Loki's bytes (uncompressed chunk KB, registry quality/index-stats-bytes-and-chunks) and chunk count have no
     VictoriaLogs equivalent. Its streams and entries are
     estimates too (chunks pro-rated by time, sources summed: registry quality/index-stats-loki-chunk-accounting), but
-    exact for the visual stack's flushed, uncached seed, so a difference there stays counted."""
+    exact for the visual stack's flushed, uncached seed, so a difference there stays counted.
+
+    One difference of that kind is named by the registry case itself: "every copy of a chunk Loki reads is added".
+    When the same chunks are read from the ingesters and from the store, Loki's streams stay equal while its entries
+    and its chunk count are both an exact whole multiple of the proxy's. That signature (equal streams, entries and
+    chunks all k times the proxy's, k at least 2) is Loki counting each chunk k times; any other difference in streams
+    or entries, including entries that are not a multiple, stays a counted difference."""
     if {k: a.get(k) for k in ("streams", "entries")} != {k: b.get(k) for k in ("streams", "entries")}:
-        return None
+        copies = _chunk_copies(a, b)
+        if not copies:
+            return None
+        return (f"Loki read every chunk {copies} times (its ingesters and its store both answered): streams equal, entries and "
+                f"chunks exactly {copies}x the proxy's, which counts each line once (registry quality/index-stats-loki-chunk-accounting); "
+                "bytes have no VictoriaLogs equivalent")
     return "bytes and chunks are Loki's chunk accounting, which VictoriaLogs has no equivalent of; streams and entries match"
+
+
+def _chunk_copies(proxy, loki):
+    """k when Loki's entries and chunks are both exactly k times the proxy's (k >= 2) with equal streams, else 0."""
+    numbers = {}
+    for name, body in (("proxy", proxy), ("loki", loki)):
+        values = [body.get(key) for key in ("streams", "entries", "chunks")]
+        if not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in values):
+            return 0
+        numbers[name] = values
+    (ps, pe, pc), (ls, le, lc) = numbers["proxy"], numbers["loki"]
+    if ls != ps or le % pe or lc % pc:
+        return 0
+    k = le // pe
+    return k if k >= 2 and lc // pc == k else 0
 
 
 def _index_volume(a, b):
@@ -693,6 +719,35 @@ def render_md(rows):
     return md
 
 
+UNREADABLE_BODIES = "runtime proof: unreadable API bodies leave data completeness unproved"
+
+
+def base_cannot_answer(row, gap, pr_judged):
+    """Main-side runtime-proof problems of a page this pull request fixes, when the PR answers the page completely.
+
+    A fix for a request the base cannot answer (an oversize answer the browser cannot read, an error answer that is
+    no query rejection) has no usable base to measure against, and the page's own fix proof decides whether the PR is
+    right. The problems are set aside, and recorded in row["base_unusable"], only when every one of these holds: each
+    problem is about the main side; the PR settled; no body of the PR side is unreadable; the PR answered without an
+    error; the PR shows no difference from Loki that the base lacks (the rule that makes a regression) wherever Loki was
+    compared; and no other runtime problem remains (a PR-side
+    problem, a missing Loki reference, a resource regression). Returns the problems set aside."""
+    problems = row["runtime_problems"]
+    main_only_gap = bool(gap["main"]["keys"]) and not gap["pr"]["keys"]
+    moved = [x for x in problems if x.startswith("runtime proof: main ") or (x == UNREADABLE_BODIES and main_only_gap)]
+    if not moved or [x for x in problems if x not in moved]:
+        return []
+    if not pr_judged or gap["pr"]["keys"] or row.get("errors_pr"):
+        return []
+    if row.get("loki_compared") and row.get("loki_new"):
+        return []
+    row["runtime_problems"] = []
+    row["base_unusable"] = sorted(set(moved))
+    row["base_comparison_note"] = ("Base-relative resource and settlement changes unavailable: the base could not answer "
+                                   "this page, which the pull request fixes.")
+    return moved
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
@@ -707,6 +762,10 @@ def main():
     plan_path = os.path.join(a.out, "plan.json")
     plan = load_json(plan_path) if os.path.exists(plan_path) else {}
     runtime_required = bool(plan.get("runtime_proof", {}).get("required"))
+    # Pages whose registry case this pull request turns to fixed (plan.py: fix_cases): a base that cannot answer them
+    # is the very defect being fixed.
+    fix_pages = {entry for case in (plan.get("fix_cases") or {}).values() if case.get("status") == "fixed"
+                 for entry in case.get("entries") or []}
     rows, report = [], []
     allowed = spec.get("allowed_errors") or []  # substrings of error answers that are expected (documented in the README)
     for d in sorted(glob.glob(os.path.join(a.out, "data", "*", "*"))):
@@ -822,6 +881,8 @@ def main():
                 row["base_comparison_note"] = "Base-relative resource and settlement changes unavailable: base rejected a query."
             row["runtime_problems"].extend(runtime_problems(captures["main"], captures["pr"], required=True,
                                                              comparable=not corrected))
+        if runtime_required and page in fix_pages:
+            base_cannot_answer(row, gap, sp_judged)
     md = render_md(rows)
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)
