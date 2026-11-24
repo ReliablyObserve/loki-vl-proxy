@@ -1,11 +1,11 @@
 {
- "commit": "895c23078f4a",
- "date": "2026-11-23",
+ "commit": "b283a405a88d",
+ "date": "2026-11-24",
  "errors": {
   "recorded": {
    "comparable_rows": 248,
-   "matching_rows": 241,
-   "known_differences": 7,
+   "matching_rows": 242,
+   "known_differences": 6,
    "known_leaks": 0
   },
   "live": {
@@ -18,69 +18,69 @@
  },
  "loki": "3.7.10",
  "perf_weekly": {
-  "date": "2026-11-16",
+  "date": "2026-11-23",
   "loki_version": "3.7.10",
   "pairs": 525,
-  "faster": 353,
-  "par": 153,
-  "slower": 19,
+  "faster": 329,
+  "par": 171,
+  "slower": 25,
   "distribution": [
    {
-    "above": 6,
-    "below": 365,
-    "between": 14,
-    "close": 183,
+    "above": 4,
+    "below": 336,
+    "between": 22,
+    "close": 206,
     "profile": "loki-defaults",
     "request": "first",
     "rows": 568
    },
    {
-    "above": 6,
-    "below": 187,
-    "between": 4,
-    "close": 568,
+    "above": 0,
+    "below": 92,
+    "between": 2,
+    "close": 671,
     "profile": "loki-defaults",
     "request": "repeat",
     "rows": 765
    },
    {
     "above": 2,
-    "below": 312,
-    "between": 13,
-    "close": 120,
+    "below": 305,
+    "between": 17,
+    "close": 123,
     "profile": "aligned",
     "request": "first",
     "rows": 447
    },
    {
-    "above": 5,
-    "below": 22,
-    "between": 2,
-    "close": 500,
+    "above": 0,
+    "below": 27,
+    "between": 3,
+    "close": 499,
     "profile": "aligned",
     "request": "repeat",
     "rows": 529
    }
   ],
-  "over_2x_rows": 6
+  "over_2x_rows": 5
  },
  "red": true,
  "registry": {
-  "cases": 451,
+  "cases": 500,
   "by_status": {
-   "documented": 15,
+   "documented": 16,
    "fixed": 171,
-   "no gap": 106,
-   "open": 149,
+   "no gap": 104,
+   "open": 199,
    "owner-kept": 7,
    "upstream": 3
   },
   "open_by_impact": {
    "api-only": 21,
-   "drilldown-visible": 17,
+   "drilldown-visible": 18,
    "edge": 46,
-   "explore-visible": 64,
-   "grafana-datasource": 1
+   "explore-visible": 112,
+   "grafana-datasource": 2
   }
  },
  "sweep": {
@@ -103,8 +103,8 @@
   },
   "live_check": {
    "conclusion": "failure",
-   "date": "2026-11-23",
-   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45100580831",
+   "date": "2026-11-24",
+   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45312658480",
    "workflow": "query-corpus.yaml"
   },
   "recorded_file": "conformance/registry/grammar-sweep.json"
