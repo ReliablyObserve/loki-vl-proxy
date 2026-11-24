@@ -957,6 +957,23 @@ class MergeTest(unittest.TestCase):
         self.assertEqual(verdict["exit"], 3)
         self.assertIn("shard-2, shard-3", text)
 
+    def test_a_cancelled_shard_of_a_required_proof_is_reported_as_incomplete(self):
+        # A shard cancelled at the job limit uploads no meta, selection or verdict; the proof must not read them.
+        name = "logs plain"
+        sel = {"run": True, "sets": {"control": [name], "level-filter": [name]},
+               "runtime_proof": {"required": True, "cells": {f"control/{name}": ["1h"], f"level-filter/{name}": ["1h"]},
+                                 "ranges": ["1h"]}}
+        with open(self.sel_path, "w") as f:
+            json.dump(sel, f)
+        done, cancelled = os.path.join(self.tmp, "shard-1"), os.path.join(self.tmp, "shard-2")
+        write_shard(done, ["control"])
+        os.makedirs(cancelled)
+        code, verdict, _, text = self.merge([done, cancelled])
+        self.assertEqual(code, 3)
+        self.assertEqual(verdict["exit"], 3)
+        self.assertIn("shard-2 did not complete", text)
+        self.assertNotIn("KeyError", text)
+
     def test_an_invalid_shard_makes_the_run_invalid(self):
         a, b = os.path.join(self.tmp, "shard-1"), os.path.join(self.tmp, "shard-2")
         write_shard(a, ["control"])
