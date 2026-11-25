@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -41,7 +42,9 @@ func labelsAnswer(t testing.TB, p *Proxy, start, end time.Time) string {
 // VictoriaLogs that answers every call after a delay (none, 2 ms, or growing
 // with the listing's range), per request:
 //   - back=3617s is the A/B shape "refresh labels (label browser)": the
-//     window filled once, then three windows each moved back 3617 s;
+//     window filled once, then three windows each moved back 3617 s, with the
+//     first window ending at several places in an hour two hours back, and
+//     near now;
 //   - refresh=30s is a Grafana refresh that the response cache cannot answer:
 //     the filled window, ending 20 s before an hour (the cache key's bucket
 //     for a 24h window), moved forward by 30 s;
@@ -51,18 +54,31 @@ func labelsAnswer(t testing.TB, p *Proxy, start, end time.Time) string {
 // read) per request.
 func BenchmarkLabelsShiftedWindow(b *testing.B) {
 	now := time.Now()
-	// Sealed, unaligned and at a fixed place in its hour.
-	end0 := now.Truncate(time.Hour).Add(-2*time.Hour + 26*time.Minute + 50*time.Second)
-	refresh0 := now.Truncate(time.Hour).Add(-2*time.Hour + 59*time.Minute + 40*time.Second)
-	for _, mode := range []struct {
+	type mode struct {
 		name     string
 		fill     time.Time   // zero: nothing filled first
 		measured []time.Time // window ends
-	}{
-		{"back=3617s", end0, []time.Time{end0.Add(-3617 * time.Second), end0.Add(-2 * 3617 * time.Second), end0.Add(-3 * 3617 * time.Second)}},
-		{"refresh=30s", refresh0, []time.Time{refresh0.Add(30 * time.Second)}},
-		{"cold", time.Time{}, []time.Time{end0}},
-	} {
+	}
+	back := func(name string, end0 time.Time) mode {
+		return mode{"back=3617s/" + name, end0, []time.Time{end0.Add(-3617 * time.Second), end0.Add(-2 * 3617 * time.Second), end0.Add(-3 * 3617 * time.Second)}}
+	}
+	// Sealed and unaligned, at fixed places in an hour two hours back (every
+	// hour of the moved windows' ends has ended an hour ago), and near now as
+	// the A/B run asks (the first moved window's end lies in an hour that
+	// ended less than an hour ago; the place in the hour is the wall clock's).
+	hourAgo2 := now.Truncate(time.Hour).Add(-2 * time.Hour)
+	end0 := hourAgo2.Add(26*time.Minute + 50*time.Second)
+	refresh0 := hourAgo2.Add(59*time.Minute + 40*time.Second)
+	modes := []mode{back("at=:26:50", end0)}
+	for _, at := range []time.Duration{5*time.Minute + 13*time.Second, 20*time.Minute + 13*time.Second, 35*time.Minute + 13*time.Second, 50*time.Minute + 13*time.Second} {
+		modes = append(modes, back(fmt.Sprintf("at=:%02d:13", int(at/time.Minute)), hourAgo2.Add(at)))
+	}
+	modes = append(modes,
+		back("at=now", now.Truncate(time.Minute).Add(-time.Minute-13*time.Second)),
+		mode{"refresh=30s", refresh0, []time.Time{refresh0.Add(30 * time.Second)}},
+		mode{"cold", time.Time{}, []time.Time{end0}},
+	)
+	for _, mode := range modes {
 		for _, cost := range []struct {
 			name  string
 			delay func(r *http.Request) time.Duration

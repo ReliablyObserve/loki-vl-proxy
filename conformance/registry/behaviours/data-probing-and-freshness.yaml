@@ -82,8 +82,10 @@ decisions:
       it holds a name the rest of the window lacks, the pieces are read exactly.
       Within the live window only a countable query whose hour carries its row
       count is covered, so the run count of every listing confirms the hour.
-      Names-only answers are cached under their own keys (sfn:names:,
-      label_inventory:...:names).
+      When a covering hour holds a name the rest of the window lacks, its
+      pieces are read from VictoriaLogs whatever their own schedule says (the
+      hour's names changed, so rows arrived in it). Names-only answers are
+      cached under their own keys (sfn:names:, label_inventory:...:names).
     over: ['the pieces read one by one (before: about 19 calls, five rounds, per 24h window moved back an hour)', 'one call over each end (exact, but a refresh would read up to an hour per end on every request instead of its edge)', 'the enclosing hour scanned whatever the pieces span (up to 360x the rows of a 10-second edge)', 'higher parallelism (more VictoriaLogs load per request at fleet scale)']
     why: |
       A window moved back by an hour or more has new unaligned ends that no
@@ -92,9 +94,9 @@ decisions:
       round of calls costs about 50 ms, so the repeats took 273-306 ms against
       Loki's 64-66 ms. The hours of the ends are cached for every later window
       and replica (ordinary hour buckets, shared through the peer tier).
-    evidence: 'perf A/B 2026-11-25 (loki-defaults, runs 45611003635 and 45633797620): 24h warm 273-306 ms vs Loki 64-66 ms, 20 VictoriaLogs calls per repeat; 6h warm 21-56 ms vs 2-3 ms. BenchmarkLabelsShiftedWindow (Apple M5 Pro, GOMAXPROCS=4, 8 interleaved runs, 2026-11-25): moved 24h window 19 -> 2.7 calls and 120 -> 80 listed minutes per request, -59% time at 2 ms per call and -15% with a cost that grows with the range; refresh across an hour bucket 19 -> 3 calls, 120 -> 60 minutes; first load unchanged (63 calls, 1440 minutes). TestLabelsInventoryCoverOnVictoriaLogs: names equal one full-range call on VictoriaLogs v1.49.0 and v1.54.0.'
+    evidence: 'perf A/B 2026-11-25 (loki-defaults, runs 45611003635 and 45633797620): 24h warm 273-306 ms vs Loki 64-66 ms, 20 VictoriaLogs calls per repeat; 6h warm 21-56 ms vs 2-3 ms. BenchmarkLabelsShiftedWindow (Apple M5 Pro, GOMAXPROCS=4, 8 interleaved runs, 2026-11-25): a 24h window moved back 3617 s makes 2.7-12 calls instead of 19 and lists 70-94 minutes instead of 120 (first window ending at :05, :20, :26, :35, :50 and near now), 24-59% less time at 2 ms per call and the same time when a call costs in proportion to its range; refresh across an hour bucket 19 -> 3 calls and 120 -> 60 minutes; first load unchanged (63 calls, 1440 minutes). TestLabelsInventoryCoverOnVictoriaLogs: names equal one full-range call on VictoriaLogs v1.49.0 and v1.54.0.'
     code: [internal/proxy/metadata_inventory.go, internal/proxy/label_metadata.go]
-    tests: [TestLabelsInventory_ShiftedWindowReadsTheHoursOfItsEnds, TestLabelsInventory_CoveredEndsMatchOneFullRangeCall, TestLabelsInventory_ExactListingsKeepHitsAndOrder, TestLabelsInventory_RowsBackfilledIntoACoveredEndAppearOnTheNextRequest, TestLabelsInventoryCoverOnVictoriaLogs, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow]
+    tests: [TestLabelsInventory_ShiftedWindowReadsTheHoursOfItsEnds, TestLabelsInventory_CoveredEndsMatchOneFullRangeCall, TestLabelsInventory_ExactListingsKeepHitsAndOrder, TestLabelsInventory_RowsBackfilledIntoACoveredEndAppearOnTheNextRequest, TestLabelsInventory_RowsBackfilledIntoAnEmptyCoveredPieceAppearOnTheNextRequest, TestLabelsInventory_CoverGates, TestLabelsInventoryCoverOnVictoriaLogs, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow]
     history:
       - date: '2026-11-25'
         what: 'perf A/B row metadata-inventory / refresh labels (label browser) at 24h and 6h, warm (windows moved back 3617 s and 317 s), loki-defaults'

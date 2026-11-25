@@ -306,3 +306,138 @@ func TestLabelsInventory_RowsBackfilledIntoACoveredEndAppearOnTheNextRequest(t *
 		})
 	}
 }
+
+// A row written with an old timestamp into an empty bucket of a covered end
+// is listed by the next near-now request: the hour's row count changes, the
+// hour is read again and holds the new name, and the pieces are then read
+// from VictoriaLogs whatever their own schedule says (the empty bucket was
+// cached by an earlier window that read that end as pieces).
+//
+// conformance: quality/labels-backfill-into-cached-bucket, semantics/label-inventory-exact-and-incremental
+func TestLabelsInventory_RowsBackfilledIntoAnEmptyCoveredPieceAppearOnTheNextRequest(t *testing.T) {
+	now := time.Now()
+	hour := now.Truncate(time.Hour).Add(-3 * time.Hour) // ended two hours ago
+	gapFrom, gapTo := hour.Add(10*time.Minute), hour.Add(15*time.Minute)
+	f := &fakeVictoriaLogs{}
+	for ts := now.Add(-30 * time.Hour).Truncate(time.Hour); ts.Before(now); ts = ts.Add(20 * time.Second) {
+		if !ts.Before(gapFrom) && ts.Before(gapTo) {
+			continue
+		}
+		f.add(fakeVLRow{ts: ts.UnixNano(), stream: map[string]string{"app": "api", "env": "prod"}})
+	}
+	vl := &spanLog{f: f}
+	srv := httptest.NewServer(vl)
+	t.Cleanup(srv.Close)
+	p, _ := newFreshnessProxy(t, srv.URL, 24*time.Hour)
+	end := hour.Add(26*time.Minute + 33*time.Second)
+	// The first window reads its end as pieces and caches the empty one.
+	_ = labelsAnswer(t, p, end.Add(-6*time.Hour), end)
+	// A window an hour later caches the whole hour.
+	_ = labelsAnswer(t, p, end.Add(time.Hour-6*time.Hour), end.Add(time.Hour))
+	time.Sleep(200 * time.Millisecond) // past the recent-tail staleness
+	_ = vl.readsInside(hour, hour.Add(time.Hour))
+	_ = labelsAnswer(t, p, end.Add(-6*time.Hour), end)
+	if reads := vl.readsInside(hour, hour.Add(time.Hour)); reads != 0 {
+		t.Fatalf("the end was read %d times, want it answered by its cached hour", reads)
+	}
+	f.add(fakeVLRow{ts: gapFrom.Add(2 * time.Minute).UnixNano(), stream: map[string]string{"app": "api", "late_gap": "1"}})
+	time.Sleep(200 * time.Millisecond)
+	if got := labelsAnswer(t, p, end.Add(-6*time.Hour), end); !strings.Contains(got, `"late_gap"`) {
+		t.Fatalf("a row backfilled into an empty piece of a covered end was not listed: %s", got)
+	}
+}
+
+// Each gate of the decision to answer an end from its hour, on constructed
+// cache state: the freshness gates (an hour that ended an hour ago; inside the
+// live window a countable query and a known row count), the cost gates (a
+// cached hour whose names are known, or pieces that span half the hour and
+// need more than one round), and the first-load probe.
+//
+// conformance: semantics/label-inventory-exact-and-incremental, semantics/label-browser-latency-cold-and-refresh
+func TestLabelsInventory_CoverGates(t *testing.T) {
+	now := time.Now()
+	settled := now.Truncate(time.Hour).Add(-3 * time.Hour) // ended two hours ago
+	newest := now.Truncate(time.Hour).Add(-time.Hour)      // ended within the last hour
+	entry := func(rows int64, names ...string) inventoryEntry {
+		e := inventoryEntry{Values: names, Hits: make([]int64, len(names)), Rows: rows, Checked: cache.Now().UnixNano()}
+		for i := range e.Hits {
+			e.Hits[i] = 1
+		}
+		return e
+	}
+	type state struct {
+		ownCached  bool
+		hourCached bool
+		hourRows   int64
+		hourNames  []string
+		// piecesCached caches every bucket of the judged end's run: only its edge
+		// needs a call.
+		piecesCached bool
+	}
+	for _, tc := range []struct {
+		name      string
+		start     time.Time // the left end's run lies in its hour
+		end       time.Time // the right end's run lies in its hour
+		side      string    // which end is judged: "left" or "right"
+		countable bool
+		freshness time.Duration
+		st        state
+		want      bool
+	}{
+		{"cached settled hour, names known", settled.Add(-5*time.Hour + 7*time.Minute), settled.Add(26 * time.Minute), "right", true, 24 * time.Hour, state{true, true, 10, []string{"app"}, false}, true},
+		{"hour ended within the last hour", newest.Add(-5*time.Hour + 7*time.Minute), newest.Add(26 * time.Minute), "right", true, 24 * time.Hour, state{true, true, 10, []string{"app"}, false}, false},
+		{"live window, not countable", settled.Add(-5*time.Hour + 7*time.Minute), settled.Add(26 * time.Minute), "right", false, 24 * time.Hour, state{true, true, 10, []string{"app"}, false}, false},
+		{"outside the live window, not countable", settled.Add(-5*time.Hour + 7*time.Minute), settled.Add(26 * time.Minute), "right", false, time.Hour, state{true, true, 10, []string{"app"}, false}, true},
+		{"live window, row count unknown", settled.Add(-5*time.Hour + 7*time.Minute), settled.Add(26 * time.Minute), "right", true, 24 * time.Hour, state{true, true, -1, []string{"app"}, false}, false},
+		{"cached hour holds a name the window lacks", settled.Add(-5*time.Hour + 7*time.Minute), settled.Add(26 * time.Minute), "right", true, 24 * time.Hour, state{true, true, 10, []string{"app", "rare"}, false}, false},
+		{"hour not cached, pieces span half of it", settled.Add(-5*time.Hour + 7*time.Minute + 30*time.Second), settled.Add(26 * time.Minute), "left", true, 24 * time.Hour, state{true, false, 0, nil, false}, true},
+		{"hour not cached, pieces span less than half", settled.Add(-5*time.Hour + 41*time.Minute + 30*time.Second), settled.Add(26 * time.Minute), "left", true, 24 * time.Hour, state{true, false, 0, nil, false}, false},
+		{"hour not cached, only the edge needs a call", settled.Add(-5*time.Hour + 7*time.Minute + 30*time.Second), settled.Add(26 * time.Minute), "left", true, 24 * time.Hour, state{true, false, 0, nil, true}, false},
+		{"first load: the window's buckets are not in memory", settled.Add(-5*time.Hour + 7*time.Minute), settled.Add(26 * time.Minute), "right", true, 24 * time.Hour, state{false, true, 10, []string{"app"}, false}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newInventoryTestProxy(t, &fakeVictoriaLogs{}, 4)
+			p.metadataCacheFreshness = tc.freshness
+			base := "test-base"
+			plan := planInventorySegments(tc.start.UnixNano(), tc.end.UnixNano(), now.Add(-metadataInventorySealLag).UnixNano())
+			if tc.st.ownCached {
+				for _, seg := range plan {
+					if seg.level == 0 || seg.level == 1 {
+						if err := p.storeInventoryEntry(inventoryBucketKey(base, seg), entry(10, "app")); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
+			at := tc.end
+			if tc.side == "left" {
+				at = tc.start
+			}
+			hour := inventorySegment{start: at.Truncate(time.Hour).UnixNano(), end: at.Truncate(time.Hour).Add(time.Hour).UnixNano(), level: 1}
+			if tc.st.piecesCached {
+				for _, seg := range plan {
+					if seg.level >= 2 && seg.start >= hour.start && seg.end <= hour.end {
+						if err := p.storeInventoryEntry(inventoryBucketKey(base, seg), entry(3, "app")); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
+			if tc.st.hourCached {
+				if err := p.storeInventoryEntry(inventoryBucketKey(base, hour), entry(tc.st.hourRows, tc.st.hourNames...)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			out, covers := p.coverFinePieces("/select/logsql/stream_field_names", base, plan, now.Add(-metadataInventorySealLag).UnixNano(), tc.countable)
+			got := false
+			for i := range covers {
+				if out[i] == hour {
+					got = true
+				}
+			}
+			if got != tc.want {
+				t.Fatalf("the %s end answered by its hour: %v, want %v (covers %v)", tc.side, got, tc.want, covers)
+			}
+		})
+	}
+}

@@ -52,7 +52,8 @@ why: |
   take more than one round of parallel calls). Within the live window the
   query must be countable and the hour must carry its row count, so the run
   count of every listing confirms the hour and a row written into a covered
-  end makes the hour, and then the pieces, be read again on the next request. A piece's names are a subset of its hour's names, so an
+  end makes the hour, and then the pieces (whatever their own schedule
+  says), be read again on the next request. A piece's names are a subset of its hour's names, so an
   hour whose names all appear in the rest of the window adds none; when one
   would add a name, the pieces are read exactly. The names equal one
   full-range call's; the hits and order of the merged listing are not

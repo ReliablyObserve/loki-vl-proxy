@@ -810,8 +810,9 @@ func (p *Proxy) peekInventoryEntry(key string) (inventoryEntry, bool) {
 }
 
 // resolveCovers drops each covering hour whose names all appear in the parts
-// of the window that are answered exactly, and answers the pieces of every
-// other covering hour exactly, so the names are those of one full-range call.
+// of the window that are answered exactly, and reads the pieces of every
+// other covering hour from VictoriaLogs, so the names are those of one
+// full-range call.
 func (p *Proxy) resolveCovers(ctx context.Context, path string, params url.Values, base string, parts [][]vlValueHits, covers map[int][]inventorySegment, countable, longListing bool) error {
 	known := map[string]struct{}{}
 	for i, part := range parts {
@@ -838,7 +839,10 @@ func (p *Proxy) resolveCovers(ctx context.Context, path string, params url.Value
 	for _, i := range rescan {
 		for _, seg := range covers[i] {
 			group.Go(func() error {
-				items, _, err := p.fetchInventorySegment(ctx, path, params, base, seg, countable, longListing, false)
+				// Forced: the hour's names changed since the pieces were
+				// cached, so rows arrived somewhere in it; a piece's own
+				// schedule may still call it fresh.
+				items, _, err := p.fetchInventorySegment(ctx, path, params, base, seg, countable, longListing, true)
 				if err != nil {
 					return err
 				}

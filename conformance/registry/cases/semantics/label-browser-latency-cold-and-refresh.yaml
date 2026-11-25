@@ -38,10 +38,13 @@ why: |
   273 ms warm against Loki's 64 and 66 ms with 20 calls per request, and its
   6h window (moved back 317 s) 21-56 ms against 2-3 ms. Since 2026-11-25 the
   names-only /labels listing answers those pieces from the hour that holds
-  them (semantics/label-inventory-exact-and-incremental): 2.7 calls and 80
-  listed minutes per moved 24h request and 3 calls and 60 minutes for a
-  refresh across an hour boundary, instead of 19 calls and 120 minutes each;
-  first loads unchanged (BenchmarkLabelsShiftedWindow, decision
+  them (semantics/label-inventory-exact-and-incremental): 2.7-12 calls and
+  70-94 listed minutes per moved 24h request, depending on where its ends
+  sit in their hours (12 near now, where the right end of the first moved
+  window lies in an hour that ended less than an hour ago and is read as
+  before), and 3 calls and 60 minutes for a refresh across an hour boundary,
+  instead of 19 calls and 120 minutes each; first loads unchanged
+  (BenchmarkLabelsShiftedWindow, decision
   labels-names-only-ends-from-their-hours in data-probing-and-freshness).
 
   Implemented in internal/proxy/metadata_inventory.go (the bucketed
