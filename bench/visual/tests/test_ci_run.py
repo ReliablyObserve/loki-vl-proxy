@@ -160,6 +160,13 @@ function add(cdp,id="one",over={}) {
   got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/limit/);
   assert.equal(got.digest.bytes,Buffer.byteLength(big));assert.equal(got.digest.sha256,require("node:crypto").createHash("sha256").update(big).digest("hex"));
   assert.equal(got.digest.head.length,16*1024);assert.ok(got.digest.head.startsWith('{"results"'));assert.equal(got.digest.tail,big.slice(-4*1024));f.collector.dispose();
+  // The frames' own execution statistics are not the answer: bodies that differ only there hash alike, any other difference does not.
+  const framed=(exec,v)=>'{"results":{"A":{"status":200,"frames":[{"schema":{"meta":{"stats":[{"displayName":"Summary: exec time","unit":"s","value":'+exec+'},{"displayName":"x","value":0}]}},"data":{"values":[['+v+']]}}]}}}'+" ".repeat(33*1024*1024);
+  const digestOf=async(text)=>{f=fixture();add(f.cdp);f.cdp.send=async()=>({body:text,base64Encoded:false});const d=(await f.collector.read(identity)).digest;f.collector.dispose();return d;};
+  const d1=await digestOf(framed("0.000118085","1,2,3")),d2=await digestOf(framed("0.00011535","1,2,3")),d3=await digestOf(framed("0.00011535","1,2,4"));
+  assert.equal(d1.sha256,d2.sha256);assert.equal(d1.bytes,d2.bytes);assert.notEqual(d1.raw_bytes,d2.raw_bytes);assert.notEqual(d2.sha256,d3.sha256);
+  const nested=await digestOf(framed("0.1","1").replace('"stats":[','"stats":[[1],'));const nested2=await digestOf(framed("0.2","1").replace('"stats":[','"stats":[[1],'));
+  assert.notEqual(nested.sha256,nested2.sha256);
   // The same body in base64, and one over the digest bound, which is only reported as over the limit.
   f=fixture();add(f.cdp);f.cdp.send=async()=>({body:Buffer.from(big).toString("base64"),base64Encoded:true});
   got=await f.collector.read(identity);assert.match(got.error,/limit/);assert.equal(got.digest.bytes,Buffer.byteLength(big));f.collector.dispose();

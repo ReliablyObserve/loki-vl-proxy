@@ -1127,6 +1127,10 @@ def main():
     # is the very defect being fixed.
     fix_pages = {entry for case in (plan.get("fix_cases") or {}).values() if case.get("status") == "fixed"
                  for entry in case.get("entries") or []}
+    # A page the spec declares as a fix for a case that is still open overall (the case has other parts to fix) is a
+    # fix page for its runtime too, but only where its answer differs from the base's: that difference is the base
+    # answering it wrongly. A page whose answer is the base's keeps the base as its time reference.
+    declared_pages = {entry for case in (plan.get("fix_cases") or {}).values() for entry in case.get("entries") or []}
     rows, report, client_proofs = [], [], []
     client_proof_bytes = 4096  # Include the enclosing JSON/list metadata in the total retention bound.
     allowed = spec.get("allowed_errors") or []  # substrings of error answers that are expected (documented in the README)
@@ -1260,6 +1264,8 @@ def main():
                                                              comparable=not corrected, client_error=client_error))
         if runtime_required and page in fix_pages:
             base_cannot_answer(row, gap, sp_judged)
+            fix_page_runtime(row, captures)
+        elif runtime_required and page in declared_pages and row["main_pr_diffs"]:
             fix_page_runtime(row, captures)
     md = render_md(rows)
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")

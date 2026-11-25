@@ -127,7 +127,8 @@ func (p *Proxy) mixedJSONKeyNames(ctx context.Context, base string, from, to tim
 // always read.
 func (p *Proxy) collectKeyChecked(ctx context.Context, plan *orderedJSONMetricPlan, base string, class *mixedJSONRowClass, key string, fetchStart, start, end time.Time, step, bucket time.Duration) (series map[string]manualSeriesSamples, served bool, err error, done bool) {
 	memoKey := p.mixedCertMemoKey(ctx, base, class.label, "keyset", fetchStart, end)
-	names, remembered := []string(nil), false
+	var names []string
+	remembered := false
 	if entry, ok := p.mixedCertificates.get(memoKey, time.Now()); ok {
 		names, remembered = entry.names, true
 	} else {

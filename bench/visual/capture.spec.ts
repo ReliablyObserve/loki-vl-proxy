@@ -170,9 +170,29 @@ async function settle(page: Page, pending: { n: number; last: number; seen?: num
 const BACKEND = /\/api\/ds\/query|\/api\/datasources\/uid\/[^/]+\/resources\/|\/api\/datasources\/proxy\//;
 
 // What is kept of a response body above the retention cap: it was read once, completely, and is not retained.
-type BodyDigest = { sha256: string; bytes: number; head: string; tail: string };
-const digestOfBody = (body: Buffer): BodyDigest => ({ sha256: createHash("sha256").update(body).digest("hex"), bytes: body.length,
-  head: body.subarray(0, 16 * 1024).toString("utf8"), tail: body.subarray(-4 * 1024).toString("utf8") });
+// The hash and the length are those of the body without the contents of its frames' "stats" arrays: Grafana's frame
+// meta carries the request's own execution statistics (an exec time of 0.000118085 s against 0.00011535 s), which are
+// not the answer and differ on every request, so two identical answers would never hash alike. Only an array of flat
+// objects is skipped (what the stats are); anything else stays in the hash. `raw_bytes` is the length as received.
+type BodyDigest = { sha256: string; bytes: number; raw_bytes: number; head: string; tail: string };
+const STATS_MARKER = Buffer.from('"stats":[');
+const FLAT_OBJECTS = /^(?:\{[^{}]*\},?)*$/;
+const digestOfBody = (body: Buffer): BodyDigest => {
+  const hash = createHash("sha256");
+  let hashed = 0, pos = 0;
+  const take = (part: Buffer) => { hash.update(part); hashed += part.length; };
+  for (;;) {
+    const at = body.indexOf(STATS_MARKER, pos);
+    if (at < 0) break;
+    const start = at + STATS_MARKER.length, end = body.indexOf(0x5d, start);
+    if (end < 0) break;
+    take(body.subarray(pos, start));
+    pos = FLAT_OBJECTS.test(body.subarray(start, end).toString("latin1")) ? end : start;
+  }
+  take(body.subarray(pos));
+  return { sha256: hash.digest("hex"), bytes: hashed, raw_bytes: body.length,
+    head: body.subarray(0, 16 * 1024).toString("utf8"), tail: body.subarray(-4 * 1024).toString("utf8") };
+};
 
 // Independent CDP buffers retain proof bytes only inside Chrome. No body cache,
 // refetch, request interception or URL-only matching is used by the fallback.

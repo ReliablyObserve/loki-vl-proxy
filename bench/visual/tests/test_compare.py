@@ -1048,6 +1048,33 @@ class ExplainedVsLokiTest(unittest.TestCase):
         _, row = self.run_compare(broken, slow, slow, runtime_required=True, fix_cases=fixes)
         self.assertTrue(row["runtime_problems"], "a PR-side problem is never set aside")
 
+    # conformance: semantics/two-parsers-keep-one
+    def test_a_declared_fix_page_of_an_open_case_is_timed_against_loki_only_where_its_answer_differs(self):
+        runtime = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                       js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100,
+                       page_encoded_bytes=200, first_api_data_ms=25)
+        opened = {"semantics/case-a": {"entries": ["page-a"], "status": "open"}}
+
+        def timed(values, settle_ms):
+            return dict(capture(values), runtime=runtime, settle_ms=settle_ms)
+        regression = "runtime regression"
+        # The base answers differently and quickly, the PR answers as Loki does, in Loki's time: the base is no reference.
+        main, pr, loki = timed([1], 5000), timed([2], 10000), timed([2], 9000)
+        _, row = self.run_compare(main, pr, loki, runtime_required=True)
+        self.assertIn(regression, " ".join(row["runtime_problems"]), "without a fix claim the base is the reference")
+        _, row = self.run_compare(main, pr, loki, runtime_required=True, fix_cases=opened)
+        self.assertEqual(row["runtime_problems"], [])
+        self.assertTrue(row["main_not_a_reference"])
+        self.assertIn("not a reference", row["base_comparison_note"])
+        # Over twice Loki's time (and a second over) is still a regression, against Loki.
+        _, row = self.run_compare(main, timed([2], 25000), loki, runtime_required=True, fix_cases=opened)
+        self.assertIn("over 2x Loki", " ".join(row["runtime_problems"]))
+        # The base answers the page as the PR does: it is a valid reference, and a slower PR is a regression.
+        same = timed([2], 5000)
+        _, row = self.run_compare(same, pr, loki, runtime_required=True, fix_cases=opened)
+        self.assertIn(regression, " ".join(row["runtime_problems"]))
+        self.assertNotIn("main_not_a_reference", row)
+
     def test_an_unreadable_base_body_is_set_aside_only_when_the_pr_body_is_readable(self):
         runtime = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
                        js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100,
