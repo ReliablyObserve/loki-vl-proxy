@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -532,9 +533,8 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 	// Candidate resolution only needs to discover VL field aliases (e.g. k8s_namespace_name →
 	// k8s.namespace.name); field_names provides this at much lower cost than stream_field_names.
 	//
-	// For the actual value fetch, use stream_field_values when available: stream-indexed labels
-	// (cluster, namespace, app, env, …) are stored only in VL's stream index and field_values
-	// returns empty for them. stream_field_values covers both stream-indexed and columnar fields.
+	// The value fetch below chooses the endpoint per candidate (see there): stream_field_values lists stream fields
+	// only, field_values lists any field.
 	streamFields := []string{}
 	if p.supportsStreamMetadataEndpoints() {
 		fields, err := p.fetchAllFieldNamesCached(ctx, params)
@@ -556,14 +556,14 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 		return []string{}, nil
 	}
 
-	// Prefer stream_field_values on backends that support stream metadata endpoints:
-	// stream-indexed labels (cluster, namespace, app, …) are only in the stream index and
-	// field_values returns empty for them. If stream_field_values returns empty or errors,
-	// the loop below falls back to field_values automatically.
-	endpoint := "/select/logsql/field_values"
-	if p.supportsStreamMetadataEndpoints() {
-		endpoint = "/select/logsql/stream_field_values"
-	}
+	// VictoriaLogs answers stream_field_values only for a stream field (an empty list, not an error, for any other
+	// field) and field_values for every field. Loki answers /label/{name}/values for indexed labels, so an undeclared
+	// non-stream field keeps the empty stream answer; a field the operator declared (-stream-fields or
+	// -extra-label-fields), which /labels lists, must have its values listed. On v1.50.0 and later the stream fields
+	// are in the column index and field_values answers them too, in one call (capability.ColumnFieldValues); before
+	// that the stream endpoint is tried first and field_values is read when it had no values.
+	streamEndpoints := p.supportsStreamMetadataEndpoints()
+	columnIndexed := p.supportsColumnIndexedFields()
 
 	seen := make(map[string]struct{}, 16)
 	values := make([]string, 0, 16)
@@ -576,15 +576,29 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 		}
 		queryParams.Set("field", candidate)
 
-		fieldValues, fieldErr := p.fetchVLFieldValues(ctx, endpoint, queryParams)
-		if fieldErr != nil && endpoint == "/select/logsql/stream_field_values" && shouldFallbackToGenericMetadata(fieldErr) {
-			endpoint = "/select/logsql/field_values"
-			fieldValues, fieldErr = p.fetchVLFieldValues(ctx, endpoint, queryParams)
+		isDeclared := slices.Contains(p.declaredLabelFields, candidate)
+		var fieldValues []string
+		var fieldErr error
+		if !streamEndpoints || isDeclared && columnIndexed {
+			fieldValues, fieldErr = p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+		} else {
+			fieldValues, fieldErr = p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
+			if fieldErr != nil && shouldFallbackToGenericMetadata(fieldErr) {
+				streamEndpoints = false // the backend has no stream endpoints: the rest of the lookup does not try them
+				fieldValues, fieldErr = p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+			} else if fieldErr == nil && len(fieldValues) == 0 && isDeclared {
+				fieldValues, fieldErr = p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+			}
 		}
 		if fieldErr != nil {
 			return nil, fieldErr
 		}
 		for _, value := range fieldValues {
+			// field_values counts the rows that lack the field as the empty value; Loki has no label with an empty
+			// value (a label with no value is not there), so it is not listed.
+			if value == "" {
+				continue
+			}
 			if _, ok := seen[value]; ok {
 				continue
 			}

@@ -251,7 +251,7 @@ var gates = [numGates]Gate{
 	ColumnFieldValues: {
 		Name: "vl.column_field_values", Kind: Capability, From: [3]int{1, 50, 0},
 		Registry: "column-field-values", Citation: "VictoriaLogs v1.50.0 (stream fields in the column index)",
-		Reads: "label value lookups: field_values replaces stream_field_values (drilldown.go)",
+		Reads: "label value lookups: field_values replaces stream_field_values (drilldown.go; declared fields in label_metadata.go)",
 	},
 	StreamMetadataEndpoints: {
 		Name: "vl.stream_metadata_endpoints", Kind: Capability, From: [3]int{1, 30, 0}, Default: true,

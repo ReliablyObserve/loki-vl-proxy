@@ -12,6 +12,8 @@ proxy_usage: |
   Label value lookups of the Drilldown handlers read field_values instead of
   stream_field_values when the gate vl.column_field_values is on
   (supportsColumnIndexedFields in internal/proxy/backend.go, drilldown.go).
+  /label/{name}/values reads field_values for a field declared with -stream-fields
+  or -extra-label-fields (label_metadata.go).
 fallback: |
   stream_field_values on v1.49 and on a release not yet known: the same values, slower.
 proves: []
