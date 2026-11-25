@@ -114,7 +114,7 @@ func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
 // with one series per stream there. A count over a line an unpack rejects fails with Loki's pipeline error under any
 // function but a sum with no grouping, where the proxy answered.
 //
-// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-parser-error-not-raised, semantics/unwrap-conversion-check-reads-unpack-unlike-loki, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line, semantics/unpack-parser-error-not-raised, semantics/unwrap-conversion-check-reads-unpack-unlike-loki, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_UnpackSumsLikeLoki(t *testing.T) {
 	app, now := unpackFixture(t, "unpacksum")
 	selector := fmt.Sprintf(`{app=%q}`, app)
@@ -144,6 +144,8 @@ func TestCompat_UnpackSumsLikeLoki(t *testing.T) {
 		`sum(rate(` + selector + ` | unpack [5m]))`,
 		`sum(rate(` + selector + ` | unpack | drop agent [5m]))`,
 		`sum(count_over_time(` + selector + ` | unpack [5m]))`,
+		`sum by (app) (count_over_time(` + selector + ` | unpack [5m]))`,
+		`sum by (app) (rate(` + selector + ` | unpack [5m]))`,
 		`label_replace(sum(rate(` + selector + ` | unpack [5m])), "d", "x", "d", ".*")`,
 		`sum(absent_over_time({app="no-unpack-stream"} | unpack [5m]))`,
 		`absent_over_time({app="no-unpack-stream"} | unpack [5m])`,

@@ -332,6 +332,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/topk-bottomk-without-strips-label` — topk without and bottomk without keep every label of the winning series, like Loki (fixed) | #736 | 0 | 0 |
 | `semantics/topk-over-vector-aggregation` — An aggregation around a topk, bottomk or sort folds what the ranking kept at each step (fixed) | #749 | 0 | 0 |
 | `semantics/transient-backend-failure-is-retried` — A transient VictoriaLogs failure is retried and the client gets the answer Loki gives (fixed) | TBD-PR | 0 | 0 |
+| `semantics/unpack-instant-grouped-sum-reads-every-line` — An instant grouped sum of a count or a rate over an unpack answers from stats, not from every line | #1758 | 0 | 0 |
 | `semantics/unwrap-bare-range-exposes-parsed-labels` — a range function with unwrap and no outer aggregation exposes every parsed label although the parser names one key (fixed) | verified against recorded Loki answers in the extraction-list differential | 0 | 0 |
 | `semantics/unwrap-conversion-error` — An unwrap over a value its conversion rejects fails like Loki, with a 400 SampleExtractionErr (fixed) | #704 | 0 | 0 |
 | `semantics/unwrap-duration-seconds` — `unwrap duration_seconds(label)` is converted like duration(), as Loki does (fixed) | #729 | 0 | 0 |

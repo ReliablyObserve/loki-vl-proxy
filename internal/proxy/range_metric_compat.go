@@ -611,10 +611,10 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if hasOrigSpec && origSpec.HasUnwrap && isSumAllLogRange(originalLogql) {
 		return false
 	}
-	// An ungrouped sum of a count or a rate over an unpack: VictoriaLogs answers one series from stats, as it
-	// does the range query. The evaluator below groups a rate by the stream the translated stats name, and reads
-	// every line of the window.
-	if hasOrigSpec && !origSpec.HasUnwrap && isUnpackSumAll(originalLogql) {
+	// A sum, with no clause or a by clause, of a count or a rate over an unpack: VictoriaLogs answers it from
+	// stats, as it does the range query. The evaluator below groups a rate by the stream the translated stats name
+	// and reads every line of the window, which fails past its limits.
+	if hasOrigSpec && !origSpec.HasUnwrap && isUnpackSum(originalLogql) {
 		return false
 	}
 	// Instant queries with parser stages and explicit drop-error: use native VL stats.
@@ -1131,23 +1131,46 @@ func isSumAllLogRange(query string) bool {
 	return false
 }
 
-// isUnpackSumAll reports a sum with no by or without clause of a count_over_time or a rate over a log query with
-// an unpack stage (semantics/unpack-instant-sum-rate-per-stream).
+// isUnpackSum reports a sum with no clause or a by clause of a count_over_time or a rate over a log query with an
+// unpack stage (semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line).
+// A without clause is not one: the labels it keeps are the ones the unpack promoted.
+func isUnpackSum(query string) bool {
+	_, ok := unpackSumGrouping(query)
+	return ok
+}
+
+// isUnpackSumAll reports an isUnpackSum whose sum has no label to group by: one series, whatever the log query
+// leaves of each line's labels.
 func isUnpackSumAll(query string) bool {
-	ra, ok := ungroupedSumRange(query)
-	if !ok || ra.Op != logqlpkg.RangeRate && ra.Op != logqlpkg.RangeCountOverTime {
-		return false
+	grouping, ok := unpackSumGrouping(query)
+	return ok && (grouping == nil || len(grouping.Labels) == 0)
+}
+
+// unpackSumGrouping is the grouping of the sum of an isUnpackSum query.
+func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
+	// The shared parse of the query: it is read, never changed.
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
+		return nil, false
+	}
+	agg, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok || agg.Op != logqlpkg.VectorSum || agg.Grouping != nil && agg.Grouping.Without {
+		return nil, false
+	}
+	ra, ok := agg.Inner.(*logqlpkg.RangeAggregation)
+	if !ok || ra.Grouping != nil || ra.Op != logqlpkg.RangeRate && ra.Op != logqlpkg.RangeCountOverTime {
+		return nil, false
 	}
 	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
 	if !ok {
-		return false
+		return nil, false
 	}
 	for _, stage := range lq.Pipeline {
-		if p, ok := stage.(*logqlpkg.ParserStage); ok && p.Type == logqlpkg.ParserUnpack {
-			return true
+		if p, isParser := stage.(*logqlpkg.ParserStage); isParser && p.Type == logqlpkg.ParserUnpack {
+			return agg.Grouping, true
 		}
 	}
-	return false
+	return nil, false
 }
 
 // unpackMetricResponseVersion fences the answers to a metric query over an unpack cached before its semantics

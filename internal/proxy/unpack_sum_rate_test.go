@@ -11,8 +11,23 @@ import (
 // An ungrouped sum of a count or a rate over an unpack takes VictoriaLogs' stats at an instant, as at a range: the
 // evaluator over raw rows grouped a rate by the stream. Every other shape keeps its route.
 //
-// conformance: semantics/unpack-instant-sum-rate-per-stream
+// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line
 func TestIsUnpackSumAll(t *testing.T) {
+	for q, want := range map[string]bool{
+		`sum by (x) (rate({a="b"} | unpack [1m]))`:                     true,
+		`sum(count_over_time({a="b"} | unpack [1m])) by (x, y)`:        true,
+		`sum by () (rate({a="b"} | unpack [1m]))`:                      true,
+		`sum without (x) (rate({a="b"} | unpack [1m]))`:                false,
+		`max by (x) (rate({a="b"} | unpack [1m]))`:                     false,
+		`sum by (x) (bytes_rate({a="b"} | unpack [1m]))`:               false,
+		`sum by (x) (sum_over_time({a="b"} | unpack | unwrap y [1m]))`: false,
+		`sum by (x) (rate({a="b"} | json [1m]))`:                       false,
+		`rate({a="b"} | unpack [1m])`:                                  false,
+	} {
+		if got := isUnpackSum(RequestQueryText(q)); got != want {
+			t.Errorf("isUnpackSum %s: %v, want %v", q, got, want)
+		}
+	}
 	for q, want := range map[string]bool{
 		`sum(rate({a="b"} | unpack [1m]))`:                                     true,
 		`sum(count_over_time({a="b"} | unpack [1m]))`:                          true,

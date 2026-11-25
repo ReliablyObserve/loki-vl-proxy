@@ -99,6 +99,18 @@ func unpackSumQueries() []string {
 		`count_over_time({job="bad"} | unpack != "k" [1m])`,
 		`sum_over_time({job="uwline"} | unpack | unwrap a [1m])`,
 	)
+	// A grouped sum reads VictoriaLogs' stats at an instant too.
+	for _, job := range []string{`{job="pk"}`, `{job=~"pk|bad"}`} {
+		out = append(out,
+			`sum by (job) (count_over_time(`+job+` | unpack [5m]))`,
+			`sum by (job, service_name) (rate(`+job+` | unpack | drop a [5m]))`,
+		)
+	}
+	// A keep makes the series the labels it leaves, which the handlers read as a grouped sum.
+	out = append(out,
+		`count_over_time({job="pk"} | unpack | keep job, app [5m])`,
+		`rate({job="pk"} | unpack | keep job [5m])`,
+	)
 	// An unwrapped value is a label the unpack promotes.
 	for _, job := range []string{`{job="uw"}`, `{job="uwbad"}`} {
 		for _, fn := range []string{"sum_over_time", "max_over_time"} {
@@ -175,7 +187,7 @@ func unpackSumFixture() metricFixture {
 
 // TestUnpackSumMatchesLoki replays the recorded answers through the handlers.
 //
-// conformance: semantics/translator-writes-unpack-as-unpack-json, semantics/unpack-parser-error-not-raised, semantics/unpack-instant-sum-rate-per-stream, semantics/unwrap-conversion-check-reads-unpack-unlike-loki
+// conformance: semantics/translator-writes-unpack-as-unpack-json, semantics/unpack-parser-error-not-raised, semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line, semantics/unwrap-conversion-check-reads-unpack-unlike-loki
 func TestUnpackSumMatchesLoki(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	fix := unpackSumFixture()
