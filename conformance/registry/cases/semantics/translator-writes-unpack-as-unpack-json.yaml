@@ -47,12 +47,41 @@ why: |
 
   The query plan lowers a count_over_time, rate or absent_over_time over an
   unpack followed only by drops and keeps (the text equals the translator's,
-  and the lines it counts are Loki's); every other shape is delegated under the name of
-  what it reads (unpack line, unpack line read, unpack label read, unpack
-  parser order) until the stages after an unpack read the promoted labels and
-  the replaced line as Loki does. The proxy's own evaluation of an unwrapped
-  value (internal/proxy ordered_json_metric.go) reads an unpack as a json
-  parser; unwrap_conversion_error.go reads it as Loki does.
+  and the lines it counts are Loki's), and a count_over_time or
+  absent_over_time of that form under a sum with no by or without clause;
+  every other shape is delegated under the name of what it reads (unpack line,
+  unpack line read, unpack label read, unpack parser order) until the stages
+  after an unpack read the promoted labels and the replaced line as Loki does.
+  TestUnpackSumMatchesLoki holds these aggregations to real Loki through the
+  proxy (recorded, VictoriaLogs v1.49.0 and v1.54.0): the sums answer Loki's
+  series and values, over lines that are no JSON object too (Loki parses no
+  line for a sum that needs no label).
+
+  Open in the served answers (the plan writes the translator's text, so they
+  are unchanged by the lowering):
+    count_over_time or rate over | unpack with a line that is not a JSON
+    object in a window: Loki fails the query with its JSONParserErr pipeline
+    error, the proxy answers 200.
+    an instant sum(rate(... | unpack [r])): the proxy answers one series per
+    stream, Loki one series; the same sum over json, logfmt or no parser, and
+    every range request, answers as Loki. The plan leaves a sum of a rate
+    over an unpack delegated.
+
+  A pushdown of the packed rule is not exact: with `unpack_json fields
+  (_entry)` guarded by a raw-line regexp for a string `_entry`, then a second
+  unpack and a format of _msg, VictoriaLogs v1.49.0 and v1.54.0 still differ
+  from Loki on 23 adversarial lines (kept lines: 2 for a line filter, 4 for a
+  label filter; returned lines: 3 for a log query) over an empty `_entry`, a
+  nested string `_entry` next to a numeric top-level one, a duplicate key and
+  values that are not strings, and it takes about twice the translator text's
+  time for a count over 600k packed rows.
+
+  The proxy's own evaluation of an unwrapped value (internal/proxy
+  ordered_json_metric.go) reads an unpack as a json parser. The unwrap
+  conversion check (unwrap_conversion_error.go) promotes the string keys of
+  any line holding the text "_entry" and marks no non-JSON line: it differs
+  from Loki's recorded labels on a numeric, an object and a nested-only
+  `_entry` and on a line that is not JSON.
 
   Twelve additional historical series facets exercise unsupported unpack compositions on
   both endpoints: unpack before named JSON/unwrap, before raw unwrap with filters, after

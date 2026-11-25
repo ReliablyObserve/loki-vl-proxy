@@ -2904,6 +2904,7 @@
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/typed_pair_blank_test.go | semantics/blank-before-call-parenthesis-read-unlike-loki",
     "internal/querycorpus/typed_pair_blank_test.go | semantics/translator-reads-only-space-between-tokens",
+    "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/unwrap-per-series-identity-label-filter",
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
@@ -3648,7 +3649,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 826,
+      "go": 827,
       "playwright": 3
     },
     "page_kinds": {

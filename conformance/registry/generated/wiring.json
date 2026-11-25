@@ -2510,6 +2510,7 @@
       "internal/querycorpus/odd_spellings_loki_test.go"
     ],
     "semantics/translator-writes-unpack-as-unpack-json": [
+      "internal/querycorpus/unpack_sum_loki_diff_test.go",
       "internal/queryplan/lower/unpack_test.go"
     ],
     "semantics/tumbling-window-single-grid": [
@@ -5706,6 +5707,9 @@
       "semantics/blank-before-call-parenthesis-read-unlike-loki",
       "semantics/translator-reads-only-space-between-tokens"
     ],
+    "internal/querycorpus/unpack_sum_loki_diff_test.go": [
+      "semantics/translator-writes-unpack-as-unpack-json"
+    ],
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-per-series-identity-label-filter",
@@ -7006,7 +7010,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 829,
+  "tests_with_markers": 830,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

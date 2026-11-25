@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan now lowers `sum(count_over_time(… | unpack [r]))` and `sum(absent_over_time(… | unpack [r]))` (no `by` or `without`, only `drop` and `keep` after the unpack), with the same VictoriaLogs query as before, so answers do not change. A differential against real Loki holds these sums. It also records two existing differences over `| unpack`: a count or a rate over a line that is not a JSON object answers where Loki fails with `JSONParserErr`, and an instant `sum(rate(… | unpack [r]))` answers one series per stream.
+
 ## [2.363.1] - 2026-11-25
 
 ### Fixed
