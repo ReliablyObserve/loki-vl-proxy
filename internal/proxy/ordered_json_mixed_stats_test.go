@@ -1129,8 +1129,11 @@ func TestOrderedMixedStatsAuxSurvivesSmallDiskRestart(t *testing.T) {
 			t.Fatal("cross-order SSD restart lost auxiliary buckets or native values")
 		}
 	}
-	if statsCalls.Load() != 1 || rawCalls.Load() != 6 || c2.Stats().L2.Hits == 0 {
-		t.Fatalf("expected one shared stats read, six exact raw reads and SSD reuse across both orders: stats=%d raw=%d L2=%d", statsCalls.Load(), rawCalls.Load(), c2.Stats().L2.Hits)
+	// The two parser orders no longer share one native read: the explicit order's class has fewer guards (see
+	// newMixedJSONRowClassFor), so each order reads once, and every repeat, shift and restart reuses its own. The
+	// answers above are identical across orders; only the shared read was given up for the cheaper explicit order.
+	if statsCalls.Load() != 2 || rawCalls.Load() != 6 || c2.Stats().L2.Hits == 0 {
+		t.Fatalf("expected one stats read per parser order, six exact raw reads and SSD reuse: stats=%d raw=%d L2=%d", statsCalls.Load(), rawCalls.Load(), c2.Stats().L2.Hits)
 	}
 }
 

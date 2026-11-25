@@ -2161,6 +2161,7 @@
     "internal/proxy/ordered_json_mixed_certificate_oracle_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/ordered_json_mixed_class_oracle_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/ordered_json_mixed_class_test.go | semantics/two-parsers-keep-one",
+    "internal/proxy/ordered_json_mixed_shape_oracle_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/ordered_json_mixed_stats_test.go | mixed-json-row-stats",
     "internal/proxy/ordered_json_mixed_stats_test.go | quality/query-range-extent-cache",
     "internal/proxy/ordered_json_mixed_stats_test.go | quality/query-range-settled-steps",
@@ -3636,7 +3637,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 820,
+      "go": 821,
       "playwright": 3
     },
     "page_kinds": {

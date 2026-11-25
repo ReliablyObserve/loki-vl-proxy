@@ -2514,6 +2514,7 @@
       "internal/proxy/ordered_json_mixed_certificate_oracle_test.go",
       "internal/proxy/ordered_json_mixed_class_oracle_test.go",
       "internal/proxy/ordered_json_mixed_class_test.go",
+      "internal/proxy/ordered_json_mixed_shape_oracle_test.go",
       "internal/proxy/ordered_json_mixed_stats_test.go",
       "internal/proxy/ordered_json_raw_chunks_test.go",
       "internal/proxy/ordered_json_recorded_test.go",
@@ -4423,6 +4424,9 @@
       "semantics/two-parsers-keep-one"
     ],
     "internal/proxy/ordered_json_mixed_class_test.go": [
+      "semantics/two-parsers-keep-one"
+    ],
+    "internal/proxy/ordered_json_mixed_shape_oracle_test.go": [
       "semantics/two-parsers-keep-one"
     ],
     "internal/proxy/ordered_json_mixed_stats_test.go": [
@@ -6972,7 +6976,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 823,
+  "tests_with_markers": 824,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

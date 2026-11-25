@@ -39,7 +39,7 @@ func (plan *orderedJSONMetricPlan) mixedStatsClass() (*mixedJSONRowClass, bool) 
 	if !plan.mixedStatsStages(key) {
 		return nil, false
 	}
-	return newMixedJSONRowClass(key)
+	return newMixedJSONRowClassFor(key, plan.mixedProjectionStages(key))
 }
 
 func (plan *orderedJSONMetricPlan) mixedStatsStages(key string) bool {
@@ -128,7 +128,7 @@ func (p *Proxy) collectOrderedMixedJSONStats(ctx context.Context, plan *orderedJ
 	// A certificate derived for this tenant, selector and window class is reused for a minute. The re-read after
 	// the scan is what keeps it sound: it lists the names of the rows the scan could see, and they must all be
 	// among the remembered ones, whatever the age of the entry.
-	memoKey := p.mixedCertMemoKey(ctx, base, class.label, fetchStart, end)
+	memoKey := p.mixedCertMemoKey(ctx, base, class.label, class.explicit, fetchStart, end)
 	if entry, ok := p.mixedCertificates.get(memoKey, time.Now()); ok {
 		if entry.certified == nil {
 			p.observeInternalOperation(ctx, "mixed_class_certificate", "cache_hit_class", 0)
@@ -183,10 +183,11 @@ func (p *Proxy) scanCertifiedMixedJSONStats(ctx context.Context, plan *orderedJS
 
 // mixedCertMemoKey keys a remembered certificate by tenant and auth scope, the selector's backend query, the class
 // label and the window class.
-func (p *Proxy) mixedCertMemoKey(ctx context.Context, base, label string, from, to time.Time) string {
+func (p *Proxy) mixedCertMemoKey(ctx context.Context, base, label string, explicit bool, from, to time.Time) string {
 	params := url.Values{}
 	params.Set("query", base)
 	params.Set("label", label)
+	params.Set("explicit", strconv.FormatBool(explicit)) // the explicit order's class has fewer guards
 	params.Set("window", mixedCertWindowClass(to.Sub(from)))
 	return p.metadataFieldNamesCacheKey(ctx, "mxc:", params)
 }

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
@@ -822,5 +824,71 @@ func TestMixedClassFieldNamesCleanImpliesEnvelopeKeyGuards(t *testing.T) {
 		if accepted < 100 {
 			t.Fatalf("label=%s: only %d names accepted; the test lost its coverage", label, accepted)
 		}
+	}
+}
+
+// conformance: semantics/two-parsers-keep-one
+func TestMixedJSONRowClassExplicitOrderDropsOnlyTheKeyTextGuards(t *testing.T) {
+	for _, label := range []string{"k", "user_id", "a_b_c"} {
+		full, ok1 := newMixedJSONRowClassFor(label, false)
+		explicit, ok2 := newMixedJSONRowClassFor(label, true)
+		if !ok1 || !ok2 || full.explicit || !explicit.explicit {
+			t.Fatalf("%s: classes missing or mislabeled", label)
+		}
+		if def, _ := newMixedJSONRowClass(label); !reflect.DeepEqual(def.safe, full.safe) {
+			t.Fatalf("%s: newMixedJSONRowClass is not the full class", label)
+		}
+		// The full class has the 129-run guard, the alias guard and one nested-prefix guard per underscore span; the
+		// explicit one has none of them and every other guard, in the same order.
+		dropped := 2 + strings.Count(label, "_")
+		if len(full.safe.(logsql.AllOf))-len(explicit.safe.(logsql.AllOf)) != dropped {
+			t.Fatalf("%s: explicit class drops %d guards, want %d", label, len(full.safe.(logsql.AllOf))-len(explicit.safe.(logsql.AllOf)), dropped)
+		}
+		isKeyText := func(g logsql.FilterExpr) bool {
+			f, ok := g.(logsql.FieldFilter)
+			return ok && f.Field == "_msg" && f.Negate && (f.Value == `"[A-Za-z0-9_]{129}` || f.Value == mixedClassBodyAliasPattern(label) ||
+				(strings.Contains(label, "_") && strings.HasSuffix(f.Value, `"\s*:\s*\{`)))
+		}
+		kept := func(c *mixedJSONRowClass) []string {
+			var out []string
+			for _, g := range c.safe.(logsql.AllOf) {
+				if !isKeyText(g) {
+					out = append(out, g.String())
+				}
+			}
+			return out
+		}
+		if !reflect.DeepEqual(kept(full), kept(explicit)) {
+			t.Fatalf("%s: the explicit class differs from the full one beyond the three key-text guards", label)
+		}
+		for _, g := range explicit.safe.(logsql.AllOf) {
+			if isKeyText(g) {
+				t.Fatalf("%s: explicit class still has a key-text guard: %s", label, g.String())
+			}
+		}
+		dropCount := 0
+		for _, g := range full.safe.(logsql.AllOf) {
+			if isKeyText(g) {
+				dropCount++
+			}
+		}
+		if dropCount != dropped {
+			t.Fatalf("%s: the full class has %d key-text guards, want %d", label, dropCount, dropped)
+		}
+	}
+}
+
+// A class derived for one parser order must never be served to the other: the certificate memo is keyed by the order.
+func TestMixedCertMemoKeySeparatesTheParserOrders(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", LogLevel: "error", MetadataInventoryParallelism: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	from := time.Unix(1700000000, 0)
+	a := p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", false, from, from.Add(time.Hour))
+	b := p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", true, from, from.Add(time.Hour))
+	if a == b || a != p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", false, from, from.Add(time.Hour)) {
+		t.Fatalf("memo keys: full %q explicit %q", a, b)
 	}
 }

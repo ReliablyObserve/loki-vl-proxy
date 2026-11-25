@@ -32,10 +32,24 @@ type mixedJSONRowClass struct {
 	// base is the guards before the five that read the packed envelope.
 	base          logsql.AllOf
 	originalField string
+	// explicit is the class of `json k="[\"k\"]" | logfmt`, which reads only the named path (see
+	// newMixedJSONRowClassFor); the memo key carries it, so a class of one shape is never served to the other.
+	explicit bool
 }
 
 // conformance: semantics/two-parsers-keep-one
 func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
+	return newMixedJSONRowClassFor(label, false)
+}
+
+// newMixedJSONRowClassFor is the class for one of the two parser orders. The bare `logfmt | json` runs Loki's full
+// JSON parse, which flattens nested objects, trims and sanitizes every key and so can read another spelling as the
+// extracted key; three guards on the message's key text keep those rows out of the native count. The explicit
+// `json k="[\"k\"]" | logfmt` reads only the named path: what is in the other keys cannot reach the label, so a row
+// is no less safe for a trimmed, nested, dotted or long other key, and the native count takes it. The recorded Loki
+// answers for those rows, both orders, through real VictoriaLogs 1.49 and 1.54, are
+// TestOrderedMixedStatsShapeKeysMatchRecordedLoki; the duplicate-key, hazard and target guards are the same for both.
+func newMixedJSONRowClassFor(label string, explicit bool) (*mixedJSONRowClass, bool) {
 	if len(label) > 128 || !orderedJSONPushdownLabelOK(label) || !isValidLabelName(label) || strings.HasPrefix(label, "_") ||
 		strings.HasSuffix(label, "_extracted") || label == "level" {
 		return nil, false
@@ -87,16 +101,21 @@ func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
 		// characters": any quoted run that long, so a row with a long value
 		// is rejected too and takes the exact complement, which only costs
 		// that row its native count.
-		regex("_msg", `"[A-Za-z0-9_]{129}`, true),
-		regex("_msg", mixedClassBodyAliasPattern(label), true),
-		// Reuse the existing closed JSON disagreement predicate as typed
-		// nodes, preserving the legacy spelling without a deferred-text site.
-		logsql.NotExpr{Expr: jsonLokiRejectHazardFilter()},
 	}
-	parts := strings.Split(label, "_")
-	for i := 1; i < len(parts); i++ {
-		prefix := regexp.QuoteMeta(strings.Join(parts[:i], "_"))
-		safe = append(safe, regex("_msg", `"`+prefix+`"\s*:\s*\{`, true))
+	if !explicit {
+		safe = append(safe,
+			regex("_msg", `"[A-Za-z0-9_]{129}`, true),
+			regex("_msg", mixedClassBodyAliasPattern(label), true))
+	}
+	// Reuse the existing closed JSON disagreement predicate as typed
+	// nodes, preserving the legacy spelling without a deferred-text site.
+	safe = append(safe, logsql.NotExpr{Expr: jsonLokiRejectHazardFilter()})
+	if !explicit {
+		parts := strings.Split(label, "_")
+		for i := 1; i < len(parts); i++ {
+			prefix := regexp.QuoteMeta(strings.Join(parts[:i], "_"))
+			safe = append(safe, regex("_msg", `"`+prefix+`"\s*:\s*\{`, true))
+		}
 	}
 	// The guards that read the packed envelope force pack_json for the block and
 	// are the most expensive, so they come last, after every message, stream and
@@ -128,6 +147,7 @@ func newMixedJSONRowClass(label string) (*mixedJSONRowClass, bool) {
 		nativePrepare: prepare,
 		base:          base,
 		safe:          safe,
+		explicit:      explicit,
 	}, true
 }
 
