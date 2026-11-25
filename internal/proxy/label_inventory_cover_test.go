@@ -1,0 +1,214 @@
+package proxy
+
+import (
+	"context"
+	"math/rand/v2"
+	"net/url"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+)
+
+// The label browser over a window moved back by an hour or more (the A/B
+// shape "refresh labels (label browser)" moves its 24h window back 3617 s per
+// run, and its 6h window 317 s) used to read each unaligned end of the window
+// as an edge plus minute and 5-minute buckets that no earlier request cached:
+// about 19 VictoriaLogs calls, five rounds at four in parallel. The pieces of
+// each end are now answered by the hour that holds them: cached, or one count
+// and one scan, and the answer lists exactly the names of one full-range call.
+//
+// conformance: semantics/label-browser-latency-cold-and-refresh, semantics/label-inventory-exact-and-incremental, loki_api_v1_labels
+func TestLabelsInventory_ShiftedWindowReadsTheHoursOfItsEnds(t *testing.T) {
+	vl := &fakeVictoriaLogs{}
+	now := time.Now()
+	seedStableLabels(vl, now)
+	bucketed := newInventoryTestProxy(t, vl, 4)
+	full := newInventoryTestProxy(t, vl, -1)
+	// Sealed, unaligned and at a fixed place in its hour, so every run plans
+	// the same pieces whatever the wall clock says.
+	end0 := now.Truncate(time.Hour).Add(-2*time.Hour + 26*time.Minute + 50*time.Second)
+	for _, tc := range []struct {
+		window, shift   time.Duration
+		maxScans, maxRT int
+	}{
+		{24 * time.Hour, 3617 * time.Second, 2, 4},
+		{6 * time.Hour, 317 * time.Second, 3, 4},
+	} {
+		t.Run(tc.window.String(), func(t *testing.T) {
+			_ = labelsAnswer(t, bucketed, end0.Add(-tc.window), end0) // the first load fills the buckets
+			vl.reset()
+			for run := 1; run <= 3; run++ {
+				end := end0.Add(-time.Duration(run) * tc.shift)
+				got := labelsAnswer(t, bucketed, end.Add(-tc.window), end)
+				calls, spans := vl.reset()
+				want := labelsAnswer(t, full, end.Add(-tc.window), end)
+				vl.reset()
+				if got != want {
+					t.Fatalf("run %d: bucketed %s, one call %s", run, got, want)
+				}
+				scans := calls["/select/logsql/stream_field_names"]
+				total := scans + calls["/select/logsql/query"]
+				t.Logf("run %d: %d listings %v, %d counts", run, scans, spans, calls["/select/logsql/query"])
+				if scans > tc.maxScans || total > tc.maxRT {
+					t.Fatalf("run %d made %d listings and %d calls in all, want at most %d and %d: %v", run, scans, total, tc.maxScans, tc.maxRT, spans)
+				}
+			}
+		})
+	}
+}
+
+// A name that only the pieces at a window's end hold is never lost: the
+// covering hour holds it too, so it is not among the names of the rest of the
+// window, and the pieces are read exactly. Random windows, shifts and rows
+// with a label of their own, against one full-range call.
+//
+// conformance: semantics/label-inventory-exact-and-incremental, loki_api_v1_labels
+func TestLabelsInventory_CoveredEndsMatchOneFullRangeCall(t *testing.T) {
+	rng := rand.New(rand.NewPCG(17, 23))
+	now := time.Now()
+	for trial := 0; trial < 12; trial++ {
+		vl := &fakeVictoriaLogs{}
+		seedRows(vl, now, rng)
+		for i := 0; i < 6; i++ {
+			ts := now.Add(-time.Duration(rng.Int64N(int64(50 * time.Hour))))
+			vl.add(fakeVLRow{ts: ts.UnixNano(), stream: map[string]string{"app": "api", "only_" + strconv.Itoa(i): "x"}})
+		}
+		bucketed := newInventoryTestProxy(t, vl, 4)
+		full := newInventoryTestProxy(t, vl, -1)
+		window := []time.Duration{6 * time.Hour, 24 * time.Hour, 7 * 24 * time.Hour, 3*time.Hour + 17*time.Minute}[trial%4]
+		end := now.Add(-time.Minute - time.Duration(rng.Int64N(int64(26*time.Hour))))
+		for step := 0; step < 6; step++ {
+			start := end.Add(-window)
+			got, want := labelsAnswer(t, bucketed, start, end), labelsAnswer(t, full, start, end)
+			if got != want {
+				t.Fatalf("trial %d step %d, %s ending %s:\n bucketed %s\n one call %s", trial, step, window, end.UTC().Format(time.RFC3339Nano), got, want)
+			}
+			// The next window: moved back by up to two hours, or forward by
+			// seconds (a refresh), never into the unsealed last minute.
+			if rng.IntN(3) == 0 {
+				end = end.Add(time.Duration(1+rng.IntN(90)) * time.Second)
+				if limit := now.Add(-time.Minute); end.After(limit) {
+					end = limit
+				}
+			} else {
+				end = end.Add(-time.Duration(1+rng.Int64N(int64(2*time.Hour/time.Second))) * time.Second)
+			}
+		}
+	}
+}
+
+// Only the /labels path reads names alone: a label values listing, and a
+// names listing asked without the mark (detected labels, the stream label
+// cache), keep VictoriaLogs' exact hits and order, and a names-only answer
+// never lands in the exact field-name cache other readers share.
+//
+// conformance: semantics/label-inventory-exact-and-incremental, loki_api_v1_label_name_values
+func TestLabelsInventory_ExactListingsKeepHitsAndOrder(t *testing.T) {
+	vl := &fakeVictoriaLogs{}
+	now := time.Now()
+	seedStableLabels(vl, now)
+	end0 := now.Truncate(time.Minute).Add(-2*time.Minute - 13*time.Second)
+	end := end0.Add(-3617 * time.Second)
+	// A label only the first seconds of the shifted window hold: a piece of
+	// its left end.
+	vl.add(fakeVLRow{ts: end.Add(-24*time.Hour + 30*time.Second).UnixNano(), stream: map[string]string{"rare": "1"}})
+	bucketed := newInventoryTestProxy(t, vl, 4)
+	full := newInventoryTestProxy(t, vl, -1)
+	_ = labelsAnswer(t, bucketed, end0.Add(-24*time.Hour), end0)
+	params := url.Values{"query": {"*"}, "start": {strconv.FormatInt(end.Add(-24*time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
+	_ = labelsAnswer(t, bucketed, end.Add(-24*time.Hour), end)
+	names := withNamesOnlyListing(context.Background())
+	for _, l := range []struct {
+		ctx   context.Context
+		path  string
+		extra url.Values
+	}{
+		{names, "/select/logsql/stream_field_values", url.Values{"field": {"pod"}}},
+		{names, "/select/logsql/field_names", nil},
+		{context.Background(), "/select/logsql/stream_field_names", nil},
+	} {
+		q := url.Values{}
+		for k, v := range params {
+			q[k] = v
+		}
+		for k, v := range l.extra {
+			q[k] = v
+		}
+		got, err := bucketed.fetchVLListing(l.ctx, l.path, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := full.fetchVLListing(context.Background(), l.path, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: bucketed %v, one call %v", l.path, got, want)
+		}
+	}
+	// The exact field-name cache keeps VictoriaLogs' order (hits descending).
+	got, err := bucketed.fetchStreamFieldNamesCached(context.Background(), params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := full.fetchStreamFieldNamesCached(context.Background(), params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("exact field names after a names-only listing: %v, want %v", got, want)
+	}
+	if !strings.Contains(labelsAnswer(t, bucketed, end.Add(-24*time.Hour), end), `"rare"`) {
+		t.Fatal("the label held by one end of the window is missing")
+	}
+}
+
+// FuzzLabelsInventoryCover holds the names-only listing of a window and of
+// the window moved by a shift to one full-range call, over rows with labels
+// of their own placed by the input.
+func FuzzLabelsInventoryCover(f *testing.F) {
+	f.Add(uint16(1440), int32(3617), uint16(77), uint16(1500), uint16(3000))
+	f.Add(uint16(360), int32(317), uint16(5), uint16(361), uint16(10))
+	f.Add(uint16(100), int32(-45), uint16(0), uint16(59), uint16(61))
+	now := time.Now().Truncate(time.Minute)
+	f.Fuzz(func(t *testing.T, windowMin uint16, shiftS int32, endAgoMin, rowA, rowB uint16) {
+		window := time.Duration(windowMin%(4*1440)+11) * time.Minute
+		end := now.Add(-time.Duration(endAgoMin%(2*1440)+2)*time.Minute - 13*time.Second)
+		vl := &fakeVictoriaLogs{}
+		for ts := end.Add(-window - 3*time.Hour); ts.Before(now); ts = ts.Add(7 * time.Minute) {
+			vl.add(fakeVLRow{ts: ts.UnixNano(), stream: map[string]string{"app": "api"}})
+		}
+		vl.add(fakeVLRow{ts: end.Add(-time.Duration(rowA) * time.Minute).UnixNano(), stream: map[string]string{"only_a": "1"}})
+		vl.add(fakeVLRow{ts: end.Add(-time.Duration(rowB) * 17 * time.Second).UnixNano(), stream: map[string]string{"only_b": "1"}})
+		bucketed := newInventoryTestProxy(t, vl, 4)
+		full := newInventoryTestProxy(t, vl, -1)
+		for _, e := range []time.Time{end, end.Add(-time.Duration(shiftS%(3*3600)) * time.Second)} {
+			if limit := now.Add(-time.Minute); e.After(limit) {
+				e = limit
+			}
+			if got, want := labelsAnswer(t, bucketed, e.Add(-window), e), labelsAnswer(t, full, e.Add(-window), e); got != want {
+				t.Fatalf("%s ending %s: bucketed %s, one call %s", window, e.UTC().Format(time.RFC3339), got, want)
+			}
+		}
+	})
+}
+
+// newInventoryTestProxyAt is newInventoryTestProxy for a VictoriaLogs at url.
+func newInventoryTestProxyAt(t *testing.T, url string, parallelism int) *Proxy {
+	t.Helper()
+	p, err := New(Config{
+		BackendURL:                   url,
+		Cache:                        cache.New(time.Hour, 100000),
+		LogLevel:                     "error",
+		MetadataInventoryParallelism: parallelism,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	return p
+}

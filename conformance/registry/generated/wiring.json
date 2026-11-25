@@ -489,6 +489,7 @@
       "test/e2e-compat/labels_alias_test.go"
     ],
     "loki_api_v1_label_name_values": [
+      "internal/proxy/label_inventory_cover_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
       "internal/proxy/metadata_inventory_test.go",
@@ -498,6 +499,8 @@
     "loki_api_v1_labels": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/label_cache_behavior_test.go",
+      "internal/proxy/label_inventory_cover_oracle_test.go",
+      "internal/proxy/label_inventory_cover_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/labels_alias_test.go",
       "internal/proxy/labels_post_form_cache_test.go",
@@ -1839,6 +1842,8 @@
       "internal/proxy/keyword_fold_runes_test.go"
     ],
     "semantics/label-browser-latency-cold-and-refresh": [
+      "internal/proxy/label_inventory_cover_oracle_test.go",
+      "internal/proxy/label_inventory_cover_test.go",
       "internal/proxy/metadata_inventory_test.go"
     ],
     "semantics/label-filter-after-regexp-parser-misses-metadata": [
@@ -1888,6 +1893,8 @@
       "internal/logql/stage_parse_validate_loki_test.go"
     ],
     "semantics/label-inventory-exact-and-incremental": [
+      "internal/proxy/label_inventory_cover_oracle_test.go",
+      "internal/proxy/label_inventory_cover_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/label_values_cap_inventory_test.go",
       "internal/proxy/metadata_inventory_test.go"
@@ -4118,6 +4125,17 @@
       "semantics/detected-fields-empty-answer",
       "semantics/line-format-template-error-keeps-entry",
       "semantics/unwrap-conversion-error"
+    ],
+    "internal/proxy/label_inventory_cover_oracle_test.go": [
+      "loki_api_v1_labels",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental"
+    ],
+    "internal/proxy/label_inventory_cover_test.go": [
+      "loki_api_v1_label_name_values",
+      "loki_api_v1_labels",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental"
     ],
     "internal/proxy/label_map_plan_test.go": [
       "architecture-syntax-package-layering"
@@ -6984,7 +7002,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 826,
+  "tests_with_markers": 828,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

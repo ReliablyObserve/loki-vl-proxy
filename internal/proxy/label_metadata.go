@@ -196,6 +196,9 @@ func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, 
 }
 
 func (p *Proxy) fetchScopedLabelNames(ctx context.Context, rawQuery, start, end, search string, useInventoryCache bool) ([]string, error) {
+	// Its callers answer /labels, which lists the names sorted: their hits and
+	// VictoriaLogs' order never reach a client.
+	ctx = withNamesOnlyListing(ctx)
 	start, end = lokiLabelStartToVL(start), lokiLabelEndToVL(end)
 	candidates := metadataQueryCandidates(rawQuery)
 	var lastErr error
@@ -338,7 +341,13 @@ type labelCacheBypassKey struct{}
 // the background path because it lists only stream labels; field_names would also
 // list message and structured fields that Loki never reports as labels.
 func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
-	cacheKey := p.metadataFieldNamesCacheKey(ctx, "sfn:", params)
+	prefix := "sfn:"
+	if isNamesOnlyListing(ctx) {
+		// The names of a names-only listing are not in VictoriaLogs' order,
+		// which other readers of this cache keep.
+		prefix = "sfnn:"
+	}
+	cacheKey := p.metadataFieldNamesCacheKey(ctx, prefix, params)
 	if ctx.Value(labelCacheBypassKey{}) == nil {
 		if fields, ok := p.cachedFieldNames(ctx, cacheKey); ok {
 			return fields, nil
@@ -498,6 +507,10 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 	}
 
 	cacheKey := "label_inventory:" + getOrgID(ctx) + ":" + readCacheKeyVersion("label_inventory") + ":" + params.Encode()
+	if isNamesOnlyListing(ctx) {
+		// Not in VictoriaLogs' order, which targetLabels resolution reads.
+		cacheKey += ":names"
+	}
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			cacheKey += ":auth:" + fp

@@ -382,7 +382,7 @@ jobs:
         if: needs.plan.outputs.query_corpus == 'true'
         env:
           LVP_RUN_ORACLES: "1"
-        run: go test ./internal/proxy -run '^(TestVLRefusalPredictionMatchesVictoriaLogs|TestMixedJSONRowClassActualVictoriaLogsPartition|TestMixedJSONRowClassRelevantAliasesActualVictoriaLogsAndLoki|TestOrderedMixedStatsActualRangeMatchesRecordedLoki|TestOrderedMixedStatsActualSourceAliasesMatchCanonicalLoki)$' -count=1 -v -timeout=10m
+        run: go test ./internal/proxy -run '^(TestVLRefusalPredictionMatchesVictoriaLogs|TestMixedJSONRowClassActualVictoriaLogsPartition|TestMixedJSONRowClassRelevantAliasesActualVictoriaLogsAndLoki|TestOrderedMixedStatsActualRangeMatchesRecordedLoki|TestOrderedMixedStatsActualSourceAliasesMatchCanonicalLoki|TestLabelsInventoryCoverOnVictoriaLogs)$' -count=1 -v -timeout=10m
 
       - name: Upload quality diagnostics
         if: always()

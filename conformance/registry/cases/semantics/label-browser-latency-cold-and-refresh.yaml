@@ -29,9 +29,22 @@ why: |
   23.4 s): only its buckets make the next windows cheap, and the keep-warm
   loop fills them for the 1 h to 7 d presets.
 
+  A window moved back by an hour or more has new unaligned ends that no
+  earlier request cached: each end was an edge plus up to three minute and
+  eleven 5-minute buckets, about 19 VictoriaLogs calls per 24h /labels, five
+  rounds at four in parallel. In the perf A/B of 2026-11-25 (loki-defaults,
+  runs 45611003635 and 45633797620) the shape "refresh labels (label
+  browser)", which moves its 24h window back 3617 s per run, took 306 and
+  273 ms warm against Loki's 64 and 66 ms with 20 calls per request, and its
+  6h window (moved back 317 s) 21-56 ms against 2-3 ms. Since 2026-11-25 the
+  names-only /labels listing answers those pieces from the hour that holds
+  them (semantics/label-inventory-exact-and-incremental): 2.7 calls per
+  moved 24h request and 3 for a refresh across an hour boundary instead of
+  19 each, first loads unchanged (BenchmarkLabelsShiftedWindow).
+
   Implemented in internal/proxy/metadata_inventory.go (the bucketed
-  inventory) and internal/proxy/label_metadata.go (warmMetadataCacheOnStartup,
-  warmLabelWindows, labelKeepWarmSchedule).
+  inventory, coverFinePieces) and internal/proxy/label_metadata.go
+  (warmMetadataCacheOnStartup, warmLabelWindows, labelKeepWarmSchedule).
 request:
   method: GET
   path: /loki/api/v1/labels

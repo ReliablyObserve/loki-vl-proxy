@@ -42,9 +42,26 @@ why: |
   warm-up and keep-warm run as the /labels request of a client without a
   tenant header, so the buckets they fill are the ones such requests read.
 
+  /labels reads only the set of names (sorted, without hits), so its listing
+  is names-only (2026-11-25): once the window's own hour and day buckets are
+  cached, a run of pieces finer than an hour inside one sealed hour (edges,
+  minute and 5-minute buckets) is answered by that hour when it saves calls
+  (the hour is cached and every name it holds is among the names of the
+  window's own buckets, or the pieces would take more than one round of
+  parallel calls). A piece's names are a subset of its hour's names, so an
+  hour whose names all appear in the rest of the window adds none; when one
+  would add a name, the pieces are read exactly. The names equal one
+  full-range call's; the hits and order of the merged listing are not
+  VictoriaLogs' (nothing reads them), and the names-only answers are cached
+  under their own keys, apart from the exact field-name and label inventory
+  entries that detected labels, the stream label cache and targetLabels
+  resolution read in VictoriaLogs' order. Label values and every other
+  listing keep every piece.
+
   Implemented in internal/proxy/metadata_inventory.go (bucket plan, merge,
-  revalidation, counted buckets) and internal/proxy/label_metadata.go
-  (fetchScopedLabelNames, fetchScopedLabelValues).
+  revalidation, counted buckets, coverFinePieces, coverPays, resolveCovers)
+  and internal/proxy/label_metadata.go (fetchScopedLabelNames,
+  fetchScopedLabelValues).
 request:
   method: GET
   path: /loki/api/v1/labels
@@ -66,7 +83,9 @@ compare:
     Every answer equals the answer of the same build with the inventory off
     (-metadata-inventory-parallelism=0), values, hits and order included, for
     stream field names and values, field names and values, unfiltered and
-    selector queries, windows from 37 minutes to 50 hours ending at any time;
+    selector queries, windows from 37 minutes to 50 hours ending at any time
+    (the names-only /labels listing: the same names, on the fake and on
+    VictoriaLogs v1.49.0 and v1.54.0);
     a window moved by seconds reads only its edges from VictoriaLogs; a row
     written late into a revalidated hour appears; a failed bucket fails the
     listing, never a partial answer; a request sharing a bucket with a

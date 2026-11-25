@@ -532,6 +532,10 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 	// running: they finish and are cached, so the retry that follows a 429
 	// continues where this request stopped instead of starting over. Only
 	// the request's own context cancels them.
+	var covers map[int][]inventorySegment
+	if path == "/select/logsql/stream_field_names" && isNamesOnlyListing(ctx) {
+		plan, covers = p.coverFinePieces(path, base, plan, now.Add(-metadataInventorySealLag).UnixNano())
+	}
 	var rescan map[string]struct{}
 	if countable {
 		rescan = p.revalidateLiveRuns(ctx, path, params, base, plan)
@@ -581,12 +585,245 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 		}
 		return nil, err
 	}
+	if len(covers) > 0 {
+		if err := p.resolveCovers(ctx, path, params, base, parts, covers, countable, longListing); err != nil {
+			return nil, err
+		}
+	}
 	p.observeInternalOperation(ctx, "metadata_inventory", inventoryOutcome(scanned, revalidated, reused), time.Since(now))
 	merged := mergeVLValueHits(parts...)
 	if err := p.checkMergedListingCap(ctx, path, merged); err != nil {
 		return nil, err
 	}
 	return merged, nil
+}
+
+// namesOnlyListingKey marks a listing whose caller reads only the set of
+// names: /labels sorts them and never shows their hits. Such a listing may
+// answer the pieces of a window finer than an hour from the hour that holds
+// them (coverFinePieces), so the merged answer has the same names as one
+// full-range call, but not its hits or its order.
+type namesOnlyListingKey struct{}
+
+func withNamesOnlyListing(ctx context.Context) context.Context {
+	return context.WithValue(ctx, namesOnlyListingKey{}, true)
+}
+
+func isNamesOnlyListing(ctx context.Context) bool { return ctx.Value(namesOnlyListingKey{}) != nil }
+
+// coverFinePieces replaces, in the plan of a names-only listing, each run of
+// pieces finer than an hour (5-minute and minute buckets, unaligned edges)
+// that lies inside one sealed hour by that hour, when that saves VictoriaLogs
+// calls (coverPays). It returns the new plan and, by plan index, the pieces
+// each covering hour stands in for.
+//
+// The names of a piece are a subset of the names of any bucket holding it,
+// so a covering hour whose names all appear in the rest of the window adds no
+// name and the pieces need no scan (resolveCovers checks this and scans the
+// pieces when it fails). A window moved by an hour or more (a dashboard
+// opened later, the label browser over yesterday) has new unaligned ends: up
+// to fifteen pieces on each side, cached by no earlier request, which are
+// ceil(pieces/parallelism) rounds of VictoriaLogs calls. Their hours are one
+// count and one scan when not cached, and nothing when cached; a refresh that
+// moves an end within the same hour then needs no call for it.
+//
+// The decision reads the memory tier only (no disk or peer lookups, which the
+// fetch makes anyway), and nothing changes while the middle hour or day
+// bucket of the window is not there: a first load plans its pieces as before.
+func (p *Proxy) coverFinePieces(path, base string, plan []inventorySegment, sealBefore int64) ([]inventorySegment, map[int][]inventorySegment) {
+	hour := int64(time.Hour)
+	fine := func(seg inventorySegment) bool { return seg.level < 0 || seg.level >= 2 }
+	// A window moved from an earlier one shares its middle with it.
+	own := 0
+	for _, seg := range plan {
+		if !fine(seg) {
+			own++
+		}
+	}
+	if own == 0 {
+		return plan, nil
+	}
+	for i, n := 0, 0; i < len(plan); i++ {
+		if fine(plan[i]) {
+			continue
+		}
+		if n == own/2 {
+			if _, ok := p.cache.Peek(inventoryBucketKey(base, plan[i])); !ok {
+				return plan, nil
+			}
+			break
+		}
+		n++
+	}
+	// The names the window's own hour and day buckets held when they were
+	// cached: what the exact part of the answer is expected to list.
+	var known map[string]struct{}
+	knownNames := func() map[string]struct{} {
+		if known != nil {
+			return known
+		}
+		known = map[string]struct{}{}
+		for _, seg := range plan {
+			if fine(seg) {
+				continue
+			}
+			if e, ok := p.peekInventoryEntry(inventoryBucketKey(base, seg)); ok {
+				for _, v := range e.Values {
+					known[v] = struct{}{}
+				}
+			}
+		}
+		return known
+	}
+	out := make([]inventorySegment, 0, len(plan))
+	var covers map[int][]inventorySegment
+	for i := 0; i < len(plan); {
+		seg := plan[i]
+		if !fine(seg) {
+			out = append(out, seg)
+			i++
+			continue
+		}
+		cover := inventorySegment{start: seg.start - seg.start%hour, level: 1}
+		cover.end = cover.start + hour
+		j := i
+		for j < len(plan) && fine(plan[j]) && plan[j].start >= cover.start && plan[j].end <= cover.end {
+			j++
+		}
+		if j == i { // a piece across an hour boundary: the unsealed end of the window
+			out = append(out, seg)
+			i++
+			continue
+		}
+		run := plan[i:j]
+		if cover.end <= sealBefore && p.coverPays(path, base, cover, run, knownNames) {
+			if covers == nil {
+				covers = map[int][]inventorySegment{}
+			}
+			covers[len(out)] = append([]inventorySegment(nil), run...)
+			out = append(out, cover)
+		} else {
+			out = append(out, run...)
+		}
+		i = j
+	}
+	return out, covers
+}
+
+// coverPays reports whether answering run from its hour costs fewer
+// VictoriaLogs calls than answering its pieces, and is expected to add no
+// name. The pieces that need a call are every edge and every bucket not in
+// memory. A cached hour is used when a piece needs a call and every name it
+// holds is among the names the window's own hour and day buckets hold
+// (known), and when it is fresh or more than one piece needs a call (its
+// revalidation is one count or one scan). An hour not cached is one count and
+// one scan: it is used only when the pieces fill more than one round of the
+// listing's parallel calls and the window's own buckets hold names.
+func (p *Proxy) coverPays(path, base string, cover inventorySegment, run []inventorySegment, known func() map[string]struct{}) bool {
+	if e, ok := p.peekInventoryEntry(inventoryBucketKey(base, cover)); ok {
+		missing := runMissing(run, 2, func(seg inventorySegment) bool {
+			_, ok := p.cache.Peek(inventoryBucketKey(base, seg))
+			return ok
+		})
+		if missing == 0 {
+			return false
+		}
+		names := known()
+		for _, v := range e.Values {
+			if _, ok := names[v]; !ok {
+				return false
+			}
+		}
+		return missing > 1 || p.inventoryEntryFresh(path, cover, e)
+	}
+	need := p.metadataInventoryParallelism + 1
+	return runMissing(run, need, func(seg inventorySegment) bool {
+		_, ok := p.cache.Peek(inventoryBucketKey(base, seg))
+		return ok
+	}) >= need && len(known()) > 0
+}
+
+// runMissing counts the pieces of run that need a VictoriaLogs call (every
+// edge, every bucket cached reports false for), up to enough: it stops once
+// it has found enough or the pieces left cannot make it.
+func runMissing(run []inventorySegment, enough int, cached func(inventorySegment) bool) int {
+	missing, left := 0, 0
+	for _, seg := range run {
+		if seg.level < 0 {
+			missing++
+		} else {
+			left++
+		}
+	}
+	for _, seg := range run {
+		if missing >= enough || missing+left < enough {
+			return missing
+		}
+		if seg.level < 0 {
+			continue
+		}
+		left--
+		if !cached(seg) {
+			missing++
+		}
+	}
+	return missing
+}
+
+// peekInventoryEntry reads a bucket entry from the memory tier only.
+func (p *Proxy) peekInventoryEntry(key string) (inventoryEntry, bool) {
+	raw, ok := p.cache.Peek(key)
+	if !ok {
+		return inventoryEntry{}, false
+	}
+	var e inventoryEntry
+	if json.Unmarshal(raw, &e) != nil || len(e.Hits) != len(e.Values) {
+		return inventoryEntry{}, false
+	}
+	return e, true
+}
+
+// resolveCovers drops each covering hour whose names all appear in the parts
+// of the window that are answered exactly, and answers the pieces of every
+// other covering hour exactly, so the names are those of one full-range call.
+func (p *Proxy) resolveCovers(ctx context.Context, path string, params url.Values, base string, parts [][]vlValueHits, covers map[int][]inventorySegment, countable, longListing bool) error {
+	known := map[string]struct{}{}
+	for i, part := range parts {
+		if _, cover := covers[i]; cover {
+			continue
+		}
+		for _, item := range part {
+			known[item.Value] = struct{}{}
+		}
+	}
+	var rescan []int
+	for i := range covers {
+		for _, item := range parts[i] {
+			if _, ok := known[item.Value]; !ok {
+				rescan = append(rescan, i)
+				break
+			}
+		}
+		parts[i] = nil
+	}
+	var group errgroup.Group
+	group.SetLimit(p.metadataInventoryParallelism)
+	var mu sync.Mutex
+	for _, i := range rescan {
+		for _, seg := range covers[i] {
+			group.Go(func() error {
+				items, _, err := p.fetchInventorySegment(ctx, path, params, base, seg, countable, longListing, false)
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				parts[i] = append(parts[i], items...)
+				mu.Unlock()
+				return nil
+			})
+		}
+	}
+	return group.Wait()
 }
 
 // vlListingEncodedSize is the size of the response VictoriaLogs sends for a
