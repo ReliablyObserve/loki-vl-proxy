@@ -124,7 +124,11 @@ func (m *Metrics) RecordCacheLookup(tier, result string, d time.Duration) {
 // writeBucketLines writes one series' cumulative bucket lines, name_bucket{labels,le="bound"} count, and its
 // +Inf line. Everything before the bound is built once: bucket lines are most of a /metrics answer.
 func writeBucketLines(sb *strings.Builder, name, labels string, h histogramSnapshot) {
-	prefix := name + "_bucket{" + labels + `,le="`
+	prefix := name + "_bucket{" + labels
+	if labels != "" {
+		prefix += ","
+	}
+	prefix += `le="`
 	var num [32]byte
 	for i, b := range h.buckets {
 		sb.WriteString(prefix)
@@ -141,8 +145,11 @@ func writeBucketLines(sb *strings.Builder, name, labels string, h histogramSnaps
 
 func writeHistogramSeries(sb *strings.Builder, name, labels string, h histogramSnapshot) {
 	writeBucketLines(sb, name, labels, h)
-	fmt.Fprintf(sb, "%s_sum{%s} %g\n", name, labels, h.loadSum())
-	fmt.Fprintf(sb, "%s_count{%s} %d\n", name, labels, h.loadCount())
+	if labels != "" {
+		labels = "{" + labels + "}"
+	}
+	fmt.Fprintf(sb, "%s_sum%s %g\n", name, labels, h.loadSum())
+	fmt.Fprintf(sb, "%s_count%s %d\n", name, labels, h.loadCount())
 }
 
 func (m *Metrics) writeRequestFlowMetrics(sb *strings.Builder) {

@@ -29,6 +29,22 @@ func BenchmarkRecordRequestDurations(b *testing.B) {
 	}
 }
 
+// BenchmarkHistogramObserveDuration observes into a duration histogram with the build's own bounds.
+func BenchmarkHistogramObserveDuration(b *testing.B) {
+	for _, tc := range []struct {
+		name    string
+		seconds float64
+	}{{"fast", 0.0005}, {"middle", 0.3}, {"slow", 25}, {"above-all", 500}} {
+		b.Run(tc.name, func(b *testing.B) {
+			h := NewMetrics().backendDurations[joinMetricKey("query_range", "/loki/api/v1/query_range")]
+			b.ReportAllocs()
+			for b.Loop() {
+				h.observe(tc.seconds)
+			}
+		})
+	}
+}
+
 // BenchmarkMetricsRender renders /metrics for a replica that served the seeded routes, a few VictoriaLogs routes
 // and, in the sensitive variant, 32 tenants and 32 clients.
 func BenchmarkMetricsRender(b *testing.B) {

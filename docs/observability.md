@@ -712,16 +712,7 @@ The duration histograms (`loki_vl_proxy_request_duration_seconds`, `backend_dura
 
 `-metrics.duration-buckets` (Helm `observability.metrics.durationBuckets`) replaces the list: finite numbers above zero, ascending, at most 32. It applies to `/metrics` and OTLP push. `cache_lookup_seconds`, `peer_cache_fetch_duration_seconds` and the count histograms (`upstream_calls_per_request`, `request_fanout`, `window_count`, `client_query_length_chars`) keep fixed bounds of their own.
 
-Each bound is one series per duration histogram series, so the seven default bounds above `10` cost seven series for each: one per request route, backend route, phase and route, internal operation and outcome, and, with `-metrics.export-sensitive-labels`, per identity and route. Measured on one replica's `/metrics` (default bounds against the earlier twelve):
-
-| State of the replica | Series | Added series | Body | Gzip |
-|---|---|---|---|---|
-| just started | 1,895 | 357 (+23%) | 275 kB | 11.8 kB |
-| just started, sensitive labels | 3,673 | 693 (+23%) | 580 kB | 19.2 kB |
-| 15 routes with phases, 10 more VictoriaLogs routes, 30 operations | 4,440 | 847 (+24%) | 533 kB | 20.2 kB |
-| the same with 256 tenants and 256 clients on 5 routes each | 65,354 | 19,103 (+41%) | 10.6 MB | 211 kB |
-
-To spend fewer series, list fewer bounds. Roll a changed list out to every replica before reading quantiles: replicas with different `le` sets do not aggregate correctly.
+Each bound is one series per duration histogram series: per request route, backend route, phase and route, internal operation and outcome, and, with `-metrics.export-sensitive-labels`, per identity and route (the identity families are by far the largest). To spend fewer series, list fewer bounds. Roll a changed list out to every replica before reading quantiles: replicas with different `le` sets do not aggregate correctly.
 
 #### OTLP Push
 

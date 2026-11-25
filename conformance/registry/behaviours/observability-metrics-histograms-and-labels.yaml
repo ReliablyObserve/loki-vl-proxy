@@ -1,11 +1,11 @@
 id: observability-metrics-histograms-and-labels
 kind: observability
 title: Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape
+pending: true
 
 loki: |
-  Loki exposes request duration histograms whose highest finite bound lies
-  above its query timeouts, labelled by route. The proxy's metric names and
-  labels are its own; no Loki behaviour is mirrored here.
+  Not a Loki compatibility surface: the metric names and labels are the
+  proxy's own.
 
 victorialogs: |
   A VictoriaLogs call ends at the timeout the proxy sends with it or at
@@ -46,13 +46,13 @@ decisions:
       7 series per duration histogram series.
     evidence: 'GitHub issue #1765; /metrics of one replica rendered on 2026-11-26, base against change: just started 1,538 to 1,895 series (gzip 10.6 kB to 11.8 kB), with sensitive labels 2,980 to 3,673; 256 tenants and clients on 5 routes 46,251 to 65,354 series'
     code: [internal/metrics/duration_buckets.go, internal/metrics/metrics.go, cmd/proxy/main.go]
-    tests: [TestDefaultDurationBuckets, TestParseDurationBuckets, FuzzParseDurationBuckets, TestDurationHistogramsExposeTheBuckets, TestSlowRequestsAreToldApart, TestHistogramObserveBounds, TestOTLPDurationHistogramsUseTheBuckets, TestBuildProxyConfig_MetricsDurationBuckets, TestMetricsDurationBucketsValue]
+    tests: [TestDefaultDurationBuckets, TestParseDurationBuckets, FuzzParseDurationBuckets, TestDurationHistogramsExposeTheBuckets, TestSlowRequestsAreToldApart, TestHistogramObserveBounds, TestHistogramCumulativeAndPerBucketCounts, TestOTLPDurationHistogramsUseTheBuckets, TestBuildProxyConfig_MetricsDurationBuckets, TestMetricsDurationBucketsValue]
     quality: |
       The earlier bounds are present, count histograms keep their own, a
       configured list reaches every duration family on /metrics and OTLP, and
       an invalid list stops startup naming the flag.
     performance:
-      tracked: ['BenchmarkRecordRequestDurations', 'BenchmarkHistogramObserve', 'BenchmarkMetricsRender']
+      tracked: ['BenchmarkRecordRequestDurations', 'BenchmarkHistogramObserveDuration', 'BenchmarkMetricsRender']
       bound: 'recording costs no allocation more and no time beyond noise; a /metrics render is not slower than with the twelve bounds'
   - id: scrape-honors-the-proxy-endpoint-label
     chosen: 'The chart ServiceMonitor sets honorLabels: true (serviceMonitor.honorLabels)'

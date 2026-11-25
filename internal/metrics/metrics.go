@@ -179,7 +179,9 @@ type histogram struct {
 	sum     float64
 	count   int64
 	buckets []float64
-	counts  []int64
+	// counts holds each observation once, at the first bucket whose bound holds it; snapshot adds them up
+	// into the cumulative counts of the exposition.
+	counts []int64
 }
 
 // defaultBuckets bound the histograms that count something other than seconds (query length, windows per
@@ -346,6 +348,8 @@ func newCountHistogram() *histogram {
 	return newHistogramWithBuckets(countBuckets)
 }
 
+// histogramSnapshot is a copy of a histogram with cumulative counts: counts[i] observations at or below
+// buckets[i].
 type histogramSnapshot struct {
 	sum     float64
 	count   int64
@@ -365,6 +369,9 @@ func (h *histogram) snapshot() histogramSnapshot {
 		counts:  append([]int64(nil), h.counts...),
 	}
 	h.mu.RUnlock()
+	for i := 1; i < len(s.counts); i++ {
+		s.counts[i] += s.counts[i-1]
+	}
 	return s
 }
 
@@ -375,8 +382,7 @@ func (h *histogram) observe(v float64) {
 	h.mu.Lock()
 	h.sum += v
 	h.count++
-	// The bounds ascend: search for the first one that holds v, then count it and every one above it. A NaN
-	// fits none.
+	// The bounds ascend: search for the first one that holds v. A NaN fits none.
 	first, end := 0, len(h.buckets)
 	for first < end {
 		if mid := int(uint(first+end) >> 1); v <= h.buckets[mid] {
@@ -385,8 +391,8 @@ func (h *histogram) observe(v float64) {
 			first = mid + 1
 		}
 	}
-	for counts, i := h.counts, first; i < len(counts); i++ {
-		counts[i]++
+	if first < len(h.counts) {
+		h.counts[first]++
 	}
 	h.mu.Unlock()
 }
@@ -2355,34 +2361,19 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_window_fetch_seconds Query-range window backend fetch duration.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_fetch_seconds histogram\n")
 	if m.windowFetch != nil {
-		for i, b := range m.windowFetch.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"%g\"} %d\n", b, m.windowFetch.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"+Inf\"} %d\n", m.windowFetch.loadCount())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_sum %g\n", m.windowFetch.loadSum())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_count %d\n", m.windowFetch.loadCount())
+		writeHistogramSeries(&sb, "loki_vl_proxy_window_fetch_seconds", "", m.windowFetch.snapshot())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_window_merge_seconds Query-range window merge duration.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_merge_seconds histogram\n")
 	if m.windowMerge != nil {
-		for i, b := range m.windowMerge.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"%g\"} %d\n", b, m.windowMerge.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"+Inf\"} %d\n", m.windowMerge.loadCount())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_sum %g\n", m.windowMerge.loadSum())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_count %d\n", m.windowMerge.loadCount())
+		writeHistogramSeries(&sb, "loki_vl_proxy_window_merge_seconds", "", m.windowMerge.snapshot())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_window_count Query-range window count per request.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_count histogram\n")
 	if m.windowCount != nil {
-		for i, b := range m.windowCount.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"%g\"} %d\n", b, m.windowCount.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"+Inf\"} %d\n", m.windowCount.loadCount())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_sum %g\n", m.windowCount.loadSum())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_count %d\n", m.windowCount.loadCount())
+		writeHistogramSeries(&sb, "loki_vl_proxy_window_count", "", m.windowCount.snapshot())
 	}
 	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_attempt_total Query-range window prefilter attempts.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_attempt_total counter\n")
@@ -2419,12 +2410,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_duration_seconds Query-range window prefilter duration.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_duration_seconds histogram\n")
 	if m.windowPrefilterDuration != nil {
-		for i, b := range m.windowPrefilterDuration.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"%g\"} %d\n", b, m.windowPrefilterDuration.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"+Inf\"} %d\n", m.windowPrefilterDuration.loadCount())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_sum %g\n", m.windowPrefilterDuration.loadSum())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_count %d\n", m.windowPrefilterDuration.loadCount())
+		writeHistogramSeries(&sb, "loki_vl_proxy_window_prefilter_duration_seconds", "", m.windowPrefilterDuration.snapshot())
 	}
 	sb.WriteString("# HELP loki_vl_proxy_window_adaptive_parallel_current Current adaptive query-range window parallelism.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_adaptive_parallel_current gauge\n")

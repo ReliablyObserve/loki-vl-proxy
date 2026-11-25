@@ -140,8 +140,8 @@ func TestHistogramObserveBounds(t *testing.T) {
 	} {
 		h := newHistogramWithBuckets([]float64{1, 10, 60})
 		h.observe(tc.v)
-		if !slices.Equal(h.counts, tc.want) || h.count != 1 {
-			t.Errorf("observe(%v): counts %v count %d, want %v and 1", tc.v, h.counts, h.count, tc.want)
+		if got := h.snapshot().counts; !slices.Equal(got, tc.want) || h.count != 1 {
+			t.Errorf("observe(%v): counts %v count %d, want %v and 1", tc.v, got, h.count, tc.want)
 		}
 	}
 }
@@ -257,6 +257,24 @@ func TestSlowRequestsAreToldApart(t *testing.T) {
 	}
 }
 
+// Many observations read back as cumulative buckets on /metrics and as per-bucket counts on OTLP.
+func TestHistogramCumulativeAndPerBucketCounts(t *testing.T) {
+	h := newHistogramWithBuckets([]float64{1, 10, 60})
+	for _, v := range []float64{0.5, 1, 2, 30, 30, 61, 1000} {
+		h.observe(v)
+	}
+	if got := h.snapshot().counts; !slices.Equal(got, []int64{2, 3, 5}) {
+		t.Fatalf("cumulative counts %v", got)
+	}
+	if got := h.snapshot().counts; !slices.Equal(got, []int64{2, 3, 5}) {
+		t.Fatalf("a snapshot changed the histogram: %v", got)
+	}
+	dp := NewOTLPPusher(OTLPConfig{}, NewMetrics()).histogramDP(h, 1)
+	if got := dp["bucketCounts"]; !reflect.DeepEqual(got, []int64{2, 1, 2, 2}) {
+		t.Fatalf("per-bucket counts %v", got)
+	}
+}
+
 func TestWriteBucketLines(t *testing.T) {
 	var sb strings.Builder
 	writeBucketLines(&sb, "x_seconds", `a="b"`, histogramSnapshot{count: 4, buckets: []float64{0.00001, 2.5, 1e21}, counts: []int64{0, 2, 3}})
@@ -264,6 +282,11 @@ func TestWriteBucketLines(t *testing.T) {
 		"x_seconds_bucket{a=\"b\",le=\"1e+21\"} 3\nx_seconds_bucket{a=\"b\",le=\"+Inf\"} 4\n"
 	if sb.String() != want {
 		t.Fatalf("got %q, want %q", sb.String(), want)
+	}
+	sb.Reset()
+	writeHistogramSeries(&sb, "y_seconds", "", histogramSnapshot{sum: 1.5, count: 1, buckets: []float64{2}, counts: []int64{1}})
+	if want := "y_seconds_bucket{le=\"2\"} 1\ny_seconds_bucket{le=\"+Inf\"} 1\ny_seconds_sum 1.5\ny_seconds_count 1\n"; sb.String() != want {
+		t.Fatalf("without labels: got %q, want %q", sb.String(), want)
 	}
 }
 

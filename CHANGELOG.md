@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- Rendering `/metrics` takes about half the time and 57% less memory per scrape, although the answer is 26% larger with the new bounds: the buffer is sized from the previous answer and histogram bucket lines are written without `fmt` (`BenchmarkMetricsRender`: 1.00 ms to 0.46 ms with default labels, 2.97 ms to 1.34 ms with sensitive labels).
+- Rendering `/metrics` takes about half the time and 55 to 60% less memory per scrape, although the answer is 26% larger with the new bounds: the buffer is sized from the previous answer and histogram bucket lines are written without `fmt` (`BenchmarkMetricsRender`: 759 µs to 408 µs with default labels, 2.31 ms to 1.17 ms with sensitive labels). Recording a duration is 17 to 25% cheaper: an observation counts one bucket and the cumulative counts are built when they are read (`BenchmarkHistogramObserveDuration`, about 8 ns to 6 ns with nineteen bounds against twelve).
 
 ### Fixed
 
