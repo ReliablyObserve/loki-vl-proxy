@@ -318,6 +318,10 @@ class RunTest(unittest.TestCase):
         port = srv.server_address[1] - 1  # the admin listener is the proxy's port + 1
         state = {"out": self.out, "ports": {"main": port, "pr": port}}
         Path(self.out, "proxy-main-aligned.log").write_text("x")
+        with self.assertRaises(OSError):  # no log of the PR build to wait on: no cold sample
+            ci_run.flush_proxies(state)
+        Path(self.out, "proxy-pr-aligned.log").write_text("x")
+        FlushServer.hits = []
         self.assertTrue(ci_run.flush_proxies(state))
         self.assertEqual(FlushServer.hits, ["/admin/cache/flush"] * 2)
         FlushServer.status = 403

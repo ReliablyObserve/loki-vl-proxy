@@ -373,8 +373,11 @@ def flush_proxies(state):
             e.close()
         if status != 200:
             raise OSError(f"cache flush {url}: HTTP {status}")
-    logs = [p for side in ("main", "pr") for p in sorted(glob.glob(os.path.join(state["out"], f"proxy-{side}-*.log")))]
-    return ab_stack.logs_quiet(logs, quiet=FLUSH_QUIET_S, cap=FLUSH_QUIET_CAP_S)
+    logs = {side: sorted(glob.glob(os.path.join(state["out"], f"proxy-{side}-*.log"))) for side in ("main", "pr")}
+    if not all(logs.values()):
+        # Without a build's log there is nothing to wait on: its background work could run into the capture.
+        raise OSError(f"no proxy log to wait on for {[side for side, found in logs.items() if not found]}")
+    return ab_stack.logs_quiet([p for found in logs.values() for p in found], quiet=FLUSH_QUIET_S, cap=FLUSH_QUIET_CAP_S)
 
 
 def bounded(cmd, cwd, env, log, timeout):
@@ -395,7 +398,7 @@ def repeat_pair(a, out, page, rng, kind, order, end, port, state, first, deadlin
     try:
         quiet = flush_proxies(state)
     except (OSError, ValueError) as e:  # urllib's errors are OSErrors
-        return {"order": list(order), "why": f"cache flush refused: {str(e)[:120]}"}
+        return {"order": list(order), "why": f"cache flush refused or not waited out: {str(e)[:120]}"}
     stage = tempfile.mkdtemp(prefix="runtime-repeat-", dir=out)
     plan = os.path.join(stage, "plan.json")
     dump_json(plan, {"entries": {page: {"kind": kind, "ranges": [rng]}}})
