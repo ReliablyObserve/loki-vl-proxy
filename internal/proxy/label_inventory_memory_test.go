@@ -95,19 +95,6 @@ func dayNames(f *fakeVictoriaLogs, start, end time.Time) map[string]bool {
 	return out
 }
 
-func waitForDayBucket(t testing.TB, p *Proxy, base string, day time.Time) {
-	t.Helper()
-	seg := inventorySegment{start: day.UnixNano(), end: day.Add(24 * time.Hour).UnixNano(), level: 0}
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, ok := p.cache.Peek(inventoryBucketKey(base, seg)); ok {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("the day bucket of %s was not filled in the background", day.Format(time.DateOnly))
-}
-
 func listingBase(p *Proxy) string {
 	return p.inventoryKeyBase(context.Background(), "/select/logsql/stream_field_names", url.Values{"query": {"*"}})
 }
@@ -116,8 +103,8 @@ func listingBase(p *Proxy) string {
 // hour (24h) or by 317 s (1h, 6h) per run. Once the first window has been
 // read, the moved windows are answered from memory with no VictoriaLogs call:
 // each piece of an end comes from its own entry or from the smallest cached
-// bucket holding it (for the far end of a 24h window, the day bucket the
-// first listing filled in the background). Every answer lists every name of
+// bucket holding it (for the far end of a window moved back by an hour, the
+// hour the previous listing read in the background). Every answer lists every name of
 // one full-range call, and no name beyond those of the UTC days it touches.
 //
 // conformance: semantics/label-browser-latency-cold-and-refresh, semantics/label-inventory-exact-and-incremental, loki_api_v1_labels
@@ -133,9 +120,7 @@ func TestLabelsInventory_MovedWindowsAreAnsweredFromMemory(t *testing.T) {
 			p := newMemoryInventoryProxy(t, vl, 10*time.Second)
 			full := newInventoryTestProxy(t, vl, -1)
 			_ = namesOnlyListing(t, p, end0.Add(-tc.width), end0)
-			if d := end0.Add(-tc.width).Truncate(24 * time.Hour); d.Add(24 * time.Hour).Before(now.Add(-time.Minute)) {
-				waitForDayBucket(t, p, listingBase(p), d)
-			}
+			settleBackground(t, p) // the hours the moved windows start in
 			// The first moved window may still read its new ends; the next
 			// ones are answered from memory.
 			_ = namesOnlyListing(t, p, end0.Add(-tc.shift-tc.width), end0.Add(-tc.shift))
@@ -310,11 +295,10 @@ func TestLabelsInventory_MemoryAnswersOffWithoutStaleness(t *testing.T) {
 	}
 }
 
-// The background reads after a listing span at most the window's own width:
-// a 10-minute window over the end of yesterday reads nothing in the
-// background (not the day), an hour reads one hour, six hours at most three
-// hours, a day its partly covered day; with -metadata-inventory-prefetch
-// false nothing is read.
+// The background reads after a listing span at most the window's own width
+// and are hours only: a 10-minute window over the end of yesterday reads
+// nothing in the background, an hour reads one hour, six hours and a day at
+// most three hours; with -metadata-inventory-prefetch false nothing is read.
 //
 // conformance: semantics/label-inventory-exact-and-incremental, limits/concurrent-full-retention-scans-exhaust-backend
 func TestLabelsInventory_PrefetchStaysWithinTheWindowWidth(t *testing.T) {
@@ -357,8 +341,8 @@ func TestLabelsInventory_PrefetchStaysWithinTheWindowWidth(t *testing.T) {
 			if (tc.name == "10m over the end of yesterday" || !tc.prefetch) && len(calls) != 0 {
 				t.Fatalf("background calls %v, want none", calls)
 			}
-			if tc.name == "24h" && read != 24*time.Hour {
-				t.Fatalf("the 24h window read %s in the background, want its partly covered day", read)
+			if tc.name == "24h" && read != 3*time.Hour {
+				t.Fatalf("the 24h window read %s in the background, want the hours of its ends and the hour before it", read)
 			}
 		})
 	}

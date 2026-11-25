@@ -28,7 +28,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `extraArgs.backend-metadata-scan-memory-headroom` | `0.4` | Share of VictoriaLogs' available memory (from its `/metrics`) that long-range scans must leave free; `0` disables the memory gate |
 | `extraArgs.backend-metadata-scan-latency-tolerance` | `1.5` | How many times its no-load duration a concurrent scan may take before the limit shrinks |
 | `extraArgs.metadata-inventory-parallelism` | `4` | Label names and values are listed from a time-bucketed inventory (day, hour, 5-minute and minute buckets cached and shared with peers), so a refresh reads only its edges; bucket listings in flight per request. `0` turns it off |
-| `extraArgs.metadata-inventory-prefetch` | `true` | After a `/labels` listing, read in the background the hour and day buckets that let a moved window be answered from memory (with `-metadata-max-staleness` above 0), at most the window's own width per listing. `false` keeps memory answers to the buckets requests read |
+| `extraArgs.metadata-inventory-prefetch` | `true` | After a `/labels` listing, read in the background the hour buckets that let a moved window be answered from memory (with `-metadata-max-staleness` above 0), at most the window's own width per listing. `false` keeps memory answers to the buckets requests read |
 | `extraArgs.rate-limit-per-second` / `extraArgs.rate-limit-burst` | `50` / `100` | Per-client (source IP) token bucket; `rate-limit-per-second=0` disables it |
 | `extraArgs.server.register-instrumentation` | `true` | Serve `/metrics` (the binary default is `false`) |
 | `extraArgs.metrics-listen` | `:9091` | Dedicated `/metrics` listener, exposed as the `metrics` Service port |

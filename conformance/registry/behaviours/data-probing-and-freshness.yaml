@@ -119,10 +119,12 @@ decisions:
       entry used was read or confirmed within the bound; a holding bucket is
       used for a day only when the window's part of that day holds a non-empty
       bucket of its own. Entries past the bound are confirmed in the
-      background. After a listing, the hours of the window's ends, the hour
-      before it and the sealed days it only partly covers are read in the
-      background inventory lane.
-    over: ['reading the moved ends from VictoriaLogs on every request (base: 7, 3-7 and 20 calls per moved 1h, 6h and 24h window)', 'exact answers only from memory (the new end of a window moved back has no cached piece, so every moved request still read VictoriaLogs)', 'answering from memory past -metadata-max-staleness (rows written into a used bucket would stay unlisted for the bucket schedule, up to 15 minutes)', 'a dedicated prefetch flag (kept on the approved staleness flag; the owner can split it)']
+      background. With -metadata-inventory-prefetch (default on, its own flag
+      so background VictoriaLogs work can be turned off apart from staleness),
+      after a listing the hours
+      holding the window's start and end and the hour before it, at most the
+      window's width, are read in the background inventory lane.
+    over: ['reading the moved ends from VictoriaLogs on every request (base: 7, 3-7 and 20 calls per moved 1h, 6h and 24h window)', 'exact answers only from memory (the new end of a window moved back has no cached piece, so every moved request still read VictoriaLogs)', 'answering from memory past -metadata-max-staleness (rows written into a used bucket would stay unlisted for the bucket schedule, up to 15 minutes)', 'filling the partly covered UTC day in the background (a 24h cold load read its day again: 2,880 listed minutes instead of 1,440)', 'background reads unbounded by the window (a 10-minute window over yesterday would read a whole day)']
     why: |
       The owner asked for the label browser's moved windows to be faster than
       Loki (2026-11-25). Loki answers them from its index in 1-5 ms on the
@@ -131,7 +133,7 @@ decisions:
       has to come from a bucket that holds it. Loki's own /labels lists every
       name of the window's UTC day (measured), so a holding bucket of the same
       day keeps the answer between the exact one and Loki's.
-    evidence: 'Loki 3.7.10 on the e2e stack, 2026-11-25 (data of 11-24 and 11-25): 12 windows; Loki lists the whole day (26 / 86 / 92 for two days) for every window that overlaps the day''s data, none after the last row; the exact answer is a subset of Loki''s in every window. 120 random windows: memory answers between exact and Loki in all, 3 beyond exact. Local A/B harness (set metadata-inventory, passes over 4 ends): refresh labels warm p50 1 ms with 0 request-path calls in most passes against base 22-75 ms (1h/6h) and 179-323 ms (24h), Loki 1-4 ms; precise per-request timing: PR 0.26-0.63 ms, Loki 1.04-2.50 ms. Two replicas with the peer tier, requests alternating: 0.7-0.9 ms once each replica read once; the first moved request on a replica without the entries in memory reads VictoriaLogs (1h: 78 ms in the first round).'
+    evidence: 'Loki 3.7.10 on the e2e stack, 2026-11-25 (data of 11-24 and 11-25): 12 windows; Loki lists the whole day (26 / 86 / 92 for two days) for every window that overlaps the day''s data, none after the last row; the exact answer is a subset of Loki''s in every window. 120 random windows: memory answers between exact and Loki in all, 3 beyond exact. Local A/B harness, final build, four passes of the set metadata-inventory (ends 13:35-15:50): refresh labels warm p50 6h 0 ms and 24h 1 ms with no request-path call in 4 of 4 passes (Loki 1-3 ms, base 22-25 and 180-205 ms); 1h 1 ms in 3 of 4 (40 ms in one pass: two moved windows arrived before the background read of the hour their ends needed finished; Loki 1-2 ms, base 39-51 ms). Per-request timing, three rounds: 0.26-0.63 ms against Loki 1.07-2.39 ms. Two replicas with the peer tier, requests alternating: 0.7-0.9 ms once each replica read once; the first moved request on a replica without the entries in memory reads VictoriaLogs (1h: 78 ms in the first round). Near-now windows were not probed on Loki (no live writes on the stack); CI''s 1h and 6h windows end minutes ago.'
     code: [internal/proxy/metadata_inventory.go]
     tests: [TestLabelsInventory_MovedWindowsAreAnsweredFromMemory, TestLabelsInventory_MemoryAnswersStayBetweenTheWindowAndItsDays, TestLabelsInventory_MemoryAnswersKeepTheStalenessBound, TestLabelsInventory_MemoryAnswersOffWithoutStaleness, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow]
     history:

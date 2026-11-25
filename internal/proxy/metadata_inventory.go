@@ -768,17 +768,15 @@ func (p *Proxy) inventoryConfirmedSince(key string, notBefore int64) bool {
 	return err == nil && at >= notBefore
 }
 
-// fillTouchedDays reads, in the background, the buckets a later moved
+// fillTouchedDays reads, in the background, the hour buckets a later moved
 // window needs to be answered from memory (answerNamesFromMemory) and that a
 // names-only listing touches without reading them whole, in this order: the
-// sealed UTC day holding the window's start when the window only partly
-// covers it, the hour holding its start, the hour before it, the hour holding
-// its end, and the day holding its end. The label browser moved back by an
-// hour or by a few minutes, or over yesterday, then finds every piece of its
-// ends held by a cached bucket. The buckets read per listing span at most the
-// window's own width, so the background work never exceeds what the request
-// itself asked for: a 24h window reads its partly covered day, a 6h window up
-// to three hours, a window under an hour nothing. Each read is one row count
+// hour holding the window's start, the hour before it and the hour holding
+// its end. The label browser moved back by a few minutes or by an hour then
+// finds every piece of its ends held by a cached hour (each listing reads the
+// hour the next one moved back by an hour starts in). The hours read per
+// listing span at most the window's own width: a window of six hours or more
+// reads up to three, a window under an hour none. Each read is one row count
 // and one listing, cached like every bucket (memory, disk and peers) and
 // shared by every later listing of the same query and scope, in the
 // background inventory lane (skipped when the metadata-scan limiter is
@@ -790,16 +788,14 @@ func (p *Proxy) fillTouchedDays(ctx context.Context, path string, params url.Val
 	}
 	sealBefore := now.Add(-metadataInventorySealLag).UnixNano()
 	first, last := plan[0].start, plan[len(plan)-1].end
-	hour, day := int64(time.Hour), int64(24*time.Hour)
+	hour := int64(time.Hour)
 	holding := func(at, size int64, level int) inventorySegment {
 		return inventorySegment{start: at - at%size, end: at - at%size + size, level: level}
 	}
 	candidates := []inventorySegment{
-		holding(first, day, 0),
 		holding(first, hour, 1),
 		holding(first-hour, hour, 1),
 		holding(last-1, hour, 1),
-		holding(last-1, day, 0),
 	}
 	budget := last - first
 	var fills []inventorySegment

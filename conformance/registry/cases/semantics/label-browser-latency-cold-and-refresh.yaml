@@ -79,14 +79,18 @@ compare:
   mode: exact
   fields: [status, data]
   expect: |
-    The same label names and values as one full-range listing; a window
+    The same label values as one full-range listing, and every label name
+    of it (with -metadata-max-staleness above 0 a /labels answer from memory
+    may also list names the same UTC day holds outside the window, when the
+    window's part of that day holds rows: Loki's day granularity); a window
     moved by seconds or by minutes reads only its edges and the buckets
-    nobody has cached from VictoriaLogs (bench/ab set metadata-inventory:
-    refresh shapes over 1h-7d answer in well under a second, never-queried
-    windows inside the warmed range close to that).
+    nobody has cached from VictoriaLogs, or nothing when memory holds its
+    pieces (bench/ab set metadata-inventory: refresh shapes over 1h-7d answer
+    in well under a second, never-queried windows inside the warmed range
+    close to that).
 loki_parity: |
   Loki's /labels and /label/{name}/values read the index, so their latency does not depend on the range; the proxy
-  matches the answer exactly and gets the latency close for every window
+  matches the answer (values exactly; names exactly or, from memory, at most at Loki's UTC-day granularity) and gets the latency close for every window
   inside what it has scanned once.
 perf:
   max_ratio: 2.0
