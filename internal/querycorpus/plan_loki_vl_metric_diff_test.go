@@ -570,7 +570,7 @@ func recordMetricAnswers(t *testing.T, path string, queries []metricQuery) {
 			if c := committed[r.Q]; c != nil {
 				want, _ = json.Marshal(c.stored())
 			}
-			if string(got) != string(want) {
+			if string(got) != string(want) && !lokiTieOnlyDifference(r, committed[r.Q]) {
 				if changed++; changed <= 5 {
 					t.Errorf("the oracles answer %s otherwise than %s records", r.Q, path)
 				}
@@ -584,6 +584,40 @@ func recordMetricAnswers(t *testing.T, path string, queries []metricQuery) {
 	}
 	writeMetricAnswers(t, path, recs)
 	t.Logf("recorded %s: %d queries", path, len(recs))
+}
+
+// lokiTieOnlyDifference reports a live record that differs from the committed one only in which of the series tied at
+// the cut of a ranking Loki keeps: Loki breaks such a tie by the order of a Go map, so two runs of the same engine on
+// the same data keep different series of the same values (the check failed on main on ten to twelve of the
+// recorded rankings at random). Everything else must be equal: the inputs, every VictoriaLogs answer, every Loki
+// status and error, and for each Loki answer the same ranked values at every step with the same label names
+// (rankedTieOnly).
+func lokiTieOnlyDifference(live, committed *metricRecord) bool {
+	if live == nil || committed == nil || live.Inputs != committed.Inputs || len(live.Loki) != len(committed.Loki) {
+		return false
+	}
+	a, b := live.stored(), committed.stored()
+	a.Loki, b.Loki = nil, nil
+	ja, _ := json.Marshal(a)
+	jb, _ := json.Marshal(b)
+	if string(ja) != string(jb) {
+		return false
+	}
+	differed := false
+	for kind, l := range live.Loki {
+		c, ok := committed.Loki[kind]
+		if !ok || l.Status != c.Status || l.Error != c.Error {
+			return false
+		}
+		if string(l.Body) == string(c.Body) {
+			continue
+		}
+		if !rankedTieOnly(c, metricHandlerRun{status: l.Status, body: string(l.Body)}) {
+			return false
+		}
+		differed = true
+	}
+	return differed
 }
 
 // ---- comparison ----

@@ -2222,6 +2222,7 @@
     ],
     "semantics/rank-over-binary-operation": [
       "internal/proxy/rank_binary_range_test.go",
+      "internal/querycorpus/loki_tie_check_test.go",
       "internal/querycorpus/rank_binary_loki_diff_test.go"
     ],
     "semantics/raw-nul-in-string-literal-accepted": [
@@ -5558,6 +5559,9 @@
     "internal/querycorpus/logql_surface_loki_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/loki_tie_check_test.go": [
+      "semantics/rank-over-binary-operation"
+    ],
     "internal/querycorpus/metric_stages_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -6984,7 +6988,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 826,
+  "tests_with_markers": 827,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
