@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.364.1] - 2026-11-25
+
 ### Fixed
 
 - The `Query Corpus` live check of the metric differential also accepts a `topk` or `bottomk` tie between series with different label names, when a recorded Loki answer of the query holds those names, and a `sort` or `sort_desc` vector that returns series of one value in another order; the tie rules apply to those operators only.
