@@ -213,8 +213,12 @@ func (c *mixedJSONRowClass) certifiedFor(names []string, lengths mixedClassLengt
 			regex(name, `^[\x20-\x26\x28-\x3b\x3d-\x7e]*$`, false))
 	}
 	// The class's remaining guards, after its first three (the message grammar, the second message guard and the
-	// message length, replaced above), without the five that read the packed envelope.
-	guards = append(guards, c.base[3:]...)
+	// message length, replaced above), without the five that read the packed envelope and without the three that read
+	// the stream descriptor's label names (mixedClassStreamNameGuards): a stream label is a stored field, and the names
+	// of the window's stored fields are checked clean before the scan and again after it (mixedClassFieldNamesClean:
+	// an identifier, not the label, no doubled or trailing underscore), which is exactly what those guards test per row.
+	guards = append(guards, c.base[3])
+	guards = append(guards, c.base[mixedClassStreamNameGuardsAt+mixedClassStreamNameGuards:]...)
 	nativePrepare := make([]logsql.Pipe, 0, len(c.prepare)-1)
 	for _, pipe := range c.prepare {
 		if _, packed := pipe.(logsql.PipePackJSON); !packed {

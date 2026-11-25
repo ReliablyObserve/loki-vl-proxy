@@ -18,6 +18,15 @@ const (
 	mixedClassInvalidBodyKey = `"(?:[ !#-~]*[\x20-\x21\x23-\x2f\x3a-\x40\x5b-\x5e\x60\x7b-\x7e][ !#-~]*|[0-9][ !#-~]*|)"\s*:`
 )
 
+// The three guards that read the stream descriptor's label names sit at this place of the class's base guards, after
+// the three message guards and the target's value run: the descriptor's grammar, its aliased names and the label
+// itself as a stream label. A certified class (certifiedFor) leaves them out, as the window's stored field names
+// settle them; TestMixedJSONRowClassStreamNameGuardsAreTheDroppedOnes pins which guards they are.
+const (
+	mixedClassStreamNameGuardsAt = 4
+	mixedClassStreamNameGuards   = 3
+)
+
 // mixedJSONRowClass describes a conservative backend row partition. It does
 // not authorize a route: the caller must separately prove the original typed
 // pipeline, source profile and alias configuration eligible. Prepared fields

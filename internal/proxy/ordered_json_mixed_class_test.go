@@ -900,3 +900,61 @@ func TestMixedCertMemoKeySeparatesTheParserOrders(t *testing.T) {
 		t.Fatalf("memo keys: full %q explicit %q", a, b)
 	}
 }
+
+// conformance: semantics/two-parsers-keep-one
+func TestMixedJSONRowClassStreamNameGuardsAreTheDroppedOnes(t *testing.T) {
+	names := []string{"_time", "_stream_id", "_stream", "_msg", "app", "env", "level"}
+	lengths := mixedClassLengths{"_msg": 300, "_stream": 100, "app": 8, "env": 8, "level": 8}
+	for _, label := range []string{"k", "user_id", "a_b_c"} {
+		for _, explicit := range []bool{false, true} {
+			c, _ := newMixedJSONRowClassFor(label, explicit)
+			certified, ok := c.certifiedFor(names, lengths)
+			if !ok {
+				t.Fatalf("%s: not certified", label)
+			}
+			reads := func(g logsql.FilterExpr) []string {
+				seen := map[string]bool{}
+				for _, f := range mixedClassFieldFilters(t, g) {
+					seen[f.Field] = true
+				}
+				var out []string
+				for field := range seen {
+					out = append(out, field)
+				}
+				return out
+			}
+			dropped := c.base[mixedClassStreamNameGuardsAt : mixedClassStreamNameGuardsAt+mixedClassStreamNameGuards]
+			for i, g := range dropped {
+				if r := reads(g); len(r) != 1 || r[0] != mixedClassStreamField {
+					t.Fatalf("%s guard %d reads %v, want only the stream descriptor", label, i, r)
+				}
+			}
+			// Nothing else reading the descriptor's label names is left out, and none of the three is kept.
+			text := map[string]bool{}
+			for _, g := range certified.safe.(logsql.AllOf) {
+				text[g.String()] = true
+			}
+			for i, g := range dropped {
+				if text[g.String()] {
+					t.Fatalf("%s: dropped guard %d is still in the certified class", label, i)
+				}
+			}
+			if !text[c.base[3].String()] || !text[c.base[mixedClassStreamNameGuardsAt+mixedClassStreamNameGuards].String()] {
+				t.Fatalf("%s: the guards around the dropped ones must stay", label)
+			}
+			// The length and character guards on the descriptor stay: they bound the packed envelope.
+			var characters, length int
+			for _, g := range certified.safe.(logsql.AllOf) {
+				if lr, isLen := g.(logsql.LenRange); isLen && lr.Field == mixedClassStreamField {
+					length++
+				}
+				if r := reads(g); len(r) == 1 && r[0] == mixedClassStreamField {
+					characters++
+				}
+			}
+			if length != 1 || characters != 1 {
+				t.Fatalf("%s: the certified class has %d descriptor length and %d character guards, want one each", label, length, characters)
+			}
+		}
+	}
+}
