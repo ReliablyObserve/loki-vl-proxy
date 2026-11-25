@@ -18,7 +18,7 @@ import (
 // (detected_level) to the context query only when the label is in the answer. Loki lists label names from whole
 // index periods and the chunks overlapping the request, not from the instant: a stream written two minutes before
 // the row is listed. The proxy listed the names of the instant alone, so the context query differed from Loki's
-// (explore-log-context in the visual proof). A window narrower than a minute now lists the day.
+// (explore-log-context in the visual proof). A zero-width window now lists what Loki lists.
 //
 // conformance: semantics/labels-point-window-is-the-index-day
 func TestCompat_LabelsPointWindowListsTheIndexDayLikeLoki(t *testing.T) {

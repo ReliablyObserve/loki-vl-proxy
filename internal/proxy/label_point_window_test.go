@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
@@ -27,8 +28,9 @@ func TestWidenLabelPointWindow(t *testing.T) {
 		anchor     time.Time // the instant whose UTC day is the answer, for an older point
 	}{
 		{"start equals end, the clicked row", ns(row), ns(row), true, true, time.Time{}},
-		{"one millisecond", ns(row), ns(row.Add(time.Millisecond)), true, true, time.Time{}},
-		{"59 seconds", ns(row), ns(row.Add(59 * time.Second)), true, true, time.Time{}},
+		{"one nanosecond is a window", ns(row), ns(row.Add(time.Nanosecond)), false, false, time.Time{}},
+		{"one millisecond is a window", ns(row), ns(row.Add(time.Millisecond)), false, false, time.Time{}},
+		{"59 seconds is a window", ns(row), ns(row.Add(59 * time.Second)), false, false, time.Time{}},
 		{"seconds spelling", fmt.Sprint(row.Unix()), fmt.Sprint(row.Unix()), true, true, time.Time{}},
 		{"RFC 3339 spelling", row.Format(time.RFC3339Nano), row.Format(time.RFC3339Nano), true, true, time.Time{}},
 		{"exactly three hours back is recent", ns(now.Add(-3 * time.Hour)), ns(now.Add(-3 * time.Hour)), true, true, time.Time{}},
@@ -116,5 +118,54 @@ func TestLabelsOlderPointWindowListsItsDayAndIsCached(t *testing.T) {
 	}
 	if len(fake.calls) != calls {
 		t.Fatalf("a second point of the same day read the backend again: %v", fake.calls[calls:])
+	}
+}
+
+func TestWithWidenedLabelPointRewritesOnlyTheBounds(t *testing.T) {
+	now := time.Now()
+	at := strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10)
+	wantStart, wantEnd, _ := widenLabelPointWindow(at, at, now)
+	for _, tc := range []struct{ name, query string }{
+		{"bounds only", "start=" + at + "&end=" + at},
+		{"with a selector", "query=%7Bapp%3D%22a%22%7D&start=" + at + "&end=" + at + "&since=1h"},
+		{"an encoded spelling of a bound", "st%61rt=" + at + "&end=" + at},
+		{"a repeated bound", "start=" + at + "&start=1&end=" + at},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "/loki/api/v1/labels?"+tc.query, nil)
+			r.Header.Set("X-Scope-OrgID", "tenant")
+			got := withWidenedLabelPoint(r, now)
+			if got == r {
+				t.Fatal("a point was not widened")
+			}
+			if got.FormValue("start") != wantStart || got.FormValue("end") != wantEnd {
+				t.Fatalf("window [%s %s], want [%s %s] (%s)", got.FormValue("start"), got.FormValue("end"), wantStart, wantEnd, got.URL.RawQuery)
+			}
+			if got.Header.Get("X-Scope-OrgID") != "tenant" || got.URL.Path != r.URL.Path {
+				t.Fatal("the copy lost the headers or the path")
+			}
+			if strings.Contains(tc.name, "selector") && got.FormValue("query") != `{app="a"}` || strings.Contains(tc.name, "selector") && got.FormValue("since") != "1h" {
+				t.Fatalf("another parameter changed: %s", got.URL.RawQuery)
+			}
+			if r.FormValue("start") != at && tc.name == "bounds only" {
+				t.Fatal("the original request was changed")
+			}
+		})
+	}
+	post := httptest.NewRequest("POST", "/loki/api/v1/labels?start="+at+"&end="+at, nil)
+	if withWidenedLabelPoint(post, now) != post {
+		t.Fatal("a POST was widened")
+	}
+}
+
+// A request that is not a point costs nothing here: the handler parses the form anyway.
+func TestWithWidenedLabelPointAllocatesNothingForAnOrdinaryWindow(t *testing.T) {
+	now := time.Now()
+	for _, target := range []string{"/loki/api/v1/labels", "/loki/api/v1/labels?start=" + strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10) + "&end=" + strconv.FormatInt(now.UnixNano(), 10)} {
+		r := httptest.NewRequest("GET", target, nil)
+		_ = r.FormValue("start") // the handler's own first read
+		if allocs := testing.AllocsPerRun(100, func() { _ = withWidenedLabelPoint(r, now) }); allocs != 0 {
+			t.Fatalf("%s: %v allocations, want 0", target, allocs)
+		}
 	}
 }

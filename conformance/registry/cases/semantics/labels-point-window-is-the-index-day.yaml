@@ -1,5 +1,5 @@
 id: semantics/labels-point-window-is-the-index-day
-title: /labels with a window under a minute (Grafana "Show context") lists the ingester window or the index day, like Loki (fixed)
+title: /labels with start equal to end (Grafana "Show context") lists the ingester window or the index day, like Loki (fixed)
 proves:
   - loki_api_v1_labels
 consumer: explore
@@ -18,15 +18,18 @@ why: |
   and the context query lost its `| detected_level=...` filter
   (explore-log-context in the visual proof, with the rows themselves equal).
 
-  A window narrower than a minute is now listed over the last three hours when
-  its end is within three hours of now, and over the UTC day of its end
-  otherwise (internal/proxy/label_point_window.go, called first in
-  handleLabels, before the tenant fan-out and the cache key). A window of a
-  minute or more keeps its own bounds, so every other /labels answer is
-  unchanged. The recent window ends at now and follows the existing near-now
-  freshness and staleness bounds; an older day ends at its end, so every point
-  of one day shares one cached answer. The day read is the inventory's hour
-  buckets, which stay cached.
+  A zero-width window (start equal to end, as Grafana sends it) is now listed
+  over the last three hours when its end is within three hours of now, and
+  over the UTC day of its end otherwise (internal/proxy/label_point_window.go,
+  called first in handleLabels, before the tenant fan-out and the cache key).
+  Any window with a width keeps its own bounds, so every other /labels answer
+  is unchanged and costs nothing extra (the check is a substring scan and a
+  string comparison; allocations and bytes per request equal main's). Loki
+  answers a window of 1 ms, 1 s and 5 min the same way as a point, but no
+  client is known to ask that, so those stay open. The recent window ends at
+  now and follows the existing near-now freshness and staleness bounds; an
+  older day ends at its end, so every point of one day shares one cached
+  answer. The day read is the inventory's hour buckets, which stay cached.
 request:
   method: GET
   path: /loki/api/v1/labels
@@ -54,8 +57,8 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/label_point_window.go widenLabelPointWindow, label_handlers.go handleLabels'
-  loki: 'a window under a minute lists the ingester streams (recent) or the index period (older), not the instant (measured on Loki 3.7.10, in this case)'
+  loki: 'a point window (and a window of up to minutes) lists the ingester streams (recent) or the index period (older), not the instant (measured on Loki 3.7.10, in this case)'
   proxy: 'listed the names of streams with lines at the instant, so detected_level and sparse labels were missing'
   planned_test: 'TestCompat_LabelsPointWindowListsTheIndexDayLikeLoki (test/e2e-compat, group core); proxy TestWidenLabelPointWindow, TestLabelsRecentPointWindowListsTheIngesterWindowLikeLoki, TestLabelsOlderPointWindowListsItsDayAndIsCached'
-  note: 'A window of a minute or more still lists the streams with lines in it while Loki lists the chunks overlapping it: quality/label-values-chunk-window stays open.'
+  note: 'A window with any width still lists the streams with lines in it while Loki lists the chunks overlapping it: quality/label-values-chunk-window stays open.'
   clusters: []
