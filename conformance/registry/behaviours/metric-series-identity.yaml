@@ -121,6 +121,32 @@ decisions:
       tracked: ['TestListedWindowChunksVictoriaLogsCost (LVP_XLIST_CHUNKS_VLCOST=1): status, VictoriaLogs time and calls per shape, one read vs chunks', 'TestListedIdentityWindowsVictoriaLogsCost (LVP_XLIST_WINDOWS_VLCOST=1)', 'BenchmarkListedWindowsRequest, base vs head']
       bound: 'a request that fits one chunk: one stats_query_range as before, proxy cost within noise; a chunked request: one stats_query_range per chunk read one after another, each reading the range before its chunk again'
     pending: true
+  - id: stream-identity-window-chunks-after-overflow
+    chosen: 'a folded window metric of any series identity (count, min, max or avg over a range function, also under an outer sum, and the rate/count ratio B2 is read as) whose stats_query_range read over the whole range passes the stats body bound is read again in the time chunks of extraction-list-window-chunks (listed_window_chunks.go), starting at a quarter of the steps; the replica keeps the size for ten minutes (the same memory-tier hint), so the next request of the query at that step is chunked at once. A read within the bound is not chunked.'
+    over:
+      - 'one read of every stream''s buckets over the whole range (main): about 320,000 short-lived streams a day passed the 64 MiB stats body bound at a 60s step, the raw rows the window evaluator fell to passed -backend-max-buffered-response-bytes, 500 where the answer is a few groups per step'
+      - 'chunking every folded window metric up front: the same reads for a request that fits one chunk, but every such request would move to the chunked writer; only the requests that answered 500 move'
+      - 'the range-splitting retry of the binary route (binary_aggregation_range.go) on the B2 rewrite alone: leaves the plain count by (F2) and the other series-level shapes (F3, F4) failing on the same read'
+      - '_stream_id instead of _stream in the read: about half the bytes, the same cliff at twice the streams'
+      - 'raising the stats body bound: a hidden ceiling a longer range passes again'
+    why: |
+      The answer of a count, min, max or avg over a range function is folded
+      as the matrix is built (matrix_fold_sink.go), but the read before it holds
+      a series per stream. Its size grows with the streams of the range, not
+      with the groups of the answer. A step's value depends only on the
+      buckets in (t-range, t], so reading the steps in chunks, each from the
+      range before its first step, gives the one-read answer, and the fold
+      holds a cell per group and step. The chunks are read only after the
+      whole range's read passed the bound (or this replica saw it pass for the
+      query within ten minutes), so no request that answered before changes.
+    evidence: 'TestStreamIdentityWindowsChunkedPastBodyBound (internal/proxy, emulated VictoriaLogs v1.54.0): B2 and count by over 3h of a new pod stream per service every 10 s at a 60 s step, the stats body bound at half the whole read: 500 ResourceExhausted on main, Loki''s active-stream counts on the branch, every chunk within the bound, the repeat chunked at once (no read thrown away), a read within the bound not chunked. Real VictoriaLogs v1.54.0 with 26 h of the bench/ab generator (322,601 streams in 24 h, 2026-11-25): B2 24h at 60 s main 500 in 13.7 s, branch 200 in 21.2 s with 12 VictoriaLogs calls, repeat 0 calls; F1-F4 of series-level-fine-step 24h at 20 s main 500 (8-12 s), branch 200 (F1 19.3 s, 11 calls; F2 and F3 answered from the bucket reads F1 left in the proxy's caches, 0 calls; F4 21.5 s, 10 calls); the chunked 24h B2 answer equals the one-read 6h answer at 60 s on all 5,415 shared points.'
+    code: [internal/proxy/listed_window_chunks.go, internal/proxy/range_metric_compat.go]
+    tests: [TestStreamIdentityWindowsChunkedPastBodyBound, TestListedWindowChunksMatchUnchunked, FuzzListedWindowChunks, TestListedWindowChunksEdges]
+    quality: 'B2 and the series-level shapes answer 200 at 24h where they answered 500; every request whose read fits the bound reads and answers as before.'
+    performance:
+      tracked: ['BenchmarkSeriesLevelAggregationShapes (B2, countBy, avgBy, N14), base vs head', 'the 24h stack table of the pull request (B2, F1-F4)']
+      bound: 'a request within the bound: one stats_query_range as before; a request past it: the thrown-away whole read plus one stats_query_range per chunk, read one after another (the first time on a replica; a repeat within ten minutes reads only the chunks)'
+    pending: true
   - id: parser-identity-sliding-windows-bucket-merge
     chosen: 'A parser''s series identity over a range longer than the step (sum, avg, max or min over avg, max, min, stddev or stdvar over time after a json or logfmt parser of every key) reads one VictoriaLogs call per time chunk (listed_window_chunks.go): the function''s partials per series hash and per anchored bucket (the hash written before the unwrap gate, lower.Profile IdentityAhead), with the series that lie wholly in one bucket of the read folded in VictoriaLogs in the same scan (lower.SeriesFold), on /select/logsql/query with the bounds stats_query_range reads for the read''s grid (SeriesFoldQueryParams): the bucket stats by the bucket (_time:<step> offset <offset>), the grouping and the hash; a stats pipe by the grouping and the hash counts each series'' buckets and keeps its bucket rows (json_values); a series in one bucket whose value is finite and not a NaN line''s is folded (its hash blanked), every other series'' bucket rows are read back (unroll); the last stats pipe passes the kept series'' partials through (any) and adds up (or takes the extreme of) the folded values and counts them. The parser''s unpack writes its keys under the identity''s prefix and copies them out, so each line is unpacked once and hashed once (lower.SeriesFoldBase). The proxy reads the rows back into stats_query_range''s answer shape (seriesFoldRead.matrix); the window evaluator merges each kept series'' buckets into Loki''s windows and adds a folded row to every window holding its bucket, weighted by its count (foldAccumulator.addPartial). The unwrap check''s counting form groups the bucket stats and the last stats pipe by its flag, not the series stats (lower.SeriesFoldKeepsFlag). The reads bypass the stats extent cache; identical reads in flight share one call (seriesFoldPost).'
     over:

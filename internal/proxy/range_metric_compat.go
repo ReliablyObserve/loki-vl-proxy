@@ -810,8 +810,12 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	}
 	// An extraction list's series identity on a range longer than the step: the windows are evaluated in time chunks,
 	// each read under the per-chunk bound and folded as it is read (listed_window_chunks.go).
-	if p.listedWindowChunksRoute(w, r, listedChunkReads{bucketsOK: bucketsOK, counter: counterProof != nil, quantile: quantileCounts, rawRows: &forceRawLevelRows},
-		spec, origSpec, manualFunc, statsAggFunc, startTS, endTS, step, bucket, sampleShift) {
+	// So is every other series identity whose read over the whole range passed the stats body bound on this replica
+	// (windowReadOverflowed), or passes it below.
+	chunkReads := listedChunkReads{bucketsOK: bucketsOK, counter: counterProof != nil, quantile: quantileCounts, rawRows: &forceRawLevelRows,
+		overflowed: p.windowReadOverflowed(r, step, bucket)}
+	windowAggFunc := statsAggFunc
+	if p.listedWindowChunksRoute(w, r, chunkReads, spec, origSpec, manualFunc, windowAggFunc, startTS, endTS, step, bucket, sampleShift) {
 		return true
 	}
 	if !bucketsOK || (bucket > 0 && (endTS.Sub(startTS)+origSpec.Window)/bucket > heavyQueryBucketThreshold) {
@@ -844,7 +848,17 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		if forceRawLevelRows {
 			break
 		}
-		series, ok, err := collect(r.Context(), fetchStart, endTS)
+		readCtx, meter := withStatsReadMeter(r.Context())
+		series, ok, err := collect(readCtx, fetchStart, endTS)
+		if meter.overBytes && !chunkReads.overflowed {
+			// The whole range's buckets passed the stats body bound: the steps are read again in time chunks, each
+			// folded as it is read, where the answer (the folded groups) fits (listed_window_chunks.go).
+			chunkReads.overflowed = true
+			p.noteWindowReadOverflow(r, startTS, endTS, step, bucket)
+			if p.listedWindowChunksRoute(w, r, chunkReads, spec, origSpec, manualFunc, windowAggFunc, startTS, endTS, step, bucket, sampleShift) {
+				return true
+			}
+		}
 		if err != nil {
 			p.writeErr(w, r.Context(), err)
 			return true
