@@ -30,8 +30,8 @@ def strict_json(body):
         try:
             if math.isfinite(value):
                 return value
-        except OverflowError:
-            pass
+        except OverflowError as error:
+            raise ValueError("non-finite JSON number") from error
         raise ValueError("non-finite JSON number")
     def constant(_):
         raise ValueError("nonstandard JSON constant")

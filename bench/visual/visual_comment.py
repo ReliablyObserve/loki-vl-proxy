@@ -612,9 +612,9 @@ def render(rows, pixeldiff, plan, meta, a):
         px = "" if i["pixel"] is None else f"{i['pixel']:.2%}"
         lines.append(f"| {esc(r['page'])} | {esc(r['range'])} | {'core' if i['core'] else 'detailed'} | {same} | {vs_loki(r)} | {px} | {result_cell(i)} |")
     lines += ["", "Gate: a base-vs-PR data difference passes when the PR is closer to Loki, and fails when the PR diverges from Loki "
-              f"or Loki cannot decide it (at a range Loki does not hold, a difference passes when the same page proved that query to answer like Loki at a shorter range; otherwise label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
-              "but not on the base, an error banner, panel error, error answer or new \"No data\" panel on the PR, a PR side that never "
-              "settled, a value difference that did not reproduce on the recapture. A delayed first-pass request and pixel differences only warn."]
+              + f"or Loki cannot decide it (at a range Loki does not hold, a difference passes when the same page proved that query to answer like Loki at a shorter range; otherwise label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
+              + "but not on the base, an error banner, panel error, error answer or new \"No data\" panel on the PR, a PR side that never "
+              + "settled, a value difference that did not reproduce on the recapture. A delayed first-pass request and pixel differences only warn."]
     if a.mode == "branch":
         unclean = [i for i in items if i["fails"] or i["warns"]]
         for i in unclean:

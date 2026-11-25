@@ -44,7 +44,6 @@ def run(files, **kw):
 
 class PlanTest(unittest.TestCase):
     def test_historical_scene_reads_its_matrix_at_the_same_revision(self):
-        import json
         from unittest import mock
         catalog = {"pages": [{"id": "mixed", "kind": "explore", "case_id": "one"}]}
         def at(ref, path):
@@ -64,7 +63,6 @@ class PlanTest(unittest.TestCase):
                 plan.spec_at("missing-case")
 
     def test_mixed_parser_scene_uses_quality_matrix_and_proves_typed_admission(self):
-        import json
         spec = plan.load_spec()
         with open(os.path.join(plan.ab.ROOT, plan.SPEC)) as handle:
             raw = json.load(handle)

@@ -245,7 +245,7 @@ class ResampleResourcesTest(unittest.TestCase):
 
     def test_one_missing_boundary_cannot_be_hidden_by_other_resource_samples(self):
         result, _, _ = self.exercise(missing=True)
-        self.assertTrue(result["reuse"]["base"]["cold"]["cpu_samples"] == 2)
+        self.assertEqual(result["reuse"]["base"]["cold"]["cpu_samples"], 2)
         cost = result["reuse"]["pr"]["cold"]
         self.assertNotEqual(cost.get("cpu_samples"), 2)
         self.assertNotEqual(cost.get("rss_samples"), 2)

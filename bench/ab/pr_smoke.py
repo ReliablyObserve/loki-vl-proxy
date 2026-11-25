@@ -87,6 +87,7 @@ import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import answers  # noqa: E402
 import baseline_candidate  # noqa: E402
 import cold  # noqa: E402
 import comment  # noqa: E402
@@ -368,7 +369,7 @@ def original_window_problems(wrapper, shape, rng, sample, meta, phase="matrix"):
         return ["invalid original-window source"]
     ref, old = proof.get("reference") or {}, proof.get("measured_reference") or {}
     target_urls = wrapper.get("target_urls") or {}
-    endpoints = {t: perf_matrix.source_endpoint(measured[t].get("request_url")) for t in measured}
+    endpoints = {t: answers.source_endpoint(measured[t].get("request_url")) for t in measured}
     if not isinstance(target_urls, dict) or set(target_urls) != set(measured) or any(v is None for v in endpoints.values()) or endpoints["loki"] in (endpoints["base"], endpoints["pr"]):
         return ["invalid or proxy-as-Loki measured source"]
     for target in ("base", "pr", "loki"):
@@ -378,7 +379,7 @@ def original_window_problems(wrapper, shape, rng, sample, meta, phase="matrix"):
                 or type(receipt.get("response_bytes")) is not int or not 0 < receipt["response_bytes"] <= perf_matrix.CORRECTNESS_BODY_CAP
                 or not re.fullmatch(r"[0-9a-f]{64}", receipt.get("body_sha256") or "")):
             return ["original-window body provenance mismatch"]
-        if (perf_matrix.source_endpoint(target_urls[target]) is None or measured[target]["request_url"] !=
+        if (answers.source_endpoint(target_urls[target]) is None or measured[target]["request_url"] !=
                 perf_matrix.request_url(target_urls[target], shape, query, secs, step, end)):
             return ["measured request does not match declared target"]
         if not (receipt.get("status") == 200 and receipt.get("answer_proof") == "answer" or
@@ -391,8 +392,8 @@ def original_window_problems(wrapper, shape, rng, sample, meta, phase="matrix"):
             or extra == 1 and (ref.get("correctness_query_mode") != "space-tab-suffix-128"
                               or not actual.startswith(query) or len(actual) != len(query)+128 or set(actual[len(query):]) - {" ", "\t"})):
         return ["invalid original-window reference spelling"]
-    if (perf_matrix.source_endpoint(ref.get("url")) != endpoints["loki"]
-            or perf_matrix.source_endpoint(old.get("url")) != endpoints["loki"]):
+    if (answers.source_endpoint(ref.get("url")) != endpoints["loki"]
+            or answers.source_endpoint(old.get("url")) != endpoints["loki"]):
         return ["reference does not match measured Loki source"]
     url = perf_matrix.urllib.parse.urlsplit(ref["url"])
     expected = perf_matrix.urllib.parse.urlsplit(perf_matrix.request_url(target_urls["loki"], shape, actual, secs, step, end))

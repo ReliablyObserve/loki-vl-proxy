@@ -29,7 +29,6 @@ the independent original-window parity evidence.
 """
 import concurrent.futures
 import hashlib
-import json
 import math
 import os
 import sys

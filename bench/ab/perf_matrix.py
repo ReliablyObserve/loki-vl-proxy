@@ -66,7 +66,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from answers import correctness_endpoint, correctness_spelling, metadata_endpoint, metadata_schema, query_rejection, source_endpoint, strict_json  # noqa: E402
+from answers import correctness_endpoint, correctness_spelling, metadata_endpoint, metadata_schema, query_rejection, strict_json  # noqa: E402
 import report  # noqa: E402
 from bench.parity import differ  # noqa: E402
 from selection import load_shapes, query_lookback  # noqa: E402

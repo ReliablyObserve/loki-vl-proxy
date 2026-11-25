@@ -11,6 +11,7 @@ import unittest
 import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import answers  # noqa: E402
 import perf_matrix  # noqa: E402
 import pr_smoke  # noqa: E402
 
@@ -165,7 +166,7 @@ class RuntimeProofTest(unittest.TestCase):
         self.assertEqual((verdict["failed"], verdict["state"], verdict["exit"]), (True, "failed", 1))
 
     def test_source_endpoint_normalizes_default_ports_and_keeps_reverse_proxy_paths_distinct(self):
-        endpoint = perf_matrix.source_endpoint
+        endpoint = answers.source_endpoint
         self.assertEqual(endpoint("http://LOKI/a/"), endpoint("http://loki:80/a"))
         self.assertNotEqual(endpoint("http://host/base"), endpoint("http://host/loki"))
         self.assertNotEqual(endpoint("http://host:3100"), endpoint("http://host:3101"))
