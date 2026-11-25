@@ -41,10 +41,6 @@ type levelStages struct {
 	n    int
 	room [4]*levelFilterNodes
 	more []*levelFilterNodes
-	// keepsAcrossParsers is set for a metric row with a filter moved ahead of a parser: the parser's pipe would
-	// overwrite the derived detected_level a grouping reads with the line's key of that name, which Loki names
-	// detected_level_extracted.
-	keepsAcrossParsers bool
 }
 
 // add records the plan of the next level filter.
@@ -130,8 +126,7 @@ func detectedLevelStages(sel *queryplan.LogSelect, prof Profile) (*queryplan.Log
 	if !moves {
 		return sel, res, ""
 	}
-	// A label removed behind the moved filter stays removed: nothing is held across its parsers.
-	return hoistLevelFilters(sel, &res, first, state == levelIngest), res, ""
+	return hoistLevelFilters(sel, &res, first), res, ""
 }
 
 // checkLevelStage is the plan of a label filter on detected_level that no stage precedes (levelStage), or the
@@ -272,8 +267,6 @@ type levelWriter struct {
 	pending []*levelFilterNodes
 	// wrote says the pipes of a level filter were written.
 	wrote bool
-	// held says the derived detected_level was saved ahead of a parser (hold).
-	held bool
 }
 
 // write takes stage st when it is a level filter (and reports it), and writes the pipes held so far before any

@@ -89,7 +89,8 @@ func TestDetectedLevelFilterLoweringIsTheTranslatorsText(t *testing.T) {
 			if strings.HasPrefix(want, "|") {
 				want = "* " + want
 			}
-			if got := physical.Encode(op); got != want {
+			// A metric row's parser behind the derivation keeps the derived level.
+			if got := strings.Replace(physical.Encode(op), " | unpack_json keep_original_fields", " | unpack_json", 1); got != want {
 				t.Errorf("%s: %q:\n lowered %s\n  string %s", name, q, got, want)
 			}
 		}
@@ -441,9 +442,8 @@ func FuzzDetectedLevelLowering(f *testing.F) {
 				legacy = "* " + legacy
 			}
 			got := physical.Encode(op)
-			// A metric row holds the derived level across the parser.
-			got = strings.Replace(got, ` | format "<detected_level>" as __dl_keep`, "", 1)
-			got = strings.Replace(got, ` | rename __dl_keep as detected_level`, "", 1)
+			// A metric row keeps the derived level over the parser.
+			got = strings.Replace(got, ` | unpack_json keep_original_fields`, " | unpack_json", 1)
 			if got != QuoteKeywordFieldText(legacy) {
 				t.Fatalf("%s: %s:\n lowered %s\n  string %s", name, q, got, legacy)
 			}

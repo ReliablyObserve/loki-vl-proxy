@@ -184,11 +184,12 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 			// A parser, a drop, a keep and decolorize are pipes (stagePipes); a drop of matchers and a
 			// wildcard pattern write none.
 			if len(staged) > 0 && len(staged[i]) > 0 {
+				pipes := staged[i]
 				if _, ok := st.(*queryplan.Parse); ok {
 					afterParser = true
-					level.hold(&q)
+					pipes = level.guard(pipes)
 				}
-				q.pipe(staged[i]...)
+				q.pipe(pipes...)
 			}
 			continue
 		}
@@ -236,7 +237,6 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 	}
 	level.flush(&q)
 	q.flush()
-	level.restore(&q)
 	q.pipes = appendScratchDeletes(q.pipes, lf, len(read) > 0)
 	f, err := translate.StreamSelectorFilterNamed(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteFieldName)
 	if err != nil {

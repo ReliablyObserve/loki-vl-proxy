@@ -146,12 +146,11 @@ func constantLevelPlan(op, value, label string) (*levelFilterNodes, string) {
 
 // hoistLevelFilters is sel with the filters on the ingest value after the stage at index first moved ahead of it,
 // in their order: the pipeline Loki answers the same for, since the filters read the value no stage between changes.
-// holds says the label is still the ingest value at the end of the pipeline.
-func hoistLevelFilters(sel *queryplan.LogSelect, levels *levelStages, first int, holds bool) *queryplan.LogSelect {
+func hoistLevelFilters(sel *queryplan.LogSelect, levels *levelStages, first int) *queryplan.LogSelect {
 	var moved, rest []queryplan.Stage
 	// The plans follow the stage order: those of the moved filters come ahead of the constant ones left behind.
 	var ahead, behind []*levelFilterNodes
-	k, parser := 0, false
+	k := 0
 	for i, st := range sel.Stages {
 		if f, ok := st.(*queryplan.LabelFilter); ok && isLevelLeaf(f.Expr) {
 			p := levels.plan(k)
@@ -167,16 +166,12 @@ func hoistLevelFilters(sel *queryplan.LogSelect, levels *levelStages, first int,
 				continue
 			}
 		}
-		if i < first {
-			continue
+		if i >= first {
+			rest = append(rest, st)
 		}
-		_, isParser := st.(*queryplan.Parse)
-		parser = parser || isParser
-		rest = append(rest, st)
 	}
 	stages := append(append(append(make([]queryplan.Stage, 0, len(sel.Stages)), sel.Stages[:first]...), moved...), rest...)
-	ordered := levelStages{any: levels.any, mode: levels.mode,
-		keepsAcrossParsers: holds && parser && levels.mode == translate.DetectedLevelFilterMetric}
+	ordered := levelStages{any: levels.any, mode: levels.mode}
 	for _, p := range append(ahead, behind...) {
 		ordered.add(p)
 	}
@@ -184,27 +179,37 @@ func hoistLevelFilters(sel *queryplan.LogSelect, levels *levelStages, first int,
 	return &queryplan.LogSelect{Matchers: sel.Matchers, Stages: stages, Sem: sel.Sem}
 }
 
-// levelKeepField holds the derived detected_level of a metric row across its parsers; the chain's own deletes
-// (__dl_*) run ahead of it.
-const levelKeepField = "__dl_keep"
-
-// hold saves the derived detected_level of a metric row ahead of the first parser behind a filter moved ahead of it.
-func (w *levelWriter) hold(q *queryParts) {
-	if w.levels.keepsAcrossParsers && !w.held && w.wrote {
-		w.held = true
-		q.pipe(logsql.PipeFormat{Template: "<" + translate.DetectedLevelLabel + ">", ResultField: levelKeepField})
+// guard is the pipes of a parser behind the derivation of detected_level in a metric row: a grouping reads the
+// derived value from the field of that name, which the parser must not overwrite with a line's own key of the name
+// (Loki's detected_level_extracted). VictoriaLogs' keep_original_fields keeps every field already set, as Loki keeps
+// a stream label or structured metadata over a parsed key.
+func (w *levelWriter) guard(pipes []logsql.Pipe) []logsql.Pipe {
+	if !w.wrote || w.levels.mode != translate.DetectedLevelFilterMetric {
+		return pipes
 	}
-}
-
-// restore puts a held detected_level back once every stage is written.
-func (w *levelWriter) restore(q *queryParts) {
-	if w.held {
-		q.pipes = append(q.pipes, logsql.PipeRename{Pairs: [][2]string{{levelKeepField, translate.DetectedLevelLabel}}})
+	out := slices.Clone(pipes)
+	for i, p := range out {
+		switch p := p.(type) {
+		case logsql.PipeUnpackJSON:
+			p.KeepOriginalFields = true
+			out[i] = p
+		case logsql.PipeUnpackLogfmt:
+			p.KeepOriginalFields = true
+			out[i] = p
+		case logsql.PipeExtract:
+			p.KeepOriginalFields = true
+			out[i] = p
+		case logsql.PipeExtractRegexp:
+			p.KeepOriginalFields = true
+			out[i] = p
+		}
 	}
+	return out
 }
 
 // WritesLevelAfterStage reports a plan with a filter on detected_level after a stage that the lowering writes as
-// Loki reads it, where the string translator filters the field a parser, a drop or a formatting stage leaves
+// Loki reads it, where the string translator filters the field a parser, a drop or a formatting stage leaves, or a
+// metric with a parser behind such a filter, whose derived value the translator lets the parser overwrite
 // (semantics/level-filter-after-stage).
 func WritesLevelAfterStage(p *queryplan.Plan) bool { return nodeWritesLevelAfterStage(p.Root) }
 
@@ -213,7 +218,7 @@ func nodeWritesLevelAfterStage(n queryplan.Node) bool {
 	case *queryplan.LogSelect:
 		return selectWritesLevelAfterStage(n)
 	case *queryplan.RangeAgg:
-		return n.In != nil && selectWritesLevelAfterStage(n.In)
+		return n.In != nil && (selectWritesLevelAfterStage(n.In) || parsesBehindLevelFilter(n.In))
 	case *queryplan.VectorAgg:
 		return nodeWritesLevelAfterStage(n.In)
 	case *queryplan.Rank:
@@ -224,6 +229,55 @@ func nodeWritesLevelAfterStage(n queryplan.Node) bool {
 		return nodeWritesLevelAfterStage(n.L) || nodeWritesLevelAfterStage(n.R)
 	}
 	return false
+}
+
+// parsesBehindLevelFilter reports a log query with a parser behind a filter on detected_level: in a metric row the
+// lowering keeps the derived value over the parser (guard).
+func parsesBehindLevelFilter(sel *queryplan.LogSelect) bool {
+	filtered := false
+	for _, st := range sel.Stages {
+		switch s := st.(type) {
+		case *queryplan.LabelFilter:
+			filtered = filtered || s.Expr != nil && isLevelLeaf(s.Expr) && s.Expr.Value != ""
+		case *queryplan.Parse:
+			if filtered && s.Type != logql.ParserUnpack {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// FiltersLevelFirst reports a metric of one log query with a filter on detected_level that no stage precedes: the
+// string translator's text derives detected_level for it too.
+func FiltersLevelFirst(p *queryplan.Plan) bool {
+	n := p.Root
+	for {
+		switch v := n.(type) {
+		case *queryplan.VectorAgg:
+			n = v.In
+			continue
+		case *queryplan.LabelReplace:
+			n = v.In
+			continue
+		case *queryplan.RangeAgg:
+			if v.In == nil {
+				return false
+			}
+			for _, st := range v.In.Stages {
+				if f, ok := st.(*queryplan.LabelFilter); ok {
+					if f.Expr != nil && isLevelLeaf(f.Expr) {
+						return true
+					}
+					continue
+				}
+				if _, changes := levelTransition(levelIngest, st); changes {
+					return false
+				}
+			}
+		}
+		return false
+	}
 }
 
 func selectWritesLevelAfterStage(sel *queryplan.LogSelect) bool {

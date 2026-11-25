@@ -307,7 +307,7 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 			return "", false
 		}
 	}
-	if lower.WritesLevelAfterStage(plan) && addsLevelProbe(plan, canon) {
+	if lower.WritesLevelAfterStage(plan) && !lower.FiltersLevelFirst(plan) && addsLevelProbe(plan, canon) {
 		return "", false
 	}
 	op, err := lower.PlanQuery(canon, plan, prof)

@@ -25,34 +25,41 @@ import (
 // store, on v1.49.0 and v1.54.0, over the same entries as an ingestion route stores them: no detected_level field of
 // their own). A metric query compares the counts per detected_level. LVP_RUN_ORACLES=1 records the answers again.
 
-// levelFixture is one entry: the level Loki attaches to it, its stored fields and its line. The shapes are those the
-// derivation of detected_level answers as Loki's ingest does (a stored level field, a top-level level key of a JSON
-// or logfmt line, a keyword, none); its own known differences are held by internal/proxy
-// TestDetectedLevelFilterKnownChainDifferences.
+// levelFixture is one entry: its stream labels besides app, its structured metadata, its line, and the level Loki
+// attached to it at ingest (and the detected_level_extracted it added), recorded from a real Loki by
+// test/e2e-compat TestCompat_LevelAfterStageIngestLevels.
 type levelFixture struct {
-	level  string
-	fields [][2]string
-	line   string
+	Name      string            `json:"name"`
+	Stream    map[string]string `json:"stream"`
+	Fields    map[string]string `json:"fields"`
+	Line      string            `json:"line"`
+	Level     string            `json:"level"`
+	Extracted string            `json:"extracted"`
 }
 
-var levelFixtures = []levelFixture{
-	{level: "error", line: `{"level":"error","a":"1"}`},
-	{level: "info", line: `{"level":"info","a":"2"}`},
-	// The stored level decides at ingest; the line's own level key says otherwise.
-	{level: "info", fields: [][2]string{{"level", "info"}}, line: `{"level":"error","a":"1"}`},
-	{level: "error", fields: [][2]string{{"level", "error"}}, line: `{"level":"info","a":"1"}`},
-	// A body key called detected_level, which a parser names detected_level_extracted.
-	{level: "info", fields: [][2]string{{"level", "info"}}, line: `{"detected_level":"error","a":"1"}`},
-	{level: "error", fields: [][2]string{{"level", "error"}}, line: `{"detected_level":"info","a":"1"}`},
-	{level: "unknown", line: `{"detected_level":"","a":"1"}`},
-	{level: "info", fields: [][2]string{{"level", "info"}}, line: `level=error detected_level=error a=1`},
-	{level: "error", line: `level=error msg="job failed" a=1`},
-	{level: "info", line: `level=info msg=ok a=2`},
-	{level: "warn", fields: [][2]string{{"level", "WARN"}}, line: `a=1 detected_level=info`},
-	{level: "error", line: `2026 [1] db ERROR: deadlock`},
-	{level: "info", line: `info a=1`},
-	{level: "unknown", line: `ordinary sample 7`},
-	{level: "unknown", line: `{"a":`},
+var levelFixtures = func() (out []levelFixture) {
+	b, err := os.ReadFile("testdata/level-after-stage-entries.json")
+	if err == nil {
+		err = json.Unmarshal(b, &out)
+	}
+	if err != nil {
+		panic(err)
+	}
+	return out
+}()
+
+// lokiInputs are the stream labels and structured metadata Loki holds for the entry: its own, plus the level at
+// ingest, which a stream label of the name holds itself.
+func (f levelFixture) lokiInputs() (labels, metadata map[string]string) {
+	labels, metadata = map[string]string{"app": "g"}, map[string]string{}
+	maps.Copy(labels, f.Stream)
+	maps.Copy(metadata, f.Fields)
+	if _, ok := f.Stream["detected_level"]; !ok {
+		metadata["detected_level"] = f.Level
+	} else if f.Extracted != "" {
+		metadata["detected_level_extracted"] = f.Extracted
+	}
+	return labels, metadata
 }
 
 // levelAfterStageQueries are the log queries (the six corpus shapes' stages among them) and, after them, the metric
@@ -200,11 +207,8 @@ func recordLevelAfterStageAnswers(t *testing.T) {
 	for _, q := range levelAfterStageQueries {
 		log, _ := levelLogQuery(q)
 		for _, f := range levelFixtures {
-			metadata := map[string]string{"detected_level": f.level}
-			for _, kv := range f.fields {
-				metadata[kv[0]] = kv[1]
-			}
-			cases = append(cases, oraclerun.ProcessCase{Query: log, Labels: map[string]string{"app": "g"}, Line: f.line, Metadata: metadata, WithCategories: true})
+			labels, metadata := f.lokiInputs()
+			cases = append(cases, oraclerun.ProcessCase{Query: log, Labels: labels, Line: f.Line, Metadata: metadata, WithCategories: true})
 		}
 	}
 	loki, err := oraclerun.LokiProcess(filepath.Join(root, "test", "oracle", "loki"), cases)
@@ -243,10 +247,15 @@ func recordLevelAfterStageAnswers(t *testing.T) {
 	}
 	var rows []oraclerun.StoreRow
 	for j, f := range levelFixtures {
-		rows = append(rows, oraclerun.StoreRow{
-			Stream: [][2]string{{"app", "g"}, {"fx", fmt.Sprintf("%02d", j)}},
-			Fields: append(append([][2]string{}, f.fields...), [2]string{"_msg", f.line}),
-		})
+		row := oraclerun.StoreRow{Stream: [][2]string{{"app", "g"}, {"fx", fmt.Sprintf("%02d", j)}}}
+		for _, k := range slices.Sorted(maps.Keys(f.Stream)) {
+			row.Stream = append(row.Stream, [2]string{k, f.Stream[k]})
+		}
+		for _, k := range slices.Sorted(maps.Keys(f.Fields)) {
+			row.Fields = append(row.Fields, [2]string{k, f.Fields[k]})
+		}
+		row.Fields = append(row.Fields, [2]string{"_msg", f.Line})
+		rows = append(rows, row)
 	}
 	for _, v := range []string{"v1.49.0", "v1.54.0"} {
 		modfile := ""

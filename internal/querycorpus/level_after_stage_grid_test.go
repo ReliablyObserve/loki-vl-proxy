@@ -2,6 +2,7 @@ package querycorpus_test
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -76,10 +77,16 @@ func hoistedSpellingHeld(q string, prof planProfile, got physical.Op) string {
 		want = "* " + want
 	}
 	text := physical.Encode(got)
-	text = strings.Replace(text, ` | format "<detected_level>" as __dl_keep`, "", 1)
-	text = strings.Replace(text, ` | rename __dl_keep as detected_level`, "", 1)
-	if text != lower.QuoteKeywordFieldText(want) {
+	if withoutKeptOriginals(text) != withoutKeptOriginals(lower.QuoteKeywordFieldText(want)) {
 		return fmt.Sprintf("%s: %q:\n lowered %s\n  string %s (of %q)", prof.name, q, text, want, spelled)
 	}
 	return ""
 }
+
+// withoutKeptOriginals is the text without the keep_original_fields flag a metric row's parser behind the level
+// derivation takes (the derivation's own format pipes write the flag too, in both texts alike).
+func withoutKeptOriginals(text string) string {
+	return keptOriginalParser.ReplaceAllString(text, "$1")
+}
+
+var keptOriginalParser = regexp.MustCompile(`(\| (?:unpack_json|unpack_logfmt|extract|extract_regexp)(?: [^|]*?)?) keep_original_fields`)
