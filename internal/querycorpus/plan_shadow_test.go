@@ -119,7 +119,12 @@ var servedDivergences = map[string]string{
 	// blank (spacedParserText), which Loki reads as the same parser.
 	knownUnspacedParser:                       "TestUnspacedParserMatchesLoki (internal/queryplan/lower)",
 	"semantics/label-filter-numeric-equality": "TestNumericEqualityAfterParserMatchesLoki (internal/queryplan/lower), TestPlanMatchesLokiOnLogQueries, TestPlanMatchesLokiOnMetricQueries (internal/querycorpus)",
+	knownLevelAfterStage:                      "TestLevelFilterAfterStageMatchesLoki (internal/queryplan/lower)",
 }
+
+// knownLevelAfterStage is the recorded known divergence of a filter on detected_level after a stage, which the
+// translator reads from the field the stage leaves.
+const knownLevelAfterStage = "semantics/level-filter-after-stage"
 
 // knownUnspacedParser is the recorded known divergence of a regexp or pattern parser written with no blank before its
 // expression.
@@ -281,6 +286,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				// A numeric, duration or bytes equality after a json or logfmt parser: the plan compares the value as
 				// a number as Loki does, the translator writes the exact text of the literal.
 				caseID, ok = "semantics/label-filter-numeric-equality", true
+			}
+			if !ok && lower.WritesLevelAfterStage(plan) && !sameAsTranslator(got, legacy) {
+				// A filter on detected_level after a stage: the plan reads Loki's ingest value (or no label, after a
+				// drop), the translator the field the stage leaves.
+				caseID, ok = knownLevelAfterStage, true
 			}
 			if c := translatorspelling.Case(q, plan); !ok && !routed && c != "" && !sameAsTranslator(got, legacy) {
 				// A spelling the translator reads otherwise than the plan, which reads the tree: held to a spelling or a

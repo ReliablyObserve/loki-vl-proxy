@@ -21,6 +21,10 @@ func PlanLogFilter(p *queryplan.Plan, prof Profile) (logsql.FilterExpr, error) {
 	if keepsSpelling(sel, prof) {
 		return nil, &NotLoweredError{Construct: escapedSpellingConstruct}
 	}
+	if selectWritesLevelAfterStage(sel) {
+		// A delete reads filters on stored labels and lines alone.
+		return nil, &NotLoweredError{Construct: deletePipesConstruct}
+	}
 	q, _, err := logSelectQuery(sel, prof)
 	if err != nil {
 		return nil, err

@@ -29,6 +29,7 @@ smoke	internal/proxy	FuzzConvertUnwrap	12s	-	the unwrap conversion is ParseFloat
 smoke	internal/proxy	FuzzLokiLogfmtPairs	12s	-	the logfmt reading terminates, yields valid keys and reads back the pairs it yields
 smoke	internal/proxy	FuzzResponseKeyFencesMatchParsedTree	12s	-	every response key fence fires for the construct the parsed tree holds, in any keyword case, comment and name spelling, and keeps the keys its older screen fired for
 smoke	internal/proxy	FuzzNumericEqualityFence	12s	-	the numeric equality response fence fires on every query whose plan writes a numeric, duration or bytes equality after a json or logfmt parser
+smoke	internal/proxy	FuzzLevelAfterStageFence	12s	-	the fence of a detected_level filter after a stage fires on every query whose plan writes one
 smoke	internal/proxy	FuzzTumblingStatsRangeParams	12s	-	the tumbling stats_query_range form built once equals the form built and overwritten
 smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
 smoke	internal/proxy	FuzzTenantHeader	12s	-	X-Scope-OrgID check: Loki's tenant ID rules, own-tenant routing

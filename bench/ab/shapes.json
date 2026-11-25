@@ -2326,6 +2326,7 @@
      "name": "LF6 logs, json then detected_level",
      "query": "{service_name=\"api-gateway\"} | json | detected_level=\"error\"",
      "covers": [
+      "semantics/level-filter-after-stage",
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level",
       "semantics/json-metric-detected-level-derivation",
@@ -2498,6 +2499,7 @@
      "name": "LF21 logfmt count by detected_level, level filter",
      "query": "sum by (detected_level) (count_over_time({service_name=\"payment-service\"} | logfmt | detected_level=\"error\" [1m]))",
      "covers": [
+      "semantics/level-filter-after-stage",
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level",
       "parser-logfmt",
@@ -2508,6 +2510,7 @@
      "name": "LF22 json count by detected_level, level filter",
      "query": "sum by (detected_level) (count_over_time({service_name=\"api-gateway\"} | json | detected_level=\"error\" | drop __error__ [1m]))",
      "covers": [
+      "semantics/level-filter-after-stage",
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level",
       "semantics/json-metric-detected-level-derivation",

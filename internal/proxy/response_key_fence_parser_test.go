@@ -403,6 +403,7 @@ func fenceWants(query string) map[string]bool {
 		want["count-stdvar-series"] = lower.WritesCountVarianceSeries(plan)
 		// A numeric, duration or bytes equality after a json or logfmt parser, which the plan compares as a number.
 		want["numeric-equality"] = lower.WritesNumericEquality(plan)
+		want["level-after-stage"] = lower.WritesLevelAfterStage(plan)
 		// A log query with a stage and a label filter value that holds a \x00, \x01 or \x02 byte, read from the values
 		// the parser decoded.
 		if sel, ok := plan.Root.(*queryplan.LogSelect); ok {
@@ -848,6 +849,7 @@ func fenceFires(name, query string) bool {
 		"count-stdvar-series":      func() string { return countVarianceResponseKeyVersion(query) },
 		"marker-bytes-label-value": func() string { return markerBytesLabelValueResponseKeyVersion(query) },
 		"numeric-equality":         func() string { return numericEqualityResponseKeyVersion(query) },
+		"level-after-stage":        func() string { return levelAfterStageResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -889,6 +891,14 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"keep-unwrap-identity", `sum(sum_over_time({a="b"} | json | keep x | unwrap n [5m]))`, true},
 		{"keep-unwrap-identity", `sum(sum_over_time({a="b"} | json | unwrap n [5m]))`, false},
 		{"keep-unwrap-identity", `{a="b"} | json | keep x`, false},
+		{"level-after-stage", `{a="b"} | json | detected_level="x"`, true},
+		{"level-after-stage", `{a="b"} | LOGFMT | detected_level="x"`, true},
+		{"level-after-stage", "{a=\"b\"} | Drop level # c\n | detected_level!=\"x\"", true},
+		{"level-after-stage", `{a="b"} | decolorize | detected_level="x"`, true},
+		{"level-after-stage", `sum by (detected_level) (count_over_time({a="b"} | Json | detected_level="x" [1m]))`, true},
+		{"level-after-stage", `{a="b"} | detected_level="x"`, false},
+		{"level-after-stage", `{a="b"} | json | level="x"`, false},
+		{"level-after-stage", `sum by (detected_level) (count_over_time({a="b"}[1m]))`, false},
 		{"ip-label-filter", `{a="b"} | x = ip("10.0.0.0/8")`, true},
 		{"ip-label-filter", `{a="b"} | x = IP("10.0.0.0/8")`, true},
 		{"ip-label-filter", `{a="b"} | x != Ip ("10.0.0.0/8")`, true},

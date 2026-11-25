@@ -69,7 +69,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 11 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
-| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 12 | unknown |
+| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 13 | unknown |
 | semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 1 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 12 | 3 | gap |
@@ -180,3 +180,4 @@ newest weekly run did not re-measure (listed apart in performance.md).
 | `quality/unwrap-logfmt-narrowed-unpack` | 1 | 0.29s (G8 bytes() of a number, 24h) | 0.20s | 0.01s | 0.01s | — |
 | `semantics/unwrap-gate-parsefloat-divergences` | 1 | 0.29s (G8 bytes() of a number, 24h) | 0.20s | 0.01s | 0.01s | — |
 | `semantics/pattern-line-filter-anchoring` | 1 | 0.24s (A5 drilldown exclude, volume by detected_level, 24h) | 0.19s | 0.01s | 0.01s | — |
+| `semantics/level-filter-after-stage` | 1 | 0.11s (LF21 logfmt count by detected_level, level filter, 6h) | 0.06s | 0.01s | 0.01s | — |

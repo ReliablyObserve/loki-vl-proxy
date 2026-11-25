@@ -456,10 +456,14 @@
     "1h"
    ],
    "covers": [
+    "semantics/level-filter-after-stage",
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "semantics/json-metric-detected-level-derivation",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/level-filter-after-stage"
    ]
   },
   {
@@ -470,6 +474,7 @@
     "1h"
    ],
    "covers": [
+    "semantics/level-filter-after-stage",
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "semantics/json-metric-detected-level-derivation",
@@ -527,10 +532,14 @@
     "1h"
    ],
    "covers": [
+    "semantics/level-filter-after-stage",
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "parser-logfmt",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/level-filter-after-stage"
    ]
   },
   {

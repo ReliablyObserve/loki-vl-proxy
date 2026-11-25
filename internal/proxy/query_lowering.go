@@ -41,7 +41,7 @@ var QueryPlanFlippedConstructs = []string{"LogSelect", "VectorAgg", "RangeAgg", 
 // divergence (UnspacedParser: a regexp or pattern parser written with no blank before its expression, which the
 // translator copies into a pipe VictoriaLogs rejects, semantics/translator-copies-unspaced-parser); conformance/
 // registry/query-plan.json records the list.
-var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "LabelFormat", "LineFormat", "RegexpPattern", "DropKeep"}
+var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "LabelFormat", "LineFormat", "RegexpPattern", "DropKeep", "Decolorize"}
 
 // loweringProfile is the lowering's view of the options the string translator is given: the one place the
 // translator's options become a lower.Profile, shared by the flip and the live shadow.
@@ -185,9 +185,9 @@ func lowersParse(query string) bool {
 }
 
 // turnedAwayByStages reports a parsed query the text screens turn away for a stage of its log query, read from the
-// tree in a few steps: a vector(n) call at the top or as a binary operand, a decolorize or unpack stage, and a
-// detected_level filter after a stage (after a json or logfmt parser in a metric query; in a log query also an unwrap
-// and a service_name filter). An equality on a number after a parser is served from the plan. The validation asks it before lowersParse, so a query it names costs no text scan; a query it
+// tree in a few steps: a vector(n) call at the top or as a binary operand, an unpack stage, a decolorize stage in a
+// metric query, and (in a log query) an unwrap and a service_name filter. An equality on a number after a parser is
+// served from the plan. The validation asks it before lowersParse, so a query it names costs no text scan; a query it
 // misses is read by the screens as before. It never names a query the translation plans.
 func turnedAwayByStages(expr logqlpkg.Expr) bool {
 	logQuery := true
@@ -219,11 +219,12 @@ func isVectorCall(e logqlpkg.Expr) bool {
 
 // pipelineTurnedAway is turnedAwayByStages of one pipeline.
 func pipelineTurnedAway(stages []logqlpkg.Stage, logQuery bool) bool {
-	staged, keyParsed := false, false
 	for _, st := range stages {
 		switch x := st.(type) {
 		case *logqlpkg.DecolorizeStage:
-			return true
+			if !logQuery {
+				return true
+			}
 		case *logqlpkg.UnwrapStage:
 			if logQuery {
 				return true
@@ -232,31 +233,21 @@ func pipelineTurnedAway(stages []logqlpkg.Stage, logQuery bool) bool {
 			if x.Type == logqlpkg.ParserUnpack {
 				return true
 			}
-			staged = true
-			keyParsed = keyParsed || x.Type == logqlpkg.ParserJSON || x.Type == logqlpkg.ParserLogfmt
 		case *logqlpkg.LabelFilterStage:
-			if x.Expr != nil && labelFilterTurnedAway(x.Expr, staged, keyParsed, logQuery) {
+			if logQuery && x.Expr != nil && filtersServiceName(x.Expr) {
 				return true
 			}
-		case *logqlpkg.LineFilterStage:
-		default:
-			staged = true
 		}
 	}
 	return false
 }
 
-// labelFilterTurnedAway reports a leaf of a label filter the screens turn away: detected_level after a stage (in a
-// metric query, after a json or logfmt parser) and (in a log query) service_name.
-func labelFilterTurnedAway(e *logqlpkg.LabelFilterExpr, staged, keyParsed, logQuery bool) bool {
+// filtersServiceName reports a leaf of a label filter on service_name, which the screens turn away in a log query.
+func filtersServiceName(e *logqlpkg.LabelFilterExpr) bool {
 	if !e.IsLeaf() {
-		return labelFilterTurnedAway(e.Left, staged, keyParsed, logQuery) || labelFilterTurnedAway(e.Right, staged, keyParsed, logQuery)
+		return filtersServiceName(e.Left) || filtersServiceName(e.Right)
 	}
-	switch {
-	case e.Name == "detected_level" && (logQuery && staged || keyParsed), e.Name == "service_name" && logQuery:
-		return true
-	}
-	return false
+	return e.Name == "service_name"
 }
 
 // keepIdentityConstruct is the flip of a range function over an unwrapped label whose series a keep before the
@@ -316,6 +307,9 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 			return "", false
 		}
 	}
+	if lower.WritesLevelAfterStage(plan) && addsLevelProbe(plan, canon) {
+		return "", false
+	}
 	op, err := lower.PlanQuery(canon, plan, prof)
 	if err != nil {
 		return "", false
@@ -323,6 +317,20 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	querycorpus.Record(querycorpus.LogQLTranslate, canon)
 	p.recordLoweringShadow(shadowFlipped, construct)
 	return physical.Encode(op), true
+}
+
+// addsLevelProbe reports a metric query with a filter on detected_level after a stage that the lowering's text would
+// send to VictoriaLogs with one request more than the string translator's: the text derives detected_level, which
+// the native stats route probes the window's level fields for (pruneLevelChain), and neither a grouping by
+// detected_level (the translator's text derives it too) nor the ordered JSON evaluator (which derives it itself)
+// serves the query. Such a query stays with the string translator (semantics/level-filter-after-stage).
+func addsLevelProbe(plan *queryplan.Plan, canon string) bool {
+	if v, ok := plan.Root.(*queryplan.VectorAgg); ok && v.By != nil && !v.By.Without &&
+		slices.Contains(v.By.Labels, detectedLevelLabel) {
+		return false
+	}
+	_, ordered := compileOrderedJSONMetric(canon)
+	return !ordered
 }
 
 // dynamicIdentityConstruct is the flip of a range function over an unwrapped label after a json or logfmt parser

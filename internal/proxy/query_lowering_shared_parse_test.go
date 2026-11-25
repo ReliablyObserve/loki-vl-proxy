@@ -172,7 +172,7 @@ func TestTurnedAwayByStagesNamesNoServedQuery(t *testing.T) {
 		t.Fatal("no corpus query named")
 	}
 	for _, q := range []string{
-		`{app="a"} |= "x" | decolorize`, `{app="a"} | unpack | x="y"`, `{app="a"} | logfmt | detected_level="error"`,
+		`count_over_time({app="a"} | decolorize [5m])`, `{app="a"} | unpack | x="y"`,
 		`{app="a"} | service_name="x"`, `vector(1)`, `vector(1) + sum(rate({app="a"}[5m]))`,
 	} {
 		expr, err := logqlpkg.Parse(q)
@@ -189,7 +189,7 @@ func TestTurnedAwayByStagesNamesNoServedQuery(t *testing.T) {
 	// nobody.
 	for q, want := range map[string]bool{
 		`{app="a"} | json | unwrap n`: true, `sum_over_time({app="a"} | json | unwrap n [5m])`: false,
-		`{app="a"} | json | drop x | detected_level="error"`: true, `sum(count_over_time({app="a"} | drop x | detected_level="e" [5m]))`: false,
+		`{app="a"} | json | service_name="x"`: true, `sum(count_over_time({app="a"} | drop x | detected_level="e" [5m]))`: false,
 	} {
 		expr, err := logqlpkg.Parse(q)
 		if err != nil {

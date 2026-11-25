@@ -17,7 +17,7 @@ import (
 //     it does not know: the proxy evaluates them, or the plan does not write them;
 //   - a stage the lowering leaves to the translator in a metric query (unpack, line_format, decolorize), a regexp or
 //     pattern parser with no blank before its expression, a keep with an unwrap (the keep identity has its own path),
-//     a level filter after a parser, a set operator outside a log pipeline;
+//     detected_level named after a parser other than by a label filter, a set operator outside a log pipeline;
 //   - an empty without clause, a grouping after a range function inside an aggregation, nested aggregations over an
 //     unwrap, a range function that reads an unwrapped value with no unwrap;
 //   - a binary operation inside an aggregation, more than one at the top, one with a without clause or a
@@ -518,8 +518,9 @@ func (s *metricScan) keyword(q, w string, j int) (done, ok bool) {
 	case "unwrap":
 		s.unwrap, s.unwrapLabel = true, true
 	case "detected_level":
-		// A level filter after a parser.
-		return s.parsed && s.rangeAt > 0, false
+		// After a parser, a label filter is written as Loki reads it (level_after_stage.go); the name anywhere else
+		// there (a drop, a keep, a label_format) is turned away.
+		return s.parsed && s.rangeAt > 0 && (!s.labelFilter || !comparisonFollows(q, j)), false
 	case "by", "without":
 		// A grouping after a range function inside an aggregation, a without after one, and an empty without clause.
 		if s.afterRange && (s.paren > 0 || w == "without") || w == "without" && emptyClause(q, j) {

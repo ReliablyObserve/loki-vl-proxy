@@ -236,7 +236,7 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `sum(quantile_over_time(0.5, {app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap quantile"},
 		{q: `rate({app="a"} | json [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route pipeline"},
 		{q: `sum(count_over_time({app="a"}[5m]) > 1)`, req: RouteRequest{Instant: true}, construct: "VectorAgg operand"},
-		{q: `sum by (level) (rate({app="a"} | json | detected_level="x" [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg " + levelAfterStageConstruct},
+		{q: `sum by (level) (rate({app="a"} | json | detected_level="x" [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route pipeline"},
 		{q: `sum by (level) (rate({app="a"} | detected_level="x" [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route level filter"},
 		{q: `count_over_time({app="a"} |= "y" | detected_level!="info" [1m])`, req: RouteRequest{Step: time.Minute, Span: hour}, construct: "RangeAgg route level filter"},
 	} {

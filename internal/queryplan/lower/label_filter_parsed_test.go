@@ -140,8 +140,8 @@ func TestPlanDelegatesLabelFiltersAfterParser(t *testing.T) {
 		`{app="a"} | json a | a_extracted="1"`:                     "LogSelect label filter _extracted with parser arguments",
 		`{app="a"} | json | logfmt --keep-empty | a_extracted="1"`: "LogSelect label filter _extracted with parser arguments",
 		// derived labels.
-		`{app="a"} | json | detected_level="e"`: levelAfterStageConstruct,
-		`{app="a"} | json | service_name="s"`:   "LogSelect label filter service_name",
+		`{app="a"} | drop detected_level | json | detected_level="e"`: levelAfterStageConstruct,
+		`{app="a"} | json | service_name="s"`:                         "LogSelect label filter service_name",
 	} {
 		lowered, _, construct2, delegated, ok := parsedLowering(t, q, parserProfiles()[0])
 		if !ok {
