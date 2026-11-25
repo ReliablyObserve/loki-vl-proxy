@@ -117,18 +117,36 @@ var listedWindowChunksObserve func(first, last int64, m statsReadMeter)
 // listedChunkReads is what the window evaluator decided about a request before the chunks: bucketsOK, a bucket grid
 // exists; counter, a rate_counter proof reads the rows; quantile, the quantile's counts are read; rawRows, the level is
 // read from raw rows (set here when the bucket reads were sent over the whole request and did not answer, so the
-// evaluator goes on to the raw rows without sending them again).
+// evaluator goes on to the raw rows without sending them again); overflowed, the read of the whole range passed the
+// stats body bound (now, or on this replica within listedChunkSizeTTL: windowReadOverflowed).
 type listedChunkReads struct {
 	bucketsOK, counter, quantile bool
 	rawRows                      *bool
+	overflowed                   bool
 }
 
-// listedWindowChunksRoute answers a window metric over an extraction list's series identity in time chunks when the
-// request folds it (a matrix fold) and its windows are read from stats buckets, and reports whether it did.
+// rereadOverflowedInChunks follows a whole-range read of a window metric's buckets that passed the stats body bound:
+// the replica remembers it, and the steps are read again in time chunks, each folded as it is read, where the answer
+// (the folded groups) fits. It reports whether that answered the request; a read within the bound, or one already in
+// chunks, is left alone.
+func (p *Proxy) rereadOverflowedInChunks(w http.ResponseWriter, r *http.Request, meter *statsReadMeter, reads *listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
+	if !meter.overBytes || reads.overflowed {
+		return false
+	}
+	reads.overflowed = true
+	p.noteWindowReadOverflow(r, start, end, step, bucket)
+	return p.listedWindowChunksRoute(w, r, *reads, spec, origSpec, manualFunc, statsAggFunc, start, end, step, bucket, shift)
+}
+
+// listedWindowChunksRoute answers a window metric in time chunks when the request folds it (a matrix fold), its
+// windows are read from stats buckets, and its series identity is an extraction list's or its read over the whole
+// range passed the stats body bound (reads.overflowed: the stream's series of a count, min, max or avg over a range
+// function over many short-lived streams, which the vector aggregation folds into a few groups), and reports
+// whether it did.
 func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, reads listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
 	fold := matrixFoldFrom(r.Context())
 	if fold == nil || listedWindowChunksOff || !reads.bucketsOK || statsAggFunc == "" || *reads.rawRows || reads.counter || reads.quantile ||
-		!p.identityWindows(r.Context(), r.FormValue("query")) {
+		!reads.overflowed && !p.identityWindows(r.Context(), r.FormValue("query")) {
 		return false
 	}
 	chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
@@ -291,4 +309,20 @@ func (p *Proxy) listedChunkSize(ctx context.Context, key string) (int64, bool) {
 	}
 	n, err := strconv.ParseInt(string(raw), 10, 64)
 	return n, err == nil && n > 0
+}
+
+// windowReadOverflowed reports a request whose read over its whole range this replica saw pass the stats body bound
+// within listedChunkSizeTTL (noteWindowReadOverflow, or a chunked read that had to shrink): its windows are read in
+// time chunks at once, without sending the whole range's read again.
+func (p *Proxy) windowReadOverflowed(r *http.Request, step, bucket time.Duration) bool {
+	_, measured := p.listedChunkSize(r.Context(), listedChunkSizeKey(r.Context(), r.FormValue("query"), step, bucket))
+	return measured
+}
+
+// noteWindowReadOverflow records that the read of the steps [start, end] passed the stats body bound: the chunks
+// start at a quarter of them (listedChunkShrink), as a chunk whose read passed its bound is cut.
+func (p *Proxy) noteWindowReadOverflow(r *http.Request, start, end time.Time, step, bucket time.Duration) {
+	n := stepCount(start.UnixNano(), end.UnixNano(), step.Nanoseconds())
+	size := max(1, n/listedChunkShrink)
+	p.setLocalReadCacheWithTTL(listedChunkSizeKey(r.Context(), r.FormValue("query"), step, bucket), []byte(strconv.FormatInt(size, 10)), listedChunkSizeTTL)
 }
