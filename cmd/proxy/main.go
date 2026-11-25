@@ -113,6 +113,7 @@ type proxyRuntimeConfig struct {
 	backendDefaultMsgValue              string
 	jsonLineFieldsAsLineKeys            bool
 	detectedLevelBodyScan               bool
+	serviceNameStreamLabelOnly          bool
 	translateShadowSample               float64
 	queryPlanLowering                   bool
 	queryStatsMode                      string
@@ -658,6 +659,7 @@ func run(
 	emitStructuredMetadata := fs.Bool("emit-structured-metadata", true, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
 	backendDefaultMsgValue := fs.String("backend-default-msg-value", "", "VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default \"missing _msg field\" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields")
 	jsonLineFieldsAsLineKeys := fs.Bool("json-line-fields-as-line-keys", false, "Read every stored field of a row whose _msg is VictoriaLogs' missing-message placeholder (its -defaultMsgValue, or -backend-default-msg-value) as a key of the row's JSON line, as Loki holds a JSON line pushed to VictoriaLogs' Loki push route without disable_message_parsing=1: the fields are no labels until `| json` (structured metadata without a parser, parsed labels after `| logfmt` otherwise), and a query that reads a label no stage can give such a line (an unwrap or a label filter after `| logfmt` or without a parser) leaves those rows out, in VictoriaLogs. VictoriaLogs cannot tell such a line's keys from structured metadata pushed beside it, so with this on that structured metadata is hidden too, and so are the fields of any other row stored without a message (jsonline rows and OpenTelemetry map bodies without one, attributes included): leave it off when such rows carry structured metadata or attributes, and prefer pushing with disable_message_parsing=1, which keeps the line and needs no flag. Acts in the Loki-compatible profile only (-label-style=underscores with -metadata-field-mode=translated, the defaults) and needs a non-empty VictoriaLogs -defaultMsgValue")
+	serviceNameStreamLabelOnly := fs.Bool("service-name-stream-label-only", false, "Declare that VictoriaLogs stores service_name only as a stream label (or not at all) and service.name never as a regular field of a row whose stream has a service.name label (no structured metadata, log attribute or JSON key named service_name, none named service.name beside a service.name resource attribute or stream field). A {service_name=\"x\"} selector then also sends a stream filter, so VictoriaLogs reads only the streams whose service_name or service.name stream label can give x (with service.name as a stream field, the streams of that service). Answers stay the same while the declaration holds; a row it does not hold for can be missed. Off: the derived service_name filter alone, which VictoriaLogs evaluates over every stream of the window")
 	detectedLevelBodyScan := fs.Bool("detected-level-body-scan", true, "Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
 	deleteAPIAuthToken := fs.String("delete-api-auth-token", "", "Token every /loki/api/v1/delete request must carry, in X-Delete-Token or Authorization: Bearer (constant-time compare); required by -delete-api-enabled. It is the delete API's own credential: the admin token and the admin listener are unaffected. Prefer the Helm value deleteAuth.existingSecret, which keeps it out of the pod spec")
@@ -1002,6 +1004,7 @@ func run(
 			backendDefaultMsgValue:              *backendDefaultMsgValue,
 			jsonLineFieldsAsLineKeys:            *jsonLineFieldsAsLineKeys,
 			detectedLevelBodyScan:               *detectedLevelBodyScan,
+			serviceNameStreamLabelOnly:          *serviceNameStreamLabelOnly,
 			translateShadowSample:               *translateShadowSample,
 			queryPlanLowering:                   *queryPlanLowering,
 			queryStatsMode:                      *queryStatsMode,
@@ -2391,6 +2394,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendDefaultMsgValue:             cfg.backendDefaultMsgValue,
 		JSONLineFieldsAsLineKeys:           cfg.jsonLineFieldsAsLineKeys,
 		DisableDetectedLevelBodyScan:       !cfg.detectedLevelBodyScan,
+		ServiceNameStreamLabelOnly:         cfg.serviceNameStreamLabelOnly,
 		TranslateShadowSample:              cfg.translateShadowSample,
 		DisableQueryPlanLowering:           !cfg.queryPlanLowering,
 		QueryStatsMode:                     cfg.queryStatsMode,

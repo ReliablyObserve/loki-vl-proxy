@@ -535,6 +535,8 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
 			// A root identity over a range longer than the step writes its series hash ahead of the gate.
 			prof.IdentityAhead = ahead
+			// Only the text served here: the delete filter, the shadows and the verdicts keep the derivation alone.
+			prof.ServiceNameStreamLabelOnly = p.serviceNameStreamLabelOnly
 			// The planning budget (query_budget.go) stops the lowering at a node; a stopped lowering must not fall back
 			// to the string translator, which would do the work again.
 			seg := p.beginPlan(ctx, p.limits())

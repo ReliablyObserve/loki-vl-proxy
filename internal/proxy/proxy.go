@@ -272,6 +272,11 @@ type Config struct {
 	// fallback, skipping the per-row scan of the line body. Zero value keeps
 	// Loki's full derivation.
 	DisableDetectedLevelBodyScan bool
+	// ServiceNameStreamLabelOnly is the operator's statement that VictoriaLogs stores service_name only as a stream
+	// label (if at all) and service.name never as a regular field of a row whose stream has a service.name label:
+	// a positive service_name selector matcher then also sends the stream filter of the streams that can hold its
+	// rows (translate.ServiceNameStreamFilter). Zero value: the derivation's filter alone.
+	ServiceNameStreamLabelOnly bool
 	// TranslateShadowSample is the share (0-1) of the string translator's cache misses that the typed lowering
 	// also translates in the background to be compared with it (see lowering_shadow.go). 0 turns it off.
 	TranslateShadowSample float64
@@ -817,6 +822,7 @@ type Proxy struct {
 	backendDefaultMsgValue                string
 	jsonLineFieldsAsLineKeys              bool
 	detectedLevelBodyScan                 bool
+	serviceNameStreamLabelOnly            bool
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	deleteAPIAuthToken                    string
@@ -1572,6 +1578,7 @@ func New(cfg Config) (*Proxy, error) {
 		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
 		jsonLineFieldsAsLineKeys:              cfg.JSONLineFieldsAsLineKeys,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
+		serviceNameStreamLabelOnly:            cfg.ServiceNameStreamLabelOnly,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
 		flippedConstructs:                     QueryPlanFlippedConstructs,
@@ -3236,6 +3243,13 @@ func (p *Proxy) appendResponseProfileCacheKey(dst []byte, r *http.Request, endpo
 			dst = append(dst, "/ms-"...)
 			dst = strconv.AppendInt(dst, int64(limits.MaxQuerySeries), 10)
 		}
+	}
+	// An answer read through the service_name stream filter (-service-name-stream-label-only) is kept apart from
+	// one read without it, so turning the flag off never serves an answer the operator's statement decided. Every
+	// query with a service_name matcher spells these bytes; other queries, and every query while the flag is off,
+	// keep their keys.
+	if p.serviceNameStreamLabelOnly && strings.Contains(r.FormValue("query"), "service_name") {
+		dst = append(dst, "/sn-stream"...)
 	}
 	return dst
 }

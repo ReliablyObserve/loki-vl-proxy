@@ -79,6 +79,7 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-patterns-startup-peer-warm-timeout` | — | `5s` | Startup timeout for peer warm merge of pattern snapshots |
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
 | `-stream-fields` | — | — | Comma-separated `_stream_fields` labels used for stream selector optimization and label-surface hints |
+| `-service-name-stream-label-only` | — | `false` | Declare that VictoriaLogs stores `service_name` only as a stream label (or not at all) and `service.name` never as a regular field of a row whose stream has a `service.name` label. A positive `{service_name="x"}` matcher then also sends the stream filter `{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` beside the derived `service_name` filter, so VictoriaLogs reads only the streams that can hold that service (with `service.name` as an OpenTelemetry stream field, that service's streams) instead of every stream in the window. Answers are unchanged while the declaration holds; where it does not, rows can be missed. See [service_name stream filter](#service_name-stream-filter) for the checks to run before turning it on |
 | `-extra-label-fields` | `EXTRA_LABEL_FIELDS` | — | Comma-separated additional VL fields to expose on label-facing APIs and alias resolution paths (for example `host.id,k8s.cluster.name`) |
 
 Configure `-label-style` and `-metadata-field-mode` with flags (or Helm `extraArgs`). The `LABEL_STYLE` and `METADATA_FIELD_MODE` environment variables do not override the current defaults.
@@ -1124,3 +1125,42 @@ These Grafana Loki datasource settings now have a direct proxy-side mapping:
 Trusted user headers, `send_user_header`, what the request log records and what is forwarded to VictoriaLogs: see [Grafana user identity](tenancy-and-auth.md#5-grafana-user-identity). The recommended setup is `-log-user-header=X-Grafana-User` with `-log-user-header-trusted-cidrs`.
 
 Alerting is not finished: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend (a read bridge to vmalert), but it does not evaluate rules or implement Loki's ruler API. Loki-compatible rule evaluation, rule writes and full ruler parity are planned work, not shipped.
+
+## service_name stream filter
+
+Loki assigns `service_name` at ingest; the proxy derives it on the read path from what VictoriaLogs stores: the
+first non-empty of `service_name`, `service.name`, `service`, `app`, `application`, `app_name`, `name`,
+`app_kubernetes_io_name`, `container`, `container_name`, `k8s.container.name`, `k8s_container_name`, `component`,
+`workload`, `job`, `k8s.job.name`, `k8s_job_name`, else `unknown_service`. A `{service_name="x"}` selector is a
+filter over those fields, which VictoriaLogs evaluates on every stream of the window: Logs Drilldown sends every
+query of a service with that selector.
+
+`-service-name-stream-label-only` lets VictoriaLogs pick the streams from its stream index. It is off by default
+because it relies on a statement about how the deployment ingests, which the proxy cannot check for every row of
+every request at a cost lower than what it saves. Turn it on only when both hold for every tenant:
+
+- `service_name` is stored only as a stream label, or not at all: no structured metadata, OpenTelemetry log
+  attribute or JSON key named `service_name` outside the stream fields (the Loki push route keeps the
+  `service_name` label in the stream; OpenTelemetry ingestion stores `service.name`, not `service_name`);
+- `service.name` is never a regular field of a row whose stream has a `service.name` label (an OpenTelemetry log
+  attribute `service.name` beside the resource attribute). A `service.name` that is a regular field of streams
+  without that label is fine.
+
+Both can be checked in VictoriaLogs over a window (checked on v1.49.0 and v1.54.0); each query must return no
+rows. The first finds a regular `service_name` field, the second a regular `service_name` beside a stream label of
+another value, the third the same for `service.name` (a stream label value holding a `"` is reported too, which
+errs on the safe side):
+
+```
+service_name:* -{service_name=~".+"} | limit 1
+{service_name=~".+"} | extract_regexp `service_name="(?P<__sn_tag>[^"]*)"` from _stream | filter -service_name:eq_field(__sn_tag) | limit 1
+{service.name=~".+"} | extract_regexp `service\.name="(?P<__sd_tag>[^"]*)"` from _stream | filter -"service.name":eq_field(__sd_tag) | limit 1
+```
+
+The selector keeps its derived filter, so the rows kept are those it keeps without the flag; only the streams
+VictoriaLogs reads change. The stream filter is written for a positive matcher with a value; `!=`, `=~`, `!~`,
+`service_name=""`, a selector that already has a stream filter from `-stream-fields`, the delete API and queries
+the string translator serves keep the derived filter alone. Answers read with the flag are cached under keys of
+their own, so turning it off never serves one. With `service.name` stored as a regular field only, the flag has
+nothing to gain and costs VictoriaLogs about a millisecond more on the first read of a window.
+

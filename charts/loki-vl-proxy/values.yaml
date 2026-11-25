@@ -350,6 +350,7 @@ extraArgs:
   # stream-response: "true"  # chunked transfer encoding for large results
   # Stream selector optimization — list VL _stream_fields labels for fast index path
   # stream-fields: "app,env,namespace"
+  # service-name-stream-label-only: "false"  # declare service_name is stored only as a stream label and service.name never as a regular field beside a service.name stream label: {service_name="x"} then also sends a stream filter (VictoriaLogs reads only that service's streams); see the configuration reference before turning it on
   # Indexed label-values browse cache (high-cardinality UX hardening)
   # label-values-indexed-cache: "true"
   # label-values-hot-limit: "200"
