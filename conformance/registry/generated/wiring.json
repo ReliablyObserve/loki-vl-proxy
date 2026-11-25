@@ -2580,7 +2580,8 @@
     "semantics/unpack-parser-error-not-raised": [
       "internal/proxy/unpack_parser_error_test.go",
       "internal/querycorpus/unpack_error_lines_test.go",
-      "internal/querycorpus/unpack_sum_loki_diff_test.go"
+      "internal/querycorpus/unpack_sum_loki_diff_test.go",
+      "test/e2e-compat/unpack_metrics_test.go"
     ],
     "semantics/unwrap-bare-range-exposes-parsed-labels": [
       "internal/querycorpus/extraction_list_identity_loki_diff_test.go"
@@ -6943,6 +6944,7 @@
       "loki_api_v1_query_range",
       "semantics/unpack-instant-grouped-sum-reads-every-line",
       "semantics/unpack-instant-sum-rate-per-stream",
+      "semantics/unpack-parser-error-not-raised",
       "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
     ],
     "test/e2e-compat/unwrap_conversion_error_test.go": [

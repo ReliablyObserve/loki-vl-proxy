@@ -103,8 +103,11 @@ const (
 // filter on __error__ (Loki keeps the error as a label) or a drop of it after
 // the parser.
 func jsonErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation) (jsonErrorProbe, bool) {
-	if ra.HasOffset() && ra.OffsetDuration <= 0 || !hasJSONParser(ra) {
+	if ra.HasOffset() && ra.OffsetDuration <= 0 {
 		return jsonErrorProbe{}, false
+	}
+	if !hasJSONParser(ra) {
+		return unpackErrorProbeFor(ra, parent)
 	}
 	leaf := *ra
 	leaf.Offset, leaf.OffsetDuration = "", 0
@@ -579,7 +582,12 @@ func (j *jsonErrorCheck) confirmHits(ctx context.Context, p *Proxy, c *unwrapChe
 	for _, h := range hits {
 		for i := range j.probes {
 			probe := &j.probes[i]
-			from, to, _ := c.jsonWindows(probe)
+			from, to, last := c.jsonWindows(probe)
+			// A raw row's mark is one instant: a line in no window of the probe (a step longer than its range
+			// leaves gaps between windows) gives Loki no sample, and takes no lookup.
+			if !h.from.IsZero() && h.to.Sub(h.from) == time.Nanosecond && !c.jsonVisible(h.from.UnixNano(), probe, last) {
+				continue
+			}
 			if !h.from.IsZero() {
 				if h.from.After(from) {
 					from = h.from

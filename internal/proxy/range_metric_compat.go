@@ -1174,7 +1174,8 @@ func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
 }
 
 // unpackMetricResponseVersion fences the answers to a metric query over an unpack cached before its semantics
-// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream).
+// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream),
+// and a count over a line the unpack rejects answered where Loki fails (semantics/unpack-parser-error-not-raised).
 const unpackMetricResponseVersion = "@unpack-metric-v1:"
 
 // unpackMetricResponseKeyVersion is that fence: a text screen, so a query that names unpack and a rate or an

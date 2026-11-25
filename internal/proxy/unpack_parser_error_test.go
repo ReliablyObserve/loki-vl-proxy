@@ -41,6 +41,39 @@ func TestUnpackLineErrorMatchesRecordedLoki(t *testing.T) {
 	}
 }
 
+// The probe of a count over an unpack exists exactly where Loki can fail the query.
+//
+// conformance: semantics/unpack-parser-error-not-raised
+func TestUnpackErrorProbes(t *testing.T) {
+	for q, want := range map[string]int{
+		`count_over_time({a="b"} | unpack [1m])`:                                     1,
+		`rate({a="b"} |= "k" | unpack | drop x [1m] offset 5m)`:                      1,
+		`bytes_over_time({a="b"} | x="1" | unpack [1m])`:                             1,
+		`bytes_rate({a="b"} | unpack |= "k" [1m])`:                                   1,
+		`sum by (x) (count_over_time({a="b"} | unpack [1m]))`:                        1,
+		`max(count_over_time({a="b"} | unpack [1m]))`:                                1,
+		`count_over_time({a="b"} | unpack [1m]) + rate({a="b"} | unpack [1m])`:       2,
+		`label_replace(count_over_time({a="b"} | unpack [1m]), "d", "x", "d", ".*")`: 1,
+		`sum(count_over_time({a="b"} | unpack [1m]))`:                                0,
+		`sum(rate({a="b"} | unpack | keep x [1m]))`:                                  0,
+		`count_over_time({a="b"} | unpack | drop __error__, __error_details__ [1m])`: 0,
+		`count_over_time({a="b"} | unpack | __error__="" [1m])`:                      0,
+		`absent_over_time({a="b"} | unpack [1m])`:                                    0,
+		// Another parser beside the unpack: not covered yet (semantics/translator-writes-unpack-as-unpack-json).
+		`count_over_time({a="b"} | unpack | json [1m])`:   0,
+		`count_over_time({a="b"}[1m])`:                    0,
+		`sum_over_time({a="b"} | unpack | unwrap x [1m])`: 0,
+	} {
+		expr, ok := sharedLogQLExpr(RequestQueryText(q))
+		if !ok {
+			t.Fatalf("%s does not parse", q)
+		}
+		if got := len(jsonErrorProbes(expr)); got != want {
+			t.Errorf("%s: %d probes, want %d", q, got, want)
+		}
+	}
+}
+
 // FuzzUnpackLineError holds the reading to the contract on any line: an empty line and a valid JSON object set no
 // error, a line that opens with anything but a brace sets Loki's not-an-object error.
 //
