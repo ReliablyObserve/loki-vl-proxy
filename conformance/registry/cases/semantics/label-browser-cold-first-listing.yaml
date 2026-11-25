@@ -5,7 +5,48 @@ proves:
   - data-probing-and-freshness
 consumer: explore
 why: |
-  PLACEHOLDER
+  The first /labels of a window on a proxy that holds nothing for it (a
+  replica just started, or a window outside what its inventory holds) is
+  read from VictoriaLogs, while Loki lists label names from its index
+  whatever the range. In the CI A/B (loki-defaults) explore labels cold was
+  25-136 ms over 1h, 485-598 ms over 6h and 1.41-1.89 s over 24h against
+  Loki's 2-5, 3 and 74-85 ms (perf runs 45611003635, 45633797620,
+  45660055712, 45675990322); with a selector Loki is slower (0.16-0.46 s)
+  and the proxy is below it at 1h. On the weekly seed day (2026-10-27) the
+  24h rows were 0.58 s against 0.05 s.
+
+  Where the time goes (e2e stack, 2026-11-25, VictoriaLogs v1.54, Loki
+  3.7.10, flushed proxy, medians of three): the request path is VictoriaLogs
+  calls, not proxy work. Over 24h the listing made 63 stream_field_names
+  calls (day, hour and edge buckets, four in flight) taking 5.6 s of
+  VictoriaLogs time in all for a 1.35 s answer (5.6 s / 4); over 6h 27
+  calls, 2.6 s, 0.55 s; over 1h 17 calls, 0.85 s, 0.19 s. VictoriaLogs is
+  the bottleneck: the same listing took 2.4 s with one call in flight and
+  1.6 s with eight (each call slower under contention). One
+  stream_field_names call over the whole window takes 0.41-0.49 s over
+  24h, 0.15 s over 6h and 0.08 s over 1h; field_names, which also lists
+  fields that are not stream labels, takes 23, 9 and 5 ms.
+
+  Options to reach Loki's time, none implemented here:
+  - keep the inventory's buckets warm in the background for the windows
+    the presets cover (sealed hours and days once, the open hour within
+    -metadata-max-staleness), so a first window inside that horizon is
+    answered from memory like a moved one (about 1 ms in the CI A/B):
+    about 1.4 s of VictoriaLogs work per tenant and day of horizon at
+    start, then one open-hour listing (25-45 ms) per staleness interval
+    per active tenant, shared across replicas by the peer cache;
+  - answer a first listing with one call over the window and fill the
+    buckets in the background: 0.41 s instead of 1.35 s over 24h (3x),
+    still 100x Loki, and it adds that call to the VictoriaLogs work;
+  - list names from field_names (23 ms over 24h) filtered by a kept set of
+    stream field names: near Loki, but a new stream label would show only
+    after the set is refreshed, a semantics decision;
+  - more parallel bucket calls do not help (1.6 s at eight).
+
+  Until then the label browser shapes hold their cold run to the base
+  build's (bench/ab/shapes.json cold_vs_base: no slower than the base
+  beyond 30% and 100 ms after three flushed re-measures), so it cannot get
+  worse, and this item records the target against Loki.
 request:
   method: GET
   path: /loki/api/v1/labels
