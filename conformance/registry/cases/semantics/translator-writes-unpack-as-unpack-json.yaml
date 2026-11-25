@@ -47,8 +47,8 @@ why: |
 
   The query plan lowers a count_over_time, rate or absent_over_time over an
   unpack followed only by drops and keeps (the text equals the translator's,
-  and the lines it counts are Loki's), and a count_over_time or
-  absent_over_time of that form under a sum with no by or without clause;
+  and the lines it counts are Loki's), alone or under a sum with no by or
+  without clause;
   every other shape is delegated under the name of what it reads (unpack line,
   unpack line read, unpack label read, unpack parser order) until the stages
   after an unpack read the promoted labels and the replaced line as Loki does.
@@ -57,10 +57,9 @@ why: |
   series and values, over lines that are no JSON object too (Loki parses no
   line for a sum that needs no label).
 
-  Open in the served answers, each its own case (the plan writes the translator's
-  text, so the lowering changes none of them):
-  semantics/unpack-parser-error-not-raised and
-  semantics/unpack-instant-sum-rate-per-stream. The text screens of the query
+  Open in the served answers, its own case (the plan writes the translator's
+  text, so the lowering changes none of it):
+  semantics/unpack-parser-error-not-raised. The text screens of the query
   handlers still turn every unpack away, so no query over an unpack is served
   from the plan yet.
 

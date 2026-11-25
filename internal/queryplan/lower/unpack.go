@@ -24,9 +24,9 @@ import (
 //
 // So only a plain range aggregation (count_over_time, rate, absent_over_time) over a query whose only parser is the
 // unpack and whose stages after it are drops and keeps is lowered, written as the json parser the translator writes
-// for it (the same pipe, so the text is equal to the translator's); a count and an absence check also under a sum
-// with no by or without clause, which adds up the series however they split. Every other shape is delegated under
-// the name of what it reads (semantics/translator-writes-unpack-as-unpack-json).
+// for it (the same pipe, so the text is equal to the translator's); each also under a sum with no by or
+// without clause, which adds up the series however they split. Every other shape is delegated under the name of
+// what it reads (semantics/translator-writes-unpack-as-unpack-json).
 
 // The constructs this file delegates. The metric ones carry the prefix of the aggregation that owns the query.
 const (
@@ -39,7 +39,7 @@ const (
 	// unpackOrderConstruct is an unpack among other parsers, which read the line it replaced or the labels it set.
 	unpackOrderConstruct = "unpack parser order"
 	// unpackParserConstruct is the unpack in a query the lowering does not read the stages of (a vector aggregation's
-	// operand other than an ungrouped sum of a count or an absence check, a nest).
+	// operand other than an ungrouped sum of a count, a rate or an absence check, a nest).
 	unpackParserConstruct = "LogSelect unpack parser"
 )
 

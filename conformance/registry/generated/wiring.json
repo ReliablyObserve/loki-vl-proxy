@@ -609,6 +609,7 @@
       "test/e2e-compat/stdvar_over_time_binary_marker_test.go",
       "test/e2e-compat/sub_second_step_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go",
+      "test/e2e-compat/unpack_metrics_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
       "test/e2e-compat/unwrap_over_time_window_test.go",
@@ -771,6 +772,7 @@
       "test/e2e-compat/sub_second_step_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go",
       "test/e2e-compat/topk_range_per_step_test.go",
+      "test/e2e-compat/unpack_metrics_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
       "test/e2e-compat/unwrap_extent_cache_test.go",
@@ -2563,7 +2565,9 @@
       "internal/querycorpus/grammar_sweep_test.go"
     ],
     "semantics/unpack-instant-sum-rate-per-stream": [
-      "internal/querycorpus/unpack_sum_loki_diff_test.go"
+      "internal/proxy/unpack_sum_rate_test.go",
+      "internal/querycorpus/unpack_sum_loki_diff_test.go",
+      "test/e2e-compat/unpack_metrics_test.go"
     ],
     "semantics/unpack-non-string-values": [
       "internal/proxy/compat_oversized_reply_test.go"
@@ -5267,6 +5271,9 @@
       "semantics/comments-signed-compound-offsets",
       "semantics/proxy-accepts-operators-not-in-loki"
     ],
+    "internal/proxy/unpack_sum_rate_test.go": [
+      "semantics/unpack-instant-sum-rate-per-stream"
+    ],
     "internal/proxy/unwrap_binary_operand_loki_test.go": [
       "semantics/unwrap-conversion-error",
       "semantics/unwrap-conversion-error-binary-operand"
@@ -6909,6 +6916,11 @@
       "semantics/topk-bottomk-range-series",
       "semantics/topk-grouped-spellings"
     ],
+    "test/e2e-compat/unpack_metrics_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/unpack-instant-sum-rate-per-stream"
+    ],
     "test/e2e-compat/unwrap_conversion_error_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -7064,7 +7076,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 834,
+  "tests_with_markers": 836,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -611,6 +611,12 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if hasOrigSpec && origSpec.HasUnwrap && isSumAllLogRange(originalLogql) {
 		return false
 	}
+	// An ungrouped sum of a count or a rate over an unpack: VictoriaLogs answers one series from stats, as it
+	// does the range query. The evaluator below groups a rate by the stream the translated stats name, and reads
+	// every line of the window.
+	if hasOrigSpec && !origSpec.HasUnwrap && isUnpackSumAll(originalLogql) {
+		return false
+	}
 	// Instant queries with parser stages and explicit drop-error: use native VL stats.
 	// VL correctly evaluates [time-range, time] for instant queries; the drop-error opt-in
 	// means parse-failed lines are intentionally excluded — count-all semantics are acceptable.
@@ -1123,6 +1129,39 @@ func isSumAllLogRange(query string) bool {
 		return !unwrapped
 	}
 	return false
+}
+
+// isUnpackSumAll reports a sum with no by or without clause of a count_over_time or a rate over a log query with
+// an unpack stage (semantics/unpack-instant-sum-rate-per-stream).
+func isUnpackSumAll(query string) bool {
+	ra, ok := ungroupedSumRange(query)
+	if !ok || ra.Op != logqlpkg.RangeRate && ra.Op != logqlpkg.RangeCountOverTime {
+		return false
+	}
+	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
+	if !ok {
+		return false
+	}
+	for _, stage := range lq.Pipeline {
+		if p, ok := stage.(*logqlpkg.ParserStage); ok && p.Type == logqlpkg.ParserUnpack {
+			return true
+		}
+	}
+	return false
+}
+
+// unpackMetricResponseVersion fences the answers to a metric query over an unpack cached before its semantics
+// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream).
+const unpackMetricResponseVersion = "@unpack-metric-v1:"
+
+// unpackMetricResponseKeyVersion is that fence: a text screen, so a query that names unpack and a rate or an
+// _over_time function is fenced whatever its shape (one more cache miss), and no query without an unpack changes
+// its key.
+func unpackMetricResponseKeyVersion(query string, other bool) string {
+	if containsWord(query, "unpack", other) && (containsWord(query, "rate", other) || containsWord(query, "_over_time", other)) {
+		return unpackMetricResponseVersion
+	}
+	return ""
 }
 
 const logfmtPresenceResponseVersion = "@logfmt-presence-v1:"

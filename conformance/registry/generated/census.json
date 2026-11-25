@@ -1212,7 +1212,7 @@
     "semantics/unknown-pipeline-stage-error-text | compare:observed",
     "semantics/unknown-pipeline-stage-error-text | gap:open",
     "semantics/unpack-instant-sum-rate-per-stream | compare:exact",
-    "semantics/unpack-instant-sum-rate-per-stream | gap:open",
+    "semantics/unpack-instant-sum-rate-per-stream | gap:fixed",
     "semantics/unpack-logfmt-negative-ip-filter-selection | compare:observed",
     "semantics/unpack-logfmt-negative-ip-filter-selection | gap:open",
     "semantics/unpack-logfmt-negative-ip-filter-selection | query",
@@ -2647,6 +2647,7 @@
     "internal/proxy/typed_fold_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/unknown_logql_names_test.go | semantics/comments-signed-compound-offsets",
     "internal/proxy/unknown_logql_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
+    "internal/proxy/unpack_sum_rate_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "internal/proxy/unwrap_binary_operand_loki_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/unwrap_binary_operand_loki_test.go | semantics/unwrap-conversion-error-binary-operand",
     "internal/proxy/unwrap_bytes_gate_property_test.go | semantics/unwrap-bytes-whole-size-exact",
@@ -3571,6 +3572,9 @@
     "test/e2e-compat/topk_range_per_step_test.go | loki_api_v1_query_range",
     "test/e2e-compat/topk_range_per_step_test.go | semantics/topk-bottomk-range-series",
     "test/e2e-compat/topk_range_per_step_test.go | semantics/topk-grouped-spellings",
+    "test/e2e-compat/unpack_metrics_test.go | loki_api_v1_query",
+    "test/e2e-compat/unpack_metrics_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/unpack_metrics_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "test/e2e-compat/unwrap_conversion_error_test.go | loki_api_v1_query",
     "test/e2e-compat/unwrap_conversion_error_test.go | loki_api_v1_query_range",
     "test/e2e-compat/unwrap_conversion_error_test.go | parser-error-and-label-collision",
@@ -3680,7 +3684,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 831,
+      "go": 833,
       "playwright": 3
     },
     "page_kinds": {

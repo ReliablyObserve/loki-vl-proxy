@@ -310,6 +310,7 @@ func TestUnpackLowering(t *testing.T) {
 		`rate({app="x"} | unpack [5m])`,
 		`rate({app="x"} | unpack | drop a [5m])`,
 		`sum(count_over_time({app="x"} | unpack [5m]))`,
+		`sum(rate({app="x"} | unpack | keep a, b [5m]))`,
 		`sum(count_over_time({app="x"} |= "k" | unpack | drop a [5m] offset 1h))`,
 		`sum(absent_over_time({app="x"} | unpack [5m]))`,
 		`max(sum(count_over_time({app="x"} | unpack [5m])))`,
@@ -352,7 +353,6 @@ func TestUnpackLowering(t *testing.T) {
 		`max_over_time({app="x"} | unpack | unwrap x [5m])`:               "RangeAgg LogSelect " + unpackLabelReadConstruct,
 		`max_over_time({app="x"} | unpack | k="a" | unwrap x [5m])`:       "RangeAgg LogSelect " + unpackLabelReadConstruct,
 		`sum_over_time({app="x"} | unpack | unwrap bytes(x) [5m])`:        "RangeAgg LogSelect " + unpackLabelReadConstruct,
-		`sum(rate({app="x"} | unpack [5m]))`:                              "VectorAgg " + unpackParserConstruct,
 		`sum(bytes_rate({app="x"} | unpack [5m]))`:                        "VectorAgg " + unpackParserConstruct,
 		`sum by (a) (rate({app="x"} | unpack [5m]))`:                      "VectorAgg " + unpackParserConstruct,
 		`sum by (app) (count_over_time({app="x"} | unpack [5m]))`:         "VectorAgg " + unpackParserConstruct,
@@ -385,8 +385,8 @@ func TestUnpackLowering(t *testing.T) {
 // FuzzUnpackLowering holds the lowering of a query with an unpack to the contract of this file on any selector,
 // stage before and after the unpack, function and wrapper: a range aggregation the lowering writes is a count, a
 // rate or an absence check whose stages after the unpack are drops and keeps and whose only parser is the unpack,
-// alone or (a count or an absence check) under a sum with no clause, written as the string translator writes it; a
-// log query, and every other shape, is left to the translator.
+// alone or under a sum with no clause, written as the string translator writes it; a log query, and every other
+// shape, is left to the translator.
 //
 // conformance: semantics/translator-writes-unpack-as-unpack-json
 func FuzzUnpackLowering(f *testing.F) {
@@ -454,7 +454,7 @@ func FuzzUnpackLowering(f *testing.F) {
 			case 3, 4:
 				t.Fatalf("%s: the bytes of a line an unpack replaced are lowered", q)
 			}
-			if wrap%4 > 1 || wrap%4 == 1 && fn%5 == 1 {
+			if wrap%4 > 1 {
 				t.Fatalf("%s: a vector aggregation that reads the series an unpack makes is lowered", q)
 			}
 			if after%12 > 4 {

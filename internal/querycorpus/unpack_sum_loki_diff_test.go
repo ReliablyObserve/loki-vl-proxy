@@ -20,10 +20,8 @@ import (
 //   - Data (unpackSumFixture): job=pk holds only JSON objects (packed lines, lines without an `_entry`, an empty,
 //     numeric or object `_entry`, values that are not strings, a packed key that collides with a stream label);
 //     job=bad adds lines that are no JSON object in a ten-minute stretch, which Loki's unpack marks with __error__.
-//   - Open differences, both served from the string translator and unchanged by the plan's lowering: a range
-//     aggregation over lines Loki's unpack rejects answers where Loki fails
-//     (semantics/unpack-parser-error-not-raised), and an instant `sum(rate(… | unpack …))` answers one series per
-//     stream (semantics/unpack-instant-sum-rate-per-stream).
+//   - Open difference: a range aggregation over lines Loki's unpack rejects answers where Loki fails
+//     (semantics/unpack-parser-error-not-raised).
 //   - A sum with no clause adds up the series, so Loki's answer is held series by series and value by value (it
 //     answers over job=bad too: Loki parses no line for a sum that needs no label). A range aggregation of its own
 //     splits the series by the promoted labels (the owner-kept stream identity of parser metrics), so it is held to
@@ -48,7 +46,9 @@ func unpackSumQueries() []string {
 		out = append(out, `sum(absent_over_time(`+job+` | unpack [1m]))`)
 	}
 	// An absence check over a selector with no line: the sum answers 1.
-	return append(out, `sum(absent_over_time({job="none"} | unpack [1m]))`)
+	// absent_over_time reads the same count at an instant.
+	return append(out, `sum(absent_over_time({job="none"} | unpack [1m]))`,
+		`absent_over_time({job="none"} | unpack [1m])`, `absent_over_time({job="pk"} | unpack [1m])`)
 }
 
 func unpackSumFixture() metricFixture {
@@ -110,9 +110,8 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
-		// The plan lowers every query but a sum of a rate, which stays delegated for its instant answers.
-		if _, err := lower.PlanQuery(q, p, lower.Profile{}); (err == nil) == strings.HasPrefix(q, "sum(rate(") {
-			t.Fatalf("%s: lowered %v: %v", q, err == nil, err)
+		if _, err := lower.PlanQuery(q, p, lower.Profile{}); err != nil {
+			t.Fatalf("%s: not lowered: %v", q, err)
 		}
 		queries = append(queries, metricQuery{q: q, id: queryID("logql", q), plan: p, fix: fix, reqs: metricRequests(q, firstRangeOf(p.Root))})
 	}
@@ -120,7 +119,7 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 		recordMetricAnswers(t, unpackSumAnswersPath, queries)
 	}
 	answers := readMetricAnswersFrom(t, unpackSumAnswersPath)
-	match, runs, sums, failing, split := 0, 0, 0, 0, 0
+	match, runs, sums, failing := 0, 0, 0, 0
 	for _, mq := range queries {
 		rec := answers[mq.q]
 		if rec == nil || rec.Inputs != mq.inputsHash() {
@@ -144,17 +143,13 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 						diff = fmt.Sprintf("another answer: %v", d.classes)
 					}
 				}
-				// The open differences: a range aggregation of its own over lines Loki's unpack rejects, and an instant
-				// sum of a rate over an unpack, which answers per stream.
+				// The open difference: a range aggregation of its own over lines Loki's unpack rejects.
 				failsInLoki := !sum && strings.Contains(mq.q, `{job="bad"}`) && loki.Status == 400
-				perStream := mr.instant && strings.HasPrefix(mq.q, "sum(rate(") && strings.HasSuffix(mq.q, "| unpack [1m]))")
 				switch {
-				case (failsInLoki || perStream) && diff == "":
+				case failsInLoki && diff == "":
 					t.Errorf("%s %s %s matches Loki now: take it off the open differences", prof.name, mr.kind, mq.q)
 				case failsInLoki && run.status == 200:
 					failing++
-				case perStream && loki.Status == 200 && run.status == 200:
-					split++
 				case diff != "":
 					t.Errorf("%s %s %s (Loki %d, %d VictoriaLogs requests): %.600s", prof.name, mr.kind, mq.q, loki.Status, len(run.sent), diff)
 				default:
@@ -166,8 +161,8 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them sums), %d answer where Loki fails, %d answer an instant sum of a rate per stream", match, runs, sums, failing, split)
-	if sums == 0 || failing == 0 || split == 0 {
+	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them sums), %d answer where Loki fails", match, runs, sums, failing)
+	if sums == 0 || failing == 0 {
 		t.Error("no sum, or no run Loki fails, reached the comparison")
 	}
 }
