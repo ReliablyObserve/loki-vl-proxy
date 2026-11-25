@@ -1112,6 +1112,29 @@ class ShardTest(unittest.TestCase):
         spec = {"sets": {"m": {"shapes": [{"name": "s0"}, {"name": "s1", "instant": True}]}}}
         self.assertEqual(pr_smoke.set_costs({"sets": {"m": ["s0", "s1"]}}, spec), {"m": 3})
 
+    def test_a_set_cost_factor_multiplies_its_cost_and_spreads_the_heavy_sets(self):
+        spec = {"sets": {"heavy-a": {"cost_factor": 20, "shapes": [{"name": "s0"}]},
+                         "heavy-b": {"cost_factor": 20, "shapes": [{"name": "s0"}]},
+                         **{f"plain-{i}": {"shapes": [{"name": "s0"}, {"name": "s1"}]} for i in range(6)}}}
+        sel = {"run": True, "sets": {name: [shape["name"] for shape in group["shapes"]] for name, group in spec["sets"].items()}}
+        costs = pr_smoke.set_costs(sel, spec)
+        self.assertEqual((costs["heavy-a"], costs["plain-0"]), (40, 4))  # a range shape counts twice, the factor multiplies
+        shards = pr_smoke.split_selection(sel, 4, spec, min_cost=4)
+        homes = {name: i for i, shard in enumerate(shards) for name in shard["sets"]}
+        self.assertNotEqual(homes["heavy-a"], homes["heavy-b"])
+        loads = [sum(costs[n] for n in shard["sets"]) for shard in shards]
+        self.assertLessEqual(max(loads), 40 + 4)
+
+    def test_the_heavy_sets_of_the_real_shapes_carry_their_measured_factor(self):
+        with open(os.path.join(pr_smoke.HERE, "shapes.json")) as f:
+            spec = json.load(f)
+        self.assertGreaterEqual(spec["sets"]["series-level-fine-step"]["cost_factor"], 8)
+        self.assertGreaterEqual(spec["sets"]["mixed-parser-metrics"]["cost_factor"], 8)
+        sel = selection("series-level-fine-step", "mixed-parser-metrics", "level-filter", "json-detected-level")
+        shards = pr_smoke.split_selection(sel, 4, min_cost=1)
+        home = {n: i for i, sh in enumerate(shards) for n in sh["sets"]}
+        self.assertNotEqual(home["series-level-fine-step"], home["mixed-parser-metrics"])
+
     def test_a_selection_that_does_not_run_is_one_shard(self):
         sel = {"run": False, "sets": {}}
         self.assertEqual(pr_smoke.split_selection(sel, 4, {"sets": {}}), [sel])

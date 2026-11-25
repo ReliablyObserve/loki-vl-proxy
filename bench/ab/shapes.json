@@ -3342,6 +3342,7 @@
   }
 ,
   "series-level-fine-step": {
+   "cost_factor": 10,
    "description": "count, min, max and avg of a range function, and a sum by over a rate/count ratio, at a 20 s step over 24h: a sliding 5m window gives every stream a sample at each of the 15 steps its window covers (2.5 at a 120 s step), so the bucket matrix the proxy built before folding was (stream, active step) pairs x about 35 bytes (B2 of aggregation-over-binary answered 500 at 48h with a 120 s step, where Loki answers 200). The answers are groups x steps. Like B2, these compare differs from Loki where structured metadata splits Loki's series (metric-identity/structured-metadata-splits-series). Run with the control set.",
    "ranges": [
     "24h-20s"
@@ -3587,6 +3588,7 @@
    ]
   },
   "mixed-parser-metrics": {
+   "cost_factor": 9,
    "description": "Ordered mixed-parser metrics, reusing the typed quality matrix queries.",
    "ranges": [
     "1h",

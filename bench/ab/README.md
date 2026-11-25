@@ -427,6 +427,10 @@ and `-probes.json`.
      (40) per shard stays one shard, because each additional shard costs its own
      stack and seed. More shards reduce per-runner query work; they do not remove
      long-history seed requirements or establish that a run fits its time budget.
+     A set is never split, and its cost is its cells times an optional `cost_factor`
+     in `shapes.json` (default 1; the unit is about 20 seconds). `series-level-fine-step`
+     (10) and `mixed-parser-metrics` (9) carry the factor their measured cells need, so
+     a shard of four of them no longer runs an hour next to shards of 90 ordinary cells.
    - Each `perf-smoke-shard` runs steps 2 to 5 below for its sets, on its own
      runner and fresh stack, so a shape's three targets always share one
      stack.

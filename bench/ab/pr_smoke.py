@@ -647,13 +647,21 @@ SHARD_MIN_COST = 40
 
 
 def set_costs(sel, spec):
-    """{set: estimated cost}: one pass per shape in loki-defaults, one more per range-metric shape in aligned."""
+    """{set: estimated cost}: one pass per shape in loki-defaults, one more per range-metric shape in aligned,
+    times the set's `cost_factor` in shapes.json (default 1).
+
+    A cell is not always as long as another. The unit is about 20 seconds on a hosted runner (a shard of 51 units
+    ran 24 minutes with its stack and seed). A cell of series-level-fine-step (a sliding window at a 20 s step
+    over 24h) took about 200 seconds and one of mixed-parser-metrics about 180, ten and nine units: shard 10 of a
+    run, holding four of the first, ran over an hour. A set is not split, so a heavy one counts as many units as it
+    takes, and the others are spread around it."""
     costs = {}
     for name, shapes in sel.get("sets", {}).items():
         by_name = {sh["name"]: sh for sh in spec["sets"][name]["shapes"]}
         cells = sel.get("runtime_proof", {}).get("cells", {})
-        costs[name] = sum(max(1, len(cells.get(f"{name}/{n}", ["1h"]))) * (2 if range_metric(by_name[n]) else 1)
-                          for n in shapes)
+        factor = spec["sets"][name].get("cost_factor", 1)
+        costs[name] = factor * sum(max(1, len(cells.get(f"{name}/{n}", ["1h"]))) * (2 if range_metric(by_name[n]) else 1)
+                                   for n in shapes)
     return costs
 
 
