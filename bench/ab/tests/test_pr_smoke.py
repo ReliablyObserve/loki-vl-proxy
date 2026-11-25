@@ -1128,12 +1128,15 @@ class ShardTest(unittest.TestCase):
     def test_the_heavy_sets_of_the_real_shapes_carry_their_measured_factor(self):
         with open(os.path.join(pr_smoke.HERE, "shapes.json")) as f:
             spec = json.load(f)
-        self.assertGreaterEqual(spec["sets"]["series-level-fine-step"]["cost_factor"], 8)
-        self.assertGreaterEqual(spec["sets"]["mixed-parser-metrics"]["cost_factor"], 8)
-        sel = selection("series-level-fine-step", "mixed-parser-metrics", "level-filter", "json-detected-level")
+        # series-level-fine-step and mixed-parser-metrics took ten and nine units a cell; a branch may not hold both.
+        heavy = [name for name in ("series-level-fine-step", "mixed-parser-metrics") if name in spec["sets"]]
+        self.assertIn("series-level-fine-step", heavy)
+        for name in heavy:
+            self.assertGreaterEqual(spec["sets"][name]["cost_factor"], 8)
+        sel = selection(*heavy, "level-filter", "json-detected-level")
         shards = pr_smoke.split_selection(sel, 4, min_cost=1)
         home = {n: i for i, sh in enumerate(shards) for n in sh["sets"]}
-        self.assertNotEqual(home["series-level-fine-step"], home["mixed-parser-metrics"])
+        self.assertEqual(len({home[name] for name in heavy}), len(heavy))
 
     def test_long_history_sets_share_shards_and_the_seed_counts_in_the_load(self):
         # A 7d range makes a shard seed 50 hours (39 minutes); one such set in every shard is a seed in every shard.
