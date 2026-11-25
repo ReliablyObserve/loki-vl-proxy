@@ -57,8 +57,11 @@ why: |
   series and values, over lines that are no JSON object too (Loki parses no
   line for a sum that needs no label).
 
-  The text screens of the query handlers still turn every unpack away, so no
-  query over an unpack is served from the plan yet.
+  Open in the served answers, its own case (the plan writes the translator's
+  text, so the lowering changes none of it):
+  semantics/unpack-parser-error-not-raised. The text screens of the query
+  handlers still turn every unpack away, so no query over an unpack is served
+  from the plan yet.
 
   A pushdown of the packed rule is not exact: with `unpack_json fields
   (_entry)` guarded by a raw-line regexp for a string `_entry`, then a second

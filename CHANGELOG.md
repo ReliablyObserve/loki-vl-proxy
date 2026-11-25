@@ -9,14 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A `count_over_time`, `rate`, `bytes_over_time` or `bytes_rate` over `| unpack` whose window holds a line that is not a JSON object answers Loki's 400 `JSONParserErr`, where it answered 200, under every function above it; a `sum` with no grouping and a `drop __error__` answer as before. The check rides on the query's own VictoriaLogs reads.
 - An unwrapped metric over `| unpack` no longer answers 400 `SampleExtractionErr` for a value on a line Loki's unpack promotes nothing from (a numeric, object or nested `_entry`).
 - An instant `sum by (…)` of a `count_over_time` or `rate` over `| unpack` reads VictoriaLogs stats instead of every log line, so a long window answers where it failed with a 500.
 - An instant `sum(rate(… | unpack [r]))` answers one series, as Loki does, where it answered one series per stream. An instant `sum` of a `rate` or `count_over_time` over `| unpack` with no `by` or `without` now reads VictoriaLogs stats, as the range query does, instead of every log line of the window. Metric answers over `unpack` cached before this are not served.
 
 ### Changed
 
-- The query plan now lowers a `sum` with no `by` or `without` of `count_over_time`, `rate` or `absent_over_time` over `| unpack` (only `drop` and `keep` after the unpack), writing the same VictoriaLogs query as before. Queries over `| unpack` are still not served from the plan. A differential against real Loki holds these sums.
+- The query plan now lowers a `sum` with no `by` or `without` of `count_over_time`, `rate` or `absent_over_time` over `| unpack` (only `drop` and `keep` after the unpack), writing the same VictoriaLogs query as before. Queries over `| unpack` are still not served from the plan. A differential against real Loki holds these sums. It also records an existing difference: a count or a rate over a line that is not a JSON object answers where Loki fails with `JSONParserErr`.
 
 ## [2.364.1] - 2026-11-25
 

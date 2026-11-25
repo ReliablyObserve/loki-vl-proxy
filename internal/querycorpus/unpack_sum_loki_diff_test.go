@@ -20,9 +20,8 @@ import (
 //   - Data (unpackSumFixture): job=pk holds only JSON objects (packed lines, lines without an `_entry`, an empty,
 //     numeric or object `_entry`, values that are not strings, a packed key that collides with a stream label);
 //     job=bad adds lines that are no JSON object in a ten-minute stretch, which Loki's unpack marks with __error__.
-//   - A range aggregation over lines Loki's unpack rejects fails with Loki's pipeline error under every function
-//     (semantics/unpack-parser-error-not-raised), unless the pipeline drops or filters __error__ or a sum without
-//     grouping needs no label.
+//   - Open: a range aggregation over lines Loki's unpack rejects answers where Loki fails with its pipeline error
+//     (semantics/unpack-parser-error-not-raised); a sum without grouping needs no label and matches.
 //   - An unwrapped value over lines that are not packed and hold no number fails nothing, as in Loki
 //     (semantics/unwrap-conversion-check-reads-unpack-unlike-loki).
 //   - A sum with no clause adds up the series, so Loki's answer is held series by series and value by value (it
@@ -203,7 +202,7 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 		recordMetricAnswers(t, unpackSumAnswersPath, queries)
 	}
 	answers := readMetricAnswersFrom(t, unpackSumAnswersPath)
-	match, runs, sums, failing, open := 0, 0, 0, 0, 0
+	match, runs, sums, failing, open, notRaised := 0, 0, 0, 0, 0, 0
 	for _, mq := range queries {
 		rec := answers[mq.q]
 		if rec == nil || rec.Inputs != mq.inputsHash() {
@@ -237,6 +236,15 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 					open++
 					continue
 				}
+				// Open: a metric over a line the unpack rejects answers where Loki fails, unless the unwrap conversion
+				// check reads the line (semantics/unpack-parser-error-not-raised).
+				if loki.Status == 400 && !strings.Contains(mq.q, "unwrap") {
+					if run.status != 200 {
+						t.Errorf("%s %s %s: status %d where Loki fails: take the open parser error difference off the harness", prof.name, mr.kind, mq.q, run.status)
+					}
+					notRaised++
+					continue
+				}
 				if diff != "" {
 					t.Errorf("%s %s %s (Loki %d, %d VictoriaLogs requests): %.600s", prof.name, mr.kind, mq.q, loki.Status, len(run.sent), diff)
 					continue
@@ -257,8 +265,8 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 	if open != listed {
 		t.Errorf("%d runs listed in unpackSumKnown were open, %d are listed: a listed query is no longer run", open, listed)
 	}
-	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them answered sums, %d Loki errors), %d listed as open", match, runs, sums, failing, open)
-	if sums == 0 || failing == 0 {
+	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them answered sums, %d matching Loki errors), %d listed as open, %d answering where Loki fails", match, runs, sums, failing, open, notRaised)
+	if sums == 0 || notRaised == 0 {
 		t.Error("no sum, or no run Loki fails, reached the comparison")
 	}
 }

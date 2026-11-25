@@ -196,8 +196,8 @@ func trailingKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
 // inner stats are grouped by the kept labels in the translation
 // (translator.trailingKeepGrouping). An instant query has no steps to keep.
 func applyKeepSeriesGrouping(r *http.Request, query string, isRange bool) string {
-	// A sum with no clause of a count or a rate over an unpack adds up every series, whatever a keep leaves; a
-	// grouping pushed under it would make Loki's reading parse every line (a parser error a sum raises none of).
+	// A sum with no clause of a count or a rate over an unpack adds up every series, whatever a keep leaves: it
+	// needs no grouping pushed under it, which would take it off the stats route (isUnpackSum).
 	if strings.Contains(query, "unpack") && isUnpackSumAll(query) {
 		return query
 	}
