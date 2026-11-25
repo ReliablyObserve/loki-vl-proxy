@@ -105,14 +105,13 @@ func TestQueryPlanLowering_LogCorpusTextParity(t *testing.T) {
 					// TestNumericEqualityAfterParserMatchesLoki), so the texts differ by design.
 					continue
 				}
-				if plan := resolvedPlan(q); plan != nil && lower.WritesLevelAfterStage(plan) {
-					// A filter on detected_level after a stage is written ahead of it
-					// (semantics/level-filter-after-stage, held to Loki by TestLevelFilterAfterStageMatchesLoki).
-					continue
-				}
 				got, gotErr := on.translateLogResponseQuery(ctx, q)
 				want, wantErr := off.translateLogResponseQuery(ctx, respaced(q))
-				if got != want || (gotErr == nil) != (wantErr == nil) {
+				// A filter on detected_level after a stage is written ahead of it
+				// (semantics/level-filter-after-stage, held to Loki by TestLevelFilterAfterStageMatchesLoki).
+				plan0 := resolvedPlan(q)
+				ahead := plan0 != nil && lower.WritesLevelAfterStage(plan0)
+				if !ahead && (got != want || (gotErr == nil) != (wantErr == nil)) {
 					if differs++; differs <= 10 {
 						t.Errorf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
 					}

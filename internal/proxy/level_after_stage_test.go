@@ -55,7 +55,7 @@ func TestLevelAfterStageServedFromPlan(t *testing.T) {
 }
 
 // The fence of a filter on detected_level after a stage fires on every query whose plan writes one, whatever the
-// spelling.
+// spelling: its text screen never turns one away.
 //
 // conformance: semantics/level-filter-after-stage, cache-response-key-versions
 func FuzzLevelAfterStageFence(f *testing.F) {

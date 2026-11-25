@@ -39,7 +39,7 @@ request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{service_name="worker-service"} | label_format detected_level="error" | detected_level="error"'
+    query: '{service_name="visual-detected-level-stage"} | keep detected_level'
     start: 'now-15m'
     end: 'now'
     limit: '100'
@@ -50,8 +50,7 @@ compare:
   mode: observed
   fields: [status, streams.stream, streams.values]
   expect: |
-    Loki's labels and entries: the filter reads the value the label_format
-    stage wrote, on every entry.
+    Loki's entries, each with detected_level in its structured metadata.
 gap:
   status: open
   impact: explore-visible

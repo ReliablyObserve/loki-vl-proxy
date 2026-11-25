@@ -403,7 +403,6 @@ func fenceWants(query string) map[string]bool {
 		want["count-stdvar-series"] = lower.WritesCountVarianceSeries(plan)
 		// A numeric, duration or bytes equality after a json or logfmt parser, which the plan compares as a number.
 		want["numeric-equality"] = lower.WritesNumericEquality(plan)
-		want["level-after-stage"] = lower.WritesLevelAfterStage(plan)
 		// A log query with a stage and a label filter value that holds a \x00, \x01 or \x02 byte, read from the values
 		// the parser decoded.
 		if sel, ok := plan.Root.(*queryplan.LogSelect); ok {

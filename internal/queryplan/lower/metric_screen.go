@@ -158,8 +158,8 @@ type metricScan struct {
 	// ranges, vectors and labelReplaces count those calls; labelReplaceCommas the commas between the arguments of the
 	// top label_replace.
 	ranges, vectors, labelReplaces, labelReplaceCommas int
-	// parsed is a json or logfmt parser seen.
-	parsed bool
+	// parsed is a json or logfmt parser seen, jsonStage a json one.
+	parsed, jsonStage bool
 	// needsUnwrap is a range function that reads an unwrapped value; unwrap the unwrap stage, unwrapLabel the label it
 	// names next.
 	needsUnwrap, unwrap, unwrapLabel bool
@@ -172,8 +172,9 @@ type metricScan struct {
 	// in a json stage until the next pipe, and jsonPath by an extraction expression the lowering does not write (one
 	// that starts with a bracket or a blank, or holds a comma, a quote or an escape).
 	extractedFilter, jsonArgs, jsonPath bool
-	// parsedOther is a regexp or pattern parser; groupsServiceName a clause naming service_name.
-	parsedOther, groupsServiceName bool
+	// parsedOther is a regexp or pattern parser; groupsServiceName a clause naming service_name, groupsLevel one
+	// naming detected_level.
+	parsedOther, groupsServiceName, groupsLevel bool
 	// log is set for a log query (ScreenLogStages): its whole text after the selector is a pipeline. stages are the
 	// stage families read, and staged is a stage other than a line or label filter read.
 	log     bool
@@ -475,6 +476,7 @@ func (s *metricScan) label(q, w string, j int) (done, ok bool) {
 	case s.clauseAt > 0 && s.paren == s.clauseAt:
 		s.candidate = s.candidate || translate.ParsedLabelCandidate(w)
 		s.groupsServiceName = s.groupsServiceName || w == "service_name"
+		s.groupsLevel = s.groupsLevel || w == "detected_level"
 		return true, true
 	case !s.unwrapLabel:
 		return false, false
@@ -513,14 +515,17 @@ func (s *metricScan) keyword(q, w string, j int) (done, ok bool) {
 	case "json", "logfmt":
 		s.parsed = true
 		s.jsonArgs = w == "json"
+		s.jsonStage = s.jsonStage || w == "json"
 	case "keep":
 		s.keep = true
 	case "unwrap":
 		s.unwrap, s.unwrapLabel = true, true
 	case "detected_level":
-		// After a parser, a label filter is written as Loki reads it (level_after_stage.go); the name anywhere else
-		// there (a drop, a keep, a label_format) is turned away.
-		return s.parsed && s.rangeAt > 0 && (!s.labelFilter || !comparisonFollows(q, j)), false
+		// After a parser, a label filter is written as Loki reads it (level_after_stage.go) where the proxy serves
+		// it: under a grouping by the label, or after a json parser. The name anywhere else there (a drop, a keep, a
+		// label_format) is turned away.
+		served := s.labelFilter && (s.groupsLevel || s.jsonStage) && comparisonFollows(q, j)
+		return s.parsed && s.rangeAt > 0 && !served, false
 	case "by", "without":
 		// A grouping after a range function inside an aggregation, a without after one, and an empty without clause.
 		if s.afterRange && (s.paren > 0 || w == "without") || w == "without" && emptyClause(q, j) {

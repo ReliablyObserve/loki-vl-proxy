@@ -418,6 +418,11 @@ func FuzzDetectedLevelLowering(f *testing.F) {
 		// A filter behind the parser is written ahead of it: the reference is the translator's text for that spelling.
 		reference := q
 		if shape%6 == 4 {
+			// A comparison with "" behind a parser is a constant the string translator has no spelling for
+			// (TestLevelFilterAfterStageMatchesLoki holds it to Loki).
+			if op := (ops >> 3) % 6; v2 == "" && op != 2 && op != 3 {
+				return
+			}
 			reference = strings.Replace(q, l1+` | json | `+l2, l1+` | `+l2+` | json`, 1)
 		}
 		for name, prof := range detectedLevelProfiles() {

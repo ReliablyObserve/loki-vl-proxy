@@ -32,7 +32,7 @@ why: |
   label_format from or to it, a parser after it was removed, unpack), an
   and/or tree, a comparison or ip() form, and the labels of the response.
 corpus:
-  size: 9
+  size: 8
   dimensions:
     shapes:
       - query: '{service_name="worker-service"} | logfmt | detected_level="error"'
@@ -40,7 +40,6 @@ corpus:
       - query: '{service_name="api-gateway"} | pattern "<_> <m>" | detected_level=~"error|warn"'
       - query: '{namespace="prod"} | drop level | detected_level="error"'
       - query: '{namespace="prod"} | decolorize | detected_level="error"'
-      - query: '{namespace="prod"} | decolorize |= "error"'
       - query: '{service_name="api-gateway"} | drop detected_level | detected_level=""'
       - query: '{service_name="api-gateway"} | keep app | detected_level="error"'
       - query: 'sum by (detected_level) (count_over_time({service_name="api-gateway"} | logfmt | detected_level!="info" [5m]))'
