@@ -29,9 +29,37 @@ why: |
   23.4 s): only its buckets make the next windows cheap, and the keep-warm
   loop fills them for the 1 h to 7 d presets.
 
+  A window moved back by an hour or more has new unaligned ends that no
+  earlier request cached: each end was an edge plus up to three minute and
+  eleven 5-minute buckets, about 19 VictoriaLogs calls per 24h /labels, five
+  rounds at four in parallel. In the perf A/B of 2026-11-25 (loki-defaults,
+  runs 45611003635 and 45633797620) the shape "refresh labels (label
+  browser)", which moves its 24h window back 3617 s per run, took 306 and
+  273 ms warm against Loki's 64 and 66 ms with 20 calls per request, and its
+  6h window (moved back 317 s) 21-56 ms against 2-3 ms. Since 2026-11-25 the
+  names-only /labels listing answers those pieces from the hour that holds
+  them (semantics/label-inventory-exact-and-incremental): 2.7-12 calls and
+  70-94 listed minutes per moved 24h request, depending on where its ends
+  sit in their hours (12 near now, where the right end of the first moved
+  window lies in an hour that ended less than an hour ago and is read as
+  before), and 3 calls and 60 minutes for a refresh across an hour boundary,
+  instead of 19 calls and 120 minutes each; first loads unchanged
+  (BenchmarkLabelsShiftedWindow, decision
+  labels-names-only-ends-from-their-hours in data-probing-and-freshness).
+
+  With the memory answers of semantics/label-inventory-exact-and-incremental
+  (2026-11-25, decision labels-memory-answers-at-loki-granularity) the moved
+  windows of this shape make no VictoriaLogs call on the request path. On
+  the e2e stack (Loki 3.7.10 aligned profile, VictoriaLogs v1.54, data of
+  2026-11-24/25), timed per request with interleaved targets over three
+  rounds, the warm p50 was 0.50-0.55 ms (1h), 0.50-0.52 ms (6h) and
+  0.26-0.63 ms (24h) against Loki's 1.31-2.50, 1.32-1.40 and 1.08-1.64 ms and
+  base's 28.8-42.7, 22.3-23.9 and 0.3-119.6 ms (base's low 24h figures are
+  response cache hits of windows an earlier round asked).
+
   Implemented in internal/proxy/metadata_inventory.go (the bucketed
-  inventory) and internal/proxy/label_metadata.go (warmMetadataCacheOnStartup,
-  warmLabelWindows, labelKeepWarmSchedule).
+  inventory, coverFinePieces) and internal/proxy/label_metadata.go
+  (warmMetadataCacheOnStartup, warmLabelWindows, labelKeepWarmSchedule).
 request:
   method: GET
   path: /loki/api/v1/labels
@@ -51,14 +79,18 @@ compare:
   mode: exact
   fields: [status, data]
   expect: |
-    The same label names and values as one full-range listing; a window
+    The same label values as one full-range listing, and every label name
+    of it (with -metadata-max-staleness above 0 a /labels answer from memory
+    may also list names the same UTC day holds outside the window, when the
+    window's part of that day holds rows: Loki's day granularity); a window
     moved by seconds or by minutes reads only its edges and the buckets
-    nobody has cached from VictoriaLogs (bench/ab set metadata-inventory:
-    refresh shapes over 1h-7d answer in well under a second, never-queried
-    windows inside the warmed range close to that).
+    nobody has cached from VictoriaLogs, or nothing when memory holds its
+    pieces (bench/ab set metadata-inventory: refresh shapes over 1h-7d answer
+    in well under a second, never-queried windows inside the warmed range
+    close to that).
 loki_parity: |
   Loki's /labels and /label/{name}/values read the index, so their latency does not depend on the range; the proxy
-  matches the answer exactly and gets the latency close for every window
+  matches the answer (values exactly; names exactly or, from memory, at most at Loki's UTC-day granularity) and gets the latency close for every window
   inside what it has scanned once.
 perf:
   max_ratio: 2.0

@@ -197,6 +197,9 @@ func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, 
 }
 
 func (p *Proxy) fetchScopedLabelNames(ctx context.Context, rawQuery, start, end, search string, useInventoryCache bool) ([]string, error) {
+	// Its callers answer /labels, which lists the names sorted: their hits and
+	// VictoriaLogs' order never reach a client.
+	ctx = withNamesOnlyListing(ctx)
 	start, end = lokiLabelStartToVL(start), lokiLabelEndToVL(end)
 	candidates := metadataQueryCandidates(rawQuery)
 	var lastErr error
@@ -228,6 +231,34 @@ func (p *Proxy) fetchScopedLabelNames(ctx context.Context, rawQuery, start, end,
 		return labels, nil
 	}
 	return nil, lastErr
+}
+
+// prefetchLabelsWindow starts, for a /labels request the response cache
+// answered, the background reads a listing of its window would start after
+// its answer (fillTouchedDays): the next window, moved back by minutes, then
+// finds the hours it needs in memory. It reads only memory itself.
+func (p *Proxy) prefetchLabelsWindow(r *http.Request) {
+	if !p.metadataInventoryPrefetch || p.metadataMaxStaleness <= 0 || !p.metadataInventoryEnabled() || !p.supportsStreamMetadataEndpoints() {
+		return
+	}
+	r = p.withRequestScope(r)
+	ctx := withNamesOnlyListing(r.Context())
+	candidates := metadataQueryCandidates(r.FormValue("query"))
+	if len(candidates) == 0 {
+		return
+	}
+	params, err := p.metadataQueryParams(ctx, candidates[0], lokiLabelStartToVL(r.FormValue("start")), lokiLabelEndToVL(r.FormValue("end")), "", p.labelSearchParam(r))
+	if err != nil {
+		return
+	}
+	const path = "/select/logsql/stream_field_names"
+	now := time.Now()
+	plan, ok := p.inventoryPlan(path, params, now)
+	if !ok {
+		return
+	}
+	_, countable := inventoryQueryShape(params.Get("query"))
+	p.fillTouchedDays(ctx, path, params, p.inventoryKeyBase(ctx, path, params), plan, now, countable)
 }
 
 func (p *Proxy) fetchScopedLabelValues(ctx context.Context, labelName, rawQuery, start, end, limit, search string) ([]string, error) {
@@ -339,7 +370,13 @@ type labelCacheBypassKey struct{}
 // the background path because it lists only stream labels; field_names would also
 // list message and structured fields that Loki never reports as labels.
 func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
-	cacheKey := p.metadataFieldNamesCacheKey(ctx, "sfn:", params)
+	prefix := "sfn:"
+	if isNamesOnlyListing(ctx) {
+		// The names of a names-only listing are not in VictoriaLogs' order,
+		// which other readers of this cache keep.
+		prefix = "sfn:names:"
+	}
+	cacheKey := p.metadataFieldNamesCacheKey(ctx, prefix, params)
 	if ctx.Value(labelCacheBypassKey{}) == nil {
 		if fields, ok := p.cachedFieldNames(ctx, cacheKey); ok {
 			return fields, nil
@@ -499,6 +536,10 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 	}
 
 	cacheKey := "label_inventory:" + getOrgID(ctx) + ":" + readCacheKeyVersion("label_inventory") + ":" + params.Encode()
+	if isNamesOnlyListing(ctx) {
+		// Not in VictoriaLogs' order, which targetLabels resolution reads.
+		cacheKey += ":names"
+	}
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			cacheKey += ":auth:" + fp
