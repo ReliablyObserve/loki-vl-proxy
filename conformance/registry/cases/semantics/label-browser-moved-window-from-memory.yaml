@@ -32,7 +32,8 @@ why: |
   that measures nothing cannot pass.
 
   Timing gates, the perf A/B: this item's perf block locks the warm rows of
-  the moved-window shapes at Loki's time (max_ratio 1.0), judged by the
+  the label browser shapes (explore labels and refresh labels, with and
+  without a selector) at Loki's time (max_ratio 1.0), judged by the
   harness's own rules (over2x.judge: slower than the bound and more than
   MIN_GAP, 50 ms, slower; a flagged row is measured again before it is
   reported). On the merged #1750 head (perf run 45690680132, loki-defaults,
@@ -45,6 +46,17 @@ why: |
   moved request (one warm run of about 28 ms) stay under the existing 2x
   lock of semantics/label-browser-latency-cold-and-refresh and are reported,
   not held to Loki: their spread across runs is not yet known.
+
+  The lock was shown to fail (e2e stack, 2026-11-25, Loki 3.7.10 aligned,
+  main at a3b5ad722 run twice, -metadata-max-staleness 10s and 0, judged with
+  over2x.bound_for and judge on this tree): with the memory answers off the
+  24h warm rows of refresh labels were 103 and 93 ms against Loki's 2 and
+  8 ms, above the lock, while the 1h rows (41 and 49 ms against 1 and 5 ms)
+  stayed within it by the 50 ms floor; with them on every locked warm row
+  was within (0-1 ms against 1-8 ms). Pull request runs measured only the
+  1h cells of these shapes on the #1750 head (perf run 45690680132), so
+  there the lock cannot fire and the deterministic gates hold the rows; the
+  timing lock binds at 24h in the baseline, daily and weekly runs.
 
   Implemented in internal/proxy/metadata_inventory.go (answerNamesFromMemory,
   fillTouchedDays, waitForInventoryFills), internal/proxy/label_handlers.go

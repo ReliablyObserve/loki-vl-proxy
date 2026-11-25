@@ -285,7 +285,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/json-metric-step-wider-than-range` | 2 × 3 ranges | 6 same | worst 1.19s / 0.01s (24h) | 0.87s / 0.01s | same; 1 slower than Loki cold | not locked |
 | `semantics/keep-leaves-labels-loki-drops` | 6 × 4 ranges | 16 same | worst 1.42s / 0.01s (24h) | 1.06s / 0.01s | differs; 2 slower than Loki cold | not locked |
 | `semantics/label-browser-latency-cold-and-refresh` | 8 × 4 ranges | 32 same | worst 0.46s / 0.00s (24h) | 0.09s † / 0.09s | same | locked 2026-10-27 |
-| `semantics/label-browser-moved-window-from-memory` | 2 × 4 ranges | 8 same | worst 0.03s / 0.05s (24h) | 0.09s † / 0.06s | same | locked 2026-11-25 |
+| `semantics/label-browser-moved-window-from-memory` | 4 × 4 ranges | 16 same | worst 0.46s / 0.00s (24h) | 0.09s † / 0.09s | same | locked 2026-11-25 |
 | `semantics/label-filter-before-parser-pushdown` | 2 × 4 ranges | 8 same | worst 1.35s / 0.01s (24h) | 4.89s / 0.04s | same | locked 2026-10-27 |
 | `semantics/label-filter-expression-syntax` | 3 × 4 ranges | 12 same | worst 2.54s / 0.01s (24h) | 4.22s / 0.04s | same | not locked |
 | `semantics/label-inventory-exact-and-incremental` | 12 × 4 ranges | 48 same | worst 0.46s / 0.00s (24h) | 0.09s † / 0.09s | differs | locked 2026-10-27 |

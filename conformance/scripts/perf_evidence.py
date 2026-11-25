@@ -1125,16 +1125,24 @@ def render_quality_summary(q, target_is_docs=False):
                    + f"; above 2× Loki: **{first['above']}** on the first request"
                    + (f" and **{repeat['above']}** on a repeat" if repeat else "") + f" (the {q['date']} distribution).")
     locked = sum(1 for b in q["blocks"].values() if b["locked"] is True)
+    # The bound each locked item holds its rows to: 2× by default, tighter where an item sets it.
+    bounds = sorted({float(b.get("max_ratio", 2.0)) for b in q["blocks"].values() if b["locked"] is True}, reverse=True)
+    if len(bounds) > 1:
+        by_bound = ", ".join(f"{sum(1 for b in q['blocks'].values() if b['locked'] is True and float(b.get('max_ratio', 2.0)) == r)} at {r:g}×"
+                             for r in bounds)
+        locked_text = f"locked at their bound ({by_bound})"
+    else:
+        locked_text = f"locked at the {bounds[0]:g}× bound" if bounds else "locked at the 2× bound"
     if over:
         out.append(f"- **{len(over)} shape, range and mode rows are on the above-2× list for the `{q['profile']}` profile** "
                    f"(more than 2× Loki and more than 50 ms slower): **{over_modes['cold']}** on the first request, **{over_modes['warm']}** on a "
                    f"repeat, **{over_modes['refresh']}** on a refresh. Each is a defect being fixed: a row joins the "
                    f"list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold "
                    f"more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. {locked} of "
-                   f"{len(q['blocks'])} covered registry items are locked at the 2× bound.")
+                   f"{len(q['blocks'])} covered registry items are {locked_text}.")
     else:
         out.append(f"- No row is on the above-2× list for the `{q['profile']}` profile. {locked} of {len(q['blocks'])} covered registry items are "
-                   f"locked at the 2× bound.")
+                   f"{locked_text}.")
     if first_asks:
         out.append(f"- **{len(first_asks)}** listed first requests are first asks ("
                    + ", ".join(f"{code(r['shape'])} over {r['range']}" for r in first_asks)

@@ -530,7 +530,7 @@
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-queue-429",
       "backend-admission-and-heavy-query-queueing",
-      "semantics/labels-end-inclusive-like-loki"
+      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory"
      ]
     },
     {
@@ -544,7 +544,7 @@
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-queue-429",
       "backend-admission-and-heavy-query-queueing",
-      "semantics/labels-end-inclusive-like-loki"
+      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory"
      ]
     },
     {
