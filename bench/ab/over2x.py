@@ -246,7 +246,7 @@ def shape_covers(spec):
 
 def make_bounds(blocks, spec):
     """The bounds the gates use: the perf: blocks (id -> block) and the shapes' covers."""
-    return {"blocks": blocks, "covers": shape_covers(spec)}
+    return {"blocks": blocks, "covers": shape_covers(spec), "cold_vs_base": cold_vs_base_shapes(spec)}
 
 
 def read_bounds(root=ROOT, spec=None):
@@ -632,14 +632,15 @@ def cold_vs_base_shapes(spec=None):
     return _COLD_VS_BASE
 
 
-def cold_vs_base(summary, noise, min_delta, spec=None):
+def cold_vs_base(summary, noise, min_delta, spec=None, bounds=None):
     """Findings (kind "cold_slower_than_base") for the rows of a summary whose shape holds its cold to the base
     build's and whose PR cold is slower than the base's beyond noise; both builds answered 200 and are like for
-    like with the summary's profile."""
+    like with the summary's profile. The shapes come from bounds (bounds_at the base: a pull request cannot turn
+    its own gate off, as it cannot unlock its own rows), else from spec or the working tree's shapes.json."""
     b, c = summary["baseline"], summary["candidate"]
     if not (like_for_like(summary, b) and like_for_like(summary, c)):
         return []
-    held = cold_vs_base_shapes(spec)
+    held = bounds["cold_vs_base"] if bounds and "cold_vs_base" in bounds else cold_vs_base_shapes(spec)
     out = []
     for row in summary["rows"]:
         if (summary["set"], row["shape"]) not in held:

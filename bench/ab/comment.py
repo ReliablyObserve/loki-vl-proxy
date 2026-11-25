@@ -389,7 +389,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     new_diffs = [row for _, row in rows if new_difference(row)]
     pre = sum(1 for _, row in rows if row.get("parity_vs_reference") == "differs" and not new_difference(row))
     same_as_loki = sum(1 for _, row in rows if row.get("parity_vs_reference", "").startswith("same"))
-    cold_slow = [f for s in summaries for f in over2x.cold_vs_base(s, meta.get("noise", 0.30), meta.get("min_delta", 0.10))]
+    cold_slow = [f for s in summaries for f in over2x.cold_vs_base(s, meta.get("noise", 0.30), meta.get("min_delta", 0.10),
+                                                                        bounds=bounds)]
     failed = bool(counts.get("broken") or counts.get("slower") or new_diffs or cold_slow)
     mode = meta.get("over_2x_loki", over2x.DEFAULT_GATE)
     findings = ([f for s in summaries for f in over2x.gate(s, baseline, meta.get("noise", 0.30),

@@ -1181,6 +1181,17 @@ class ColdVsBaseTest(unittest.TestCase):
         r = row("held", base_cold=0.8, pr_cold=1.5, loki_cold=0.004, stale=["base", "pr", "loki"])
         self.assertEqual(self.found(r), [("held", "cold_slower_than_base")])
 
+    def test_the_held_shapes_come_from_the_base_bounds(self):
+        r = row("held", base_cold=0.8, pr_cold=1.5)
+        base = over2x.make_bounds({}, self.SPEC)
+        self.assertEqual(base["cold_vs_base"], {("control", "held")})
+        found = over2x.cold_vs_base(summary(r), NOISE, MIN_DELTA, bounds=base)
+        self.assertEqual([f["shape"] for f in found], ["held"])
+        # A pull request that drops the key from its own shapes.json is still judged by the base's.
+        head = {"sets": {"control": {"shapes": [{"name": "held"}]}}}
+        self.assertEqual(len(over2x.cold_vs_base(summary(r), NOISE, MIN_DELTA, spec=head, bounds=base)), 1)
+        self.assertEqual(over2x.cold_vs_base(summary(r), NOISE, MIN_DELTA, bounds=over2x.make_bounds({}, head)), [])
+
     def test_the_repository_holds_the_label_browser_shapes(self):
         self.assertEqual({s for s, _ in over2x.cold_vs_base_shapes()}, {"metadata-inventory"})
         self.assertEqual(len(over2x.cold_vs_base_shapes()), 4)

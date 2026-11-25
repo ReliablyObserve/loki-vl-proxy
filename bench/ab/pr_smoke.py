@@ -1204,7 +1204,8 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
                 # A cold held to the base build's (over2x.cold_vs_base) is re-measured the same way before it fails.
                 if cold_samples:
                     pairs = sorted(set(pairs) | {(f["shape"], f["range"]) for f in
-                                                 over2x.cold_vs_base(summary, args.noise, args.min_delta)})
+                                                 over2x.cold_vs_base(summary, args.noise, args.min_delta,
+                                                                     bounds=bounds)})
                 summary = confirm(summary, args, plan, st, out, targets, baseline, bounds, summaries)
                 if pairs:
                     records = cold.recold(summary, first_cold, pairs, by_name, spec, spare["cold_end"], cold_samples,
