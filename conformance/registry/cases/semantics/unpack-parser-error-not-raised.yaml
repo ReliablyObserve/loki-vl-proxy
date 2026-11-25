@@ -14,7 +14,8 @@ why: |
   and keeps after it: the mark rides on the metric's own VictoriaLogs reads, so a query whose lines all parse sends
   no further request. A sum with no grouping needs no label, Loki parses no line for it and answers; a drop of
   __error__ intercepts. Held to Loki by TestUnpackSumMatchesLoki (recorded, VictoriaLogs v1.49.0 and v1.54.0),
-  TestUnpackLineErrorMatchesRecordedLoki and TestCompat_UnpackSumsLikeLoki.
+  TestUnpackLineErrorMatchesRecordedLoki and TestCompat_UnpackSumsLikeLoki. Answers cached before carry no
+  `@unpack-metric-v2:` fence.
 
   Not covered: lines VictoriaLogs reads as JSON while Loki's unpack rejects them (a value NaN, an invalid escape:
   semantics/json-parser-error-hazard-lines-not-marked); an unpack next to another parser, followed by a label filter
@@ -29,7 +30,7 @@ compare:
   expect: "Loki's 400 with the JSONParserErr pipeline error."
 gap:
   status: fixed
-  fixed_by: "#1758"
+  fixed_by: "#1770"
   impact: edge
   effort: M
   area: 'internal/proxy/unpack_parser_error.go (unpackErrorProbeFor, unpackLineError); internal/proxy/json_parser_error_check.go'

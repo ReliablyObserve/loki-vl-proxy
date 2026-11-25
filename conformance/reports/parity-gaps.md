@@ -425,7 +425,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/translator-reads-blank-before-range-call-as-text` — A range function spelled with a blank before its parenthesis is answered as Loki reads it (fixed: the request rewrite writes the call wit... | #1644 | 0 | 0 |
 | `semantics/translator-reads-parenthesized-metric-as-text` — A metric query wrapped whole in parentheses is answered as Loki reads it (fixed: the request rewrite removes the parentheses, which the s... | #1644 | 0 | 0 |
 | `semantics/unpack-instant-sum-rate-per-stream` — An instant sum of a rate over an unpack answers one series, as Loki does | #1758 | 0 | 0 |
-| `semantics/unpack-parser-error-not-raised` — A metric over an unpack of a line that is not a JSON object fails with Loki's JSONParserErr | #1758 | 0 | 0 |
+| `semantics/unpack-parser-error-not-raised` — A metric over an unpack of a line that is not a JSON object fails with Loki's JSONParserErr | #1770 | 0 | 0 |
 | `semantics/unwrap-conversion-check-reads-unpack-unlike-loki` — The unwrap conversion check reads an unpack as Loki does | #1758 | 0 | 0 |
 | `semantics/unwrap-identity-key-order` — A parser's series identity splits one series whose lines hold the same keys in another order (fixed) | #1652 | 0 | 0 |
 | `semantics/unwrap-identity-nan-partials` — A parser's series whose value is NaN answers 0 or leaves the sum over the series (fixed) | #1667 | 0 | 0 |
