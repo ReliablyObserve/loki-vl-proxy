@@ -251,6 +251,7 @@
       "internal/proxy/limit_errors_test.go"
     ],
     "limits/concurrent-full-retention-scans-exhaust-backend": [
+      "internal/proxy/label_browser_gates_test.go",
       "internal/proxy/label_inventory_memory_test.go",
       "internal/proxy/metadata_inventory_test.go",
       "internal/proxy/metadata_scan_admission_test.go",
@@ -501,6 +502,7 @@
     ],
     "loki_api_v1_labels": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/label_browser_gates_test.go",
       "internal/proxy/label_cache_behavior_test.go",
       "internal/proxy/label_inventory_cover_oracle_test.go",
       "internal/proxy/label_inventory_cover_test.go",
@@ -1851,10 +1853,14 @@
       "internal/proxy/keyword_fold_runes_test.go"
     ],
     "semantics/label-browser-latency-cold-and-refresh": [
+      "internal/proxy/label_browser_gates_test.go",
       "internal/proxy/label_inventory_cover_oracle_test.go",
       "internal/proxy/label_inventory_cover_test.go",
       "internal/proxy/label_inventory_memory_test.go",
       "internal/proxy/metadata_inventory_test.go"
+    ],
+    "semantics/label-browser-moved-window-from-memory": [
+      "internal/proxy/label_browser_gates_test.go"
     ],
     "semantics/label-filter-after-regexp-parser-misses-metadata": [
       "internal/querycorpus/plan_loki_vl_diff_test.go"
@@ -1903,6 +1909,7 @@
       "internal/logql/stage_parse_validate_loki_test.go"
     ],
     "semantics/label-inventory-exact-and-incremental": [
+      "internal/proxy/label_browser_gates_test.go",
       "internal/proxy/label_inventory_cover_oracle_test.go",
       "internal/proxy/label_inventory_cover_test.go",
       "internal/proxy/label_inventory_memory_test.go",
@@ -3171,7 +3178,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 747,
+  "registry_items": 748,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4128,6 +4135,13 @@
     "internal/proxy/label_backfill_cached_bucket_test.go": [
       "quality/labels-backfill-into-cached-bucket",
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "internal/proxy/label_browser_gates_test.go": [
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "loki_api_v1_labels",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-browser-moved-window-from-memory",
+      "semantics/label-inventory-exact-and-incremental"
     ],
     "internal/proxy/label_cache_behavior_test.go": [
       "loki_api_v1_labels",
@@ -7050,7 +7064,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 834,
+  "tests_with_markers": 835,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7206,5 +7220,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 481
+  "wired_items": 482
 }

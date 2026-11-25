@@ -541,6 +541,19 @@ between the two alternatives keeps them apart only where the class can
 never stand at the start of the text. Time a new regexp with VictoriaLogs'
 own parser (`logstorage.ParseQuery` from the `test/oracle/vl` module) on both
 versions, and its per-line match cost with a Go benchmark.
+## AST/planner changes leave no Loki difference (hard rule)
+
+Every change that routes or plans queries through the AST flow gives those queries full Loki compatibility.
+
+- Eliminate every difference from Loki on the query classes the change touches: differences already on `main`,
+  differences of the string translator and differences found while working. A class left delegated, or a registry case
+  left open, does not finish the change.
+- VictoriaLogs does the work where its answer is exact; otherwise the proxy evaluates it with bounded memory and a
+  documented limit. Never approximate. The proof is real Loki.
+- Where the exact answer costs more than the performance bounds allow, or conflicts with another rule in this file, the
+  pull request states the measured options and waits for a decision.
+- The pull request body lists every remaining difference on the touched classes; the target is none.
+
 ## Serving a construct from the query plan
 
 A construct moves from the string translator to the typed plan (`internal/queryplan/lower`, written by
