@@ -63,8 +63,27 @@ why: |
   resolution read in VictoriaLogs' order. Label values and every other
   listing keep every piece.
 
+  With -metadata-max-staleness above 0 (2026-11-25), a names-only listing is
+  first tried from memory (answerNamesFromMemory): every plan piece from its
+  own entry or from the smallest bucket of the same UTC day that holds it,
+  every live-window entry read or confirmed within the bound, and a holding
+  bucket used for a day only when the window's part of that day holds a
+  non-empty bucket of its own. Such an answer lists every name of one
+  full-range call and at most names the same UTC day holds outside the
+  window. That is Loki's own granularity for stored data, measured on Loki
+  3.7.10 (stack data of 2026-11-24/25): every window inside a day, of 1 minute
+  to 15 hours, lists the day's names (26 on 11-25, 86 on 11-24, a label whose
+  only row is at 06:40 listed for 07:30-09:00), a window after the day's last
+  row lists none, a two-day window lists the union (92), and the exact answer
+  is a subset of Loki's in every one of 12 windows (20 of 26, 46 of 86). Over
+  120 random windows the memory answers were all between the exact answer and
+  Loki's, 3 of them listing names beyond the exact one. After a listing, the
+  hours of the window's ends, the hour before it and the sealed days it only
+  partly covers are read in the background inventory lane (fillTouchedDays).
+
   Implemented in internal/proxy/metadata_inventory.go (bucket plan, merge,
-  revalidation, counted buckets, coverFinePieces, coverPays, resolveCovers)
+  revalidation, counted buckets, coverFinePieces, coverPays, resolveCovers,
+  answerNamesFromMemory, fillTouchedDays, confirmInBackground)
   and internal/proxy/label_metadata.go (fetchScopedLabelNames,
   fetchScopedLabelValues).
 request:
@@ -90,7 +109,8 @@ compare:
     stream field names and values, field names and values, unfiltered and
     selector queries, windows from 37 minutes to 50 hours ending at any time
     (the names-only /labels listing: the same names, on the fake and on
-    VictoriaLogs v1.49.0 and v1.54.0);
+    VictoriaLogs v1.49.0 and v1.54.0; answered from memory, every name of one
+    call and no name beyond the UTC days of the window that hold rows in it);
     a window moved by seconds reads only its edges from VictoriaLogs; a row
     written late into a revalidated hour appears; a failed bucket fails the
     listing, never a partial answer; a request sharing a bucket with a

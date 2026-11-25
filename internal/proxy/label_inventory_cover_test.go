@@ -189,12 +189,35 @@ func FuzzLabelsInventoryCover(f *testing.F) {
 		vl.add(fakeVLRow{ts: end.Add(-time.Duration(rowB) * 17 * time.Second).UnixNano(), stream: map[string]string{"only_b": "1"}})
 		bucketed := newInventoryTestProxy(t, vl, 4)
 		full := newInventoryTestProxy(t, vl, -1)
-		for _, e := range []time.Time{end, end.Add(-time.Duration(shiftS%(3*3600)) * time.Second)} {
+		memory := newMemoryInventoryProxy(t, vl, 10*time.Second)
+		ends := []time.Time{end, end.Add(-time.Duration(shiftS%(3*3600)) * time.Second), end.Add(-2 * time.Duration(shiftS%(3*3600)) * time.Second)}
+		for i, e := range ends {
 			if limit := now.Add(-time.Minute); e.After(limit) {
 				e = limit
 			}
-			if got, want := labelsAnswer(t, bucketed, e.Add(-window), e), labelsAnswer(t, full, e.Add(-window), e); got != want {
-				t.Fatalf("%s ending %s: bucketed %s, one call %s", window, e.UTC().Format(time.RFC3339), got, want)
+			want := labelsAnswer(t, full, e.Add(-window), e)
+			if i < 2 {
+				if got := labelsAnswer(t, bucketed, e.Add(-window), e); got != want {
+					t.Fatalf("%s ending %s: bucketed %s, one call %s", window, e.UTC().Format(time.RFC3339), got, want)
+				}
+			}
+			// With bounded staleness on, the names-only listing may answer
+			// from memory: every name of one call, and only names of the UTC
+			// days the window touches with rows (Loki's day granularity).
+			exact := namesOnlyListing(t, full, e.Add(-window), e)
+			got := namesOnlyListing(t, memory, e.Add(-window), e)
+			allowed := dayNames(vl, e.Add(-window), e.Add(time.Millisecond))
+			set := map[string]bool{}
+			for _, n := range got {
+				set[n] = true
+				if !allowed[n] {
+					t.Fatalf("%s ending %s: memory listed %q, held by no day of the window with rows", window, e.UTC().Format(time.RFC3339), n)
+				}
+			}
+			for _, n := range exact {
+				if !set[n] {
+					t.Fatalf("%s ending %s: memory lost %q (%v, one call %v)", window, e.UTC().Format(time.RFC3339), n, got, exact)
+				}
 			}
 		}
 	})

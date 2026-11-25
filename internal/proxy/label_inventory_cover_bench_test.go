@@ -51,16 +51,20 @@ func labelsAnswer(t testing.TB, p *Proxy, start, end time.Time) string {
 //   - cold is the first request, nothing cached.
 //
 // It reports the VictoriaLogs calls and the listed range (minutes of rows
-// read) per request.
+// read) per request, background fills included.
 func BenchmarkLabelsShiftedWindow(b *testing.B) {
 	now := time.Now()
 	type mode struct {
 		name     string
 		fill     time.Time   // zero: nothing filled first
 		measured []time.Time // window ends
+		// staleness is -metadata-max-staleness: 0 keeps every listing on the
+		// path that reads VictoriaLogs; above 0 a names-only listing may be
+		// answered from memory, and background fills run between requests.
+		staleness time.Duration
 	}
 	back := func(name string, end0 time.Time) mode {
-		return mode{"back=3617s/" + name, end0, []time.Time{end0.Add(-3617 * time.Second), end0.Add(-2 * 3617 * time.Second), end0.Add(-3 * 3617 * time.Second)}}
+		return mode{name: "back=3617s/" + name, fill: end0, measured: []time.Time{end0.Add(-3617 * time.Second), end0.Add(-2 * 3617 * time.Second), end0.Add(-3 * 3617 * time.Second)}}
 	}
 	// Sealed and unaligned, at fixed places in an hour two hours back (every
 	// hour of the moved windows' ends has ended an hour ago), and near now as
@@ -73,10 +77,13 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 	for _, at := range []time.Duration{5*time.Minute + 13*time.Second, 20*time.Minute + 13*time.Second, 35*time.Minute + 13*time.Second, 50*time.Minute + 13*time.Second} {
 		modes = append(modes, back(fmt.Sprintf("at=:%02d:13", int(at/time.Minute)), hourAgo2.Add(at)))
 	}
+	memory := back("at=:26:50/staleness=10s", end0)
+	memory.staleness = 10 * time.Second
 	modes = append(modes,
+		memory,
 		back("at=now", now.Truncate(time.Minute).Add(-time.Minute-13*time.Second)),
-		mode{"refresh=30s", refresh0, []time.Time{refresh0.Add(30 * time.Second)}},
-		mode{"cold", time.Time{}, []time.Time{end0}},
+		mode{name: "refresh=30s", fill: refresh0, measured: []time.Time{refresh0.Add(30 * time.Second)}},
+		mode{name: "cold", measured: []time.Time{end0}},
 	)
 	for _, mode := range modes {
 		for _, cost := range []struct {
@@ -111,17 +118,25 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					b.StopTimer()
-					p, err := New(Config{BackendURL: srv.URL, Cache: cache.New(time.Hour, 100000), LogLevel: "error"})
+					p, err := New(Config{BackendURL: srv.URL, Cache: cache.New(time.Hour, 100000), LogLevel: "error", MetadataMaxStaleness: mode.staleness})
 					if err != nil {
 						b.Fatal(err)
 					}
 					if !mode.fill.IsZero() {
 						_ = labelsAnswer(b, p, mode.fill.Add(-24*time.Hour), mode.fill)
 					}
+					if mode.staleness > 0 {
+						time.Sleep(200 * time.Millisecond) // the first listing's background fills
+					}
 					vl.reset()
 					b.StartTimer()
 					for _, end := range mode.measured {
 						_ = labelsAnswer(b, p, end.Add(-24*time.Hour), end)
+						if mode.staleness > 0 {
+							b.StopTimer()
+							time.Sleep(50 * time.Millisecond) // the time between two requests
+							b.StartTimer()
+						}
 					}
 					b.StopTimer()
 					c, spans := vl.reset()

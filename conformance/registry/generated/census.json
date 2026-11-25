@@ -1986,6 +1986,10 @@
     "internal/proxy/label_inventory_cover_test.go | quality/labels-backfill-into-cached-bucket",
     "internal/proxy/label_inventory_cover_test.go | semantics/label-browser-latency-cold-and-refresh",
     "internal/proxy/label_inventory_cover_test.go | semantics/label-inventory-exact-and-incremental",
+    "internal/proxy/label_inventory_memory_test.go | loki_api_v1_labels",
+    "internal/proxy/label_inventory_memory_test.go | quality/labels-backfill-into-cached-bucket",
+    "internal/proxy/label_inventory_memory_test.go | semantics/label-browser-latency-cold-and-refresh",
+    "internal/proxy/label_inventory_memory_test.go | semantics/label-inventory-exact-and-incremental",
     "internal/proxy/label_map_plan_test.go | architecture-syntax-package-layering",
     "internal/proxy/label_matcher_regexp_routes_test.go | loki_api_v1_detected_labels",
     "internal/proxy/label_matcher_regexp_routes_test.go | profiles/stream-selector-regexp-anchoring",
@@ -3652,7 +3656,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 827,
+      "go": 828,
       "playwright": 3
     },
     "page_kinds": {

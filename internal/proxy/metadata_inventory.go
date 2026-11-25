@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -534,6 +535,18 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 	// the request's own context cancels them.
 	var covers map[int][]inventorySegment
 	if path == "/select/logsql/stream_field_names" && isNamesOnlyListing(ctx) {
+		// The background fills start once this listing has its answer, so they
+		// never compete with its own VictoriaLogs calls.
+		defer p.fillTouchedDays(ctx, path, params, base, plan, now, countable)
+		items, miss, unconfirmed := p.answerNamesFromMemory(path, base, plan, now)
+		if miss == "" {
+			p.observeInternalOperation(ctx, "metadata_inventory", "memory", time.Since(now))
+			return items, nil
+		}
+		if miss != "off" {
+			p.observeInternalOperation(ctx, "metadata_inventory_memory_miss", miss, 0)
+		}
+		defer p.confirmInBackground(ctx, path, params, base, unconfirmed, countable)
 		plan, covers = p.coverFinePieces(path, base, plan, now.Add(-metadataInventorySealLag).UnixNano(), countable)
 	}
 	var rescan map[string]struct{}
@@ -610,6 +623,241 @@ func withNamesOnlyListing(ctx context.Context) context.Context {
 }
 
 func isNamesOnlyListing(ctx context.Context) bool { return ctx.Value(namesOnlyListingKey{}) != nil }
+
+// answerNamesFromMemory answers a names-only listing from the bucket entries
+// in memory, without a VictoriaLogs call, when every piece of the plan is
+// there: its own entry, or else the smallest bucket holding it (a minute,
+// 5-minute, hour or day bucket of the same UTC day). The names of a holding
+// bucket are a superset of the piece's, so the answer lists every name of
+// one full-range call and, at most, names the same UTC day holds outside
+// the window. That is Loki's granularity for stored data: its /labels lists
+// the names of the day's index for any window that overlaps the day's data
+// (registry semantics/label-inventory-exact-and-incremental). A holding
+// bucket is used for a day only when the window's part of that day holds a
+// non-empty bucket of its own, so a window with no rows in a day gets none of
+// that day's names, as Loki answers.
+//
+// Freshness is the bounded staleness of -metadata-max-staleness (0 turns this
+// path off): inside the live window every entry used must have been read or
+// confirmed by a row count at most that long ago (markInventoryConfirmed);
+// older ones follow their revalidation schedule. Otherwise the listing takes
+// the path that reads VictoriaLogs.
+//
+// Otherwise it returns why ("off", "uncached", "unconfirmed",
+// "no_rows_evidence") and the cached entries it could not use only because
+// they were not confirmed recently enough, for confirmInBackground.
+func (p *Proxy) answerNamesFromMemory(path, base string, plan []inventorySegment, now time.Time) ([]vlValueHits, string, []inventorySegment) {
+	if p.metadataMaxStaleness <= 0 || len(plan) == 0 {
+		return nil, "off", nil
+	}
+	nowNs := cache.Now().UnixNano()
+	live := nowNs - int64(p.inventoryLiveWindow())
+	recent := nowNs - int64(p.metadataMaxStaleness)
+	var unconfirmed []inventorySegment
+	usable := func(seg inventorySegment) (inventoryEntry, bool) {
+		key := inventoryBucketKey(base, seg)
+		e, ok := p.peekInventoryEntry(key)
+		if !ok {
+			return inventoryEntry{}, false
+		}
+		if seg.end > live {
+			if e.Checked >= recent || p.inventoryConfirmedSince(key, recent) {
+				return e, true
+			}
+			unconfirmed = append(unconfirmed, seg)
+			return e, false
+		}
+		return e, p.inventoryEntryFresh(path, seg, e)
+	}
+	day := int64(24 * time.Hour)
+	evidence := map[int64]bool{}
+	needs := map[int64]bool{}
+	used := map[inventorySegment]bool{}
+	var parts [][]vlValueHits
+	for _, seg := range plan {
+		if seg.level >= 0 {
+			if e, ok := usable(seg); ok {
+				if len(e.Values) > 0 {
+					evidence[seg.start-seg.start%day] = true
+				}
+				parts = append(parts, e.items())
+				continue
+			}
+		}
+		found := false
+		for li := len(metadataInventoryLevels) - 1; li >= 0 && !found; li-- {
+			if seg.level >= 0 && li >= seg.level {
+				continue
+			}
+			size := int64(metadataInventoryLevels[li])
+			a := inventorySegment{start: seg.start - seg.start%size, level: li}
+			a.end = a.start + size
+			if a.end < seg.end {
+				continue // the unsealed end of the window: nothing holds it
+			}
+			if used[a] {
+				found = true
+				break
+			}
+			if e, ok := usable(a); ok {
+				used[a] = true
+				parts = append(parts, e.items())
+				found = true
+			}
+		}
+		if !found {
+			if len(unconfirmed) > 0 {
+				return nil, "unconfirmed", unconfirmed
+			}
+			return nil, "uncached", nil
+		}
+		needs[seg.start-seg.start%day] = true
+	}
+	for d := range needs {
+		if !evidence[d] {
+			return nil, "no_rows_evidence", nil
+		}
+	}
+	return mergeVLValueHits(parts...), "", nil
+}
+
+// confirmInBackground confirms, in the background, the cached entries a
+// memory answer could not use because no row count confirmed them within
+// -metadata-max-staleness: a count equal to the entry's rows confirms it
+// (markInventoryConfirmed), anything else reads the bucket again. At most a
+// few per listing, each once at a time.
+func (p *Proxy) confirmInBackground(ctx context.Context, path string, params url.Values, base string, segs []inventorySegment, countable bool) {
+	const maxPerListing = 8
+	if len(segs) > maxPerListing {
+		segs = segs[:maxPerListing]
+	}
+	for _, seg := range segs {
+		key := inventoryBucketKey(base, seg)
+		p.runInventoryBackground(ctx, "confirm:"+key, func(bg context.Context) error {
+			if e, ok := p.peekInventoryEntry(key); ok && countable && e.Rows >= 0 {
+				rows, at, err := p.countInventoryRows(bg, params.Get("query"), seg, cache.Now().UnixNano())
+				if err != nil {
+					return err
+				}
+				if rows == e.Rows {
+					p.markInventoryConfirmed(key, at)
+					return nil
+				}
+			}
+			_, _, err := p.fetchInventorySegment(bg, path, withTimeRange(params, seg.start, seg.end), base, seg, countable, false, true)
+			return err
+		})
+	}
+}
+
+// markInventoryConfirmed records, in this replica's memory for
+// -metadata-max-staleness, that a row count confirmed a bucket entry.
+func (p *Proxy) markInventoryConfirmed(key string, at int64) {
+	if p.metadataMaxStaleness <= 0 {
+		return
+	}
+	p.cache.SetLocalOnlyWithTTL(key+":confirmed", []byte(strconv.FormatInt(at, 10)), p.metadataMaxStaleness)
+}
+
+func (p *Proxy) inventoryConfirmedSince(key string, notBefore int64) bool {
+	raw, ok := p.cache.Peek(key + ":confirmed")
+	if !ok {
+		return false
+	}
+	at, err := strconv.ParseInt(string(raw), 10, 64)
+	return err == nil && at >= notBefore
+}
+
+// fillTouchedDays reads, in the background, the buckets a later moved
+// window needs to be answered from memory (answerNamesFromMemory) and that a
+// names-only listing touches without reading them: the day bucket of every
+// sealed UTC day the window only partly covers, the hour buckets holding
+// the window's two ends, and the hour before its start. The label browser moved back by an hour or by a few
+// minutes, or over yesterday, then finds every piece of its ends held by a
+// cached bucket. Each fill is one row count and one listing, cached like every
+// bucket (memory, disk and peers) and shared by every later listing of the
+// same query and scope; it runs in the background inventory lane (skipped
+// when the metadata-scan limiter is closed), one per bucket and listing at a
+// time, and at most five per listing. -metadata-max-staleness=0 turns it off
+// with the memory answers it feeds.
+func (p *Proxy) fillTouchedDays(ctx context.Context, path string, params url.Values, base string, plan []inventorySegment, now time.Time, countable bool) {
+	if p.metadataMaxStaleness <= 0 || len(plan) == 0 || isBackgroundInventory(ctx) {
+		return
+	}
+	sealBefore := now.Add(-metadataInventorySealLag).UnixNano()
+	first, last := plan[0].start, plan[len(plan)-1].end
+	var fills []inventorySegment
+	hour := int64(time.Hour)
+	for _, level := range []int{1, 0} { // the hours, then the days, of both ends
+		size := int64(metadataInventoryLevels[level])
+		ats := []int64{first, last - 1}
+		if level == 1 {
+			// And the hour before the window: the label browser moved back
+			// by an hour, or by minutes across the hour, starts there.
+			ats = append(ats, first-hour)
+		}
+		for _, at := range ats {
+			seg := inventorySegment{start: at - at%size, end: at - at%size + size, level: level}
+			if seg.end > sealBefore || (first <= seg.start && seg.end <= last) || slices.Contains(fills, seg) {
+				continue // not sealed, read whole by the plan, or listed
+			}
+			fills = append(fills, seg)
+		}
+	}
+	for _, seg := range fills {
+		key := inventoryBucketKey(base, seg)
+		if _, ok := p.cache.Peek(key); ok {
+			continue
+		}
+		p.runInventoryBackground(ctx, "fill:"+key, func(bg context.Context) error {
+			_, _, err := p.fetchInventorySegment(bg, path, withTimeRange(params, seg.start, seg.end), base, seg, countable, p.metadataScanLimiter != nil && seg.level == 0, false)
+			return err
+		})
+	}
+}
+
+// runInventoryBackground runs fill once per key at a time, detached from
+// the request (its tenant and auth scope kept), in the background inventory
+// lane, bounded by the background timeout and stopped at shutdown.
+func (p *Proxy) runInventoryBackground(ctx context.Context, key string, fill func(context.Context) error) {
+	s := &p.metadataEdges
+	s.mu.Lock()
+	if s.base == nil {
+		s.base, s.stop = context.WithCancel(context.Background())
+	}
+	base := s.base
+	s.mu.Unlock()
+	if base.Err() != nil {
+		return
+	}
+	// Its VictoriaLogs calls are not the request's (X-Loki-VL-Backend-Calls).
+	detached := withBackgroundInventory(context.WithValue(context.WithoutCancel(ctx), requestTelemetryKey, (*requestTelemetry)(nil)))
+	s.refreshes.DoChan(key, func() (interface{}, error) {
+		s.mu.Lock()
+		if base.Err() != nil {
+			s.mu.Unlock()
+			return nil, base.Err()
+		}
+		s.wg.Add(1)
+		s.mu.Unlock()
+		defer s.wg.Done()
+		started := time.Now()
+		bg, cancel := context.WithTimeout(detached, p.labelBackgroundTimeout())
+		defer cancel()
+		defer context.AfterFunc(base, cancel)()
+		err := fill(bg)
+		outcome := "ok"
+		if err != nil {
+			outcome = "error"
+			if isHeavyQueryQueueFull(err) {
+				outcome = "skipped"
+			}
+			p.log.Debug("background label inventory read failed", "error", err)
+		}
+		p.observeInternalOperation(bg, "metadata_inventory_background", outcome, time.Since(started))
+		return nil, err
+	})
+}
 
 // coverFinePieces replaces, in the plan of a names-only listing, each run of
 // pieces finer than an hour (5-minute and minute buckets, unaligned edges)
@@ -1085,6 +1333,7 @@ func (p *Proxy) confirmRun(ctx context.Context, path, query string, run []runBuc
 	}
 	if rows == expected {
 		for _, b := range run {
+			p.markInventoryConfirmed(b.key, at)
 			if b.entry.Rows >= 0 && p.inventoryEntryFresh(path, b.seg, b.entry) {
 				continue // served as cached: nothing to rewrite
 			}

@@ -47,6 +47,16 @@ why: |
   (BenchmarkLabelsShiftedWindow, decision
   labels-names-only-ends-from-their-hours in data-probing-and-freshness).
 
+  With the memory answers of semantics/label-inventory-exact-and-incremental
+  (2026-11-25, decision labels-memory-answers-at-loki-granularity) the moved
+  windows of this shape make no VictoriaLogs call on the request path. On
+  the e2e stack (Loki 3.7.10 aligned profile, VictoriaLogs v1.54, data of
+  2026-11-24/25), timed per request with interleaved targets over three
+  rounds, the warm p50 was 0.50-0.55 ms (1h), 0.50-0.52 ms (6h) and
+  0.26-0.63 ms (24h) against Loki's 1.31-2.50, 1.32-1.40 and 1.08-1.64 ms and
+  base's 28.8-42.7, 22.3-23.9 and 0.3-119.6 ms (base's low 24h figures are
+  response cache hits of windows an earlier round asked).
+
   Implemented in internal/proxy/metadata_inventory.go (the bucketed
   inventory, coverFinePieces) and internal/proxy/label_metadata.go
   (warmMetadataCacheOnStartup, warmLabelWindows, labelKeepWarmSchedule).

@@ -110,3 +110,40 @@ decisions:
       tracked: ['metadata-inventory refresh labels (label browser)', 'metadata-inventory refresh labels with selector']
       bound: 'perf block max_ratio 2.0, target 1.0; green at Loki speed or below'
     pending: true
+  - id: labels-memory-answers-at-loki-granularity
+    chosen: |
+      With -metadata-max-staleness above 0, /labels answers a window from the
+      label inventory in memory, with no VictoriaLogs call, when every plan
+      piece is held by its own entry or by the smallest bucket of the same UTC
+      day (minute, 5-minute, hour, day) and, inside the live window, every
+      entry used was read or confirmed within the bound; a holding bucket is
+      used for a day only when the window's part of that day holds a non-empty
+      bucket of its own. Entries past the bound are confirmed in the
+      background. After a listing, the hours of the window's ends, the hour
+      before it and the sealed days it only partly covers are read in the
+      background inventory lane.
+    over: ['reading the moved ends from VictoriaLogs on every request (base: 7, 3-7 and 20 calls per moved 1h, 6h and 24h window)', 'exact answers only from memory (the new end of a window moved back has no cached piece, so every moved request still read VictoriaLogs)', 'answering from memory past -metadata-max-staleness (rows written into a used bucket would stay unlisted for the bucket schedule, up to 15 minutes)', 'a dedicated prefetch flag (kept on the approved staleness flag; the owner can split it)']
+    why: |
+      The owner asked for the label browser's moved windows to be faster than
+      Loki (2026-11-25). Loki answers them from its index in 1-5 ms on the
+      e2e stack and 2-66 ms in the CI A/B. No VictoriaLogs call fits that,
+      so the answer has to come from memory, and the new end of a moved window
+      has to come from a bucket that holds it. Loki's own /labels lists every
+      name of the window's UTC day (measured), so a holding bucket of the same
+      day keeps the answer between the exact one and Loki's.
+    evidence: 'Loki 3.7.10 on the e2e stack, 2026-11-25 (data of 11-24 and 11-25): 12 windows; Loki lists the whole day (26 / 86 / 92 for two days) for every window that overlaps the day''s data, none after the last row; the exact answer is a subset of Loki''s in every window. 120 random windows: memory answers between exact and Loki in all, 3 beyond exact. Local A/B harness (set metadata-inventory, passes over 4 ends): refresh labels warm p50 1 ms with 0 request-path calls in most passes against base 22-75 ms (1h/6h) and 179-323 ms (24h), Loki 1-4 ms; precise per-request timing: PR 0.26-0.63 ms, Loki 1.04-2.50 ms. Two replicas with the peer tier, requests alternating: 0.7-0.9 ms once each replica read once; the first moved request on a replica without the entries in memory reads VictoriaLogs (1h: 78 ms in the first round).'
+    code: [internal/proxy/metadata_inventory.go]
+    tests: [TestLabelsInventory_MovedWindowsAreAnsweredFromMemory, TestLabelsInventory_MemoryAnswersStayBetweenTheWindowAndItsDays, TestLabelsInventory_MemoryAnswersKeepTheStalenessBound, TestLabelsInventory_MemoryAnswersOffWithoutStaleness, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow]
+    history:
+      - date: '2026-11-25'
+        what: 'perf A/B rows metadata-inventory / refresh labels (label browser), warm, 1h / 6h / 24h (loki-defaults)'
+        measured: '15-29 ms / 21-56 ms / 273-306 ms against Loki 3 / 2-3 / 64-66 ms, with 7 / 3-7 / 20 VictoriaLogs calls per repeat'
+        cause: 'each moved window read its new ends, and confirmed its live buckets by a row count, from VictoriaLogs on the request path'
+        effect: 'every label browser over a moved window waited for VictoriaLogs'
+        fixed_by: '#1750'
+        after: 'to be measured by the perf A/B of #1750'
+    quality: '/labels never drops a name of the exact answer and never lists a name of a UTC day whose part of the window holds no row; label values and every other listing are unchanged; with -metadata-max-staleness=0 every listing reads VictoriaLogs as before.'
+    performance:
+      tracked: ['metadata-inventory refresh labels (label browser)', 'metadata-inventory refresh labels with selector']
+      bound: 'perf block max_ratio 2.0, target 1.0; owner target for these rows: below Loki'
+    pending: true

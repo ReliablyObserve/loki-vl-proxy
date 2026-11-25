@@ -501,6 +501,7 @@
       "internal/proxy/label_cache_behavior_test.go",
       "internal/proxy/label_inventory_cover_oracle_test.go",
       "internal/proxy/label_inventory_cover_test.go",
+      "internal/proxy/label_inventory_memory_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/labels_alias_test.go",
       "internal/proxy/labels_post_form_cache_test.go",
@@ -1215,6 +1216,7 @@
     "quality/labels-backfill-into-cached-bucket": [
       "internal/proxy/label_backfill_cached_bucket_test.go",
       "internal/proxy/label_inventory_cover_test.go",
+      "internal/proxy/label_inventory_memory_test.go",
       "test/e2e-compat/labels_backfill_cached_bucket_test.go"
     ],
     "quality/logfmt-parse-risk-candidates": [
@@ -1848,6 +1850,7 @@
     "semantics/label-browser-latency-cold-and-refresh": [
       "internal/proxy/label_inventory_cover_oracle_test.go",
       "internal/proxy/label_inventory_cover_test.go",
+      "internal/proxy/label_inventory_memory_test.go",
       "internal/proxy/metadata_inventory_test.go"
     ],
     "semantics/label-filter-after-regexp-parser-misses-metadata": [
@@ -1899,6 +1902,7 @@
     "semantics/label-inventory-exact-and-incremental": [
       "internal/proxy/label_inventory_cover_oracle_test.go",
       "internal/proxy/label_inventory_cover_test.go",
+      "internal/proxy/label_inventory_memory_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/label_values_cap_inventory_test.go",
       "internal/proxy/metadata_inventory_test.go"
@@ -4139,6 +4143,12 @@
     ],
     "internal/proxy/label_inventory_cover_test.go": [
       "loki_api_v1_label_name_values",
+      "loki_api_v1_labels",
+      "quality/labels-backfill-into-cached-bucket",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental"
+    ],
+    "internal/proxy/label_inventory_memory_test.go": [
       "loki_api_v1_labels",
       "quality/labels-backfill-into-cached-bucket",
       "semantics/label-browser-latency-cold-and-refresh",
@@ -7018,7 +7028,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 830,
+  "tests_with_markers": 831,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
