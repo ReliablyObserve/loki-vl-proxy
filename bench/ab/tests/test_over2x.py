@@ -767,8 +767,12 @@ class AcceptanceReplayTest(unittest.TestCase):
         # quality/unwrap-logfmt-narrowed-unpack covers G1, G7, G8 and G10 of the unwrap-gate set, whose 24h cold
         # G8 row is above 2× in the 2026-11-04 daily report; it is locked once a weekly run measures it within.
         self.assertEqual(len(locked), 27)
+        # semantics/label-browser-cold-first-listing is an open cold target (modes [cold]): the label browser's cold
+        # rows are never comparable with Loki (its cold answers are cache-served or stale; on the seed day 0.58 s at
+        # 24h against Loki's 0.05 s, not computed), so the seed day measures only its shapes' warm rows within.
         unlocked_since = {"semantics/json-filter-pushdown-translated-label", "explore-logs-volume-json",
-                          "quality/logfmt-parse-risk-candidates", "quality/unwrap-logfmt-narrowed-unpack"}
+                          "quality/logfmt-parse-risk-candidates", "quality/unwrap-logfmt-narrowed-unpack",
+                          "semantics/label-browser-cold-first-listing"}
         state = {i: {"within": 0, "above": 0} for i in b["blocks"]}
         for set_name, r in seed_lines():
             for mode, pair in over2x.history_pairs(r).items():
@@ -1148,6 +1152,49 @@ class Pr989GateTest(unittest.TestCase):
                 self.assertEqual(over2x.main(), 0)
         self.assertNotIn("first_measurement", out.getvalue())
         self.assertNotIn("  new ", out.getvalue())
+
+
+class ColdVsBaseTest(unittest.TestCase):
+    """A shape with "cold_vs_base" fails when its PR cold is slower than the base's beyond noise."""
+
+    SPEC = {"sets": {"control": {"shapes": [{"name": "held", "cold_vs_base": True}, {"name": "free"}]}}}
+
+    def found(self, *rows, **extra):
+        return [(f["shape"], f["kind"]) for f in over2x.cold_vs_base(summary(*rows, **extra), NOISE, MIN_DELTA, self.SPEC)]
+
+    def test_slower_beyond_both_floors_fails_only_on_a_held_shape(self):
+        rows = [row("held", base_cold=0.8, pr_cold=1.2), row("free", base_cold=0.8, pr_cold=1.2)]
+        self.assertEqual(self.found(*rows), [("held", "cold_slower_than_base")])
+
+    def test_within_the_relative_or_the_absolute_noise_passes(self):
+        self.assertEqual(self.found(row("held", base_cold=0.8, pr_cold=1.0)), [])  # +25%
+        self.assertEqual(self.found(row("held", base_cold=0.07, pr_cold=0.16)), [])  # 2.3x, 90 ms
+        self.assertEqual(self.found(row("held", base_cold=0.07, pr_cold=0.18)), [("held", "cold_slower_than_base")])
+
+    def test_faster_errors_and_unlike_builds_are_not_findings(self):
+        self.assertEqual(self.found(row("held", base_cold=1.2, pr_cold=0.8)), [])
+        self.assertEqual(self.found(row("held", base_cold=0.8, pr_cold=2.0, status=("200", "500", "200"))), [])
+        self.assertEqual(self.found(row("held", base_cold=0.8, pr_cold=2.0), not_like_for_like=["base"]), [])
+
+    def test_it_ignores_loki_and_stale_marks(self):
+        # The label browser's cold is stale (never compared with Loki); the base comparison still applies.
+        r = row("held", base_cold=0.8, pr_cold=1.5, loki_cold=0.004, stale=["base", "pr", "loki"])
+        self.assertEqual(self.found(r), [("held", "cold_slower_than_base")])
+
+    def test_the_held_shapes_come_from_the_base_bounds(self):
+        r = row("held", base_cold=0.8, pr_cold=1.5)
+        base = over2x.make_bounds({}, self.SPEC)
+        self.assertEqual(base["cold_vs_base"], {("control", "held")})
+        found = over2x.cold_vs_base(summary(r), NOISE, MIN_DELTA, bounds=base)
+        self.assertEqual([f["shape"] for f in found], ["held"])
+        # A pull request that drops the key from its own shapes.json is still judged by the base's.
+        head = {"sets": {"control": {"shapes": [{"name": "held"}]}}}
+        self.assertEqual(len(over2x.cold_vs_base(summary(r), NOISE, MIN_DELTA, spec=head, bounds=base)), 1)
+        self.assertEqual(over2x.cold_vs_base(summary(r), NOISE, MIN_DELTA, bounds=over2x.make_bounds({}, head)), [])
+
+    def test_the_repository_holds_the_label_browser_shapes(self):
+        self.assertEqual({s for s, _ in over2x.cold_vs_base_shapes()}, {"metadata-inventory"})
+        self.assertEqual(len(over2x.cold_vs_base_shapes()), 4)
 
 
 if __name__ == "__main__":
