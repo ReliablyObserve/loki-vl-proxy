@@ -873,6 +873,7 @@ type Proxy struct {
 	metadataInventoryParallelism          int                // bucket listings in flight per request; 0 = inventory off
 	metadataInventoryPrefetch             bool               // -metadata-inventory-prefetch
 	inventoryBackgroundRunning            atomic.Int64       // background inventory reads running (runInventoryBackground)
+	inventoryInflight                     sync.Map           // bucket key -> chan closed when its background read ends
 	inventoryGroup                        singleflight.Group // one fill per inventory bucket
 	inventoryCountGroup                   singleflight.Group // one row count per tenant, query and range at a time
 	selectCallsInFlight                   atomic.Int64       // VictoriaLogs select calls this replica has in flight

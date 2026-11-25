@@ -24,6 +24,7 @@ func newMemoryInventoryProxy(t *testing.T, vl *fakeVictoriaLogs, staleness time.
 	p.metadataMaxStaleness = staleness
 	p.metadataInventoryPrefetch = true
 	p.metadataCacheFreshness = 24 * time.Hour
+	p.metadataEdgeRefreshBudget = 100 * time.Millisecond // the flag's default
 	return p
 }
 
@@ -50,14 +51,26 @@ func settleBackground(t testing.TB, p *Proxy) {
 // below the response caches.
 func namesOnlyListing(t testing.TB, p *Proxy, start, end time.Time) []string {
 	t.Helper()
+	names, _ := namesOnlyListingCalls(t, p, start, end)
+	return names
+}
+
+// namesOnlyListingCalls is namesOnlyListing plus the VictoriaLogs calls the
+// listing itself made (its request telemetry), apart from background reads.
+func namesOnlyListingCalls(t testing.TB, p *Proxy, start, end time.Time) ([]string, int) {
+	t.Helper()
+	rt := newRequestTelemetry()
 	ctx := context.WithValue(withNamesOnlyListing(context.Background()), labelCacheBypassKey{}, true)
+	ctx = context.WithValue(ctx, requestTelemetryKey, rt)
 	items, err := p.fetchVLListing(ctx, "/select/logsql/stream_field_names", url.Values{"query": {"*"}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	names := listingValues(items)
 	sort.Strings(names)
-	return names
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return names, rt.upstreamCalls
 }
 
 // dayNames are the names of the rows of every UTC day [start, end) touches
@@ -127,11 +140,12 @@ func TestLabelsInventory_MovedWindowsAreAnsweredFromMemory(t *testing.T) {
 			settleBackground(t, p)
 			for run := 2; run <= 3; run++ {
 				end := end0.Add(-time.Duration(run) * tc.shift)
-				vl.reset()
-				got := namesOnlyListing(t, p, end.Add(-tc.width), end)
-				calls, _ := vl.reset()
-				if n := calls["/select/logsql/stream_field_names"] + calls["/select/logsql/query"]; n != 0 {
-					t.Fatalf("run %d made %d VictoriaLogs calls (%v), want an answer from memory", run, n, calls)
+				// The previous listing's prefetch has finished: this holds the
+				// answer, not the race with it (MovedWindowJoinsTheRunningPrefetch).
+				settleBackground(t, p)
+				got, n := namesOnlyListingCalls(t, p, end.Add(-tc.width), end)
+				if n != 0 {
+					t.Fatalf("run %d made %d VictoriaLogs calls on its request path, want an answer from memory", run, n)
 				}
 				exact := namesOnlyListing(t, full, end.Add(-tc.width), end)
 				allowed := dayNames(vl, end.Add(-tc.width), end.Add(time.Millisecond))
@@ -238,15 +252,16 @@ func TestLabelsInventory_MemoryAnswersKeepTheStalenessBound(t *testing.T) {
 	start := end.Add(-6 * time.Hour)
 	_ = namesOnlyListing(t, p, start, end)
 	settleBackground(t, p) // the hours of the ends, read in the background
-	vl.reset()
-	_ = namesOnlyListing(t, p, start.Add(-time.Second), end.Add(-time.Second))
-	if calls, _ := vl.reset(); len(calls) != 0 {
-		t.Fatalf("within the bound: %v, want an answer from memory", calls)
+	if _, n := namesOnlyListingCalls(t, p, start.Add(-time.Second), end.Add(-time.Second)); n != 0 {
+		t.Fatalf("within the bound: %d request-path calls, want an answer from memory", n)
 	}
+	settleBackground(t, p)
 	restore := cache.AdvanceClockForTesting(400 * time.Millisecond) // past the bound
 	defer restore()
-	_ = namesOnlyListing(t, p, start.Add(-2*time.Second), end.Add(-2*time.Second))
-	if calls, _ := vl.reset(); len(calls) == 0 {
+	// No wait budget here (-metadata-edge-refresh-budget 0): past the bound
+	// the listing reads VictoriaLogs itself.
+	p.metadataEdgeRefreshBudget = 0
+	if _, n := namesOnlyListingCalls(t, p, start.Add(-2*time.Second), end.Add(-2*time.Second)); n == 0 {
 		t.Fatal("past the bound the listing was answered from memory without a confirmation")
 	}
 
@@ -285,9 +300,7 @@ func TestLabelsInventory_MemoryAnswersOffWithoutStaleness(t *testing.T) {
 	if _, ok := p.cache.Peek(inventoryBucketKey(listingBase(p), inventorySegment{start: day.UnixNano(), end: day.Add(24 * time.Hour).UnixNano(), level: 0})); ok {
 		t.Fatal("a day was filled in the background with -metadata-max-staleness=0")
 	}
-	vl.reset()
-	_ = namesOnlyListing(t, p, end.Add(-24*time.Hour-time.Second), end.Add(-time.Second))
-	if calls, _ := vl.reset(); len(calls) == 0 {
+	if _, n := namesOnlyListingCalls(t, p, end.Add(-24*time.Hour-time.Second), end.Add(-time.Second)); n == 0 {
 		t.Fatal("answered from memory with -metadata-max-staleness=0")
 	}
 	if counterValue(p, "memory") != 0 {
@@ -345,5 +358,79 @@ func TestLabelsInventory_PrefetchStaysWithinTheWindowWidth(t *testing.T) {
 				t.Fatalf("the 24h window read %s in the background, want the hours of its ends and the hour before it", read)
 			}
 		})
+	}
+}
+
+// A moved window that arrives while the background read of the hour it needs
+// is still running waits for that read (within -metadata-edge-refresh-budget)
+// and is answered from memory, instead of reading the hour's pieces itself:
+// the label browser moved back by 317 s right after its first load.
+//
+// conformance: semantics/label-browser-latency-cold-and-refresh, semantics/label-inventory-exact-and-incremental
+func TestLabelsInventory_MovedWindowJoinsTheRunningPrefetch(t *testing.T) {
+	now := time.Now()
+	f := &fakeVictoriaLogs{}
+	seedStableLabels(f, now)
+	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(20 * time.Millisecond) // the prefetch is still running when the next window arrives
+		f.ServeHTTP(w, r)
+	})
+	p := newInventoryTestProxy(t, slow, 4)
+	p.metadataMaxStaleness = 10 * time.Second
+	p.metadataInventoryPrefetch = true
+	p.metadataCacheFreshness = 24 * time.Hour
+	p.metadataEdgeRefreshBudget = 2 * time.Second
+	full := newInventoryTestProxy(t, f, -1)
+	end0 := now.Truncate(time.Hour).Add(-2*time.Hour + 26*time.Minute + 50*time.Second)
+	_ = namesOnlyListing(t, p, end0.Add(-time.Hour), end0)
+	if p.inventoryBackgroundRunning.Load() == 0 {
+		if _, running := p.inventoryInflight.Load(inventoryBucketKey(listingBase(p), inventorySegment{start: end0.Add(-time.Hour).Truncate(time.Hour).UnixNano(), end: end0.Add(-time.Hour).Truncate(time.Hour).Add(time.Hour).UnixNano(), level: 1})); !running {
+			t.Fatal("the first listing started no background read of the hour its start lies in")
+		}
+	}
+	end := end0.Add(-317 * time.Second)
+	got, n := namesOnlyListingCalls(t, p, end.Add(-time.Hour), end)
+	if n != 0 {
+		t.Fatalf("the moved window made %d request-path calls, want it to wait for the running prefetch", n)
+	}
+	if want := namesOnlyListing(t, full, end.Add(-time.Hour), end); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("names %v, one call %v", got, want)
+	}
+	settleBackground(t, p)
+}
+
+// An answer from the response cache starts the same background reads as a
+// listing: the label browser's next moved window finds the hour it needs.
+//
+// conformance: semantics/label-browser-latency-cold-and-refresh
+func TestLabelsInventory_ResponseCacheHitPrefetches(t *testing.T) {
+	now := time.Now()
+	vl := &fakeVictoriaLogs{}
+	seedStableLabels(vl, now)
+	p := newMemoryInventoryProxy(t, vl, 10*time.Second)
+	end := now.Truncate(time.Hour).Add(-2*time.Hour + 26*time.Minute + 50*time.Second)
+	hourReads := func() int {
+		_, spans := vl.reset()
+		n := 0
+		for _, s := range spans {
+			if s == time.Hour {
+				n++
+			}
+		}
+		return n
+	}
+	p.metadataInventoryPrefetch = false
+	first := labelsAnswer(t, p, end.Add(-time.Hour), end)
+	settleBackground(t, p)
+	if n := hourReads(); n != 0 {
+		t.Fatalf("%d hour reads with prefetch off", n)
+	}
+	p.metadataInventoryPrefetch = true
+	if got := labelsAnswer(t, p, end.Add(-time.Hour), end); got != first {
+		t.Fatalf("the cached answer changed: %s, want %s", got, first)
+	}
+	settleBackground(t, p)
+	if n := hourReads(); n != 1 {
+		t.Fatalf("an answer from the response cache read %d hours in the background, want the hour its window starts in", n)
 	}
 }

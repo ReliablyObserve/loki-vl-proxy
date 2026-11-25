@@ -538,7 +538,23 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 		// The background fills start once this listing has its answer, so they
 		// never compete with its own VictoriaLogs calls.
 		defer p.fillTouchedDays(ctx, path, params, base, plan, now, countable)
-		items, miss, unconfirmed := p.answerNamesFromMemory(path, base, plan, now)
+		items, miss, pending := p.answerNamesFromMemory(path, base, plan, now)
+		if miss == "unconfirmed" {
+			p.confirmInBackground(ctx, path, params, base, pending, countable)
+		}
+		if miss == "unconfirmed" || miss == "uncached" {
+			// A background read of a bucket this answer needs is running (the
+			// previous listing's prefetch, or the confirmation just started):
+			// wait for it within -metadata-edge-refresh-budget and look again,
+			// rather than reading the pieces from VictoriaLogs.
+			keys := make([]string, len(pending))
+			for i, seg := range pending {
+				keys[i] = inventoryBucketKey(base, seg)
+			}
+			if p.waitForInventoryFills(ctx, keys) {
+				items, miss, _ = p.answerNamesFromMemory(path, base, plan, now)
+			}
+		}
 		if miss == "" {
 			p.observeInternalOperation(ctx, "metadata_inventory", "memory", time.Since(now))
 			return items, nil
@@ -546,7 +562,6 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 		if miss != "off" {
 			p.observeInternalOperation(ctx, "metadata_inventory_memory_miss", miss, 0)
 		}
-		defer p.confirmInBackground(ctx, path, params, base, unconfirmed, countable)
 		plan, covers = p.coverFinePieces(path, base, plan, now.Add(-metadataInventorySealLag).UnixNano(), countable)
 	}
 	var rescan map[string]struct{}
@@ -644,8 +659,10 @@ func isNamesOnlyListing(ctx context.Context) bool { return ctx.Value(namesOnlyLi
 // the path that reads VictoriaLogs.
 //
 // Otherwise it returns why ("off", "uncached", "unconfirmed",
-// "no_rows_evidence") and the cached entries it could not use only because
-// they were not confirmed recently enough, for confirmInBackground.
+// "no_rows_evidence") and the buckets that would let it answer: the cached
+// entries it could not use only because they were not confirmed recently
+// enough (for confirmInBackground), or the buckets that would hold the first
+// piece it found no bucket for (a running background read may fill them).
 func (p *Proxy) answerNamesFromMemory(path, base string, plan []inventorySegment, now time.Time) ([]vlValueHits, string, []inventorySegment) {
 	if p.metadataMaxStaleness <= 0 || len(plan) == 0 {
 		return nil, "off", nil
@@ -709,7 +726,17 @@ func (p *Proxy) answerNamesFromMemory(path, base string, plan []inventorySegment
 			if len(unconfirmed) > 0 {
 				return nil, "unconfirmed", unconfirmed
 			}
-			return nil, "uncached", nil
+			// The buckets that would hold the piece, which a background read
+			// may be filling.
+			var holders []inventorySegment
+			for li := len(metadataInventoryLevels) - 1; li >= 0; li-- {
+				if seg.level >= 0 && li >= seg.level {
+					continue
+				}
+				size := int64(metadataInventoryLevels[li])
+				holders = append(holders, inventorySegment{start: seg.start - seg.start%size, end: seg.start - seg.start%size + size, level: li})
+			}
+			return nil, "uncached", holders
 		}
 		needs[seg.start-seg.start%day] = true
 	}
@@ -733,7 +760,7 @@ func (p *Proxy) confirmInBackground(ctx context.Context, path string, params url
 	}
 	for _, seg := range segs {
 		key := inventoryBucketKey(base, seg)
-		p.runInventoryBackground(ctx, "confirm:"+key, func(bg context.Context) error {
+		p.runInventoryBackground(ctx, key, func(bg context.Context) error {
 			if e, ok := p.peekInventoryEntry(key); ok && countable && e.Rows >= 0 {
 				rows, at, err := p.countInventoryRows(bg, params.Get("query"), seg, cache.Now().UnixNano())
 				if err != nil {
@@ -814,7 +841,7 @@ func (p *Proxy) fillTouchedDays(ctx context.Context, path string, params url.Val
 	}
 	for _, seg := range fills {
 		key := inventoryBucketKey(base, seg)
-		p.runInventoryBackground(ctx, "fill:"+key, func(bg context.Context) error {
+		p.runInventoryBackground(ctx, key, func(bg context.Context) error {
 			_, _, err := p.fetchInventorySegment(bg, path, withTimeRange(params, seg.start, seg.end), base, seg, countable, p.metadataScanLimiter != nil && seg.level == 0, false)
 			return err
 		})
@@ -823,7 +850,10 @@ func (p *Proxy) fillTouchedDays(ctx context.Context, path string, params url.Val
 
 // runInventoryBackground runs fill once per key at a time, detached from
 // the request (its tenant and auth scope kept), in the background inventory
-// lane, bounded by the background timeout and stopped at shutdown.
+// lane, bounded by the background timeout and stopped at shutdown. While it
+// runs, its key is in p.inventoryInflight with a channel closed when it ends,
+// so a listing that needs the bucket it reads can wait for it
+// (waitForInventoryFills) instead of reading the bucket's pieces itself.
 func (p *Proxy) runInventoryBackground(ctx context.Context, key string, fill func(context.Context) error) {
 	s := &p.metadataEdges
 	s.mu.Lock()
@@ -831,23 +861,25 @@ func (p *Proxy) runInventoryBackground(ctx context.Context, key string, fill fun
 		s.base, s.stop = context.WithCancel(context.Background())
 	}
 	base := s.base
-	s.mu.Unlock()
 	if base.Err() != nil {
+		s.mu.Unlock()
 		return
 	}
+	done := make(chan struct{})
+	if _, running := p.inventoryInflight.LoadOrStore(key, done); running {
+		s.mu.Unlock()
+		return
+	}
+	s.wg.Add(1)
+	s.mu.Unlock()
+	p.inventoryBackgroundRunning.Add(1)
 	// Its VictoriaLogs calls are not the request's (X-Loki-VL-Backend-Calls).
 	detached := withBackgroundInventory(context.WithValue(context.WithoutCancel(ctx), requestTelemetryKey, (*requestTelemetry)(nil)))
-	s.refreshes.DoChan(key, func() (interface{}, error) {
-		s.mu.Lock()
-		if base.Err() != nil {
-			s.mu.Unlock()
-			return nil, base.Err()
-		}
-		s.wg.Add(1)
-		s.mu.Unlock()
+	go func() {
 		defer s.wg.Done()
-		p.inventoryBackgroundRunning.Add(1)
 		defer p.inventoryBackgroundRunning.Add(-1)
+		defer close(done)
+		defer p.inventoryInflight.Delete(key)
 		started := time.Now()
 		bg, cancel := context.WithTimeout(detached, p.labelBackgroundTimeout())
 		defer cancel()
@@ -862,8 +894,34 @@ func (p *Proxy) runInventoryBackground(ctx context.Context, key string, fill fun
 			p.log.Debug("background label inventory read failed", "error", err)
 		}
 		p.observeInternalOperation(bg, "metadata_inventory_background", outcome, time.Since(started))
-		return nil, err
-	})
+	}()
+}
+
+// waitForInventoryFills waits, at most -metadata-edge-refresh-budget, for the
+// background reads of keys that are running, and reports whether it waited
+// for any.
+func (p *Proxy) waitForInventoryFills(ctx context.Context, keys []string) bool {
+	var waits []chan struct{}
+	for _, key := range keys {
+		if v, ok := p.inventoryInflight.Load(key); ok {
+			waits = append(waits, v.(chan struct{}))
+		}
+	}
+	if len(waits) == 0 || p.metadataEdgeRefreshBudget <= 0 {
+		return false
+	}
+	timer := time.NewTimer(p.metadataEdgeRefreshBudget)
+	defer timer.Stop()
+	for _, done := range waits {
+		select {
+		case <-done:
+		case <-timer.C:
+			return true
+		case <-ctx.Done():
+			return true
+		}
+	}
+	return true
 }
 
 // coverFinePieces replaces, in the plan of a names-only listing, each run of

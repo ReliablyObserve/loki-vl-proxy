@@ -42,6 +42,9 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		if !metadataListPayloadEmpty(cached) && p.shouldRefreshLabelsInBackground(remaining, labelsTTL) {
 			p.refreshLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), p.labelSearchParam(r), p.snapshotForwardedAuth(r))
 		}
+		// An answer from the response cache still prefetches the hours the
+		// next moved window needs, as a listing would.
+		p.prefetchLabelsWindow(r)
 		return
 	}
 	p.metrics.RecordCacheMiss()

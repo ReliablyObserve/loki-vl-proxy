@@ -233,6 +233,34 @@ func (p *Proxy) fetchScopedLabelNames(ctx context.Context, rawQuery, start, end,
 	return nil, lastErr
 }
 
+// prefetchLabelsWindow starts, for a /labels request the response cache
+// answered, the background reads a listing of its window would start after
+// its answer (fillTouchedDays): the next window, moved back by minutes, then
+// finds the hours it needs in memory. It reads only memory itself.
+func (p *Proxy) prefetchLabelsWindow(r *http.Request) {
+	if !p.metadataInventoryPrefetch || p.metadataMaxStaleness <= 0 || !p.metadataInventoryEnabled() || !p.supportsStreamMetadataEndpoints() {
+		return
+	}
+	r = p.withRequestScope(r)
+	ctx := withNamesOnlyListing(r.Context())
+	candidates := metadataQueryCandidates(r.FormValue("query"))
+	if len(candidates) == 0 {
+		return
+	}
+	params, err := p.metadataQueryParams(ctx, candidates[0], lokiLabelStartToVL(r.FormValue("start")), lokiLabelEndToVL(r.FormValue("end")), "", p.labelSearchParam(r))
+	if err != nil {
+		return
+	}
+	const path = "/select/logsql/stream_field_names"
+	now := time.Now()
+	plan, ok := p.inventoryPlan(path, params, now)
+	if !ok {
+		return
+	}
+	_, countable := inventoryQueryShape(params.Get("query"))
+	p.fillTouchedDays(ctx, path, params, p.inventoryKeyBase(ctx, path, params), plan, now, countable)
+}
+
 func (p *Proxy) fetchScopedLabelValues(ctx context.Context, labelName, rawQuery, start, end, limit, search string) ([]string, error) {
 	start, end = lokiLabelStartToVL(start), lokiLabelEndToVL(end)
 	candidates := metadataQueryCandidates(rawQuery)
