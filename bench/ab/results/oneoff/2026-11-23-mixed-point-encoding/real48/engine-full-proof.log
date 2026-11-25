@@ -1,6 +1,0 @@
-=== RUN   TestOrderedMixedStatsActualRangeMatchesRecordedLoki
-    ordered_json_mixed_stats_test.go:523: PASS pinned engine vs complete live24h source: 4 requests, 14828 source rows
-    ordered_json_mixed_stats_test.go:523: PASS full48h identical VL-source oracle: 6 count requests, 39321 source rows; original live48h retention mismatch remains recorded
---- PASS: TestOrderedMixedStatsActualRangeMatchesRecordedLoki (81.79s)
-PASS
-ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	82.440s

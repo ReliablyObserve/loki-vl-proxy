@@ -1,3 +1,0 @@
-internal/proxy/range_metric_compat.go:3083:6: can inline hitsWindowFunction
-internal/proxy/range_metric_compat.go:3090:6: can inline hitsSamplePrefix
-ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	1.228s
