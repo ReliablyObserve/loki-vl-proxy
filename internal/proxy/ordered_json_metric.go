@@ -83,6 +83,7 @@ func (p *Proxy) orderedJSONMetricMaxBytes() int64 {
 type orderedJSONStage struct {
 	parser    bool
 	logfmt    bool
+	unpack    bool   // an unpack parser: only its parser error is read (the JSON parser error check)
 	jsonField string // one top-level key, extracted under its own name
 	filter    *translator.DropCondition
 	line      func(string) bool
@@ -3535,6 +3536,10 @@ func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line 
 			return nil, false, err
 		}
 		switch {
+		case stage.unpack:
+			if err := plan.recordJSONError(labels, unpackLineError(line)); err != nil {
+				return nil, false, err
+			}
 		case stage.parser:
 			if !plan.noLabels && (plan.required == nil || len(extracted) != len(plan.required)) {
 				if plan.mixedParsers && len(line) > 1<<20 {

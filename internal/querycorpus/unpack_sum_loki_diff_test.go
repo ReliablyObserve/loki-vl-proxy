@@ -10,18 +10,18 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
-// The Loki differential of the unpack aggregations the query plan lowers (internal/queryplan/lower unpack.go): real
+// The Loki differential of metric queries over an unpack: real
 // Loki (the engine oracle) and real VictoriaLogs (the serve oracle, v1.54.0 and v1.49.0) over the same data, through
 // the proxy's real query and query_range handlers, as the metric differential runs them.
 //
 //   - Data (unpackSumFixture): job=pk holds only JSON objects (packed lines, lines without an `_entry`, an empty,
 //     numeric or object `_entry`, values that are not strings, a packed key that collides with a stream label);
 //     job=bad adds lines that are no JSON object in a ten-minute stretch, which Loki's unpack marks with __error__.
-//   - Open difference: a range aggregation over lines Loki's unpack rejects answers where Loki fails
-//     (semantics/unpack-parser-error-not-raised).
+//   - A range aggregation over lines Loki's unpack rejects fails with Loki's pipeline error under every function
+//     (semantics/unpack-parser-error-not-raised), unless the pipeline drops or filters __error__ or a sum without
+//     grouping needs no label.
 //   - A sum with no clause adds up the series, so Loki's answer is held series by series and value by value (it
 //     answers over job=bad too: Loki parses no line for a sum that needs no label). A range aggregation of its own
 //     splits the series by the promoted labels (the owner-kept stream identity of parser metrics), so it is held to
@@ -46,6 +46,22 @@ func unpackSumQueries() []string {
 		out = append(out, `sum(absent_over_time(`+job+` | unpack [1m]))`)
 	}
 	// An absence check over a selector with no line: the sum answers 1.
+	// Parser errors reach every function above the range aggregation unless the pipeline intercepts them, and a
+	// grouping makes Loki parse under a sum.
+	leaf := `count_over_time({job="bad"} | unpack [1m])`
+	out = append(out,
+		`sum by (app) (`+leaf+`)`,
+		`sort(`+leaf+`)`,
+		`topk(2, `+leaf+`)`,
+		`max(`+leaf+`)`,
+		`count by (pod) (`+leaf+`)`,
+		`label_replace(`+leaf+`, "dst", "$1", "app", "(.*)")`,
+		leaf+` * 2`,
+		`sum(`+leaf+`) + sum by (app) (`+leaf+`)`,
+		`rate({job="bad"} |= "k" | unpack [1m] offset 40m)`,
+		`bytes_over_time({job="bad"} != "json" | unpack [1m])`,
+		`count_over_time({job="bad"} | unpack | drop __error__, __error_details__ [1m])`,
+	)
 	// absent_over_time reads the same count at an instant.
 	return append(out, `sum(absent_over_time({job="none"} | unpack [1m]))`,
 		`absent_over_time({job="none"} | unpack [1m])`, `absent_over_time({job="pk"} | unpack [1m])`)
@@ -110,9 +126,6 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
-		if _, err := lower.PlanQuery(q, p, lower.Profile{}); err != nil {
-			t.Fatalf("%s: not lowered: %v", q, err)
-		}
 		queries = append(queries, metricQuery{q: q, id: queryID("logql", q), plan: p, fix: fix, reqs: metricRequests(q, firstRangeOf(p.Root))})
 	}
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
@@ -137,31 +150,26 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 				}
 				runs++
 				diff := parserErrorDiff(loki, run, true)
-				sum := strings.HasPrefix(mq.q, "sum(")
+				sum := strings.HasPrefix(mq.q, "sum(count") || strings.HasPrefix(mq.q, "sum(rate") || strings.HasPrefix(mq.q, "sum(absent")
 				if sum && diff == "" && loki.Status == 200 {
 					if d := compareMetric(loki, run); len(d.classes) != 0 {
 						diff = fmt.Sprintf("another answer: %v", d.classes)
 					}
 				}
-				// The open difference: a range aggregation of its own over lines Loki's unpack rejects.
-				failsInLoki := !sum && strings.Contains(mq.q, `{job="bad"}`) && loki.Status == 400
-				switch {
-				case failsInLoki && diff == "":
-					t.Errorf("%s %s %s matches Loki now: take it off the open differences", prof.name, mr.kind, mq.q)
-				case failsInLoki && run.status == 200:
-					failing++
-				case diff != "":
+				if diff != "" {
 					t.Errorf("%s %s %s (Loki %d, %d VictoriaLogs requests): %.600s", prof.name, mr.kind, mq.q, loki.Status, len(run.sent), diff)
-				default:
-					match++
-					if sum && loki.Status == 200 {
-						sums++
-					}
+					continue
+				}
+				match++
+				if loki.Status == 400 {
+					failing++
+				} else if sum {
+					sums++
 				}
 			}
 		}
 	}
-	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them sums), %d answer where Loki fails", match, runs, sums, failing)
+	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them answered sums, %d Loki errors)", match, runs, sums, failing)
 	if sums == 0 || failing == 0 {
 		t.Error("no sum, or no run Loki fails, reached the comparison")
 	}

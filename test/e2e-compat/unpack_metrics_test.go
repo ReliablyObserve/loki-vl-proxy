@@ -111,12 +111,26 @@ func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
 }
 
 // A sum with no clause over an unpack is one series in Loki, at an instant too: the proxy answered a sum of a rate
-// with one series per stream there.
+// with one series per stream there. A count over a line an unpack rejects fails with Loki's pipeline error under any
+// function but a sum with no grouping, where the proxy answered.
 //
-// conformance: semantics/unpack-instant-sum-rate-per-stream, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-parser-error-not-raised, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_UnpackSumsLikeLoki(t *testing.T) {
 	app, now := unpackFixture(t, "unpacksum")
 	selector := fmt.Sprintf(`{app=%q}`, app)
+	badApp, badNow := unpackFixture(t, "unpackbad", `not json %d`, `["%d"]`, `{"a":"%d"`)
+	bad := fmt.Sprintf(`count_over_time({app=%q} | unpack [5m])`, badApp)
+	for i, query := range []string{
+		bad, `sum by (app) (` + bad + `)`, `topk(2, ` + bad + `)`, `sum(` + bad + `)`,
+		`rate({app="` + badApp + `"} |= "packed" | unpack [5m])`,
+		`count_over_time({app="` + badApp + `"} | unpack | drop __error__, __error_details__ [5m])`,
+	} {
+		for _, endpoint := range []string{"query", "query_range"} {
+			t.Run("errors/"+endpoint+"/"+strconv.Itoa(i), func(t *testing.T) {
+				unpackAgainstLoki(t, query, endpoint, badNow)
+			})
+		}
+	}
 	for i, query := range []string{
 		`sum(rate(` + selector + ` | unpack [5m]))`,
 		`sum(rate(` + selector + ` | unpack | drop agent [5m]))`,
