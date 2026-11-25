@@ -670,6 +670,10 @@
     "semantics/label-browser-latency-cold-and-refresh | compare:exact",
     "semantics/label-browser-latency-cold-and-refresh | perf",
     "semantics/label-browser-latency-cold-and-refresh | perf:locked",
+    "semantics/label-browser-moved-window-from-memory | compare:observed",
+    "semantics/label-browser-moved-window-from-memory | gap:fixed",
+    "semantics/label-browser-moved-window-from-memory | perf",
+    "semantics/label-browser-moved-window-from-memory | perf:locked",
     "semantics/label-filter-after-regexp-parser-misses-metadata | compare:observed",
     "semantics/label-filter-after-regexp-parser-misses-metadata | gap:open",
     "semantics/label-filter-after-regexp-parser-misses-metadata | query",
@@ -1978,6 +1982,11 @@
     "internal/proxy/keyword_fold_runes_test.go | semantics/vector-call-blank-before-parenthesis-as-query",
     "internal/proxy/label_backfill_cached_bucket_test.go | quality/labels-backfill-into-cached-bucket",
     "internal/proxy/label_backfill_cached_bucket_test.go | semantics/metadata-answers-include-last-24h-like-loki",
+    "internal/proxy/label_browser_gates_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
+    "internal/proxy/label_browser_gates_test.go | loki_api_v1_labels",
+    "internal/proxy/label_browser_gates_test.go | semantics/label-browser-latency-cold-and-refresh",
+    "internal/proxy/label_browser_gates_test.go | semantics/label-browser-moved-window-from-memory",
+    "internal/proxy/label_browser_gates_test.go | semantics/label-inventory-exact-and-incremental",
     "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
     "internal/proxy/label_cache_behavior_test.go | quality/label-cache-aged-labels-kept",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
@@ -3666,12 +3675,12 @@
       "any": 50,
       "api": 124,
       "drilldown": 63,
-      "explore": 264,
+      "explore": 265,
       "grafana-datasource": 4,
       "operator": 5
     },
     "claiming_tests": {
-      "go": 830,
+      "go": 831,
       "playwright": 3
     },
     "page_kinds": {
@@ -3690,10 +3699,10 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 114,
+    "shape_covers_distinct": 115,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 482
+    "wired_items": 483
   },
   "gates": [
     "A/B shape selection",

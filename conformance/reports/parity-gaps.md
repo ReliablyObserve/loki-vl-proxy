@@ -297,6 +297,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/json-parser-error-under-wrappers` — A JSON parser error fails a metric under any function, as in Loki (fixed; strict logfmt open) | TBD-PR | 0 | 0 |
 | `semantics/keep-before-unwrap-series-identity` — A keep before an unwrap decides the series of first, last, quantile, stddev, stdvar, avg, max, sum and rate_counter over time (fixed) | this change | 0 | 0 |
 | `semantics/keep-leaves-labels-loki-drops` — `\| keep` leaves labels Loki drops: a parsed key renamed name_extracted, the stream labels under a vector aggregation (fixed) | #1100 | 0 | 0 |
+| `semantics/label-browser-moved-window-from-memory` — The label browser's moved windows are answered from memory, faster than Loki, without losing a name | #1750 | 0 | 0 |
 | `semantics/label-filter-expression-syntax` — Comma-joined and parenthesized label-filter expressions are rejected (open) | #995 | 0 | 0 |
 | `semantics/label-replace-duplicates-before-ranking` — topk, bottomk and stddev over label sets a label_replace made equal ranked merged series on query_range (fixed) | #744 | 0 | 0 |
 | `semantics/label-replace-instant-vector` — label_replace around a vector at an instant adds the destination label, like Loki (fixed) | #744 | 0 | 0 |
