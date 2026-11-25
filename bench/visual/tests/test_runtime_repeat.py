@@ -17,9 +17,9 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock as mock
 from argparse import Namespace
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import ci_run  # noqa: E402
@@ -335,8 +335,8 @@ class RunTest(unittest.TestCase):
 
     def test_a_pair_past_its_deadline_is_stopped_with_its_children(self):
         t0 = time.time()
-        code = ci_run.bounded([sys.executable, "-c", "import subprocess, sys; subprocess.run([sys.executable, '-c', "
-                               "'import time; time.sleep(30)']); "], self.out, dict(os.environ),
+        code = ci_run.bounded([sys.executable, "-c", ("import subprocess, sys; subprocess.run([sys.executable, '-c', "
+                                      + "'import time; time.sleep(30)']); ")], self.out, dict(os.environ),
                               os.path.join(self.out, "log"), 1)
         self.assertIsNone(code)
         self.assertLess(time.time() - t0, 10)
