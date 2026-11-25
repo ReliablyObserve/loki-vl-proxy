@@ -25,6 +25,13 @@ Endpoint items (loki_api_v1_*) sit under every shape of an endpoint and their
 handler file is touched by most changes, so a handler change selects that
 endpoint's smoke shapes, not every shape behind the endpoint.
 
+Ranges. A pull request run measures its shapes at 1h; a required runtime proof
+measures each shape at its declared ranges up to 48h (runtime_cells). A shape
+that declares its own "ranges" in shapes.json is measured at them whenever a pull
+request selects it (range_cells, the selection's "cells"): a row locked at a
+range the 1h cell cannot show, such as the label browser's 24h rows, is then
+judged on the pull request that could move it. Its other shapes stay at 1h.
+
   selection.py --base origin/main              files from git diff base...HEAD
   selection.py --files internal/proxy/x.go ... explicit file list
   selection.py --check                         gate: every shape is reachable
@@ -108,6 +115,26 @@ def runtime_cells(sets, spec):
                 if r in spec["ranges"] and spec["ranges"][r][0] <= 48 * 3600]
             cells[f"{name}/{shape['name']}"] = ranges or ["1h"]
     return cells
+
+
+def range_cells(sets, spec):
+    """{set/shape: ranges} for the selected shapes that declare their own "ranges" (up to 48h), for a run without
+    a required runtime proof: those shapes are measured at them, every other shape at the run's ranges (1h)."""
+    cells = {}
+    for name, names in sets.items():
+        for shape in spec["sets"][name]["shapes"]:
+            if shape["name"] in names and shape.get("ranges") and not shape.get("instant"):
+                ranges = [r for r in shape["ranges"] if r in spec["ranges"] and spec["ranges"][r][0] <= 48 * 3600]
+                if ranges:
+                    cells[f"{name}/{shape['name']}"] = ranges
+    return cells
+
+
+def cells_of(sel):
+    """The per-shape ranges a selection plans: the runtime proof's cells when one is required, else its range_cells
+    (shapes with none run at the run's ranges)."""
+    proof = sel.get("runtime_proof", {})
+    return proof.get("cells", {}) if proof.get("required") else sel.get("cells", {})
 
 
 def read(path):
@@ -305,6 +332,10 @@ def select(files, base=None, spec=None, items=None, head=None):
             "ranges": sorted(measured, key=lambda r: (spec["ranges"][r][0], r)) or ["1h"],
             "cells": cells,
         }
+    else:
+        cells = range_cells(sets, spec)
+        if cells:
+            result["cells"] = cells
     return result
 
 
@@ -349,6 +380,11 @@ def check(spec=None, items=None):
         for shape in shape_set["shapes"]:
             if shape.get("smoke") and set_name != CONTROL:
                 problems.append(f"{SHAPES}: {set_name}/{shape['name']} is marked smoke outside '{CONTROL}'")
+            own = shape.get("ranges")
+            if own is not None and (not isinstance(own, list) or not own or shape.get("instant") or any(
+                    r not in shape_set.get("ranges", []) or spec["ranges"].get(r, [0])[0] > 48 * 3600 for r in own)):
+                problems.append(f"{SHAPES}: {set_name}/{shape['name']} ranges must be a non-empty list of its set's "
+                                "ranges up to 48h, on a shape that is not instant (range_cells)")
             specific, _ = shape_files(shape, items)
             if set_name != CONTROL and not specific:
                 problems.append(f"{SHAPES}: {set_name}/{shape['name']} covers no registry item that names code, "

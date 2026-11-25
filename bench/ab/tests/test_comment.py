@@ -138,5 +138,35 @@ class RenderTest(unittest.TestCase):
         self.assertIn("7.0 min", text)
 
 
+class ColdVsBaseRenderTest(unittest.TestCase):
+    def label_row(self, base_cold, pr_cold, **extra):
+        r = row("explore labels (label browser)", "same", 0.002, 0.001, 0.003, rng="24h")
+        r["cold"] = {"base": base_cold, "pr": pr_cold, "loki": 0.05}
+        r["stale"] = ["base", "pr", "loki"]
+        r.update(extra)
+        return r
+
+    def test_a_held_cold_slower_than_base_fails_and_is_listed(self):
+        text, verdict = comment.render([summary([self.label_row(0.8, 1.6, cold_samples={"base": [0.8], "pr": [1.6]})],
+                                                set_name="metadata-inventory")], SELECTION, META)
+        self.assertTrue(verdict["failed"])
+        self.assertEqual(verdict["exit"], 1)
+        self.assertEqual(verdict["cold_vs_base"]["slower"], 1)
+        self.assertIn("Cold slower than the base build: 1", text)
+        self.assertIn("800 ms ᵐ", text)
+
+    def test_a_held_cold_within_noise_passes(self):
+        text, verdict = comment.render([summary([self.label_row(0.8, 0.95)], set_name="metadata-inventory")],
+                                       SELECTION, META)
+        self.assertFalse(verdict["failed"])
+        self.assertNotIn("cold_vs_base", verdict)
+        self.assertNotIn("Cold slower than the base build", text)
+
+    def test_the_stamp_names_the_shapes_own_ranges(self):
+        text, _ = comment.render([summary([self.label_row(0.8, 0.8)], set_name="metadata-inventory")], SELECTION,
+                                 dict(META, cell_ranges=["1h", "6h", "24h"]))
+        self.assertIn("ranges 1h (shapes with their own ranges: 1h, 6h, 24h)", text)
+
+
 if __name__ == "__main__":
     unittest.main()

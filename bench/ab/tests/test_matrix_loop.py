@@ -575,6 +575,17 @@ class NoSleepTest(unittest.TestCase):
         self.assertTrue(written["rows"])
         self.assertEqual({r["range"] for r in written["rows"] if r["shape"] == W8}, {"1h"})
 
+    def test_cells_plan_gives_a_shape_its_own_ranges_and_the_others_the_run_ranges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "selection.json")
+            with open(path, "w") as f:
+                json.dump({"cells": {f"unwrap-sum-without/{W8}": ["1h", "24h"]}}, f)
+            written, _, _, _ = run_main(recorded(), ["--ranges", "6h", "--cells-plan", path])
+        self.assertEqual({r["range"] for r in written["rows"] if r["shape"] == W8}, {"1h", "24h"})
+        self.assertEqual({r["range"] for r in written["rows"] if r["shape"] == W9}, {"instant"})
+        self.assertFalse(written.get("runtime_proof"))
+        self.assertFalse(any("answer_proof" in r for r in written["rows"]))
+
     def test_no_request_is_followed_by_a_sleep(self):
         _, replay, sleeps, _ = run_main(recorded())
         self.assertGreater(len(replay.sent), 50)
