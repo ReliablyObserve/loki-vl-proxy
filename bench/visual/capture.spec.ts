@@ -6,6 +6,7 @@
 //   VP_PAGES=explore-A,dd-fields VP_RANGES=15m,1h   (optional filters)
 //   VP_PLAN=plan.json   the CI plan of plan.py: its entries and their own ranges
 //                       (replaces VP_PAGES / VP_RANGES; VP_LIVE=1 runs only the tail pages, else only the static ones)
+//   VP_DATASOURCES=pr,main   only these datasources, in this order (default: every one of spec.json, in its order)
 //
 // Windows are absolute (end = the seed end), so all datasources see the same
 // window and the data is static.
@@ -46,7 +47,14 @@ const pagesOnly = only(process.env.VP_PAGES);
 const rangesOnly = only(process.env.VP_RANGES);
 const plan: Record<string, { ranges: string[] }> | null = process.env.VP_PLAN
   ? JSON.parse(fs.readFileSync(process.env.VP_PLAN, "utf8")).entries : null;
-const dss: Ds[] = spec.datasources;
+// VP_DATASOURCES=pr,main: only these datasources, in this order (ci_run.py's cold repeats of a runtime regression).
+const dss: Ds[] = process.env.VP_DATASOURCES
+  ? process.env.VP_DATASOURCES.split(",").map((id) => {
+      const ds = (spec.datasources as Ds[]).find((d) => d.id === id);
+      if (!ds) throw new Error(`VP_DATASOURCES: no datasource "${id}" in spec.json`);
+      return ds;
+    })
+  : spec.datasources;
 const vars: Record<string, string> = spec.vars || {};
 const expand = (s: string, service?: string) =>
   s.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent((k === "service" && service) || (vars[k] ?? "")));

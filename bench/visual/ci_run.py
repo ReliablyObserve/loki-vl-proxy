@@ -15,6 +15,7 @@ Steps (stack.py does the stack, shared with the manual tooling):
      proxy (--base) and the PR proxy (the working tree), and Grafana;
   2. capture.spec.ts over the static plan (page x range, base | PR | Loki in sequence);
      compare.py; the static captures whose data differed (or never settled) once more;
+     the captures whose only finding is a first-pass runtime regression measured again cold (repeat_runtime);
   3. the Live tail pages with the mirrored live generator (after the recapture: the generator
      writes into the streams the static windows read), compare.py again over everything,
      montage.py (images, at most 300 KB each);
@@ -25,9 +26,12 @@ montage/*.png, shots/ and data/ (the raw captures), error.json when the run
 died, and the logs. visual_comment.py renders the comment and the verdict from them.
 """
 import argparse
+import glob
+import importlib.util
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -39,11 +43,18 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from compare import RUNTIME_GUARDS, runtime_problems, runtime_regressions  # noqa: E402
 from shards import fixture_hours
 from vio import dump_json, load_json  # noqa: E402
-from visual_comment import classify, loki_ui_for_gate, new_empty_panel  # noqa: E402
+from visual_comment import classify, loki_ui_for_gate, new_empty_panel, ui_problems  # noqa: E402
+
+# bench/ab/stack.py under its own name, as stack.py loads it: `stack` on sys.path may be either of the two files.
+_spec = importlib.util.spec_from_file_location("ab_stack", os.path.join(HERE, "..", "ab", "stack.py"))
+ab_stack = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ab_stack)
 
 PY = sys.executable
+REGRESSION = "runtime regression:"
 
 
 def run(cmd, cwd=None, env=None, log=None, check=True):
@@ -240,6 +251,217 @@ def capture_env(a, out, end, port):
                 VP_PLAN=os.path.join(out, "plan.json"), WORKERS=str(a.workers))
 
 
+# Cold repeats of a first-pass runtime regression (README, "Runtime regressions are measured again cold").
+#
+# A capture measures each build once, the base first, so a settlement that moves by a second or two from one page load
+# to the next (the quiet window ends a few seconds after the last answer, and a late answer moves it) can fail a page
+# the pull request does not touch. A warm recapture cannot settle that: the proxies cache, so it would hide a real cold
+# cost. Instead, each such page is loaded RUNTIME_REPEATS more times through both builds, each time after both proxies'
+# caches were flushed and their logs went quiet, the PR first in the first repeat and the base first in the second.
+# The rule: per build, the median of every measured value over the first pass and the repeats, judged by the same
+# thresholds as one capture (compare.runtime_regressions). A regression the median shows stands; one it does not show
+# is cleared and listed as not reproduced. Any repeat that is not a clean cold sample (not settled, loaded more than
+# once, a runtime-proof problem, another API request count than the first pass, a refused flush, Playwright failed,
+# over the time budget) leaves the first-pass finding standing, as does a row past the cap.
+RUNTIME_REPEATS = 2
+MAX_RUNTIME_REPEAT_ROWS = 4
+RUNTIME_REPEAT_BUDGET_S = 300
+REPEAT_ORDERS = (("pr", "main"), ("main", "pr"))  # the first pass asked main first
+FLUSH_QUIET_S, FLUSH_QUIET_CAP_S = 2.0, 10.0
+
+
+def runtime_repeat_candidate(r, recaptured=()):
+    """A static capture whose only finding is a base-vs-PR runtime regression of the first pass.
+
+    Not a recaptured row (its observations stay under keep_runtime_observations), not a fix page (its findings are
+    against Loki, `runtime regression vs Loki:`, and Loki's results cache ignores no-cache), and nothing else that fails
+    the row: no data difference, settled, no "No data" panel or error banner only the PR shows, no error answer."""
+    problems = r.get("runtime_problems") or []
+    return (r["range"] != "live" and f"{r['page']} {r['range']}" not in set(recaptured) and bool(problems)
+            and all(p.startswith(REGRESSION) for p in problems) and not needs_second_look(r) and not r.get("errors_pr")
+            and not ui_problems(r.get("ui_main") or {}, r.get("ui_pr") or {}, loki_ui_for_gate(r)))
+
+
+def first_pass_observation(row):
+    """The row's own capture, as one observation (Loki's side kept for the report; the rule reads main and PR)."""
+    return {"order": ["main", "pr", "loki"], "settle_s": dict(row.get("settle_s") or {}),
+            **{f"runtime_{side}": row.get(f"runtime_{side}") for side in ("main", "pr", "loki")}}
+
+
+def repeat_observation(order, captures, first):
+    """One cold pair as the row keeps it, with why it cannot count (None when it can)."""
+    obs = {"order": list(order), "settle_s": {}, "attempts": {}}
+    why = []
+    for side in ("main", "pr"):
+        cap = captures.get(side)
+        if not isinstance(cap, dict):
+            why.append(f"{side}: no capture")
+            continue
+        settle = cap.get("settle_ms")
+        obs["settle_s"][side] = settle / 1000 if isinstance(settle, (int, float)) and not isinstance(settle, bool) else None
+        obs["runtime_" + side] = cap.get("runtime")
+        obs["attempts"][side] = cap.get("attempts")
+        if cap.get("attempts") != 1:
+            why.append(f"{side}: loaded {cap.get('attempts')} times (a retry meets a warm proxy)")
+        proof = runtime_problems(cap, cap, required=True, comparable=False)
+        if proof:
+            why.append(f"{side}: {proof[0]}")
+        requests = (cap.get("runtime") or {}).get("api_requests")
+        wanted = (first.get("runtime_" + side) or {}).get("api_requests")
+        if requests != wanted:
+            why.append(f"{side}: {requests} API requests, the first pass {wanted}")
+    if why:
+        obs["why"] = "; ".join(why)
+    return obs
+
+
+def median(values):
+    values = sorted(values)
+    mid = len(values) // 2
+    return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
+
+def median_observation(observations):
+    """Per build, the median of each judged value over the observations (shaped like a row: settle_s in seconds)."""
+    out = {"settle_s": {}}
+    for side in ("main", "pr"):
+        out["settle_s"][side] = median([o["settle_s"][side] for o in observations])
+        out["runtime_" + side] = {key: median([o["runtime_" + side][key] for o in observations]) for key, _, _ in RUNTIME_GUARDS}
+    return out
+
+
+def judge_runtime_repeat(row, repeat, n=RUNTIME_REPEATS):
+    """Apply the rule of the cold repeats to a candidate row of the final comparison; changes the row in place.
+
+    repeat: {"pairs": [observation, ...]} or {"why": reason} for a row that was not measured again. All observations
+    stay on the row (`runtime_repeat`); only a median within the thresholds over n clean repeats clears the finding."""
+    first = first_pass_observation(row)
+    record = row["runtime_repeat"] = {"first_pass": first, "first_pass_findings": list(row.get("runtime_problems") or []),
+                                      "pairs": repeat.get("pairs") or [], "rule": f"median of the first pass and {n} cold repeats per build"}
+    bad = [p["why"] for p in record["pairs"] if p.get("why")]
+    if repeat.get("why") or bad or len(record["pairs"]) < n:
+        record["verdict"] = "stands"
+        record["why"] = repeat.get("why") or (bad[0] if bad else f"{len(record['pairs'])} of {n} cold repeats taken")
+        return row
+    observations = [first, *record["pairs"]]
+    medians = median_observation(observations)
+    record["median"] = medians
+    found = runtime_regressions(
+        {"settle_ms": medians["settle_s"]["main"] * 1000, "runtime": medians["runtime_main"]},
+        {"settle_ms": medians["settle_s"]["pr"] * 1000, "runtime": medians["runtime_pr"]})
+    if found:
+        record["verdict"] = "reproduced"
+        row["runtime_problems"] = [f"{p} (median of {len(observations)} cold observations per build)" for p in found]
+    else:
+        record["verdict"] = "not reproduced"
+        row["runtime_unconfirmed"] = record["first_pass_findings"]
+        row["runtime_problems"] = []
+    return row
+
+
+def flush_proxies(state):
+    """POST /admin/cache/flush to both proxies (their admin listener, port + 1, as bench/ab/stack.proxy_command starts
+    them); then wait until both proxies' logs are quiet, so no background work a flush started runs into a capture."""
+    for side in ("main", "pr"):
+        url = f"http://127.0.0.1:{state['ports'][side] + 1}/admin/cache/flush"
+        req = urllib.request.Request(url, data=b"", method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                status = resp.status
+        except urllib.error.HTTPError as e:
+            status = e.code
+            e.close()
+        if status != 200:
+            raise OSError(f"cache flush {url}: HTTP {status}")
+    logs = [p for side in ("main", "pr") for p in sorted(glob.glob(os.path.join(state["out"], f"proxy-{side}-*.log")))]
+    return ab_stack.logs_quiet(logs, quiet=FLUSH_QUIET_S, cap=FLUSH_QUIET_CAP_S)
+
+
+def bounded(cmd, cwd, env, log, timeout):
+    """Run a step that must end by `timeout` seconds; the whole process group (npx, node, Chrome) is stopped then."""
+    print("+ " + " ".join(cmd), flush=True)
+    with open(log, "a", encoding="utf-8") as f:
+        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            return proc.wait(timeout=max(timeout, 1))
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            return None
+
+
+def repeat_pair(a, out, page, rng, kind, order, end, port, state, first, deadline):
+    """One cold pair of a page: flush both proxies, then load the page through both builds in `order`, once each."""
+    try:
+        quiet = flush_proxies(state)
+    except (OSError, ValueError) as e:  # urllib's errors are OSErrors
+        return {"order": list(order), "why": f"cache flush refused: {str(e)[:120]}"}
+    stage = tempfile.mkdtemp(prefix="runtime-repeat-", dir=out)
+    plan = os.path.join(stage, "plan.json")
+    dump_json(plan, {"entries": {page: {"kind": kind, "ranges": [rng]}}})
+    # The first pass's settle rule (no VP_QUIET_MS / VP_SETTLE_MS of the patient recapture), one page at a time: two
+    # workers would load the other build while one is measured, and a flush would land in the middle of a capture.
+    env = dict(capture_env(a, stage, end, port), VP_PLAN=plan, VP_DATASOURCES=",".join(order), WORKERS="1")
+    code = bounded(["npx", "playwright", "test"], HERE, env, os.path.join(out, "capture.log"), deadline - time.time())
+    if code is None:
+        return {"order": list(order), "why": "the time budget of the cold repeats ran out during the pair"}
+    captures = {}
+    for side in order:
+        path = os.path.join(stage, "data", page, rng, f"{side}.json")
+        if os.path.isfile(path) and os.path.getsize(path):
+            captures[side] = load_json(path)
+    obs = repeat_observation(order, captures, first)
+    obs["logs_quiet"] = quiet
+    if code:
+        obs["why"] = "; ".join(x for x in (f"Playwright exit {code}", obs.get("why")) if x)
+    return obs
+
+
+def repeat_runtime(a, out, plan, state, meta):
+    """Measure again, cold, the captures whose only finding is a first-pass runtime regression (see RUNTIME_REPEATS).
+
+    Runs before the Live tail pass (its generator writes into the streams the static windows read). Returns
+    {"page range": {"pairs": [...]} or {"why": ...}} for judge_runtime_repeat; also written to runtime-repeat.json."""
+    path = os.path.join(out, "compare.json")
+    rows = load_json(path) if os.path.exists(path) else []
+    names = sorted(f"{r['page']} {r['range']}" for r in rows if runtime_repeat_candidate(r, meta.get("recaptured") or ()))
+    by = {f"{r['page']} {r['range']}": r for r in rows}
+    t0 = time.time()
+    deadline = t0 + a.runtime_repeat_budget
+    repeats = {}
+    for i, name in enumerate(names):
+        if i >= a.max_runtime_repeat:
+            repeats[name] = {"why": f"over the cap of {a.max_runtime_repeat} cold-repeated captures per shard"}
+            continue
+        if time.time() >= deadline:
+            repeats[name] = {"why": f"the {a.runtime_repeat_budget} s budget of the cold repeats was used up"}
+            continue
+        page, rng = name.rsplit(" ", 1)
+        first = first_pass_observation(by[name])
+        pairs = []
+        for j in range(a.runtime_repeats):
+            pairs.append(repeat_pair(a, out, page, rng, plan["entries"][page]["kind"], REPEAT_ORDERS[j % 2],
+                                     state["end"], state["ports"]["grafana"], dict(state, out=out), first, deadline))
+            if pairs[-1].get("why"):
+                break  # the finding stands: no use in loading the page again
+        repeats[name] = {"pairs": pairs}
+    if names:
+        dump_json(os.path.join(out, "runtime-repeat.json"), repeats)
+        phase(meta, "runtime_repeat", t0)
+    meta["runtime_repeat"] = {"candidates": names, "repeats": a.runtime_repeats, "max_rows": a.max_runtime_repeat,
+                              "budget_s": a.runtime_repeat_budget, "elapsed_s": round(time.time() - t0)}
+    return repeats
+
+
+def apply_runtime_repeats(rows, repeats, n=RUNTIME_REPEATS):
+    """Judge every row measured again; a row whose final comparison is no longer a candidate keeps its findings."""
+    for row in rows:
+        name = f"{row['page']} {row['range']}"
+        if name in repeats and runtime_repeat_candidate(row):
+            judge_runtime_repeat(row, repeats[name], n)
+    return rows
+
+
 def capture(a, out, plan, end, port, meta, loki_port):
     """The static captures; a failed Playwright test leaves a capture missing, which the verdict reports."""
     static = [p for p, e in plan["entries"].items() if e["kind"] != "tail"]
@@ -293,6 +515,12 @@ def main():
     ap.add_argument("--loki-hours", type=float, default=1.5)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--max-recapture", type=int, default=6, help="re-capture at most this many differing captures once")
+    ap.add_argument("--runtime-repeats", type=int, default=RUNTIME_REPEATS,
+                    help="cold base/PR pairs that measure again a capture whose only finding is a runtime regression")
+    ap.add_argument("--max-runtime-repeat", type=int, default=MAX_RUNTIME_REPEAT_ROWS,
+                    help="measure again at most this many such captures (past it the first-pass finding stands)")
+    ap.add_argument("--runtime-repeat-budget", type=int, default=RUNTIME_REPEAT_BUDGET_S,
+                    help="seconds all cold repeats of this run may take (past it the first-pass finding stands)")
     ap.add_argument("--end", type=int, default=0, help="seed end (unix seconds); the shards of one run pass the same")
     ap.add_argument("--shard", default="", help="'i/k': this run captures shard i of k (the plan is already that shard's; recorded in meta.json)")
     ap.add_argument("--keep-stack", action="store_true")
@@ -333,16 +561,19 @@ def main():
         run(compare, log=os.path.join(out, "compare.log"), check=False)  # exit 1 = a difference; the verdict decides
         first = load_json(os.path.join(out, "compare.json")) if os.path.exists(os.path.join(out, "compare.json")) else []
         recaptured = recapture(a, out, plan, state["end"], state["ports"]["grafana"], meta)
+        repeats = repeat_runtime(a, out, plan, state, meta)
         live = capture_live(a, out, plan, state["end"], state["ports"]["grafana"], meta)
         if recaptured or live:
             run(compare, log=os.path.join(out, "compare.log"), check=False)
+        compared = os.path.join(out, "compare.json")
         if recaptured:
             # A one-sided request that appears on the patient second look was an incomplete first capture.
             # A changed value that disappears remains a non-deterministic data failure.
-            compared = os.path.join(out, "compare.json")
             second = load_json(compared) if os.path.exists(compared) else []
             dump_json(compared, keep_runtime_observations(first, second, set(meta.get("recaptured", []))))
             meta["flipped"], meta["late_requests"] = recapture_flips(first, second)
+        if repeats and os.path.exists(compared):
+            dump_json(compared, apply_runtime_repeats(load_json(compared), repeats, a.runtime_repeats))
         run([PY, os.path.join(HERE, "montage.py"), out], log=os.path.join(out, "montage.log"))
         phase(meta, "compare", t0)
         ok = True
