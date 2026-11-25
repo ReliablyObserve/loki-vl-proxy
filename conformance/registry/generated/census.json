@@ -2839,6 +2839,7 @@
     "internal/querycorpus/listed_window_chunks_loki_diff_test.go | metric-series-identity",
     "internal/querycorpus/listed_window_chunks_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/logql_surface_loki_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/loki_tie_check_test.go | semantics/rank-over-binary-operation",
     "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/numeric_equality_vlcost_test.go | semantics/label-filter-numeric-equality",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
@@ -3643,7 +3644,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 824,
+      "go": 825,
       "playwright": 3
     },
     "page_kinds": {
