@@ -3536,11 +3536,7 @@ func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line 
 			return nil, false, err
 		}
 		switch {
-		case stage.unpack:
-			if err := plan.recordJSONError(labels, unpackLineError(line)); err != nil {
-				return nil, false, err
-			}
-		case stage.parser:
+		case stage.parser && !stage.unpack:
 			if !plan.noLabels && (plan.required == nil || len(extracted) != len(plan.required)) {
 				if plan.mixedParsers && len(line) > 1<<20 {
 					return nil, false, errOrderedJSONComplexity
@@ -3590,15 +3586,27 @@ func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line 
 				return nil, false, nil
 			}
 		default:
-			applyOrderedJSONFields(stage, labels)
-			for name := range metadata {
-				if _, exists := labels[name]; !exists {
-					delete(metadata, name)
-				}
+			if err := plan.applyRowStage(stage, line, labels, metadata); err != nil {
+				return nil, false, err
 			}
 		}
 	}
 	return labels, true, nil
+}
+
+// applyRowStage is a stage of a row that neither parses keys nor filters: an unpack, of which only the parser error
+// is read, or a drop or a keep, which also forgets the metadata labels it removed.
+func (plan *orderedJSONMetricPlan) applyRowStage(stage orderedJSONStage, line string, labels map[string]string, metadata map[string]bool) error {
+	if stage.unpack {
+		return plan.recordJSONError(labels, unpackLineError(line))
+	}
+	applyOrderedJSONFields(stage, labels)
+	for name := range metadata {
+		if _, exists := labels[name]; !exists {
+			delete(metadata, name)
+		}
+	}
+	return nil
 }
 
 func applyOrderedJSONFields(stage orderedJSONStage, labels map[string]string) {
