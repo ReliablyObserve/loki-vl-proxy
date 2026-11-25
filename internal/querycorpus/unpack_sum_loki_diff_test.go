@@ -3,6 +3,7 @@ package querycorpus_test
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +33,34 @@ import (
 // The answers are recorded (unpackSumAnswersPath; LVP_RUN_ORACLES=1 records them again, with LVP_RECORD_PACE=1s).
 
 const unpackSumAnswersPath = "testdata/unpack-sum-loki-diff.jsonl.gz"
+
+// unpackSumCase holds open the stages after an unpack that read the labels or the line it made.
+const unpackSumCase = "semantics/translator-writes-unpack-as-unpack-json"
+
+// unpackSumOpen is the runs of a query that differ from Loki, and the registry case holding them open.
+type unpackSumOpen struct {
+	id   string
+	runs []string
+}
+
+func (o unpackSumOpen) has(run string) bool { return slices.Contains(o.runs, run) }
+
+// unpackSumKnown are the runs that differ from Loki, by query: version and request kind. A listed run that matches
+// fails too, so the list only shrinks.
+var unpackSumKnown = func() map[string]unpackSumOpen {
+	ranged := []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}
+	all := append([]string{"v1.54.0 instant", "v1.49.0 instant"}, ranged...)
+	return map[string]unpackSumOpen{
+		// A label filter on __error__ and a line filter after the unpack read what it made.
+		`count_over_time({job="bad"} | unpack | __error__="" [1m])`: {unpackSumCase, ranged},
+		`count_over_time({job="bad"} | unpack != "k" [1m])`:         {unpackSumCase, ranged},
+		// A value is unwrapped from a line that is not packed.
+		`sum_over_time({job="uwline"} | unpack | unwrap a [1m])`: {unpackSumCase, all},
+		// A sum over a maximum adds the maxima of Loki's series, which the promoted labels split.
+		`sum(max_over_time({job="uw"} | unpack | unwrap a [1m]))`:    {unpackSumCase, ranged},
+		`sum(max_over_time({job="uwbad"} | unpack | unwrap a [1m]))`: {unpackSumCase, []string{"v1.54.0 step<range", "v1.49.0 step<range"}},
+	}
+}()
 
 // unpackSumQueries are the queries, each range aggregation alone and under a sum.
 func unpackSumQueries() []string {
@@ -64,6 +93,12 @@ func unpackSumQueries() []string {
 		`bytes_over_time({job="bad"} != "json" | unpack [1m])`,
 		`count_over_time({job="bad"} | unpack | drop __error__, __error_details__ [1m])`,
 	)
+	// The stages after an unpack that read what it made (unpackSumKnown holds the runs open).
+	out = append(out,
+		`count_over_time({job="bad"} | unpack | __error__="" [1m])`,
+		`count_over_time({job="bad"} | unpack != "k" [1m])`,
+		`sum_over_time({job="uwline"} | unpack | unwrap a [1m])`,
+	)
 	// An unwrapped value is a label the unpack promotes.
 	for _, job := range []string{`{job="uw"}`, `{job="uwbad"}`} {
 		for _, fn := range []string{"sum_over_time", "max_over_time"} {
@@ -83,6 +118,7 @@ func unpackSumFixture() metricFixture {
 		{"job": "bad", "app": "web", "pod": "d", "service_name": "web"},
 		{"job": "uw", "app": "api", "pod": "e", "service_name": "api"},
 		{"job": "uwbad", "app": "api", "pod": "f", "service_name": "api"},
+		{"job": "uwline", "app": "api", "pod": "g", "service_name": "api"},
 	}}
 	valid := []string{
 		`{"a":"1","b":"x","_entry":"hello world k"}`,
@@ -113,6 +149,9 @@ func unpackSumFixture() metricFixture {
 			switch labels["job"] {
 			case "uw":
 				line = unwrapped[i%len(unwrapped)]
+			case "uwline":
+				// A numeric value on a line that is not packed: Loki promotes nothing from it.
+				line = []string{`{"a":"2","_entry":"x"}`, `{"a":"1000"}`, `{"a":"1","_entry":""}`}[i%3]
 			case "uwbad":
 				line = []string{`{"a":"2","_entry":"x"}`, `not json`}[i%2]
 			}
@@ -176,9 +215,13 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 						diff = fmt.Sprintf("another answer: %v", d.classes)
 					}
 				}
-				// Open: a sum over a maximum adds the maxima of Loki's series, which the promoted labels split; the
-				// proxy splits by stream (semantics/translator-writes-unpack-as-unpack-json).
-				if diff != "" && strings.HasPrefix(mq.q, "sum(max_over_time(") {
+				known := unpackSumKnown[mq.q]
+				runKey := prof.version + " " + mr.kind
+				switch {
+				case known.has(runKey) && diff == "":
+					t.Errorf("%s %s %s matches Loki: remove it from unpackSumKnown (%s)", prof.name, mr.kind, mq.q, known.id)
+					continue
+				case known.has(runKey):
 					open++
 					continue
 				}
@@ -195,8 +238,15 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them answered sums, %d Loki errors), %d open sums of a maximum", match, runs, sums, failing, open)
-	if sums == 0 || failing == 0 || open == 0 {
+	listed := 0
+	for _, k := range unpackSumKnown {
+		listed += len(k.runs)
+	}
+	if open != listed {
+		t.Errorf("%d runs listed in unpackSumKnown were open, %d are listed: a listed query is no longer run", open, listed)
+	}
+	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them answered sums, %d Loki errors), %d listed as open", match, runs, sums, failing, open)
+	if sums == 0 || failing == 0 {
 		t.Error("no sum, or no run Loki fails, reached the comparison")
 	}
 }

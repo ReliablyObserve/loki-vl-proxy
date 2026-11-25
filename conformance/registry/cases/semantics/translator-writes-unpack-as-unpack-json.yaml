@@ -75,7 +75,9 @@ why: |
   answered 1003 where Loki answers 3 with Loki's engine and VictoriaLogs
   v1.49.0 and v1.54.0), and a sum over a max_over_time adds the
   proxy's per-stream maxima where Loki adds those of its series, split by the
-  promoted labels.
+  promoted labels. TestUnpackSumMatchesLoki lists these runs in unpackSumKnown
+  with two more: a count after a label filter on __error__ and after a line
+  filter that follows the unpack.
 
   Twelve additional historical series facets exercise unsupported unpack compositions on
   both endpoints: unpack before named JSON/unwrap, before raw unwrap with filters, after
