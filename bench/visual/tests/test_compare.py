@@ -74,6 +74,18 @@ class CompareTest(unittest.TestCase):
         entry = dict(id=page, kind='explore', query=proof['ci']['captures'][0]['queries'][0]['expression'], covers=[case['id']])
         return page, entry, caps, [(case, proof)]
 
+    def test_an_answer_the_other_side_also_gave_one_more_time_is_no_difference(self):
+        # explore-unwrap-conversion-error at 6h: Grafana asked the rejected query twice on the base and once on the PR.
+        a, b = {("error", ""): ("error", "pipeline error")}, {("series", "x"): ("metric", {"a": 1})}
+        key = ("query", "A", "q", "range", "1", "2", "c")
+        for left, right in (({key: [a, a]}, {key: [a]}), ({key: [a]}, {key: [a, a]}), ({key: [a, a, a]}, {key: [a]})):
+            _, ok, diffs, _, missing, _ = compare.compare(left, right)
+            self.assertEqual((diffs, missing), ([], 0))
+        # A different answer, or a request one side never made, is still a difference.
+        for left, right in (({key: [a, b]}, {key: [a]}), ({key: [a]}, {key: [b]}), ({key: [a]}, {})):
+            _, _, diffs, _, _, _ = compare.compare(left, right)
+            self.assertTrue(diffs, (left, right))
+
     def test_a_rejection_the_page_asked_for_twice_is_the_rejection_asked_for_once(self):
         # explore-unwrap-conversion-error at 15m: Grafana sent the rejected query twice on both proxies and once on Loki.
         text = ("pipeline error: 'SampleExtractionErr' for series: '{app=\"%s\"}'.\nUse a label filter to intentionally skip "

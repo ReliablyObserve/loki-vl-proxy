@@ -755,6 +755,14 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, b
         la, lb = left.get(k, []), right.get(k, [])
         for i, j in pairs(la, lb):
             if i is None or j is None:
+                # An answer the other side also gave, one more time, is Grafana asking again (it re-issues a rejected
+                # or slow query from timing alone), not a different answer: the data are the same. What it costs
+                # shows in the runtime evidence (requests, bytes), not here.
+                other, extra = (lb, la[i]) if j is None else (la, lb[j])
+                if any(digest(repr(sorted(o.items(), key=str))) == digest(repr(sorted(extra.items(), key=str))) for o in other):
+                    n += 1
+                    ok += 1
+                    continue
                 missing += 1
                 text = f"{k[0]} {str(k[2:] or k[1])[:90]}: request only on one side ({'left' if j is None else 'right'})"
                 reason = explain_one_sided(k) if explain else None

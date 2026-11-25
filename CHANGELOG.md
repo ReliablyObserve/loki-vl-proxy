@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The visual proof no longer reports Grafana asking the same query one more time on one build as a data difference (an answer the other side also gave, repeated, is the same answer; what it costs stays in the runtime evidence), and a row whose only finding is a resource regression no longer uses up the cap of recaptures that the rows which can flip need.
 - A `/labels` request with start equal to end (Grafana's "Show context" sends the clicked row's instant as both bounds) lists the names Loki lists: the last three hours when its end is within three hours of now (Loki's ingester window, every stream it holds), the UTC day of its end otherwise, instead of only the streams with lines at the instant. The row's context query then carries the same structured-metadata filter (`| detected_level=...`) as on Loki; the visual seed answered 15 names where Loki answered 17. Windows with any width are unchanged and cost nothing extra, and the older day shares one cached answer for all its points. Measured on Loki 3.7.10 (registry case `semantics/labels-point-window-is-the-index-day`; end-to-end test against real Loki).
 - The visual proof compares what a request was rejected with, not how many times the page asked: Grafana sends a rejected query once more on one build and not on another from timing alone (twice on both proxies, once on Loki, the same 400 and text). A different status, code or text still fails.
 

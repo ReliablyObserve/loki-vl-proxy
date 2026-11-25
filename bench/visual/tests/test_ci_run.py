@@ -400,6 +400,18 @@ const start = Function(strip(source) + ";return startRuntimeProof")();
     LOADING_ROW = {"page": "explore-unwrap-missing-label", "range": "15m", "main_pr_diffs": [], "settled": True,
                    "loki_compared": True, "ui_main": {"noData": 0}, "ui_pr": {"noData": 1}, "ui_loki": {"noData": 0}}
 
+    def test_a_resource_regression_alone_does_not_ask_for_a_second_look_or_use_the_cap(self):
+        # The first pass keeps it (keep_runtime_observations), so loading the page again clears nothing; the eight
+        # mixed-parser rows of #1715 must not use the recapture cap that the rows which can flip need.
+        row = {"page": "explore-mixed-parser-explicit-count", "range": "24h", "main_pr_diffs": [], "settled": True,
+               "loki_compared": False, "runtime_problems": ["runtime regression: Grafana settlement 16568 -> 24590 ms"]}
+        self.assertFalse(ci_run.needs_second_look(row))
+        # A proof gap, a difference or an unsettled page still gets one.
+        self.assertTrue(ci_run.needs_second_look({**row, "runtime_problems": row["runtime_problems"] + ["runtime proof: required Loki reference lacks a corresponding API answer"]}))
+        self.assertTrue(ci_run.needs_second_look({**row, "runtime_problems": ["runtime proof: x"]}))
+        self.assertTrue(ci_run.needs_second_look({**row, "main_pr_diffs": ["query: request only on one side (left)"]}))
+        self.assertTrue(ci_run.needs_second_look({**row, "settled": False}))
+
     def test_a_no_data_panel_only_on_the_pr_with_the_same_data_gets_a_second_look(self):
         row = self.LOADING_ROW
         self.assertTrue(ci_run.needs_second_look(row))
