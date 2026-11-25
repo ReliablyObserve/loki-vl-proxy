@@ -886,9 +886,9 @@ func TestMixedCertMemoKeySeparatesTheParserOrders(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	from := time.Unix(1700000000, 0)
-	a := p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", false, from, from.Add(time.Hour))
-	b := p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", true, from, from.Add(time.Hour))
-	if a == b || a != p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", false, from, from.Add(time.Hour)) {
+	a := p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", "full", from, from.Add(time.Hour))
+	b := p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", "explicit", from, from.Add(time.Hour))
+	if a == b || a != p.mixedCertMemoKey(context.Background(), `{app="a"}`, "k", "full", from, from.Add(time.Hour)) {
 		t.Fatalf("memo keys: full %q explicit %q", a, b)
 	}
 }

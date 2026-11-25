@@ -138,6 +138,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/ordered_json_mixed_keys.go",
         "internal/proxy/rate_counter_singletons.go"
       ]
     },
@@ -301,6 +302,7 @@
       "used_in": [
         "internal/proxy/metric_binary.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_mixed_keys.go",
         "internal/proxy/ordered_json_unparsed_row.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_counts.go",
@@ -569,6 +571,7 @@
         "internal/proxy/metric_agg.go",
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_mixed_class.go",
+        "internal/proxy/ordered_json_mixed_keys.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_samples.go",

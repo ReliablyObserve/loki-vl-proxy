@@ -35,6 +35,29 @@ type mixedJSONRowClass struct {
 	// explicit is the class of `json k="[\"k\"]" | logfmt`, which reads only the named path (see
 	// newMixedJSONRowClassFor); the memo key carries it, so a class of one shape is never served to the other.
 	explicit bool
+	// keysChecked marks the class that lacks those guards because the window's JSON key names are checked instead
+	// (see collectKeyChecked); its certificates are kept apart from the full class's.
+	keysChecked bool
+}
+
+// memoMode names the guard set for the certificate memo key.
+func (c *mixedJSONRowClass) memoMode() string {
+	switch {
+	case c.explicit:
+		return "explicit"
+	case c.keysChecked:
+		return "keys"
+	}
+	return "full"
+}
+
+// withoutKeyText is the class of the bare order without the three key-text guards, for a window whose JSON key
+// names have been checked. It is the explicit order's guard set.
+func (c *mixedJSONRowClass) withoutKeyText() *mixedJSONRowClass {
+	derived, _ := newMixedJSONRowClassFor(c.label, true)
+	derived.explicit = false
+	derived.keysChecked = true
+	return derived
 }
 
 // conformance: semantics/two-parsers-keep-one

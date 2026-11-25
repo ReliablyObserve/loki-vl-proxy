@@ -383,8 +383,8 @@ func TestOrderedMixedStatsExpandedQueryBudgetBeforeBackend(t *testing.T) {
 		t.Run(stages, func(t *testing.T) {
 			var requests atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/select/logsql/field_names" {
-					// The field-name certificate is not under test here; without a listing the full class runs.
+				if r.URL.Path == "/select/logsql/field_names" || strings.Contains(r.FormValue("query"), mixedJSONKeyPrefix) {
+					// The field-name and JSON key certificates are not under test here; without a listing the full class runs.
 					http.Error(w, "no listing", http.StatusServiceUnavailable)
 					return
 				}
@@ -1040,6 +1040,11 @@ func TestOrderedMixedStatsAuxSurvivesSmallDiskRestart(t *testing.T) {
 			statsCalls.Add(1)
 			fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","%s":"body"},"values":[[%d,"1"]]},{"metric":{"__name__":"%s","%s":""},"values":[[%d,"1"]]}]}}`, mixedStatsGroupField, at.Add(-30*time.Second).Unix(), "c", mixedStatsGroupField, at.Unix())
 		case "/select/logsql/query":
+			if strings.Contains(r.FormValue("query"), mixedJSONKeyPrefix) {
+				// The JSON key listing is not under test here; without it the full class runs.
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 			rawCalls.Add(1)
 			_, _ = w.Write(append(outer, '\n'))
 		case "/select/logsql/field_names":
@@ -1156,6 +1161,11 @@ func TestOrderedMixedStatsHTTPRepeatAndShiftReuseOriginalSteps(t *testing.T) {
 					}
 					fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","%s":"body"},"values":[[%d,"1"]]},{"metric":{"__name__":"%s","%s":""},"values":[[%d,"1"]]}]}}`, mixedStatsGroupField, at.Add(-30*time.Second).Unix(), "c", mixedStatsGroupField, at.Unix())
 				case "/select/logsql/query":
+					if strings.Contains(r.FormValue("query"), mixedJSONKeyPrefix) {
+						// The JSON key listing is not under test here; without it the full class runs.
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
 					rawCalls.Add(1)
 					from, _ := parseFlexibleUnixNanos(r.Form.Get("start"))
 					to, _ := parseFlexibleUnixNanos(r.Form.Get("end"))
@@ -1336,6 +1346,11 @@ func TestOrderedMixedStatsRangeUnionUsesOriginalReaderAndReducer(t *testing.T) {
 						statsCalls++
 						fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","%s":"body"},"values":[[%d,"1"]]},{"metric":{"__name__":"%s","%s":""},"values":[[%d,"1"]]}]}}`, mixedStatsGroupField, at.Add(-30*time.Second).Unix(), "c", mixedStatsGroupField, at.Unix())
 					case "/select/logsql/query":
+						if strings.Contains(r.FormValue("query"), mixedJSONKeyPrefix) {
+							// The JSON key listing is not under test here; without it the full class runs.
+							w.WriteHeader(http.StatusServiceUnavailable)
+							return
+						}
 						rawCalls++
 						if !strings.Contains(r.FormValue("query"), "NOT (") {
 							t.Error("raw request lacks full static complement")
@@ -1447,6 +1462,11 @@ func TestOrderedMixedStatsEnvelopeExpansionRetainsOriginalByteBudget(t *testing.
 							statsCalls.Add(1)
 							fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","%s":""},"values":[[%d,"1"]]}]}}`, mixedStatsGroupField, at.Add(-30*time.Second).Unix())
 						case "/select/logsql/query":
+							if strings.Contains(r.FormValue("query"), mixedJSONKeyPrefix) {
+								// The JSON key listing is not under test here; without it the full class runs.
+								w.WriteHeader(http.StatusServiceUnavailable)
+								return
+							}
 							if strings.Contains(r.FormValue("query"), "pack_json as "+mixedClassOriginalField) {
 								envelopeCalls.Add(1)
 								_, _ = w.Write(wrapped)
