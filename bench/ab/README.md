@@ -416,13 +416,15 @@ and `-probes.json`.
 1. The shared scope gate skips the job for docs, CI, tests, chart, registry or
    harness-only changes. On product PRs, `selection.py` maps the changed files
    to shapes (below).
-   - **Shards.** `perf-plan` selects the shapes, and `pr_smoke.py --split 4`
-     splits a large selection into up to four shards of about equal cost:
+   - **Shards.** `perf-plan` selects the shapes and calls `pr_smoke.py --split`
+     with a ceiling of twelve when `runtime_proof.required` is true, otherwise
+     four. Large required selections can use up to twelve shards of about equal cost:
      one pass per shape in loki-defaults, plus one per range-metric shape in
      aligned. Each set goes to exactly one shard, most costly first, to the
      least loaded shard. A selection that costs less than `SHARD_MIN_COST`
-     (40) per shard stays one shard, because a shard costs its own stack and
-     seed.
+     (40) per shard stays one shard, because each additional shard costs its own
+     stack and seed. More shards reduce per-runner query work; they do not remove
+     long-history seed requirements or establish that a run fits its time budget.
    - Each `perf-smoke-shard` runs steps 2 to 5 below for its sets, on its own
      runner and fresh stack, so a shape's three targets always share one
      stack.
