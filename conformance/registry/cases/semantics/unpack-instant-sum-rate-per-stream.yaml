@@ -1,0 +1,30 @@
+id: semantics/unpack-instant-sum-rate-per-stream
+title: "An instant sum of a rate over an unpack answers one series per stream (open)"
+pending: true
+proves:
+  - parser-unpack
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  An instant `sum(rate(... | unpack [r]))` is one series in Loki. The proxy answers one series per stream, each
+  with the stream labels and detected_level. The same sum over json, logfmt or no parser answers as Loki, and so
+  does every range request. Seen on main before the query plan lowered any sum over an unpack, with VictoriaLogs
+  v1.49.0 and v1.54.0 (TestUnpackSumMatchesLoki). The plan leaves a sum of a rate over an unpack delegated.
+request:
+  scope: query-grammar
+  entry: "TestUnpackSumMatchesLoki (internal/querycorpus): the instant sum of a rate"
+  setup: "Send sum of a rate over an unpack as /loki/api/v1/query over two streams."
+compare:
+  mode: exact
+  fields: [status, series labels, values]
+  expect: "Loki's single series and value."
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy instant metric handlers (unpack)'
+  loki: 'one series'
+  proxy: 'one series per stream'
+  planned_test: 'TestUnpackSumMatchesLoki (internal/querycorpus) holds the runs as an open difference'
+  clusters: []

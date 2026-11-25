@@ -2542,8 +2542,14 @@
       "internal/proxy/error_refusals_test.go",
       "internal/querycorpus/grammar_sweep_test.go"
     ],
+    "semantics/unpack-instant-sum-rate-per-stream": [
+      "internal/querycorpus/unpack_sum_loki_diff_test.go"
+    ],
     "semantics/unpack-non-string-values": [
       "internal/proxy/compat_oversized_reply_test.go"
+    ],
+    "semantics/unpack-parser-error-not-raised": [
+      "internal/querycorpus/unpack_sum_loki_diff_test.go"
     ],
     "semantics/unwrap-bare-range-exposes-parsed-labels": [
       "internal/querycorpus/extraction_list_identity_loki_diff_test.go"
@@ -3154,7 +3160,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 746,
+  "registry_items": 749,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -5708,7 +5714,9 @@
       "semantics/translator-reads-only-space-between-tokens"
     ],
     "internal/querycorpus/unpack_sum_loki_diff_test.go": [
-      "semantics/translator-writes-unpack-as-unpack-json"
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/unpack-instant-sum-rate-per-stream",
+      "semantics/unpack-parser-error-not-raised"
     ],
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
@@ -7145,6 +7153,7 @@
     "semantics/unpack-logfmt-negative-ip-filter-selection",
     "semantics/unwrap-avg-overflow",
     "semantics/unwrap-bytes-pushdown-near-2-64",
+    "semantics/unwrap-conversion-check-reads-unpack-unlike-loki",
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
@@ -7166,5 +7175,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 480
+  "wired_items": 482
 }

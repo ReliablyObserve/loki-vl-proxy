@@ -1,0 +1,33 @@
+id: semantics/unwrap-conversion-check-reads-unpack-unlike-loki
+title: "The unwrap conversion check reads an unpack unlike Loki on four kinds of line (open)"
+pending: true
+proves:
+  - parser-unpack
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  The proxy's unwrap conversion check runs the parser stages over a line itself (unwrap_conversion_error.go,
+  unwrapParseLine). For unpack it promotes the string keys of any line holding the text "_entry" and sets no error
+  on a line that is not JSON. Against Loki's recorded labels over the 15 lines of
+  internal/queryplan/lower/testdata/unpack-oracles.json it differs on four: a numeric `_entry`, an object `_entry`
+  and an `_entry` only in a nested object promote labels Loki does not, and a plain text line gets no __error__
+  where Loki sets JSONParserErr. Measured by calling the function over those lines; the effect on a query answer
+  is not measured.
+request:
+  scope: query-grammar
+  entry: "internal/proxy unwrapParseLine over the lines of unpack-oracles.json"
+  setup: "Run an unwrapped metric over an unpack of a line whose _entry is a number."
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: "The labels Loki's unpack gives each line."
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy unwrap_conversion_error.go (unwrapParseLine, ParserUnpack)'
+  loki: 'labels only from a line with a top-level string _entry'
+  proxy: 'labels from any line holding the text "_entry"'
+  planned_test: 'a unit table over the recorded unpack lines'
+  clusters: []

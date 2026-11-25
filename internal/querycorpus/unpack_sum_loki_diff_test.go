@@ -20,9 +20,10 @@ import (
 //   - Data (unpackSumFixture): job=pk holds only JSON objects (packed lines, lines without an `_entry`, an empty,
 //     numeric or object `_entry`, values that are not strings, a packed key that collides with a stream label);
 //     job=bad adds lines that are no JSON object in a ten-minute stretch, which Loki's unpack marks with __error__.
-//   - Open differences, both served from the string translator and unchanged by the plan's lowering
-//     (semantics/translator-writes-unpack-as-unpack-json): a range aggregation over lines Loki's unpack rejects
-//     answers where Loki fails, and an instant `sum(rate(… | unpack …))` answers one series per stream.
+//   - Open differences, both served from the string translator and unchanged by the plan's lowering: a range
+//     aggregation over lines Loki's unpack rejects answers where Loki fails
+//     (semantics/unpack-parser-error-not-raised), and an instant `sum(rate(… | unpack …))` answers one series per
+//     stream (semantics/unpack-instant-sum-rate-per-stream).
 //   - A sum with no clause adds up the series, so Loki's answer is held series by series and value by value (it
 //     answers over job=bad too: Loki parses no line for a sum that needs no label). A range aggregation of its own
 //     splits the series by the promoted labels (the owner-kept stream identity of parser metrics), so it is held to
@@ -98,7 +99,7 @@ func unpackSumFixture() metricFixture {
 
 // TestUnpackSumMatchesLoki replays the recorded answers through the handlers.
 //
-// conformance: semantics/translator-writes-unpack-as-unpack-json
+// conformance: semantics/translator-writes-unpack-as-unpack-json, semantics/unpack-parser-error-not-raised, semantics/unpack-instant-sum-rate-per-stream
 func TestUnpackSumMatchesLoki(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	fix := unpackSumFixture()
