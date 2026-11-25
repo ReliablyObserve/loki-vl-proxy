@@ -84,16 +84,29 @@ def runtime_problems(main, pr, required=False, comparable=True, client_error=Non
             problems.append(f"runtime proof: {side} capture did not measure API work successfully")
     if problems or not comparable:
         return problems
-    for key, minimum, label in (
-        ("browser_thread_seconds", 0.25, "browser thread CPU"),
-        ("js_heap_max_sampled_bytes", 32 << 20, "sampled browser heap"),
-        ("api_encoded_bytes", 64 << 10, "API encoded bytes"),
-    ):
+    return runtime_regressions(main, pr)
+
+
+# A material base-vs-PR change: the PR above the base by more than 25% and by more than the minimum. The resources are
+# read from a capture's `runtime`, the settlement from its `settle_ms`.
+RUNTIME_GUARDS = (
+    ("browser_thread_seconds", 0.25, "browser thread CPU"),
+    ("js_heap_max_sampled_bytes", 32 << 20, "sampled browser heap"),
+    ("api_encoded_bytes", 64 << 10, "API encoded bytes"),
+)
+SETTLE_GUARD_MS = 500
+
+
+def runtime_regressions(main, pr):
+    """The `runtime regression:` findings of one base/PR pair of observations (captures, or ci_run.py's medians of the
+    cold repeats: the same rule for both)."""
+    problems = []
+    for key, minimum, label in RUNTIME_GUARDS:
         before, after = main["runtime"][key], pr["runtime"][key]
         if after > before * 1.25 and after - before > minimum:
             problems.append(f"runtime regression: {label} {before:g} -> {after:g}")
     before, after = main.get("settle_ms"), pr.get("settle_ms")
-    if isinstance(before, (int, float)) and isinstance(after, (int, float)) and after > before * 1.25 and after - before > 500:
+    if isinstance(before, (int, float)) and isinstance(after, (int, float)) and after > before * 1.25 and after - before > SETTLE_GUARD_MS:
         problems.append(f"runtime regression: Grafana settlement {before:g} -> {after:g} ms")
     return problems
 

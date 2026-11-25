@@ -239,6 +239,13 @@ def assess(row, pixel, expected=False, flipped=(), proven=None, resources=None, 
     fails, warns, status = [], [], ""
     # Required runtime proof is independent of intended/improved data changes.
     fails.extend(row.get("runtime_problems") or [])
+    repeat = row.get("runtime_repeat") or {}
+    if row.get("runtime_unconfirmed"):
+        # ci_run.judge_runtime_repeat: the median of the first pass and the cold repeats is within the thresholds.
+        warns.append(f"first-pass runtime finding not reproduced cold ({repeat.get('rule', 'cold repeats')}): "
+                     + "; ".join(row["runtime_unconfirmed"]))
+    elif repeat.get("verdict") == "stands" and repeat.get("why"):
+        warns.append(f"first-pass runtime finding not measured again cold: {repeat['why']}")
     if row.get("base_unusable"):
         # The base could not answer this page, which the PR fixes: the PR side is proven complete, the comparison with the base is not.
         warns.append("the base could not serve as the runtime baseline for this fix (" + "; ".join(row["base_unusable"]) + ")")
@@ -509,7 +516,8 @@ def runtime_section(rows, targeted=(), failed=()):
         return [], {"measured_pairs": 0, "regressions": 0, "unproven": 0}
     summary = {"measured_pairs": sum(bool(r.get("runtime_main") and r.get("runtime_pr")) for r in measured),
                "regressions": sum(any(p.startswith("runtime regression:") for p in r.get("runtime_problems", ())) for r in measured),
-               "unproven": sum(any(not p.startswith("runtime regression:") for p in r.get("runtime_problems", ())) for r in measured)}
+               "unproven": sum(any(not p.startswith("runtime regression:") for p in r.get("runtime_problems", ())) for r in measured),
+               "not_reproduced_cold": sum(bool(r.get("runtime_unconfirmed")) for r in measured)}
     expected = [(r, e) for r in measured for e in r.get("expected_client_errors", [])
                 if isinstance(e, dict) and e.get("state") == "upstream_matches_loki"
                 and isinstance(e.get("registry_case"), str) and CASE_ID.match(e["registry_case"])]
@@ -522,22 +530,36 @@ def runtime_section(rows, targeted=(), failed=()):
         return f"{value / scale:.3f}"
 
     lines = ["", f"Runtime evidence: {summary['measured_pairs']} base/PR pairs measured, "
-             f"{summary['regressions']} with material regressions, {summary['unproven']} with incomplete proof.", "",
+             f"{summary['regressions']} with material regressions, {summary['unproven']} with incomplete proof"
+             + (f", {summary['not_reproduced_cold']} first-pass finding(s) not reproduced cold" if summary["not_reproduced_cold"] else "")
+             + ".", "",
              "<details><summary>Runtime API and Grafana measurements</summary>", "",
-             "One observation per capture; resource findings retain the first pass alongside the recapture. These are not p50/p95 estimates. "
+             "One observation per capture; resource findings retain the first pass alongside the recapture. A capture whose only finding is a "
+             + "first-pass runtime regression is loaded again cold (both proxies' caches flushed) in two more base/PR pairs, PR first and then "
+             + "base first, and judged on the per-build median of the three; every observation is listed. These are not p50/p95 estimates. "
              + "CPU is browser main-thread CPU; sampled JS heap is not total browser/Grafana RSS. Wire bytes include the "
              + "encoded API responses seen by Chromium. First API data is not chart paint. Missing measurements are unavailable.", "",
              "| page / range | build | settle (s) | first API data (s) | browser thread CPU (s) | sampled JS heap (MiB) | API wire (KiB) | API requests | heap samples |",
              "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
-    display = sorted(measured, key=lambda r: (not r.get("runtime_problems") and key(r) not in failed, r["page"] not in targeted))[:12]
+    display = sorted(measured, key=lambda r: (not r.get("runtime_problems") and key(r) not in failed and not r.get("runtime_repeat"),
+                                              r["page"] not in targeted))[:12]
     for row in display:
         observations = [("capture", row)]
         if row.get("runtime_first_pass"):
             observations = [("first pass", row["runtime_first_pass"]), ("recapture", row)]
         elif row.get("runtime_recapture"):
             observations = [("first pass", row), ("recapture", row["runtime_recapture"])]
+        repeat = row.get("runtime_repeat") or {}
+        if repeat:
+            observations = [("first pass", repeat.get("first_pass") or {})]
+            for n, pair in enumerate(repeat.get("pairs") or (), 1):
+                first = (pair.get("order") or ["?"])[0]
+                observations.append((f"cold repeat {n}, {first} first" + (", not counted" if pair.get("why") else ""), pair))
+            if repeat.get("median"):
+                observations.append((f"median, {repeat.get('verdict', '')}", repeat["median"]))
         for state, observation in observations:
-            for side in ("main", "pr", "loki"):
+            # The cold repeats load the two builds only: their observations have no Loki side to list.
+            for side in ("main", "pr", "loki") if "runtime_loki" in observation else ("main", "pr"):
                 runtime = observation.get("runtime_" + side) or {}
                 label = "main (query rejected)" if side == "main" and row.get("corrected_base_rejections") else side
                 lines.append(f"| {esc(row['page'], 100)} / {esc(row['range'], 16)} | {label} ({state}) | "
@@ -552,6 +574,8 @@ def runtime_section(rows, targeted=(), failed=()):
               f"Showing {len(display)} of {len(measured)} pairs. Every observation is in the comparison artifact.", "",
               "Material regressions require both >25% and an absolute increase: 0.25 s browser CPU, "
               + "32 MiB sampled JS heap, 64 KiB API wire, or 0.5 s settlement. A warmer exact-window recapture cannot clear a first-pass resource finding; "
+              + "the cold repeats clear one only when the per-build median is within those same thresholds, and a repeat that is not a clean cold "
+              + "sample (retried, unsettled, another request count, a refused flush, over the budget) leaves it standing; "
               + "intended visual-change labels do not waive this gate.", "", "</details>"]
     if expected:
         lines += ["", f"Expected client errors matching Loki: {len(expected)} scene/range comparisons. The upstream gaps remain open.",

@@ -157,6 +157,35 @@ retry cannot clear a first-pass regression. Canceled/unfinished transfer prefixe
 are included in observed wire bytes, with their subcounts in the JSON artifact.
 The expected-visual-change label does not waive resource proof.
 
+**Runtime regressions are measured again cold.** A capture measures each build once,
+the base first, and settlement moves by a second or two from one page load to the next
+(it ends a quiet window after the last answer, so one late answer moves it) while the
+requests and their answers stay the same. A capture whose only finding is a base-vs-PR
+`runtime regression:` (no data difference, settled, no "No data" panel, error banner or
+error answer only the PR shows, not recaptured, not a fix page) is therefore loaded
+again in two more pairs, after the recapture and before the Live tail pass
+(`ci_run.repeat_runtime`). Before each pair both proxies' caches are flushed
+(`POST /admin/cache/flush` on their admin listener: the response and compatibility
+caches, memory and disk tiers) and both proxy logs go quiet; the first pair loads the
+PR first, the second the base first. Each pair is one Playwright run of that page alone
+(one worker, base and PR only, the first pass's settle rule). The rule: per build, the
+median of each judged value over the first pass and the two repeats, judged by the same
+thresholds as one capture (`compare.runtime_regressions`). A regression the median
+shows fails as before; one it does not show is cleared and listed as a warning, "not
+reproduced cold". A repeat that is not a clean cold sample (retried, not settled, a
+runtime-proof problem, another API request count than the first pass, a refused flush,
+a Playwright failure, cut by the time budget) leaves the first-pass finding standing,
+and so does a capture past the cap (four per shard) or past the budget (300 s per
+shard: at most about five more minutes on a shard, whose limit is 25). Every
+observation (first pass, both pairs, the medians) is kept on the row (`runtime_repeat`
+in `compare.json`, the raw pairs in the shard's `runtime-repeat.json`) and listed in
+the comment's runtime table. What the repeats cannot tell: a cost only the first load
+after a proxy start shows, or one in proxy state a flush keeps (translation and
+request-text memos), and VictoriaLogs' own caches and the OS page cache are warm for
+both builds alike after the first pass. A fix page's `runtime regression vs Loki:` and
+the findings of a recaptured capture are not measured again (Loki's results cache
+ignores no-cache; a recaptured page's observations are already a second, warmer look).
+
 Preview a selection: `python3 bench/visual/plan.py --base origin/main` or
 `--files internal/proxy/ordered_json_metric.go`.
 
@@ -168,7 +197,7 @@ holds at least 7h. Every shard uses the whole plan's widest range plus an hour
 for lookback and fixture rounding when it needs more history. Loki holds 1.5h: 15m and 1h are compared with Loki, 6h is base vs PR only. A
 warm-up page load of each kind comes first (a fresh Grafana loads the Drilldown app
 slowly), then the static captures and, for the ones whose data differed, a recapture,
-then, only when a Live tail entry was selected, the mirrored live generator and the tail
+then the cold repeats of the captures whose only finding is a runtime regression, then, only when a Live tail entry was selected, the mirrored live generator and the tail
 captures (last: the generator writes into the streams the static windows read, and Loki's
 index/stats is an estimate from chunk metadata that moves while it writes).
 Retries use a fresh capture directory and require all expected sides before replacing a
