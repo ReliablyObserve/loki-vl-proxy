@@ -250,6 +250,7 @@
       "internal/proxy/limit_errors_test.go"
     ],
     "limits/concurrent-full-retention-scans-exhaust-backend": [
+      "internal/proxy/label_inventory_memory_test.go",
       "internal/proxy/metadata_inventory_test.go",
       "internal/proxy/metadata_scan_admission_test.go",
       "internal/proxy/metadata_scan_limiter_test.go",
@@ -4149,6 +4150,7 @@
       "semantics/label-inventory-exact-and-incremental"
     ],
     "internal/proxy/label_inventory_memory_test.go": [
+      "limits/concurrent-full-retention-scans-exhaust-backend",
       "loki_api_v1_labels",
       "quality/labels-backfill-into-cached-bucket",
       "semantics/label-browser-latency-cold-and-refresh",

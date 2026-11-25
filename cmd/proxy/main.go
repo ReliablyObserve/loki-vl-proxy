@@ -284,6 +284,7 @@ type proxyRuntimeConfig struct {
 	backendMetadataScanMemoryHeadroom   float64
 	backendMetadataScanLatencyTolerance float64
 	metadataInventoryParallelism        int
+	metadataInventoryPrefetch           bool
 	drilldownBurstWindowMs              int
 	drilldownBurstMaxFields             int
 	drilldownFieldBatchWindowMs         int
@@ -634,6 +635,7 @@ func run(
 	backendMinConcurrentMetadataScans := fs.Int("backend-min-concurrent-metadata-scans", proxy.DefaultBackendMinConcurrentMetadataScans, "Floor of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: latency and failure feedback never shrink the limit below it, and below it a replica may start a scan while others' long work uses up to a quarter of VictoriaLogs' select slots. VictoriaLogs' full select slots, memory headroom and a silent /metrics still hold scans back. Must be <= -backend-max-concurrent-metadata-scans; 0 uses the default")
 	backendMetadataScanMemoryHeadroom := fs.Float64("backend-metadata-scan-memory-headroom", proxy.DefaultBackendMetadataScanMemoryHeadroom, "Fraction of the memory available to VictoriaLogs (vm_available_memory_bytes on its /metrics) that long-range metadata scans must leave free: a scan is admitted only while the memory VictoriaLogs has in use, plus the estimated cost of in-flight scans, of the selects it runs for others and of this one, stays below 1 minus this fraction. Costs are learned per endpoint, range and tenant from the memory growth while scans ran; a listing never measured runs alone. 0 disables the memory gate (latency and failure feedback remain)")
 	backendMetadataScanLatencyTolerance := fs.Float64("backend-metadata-scan-latency-tolerance", proxy.DefaultBackendMetadataScanLatencyTolerance, "How many times its no-load duration (per row when the rows are known) a long-range metadata scan that ran beside others may take before the adaptive limit shrinks by 20%. Must be >= 1; 0 uses the default")
+	metadataInventoryPrefetch := fs.Bool("metadata-inventory-prefetch", true, "After a /labels listing, read in the background the label inventory buckets that let a moved window of it be answered from memory (with -metadata-max-staleness above 0): the hour buckets of the window's two ends, the hour before it and the sealed UTC days it only partly covers, at most the window's own width of buckets per listing (a 24h window: its partly covered day; a 6h window: three hours; under an hour: nothing). Each read is one row count and one listing, cached and shared by every later listing and peer, run in the background inventory lane (skipped when the metadata-scan limiter is closed). false keeps the memory answers to buckets the requests themselves read.")
 	metadataInventoryParallelism := fs.Int("metadata-inventory-parallelism", proxy.DefaultMetadataInventoryParallelism, "Label names and values (/labels, /label/{name}/values, detected field names) are listed from a time-bucketed inventory: day, hour, 5-minute and minute buckets cached in the read cache (memory, disk and peers) and merged, so a window moved by seconds reads only its edges from VictoriaLogs. This is how many bucket listings one request may have in flight, and how many segment reads an instant /index/volume may have in flight (-max-stats-cache-freshness). 0 turns the inventory and the volume segments off, making every listing and volume one VictoriaLogs call over the whole range")
 	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries, and metadata listings count as long-range for -backend-max-concurrent-metadata-scans. Must be > 0")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
@@ -1172,6 +1174,7 @@ func run(
 			backendMetadataScanMemoryHeadroom:   *backendMetadataScanMemoryHeadroom,
 			backendMetadataScanLatencyTolerance: *backendMetadataScanLatencyTolerance,
 			metadataInventoryParallelism:        *metadataInventoryParallelism,
+			metadataInventoryPrefetch:           *metadataInventoryPrefetch,
 			drilldownBurstWindowMs:              *drilldownBurstWindowMs,
 			drilldownBurstMaxFields:             *drilldownBurstMaxFields,
 			drilldownFieldBatchWindowMs:         *drilldownFieldBatchWindowMs,
@@ -2530,6 +2533,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendMetadataScanMemoryHeadroom:   cfg.backendMetadataScanMemoryHeadroom,
 		BackendMetadataScanLatencyTolerance: cfg.backendMetadataScanLatencyTolerance,
 		MetadataInventoryParallelism:        inventoryParallelismConfig(cfg.metadataInventoryParallelism),
+		MetadataInventoryPrefetch:           cfg.metadataInventoryPrefetch,
 		DrilldownBurstWindowMs:              cfg.drilldownBurstWindowMs,
 		DrilldownBurstMaxFields:             cfg.drilldownBurstMaxFields,
 		DrilldownFieldBatchWindowMs:         cfg.drilldownFieldBatchWindowMs,

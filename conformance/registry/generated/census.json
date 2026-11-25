@@ -1986,6 +1986,7 @@
     "internal/proxy/label_inventory_cover_test.go | quality/labels-backfill-into-cached-bucket",
     "internal/proxy/label_inventory_cover_test.go | semantics/label-browser-latency-cold-and-refresh",
     "internal/proxy/label_inventory_cover_test.go | semantics/label-inventory-exact-and-incremental",
+    "internal/proxy/label_inventory_memory_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
     "internal/proxy/label_inventory_memory_test.go | loki_api_v1_labels",
     "internal/proxy/label_inventory_memory_test.go | quality/labels-backfill-into-cached-bucket",
     "internal/proxy/label_inventory_memory_test.go | semantics/label-browser-latency-cold-and-refresh",

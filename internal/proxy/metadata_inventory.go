@@ -770,45 +770,54 @@ func (p *Proxy) inventoryConfirmedSince(key string, notBefore int64) bool {
 
 // fillTouchedDays reads, in the background, the buckets a later moved
 // window needs to be answered from memory (answerNamesFromMemory) and that a
-// names-only listing touches without reading them: the day bucket of every
-// sealed UTC day the window only partly covers, the hour buckets holding
-// the window's two ends, and the hour before its start. The label browser moved back by an hour or by a few
-// minutes, or over yesterday, then finds every piece of its ends held by a
-// cached bucket. Each fill is one row count and one listing, cached like every
-// bucket (memory, disk and peers) and shared by every later listing of the
-// same query and scope; it runs in the background inventory lane (skipped
-// when the metadata-scan limiter is closed), one per bucket and listing at a
-// time, and at most five per listing. -metadata-max-staleness=0 turns it off
-// with the memory answers it feeds.
+// names-only listing touches without reading them whole, in this order: the
+// sealed UTC day holding the window's start when the window only partly
+// covers it, the hour holding its start, the hour before it, the hour holding
+// its end, and the day holding its end. The label browser moved back by an
+// hour or by a few minutes, or over yesterday, then finds every piece of its
+// ends held by a cached bucket. The buckets read per listing span at most the
+// window's own width, so the background work never exceeds what the request
+// itself asked for: a 24h window reads its partly covered day, a 6h window up
+// to three hours, a window under an hour nothing. Each read is one row count
+// and one listing, cached like every bucket (memory, disk and peers) and
+// shared by every later listing of the same query and scope, in the
+// background inventory lane (skipped when the metadata-scan limiter is
+// closed), one per bucket at a time. -metadata-inventory-prefetch=false or
+// -metadata-max-staleness=0 turns it off.
 func (p *Proxy) fillTouchedDays(ctx context.Context, path string, params url.Values, base string, plan []inventorySegment, now time.Time, countable bool) {
-	if p.metadataMaxStaleness <= 0 || len(plan) == 0 || isBackgroundInventory(ctx) {
+	if !p.metadataInventoryPrefetch || p.metadataMaxStaleness <= 0 || len(plan) == 0 || isBackgroundInventory(ctx) {
 		return
 	}
 	sealBefore := now.Add(-metadataInventorySealLag).UnixNano()
 	first, last := plan[0].start, plan[len(plan)-1].end
+	hour, day := int64(time.Hour), int64(24*time.Hour)
+	holding := func(at, size int64, level int) inventorySegment {
+		return inventorySegment{start: at - at%size, end: at - at%size + size, level: level}
+	}
+	candidates := []inventorySegment{
+		holding(first, day, 0),
+		holding(first, hour, 1),
+		holding(first-hour, hour, 1),
+		holding(last-1, hour, 1),
+		holding(last-1, day, 0),
+	}
+	budget := last - first
 	var fills []inventorySegment
-	hour := int64(time.Hour)
-	for _, level := range []int{1, 0} { // the hours, then the days, of both ends
-		size := int64(metadataInventoryLevels[level])
-		ats := []int64{first, last - 1}
-		if level == 1 {
-			// And the hour before the window: the label browser moved back
-			// by an hour, or by minutes across the hour, starts there.
-			ats = append(ats, first-hour)
+	for _, seg := range candidates {
+		if seg.end > sealBefore || (first <= seg.start && seg.end <= last) || slices.Contains(fills, seg) {
+			continue // not sealed, read whole by the plan, or listed
 		}
-		for _, at := range ats {
-			seg := inventorySegment{start: at - at%size, end: at - at%size + size, level: level}
-			if seg.end > sealBefore || (first <= seg.start && seg.end <= last) || slices.Contains(fills, seg) {
-				continue // not sealed, read whole by the plan, or listed
-			}
-			fills = append(fills, seg)
+		if _, ok := p.cache.Peek(inventoryBucketKey(base, seg)); ok {
+			continue
 		}
+		if seg.end-seg.start > budget {
+			continue
+		}
+		budget -= seg.end - seg.start
+		fills = append(fills, seg)
 	}
 	for _, seg := range fills {
 		key := inventoryBucketKey(base, seg)
-		if _, ok := p.cache.Peek(key); ok {
-			continue
-		}
 		p.runInventoryBackground(ctx, "fill:"+key, func(bg context.Context) error {
 			_, _, err := p.fetchInventorySegment(bg, path, withTimeRange(params, seg.start, seg.end), base, seg, countable, p.metadataScanLimiter != nil && seg.level == 0, false)
 			return err
@@ -841,6 +850,8 @@ func (p *Proxy) runInventoryBackground(ctx context.Context, key string, fill fun
 		s.wg.Add(1)
 		s.mu.Unlock()
 		defer s.wg.Done()
+		p.inventoryBackgroundRunning.Add(1)
+		defer p.inventoryBackgroundRunning.Add(-1)
 		started := time.Now()
 		bg, cancel := context.WithTimeout(detached, p.labelBackgroundTimeout())
 		defer cancel()

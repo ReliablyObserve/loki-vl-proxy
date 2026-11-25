@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // newMemoryInventoryProxy is newInventoryTestProxy with the bounded staleness
@@ -20,8 +22,28 @@ func newMemoryInventoryProxy(t *testing.T, vl *fakeVictoriaLogs, staleness time.
 	t.Helper()
 	p := newInventoryTestProxy(t, vl, 4)
 	p.metadataMaxStaleness = staleness
+	p.metadataInventoryPrefetch = true
 	p.metadataCacheFreshness = 24 * time.Hour
 	return p
+}
+
+// settleBackground waits until no background inventory read of p is running,
+// as seen three polls in a row (a read starts a moment after the listing that
+// asks for it returns).
+func settleBackground(t testing.TB, p *Proxy) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for idle := 0; idle < 3; {
+		if time.Now().After(deadline) {
+			t.Fatal("background inventory reads did not finish")
+		}
+		if p.inventoryBackgroundRunning.Load() == 0 {
+			idle++
+		} else {
+			idle = 0
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
 }
 
 // namesOnlyListing lists the names of [start, end] as /labels asks for them,
@@ -117,7 +139,7 @@ func TestLabelsInventory_MovedWindowsAreAnsweredFromMemory(t *testing.T) {
 			// The first moved window may still read its new ends; the next
 			// ones are answered from memory.
 			_ = namesOnlyListing(t, p, end0.Add(-tc.shift-tc.width), end0.Add(-tc.shift))
-			time.Sleep(50 * time.Millisecond) // background confirmations
+			settleBackground(t, p)
 			for run := 2; run <= 3; run++ {
 				end := end0.Add(-time.Duration(run) * tc.shift)
 				vl.reset()
@@ -188,7 +210,7 @@ func TestLabelsInventory_MemoryAnswersStayBetweenTheWindowAndItsDays(t *testing.
 					t.Fatalf("trial %d step %d: lost %q (memory %v, one call %v)", trial, step, n, got, exact)
 				}
 			}
-			time.Sleep(20 * time.Millisecond)
+			settleBackground(t, p)
 			if rng.IntN(2) == 0 {
 				end = end.Add(-time.Duration(317+rng.IntN(3600)) * time.Second)
 			} else {
@@ -230,13 +252,14 @@ func TestLabelsInventory_MemoryAnswersKeepTheStalenessBound(t *testing.T) {
 	end := now.Truncate(time.Hour).Add(-2*time.Hour + 26*time.Minute + 50*time.Second)
 	start := end.Add(-6 * time.Hour)
 	_ = namesOnlyListing(t, p, start, end)
-	time.Sleep(100 * time.Millisecond) // the hours of the ends, filled in the background
+	settleBackground(t, p) // the hours of the ends, read in the background
 	vl.reset()
 	_ = namesOnlyListing(t, p, start.Add(-time.Second), end.Add(-time.Second))
 	if calls, _ := vl.reset(); len(calls) != 0 {
 		t.Fatalf("within the bound: %v, want an answer from memory", calls)
 	}
-	time.Sleep(400 * time.Millisecond) // past the bound
+	restore := cache.AdvanceClockForTesting(400 * time.Millisecond) // past the bound
+	defer restore()
 	_ = namesOnlyListing(t, p, start.Add(-2*time.Second), end.Add(-2*time.Second))
 	if calls, _ := vl.reset(); len(calls) == 0 {
 		t.Fatal("past the bound the listing was answered from memory without a confirmation")
@@ -245,20 +268,20 @@ func TestLabelsInventory_MemoryAnswersKeepTheStalenessBound(t *testing.T) {
 	// A row with a new label written into a settled hour of the window.
 	hour := end.Truncate(time.Hour).Add(-3 * time.Hour)
 	vl.add(fakeVLRow{ts: hour.Add(17 * time.Minute).UnixNano(), stream: map[string]string{"app": "api", "late": "1"}})
-	deadline := time.Now().Add(5 * time.Second)
-	for i := 3; ; i++ {
+	// Each listing moves the window by a second; the clock moves past the
+	// bound and the count reuse between two listings.
+	for i := 3; i < 12; i++ {
 		before := counterValue(p, "memory")
 		got := namesOnlyListing(t, p, start.Add(-time.Duration(i)*time.Second), end.Add(-time.Duration(i)*time.Second))
 		calls, _ := vl.reset()
 		t.Logf("listing %d: from memory %v, VictoriaLogs calls %v", i, counterValue(p, "memory") > before, calls)
 		if contains(got, "late") {
-			break
+			return
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("a row written into a covered hour was never listed: %v", got)
-		}
-		time.Sleep(100 * time.Millisecond)
+		settleBackground(t, p)
+		defer cache.AdvanceClockForTesting(200 * time.Millisecond)()
 	}
+	t.Fatal("a row written into a covered hour was never listed")
 }
 
 // Off when -metadata-max-staleness is 0: every listing reads VictoriaLogs as
@@ -272,7 +295,7 @@ func TestLabelsInventory_MemoryAnswersOffWithoutStaleness(t *testing.T) {
 	p := newMemoryInventoryProxy(t, vl, 0)
 	end := now.Truncate(time.Hour).Add(-2*time.Hour + 26*time.Minute + 50*time.Second)
 	_ = namesOnlyListing(t, p, end.Add(-24*time.Hour), end)
-	time.Sleep(100 * time.Millisecond)
+	settleBackground(t, p)
 	day := end.Add(-24 * time.Hour).Truncate(24 * time.Hour)
 	if _, ok := p.cache.Peek(inventoryBucketKey(listingBase(p), inventorySegment{start: day.UnixNano(), end: day.Add(24 * time.Hour).UnixNano(), level: 0})); ok {
 		t.Fatal("a day was filled in the background with -metadata-max-staleness=0")
@@ -284,5 +307,59 @@ func TestLabelsInventory_MemoryAnswersOffWithoutStaleness(t *testing.T) {
 	}
 	if counterValue(p, "memory") != 0 {
 		t.Fatal("memory answers counted with -metadata-max-staleness=0")
+	}
+}
+
+// The background reads after a listing span at most the window's own width:
+// a 10-minute window over the end of yesterday reads nothing in the
+// background (not the day), an hour reads one hour, six hours at most three
+// hours, a day its partly covered day; with -metadata-inventory-prefetch
+// false nothing is read.
+//
+// conformance: semantics/label-inventory-exact-and-incremental, limits/concurrent-full-retention-scans-exhaust-backend
+func TestLabelsInventory_PrefetchStaysWithinTheWindowWidth(t *testing.T) {
+	now := time.Now()
+	vl := &fakeVictoriaLogs{}
+	seedStableLabels(vl, now)
+	midnight := now.Truncate(24 * time.Hour)
+	if now.Sub(midnight) < 2*time.Hour {
+		midnight = midnight.Add(-24 * time.Hour) // keep every window sealed
+	}
+	for _, tc := range []struct {
+		name       string
+		start, end time.Time
+		prefetch   bool
+	}{
+		{"10m over the end of yesterday", midnight.Add(-10*time.Minute - 13*time.Second), midnight.Add(-13 * time.Second), true},
+		{"1h", midnight.Add(-time.Hour - 13*time.Minute), midnight.Add(-13 * time.Minute), true},
+		{"6h", midnight.Add(-6*time.Hour - 13*time.Minute), midnight.Add(-13 * time.Minute), true},
+		{"24h", midnight.Add(-24*time.Hour - 13*time.Minute), midnight.Add(-13 * time.Minute), true},
+		{"24h, prefetch off", midnight.Add(-24*time.Hour - 13*time.Minute), midnight.Add(-13 * time.Minute), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newMemoryInventoryProxy(t, vl, 10*time.Second)
+			p.metadataInventoryPrefetch = tc.prefetch
+			params := url.Values{"query": {"*"}, "start": {strconv.FormatInt(tc.start.UnixNano(), 10)}, "end": {strconv.FormatInt(tc.end.UnixNano(), 10)}}
+			plan := planInventorySegments(tc.start.UnixNano(), tc.end.UnixNano(), now.Add(-metadataInventorySealLag).UnixNano())
+			vl.reset()
+			p.fillTouchedDays(withNamesOnlyListing(context.Background()), "/select/logsql/stream_field_names", params, listingBase(p), plan, now, true)
+			settleBackground(t, p)
+			calls, spans := vl.reset()
+			var read time.Duration
+			for _, s := range spans {
+				read += s
+			}
+			width := tc.end.Sub(tc.start)
+			t.Logf("%s: background listings %v (%s), calls %v", tc.name, spans, read, calls)
+			if read > width {
+				t.Fatalf("the background read %s for a window of %s", read, width)
+			}
+			if (tc.name == "10m over the end of yesterday" || !tc.prefetch) && len(calls) != 0 {
+				t.Fatalf("background calls %v, want none", calls)
+			}
+			if tc.name == "24h" && read != 24*time.Hour {
+				t.Fatalf("the 24h window read %s in the background, want its partly covered day", read)
+			}
+		})
 	}
 }

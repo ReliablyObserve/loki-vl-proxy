@@ -50,8 +50,10 @@ func labelsAnswer(t testing.TB, p *Proxy, start, end time.Time) string {
 //     for a 24h window), moved forward by 30 s;
 //   - cold is the first request, nothing cached.
 //
-// It reports the VictoriaLogs calls and the listed range (minutes of rows
-// read) per request, background fills included.
+// Each mode runs with the memory answers off and, with "/staleness=10s",
+// with the shipped default (memory answers and background reads on). It
+// reports the VictoriaLogs calls and the listed range (minutes of rows read)
+// per request, background reads included (they finish between requests).
 func BenchmarkLabelsShiftedWindow(b *testing.B) {
 	now := time.Now()
 	type mode struct {
@@ -77,14 +79,18 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 	for _, at := range []time.Duration{5*time.Minute + 13*time.Second, 20*time.Minute + 13*time.Second, 35*time.Minute + 13*time.Second, 50*time.Minute + 13*time.Second} {
 		modes = append(modes, back(fmt.Sprintf("at=:%02d:13", int(at/time.Minute)), hourAgo2.Add(at)))
 	}
-	memory := back("at=:26:50/staleness=10s", end0)
-	memory.staleness = 10 * time.Second
 	modes = append(modes,
-		memory,
 		back("at=now", now.Truncate(time.Minute).Add(-time.Minute-13*time.Second)),
 		mode{name: "refresh=30s", fill: refresh0, measured: []time.Time{refresh0.Add(30 * time.Second)}},
 		mode{name: "cold", measured: []time.Time{end0}},
 	)
+	// The shipped default: -metadata-max-staleness 10s and
+	// -metadata-inventory-prefetch on (memory answers and background reads).
+	for _, m := range []mode{modes[0], modes[len(modes)-3], modes[len(modes)-2], modes[len(modes)-1]} {
+		m.name += "/staleness=10s"
+		m.staleness = 10 * time.Second
+		modes = append(modes, m)
+	}
 	for _, mode := range modes {
 		for _, cost := range []struct {
 			name  string
@@ -118,7 +124,7 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					b.StopTimer()
-					p, err := New(Config{BackendURL: srv.URL, Cache: cache.New(time.Hour, 100000), LogLevel: "error", MetadataMaxStaleness: mode.staleness})
+					p, err := New(Config{BackendURL: srv.URL, Cache: cache.New(time.Hour, 100000), LogLevel: "error", MetadataMaxStaleness: mode.staleness, MetadataInventoryPrefetch: mode.staleness > 0})
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -126,7 +132,7 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 						_ = labelsAnswer(b, p, mode.fill.Add(-24*time.Hour), mode.fill)
 					}
 					if mode.staleness > 0 {
-						time.Sleep(200 * time.Millisecond) // the first listing's background fills
+						settleBackground(b, p) // the first listing's background reads
 					}
 					vl.reset()
 					b.StartTimer()
@@ -134,7 +140,7 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 						_ = labelsAnswer(b, p, end.Add(-24*time.Hour), end)
 						if mode.staleness > 0 {
 							b.StopTimer()
-							time.Sleep(50 * time.Millisecond) // the time between two requests
+							settleBackground(b, p) // the background reads between two requests
 							b.StartTimer()
 						}
 					}
