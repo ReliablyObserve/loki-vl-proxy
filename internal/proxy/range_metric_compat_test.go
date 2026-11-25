@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -430,15 +431,20 @@ func TestQueryRange_CountOverTimeParserUsesDirectStatsRange(t *testing.T) {
 	var (
 		manualCalled bool
 		statsCalled  bool
+		foreignGuard bool
 	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
 		}
+		query := r.FormValue("query")
 		switch r.URL.Path {
 		case "/select/logsql/query":
-			// Parser probe may hit this endpoint, but manual metric fallback
-			// should not for parser count_over_time.
+			if strings.Contains(query, "severity:*") && strings.HasSuffix(query, " | limit 1") {
+				foreignGuard = true
+				w.Header().Set("Content-Type", "application/x-ndjson")
+				return // selected rows have only a stored level
+			}
 			if r.Form.Get("limit") == "1000000" || r.Form.Get("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001") {
 				manualCalled = true
 			}
@@ -450,8 +456,12 @@ func TestQueryRange_CountOverTimeParserUsesDirectStatsRange(t *testing.T) {
 			)
 		case "/select/logsql/stats_query_range":
 			statsCalled = true
+			if !strings.Contains(query, "copy detected_level as __dl_d, level as __dl_l") ||
+				!strings.Contains(query, "stats by (__dl_d, __dl_l)") || strings.Contains(query, "unpack_") {
+				t.Errorf("unexpected stored-level aggregation: %s", query)
+			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"level":"info"},"values":[[%d,"2"]]},{"metric":{"level":"error"},"values":[[%d,"1"]]}]}}`, base.Unix(), base.Unix())
+			_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__dl_l":"info"},"values":[[%d,"2"]]},{"metric":{"__dl_l":"error"},"values":[[%d,"1"]]}]}}`, base.Unix(), base.Unix())
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -472,29 +482,15 @@ func TestQueryRange_CountOverTimeParserUsesDirectStatsRange(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if manualCalled {
-		t.Fatalf("unexpected manual fallback for parser count_over_time")
+		t.Fatalf("unexpected manual fallback for parser count_over_time (stats=%v guard=%v compatible=%v lineKeys=%v bodyScan=%v)", statsCalled, foreignGuard, p.lokiCompatibleProfile(), p.jsonLineKeysActive(), p.detectedLevelBodyScan)
 	}
-	if !statsCalled {
-		t.Fatalf("expected stats_query_range to be called")
+	if !statsCalled || !foreignGuard {
+		t.Fatalf("expected stats_query_range and a foreign-field guard, got stats=%v guard=%v", statsCalled, foreignGuard)
 	}
-
-	var resp struct {
-		Data struct {
-			Result []struct {
-				Metric map[string]string `json:"metric"`
-			} `json:"result"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-
-	seen := map[string]bool{}
-	for _, series := range resp.Data.Result {
-		seen[series.Metric["detected_level"]] = true
-	}
-	if !seen["info"] || !seen["error"] {
-		t.Fatalf("expected detected_level info/error series, got %v", resp.Data.Result)
+	got := dlvBaselineReadMatrix(t, rec)
+	want := dlvBaselineMatrix{"info": {base.Add(time.Minute).Unix(): "2"}, "error": {base.Add(time.Minute).Unix(): "1"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("detected_level series: got %v, want %v", got, want)
 	}
 }
 

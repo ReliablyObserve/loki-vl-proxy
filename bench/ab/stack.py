@@ -12,19 +12,21 @@ it can run next to the e2e stack without touching it.
 
 The steps, in order:
   1. `up` starts only Loki and VictoriaLogs from test/e2e-compat/docker-compose.yml.
-  2. `seed` runs test/e2e-compat/log-generator.py in backfill mode: the live
+  2. A/B callers build their proxy binaries sequentially with capped compiler
+     parallelism and memory, before starting heavy ingestion.
+  3. `seed` runs test/e2e-compat/log-generator.py in backfill mode: the live
      generator's data profile, written for a fixed window ending at --end, to
-     both backends. It then flushes Loki and waits until Loki and
-     VictoriaLogs count the same lines in every 10-minute slice of the window
+     both backends, triggering periodic Loki flushes after acknowledged stream
+     budgets. This is seed pacing, not a memory bound. It then flushes Loki and
+     waits until Loki and VictoriaLogs count the same lines in every 10-minute slice of the window
      (Loki reads data older than query_ingesters_within from its store only,
      so an unflushed backfill would look missing on Loki).
-  3. Each proxy build runs as a host process with the command line and
+  4. Each proxy build runs as a host process with the command line and
      environment of the stack's proxy service (--service) as that build's own
      compose file defines it, rewritten to host ports; flags pointing at
      services this stack does not start are dropped.
 """
 import argparse
-import concurrent.futures
 import contextlib
 import json
 import math
@@ -169,6 +171,7 @@ class Stack:
         self.vl = f"http://127.0.0.1:{vl_port}"
         self.vl_container = f"{project}-victorialogs"
         self.loki_container = f"{project}-loki"
+        self.artifact_dir = None
 
     @property
     def overlays(self):
@@ -265,18 +268,77 @@ class Stack:
     def seed(self, seconds, end, timeout=900, batch=BACKFILL_BATCH, interval=BACKFILL_INTERVAL):
         env = dict(os.environ, LOKI_URL=self.loki, VL_URL=self.vl, LOG_BATCH=str(batch),
                    LOG_BACKFILL_SECONDS=str(seconds), LOG_BACKFILL_INTERVAL=str(interval),
-                   LOG_BACKFILL_END=str(end), LOG_BACKFILL_ONLY="1", LOG_BACKFILL_SEED=str(end))
+                   LOG_BACKFILL_END=str(end), LOG_BACKFILL_ONLY="1", LOG_BACKFILL_SEED=str(end),
+                   LOG_BACKFILL_FLUSH_STREAMS="10000")
         if self.no_level_label:
             env["LOG_NO_LEVEL_LABEL"] = "1"
         t0 = time.time()
-        subprocess.run([sys.executable, GENERATOR], cwd=self.root, env=env, check=True, stdout=sys.stderr)
         try:
-            with urllib.request.urlopen(urllib.request.Request(f"{self.loki}/flush", method="POST"), timeout=60):
-                pass  # the response body is empty; only the status matters
-        except (urllib.error.URLError, OSError) as e:
-            log(f"Loki /flush failed ({e}); waiting for the counts anyway")
-        self.wait_equal_counts(end - seconds, end, timeout)
+            subprocess.run([sys.executable, GENERATOR], cwd=self.root, env=env, check=True, stdout=sys.stderr)
+            try:
+                with urllib.request.urlopen(urllib.request.Request(f"{self.loki}/flush", method="POST"), timeout=60):
+                    pass  # the response body is empty; only the status matters
+            except (urllib.error.URLError, OSError) as e:
+                log(f"Loki /flush failed ({e}); waiting for the counts anyway")
+            self.wait_equal_counts(end - seconds, end, timeout)
+        except BaseException as error:
+            # Capture before the caller's finally tears down containers and
+            # volumes. Evidence is best effort and never replaces this error.
+            self.capture_seed_failure(error)
+            raise
         log(f"seeded {seconds}s ending {end} in {time.time() - t0:.0f}s")
+
+    def capture_seed_failure(self, error):
+        """Keep bounded backend evidence in the existing shard artifact dir."""
+        if not self.artifact_dir:
+            return
+        out = self.artifact_dir
+        try:
+            os.makedirs(out, exist_ok=True)
+            evidence = {"phase": "seed", "profile": self.profile, "error_type": type(error).__name__,
+                        "error": str(error), "backends": {}}
+            state_format = ('{"status":{{json .State.Status}},"oom_killed":{{.State.OOMKilled}},'
+                            '"exit_code":{{.State.ExitCode}},"error":{{json .State.Error}},'
+                            '"started_at":{{json .State.StartedAt}},"finished_at":{{json .State.FinishedAt}},'
+                            '"restart_count":{{.RestartCount}},"image":{{json .Config.Image}},'
+                            '"memory_limit_bytes":{{.HostConfig.Memory}}}')
+            for backend, container in (("loki", self.loki_container), ("victorialogs", self.vl_container)):
+                row = {"container": container}
+                evidence["backends"][backend] = row
+                try:
+                    result = subprocess.run(["docker", "inspect", "--format", state_format, container],
+                                            capture_output=True, text=True, check=False, timeout=10, env=self.env)
+                    if result.returncode:
+                        row["inspect_error"] = result.stderr[-2048:]
+                    else:
+                        row["state"] = json.loads(result.stdout)
+                except Exception as inspect_error:  # diagnostics must not mask the original failure
+                    row["inspect_error"] = str(inspect_error)
+                name = f"seed-{self.profile}-{backend}.log"
+                row["log_file"] = name
+                try:
+                    path = os.path.join(out, name)
+                    # Stream to disk rather than buffering backend logs while
+                    # diagnosing possible memory pressure. Keep only the tail.
+                    with open(path, "wb") as target:
+                        result = subprocess.run(["docker", "logs", "--timestamps", "--tail", "200", container],
+                                                stdout=target, stderr=subprocess.STDOUT, check=False, timeout=10,
+                                                env=self.env)
+                    row["log_exit"] = result.returncode
+                    if os.path.getsize(path) > 256 << 10:
+                        with open(path, "rb") as source:
+                            source.seek(-(256 << 10), os.SEEK_END)
+                            tail = source.read(256 << 10)
+                        with open(path, "wb") as target:
+                            target.write(tail)
+                        row["log_truncated"] = True
+                except Exception as log_error:  # keep collecting the other backend
+                    row["log_error"] = str(log_error)
+            with open(os.path.join(out, f"seed-{self.profile}-backends.json"), "w") as target:
+                json.dump(evidence, target, indent=2)
+            log(f"seed failure diagnostics: seed-{self.profile}-backends.json and backend log tails")
+        except Exception as capture_error:
+            log(f"seed diagnostics failed ({capture_error}); preserving original {type(error).__name__}")
 
     def counts(self, start, end, slice_s):
         """Lines per slice (T-slice, T] on each backend, for every step-aligned T in (start, end].
@@ -353,14 +415,16 @@ def build(ref, out, root=ROOT):
     Returns the tree it built from; a worktree it created is removed again
     when the build fails.
     """
+    command = ["go", "build", "-p=1", "-o", out, "./cmd/proxy"]
+    env = dict(os.environ, GOMAXPROCS="2", GOMEMLIMIT="3GiB")
     if ref is None:
-        subprocess.run(["go", "build", "-o", out, "./cmd/proxy"], cwd=root, check=True)
+        subprocess.run(command, cwd=root, env=env, check=True)
         return root
     tree = tempfile.mkdtemp(prefix="ab-tree-")
     try:
         subprocess.run(["git", "worktree", "add", "--detach", "--force", tree, ref], cwd=root, check=True,
                        stdout=subprocess.DEVNULL)
-        subprocess.run(["go", "build", "-o", out, "./cmd/proxy"], cwd=tree, check=True)
+        subprocess.run(command, cwd=tree, env=env, check=True)
     except BaseException:
         remove_tree(tree, root)
         raise
@@ -374,29 +438,21 @@ def remove_tree(tree, root=ROOT):
 
 
 def build_and_seed(st, builds, seed_args):
-    """Build every (name, ref, out) while the stack seeds; returns {name: tree}.
+    """Finish capped builds before heavy ingest; returns {name: tree}.
 
-    A failed build stops the run at once instead of waiting for the seed (the
-    seed thread ends on its own when the stack goes down). Trees of the builds
-    that succeeded are returned through the exception's `trees` attribute so
-    the caller can remove them.
+    The seed, time window, density and backend limits are unchanged. A failed
+    build never starts ingest. Completed trees remain available for teardown.
     """
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(builds) + 1)
-    seeding = pool.submit(st.seed, *seed_args)
-    futures = {pool.submit(build, ref, out): name for name, ref, out in builds}
+    if builds:
+        st.artifact_dir = os.path.dirname(os.path.abspath(builds[0][2]))
     trees = {}
     try:
-        for future in concurrent.futures.as_completed(futures):
-            trees[futures[future]] = future.result()
-        seeding.result()
+        for name, ref, out in builds:
+            trees[name] = build(ref, out)
+        st.seed(*seed_args)
     except BaseException as e:
-        for future, name in futures.items():
-            if future.done() and future.exception() is None:
-                trees[name] = future.result()
         e.trees = trees
         raise
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
     return trees
 
 

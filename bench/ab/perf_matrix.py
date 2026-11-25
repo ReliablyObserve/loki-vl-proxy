@@ -53,6 +53,7 @@ Run each proxy build on a port you have verified you own and with a unique
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -65,8 +66,10 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from answers import query_rejection  # noqa: E402
-from selection import query_lookback  # noqa: E402
+from answers import correctness_endpoint, correctness_spelling, metadata_endpoint, metadata_schema, query_rejection, strict_json  # noqa: E402
+import report  # noqa: E402
+from bench.parity import differ  # noqa: E402
+from selection import load_shapes, query_lookback  # noqa: E402
 from bench.visual.vio import error_text  # noqa: E402
 import reuse  # noqa: E402
 import stack  # noqa: E402
@@ -155,10 +158,12 @@ INTERNAL_SERVER_ERROR = "Internal Server Error"
 def answer_proof(status, body, shape):
     """An actual Loki answer, or a fingerprint of its semantic query rejection."""
     try:
-        parsed = json.loads(body)
+        parsed = strict_json(body)
     except (ValueError, UnicodeError):
         parsed = None
     if status != 200:
+        if isinstance(parsed, dict) and (parsed.get("status") not in (None, "error") or "errorType" in parsed and not isinstance(parsed["errorType"], str)):
+            return None
         message = parsed.get("error") if isinstance(parsed, dict) else body.decode(errors="replace").strip()
         if status in (400, 422, 500) and query_rejection(message):
             return "rejection:" + hashlib.sha256(error_text(message).encode()).hexdigest()
@@ -168,19 +173,33 @@ def answer_proof(status, body, shape):
             # are none of these and stay unproved. report.py accepts this only as a whole: every run, alone.
             return "failure:" + hashlib.sha256(error_text(message).encode()).hexdigest()
         return None
-    if not isinstance(parsed, dict) or parsed.get("status") == "error" or parsed.get("error"):
+    if not isinstance(parsed, dict) or parsed.get("status") not in (None, "success") or parsed.get("error"):
         return None
     data = parsed.get("data", parsed)
-    path = shape.get("path", "")
-    if path.endswith(("/detected_fields", "/detected_labels")):
-        field = "fields" if path.endswith("/detected_fields") else "detectedLabels"
-        valid = isinstance(data, list) or isinstance(data, dict) and (not data or isinstance(data.get(field), list))
-    elif path.endswith(("/labels", "/values", "/patterns")):
-        valid = isinstance(data, list)
-    elif path.endswith("/index/volume") and isinstance(data, dict) and "volumes" in data:
-        valid = isinstance(data["volumes"], list)
-    else:
-        valid = isinstance(data, dict) and isinstance(data.get("result"), list)
+    endpoint = correctness_endpoint(shape)
+    if endpoint is None:
+        return None
+    valid = metadata_schema(parsed, endpoint) if metadata_endpoint(shape) else None
+    if valid is None:
+        kind = data.get("resultType") if isinstance(data, dict) else None
+        result = data.get("result") if isinstance(data, dict) else None
+        def point(value, numeric=True):
+            if not isinstance(value, list) or len(value) != 2 or type(value[0]) not in (int, float) or not isinstance(value[1], str):
+                return False
+            try:
+                return math.isfinite(value[0]) and (not numeric or differ.valid_sample_value(value[1]))
+            except (ValueError, OverflowError):
+                return False
+        if kind in ("matrix", "vector"):
+            valid = differ.valid_metric_result(parsed)
+        elif kind == "streams":
+            valid = isinstance(result, list) and all(isinstance(s, dict) and isinstance(s.get("stream"), dict)
+                    and all(isinstance(k, str) and isinstance(v, str) for k, v in s["stream"].items())
+                    and isinstance(s.get("values"), list) and all(isinstance(p, list) and 2 <= len(p) <= 3
+                    and isinstance(p[0], str) and re.fullmatch(r"-?[0-9]{1,19}", p[0]) and -(1 << 63) <= int(p[0]) < (1 << 63)
+                    and isinstance(p[1], str) and (len(p) == 2 or isinstance(p[2], dict)) for p in s["values"]) for s in result)
+        else:
+            valid = kind in ("scalar", "string") and point(result, kind == "scalar")
     return "answer" if valid else None
 
 
@@ -316,19 +335,95 @@ def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refre
     return plans
 
 
-def request_full(url, headers, tenant, timeout):
+def request_full(url, headers, tenant, timeout, max_body_bytes=None):
     """(status, body, seconds, started, calls): calls is the proxy's X-Loki-VL-Backend-Calls for this request (a proxy run
     with -debug-vl-calls-header), None when the answer carries none."""
     req = urllib.request.Request(url, headers={"X-Scope-OrgID": tenant, **headers})
     t0 = time.time()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            body, status, calls = r.read(), r.status, r.headers.get(reuse.CALLS_HEADER)
+            body, status, calls = r.read() if max_body_bytes is None else r.read(max_body_bytes + 1), r.status, r.headers.get(reuse.CALLS_HEADER)
     except urllib.error.HTTPError as e:
-        body, status, calls = e.read(), e.code, e.headers.get(reuse.CALLS_HEADER)
+        body, status, calls = e.read() if max_body_bytes is None else e.read(max_body_bytes + 1), e.code, e.headers.get(reuse.CALLS_HEADER)
     except (urllib.error.URLError, OSError) as e:
         return 0, str(e).encode()[:200], time.time() - t0, t0, None
     return status, body, time.time() - t0, t0, reuse.calls_of(calls)
+
+
+CORRECTNESS_BODY_CAP = 32 * 1024 * 1024
+
+
+def correctness_reference(base, shape, query, secs, step, end, tenant, timeout, measured=None, phase="original-window"):
+    actual, mode = (query, "measured") if measured is not None else correctness_spelling(query, shape)
+    url = request_url(base, shape, actual, secs, step, end)
+    headers = {k: v for k, v in request_headers(shape).items() if k.lower() != "cache-control"}
+    headers["Cache-Control"] = "no-cache"
+    status, body, dt, at, _ = measured if measured is not None else request_full(
+        url, headers, tenant, timeout, max_body_bytes=CORRECTNESS_BODY_CAP)
+    try:
+        decoded = strict_json(body) if len(body) <= CORRECTNESS_BODY_CAP else None
+    except (ValueError, UnicodeError):
+        decoded = body.decode(errors="replace") if status != 200 else None
+    proof = answer_proof(status, body, shape) if len(body) <= CORRECTNESS_BODY_CAP else None
+    data = decoded.get("data", decoded) if isinstance(decoded, dict) else None
+    stats = data.get("stats") if isinstance(data, dict) else None
+    raw = stats.get("cache") if isinstance(stats, dict) else None
+    cache_absent = isinstance(decoded, dict) and all("cache" not in container and (
+        "stats" not in container or isinstance(container["stats"], dict) and "cache" not in container["stats"])
+        for container in (decoded, data) if isinstance(container, dict))
+    observation = metadata_endpoint(shape) and proof == "answer" and cache_absent
+    cache = report.correctness_cache_projection(raw)
+    rejection = isinstance(proof, str) and proof.startswith("rejection:")
+    record = dict(phase=phase, end=end, history_start=end-secs-query_lookback(query), at=at, seconds=round(dt, 3),
+                  status=status, response_bytes=len(body), body_sha256=hashlib.sha256(body).hexdigest(), answer_proof=proof,
+                  original_query=query, actual_query=actual, correctness_query_mode=mode, url=url,
+                  correctness_cache_control=None if measured is not None else "no-cache", cache_raw=raw, cache=cache,
+                  reference_kind="metadata-api-response" if observation else "computed-query", cache_status="unavailable" if observation else "observed", cache_absent=cache_absent,
+                  signature=signature(status, body, shape.get("logs", False), query.lstrip().startswith(("topk", "bottomk"))) if proof else "unavailable",
+                  ranked_max_points=ranked_max_points(query, secs, step, shape.get("instant", False)))
+    record["reference_skip"] = "" if rejection or observation else report.reference_skip(record) if cache is not None else "cache-status-invalid-or-hit"
+    record["complete"] = bool(proof and decoded is not None and math.isfinite(dt) and dt >= 0
+                              and not (isinstance(decoded, dict) and decoded.get("warnings")) and not record["reference_skip"])
+    return record, decoded
+
+
+def first_window_correctness(responses, shape, rng, query, secs, step, end, targets, tenant, timeout):
+    proof = dict(complete=False, end=end, history_start=end-secs-query_lookback(query), query=query,
+                 range=rng, run=0, extra_reads=0, targets={}, measured_reference=None)
+    if set(responses) != set(targets) or "loki" not in responses or any(v.get("reply") is None for v in responses.values()):
+        return {**proof, "problem": "measured body unavailable or retention cap exceeded"}
+    if (sum(len(v["reply"][1]) for v in responses.values()) > 3 * CORRECTNESS_BODY_CAP
+            or any(len(v["reply"][1]) > CORRECTNESS_BODY_CAP or not answer_proof(v["reply"][0], v["reply"][1], shape)
+                   for name, v in responses.items() if name != "loki")):
+        return {**proof, "problem": "measured proxy answer unavailable"}
+    ref, decoded = correctness_reference(targets["loki"], shape, query, secs, step, end, tenant, timeout,
+                                         measured=responses["loki"]["reply"])
+    proof["measured_reference"] = ref
+    if not ref["complete"] and ref["status"] == 200 and (not metadata_endpoint(shape) or not ref["cache_absent"]):
+        ref, decoded = correctness_reference(targets["loki"], shape, query, secs, step, end, tenant, timeout)
+        proof["extra_reads"] = 1
+    proof["reference"] = ref
+    if not ref["complete"]:
+        return {**proof, "problem": "computed reference unavailable"}
+    endpoint = correctness_endpoint(shape)
+    for name, value in responses.items():
+        if name == "loki":
+            continue
+        status, body, dt, at, _ = value["reply"]
+        answer = answer_proof(status, body, shape)
+        try:
+            parsed = strict_json(body)
+        except (ValueError, UnicodeError):
+            parsed = body.decode(errors="replace") if status != 200 else None
+        if not answer or parsed is None or isinstance(parsed, dict) and parsed.get("warnings"):
+            return {**proof, "problem": "measured proxy answer incomplete"}
+        facets = differ.diff(endpoint, ref["status"], decoded, status, parsed,
+                             limit=shape.get("limit", 0), direction=shape.get("direction", "backward"), query=query,
+                             documented_values=shape.get("documented_values"))
+        proof["targets"][name] = dict(status=status, response_bytes=len(body), body_sha256=hashlib.sha256(body).hexdigest(),
+                                      answer_proof=answer, parity_vs_reference=report.correctness_parity(shape, facets), facets=facets)
+    proof["complete"] = True
+    return proof
 
 
 def request(url, headers, tenant, timeout):
@@ -435,6 +530,8 @@ def signature(status, body, logs, ranked=False):
         return name_set_signature("labels", [str(d.get("label")) for d in data.get("detectedLabels") or []])
     if isinstance(data, dict) and "fields" in data:
         return name_set_signature("fields", [str(d.get("label")) for d in data.get("fields") or []])
+    if data.get("resultType") in ("scalar", "string"):
+        return data["resultType"] + "=" + hashlib.sha256(json.dumps(data.get("result"), separators=(",", ":")).encode()).hexdigest()
     result = data.get("result", [])
     if logs or data.get("resultType") == "streams":
         return f"streams={len(result)} lines={sum(len(s.get('values', [])) for s in result)}"
@@ -557,7 +654,7 @@ def main():
     logs = dict(x.split("=", 1) for x in args.quiet_log)
 
     with open(args.shapes_file) as f:
-        spec = json.load(f)
+        spec = load_shapes(f.read())
     shape_set = spec["sets"][args.set]
     range_defs = spec["ranges"]
     ranges = [r for r in (args.ranges.split(",") if args.ranges else shape_set["ranges"]) if r]
@@ -606,6 +703,7 @@ def main():
             secs, step = range_defs.get(rname, (0, 0))
             query = shape_query(shape, step)
             for run in range(args.runs):
+                source_bodies, retained_bytes = {}, 0
                 if run == 0:
                     for flush_url in args.flush_before_run0:
                         flush_cache(flush_url, os.environ.get("AB_ADMIN_TOKEN", ""))
@@ -646,6 +744,12 @@ def main():
                                                   query.lstrip().startswith(("topk", "bottomk"))),
                            "vl_cpu_max": None, "vl_cpu_avg": None, "at": int(t0)}
                     row["response_bytes"] = len(body)
+                    if args.range_plan and run == 0:
+                        row["body_sha256"] = hashlib.sha256(body).hexdigest()
+                        row["request_url"] = url
+                        retained_bytes += len(body)
+                        source_bodies[tname] = {"row": row, "reply": (status, body, dt, t0, calls)
+                                               if len(body) <= CORRECTNESS_BODY_CAP and retained_bytes <= 3 * CORRECTNESS_BODY_CAP else None}
                     if args.range_plan:
                         row["answer_proof"] = answer_proof(status, body, shape)
                         row["history_start"] = run_end - secs - query_lookback(query)
@@ -674,6 +778,12 @@ def main():
                         break
                 if aborted:
                     break
+                if args.range_plan and run == 0:
+                    original = first_window_correctness(source_bodies, shape, rname, query, secs, step, run_end,
+                                                        dict(targets), args.tenant, args.timeout)
+                    for value in source_bodies.values():
+                        value["row"]["original_window_correctness"] = original
+                    source_bodies.clear()
             if args.exact_repeat and args.proxy_metrics and not aborted:
                 exact_repeats.extend(exact_repeat_pass(targets, shape, rname, query, secs, step, end, args))
             if aborted:
@@ -687,7 +797,7 @@ def main():
         row["vl_cpu_max"], row["vl_cpu_avg"] = sampler.between(t0, t0 + dt)
     restart1 = restarts()
     result = {"set": args.set, "description": shape_set.get("description", ""), "end": end, "runs": args.runs,
-               "runtime_proof": bool(args.range_plan), "targets": [t for t, _ in targets], "restart_before": restart0, "restart_after": restart1,
+               "runtime_proof": bool(args.range_plan), "targets": [t for t, _ in targets], "target_urls": dict(targets), "restart_before": restart0, "restart_after": restart1,
               "valid": not aborted and restart0 == restart1, "cpu_samples_missed": sampler.failed,
               "mode": "refresh" if args.refresh_s else "shifted", "refresh_s": args.refresh_s,
               "profile": args.profile, "not_like_for_like": args.not_like_for_like,

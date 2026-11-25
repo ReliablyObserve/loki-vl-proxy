@@ -530,12 +530,26 @@ func TestOrderedJSONLogsVolumePartialJSONKeepsRawEvaluator(t *testing.T) {
 // Without a JSON parser only the detected_level volume shapes compile; the
 // other routes keep every other plain and logfmt metric.
 func TestLevelVolumePlanRequiresDetectedLevelAndDroppedErrors(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		stats bool
+	}{
+		{`sum by (detected_level) (count_over_time({env="production"} | json | logfmt | drop __error__[1m]))`, true},
+		{`sum by (detected_level) (count_over_time({env="production"} | logfmt | drop __error__ | json [1m]))`, false},
+		{`sum by (detected_level) (count_over_time({env="production"} | logfmt | json | drop __error_details__ [1m]))`, false},
+		{`sum by (detected_level) (count_over_time({env="production"} | json | logfmt | level!="" | drop __error__ [1m]))`, false},
+		{`sum by (detected_level_extracted) (count_over_time({env="production"} | json | logfmt | drop __error__[1m]))`, false},
+	} {
+		plan, ok := compileOrderedJSONMetric(tc.query)
+		if !ok || !plan.mixedParsers || plan.pushdown != tc.stats || plan.withoutJSON != "" {
+			t.Errorf("%s: expected ordered mixed plan, stored-level stats %v; got %+v", tc.query, tc.stats, plan)
+		}
+	}
 	for _, query := range []string{
 		`sum by (level) (count_over_time({env="production"} | drop __error__[1m]))`,
 		`sum by (detected_level) (count_over_time({env="production"}[1m]))`,
 		`sum by (detected_level) (count_over_time({env="production"} | logfmt [1m]))`,
 		`sum by (detected_level, service_name) (count_over_time({env="production"} | drop __error__[1m]))`,
-		`sum by (detected_level) (count_over_time({env="production"} | json | logfmt | drop __error__[1m]))`,
 		`sum by (detected_level) (count_over_time({env="production"} | logfmt level | drop __error__[1m]))`,
 	} {
 		if plan, ok := compileOrderedJSONMetric(query); ok {

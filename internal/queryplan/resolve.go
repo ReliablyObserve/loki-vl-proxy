@@ -128,26 +128,12 @@ func resolvePipeline(s *LogSelect, p *Plan) {
 	// least 1).
 	var ps *PipelineSem
 	if p.ps.ErrorAt != 0 {
-		ps = &PipelineSem{ErrorAt: -1}
+		ps = new(PipelineSem)
 	} else {
 		ps = &p.ps
-		*ps = PipelineSem{ErrorAt: -1}
 	}
-	last := -1
-	for i, st := range s.Stages {
-		if _, ok := st.(*Parse); ok {
-			ps.Parsers++
-			last = i
-		}
-	}
+	*ps = ParserSemantics(s.Stages)
 	if ps.Parsers > 0 {
-		ps.ErrorPolicy = ErrorPropagate
-		for i := last + 1; i < len(s.Stages); i++ {
-			if dropsErrorLabel(s.Stages[i]) {
-				ps.ErrorPolicy, ps.ErrorAt = ErrorDroppedLabel, i
-				break
-			}
-		}
 		if sem.Rules == nil {
 			sem.Rules = p.rule[:0:1]
 		}
@@ -158,6 +144,29 @@ func resolvePipeline(s *LogSelect, p *Plan) {
 		}
 	}
 	s.Sem = ps
+}
+
+// ParserSemantics resolves the parser count and error policy in pipeline order.
+// The ordered metric compiler uses the same facts when admitting parser pairs.
+func ParserSemantics(stages []Stage) PipelineSem {
+	ps := PipelineSem{ErrorAt: -1}
+	last := -1
+	for i, stage := range stages {
+		if _, ok := stage.(*Parse); ok {
+			ps.Parsers++
+			last = i
+		}
+	}
+	if ps.Parsers != 0 {
+		ps.ErrorPolicy = ErrorPropagate
+		for i := last + 1; i < len(stages); i++ {
+			if dropsErrorLabel(stages[i]) {
+				ps.ErrorPolicy, ps.ErrorAt = ErrorDroppedLabel, i
+				break
+			}
+		}
+	}
+	return ps
 }
 
 // dropsErrorLabel reports a drop stage that names __error__ without a

@@ -99,6 +99,19 @@ class FixProofTest(unittest.TestCase):
         self.assertEqual(verdict["runtime_proof"]["measured_pairs"], 400)
         self.assertIn("artifact", text)
 
+    def test_expected_upstream_client_errors_remain_visible_and_cannot_waive_regressions(self):
+        r = row(runtime_main={'api_requests': 3}, runtime_pr={'api_requests': 3},
+                runtime_problems=['runtime regression: Grafana settlement 1000 -> 3000 ms'],
+                expected_client_errors=[dict(registry_case='profiles/grafana-uppercase-metric-log-volume',
+                    state='upstream_matches_loki', primary_points=dict(main=12, pr=12, loki=12))])
+        text, verdict = comment.render([r], {}, plan(('explore-a', '1h')), META, argparse.Namespace(**vars(ARGS)))
+        self.assertEqual(verdict['exit'], 1)
+        self.assertEqual(verdict['runtime_proof']['regressions'], 1)
+        self.assertEqual(verdict['runtime_proof']['expected_client_error_scenes'], 1)
+        self.assertIn('upstream gaps remain open', text)
+        self.assertIn('expected-client-error-captures.json', text)
+        self.assertIn('not a client fix', text)
+
     def test_warning_overflow_keeps_every_fix_and_core_montage_published(self):
         fixes = [f"fix-{n}" for n in range(8)]
         cores = [f"core-{n}" for n in range(9)]

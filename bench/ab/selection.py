@@ -115,8 +115,44 @@ def read(path):
         return f.read()
 
 
-def load_shapes(text=None):
-    return json.loads(text if text is not None else read(SHAPES))
+def read_at(ref, path, root=None):
+    """Read a repository file at its own revision; only an absent file is optional."""
+    listed = subprocess.run(["git", "ls-tree", "--name-only", ref, "--", path], cwd=root or ROOT,
+                            capture_output=True, text=True, check=True).stdout
+    if not listed.strip():
+        return None
+    return subprocess.run(["git", "show", f"{ref}:{path}"], cwd=root or ROOT,
+                          capture_output=True, text=True, check=True).stdout
+
+
+def resolve_case_queries(entries, root=None, ref=None):
+    """Use the existing typed quality case as the sole query definition."""
+    referenced = [e for e in entries if e.get("case_id")]
+    if not referenced:
+        return
+    matrix_path = "test/e2e-compat/query-semantics-matrix.json"
+    if ref:
+        text = read_at(ref, matrix_path, root=root) if root is not None else read_at(ref, matrix_path)
+        if text is None:
+            raise ValueError(f"{ref}: referenced typed matrix is missing")
+        matrix = json.loads(text)
+    else:
+        with open(os.path.join(root or ROOT, matrix_path), encoding="utf-8") as handle:
+            matrix = json.load(handle)
+    cases = {c["id"]: c for c in matrix["cases"]}
+    for entry in referenced:
+        case = cases.get(entry["case_id"])
+        if not case or case.get("endpoint") != "query_range" or case.get("expectation") != "success":
+            raise ValueError(f"{entry['case_id']}: runtime scene needs a successful query_range matrix case")
+        if "query" in entry:
+            raise ValueError(f"{entry['case_id']}: query must come only from the typed matrix")
+        entry["query"] = case["query"]
+
+
+def load_shapes(text=None, ref=None):
+    spec = json.loads(text if text is not None else read(SHAPES))
+    resolve_case_queries([shape for group in spec["sets"].values() for shape in group["shapes"]], ref=ref)
+    return spec
 
 
 def registry_items():
@@ -181,13 +217,9 @@ def shape_files(shape, items):
 
 
 def shapes_at(ref):
-    """The shape sets at a git ref; none when the ref predates shapes.json or it does not parse."""
-    try:
-        text = subprocess.run(["git", "show", f"{ref}:{SHAPES}"], cwd=ROOT, capture_output=True, text=True,
-                              check=True).stdout
-        return load_shapes(text)["sets"]
-    except (subprocess.CalledProcessError, ValueError):
-        return {}
+    """Resolve the catalog and referenced matrix at the same immutable revision."""
+    text = read_at(ref, SHAPES)
+    return {} if text is None else load_shapes(text, ref=ref)["sets"]
 
 
 def changed_shapes(base, head=None):

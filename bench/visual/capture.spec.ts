@@ -12,12 +12,14 @@
 import { test, Page, Request, Response } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
+import { createHash } from "crypto";
 
 type Ds = { id: string; uid: string };
 type PageSpec = {
   id: string;
   kind: "explore" | "label-browser" | "log-context" | "drilldown" | "tail";
   query?: string;
+  case_id?: string; // query owned by the existing typed quality matrix
   path?: string; // drilldown path below /explore, {service} {label} {field} expanded
   service?: boolean; // drilldown: filter by var-filters service_name
   serviceName?: string; // drilldown: that service instead of vars.service
@@ -26,6 +28,17 @@ type PageSpec = {
   ranges?: string[];
 };
 const spec = JSON.parse(fs.readFileSync(process.env.VP_SPEC || path.join(__dirname, "spec.json"), "utf8"));
+const casePages = (spec.pages as PageSpec[]).filter(p => p.case_id);
+if (casePages.length) {
+  const matrix = JSON.parse(fs.readFileSync(path.join(__dirname, "../../test/e2e-compat/query-semantics-matrix.json"), "utf8"));
+  for (const page of casePages) {
+    const c = matrix.cases.find((entry: { id: string }) => entry.id === page.case_id);
+    if (page.kind !== "explore" || page.query !== undefined || !c || c.endpoint !== "query_range" || c.expectation !== "success") {
+      throw new Error(`${page.case_id}: runtime scene needs an exclusive successful query_range matrix case`);
+    }
+    page.query = c.query;
+  }
+}
 const OUT = process.env.VP_OUT || "out";
 const END = parseInt(process.env.VP_END || "0") || Math.floor(Date.now() / 60000) * 60;
 const only = (v?: string) => (v ? new Set(v.split(",")) : null);
@@ -73,7 +86,45 @@ async function uiState(page: Page) {
   return page.evaluate(() => {
     const text = document.body.innerText || "";
     const banner = /(Plugin (unavailable|failed|not found)|Failed to load|Unable to load|Something went wrong|An unexpected error|Error loading|Query error|Bad Gateway|Internal Server Error|Cannot read properties of)[^\n]{0,80}/g;
-    const banners = [...new Set(text.match(banner) || [])].sort().slice(0, 8);
+    const visible = (e: Element) => e.getClientRects().length > 0;
+    const alerts = '[role="alert"], [data-testid="data-testid Alert error"], [data-testid="data-testid Error boundary"]';
+    const alertText = [...document.querySelectorAll(alerts)]
+      .filter(visible).map(e => e.textContent || "");
+    // A service's log samples can themselves say "Cannot read property" or "Plugin unavailable". They are data,
+    // not error banners. Read actual alerts first (even within panels), then retain the unstructured crash-page
+    // fallback only outside log rows. The native landing page uses data-log-index and log-line-body even when
+    // its syntax highlighting splits a message across spans. Other panel text and crash stacks remain eligible.
+    const results = alerts + ', [data-log-index], .log-line-body, .log-syntax-highlight, [data-testid*="log-row"], [data-testid*="Log row"], [data-testid*="log-line"], [data-testid*="Log line"], [class*="logs-row"], script, style';
+    const outside = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    const fragments: string[] = [];
+    let previousBlock: Element | null = null;
+    const blocks = 'address, article, aside, blockquote, div, details, dialog, dl, fieldset, figure, footer, form, h1, h2, h3, h4, h5, h6, header, li, main, nav, ol, p, pre, section, summary, table, td, th, tr, ul';
+    while (outside.nextNode()) {
+      const node = outside.currentNode;
+      if (node.nodeType === 1) {
+        if ((node as Element).tagName === "BR" && visible(node as Element)) {
+          fragments.push("\n");
+          previousBlock = null;
+        }
+        continue;
+      }
+      const parent = node.parentElement;
+      if (!parent) continue;
+      if (parent.closest(results)) {
+        fragments.push("\n");
+        previousBlock = null;
+        continue;
+      }
+      if (!visible(parent)) continue;
+      const block = parent.closest(blocks);
+      if (block !== previousBlock) fragments.push("\n");
+      fragments.push(node.textContent || "");
+      previousBlock = block;
+    }
+    // Inline markup can split a real banner ("Plugin " + <b>unavailable</b>). Keep its text together, but do not
+    // join separate block elements or bridge over discarded log rows to invent a failure phrase.
+    alertText.push(fragments.join(""));
+    const banners = [...new Set(alertText.flatMap(s => s.match(banner) || []))].sort().slice(0, 8);
     // The collapsed "Details" of an error boundary (Grafana's "Plugin failed to load") carry the error and its stack.
     const details = banners.length ? [...document.querySelectorAll("details")].map((d) => (d.textContent || "").trim()).filter(Boolean).join("\n").slice(0, 2000) : "";
     return {
@@ -118,12 +169,243 @@ async function settle(page: Page, pending: { n: number; last: number; seen?: num
 
 const BACKEND = /\/api\/ds\/query|\/api\/datasources\/uid\/[^/]+\/resources\/|\/api\/datasources\/proxy\//;
 
+// What is kept of a response body above the retention cap: it was read once, completely, and is not retained.
+// The hash and the length are those of the body without the contents of its frames' "stats" arrays: Grafana's frame
+// meta carries the request's own execution statistics (an exec time of 0.000118085 s against 0.00011535 s), which are
+// not the answer and differ on every request, so two identical answers would never hash alike. Only an array of flat
+// objects is skipped (what the stats are); anything else stays in the hash. `raw_bytes` is the length as received.
+type BodyDigest = { sha256: string; bytes: number; raw_bytes: number; head: string; tail: string };
+const STATS_MARKER = Buffer.from('"stats":[');
+const FLAT_OBJECTS = /^(?:\{[^{}]*\},?)*$/;
+const digestOfBody = (body: Buffer): BodyDigest => {
+  const hash = createHash("sha256");
+  let hashed = 0, pos = 0;
+  const take = (part: Buffer) => { hash.update(part); hashed += part.length; };
+  for (;;) {
+    const at = body.indexOf(STATS_MARKER, pos);
+    if (at < 0) break;
+    const start = at + STATS_MARKER.length, end = body.indexOf(0x5d, start);
+    if (end < 0) break;
+    take(body.subarray(pos, start));
+    pos = FLAT_OBJECTS.test(body.subarray(start, end).toString("latin1")) ? end : start;
+  }
+  take(body.subarray(pos));
+  return { sha256: hash.digest("hex"), bytes: hashed, raw_bytes: body.length,
+    head: body.subarray(0, 16 * 1024).toString("utf8"), tail: body.subarray(-4 * 1024).toString("utf8") };
+};
+
+// Independent CDP buffers retain proof bytes only inside Chrome. No body cache,
+// refetch, request interception or URL-only matching is used by the fallback.
+function startBodyFallback(cdp: any) {
+  const maxBody = 32 * 1024 * 1024, maxDigestBody = 256 * 1024 * 1024;
+  const maxIdentity = 256 * 1024, maxMetadata = 4 * 1024 * 1024, maxRequests = 1024;
+  type Seen = { method: string; url: string; postData: string | null; status?: number; responseURLMatches?: boolean;
+    finished?: boolean; failed?: boolean; redirected?: boolean };
+  const seen = new Map<string, Seen>();
+  let metadata = 0, unavailable = "", disposed = false, active = 0;
+  const cancellations = new Set<() => void>();
+  const request = ({ requestId, request, redirectResponse }: any) => {
+    if (disposed || unavailable) return;
+    const previous = seen.get(requestId);
+    if (previous) { previous.redirected = true; return; }
+    if (!BACKEND.test(request.url)) return;
+    const postData = typeof request.postData === "string" ? request.postData : null;
+    if (typeof request.method !== "string" || typeof request.url !== "string" ||
+        (request.hasPostData && postData === null)) { unavailable = "request identity incomplete"; return; }
+    const parts = [request.method, request.url, postData || ""];
+    if (parts.some(part => part.length > maxIdentity)) { unavailable = "request identity limit"; return; }
+    const bytes = parts.reduce((sum, part) => sum + Buffer.byteLength(part), 0);
+    if (bytes > maxIdentity || metadata + bytes > maxMetadata || seen.size >= maxRequests) {
+      unavailable = "request identity limit"; return;
+    }
+    metadata += bytes;
+    seen.set(requestId, {method: request.method, url: request.url, postData, redirected: !!redirectResponse});
+  };
+  const response = ({ requestId, response }: any) => {
+    const item = seen.get(requestId);
+    if (item && !item.redirected) { item.status = response.status; item.responseURLMatches = response.url === item.url; }
+  };
+  const finished = ({ requestId }: any) => { const item = seen.get(requestId); if (item) item.finished = true; };
+  const failed = ({ requestId }: any) => { const item = seen.get(requestId); if (item) item.failed = true; };
+  const events: [string, (...args: any[]) => void][] = [
+    ["Network.requestWillBeSent", request], ["Network.responseReceived", response],
+    ["Network.loadingFinished", finished], ["Network.loadingFailed", failed],
+  ];
+  for (const [name, handler] of events) cdp.on(name, handler);
+  return {
+    async read(identity: {method: string; url: string; postData: string | null; status: number})
+      : Promise<{body?: Buffer; error?: string; digest?: BodyDigest}> {
+      const no = (error: string, digest?: BodyDigest) => ({error, ...(digest ? {digest} : {})});
+      if (disposed) return no("collector disposed");
+      if (unavailable) return no(unavailable);
+      const matches = [...seen.entries()].filter(([, item]) => item.method === identity.method &&
+        item.url === identity.url && item.postData === identity.postData);
+      if (matches.length !== 1) return no(matches.length ? "ambiguous request identity" : "request identity missing");
+      const [requestId, item] = matches[0];
+      if (item.redirected) return no("redirected request");
+      if (item.status !== identity.status || !item.responseURLMatches) return no("response status/identity mismatch");
+      if (!item.finished || item.failed) return no("response incomplete or failed");
+      if (active >= 2) return no("concurrent body read limit");
+      active++;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let cancelRead: () => void = () => {};
+      try {
+        const deadline = new Promise<never>((_, reject) => {
+          cancelRead = () => reject(new Error("collector disposed"));
+          cancellations.add(cancelRead);
+          timer = setTimeout(() => { unavailable = "body read timed out"; reject(new Error(unavailable)); }, 2000);
+        });
+        const value = await Promise.race([cdp.send("Network.getResponseBody", {requestId}), deadline]);
+        if (disposed) return no("collector disposed");
+        if (typeof value?.body !== "string" || typeof value.base64Encoded !== "boolean") return no("body unavailable");
+        const encoding = value.base64Encoded ? "base64" : "utf8";
+        if (value.body.length > (value.base64Encoded ? Math.ceil(maxBody / 3) * 4 : maxBody) ||
+            Buffer.byteLength(value.body, encoding) > maxBody) {
+          // Over the retention cap: not kept, but proved complete by its digest and length (up to maxDigestBody).
+          const size = Buffer.byteLength(value.body, encoding);
+          return no("body byte limit", size <= maxDigestBody ? digestOfBody(Buffer.from(value.body, encoding)) : undefined);
+        }
+        const body = Buffer.from(value.body, encoding);
+        if (value.base64Encoded && body.toString("base64") !== value.body) return no("invalid body encoding");
+        return {body};
+      } catch {
+        return no(unavailable || (disposed ? "collector disposed" : "body unavailable"));
+      } finally {
+        clearTimeout(timer); cancellations.delete(cancelRead); active--;
+      }
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const cancel of cancellations) cancel();
+      for (const [name, handler] of events) cdp.off(name, handler);
+      seen.clear();
+    },
+  };
+}
+
+// Raw pageerror text and the structured DTO share the actual CDP exceptionId. Playwright's Error loses the
+// identity and payload of a thrown plain object; its separate event count audits that CDP missed nothing.
+async function startClientExceptionProof(page: Page, cdp: any, errors: string[]) {
+  const state: any = { version: 1, complete: true, overflow: false, playwright_page_error_count: 0, events: [] };
+  const pending = new Set<Promise<void>>(), cancellations = new Set<() => void>();
+  const audit: string[] = [];
+  let enabled = false, finalizing = false, disposed = false, count = 0;
+  const bounded = async (work: Promise<any>) => {
+    let cancel: () => void = () => {};
+    const cancellation = new Promise((_, reject) => { cancel = () => reject(new Error("exception evidence canceled or timed out")); });
+    const timer = setTimeout(cancel, 2000);
+    cancellations.add(cancel);
+    try { return await Promise.race([work, cancellation]); }
+    finally { clearTimeout(timer); cancellations.delete(cancel); }
+  };
+  const onPageError = (e: Error) => {
+    state.playwright_page_error_count++;
+    if (audit.length < 4) audit.push(`pageerror: ${String(e.stack || e).slice(0, 1500)}`);
+    else { state.overflow = true; state.complete = false; }
+  };
+  // A console error of a plugin carries its stack (a rejected query shows its full series labels and several frames).
+  // The proof is incomplete only when a message does not fit this bound, not at the first 1500 characters: a page that
+  // throws no exception must not lose its proof to a long but fully retained console message.
+  const CONSOLE_TEXT_LIMIT = 8192;
+  const onConsole = (message: any) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (text.length > CONSOLE_TEXT_LIMIT || errors.length >= 20) state.complete = false;
+    if (errors.length < 20) errors.push(text.slice(0, CONSOLE_TEXT_LIMIT));
+  };
+  const onException = (event: any) => {
+    const detail = event.exceptionDetails || {}, object = detail.exception || {};
+    const text = `pageerror: ${String(object.description || object.value || detail.text || "unknown exception")}`;
+    const index = errors.length;
+    if (index < 20) errors.push(text.slice(0, 1500));
+    else state.complete = false;
+    count++;
+    if (count > 4) { state.overflow = true; state.complete = false; return; }
+    const frames = detail.stackTrace?.callFrames || [];
+    const item: any = {
+      event_id: `runtime:${detail.exceptionId}`, exception_id: detail.exceptionId, raw_error_index: index,
+      kind: "uncaught", class_name: object.className || object.type || "unknown", own_property_names: [],
+      stack: frames.slice(0, 8).map((frame: any) => ({
+        url: String(frame.url || "").split("?")[0].slice(0, 2048),
+        line: frame.lineNumber + 1, column: frame.columnNumber + 1,
+      })),
+    };
+    state.events.push(item);
+    if (text.length > 1500 || frames.length > 8 || !Number.isInteger(detail.exceptionId) || finalizing) state.complete = false;
+    // Only inspect a small plain object with the observed DTO keys. No getters, functions, configuration or
+    // headers are evaluated or collected; unknown exceptions remain raw errors and cannot match a contract.
+    const preview = object.preview;
+    if (object.className !== "Object" || !object.objectId || !preview || preview.overflow !== false || preview.properties?.length !== 3 ||
+        JSON.stringify((preview.properties || []).map((p: any) => p.name).sort()) !== '["message","refId","status"]' || finalizing) return;
+    const work = (async () => {
+      try {
+        const properties = await bounded(cdp.send("Runtime.getProperties", { objectId: object.objectId, ownProperties: true }));
+        const own = properties.result || [];
+        if (own.length !== 3 || own.some((p: any) => !p.value || p.get || p.set)) { state.complete = false; return; }
+        item.own_property_names = own.map((p: any) => p.name).sort();
+        if (JSON.stringify(item.own_property_names) !== '["message","refId","status"]') return;
+        const values = Object.fromEntries(own.map((p: any) => [p.name, p.value.value]));
+        if (typeof values.refId !== "string" || Buffer.byteLength(values.refId) > 512 ||
+            typeof values.message !== "string" || Buffer.byteLength(values.message) > 4096 || !Number.isInteger(values.status)) {
+          state.complete = false; return;
+        }
+        Object.assign(item, {kind: "uncaught-object", ref_id: values.refId, status: values.status, message: values.message});
+      } catch { state.complete = false; }
+    })();
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+  };
+  page.on("pageerror", onPageError);
+  page.on("console", onConsole);
+  cdp.on("Runtime.exceptionThrown", onException);
+  try { await bounded(cdp.send("Runtime.enable")); enabled = true; }
+  catch { state.complete = false; }
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    if (!finalizing) state.complete = false;
+    page.off("pageerror", onPageError);
+    page.off("console", onConsole);
+    cdp.off("Runtime.exceptionThrown", onException);
+    for (const cancel of cancellations) cancel();
+  };
+  return {
+    dispose,
+    async finish() {
+      finalizing = true;
+      try { await bounded(Promise.all([...pending])); }
+      catch { state.complete = false; }
+      finally {
+        if (!enabled || count !== state.playwright_page_error_count) {
+          state.complete = false;
+          for (const text of audit) if (errors.length < 20) errors.push(text);
+        }
+        dispose();
+      }
+      return state;
+    },
+  };
+}
+
 // Collect during the existing capture, not another load. Heap maxima are
 // sampled; ThreadTime is the target main thread's CPU counter, not host CPU.
-async function startRuntimeProof(page: Page, began = Date.now()) {
+async function startRuntimeProof(page: Page, began = Date.now(), errors: string[] = []) {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
-  await cdp.send("Network.enable");
+  const bodyFallback = startBodyFallback(cdp);
+  try {
+    // Chrome keeps a response only up to maxResourceBufferSize and then answers getResponseBody "Request content was
+  // evicted from inspector cache": with 32 MiB here, Logs Drilldown's trace_id and span_id breakdowns (over 40 MiB)
+  // were unreadable, and their pages could not prove their answers complete. The buffer is sized for the largest
+  // answer of the plan; what the capture keeps of a body is still bounded (maxBody, and a digest above it).
+  await cdp.send("Network.enable", {maxTotalBufferSize: 768 * 1024 * 1024, maxResourceBufferSize: 256 * 1024 * 1024});
+  } catch (error) {
+    bodyFallback.dispose();
+    await cdp.detach().catch(() => {});
+    throw error;
+  }
+  const exceptions = await startClientExceptionProof(page, cdp, errors);
   const requests = new Map<string, { api: boolean; received: number }>();
   let apiRequests = 0, apiBytes = 0, pageBytes = 0, heap = 0, samples = 0;
   let abortedAPIBytes = 0, abortedAPIRequests = 0;
@@ -178,8 +460,26 @@ async function startRuntimeProof(page: Page, began = Date.now()) {
   const timer = setInterval(() => {
     if (!sampling) sampling = sample().catch((e) => { sampleError = String(e); }).finally(() => { sampling = undefined; });
   }, 250);
-  page.once("close", () => clearInterval(timer));
+  let disposed = false;
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    clearInterval(timer);
+    exceptions.dispose();
+    bodyFallback.dispose();
+    page.off("close", onClose);
+    cdp.removeAllListeners();
+    await cdp.detach().catch(() => {});
+  };
+  const onClose = () => { void dispose(); };
+  page.once("close", onClose);
   return {
+    dispose,
+    readBody: bodyFallback.read,
+    async finishClientExceptions() {
+      try { return await exceptions.finish(); }
+      finally { await dispose(); }
+    },
     recordData(records: any[], completedAt = Date.now()) {
       if (completedAt > stoppedAt) return;
       const present = records.some((r) => {
@@ -200,7 +500,6 @@ async function startRuntimeProof(page: Page, began = Date.now()) {
       clearInterval(timer);
       const boundary = sample().catch((e) => { sampleError = String(e); });
       await Promise.all([sampling, boundary]);
-      await cdp.detach().catch(() => {});
       const delta = (key: string) => Number.isFinite(before[key]) && Number.isFinite(after[key]) && after[key] >= before[key]
         ? after[key] - before[key] : undefined;
       const unfinished = [...requests.values()];
@@ -307,27 +606,39 @@ const abortedRecord = (rq: Request) => ({ url: rq.url().replace(/^https?:\/\/[^/
 // nothing either: it is recorded as `aborted`, whether the cancel came before or after the headers, so that
 // whether it left a record does not depend on which of the two happened first. compare.py reads it as "cancelled
 // by the page".
-async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>) {
+async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>, readBody?: ReturnType<typeof startBodyFallback>["read"]) {
   const rq = rs.request();
   const url = rq.url().replace(/^https?:\/\/[^/]+/, "");
   await over(rq);
   if (cancelled(rq)) return abortedRecord(rq);
   let body: any = null;
   let unavailable = "";
-  try { body = await rs.json(); } catch {
-    try { body = await rs.text(); } catch {
-      // Chrome drops the body of a very large answer from the inspector's buffer ("evicted"): ask for the raw bytes
-      // once more, and when they are gone too say so in the record instead of leaving a bare null.
-      try {
-        const raw = (await rs.body()).toString("utf8");
-        try { body = JSON.parse(raw); } catch { body = raw; }
-      } catch (e) { body = null; unavailable = String((e as Error)?.message ?? e).split("\n")[0].slice(0, 160) || "body unavailable"; }
+  let source: string | undefined;
+  let digest: BodyDigest | undefined;
+  let bytes: Buffer | undefined;
+  try { bytes = await rs.body(); } catch (error) {
+    unavailable = String((error as Error)?.message ?? error).split("\n")[0].slice(0, 160) || "body unavailable";
+    if (cancelled(rq)) return abortedRecord(rq);
+    if (readBody && /evicted from inspector cache|No (?:resource|data) (?:found )?with given identifier/.test(unavailable)) {
+      const recovered = await readBody({method: rq.method(), url: rq.url(), postData: rq.postData(), status: rs.status()});
+      if (recovered.body) { bytes = recovered.body; source = "cdp-fallback"; }
+      else {
+        unavailable = `CDP fallback unavailable: ${recovered.error || "body missing"}; ${unavailable}`.slice(0, 160);
+        digest = recovered.digest;
+      }
     }
+  }
+  if (cancelled(rq)) return abortedRecord(rq);
+  if (bytes) {
+    const raw = bytes.toString("utf8");
+    try { body = JSON.parse(raw); } catch { body = raw; }
   }
   const length = parseInt(rs.headers()["content-length"] || "", 10);
   return { url, method: rq.method(),
     request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body,
-    ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}) } : {}) };
+    ...(source ? {body_source: source} : {}),
+    ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}),
+                          ...(digest ? { body_digest: digest } : {}) } : {}) };
 }
 
 for (const p of spec.pages as PageSpec[]) {
@@ -354,12 +665,12 @@ for (const p of spec.pages as PageSpec[]) {
         // "plugin unavailable"; the page load is repeated, never recorded as the datasource's answer.
         for (let attempt = 0; attempt < 3; attempt++) {
         const ctx = await browser.newContext();
+        let runtimeProof: Awaited<ReturnType<typeof startRuntimeProof>> | undefined;
+        try {
         const page = await ctx.newPage();
         const pending = { n: 0, last: Date.now(), seen: 0 };
         const records: any[] = [];
         const errors: string[] = [];
-        page.on("console", (m) => { if (m.type() === "error" && errors.length < 20) errors.push(m.text().slice(0, 1500)); });
-        page.on("pageerror", (e) => { if (errors.length < 20) errors.push(`pageerror: ${String(e.stack || e).slice(0, 1500)}`); });
         if (p.kind === "drilldown") await queriesAfterPanelModule(page);
         page.on("request", (rq) => {
           if (BACKEND.test(rq.url())) { pending.n++; pending.seen = (pending.seen || 0) + 1; pending.last = Date.now(); }
@@ -387,9 +698,9 @@ for (const p of spec.pages as PageSpec[]) {
         const reading = new Set<Promise<void>>();
         const track = (work: Promise<void>) => { const job = work.finally(() => reading.delete(job)); reading.add(job); };
         page.on("response", (rs) => {
-          if (BACKEND.test(rs.request().url())) track(recordAnswer(rs, over).then(record => {
+          if (BACKEND.test(rs.request().url())) track(recordAnswer(rs, over, runtimeProof?.readBody).then(record => {
             records.push(record);
-            runtimeProof.recordData([record], completion.get(rs.request()));
+            runtimeProof?.recordData([record], completion.get(rs.request()));
           }));
         });
         // A request cancelled before its headers arrived never gets a `response` event.
@@ -397,7 +708,7 @@ for (const p of spec.pages as PageSpec[]) {
           if (BACKEND.test(rq.url())) track(rq.response().then((rs) => { if (!rs && cancelled(rq)) records.push(abortedRecord(rq)); }));
         });
         const t0 = Date.now();
-        const runtimeProof = await startRuntimeProof(page, t0);
+        runtimeProof = await startRuntimeProof(page, t0, errors);
         await page.goto(url(p, ds.uid, r), { waitUntil: "commit" });
         if (p.kind === "label-browser") {
           await page.getByRole("button", { name: /Label browser/i }).first().click({ timeout: 30_000 }).catch(() => {});
@@ -429,10 +740,15 @@ for (const p of spec.pages as PageSpec[]) {
         fs.mkdirSync(ddir, { recursive: true });
         await page.screenshot({ path: path.join(dir, `${ds.id}.png`) });
         const ui = await uiState(page);
+        const client_exceptions = await runtimeProof.finishClientExceptions();
         fs.writeFileSync(path.join(ddir, `${ds.id}.json`), JSON.stringify({ settled: ok, settle_ms: settleMs,
-          last_api_completion_ms: lastCompletionMs, attempts: attempt + 1, records, ui, errors, runtime }));
+          last_api_completion_ms: lastCompletionMs, attempts: attempt + 1, records, ui, errors, runtime, client_exceptions }));
         await ctx.close();
         break;
+        } finally {
+          await runtimeProof?.dispose();
+          await ctx.close();
+        }
         }
       }
     });

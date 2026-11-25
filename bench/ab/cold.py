@@ -21,9 +21,15 @@ Two steps, both bounded:
                does its finding.
 
 Nothing here changes a threshold, a lock or the above-2× rule: gate() and judge() read the median as they read
-any cold.
+any cold. Every existing proxy sample has before/after metric scrapes. Resource counters are component-wise
+medians over the same first-pass and new samples, with missing boundaries kept incomplete. When a reference
+URL is supplied, one additional Loki request per sampled window checks the complete candidate answer through
+the existing parity comparator. These correctness reads increase measured work; they do not replace or repair
+the independent original-window parity evidence.
 """
 import concurrent.futures
+import hashlib
+import math
 import os
 import sys
 import time
@@ -33,6 +39,7 @@ sys.path.insert(0, HERE)
 import over2x  # noqa: E402
 import perf_matrix  # noqa: E402
 import stack  # noqa: E402
+from bench.parity import differ  # noqa: E402
 
 COLD_SAMPLES = 3     # new cold samples per flagged row (the first pass is the fourth)
 WARM_ROUNDS = 3      # at most; a build whose times stop moving earlier stops earlier
@@ -107,25 +114,84 @@ def sample_once(proxies, order, request, flush):
     return out
 
 
-def resample(proxies, shape, rng, ranges, cold_end, n, base, cand, tenant="0", timeout=90):
-    """{target: [n cold seconds]} for one shape x range, or None when any sample could not be taken."""
+def resample(proxies, shape, rng, ranges, cold_end, n, base, cand, tenant="0", timeout=90, evidence=None,
+             reference_url=None, deadline=None):
+    """Cold seconds, with matching per-request costs/answer receipts in evidence; None on an invalid sample."""
     if shape.get("end_offset"):
         return None  # a historical window: the spare region is not under it
     secs, step = ranges.get(rng, (0, 0))
     query = perf_matrix.shape_query(shape, step)
     headers = perf_matrix.request_headers(shape)
     got = {base: [], cand: []}
+    path = shape.get("path", "")
+    endpoint = path.rsplit("/", 1)[-1] if path else ("query" if shape.get("instant") else "query_range")
+    endpoint = {"values": "label_values", "stats": "index_stats"}.get(endpoint, endpoint)
     for i in range(n):
+        if deadline is not None and time.time() >= deadline:
+            return None
         end = cold_end - i * SAMPLE_SHIFT
+        replies = {}
+
+        def receipt(status, body, dt, started):
+            proof = perf_matrix.answer_proof(status, body, shape)
+            try:
+                decoded = perf_matrix.strict_json(body)
+            except (ValueError, UnicodeError):
+                decoded = None
+            valid = (status == 200 and bool(body) and proof == "answer" and math.isfinite(dt) and dt >= 0
+                     and isinstance(decoded, dict) and not decoded.get("warnings")
+                     and not differ.vacuous(endpoint, status, decoded, status, decoded))
+            return {"phase": "flushed-resample", "end": end,
+                    "history_start": end - secs - perf_matrix.query_lookback(query), "at": started,
+                    "seconds": round(dt, 3), "status": status, "response_bytes": len(body),
+                    "body_sha256": hashlib.sha256(body).hexdigest(), "answer_proof": proof,
+                    "signature": perf_matrix.signature(status, body, shape.get("logs", False),
+                                                       query.lstrip().startswith(("topk", "bottomk"))) if proof else "unavailable"}, decoded, valid
 
         def request(proxy, end=end):
-            status, _, dt, _ = perf_matrix.request(perf_matrix.request_url(proxy.url, shape, query, secs, step, end),
-                                                   headers, tenant, timeout)
-            return status, round(dt, 3)
+            if deadline is not None and time.time() >= deadline:
+                return 0, 0
+            url = perf_matrix.request_url(proxy.url, shape, query, secs, step, end)
+            before = perf_matrix.reuse.scrape(proxy.url)
+            request_timeout = min(timeout, max(0.001, deadline - time.time())) if deadline is not None else timeout
+            status, body, dt, started, calls = perf_matrix.request_full(url, headers, tenant, request_timeout)
+            after = perf_matrix.reuse.scrape(proxy.url)
+            cost = perf_matrix.reuse.delta(before, after) if before is not None and after is not None else None
+            if cost is not None and calls is not None:
+                cost = perf_matrix.reuse.with_request_calls(cost, calls)
+            record, decoded, valid = receipt(status, body, dt, started)
+            name = next(name for name in (base, cand) if proxies[name] is proxy)
+            replies[name] = decoded
+            record["url"] = url
+            record["vl_calls_header"] = calls
+            record["reuse"] = cost
+            if evidence is not None:
+                evidence.setdefault(name, []).append(record)
+            return status if valid else 0, round(dt, 3)
 
         one = sample_once(proxies, (base, cand) if i % 2 == 0 else (cand, base), request, flush_proxy)
         if one is None:
             return None
+        if reference_url is not None:
+            if deadline is not None and time.time() >= deadline:
+                return None
+            request_timeout = min(timeout, max(0.001, deadline - time.time())) if deadline is not None else timeout
+            reference, decoded = perf_matrix.correctness_reference(reference_url, shape, query, secs, step, end,
+                                                                   tenant, request_timeout, phase="flushed-resample")
+            valid = reference["complete"] and reference["status"] == 200 and not differ.vacuous(endpoint, 200, decoded, 200, decoded)
+            if evidence is not None:
+                evidence.setdefault("loki", []).append(reference)
+            if not valid or reference["reference_skip"]:
+                return None
+            for target in (base, cand):
+                facets = differ.diff(endpoint, reference["status"], decoded, 200, replies[target],
+                                     limit=shape.get("limit", 0), direction=shape.get("direction", "backward"), query=query,
+                                     documented_values=shape.get("documented_values"))
+                if evidence is not None:
+                    evidence[target][-1]["parity_vs_reference"] = perf_matrix.report.correctness_parity(shape, facets)
+                    evidence[target][-1]["parity_facets"] = facets
+                if target == cand and perf_matrix.report.correctness_parity(shape, facets) == "differs":
+                    return None
         for t, dt in one.items():
             got[t].append(dt)
     return got
@@ -136,7 +202,8 @@ def flush_proxy(proxy):
     perf_matrix.flush_cache(url, token)
 
 
-def recold(summary, first_cold, pairs, proxies, spec, cold_end, n=COLD_SAMPLES, log=print, deadline=None, first_resources=None):
+def recold(summary, first_cold, pairs, proxies, spec, cold_end, n=COLD_SAMPLES, log=print, deadline=None,
+           first_resources=None, reference_url=None, first_semantics=None):
     """Re-measure the cold of `pairs` (shape, range) in a summary; returns one record per pair for the run's meta.
 
     first_cold: {(shape, range): {target: the first pass's cold}}, taken before the confirm pass replaced rows.
@@ -153,27 +220,55 @@ def recold(summary, first_cold, pairs, proxies, spec, cold_end, n=COLD_SAMPLES, 
         if row is None or shape is None:
             continue
         first, t0 = first_cold.get((shape_name, rng), {}), time.time()
+        evidence = {}
         if deadline is not None and t0 > deadline:
             got, why = None, "the time budget for cold re-measures was used up"
         else:
             log(f"re-measuring the cold of '{shape_name}' {rng}: {n} flushed samples of each build, ABAB")
-            got, why = resample(proxies, shape, rng, spec["ranges"], cold_end, n, base, cand), "a sample could not be taken"
+            got = resample(proxies, shape, rng, spec["ranges"], cold_end, n, base, cand, evidence=evidence,
+                           reference_url=reference_url, deadline=deadline)
+            why = "a sample could not be taken"
+        prior_semantics = {key: row.get(key) for key in ("parity_vs_reference", "baseline_parity_vs_reference")}
+        row["cold_resample_parity"] = {
+            "original_window": (first_semantics or {}).get((shape_name, rng), prior_semantics),
+            "original_source": "first-pass" if first_semantics is not None else "prior row; first-pass provenance unavailable",
+            "prior_row": prior_semantics,
+            "reference_url_supplied": reference_url is not None,
+            "targets": {target: [sample.get("parity_vs_reference", "n/a") for sample in evidence.get(target, [])]
+                        for target in (base, cand)},
+        }
+        if "differs" in row["cold_resample_parity"]["targets"][cand]:
+            row["parity_vs_reference"] = "differs"
         changed = decide(row, first, got, base, cand)
         if not changed and first:
             row["cold"] = dict(first)
-        for target, cost in row.get("reuse", {}).items():
+        for target in (base, cand):
+            cost = row.setdefault("reuse", {}).setdefault(target, {})
             if changed:
-                # The flushed timing sampler does not take matching metric scrapes.
-                # Keep the earlier cost only as evidence with its explicit state.
                 prior = cost.pop("cold", None)
                 if prior is not None:
                     cost["before_cold_resample"] = prior
-                row["cold_resource_note"] = "Flushed cold latency was resampled; matching CPU/memory was not measured."
+                original = (first_resources or {}).get((shape_name, rng), {}).get(target)
+                samples = [{"phase": "first-pass", "seconds": first[target], "reuse": original},
+                           *evidence.get(target, [])]
+                row.setdefault("cold_resource_samples", {})[target] = samples
+                costs = [sample.get("reuse") for sample in samples]
+                aggregate = perf_matrix.reuse.median(costs)
+                if aggregate is not None:
+                    # Missing boundaries must not disappear inside a median of the measured subset.
+                    aggregate["cpu_samples"] = 2 if aggregate.get("cpu_runs_measured") == len(samples) else 0
+                    aggregate["rss_samples"] = 2 if aggregate.get("rss_runs_measured") == len(samples) else 0
+                cost["cold"] = aggregate
+                row["cold_resource_note"] = (
+                    "Latency and resource counters are component-wise medians over the same first-pass and "
+                    "flushed samples; RSS is sampled at each request boundary, not a continuous peak. "
+                    "Missing boundaries remain incomplete; no one sample is labeled as the median request.")
             elif first_resources is not None:
                 cost["cold"] = first_resources.get((shape_name, rng), {}).get(target)
         records.append({"set": summary["set"], "profile": summary.get("profile"), "shape": shape_name, "range": rng,
                         "applied": changed, "seconds": round(time.time() - t0, 1),
                         "samples": row.get("cold_samples") if changed else None,
+                        "requests": evidence,
                         **({} if changed else {"why": f"{why}; the first-pass cold stands"})})
     if records:
         quiet_all(proxies)  # the flushes' own refreshes finish before the next set's first request

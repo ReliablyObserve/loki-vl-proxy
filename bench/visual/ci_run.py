@@ -160,7 +160,11 @@ def needs_second_look(r):
     (explore-unwrap-missing-label at 15m on #1639 and #1650)."""
     if r["range"] == "live":
         return False
-    return bool(r["main_pr_diffs"] or r.get("runtime_problems") or not r.get("settled", True)
+    # A resource regression is kept from the first pass (keep_runtime_observations): a warmer second look cannot
+    # clear it, so it is no reason to load the page again and must not use up the cap of recaptures (--max-recapture)
+    # that the rows that can flip need (an extra request wave, a one-sided answer).
+    return bool(r["main_pr_diffs"] or not r.get("settled", True)
+                or any(not p.startswith("runtime regression:") for p in r.get("runtime_problems") or ())
                 or new_empty_panel(r.get("ui_main") or {}, r.get("ui_pr") or {}, loki_ui_for_gate(r)))
 
 

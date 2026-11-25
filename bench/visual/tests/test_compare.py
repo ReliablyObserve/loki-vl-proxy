@@ -5,6 +5,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
+from pathlib import Path
+from unittest.mock import patch
+from contextlib import redirect_stdout
+from io import StringIO
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
@@ -23,6 +28,388 @@ def capture(values, ui=None, settled=True, uid="ds1", fields=None, status=200, e
 
 
 class CompareTest(unittest.TestCase):
+    def client_error_fixture(self):
+        proof = json.loads(Path(HERE, '../../ab/results/oneoff/2026-11-21-mixed-parser-metrics/grafana-uppercase-volume-proof.json').resolve().read_text())
+        page = proof['existing_contracts']['visual_scenes'][0]
+        observed = next(c for c in proof['ci']['captures'] if c['scene_id'] == page)
+        primary = next(q for q in observed['queries'] if q['ref_id'] == 'A')
+        supporting = next(q for q in observed['queries'] if q['ref_id'] == 'log-volume-A')
+        cap = capture([3, 4])
+        cap['records'][0]['request'] = deepcopy(primary['request'])
+        start = int(primary['request']['from'])
+        cap['records'][0]['response']['results']['A']['frames'][0]['data']['values'][0] = [start, start + 5000]
+        cap['records'].append(dict(url='/api/ds/query', method='POST', status=400,
+                                   request=deepcopy(supporting['request']), response=deepcopy(supporting['response'])))
+        cap['errors'] = [*deepcopy(observed['console_errors']), 'pageerror: Object']
+        cap['runtime'] = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                              js_heap_max_sampled_bytes=1000, api_requests=2, api_encoded_bytes=100,
+                              page_encoded_bytes=200, first_api_data_ms=300)
+        cap['client_exceptions'] = dict(version=1, complete=True, overflow=False, playwright_page_error_count=1,
+            events=[dict(event_id='runtime:1', exception_id=1, raw_error_index=len(cap['errors'])-1, kind='uncaught-object',
+                         class_name='Object', own_property_names=['message', 'refId', 'status'],
+                         ref_id='log-volume-A', status=400, message=supporting['response']['results']['log-volume-A']['error'],
+                         stack=[dict(url='/public/build/client.js', line=1, column=1)])])
+        case = dict(id=proof['registry_case'], gap=dict(status='upstream'), compare=dict(values=dict(
+            client_error_contract='loki-metric-supporting-error-v1')))
+        return page, dict(id=page, kind='explore', query=primary['expression'], covers=[case['id']]), dict(main=deepcopy(cap), pr=deepcopy(cap), loki=deepcopy(cap)), [(case, proof)]
+
+    def rejection_fixture(self):
+        proof = json.loads(Path(HERE, '../../ab/results/oneoff/2026-11-24-visual-client-errors/topk-over-log-selector-rejection-proof.json').resolve().read_text())
+        page = 'explore-topk-over-log-selector'
+        caps = {}
+        for recorded in (c for c in proof['ci']['captures'] if c['scene_id'] == page and c['range'] == '1h'):
+            records = [dict(url='/api/datasources/uid/vp-x/resources/labels?start=1&end=2', method='GET', status=200, response={'status': 'success', 'data': ['app']})]
+            for q in recorded['queries']:
+                records.append(dict(url='/api/ds/query?ds_type=loki', method='POST', status=q['status'], request=deepcopy(q['request']), response=deepcopy(q['response'])))
+            errors = [*deepcopy(recorded['console_errors']), 'pageerror: Object']
+            caps[recorded['side']] = dict(
+                settled=True, settle_ms=1000, records=records, errors=errors, ui=deepcopy(recorded['ui']),
+                runtime=dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2, js_heap_max_sampled_bytes=1000,
+                             api_requests=2, api_encoded_bytes=100, page_encoded_bytes=200, first_api_data_ms=300),
+                client_exceptions=dict(version=1, complete=True, overflow=False, playwright_page_error_count=1, events=[dict(
+                    event_id='runtime:1', exception_id=1, raw_error_index=len(errors) - 1, kind='uncaught-object', class_name='Object',
+                    own_property_names=['message', 'refId', 'status'], ref_id=recorded['thrown']['ref_id'], status=recorded['thrown']['status'],
+                    message=recorded['thrown']['message'], stack=[dict(url='/public/build/client.js', line=1, column=1)])]))
+        case = dict(id=proof['registry_case'], gap=dict(status='upstream'), compare=dict(values=dict(client_error_contract='loki-query-rejection-v1')))
+        entry = dict(id=page, kind='explore', query=proof['ci']['captures'][0]['queries'][0]['expression'], covers=[case['id']])
+        return page, entry, caps, [(case, proof)]
+
+    DIGEST = dict(sha256="a" * 64, bytes=45_000_000, head='{"results":{"A":{"status":200,"frames":[{"schema":', tail='"values":[[1,2]]}]}}}')
+
+    def digest_record(self, **over):
+        query = dict(refId="A", expr="sum by (trace_id) (count_over_time({a=\"b\"} [5m]))", queryType="range", maxLines=1,
+                     datasource=dict(uid="vp-x"), startNs="1", endNs="2")
+        record = dict(url="/api/ds/query?ds_type=loki", method="POST", status=200, request=dict(queries=[query], **{"from": "1", "to": "2"}),
+                      response=None, body_unavailable="CDP fallback unavailable: body byte limit", body_digest=deepcopy(self.DIGEST))
+        record.update(over)
+        return record
+
+    def test_a_body_hashed_whole_is_a_complete_answer_only_when_it_looks_like_one(self):
+        # dd-fields at 6h: two answers over the 32 MiB the capture retains, hashed once as they were read.
+        good = self.digest_record()
+        self.assertEqual(compare.body_digest(good), ("a" * 64, 45_000_000))
+        for name, record in {
+            "no digest": {**good, "body_digest": None},
+            "a retained body": {**good, "response": {"results": {}}},
+            "a failed status": {**good, "status": 500},
+            "a short hash": {**good, "body_digest": {**self.DIGEST, "sha256": "a" * 63}},
+            "an uppercase hash": {**good, "body_digest": {**self.DIGEST, "sha256": "A" * 64}},
+            "no bytes": {**good, "body_digest": {**self.DIGEST, "bytes": 0}},
+            "a boolean for the bytes": {**good, "body_digest": {**self.DIGEST, "bytes": True}},
+            "an error answer": {**good, "body_digest": {**self.DIGEST, "head": '{"results":{"A":{"error":"boom","status":400}}}'}},
+            "not JSON": {**good, "body_digest": {**self.DIGEST, "head": "<html>Bad Gateway"}},
+            "a truncated tail": {**good, "body_digest": {**self.DIGEST, "tail": '"values":[[1,2'}},
+        }.items():
+            self.assertIsNone(compare.body_digest(record), name)
+        rejected, answered, problems = compare.answer_evidence(dict(records=[good]))
+        self.assertEqual((len(answered), problems), (1, []))
+        _, _, problems = compare.answer_evidence(dict(records=[{**good, "body_digest": None}]))
+        self.assertIn("unusable API answer", problems)
+
+    def test_digests_of_the_same_answer_match_and_any_other_difference_is_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def side(name, record):
+                path = os.path.join(tmp, name + ".json")
+                with open(path, "w") as f:
+                    json.dump(dict(settled=True, settle_ms=1, records=[record]), f)
+                gaps = {}
+                _, recs = compare.records(path, gaps=gaps)
+                return recs, gaps
+            main, g1 = side("main", self.digest_record())
+            same_pr, g2 = side("pr", self.digest_record())
+            other_pr, _ = side("other", self.digest_record(body_digest={**self.DIGEST, "sha256": "b" * 64}))
+            longer_pr, _ = side("longer", self.digest_record(body_digest={**self.DIGEST, "bytes": 45_000_001}))
+            unreadable, g3 = side("unreadable", self.digest_record(body_digest=None))
+            for gaps in (g1, g2):
+                self.assertEqual(gaps["keys"], set())  # the digest is not a gap of the capture
+            self.assertTrue(g3["keys"])
+            _, _, diffs, _, _, _ = compare.compare(main, same_pr)
+            self.assertEqual(diffs, [])
+            for other in (other_pr, longer_pr):
+                _, _, diffs, _, _, _ = compare.compare(main, other)
+                self.assertTrue(diffs)
+            # A hashed body against one that could not be read is not a comparison, as before (reported, not gated).
+            _, _, diffs, _, _, _ = compare.compare(main, unreadable)
+            self.assertTrue(all("capture body unreadable" in d for d in diffs))
+
+    def test_a_fix_page_is_judged_against_loki_not_against_the_base_it_fixes(self):
+        regression = ["runtime regression: Grafana settlement 7060 -> 12564 ms", "runtime regression: browser thread CPU 1.7 -> 2.5"]
+        def row(extra=(), loki_compared=True):
+            return {"runtime_problems": [*regression, *extra], "loki_compared": loki_compared}
+        cap = lambda settle, cpu: {"settled": True, "settle_ms": settle, "runtime": {"browser_thread_seconds": cpu}}
+        # The base's findings are set aside and reported; the page passes when it is within twice Loki.
+        r = row()
+        moved = compare.fix_page_runtime(r, {"pr": cap(12564, 2.5), "loki": cap(11000, 2.4)})
+        self.assertEqual(moved, regression)
+        self.assertEqual(r["runtime_problems"], [])
+        self.assertEqual(r["main_not_a_reference"], regression)
+        self.assertIn("not a reference", r["base_comparison_note"])
+        # Over twice Loki (and over a second): a finding against Loki, whatever the base did.
+        r = row()
+        compare.fix_page_runtime(r, {"pr": cap(26000, 2.5), "loki": cap(11000, 2.4)})
+        self.assertEqual(len(r["runtime_problems"]), 1)
+        self.assertIn("vs Loki: Grafana settlement 11000 -> 26000 ms (over 2x Loki)", r["runtime_problems"][0])
+        # Twice Loki but under a second over is noise; the CPU rule has its own floor.
+        r = row()
+        compare.fix_page_runtime(r, {"pr": cap(1900, 0.7), "loki": cap(900, 0.3)})
+        self.assertEqual(r["runtime_problems"], [])
+        r = row()
+        compare.fix_page_runtime(r, {"pr": cap(2000, 2.0), "loki": cap(2000, 0.5)})
+        self.assertIn("browser thread CPU", r["runtime_problems"][0])
+        # No Loki capture (beyond its history), an unsettled Loki or a missing number: nothing against Loki, the base's are set aside.
+        for caps, compared in (({"pr": cap(26000, 9)}, False), ({"pr": cap(26000, 9), "loki": {**cap(1, 1), "settled": False}}, True),
+                               ({"pr": {"settled": True}, "loki": cap(11000, 2.4)}, True)):
+            r = row(loki_compared=compared)
+            compare.fix_page_runtime(r, caps)
+            self.assertEqual(r["runtime_problems"], [])
+        # A proof gap is never set aside by this rule.
+        r = row(["runtime proof: pr missing/invalid settle_ms"])
+        compare.fix_page_runtime(r, {"pr": cap(12564, 2.5), "loki": cap(11000, 2.4)})
+        self.assertEqual(r["runtime_problems"], ["runtime proof: pr missing/invalid settle_ms"])
+
+    def test_an_answer_the_other_side_also_gave_one_more_time_is_no_difference(self):
+        # explore-unwrap-conversion-error at 6h: Grafana asked the rejected query twice on the base and once on the PR.
+        a, b = {("error", ""): ("error", "pipeline error")}, {("series", "x"): ("metric", {"a": 1})}
+        key = ("query", "A", "q", "range", "1", "2", "c")
+        for left, right in (({key: [a, a]}, {key: [a]}), ({key: [a]}, {key: [a, a]}), ({key: [a, a, a]}, {key: [a]})):
+            _, ok, diffs, _, missing, _ = compare.compare(left, right)
+            self.assertEqual((diffs, missing), ([], 0))
+        # A different answer, or a request one side never made, is still a difference.
+        for left, right in (({key: [a, b]}, {key: [a]}), ({key: [a]}, {key: [b]}), ({key: [a]}, {})):
+            _, _, diffs, _, _, _ = compare.compare(left, right)
+            self.assertTrue(diffs, (left, right))
+
+    def test_a_rejection_the_page_asked_for_twice_is_the_rejection_asked_for_once(self):
+        # explore-unwrap-conversion-error at 15m: Grafana sent the rejected query twice on both proxies and once on Loki.
+        text = ("pipeline error: 'SampleExtractionErr' for series: '{app=\"%s\"}'.\nUse a label filter to intentionally skip "
+                "this error. (e.g | __error__!=\"SampleExtractionErr\").")
+
+        def capture(times, status=400, series="auth-service"):
+            query = dict(refId="A", expr="max_over_time({a=\"b\"} | json | unwrap x [1m])", queryType="range", maxLines=1,
+                         datasource=dict(uid="vp-x"), startNs="1", endNs="2")
+            record = dict(url="/api/ds/query?ds_type=loki", method="POST", status=status, request=dict(queries=[query], **{"from": "1", "to": "2"}),
+                          response=dict(results=dict(A=dict(status=status, error=text % series, frames=[]))))
+            return dict(records=[deepcopy(record) for _ in range(times)])
+
+        twice, once = compare.answer_evidence(capture(2)), compare.answer_evidence(capture(1))
+        self.assertEqual(twice[0], once[0])
+        self.assertEqual(twice[2], [])
+        # The series the error names is whichever stream a shard met first; the status and the rest of the text still count.
+        self.assertEqual(compare.answer_evidence(capture(2, series="frontend"))[0], once[0])
+        self.assertNotEqual(compare.answer_evidence(capture(2, status=422))[0], once[0])
+        changed = capture(1)
+        changed["records"][0]["response"]["results"]["A"]["error"] = text % "auth-service" + " (a different closing sentence)"
+        self.assertNotEqual(compare.answer_evidence(changed)[0], once[0])
+
+    def test_query_rejection_contract_accepts_only_the_identical_recorded_rejections(self):
+        page, entry, caps, contracts = self.rejection_fixture()
+        evidence = compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts)
+        self.assertIsNotNone(evidence)
+        self.assertEqual((evidence.receipt['contract'], evidence.receipt['state']), ('loki-query-rejection-v1', 'upstream_matches_loki'))
+        self.assertTrue(caps['pr']['errors'])  # Evidence never deletes raw errors.
+        for side in ('main', 'pr', 'loki'):
+            self.assertEqual(compare.runtime_problems(caps[side], caps[side], required=True, client_error=evidence), [])
+        caps['pr']['errors'].append('pageerror: TypeError: real new failure')
+        self.assertTrue(compare.runtime_problems(caps['main'], caps['pr'], required=True, client_error=evidence))
+
+    def test_query_rejection_contract_is_not_a_generic_exception_allowlist(self):
+        page, entry, baseline, contracts = self.rejection_fixture()
+        def supporting(c, side='pr'): return next(r for r in c[side]['records'] if r.get('request', {}).get('queries', [{}])[0].get('refId') == 'log-volume-A')
+        def primary(c, side='pr'): return next(r for r in c[side]['records'] if r.get('request', {}).get('queries', [{}])[0].get('refId') == 'A')
+        event = lambda c, side='pr': c[side]['client_exceptions']['events'][0]
+        def all_sides(change):
+            def run(c):
+                for side in ('main', 'pr', 'loki'):
+                    change(c, side)
+            return run
+        mutations = {
+            'missing Loki': lambda c: c.pop('loki'),
+            'old Object only': lambda c: c['pr'].pop('client_exceptions'),
+            'incomplete capture': lambda c: c['pr']['client_exceptions'].update(complete=False),
+            'extra page error': lambda c: c['pr']['client_exceptions'].update(playwright_page_error_count=2),
+            'thrown for the primary': lambda c: event(c).update(ref_id='A'),
+            'other status thrown': lambda c: event(c).update(status=500),
+            'thrown message differs from the supporting DTO': lambda c: event(c).update(message='parse error: something else'),
+            'primary answered 200': lambda c: primary(c).update(status=200),
+            'supporting answered 500': lambda c: supporting(c).update(status=500),
+            'one side rejects differently': lambda c: primary(c)['response']['results']['A'].update(error='parse error: another failure'),
+            'frames returned': lambda c: primary(c)['response']['results']['A'].update(frames=[{'data': {'values': [[1], [1]]}}]),
+            'extra request': lambda c: c['pr']['records'].append(deepcopy(primary(c))),
+            'unknown query': lambda c: primary(c)['request']['queries'][0].update(refId='B'),
+            'resource failure': lambda c: c['pr']['records'][0].update(status=500),
+            'new console error': lambda c: c['pr']['errors'].insert(0, 'Error: something new'),
+            'cancelled request': lambda c: primary(c).update(aborted=True),
+            'primary expression changed': all_sides(lambda c, s: primary(c, s)['request']['queries'][0].update(expr='vector(1)')),
+            'supporting expression changed': all_sides(lambda c, s: supporting(c, s)['request']['queries'][0].update(expr='vector(1)')),
+            'query type changed': all_sides(lambda c, s: primary(c, s)['request']['queries'][0].update(queryType='instant')),
+            'DTO changed on every side': all_sides(lambda c, s: primary(c, s)['response']['results']['A'].update(error='parse error: a new shared failure')),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name):
+                caps = deepcopy(baseline)
+                mutate(caps)
+                self.assertIsNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+        # the contract is bound to its registry case, its page and its recorded range
+        case, proof = contracts[0]
+        for name, args in {
+            'not an upstream gap': (page, '1h', entry, [(dict(case, gap=dict(status='fixed')), proof)]),
+            'case not covered by the page': (page, '1h', dict(entry, covers=[]), contracts),
+            'other page': ('another-page', '1h', dict(entry, id='another-page'), contracts),
+            'other range': (page, '6h', entry, contracts),
+            'proof of another case': (page, '1h', entry, [(case, dict(proof, registry_case='profiles/other'))]),
+            'other contract kind': (page, '1h', entry, [(dict(case, compare=dict(values=dict(client_error_contract='loki-metric-supporting-error-v1'))), proof)]),
+        }.items():
+            with self.subTest(name):
+                self.assertIsNone(compare.client_error_evidence(args[0], args[1], args[2], deepcopy(baseline), contracts=args[3]))
+
+    def test_query_rejection_receipt_is_reported_without_claiming_primary_points(self):
+        page, entry, caps, contracts = self.rejection_fixture()
+        with tempfile.TemporaryDirectory() as out:
+            directory = Path(out, 'data', page, '1h')
+            directory.mkdir(parents=True)
+            for side, cap in caps.items():
+                Path(directory, side + '.json').write_text(json.dumps(cap))
+            Path(out, 'plan.json').write_text(json.dumps({'runtime_proof': {'required': True}}))
+            import plan
+            with patch.object(sys, 'argv', ['compare.py', out]), patch.object(compare, 'client_error_contracts', return_value=contracts), \
+                    patch.object(plan, 'load_spec', return_value={'pages': [entry], 'ranges': {'1h': 3600}}), redirect_stdout(StringIO()), self.assertRaises(SystemExit) as result:
+                compare.main()
+            self.assertEqual(result.exception.code, 0)
+            rows = json.loads(Path(out, 'compare.json').read_text())
+            self.assertEqual(rows[0]['expected_client_errors'][0]['contract'], 'loki-query-rejection-v1')
+            text = Path(out, 'compare.md').read_text()
+            self.assertIn('rejected with the identical 400 DTOs on all three builds', text)
+            self.assertNotIn('primary points match', text)
+
+    def test_registry_client_error_requires_complete_loki_triplet(self):
+        page, entry, caps, contracts = self.client_error_fixture()
+        evidence = compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts)
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence.receipt['registry_case'], contracts[0][0]['id'])
+        self.assertEqual(evidence.receipt['state'], 'upstream_matches_loki')
+        self.assertTrue(caps['pr']['errors'])  # Evidence never deletes raw errors.
+        self.assertEqual(compare.runtime_problems(caps['main'], caps['pr'], required=True, client_error=evidence), [])
+        caps['pr']['errors'].append('pageerror: TypeError: real new failure')
+        self.assertTrue(compare.runtime_problems(caps['main'], caps['pr'], required=True, client_error=evidence))
+
+    def test_registry_client_error_retains_full_fresh_captures(self):
+        page, entry, caps, contracts = self.client_error_fixture()
+        with tempfile.TemporaryDirectory() as out:
+            directory = Path(out, 'data', page, '1h')
+            directory.mkdir(parents=True)
+            for side, cap in caps.items():
+                Path(directory, side + '.json').write_text(json.dumps(cap))
+            Path(out, 'plan.json').write_text(json.dumps({'runtime_proof': {'required': True}}))
+            import plan
+            with patch.object(sys, 'argv', ['compare.py', out]), patch.object(compare, 'client_error_contracts', return_value=contracts), \
+                    patch.object(plan, 'load_spec', return_value={'pages': [entry], 'ranges': {'1h': 3600}}), redirect_stdout(StringIO()), self.assertRaises(SystemExit) as result:
+                compare.main()
+            self.assertEqual(result.exception.code, 0)
+            rows = json.loads(Path(out, 'compare.json').read_text())
+            self.assertEqual(rows[0]['expected_client_errors'][0]['state'], 'upstream_matches_loki')
+            raw = json.loads(Path(out, 'expected-client-error-captures.json').read_text())
+            self.assertEqual(raw[0]['captures'], caps)
+            self.assertIn('upstream gap remains open', Path(out, 'compare.md').read_text())
+
+    def test_client_error_retention_budget_cannot_accept_without_proof(self):
+        page, entry, caps, contracts = self.client_error_fixture()
+        with patch.object(compare, 'CLIENT_ERROR_PROOF_BYTES', 1):
+            self.assertIsNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+
+    def test_client_error_requires_recorded_scope_even_if_all_three_change_together(self):
+        page, entry, baseline, contracts = self.client_error_fixture()
+        for changed in ('error', 'primary-expression', 'support-expression', 'support-type', 'interval', 'window'):
+            with self.subTest(changed=changed):
+                caps = deepcopy(baseline)
+                for cap in caps.values():
+                    if changed == 'error':
+                        cap['records'][1]['response']['results']['log-volume-A']['error'] = 'parse error: another shared failure'
+                        cap['client_exceptions']['events'][0]['message'] = 'parse error: another shared failure'
+                    elif changed.endswith('expression'):
+                        index = 0 if changed.startswith('primary') else 1
+                        cap['records'][index]['request']['queries'][0]['expr'] = 'vector(1)'
+                    elif changed == 'support-type':
+                        cap['records'][1]['request']['queries'][0]['queryType'] = 'instant'
+                    elif changed == 'interval':
+                        cap['records'][1]['request']['queries'][0]['intervalMs'] = 1
+                    else:
+                        for record in cap['records']:
+                            record['request']['to'] = str(int(record['request']['to']) + 3600000)
+                self.assertIsNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+
+    def test_client_error_allows_a_fresh_shifted_window_but_not_a_new_shape(self):
+        page, entry, caps, contracts = self.client_error_fixture()
+        for cap in caps.values():
+            for record in cap['records']:
+                for key in ('from', 'to'):
+                    record['request'][key] = str(int(record['request'][key]) + 3600000)
+            times = cap['records'][0]['response']['results']['A']['frames'][0]['data']['values'][0]
+            times[:] = [t + 3600000 for t in times]
+        self.assertIsNotNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+
+    def test_registry_client_error_is_not_a_generic_exception_allowlist(self):
+        page, entry, baseline, contracts = self.client_error_fixture()
+        event = lambda c: c['pr']['client_exceptions']['events'][0]
+        def primary(c): return c['pr']['records'][0]['response']['results']['A']
+        mutations = {
+            'missing Loki': lambda c: c.pop('loki'),
+            'old Object only': lambda c: c['pr'].pop('client_exceptions'),
+            'incomplete': lambda c: c['pr']['client_exceptions'].update(complete=False),
+            'overflow': lambda c: c['pr']['client_exceptions'].update(overflow=True),
+            'missing audit event': lambda c: c['pr']['client_exceptions'].update(playwright_page_error_count=0),
+            'different event identity': lambda c: event(c).update(event_id='runtime:2'),
+            'wrong raw index': lambda c: event(c).update(raw_error_index=0),
+            'TypeError': lambda c: event(c).update(class_name='TypeError'),
+            'unknown property': lambda c: event(c)['own_property_names'].append('newError'),
+            'wrong ref': lambda c: event(c).update(ref_id='another-query'),
+            'wrong exception message': lambda c: event(c).update(message='another error'),
+            'wrong exception status': lambda c: event(c).update(status=500),
+            'extra exception': lambda c: c['pr']['client_exceptions']['events'].append(deepcopy(event(c))),
+            'extra raw error': lambda c: c['pr']['errors'].append('pageerror: Object'),
+            'unknown console error': lambda c: c['pr']['errors'].append('new failure in client code'),
+            'raw error missing': lambda c: c['pr'].update(errors=[]),
+            'missing stack provenance': lambda c: event(c).update(stack=[]),
+            'changed value': lambda c: primary(c)['frames'][0]['data']['values'][1].__setitem__(0, 99),
+            'missing point': lambda c: primary(c)['frames'][0]['data']['values'][1].pop(),
+            'changed label': lambda c: primary(c)['frames'][0]['schema']['fields'][1].update(labels={'new': 'label'}),
+            'empty primary': lambda c: primary(c).update(frames=[]),
+            'primary failed': lambda c: c['pr']['records'][0].update(status=400),
+            'support failed differently': lambda c: c['pr']['records'][1].update(status=500),
+            'support error different': lambda c: c['pr']['records'][1]['response']['results']['log-volume-A'].update(error='parse error: another'),
+            'support extra field': lambda c: c['pr']['records'][1]['response']['results']['log-volume-A'].update(new=True),
+            'support wrong expression': lambda c: c['pr']['records'][1]['request']['queries'][0].update(expr='sum(vector(1))'),
+            'support wrong query type': lambda c: c['pr']['records'][1]['request']['queries'][0].update(queryType='instant'),
+            'support missing source type': lambda c: c['pr']['records'][1]['request']['queries'][0].pop('supportingQueryType'),
+            'support wrong interval': lambda c: c['pr']['records'][1]['request']['queries'][0].update(intervalMs=1),
+            'primary wrong expression': lambda c: c['pr']['records'][0]['request']['queries'][0].update(expr='vector(1)'),
+            'unreadable body': lambda c: c['pr']['records'][0].update(response=None),
+            'unsettled': lambda c: c['pr'].update(settled=False),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                caps = deepcopy(baseline)
+                mutate(caps)
+                self.assertIsNone(compare.client_error_evidence(page, '1h', entry, caps, contracts=contracts))
+                self.assertTrue(compare.runtime_problems(caps['main'], caps['pr'], required=True))
+        self.assertIsNone(compare.client_error_evidence('other-scene', '1h', entry, baseline, contracts=contracts))
+        self.assertIsNone(compare.client_error_evidence(page, '24h', entry, baseline, contracts=contracts))
+        self.assertIsNone(compare.client_error_evidence(page, '1h', dict(entry, query='vector(1)'), baseline, contracts=contracts))
+        self.assertIsNone(compare.client_error_evidence(page, '1h', dict(entry, covers=[]), baseline, contracts=contracts))
+        self.assertIsNone(compare.client_error_evidence(page, '1h', entry, baseline, contracts=[]))
+        changed = deepcopy(contracts)
+        changed[0][0]['gap']['status'] = 'fixed'
+        self.assertIsNone(compare.client_error_evidence(page, '1h', entry, baseline, contracts=changed))
+
+    def test_runtime_proof_keeps_real_javascript_page_errors(self):
+        base = capture([1])
+        base["runtime"] = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                               js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100,
+                               page_encoded_bytes=200, first_api_data_ms=300)
+        base["errors"] = ["pageerror: TypeError: Cannot read properties of undefined"]
+        self.assertIn("Grafana JavaScript page error", " ".join(compare.runtime_problems(base, base, required=True)))
+        base["errors"] = ["Error: pipeline error: 'JSONParserErr'"]
+        self.assertEqual(compare.runtime_problems(base, base, required=True), [])
+
     def test_failed_comparison_cannot_leave_a_stale_success_report(self):
         with tempfile.TemporaryDirectory() as out:
             d = os.path.join(out, "data", "page-a", "1h")
@@ -660,6 +1047,33 @@ class ExplainedVsLokiTest(unittest.TestCase):
         slow = dict(answer, runtime=dict(runtime, browser_thread_seconds=9, js_heap_max_sampled_bytes=900 << 20))
         _, row = self.run_compare(broken, slow, slow, runtime_required=True, fix_cases=fixes)
         self.assertTrue(row["runtime_problems"], "a PR-side problem is never set aside")
+
+    # conformance: semantics/two-parsers-keep-one
+    def test_a_declared_fix_page_of_an_open_case_is_timed_against_loki_only_where_its_answer_differs(self):
+        runtime = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,
+                       js_heap_max_sampled_bytes=1000, api_requests=1, api_encoded_bytes=100,
+                       page_encoded_bytes=200, first_api_data_ms=25)
+        opened = {"semantics/case-a": {"entries": ["page-a"], "status": "open"}}
+
+        def timed(values, settle_ms):
+            return dict(capture(values), runtime=runtime, settle_ms=settle_ms)
+        regression = "runtime regression"
+        # The base answers differently and quickly, the PR answers as Loki does, in Loki's time: the base is no reference.
+        main, pr, loki = timed([1], 5000), timed([2], 10000), timed([2], 9000)
+        _, row = self.run_compare(main, pr, loki, runtime_required=True)
+        self.assertIn(regression, " ".join(row["runtime_problems"]), "without a fix claim the base is the reference")
+        _, row = self.run_compare(main, pr, loki, runtime_required=True, fix_cases=opened)
+        self.assertEqual(row["runtime_problems"], [])
+        self.assertTrue(row["main_not_a_reference"])
+        self.assertIn("not a reference", row["base_comparison_note"])
+        # Over twice Loki's time (and a second over) is still a regression, against Loki.
+        _, row = self.run_compare(main, timed([2], 25000), loki, runtime_required=True, fix_cases=opened)
+        self.assertIn("over 2x Loki", " ".join(row["runtime_problems"]))
+        # The base answers the page as the PR does: it is a valid reference, and a slower PR is a regression.
+        same = timed([2], 5000)
+        _, row = self.run_compare(same, pr, loki, runtime_required=True, fix_cases=opened)
+        self.assertIn(regression, " ".join(row["runtime_problems"]))
+        self.assertNotIn("main_not_a_reference", row)
 
     def test_an_unreadable_base_body_is_set_aside_only_when_the_pr_body_is_readable(self):
         runtime = dict(browser_thread_seconds=1, browser_task_seconds=1, metric_samples=2,

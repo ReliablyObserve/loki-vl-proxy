@@ -2,11 +2,83 @@
 from functools import lru_cache
 from pathlib import Path
 import json
+import math
 import re
+import secrets
 import sys
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+
+
+def source_endpoint(url):
+    """Comparable endpoint identity; malformed/credential-bearing sources are not proof."""
+    try:
+        value = urlsplit(url)
+        if value.scheme not in ("http", "https") or not value.hostname or value.username is not None or value.password is not None:
+            return None
+        return value.scheme, value.hostname.lower().rstrip("."), value.port if value.port is not None else (443 if value.scheme == "https" else 80), value.path.rstrip("/")
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def strict_json(body):
+    """Wire JSON numbers are finite; Loki's quoted NaN/Inf samples remain strings."""
+    def number(text, convert):
+        value = convert(text)
+        try:
+            if math.isfinite(value):
+                return value
+        except OverflowError as error:
+            raise ValueError("non-finite JSON number") from error
+        raise ValueError("non-finite JSON number")
+    def constant(_):
+        raise ValueError("nonstandard JSON constant")
+    return json.loads(body, parse_constant=constant, parse_float=lambda v: number(v, float), parse_int=lambda v: number(v, int))
+
+
+def correctness_spelling(query, shape):
+    """Equivalent spelling only for extra correctness reads; measured queries are unchanged."""
+    if not query or shape.get("path") and not shape.get("query") and not shape.get("instant"):
+        return query, "unchanged-no-query"
+    return query + "".join("\t" if byte & (1 << bit) else " "
+                           for byte in secrets.token_bytes(16) for bit in range(8)), "space-tab-suffix-128"
+
+
+def correctness_endpoint(shape):
+    from bench.parity.run import PATHS
+    path = shape.get("path")
+    return next((name for name, template in PATHS.items() if re.fullmatch(
+        re.escape(template).replace(r"\{name\}", "[^/]+"), path)), None) if path else "query" if shape.get("instant") else "query_range"
+
+
+def metadata_endpoint(shape):
+    return correctness_endpoint(shape) in ("labels", "label_values", "detected_labels", "detected_fields", "patterns", "index_stats", "volume", "volume_range")
+
+
+def metadata_schema(parsed, endpoint):
+    """Actual Loki API envelopes, not query-result lookalikes or unwrapped guesses."""
+    uint = lambda value: type(value) is int and value >= 0
+    strings = lambda value: isinstance(value, list) and all(isinstance(v, str) for v in value)
+    if endpoint in ("labels", "label_values"):
+        rows = parsed.get("data")
+        return strings(rows) and len(set(rows)) == len(rows)
+    if endpoint == "index_stats":
+        return all(uint(parsed.get(k)) for k in ("streams", "chunks", "bytes", "entries"))
+    if endpoint in ("detected_fields", "detected_labels"):
+        if endpoint == "detected_fields" and not parsed:
+            return True  # semantics/detected-fields-empty-answer: Loki omits empty fields and limit.
+        rows = parsed.get("fields" if endpoint == "detected_fields" else "detectedLabels")
+        return isinstance(rows, list) and all(isinstance(v, dict) and isinstance(v.get("label"), str)
+            and uint(v.get("cardinality")) and (endpoint != "detected_fields" or isinstance(v.get("type"), str)
+            and (v.get("parsers") is None or strings(v["parsers"])) and strings(v.get("jsonPath", []))) for v in rows) and len({v["label"] for v in rows}) == len(rows)
+    if endpoint == "patterns":
+        rows = parsed.get("data")
+        return isinstance(rows, list) and all(isinstance(v, dict) and isinstance(v.get("pattern"), str)
+            and isinstance(v.get("level", ""), str) and isinstance(v.get("samples"), list)
+            and all(isinstance(p, list) and len(p) == 2 and uint(p[0]) and uint(p[1]) for p in v["samples"]) for v in rows)
+    return None
 
 
 @lru_cache(maxsize=1)

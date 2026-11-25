@@ -13,6 +13,56 @@ import report  # noqa: E402
 import comment  # noqa: E402
 
 
+class CorrectnessCacheStatusTest(unittest.TestCase):
+    def test_original_and_refresh_proofs_do_not_change_measured_cached_latency_or_verdict(self):
+        raw = raw_rows({t: 200 for t in ("main", "branch", "loki")},
+                       {t: "series=1 points=1 sum=1" for t in ("main", "branch", "loki")})
+        raw["runtime_proof"] = True
+        raw["runs"] = 3
+        for row in raw["rows"]:
+            if row["target"] == "loki":
+                row["cache"] = {"result": {"entriesFound": 1, "entriesRequested": 1}}
+            if row["run"] == 0:
+                row["original_window_correctness"] = {"complete": True, "marker": "original"}
+        fresh = json.loads(json.dumps(raw))
+        for row in fresh["rows"]:
+            if row["run"] == 0:
+                row["original_window_correctness"]["marker"] = "refresh"
+        result = summarize(raw, refresh=fresh)
+        self.assertEqual(result["cold"]["loki"], 0.1)
+        self.assertEqual(result["p50"]["loki"], 0.1)
+        self.assertIn("loki", result["cold_cache_served"])
+        self.assertEqual(result["parity_vs_reference"], "n/a")
+        self.assertEqual(result["original_window_correctness"]["matrix"]["proof"]["marker"], "original")
+        self.assertEqual(result["original_window_correctness"]["refresh"]["proof"]["marker"], "refresh")
+
+    def test_correctness_projection_excludes_storage_buckets_but_validates_known_results(self):
+        raw = {"result": {"entriesFound": 0, "entriesRequested": 0},
+               "chunk": {"entriesFound": 1, "entriesRequested": 1, "bytesReceived": 9}, "unknown": 1}
+        projection = report.correctness_cache_projection(raw)
+        self.assertEqual(projection, {"result": raw["result"]})
+        self.assertEqual(report.reference_skip({"cache": projection}), "")
+        self.assertEqual(raw["unknown"], 1)
+        self.assertIsNone(report.correctness_cache_projection({**raw, "volumeResult": "invalid"}))
+
+    def test_only_complete_integer_cache_misses_prove_a_computed_correctness_read(self):
+        bucket = {"entriesFound": 0, "entriesRequested": 1}
+        for cache in ({"result": bucket}, {"result": {"entriesFound": 0, "entriesRequested": 0}},
+                      {"result": bucket, "statsResult": {"entriesFound": 9, "entriesRequested": 9}},
+                      {"result": bucket, "volumeResult": dict(bucket, bytesReceived=0)}):
+            with self.subTest(cache=cache):
+                self.assertTrue(report.computed_correctness_cache(cache))
+        invalid = [None, {}, {"result": {}}, {"result": {"entriesFound": 0}},
+                   {"result": bucket, "volumeResult": {}}, {"result": bucket, "volumeResult": "invalid"},
+                   {"result": dict(bucket, entriesFound=1)}, {"result": dict(bucket, bytesReceived=1)}]
+        for field in ("entriesFound", "entriesRequested", "bytesReceived"):
+            for value in (True, "0", -1, float("nan"), float("inf"), 0.5):
+                invalid.append({"result": dict(bucket, **{field: value})})
+        for cache in invalid:
+            with self.subTest(cache=cache):
+                self.assertFalse(report.computed_correctness_cache(cache))
+
+
 def raw_rows(statuses, signatures):
     rows = []
     for run in range(3):

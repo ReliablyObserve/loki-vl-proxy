@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
@@ -95,8 +96,13 @@ func jsonValidityPipes(onCopy bool) string {
 // search where one exists, and it matches anywhere in the line, which is a
 // superset: a value inside a string or an array only sends the line to the
 // raw rows.
-var jsonLokiRejectHazard = func() string {
-	var words []string
+var jsonLokiRejectHazard = jsonLokiRejectHazardFilter().String()
+
+// Keep the closed hazard expression typed so new callers do not reintroduce
+// raw query text. Each call owns its slice-backed nodes. The legacy caller's
+// spelling and cache identity are pinned by the byte-for-byte regression.
+func jsonLokiRejectHazardFilter() logsql.FilterExpr {
+	words := make(logsql.AnyOfLower, 0, 16)
 	for _, word := range []string{"nan", "inf"} {
 		for mask := 0; mask < 8; mask++ {
 			b := []byte(word)
@@ -105,15 +111,24 @@ var jsonLokiRejectHazard = func() string {
 					b[i] -= 'a' - 'A'
 				}
 			}
-			words = append(words, "_msg:"+string(b))
+			words = append(words, logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpPhrase, Value: string(b)})
 		}
 	}
-	escapedKey := `(_msg:"\\" _msg:~` + strconv.Quote(`\\(?s:.)`+vlNotInRun(`"`)+`"\s*:`) + `)`
-	nanInf := `((` + strings.Join(words, " or ") + `) _msg:~` + strconv.Quote(`:\s*(?i:nan|inf)`) + `)`
-	plus := `(_msg:"+" _msg:~` + strconv.Quote(`:\s*\+`) + `)`
-	dotE := `_msg:~` + strconv.Quote(`:\s*[.eE]`)
-	return "(" + escapedKey + " or " + nanInf + " or " + plus + " or " + dotE + ")"
-}()
+	regex := func(pattern string) logsql.FilterExpr {
+		return logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpRegexp, Value: pattern}
+	}
+	escapedKey := logsql.Group{Expr: logsql.AllOf{
+		logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpPhrase, Value: `\`},
+		regex(`\\(?s:.)` + vlNotInRun(`"`) + `"\s*:`),
+	}}
+	nanInf := logsql.Group{Expr: logsql.AllOf{
+		logsql.Group{Expr: words}, regex(`:\s*(?i:nan|inf)`),
+	}}
+	plus := logsql.Group{Expr: logsql.AllOf{
+		logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpPhrase, Value: "+"}, regex(`:\s*\+`),
+	}}
+	return logsql.Group{Expr: logsql.AnyOfLower{escapedKey, nanInf, plus, regex(`:\s*[.eE]`)}}
+}
 
 // jsonInvalidCondition selects the brace-opened lines read as raw rows, the
 // ones VictoriaLogs cannot vouch for; hazard adds jsonLokiRejectHazard once a
@@ -307,7 +322,9 @@ func mergeOrderedJSONRowSeries(merged, rows map[string]manualSeriesSamples, byte
 // detected_level: the derivation reads every stored level field (and the OTLP
 // severity fields), which no label of the plan names.
 func (p *Proxy) orderedJSONRowProjection(plan *orderedJSONMetricPlan) string {
-	if plan.required == nil || plan.derivesLevel {
+	// A surviving mixed-parser error carries the entire failing series;
+	// unrelated stored metadata and the ingest level are part of its message.
+	if plan.required == nil || plan.derivesLevel || plan.mixedErrorsCanSurvive {
 		return ""
 	}
 	fields := []string{"_time", "_stream", "_msg", "level"}
@@ -394,6 +411,12 @@ func (p *Proxy) collectOrderedJSONRowSpans(ctx context.Context, plan *orderedJSO
 	if err != nil {
 		return nil, err
 	}
+	return p.collectOrderedJSONRowSpansUsingReader(ctx, plan, reader, rowQuery, spans, start, end, step)
+}
+
+// collectOrderedJSONRowSpansUsingReader shares one scanner budget and evaluator
+// for ordinary split rows and classified rows whose original envelope is restored.
+func (p *Proxy) collectOrderedJSONRowSpansUsingReader(ctx context.Context, plan *orderedJSONMetricPlan, reader *orderedJSONRowReader, rowQuery string, spans [][2]time.Time, start, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
 	for _, span := range spans {
 		from, to := span[0], span[1]
 		if windowStart := start.Add(-plan.window); from.Before(windowStart) {

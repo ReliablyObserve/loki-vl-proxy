@@ -1,4 +1,5 @@
 """Unit tests for bench/visual/plan.py (python3 -m unittest discover -s bench/visual/tests)."""
+import json
 import os
 import subprocess
 import sys
@@ -42,6 +43,40 @@ def run(files, **kw):
 
 
 class PlanTest(unittest.TestCase):
+    def test_historical_scene_reads_its_matrix_at_the_same_revision(self):
+        from unittest import mock
+        catalog = {"pages": [{"id": "mixed", "kind": "explore", "case_id": "one"}]}
+        def at(ref, path):
+            if path == plan.SPEC:
+                return json.dumps(catalog)
+            return json.dumps({"cases": [{"id": "one", "query": ref, "endpoint": "query_range",
+                                          "expectation": "success"}]})
+        with mock.patch.object(plan.ab, "read_at", side_effect=at):
+            old, new = plan.spec_at("old"), plan.spec_at("new")
+            self.assertEqual(old["pages"][0]["query"], "old")
+            self.assertEqual(new["pages"][0]["query"], "new")
+            self.assertEqual(plan.changed_entries(new, "new"), [])
+            self.assertEqual(plan.changed_entries(new, "old"), ["mixed"])
+        with mock.patch.object(plan.ab, "read_at", side_effect=lambda ref, path:
+                               json.dumps(catalog) if path == plan.SPEC else '{"cases": []}'):
+            with self.assertRaises(ValueError):
+                plan.spec_at("missing-case")
+
+    def test_mixed_parser_scene_uses_quality_matrix_and_proves_typed_admission(self):
+        spec = plan.load_spec()
+        with open(os.path.join(plan.ab.ROOT, plan.SPEC)) as handle:
+            raw = json.load(handle)
+        for page in raw["pages"]:
+            if page.get("case_id", "").startswith("mixed_parser_"):
+                self.assertNotIn("query", page)
+                resolved = next(p for p in spec["pages"] if p["id"] == page["id"])
+                self.assertIn("| json", resolved["query"])
+                self.assertIn("| logfmt", resolved["query"])
+        out = plan.plan(["internal/queryplan/resolve.go"])
+        self.assertEqual(plan.runtime_proof_problems(out), [])
+        self.assertIn("explore-mixed-parser-explicit-count", out["entries"])
+        self.assertIn("explore-mixed-parser-reverse-count", out["entries"])
+
     def test_ast_targeted_proof_survives_capture_budget(self):
         items = dict(ITEMS, **{"parser-json": ({"internal/queryplan/lower/json.go"}, set())})
         out = plan.plan(["internal/queryplan/lower/json.go"], spec=SPEC, items=items, max_captures=1)
@@ -262,6 +297,48 @@ class BaselinePlanTest(unittest.TestCase):
         self.assertEqual(got["entries"]["fix-page"]["fixes"], ["semantics/case-a"])
         self.assertEqual(got["captures"], plan.plan_all(SPEC)["captures"])
 
+    def test_mixed_rate_fix_facets_reuse_catalog_and_keep_count_runtime_controls(self):
+        root = plan.ab.ROOT
+        with open(os.path.join(root, "test/e2e-compat/query-semantics-matrix.json")) as handle:
+            matrix = json.load(handle)
+        with open(os.path.join(root, "test/e2e-compat/query-semantics-operations.json")) as handle:
+            inventory = json.load(handle)
+        cases = {case["id"]: case for case in matrix["cases"]}
+        performance = {case["case_id"] for case in matrix["performance_cases"]}
+        operations = {cid for operation in inventory["operations"] for cid in operation["cases"]}
+        paths = {path["id"]: path for path in inventory["depth_paths"]}
+        spec = plan.load_spec()
+        pages = {page["id"]: page for page in spec["pages"]}
+        registry_case = "semantics/two-parsers-keep-one"
+        for direction, parser in (("explicit", "json"), ("reverse", "logfmt")):
+            count_id = f"mixed_parser_{direction}_group"
+            rate_id = f"mixed_parser_{direction}_rate_group"
+            self.assertIn(rate_id, cases)
+            rate = cases[rate_id]
+            self.assertEqual(rate["query"], cases[count_id]["query"].replace("count_over_time(", "rate(", 1))
+            self.assertEqual(rate["compare"], "metric_points")
+            self.assertTrue(rate["require_non_empty"])
+            self.assertEqual(rate["endpoint"], "query_range")
+            self.assertEqual(rate["expectation"], "success")
+            self.assertIn(rate_id, performance)
+            self.assertIn(rate_id, operations)
+            self.assertIn(rate_id, paths[f"{parser}_parser_range_function_aggregation"]["matrix_cases"])
+            rate_page = pages[f"explore-mixed-parser-{direction}-rate"]
+            self.assertEqual(rate_page["case_id"], rate_id)
+            self.assertEqual(rate_page["query"], rate["query"])
+            self.assertEqual(rate_page["fixes"], [registry_case])
+            self.assertNotIn("fixes", pages[f"explore-mixed-parser-{direction}-count"])
+        result = plan.plan(["internal/queryplan/resolve.go"], spec=spec,
+                           cases=[registry_case], max_captures=1)
+        self.assertEqual(set(result["fix_cases"][registry_case]["entries"]),
+                         {"explore-mixed-parser-explicit-rate", "explore-mixed-parser-reverse-rate"})
+        for direction in ("explicit", "reverse"):
+            for function in ("count", "rate"):
+                pid = f"explore-mixed-parser-{direction}-{function}"
+                self.assertIn(pid, result["entries"])
+                self.assertTrue(result["entries"][pid]["runtime_required"])
+                self.assertNotIn(pid, result["dropped"])
+
     def test_every_page_at_its_own_ranges(self):
         got = plan.plan_all(SPEC)
         self.assertTrue(got["run"])
@@ -323,6 +400,98 @@ class ChangedCasesTest(unittest.TestCase):
 
     def changed(self):
         return sorted(plan.changed_cases("main", "HEAD", root=self.repo))
+
+    def scene(self, query='{app="a"}', fixes=None):
+        path = os.path.join(self.repo, "bench/visual/spec.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            json.dump({"pages": [{"id": "proof", "kind": "explore", "query": query,
+                                 "fixes": fixes if fixes is not None else ["a/open-one"]}]}, handle)
+
+    def inherit_scene(self):
+        self.scene()
+        self.commit("existing scene")
+        git(self.repo, "branch", "-f", "main", "HEAD")
+
+    def test_inherited_fix_claim_ignores_only_why_and_cluster_ownership(self):
+        self.inherit_scene()
+        self.write("a/open-one", "open", extra="  clusters:\n    - abcdef01\n")
+        with open(self.path("a/open-one")) as handle:
+            text = handle.read()
+        with open(self.path("a/open-one"), "w") as handle:
+            handle.write("why: |\n  Historical ownership evidence only.\n" + text)
+        self.commit("ownership metadata")
+        self.assertEqual(self.changed(), [])
+
+    def test_existing_fix_claim_still_requires_changed_contract_proof(self):
+        self.inherit_scene()
+        for field in ("request", "compare", "pending", "corpus"):
+            with self.subTest(field=field):
+                self.write("a/open-one", "open")
+                with open(self.path("a/open-one"), "a") as handle:
+                    handle.write(f"{field}: changed\n")
+                self.commit(field)
+                self.assertEqual(self.changed(), ["a/open-one"])
+
+    def test_new_fix_edge_requires_proof_without_case_yaml_change(self):
+        self.scene(fixes=[])
+        self.commit("unclaimed scene")
+        git(self.repo, "branch", "-f", "main", "HEAD")
+        self.scene()
+        self.commit("claim partial fix")
+        self.assertEqual(self.changed(), ["a/open-one"])
+
+    def test_changed_existing_fix_scene_requires_proof_without_case_yaml_change(self):
+        self.inherit_scene()
+        self.scene(query='{app="b"}')
+        self.commit("different captured query")
+        self.assertEqual(self.changed(), ["a/open-one"])
+
+    def test_covers_only_scene_edit_does_not_claim_new_fix(self):
+        self.inherit_scene()
+        path = os.path.join(self.repo, "bench/visual/spec.json")
+        with open(path) as handle:
+            spec = json.load(handle)
+        spec["pages"][0]["covers"] = ["another-item"]
+        with open(path, "w") as handle:
+            json.dump(spec, handle)
+        self.commit("link another control")
+        self.assertEqual(self.changed(), [])
+
+    def test_metadata_only_case_remains_a_source_selected_regression_control(self):
+        self.inherit_scene()
+        self.write("a/open-one", "open", extra="  clusters: [abcdef01]\n")
+        self.commit("historical ownership")
+        self.assertEqual(self.changed(), [])
+        result = plan.plan(["internal/proxy/case_only.go"], spec=SPEC, items=ITEMS,
+                           cases=self.changed(), case_gaps=GAPS)
+        self.assertIn("fix-page", result["entries"])
+        self.assertNotIn("fixes", result["entries"]["fix-page"])
+        self.assertEqual(result["entries"]["fix-page"]["why"], ["internal/proxy/case_only.go"])
+
+    def test_inherited_fix_scene_resolves_typed_queries_at_each_ref(self):
+        self.inherit_scene()
+        scene = os.path.join(self.repo, "bench/visual/spec.json")
+        matrix = os.path.join(self.repo, "test/e2e-compat/query-semantics-matrix.json")
+        os.makedirs(os.path.dirname(matrix), exist_ok=True)
+        with open(scene, "w") as handle:
+            json.dump({"pages": [{"id": "proof", "kind": "explore", "case_id": "typed",
+                                 "fixes": ["a/open-one"]}]}, handle)
+        case = {"id": "typed", "endpoint": "query_range", "expectation": "success", "query": '{app="a"}'}
+        with open(matrix, "w") as handle:
+            json.dump({"cases": [case]}, handle)
+        self.commit("typed proof")
+        git(self.repo, "branch", "-f", "main", "HEAD")
+        case["query"] = '{app="b"}'
+        with open(matrix, "w") as handle:
+            json.dump({"cases": [case]}, handle)
+        self.commit("typed query changed")
+        self.assertEqual(self.changed(), ["a/open-one"])
+        with open(matrix, "w") as handle:
+            json.dump({"cases": []}, handle)
+        self.commit("invalid reference")
+        with self.assertRaises(ValueError):
+            self.changed()
 
     def test_new_case_and_open_to_fixed_trigger(self):
         self.write("a/new-one", "open")

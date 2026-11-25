@@ -20,7 +20,9 @@ The current result signatures compare aggregate fingerprints. Metric sum
 tolerance requires the same series signature and point count, including ranked
 answers; missing points are differences even when their sums match. These
 fingerprints do not establish equality of every label, timestamp, sample value
-or log line. Use the Loki compatibility tests for those comparisons.
+or log line. Required runtime cells additionally compare their complete first
+answers through the shared parity comparator, with independent confirmation
+and refresh receipts; ordinary reports retain the fingerprint contract.
 
 Results are compared with Loki only on the runs Loki computed. Each run moves the
 window back a minute, and from run 1 on Loki's results cache usually answers the
@@ -443,12 +445,18 @@ and `-probes.json`.
    - Loki's cold reuse across sets (step 4) only applies within one Loki
      process, so each shard does it for its own sets.
 2. A fresh Loki and VictoriaLogs start from the e2e compose file with
-   `docker-compose.ab.yml` (own project, container names and ports). While
-   the log generator seeds a fixed 86-minute window into both (about 75 lines/s,
+   `docker-compose.ab.yml` (own project, container names and ports). The base
+   and PR binaries compile with bounded parallelism before ingestion. Then
+   the log generator seeds the planned window into both (about 75 lines/s,
    seeded random, lines on half-second timestamps) and waits until both count
    the same lines in every 10-minute slice (the window is the longest range plus
-   one block of windows per selected set, see above), the base (the merge commit's first
-   parent, built in a detached worktree) and the PR build compile.
+   one block of windows per selected set, see above). After 10,000 successfully
+   dual-written stream objects, the seeder triggers `/flush` at an existing
+   payload boundary. This does not change rows, labels or timestamps, and is
+   not a memory bound or proof that flushing has completed. A failed push or
+   flush stops the seed without replay; the final flush and per-slice count
+   checks still determine fixture readiness. Outside this seeder, the optional
+   `LOG_BACKFILL_FLUSH_STREAMS` is disabled unless set to a positive integer.
 3. Each build runs as a host process with its own tree's flags of the stack's
    `loki-vl-proxy-underscore` service. A port that is not free fails the run
    instead of measuring someone else's process.
@@ -457,6 +465,20 @@ and `-probes.json`.
    same step-aligned windows, each set in its own block of windows ending at or
    below the seeded data's end. No target gets a `Cache-Control` header; a query
    an earlier set already ran takes that set's computed Loki cold.
+   Required runtime cells retain complete first-pass bodies up to 32 MiB per
+   target and 96 MiB per cell. After timed targets finish, a cached Loki
+   answer can be supplemented by one computed correctness read at the exact
+   original window, using an equivalent whitespace suffix. Full labels,
+   timestamps, values and supported error replies are compared separately;
+   this extra read never replaces Loki's measured timings or cache labels.
+   Missing or oversized evidence remains incomplete. Confirmation and refresh
+   keep independent receipts for their own first windows.
+   Metadata APIs that genuinely omit cache statistics retain their complete
+   measured API response as an observation with cache status unavailable,
+   never as a computed cache miss. Present cache statistics remain validated;
+   volume cache hits still require the separate computed reference. Existing
+   narrowly documented registry deviations remain visible; any other candidate
+   difference blocks, while a corrected candidate may differ from main.
 5. A shape the first pass calls slower or faster is measured again with 7
    runs on windows the first pass did not use, inside the set's block, so the
    proxies' exact-URL caches cannot answer them; only a move that holds is
@@ -573,6 +595,11 @@ list here.
    `python3 conformance/scripts/perf_evidence.py --check` must pass.
 3. The pull request that adds it runs it (it is "added or edited"), and every
    later change to the code its items name runs it again.
+
+A shape may use `case_id` instead of `query` to reuse a successful
+`query_range` case in `test/e2e-compat/query-semantics-matrix.json`. The loader
+rejects an unknown case or a second query definition. This keeps the quality
+contract's expression and the measured expression identical.
 
 ### The daily report's perf smoke
 
@@ -841,6 +868,16 @@ The mode is set in `perf-ab.yaml` by `--over-2x-loki`:
 - `warn` (the script's default, for local runs): the same rows are a ⚠️ section
   at the top of the comment and `::warning::` annotations only. The weekly run
   only ever warns.
+
+Two kinds of difference from Loki are not a proxy defect and the runtime proof accepts them, each for exactly what it
+names. A `topk` or `bottomk` answer is compared by the ranked values at every step and the label names, not by which of
+several series tied at the cutoff was kept: Loki's own pick between them changes with the spelling of an equivalent
+query (`bench/parity/differ.py diff_ranked`; a wrong value, a missing or extra step and a different number of ranked
+series still differ). A shape may name, in `shapes.json` as `documented_values`, the registry deviation its *value*
+differences come from (B2, a count of series: `metric-identity/structured-metadata-splits-series`, owner-accepted);
+only a `values differ` facet of a range or instant query is covered, and only while the registry case is documented,
+owner-kept or upstream. The Loki reference of a pull request run waits 180 s per request, as the daily run does: a
+first ask on a fresh Loki answered B2 at 1h after more than 90 s.
 
 To clear a flagged row: fix the path so the shape is within 2× Loki (target 1×)
 on cold, warm and refresh, and check the comment's PR ÷ Loki column; a row the

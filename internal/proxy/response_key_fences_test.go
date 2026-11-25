@@ -218,6 +218,17 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 
 			// The rune fence (rune_response_fence.go) ends the compat chains and is empty for a valid query.
 			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+rankOverBinaryLabelReplaceFence(query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)
+			if expr, ok := sharedLogQLExpr(fenceVariablesResolved(query)); ok && containsMixedParserMetric(expr) {
+				oldCompatQuery += mixedParserMetricResponseVersion
+				oldCompatRange += mixedParserMetricResponseVersion
+				oldInner += mixedParserMetricResponseVersion
+			}
+			// This evaluator fence is an intentional semantic-key change;
+			// every preceding fence retains its historical byte order.
+			added := orderedJSONEvaluatorResponseKeyVersion(query)
+			oldCompatQuery += added
+			oldCompatRange += added
+			oldInner += added
 			if got := responseKeyFences(r, query, responseKeyCompatQuery); got != oldCompatQuery {
 				t.Errorf("compat query fences differ for %q (%s): got %q want %q", query, shape.name, got, oldCompatQuery)
 			}

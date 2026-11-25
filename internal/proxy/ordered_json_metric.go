@@ -23,6 +23,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/grafana/jsonparser"
 )
@@ -80,29 +81,35 @@ func (p *Proxy) orderedJSONMetricMaxBytes() int64 {
 }
 
 type orderedJSONStage struct {
-	parser bool
-	logfmt bool // parser is `| logfmt`; such plans only use the stats pushdown
-	filter *translator.DropCondition
-	line   func(string) bool
-	fields map[string]bool
-	match  []translator.DropCondition
-	keep   bool
+	parser    bool
+	logfmt    bool
+	jsonField string // one top-level key, extracted under its own name
+	filter    *translator.DropCondition
+	line      func(string) bool
+	fields    map[string]bool
+	match     []translator.DropCondition
+	keep      bool
 }
 
 type orderedJSONMetricPlan struct {
-	selector      string
-	fetchQuery    string
-	function      string
-	window        time.Duration
-	stages        []orderedJSONStage
-	grouping      *logqlpkg.Grouping
-	aggregated    bool
-	reducesLabels bool
-	noLabels      bool
-	preserveError bool
-	required      map[string]bool
-	earlyFilters  []translator.DropCondition
-	withoutJSON   string
+	selector              string
+	fetchQuery            string
+	function              string
+	window                time.Duration
+	stages                []orderedJSONStage
+	grouping              *logqlpkg.Grouping
+	aggregated            bool
+	mixedParsers          bool
+	mixedErrorsCanSurvive bool
+	reducesLabels         bool
+	noLabels              bool
+	preserveError         bool
+	// projectedLabel is the sole observable mutable label of a certified
+	// explicit mixed-parser projection. The original base stays complete.
+	projectedLabel string
+	required       map[string]bool
+	earlyFilters   []translator.DropCondition
+	withoutJSON    string
 	// preLevelFilters are the label filters on detected_level before the
 	// parser of a JSON plan. fetchQuery keeps them for the raw-row fetch;
 	// pushdownQuery is the base of the stats pushdown without them (see
@@ -155,7 +162,9 @@ type orderedJSONMetricPlan struct {
 // arguments are invalid, is left to the general path (which reports them).
 func (p *Proxy) handleOrderedJSONMetricUnderTransform(w http.ResponseWriter, r *http.Request, requestStart time.Time, query, inner string, isRange bool) bool {
 	if _, ok := compileOrderedJSONMetric(inner); !ok {
-		return false
+		if plan, _, vector := orderedJSONVectorPlan(inner); !vector || !plan.mixedParsers {
+			return false
+		}
 	}
 	// A query the translation refuses is left to the general path, which reports it.
 	if _, err := p.translateQueryWithContext(r.Context(), query); err != nil {
@@ -237,10 +246,8 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 		case served:
 			p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorStats, rangeMetricReasonPushdown)
 			traceStep(r.Context(), slowTraceStep{kind: "operation", route: "json_metric_evaluator", outcome: rangeMetricEvaluatorStats + "/" + rangeMetricReasonPushdown})
-			if isRange && err == nil && (plan.split == jsonSplitStrict || plan.split == jsonSplitErrors) {
-				// The split's answer is exact per evaluation time, like a raw
-				// answer: its steps are kept under their own route.
-				armOrderedJSONSteps(r, query, "ordered-json-split", readAt)
+			if isRange && err == nil {
+				armOrderedJSONStatsSteps(r, query, plan, readAt)
 			}
 		case parseDisagreement:
 			reason = rangeMetricReasonProbe
@@ -260,7 +267,11 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 			body, err = buildOrderedJSONMetric(withMetricSampleLimit(r.Context(), p.maxMetricSamples()), plan, series, start, end, step, isRange, p.orderedJSONMetricMaxBytes())
 		}
 		if err == nil && isRange {
-			armOrderedJSONSteps(r, query, "ordered-json-raw", readAt)
+			route := "ordered-json-raw"
+			if plan.mixedParsers {
+				route = mixedRawStepsRoute
+			}
+			armOrderedJSONSteps(r, query, route, readAt)
 		}
 	}
 	status := http.StatusOK
@@ -279,6 +290,20 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 		p.queryTracker.Record(endpoint, query, time.Since(requestStart), status >= 400)
 	}
 	return true
+}
+
+func armOrderedJSONStatsSteps(r *http.Request, query string, plan *orderedJSONMetricPlan, readAt int64) {
+	if plan.mixedParsers {
+		if _, exactClass := plan.mixedStatsClass(); exactClass {
+			// The complete hybrid answer retains the original mixed
+			// evaluator's label order and per-step cache identity.
+			armOrderedJSONSteps(r, query, mixedRawStepsRoute, readAt)
+		}
+	}
+	if plan.split == jsonSplitStrict || plan.split == jsonSplitErrors {
+		// Split answers are exact per evaluation time, like raw answers.
+		armOrderedJSONSteps(r, query, "ordered-json-split", readAt)
+	}
 }
 
 // armOrderedJSONSteps keeps the steps of a complete ordered JSON answer
@@ -425,7 +450,7 @@ func compileOrderedJSONMetricExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, b
 	}
 	plan.selector = "{" + strings.Join(matchers, ",") + "}"
 	retained, hasJSON, hasLogfmt, ok := plan.compilePipeline(logExpr.Pipeline)
-	if !ok || (hasJSON && hasLogfmt) {
+	if !ok {
 		return nil, false
 	}
 	plan.setDetectedLevel()
@@ -435,10 +460,21 @@ func compileOrderedJSONMetricExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, b
 	}
 	plan.parser = "json"
 	plan.setParserHints()
+	plan.setMixedProjectionLabel()
 	// None of the supported stages modifies the log line, so line filters
 	// commute with parsing/label mutations. Push them into VL to avoid scanning
 	// discarded lines while retaining their original position in local execution.
 	plan.fetchQuery = plan.selector + retained
+	if plan.mixedParsers {
+		// Neither parser changes the original detected_level. With errors
+		// dropped after the last parser, count/rate needs just stored-level
+		// buckets when the runtime source and precedence checks succeed.
+		plan.pushdown = plan.aggregated && plan.grouping != nil && !plan.grouping.Without &&
+			slices.Equal(plan.grouping.Labels, []string{detectedLevelLabel}) &&
+			(plan.function == "count_over_time" || plan.function == "rate") &&
+			retained == "" && plan.errorsDroppedAfterParser()
+		return plan, true
+	}
 	if plan.noLabels || plan.canElideJSONWithDroppedErrors(logExpr.Selector.Matchers) {
 		grouping := ""
 		if plan.grouping != nil {
@@ -471,12 +507,31 @@ func compileOrderedJSONMetricExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, b
 func (plan *orderedJSONMetricPlan) compilePipeline(pipeline []logqlpkg.Stage) (retained string, hasJSON, hasLogfmt, ok bool) {
 	var sb, pushdown strings.Builder
 	unmodified := true // no stage so far changes the labels a filter reads
+	var explicit, checkedPair bool
 	for _, stage := range pipeline {
 		compiled, valid := compileOrderedJSONStage(stage)
+		if parser, ok := stage.(*logqlpkg.ParserStage); ok {
+			if name := orderedJSONProjectionKey(parser); name != "" {
+				compiled.parser, compiled.jsonField, valid, explicit = true, name, true, true
+			}
+		}
 		if !valid {
 			return "", false, false, false
 		}
-		_, lineFilter := stage.(*logqlpkg.LineFilterStage)
+		lineStage, lineFilter := stage.(*logqlpkg.LineFilterStage)
+		if lineFilter && len(lineStage.Or) != 0 {
+			if !checkedPair {
+				plan.mixedParsers = pipelineHasParserStageOf(pipeline, true, false) && pipelineHasParserStageOf(pipeline, false, true)
+				checkedPair = true
+			}
+			if plan.mixedParsers {
+				var err error
+				compiled.line, err = orderedMixedLineAlternatives(lineStage, compiled.line)
+				if err != nil {
+					return "", false, false, false
+				}
+			}
+		}
 		// A filter on __error__ before the parser compares the empty value;
 		// it stays a stage of the raw evaluator, which sets the label.
 		preParserFilter := compiled.filter != nil && unmodified && !strings.HasPrefix(compiled.filter.Field, "__")
@@ -499,10 +554,107 @@ func (plan *orderedJSONMetricPlan) compilePipeline(pipeline []logqlpkg.Stage) (r
 		plan.reducesLabels = plan.reducesLabels || compiled.fields != nil
 		plan.stages = append(plan.stages, compiled)
 	}
+	plan.mixedParsers = hasJSON && hasLogfmt
+	if plan.mixedParsers {
+		// A written sum-by supplies required-label hints. A bare trailing keep
+		// reduces the output labels after both parsers have run without hints.
+		sem := queryplan.ParserSemantics(pipeline)
+		plan.mixedErrorsCanSurvive = sem.ErrorPolicy != queryplan.ErrorDroppedLabel
+		if !mixedMetricStages(plan.grouping, !plan.aggregated, pipeline, sem) {
+			return "", false, false, false
+		}
+	} else if explicit {
+		return "", false, false, false
+	}
 	if len(plan.preLevelFilters) > 0 {
 		plan.pushdownQuery = plan.selector + pushdown.String()
 	}
 	return sb.String(), hasJSON, hasLogfmt, true
+}
+
+func orderedJSONProjectionKey(p *logqlpkg.ParserStage) string {
+	if p.Type == logqlpkg.ParserJSON && len(p.Fields) == 1 {
+		f := p.Fields[0]
+		if f.Expression == f.Name || f.Expression == `["`+f.Name+`"]` {
+			return f.Name
+		}
+	}
+	return ""
+}
+
+// mixedMetricStages decides ownership from validated stages. Response keys
+// need that decision, without compiled regexps or a physical row evaluator.
+func mixedMetricStages(group *logqlpkg.Grouping, bare bool, stages []logqlpkg.Stage, sem queryplan.PipelineSem) bool {
+	if sem.Parsers != 2 {
+		return false
+	}
+	if bare {
+		if kept, ok := trailingKeepLabels(stages); !ok || len(kept) == 0 {
+			return false
+		}
+	} else if group == nil || group.Without || len(group.Labels) == 0 {
+		return false
+	}
+	jsonSeen, logfmtSeen := false, false
+	for i, stage := range stages {
+		switch s := stage.(type) {
+		case *logqlpkg.ParserStage:
+			if s.Strict || s.KeepEmpty {
+				return false
+			}
+			switch s.Type {
+			case logqlpkg.ParserJSON:
+				jsonSeen = true
+				if s.Param != "" && !mixedJSONProjection(stages, i, orderedJSONProjectionKey(s)) {
+					return false
+				}
+			case logqlpkg.ParserLogfmt:
+				if s.Param != "" {
+					return false
+				}
+				logfmtSeen = true
+			default:
+				return false
+			}
+		case *logqlpkg.LineFilterStage:
+			switch s.Op {
+			case logqlpkg.LineFilterContains, logqlpkg.LineFilterExcludes, logqlpkg.LineFilterMatchRe, logqlpkg.LineFilterExcludeRe:
+			default:
+				return false
+			}
+			if s.IP || slices.ContainsFunc(s.Or, func(a logqlpkg.LineFilterAlt) bool { return a.IP }) {
+				return false
+			}
+		case *logqlpkg.LabelFilterStage:
+			if _, ok := orderedLabelFilterExpr(s); !ok {
+				return false
+			}
+		case *logqlpkg.DropStage, *logqlpkg.KeepStage:
+		default:
+			return false
+		}
+	}
+	return jsonSeen && logfmtSeen
+}
+
+// The single projected key, followed by logfmt, error-label removal and
+// the key's presence filter, is the explicit Drilldown form.
+func mixedJSONProjection(stages []logqlpkg.Stage, i int, key string) bool {
+	if key == "" || len(stages)-i != 4 {
+		return false
+	}
+	for _, stage := range stages[:i] {
+		f, ok := stage.(*logqlpkg.LabelFilterStage)
+		if !ok || f.Expr == nil || strings.HasPrefix(f.Expr.Name, "__") {
+			return false
+		}
+	}
+	next, p := stages[i+1].(*logqlpkg.ParserStage)
+	drop, d := stages[i+2].(*logqlpkg.DropStage)
+	filter, f := stages[i+3].(*logqlpkg.LabelFilterStage)
+	return p && next.Type == logqlpkg.ParserLogfmt && d && len(drop.Matchers) == 0 && len(drop.Labels) == 2 &&
+		slices.Contains(drop.Labels, "__error__") && slices.Contains(drop.Labels, "__error_details__") &&
+		f && filter.Expr != nil && filter.Expr.Name == key && filter.Expr.Cmp == "!=" && filter.Expr.Value == ""
 }
 
 // statsQuery is the LogQL whose translation is the base of the stats pushdown,
@@ -1068,6 +1220,9 @@ func logfmtKeyAliasPattern(labels []string) string {
 // then answers. An ungrouped sum unpacks only its filter keys; without any it
 // is served natively (withoutJSON).
 func (plan *orderedJSONMetricPlan) setStatsPushdown() {
+	if plan.mixedParsers {
+		return
+	}
 	if !plan.aggregated || (plan.grouping != nil && plan.grouping.Without) {
 		return
 	}
@@ -1334,12 +1489,18 @@ func levelChainFilter(filter translator.DropCondition) string {
 // setDetectedLevel records whether the plan reads detected_level (see
 // derivesLevel).
 func (plan *orderedJSONMetricPlan) setDetectedLevel() {
-	if plan.aggregated && plan.grouping != nil && containsString(plan.grouping.Labels, detectedLevelLabel) != plan.grouping.Without {
+	// A mixed parser sees a body key named detected_level under its collision
+	// suffix. A grouping or filter using that suffix needs the original level
+	// in the base labels before either parser can run.
+	readsLevel := func(label string) bool {
+		return label == detectedLevelLabel || plan.mixedParsers && label == detectedLevelLabel+extractedSuffix
+	}
+	if plan.aggregated && plan.grouping != nil && slices.ContainsFunc(plan.grouping.Labels, readsLevel) != plan.grouping.Without {
 		plan.derivesLevel = true
 	}
 	plan.derivesLevel = plan.derivesLevel || len(plan.preLevelFilters) > 0
 	for _, stage := range plan.stages {
-		if stage.filter != nil && stage.filter.Field == detectedLevelLabel {
+		if stage.filter != nil && readsLevel(stage.filter.Field) {
 			plan.derivesLevel = true
 		}
 	}
@@ -1393,7 +1554,18 @@ var errLevelNotStored = errors.New("rows without a stored level")
 // spelling, translator.BuildDetectedLevelChain), is a row only the chain and
 // its guards read exactly: the query is asked again with them.
 func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration, instant bool) (body []byte, served bool, parseDisagreement bool, err error) {
+	if !instant {
+		if body, served, err := p.orderedMixedJSONStatsRange(ctx, plan, start, end, step); served || err != nil {
+			return body, served, false, err
+		}
+	}
 	if !plan.pushdown || p.labelTranslator == nil {
+		return nil, false, false, nil
+	}
+	if plan.mixedParsers && (len(p.labelTranslator.vlToLoki) != 0 || p.jsonLineKeysActive()) {
+		// Custom label mappings can change the grouping source. The
+		// foreign-level guard must inspect every selected row, including
+		// the placeholders excluded by JSON line-key parse-risk probes.
 		return nil, false, false, nil
 	}
 	if plan.validOnly && (instant || requestKeepsPartialSeries(ctx) && plan.split == jsonSplitValid) {
@@ -1418,7 +1590,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	if plan.derivesLevel {
 		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true, instant)
-		if plan.split == jsonSplitValid && (errors.Is(err, errLevelNotStored) || errors.Is(err, errStatsGroupGuard)) {
+		if (plan.split == jsonSplitValid || plan.mixedParsers) && (errors.Is(err, errLevelNotStored) || errors.Is(err, errStatsGroupGuard)) {
 			return nil, false, false, nil
 		}
 		if !errors.Is(err, errLevelNotStored) && !errors.Is(err, errStatsGroupGuard) {
@@ -1439,15 +1611,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	// and the parse-risk probes read both keys, the probes with the stored
 	// value of name ignored because the scratch unpack reads the body anyway.
 	plain, allKeys, extracted, extractedKeys := splitPushdownKeys(unpack)
-	// A stream label or structured metadata VictoriaLogs stores under another
-	// spelling (service_version as service.version) is read from that field:
-	// Loki gives such a label precedence over a parsed key of the same name.
-	stored := make(map[string]string)
-	for _, field := range allKeys {
-		if vl := p.labelTranslator.ToVL(field); vl != field {
-			stored[field] = vl
-		}
-	}
+	stored := p.storedPushdownFields(allKeys)
 	if instant {
 		// One evaluation time: the single bucket (start-window, start].
 		step = plan.window
@@ -1518,7 +1682,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	// A split plan's stored level is only Loki's when no other stored level
 	// field can outrank it (storedLevelForeignFieldRisk).
 	foreignDone := make(chan riskResult, 1)
-	if plan.validOnly && storedLevel {
+	if (plan.validOnly || plan.mixedParsers) && storedLevel {
 		running.Go(func() {
 			foreign, err := p.storedLevelForeignFieldRisk(riskCtx, probeBase, windowStart, end)
 			foreignDone <- riskResult{foreign, err}
@@ -1612,6 +1776,19 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		stats = <-statsDone
 	}
 	return p.finishOrderedJSONStats(ctx, plan, stats, base, query, storedLevel, hazard.risky, bucket, start, end, step, instant)
+}
+
+// storedPushdownFields maps a Loki label to its stored VictoriaLogs field when
+// they differ (service_version to service.version). The stored value takes
+// precedence over a parsed key of the same name.
+func (p *Proxy) storedPushdownFields(fields []string) map[string]string {
+	stored := make(map[string]string)
+	for _, field := range fields {
+		if vl := p.labelTranslator.ToVL(field); vl != field {
+			stored[field] = vl
+		}
+	}
+	return stored
 }
 
 // orderedJSONStatsPipes is the query text of the stats pushdown and what its
@@ -1711,8 +1888,8 @@ func (p *Proxy) finishOrderedJSONStats(ctx context.Context, plan *orderedJSONMet
 		// series, so it counts them and answers Loki's series limit itself.
 		p.markLevelNeedsChain(ctx, base+levelShapeSeparator+query)
 	}
-	if plan.validOnly && (errors.Is(err, errBodyTooLarge) || errors.Is(err, errStatsGroupGuard)) {
-		// A split read too large to hold says nothing about the series of the
+	if (plan.validOnly || plan.mixedParsers) && (errors.Is(err, errBodyTooLarge) || errors.Is(err, errStatsGroupGuard)) {
+		// An intermediate stats read too large to hold says nothing about the series of the
 		// answer (the groups merge into fewer series): the row evaluator
 		// answers, as it did before the split, with its own limits and Loki's
 		// series limit error.
@@ -1722,6 +1899,15 @@ func (p *Proxy) finishOrderedJSONStats(ctx context.Context, plan *orderedJSONMet
 		return nil, false, false, err
 	}
 	if storedLevel {
+		if plan.mixedParsers {
+			for _, entry := range series {
+				// On a reconstructed message an unrecognized level spelling can
+				// leave the value to a keyword in the body.
+				if canonicalLevel([]byte(entry.Metric[storedLevelField])) == "" {
+					return nil, false, false, errLevelNotStored
+				}
+			}
+		}
 		if series, ok = storedLevelSeries(series, plan.levelFilters()); !ok {
 			p.markLevelNeedsChain(ctx, base)
 			return nil, false, false, errLevelNotStored
@@ -1756,7 +1942,26 @@ func (p *Proxy) finishOrderedJSONStats(ctx context.Context, plan *orderedJSONMet
 	case storedLevel:
 		// The spellings of one level are one series, as in Loki: only the
 		// merged answer meets the limit.
-		merged, err = capSeriesForRequest(ctx, merged, p.resolvedMaxStatsQuerySeries(ctx))
+		limit := p.resolvedMaxStatsQuerySeries(ctx)
+		if plan.mixedParsers && limit > 0 && len(merged) > limit {
+			// Stored count/rate buckets can include the open lower boundary
+			// and data after the last evaluation. A kept group contributes
+			// only its visible buckets to the partial-result ranking.
+			startNS, endNS := start.UnixNano(), end.UnixNano()
+			for key, entry := range merged {
+				entry.Samples = slices.DeleteFunc(entry.Samples, func(s rangeMetricSample) bool {
+					return s.value == 0 || !orderedJSONSampleVisible(s.ts+1, startNS, endNS, int64(step), int64(plan.window))
+				})
+				if len(entry.Samples) == 0 {
+					delete(merged, key)
+				} else {
+					merged[key] = entry
+				}
+			}
+			merged, err = capBucketSeriesForRequest(ctx, merged, limit)
+		} else {
+			merged, err = capSeriesForRequest(ctx, merged, limit)
+		}
 	}
 	if err != nil {
 		return nil, false, false, err
@@ -2948,26 +3153,35 @@ func compileOrderedJSONStage(stage logqlpkg.Stage) (orderedJSONStage, bool) {
 // bytes comparison are not (ok is false), nor is an ip() filter on
 // detected_level, which the level pipes compare as a stored word.
 func compileOrderedJSONLabelFilter(stage *logqlpkg.LabelFilterStage) (condition translator.DropCondition, ok bool) {
-	expr := stage.Expr
-	if expr == nil {
-		var err *logqlpkg.LabelFilterSyntaxError
-		if expr, err = logqlpkg.ParseLabelFilterExpr(stage.Raw); err != nil {
-			return condition, false
-		}
-	}
-	if !expr.IsLeaf() || strings.HasPrefix(stage.Raw, "(") {
+	expr, ok := orderedLabelFilterExpr(stage)
+	if !ok {
 		return condition, false
 	}
 	var err error
-	switch {
-	case expr.Kind == logqlpkg.LabelFilterValueString && slices.Contains([]string{"=", "!=", "=~", "!~"}, expr.Cmp):
-		condition, err = translator.NewLabelFilterCondition(expr.Name, expr.Cmp, expr.Value)
-	case expr.Kind == logqlpkg.LabelFilterValueIP && (expr.Cmp == "=" || expr.Cmp == "!=") && expr.Name != detectedLevelLabel:
+	if expr.Kind == logqlpkg.LabelFilterValueIP {
 		condition, err = translator.NewIPLabelFilterCondition(expr.Name, expr.Value, expr.Cmp == "!=")
-	default:
-		return condition, false
+	} else {
+		condition, err = translator.NewLabelFilterCondition(expr.Name, expr.Cmp, expr.Value)
 	}
 	return condition, err == nil
+}
+
+func orderedLabelFilterExpr(stage *logqlpkg.LabelFilterStage) (*logqlpkg.LabelFilterExpr, bool) {
+	expr := stage.Expr
+	if expr == nil {
+		expr, _ = logqlpkg.ParseLabelFilterExpr(stage.Raw)
+	}
+	if expr == nil || !expr.IsLeaf() || strings.HasPrefix(stage.Raw, "(") {
+		return nil, false
+	}
+	switch expr.Kind {
+	case logqlpkg.LabelFilterValueString:
+		return expr, slices.Contains([]string{"=", "!=", "=~", "!~"}, expr.Cmp)
+	case logqlpkg.LabelFilterValueIP:
+		return expr, (expr.Cmp == "=" || expr.Cmp == "!=") && expr.Name != detectedLevelLabel
+	default:
+		return nil, false
+	}
 }
 
 // parseLogfmt extracts the line's logfmt pairs the way Loki's decoder does, so
@@ -2975,7 +3189,32 @@ func compileOrderedJSONLabelFilter(stage *logqlpkg.LabelFilterStage) (condition 
 // differently (a tab separator, for one). A key that collides with a stream
 // label or structured metadata keeps the stored value, as Loki's _extracted
 // rule does for the value this metric groups by.
-func (plan *orderedJSONMetricPlan) parseLogfmt(line string, collisions, labels map[string]string, extracted map[string]bool) {
+func (plan *orderedJSONMetricPlan) parseLogfmt(line string, collisions, labels map[string]string, extracted map[string]bool) error {
+	if plan.mixedParsers {
+		var err error
+		lokiLogfmtPairs(line, func(key, value string) {
+			if err != nil || value == "" {
+				return
+			}
+			name := orderedJSONLabelName(key, true)
+			if _, exists := collisions[name]; exists {
+				name += extractedSuffix
+			}
+			if name == "" || plan.required != nil && !plan.required[name] || extracted[name] {
+				return
+			}
+			if plan.required == nil && (len(extracted) >= 1024 || len(name) > 1024 || len(value) > 64<<10) {
+				err = errOrderedJSONComplexity
+				return
+			}
+			value = lokiLabelValue(value)
+			labels[name], extracted[name] = value, true
+			if !plan.acceptExtractedLabel(name, value) {
+				err = errOrderedJSONFilterRejected
+			}
+		})
+		return err
+	}
 	for name, value := range parseLogfmtFields(line) {
 		if _, taken := collisions[name]; taken {
 			continue
@@ -2986,6 +3225,29 @@ func (plan *orderedJSONMetricPlan) parseLogfmt(line string, collisions, labels m
 		labels[name] = value
 		extracted[name] = true
 	}
+	return nil
+}
+
+// Positive alternatives select any match. Each negative alternative must
+// accept the row. The original stage remains in the safe line pushdown.
+func orderedMixedLineAlternatives(stage *logqlpkg.LineFilterStage, first func(string) bool) (func(string) bool, error) {
+	tests := []func(string) bool{first}
+	for _, alt := range stage.Or {
+		test, err := orderedJSONLineFilter(&logqlpkg.LineFilterStage{Op: stage.Op, Value: alt.Value, IP: alt.IP})
+		if err != nil {
+			return nil, err
+		}
+		tests = append(tests, test)
+	}
+	positive := stage.Op == logqlpkg.LineFilterContains || stage.Op == logqlpkg.LineFilterMatchRe
+	return func(line string) bool {
+		for _, test := range tests {
+			if test(line) == positive {
+				return positive
+			}
+		}
+		return !positive
+	}, nil
 }
 
 func orderedJSONLineFilter(stage *logqlpkg.LineFilterStage) (func(string) bool, error) {
@@ -3058,6 +3320,34 @@ func (plan *orderedJSONMetricPlan) setParserHints() {
 			plan.required[strings.TrimSuffix(label, "_extracted")] = true
 		}
 	}
+}
+
+// setMixedProjectionLabel narrows only the mutable parser labels. Collision
+// provenance and raw metadata validation still use the complete original base.
+func (plan *orderedJSONMetricPlan) setMixedProjectionLabel() {
+	plan.projectedLabel = ""
+	if !plan.mixedParsers || !plan.aggregated || plan.grouping == nil || plan.grouping.Without ||
+		len(plan.grouping.Labels) != 1 || len(plan.required) != 1 || plan.mixedErrorsCanSurvive ||
+		plan.derivesLevel || len(plan.preLevelFilters) != 0 || plan.preserveError {
+		return
+	}
+	key := plan.grouping.Labels[0]
+	if key == "" || strings.HasPrefix(key, "__") || strings.HasSuffix(key, extractedSuffix) ||
+		key == "service_name" || key == detectedLevelLabel || !plan.required[key] || !plan.mixedProjectionStages(key) {
+		return
+	}
+	plan.projectedLabel = key
+}
+
+func (plan *orderedJSONMetricPlan) mixedProjectionStages(key string) bool {
+	if len(plan.stages) != 4 {
+		return false
+	}
+	first, second, drop, filter := plan.stages[0], plan.stages[1], plan.stages[2], plan.stages[3]
+	return first.parser && !first.logfmt && first.jsonField == key && second.parser && second.logfmt &&
+		!drop.keep && len(drop.match) == 0 && len(drop.fields) == 2 &&
+		drop.fields["__error__"] && drop.fields["__error_details__"] &&
+		filter.filter != nil && filter.filter.Field == key && filter.filter.Op == "!=" && filter.filter.Value == ""
 }
 
 type orderedJSONPipelineError struct{ message string }
@@ -3134,7 +3424,7 @@ func lokiPipelineErrorType(value string) string {
 // label filter rejects the empty value an unparsed line has for its key, and
 // the error is not the grouped label itself.
 func (plan *orderedJSONMetricPlan) failsOnUnparsedLine() bool {
-	if plan.parser != "json" || plan.noLabels || plan.preserveError {
+	if plan.mixedParsers || plan.parser != "json" || plan.noLabels || plan.preserveError {
 		return false
 	}
 	parsed := false
@@ -3196,6 +3486,18 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	return lokiPipelineError(labels), nil
 }
 
+// A surviving pipeline error includes Loki's ingest metadata even when the
+// aggregation never reads it. Supply a missing level before replaying the
+// failing row so each parser, keep and drop sees the original label set.
+func (plan *orderedJSONMetricPlan) processMetricRow(ctx context.Context, line string, row, base map[string]string, desc cachedLogQueryStreamDescriptor, levels *logRowLevels) (map[string]string, bool, error) {
+	labels, keep, err := plan.processWithContext(ctx, line, base, desc.translatedLabels, row)
+	if err == nil && keep && plan.mixedErrorsCanSurvive && labels["__error__"] != "" && labels["__preserve_error__"] != "true" && base[detectedLevelName(desc.streamLabels)] == "" {
+		withDerivedLevel(base, levels.stringRow(row, levels.streamLabels(row["_stream"], desc.streamLabels)), desc.streamLabels)
+		return plan.processWithContext(ctx, line, base, desc.translatedLabels, row)
+	}
+	return labels, keep, err
+}
+
 func (plan *orderedJSONMetricPlan) process(line string, base map[string]string) (map[string]string, bool, error) {
 	return plan.processWithStreamLabels(line, base, base)
 }
@@ -3204,13 +3506,27 @@ func (plan *orderedJSONMetricPlan) processWithStreamLabels(line string, base, st
 	return plan.processWithContext(context.Background(), line, base, streamLabels, base)
 }
 
+func (plan *orderedJSONMetricPlan) mutableLabels(base map[string]string) map[string]string {
+	key := plan.projectedLabel
+	if key == "" {
+		return cloneStringMap(base)
+	}
+	labels := make(map[string]string, 1)
+	if value, present := base[key]; present {
+		labels[key] = value
+	}
+	return labels
+}
+
 func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line string, base, streamLabels, rawFields map[string]string) (map[string]string, bool, error) {
-	labels := cloneStringMap(base)
+	labels := plan.mutableLabels(base)
 	bodyProjection, bodyProjectionReady := false, false
 	metadata := make(map[string]bool)
-	for name := range base {
-		if _, isStream := streamLabels[name]; !isStream {
-			metadata[name] = true
+	if !plan.mixedParsers {
+		for name := range base {
+			if _, isStream := streamLabels[name]; !isStream {
+				metadata[name] = true
+			}
 		}
 	}
 	extracted := make(map[string]bool)
@@ -3221,17 +3537,37 @@ func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line 
 		switch {
 		case stage.parser:
 			if !plan.noLabels && (plan.required == nil || len(extracted) != len(plan.required)) {
-				collisions := cloneStringMap(streamLabels)
-				for name := range metadata {
-					collisions[name] = labels[name]
+				if plan.mixedParsers && len(line) > 1<<20 {
+					return nil, false, errOrderedJSONComplexity
+				}
+				// Both stages reserve the original stream and metadata names, even
+				// if an intervening projection removed their visible values.
+				collisions := base
+				if !plan.mixedParsers {
+					collisions = cloneStringMap(streamLabels)
+					for name := range metadata {
+						collisions[name] = labels[name]
+					}
 				}
 				if stage.logfmt {
-					plan.parseLogfmt(line, collisions, labels, extracted)
+					if err := plan.parseLogfmt(line, collisions, labels, extracted); err != nil {
+						if errors.Is(err, errOrderedJSONFilterRejected) {
+							return nil, false, nil
+						}
+						return nil, false, err
+					}
 					continue
 				}
-				if !bodyProjectionReady {
+				_, fieldCollision := collisions[stage.jsonField]
+				if !bodyProjectionReady && (stage.jsonField == "" || fieldCollision) {
 					bodyProjection = storedJSONBodyFieldProjection(line, rawFields, streamLabels)
 					bodyProjectionReady = true
+				}
+				if stage.jsonField != "" {
+					if err := plan.parseExplicitJSONField(stage.jsonField, line, collisions, streamLabels, bodyProjection, labels, extracted); err != nil {
+						return nil, false, err
+					}
+					continue
 				}
 				if err := plan.parseJSON(line, collisions, streamLabels, bodyProjection, labels, extracted); err != nil {
 					if errors.Is(err, errOrderedJSONFilterRejected) {
@@ -3324,6 +3660,37 @@ func storedJSONBodyFieldProjection(line string, rawFields, streamLabels map[stri
 	return err == nil && valid && matched == regularFields
 }
 
+// parseExplicitJSONField reads only the listed field. Loki's expression parser
+// leaves non-JSON lines for the next parser with an error, and supplies an empty
+// value when a JSON line lacks the key.
+func (plan *orderedJSONMetricPlan) parseExplicitJSONField(name, line string, base, streamLabels map[string]string, projection bool, labels map[string]string, extracted map[string]bool) error {
+	if len(line) == 0 || line[0] != '{' && line[0] != '[' && line[0] != '"' {
+		return plan.recordJSONError(labels, jsonparser.MalformedObjectError)
+	}
+	value := jsonLineValue([]byte(line), []string{name})
+	if len(value) > 64<<10 {
+		return errOrderedJSONComplexity
+	}
+	if strings.ContainsRune(value, utf8.RuneError) {
+		// Loki's expression parser leaves object JSON as raw label text;
+		// strings and arrays normalize replacement characters instead.
+		// Keep the distinction until final metric labels are selected.
+		_, kind, _, err := jsonparser.Get([]byte(line), name)
+		if err == nil && kind != jsonparser.Object {
+			value = lokiLabelValue(value)
+		}
+	}
+	if stored, exists := base[name]; exists {
+		if _, stream := streamLabels[name]; stream || !projection || stored != value {
+			name += extractedSuffix
+		}
+	}
+	if plan.required[name] && !extracted[name] {
+		labels[name], extracted[name] = value, true
+	}
+	return nil
+}
+
 func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels map[string]string, bodyProjection bool, labels map[string]string, extracted map[string]bool) error {
 	if len(line) > 1<<20 {
 		return errOrderedJSONComplexity
@@ -3335,9 +3702,11 @@ func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels map
 			return errOrderedJSONComplexity
 		}
 		return jsonparser.ObjectEach(data, func(key, value []byte, kind jsonparser.ValueType, _ int) error {
-			fields++
-			if fields > 1024 {
-				return errOrderedJSONComplexity
+			if plan.required == nil {
+				fields++
+				if fields > 1024 {
+					return errOrderedJSONComplexity
+				}
 			}
 			name := orderedJSONLabelName(string(key), prefix == "")
 			if name == "" && prefix == "" && kind != jsonparser.Object {
@@ -3348,22 +3717,19 @@ func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels map
 			} else if prefix != "" {
 				name = prefix + "_" + name
 			}
-			if len(name) > 1024 || len(value) > 64<<10 && kind != jsonparser.Object {
+			if !plan.wantsJSONField(name, kind, base) {
+				return nil
+			}
+			if plan.required != nil {
+				fields++
+			}
+			if fields > 1024 || len(name) > 1024 || len(value) > 64<<10 && kind != jsonparser.Object {
 				return errOrderedJSONComplexity
 			}
 			if kind == jsonparser.Object {
-				if plan.required != nil {
-					wanted := false
-					for label := range plan.required {
-						wanted = wanted || strings.HasPrefix(label, name)
-					}
-					if !wanted {
-						return nil
-					}
-				}
 				return walk(value, name, depth+1)
 			}
-			if kind != jsonparser.String && kind != jsonparser.Number && kind != jsonparser.Boolean {
+			if !orderedJSONScalarType(kind) {
 				return nil
 			}
 			decoded := orderedJSONScalar(value, kind)
@@ -3392,6 +3758,37 @@ func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels map
 		})
 	}
 	return plan.recordJSONError(labels, walk([]byte(line), "", 0))
+}
+
+// wantsJSONField applies required-label hints before decoded-value budgets.
+// Original collisions can make an otherwise unrelated key observable through
+// its _extracted name; object prefixes retain the existing walk semantics.
+func (plan *orderedJSONMetricPlan) wantsJSONField(name string, kind jsonparser.ValueType, base map[string]string) bool {
+	if plan.required == nil {
+		return true
+	}
+	if kind == jsonparser.Object {
+		for label := range plan.required {
+			if strings.HasPrefix(label, name) {
+				return true
+			}
+		}
+		return false
+	}
+	if plan.required[name] {
+		return true
+	}
+	_, collision := base[name]
+	return collision && plan.required[name+extractedSuffix]
+}
+
+func orderedJSONScalarType(kind jsonparser.ValueType) bool {
+	switch kind {
+	case jsonparser.String, jsonparser.Number, jsonparser.Boolean:
+		return true
+	default:
+		return false
+	}
 }
 
 func (plan *orderedJSONMetricPlan) recordJSONError(labels map[string]string, err error) error {
@@ -3456,6 +3853,10 @@ func orderedJSONLabelName(name string, first bool) string {
 }
 
 func (plan *orderedJSONMetricPlan) groupLabels(labels map[string]string) map[string]string {
+	if key := plan.projectedLabel; key != "" && len(labels) == 1 && labels[key] != "" {
+		// This row already owns exactly its nonempty output identity.
+		return labels
+	}
 	if !plan.aggregated {
 		// Loki merges label-reducing pipelines with a vector aggregation,
 		// whose label builder omits empty values from the resulting series.
@@ -3519,6 +3920,13 @@ type orderedJSONRowReader struct {
 	rows, limit  int
 	read         int64
 	maxBytes     int64
+	// originalField is nonempty only for a classified raw-row envelope. Its
+	// contents are restored before timestamps, provenance and parser checks.
+	originalField string
+	// staticClassTransport is set only when the request builds the proven
+	// per-row class complement. Decoding an envelope alone proves no query
+	// invariance and must not enable retries for arbitrary reverse pipelines.
+	staticClassTransport bool
 }
 
 func (p *Proxy) newOrderedJSONRowReader() (*orderedJSONRowReader, error) {
@@ -3544,6 +3952,97 @@ func (p *Proxy) newOrderedJSONRowReader() (*orderedJSONRowReader, error) {
 // inclusive) and adds the samples of the evaluations at start, start+step, ...
 // up to end to reader.
 func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSONMetricPlan, reader *orderedJSONRowReader, query string, from, to, start, end time.Time, step time.Duration) error {
+	if plan.projectedLabel == "" && !reader.staticClassTransport || to.Before(from) || !time.Unix(0, from.UnixNano()).Equal(from) ||
+		!time.Unix(0, to.UnixNano()).Equal(to) || uint64(to.UnixNano())-uint64(from.UnixNano()) > math.MaxInt64 {
+		return p.readOrderedJSONMetricSpan(ctx, plan, reader, query, from, to, start, end, step)
+	}
+	// Upper-level/frontend splits already determine this requested span.
+	// A long but small answer needs one read; transport subdivision is only
+	// recovery from a typed decoded-body cap, not another eager split layer.
+	return p.readOrderedJSONMetricChunk(ctx, plan, reader, query, from, to, start, end, step)
+}
+
+// readOrderedJSONMetricChunk commits only a complete raw span. A decoded-body
+// cap retries smaller, disjoint spans; rows and bytes of every attempt remain
+// charged to the original request. No partial answer may seed its point cache.
+func (p *Proxy) readOrderedJSONMetricChunk(ctx context.Context, plan *orderedJSONMetricPlan, reader *orderedJSONRowReader, query string, from, to, start, end time.Time, step time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target := reader
+	if len(reader.series) != 0 {
+		staged := *reader
+		staged.series = make(map[string]manualSeriesSamples)
+		target = &staged
+	}
+	err := p.readOrderedJSONMetricSpan(ctx, plan, target, query, from, to, start, end, step)
+	if target != reader {
+		reader.rows, reader.read, reader.levels = target.rows, target.read, target.levels
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if err == nil {
+		if target != reader {
+			return p.mergeOrderedJSONMetricChunk(ctx, reader, target.series)
+		}
+		return nil
+	}
+	var capped *backendBodyTooLargeError
+	if !errors.As(err, &capped) || ctx.Err() != nil || !from.Before(to) ||
+		reader.rows > reader.limit || reader.read > reader.maxBytes {
+		return err
+	}
+	// The direct target was empty before the failed attempt. Otherwise its
+	// contributions are isolated in target, never in an earlier complete span.
+	if target == reader {
+		clear(reader.series)
+	} else {
+		target.series = nil
+	}
+	n := uint64(to.UnixNano()) - uint64(from.UnixNano())
+	if n >= math.MaxInt64 || n == 0 {
+		return err
+	}
+	size := time.Duration((n + listedChunkShrink) / listedChunkShrink)
+	parts := splitQueryRangeWindows(from.UnixNano(), to.UnixNano(), size, "forward")
+	if last := len(parts) - 1; last >= 0 && parts[last].endNs-parts[last].startNs >= int64(size) {
+		// The general splitter folds a final singleton into its preceding
+		// span. A retry must keep it separate, even for two adjacent ns.
+		parts[last].endNs--
+		parts = append(parts, queryRangeWindow{startNs: to.UnixNano(), endNs: to.UnixNano()})
+	}
+	if len(parts) < 2 || parts[len(parts)-1].endNs != to.UnixNano() {
+		return err
+	}
+	for _, part := range parts {
+		if err := p.readOrderedJSONMetricChunk(ctx, plan, reader, query, time.Unix(0, part.startNs), time.Unix(0, part.endNs), start, end, step); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Proxy) mergeOrderedJSONMetricChunk(ctx context.Context, reader *orderedJSONRowReader, series map[string]manualSeriesSamples) error {
+	for key, next := range series {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		entry, exists := reader.series[key]
+		if !exists {
+			if err := seriesLimitCollecting(ctx, len(reader.series), p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+				return err
+			}
+			reader.series[key] = next
+			continue
+		}
+		entry.Samples = append(entry.Samples, next.Samples...)
+		reader.series[key] = entry
+	}
+	return nil
+}
+
+func (p *Proxy) readOrderedJSONMetricSpan(ctx context.Context, plan *orderedJSONMetricPlan, reader *orderedJSONRowReader, query string, from, to, start, end time.Time, step time.Duration) error {
 	// The query argument limit asks VL to sort by timestamp. A final limit pipe
 	// bounds raw collection without that sort; local window evaluation sorts
 	// the complete accepted rows and rejects overflow instead of truncating.
@@ -3567,6 +4066,8 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 	defer func() { reader.read += readLimit - limited.N }()
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 64<<10), 8<<20)
+	const maxReusableRowFields = 16
+	var row map[string]string
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -3578,9 +4079,27 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 		if reader.rows > reader.limit {
 			return manualRowLimitError(reader.limit)
 		}
-		var row map[string]string
+		// Discard wide rows because clear retains map storage.
+		if len(row) > maxReusableRowFields {
+			row = nil
+		}
+		// Unmarshal preserves keys that are absent from the next row.
+		clear(row)
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			// Scanner emits its final partial token before reporting a read
+			// error. Preserve a size cap or aborted body instead of mistaking
+			// the cut NDJSON row for invalid source JSON.
+			if readErr := scanner.Err(); readErr != nil {
+				return readErr
+			}
 			return fmt.Errorf("invalid backend metric row: %w", err)
+		}
+		if reader.originalField != "" {
+			var err error
+			row, err = restoreMixedClassRow(row, reader.originalField)
+			if err != nil {
+				return err
+			}
 		}
 		ts, ok := parseFlexibleUnixNanos(row["_time"])
 		if !ok {
@@ -3597,7 +4116,7 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 		if !plan.acceptDerivedLevel(base, &reader.levels, row, desc) {
 			continue
 		}
-		labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.translatedLabels, row)
+		labels, keep, err := plan.processMetricRow(ctx, p.placeholderRowLine(row, desc.rawLabels), row, base, desc, &reader.levels)
 		if err != nil {
 			return err
 		}
@@ -3608,6 +4127,19 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 			return lokiPipelineError(labels)
 		}
 		labels = plan.groupLabels(labels)
+		accepted := true
+		for _, value := range labels {
+			// Recorded Loki 3.7.10 drops a sample only when a replacement
+			// character survives in its final metric label values. A later
+			// drop or grouping that removes the label must keep the row.
+			if strings.ContainsRune(value, utf8.RuneError) {
+				accepted = false
+				break
+			}
+		}
+		if !accepted {
+			continue
+		}
 		key := canonicalLabelsKey(labels)
 		entry, exists := reader.series[key]
 		if !exists {
@@ -3692,11 +4224,16 @@ func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, se
 	if step <= 0 || end.Before(start) {
 		return nil, fmt.Errorf("invalid ordered JSON metric evaluation bounds")
 	}
-	keys := make([]string, 0, len(series))
-	for key := range series {
-		keys = append(keys, key)
+	var keys []string
+	if plan.mixedParsers {
+		keys = seriesKeysInLabelOrder(series, func(s manualSeriesSamples) map[string]string { return s.Metric })
+	} else {
+		keys = make([]string, 0, len(series))
+		for key := range series {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
 	}
-	sort.Strings(keys)
 	result := make([]map[string]interface{}, 0, len(keys))
 	totalPoints := 0
 	sampleLimit := int64(metricSampleLimit(ctx)) // read once: the loop below runs for every point of every series

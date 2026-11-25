@@ -1,6 +1,8 @@
 """Unit tests for test/e2e-compat/log-generator.py: timestamps of the lines of one push."""
 import importlib.util
 import copy
+import contextlib
+import io
 import json
 import os
 import unittest
@@ -112,6 +114,96 @@ class LokiPushIdentityTest(unittest.TestCase):
         self.assertEqual(send.call_args_list[0].args, (gen.LOKI_URL + "/loki/api/v1/push", before))
         self.assertEqual(send.call_args_list[1].args, (gen.VL_URL + "/insert/loki/api/v1/push?disable_message_parsing=1", before))
         self.assertEqual(payload, before)
+
+
+class BackfillFlushTest(unittest.TestCase):
+    def run_backfill(self, budget, seconds=250, batches=None, fail=None):
+        env = {"LOG_BACKFILL_END": "1800000000", "LOG_BACKFILL_SEED": "checkpoint-proof"}
+        if budget is not None:
+            env["LOG_BACKFILL_FLUSH_STREAMS"] = str(budget)
+        calls = []
+
+        def send(request, timeout):
+            calls.append((request.full_url, request.data, timeout))
+            if fail and request.full_url.endswith(fail):
+                raise OSError("ambiguous request failure")
+            return mock.MagicMock()
+
+        with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(io.StringIO()):
+            if budget is None:
+                os.environ.pop("LOG_BACKFILL_FLUSH_STREAMS", None)
+            gen = load()
+            with contextlib.ExitStack() as patches:
+                patches.enter_context(mock.patch.object(gen.urllib.request, "urlopen", side_effect=send))
+                if batches is not None:
+                    patches.enter_context(mock.patch.object(gen, "services_batch", side_effect=batches))
+                try:
+                    gen.backfill(seconds, 1 if batches is not None else 10)
+                except Exception as error:
+                    return calls, error
+        return calls, None
+
+    @staticmethod
+    def batches(*sizes):
+        return [[{"stream": {"app": "checkpoint", "part": str(i)},
+                  "values": [["1800000000000000000", "original line"]]} for i in range(size)] for size in sizes]
+
+    def test_checkpoint_preserves_every_payload_timestamp_and_label_without_consuming_rng(self):
+        original, error = self.run_backfill(None)
+        self.assertIsNone(error)
+        enabled, error = self.run_backfill(1)
+        self.assertIsNone(error)
+        writes = [call for call in enabled if not call[0].endswith("/flush")]
+        self.assertEqual(writes, original)
+        self.assertGreater(len(writes), 2)
+        self.assertEqual(sum(url.endswith("/flush") for url, _, _ in enabled), len(writes) // 2)
+        for i in range(0, len(enabled), 3):
+            loki, vl, flush = enabled[i:i + 3]
+            self.assertTrue(loki[0].endswith("/loki/api/v1/push"))
+            self.assertIn("disable_message_parsing=1", vl[0])
+            self.assertEqual(loki[1], vl[1])
+            self.assertTrue(flush[0].endswith("/flush"))
+            self.assertIsNone(flush[1])
+            self.assertEqual(flush[2], 60)
+
+    def test_budget_counts_successful_stream_objects_and_resets_after_flush(self):
+        calls, error = self.run_backfill(600, 5, self.batches(200, 200, 200, 200, 200))
+        self.assertIsNone(error)
+        self.assertEqual(["flush" if url.endswith("/flush") else len(json.loads(body)["streams"])
+                          for url, body, _ in calls], [400, 400, 400, 400, "flush", 200, 200])
+
+    def test_final_partial_envelope_can_cross_the_budget(self):
+        calls, error = self.run_backfill(500, 3, self.batches(210, 210, 100))
+        self.assertIsNone(error)
+        self.assertEqual(["flush" if url.endswith("/flush") else len(json.loads(body)["streams"])
+                          for url, body, _ in calls], [420, 420, 100, 100, "flush"])
+
+    def test_ambiguous_push_or_flush_failure_aborts_without_replay(self):
+        for failure, expected in (("/loki/api/v1/push", 1),
+                                  ("/insert/loki/api/v1/push?disable_message_parsing=1", 2), ("/flush", 3)):
+            with self.subTest(failure=failure):
+                calls, error = self.run_backfill(1, 3, self.batches(210, 210, 100), fail=failure)
+                self.assertIsInstance(error, OSError)
+                self.assertEqual(len(calls), expected)
+
+    def test_invalid_budget_fails_before_any_write(self):
+        for budget in (-1, "not-an-integer"):
+            with self.subTest(budget=budget):
+                calls, error = self.run_backfill(budget, 1, self.batches(1))
+                self.assertIsInstance(error, ValueError)
+                self.assertEqual(calls, [])
+
+    def test_zero_disables_checkpoints_and_live_push_ignores_backfill_setting(self):
+        zero, error = self.run_backfill(0)
+        self.assertIsNone(error)
+        original, _ = self.run_backfill(None)
+        self.assertEqual(zero, original)
+        with mock.patch.dict(os.environ, {"LOG_BACKFILL_FLUSH_STREAMS": "-1"}):
+            gen = load()
+        with mock.patch.object(gen.urllib.request, "urlopen") as send:
+            gen.dual_push([{"stream": {"app": "live"}, "values": [["1", "unchanged"]]}])
+        self.assertEqual(len(send.call_args_list), 2)
+        self.assertTrue(all("/flush" not in call.args[0].full_url for call in send.call_args_list))
 
 
 if __name__ == "__main__":

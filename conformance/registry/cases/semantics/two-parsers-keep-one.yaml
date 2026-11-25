@@ -1,8 +1,9 @@
 id: semantics/two-parsers-keep-one
-title: A query with `| json` and `| logfmt` runs the one parser the data answers to (open)
+title: Ordered JSON and logfmt stages on mixed lines (open for log replies and unsupported metrics)
 proves:
   - parser-json
   - parser-logfmt
+  - loki_api_v1_query
   - loki_api_v1_query_range
 consumer: explore
 why: |
@@ -17,6 +18,116 @@ why: |
   lines with their stream labels only, where Loki parsed all of them). The
   translation itself keeps both stages in order (`| unpack_json | unpack_logfmt`),
   and the name_extracted rename follows the first parser that reads a key.
+  The optional production-scopes generator reproduced the same gap in a real
+  Drilldown grouped metric on 2026-11-21. On the identical fifteen-minute window
+  1795217040..1795217940, with a 2s step and 2s count window, the original
+  Drilldown client received 3750 customer_id series from Loki and 1110 from the
+  proxy for `| json customer_id="[\"customer_id\"]" | logfmt | drop
+  __error__, __error_details__ | customer_id!=""`. The complete source cohort
+  counted 25622 rows on both backends in that scoped window. Counts alone are
+  not row-level identity evidence; the discrepancy was not accepted as fixture
+  parity or fixed by changing the client presentation.
+  cache_status, tenant_id, feature_flag, device_type and deployment_id had
+  differing sample values too. This also affects Fields opened in Explore.
+  The grouped count/rate/bytes evaluator runs bare JSON and logfmt in either
+  order. Its explicit JSON form covers a single top-level key followed by
+  logfmt, a drop of both error labels, and that key's nonempty filter. A bare
+  range ending in a supported keep preserves both parsers and all-label hints.
+  On mixed lines its error can differ from a written sum by the kept labels.
+  TestOrderedMixedParserRecordedMetrics
+  compares full replies with Loki, and TestRangeMetricCompatibilityDrilldownFieldBreakdown
+  checks the mixed-format fixture through the Drilldown HTTP profile.
+  TestOrderedMixedParserTrailingKeepOldCopies and TestOrderedMixedParserTransformedBinaryOldCopies
+  seed pre-change parent responses on instant and range requests. The typed matrix
+  exercises positive and negative literal and regexp alternatives, complete data
+  under both sorts, bare keep and flags, and full failing-series metadata through
+  direct and transformed-binary requests.
+  The matrix also checks an ordinary instant vector containing both the empty
+  label set and a named group, comparing every label and point. A separate fixture
+  supplies level=error only in the line. Both endpoints compare Loki's full
+  diagnostic, including detected_level and the body key's _extracted suffix
+  when a preceding filter reads that collision. TestOrderedMixedParserRecordedMetrics
+  checks those responses with recorded ingest metadata and level-less VL rows;
+  TestRangeMetricCompatibilityDrilldownFieldBreakdown verifies the raw VL row
+  lacks stored level fields and compares the full live Loki and proxy errors.
+  TestOrderedMixedSettledStepsSeriesOrder keeps the complete cold series order
+  when a cached smaller range and a newly read gap are merged. Live comparisons
+  do not require incidental engine or frontend serialization order: Loki documents
+  range-series order as unspecified, including sort and sort_desc. Full identity,
+  values, timestamps and empty-group presence remain checked. See
+  https://grafana.com/docs/loki/latest/query/metric_queries/#result-ordering.
+  TestOrderedMixedStoredLevelRecorded checks the guarded stored-level stats
+  route, open/closed evaluation boundaries, tenant limits and partial rankings
+  against recorded engine answers. Flag admission and delayed planning-budget
+  rejection are covered without publishing a hypothetical query's memo.
+  The existing performance catalog references mixed_parser_explicit_group and
+  mixed_parser_reverse_group by case_id, reusing their quality queries instead
+  of maintaining another copy of either expression.
+  The same catalogs link mixed_parser_explicit_rate_group and
+  mixed_parser_reverse_rate_group for grouped rate in both parser orders.
+  Their expressions differ from the count cases only in the range function;
+  every series label, timestamp and value remains compared against Loki.
+  Native Explore marks the rate scenes as the positive partial-fix proofs.
+  The count scenes remain mandatory source-linked runtime regression controls:
+  main and Loki already agree on the ordinary JSON generator cohort, so those
+  count captures do not establish a corrected output difference. The retained
+  rate comparison on a different production-scope selector motivates this
+  coverage, but does not certify these exact catalog expressions. Fresh
+  main/PR/Loki captures on identical CI inputs are still required. Neither
+  facet closes the remaining unsupported mixed-parser contracts.
+  The typed admission in internal/queryplan/resolve.go and ordered execution in
+  internal/proxy/ordered_json_metric.go are exercised by the existing API and
+  native Explore catalogs through those same matrix case IDs.
+  TestOrderedRawMetricChunksMatchRecordedLoki compares the count, rate and byte
+  variants with four recorded engine answers when a compressed backend response
+  is cut inside a JSON row. Only a typed decoded-body cap retries disjoint time
+  spans; failed attempts remain charged to the same request budgets. Small
+  complete long-range responses still use one raw read. This does not remove
+  the cumulative raw-row/byte limits or prove large-window UI performance.
+  TestOrderedMixedParserRawComplementRecordedMetrics reuses the central typed
+  matrix's 91 source-control and raw-complement facets over seven shared
+  OrderedMixedParserRawComplement fixtures: replacement-rune strings and
+  object/array values, numeric-looking strings, stored-label collisions and an
+  unrelated long key. Count and rate cover forward explicit JSON/logfmt,
+  reverse logfmt/JSON and grouping away the projected key, on both endpoints.
+  Twelve recorded empty-result facets require their positive one-row source
+  control; the full labels, values and timestamps remain strict. The existing
+  JSON/logfmt depth-3 paths link these matrix cases and the recorded oracle.
+  These scoped raw metric facets do not close the entire mixed-parser gap.
+  TestMixedJSONRowClassRelevantAliasesActualVictoriaLogsAndLoki checks native
+  categorical admission against actual VictoriaLogs and Loki for plain and
+  underscored targets. It includes trimmed and nested aliases, blank-object
+  depth, irrelevant key spellings and source collisions; count/rate and
+  instant/range answers retain every label and point. The original envelope
+  partition remains exhaustive and disjoint, including internal output-name
+  collisions. This is evidence for the admitted class, not arbitrary pipelines.
+  TestOrderedMixedStatsEnvelopeExpansionRetainsOriginalByteBudget holds both
+  parser orders to the original bounded raw route when the internal snapshot
+  envelope crosses the input-byte cap. The optimization must fall back without
+  raising input, row or final-output limits; its failed intermediate read is
+  additional work, not a cache hit or successful source response.
+  Log replies, malformed strict logfmt, and other unsupported pipelines remain open.
+  Concurrent parser probes are scoped by tenant and forwarded request identity.
+  TestDrilldown_ParserProbeIsolatesRequestScopes verifies distinct tenant/auth
+  verdicts and same-scope coalescing; that isolation does not resolve this
+  mixed-format pipeline difference.
+
+  The original full-run requests additionally include sort(count_over_time(... | logfmt
+  a, b="c" !~ "x" | json a="b" [5m])) on query and query_range. The complete retained
+  facets name Loki labels a and b absent from the proxy and more proxy series (range
+  2152 against 2117; instant 165 against 162). This named-logfmt/named-JSON composition
+  stays within the unsupported ordered metric scope. The assignment records that
+  observed contract; it does not establish whether stage omission, listed-field
+  visibility or empty-key handling is the sole cause, and it does not claim complete
+  golden point parity.
+
+  Historical ownership evidence for these additions is the parity-refresh artifact of
+  https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/44910591975
+  (run/results.jsonl), source ref 4a63b99e, and the committed
+  conformance/registry/generated/parity-discovery.json. Full response bodies were not
+  retained. The case remains OPEN; these assignments grant no waiver, owner-kept
+  projection, current runtime pass or fixed status.
+
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -32,16 +143,46 @@ compare:
   mode: observed
   fields: [streams.values, parsed labels]
   expect: |
-    Parsed labels for the lines of both formats.
+    Parsed labels for the lines of both formats, including every grouped field
+    series and sample when the same ordered stages are used inside a metric.
+corpus:
+  dimensions:
+    shapes:
+      - query: 'sum by (customer_id) (count_over_time({env="production"} | json customer_id="[\"customer_id\"]" | logfmt | drop __error__, __error_details__ | customer_id!="" [2s]))'
+      - query: 'sum by (user_id) (count_over_time({app="api-gateway",env="production"} |= "no-such-user" or "usr_42" | json | logfmt | drop __error__, __error_details__ [5m]))'
+      - query: 'sum by (user_id) (count_over_time({app="api-gateway",env="production"} != "no-such-user" or "usr_42" | json | logfmt | drop __error__, __error_details__ [5m]))'
+      - query: 'sum by (user_id) (count_over_time({app="api-gateway",env="production"} |~ "no-such-user" or "usr_4[2]" | json | logfmt | drop __error__, __error_details__ [5m]))'
+      - query: 'sum by (user_id) (count_over_time({app="api-gateway",env="production"} !~ "no-such-user" or "usr_4[2]" | json | logfmt | drop __error__, __error_details__ [5m]))'
+      - query: 'sort(sum by (user_id) (count_over_time({app="api-gateway",env="production"} | json | logfmt | drop __error__, __error_details__ [5m])))'
+      - query: 'sort_desc(sum by (user_id) (count_over_time({app="api-gateway",env="production"} | json | logfmt | drop __error__, __error_details__ [5m])))'
+      - query: 'sort(label_replace(sum by (user_id) (count_over_time({app="api-gateway",env="production"} | json user_id="[\"user_id\"]" | logfmt | drop __error__, __error_details__ | user_id!="" [5m])) + 1, "copy", "$1", "user_id", "(.+)"))'
+      - query: 'count_over_time({app="matrix-mixed-keep"} | logfmt | json | keep x [5m])'
+      - query: 'count_over_time({app="matrix-mixed-keep"} | logfmt --strict | json | keep x [5m])'
+      - query: 'count_over_time({app="matrix-mixed-keep"} | logfmt --keep-empty | json | keep x [5m])'
+      - query: 'sum by (tenant_id, missing) (count_over_time({app="matrix-mixed-error"} | logfmt | drop __error__ | json [5m]))'
+      - query: 'sort(label_replace(sum by (tenant_id, missing) (count_over_time({app="matrix-mixed-error"} | logfmt | drop __error__ | json [5m])) + 1, "copy", "$1", "tenant_id", "(.+)"))'
+      - query: 'count_over_time({app="matrix-mixed-error"} | logfmt | json | keep tenant_id [5m])'
+      - query: 'sum by (tenant_id) (count_over_time({app="matrix-mixed-error"} | logfmt | json | keep tenant_id [5m]))'
+      - query: 'sum by (amount) (count_over_time({app="matrix-mixed-body-level"} | json | logfmt | drop __error__, __error_details__ [5m]))'
+      - query: 'sum by (missing) (count_over_time({app="matrix-mixed-body-level"} | logfmt | json [5m]))'
+      - query: 'sum by (missing) (count_over_time({app="matrix-mixed-body-level"} | logfmt | detected_level_extracted="shadow" | json [5m]))'
 gap:
   status: open
   impact: explore-visible
   effort: M
   area: 'internal/proxy/query_translation.go preferWorkingParser (probe-based removal of a parser stage)'
   loki: 'every stage runs on every line; a key an earlier parser extracted is skipped by a later one (measured 2026-10, in this case)'
-  proxy: 'one of the two parser stages is removed from the query'
-  planned_test: 'TestCompat_TwoParsersOnMixedFormats (test/e2e-compat, group semantics)'
+  proxy: 'log requests and unsupported metrics can still lose one of the parser stages'
+  planned_test: 'TestCompat_TwoParsersOnMixedFormats (categorized log replies and strict logfmt)'
   clusters:
     - 3de57bdc
     - '197df8a8'
     - 'd16e557c'
+
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -6,6 +6,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
@@ -119,7 +121,172 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		// The compat edge looks its cache up before the handler validates the query.
 		b.add(runeResponseKeyVersion(query))
 	}
+	if jsonWord {
+		appendOrderedMetricFences(&b, query, logfmtWord)
+	}
 	return b.String()
+}
+
+func appendOrderedMetricFences(b *fenceChain, query string, logfmtWord bool) {
+	expr, ok := sharedLogQLExpr(fenceVariablesResolved(query))
+	if !ok {
+		return
+	}
+	if logfmtWord && containsMixedParserMetric(expr) {
+		b.add(mixedParserMetricResponseVersion)
+	}
+	if containsOrderedJSONEvaluatorMetric(expr) {
+		b.add(orderedJSONEvaluatorResponseVersion)
+	}
+}
+
+const mixedParserMetricResponseVersion = "@ordered-mixed-parser-metric-v1:"
+
+const orderedJSONEvaluatorResponseVersion = "@ordered-json-evaluator-v2:"
+
+// The ordered row evaluator changed both projected-value handling and required
+// JSON label hints. Simple grouped JSON is neither a bare metric nor a nested
+// vector, so its fence must cover the evaluator family directly. The steps
+// cache inherits this token through queryStepsBaseKey's queryRangeCacheKey.
+func orderedJSONEvaluatorResponseKeyVersion(query string) string {
+	if !containsWord(query, "json", spelledOtherwise(query)) {
+		return ""
+	}
+	if expr, ok := sharedLogQLExpr(fenceVariablesResolved(query)); ok && containsOrderedJSONEvaluatorMetric(expr) {
+		return orderedJSONEvaluatorResponseVersion
+	}
+	return ""
+}
+
+// Read cached typed admission facts only: compiling a physical plan here would
+// allocate maps, stages and regexps on every warm response-cache lookup.
+func containsOrderedJSONEvaluatorMetric(expr logqlpkg.Expr) bool {
+	switch n := expr.(type) {
+	case *logqlpkg.VectorAggregation:
+		if ra, ok := n.Inner.(*logqlpkg.RangeAggregation); ok && n.Op == logqlpkg.VectorSum {
+			return orderedJSONEvaluatorRange(n.Grouping, false, ra)
+		}
+		return containsOrderedJSONEvaluatorMetric(n.Inner)
+	case *logqlpkg.BinOpExpr:
+		return containsOrderedJSONEvaluatorMetric(n.Left) || containsOrderedJSONEvaluatorMetric(n.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return n.Typed && n.Func == "label_replace" && containsOrderedJSONEvaluatorMetric(n.Inner)
+	case *logqlpkg.RangeAggregation:
+		return orderedJSONEvaluatorRange(nil, true, n)
+	default:
+		return false
+	}
+}
+
+func orderedJSONEvaluatorRange(group *logqlpkg.Grouping, bare bool, ra *logqlpkg.RangeAggregation) bool {
+	if ra.Grouping != nil || ra.RangeDuration <= 0 {
+		return false
+	}
+	switch ra.Op {
+	case logqlpkg.RangeCountOverTime, logqlpkg.RangeRate, logqlpkg.RangeBytesOverTime, logqlpkg.RangeBytesRate:
+	default:
+		return false
+	}
+	log, ok := ra.Inner.(*logqlpkg.LogQuery)
+	if !ok {
+		return false
+	}
+	jsonSeen, logfmtSeen, explicit := false, false, false
+	for _, stage := range log.Pipeline {
+		switch s := stage.(type) {
+		case *logqlpkg.ParserStage:
+			switch s.Type {
+			case logqlpkg.ParserJSON:
+				jsonSeen = true
+				if orderedJSONProjectionKey(s) != "" {
+					explicit = true
+				} else if s.Param != "" {
+					return false
+				}
+			case logqlpkg.ParserLogfmt:
+				if s.Param != "" {
+					return false
+				}
+				logfmtSeen = true
+			default:
+				return false
+			}
+		case *logqlpkg.LabelFilterStage:
+			if _, ok := orderedLabelFilterExpr(s); !ok {
+				return false
+			}
+		case *logqlpkg.LineFilterStage:
+			if s.IP {
+				return false
+			}
+			switch s.Op {
+			case logqlpkg.LineFilterContains, logqlpkg.LineFilterExcludes, logqlpkg.LineFilterMatchRe, logqlpkg.LineFilterExcludeRe:
+			default:
+				return false
+			}
+		case *logqlpkg.DropStage, *logqlpkg.KeepStage:
+		default:
+			return false
+		}
+	}
+	if !jsonSeen {
+		return false
+	}
+	if logfmtSeen {
+		return mixedMetricStages(group, bare, log.Pipeline, queryplan.ParserSemantics(log.Pipeline))
+	}
+	return !explicit
+}
+
+// The original range with a trailing keep and an explicitly grouped sum
+// produce different Loki parser hints. Both identities reach the same row
+// evaluator and keep their own response keys, including before offset handling.
+func mixedMetricRange(group *logqlpkg.Grouping, bare bool, ra *logqlpkg.RangeAggregation) bool {
+	if ra.Grouping != nil || ra.RangeDuration <= 0 {
+		return false
+	}
+	switch ra.Op {
+	case logqlpkg.RangeCountOverTime, logqlpkg.RangeRate, logqlpkg.RangeBytesOverTime, logqlpkg.RangeBytesRate:
+	default:
+		return false
+	}
+	log, ok := ra.Inner.(*logqlpkg.LogQuery)
+	return ok && mixedMetricStages(group, bare, log.Pipeline, queryplan.ParserSemantics(log.Pipeline))
+}
+
+// Follow the leaves evaluated by the ordered vector chain and the existing
+// operand and outer label_replace handlers. Ranking a transformed binary
+// dispatches the operand through its own HTTP handler.
+func containsMixedParserMetric(expr logqlpkg.Expr) bool {
+	switch n := expr.(type) {
+	case *logqlpkg.BinOpExpr:
+		return containsMixedParserMetric(n.Left) || containsMixedParserMetric(n.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return n.Typed && n.Func == "label_replace" && containsMixedParserMetric(n.Inner)
+	case *logqlpkg.RangeAggregation:
+		return mixedMetricRange(nil, true, n)
+	case *logqlpkg.VectorAggregation:
+		if ra, ok := n.Inner.(*logqlpkg.RangeAggregation); ok && n.Op == logqlpkg.VectorSum {
+			return mixedMetricRange(n.Grouping, false, ra)
+		}
+		_, transformed := n.Inner.(*logqlpkg.OpaqueMetricExpr)
+		switch n.Op {
+		case logqlpkg.VectorSum, logqlpkg.VectorMin, logqlpkg.VectorMax, logqlpkg.VectorAvg, logqlpkg.VectorCount:
+			return !transformed && containsMixedParserMetric(n.Inner)
+		case logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
+			if !orderedJSONRankSupported(n) {
+				return false
+			}
+		case logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+		default:
+			return false
+		}
+		// A ranking dispatches a transformed binary through its own query
+		// handler. A transform over a direct range has no such recursive route.
+		return (!transformed || holdsBinaryOperand(n.Inner)) && containsMixedParserMetric(n.Inner)
+	default:
+		return false
+	}
 }
 
 // fenceVariablesResolved is query with its Grafana range variables (`[$__interval]`, `[$__auto]`, `[$__range]`,
@@ -160,6 +327,7 @@ func (c *fenceChain) add(s string) {
 	case 0:
 		c.one = s
 	case 1:
+		c.b.Grow(len(c.one) + len(s))
 		c.b.WriteString(c.one)
 		c.b.WriteString(s)
 	default:

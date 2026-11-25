@@ -1,0 +1,49 @@
+id: profiles/grafana-rejected-query-uncaught-error
+title: Stock Explore throws the rejection of its own log-volume query when Loki rejects the query (upstream)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's grammar only allows a metric expression inside a vector aggregation, so
+  `topk(2, {app="api-gateway",env="production"})` fails to parse with a 400
+  (semantics/vector-aggregation-over-log-selector-status covers the proxy's answer).
+  Stock Grafana Explore, for the same expression, also asks for log-volume-A and wraps the
+  expression in count_over_time. Loki rejects that supporting query as well, with its own
+  400 parse error, and the browser reports the rejection as an unhandled plain object
+  (`pageerror: Object`). The proxy answers the identical rejections, so this is neither a
+  proxy defect nor a difference from Loki.
+
+  Visual smoke run 45464738094 (base 74810c0a57, head 9fb83ef96a) records the page
+  explore-topk-over-log-selector at 1h on main, PR and Loki. All three captures hold the
+  same two 400 DTOs (the primary parse error at column 45 and the supporting parse error at
+  column 49), no frames, and one complete Chrome-DevTools-identified uncaught object with
+  refId=log-volume-A, status=400 and the supporting error text as its message.
+
+  Recorded requests, complete DTOs, capture and artifact digests and the exact commits are in
+  bench/ab/results/oneoff/2026-11-24-visual-client-errors/topk-over-log-selector-rejection-proof.json.
+  The runtime proof accepts this page error only through that record (see
+  bench/visual/compare.py `_rejection_evidence`): a different status, DTO, request, event or
+  extra page error on any side leaves the error a failure.
+request:
+  scope: grafana-explore
+  entry: explore-topk-over-log-selector
+compare:
+  mode: observed
+  fields: [status, error_text, ui]
+  values:
+    client_error_contract: loki-query-rejection-v1
+    client_error_proof: bench/ab/results/oneoff/2026-11-24-visual-client-errors/topk-over-log-selector-rejection-proof.json
+  expect: |
+    The primary query and the automatically generated log-volume-A answer Loki's 400 parse
+    errors with identical complete error DTOs on main, PR and Loki. The client still reports
+    its unhandled supplementary error; that is neither a successful runtime proof nor a
+    proxy defect.
+gap:
+  status: upstream
+  impact: grafana-datasource
+  effort: M
+  area: 'stock Grafana Explore supplementary-query error handling for a query Loki rejects'
+  loki: 'primary A and log-volume-A are 400 parse errors; stock Explore throws the supporting error object (three recorded CI captures)'
+  proxy: 'the same two 400 DTOs as Loki; no API workaround'
+  planned_test: 'bench/visual explore-topk-over-log-selector scene; bench/visual/tests/test_compare.py rejection contract tests; TestValidateLogQL_LokiRejections'

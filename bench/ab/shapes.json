@@ -2839,6 +2839,7 @@
     {
      "name": "B2 sum by over a ratio of two per-stream metrics",
      "query": "sum by (service_name) (rate({env=\"production\"}[5m]) / count_over_time({env=\"production\"}[5m]))",
+     "documented_values": "metric-identity/structured-metadata-splits-series",
      "covers": [
       "semantics/aggregation-over-binary-dropped",
       "semantics/series-level-aggregation-bounded-memory",
@@ -3583,6 +3584,31 @@
       "operator-keep",
       "loki_api_v1_query_range",
       "quality/probe-regexp-parse-cost"
+     ]
+    }
+   ]
+  },
+  "mixed-parser-metrics": {
+   "cost_factor": 9,
+   "description": "Ordered mixed-parser metrics, reusing the typed quality matrix queries.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "explicit JSON then logfmt grouped count",
+     "case_id": "mixed_parser_explicit_group",
+     "covers": [
+      "semantics/two-parsers-keep-one"
+     ]
+    },
+    {
+     "name": "logfmt then JSON grouped count",
+     "case_id": "mixed_parser_reverse_group",
+     "covers": [
+      "semantics/two-parsers-keep-one"
      ]
     }
    ]

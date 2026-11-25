@@ -2925,14 +2925,26 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 // hitsRangeMetricSeries evaluates the windows of series at the steps of [start, end]: into sink when there is one
 // (nothing is returned then), or as the matrix's series.
 func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxBytes int, sink *matrixFoldSink) ([]map[string]interface{}, error) {
+	return hitsRangeMetricSeriesBounded(manualFunc, series, start, end, step, window, maxBytes, sink, nil, 0)
+}
+
+// hitsRangeMetricSeriesBounded retains the shared window reducer, optionally
+// enforcing a caller's preexisting aggregate output budget and cancellation.
+// Existing stats callers retain their previous defaults through the wrapper.
+func hitsRangeMetricSeriesBounded(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxBytes int, sink *matrixFoldSink, ctx context.Context, maxPoints int) ([]map[string]interface{}, error) {
+	var done <-chan struct{}
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		done = ctx.Done()
+	}
 	encodedBytes := 0
+	totalPoints := 0
 	windowNS := window.Nanoseconds()
 	windowSec := window.Seconds()
 	// rate_counter over one-sample series: the unwrap rate's windows, each 0.
-	zero := manualFunc == rateCounterZeroFunc
-	if zero {
-		manualFunc = "unwrap_rate"
-	}
+	manualFunc, zero := hitsWindowFunction(manualFunc)
 	mergedUnwrap := unwrapBucketAgg(manualFunc) != ""
 
 	keys := make([]string, 0, len(series))
@@ -2953,15 +2965,14 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 		results = make([]map[string]interface{}, 0, len(keys))
 	}
 	for _, key := range keys {
-		seriesEntry := series[key]
-		samples := sortedHitsSamples(seriesEntry.Samples)
-		var prefix []float64
-		if !mergedUnwrap {
-			prefix = make([]float64, len(samples)+1)
-			for i, sample := range samples {
-				prefix[i+1] = prefix[i] + sample.value
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, err
 			}
 		}
+		seriesEntry := series[key]
+		samples := sortedHitsSamples(seriesEntry.Samples)
+		prefix := hitsSamplePrefix(samples, mergedUnwrap)
 		present := seriesEntry.PresentBuckets // ascending; nil without presence data
 		counts := seriesEntry.Counts          // ascending; avg, stddev and stdvar over time only
 		devs := seriesEntry.Deviations        // ascending; stddev and stdvar over time only
@@ -2983,6 +2994,15 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 		var sampleWindow, countWindow, devWindow windowCursor
 		pLo := 0
 		for i, n := int64(0), stepCount(startNS, endNS, stepNS); i < n; i++ {
+			if ctx != nil {
+				// Capture the request channel once: polling every point keeps
+				// cancellation responsive without walking a WithValue chain.
+				select {
+				case <-done:
+					return nil, ctx.Err()
+				default:
+				}
+			}
 			tNS := startNS + i*stepNS
 			windowStartNS := tNS - windowNS
 			lo, hi := sampleWindow.span(samples, windowStartNS, tNS)
@@ -2998,13 +3018,8 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 			} else {
 				sum = prefix[hi] - prefix[lo]
 			}
-			hasLines := sum != 0 || (mergedUnwrap && lo < hi)
-			if present != nil {
-				for pLo < len(present) && present[pLo] < windowStartNS {
-					pLo++
-				}
-				hasLines = pLo < len(present) && present[pLo] < tNS
-			}
+			hasLines, nextPresent := hitsWindowHasLines(sum, mergedUnwrap, lo, hi, present, pLo, windowStartNS, tNS)
+			pLo = nextPresent
 			if !hasLines {
 				next, more := nextHitsStep(tNS, startNS, endNS, stepNS, samples, lo, hi, present, pLo)
 				if !more {
@@ -3015,6 +3030,12 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 				continue
 			}
 			value := sum
+			if maxPoints > 0 {
+				totalPoints++
+				if totalPoints > maxPoints {
+					return nil, fmt.Errorf("ordered JSON metric output exceeds %d samples", maxPoints)
+				}
+			}
 			if manualFunc == "rate" || manualFunc == "bytes_rate" || manualFunc == "unwrap_rate" {
 				value = sum / windowSec
 			}
@@ -3051,7 +3072,41 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 	if err := addFoldedSeries(sink, series, foldedKeys, startNS, endNS, stepNS, windowNS); err != nil {
 		return nil, err
 	}
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	return results, nil
+}
+
+func hitsWindowFunction(function string) (string, bool) {
+	if function == rateCounterZeroFunc {
+		return "unwrap_rate", true
+	}
+	return function, false
+}
+
+func hitsSamplePrefix(samples []rangeMetricSample, mergedUnwrap bool) []float64 {
+	if mergedUnwrap {
+		return nil
+	}
+	prefix := make([]float64, len(samples)+1)
+	for i, sample := range samples {
+		prefix[i+1] = prefix[i] + sample.value
+	}
+	return prefix
+}
+
+func hitsWindowHasLines(sum float64, mergedUnwrap bool, lo, hi int, present []int64, pLo int, windowStartNS, tNS int64) (bool, int) {
+	hasLines := sum != 0 || (mergedUnwrap && lo < hi)
+	if present != nil {
+		for pLo < len(present) && present[pLo] < windowStartNS {
+			pLo++
+		}
+		hasLines = pLo < len(present) && present[pLo] < tNS
+	}
+	return hasLines, pLo
 }
 
 // sortedHitsSamples returns samples in time order. Coalesced results are shared
@@ -3086,10 +3141,10 @@ func appendHitsPoint(points []byte, pointHint int, tNS int64, value float64) ([]
 		points = append(points, ',')
 	}
 	points = append(points, '[')
-	points = strconv.AppendFloat(points, lokiSampleSeconds(tNS), 'f', -1, 64)
+	points = appendFixedFloat(points, lokiSampleSeconds(tNS))
 	points = append(points, ',', '"')
 	mark := len(points)
-	points = strconv.AppendFloat(points, value, 'f', -1, 64)
+	points = appendFixedFloat(points, value)
 	formatted := len(points) - mark
 	return append(points, '"', ']'), formatted
 }
@@ -3290,11 +3345,17 @@ func appendManualJSONFloat(dst []byte, v float64) ([]byte, bool) {
 	if abs := math.Abs(v); abs != 0 && (abs < 1e-6 || abs >= 1e21) {
 		return nil, false
 	}
-	if v == math.Trunc(v) && math.Abs(v) < 1<<53 && !math.Signbit(v) {
-		// A whole number (a timestamp in seconds): the same digits.
-		return strconv.AppendInt(dst, int64(v), 10), true
+	return appendFixedFloat(dst, v), true
+}
+
+// appendFixedFloat retains FormatFloat's fixed-point spelling, including
+// nonfinite sample strings and negative zero. Positive exact small integers
+// need only the integer writer; the other values keep the existing float path.
+func appendFixedFloat(dst []byte, v float64) []byte {
+	if !math.Signbit(v) && v < 1<<53 && v == float64(int64(v)) {
+		return strconv.AppendInt(dst, int64(v), 10)
 	}
-	return strconv.AppendFloat(dst, v, 'f', -1, 64), true
+	return strconv.AppendFloat(dst, v, 'f', -1, 64)
 }
 
 // appendManualJSONObject writes an object of keys in order, each value

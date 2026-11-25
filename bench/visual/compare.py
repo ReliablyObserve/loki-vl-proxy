@@ -21,6 +21,8 @@ import os
 import re
 import sys
 from collections import defaultdict
+from functools import lru_cache
+from pathlib import Path
 
 from vio import dump_json, error_text, load_json, write_text
 
@@ -34,7 +36,7 @@ VOLATILE = {"datasource", "datasourceId", "requestId", "key", "uid", "queryCachi
 META_STABLE = ("type", "typeVersion", "preferredVisualisationType", "custom", "notices")
 
 
-def runtime_problems(main, pr, required=False, comparable=True):
+def runtime_problems(main, pr, required=False, comparable=True, client_error=None):
     """Existing captures supply runtime proof; absent measurements are never zero.
 
     Resource/settlement changes beyond both noise guards enter the existing
@@ -56,6 +58,14 @@ def runtime_problems(main, pr, required=False, comparable=True):
         # reads "Cannot read properties of undefined"; the generator's seeded line "TypeError: Cannot read
         # property" is log content, and it is on Loki's page as much as on the proxy's.
         banners = (capture.get("ui") or {}).get("banners", [])
+        exceptions = capture.get("client_exceptions")
+        has_exception = (any(str(error).startswith("pageerror:") for error in capture.get("errors", []))
+                         or isinstance(exceptions, dict) and bool(exceptions.get("events") or exceptions.get("playwright_page_error_count")))
+        if has_exception and (not isinstance(client_error, _ExpectedClientError) or not client_error.matches(capture)):
+            problems.append(f"runtime proof: {side} Grafana JavaScript page error")
+        if exceptions is not None and (not isinstance(exceptions, dict) or exceptions.get("complete") is not True
+                                       or exceptions.get("overflow") is not False):
+            problems.append(f"runtime proof: {side} JavaScript exception capture is incomplete")
         if any(re.search(r"plugin (?:failed|unavailable|not found)|bad gateway|internal server error|"
                          r"page state unreadable|cannot read properties of|unexpected error", str(b), re.I) for b in banners):
             problems.append(f"runtime proof: {side} Grafana UI infrastructure error")
@@ -152,6 +162,269 @@ def resource_key(r):
                                r["url"].split("&_=")[0]))
 
 
+CLIENT_ERROR_CONTRACT = "loki-metric-supporting-error-v1"
+# A query Loki rejects itself (a 400 on the primary and on its supporting log-volume query, the same on all three builds)
+# whose rejection the stock page throws uncaught; see _rejection_evidence.
+QUERY_REJECTION_CONTRACT = "loki-query-rejection-v1"
+CLIENT_ERROR_CONTRACTS = (CLIENT_ERROR_CONTRACT, QUERY_REJECTION_CONTRACT)
+CLIENT_ERROR_PROOF_BYTES = 16 << 20
+
+
+def capture_fingerprint(capture):
+    return hashlib.sha256(json.dumps(capture, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def client_request_shape(request):
+    """Only the absolute window can move; its length and every nonvolatile request field stay recorded."""
+    if any(not isinstance(request.get(k), str) or not request[k].isdigit() for k in ("from", "to")):
+        raise ValueError("client contract requires numeric Grafana window bounds")
+    span = int(request["to"]) - int(request["from"])
+    if span <= 0:
+        raise ValueError("client contract requires a positive window")
+    return {**strip(request), "from": "0", "to": str(span)}
+
+
+def client_console_error(text):
+    # The CI and local Grafana origins differ; do not normalize messages, status, paths, versions or stacks.
+    return re.sub(r"https?://[^/\s]+", "", text)
+
+
+class _ExpectedClientError:
+    """A receipt bound to complete captures, not an exception-message allowlist."""
+    def __init__(self, case_id, page, rng, captures, events, point_counts, contract=CLIENT_ERROR_CONTRACT):
+        self.receipt = dict(registry_case=case_id, contract=contract,
+                            state="upstream_matches_loki", scene=page, range=rng,
+                            capture_sha256={side: capture_fingerprint(cap) for side, cap in captures.items()},
+                            exceptions=events, primary_points=point_counts)
+        self.payload = dict(receipt=self.receipt, captures=captures)
+        self.payload_bytes = len(json.dumps(self.payload).encode())
+
+    def matches(self, capture):
+        return capture_fingerprint(capture) in self.receipt["capture_sha256"].values()
+
+
+@lru_cache(maxsize=1)
+def client_error_contracts():
+    """Read the reviewed registry and its bounded proof; no extra query catalog."""
+    from conformance.scripts.registry_io import load_cases
+    root = Path(__file__).resolve().parents[2]
+    contracts = []
+    for row in load_cases(str(root / "conformance/registry")):
+        case = row["doc"]
+        values = case.get("compare", {}).get("values", {})
+        if values.get("client_error_contract") not in CLIENT_ERROR_CONTRACTS or case.get("gap", {}).get("status") != "upstream":
+            continue
+        path = (root / values.get("client_error_proof", "")).resolve()
+        if not path.is_relative_to(root / "bench/ab/results/oneoff") or not path.is_file() or path.stat().st_size > 256 << 10:
+            raise ValueError("client error proof must be a bounded existing oneoff artifact")
+        proof = load_json(path)
+        if proof.get("registry_case") != case["id"]:
+            raise ValueError("client error proof belongs to a different registry case")
+        contracts.append((case, proof))
+    return contracts
+
+
+def _thrown_supporting_events(captures):
+    """The one uncaught `{message, refId, status}` object of a log-volume-A rejection on every build, or None.
+
+    The event must be complete CDP evidence (version 1, no overflow, exactly one page error whose raw index and
+    identity agree) with a stack inside the stock client, so an old `pageerror: Object` string, a missing capture
+    or any other exception never qualifies."""
+    events = {}
+    for side, cap in captures.items():
+        state = cap.get("client_exceptions") or {}
+        if (cap.get("settled") is not True or state.get("complete") is not True
+                or state.get("version") != 1
+                or state.get("overflow") is not False or type(state.get("playwright_page_error_count")) is not int
+                or state["playwright_page_error_count"] != 1
+                or len(state.get("events", [])) != 1):
+            return None
+        event = state["events"][0]
+        raw = cap.get("errors", [])
+        index, exception_id = event.get("raw_error_index"), event.get("exception_id")
+        if (type(index) is not int or type(exception_id) is not int or exception_id <= 0
+                or event.get("event_id") != f"runtime:{exception_id}"
+                or [i for i, error in enumerate(raw) if isinstance(error, str) and error.startswith("pageerror:")] != [index]
+                or raw[index] != "pageerror: Object" or event.get("kind") != "uncaught-object"
+                or event.get("class_name") != "Object" or event.get("own_property_names") != ["message", "refId", "status"]
+                or event.get("ref_id") != "log-volume-A" or type(event.get("status")) is not int or event["status"] != 400
+                or not isinstance(event.get("message"), str) or len(event["message"].encode()) > 4096
+                or not 1 <= len(event.get("stack", [])) <= 8):
+            return None
+        if any(not isinstance(frame.get("url"), str) or "/public/" not in frame["url"]
+               or type(frame.get("line")) is not int or type(frame.get("column")) is not int for frame in event["stack"]):
+            return None
+        events[side] = event
+    return events
+
+
+def _supporting_error_evidence(page, rng, entry, captures, contracts=None):
+    """Recognize only a recorded client failure whose complete primary answers equal Loki's.
+
+    Old pageerror:Object strings, missing CDP evidence and any unknown event stay failures.
+    All existing API, pixel and resource checks still run on the unmodified captures.
+    """
+    try:
+        if set(captures) != {"main", "pr", "loki"} or entry.get("kind") != "explore":
+            return None
+        events = _thrown_supporting_events(captures)
+        if events is None:
+            return None
+        contracts = client_error_contracts() if contracts is None else contracts
+        for case, proof in contracts:
+            if (case.get("gap", {}).get("status") != "upstream"
+                    or case.get("compare", {}).get("values", {}).get("client_error_contract") != CLIENT_ERROR_CONTRACT
+                    or proof.get("registry_case") != case.get("id") or case["id"] not in entry.get("covers", [])
+                    or entry.get("id") != page):
+                continue
+            expected = [c for c in proof["ci"]["captures"] if c["scene_id"] == page and c["range"] == rng]
+            if len(expected) != 3 or {c["side"] for c in expected} != {"main", "pr", "loki"}:
+                continue
+            primary, requests, supporting, supporting_requests, windows = {}, {}, [], {}, {}
+            for side, cap in captures.items():
+                recorded = next(c for c in expected if c["side"] == side)
+                expected_queries = {q["ref_id"]: q for q in recorded["queries"]}
+                if entry.get("query") != expected_queries["A"]["expression"]:
+                    return None
+                console = [e for e in cap["errors"] if not e.startswith("pageerror:")]
+                if sorted(map(client_console_error, console)) != sorted(map(client_console_error, recorded.get("console_errors", []))):
+                    return None
+                seen = set()
+                for record in cap["records"]:
+                    if record.get("aborted") or record.get("response") is None:
+                        return None
+                    if "/api/ds/query" not in record["url"]:
+                        if record.get("status") != 200:
+                            return None
+                        continue
+                    queries = record["request"]["queries"]
+                    if len(queries) != 1 or queries[0].get("refId") not in {"A", "log-volume-A"}:
+                        return None
+                    query = queries[0]
+                    ref = query["refId"]
+                    if ref in seen or query["expr"] != expected_queries[ref]["expression"]:
+                        return None
+                    if client_request_shape(record["request"]) != client_request_shape(expected_queries[ref]["request"]):
+                        return None
+                    windows.setdefault(side, set()).add((record["request"]["from"], record["request"]["to"]))
+                    seen.add(ref)
+                    if set(record["response"].get("results", {})) != {ref}:
+                        return None
+                    result = record["response"]["results"][ref]
+                    if ref == "log-volume-A":
+                        if (record["status"] != 400 or record["response"] != expected_queries[ref]["response"]
+                                or result.get("status") != events[side]["status"] or result.get("error") != events[side]["message"]):
+                            return None
+                        supporting.append(record["response"])
+                        supporting_requests[side] = query_key(record, query)
+                    else:
+                        if record["status"] != 200 or result.get("status", 200) != 200 or result.get("error"):
+                            return None
+                        for frame in result.get("frames", []):
+                            columns = frame["data"]["values"]
+                            if len(columns) != 2 or len(columns[0]) != len(columns[1]) or len(set(columns[0])) != len(columns[0]):
+                                return None
+                        primary[side] = frames_of(record["response"])
+                        if len(primary[side]) != len(result.get("frames", [])):
+                            return None
+                        requests[side] = query_key(record, query)
+                if seen != {"A", "log-volume-A"} or len(windows[side]) != 1 or not primary[side] or any(x[0] != "metric" for x in primary[side].values()):
+                    return None
+            if len(set(requests.values())) != 1 or len(set(supporting_requests.values())) != 1 or not supporting[0] == supporting[1] == supporting[2]:
+                return None
+            point_counts = {side: sum(len(v[1]) for v in data.values()) for side, data in primary.items()}
+            if (not all(point_counts.values())
+                    or any(not any(point is not None for series in data.values() for point in series[1].values()) for data in primary.values())
+                    or same(primary["main"], primary["pr"])):
+                return None
+            compare_primary = same_ranked if is_ranked(requests["pr"]) else same
+            if compare_primary(primary["main"], primary["loki"]) or compare_primary(primary["pr"], primary["loki"]):
+                return None
+            evidence = _ExpectedClientError(case["id"], page, rng, captures, events, point_counts)
+            return evidence if evidence.payload_bytes <= CLIENT_ERROR_PROOF_BYTES else None
+    except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RuntimeError):
+        # A malformed/missing contract or capture does not turn an unproved exception into a match.
+        return None
+    return None
+
+
+
+def _rejection_evidence(page, rng, entry, captures, contracts=None):
+    """Recognize only a query Loki itself rejects, identically on all three builds, whose supporting rejection is thrown.
+
+    Both the primary query and the stock supporting log-volume query answer 400 with the recorded complete DTO on main,
+    PR and Loki, no frames are returned, the only page error is the CDP-identified uncaught object carrying the
+    supporting rejection verbatim, and the page spec, request shapes and console errors equal the recorded proof. Any
+    other status, DTO, event or extra request leaves the page error a failure."""
+    try:
+        if set(captures) != {"main", "pr", "loki"} or entry.get("kind") != "explore":
+            return None
+        events = _thrown_supporting_events(captures)
+        if events is None:
+            return None
+        contracts = client_error_contracts() if contracts is None else contracts
+        for case, proof in contracts:
+            if (case.get("gap", {}).get("status") != "upstream"
+                    or case.get("compare", {}).get("values", {}).get("client_error_contract") != QUERY_REJECTION_CONTRACT
+                    or proof.get("registry_case") != case.get("id") or case["id"] not in entry.get("covers", [])
+                    or entry.get("id") != page):
+                continue
+            expected = [c for c in proof["ci"]["captures"] if c["scene_id"] == page and c["range"] == rng]
+            if len(expected) != 3 or {c["side"] for c in expected} != {"main", "pr", "loki"}:
+                continue
+            answers = {}
+            for side, cap in captures.items():
+                recorded = next(c for c in expected if c["side"] == side)
+                want = {q["ref_id"]: q for q in recorded["queries"]}
+                if set(want) != {"A", "log-volume-A"} or entry.get("query") != want["A"]["expression"]:
+                    return None
+                console = [e for e in cap["errors"] if not e.startswith("pageerror:")]
+                if sorted(map(client_console_error, console)) != sorted(map(client_console_error, recorded.get("console_errors", []))):
+                    return None
+                seen, windows = {}, set()
+                for record in cap["records"]:
+                    if record.get("aborted") or record.get("response") is None:
+                        return None
+                    if "/api/ds/query" not in record["url"]:
+                        if record.get("status") != 200:
+                            return None
+                        continue
+                    queries = record["request"]["queries"]
+                    if len(queries) != 1 or queries[0].get("refId") not in want:
+                        return None
+                    query = queries[0]
+                    ref = query["refId"]
+                    if ref in seen or query["expr"] != want[ref]["expression"]:
+                        return None
+                    if client_request_shape(record["request"]) != client_request_shape(want[ref]["request"]):
+                        return None
+                    results = record["response"].get("results", {})
+                    if (record["status"] != 400 or record["response"] != want[ref]["response"] or set(results) != {ref}
+                            or results[ref].get("status") != 400 or results[ref].get("frames")):
+                        return None
+                    windows.add((record["request"]["from"], record["request"]["to"]))
+                    seen[ref] = record["response"]
+                if set(seen) != set(want) or len(windows) != 1:
+                    return None
+                supporting = seen["log-volume-A"]["results"]["log-volume-A"]
+                if events[side]["message"] != supporting.get("error") or events[side]["status"] != supporting.get("status"):
+                    return None
+                answers[side] = seen
+            if not (answers["main"] == answers["pr"] == answers["loki"]):
+                return None
+            evidence = _ExpectedClientError(case["id"], page, rng, captures, events, {}, contract=QUERY_REJECTION_CONTRACT)
+            return evidence if evidence.payload_bytes <= CLIENT_ERROR_PROOF_BYTES else None
+    except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RuntimeError):
+        return None
+    return None
+
+
+def client_error_evidence(page, rng, entry, captures, contracts=None):
+    """A recorded client failure that Loki's own page shows identically; None for anything unproved."""
+    return (_supporting_error_evidence(page, rng, entry, captures, contracts)
+            or _rejection_evidence(page, rng, entry, captures, contracts))
+
+
 def has_data(body):
     if isinstance(body, list):
         return bool(body)
@@ -169,6 +442,26 @@ def has_data(body):
         return bool(data)
     return isinstance(data, dict) and any(isinstance(data.get(k), list) and data[k]
                                           for k in ("result", "fields", "detectedLabels", "values", "series", "volumes"))
+
+
+# A body above the capture's retention cap (capture.spec.ts, BodyDigest) is kept as its SHA-256, length and a bounded head and
+# tail, read from the whole body once. Such a record answers the request only when it looks like a successful answer: a
+# well-formed digest, a JSON object that starts like one and does not start with an error, and ends like one.
+DIGEST_HEAD = re.compile(r'\A\s*\{\s*"(?:results|status|data|fields|detectedLabels|values|volumes|series)"')
+
+
+def body_digest(record):
+    """(sha256, bytes) of a 200 record whose body was not retained but was read and hashed whole; None otherwise."""
+    d = record.get("body_digest")
+    if not isinstance(d, dict) or record.get("status") != 200 or record.get("response") is not None:
+        return None
+    sha, size, head, tail = d.get("sha256"), d.get("bytes"), d.get("head"), d.get("tail")
+    if not (isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha) and isinstance(size, int) and not isinstance(size, bool)
+            and size > 0 and isinstance(head, str) and isinstance(tail, str)):
+        return None
+    if not DIGEST_HEAD.match(head) or re.search(r'"error"\s*:', head[:2048]) or not tail.rstrip().endswith(("}", "]")):
+        return None
+    return sha, size
 
 
 def answer_evidence(capture):
@@ -199,6 +492,8 @@ def answer_evidence(capture):
                     problems.append("infrastructure error or unusable error response")
             elif query and isinstance(result, dict) and isinstance(result.get("frames"), list):
                 answered.add(key)
+            elif response is None and body_digest(record):
+                answered.add(key)
             elif not query and isinstance(body, (dict, list)):
                 if isinstance(body, dict):
                     data = body.get("data", body)
@@ -216,7 +511,10 @@ def answer_evidence(capture):
                 problems.append("unusable API answer")
     if not answered:
         problems.append("no usable recorded API answer")
-    return {k: sorted(v) for k, v in rejected.items()}, answered, problems
+    # What a request was rejected with, not how often the page asked: Grafana re-issues a rejected query once more on
+    # one build and not on another from timing alone (explore-unwrap-conversion-error at 15m: twice on the proxies,
+    # once on Loki, the same 400 and text). A different status, code or text still differs.
+    return {k: sorted(set(v)) for k, v in rejected.items()}, answered, problems
 
 
 def records(path, raw=None, gaps=None):
@@ -233,7 +531,8 @@ def records(path, raw=None, gaps=None):
     for r in d["records"]:
         # A request the page cancelled (capture.spec.ts: `aborted`) has no answer and is not a gap of the capture.
         cancelled = bool(r.get("aborted"))
-        missing_body = not cancelled and r["status"] == 200 and r["response"] is None
+        digest = None if cancelled else body_digest(r)
+        missing_body = not cancelled and r["status"] == 200 and r["response"] is None and not digest
         unreadable |= missing_body
         if missing_body and r.get("body_unavailable"):
             reasons.append(str(r["body_unavailable"])[:160])
@@ -244,6 +543,7 @@ def records(path, raw=None, gaps=None):
                     keys.add(key)
                 recs[key].append({("capture", ""): ("capture", CANCELLED)} if cancelled else
                                  {("capture", ""): ("capture", "body unreadable")} if missing_body else
+                                 {("digest", ""): ("digest", *digest)} if digest else
                                  frames_of(r["response"]) if r["status"] == 200 else
                                  {("status", str(r["status"])): ("error", r["status"])})
                 if raw is not None:
@@ -265,6 +565,7 @@ def records(path, raw=None, gaps=None):
                 keys.add(key)
             recs[key].append({("capture", ""): ("capture", CANCELLED)} if cancelled else
                              {("capture", ""): ("capture", "body unreadable")} if missing_body else
+                             {("digest", ""): ("digest", *digest)} if digest else
                              {"body": ("other", hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)}
                              if r["status"] == 200 else {("status", ""): ("error", r["status"])})
     if gaps is not None:
@@ -479,6 +780,14 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, b
         la, lb = left.get(k, []), right.get(k, [])
         for i, j in pairs(la, lb):
             if i is None or j is None:
+                # An answer the other side also gave, one more time, is Grafana asking again (it re-issues a rejected
+                # or slow query from timing alone), not a different answer: the data are the same. What it costs
+                # shows in the runtime evidence (requests, bytes), not here.
+                other, extra = (lb, la[i]) if j is None else (la, lb[j])
+                if any(digest(repr(sorted(o.items(), key=str))) == digest(repr(sorted(extra.items(), key=str))) for o in other):
+                    n += 1
+                    ok += 1
+                    continue
                 missing += 1
                 text = f"{k[0]} {str(k[2:] or k[1])[:90]}: request only on one side ({'left' if j is None else 'right'})"
                 reason = explain_one_sided(k) if explain else None
@@ -491,7 +800,11 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, b
             xa, xb = la[i], lb[j]
             x, y = (nonzero(xa), nonzero(xb)) if lenient else (xa, xb)
             series += len(xa)
-            why = (same_ranked if vs_loki and is_ranked(k) else same)(x, y)
+            if (("digest", "") in xa) != (("digest", "") in xb):
+                # one side's body was hashed, the other's retained (or from Loki): the bytes are not comparable
+                why = "capture body unreadable"
+            else:
+                why = (same_ranked if vs_loki and is_ranked(k) else same)(x, y)
             if not why:
                 ok += 1
                 continue
@@ -717,12 +1030,18 @@ def render_md(rows):
     for r in rows:
         md.append(f"| {r['page']} | {r['range']} | {r['requests']} | {r['main_vs_pr']} | {r['pr_vs_loki']} | {'yes' if r['settled'] else 'NO'} |")
     for r in rows:
-        if r["main_pr_diffs"] or r.get("main_pr_nondet") or r.get("main_pr_config") or r["loki_diffs"] or r.get("loki_explained") or r.get("loki_nondet"):
+        if r["main_pr_diffs"] or r.get("main_pr_nondet") or r.get("main_pr_config") or r["loki_diffs"] or r.get("loki_explained") or r.get("loki_nondet") or r.get("expected_client_errors"):
             md += ["", f"### {r['page']} {r['range']}"]
             md += [f"- main vs PR: {x}" for x in r["main_pr_diffs"][:8]] + [f"- main vs PR (history-dependent, not gated): {x}" for x in r.get("main_pr_nondet", [])[:4]] + [f"- main vs PR (deployment configuration, not gated): {x}" for x in r.get("main_pr_config", [])[:4]] + [f"- PR vs Loki: {x}" for x in r["loki_diffs"][:8]]
             md += [f"- PR vs Loki (explained): {x}" for x in r.get("loki_explained", [])[:12]] + [f"- PR vs Loki (history-dependent, not counted): {x}" for x in r.get("loki_nondet", [])[:4]]
             md += [f"- {side} index/stats: {b['numbers']}" for side, key in (("main vs PR", "main_pr_bodies"), ("PR vs Loki", "loki_bodies"))
                    for b in r.get(key, []) if "numbers" in b]
+            md += [f"- Expected upstream client error matches Loki: {e['registry_case']}; "
+                   + ("the primary and the supporting query are rejected with the identical 400 DTOs on all three builds and the "
+                      if e.get("contract") == QUERY_REJECTION_CONTRACT else
+                      "primary points match on all three builds, the supporting 400 DTO and ")
+                   + "actual uncaught exception match. The upstream gap remains open; raw captures are retained."
+                   for e in r.get("expected_client_errors", [])]
     return md
 
 
@@ -755,17 +1074,52 @@ def base_cannot_answer(row, gap, pr_judged):
     return moved
 
 
+# A page whose registry case this pull request fixes is one the base answers wrongly, and the base's time is then not a
+# measure of anything: the page is judged against Loki, which is the reference of the answer. Over twice Loki's settle
+# time (and a second over) or browser thread CPU (and half a second) is a regression; the base's numbers stay in the
+# report. Beyond the history Loki holds there is no Loki capture here: perf A/B seeds Loki for the full range and fails
+# a shape above twice Loki.
+FIX_VS_LOKI_FACTOR = 2.0
+
+
+def fix_page_runtime(row, captures):
+    """Replace the main-relative resource findings of a fix page by findings against Loki; returns the findings set aside."""
+    problems = row["runtime_problems"]
+    moved = [x for x in problems if x.startswith("runtime regression:")]
+    if moved:
+        row["runtime_problems"] = [x for x in problems if x not in moved]
+        row["main_not_a_reference"] = moved
+        row["base_comparison_note"] = ("The base answers this page wrongly (the registry case this pull request fixes), so its "
+                                       "time is not a reference: the page is judged against Loki where Loki was captured, "
+                                       "and by perf A/B beyond. The base's findings: " + "; ".join(moved))
+    loki, pr = captures.get("loki"), captures.get("pr")
+    if row.get("loki_compared") and isinstance(loki, dict) and isinstance(pr, dict) and loki.get("settled") is True:
+        def number(capture, *path):
+            value = capture
+            for key in path:
+                value = value.get(key) if isinstance(value, dict) else None
+            return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+        for label, path, minimum, unit in (("Grafana settlement", ("settle_ms",), 1000, " ms"),
+                                           ("browser thread CPU", ("runtime", "browser_thread_seconds"), 0.5, "")):
+            before, after = number(loki, *path), number(pr, *path)
+            if before is not None and after is not None and after > before * FIX_VS_LOKI_FACTOR and after - before > minimum:
+                row["runtime_problems"].append(
+                    f"runtime regression vs Loki: {label} {before:g} -> {after:g}{unit} (over {FIX_VS_LOKI_FACTOR:g}x Loki)")
+    return moved
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("--loki-seconds", type=int, default=5400)
     a = ap.parse_args()
     # A failed recapture must not leave the prior successful comparison to be gated.
-    for name in ("compare.json", "compare.md"):
+    for name in ("compare.json", "compare.md", "expected-client-error-captures.json"):
         path = os.path.join(a.out, name)
         if os.path.exists(path):
             os.unlink(path)
-    spec = load_json(os.path.join(os.path.dirname(os.path.abspath(__file__)), "spec.json"))
+    from plan import load_spec
+    spec = load_spec()
     plan_path = os.path.join(a.out, "plan.json")
     plan = load_json(plan_path) if os.path.exists(plan_path) else {}
     runtime_required = bool(plan.get("runtime_proof", {}).get("required"))
@@ -773,7 +1127,12 @@ def main():
     # is the very defect being fixed.
     fix_pages = {entry for case in (plan.get("fix_cases") or {}).values() if case.get("status") == "fixed"
                  for entry in case.get("entries") or []}
-    rows, report = [], []
+    # A page the spec declares as a fix for a case that is still open overall (the case has other parts to fix) is a
+    # fix page for its runtime too, but only where its answer differs from the base's: that difference is the base
+    # answering it wrongly. A page whose answer is the base's keeps the base as its time reference.
+    declared_pages = {entry for case in (plan.get("fix_cases") or {}).values() for entry in case.get("entries") or []}
+    rows, report, client_proofs = [], [], []
+    client_proof_bytes = 4096  # Include the enclosing JSON/list metadata in the total retention bound.
     allowed = spec.get("allowed_errors") or []  # substrings of error answers that are expected (documented in the README)
     for d in sorted(glob.glob(os.path.join(a.out, "data", "*", "*"))):
         page, rng = d.split(os.sep)[-2:]
@@ -854,13 +1213,22 @@ def main():
         row["runtime_pr"] = captures["pr"].get("runtime")
         row["runtime_loki"] = captures.get("loki", {}).get("runtime") if row["loki_compared"] else None
         row["runtime_problems"] = []
+        entry = next((p for p in spec["pages"] if p["id"] == page), {})
+        client_error = client_error_evidence(page, rng, entry, captures) if runtime_required else None
+        if client_error and client_proof_bytes + client_error.payload_bytes > CLIENT_ERROR_PROOF_BYTES:
+            client_error = None  # No error is accepted without retaining its complete bounded evidence.
+        if client_error:
+            row["expected_client_errors"] = [client_error.receipt]
+            client_proofs.append(client_error.payload)
+            client_proof_bytes += client_error.payload_bytes
         if runtime_required and (gap["main"]["keys"] or gap["pr"]["keys"]):
             row["runtime_problems"].append("runtime proof: unreadable API bodies leave data completeness unproved")
         if runtime_required and spec["ranges"][rng] <= a.loki_seconds:
             if "loki" not in captures:
                 row["runtime_problems"].append("runtime proof: required smaller-range Loki reference is missing")
             else:
-                row["runtime_problems"].extend("Loki reference: " + p for p in runtime_problems(captures["loki"], captures["loki"], required=True))
+                row["runtime_problems"].extend("Loki reference: " + p for p in runtime_problems(captures["loki"], captures["loki"], required=True,
+                                                                                           client_error=client_error))
                 if not sl or not gap["loki"]["settled"] or gap["loki"]["keys"]:
                     row["runtime_problems"].append("runtime proof: required Loki reference is incomplete or unreadable")
         if runtime_required:
@@ -893,12 +1261,17 @@ def main():
                                                     for k in sorted(corrected, key=str)]
                 row["base_comparison_note"] = "Base-relative resource and settlement changes unavailable: base rejected a query."
             row["runtime_problems"].extend(runtime_problems(captures["main"], captures["pr"], required=True,
-                                                             comparable=not corrected))
+                                                             comparable=not corrected, client_error=client_error))
         if runtime_required and page in fix_pages:
             base_cannot_answer(row, gap, sp_judged)
+            fix_page_runtime(row, captures)
+        elif runtime_required and page in declared_pages and row["main_pr_diffs"]:
+            fix_page_runtime(row, captures)
     md = render_md(rows)
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)
+    if client_proofs:
+        dump_json(os.path.join(a.out, "expected-client-error-captures.json"), client_proofs, indent=None)
     print("\n".join(md[:200]))
     bad = [r for r in rows if r["main_pr_diffs"] or r.get("runtime_problems")]
     sys.exit(1 if bad else 0)

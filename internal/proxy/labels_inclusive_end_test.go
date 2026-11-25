@@ -129,8 +129,9 @@ func (f inclusiveEndVL) server(t *testing.T) *httptest.Server {
 // including data at the request's end (a chunk matches when From <= end and
 // Through >= start, in milliseconds), so a zero-width request (start == end:
 // Grafana's "Show context" sends the row's time truncated to milliseconds)
-// lists the labels of the rows of that millisecond, and a window ending at a
-// row lists it. /series stays end-exclusive, as in Loki.
+// lists the labels of the day (see widenLabelPointWindow: Loki answers from index
+// periods, not from the instant), and a window ending at a row lists it.
+// /series stays end-exclusive, as in Loki.
 //
 // conformance: semantics/labels-end-inclusive-like-loki
 func TestLabelsEndIsInclusiveLikeLoki(t *testing.T) {
@@ -146,8 +147,8 @@ func TestLabelsEndIsInclusiveLikeLoki(t *testing.T) {
 		want       []string
 		notWant    []string
 	}{
-		{name: "labels zero width", path: "/loki/api/v1/labels", start: at, end: at, want: []string{"app", "service_name"}, notWant: []string{"late_label"}},
-		{name: "labels zero width at the row's millisecond (Grafana)", path: "/loki/api/v1/labels", start: atMs, end: atMs, want: []string{"app", "service_name"}, notWant: []string{"late_label"}},
+		{name: "labels zero width lists the day", path: "/loki/api/v1/labels", start: at, end: at, want: []string{"app", "late_label", "service_name"}},
+		{name: "labels zero width at the row's millisecond (Grafana) lists the day", path: "/loki/api/v1/labels", start: atMs, end: atMs, want: []string{"app", "late_label", "service_name"}},
 		{name: "label values zero width at the row's millisecond (Grafana)", path: "/loki/api/v1/label/app/values", start: atMs, end: atMs, want: []string{"a1"}, notWant: []string{"late"}},
 		{name: "labels window ending at the row", path: "/loki/api/v1/labels", start: at - hour, end: at, want: []string{"app", "service_name"}, notWant: []string{"late_label"}},
 		{name: "labels window starting at the row", path: "/loki/api/v1/labels", start: at, end: at + hour, want: []string{"app", "late_label", "service_name"}},

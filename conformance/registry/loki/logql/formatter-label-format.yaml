@@ -21,7 +21,7 @@ victorialogs_candidates:
     emitted_by_proxy: true
   - id: pipe-rename
     since: v1.40.0
-    emitted_by_proxy: false
+    emitted_by_proxy: true
   - id: pipe-format
     since: v1.40.0
     emitted_by_proxy: true

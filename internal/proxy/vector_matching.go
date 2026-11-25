@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"math"
 	"net/http"
 	"regexp"
@@ -804,26 +803,24 @@ func sortSeriesByLabels(body []byte, sortable bool) []byte {
 		return body
 	}
 	var resultType string
-	var series []struct {
+	type orderedSeries struct {
 		raw    json.RawMessage
-		metric map[string]string
+		labels orderedLabelSet
 	}
 	var raws []json.RawMessage
 	_ = json.Unmarshal(data["resultType"], &resultType)
 	if (resultType != "matrix" && resultType != "vector") || (resultType == "vector" && sortable) || json.Unmarshal(data["result"], &raws) != nil {
 		return body
 	}
+	series := make([]orderedSeries, 0, len(raws))
 	for _, raw := range raws {
 		var m struct {
 			Metric map[string]string `json:"metric"`
 		}
 		_ = json.Unmarshal(raw, &m)
-		series = append(series, struct {
-			raw    json.RawMessage
-			metric map[string]string
-		}{raw, m.Metric})
+		series = append(series, orderedSeries{raw, prepareLabelOrder(m.Metric)})
 	}
-	sort.SliceStable(series, func(i, j int) bool { return compareLabelSets(series[i].metric, series[j].metric) < 0 })
+	sort.SliceStable(series, func(i, j int) bool { return series[i].labels.compare(series[j].labels) < 0 })
 	for i := range series {
 		raws[i] = series[i].raw
 	}
@@ -843,30 +840,57 @@ func queryIsSortable(logql string) bool { return sortCallRE.MatchString(logql) }
 
 // keysInLabelOrder returns the keys of the label sets in Loki's series order.
 func keysInLabelOrder(sets map[string]map[string]string) []string {
-	return slices.SortedFunc(maps.Keys(sets), func(a, b string) int { return compareLabelSets(sets[a], sets[b]) })
+	return seriesKeysInLabelOrder(sets, func(labels map[string]string) map[string]string { return labels })
+}
+
+// Read each label set's sorted names once, before comparing the series.
+func seriesKeysInLabelOrder[T any](sets map[string]T, metric func(T) map[string]string) []string {
+	type seriesKey struct {
+		key    string
+		labels orderedLabelSet
+	}
+	order := make([]seriesKey, 0, len(sets))
+	for key, entry := range sets {
+		order = append(order, seriesKey{key, prepareLabelOrder(metric(entry))})
+	}
+	slices.SortFunc(order, func(a, b seriesKey) int { return a.labels.compare(b.labels) })
+	keys := make([]string, len(order))
+	for i, entry := range order {
+		keys[i] = entry.key
+	}
+	return keys
+}
+
+type orderedLabelSet struct {
+	values map[string]string
+	names  []string
+}
+
+func prepareLabelOrder(values map[string]string) orderedLabelSet {
+	names := make([]string, 0, len(values))
+	for k := range values {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return orderedLabelSet{values, names}
 }
 
 // compareLabelSets is Prometheus' labels.Compare: label by label in name
 // order, the name first and then the value, a shorter prefix first.
 func compareLabelSets(a, b map[string]string) int {
-	names := func(m map[string]string) []string {
-		out := make([]string, 0, len(m))
-		for k := range m {
-			out = append(out, k)
+	return prepareLabelOrder(a).compare(prepareLabelOrder(b))
+}
+
+func (a orderedLabelSet) compare(b orderedLabelSet) int {
+	for i := 0; i < len(a.names) && i < len(b.names); i++ {
+		if a.names[i] != b.names[i] {
+			return strings.Compare(a.names[i], b.names[i])
 		}
-		sort.Strings(out)
-		return out
-	}
-	na, nb := names(a), names(b)
-	for i := 0; i < len(na) && i < len(nb); i++ {
-		if na[i] != nb[i] {
-			return strings.Compare(na[i], nb[i])
-		}
-		if c := strings.Compare(a[na[i]], b[nb[i]]); c != 0 {
+		if c := strings.Compare(a.values[a.names[i]], b.values[b.names[i]]); c != 0 {
 			return c
 		}
 	}
-	return len(na) - len(nb)
+	return len(a.names) - len(b.names)
 }
 
 // pointSeconds is the time of a sample point `[time, "value"]`.

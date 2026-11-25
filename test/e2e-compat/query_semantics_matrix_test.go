@@ -13,12 +13,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/casefixtures"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/metricparity"
 )
 
@@ -125,18 +127,61 @@ type querySemanticsDepthPath struct {
 }
 
 type querySemanticsCase struct {
-	ID               string   `json:"id"`
-	Family           string   `json:"family"`
-	Endpoint         string   `json:"endpoint"`
-	Query            string   `json:"query"`
-	Step             string   `json:"step"`
-	Expectation      string   `json:"expectation"`
-	ExpectResultType string   `json:"expect_result_type"`
-	Compare          string   `json:"compare"`
-	RequireNonEmpty  bool     `json:"require_non_empty"`
-	KnownDeviation   string   `json:"known_deviation,omitempty"`
-	LineLimit        int      `json:"line_limit,omitempty"`
-	ExpectedFields   []string `json:"expected_fields,omitempty"`
+	ID                  string            `json:"id"`
+	Family              string            `json:"family"`
+	Endpoint            string            `json:"endpoint"`
+	Query               string            `json:"query"`
+	Step                string            `json:"step"`
+	Expectation         string            `json:"expectation"`
+	ExpectResultType    string            `json:"expect_result_type"`
+	Compare             string            `json:"compare"`
+	RequireNonEmpty     bool              `json:"require_non_empty"`
+	KnownDeviation      string            `json:"known_deviation,omitempty"`
+	LineLimit           int               `json:"line_limit,omitempty"`
+	ExpectedFields      []string          `json:"expected_fields,omitempty"`
+	ExpectedErrorLabels map[string]string `json:"expected_error_labels,omitempty"`
+	RequireEmptyGroup   bool              `json:"require_empty_group,omitempty"`
+	SourceControl       string            `json:"source_control,omitempty"`
+	RequireEmptyResult  bool              `json:"require_empty_result,omitempty"`
+}
+
+func querySemanticsOneSource(body string) error {
+	var reply struct {
+		Status   string   `json:"status"`
+		Warnings []string `json:"warnings"`
+		Data     struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []json.RawMessage `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &reply); err != nil {
+		return err
+	}
+	if reply.Status != "success" || len(reply.Warnings) != 0 || reply.Data.ResultType != "vector" || len(reply.Data.Result) != 1 || reply.Data.Result[0].Metric == nil || len(reply.Data.Result[0].Metric) != 0 || len(reply.Data.Result[0].Value) != 2 || string(reply.Data.Result[0].Value[1]) != `"1"` {
+		return fmt.Errorf("source control must return exactly one ungrouped row without warnings: %s", body)
+	}
+	return nil
+}
+
+func querySemanticsEmptyMetric(body, resultType string) error {
+	var reply struct {
+		Status   string   `json:"status"`
+		Warnings []string `json:"warnings"`
+		Data     struct {
+			ResultType string            `json:"resultType"`
+			Result     []json.RawMessage `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &reply); err != nil {
+		return err
+	}
+	if reply.Status != "success" || len(reply.Warnings) != 0 || reply.Data.ResultType != resultType || reply.Data.Result == nil || len(reply.Data.Result) != 0 {
+		return fmt.Errorf("expected recorded empty %s without warnings: %s", resultType, body)
+	}
+	return nil
 }
 
 // querySemanticsLogEntries compares the full stream identity and every log
@@ -242,6 +287,7 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 	seen := make(map[string]bool, len(matrix.Cases))
 	qualityQueries := make(map[string]string, len(matrix.Cases))
 	qualitySuccess := make(map[string]bool, len(matrix.Cases))
+	qualityCases := make(map[string]querySemanticsCase, len(matrix.Cases))
 	for _, tc := range matrix.Cases {
 		if seen[tc.ID] {
 			return fmt.Errorf("duplicate query semantics case %q", tc.ID)
@@ -249,6 +295,7 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 		seen[tc.ID] = true
 		qualityQueries[tc.Query] = tc.ID
 		qualitySuccess[tc.ID] = tc.Expectation == "success"
+		qualityCases[tc.ID] = tc
 		if tc.ID == "" || tc.Endpoint == "" || tc.Query == "" || tc.Expectation == "" {
 			return fmt.Errorf("query semantics case must define id, endpoint, query, and expectation: %+v", tc)
 		}
@@ -262,11 +309,20 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 		default:
 			return fmt.Errorf("unsupported query semantics expectation %q in case %q", tc.Expectation, tc.ID)
 		}
+		if len(tc.ExpectedErrorLabels) > 0 && tc.Compare != "pipeline_error" {
+			return fmt.Errorf("expected error labels in %q require a pipeline error", tc.ID)
+		}
 		if tc.Expectation != "success" {
+			if tc.Expectation == "client_error" && tc.Compare == "pipeline_error" && tc.KnownDeviation == "" {
+				continue
+			}
 			if tc.Compare != "" || tc.KnownDeviation != "" {
 				return fmt.Errorf("error outcome %q cannot declare a success comparison", tc.ID)
 			}
 			continue
+		}
+		if tc.RequireEmptyGroup && tc.Compare != "ordered_metric_points" && tc.Compare != "metric_points" {
+			return fmt.Errorf("case %q requires empty and named groups with a full metric comparison", tc.ID)
 		}
 		metric := tc.ExpectResultType == "matrix" || tc.ExpectResultType == "vector"
 		switch tc.Compare {
@@ -278,7 +334,7 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 			if tc.ExpectResultType != "streams" {
 				return fmt.Errorf("log-entry case %q must expect streams", tc.ID)
 			}
-		case "series_count", "metric_keys", "metric_points", "ranked_values", "any_non_empty":
+		case "series_count", "metric_keys", "metric_points", "ordered_metric_points", "ranked_values", "any_non_empty":
 			if !metric {
 				return fmt.Errorf("metric comparison %q must expect a matrix or vector", tc.ID)
 			}
@@ -294,6 +350,17 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 			}
 		} else if tc.KnownDeviation != "" {
 			return fmt.Errorf("case %q cannot waive a strict comparison with a deviation", tc.ID)
+		}
+	}
+	for _, tc := range matrix.Cases {
+		if tc.RequireEmptyResult && (tc.SourceControl == "" || tc.RequireNonEmpty || tc.Expectation != "success" || tc.Compare != "metric_points") {
+			return fmt.Errorf("empty metric case %q requires a source control and strict empty-only comparison", tc.ID)
+		}
+		if tc.SourceControl != "" {
+			source, ok := qualityCases[tc.SourceControl]
+			if !ok || source.ID == tc.ID || source.SourceControl != "" || source.Expectation != "success" || source.Endpoint != "query" || source.ExpectResultType != "vector" || source.Compare != "metric_points" || !source.RequireNonEmpty || tc.Expectation != "success" || tc.Compare != "metric_points" {
+				return fmt.Errorf("case %q references an invalid positive source control %q", tc.ID, tc.SourceControl)
+			}
 		}
 	}
 	performanceIDs := make(map[string]bool, len(matrix.PerformanceCases))
@@ -517,6 +584,12 @@ func querySemanticsErrorType(resp map[string]interface{}) string {
 }
 
 func querySemanticsMetricKeySet(resp map[string]interface{}) []string {
+	keys := querySemanticsMetricKeyOrder(resp)
+	sort.Strings(keys)
+	return keys
+}
+
+func querySemanticsMetricKeyOrder(resp map[string]interface{}) []string {
 	data := extractMap(resp, "data")
 	results := extractArray(data, "result")
 	keys := make([]string, 0, len(results))
@@ -533,7 +606,6 @@ func querySemanticsMetricKeySet(resp map[string]interface{}) []string {
 		sort.Strings(parts)
 		keys = append(keys, strings.Join(parts, ","))
 	}
-	sort.Strings(keys)
 	return keys
 }
 
@@ -581,6 +653,10 @@ func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 		{"comparison_on_error", func(c *querySemanticsCase) { c.Expectation = "client_error" }},
 		{"availability_without_owner", func(c *querySemanticsCase) { c.Compare = "any_non_empty" }},
 		{"deviation_on_strict_contract", func(c *querySemanticsCase) { c.KnownDeviation = "parsed-identity/dynamic-key-parsers" }},
+		{"empty_without_source", func(c *querySemanticsCase) { c.RequireEmptyResult = true; c.RequireNonEmpty = false }},
+		{"empty_and_nonempty", func(c *querySemanticsCase) { c.RequireEmptyResult = true }},
+		{"unknown_source", func(c *querySemanticsCase) { c.SourceControl = "missing" }},
+		{"recursive_source", func(c *querySemanticsCase) { c.SourceControl = c.ID }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			candidate := metric
@@ -596,6 +672,11 @@ func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
 		t.Errorf("valid metric contract rejected: %v", err)
 	}
+	metric.RequireEmptyGroup = true
+	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
+		t.Errorf("full metric contract with empty group rejected: %v", err)
+	}
+	metric.RequireEmptyGroup = false
 	metric.Compare = "ranked_values"
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
 		t.Errorf("valid tie-tolerant ranked metric contract rejected: %v", err)
@@ -607,6 +688,72 @@ func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 	logs.Compare = "line_count"
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{logs}}); err == nil {
 		t.Error("weak line-count comparison accepted for a log case")
+	}
+}
+
+func TestQuerySemanticsMatrixRawComplementControls(t *testing.T) {
+	source := `{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1700000400,"1"]}]}}`
+	if err := querySemanticsOneSource(source); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		strings.Replace(source, `"1"`, `"0"`, 1),
+		strings.Replace(source, `"1"`, `"2"`, 1),
+		strings.Replace(source, `"metric":{}`, `"metric":{"k":"body"}`, 1),
+		strings.Replace(source, `"metric":{}`, `"metric":null`, 1),
+		strings.Replace(source, `"status":"success"`, `"status":"success","warnings":["partial"]`, 1),
+		`{"status":"success","data":{"resultType":"vector","result":[]}}`,
+	} {
+		if err := querySemanticsOneSource(body); err == nil {
+			t.Fatalf("invalid source accepted: %s", body)
+		}
+	}
+	for _, kind := range []string{"matrix", "vector"} {
+		body := `{"status":"success","data":{"resultType":"` + kind + `","result":[]}}`
+		if err := querySemanticsEmptyMetric(body, kind); err != nil {
+			t.Fatal(err)
+		}
+		for _, changed := range []string{
+			strings.Replace(body, `[]`, `null`, 1),
+			strings.Replace(body, `[]`, `[{}]`, 1),
+			strings.Replace(body, `"status":"success"`, `"status":"success","warnings":["partial"]`, 1),
+			strings.Replace(body, `"resultType":"`+kind+`"`, `"resultType":"streams"`, 1),
+		} {
+			if err := querySemanticsEmptyMetric(changed, kind); err == nil {
+				t.Fatalf("invalid empty accepted: %s", changed)
+			}
+		}
+	}
+	matrix := loadQuerySemanticsMatrix(t)
+	cases := make(map[string]querySemanticsCase)
+	for _, tc := range matrix.Cases {
+		cases[tc.ID] = tc
+	}
+	count, empty := 0, 0
+	for _, witness := range casefixtures.OrderedMixedParserRawComplement() {
+		prefix := "mixed_raw_" + strings.ReplaceAll(witness.Name, "-", "_") + "__"
+		for _, tc := range matrix.Cases {
+			if !strings.HasPrefix(tc.ID, prefix) {
+				continue
+			}
+			count++
+			selector := fmt.Sprintf(`{app=%q}`, witness.Stream.Labels["app"])
+			if !strings.Contains(tc.Query, selector) {
+				t.Fatalf("case %s selects another witness", tc.ID)
+			}
+			if tc.ID != prefix+"source" && tc.SourceControl != prefix+"source" {
+				t.Fatalf("case %s lacks its own source control", tc.ID)
+			}
+			if tc.RequireEmptyResult {
+				empty++
+			}
+		}
+		if _, ok := cases[prefix+"source"]; !ok {
+			t.Fatalf("missing positive source for %s", witness.Name)
+		}
+	}
+	if count != 91 || empty != 12 {
+		t.Fatalf("raw facet contracts=%d empty=%d; want 91 and 12", count, empty)
 	}
 }
 
@@ -903,17 +1050,76 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 	t.Logf("using isolated numeric tenant %s for query semantics fixtures", tenant)
 	ingestionAnchor = time.Now().Add(-3 * time.Minute)
 	ingestRichTestDataForTenant(t, tenant, ingestionAnchor)
+	// Distinct source streams collapse to the same kept labels. The separate
+	// one-row error fixture makes the complete failing series deterministic.
+	for _, pod := range []string{"a", "b"} {
+		pushStreamForTenant(t, ingestionAnchor, streamDef{
+			Labels: map[string]string{"app": "matrix-mixed-keep", "service_name": "matrix-mixed-keep", "x": "stored", "pod": pod, "query_semantics_run_id": tenant},
+			Lines:  []string{"{}"},
+		}, tenant)
+	}
+	pushStreamForTenant(t, ingestionAnchor, streamDef{
+		Labels: map[string]string{"app": "matrix-mixed-error", "service_name": "matrix-mixed-error", "query_semantics_run_id": tenant},
+		Lines:  []string{"tenant_id=amber"}, StructuredMetadata: map[string]string{"detected_level": "error", "region": "west"},
+	}, tenant)
+	// Only the first body has amount, and only the second has a colliding
+	// detected_level key. Neither stream labels nor stored VL fields supply a level.
+	pushStreamForTenant(t, ingestionAnchor, streamDef{
+		Labels: map[string]string{"app": "matrix-mixed-body-level", "service_name": "matrix-mixed-body-level", "query_semantics_run_id": tenant},
+		Lines:  []string{`level=error msg="r1" amount=1`, `level=error detected_level=shadow`},
+	}, tenant)
+	// Raw-complement queries retain their recorded one-minute window. Seed
+	// once inside that window, not at the older general fixture anchor.
+	evaluation := ingestionAnchor.Add(2 * time.Minute).Truncate(time.Minute)
+	for _, witness := range casefixtures.OrderedMixedParserRawComplement() {
+		labels := witness.Stream.Labels
+		labels["query_semantics_run_id"] = tenant
+		pushStreamForTenant(t, evaluation.Add(-15*time.Second), streamDef{
+			Labels: labels, Lines: []string{witness.Stream.Entries[0].Line},
+		}, tenant)
+	}
 	forceVLFlush(t)
 	waitForLokiMetricDataSelectorForTenant(t, `{app="api-gateway"}`, tenant)
+	for _, witness := range casefixtures.OrderedMixedParserRawComplement() {
+		selector := fmt.Sprintf(`{app=%q,query_semantics_run_id=%q}`, witness.Stream.Labels["app"], tenant)
+		waitForLokiMetricDataSelectorForTenant(t, selector, tenant)
+	}
 	matrix := loadQuerySemanticsMatrix(t)
 	// Keep fixtures inside their five-minute metric windows even if setup or
 	// preceding shard tests took a long time. Minute alignment also matches
 	// the reference stack's align_queries_with_step profile.
-	evaluation := ingestionAnchor.Add(2 * time.Minute).Truncate(time.Minute)
+	sources := make(map[string]querySemanticsCase)
+	sourcePassed := make(map[string]bool)
+	for _, tc := range matrix.Cases {
+		if tc.SourceControl != "" {
+			for _, control := range matrix.Cases {
+				if control.ID == tc.SourceControl {
+					sources[control.ID] = control
+				}
+			}
+		}
+	}
 
 	for _, tc := range matrix.Cases {
 		tc := tc
 		t.Run(tc.ID, func(t *testing.T) {
+			// A filtered subtest must also prove its source. Cache only completed
+			// positive checks in this isolated run, never a missing or failed one.
+			if control, ok := sources[tc.SourceControl]; ok && !sourcePassed[control.ID] {
+				params := querySemanticsParams(control, evaluation)
+				query, err := scopeQuerySemanticsQuery(control.Query, tenant)
+				if err != nil {
+					t.Fatal(err)
+				}
+				params.Set("query", query)
+				for _, backend := range []string{proxyURL, lokiURL} {
+					status, body, _ := querySemanticsGET(t, backend, control.Endpoint, params, tenant)
+					if err := querySemanticsOneSource(body); status != http.StatusOK || err != nil {
+						t.Fatalf("positive source %s on %s: status=%d error=%v body=%s", control.ID, backend, status, err, body)
+					}
+				}
+				sourcePassed[control.ID] = true
+			}
 			params := querySemanticsParams(tc, evaluation)
 			query, err := scopeQuerySemanticsQuery(params.Get("query"), tenant)
 			if err != nil && tc.Expectation == "success" {
@@ -925,6 +1131,24 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 			t.Logf("matrix_case id=%s comparison=%s known_deviation=%s", tc.ID, tc.Compare, tc.KnownDeviation)
 			proxyStatus, proxyBody, proxyResp := querySemanticsGET(t, proxyURL, tc.Endpoint, params, tenant)
 			lokiStatus, lokiBody, lokiResp := querySemanticsGET(t, lokiURL, tc.Endpoint, params, tenant)
+			if _, control := sources[tc.ID]; control {
+				for _, body := range []string{proxyBody, lokiBody} {
+					if err := querySemanticsOneSource(body); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if proxyStatus != http.StatusOK || lokiStatus != http.StatusOK {
+					t.Fatal("positive source failed")
+				}
+				sourcePassed[tc.ID] = true
+			}
+			if tc.RequireEmptyResult {
+				for _, body := range []string{proxyBody, lokiBody} {
+					if err := querySemanticsEmptyMetric(body, tc.ExpectResultType); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
 			if tc.Compare == "detected_field_sample" {
 				want := querySemanticsDetectedFields(t, lokiStatus, lokiBody)
 				var labels []string
@@ -966,7 +1190,22 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 				}
 
 				switch tc.Compare {
-				case "metric_points", "ranked_values":
+				case "metric_points", "ordered_metric_points", "ranked_values":
+					// Range-series order is unspecified, even for sort. Preserve
+					// full label/point and empty-group checks independently.
+					// https://grafana.com/docs/loki/latest/query/metric_queries/#result-ordering
+					if tc.RequireEmptyGroup {
+						want := querySemanticsMetricKeyOrder(lokiResp)
+						if len(want) < 2 || !slices.Contains(want, "") {
+							t.Fatalf("expected Loki to return the empty set and named groups, got %q", want)
+						}
+					}
+					if tc.Compare == "ordered_metric_points" {
+						got, want := querySemanticsMetricKeyOrder(proxyResp), querySemanticsMetricKeyOrder(lokiResp)
+						if !slices.Equal(got, want) {
+							t.Fatalf("metric series order %v, Loki %v", got, want)
+						}
+					}
 					responses := make([]map[string]map[string]string, 0, 2)
 					for _, backend := range []struct{ name, body string }{{"Loki", lokiBody}, {"proxy", proxyBody}} {
 						var response map[string]interface{}
@@ -1052,6 +1291,17 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 				}
 				if proxyStatus != lokiStatus {
 					t.Fatalf("expected matching 4xx status for %s, proxy=%d loki=%d proxyBody=%s lokiBody=%s", tc.ID, proxyStatus, lokiStatus, proxyBody, lokiBody)
+				}
+				if tc.Compare == "pipeline_error" {
+					got, want := strings.TrimSpace(proxyBody), strings.TrimSpace(lokiBody)
+					if !strings.HasPrefix(want, "pipeline error:") || got != want {
+						t.Fatalf("pipeline error %q, Loki %q", got, want)
+					}
+					for name, value := range tc.ExpectedErrorLabels {
+						if !strings.Contains(want, name+"="+strconv.Quote(value)) {
+							t.Fatalf("Loki error missing %s=%q: %s", name, value, want)
+						}
+					}
 				}
 				proxyPayloadStatus := querySemanticsStatusString(proxyResp)
 				lokiPayloadStatus := querySemanticsStatusString(lokiResp)

@@ -1788,10 +1788,12 @@
    "covers": [
     "loki_api_v1_labels",
     "loki_api_v1_label_name_values",
-    "semantics/labels-end-inclusive-like-loki"
+    "semantics/labels-end-inclusive-like-loki",
+    "semantics/labels-point-window-is-the-index-day"
    ],
    "fixes": [
-    "semantics/labels-end-inclusive-like-loki"
+    "semantics/labels-end-inclusive-like-loki",
+    "semantics/labels-point-window-is-the-index-day"
    ]
   },
   {
@@ -2166,6 +2168,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "operator-sum",
     "loki_api_v1_query_range"
@@ -2182,6 +2185,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "operator-topk",
     "range_function-rate",
@@ -2199,6 +2203,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "parser-json",
     "operator-sum",
@@ -2216,6 +2221,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "operator-sum",
     "loki_api_v1_query_range"
@@ -2248,6 +2254,7 @@
     "1h"
    ],
    "covers": [
+    "profiles/grafana-uppercase-metric-log-volume",
     "semantics/proxy-accepts-operators-not-in-loki",
     "operator-sum",
     "loki_api_v1_query_range"
@@ -2280,6 +2287,7 @@
    ],
    "covers": [
     "semantics/vector-aggregation-over-log-selector-status",
+    "profiles/grafana-rejected-query-uncaught-error",
     "status-400",
     "loki_api_v1_query_range"
    ]
@@ -2311,6 +2319,64 @@
    ],
    "fixes": [
     "semantics/rank-over-binary-operation"
+   ]
+  },
+  {
+   "id": "explore-mixed-parser-explicit-count",
+   "kind": "explore",
+   "case_id": "mixed_parser_explicit_group",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "covers": [
+    "semantics/two-parsers-keep-one"
+   ]
+  },
+  {
+   "id": "explore-mixed-parser-reverse-count",
+   "kind": "explore",
+   "case_id": "mixed_parser_reverse_group",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "covers": [
+    "semantics/two-parsers-keep-one"
+   ]
+  },
+  {
+   "id": "explore-mixed-parser-explicit-rate",
+   "kind": "explore",
+   "case_id": "mixed_parser_explicit_rate_group",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "covers": [
+    "semantics/two-parsers-keep-one"
+   ],
+   "fixes": [
+    "semantics/two-parsers-keep-one"
+   ]
+  },
+  {
+   "id": "explore-mixed-parser-reverse-rate",
+   "kind": "explore",
+   "case_id": "mixed_parser_reverse_rate_group",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "covers": [
+    "semantics/two-parsers-keep-one"
+   ],
+   "fixes": [
+    "semantics/two-parsers-keep-one"
    ]
   }
  ],

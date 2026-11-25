@@ -79,6 +79,7 @@ import argparse
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -86,11 +87,13 @@ import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import answers  # noqa: E402
 import baseline_candidate  # noqa: E402
 import cold  # noqa: E402
 import comment  # noqa: E402
 import over2x  # noqa: E402
 import perf_matrix  # noqa: E402
+import report  # noqa: E402
 import selection  # noqa: E402
 import stack  # noqa: E402
 
@@ -195,6 +198,8 @@ def confirm(summary, args, plan, st, out, targets, baseline=None, bounds=None, o
                        **{k: row[k] for k in KEEP_ON_CONFIRM if k in row})
             if row.get("runtime_samples"):
                 new["runtime_samples"] = {**row["runtime_samples"], "confirm": new.get("runtime_samples", {}).get("matrix", {})}
+            if row.get("original_window_correctness"):
+                new["original_window_correctness"] = {**row["original_window_correctness"], "confirm": new.get("original_window_correctness", {}).get("matrix")}
             ref = summary.get("reference", "loki")
             if ref in new.get("cold_cache_served", []):
                 # Loki's cache answered the re-run's cold from the first pass's overlapping extents (the windows
@@ -250,7 +255,7 @@ def main():
                          "with the same value a run is reproducible window for window")
     ap.add_argument("--noise", type=float, default=0.30, help="relative p50 change still counted as noise")
     ap.add_argument("--min-delta", type=float, default=0.10, help="absolute p50 change (s) still counted as noise")
-    ap.add_argument("--timeout", type=int, default=90)
+    ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--service", default="loki-vl-proxy-underscore", help="stack proxy service whose flags to use")
     ap.add_argument("--proxy-port", type=int, default=23190, help="base listens here, PR on +2 (admin +1)")
     ap.add_argument("--keep-stack", action="store_true", help="leave the stack running (for a re-run)")
@@ -348,6 +353,188 @@ def baseline_and_bounds(args, base_sha):
     return baseline, bounds
 
 
+def original_window_problems(wrapper, shape, rng, sample, meta, phase="matrix"):
+    """Full same-original-window proof, separate from measured cache/timing/signature verdicts."""
+    if not isinstance(wrapper, dict) or not isinstance(wrapper.get("proof"), dict):
+        return ["missing original-window computed proof"]
+    proof, measured = wrapper["proof"], wrapper.get("measured") or {}
+    secs, step = selection.load_shapes()["ranges"].get(rng, (0, 0))
+    query, end = perf_matrix.shape_query(shape, step), proof.get("end")
+    expected_end = sample.get("end") if phase != "refresh" else (sample.get("start") or 0)+secs+perf_matrix.query_lookback(query)
+    if (proof.get("complete") is not True or proof.get("run") != 0 or proof.get("range") != rng
+            or proof.get("query") != query or type(end) is not int or end != expected_end
+            or proof.get("history_start") != end-secs-perf_matrix.query_lookback(query)
+            or not meta["end"]-meta["seed_s"] <= proof["history_start"] <= end <= meta["end"]
+            or set(measured) != {"base", "pr", "loki"} or set(proof.get("targets", {})) != {"base", "pr"}):
+        return ["invalid original-window source"]
+    ref, old = proof.get("reference") or {}, proof.get("measured_reference") or {}
+    target_urls = wrapper.get("target_urls") or {}
+    endpoints = {t: answers.source_endpoint(measured[t].get("request_url")) for t in measured}
+    if not isinstance(target_urls, dict) or set(target_urls) != set(measured) or any(v is None for v in endpoints.values()) or endpoints["loki"] in (endpoints["base"], endpoints["pr"]):
+        return ["invalid or proxy-as-Loki measured source"]
+    for target in ("base", "pr", "loki"):
+        receipt = old if target == "loki" else proof["targets"][target]
+        if (any(measured[target].get(k) != receipt.get(k) for k in ("status", "response_bytes", "body_sha256", "answer_proof"))
+                or measured[target].get("end") != end or measured[target].get("history_start") != proof["history_start"]
+                or type(receipt.get("response_bytes")) is not int or not 0 < receipt["response_bytes"] <= perf_matrix.CORRECTNESS_BODY_CAP
+                or not re.fullmatch(r"[0-9a-f]{64}", receipt.get("body_sha256") or "")):
+            return ["original-window body provenance mismatch"]
+        if (answers.source_endpoint(target_urls[target]) is None or measured[target]["request_url"] !=
+                perf_matrix.request_url(target_urls[target], shape, query, secs, step, end)):
+            return ["measured request does not match declared target"]
+        if not (receipt.get("status") == 200 and receipt.get("answer_proof") == "answer" or
+                receipt.get("status") in (400, 422, 500) and str(receipt.get("answer_proof", "")).startswith("rejection:")):
+            return ["invalid original-window query contract"]
+    extra, actual = proof.get("extra_reads"), ref.get("actual_query")
+    if (type(extra) is not int or extra not in (0, 1) or ref.get("complete") is not True or ref.get("phase") != "original-window"
+            or ref.get("original_query") != query or ref.get("end") != end or ref.get("history_start") != proof["history_start"]
+            or not isinstance(actual, str) or (extra == 0 and (actual != query or ref != old))
+            or extra == 1 and (ref.get("correctness_query_mode") != "space-tab-suffix-128"
+                              or not actual.startswith(query) or len(actual) != len(query)+128 or set(actual[len(query):]) - {" ", "\t"})):
+        return ["invalid original-window reference spelling"]
+    if (answers.source_endpoint(ref.get("url")) != endpoints["loki"]
+            or answers.source_endpoint(old.get("url")) != endpoints["loki"]):
+        return ["reference does not match measured Loki source"]
+    url = perf_matrix.urllib.parse.urlsplit(ref["url"])
+    expected = perf_matrix.urllib.parse.urlsplit(perf_matrix.request_url(target_urls["loki"], shape, actual, secs, step, end))
+    rejection = isinstance(ref.get("answer_proof"), str) and ref["answer_proof"].startswith("rejection:")
+    cache = report.correctness_cache_projection(ref.get("cache_raw"))
+    observation = report.metadata_observation(shape, ref) and extra == 0
+    target_parities = {t: report.correctness_parity(shape, proof["targets"][t].get("facets")) for t in ("base", "pr")}
+    if (url.scheme not in ("http", "https") or not url.netloc or
+            (url.path, url.query) != (expected.path, expected.query) or ref.get("reference_skip") != ""
+            or rejection and ref.get("status") not in (400, 422, 500)
+            or (not rejection and (ref.get("status") != 200 or not observation and (cache is None or ref.get("cache") != cache)))
+            or extra and ref.get("correctness_cache_control") != "no-cache"
+            or proof["targets"]["pr"].get("parity_vs_reference") != target_parities["pr"] or target_parities["pr"] == "differs"):
+        return ["original-window answer differs or reference incomplete"]
+    if (not isinstance(proof["targets"]["base"].get("facets"), list)
+            or proof["targets"]["base"].get("parity_vs_reference") != target_parities["base"]
+            or type(ref.get("response_bytes")) is not int or not 0 < ref["response_bytes"] <= perf_matrix.CORRECTNESS_BODY_CAP
+            or not re.fullmatch(r"[0-9a-f]{64}", ref.get("body_sha256") or "")):
+        return ["incomplete original-window reference body"]
+    return []
+
+
+def cold_proof_problems(row, summary, shape, ranges, meta):
+    """A cold median includes its original sample and every fresh matched request, not just a sidecar label."""
+    problem = "incomplete cold-resample provenance"
+    applied = [entry for entry in summary.get("cold_resampled", [])
+               if isinstance(entry, dict) and (entry.get("shape"), entry.get("range")) == (row["shape"], row["range"])
+               and entry.get("applied") is True]
+    if "cold_samples" not in row and not row.get("cold_resample_parity") and not applied:
+        return []
+    proof = row.get("cold_resample_parity") or {}
+    original = proof.get("original_window") or {}
+    if original.get("original_window_correctness") and not original_window_problems(
+            original["original_window_correctness"], shape, row["range"], row.get("runtime_samples", {}).get("matrix", {}).get("loki", {}), meta):
+        original = {**original, **{key: original["original_window_correctness"]["proof"]["targets"][target]["parity_vs_reference"]
+                    for key, target in (("parity_vs_reference", "pr"), ("baseline_parity_vs_reference", "base"))}}
+    usable = lambda value: isinstance(value, str) and (
+        value in ("same", "differs", "documented") or re.fullmatch(r"same series, sum ±[0-9]+\.[0-9]{2}%", value))
+    if (proof.get("original_source") != "first-pass" or proof.get("reference_url_supplied") is not True
+            or not all(usable(original.get(key)) for key in ("parity_vs_reference", "baseline_parity_vs_reference"))):
+        return ["missing original-window Loki comparison for cold median"]
+    if "cold_samples" not in row:
+        return [problem] if applied or row.get("cold_resource_samples") else []
+    if original["parity_vs_reference"] == "differs":
+        return ["original candidate differs from Loki in included cold sample"]
+    timings = row.get("cold_samples")
+    if not isinstance(timings, dict):
+        return [problem]
+    samples = [timings.get(target) for target in ("base", "pr")]
+    number = lambda value: type(value) in (int, float) and math.isfinite(value) and value >= 0
+    if (not all(isinstance(values, list) and len(values) >= 2 and all(number(v) for v in values) for values in samples)
+            or len(samples[0]) != len(samples[1])):
+        return [problem]
+    total, count = len(samples[0]), len(samples[0]) - 1
+    if type(meta.get("cold_samples")) is not int or meta["cold_samples"] != count:
+        return [problem]
+    matches = applied
+    if len(matches) != 1 or not isinstance(matches[0].get("requests"), dict):
+        return [problem]
+    requests = matches[0]["requests"]
+    if any(not isinstance(requests.get(t), list) or len(requests[t]) != count for t in ("base", "pr", "loki")):
+        return [problem]
+    secs, step = ranges.get(row["range"], (0, 0))
+    query = perf_matrix.shape_query(shape, step)
+    lookback = perf_matrix.query_lookback(query)
+    ends = [receipt.get("end") if isinstance(receipt, dict) else None for receipt in requests["loki"]]
+    if not all(type(end) is int for end in ends) or len(set(ends)) != count:
+        return [problem]
+    for target in ("base", "pr", "loki"):
+        for i, receipt in enumerate(requests[target]):
+            if not isinstance(receipt, dict):
+                return [problem]
+            end, start = receipt.get("end"), receipt.get("history_start")
+            request_query = query
+            if target == "loki":
+                actual = receipt.get("actual_query")
+                query_used = query and (not shape.get("path") or shape.get("query") or shape.get("instant"))
+                if receipt.get("original_query") != query or not isinstance(actual, str):
+                    return [problem]
+                if query_used:
+                    if (receipt.get("correctness_query_mode") != "space-tab-suffix-128"
+                            or not actual.startswith(query) or len(actual) != len(query) + 128
+                            or set(actual[len(query):]) - {" ", "\t"}):
+                        return [problem]
+                elif receipt.get("correctness_query_mode") != "unchanged-no-query" or actual != query:
+                    return [problem]
+                request_query = actual
+            expected_url = perf_matrix.urllib.parse.urlsplit(
+                perf_matrix.request_url("http://reference", shape, request_query, secs, step, ends[i]))
+            actual_url = perf_matrix.urllib.parse.urlsplit(receipt.get("url") or "")
+            if (receipt.get("phase") != "flushed-resample" or receipt.get("status") != 200
+                    or receipt.get("answer_proof") != "answer" or not number(receipt.get("seconds"))
+                    or type(receipt.get("response_bytes")) is not int or receipt["response_bytes"] <= 0
+                    or not isinstance(receipt.get("body_sha256"), str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", receipt["body_sha256"])
+                    or not receipt.get("signature") or receipt.get("signature") == "unparseable"
+                    or end != ends[i] or start != end - secs - lookback
+                    or not number(meta.get("end")) or not number(meta.get("seed_s"))
+                    or not meta["end"] - meta["seed_s"] <= start <= end <= meta["end"]
+                    or actual_url.scheme not in ("http", "https") or not actual_url.netloc
+                    or (actual_url.path, actual_url.query) != (expected_url.path, expected_url.query)):
+                return [problem]
+            if target == "loki":
+                projected_cache = report.correctness_cache_projection(receipt.get("cache_raw"))
+                if (receipt.get("correctness_cache_control") != "no-cache"
+                        or receipt.get("reference_skip") != ""
+                        or not report.metadata_observation(shape, receipt) and (projected_cache is None or receipt.get("cache") != projected_cache
+                        or report.reference_skip(receipt))):
+                    return [problem]
+            else:
+                facets = receipt.get("parity_facets")
+                parity = receipt.get("parity_vs_reference")
+                if (not isinstance(facets, list) or parity != report.correctness_parity(shape, facets)
+                        or target == "pr" and parity == "differs" or "vl_calls_header" not in receipt
+                        or receipt["vl_calls_header"] is not None and
+                        (type(receipt["vl_calls_header"]) is not int or receipt["vl_calls_header"] < 0)
+                        or receipt["seconds"] != timings[target][i + 1]):
+                    return [problem]
+        if target == "loki":
+            continue
+        cost = row.get("reuse", {}).get(target, {}).get("cold") or {}
+        resource_samples = row.get("cold_resource_samples", {}).get(target)
+        if (not isinstance(resource_samples, list) or len(resource_samples) != total
+                or not isinstance(resource_samples[0], dict) or resource_samples[0].get("phase") != "first-pass"
+                or resource_samples[0].get("seconds") != timings[target][0]
+                or resource_samples[1:] != requests[target]
+                or any(cost.get(field) != total for field in ("metric_runs_expected", "cpu_runs_measured", "rss_runs_measured"))):
+            return [problem]
+        for sample in resource_samples:
+            measured = sample.get("reuse") or {}
+            if (measured.get("cpu_samples") != 2 or measured.get("rss_samples") != 2
+                    or not number(measured.get("cpu_seconds")) or not number(measured.get("rss_max_sampled_bytes"))):
+                return [problem]
+        if (cost != perf_matrix.reuse.median([s["reuse"] for s in resource_samples])
+                or row.get("cold", {}).get(target) != round(cold.median(timings[target]), 3)):
+            return [problem]
+        if proof.get("targets", {}).get(target) != [r["parity_vs_reference"] for r in requests[target]]:
+            return [problem]
+    return []
+
+
 def runtime_api_problems(summaries, sel, meta=None, mode="auto", supported=True):
     """Validate each planned profile/cell against its measured inputs before accepting the reduced values."""
     proof = sel.get("runtime_proof", {})
@@ -380,11 +567,18 @@ def runtime_api_problems(summaries, sel, meta=None, mode="auto", supported=True)
                 problems.append(f"runtime API proof: unexpected or duplicate cell {key}")
                 continue
             seen.add(key)
+            shape = next(sh for sh in spec["sets"][summary["set"]]["shapes"] if sh["name"] == row["shape"])
+            problems.extend(f"runtime API proof: {key} {issue}" for issue in
+                            cold_proof_problems(row, summary, shape, spec["ranges"], meta))
             passes = {"matrix": meta.get("runs")}
             if row.get("confirmed"):
                 passes["confirm"] = meta.get("confirm_runs")
             if meta.get("refresh_s"):
                 passes["refresh"] = meta.get("refresh_runs")
+            computed = {phase: original_window_problems(row.get("original_window_correctness", {}).get(phase),
+                        shape, row["range"], row.get("runtime_samples", {}).get(phase, {}).get("loki", {}), meta, phase) for phase in passes}
+            for phase in passes:
+                problems.extend(f"runtime API proof: {key} {phase} {p}" for p in computed[phase])
             for target in ("base", "pr", "loki"):
                 if row.get("status", {}).get(target) not in ("200", "400", "422", "500"):
                     problems.append(f"runtime API proof: {key} {target} missing or unusable status")
@@ -400,7 +594,7 @@ def runtime_api_problems(summaries, sel, meta=None, mode="auto", supported=True)
                             and end - seed <= sample["start"] <= sample["end"] <= end):
                         problems.append(f"runtime API proof: {key} {target} {phase} missing seeded input history")
                 if target == "loki":
-                    if row.get("parity_vs_reference") in (None, "n/a"):
+                    if row.get("parity_vs_reference") in (None, "n/a") and any(computed.values()):
                         problems.append(f"runtime API proof: {key} missing usable Loki comparison")
                     continue
                 for phase in ("cold", "repeat"):
@@ -504,8 +698,7 @@ def split_selection(sel, n, spec=None, min_cost=SHARD_MIN_COST):
     same for the same selection. A selection that does not run is one shard.
     """
     if spec is None:
-        with open(os.path.join(HERE, "shapes.json")) as f:
-            spec = json.load(f)
+        spec = selection.load_shapes()
     sets = sel.get("sets", {})
     if not sel.get("run") or not sets:
         return [sel]
@@ -752,8 +945,7 @@ def window_plan(args, sel, end, runs=None):
     sets or profiles; the seed covers the longest range, every block, and the [5m] lookback plus margin. A
     plan records its profile.
     """
-    with open(os.path.join(HERE, "shapes.json")) as f:
-        spec = json.load(f)
+    spec = selection.load_shapes()
     runs = runs if runs is not None else [("", name, shapes) for name, shapes in sel["sets"].items()]
     refresh_runs = args.refresh_runs if args.refresh_s else 0
     plans = perf_matrix.plan_windows(spec, [(name, shapes) for _, name, shapes in runs], args.ranges, args.runs,
@@ -803,8 +995,7 @@ def reuse_first_cold(summaries):
     the cache-served mark and records loki_cold_reused_from. Nothing else of the
     row changes. Instant queries have no results cache and are skipped.
     """
-    with open(os.path.join(HERE, "shapes.json")) as f:
-        spec = json.load(f)
+    spec = selection.load_shapes()
     first = {}
     for summary in summaries:
         shapes = {sh["name"]: sh for sh in spec["sets"].get(summary["set"], {}).get("shapes", [])}
@@ -889,8 +1080,7 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
         clock = time.time()
 
     try:
-        with open(os.path.join(HERE, "shapes.json")) as f:
-            spec = json.load(f)
+        spec = selection.load_shapes()
         # Planned from source: the windows and the seed depend on it, and the builds are not there yet.
         planned_support = source_supports_align(args.head or None) or (
             not args.same_build and source_supports_align(base_sha))
@@ -966,12 +1156,17 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
                 first_cold = {(r["shape"], r["range"]): dict(r["cold"]) for r in summary["rows"]}
                 first_resources = {(r["shape"], r["range"]): {t: cost.get("cold") for t, cost in r.get("reuse", {}).items()}
                                    for r in summary["rows"]}
+                first_semantics = {(r["shape"], r["range"]):
+                                   {key: r.get(key) for key in ("parity_vs_reference", "baseline_parity_vs_reference",
+                                                              "reference_skipped")} | {"original_window_correctness": r.get("original_window_correctness", {}).get("matrix")}
+                                   for r in summary["rows"]}
                 pairs = (cold.flagged(over2x.gate(summary, baseline, args.noise, args.min_delta, bounds, summaries))
                          if baseline is not None and cold_samples else [])
                 summary = confirm(summary, args, plan, st, out, targets, baseline, bounds, summaries)
                 if pairs:
                     records = cold.recold(summary, first_cold, pairs, by_name, spec, spare["cold_end"], cold_samples,
-                                          stack.log, time.time() + budget_left, first_resources=first_resources)
+                                          stack.log, time.time() + budget_left, first_resources=first_resources,
+                                          reference_url=st.loki, first_semantics=first_semantics)
                     budget_left -= sum(r["seconds"] for r in records)
                     summary["cold_resampled"] = records
                     if meta is not None:

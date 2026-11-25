@@ -62,6 +62,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import selection  # noqa: E402
 import history  # noqa: E402
 import over2x  # noqa: E402
 import pr_smoke  # noqa: E402
@@ -116,7 +117,7 @@ def main():
     run_id = ".".join(x for x in (os.environ.get("GITHUB_RUN_ID"), os.environ.get("GITHUB_RUN_ATTEMPT")) if x)
 
     with open(os.path.join(HERE, "shapes.json")) as f:
-        spec = json.load(f)
+        spec = selection.load_shapes(f.read())
     range_defs = spec["ranges"]
     max_secs = range_defs[args.max_range][0]
     sets = [s for s in args.sets.split(",") if s] or list(spec["sets"])

@@ -9,8 +9,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 func TestOrderedJSONMetricPipelineState(t *testing.T) {
@@ -119,6 +122,13 @@ func TestOrderedJSONMetricHintsAndEligibility(t *testing.T) {
 		{`rate({app="test"}|json[5m])`, `{"value":"ready","bad":INVALID}`, "JSONParserErr", true, false, false},
 		{`rate({app="test"}|json value="nested.value"[5m])`, `{}`, "", false, false, false},
 		{`rate({app="test"}|json|logfmt[5m])`, `{}`, "", false, false, false},
+		{`sum by(value)(rate({app="test"}|json|logfmt[5m]))`, `{}`, "", true, false, false},
+		{`sum by(value)(rate({app="test"}|json value="[\"value\"]"|logfmt|drop __error__, __error_details__|value!=""[5m]))`, `{}`, "", true, false, false},
+		{`sum by(value)(rate({app="test"}|json value="[\"value\"]"|logfmt[5m]))`, `{}`, "", false, false, false},
+		{`sum by(value)(rate({app="test"}|logfmt|json[5m]))`, `{}`, "", true, false, false},
+		{`sum by(value)(rate({app="test"}|json|logfmt --strict[5m]))`, `{}`, "", false, false, false},
+		{`sum by(value)(rate({app="test"}|logfmt --keep-empty|json[5m]))`, `{}`, "", false, false, false},
+		{`sum by(value)(rate({app="test"}|json|logfmt|json[5m]))`, `{}`, "", false, false, false},
 		{`rate({app="test"}|json|status>=400[5m])`, `{}`, "", false, false, false},
 		{`rate({app="test"}|= "| json field"|json[5m])`, `{}`, "", true, false, false},
 	} {
@@ -136,6 +146,107 @@ func TestOrderedJSONMetricHintsAndEligibility(t *testing.T) {
 			labels, _, err := plan.process(tc.line, map[string]string{"app": "test"})
 			if err != nil || labels["__error__"] != tc.wantError {
 				t.Fatalf("labels=%v err=%v", labels, err)
+			}
+		})
+	}
+}
+
+func TestOrderedMixedMetricFlagsSurviveHTTPAdmission(t *testing.T) {
+	for _, flag := range []string{"--strict", "--keep-empty"} {
+		query := `SUM BY (x) (count_over_time({a="b"} | JSON | LOGFMT ` + flag + ` [1m]))`
+		text := RequestQueryText(query)
+		if !strings.Contains(text, flag) {
+			t.Fatalf("lost %s: %s", flag, text)
+		}
+		if plan, ok := compileOrderedJSONMetric(text); ok {
+			t.Fatalf("flagged request claimed by ordered evaluator: %+v", plan)
+		}
+		bare := RequestQueryText(`count_over_time({a="b"} | LOGFMT ` + flag + ` | JSON | KEEP x [1m])`)
+		for _, isRange := range []bool{false, true} {
+			r := httptest.NewRequest(http.MethodGet, "/?query="+url.QueryEscape(bare), nil)
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			rewritten := applyKeepSeriesGrouping(r, bare, isRange)
+			if !strings.Contains(rewritten, flag) {
+				t.Fatalf("grouping lost %s: %s", flag, rewritten)
+			}
+			if plan, ok := compileOrderedJSONMetric(rewritten); ok {
+				t.Fatalf("flagged keep admitted: %+v", plan)
+			}
+		}
+		if text := RequestQueryText(`{a="b"} | LOGFMT ` + flag); strings.Contains(text, flag) {
+			t.Fatalf("single parser request normalization changed: %s", text)
+		}
+	}
+}
+
+// A cold flag-preservation decision shares budgeted validation of the
+// unflagged tree; a refused request leaves neither spelling in the memos.
+// conformance: semantics/two-parsers-keep-one
+func TestOrderedMixedFlagAdmissionPlanningBudget(t *testing.T) {
+	emptyValidationCaches(t)
+	rig := newComplexityRig(t, ExecutionLimitsConfig{MaxQueryPlanTime: 30 * time.Minute}, func(p *Proxy) { p.planClock = steppingClock(time.Hour) })
+	const q = `sum by (x) (count_over_time({app="mixed-budget"} | json | logfmt --strict [1m]))`
+	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil)
+	ctx, _ := requestContext()
+	_, err := rig.p.requestTextUnderBudget(r.WithContext(ctx), q, rig.p.limits())
+	planTimeError(t, err)
+	unflagged := strings.Replace(q, "--strict", "", 1)
+	for _, text := range []string{q, unflagged} {
+		_, validated := validationCache.Load(text)
+		_, planned := planMemoLoad(text)
+		_, normalized := requestTextCache.Load(text)
+		if validated || planned || normalized {
+			t.Fatalf("budget trip memoized query %s", text)
+		}
+	}
+	for _, query := range []string{q, strings.Replace(q, "[1m]", "[$__interval]", 1)} {
+		if got := RequestQueryText(query); !strings.Contains(got, "--strict") {
+			t.Fatalf("retry lost flag: %s", got)
+		}
+	}
+}
+
+// The request's stripped counterpart finishes before the delayed trip. In
+// the overlapping case another HTTP request legitimately publishes that key.
+func TestOrderedMixedFlagDelayedBudgetTrip(t *testing.T) {
+	for _, name := range []string{"cold", "overlapping"} {
+		t.Run(name, func(t *testing.T) {
+			emptyValidationCaches(t)
+			q := `sum by (x) (count_over_time({app="mixed-delayed-` + name + `"} | json | logfmt --strict [1m]))`
+			unflagged := strings.Replace(q, "--strict", "", 1)
+			other := newComplexityRig(t, ExecutionLimitsConfig{}, nil)
+			var reads atomic.Int32
+			rig := newComplexityRig(t, ExecutionLimitsConfig{MaxQueryPlanTime: time.Minute}, func(p *Proxy) {
+				p.planClock = func() time.Time {
+					n := reads.Add(1)
+					if n <= 3 {
+						return time.Unix(0, 0)
+					}
+					if n == 4 && name == "overlapping" {
+						// Independent requests share validation/plan memos. Run the
+						// successful one while the first request is still planning.
+						code, body := other.get(t, "/loki/api/v1/query_range", rangeParams(unflagged))
+						if code != 200 {
+							t.Errorf("overlapping request: %d %s", code, body)
+						}
+					}
+					return time.Unix(3600, 0)
+				}
+			})
+			status, body := rig.get(t, "/loki/api/v1/query_range", rangeParams(q))
+			if status != 400 || !strings.Contains(body, "query planning took longer than the limit") || rig.backend.hits.Load() != 0 {
+				t.Fatalf("delayed budget: status %d, calls %d, reads %d: %s", status, rig.backend.hits.Load(), reads.Load(), body)
+			}
+			for _, key := range []string{q, unflagged} {
+				want := name == "overlapping" && key == unflagged
+				_, v := validationCache.Load(key)
+				_, p := planMemoLoad(key)
+				_, n := requestTextCache.Load(key)
+				if v != want || p != want || n != want {
+					t.Errorf("%q: expected cached=%v; validation=%v plan=%v normalization=%v", key, want, v, p, n)
+				}
 			}
 		})
 	}
@@ -502,5 +613,41 @@ func TestLokiPipelineErrorTypePreservesRetainedSourceValue(t *testing.T) {
 	msg := lokiPipelineError(map[string]string{"__error__": "JSONParserErr", "app": "a'b"}).Error()
 	if !strings.HasPrefix(msg, `pipeline error: 'JSONParserErr' for series: '{__error__="JSONParserErr", app="a'b"}'.`) {
 		t.Fatalf("unexpected message: %s", msg)
+	}
+
+	// These cases prove the diagnostic's HTTP transport boundaries. They do
+	// not establish Loki compatibility for hostile source error values.
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.NewDisabled(), LogLevel: "error", MetadataInventoryParallelism: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	for _, tc := range []struct {
+		name, source string
+	}{
+		{"quotes-and-backslash", "x'y\"z\\end"},
+		{"header-looking-newlines", "source\r\nX-Injected: yes\r\n\r\nbody"},
+		{"html", `<script>alert("source")</script>`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pipelineErr := lokiPipelineError(map[string]string{"__error__": tc.source, "app": tc.source})
+			rec := httptest.NewRecorder()
+			status := p.writeErr(rec, context.Background(), pipelineErr)
+			if status != http.StatusBadRequest || rec.Code != http.StatusBadRequest {
+				t.Fatalf("pipeline error status=%d, HTTP status=%d", status, rec.Code)
+			}
+			if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+				t.Fatalf("Content-Type=%q", got)
+			}
+			if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("X-Content-Type-Options=%q", got)
+			}
+			if _, present := rec.Header()[http.CanonicalHeaderKey("X-Injected")]; present {
+				t.Fatal("source error escaped the body into an HTTP header")
+			}
+			if got, want := rec.Body.String(), pipelineErr.Error(); got != want {
+				t.Fatalf("diagnostic body changed: got %q, want %q", got, want)
+			}
+		})
 	}
 }

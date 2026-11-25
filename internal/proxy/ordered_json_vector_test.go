@@ -13,6 +13,7 @@ import (
 func TestOrderedJSONVectorKeepsDirectCompilerContract(t *testing.T) {
 	for _, query := range []string{
 		`max(sum by(cluster)(rate({app="test"}|json[5m])))`,
+		`max(sum by(cluster)(rate({app="test"}|json|logfmt[5m])))`,
 		`topk(1,sum by(cluster)(count_over_time({app="test"}|json|__error__=""[5m])))`,
 		`sum without(region)(avg by(cluster)(sum by(cluster,region)(rate({app="test"}|json[5m]))))`,
 	} {
@@ -26,11 +27,14 @@ func TestOrderedJSONVectorKeepsDirectCompilerContract(t *testing.T) {
 		if !ok || len(outer) == 0 || plan.grouping == nil || plan.grouping.Labels[0] != "cluster" || plan.noLabels {
 			t.Fatalf("lost innermost parser hints: %s plan=%+v outer=%v", query, plan, outer)
 		}
+		if strings.Contains(query, "logfmt") && (!plan.mixedParsers || plan.pushdown) {
+			t.Fatalf("mixed vector should evaluate grouped parser hints on raw rows: %+v", plan)
+		}
 	}
 	for _, query := range []string{
 		`sum by(cluster)(rate({app="test"}|json[5m]))`,
 		`max(sum by(cluster)(rate({app="test"}|logfmt[5m])))`,
-		`max(sum by(cluster)(rate({app="test"}|json|logfmt[5m])))`,
+		`max(sum by(cluster)(rate({app="test"}|json|logfmt --strict[5m])))`,
 		`stddev(sum by(cluster)(rate({app="test"}|json[5m])))`,
 		`max(sum by(cluster)(rate({app="test"}|json[5m] offset 1h)))`,
 		`topk(0,sum by(cluster)(rate({app="test"}|json[5m])))`,

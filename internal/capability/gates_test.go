@@ -35,15 +35,15 @@ func TestGateSetByRelease(t *testing.T) {
 		want    string
 		decided bool
 	}{
-		{"v1.49.0", floor, true},
-		{"v1.50.0", v150, true},
-		{"v1.51.1", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats", true},
-		{"v1.52.0", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat", true},
+		{"v1.49.0", floor + " mixed_json_row_stats", true},
+		{"v1.50.0", v150 + " mixed_json_row_stats", true},
+		{"v1.51.1", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats" + " mixed_json_row_stats", true},
+		{"v1.52.0", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat" + " mixed_json_row_stats", true},
 		// The v1.52 LTS patch is enterprise-only and carries no gate the table does not list for the line.
-		{"v1.52.2-enterprise", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat", true},
-		{"v1.53.0", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat range_time_writers_refused math_quoted_constant_clone", true},
-		{"v1.54.0", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat range_time_writers_refused math_quoted_constant_clone extra_filters_len", true},
-		{"v1.54.0-enterprise-fips", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat range_time_writers_refused math_quoted_constant_clone extra_filters_len", true},
+		{"v1.52.2-enterprise", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat" + " mixed_json_row_stats", true},
+		{"v1.53.0", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat range_time_writers_refused math_quoted_constant_clone" + " mixed_json_row_stats", true},
+		{"v1.54.0", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat range_time_writers_refused math_quoted_constant_clone extra_filters_len" + " mixed_json_row_stats", true},
+		{"v1.54.0-enterprise-fips", "dense_pattern_windowing pipe_coalesce column_field_values stream_metadata_endpoints stats_limit_after_stats pipe_json_array_concat range_time_writers_refused math_quoted_constant_clone extra_filters_len" + " mixed_json_row_stats", true},
 		{"", floor, false},
 	} {
 		s := ForRelease(ParseRelease(c.release))
@@ -184,5 +184,24 @@ func TestProbeValuesAndClassify(t *testing.T) {
 	}
 	if !containsFold([]byte("UNEXPECTED PIPE"), "unexpected pipe") || containsFold([]byte("x"), "xy") || !containsFold(nil, "") {
 		t.Fatal("containsFold")
+	}
+}
+
+// conformance: vl-capability-layer
+func TestMixedJSONRowStatsRequiresKnownValidatedRelease(t *testing.T) {
+	for _, tc := range []struct {
+		release string
+		want    bool
+	}{
+		{"", false}, {"v1.48.9", false}, {"v1.49.0", true}, {"v1.54.0", true},
+	} {
+		if got := ForRelease(ParseRelease(tc.release)).On(MixedJSONRowStats); got != tc.want {
+			t.Errorf("release %q: got %v, want %v", tc.release, got, tc.want)
+		}
+	}
+	// A different successful probe establishes only its own capability and floor.
+	s := compute(Release{}, verdicts{StatsLimitAfterStats: VerdictOn})
+	if s.On(MixedJSONRowStats) || s.Decided(MixedJSONRowStats) {
+		t.Fatal("an unrelated probe must not certify the mixed row-class evaluator")
 	}
 }

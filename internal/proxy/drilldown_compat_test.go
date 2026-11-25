@@ -1496,73 +1496,29 @@ func TestDetectedLabelValuesForField_ResolvesKnownUnderscoreAlias(t *testing.T) 
 	}
 }
 
-func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
-	var (
-		sampleQueries []string
-		statsQuery    string
-		manualQuery   string
-	)
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			t.Fatalf("parse form: %v", err)
+// conformance: semantics/two-parsers-keep-one
+func TestDrilldown_InstantMetricRunsBothParsers(t *testing.T) {
+	at := time.Unix(1700000400, 0).UTC()
+	stream := map[string]string{"app": "api"}
+	rows := []pushdownRow{{ts: at, stream: stream, msg: `{"tenant_id":"blue"}`}, {ts: at.Add(time.Second), stream: stream, msg: "tenant_id=green"}}
+	server, backend := newPushdownFakeVL(t, rows, func(s string) string { return s })
+	p := newGapTestProxy(t, server.URL)
+	query := `sum by (tenant_id) (count_over_time({app="api"} | json tenant_id="[\"tenant_id\"]" | logfmt | drop __error__, __error_details__ | tenant_id!="" [1m]))`
+	params := url.Values{"query": {query}, "time": {at.Add(2 * time.Second).Format(time.RFC3339)}}
+	got := doCompatProxyRequest(p, "/loki/api/v1/query?"+params.Encode(), map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app"})
+	series, err := decodeLokiSeries(got.Body.Bytes())
+	if got.Code != 200 || err != nil || len(series.Points) != 2 {
+		t.Fatalf("mixed-format vector: %d %v %s", got.Code, err, got.Body)
+	}
+	for _, value := range []string{"blue", "green"} {
+		if series.Points[canonicalLabelText(map[string]string{"tenant_id": value})][at.Add(2*time.Second).UnixMilli()] != "1" {
+			t.Fatalf("missing series for %s: %v", value, series)
 		}
-		switch r.URL.Path {
-		case "/select/logsql/query":
-			if r.Form.Get("limit") == "1000000" || r.Form.Get("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001") {
-				manualQuery = r.Form.Get("query")
-			}
-			sampleQueries = append(sampleQueries, r.Form.Get("query"))
-			w.Header().Set("Content-Type", "application/x-ndjson")
-			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"status\":200}","_stream":"{app=\"api-gateway\"}","app":"api-gateway","level":"info"}` + "\n"))
-			w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"{\"method\":\"POST\",\"path\":\"/api/v1/orders\",\"status\":201}","_stream":"{app=\"api-gateway\"}","app":"api-gateway","level":"info"}` + "\n"))
-		case "/select/logsql/stats_query":
-			statsQuery = r.Form.Get("query")
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status": "success",
-				"data": map[string]interface{}{
-					"resultType": "vector",
-					"result": []map[string]interface{}{
-						{"metric": map[string]string{"level": "info"}, "value": []interface{}{float64(2), "2"}},
-					},
-				},
-			})
-		default:
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
-		}
-	}))
-	defer vlBackend.Close()
-
-	p := newGapTestProxy(t, vlBackend.URL)
-	w := httptest.NewRecorder()
-	q := url.Values{}
-	q.Set("query", `sum by (detected_level) (count_over_time({service_name="api-gateway"} | json | logfmt | drop __error__, __error_details__ [15m]))`)
-	q.Set("time", "2026-04-04T17:30:00Z")
-	r := httptest.NewRequest("GET", "/loki/api/v1/query?"+q.Encode(), nil)
-	p.handleQuery(w, r)
-
-	if len(sampleQueries) == 0 {
-		t.Fatal("expected parser probe query to be issued")
 	}
-	if strings.Contains(sampleQueries[0], "count_over_time") {
-		t.Fatalf("expected parser probe to use extracted inner log query, got %q", sampleQueries[0])
-	}
-
-	effectiveMetricQuery := statsQuery
-	if effectiveMetricQuery == "" {
-		effectiveMetricQuery = manualQuery
-	}
-	if effectiveMetricQuery == "" {
-		t.Fatalf("expected either stats query or manual metric query to be issued")
-	}
-	// The detected_level derivation reads the line with both parsers; only the
-	// user's own parser stages are compared here.
-	userStages := withoutDetectedLevelChain(effectiveMetricQuery)
-	if strings.Contains(userStages, "unpack_logfmt") {
-		t.Fatalf("expected metric query to keep only the working parser, got %q", effectiveMetricQuery)
-	}
-	if !strings.Contains(userStages, "unpack_json") {
-		t.Fatalf("expected metric query to keep json parser, got %q", effectiveMetricQuery)
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	if backend.raw != 1 || len(backend.stats) != 0 || len(backend.guards) != 0 {
+		t.Fatalf("expected one ordered raw read, got raw=%d stats=%v guards=%v", backend.raw, backend.stats, backend.guards)
 	}
 }
 
@@ -2602,19 +2558,4 @@ func TestDrilldown_IndexVolumeRange_TargetLabelsServiceName_SparseBucketsLikeLok
 	if fmt.Sprint(values) != fmt.Sprint(want) {
 		t.Fatalf("got %v, want %v", values, want)
 	}
-}
-
-// withoutDetectedLevelChain removes the pipes that derive detected_level, so a
-// test can look at the stages the query itself asked for.
-func withoutDetectedLevelChain(query string) string {
-	start := strings.Index(query, `| format if (detected_level:*)`)
-	if start < 0 {
-		return query
-	}
-	const end = "| delete __dl, __dl_*, __j_*, __l_*"
-	stop := strings.Index(query[start:], end)
-	if stop < 0 {
-		return query
-	}
-	return query[:start] + query[start+stop+len(end):]
 }

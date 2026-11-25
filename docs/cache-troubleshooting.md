@@ -144,9 +144,22 @@ telemetry for RSS in that environment; do not relabel the fallback as RSS.
 ## Safety boundaries
 
 Raw JSON `count_over_time` and `rate` can retain complete settled answers on
-their original evaluation grid, including range equal to step. Native
-Drilldown field histograms, transforms and mixed-parser routes retain their
-existing admission rules. Any truncated source/gap, changed route or merged
+their original evaluation grid, including range equal to step. This includes
+eligible direct grouped metrics with ordered JSON and logfmt stages. Their
+fragments carry the evaluator's label-order provenance and a distinct order
+version, so merging disjoint groups preserves the cold reply's series order.
+Native Drilldown histograms and outer transforms retain their separate
+admission rules. A hit on a Loki answer or settled point does not establish
+reuse of raw VictoriaLogs input between different field queries. Large
+local-only exact replies also do not establish SSD or peer reuse; eligible
+shared fragments retain the existing tier budgets and placement rules.
+The certified categorical mixed-parser count/rate route shares native VL
+count buckets between the supported forward and reverse parser orders. Its
+original-row complement is evaluated separately; a bucket hit does not mean
+those raw rows were cached. After restart, a query can still need a stream-field
+inventory read even when all metric buckets or settled points came from SSD.
+Distinguish that metadata call from a query or stats scan when diagnosing reuse.
+Any truncated source/gap, changed route or merged
 series/byte/sample limit causes full evaluation rather than merging unsafe
 points. New raw JSON step keys are separated from older binaries' step keys.
 

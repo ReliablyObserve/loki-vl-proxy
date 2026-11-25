@@ -130,19 +130,20 @@ func FuzzFoldBinaryAggregation(f *testing.F) {
 
 var parserParamsRE = regexp.MustCompile(`^(\s+[A-Za-z_]\w*(\s*=\s*"[^"\\]*")?(\s*,\s*[A-Za-z_]\w*(\s*=\s*"[^"\\]*")?)*)?$`)
 
-// FuzzParserProbeLeavesBinaries: the parser probe (preferWorkingParser) drops
-// one of the json and logfmt stages from a query naming both, which is right
-// for one operand and wrong for a binary, whose operands each keep their own
-// parser. With fuzzed stage parameters, every
-// binary and aggregation over one that parses (bare, aggregated, nested, under
-// label_replace) is left to its operands, and one operand naming both parsers
-// is still probed. Any text at all is read without a panic.
+// FuzzParserProbeLeavesBinaries checks parser ownership for binaries and
+// their wrappers. Each operand keeps its own parser. The standalone grouped
+// count also keeps an unparameterized JSON/logfmt pair. Its two-stage pipeline
+// has no trailing drop and field filter to qualify an explicit JSON projection,
+// and parameterized logfmt remains on the probe path.
+// Arbitrary input must be safe to inspect even when it does not parse.
 //
 // conformance: semantics/aggregation-over-binary-dropped
 func FuzzParserProbeLeavesBinaries(f *testing.F) {
 	f.Add(``, ``)
 	f.Add(` route="route"`, ` x, y="z"`)
 	f.Add(` first="servers[0]", second="f(1) | x"`, ` a="b[1]"`)
+	f.Add(` route="route"`, ``)
+	f.Add(``, ` route`)
 	f.Fuzz(func(t *testing.T, jsonParams, logfmtParams string) {
 		_ = operandsKeepTheirParsers(jsonParams + logfmtParams)
 		// Stage parameters as Loki's grammar has them (names, `name="value"`,
@@ -160,7 +161,7 @@ func FuzzParserProbeLeavesBinaries(f *testing.F) {
 			{`sum by (route) (` + amount + ` / ` + lines + `)`, true},
 			{`max(avg without (route) (` + amount + ` > bool ` + lines + `))`, true},
 			{`label_replace(sum(` + amount + ` / ` + lines + `), "dst", "$1", "route", "(.*)")`, true},
-			{`sum by (route) (count_over_time({app="y"} | json` + jsonParams + ` | logfmt` + logfmtParams + ` [5m]))`, false},
+			{`sum by (route) (count_over_time({app="y"} | json` + jsonParams + ` | logfmt` + logfmtParams + ` [5m]))`, jsonParams == "" && logfmtParams == ""},
 		} {
 			// The expression under the label_replace must parse as LogQL: the
 			// parser takes what it cannot read (the wrapper itself, `| json]`)

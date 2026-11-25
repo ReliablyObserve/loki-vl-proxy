@@ -39,6 +39,7 @@ import math
 import os
 import re
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import reuse  # noqa: E402
@@ -79,6 +80,71 @@ def cache_served(stats):
     """
     return any((sub.get("entriesFound") or 0) > 0 or (sub.get("bytesReceived") or 0) > 0
                for name, sub in (stats or {}).items() if name != "statsResult")
+
+
+def computed_correctness_cache(stats):
+    """Strict evidence for EXTRA correctness reads only; measured cache policies stay unchanged."""
+    if not isinstance(stats, dict) or not stats or "result" not in stats:
+        return False
+
+    def counter(value):
+        return type(value) is int and value >= 0 or (
+            type(value) is float and math.isfinite(value) and value >= 0 and value.is_integer())
+
+    for name, bucket in stats.items():
+        if not isinstance(name, str):
+            return False
+        if name == "statsResult" or name != "result" and not name.endswith("Result"):
+            continue  # planning cache hits are not result reuse
+        if (not isinstance(bucket, dict)
+                or not all(counter(bucket.get(key)) for key in ("entriesFound", "entriesRequested"))
+                or "bytesReceived" in bucket and not counter(bucket["bytesReceived"])
+                or bucket["entriesFound"] != 0 or bucket.get("bytesReceived", 0) != 0):
+            return False
+    return True
+
+
+def correctness_cache_projection(stats):
+    """Validate raw correctness evidence, then project only legacy result-cache fields."""
+    if not computed_correctness_cache(stats):
+        return None
+    return {name: {key: bucket[key] for key in ("entriesFound", "entriesRequested", "bytesReceived") if key in bucket}
+            for name, bucket in stats.items()
+            if (name == "result" or name.endswith("Result")) and isinstance(bucket, dict)}
+
+
+def correctness_parity(shape, facets):
+    """Only the registry's existing, narrowly tagged API deviations are accepted visibly."""
+    if not isinstance(facets, list) or any(not isinstance(f, dict) for f in facets):
+        return "differs"
+    if not facets:
+        return "same"
+    from answers import correctness_endpoint
+    from bench.parity import differ
+    from conformance.scripts import parity_gaps
+    if not hasattr(correctness_parity, "statuses"):
+        correctness_parity.statuses = {c["id"]: c["status"] for c in parity_gaps.cases(
+            str(Path(__file__).resolve().parents[2] / "conformance/registry"))[0]}
+    endpoint = correctness_endpoint(shape)
+    allowed = {("index_stats", "stats", "bytes differ"): differ.DOC_INDEX_STATS_BYTES,
+               ("index_stats", "stats", "chunks differ"): differ.DOC_INDEX_STATS_BYTES,
+               ("detected_labels", "cardinality", "label cardinality differs"): differ.DOC_DETECTED_LABELS_CARDINALITY,
+               ("detected_fields", "field", "loki-only service *_extracted"): differ.DOC_DETECTED_FIELDS_SERVICE}
+    for facet in facets:
+        expected = differ.DOC_VOLUME_BYTES if endpoint in ("volume", "volume_range") and facet.get("kind") == "values" and facet.get("detail", "").startswith("values differ (") else allowed.get((endpoint, facet.get("kind"), facet.get("detail")))
+        if (not expected and shape.get("documented_values") and endpoint in ("query_range", "query") and facet.get("kind") == "values"
+                and facet.get("detail", "").startswith("values differ (")):
+            expected = shape["documented_values"]  # the shape names the registry deviation its values differ by
+        if not expected or facet.get("documented") != expected or correctness_parity.statuses.get(expected) not in ("documented", "owner-kept", "upstream"):
+            return "differs"
+    return "documented"
+
+
+def metadata_observation(shape, receipt):
+    from answers import metadata_endpoint
+    return (metadata_endpoint(shape) and receipt.get("reference_kind") == "metadata-api-response"
+            and receipt.get("cache_status") == "unavailable" and receipt.get("cache_absent") is True
+            and receipt.get("cache_raw") is None and receipt.get("cache") is None)
 
 
 def cache_answered_whole(stats):
@@ -137,6 +203,7 @@ def refresh_timings(raw, reference="loki", candidate="pr", tolerance=0):
         out[key] = {"p50": p50, "status": status, "reuse": {t: d for t, d in metered.items() if d is not None}}
         if raw.get("runtime_proof"):
             out[key]["samples"] = request_samples(by_target, raw["runs"], reference, candidate, tolerance)
+            out[key]["original_window_correctness"] = original_window(by_target, reference, raw.get("target_urls"))
     return out
 
 
@@ -219,6 +286,14 @@ def request_samples(by_target, runs, reference, candidate, tolerance=0):
     return evidence
 
 
+def original_window(by_target, reference, target_urls=None):
+    first = {t: next((r for r in rows if r["run"] == 0), {}) for t, rows in by_target.items()}
+    proof = first.get(reference, {}).get("original_window_correctness")
+    return {"proof": proof, "target_urls": target_urls, "measured": {t: {k: row.get(k) for k in
+            ("status", "end", "history_start", "response_bytes", "body_sha256", "answer_proof", "request_url")}
+            for t, row in first.items()}} if proof is not None else None
+
+
 def summarize(args):
     raw = load(args.raw)
     rows = raw["rows"]
@@ -243,6 +318,8 @@ def summarize(args):
                 by_target.setdefault(r["target"], []).append(r)
         if raw.get("runtime_proof"):
             entry["runtime_samples"] = {"matrix": request_samples(by_target, raw["runs"], args.reference, args.candidate, args.tolerance)}
+            if (original := original_window(by_target, args.reference, raw.get("target_urls"))) is not None:
+                entry["original_window_correctness"] = {"matrix": original}
         for t, rs in by_target.items():
             rs.sort(key=lambda r: r["run"])
             warm = [r["seconds"] for r in rs[1:]] or [rs[0]["seconds"]]
@@ -332,6 +409,7 @@ def summarize(args):
         if (shape, rng) in refresh:
             if refresh_raw.get("runtime_proof"):
                 entry.setdefault("runtime_samples", {})["refresh"] = refresh[(shape, rng)]["samples"]
+                entry.setdefault("original_window_correctness", {})["refresh"] = refresh[(shape, rng)].get("original_window_correctness")
             entry["refresh"], entry["refresh_status"] = refresh[(shape, rng)]["p50"], refresh[(shape, rng)]["status"]
             for t, d in refresh[(shape, rng)]["reuse"].items():
                 entry.setdefault("reuse", {}).setdefault(t, {})["refresh"] = d

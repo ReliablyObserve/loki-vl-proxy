@@ -510,6 +510,11 @@ def runtime_section(rows, targeted=(), failed=()):
     summary = {"measured_pairs": sum(bool(r.get("runtime_main") and r.get("runtime_pr")) for r in measured),
                "regressions": sum(any(p.startswith("runtime regression:") for p in r.get("runtime_problems", ())) for r in measured),
                "unproven": sum(any(not p.startswith("runtime regression:") for p in r.get("runtime_problems", ())) for r in measured)}
+    expected = [(r, e) for r in measured for e in r.get("expected_client_errors", [])
+                if isinstance(e, dict) and e.get("state") == "upstream_matches_loki"
+                and isinstance(e.get("registry_case"), str) and CASE_ID.match(e["registry_case"])]
+    if expected:
+        summary["expected_client_error_scenes"] = len(expected)
 
     def number(value, scale=1):
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
@@ -548,6 +553,21 @@ def runtime_section(rows, targeted=(), failed=()):
               "Material regressions require both >25% and an absolute increase: 0.25 s browser CPU, "
               + "32 MiB sampled JS heap, 64 KiB API wire, or 0.5 s settlement. A warmer exact-window recapture cannot clear a first-pass resource finding; "
               + "intended visual-change labels do not waive this gate.", "", "</details>"]
+    if expected:
+        lines += ["", f"Expected client errors matching Loki: {len(expected)} scene/range comparisons. The upstream gaps remain open.",
+                  "", "<details><summary>Registry-backed client error evidence (not a client fix)</summary>", "",
+                  "Each listed comparison has, on main, PR and Loki, either matching complete primary points and the same malformed supporting request, "
+                  + "or the primary and its supporting query rejected by Loki itself, with the same 400 DTOs and matching actual uncaught exception identities. Raw errors and complete input captures are retained in "
+                  + "`expected-client-error-captures.json`. Other data, resource and visual gates still apply.", "",
+                  "| page / range | upstream registry case | primary points main / PR / Loki |",
+                  "|---|---|---|"]
+        for row, evidence in expected[:12]:
+            counts = evidence.get("primary_points") or {}
+            rejected = evidence.get("contract") == "loki-query-rejection-v1"
+            lines.append(f"| {esc(row['page'], 100)} / {esc(row['range'], 16)} | {esc(evidence['registry_case'], 120)} | "
+                         + (" / ".join(["rejected (400)"] * 3) if rejected else
+                            " / ".join(esc(str(counts.get(side, "unavailable")), 24) for side in ("main", "pr", "loki"))) + " |")
+        lines += ["", "Every receipt is in the comparison artifact; matching an upstream error does not mark its gap fixed.", "", "</details>"]
     return lines, summary
 
 
@@ -592,9 +612,9 @@ def render(rows, pixeldiff, plan, meta, a):
         px = "" if i["pixel"] is None else f"{i['pixel']:.2%}"
         lines.append(f"| {esc(r['page'])} | {esc(r['range'])} | {'core' if i['core'] else 'detailed'} | {same} | {vs_loki(r)} | {px} | {result_cell(i)} |")
     lines += ["", "Gate: a base-vs-PR data difference passes when the PR is closer to Loki, and fails when the PR diverges from Loki "
-              f"or Loki cannot decide it (at a range Loki does not hold, a difference passes when the same page proved that query to answer like Loki at a shorter range; otherwise label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
-              "but not on the base, an error banner, panel error, error answer or new \"No data\" panel on the PR, a PR side that never "
-              "settled, a value difference that did not reproduce on the recapture. A delayed first-pass request and pixel differences only warn."]
+              + f"or Loki cannot decide it (at a range Loki does not hold, a difference passes when the same page proved that query to answer like Loki at a shorter range; otherwise label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
+              + "but not on the base, an error banner, panel error, error answer or new \"No data\" panel on the PR, a PR side that never "
+              + "settled, a value difference that did not reproduce on the recapture. A delayed first-pass request and pixel differences only warn."]
     if a.mode == "branch":
         unclean = [i for i in items if i["fails"] or i["warns"]]
         for i in unclean:

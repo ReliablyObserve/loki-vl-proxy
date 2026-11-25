@@ -378,7 +378,8 @@ def verdict(item, endpoint, encoding, params, ls, lb, lh, ps, pb, ph, cfg, lt=0,
         row.update(verdict="blocked", why=f"Loki failed ({ls}): {differ.short(differ.error_text(lb), 160)}", facets=[])
     else:
         facets = differ.diff(endpoint, ls, lb, ps, pb, cfg["stream_labels"],
-                             limit=int(params.get("limit") or 0), direction=params.get("direction", "backward"))
+                             limit=int(params.get("limit") or 0), direction=params.get("direction", "backward"),
+                             query=params.get("query", ""))
         if facets:
             row.update(verdict="diff", facets=facets)
         else:

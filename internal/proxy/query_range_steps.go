@@ -190,9 +190,9 @@ func (p *Proxy) queryStepsFor(r *http.Request, logqlQuery string) (queryStepsGri
 	if isGrafanaDrilldownRequest(r) && (!orderedOK || ordered.isNativeDrilldownHistogram(r)) {
 		return skip("drilldown_profile")
 	}
-	// A query holding both parsers is translated after a probe of its window's
-	// lines (preferWorkingParser): its steps depend on the window.
-	if hasParserStage(logqlQuery, "json") && hasParserStage(logqlQuery, "logfmt") {
+	// Mixed pipelines outside the exact per-step evaluator may still probe
+	// the request window to choose a parser.
+	if (!orderedOK || !ordered.mixedParsers) && hasParserStage(logqlQuery, "json") && hasParserStage(logqlQuery, "logfmt") {
 		return skip("mixed_parsers")
 	}
 	step, ok := parsePositiveStepDuration(r.FormValue("step"))
@@ -220,6 +220,10 @@ func (p *Proxy) queryStepsFor(r *http.Request, logqlQuery string) (queryStepsGri
 		// Older binaries do not enforce raw JSON's merged byte/sample bounds.
 		// Keep these fragments out of their otherwise identical step keys.
 		prefix += "ordered-json:v1:"
+		if ordered.mixedParsers {
+			// Older fragments learned serialized or length-prefixed label order.
+			prefix += "mixed-label-order:v1:"
+		}
 	}
 	return g, prefix + hex.EncodeToString(sum[:]) + ":" + strconv.FormatInt(g.phase, 10), true
 }
@@ -581,8 +585,8 @@ func (p *Proxy) storeQuerySteps(req *statsExtentRequest, key string, lastStored 
 	p.storeStatsExtentChunks(req, lastStored, chunks, fragments)
 	// The order of the series, learned from an answer that has several.
 	for _, f := range fragments {
-		if rules := queryStepsOrders(f); len(f.series) > 1 {
-			p.cache.SetWithTTL(key+":order", []byte(strconv.Itoa(rules)), p.queryRangeExtentCacheTTL)
+		if len(f.series) > 1 && f.names[2] != mixedRawStepsRoute {
+			p.cache.SetWithTTL(key+":order", []byte(strconv.Itoa(queryStepsOrders(f))), p.queryRangeExtentCacheTTL)
 		}
 	}
 }
@@ -644,6 +648,22 @@ func queryStepsOrders(f *statsExtentFragment) int {
 	return rules
 }
 
+// mixedRawStepsRoute certifies the ordered evaluator's Prometheus label order.
+const mixedRawStepsRoute = "ordered-mixed-raw"
+
+func orderMixedQuerySteps(series []*statsExtentSeries) bool {
+	keys := make(map[*statsExtentSeries]orderedLabelSet, len(series))
+	for _, s := range series {
+		var labels map[string]string
+		if json.Unmarshal(s.metric, &labels) != nil {
+			return false
+		}
+		keys[s] = prepareLabelOrder(labels)
+	}
+	slices.SortFunc(series, func(a, b *statsExtentSeries) int { return keys[a].compare(keys[b]) })
+	return true
+}
+
 // renderQuerySteps writes the merged answer of pieces in the envelope and the
 // series order of the evaluator's own answers, or reports false.
 func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh []*statsExtentFragment) ([]byte, bool) {
@@ -654,14 +674,20 @@ func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh 
 	if limit := p.requestQueryLimits(ctx).MaxQuerySeries; limit > 0 && len(order) > limit {
 		return nil, false // Loki's series limit applies to the whole window
 	}
-	if order, ok = p.orderQuerySteps(ctx, key, order, fresh); !ok {
+	if names[2] == mixedRawStepsRoute {
+		ok = orderMixedQuerySteps(order)
+	} else {
+		order, ok = p.orderQuerySteps(ctx, key, order, fresh)
+	}
+	if !ok {
 		return nil, false
 	}
+	raw := names[2] == "ordered-json-raw" || names[2] == mixedRawStepsRoute
 	limit := p.limits().BufferedBackendBodyBytes
 	if limit <= 0 {
 		limit = int(^uint(0) >> 1)
 	}
-	if names[2] == "ordered-json-raw" && p.orderedJSONMetricMaxBytes() < int64(limit) {
+	if raw && p.orderedJSONMetricMaxBytes() < int64(limit) {
 		limit = int(p.orderedJSONMetricMaxBytes())
 	}
 	size, ok := queryStepsAddSize(0, len(names[0]), limit)
@@ -674,7 +700,7 @@ func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh 
 	}
 	points := 0
 	for _, s := range order {
-		if names[2] == "ordered-json-raw" {
+		if raw {
 			points += len(s.points)
 			if int64(points) > p.maxMetricSamples() {
 				return nil, false
@@ -851,7 +877,10 @@ func parseQueryStepsAnswer(body []byte, grid queryStepsGrid, from, to int64) (*s
 	if !bytes.Contains([]byte(f.names[1]), []byte(`"matrix"`)) && !bytes.Contains([]byte(prefix), []byte(`"matrix"`)) {
 		return nil, false
 	}
-	out := []byte(prefix)
+	// The roundtrip must match this already-bounded body exactly. Reserve
+	// its known size instead of repeatedly copying a growing answer buffer.
+	out := make([]byte, 0, len(body))
+	out = append(out, prefix...)
 	for i, series := range f.series {
 		out = appendQueryStepsSeries(out, i, series)
 	}

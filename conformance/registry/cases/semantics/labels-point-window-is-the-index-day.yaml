@@ -1,0 +1,64 @@
+id: semantics/labels-point-window-is-the-index-day
+title: /labels with start equal to end (Grafana "Show context") lists the ingester window or the index day, like Loki (fixed)
+proves:
+  - loki_api_v1_labels
+consumer: explore
+why: |
+  Grafana's "Show context" asks /labels for the clicked row's instant (start
+  equal to end) and adds the row's structured metadata labels, detected_level
+  among them, to the context query only for names in the answer. Loki does not
+  answer from the instant. Measured on the e2e stack with Loki 3.7.10: the same
+  names for a window of 0 ms, 1 ms, 1 s and 5 min; for an instant within the
+  last three hours every stream the ingesters hold, a stream written after the
+  instant too (query_ingesters_within, 3h by default); for an older instant the
+  index period (a day), even eight hours after a rare label's last line; and
+  nothing for an instant past the data (48 hours back). The proxy listed the
+  names of streams written in the instant, so a label on another stream
+  (detected_level on the visual seed: 15 names against Loki's 17) was missing
+  and the context query lost its `| detected_level=...` filter
+  (explore-log-context in the visual proof, with the rows themselves equal).
+
+  A zero-width window (start equal to end, as Grafana sends it) is now listed
+  over the last three hours when its end is within three hours of now, and
+  over the UTC day of its end otherwise (internal/proxy/label_point_window.go,
+  called first in handleLabels, before the tenant fan-out and the cache key).
+  Any window with a width keeps its own bounds, so every other /labels answer
+  is unchanged and costs nothing extra (the check is a substring scan and a
+  string comparison; allocations and bytes per request equal main's). Loki
+  answers a window of 1 ms, 1 s and 5 min the same way as a point, but no
+  client is known to ask that, so those stay open. The recent window ends at
+  now and follows the existing near-now freshness and staleness bounds; an
+  older day ends at its end, so every point of one day shares one cached
+  answer. The day read is the inventory's hour buckets, which stay cached.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: '<a row time in ns>'
+    end: '<the same time>'
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    Streams exist that the row's stream is not (another level, a sparse
+    stream) within the last three hours.
+  verify:
+    blocked_by: fixture
+    reason: "a row time in nanoseconds read from the data to use as both start and end"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    Every name Loki lists for the point window (the proxy may list fewer: it
+    lists what VictoriaLogs holds, not what a Loki ingester still has in
+    memory after the data left the window).
+gap:
+  status: fixed
+  fixed_by: "#1715"
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/label_point_window.go widenLabelPointWindow, label_handlers.go handleLabels'
+  loki: 'a point window (and a window of up to minutes) lists the ingester streams (recent) or the index period (older), not the instant (measured on Loki 3.7.10, in this case)'
+  proxy: 'listed the names of streams with lines at the instant, so detected_level and sparse labels were missing'
+  planned_test: 'TestCompat_LabelsPointWindowListsTheIndexDayLikeLoki (test/e2e-compat, group core); proxy TestWidenLabelPointWindow, TestLabelsRecentPointWindowListsTheIngesterWindowLikeLoki, TestLabelsOlderPointWindowListsItsDayAndIsCached'
+  note: 'A window with any width still lists the streams with lines in it while Loki lists the chunks overlapping it: quality/label-values-chunk-window stays open.'
+  clusters: []

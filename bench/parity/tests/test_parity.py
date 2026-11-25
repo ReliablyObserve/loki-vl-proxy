@@ -1,4 +1,6 @@
 """Unit tests for the differential runner: corpus rewriting, semantic diff, clustering."""
+import copy
+import gzip
 import json
 import os
 import socket
@@ -102,6 +104,45 @@ class DifferTest(unittest.TestCase):
         self.assertIn("loki-only parsed <line-or-metadata-key>", details)
         self.assertIn("proxy-only structuredMetadata <line-or-metadata-key>", details)
 
+    def test_ranked_answers_compare_the_values_at_each_step_not_which_tied_series_was_kept(self):
+        query = "topk(2, sum by (s) (count_over_time({a=\"b\"}[5m])))"
+        # Three series tie at 7 across the 2nd place: Loki keeps one, the proxy another.
+        loki = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "c"}, [[1, "7"], [2, "7"]]))
+        proxy = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "b"}, [[1, "7"], [2, "7"]]))
+        self.assertEqual(differ.diff("query_range", 200, loki, 200, proxy, query=query), [])
+        # The tie picked differently at different steps changes the union of series, not the ranked values.
+        loki = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "c"}, [[1, "7"]]), ({"s": "d"}, [[2, "7"]]))
+        proxy = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "b"}, [[1, "7"], [2, "7"]]))
+        self.assertEqual(differ.diff("query_range", 200, loki, 200, proxy, query=query), [])
+        # Without the ranked expression the same answers differ, as before.
+        self.assertTrue(differ.diff("query_range", 200, loki, 200, proxy))
+        self.assertTrue(differ.diff("query_range", 200, loki, 200, proxy, query="sum(count_over_time({a=\"b\"}[5m]))"))
+        # A wrong value, a missing or extra step, a different number of ranked series, a renamed label is still a difference.
+        base = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "c"}, [[1, "7"], [2, "7"]]))
+        cases = {
+            "value": matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "b"}, [[1, "7"], [2, "8"]])),
+            "missing step": matrix(({"s": "a"}, [[1, "9"]]), ({"s": "b"}, [[1, "7"]])),
+            "extra step": matrix(({"s": "a"}, [[1, "9"], [2, "9"], [3, "9"]]), ({"s": "b"}, [[1, "7"], [2, "7"]])),
+            "fewer ranked series": matrix(({"s": "a"}, [[1, "9"], [2, "9"]])),
+            "renamed label": matrix(({"t": "a"}, [[1, "9"], [2, "9"]]), ({"t": "b"}, [[1, "7"], [2, "7"]])),
+        }
+        for name, proxy in cases.items():
+            self.assertTrue(differ.diff("query_range", 200, base, 200, proxy, query=query), name)
+        self.assertTrue(differ.is_ranked_query(" BottomK(1, x)") and not differ.is_ranked_query("sum(topk(1, x))"))
+
+    def test_a_shape_documents_the_value_difference_it_names_and_no_other(self):
+        loki = matrix(({"s": "a"}, [[1, "3.12"]]))
+        proxy = matrix(({"s": "a"}, [[1, "0.15"]]))
+        plain = differ.diff("query_range", 200, loki, 200, proxy)
+        self.assertEqual([f["kind"] for f in plain], ["values"])
+        self.assertIsNone(plain[0].get("documented"))
+        named = differ.diff("query_range", 200, loki, 200, proxy, documented_values=differ.DOC_METADATA_SPLIT)
+        self.assertEqual(named[0]["documented"], differ.DOC_METADATA_SPLIT)
+        # A missing point stays undocumented whatever the shape names.
+        short = matrix(({"s": "a"}, []))
+        self.assertTrue(any(f["kind"] == "points" and not f.get("documented")
+                            for f in differ.diff("query_range", 200, loki, 200, short, documented_values=differ.DOC_METADATA_SPLIT)))
+
     def test_metric_values_and_series(self):
         a = matrix(({"level": "info"}, [[60, "2"], [120, "3"]]))
         b = matrix(({"level": "info"}, [[60, "2"], [120, "4"]]))
@@ -126,9 +167,30 @@ class DifferTest(unittest.TestCase):
         self.assertEqual(differ.diff("query", 400, {"_text": "parse error at 1"}, 400, {"error": "parse error at 1"}), [])
         self.assertEqual(differ.diff("query", 400, {"_text": "a"}, 400, {"error": "b"})[0]["kind"], "error-text")
 
+    def test_non_success_error_type_and_presence_are_part_of_the_answer(self):
+        for status in (400, 422, 500):
+            for left, right in (({"errorType": "bad_data"}, {"errorType": "wrong"}),
+                                ({"errorType": "bad_data"}, {}), ({}, {"errorType": "bad_data"}),
+                                ({"errorType": None}, {}), ({}, {"errorType": None})):
+                with self.subTest(status=status, left=left, right=right):
+                    facets = differ.diff("query", status, {"error": "parse error", **left},
+                                         status, {"error": "parse error", **right})
+                    self.assertEqual([facet["kind"] for facet in facets], ["error-type"])
+        facets = differ.diff("query", 400, {"errorType": "bad_data", "error": "one"},
+                             400, {"errorType": "wrong", "error": "two"})
+        self.assertEqual([facet["kind"] for facet in facets], ["error-text", "error-type"])
+
+    def test_error_type_comparison_retains_plain_errors_and_text_normalization(self):
+        for left, right in (("parse error.\n", "parse error"),
+                            ({"_text": "parse  error."}, {"error": "parse error"}),
+                            ({"errorType": "bad_data", "error": "parse  error."},
+                             {"errorType": "bad_data", "error": "parse error"})):
+            with self.subTest(left=left, right=right):
+                self.assertEqual(differ.diff("query", 400, left, 400, right), [])
+
     def test_documented_deviations_marked(self):
         loki = {"fields": [{"label": "service_extracted", "type": "string"}, {"label": "x", "type": "int"}]}
-        proxy = {"fields": [{"label": "x", "type": "int"}]}
+        proxy = {"fields": [{"label": "service", "type": "string"}, {"label": "x", "type": "int"}]}
         facets = differ.diff("detected_fields", 200, loki, 200, proxy)
         self.assertEqual(facets[0]["documented"], differ.DOC_DETECTED_FIELDS_SERVICE)
         stats = differ.diff("index_stats", 200, {"streams": 1, "entries": 2, "bytes": 3, "chunks": 1},
@@ -137,11 +199,146 @@ class DifferTest(unittest.TestCase):
 
     def test_detected_fields_exemption_covers_only_the_service_name(self):
         loki = {"fields": [{"label": "service_name_extracted"}, {"label": "level_extracted"}]}
-        facets = differ.diff("detected_fields", 200, loki, 200, {"fields": []})
+        facets = differ.diff("detected_fields", 200, loki, 200, {"fields": [{"label": "service.name"}]})
         documented = [f for f in facets if f.get("documented")]
         plain = [f for f in facets if not f.get("documented")]
         self.assertEqual([f["example"] for f in documented], ["['service_name_extracted']"])
         self.assertEqual([f["detail"] for f in plain], ["loki-only *_extracted"])
+
+    def actual_metadata(self, endpoint):
+        path = os.path.join(HERE, "..", "..", "ab", "tests", "fixtures", "loki-metadata-protocol.json")
+        with open(path) as source:
+            rows = json.load(source)["responses"]
+        return json.loads(next(row["body"] for row in rows if row["path"].endswith("/" + endpoint)))
+
+    def test_recorded_empty_detected_fields_object_is_preserved_without_unwrapping_other_shapes(self):
+        # semantics/detected-fields-empty-answer records Loki's exact {} reply.
+        for right in ({}, {"fields": []}):
+            self.assertEqual(differ.diff("detected_fields", 200, {}, 200, right), [])
+        for wrong in ({"data": []}, {"fields": None}, {"fields": {}}, {"unexpected": []}):
+            with self.subTest(wrong=wrong):
+                self.assertTrue(differ.diff("detected_fields", 200, {}, 200, wrong))
+
+    def test_detected_fields_limit_presence_value_and_type_remain_part_of_the_contract(self):
+        old_proxy = {"data": [], "fields": [], "limit": 1000, "status": "success"}
+        self.assertTrue(differ.diff("detected_fields", 200, {}, 200, old_proxy))
+        self.assertTrue(differ.diff("detected_fields", 200, old_proxy, 200, {}))
+        self.assertTrue(differ.diff("detected_fields", 200, {"fields": [], "limit": 1000},
+                                   200, {"fields": [], "limit": 999}))
+        self.assertEqual(differ.diff("detected_fields", 200, old_proxy, 200, copy.deepcopy(old_proxy)), [])
+        for value in (None, True, "1000", -1, 1.5):
+            bad = {"fields": [], "limit": value}
+            with self.subTest(value=value):
+                facets = differ.diff("detected_fields", 200, bad, 200, copy.deepcopy(bad))
+                self.assertTrue(facets)
+                self.assertFalse(any(f.get("documented") for f in facets))
+
+    def test_actual_detected_field_attributes_are_compared(self):
+        answer = self.actual_metadata("detected_fields")
+        for key, value in (("jsonPath", ["wrong_path"]), ("jsonPath", None), ("jsonPath", "wrong_path"),
+                           ("parsers", ["logfmt"]), ("parsers", "json"), ("type", "int"), ("cardinality", 999)):
+            changed = copy.deepcopy(answer)
+            changed["fields"][0][key] = value
+            with self.subTest(key=key, value=value):
+                facets = differ.diff("detected_fields", 200, answer, 200, changed)
+                self.assertTrue(any(not f.get("documented") for f in facets))
+        changed = copy.deepcopy(answer)
+        changed["fields"][0].pop("jsonPath")
+        self.assertTrue(differ.diff("detected_fields", 200, answer, 200, changed))
+        answer["fields"][0]["cardinality"] = 0
+        changed = copy.deepcopy(answer)
+        changed["fields"][0]["cardinality"] = 999
+        self.assertTrue(differ.diff("detected_fields", 200, answer, 200, changed))
+
+    def test_service_owner_policy_requires_exact_counterparts_and_compares_attributes(self):
+        field = copy.deepcopy(self.actual_metadata("detected_fields")["fields"][0])
+        field.update(label="service_name_extracted", jsonPath=["service", "name"])
+        answer = {"fields": [field]}
+        for label in ("service", "service.name"):
+            counterpart = copy.deepcopy(field)
+            counterpart["label"] = label
+            candidate = {"fields": [counterpart]}
+            with self.subTest(label=label):
+                facets = differ.diff("detected_fields", 200, answer, 200, candidate)
+                self.assertTrue(facets)
+                self.assertTrue(all(f.get("documented") == differ.DOC_DETECTED_FIELDS_SERVICE for f in facets))
+            for key, value in (("jsonPath", ["service"]), ("parsers", ["logfmt"]),
+                               ("type", "int"), ("cardinality", 999)):
+                changed = copy.deepcopy(candidate)
+                changed["fields"][0][key] = value
+                with self.subTest(label=label, key=key):
+                    self.assertTrue(any(not f.get("documented")
+                                        for f in differ.diff("detected_fields", 200, answer, 200, changed)))
+        for left, right in ((answer, {"fields": []}), ({"fields": []}, {"fields": [counterpart]}),
+                            (answer, {"fields": [{**field, "label": "service.other"}]}),
+                            (answer, {"fields": [{**field, "label": "service"}, {**field, "label": "service.name"}]}),
+                            ({"fields": [{**field, "label": "version_extracted"}]},
+                             {"fields": [{**field, "label": "version"}]})):
+            facets = differ.diff("detected_fields", 200, left, 200, right)
+            self.assertTrue(any(not f.get("documented") for f in facets))
+
+    def test_duplicate_metadata_identities_fail_closed_on_either_side(self):
+        for endpoint, key in (("labels", "data"), ("detected_fields", "fields"),
+                              ("detected_labels", "detectedLabels")):
+            answer = self.actual_metadata(endpoint)
+            changed = copy.deepcopy(answer)
+            changed[key].append(copy.deepcopy(changed[key][0]))
+            for left, right in ((answer, changed), (changed, answer), (changed, copy.deepcopy(changed))):
+                with self.subTest(endpoint=endpoint):
+                    facets = differ.diff(endpoint, 200, left, 200, right)
+                    self.assertTrue(facets)
+                    self.assertFalse(any(f.get("documented") for f in facets))
+
+    def test_volume_shape_and_values_cannot_use_byte_accounting_to_hide_invalid_data(self):
+        answer = self.actual_metadata("index/volume")
+        for value in ("-1", "-0.5", "1_000", " 1000", "0x1p2"):
+            changed = copy.deepcopy(answer)
+            changed["data"]["result"][0]["value"][1] = value
+            with self.subTest(value=value):
+                facets = differ.diff("volume", 200, answer, 200, changed)
+                self.assertEqual([f["kind"] for f in facets], ["shape"])
+                self.assertFalse(any(f.get("documented") for f in facets))
+        changed = copy.deepcopy(answer)
+        changed["data"]["resultType"] = "matrix"
+        for row in changed["data"]["result"]:
+            row["values"] = [row.pop("value")]
+        self.assertEqual([f["kind"] for f in differ.diff("volume", 200, answer, 200, changed)], ["result-type"])
+
+    def test_shared_numeric_sample_grammar_keeps_decimal_equivalences(self):
+        for value in ("1", "+1000", "01000", "1e+3", "-.5", "1.", "NaN", "+Inf", "-Inf"):
+            with self.subTest(value=value):
+                self.assertTrue(differ.valid_sample_value(value))
+        for value in ("1_000", " 1000", "1000\n", "0x1p2", "1e999", "Infinity", 1, True, None):
+            with self.subTest(value=value):
+                self.assertFalse(differ.valid_sample_value(value))
+        for value in ("-1", "NaN", "+Inf", "-Inf"):
+            self.assertFalse(differ.valid_sample_value(value, nonnegative=True))
+
+    def test_metric_schema_rejects_duplicate_identities_and_points_without_changing_query_special_values(self):
+        answer = matrix(({"app": "api"}, [[1000, "10"], [1060, "20"]]))
+        for duplicate_series in (True, False):
+            changed = copy.deepcopy(answer)
+            if duplicate_series:
+                changed["data"]["result"].append(copy.deepcopy(changed["data"]["result"][0]))
+            else:
+                changed["data"]["result"][0]["values"].append([1000, "10"])
+            with self.subTest(duplicate_series=duplicate_series):
+                self.assertFalse(differ.valid_metric_result(changed))
+                for left, right in ((answer, changed), (changed, answer), (changed, copy.deepcopy(changed))):
+                    self.assertTrue(differ.diff("volume_range", 200, left, 200, right))
+        for value in ("NaN", "+Inf", "-Inf"):
+            special = matrix(({"app": "api"}, [[1000, value]]))
+            self.assertTrue(differ.valid_metric_result(special))
+            self.assertFalse(differ.valid_volume_result(special))
+
+    def test_detected_field_cardinality_keeps_existing_sketch_tolerance(self):
+        answer = self.actual_metadata("detected_fields")
+        answer["fields"][0]["cardinality"] = 100
+        changed = copy.deepcopy(answer)
+        changed["fields"][0]["cardinality"] = 104
+        self.assertEqual(differ.diff("detected_fields", 200, answer, 200, changed), [])
+        changed["fields"][0]["cardinality"] = 106
+        self.assertTrue(differ.diff("detected_fields", 200, answer, 200, changed))
 
     def test_volume_exemption_covers_bytes_only(self):
         a = matrix(({"service_name": "a"}, [[60, "100"], [120, "100"]]))
@@ -152,6 +349,65 @@ class DifferTest(unittest.TestCase):
         fewer = differ.diff("volume", 200, matrix(({"a": "1"}, [[60, "1"]]), ({"a": "2"}, [[60, "1"]])),
                             200, matrix(({"a": "1"}, [[60, "1"]])))
         self.assertFalse(any(f.get("documented") for f in fewer))
+
+    def test_volume_requires_a_metric_result_instead_of_raw_volume_rows(self):
+        vector = {"status": "success", "data": {"resultType": "vector", "result": [
+            {"metric": {"app": "api"}, "value": [1795378740, "984064"]}], "stats": {"summary": {}}}}
+        invalid = [{"data": {"volumes": [{"name": "api", "volume": 1}]}},
+                   {"data": {"volumes": [{"name": "other", "volume": 999}]}},
+                   {"data": {"volumes": []}}, {}, {"data": {}},
+                   {"data": {"resultType": "vector", "result": {}}},
+                   {"data": {"resultType": "streams", "result": []}}]
+        for value in ([], [1], ["bad-time", "1"], [1, "bad-value"]):
+            invalid.append({"data": {"resultType": "vector", "result": [{"metric": {}, "value": value}]}})
+        for endpoint in ("volume", "volume_range"):
+            for bad in invalid:
+                for left, right in ((vector, bad), (bad, vector), (bad, bad)):
+                    with self.subTest(endpoint=endpoint, left=left, right=right):
+                        facets = differ.diff(endpoint, 200, left, 200, right)
+                        self.assertEqual([f["kind"] for f in facets], ["shape"])
+                        self.assertFalse(any(f.get("documented") for f in facets))
+        self.assertEqual(differ.diff("volume", 200, vector, 200, copy.deepcopy(vector)), [])
+        changed = copy.deepcopy(vector)
+        changed["data"]["result"][0]["value"][1] = "1"
+        self.assertEqual(differ.diff("volume", 200, vector, 200, changed)[0]["documented"], differ.DOC_VOLUME_BYTES)
+        changed["data"]["result"][0]["value"][0] += 1
+        self.assertTrue(any(f["kind"] == "points" and not f.get("documented")
+                            for f in differ.diff("volume", 200, vector, 200, changed)))
+
+    def recorded_patterns(self):
+        path = os.path.join(HERE, "fixtures", "loki-pattern-samples-3.7.10.json.gz")
+        with gzip.open(path, "rt") as source:
+            return json.load(source)["response"]
+
+    def test_recorded_pattern_samples_are_order_independent_but_counts_and_times_are_not(self):
+        answer = self.recorded_patterns()
+        reordered = copy.deepcopy(answer)
+        reordered["data"].reverse()
+        for entry in reordered["data"]:
+            entry["samples"].reverse()
+        self.assertEqual(differ.diff("patterns", 200, answer, 200, reordered), [])
+        for mutation in ("count", "timestamp", "text", "level", "duplicate-entry", "duplicate-timestamp"):
+            changed = copy.deepcopy(answer)
+            if mutation == "count":
+                sample = next(s for row in changed["data"] for s in row["samples"] if s[1] == 1)
+                sample[1] = 999
+            if mutation == "timestamp": changed["data"][0]["samples"][0][0] += 1
+            if mutation == "text": changed["data"][0]["pattern"] += " changed"
+            if mutation == "level": changed["data"][0]["level"] += "-wrong"
+            if mutation == "duplicate-entry": changed["data"].append(copy.deepcopy(changed["data"][0]))
+            if mutation == "duplicate-timestamp": changed["data"][0]["samples"].append(changed["data"][0]["samples"][0][:])
+            with self.subTest(mutation=mutation):
+                facets = differ.diff("patterns", 200, answer, 200, changed)
+                self.assertTrue(facets)
+                self.assertTrue(all(f["kind"] == "patterns" and not f.get("documented") for f in facets))
+
+    def test_malformed_pattern_answers_cannot_match_as_empty_sets(self):
+        for bad in ({}, {"data": {}}, {"data": [None]}, {"data": [{"pattern": "a", "level": "info"}]}):
+            with self.subTest(bad=bad):
+                facets = differ.diff("patterns", 200, bad, 200, copy.deepcopy(bad))
+                self.assertTrue(facets)
+                self.assertTrue(all(f["kind"] == "patterns" and not f.get("documented") for f in facets))
 
     def test_documented_ids_are_registry_cases(self):
         for case in differ.DOCUMENTED:

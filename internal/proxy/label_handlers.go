@@ -25,6 +25,7 @@ import (
 //	fallback /select/logsql/field_names for older backends
 func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withWidenedLabelPoint(r, start)
 	if p.handleMultiTenantFanout(w, r, "labels") {
 		return
 	}

@@ -3,6 +3,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -23,6 +24,139 @@ class CountQueryTest(unittest.TestCase):
         self.assertRegex(q, r'^sum\(count_over_time\(\{env="production"\} != "seed-count-\d+" \[600s\]\)\)$')
         self.assertTrue(q.startswith("sum(count_over_time(" + stack.SELECTOR + " "))
         self.assertIsNotNone(re.search(r"\[600s\]", q))
+
+
+class BuildAndSeedResourcesTest(unittest.TestCase):
+    def test_both_capped_builds_finish_before_unchanged_seed(self):
+        events = []
+        st = mock.Mock()
+        builds = [("pr", None, "/tmp/proof/proxy-pr"), ("base", "old", "/tmp/proof/proxy-base")]
+
+        def build(ref, out):
+            events.append(out)
+            return "/tree/" + (ref or "pr")
+
+        def seed(*args):
+            self.assertEqual(events, [b[2] for b in builds])
+            self.assertEqual(args, (90000, 123456, 15000))
+            events.append("seed")
+
+        st.seed.side_effect = seed
+        with mock.patch.object(stack, "build", side_effect=build):
+            trees = stack.build_and_seed(st, builds, (90000, 123456, 15000))
+        self.assertEqual(trees, {"pr": "/tree/pr", "base": "/tree/old"})
+        self.assertEqual(st.artifact_dir, "/tmp/proof")
+        self.assertEqual(events[-1], "seed")
+
+    def test_failed_build_does_not_start_ingest_and_keeps_completed_trees(self):
+        st = mock.Mock()
+        failure = RuntimeError("build failed")
+        with mock.patch.object(stack, "build", side_effect=["/tree/pr", failure]):
+            with self.assertRaises(RuntimeError) as raised:
+                stack.build_and_seed(st, [("pr", None, "/tmp/proof/pr"), ("base", "old", "/tmp/proof/base")], (60, 120))
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(raised.exception.trees, {"pr": "/tree/pr"})
+        st.seed.assert_not_called()
+
+    def test_go_build_has_explicit_resource_bounds(self):
+        for ref in (None, "old"):
+            with self.subTest(ref=ref), mock.patch.object(stack.subprocess, "run") as run, \
+                    mock.patch.object(stack.tempfile, "mkdtemp", return_value="/tree/old"):
+                stack.build(ref, "/tmp/proof/proxy")
+                call = next(call for call in run.call_args_list if call.args[0][0] == "go")
+                self.assertIn("-p=1", call.args[0])
+                self.assertEqual(call.kwargs["env"]["GOMAXPROCS"], "2")
+                self.assertEqual(call.kwargs["env"]["GOMEMLIMIT"], "3GiB")
+
+
+class SeedFailureEvidenceTest(unittest.TestCase):
+    def test_seed_enables_stream_checkpoints_and_keeps_final_flush_and_count_gate(self):
+        st = stack.Stack("proof")
+        events = []
+        def generate(*args, **kwargs):
+            events.append("generator")
+            self.assertEqual(kwargs["env"].get("LOG_BACKFILL_FLUSH_STREAMS"), "10000")
+            self.assertEqual(kwargs["env"]["LOG_BACKFILL_SEED"], "123456")
+        def flush(request, timeout):
+            events.append("final-flush")
+            self.assertEqual(request.full_url, st.loki + "/flush")
+            return mock.MagicMock()
+        with mock.patch.object(stack.subprocess, "run", side_effect=generate), \
+                mock.patch.object(stack.urllib.request, "urlopen", side_effect=flush), \
+                mock.patch.object(st, "wait_equal_counts", side_effect=lambda *args: events.append(args)), \
+                mock.patch.object(stack, "log"):
+            st.seed(90000, 123456, 15000)
+        self.assertEqual(events, ["generator", "final-flush", (33456, 123456, 15000)])
+
+    def test_capture_precedes_backend_teardown_and_preserves_completed_tree(self):
+        st = stack.Stack("proof")
+        events = []
+        failure = subprocess.CalledProcessError(1, ["generator"])
+        with mock.patch.object(stack, "build", return_value="/tree/pr"), \
+                mock.patch.object(stack.subprocess, "run", side_effect=failure), \
+                mock.patch.object(st, "capture_seed_failure", side_effect=lambda error: events.append("capture")), \
+                mock.patch.object(stack, "remove_tree", side_effect=lambda tree: events.append("remove_tree")), \
+                mock.patch.object(st, "down", side_effect=lambda: events.append("down")):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                stack.build_and_seed(st, [("pr", None, "/tmp/proof/proxy-pr")], (90000, 123456))
+            stack.teardown([], raised.exception.trees.values(), st)
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(events, ["capture", "remove_tree", "down"])
+
+    def test_failure_records_evidence_before_rethrow_and_never_flushes(self):
+        st = stack.Stack("proof")
+        st.artifact_dir = "/tmp/proof"
+        failure = subprocess.CalledProcessError(1, ["generator"])
+        with mock.patch.object(stack.subprocess, "run", side_effect=failure), \
+                mock.patch.object(st, "capture_seed_failure") as capture, \
+                mock.patch.object(stack.urllib.request, "urlopen") as flush:
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                st.seed(90000, 123456, 15000)
+        self.assertIs(raised.exception, failure)
+        capture.assert_called_once_with(failure)
+        flush.assert_not_called()
+
+    def test_capture_contains_backend_state_and_bounded_logs(self):
+        st = stack.Stack("proof", profile="loki-defaults")
+        state = {"status": "exited", "oom_killed": True, "exit_code": 137, "restart_count": 2}
+
+        def run(command, **kwargs):
+            if command[1] == "inspect":
+                return subprocess.CompletedProcess(command, 0, json.dumps(state), "")
+            kwargs["stdout"].write(b"old" + b"x" * (300 << 10) + b"last backend failure\n")
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as out, mock.patch.object(stack.subprocess, "run", side_effect=run):
+            st.artifact_dir = out
+            st.capture_seed_failure(RuntimeError("seed failed"))
+            with open(os.path.join(out, "seed-loki-defaults-backends.json")) as source:
+                evidence = json.load(source)
+            self.assertEqual(set(evidence["backends"]), {"loki", "victorialogs"})
+            for item in evidence["backends"].values():
+                self.assertEqual(item["state"], state)
+                path = os.path.join(out, item["log_file"])
+                self.assertLessEqual(os.path.getsize(path), 256 << 10)
+                with open(path, "rb") as log:
+                    self.assertTrue(log.read().endswith(b"last backend failure\n"))
+
+    def test_evidence_command_errors_cannot_mask_seed_failure(self):
+        st = stack.Stack("proof")
+        with tempfile.TemporaryDirectory() as out, \
+                mock.patch.object(stack.subprocess, "run", side_effect=OSError("docker unavailable")):
+            st.artifact_dir = out
+            st.capture_seed_failure(RuntimeError("original failure"))
+            with open(os.path.join(out, "seed-aligned-backends.json")) as source:
+                evidence = json.load(source)
+            self.assertEqual(evidence["error"], "original failure")
+            self.assertTrue(all("inspect_error" in row and "log_error" in row for row in evidence["backends"].values()))
+
+    def test_unwritable_artifact_dir_does_not_replace_original_failure(self):
+        st = stack.Stack("proof")
+        st.artifact_dir = "/not-writable"
+        with mock.patch.object(stack.os, "makedirs", side_effect=OSError("read-only filesystem")), \
+                mock.patch.object(stack, "log") as log:
+            st.capture_seed_failure(RuntimeError("original failure"))
+        self.assertIn("preserving original RuntimeError", log.call_args.args[0])
 
 
 

@@ -427,6 +427,8 @@ func fenceWants(query string) map[string]bool {
 	}
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
 		want["ordered-json-vector"] = containsOrderedJSONVectorExpr(rexpr)
+		want["mixed-parser-metric"] = containsMixedParserMetric(rexpr)
+		want["ordered-json-evaluator"] = refOrderedJSONEvaluatorMetric(rexpr)
 	}
 	if spec, ok := parseBareParserMetricCompatSpec(resolved); ok && strings.Contains(spec.baseQuery, "| json") {
 		want["bare-json-metric"] = true
@@ -587,6 +589,7 @@ var fenceScreens = []struct {
 	old  func(string) bool
 	now  func(string) string
 }{
+	{"ordered-json-evaluator", func(string) bool { return false }, orderedJSONEvaluatorResponseKeyVersion},
 	{"keep-metadata-projection", refKeepMetadata, keepMetadataProjectionResponseKeyVersion},
 	{"keep-unwrap-identity", refKeepUnwrap, keepUnwrapIdentityResponseKeyVersion},
 	{"ip-label-filter", refIP, ipLabelFilterResponseKeyVersion},
@@ -719,6 +722,7 @@ func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
 func FuzzResponseKeyFencesMatchParsedTree(f *testing.F) {
 	// These tests check the fences against the parser, not the translation: their spellings stay out of the query corpus.
 	f.Cleanup(querycorpus.PauseRecording())
+	f.Add("{A=\"0\"}\t|\tJSON \t|a!=# `\n0", uint64(0))
 	for i, q := range fenceSpellingBases {
 		f.Add(q, uint64(0))
 		f.Add(q, uint64(i+1))
@@ -763,6 +767,45 @@ func emptyWithoutOverFires(query string) bool {
 	return emptyWithoutOperandResponseKeyVersion(query) != "" && !fenceWants(query)["binary-empty-without"]
 }
 
+// The reference compiles an evaluator from independently parsed input. Its
+// allocations are intentional test work, not part of the production key path.
+func refOrderedJSONEvaluatorMetric(expr logqlpkg.Expr) bool {
+	candidate := expr
+	switch n := expr.(type) {
+	case *logqlpkg.RangeAggregation:
+		rangeCopy := *n
+		rangeCopy.Offset, rangeCopy.OffsetDuration = "", 0
+		candidate = &rangeCopy
+	case *logqlpkg.VectorAggregation:
+		if ra, ok := n.Inner.(*logqlpkg.RangeAggregation); ok {
+			rangeCopy, vectorCopy := *ra, *n
+			rangeCopy.Offset, rangeCopy.OffsetDuration = "", 0
+			vectorCopy.Inner = &rangeCopy
+			candidate = &vectorCopy
+		}
+	}
+	if plan, ok := compileOrderedJSONMetricExpr(candidate); ok && plan.parser == "json" {
+		return true
+	}
+	if n, ok := expr.(*logqlpkg.VectorAggregation); ok && n.Op == logqlpkg.VectorSum {
+		if _, directRange := n.Inner.(*logqlpkg.RangeAggregation); directRange {
+			// A written sum supplies the range's hints; an unsupported sum
+			// must not be reinterpreted as an independently owned bare range.
+			return false
+		}
+	}
+	switch n := expr.(type) {
+	case *logqlpkg.VectorAggregation:
+		return refOrderedJSONEvaluatorMetric(n.Inner)
+	case *logqlpkg.BinOpExpr:
+		return refOrderedJSONEvaluatorMetric(n.Left) || refOrderedJSONEvaluatorMetric(n.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return n.Typed && n.Func == "label_replace" && refOrderedJSONEvaluatorMetric(n.Inner)
+	default:
+		return false
+	}
+}
+
 // fenceFires reports whether the named fence is in the response key chain of query (a query_range request).
 func fenceFires(name, query string) bool {
 	r := fenceShapeRequest(query)
@@ -774,11 +817,18 @@ func fenceFires(name, query string) bool {
 		"reserved-field-case":      func() string { return reservedFieldCaseResponseKeyVersion(query) },
 		"reserved-field-labels":    func() string { return reservedFieldLabelResponseKeyVersion(query) },
 		"keyword-label-names":      func() string { return keywordLabelResponseKeyVersion(query) },
-		"ordered-json-vector":      func() string { return orderedJSONVectorResponseKeyVersion(r, query) },
-		"bare-json-metric":         func() string { return bareJSONMetricResponseKeyVersion(r, query) },
-		"logfmt-presence":          func() string { return logfmtPresenceResponseKeyVersion(r, query) },
-		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
-		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
+		"mixed-parser-metric": func() string {
+			if strings.Contains(responseKeyFences(r, query, responseKeyCompatQuery), mixedParserMetricResponseVersion) {
+				return mixedParserMetricResponseVersion
+			}
+			return ""
+		},
+		"ordered-json-vector":     func() string { return orderedJSONVectorResponseKeyVersion(r, query) },
+		"bare-json-metric":        func() string { return bareJSONMetricResponseKeyVersion(r, query) },
+		"ordered-json-evaluator":  func() string { return orderedJSONEvaluatorResponseKeyVersion(query) },
+		"logfmt-presence":         func() string { return logfmtPresenceResponseKeyVersion(r, query) },
+		"stream-level-series":     func() string { return streamLevelSeriesResponseKeyVersion(query) },
+		"unwrap-dynamic-identity": func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
 		"rank-over-binary": func() string {
 			return rankOverBinaryFence(query)
 		},
@@ -815,6 +865,15 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		fence, query string
 		want         bool
 	}{
+		{"ordered-json-evaluator", `sum by(k)(count_over_time({a="b"}|json|drop __error__,__error_details__|k!=""[1m]))`, true},
+		{"ordered-json-evaluator", "SUM BY(k)(COUNT_OVER_TIME({a=\"b\"}| # parser\n JSON|DROP __error__,__error_details__|k!=\"\"[1m]))", true},
+		{"ordered-json-evaluator", `sum by(k)(rate({a="b"}|JSON[1m] offset 1h))`, true},
+		{"ordered-json-evaluator", `label_replace(max(sum by(k)(rate({a="b"}|json|logfmt[1m]))),"copy","$1","k","(.*)")`, true},
+		{"ordered-json-evaluator", `count_over_time({a="b"}|logfmt|json|keep k[1m])`, true},
+		{"ordered-json-evaluator", `sum by(k)(rate({a="b"}|logfmt[1m]))`, false},
+		{"ordered-json-evaluator", `{a="b"}|json`, false},
+		{"ordered-json-evaluator", `sum by(k)(sum_over_time({a="b"}|json|unwrap n[1m]))`, false},
+		{"ordered-json-evaluator", `sum by(k)(count_over_time({a="b"}|json k="k"[1m]))`, false},
 		{"keep-metadata-projection", `{a="b"} | keep level`, true},
 		{"keep-metadata-projection", `{a="b"} | KEEP level`, true},
 		{"keep-metadata-projection", `{a="b"} | Keep level`, true},
@@ -872,6 +931,18 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"keyword-label-names", "{a=\"b\"} | drop éKeep", false},
 		{"keyword-label-names", `{a="b"} | json | unwrap n`, false},
 		{"keyword-label-names", `{a="b"} | JSON | UNWRAP n`, false},
+		{"mixed-parser-metric", `max(sum by (x) (count_over_time({a="b"} | JSON x="[\"x\"]" | LOGFMT | drop __error__, __error_details__ | x!="" [5m])))`, true},
+		{"mixed-parser-metric", "sum by (x) (count_over_time({a=\"b\"} | json | Keep x | # parser\n logfmt [5m])) + 1", true},
+		{"mixed-parser-metric", `count_over_time({a="b"} | logfmt | json | keep x [5m])`, true},
+		{"mixed-parser-metric", `count_over_time({a="b"} | logfmt --strict | json | keep x [5m])`, false},
+		{"mixed-parser-metric", `sort_desc(sum by (x) (count_over_time({a="b"} | logfmt | json [5m])))`, true},
+		{"mixed-parser-metric", `sort(label_replace(sum by (x)(rate({a="b"} | json | logfmt [5m])), "copy", "$1", "x", "(.+)"))`, false},
+		{"mixed-parser-metric", `sort(label_replace(sum by (x)(rate({a="b"} | json | logfmt [5m])) + 1, "copy", "$1", "x", "(.+)"))`, true},
+		{"mixed-parser-metric", `label_replace(sort(sum by (x)(rate({a="b"} | json | logfmt [5m]))), "copy", "$1", "x", "(.+)")`, true},
+		{"mixed-parser-metric", `1 + sum by (x) (count_over_time({a="b"} | LOGFMT | JSON [5m]))`, true},
+		{"mixed-parser-metric", `sum by (x) (count_over_time({a="| logfmt"} | json [5m]))`, false},
+		{"mixed-parser-metric", `sum by (x) (count_over_time({a="b"} | logfmt --strict | json [5m]))`, false},
+		{"mixed-parser-metric", `{a="b"} | json | logfmt`, false},
 		{"ordered-json-vector", `bottomk(2, sum by (x) (count_over_time({a="b"} | json [5m])))`, true},
 		{"ordered-json-vector", `BOTTOMK(2, SUM BY (x) (COUNT_OVER_TIME({a="b"} | JSON [5m])))`, true},
 		{"ordered-json-vector", `sum by (x) (sum by (y) (count_over_time({a="b"} | json [5m])))`, true},
@@ -1094,6 +1165,44 @@ func textOutsideQuotes(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func TestNumericEqualityScreenCommentsAndOlderMatches(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  bool
+	}{
+		{"{A=\"0\"}\t|\tJSON \t|a!=# `\n0", true},
+		{"{app=\"#\"} | json | a =# `\n0", true},
+		{"{app=`#`} | json | a =# \"\n0", true},
+		{"{app=\"= 200\"}", true}, // Keep the older conservative screen's quoted matches.
+		{"# =\v200", true},        // Keep its comment and vertical-tab matches too.
+		{"{app=\"x\"} | json | a =#" + strings.Repeat(" =# ", 16384) + "\n\"0\"", false},
+		{"{app=\"x\"} | json | a =#" + strings.Repeat(" =# ", 16384) + "\n0", true},
+	} {
+		if got := equalityBeforeNumber(tc.query); got != tc.want {
+			t.Errorf("screen of %q = %t, want %t", tc.query, got, tc.want)
+		}
+		if allocs := testing.AllocsPerRun(10, func() { _ = equalityBeforeNumber(tc.query) }); allocs != 0 {
+			t.Errorf("screen allocates %v times", allocs)
+		}
+	}
+}
+
+func BenchmarkNumericEqualityCommentScreen(b *testing.B) {
+	for _, n := range []int{1024, 16384} {
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			query := "{app=\"x\"} | json | a =#" + strings.Repeat(" =# ", n) + "\n\"0\""
+			b.SetBytes(int64(len(query)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if equalityBeforeNumber(query) {
+					b.Fatal("quoted number is not a numeric equality")
+				}
+			}
+		})
+	}
 }
 
 // An unwrap written with other blanks than one space on each side of `| unwrap` is served from the plan with the

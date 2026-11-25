@@ -22,8 +22,8 @@ retain the core controls and their selected targeted proofs.
                                                   visual case has a fix-proof entry or an exemption
 
 Fix proofs: a spec entry lists in `fixes` the registry case ids (conformance/registry/cases, the `gap:` block)
-whose behaviour it reproduces. When a change adds a case, turns its gap status to `fixed`, or edits an open
-case with an explicit proof entry, every entry
+whose behaviour it reproduces. When a change adds a case, turns its gap status to `fixed`, changes an open
+case contract with an explicit proof entry, or adds/changes that proof scene, every entry
 that lists it is captured first at the ci_ranges Loki holds (LOKI_PROOF_S), `why: ["fix proof: <case>"]`, and never trimmed or dropped by
 the capture budget. A fixed case whose impact a Grafana panel shows needs such an entry, or `visual: none` plus
 `visual_reason:` in its gap block.
@@ -63,17 +63,19 @@ MAX_CAPTURES = 36  # static page x range captures (each is three datasources in 
 
 
 def load_spec(root=None):
-    return load_json(os.path.join(root or ab.ROOT, SPEC))
+    spec = load_json(os.path.join(root or ab.ROOT, SPEC))
+    ab.resolve_case_queries(spec["pages"], root=root)
+    return spec
 
 
-def spec_at(ref):
-    """The spec at a git ref; empty when the ref predates it or it does not parse."""
-    try:
-        text = subprocess.run(["git", "show", f"{ref}:{SPEC}"], cwd=ab.ROOT, capture_output=True, text=True,
-                              check=True).stdout
-        return json.loads(text)
-    except (subprocess.CalledProcessError, ValueError):
+def spec_at(ref, root=None):
+    """Read scenes and their matrix queries from the same revision, failing closed."""
+    text = ab.read_at(ref, SPEC, root=root) if root is not None else ab.read_at(ref, SPEC)
+    if text is None:
         return {"pages": []}
+    spec = json.loads(text)
+    ab.resolve_case_queries(spec["pages"], root=root, ref=ref)
+    return spec
 
 
 def case_gap(text):
@@ -100,31 +102,58 @@ def git_out(root, *args):
     return r.stdout if r.returncode == 0 else None
 
 
+def case_contract(text):
+    """Ignore only historical narrative and cluster ownership, retaining all other fields."""
+    text = re.sub(r"^why:[^\n]*(?:\n(?:[ \t]+[^\n]*|[ \t]*))*", "", text, flags=re.M)
+    gap = pg.block(text, "gap")
+    if gap:
+        contract = re.sub(r"^  clusters:[^\n]*(?:\n(?: {4,}[^\n]*|[ \t]*))*", "", gap, flags=re.M)
+        text = text.replace("gap:\n" + gap, "gap:\n" + contract, 1)
+    return "\n".join(line.rstrip() for line in text.splitlines() if line.strip())
+
+
 def changed_cases(base, head="HEAD", root=None, proof_cases=None):
     """Added, fixed, or explicitly proved open cases changed by this PR.
 
-    Compared from the merge base of base and head. A modified open case is
-    selected only when a visual entry lists it in `fixes`, allowing proof of
-    a partial fix without falsely closing the whole registry gap.
+    A standing fixes link is not a new PR claim when only why/clusters change.
+    Contract edits, new fixes links and changed captures still require partial
+    fix proof, including scenes whose case YAML was not edited.
     """
     root = root or ab.ROOT
-    if proof_cases is None:
-        proof_cases = {cid for page in load_spec().get("pages", []) for cid in page.get("fixes", [])}
     base = (git_out(root, "merge-base", base, head) or base).strip()
+    before_pages = {page["id"]: page for page in spec_at(base, root=root)["pages"]}
+    pages = spec_at(head, root=root)["pages"]
+    if proof_cases is None:
+        proof_cases = {cid for page in pages for cid in page.get("fixes", [])}
+    scene_claims = set()
+    for page in pages:
+        before_page = before_pages.get(page["id"])
+        prior_claims = set((before_page or {}).get("fixes", []))
+        claims = set(page.get("fixes", []))
+        scene_claims.update(claims - prior_claims)
+        if before_page is not None and capture_fields(before_page) != capture_fields(page):
+            scene_claims.update(claims)
     diff = git_out(root, "diff", "--name-status", "-M", base, head, "--", CASES) or ""
-    out = []
+    out = set()
     for line in diff.splitlines():
         parts = line.split("\t")
         code, new, old = parts[0][0], parts[-1], parts[1]
         if code not in "AMR" or not new.endswith(".yaml"):
             continue
         cid = new[len(CASES) + 1:-len(".yaml")]
-        gap = case_gap(git_out(root, "show", f"{head}:{new}") or "")
-        before = None if code == "A" else case_gap(git_out(root, "show", f"{base}:{old}") or "")
+        text = git_out(root, "show", f"{head}:{new}") or ""
+        before_text = "" if code == "A" else git_out(root, "show", f"{base}:{old}") or ""
+        gap = case_gap(text)
+        before = None if code == "A" else case_gap(before_text)
         if (before is None or (gap.get("status") == "fixed" and before.get("status") != "fixed")
-                or (cid in proof_cases and gap.get("status") == "open" and before.get("status") == "open")):
-            out.append(cid)
-    return out
+                or (cid in proof_cases and gap.get("status") == "open" and before.get("status") == "open"
+                    and case_contract(text) != case_contract(before_text))):
+            out.add(cid)
+    for cid in scene_claims & proof_cases:
+        text = ab.read_at(head, f"{CASES}/{cid}.yaml", root=root)
+        if text is not None and case_gap(text).get("status") == "open":
+            out.add(cid)
+    return sorted(out)
 
 
 # Fields that only link an entry to the registry: editing them does not change what the entry captures.

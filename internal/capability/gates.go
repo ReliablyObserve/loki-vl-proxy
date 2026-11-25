@@ -59,6 +59,7 @@ const (
 	RangeTimeWritersRefused
 	MathQuotedConstantClone
 	ExtraFiltersLen
+	MixedJSONRowStats
 	numGates
 )
 
@@ -70,17 +71,18 @@ type Patch struct {
 
 // Gate declares one capability: where it starts, the LTS lines that back-ported it, how to observe it and why.
 type Gate struct {
-	ID       GateID
-	Name     string // vl.pipe_coalesce
-	Kind     Kind
-	Side     Side
-	From     [3]int           // first release with it
-	Lines    map[[2]int]Patch // release lines that got it in a patch
-	Flavours FlavourSet       // builds that carry it (zero: every build)
-	Probe    *Probe           // optional feature probe; never set on a Safety gate
-	Registry string           // conformance/registry/vl/capabilities/<Registry>.yaml
-	Citation string           // VictoriaLogs CHANGELOG or issue
-	Default  bool             // the value when nothing is known (false for every gate after the v1.49.0 floor)
+	ID                   GateID
+	Name                 string // vl.pipe_coalesce
+	Kind                 Kind
+	Side                 Side
+	From                 [3]int           // first release with it
+	Lines                map[[2]int]Patch // release lines that got it in a patch
+	Flavours             FlavourSet       // builds that carry it (zero: every build)
+	Probe                *Probe           // optional feature probe; never set on a Safety gate
+	Registry             string           // conformance/registry/vl/capabilities/<Registry>.yaml
+	Citation             string           // VictoriaLogs CHANGELOG or issue
+	Default              bool             // the value when nothing is known (false for every gate after the v1.49.0 floor)
+	RequiresKnownRelease bool             // independent probes must not imply this gate
 	// Reads says what in the proxy reads the gate, for the generated reference.
 	Reads string
 }
@@ -286,6 +288,12 @@ var gates = [numGates]Gate{
 		Name: "vl.extra_filters_len", Kind: Behaviour, From: [3]int{1, 54, 0},
 		Registry: "vl-extra-filters-too-long", Citation: "VictoriaLogs v1.54.0 (#1923)",
 		Reads: "the refusal prediction of extra_filters and extra_stream_filters longer than -search.maxQueryLen",
+	},
+	MixedJSONRowStats: {
+		Name: "vl.mixed_json_row_stats", Kind: Capability, From: [3]int{1, 49, 0},
+		RequiresKnownRelease: true,
+		Registry:             "mixed-json-row-stats", Citation: "actual VictoriaLogs v1.49.0 and v1.54.0 class-partition and recorded Loki range oracles",
+		Reads: "certified mixed JSON/logfmt count/rate statistics with the exact original-row complement (ordered_json_mixed_stats.go)",
 	},
 }
 

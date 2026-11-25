@@ -414,7 +414,7 @@
         {
           "id": "pipe-rename",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         },
         {
           "id": "pipe-format",
