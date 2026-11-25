@@ -105,7 +105,7 @@ const textNode = parentElement => ({parentElement, textContent: parentElement.te
 const {EventEmitter} = require("node:events");
 const strip = require("node:module").stripTypeScriptTypes;
 if (!strip) process.exit(77);
-const start = Function(strip(require("node:fs").readFileSync(0,"utf8"))+";return startBodyFallback")();
+const start = Function("createHash", strip(require("node:fs").readFileSync(0,"utf8"))+";return startBodyFallback")(require("node:crypto").createHash);
 const identity = {method:"POST",url:"http://localhost/api/ds/query?requestId=1",postData:'{"queries":[{"expr":"rate({app=\\"api\\"}[5m])"}]}',status:200};
 function fixture() {
   const cdp=new EventEmitter(); let calls=0;
@@ -154,6 +154,15 @@ function add(cdp,id="one",over={}) {
   got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/unavailable/);f.collector.dispose();
   f=fixture();add(f.cdp);f.cdp.emit("Network.responseReceived",{requestId:"one",response:{url:identity.url+"&wrong=1",status:200}});
   got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/identity/);assert.equal(f.calls(),0);f.collector.dispose();
+  // A body over the 32 MiB the capture retains is not handed over, but it is read whole and hashed, so the page can prove its answer complete.
+  f=fixture();add(f.cdp);const big='{"results":{"A":{"status":200,"frames":[{"x":"'+"y".repeat(33*1024*1024)+'"}]}}}';
+  f.cdp.send=async()=>({body:big,base64Encoded:false});
+  got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/limit/);
+  assert.equal(got.digest.bytes,Buffer.byteLength(big));assert.equal(got.digest.sha256,require("node:crypto").createHash("sha256").update(big).digest("hex"));
+  assert.equal(got.digest.head.length,16*1024);assert.ok(got.digest.head.startsWith('{"results"'));assert.equal(got.digest.tail,big.slice(-4*1024));f.collector.dispose();
+  // The same body in base64, and one over the digest bound, which is only reported as over the limit.
+  f=fixture();add(f.cdp);f.cdp.send=async()=>({body:Buffer.from(big).toString("base64"),base64Encoded:true});
+  got=await f.collector.read(identity);assert.match(got.error,/limit/);assert.equal(got.digest.bytes,Buffer.byteLength(big));f.collector.dispose();
   f=fixture();add(f.cdp);f.cdp.emit("Network.requestWillBeSent",{requestId:"large",request:{method:"POST",url:identity.url,postData:"x".repeat(256*1024+1)}});
   got=await f.collector.read(identity);assert.equal(got.body,undefined);assert.match(got.error,/limit/);assert.equal(f.calls(),0);f.collector.dispose();
   f=fixture();for(let i=0;i<1025;i++)add(f.cdp,"request-"+i);

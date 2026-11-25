@@ -350,3 +350,12 @@ all. On `ubuntu-latest`, add the runner setup (checkout, Go and npm caches, Dock
 pulls, about 2-3 minutes): the old five-capture core took about 6-9 minutes and
 the then-full detailed selection 13-17 minutes. The nine-capture core has not
 yet been timed in CI; the normal job limit remains 30 minutes.
+
+## Large answers
+
+The capture keeps a backend answer up to 32 MiB in the record. Chrome's own buffer for it is larger (256 MiB per
+resource, 768 MiB in all) so that an answer above 32 MiB is not evicted before it is read. Such an answer is not kept: the
+record holds `body_digest` (SHA-256, byte length, the first 16 KiB and last 4 KiB of the decoded body), read from the
+whole body once. `compare.py` takes it as the answer when it is well formed and looks like a successful JSON answer, and
+compares base and PR by digest and length; against a retained body (Loki's) it is not compared.
+

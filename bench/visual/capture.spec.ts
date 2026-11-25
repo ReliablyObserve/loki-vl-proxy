@@ -12,6 +12,7 @@
 import { test, Page, Request, Response } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
+import { createHash } from "crypto";
 
 type Ds = { id: string; uid: string };
 type PageSpec = {
@@ -168,10 +169,15 @@ async function settle(page: Page, pending: { n: number; last: number; seen?: num
 
 const BACKEND = /\/api\/ds\/query|\/api\/datasources\/uid\/[^/]+\/resources\/|\/api\/datasources\/proxy\//;
 
+// What is kept of a response body above the retention cap: it was read once, completely, and is not retained.
+type BodyDigest = { sha256: string; bytes: number; head: string; tail: string };
+const digestOfBody = (body: Buffer): BodyDigest => ({ sha256: createHash("sha256").update(body).digest("hex"), bytes: body.length,
+  head: body.subarray(0, 16 * 1024).toString("utf8"), tail: body.subarray(-4 * 1024).toString("utf8") });
+
 // Independent CDP buffers retain proof bytes only inside Chrome. No body cache,
 // refetch, request interception or URL-only matching is used by the fallback.
 function startBodyFallback(cdp: any) {
-  const maxBody = 32 * 1024 * 1024;
+  const maxBody = 32 * 1024 * 1024, maxDigestBody = 256 * 1024 * 1024;
   const maxIdentity = 256 * 1024, maxMetadata = 4 * 1024 * 1024, maxRequests = 1024;
   type Seen = { method: string; url: string; postData: string | null; status?: number; responseURLMatches?: boolean;
     finished?: boolean; failed?: boolean; redirected?: boolean };
@@ -208,8 +214,8 @@ function startBodyFallback(cdp: any) {
   for (const [name, handler] of events) cdp.on(name, handler);
   return {
     async read(identity: {method: string; url: string; postData: string | null; status: number})
-      : Promise<{body?: Buffer; error?: string}> {
-      const no = (error: string) => ({error});
+      : Promise<{body?: Buffer; error?: string; digest?: BodyDigest}> {
+      const no = (error: string, digest?: BodyDigest) => ({error, ...(digest ? {digest} : {})});
       if (disposed) return no("collector disposed");
       if (unavailable) return no(unavailable);
       const matches = [...seen.entries()].filter(([, item]) => item.method === identity.method &&
@@ -234,7 +240,11 @@ function startBodyFallback(cdp: any) {
         if (typeof value?.body !== "string" || typeof value.base64Encoded !== "boolean") return no("body unavailable");
         const encoding = value.base64Encoded ? "base64" : "utf8";
         if (value.body.length > (value.base64Encoded ? Math.ceil(maxBody / 3) * 4 : maxBody) ||
-            Buffer.byteLength(value.body, encoding) > maxBody) return no("body byte limit");
+            Buffer.byteLength(value.body, encoding) > maxBody) {
+          // Over the retention cap: not kept, but proved complete by its digest and length (up to maxDigestBody).
+          const size = Buffer.byteLength(value.body, encoding);
+          return no("body byte limit", size <= maxDigestBody ? digestOfBody(Buffer.from(value.body, encoding)) : undefined);
+        }
         const body = Buffer.from(value.body, encoding);
         if (value.base64Encoded && body.toString("base64") !== value.body) return no("invalid body encoding");
         return {body};
@@ -365,7 +375,11 @@ async function startRuntimeProof(page: Page, began = Date.now(), errors: string[
   await cdp.send("Performance.enable");
   const bodyFallback = startBodyFallback(cdp);
   try {
-    await cdp.send("Network.enable", {maxTotalBufferSize: 128 * 1024 * 1024, maxResourceBufferSize: 32 * 1024 * 1024});
+    // Chrome keeps a response only up to maxResourceBufferSize and then answers getResponseBody "Request content was
+  // evicted from inspector cache": with 32 MiB here, Logs Drilldown's trace_id and span_id breakdowns (over 40 MiB)
+  // were unreadable, and their pages could not prove their answers complete. The buffer is sized for the largest
+  // answer of the plan; what the capture keeps of a body is still bounded (maxBody, and a digest above it).
+  await cdp.send("Network.enable", {maxTotalBufferSize: 768 * 1024 * 1024, maxResourceBufferSize: 256 * 1024 * 1024});
   } catch (error) {
     bodyFallback.dispose();
     await cdp.detach().catch(() => {});
@@ -580,6 +594,7 @@ async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>, 
   let body: any = null;
   let unavailable = "";
   let source: string | undefined;
+  let digest: BodyDigest | undefined;
   let bytes: Buffer | undefined;
   try { bytes = await rs.body(); } catch (error) {
     unavailable = String((error as Error)?.message ?? error).split("\n")[0].slice(0, 160) || "body unavailable";
@@ -587,7 +602,10 @@ async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>, 
     if (readBody && /evicted from inspector cache|No (?:resource|data) (?:found )?with given identifier/.test(unavailable)) {
       const recovered = await readBody({method: rq.method(), url: rq.url(), postData: rq.postData(), status: rs.status()});
       if (recovered.body) { bytes = recovered.body; source = "cdp-fallback"; }
-      else unavailable = `CDP fallback unavailable: ${recovered.error || "body missing"}; ${unavailable}`.slice(0, 160);
+      else {
+        unavailable = `CDP fallback unavailable: ${recovered.error || "body missing"}; ${unavailable}`.slice(0, 160);
+        digest = recovered.digest;
+      }
     }
   }
   if (cancelled(rq)) return abortedRecord(rq);
@@ -599,7 +617,8 @@ async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>, 
   return { url, method: rq.method(),
     request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body,
     ...(source ? {body_source: source} : {}),
-    ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}) } : {}) };
+    ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}),
+                          ...(digest ? { body_digest: digest } : {}) } : {}) };
 }
 
 for (const p of spec.pages as PageSpec[]) {

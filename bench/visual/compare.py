@@ -444,6 +444,26 @@ def has_data(body):
                                           for k in ("result", "fields", "detectedLabels", "values", "series", "volumes"))
 
 
+# A body above the capture's retention cap (capture.spec.ts, BodyDigest) is kept as its SHA-256, length and a bounded head and
+# tail, read from the whole body once. Such a record answers the request only when it looks like a successful answer: a
+# well-formed digest, a JSON object that starts like one and does not start with an error, and ends like one.
+DIGEST_HEAD = re.compile(r'\A\s*\{\s*"(?:results|status|data|fields|detectedLabels|values|volumes|series)"')
+
+
+def body_digest(record):
+    """(sha256, bytes) of a 200 record whose body was not retained but was read and hashed whole; None otherwise."""
+    d = record.get("body_digest")
+    if not isinstance(d, dict) or record.get("status") != 200 or record.get("response") is not None:
+        return None
+    sha, size, head, tail = d.get("sha256"), d.get("bytes"), d.get("head"), d.get("tail")
+    if not (isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha) and isinstance(size, int) and not isinstance(size, bool)
+            and size > 0 and isinstance(head, str) and isinstance(tail, str)):
+        return None
+    if not DIGEST_HEAD.match(head) or re.search(r'"error"\s*:', head[:2048]) or not tail.rstrip().endswith(("}", "]")):
+        return None
+    return sha, size
+
+
 def answer_evidence(capture):
     """Classify each requested answer by its normalized identity, including error bodies on non-200s."""
     rejected, problems, answered = defaultdict(list), [], set()
@@ -471,6 +491,8 @@ def answer_evidence(capture):
                 else:
                     problems.append("infrastructure error or unusable error response")
             elif query and isinstance(result, dict) and isinstance(result.get("frames"), list):
+                answered.add(key)
+            elif response is None and body_digest(record):
                 answered.add(key)
             elif not query and isinstance(body, (dict, list)):
                 if isinstance(body, dict):
@@ -509,7 +531,8 @@ def records(path, raw=None, gaps=None):
     for r in d["records"]:
         # A request the page cancelled (capture.spec.ts: `aborted`) has no answer and is not a gap of the capture.
         cancelled = bool(r.get("aborted"))
-        missing_body = not cancelled and r["status"] == 200 and r["response"] is None
+        digest = None if cancelled else body_digest(r)
+        missing_body = not cancelled and r["status"] == 200 and r["response"] is None and not digest
         unreadable |= missing_body
         if missing_body and r.get("body_unavailable"):
             reasons.append(str(r["body_unavailable"])[:160])
@@ -520,6 +543,7 @@ def records(path, raw=None, gaps=None):
                     keys.add(key)
                 recs[key].append({("capture", ""): ("capture", CANCELLED)} if cancelled else
                                  {("capture", ""): ("capture", "body unreadable")} if missing_body else
+                                 {("digest", ""): ("digest", *digest)} if digest else
                                  frames_of(r["response"]) if r["status"] == 200 else
                                  {("status", str(r["status"])): ("error", r["status"])})
                 if raw is not None:
@@ -541,6 +565,7 @@ def records(path, raw=None, gaps=None):
                 keys.add(key)
             recs[key].append({("capture", ""): ("capture", CANCELLED)} if cancelled else
                              {("capture", ""): ("capture", "body unreadable")} if missing_body else
+                             {("digest", ""): ("digest", *digest)} if digest else
                              {"body": ("other", hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)}
                              if r["status"] == 200 else {("status", ""): ("error", r["status"])})
     if gaps is not None:
@@ -775,7 +800,11 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, b
             xa, xb = la[i], lb[j]
             x, y = (nonzero(xa), nonzero(xb)) if lenient else (xa, xb)
             series += len(xa)
-            why = (same_ranked if vs_loki and is_ranked(k) else same)(x, y)
+            if (("digest", "") in xa) != (("digest", "") in xb):
+                # one side's body was hashed, the other's retained (or from Loki): the bytes are not comparable
+                why = "capture body unreadable"
+            else:
+                why = (same_ranked if vs_loki and is_ranked(k) else same)(x, y)
             if not why:
                 ok += 1
                 continue

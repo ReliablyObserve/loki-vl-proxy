@@ -74,6 +74,64 @@ class CompareTest(unittest.TestCase):
         entry = dict(id=page, kind='explore', query=proof['ci']['captures'][0]['queries'][0]['expression'], covers=[case['id']])
         return page, entry, caps, [(case, proof)]
 
+    DIGEST = dict(sha256="a" * 64, bytes=45_000_000, head='{"results":{"A":{"status":200,"frames":[{"schema":', tail='"values":[[1,2]]}]}}}')
+
+    def digest_record(self, **over):
+        query = dict(refId="A", expr="sum by (trace_id) (count_over_time({a=\"b\"} [5m]))", queryType="range", maxLines=1,
+                     datasource=dict(uid="vp-x"), startNs="1", endNs="2")
+        record = dict(url="/api/ds/query?ds_type=loki", method="POST", status=200, request=dict(queries=[query], **{"from": "1", "to": "2"}),
+                      response=None, body_unavailable="CDP fallback unavailable: body byte limit", body_digest=deepcopy(self.DIGEST))
+        record.update(over)
+        return record
+
+    def test_a_body_hashed_whole_is_a_complete_answer_only_when_it_looks_like_one(self):
+        # dd-fields at 6h: two answers over the 32 MiB the capture retains, hashed once as they were read.
+        good = self.digest_record()
+        self.assertEqual(compare.body_digest(good), ("a" * 64, 45_000_000))
+        for name, record in {
+            "no digest": {**good, "body_digest": None},
+            "a retained body": {**good, "response": {"results": {}}},
+            "a failed status": {**good, "status": 500},
+            "a short hash": {**good, "body_digest": {**self.DIGEST, "sha256": "a" * 63}},
+            "an uppercase hash": {**good, "body_digest": {**self.DIGEST, "sha256": "A" * 64}},
+            "no bytes": {**good, "body_digest": {**self.DIGEST, "bytes": 0}},
+            "a boolean for the bytes": {**good, "body_digest": {**self.DIGEST, "bytes": True}},
+            "an error answer": {**good, "body_digest": {**self.DIGEST, "head": '{"results":{"A":{"error":"boom","status":400}}}'}},
+            "not JSON": {**good, "body_digest": {**self.DIGEST, "head": "<html>Bad Gateway"}},
+            "a truncated tail": {**good, "body_digest": {**self.DIGEST, "tail": '"values":[[1,2'}},
+        }.items():
+            self.assertIsNone(compare.body_digest(record), name)
+        rejected, answered, problems = compare.answer_evidence(dict(records=[good]))
+        self.assertEqual((len(answered), problems), (1, []))
+        _, _, problems = compare.answer_evidence(dict(records=[{**good, "body_digest": None}]))
+        self.assertIn("unusable API answer", problems)
+
+    def test_digests_of_the_same_answer_match_and_any_other_difference_is_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def side(name, record):
+                path = os.path.join(tmp, name + ".json")
+                with open(path, "w") as f:
+                    json.dump(dict(settled=True, settle_ms=1, records=[record]), f)
+                gaps = {}
+                _, recs = compare.records(path, gaps=gaps)
+                return recs, gaps
+            main, g1 = side("main", self.digest_record())
+            same_pr, g2 = side("pr", self.digest_record())
+            other_pr, _ = side("other", self.digest_record(body_digest={**self.DIGEST, "sha256": "b" * 64}))
+            longer_pr, _ = side("longer", self.digest_record(body_digest={**self.DIGEST, "bytes": 45_000_001}))
+            unreadable, g3 = side("unreadable", self.digest_record(body_digest=None))
+            for gaps in (g1, g2):
+                self.assertEqual(gaps["keys"], set())  # the digest is not a gap of the capture
+            self.assertTrue(g3["keys"])
+            _, _, diffs, _, _, _ = compare.compare(main, same_pr)
+            self.assertEqual(diffs, [])
+            for other in (other_pr, longer_pr):
+                _, _, diffs, _, _, _ = compare.compare(main, other)
+                self.assertTrue(diffs)
+            # A hashed body against one that could not be read is not a comparison, as before (reported, not gated).
+            _, _, diffs, _, _, _ = compare.compare(main, unreadable)
+            self.assertTrue(all("capture body unreadable" in d for d in diffs))
+
     def test_an_answer_the_other_side_also_gave_one_more_time_is_no_difference(self):
         # explore-unwrap-conversion-error at 6h: Grafana asked the rejected query twice on the base and once on the PR.
         a, b = {("error", ""): ("error", "pipeline error")}, {("series", "x"): ("metric", {"a": 1})}
