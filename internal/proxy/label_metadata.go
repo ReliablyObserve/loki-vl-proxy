@@ -345,7 +345,7 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 	if isNamesOnlyListing(ctx) {
 		// The names of a names-only listing are not in VictoriaLogs' order,
 		// which other readers of this cache keep.
-		prefix = "sfnn:"
+		prefix = "sfn:names:"
 	}
 	cacheKey := p.metadataFieldNamesCacheKey(ctx, prefix, params)
 	if ctx.Value(labelCacheBypassKey{}) == nil {

@@ -44,11 +44,15 @@ why: |
 
   /labels reads only the set of names (sorted, without hits), so its listing
   is names-only (2026-11-25): once the window's own hour and day buckets are
-  cached, a run of pieces finer than an hour inside one sealed hour (edges,
-  minute and 5-minute buckets) is answered by that hour when it saves calls
+  cached, a run of pieces finer than an hour inside an hour that ended more
+  than an hour ago (edges, minute and 5-minute buckets) is answered by that
+  hour when it saves calls and reads at most about twice what the pieces read
   (the hour is cached and every name it holds is among the names of the
-  window's own buckets, or the pieces would take more than one round of
-  parallel calls). A piece's names are a subset of its hour's names, so an
+  window's own buckets, or the pieces span at least half the hour and would
+  take more than one round of parallel calls). Within the live window the
+  query must be countable and the hour must carry its row count, so the run
+  count of every listing confirms the hour and a row written into a covered
+  end makes the hour, and then the pieces, be read again on the next request. A piece's names are a subset of its hour's names, so an
   hour whose names all appear in the rest of the window adds none; when one
   would add a name, the pieces are read exactly. The names equal one
   full-range call's; the hits and order of the merged listing are not

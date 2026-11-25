@@ -68,3 +68,43 @@ decisions:
     performance:
       tracked: ['keep-series-grouping K6', 'extracted-pushdown X1', 'extracted-suffix E7', 'level-filter-stored LS8', 'json-filter-pushdown A', 'metric-latency-gap DL2']
       bound: 'perf block max_ratio 2.0, target 1.0; green at Loki speed or below'
+  - id: labels-names-only-ends-from-their-hours
+    chosen: |
+      /labels lists names only (sorted, without hits), so its stream_field_names
+      listing is marked names-only, and a run of pieces finer than an hour
+      inside one hour that ended more than an hour ago (the unaligned edge,
+      minute and 5-minute buckets of a window end) is answered by that hour
+      when the window's own hour and day buckets are in memory and it saves
+      calls: the hour is cached and its names are all among the names of the
+      window's own buckets, or the pieces span at least half the hour and need
+      more than one round of -metadata-inventory-parallelism calls. A piece's
+      names are a subset of its hour's names, so such an hour adds none; when
+      it holds a name the rest of the window lacks, the pieces are read exactly.
+      Within the live window only a countable query whose hour carries its row
+      count is covered, so the run count of every listing confirms the hour.
+      Names-only answers are cached under their own keys (sfn:names:,
+      label_inventory:...:names).
+    over: ['the pieces read one by one (before: about 19 calls, five rounds, per 24h window moved back an hour)', 'one call over each end (exact, but a refresh would read up to an hour per end on every request instead of its edge)', 'the enclosing hour scanned whatever the pieces span (up to 360x the rows of a 10-second edge)', 'higher parallelism (more VictoriaLogs load per request at fleet scale)']
+    why: |
+      A window moved back by an hour or more has new unaligned ends that no
+      earlier request cached. The perf A/B shape refresh labels (label
+      browser) moves its 24h window back 3617 s per run; on the CI stack each
+      round of calls costs about 50 ms, so the repeats took 273-306 ms against
+      Loki's 64-66 ms. The hours of the ends are cached for every later window
+      and replica (ordinary hour buckets, shared through the peer tier).
+    evidence: 'perf A/B 2026-11-25 (loki-defaults, runs 45611003635 and 45633797620): 24h warm 273-306 ms vs Loki 64-66 ms, 20 VictoriaLogs calls per repeat; 6h warm 21-56 ms vs 2-3 ms. BenchmarkLabelsShiftedWindow (Apple M5 Pro, GOMAXPROCS=4, 8 interleaved runs, 2026-11-25): moved 24h window 19 -> 2.7 calls and 120 -> 80 listed minutes per request, -59% time at 2 ms per call and -15% with a cost that grows with the range; refresh across an hour bucket 19 -> 3 calls, 120 -> 60 minutes; first load unchanged (63 calls, 1440 minutes). TestLabelsInventoryCoverOnVictoriaLogs: names equal one full-range call on VictoriaLogs v1.49.0 and v1.54.0.'
+    code: [internal/proxy/metadata_inventory.go, internal/proxy/label_metadata.go]
+    tests: [TestLabelsInventory_ShiftedWindowReadsTheHoursOfItsEnds, TestLabelsInventory_CoveredEndsMatchOneFullRangeCall, TestLabelsInventory_ExactListingsKeepHitsAndOrder, TestLabelsInventory_RowsBackfilledIntoACoveredEndAppearOnTheNextRequest, TestLabelsInventoryCoverOnVictoriaLogs, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow]
+    history:
+      - date: '2026-11-25'
+        what: 'perf A/B row metadata-inventory / refresh labels (label browser) at 24h and 6h, warm (windows moved back 3617 s and 317 s), loki-defaults'
+        measured: '24h 273-306 ms against Loki 64-66 ms (4.1-4.8x, above the locked 2x bound); 6h 21-56 ms against 2-3 ms'
+        cause: 'each new unaligned end of a moved window was read as an edge plus up to three minute and eleven 5-minute buckets that no request had cached: 19-20 calls, five rounds at four in parallel'
+        effect: 'every label browser over an earlier window paid five rounds of VictoriaLogs calls'
+        fixed_by: 'this change'
+        after: 'to be measured by the perf A/B of this change'
+    quality: '/labels lists exactly the names of one full-range listing (fake, random differential and fuzz; VictoriaLogs v1.49.0 and v1.54.0); label values and every other listing keep every piece with hits and order; a row backfilled into a covered end is listed on the next near-now request.'
+    performance:
+      tracked: ['metadata-inventory refresh labels (label browser)', 'metadata-inventory refresh labels with selector']
+      bound: 'perf block max_ratio 2.0, target 1.0; green at Loki speed or below'
+    pending: true

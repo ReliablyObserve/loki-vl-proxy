@@ -3,10 +3,13 @@ package proxy
 import (
 	"context"
 	"math/rand/v2"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -211,4 +214,95 @@ func newInventoryTestProxyAt(t *testing.T, url string, parallelism int) *Proxy {
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	return p
+}
+
+// spanLog records the [start, end) of every stream_field_names call.
+type spanLog struct {
+	mu    sync.Mutex
+	f     *fakeVictoriaLogs
+	calls [][2]int64
+}
+
+func (s *spanLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	if r.URL.Path == "/select/logsql/stream_field_names" {
+		a, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+		b, _ := strconv.ParseInt(r.Form.Get("end"), 10, 64)
+		s.mu.Lock()
+		s.calls = append(s.calls, [2]int64{a, b})
+		s.mu.Unlock()
+	}
+	s.f.ServeHTTP(w, r)
+}
+
+// readsInside counts the listings since the last call that lie inside [a, b).
+func (s *spanLog) readsInside(a, b time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, c := range s.calls {
+		if c[0] >= a.UnixNano() && c[1] <= b.UnixNano() {
+			n++
+		}
+	}
+	s.calls = nil
+	return n
+}
+
+// A row written with an old timestamp into an end of the window that its hour
+// answers is listed by the next near-now request, as it is when the end is
+// read live: the hour ended an hour ago, so every listing's run count
+// confirms it, the changed count makes the hour be read again, and the new
+// name it then holds sends the pieces to VictoriaLogs. An hour that ended
+// within the last hour never answers an end: its end is read live.
+//
+// conformance: quality/labels-backfill-into-cached-bucket, semantics/label-inventory-exact-and-incremental
+func TestLabelsInventory_RowsBackfilledIntoACoveredEndAppearOnTheNextRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		covered bool
+		end     func(now time.Time) time.Time
+	}{
+		// The window's end sits in an hour that ended more than an hour ago.
+		{"settled hour", true, func(now time.Time) time.Time {
+			return now.Truncate(time.Hour).Add(-3*time.Hour + 26*time.Minute + 33*time.Second)
+		}},
+		// The end's hour ended within the last hour.
+		{"newest hour", false, func(now time.Time) time.Time {
+			return now.Truncate(time.Hour).Add(-17*time.Minute - 13*time.Second)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			now := time.Now()
+			f := &fakeVictoriaLogs{}
+			seedStableLabels(f, now)
+			vl := &spanLog{f: f}
+			srv := httptest.NewServer(vl)
+			t.Cleanup(srv.Close)
+			p, _ := newFreshnessProxy(t, srv.URL, 24*time.Hour)
+			end := tc.end(now)
+			endHour := end.Truncate(time.Hour)
+			// The window an hour later fills the hour of this window's end.
+			later := end.Add(time.Hour)
+			_ = labelsAnswer(t, p, later.Add(-6*time.Hour), later)
+			if got := labelsAnswer(t, p, end.Add(-6*time.Hour), end); strings.Contains(got, "late_edge") {
+				t.Fatalf("before the backfill: %s", got)
+			}
+			time.Sleep(200 * time.Millisecond) // past the recent-tail staleness
+			_ = vl.readsInside(endHour, endHour.Add(time.Hour))
+			_ = labelsAnswer(t, p, end.Add(-6*time.Hour), end)
+			reads := vl.readsInside(endHour, endHour.Add(time.Hour))
+			if tc.covered && reads != 0 {
+				t.Fatalf("a refresh read the end's pieces %d times, want them answered by their cached hour", reads)
+			}
+			if !tc.covered && reads == 0 {
+				t.Fatal("a refresh did not read the end of a window in the newest hour live")
+			}
+			f.add(fakeVLRow{ts: end.Add(-10 * time.Second).UnixNano(), stream: map[string]string{"app": "api", "late_edge": "1"}})
+			time.Sleep(200 * time.Millisecond)
+			if got := labelsAnswer(t, p, end.Add(-6*time.Hour), end); !strings.Contains(got, `"late_edge"`) {
+				t.Fatalf("a row backfilled into the end of the window was not listed: %s", got)
+			}
+		})
+	}
 }

@@ -1212,6 +1212,7 @@
     ],
     "quality/labels-backfill-into-cached-bucket": [
       "internal/proxy/label_backfill_cached_bucket_test.go",
+      "internal/proxy/label_inventory_cover_test.go",
       "test/e2e-compat/labels_backfill_cached_bucket_test.go"
     ],
     "quality/logfmt-parse-risk-candidates": [
@@ -4134,6 +4135,7 @@
     "internal/proxy/label_inventory_cover_test.go": [
       "loki_api_v1_label_name_values",
       "loki_api_v1_labels",
+      "quality/labels-backfill-into-cached-bucket",
       "semantics/label-browser-latency-cold-and-refresh",
       "semantics/label-inventory-exact-and-incremental"
     ],

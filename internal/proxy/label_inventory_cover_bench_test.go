@@ -38,7 +38,8 @@ func labelsAnswer(t testing.TB, p *Proxy, start, end time.Time) string {
 }
 
 // BenchmarkLabelsShiftedWindow times /labels over a 24h window against a
-// VictoriaLogs that answers every call after delay, per request:
+// VictoriaLogs that answers every call after a delay (none, 2 ms, or growing
+// with the listing's range), per request:
 //   - back=3617s is the A/B shape "refresh labels (label browser)": the
 //     window filled once, then three windows each moved back 3617 s;
 //   - refresh=30s is a Grafana refresh that the response cache cannot answer:
@@ -46,7 +47,8 @@ func labelsAnswer(t testing.TB, p *Proxy, start, end time.Time) string {
 //     for a 24h window), moved forward by 30 s;
 //   - cold is the first request, nothing cached.
 //
-// It reports the VictoriaLogs calls per request.
+// It reports the VictoriaLogs calls and the listed range (minutes of rows
+// read) per request.
 func BenchmarkLabelsShiftedWindow(b *testing.B) {
 	now := time.Now()
 	// Sealed, unaligned and at a fixed place in its hour.
@@ -61,16 +63,34 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 		{"refresh=30s", refresh0, []time.Time{refresh0.Add(30 * time.Second)}},
 		{"cold", time.Time{}, []time.Time{end0}},
 	} {
-		for _, delay := range []time.Duration{0, 2 * time.Millisecond} {
-			b.Run(mode.name+"/vl_delay="+delay.String(), func(b *testing.B) {
+		for _, cost := range []struct {
+			name  string
+			delay func(r *http.Request) time.Duration
+		}{
+			{"vl_delay=0s", func(*http.Request) time.Duration { return 0 }},
+			{"vl_delay=2ms", func(*http.Request) time.Duration { return 2 * time.Millisecond }},
+			// A listing's cost grows with the rows it reads: 0.5 ms plus 0.1 ms
+			// per minute of range (an hour 6.5 ms); a row count reads block
+			// headers only, 0.5 ms.
+			{"vl_delay=span", func(r *http.Request) time.Duration {
+				if r.URL.Path != "/select/logsql/stream_field_names" {
+					return 500 * time.Microsecond
+				}
+				a, _ := strconv.ParseInt(r.FormValue("start"), 10, 64)
+				e, _ := strconv.ParseInt(r.FormValue("end"), 10, 64)
+				return 500*time.Microsecond + time.Duration(e-a)/time.Minute*100*time.Microsecond
+			}},
+		} {
+			b.Run(mode.name+"/"+cost.name, func(b *testing.B) {
 				vl := &fakeVictoriaLogs{}
 				seedStableLabels(vl, now)
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					time.Sleep(delay)
+					time.Sleep(cost.delay(r))
 					vl.ServeHTTP(w, r)
 				}))
 				defer srv.Close()
 				calls, requests := 0, 0
+				var listed time.Duration
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
@@ -88,7 +108,10 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 						_ = labelsAnswer(b, p, end.Add(-24*time.Hour), end)
 					}
 					b.StopTimer()
-					c, _ := vl.reset()
+					c, spans := vl.reset()
+					for _, d := range spans {
+						listed += d
+					}
 					for path, n := range c {
 						if path != "/metrics" && path != "/health" {
 							calls += n
@@ -99,6 +122,7 @@ func BenchmarkLabelsShiftedWindow(b *testing.B) {
 					b.StartTimer()
 				}
 				b.ReportMetric(float64(calls)/float64(requests), "vl_calls/request")
+				b.ReportMetric(listed.Minutes()/float64(requests), "listed_min/request")
 			})
 		}
 	}

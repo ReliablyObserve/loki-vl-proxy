@@ -534,7 +534,7 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 	// the request's own context cancels them.
 	var covers map[int][]inventorySegment
 	if path == "/select/logsql/stream_field_names" && isNamesOnlyListing(ctx) {
-		plan, covers = p.coverFinePieces(path, base, plan, now.Add(-metadataInventorySealLag).UnixNano())
+		plan, covers = p.coverFinePieces(path, base, plan, now.Add(-metadataInventorySealLag).UnixNano(), countable)
 	}
 	var rescan map[string]struct{}
 	if countable {
@@ -630,7 +630,7 @@ func isNamesOnlyListing(ctx context.Context) bool { return ctx.Value(namesOnlyLi
 // The decision reads the memory tier only (no disk or peer lookups, which the
 // fetch makes anyway), and nothing changes while the middle hour or day
 // bucket of the window is not there: a first load plans its pieces as before.
-func (p *Proxy) coverFinePieces(path, base string, plan []inventorySegment, sealBefore int64) ([]inventorySegment, map[int][]inventorySegment) {
+func (p *Proxy) coverFinePieces(path, base string, plan []inventorySegment, sealBefore int64, countable bool) ([]inventorySegment, map[int][]inventorySegment) {
 	hour := int64(time.Hour)
 	fine := func(seg inventorySegment) bool { return seg.level < 0 || seg.level >= 2 }
 	// A window moved from an earlier one shares its middle with it.
@@ -696,7 +696,7 @@ func (p *Proxy) coverFinePieces(path, base string, plan []inventorySegment, seal
 			continue
 		}
 		run := plan[i:j]
-		if cover.end <= sealBefore && p.coverPays(path, base, cover, run, knownNames) {
+		if cover.end <= sealBefore && p.coverPays(path, base, cover, run, countable, knownNames) {
 			if covers == nil {
 				covers = map[int][]inventorySegment{}
 			}
@@ -711,20 +711,42 @@ func (p *Proxy) coverFinePieces(path, base string, plan []inventorySegment, seal
 }
 
 // coverPays reports whether answering run from its hour costs fewer
-// VictoriaLogs calls than answering its pieces, and is expected to add no
-// name. The pieces that need a call are every edge and every bucket not in
+// VictoriaLogs calls than answering its pieces, reads at most about twice
+// what they read, keeps their freshness, and is expected to add no name.
+//
+// Freshness: an edge is read live on every listing. The hour must have ended
+// an hour ago (rows that shippers deliver late land in the newest hours); and
+// inside the live window (max_metadata_cache_freshness) the listing must be
+// countable and the hour's row count known, so the run count of every listing
+// (revalidateLiveRuns) confirms the hour, and a row written into a covered
+// edge changes that count and makes the hour be read again.
+//
+// Cost: the pieces that need a call are every edge and every bucket not in
 // memory. A cached hour is used when a piece needs a call and every name it
 // holds is among the names the window's own hour and day buckets hold
 // (known), and when it is fresh or more than one piece needs a call (its
 // revalidation is one count or one scan). An hour not cached is one count and
-// one scan: it is used only when the pieces fill more than one round of the
-// listing's parallel calls and the window's own buckets hold names.
-func (p *Proxy) coverPays(path, base string, cover inventorySegment, run []inventorySegment, known func() map[string]struct{}) bool {
+// one scan of a whole hour: it is used only when the pieces fill more than
+// one round of the listing's parallel calls, span at least half the hour, and
+// the window's own buckets hold names.
+func (p *Proxy) coverPays(path, base string, cover inventorySegment, run []inventorySegment, countable bool, known func() map[string]struct{}) bool {
+	now := cache.Now().UnixNano()
+	if cover.end > now-int64(time.Hour) {
+		return false
+	}
+	live := cover.end > now-int64(p.inventoryLiveWindow())
+	if live && !countable {
+		return false
+	}
+	cached := func(seg inventorySegment) bool {
+		_, ok := p.cache.Peek(inventoryBucketKey(base, seg))
+		return ok
+	}
 	if e, ok := p.peekInventoryEntry(inventoryBucketKey(base, cover)); ok {
-		missing := runMissing(run, 2, func(seg inventorySegment) bool {
-			_, ok := p.cache.Peek(inventoryBucketKey(base, seg))
-			return ok
-		})
+		if live && e.Rows < 0 {
+			return false
+		}
+		missing := runMissing(run, 2, cached)
 		if missing == 0 {
 			return false
 		}
@@ -736,11 +758,15 @@ func (p *Proxy) coverPays(path, base string, cover inventorySegment, run []inven
 		}
 		return missing > 1 || p.inventoryEntryFresh(path, cover, e)
 	}
+	span := int64(0)
+	for _, seg := range run {
+		span += seg.end - seg.start
+	}
+	if 2*span < cover.end-cover.start {
+		return false
+	}
 	need := p.metadataInventoryParallelism + 1
-	return runMissing(run, need, func(seg inventorySegment) bool {
-		_, ok := p.cache.Peek(inventoryBucketKey(base, seg))
-		return ok
-	}) >= need && len(known()) > 0
+	return runMissing(run, need, cached) >= need && len(known()) > 0
 }
 
 // runMissing counts the pieces of run that need a VictoriaLogs call (every
