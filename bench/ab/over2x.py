@@ -69,6 +69,14 @@ Loki's: summary_pairs and history_pairs leave it out of every ratio judgement (a
 the PR gate), and first_ask_judge holds it to the absolute bound instead (smoke.py reports and fails on it).
 Its warm and refresh runs, and its other ranges, keep the Loki ratio.
 
+Cold against the base build (owner 2026-11-25). A shape whose cold run must not get slower than the base build's
+carries "cold_vs_base": true in shapes.json. Its cold is not always comparable with Loki's: a listing whose
+answer is the same for every moved window (the label browser's /labels) is marked stale, as if Loki's cache had
+answered, so no ratio judges it. cold_vs_base() fails such a row when the PR build's cold is slower than the
+base build's beyond the gate's noise (the warm verdict's: 30% and 100 ms by default), after pr_smoke's cold
+re-measure (cold.recold) took the median of the first pass and flushed samples. It never replaces a Loki
+judgement of the row: the two apply together.
+
   over2x.py locks seed [--results bench/ab/results]
       Writes a perf: block into every covered item that has none, locked when every comparable row of its
       shapes measured within max_ratio in every mode on the latest daily results.
@@ -605,6 +613,45 @@ def unlike_base_kind(summary, row, mode, others, found, pr, listed, limit, noise
         return found, ("worsened" if base_above else "new"), f"slower than the base build in {where} (base not like-for-like here)"
     return found, "known", (f"as slow on base in {where} (base not like-for-like here)" if base_above else
                             f"proxy time within noise of base in {where} (base not like-for-like here)")
+
+
+COLD_VS_BASE_KEY = "cold_vs_base"
+_COLD_VS_BASE = None
+
+
+def cold_vs_base_shapes(spec=None):
+    """{(set, shape)} whose cold is held to the base build's (see the module doc), from shapes.json (read once)
+    or the given spec."""
+    global _COLD_VS_BASE
+    if spec is not None:
+        return {(name, sh["name"]) for name, v in spec["sets"].items() for sh in v.get("shapes", [])
+                if sh.get(COLD_VS_BASE_KEY) is True}
+    if _COLD_VS_BASE is None:
+        with open(SHAPES) as f:
+            _COLD_VS_BASE = cold_vs_base_shapes(json.load(f))
+    return _COLD_VS_BASE
+
+
+def cold_vs_base(summary, noise, min_delta, spec=None):
+    """Findings (kind "cold_slower_than_base") for the rows of a summary whose shape holds its cold to the base
+    build's and whose PR cold is slower than the base's beyond noise; both builds answered 200 and are like for
+    like with the summary's profile."""
+    b, c = summary["baseline"], summary["candidate"]
+    if not (like_for_like(summary, b) and like_for_like(summary, c)):
+        return []
+    held = cold_vs_base_shapes(spec)
+    out = []
+    for row in summary["rows"]:
+        if (summary["set"], row["shape"]) not in held:
+            continue
+        status, cold = row.get("status", {}), row.get("cold", {})
+        if status.get(b) != "200" or status.get(c) != "200":
+            continue
+        if slower(cold.get(b), cold.get(c), noise, min_delta):
+            out.append({"profile": profile_of(summary), "set": summary["set"], "shape": row["shape"],
+                        "range": row["range"], "mode": "cold", "base_s": cold[b], "proxy_s": cold[c],
+                        "kind": "cold_slower_than_base", "resampled": b in row.get("cold_samples", {})})
+    return out
 
 
 def failing(findings):

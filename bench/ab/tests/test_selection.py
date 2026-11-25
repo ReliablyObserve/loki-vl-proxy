@@ -224,5 +224,63 @@ class HistoricalCaseTest(unittest.TestCase):
                     selection.shapes_at("not-a-revision")
 
 
+LABEL_BROWSER = ("explore labels (label browser)", "explore labels with selector", "refresh labels (label browser)",
+                 "refresh labels with selector")
+
+
+class RangeCellsTest(unittest.TestCase):
+    """Shapes with their own ranges are measured at them in an ordinary pull request run; the others at 1h."""
+
+    def spec(self):
+        import copy
+        spec = copy.deepcopy(SPEC)
+        spec["ranges"].update({"6h": [21600, 10], "24h": [86400, 60], "7d": [604800, 600]})
+        spec["sets"]["feature"]["ranges"] = ["1h", "6h", "24h", "7d"]
+        spec["sets"]["feature"]["shapes"].append({"name": "own", "query": "w", "ranges": ["1h", "24h"],
+                                                  "covers": ["semantics/case-a"]})
+        return spec
+
+    def test_a_shape_with_its_own_ranges_gets_cells_and_the_others_none(self):
+        result = selection.select(["internal/proxy/ordered_json_metric.go"], spec=self.spec(), items=ITEMS)
+        self.assertNotIn("runtime_proof", result)
+        self.assertEqual(result["cells"], {"feature/own": ["1h", "24h"]})
+        self.assertEqual(selection.cells_of(result), {"feature/own": ["1h", "24h"]})
+
+    def test_no_cells_when_no_selected_shape_has_its_own_ranges(self):
+        result = selection.select(["internal/proxy/metric_agg.go"], spec=self.spec(), items=ITEMS)
+        self.assertNotIn("cells", result)
+        self.assertEqual(selection.cells_of(result), {})
+
+    def test_a_required_runtime_proof_keeps_its_own_cells(self):
+        spec = self.spec()
+        items = dict(ITEMS, **{"behaviour-b": ({"internal/queryplan/lower/json.go"}, set())})
+        result = selection.select(["internal/queryplan/lower/json.go"], spec=spec, items=items)
+        self.assertNotIn("cells", result)
+        self.assertEqual(selection.cells_of(result), result["runtime_proof"]["cells"])
+        self.assertEqual(result["runtime_proof"]["cells"]["feature/own"], ["1h", "24h"])
+
+    def test_check_holds_own_ranges_to_the_set_and_48h(self):
+        spec = self.spec()
+        self.assertEqual(selection.check(spec, ITEMS), [])
+        for bad in (["7d"], ["3h"], [], "24h"):
+            spec["sets"]["feature"]["shapes"][-1]["ranges"] = bad
+            problems = selection.check(spec, ITEMS)
+            self.assertEqual(len(problems), 1, bad)
+            self.assertIn("feature/own ranges", problems[0])
+
+    def test_repository_label_and_cache_changes_measure_the_label_browser_at_24h(self):
+        for path in ("internal/proxy/metadata_inventory.go", "internal/proxy/label_handlers.go",
+                     "internal/proxy/label_metadata.go", "internal/cache/cache.go"):
+            result = selection.select([path])
+            self.assertNotIn("runtime_proof", result, path)
+            self.assertEqual(result["cells"], {f"metadata-inventory/{n}": ["1h", "6h", "24h"] for n in LABEL_BROWSER}, path)
+
+    def test_repository_other_shapes_keep_1h(self):
+        # A broad change selects many sets; only the label browser shapes carry their own ranges.
+        result = selection.select(["internal/proxy/ordered_json_metric.go"])
+        self.assertGreater(len(result["sets"]), 10)
+        self.assertEqual(set(result["cells"]), {f"metadata-inventory/{n}" for n in LABEL_BROWSER})
+
+
 if __name__ == "__main__":
     unittest.main()

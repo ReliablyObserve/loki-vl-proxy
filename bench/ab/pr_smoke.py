@@ -112,6 +112,8 @@ def matrix_cmd(set_name, shapes, targets, args, end, st, runs, ranges, raw, extr
            "--container", st.vl_container, "--vl-health", f"{st.vl}/health", "--out", raw, *extra]
     if getattr(args, "runtime_range_plan", ""):
         cmd += ["--proxy-metrics", "--range-plan", args.runtime_range_plan]
+    elif getattr(args, "cells_plan", ""):
+        cmd += ["--cells-plan", args.cells_plan]
     for name in shapes or []:
         cmd += ["--shape", name]
     for name, url in targets:
@@ -322,6 +324,18 @@ def main():
                 ranges = json.load(f)["ranges"]
             problem = perf_matrix.refresh_problem(args.refresh_s, args.refresh_runs,
                                                    [ranges[r][1] for r in args.ranges if r in ranges])
+            if problem:
+                raise ValueError(problem)
+        elif sel.get("cells"):
+            # Shapes with their own ranges (selection.range_cells) run at them; the others at args.ranges.
+            args.cells_plan = os.path.join(out, "selection.json")
+            cell_ranges = sorted({r for values in sel["cells"].values() for r in values},
+                                 key=lambda r: (stack_range_seconds(r), r))
+            meta["cell_ranges"] = args.cell_ranges = cell_ranges
+            with open(os.path.join(HERE, "shapes.json")) as f:
+                ranges = json.load(f)["ranges"]
+            problem = perf_matrix.refresh_problem(args.refresh_s, args.refresh_runs,
+                                                   [ranges[r][1] for r in cell_ranges if r in ranges])
             if problem:
                 raise ValueError(problem)
         if not sel["run"]:
@@ -655,15 +669,26 @@ def set_costs(sel, spec):
     ran 24 minutes with its stack and seed). A cell of series-level-fine-step (a sliding window at a 20 s step
     over 24h) took about 200 seconds and one of mixed-parser-metrics about 180, ten and nine units: shard 10 of a
     run, holding four of the first, ran over an hour. A set is not split, so a heavy one counts as many units as it
-    takes, and the others are spread around it."""
+    takes, and the others are spread around it.
+
+    Without a required runtime proof the run measures 1h, and its shards seed about an hour; a set whose shapes run
+    at their own ranges (selection.range_cells) up to 24h makes its shard seed 26 hours (about 6 minutes), so it
+    also counts DAY_SEED_COST units for that seed and goes to a shard with room for it."""
     costs = {}
+    cells = selection.cells_of(sel)
+    own = {} if sel.get("runtime_proof", {}).get("required") else sel.get("cells", {})
     for name, shapes in sel.get("sets", {}).items():
         by_name = {sh["name"]: sh for sh in spec["sets"][name]["shapes"]}
-        cells = sel.get("runtime_proof", {}).get("cells", {})
         factor = spec["sets"][name].get("cost_factor", 1)
         costs[name] = factor * sum(max(1, len(cells.get(f"{name}/{n}", ["1h"]))) * (2 if range_metric(by_name[n]) else 1)
                                    for n in shapes)
+        if any(spec.get("ranges", {}).get(r, [0])[0] >= 86400 for n in shapes for r in own.get(f"{name}/{n}", [])):
+            costs[name] += DAY_SEED_COST
     return costs
+
+
+# About 6 minutes of seeding (26 hours of history), in set_costs units of about 20 seconds.
+DAY_SEED_COST = 18
 
 
 # A shard seeds the history its longest range needs before it measures anything, and seeding is slow and grows
@@ -680,7 +705,7 @@ LONG_SHARD_COST = 60
 
 def long_history_sets(sel, spec):
     """The selected sets with a cell over LONG_HISTORY_S: they decide how much history a shard has to seed."""
-    cells = sel.get("runtime_proof", {}).get("cells", {})
+    cells = selection.cells_of(sel)
     out = set()
     for name, shapes in sel.get("sets", {}).items():
         ranges = {r for n in shapes for r in cells.get(f"{name}/{n}", [])} or set(spec["sets"][name].get("ranges", []))
@@ -731,6 +756,12 @@ def split_selection(sel, n, spec=None, min_cost=SHARD_MIN_COST):
             cells = {key: rng for key, rng in proof["cells"].items() if key.partition("/")[0] in member}
             ranges = {r for values in cells.values() for r in values if r != "instant"}
             shard["runtime_proof"] = dict(proof, cells=cells, ranges=sorted(ranges, key=lambda r: (spec["ranges"][r][0], r)) or ["1h"])
+        elif sel.get("cells"):
+            cells = {key: rng for key, rng in sel["cells"].items() if key.partition("/")[0] in member}
+            if cells:
+                shard["cells"] = cells
+            else:
+                shard.pop("cells", None)
         shards.append(shard)
     return shards
 
@@ -799,6 +830,11 @@ def merge_meta(metas):
     resampled = [r for m in metas for r in m.get("cold_resampled", [])]
     if resampled:
         merged["cold_resampled"] = resampled
+    merged.pop("cell_ranges", None)
+    cell_ranges = sorted({r for m in metas for r in m.get("cell_ranges", [])},
+                         key=lambda r: (stack_range_seconds(r), r))
+    if cell_ranges:  # only some shards hold shapes at their own ranges
+        merged["cell_ranges"] = cell_ranges
     profiles = {}
     for m in metas:
         for p, entry in (m.get("profiles") or {}).items():
@@ -950,17 +986,19 @@ def window_plan(args, sel, end, runs=None):
     refresh_runs = args.refresh_runs if args.refresh_s else 0
     plans = perf_matrix.plan_windows(spec, [(name, shapes) for _, name, shapes in runs], args.ranges, args.runs,
                                      args.confirm_runs, end, args.refresh_s, refresh_runs,
-                                     cells=sel.get("runtime_proof", {}).get("cells"))
+                                     cells=selection.cells_of(sel) or None)
     for plan, (profile, _, _) in zip(plans, runs):
         plan["profile"] = profile
     seed = max_range_secs(args) + blocks_span(plans) + 900
     proof = sel.get("runtime_proof", {})
-    cells = proof.get("cells", {})
+    cells = selection.cells_of(sel)
     for plan, (_, name, names) in zip(plans, runs):
         for shape in spec["sets"][name]["shapes"]:
             if names and shape["name"] not in names:
                 continue
-            if not proof.get("required") and not shape.get("end_offset"):
+            # A shape at its own ranges seeds them like a required proof does: its cold re-measures below every
+            # block read as much history as its first pass.
+            if not proof.get("required") and not shape.get("end_offset") and f"{name}/{shape['name']}" not in cells:
                 continue
             for rng in cells.get(f"{name}/{shape['name']}", ["instant"] if shape.get("instant") else args.ranges):
                 secs, step = spec["ranges"].get(rng, (0, 0))
@@ -975,7 +1013,8 @@ def window_plan(args, sel, end, runs=None):
 
 
 def max_range_secs(args):
-    return max(1 if r == "instant" else stack_range_seconds(r) for r in args.ranges)
+    """The longest range the run measures: args.ranges and the ranges of shapes that run at their own (cells)."""
+    return max(1 if r == "instant" else stack_range_seconds(r) for r in [*args.ranges, *getattr(args, "cell_ranges", [])])
 
 
 def blocks_span(plans):
@@ -1162,6 +1201,10 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
                                    for r in summary["rows"]}
                 pairs = (cold.flagged(over2x.gate(summary, baseline, args.noise, args.min_delta, bounds, summaries))
                          if baseline is not None and cold_samples else [])
+                # A cold held to the base build's (over2x.cold_vs_base) is re-measured the same way before it fails.
+                if cold_samples:
+                    pairs = sorted(set(pairs) | {(f["shape"], f["range"]) for f in
+                                                 over2x.cold_vs_base(summary, args.noise, args.min_delta)})
                 summary = confirm(summary, args, plan, st, out, targets, baseline, bounds, summaries)
                 if pairs:
                     records = cold.recold(summary, first_cold, pairs, by_name, spec, spare["cold_end"], cold_samples,

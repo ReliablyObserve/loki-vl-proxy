@@ -1,0 +1,44 @@
+id: semantics/label-browser-cold-first-listing
+title: The label browser's first listing of a window is slower than Loki's
+proves:
+  - loki_api_v1_labels
+  - data-probing-and-freshness
+consumer: explore
+why: |
+  PLACEHOLDER
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: now-24h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    A proxy that holds nothing for the window yet: just started, or its
+    caches flushed (/admin/cache/flush), as the A/B shape's cold run asks.
+  verify:
+    blocked_by: proxy_only
+    reason: "needs a proxy with no state for the window (just started or flushed), timed"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    The names of one full-range listing, answered no slower than Loki's
+    first answer for the same window.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/metadata_inventory.go (the first listing of a window: bucket reads from VictoriaLogs)'
+  loki: 'Loki 3.7.10 lists label names from its index: 4 ms cold over 1h in the CI A/B, 1-5 ms on the e2e stack at every range'
+  proxy: 'the first listing of a window reads its UTC hour and day buckets from VictoriaLogs'
+  planned_test: 'perf A/B cold rows of the label browser shapes (bench/ab/shapes.json metadata-inventory, cold_vs_base), held to the base build until they reach Loki'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold]
+  locked: false
+  locked_since: null
+  effort_exception: null

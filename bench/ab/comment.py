@@ -257,6 +257,22 @@ def locked_section(locked, mode):
             "Locked by: " + "; ".join(sorted({f"`{i}`" for f in locked for i in f.get("locked_by", [])})), ""]
 
 
+def cold_vs_base_section(slow, meta):
+    """Rows whose cold is held to the base build's (shapes.json cold_vs_base) and is slower than it beyond noise."""
+    out = [f"#### 🔴 Cold slower than the base build: {len(slow)}", "",
+           "These shapes hold their cold (first) run to the base build's: it may not be slower than the base beyond "
+           f"noise (±{meta.get('noise', 0.30) * 100:.0f}% and {meta.get('min_delta', 0.10) * 1000:.0f} ms), measured "
+           "again with flushed caches before it counts (ᵐ). This fails `perf-smoke`. How to read and clear one: "
+           "`bench/ab/README.md`.", "",
+           "| profile | shape | range | base cold | PR cold | PR ÷ base |", "|---|---|---|--:|--:|--:|"]
+    for f in slow:
+        mark = " ᵐ" if f.get("resampled") else ""
+        out.append(f"| {SHORT.get(f.get('profile'), '—')} | {cell(f['shape'])} | {cell(f['range'])} | "
+                   f"{secs(f['base_s'])}{mark} | {secs(f['proxy_s'])}{mark} | "
+                   f"{over2x.times(f['proxy_s'] / f['base_s']) if f['base_s'] else '—'} |")
+    return out + [""]
+
+
 def lost_below_section(lost):
     out = ["<details><summary>🟡 " + f"{len(lost)} shape×range×mode lost below-Loki: the base build was below "
            "Loki, the PR build is above it (flagged, not failing)</summary>", "",
@@ -373,7 +389,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     new_diffs = [row for _, row in rows if new_difference(row)]
     pre = sum(1 for _, row in rows if row.get("parity_vs_reference") == "differs" and not new_difference(row))
     same_as_loki = sum(1 for _, row in rows if row.get("parity_vs_reference", "").startswith("same"))
-    failed = bool(counts.get("broken") or counts.get("slower") or new_diffs)
+    cold_slow = [f for s in summaries for f in over2x.cold_vs_base(s, meta.get("noise", 0.30), meta.get("min_delta", 0.10))]
+    failed = bool(counts.get("broken") or counts.get("slower") or new_diffs or cold_slow)
     mode = meta.get("over_2x_loki", over2x.DEFAULT_GATE)
     findings = ([f for s in summaries for f in over2x.gate(s, baseline, meta.get("noise", 0.30),
                                                             meta.get("min_delta", 0.10), bounds, summaries)]
@@ -401,7 +418,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     n = len(rows)
     verdict_bits = [f"{counts[k]} {ICON[k]} {k}" for k in ("broken", "slower", "fixed", "faster", "same") if counts.get(k)]
     others = [f for f in bad if not f.get("locked")]
-    lines = [MARKER, f"### {title}", "", *(locked_section(locked, mode) if locked else []),
+    lines = [MARKER, f"### {title}", "", *(cold_vs_base_section(cold_slow, meta) if cold_slow else []),
+             *(locked_section(locked, mode) if locked else []),
              *(over_2x_section(others, mode) if others else []),
              *(first_measurement_section(first) if first else []),
              f"**{n} shape×range** — " + " · ".join(verdict_bits) +
@@ -441,7 +459,7 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     if sampled:
         lines += ["", f"ᵐ median of the first pass's cold and {len(next(iter(sampled[0]['cold_samples'].values()))) - 1} "
                   "re-measured colds (caches flushed, logs quiet, the build asked first alternating), taken because the "
-                  "first-pass cold was a new or worse above-2× finding: " + "; ".join(
+                  "first-pass cold was a new or worse above-2× finding or slower than the base build's: " + "; ".join(
                       f"{cell(row['shape'])} {cell(row['range'])}: " + ", ".join(
                           f"{t} " + "/".join(f"{x:.2f}" for x in v) for t, v in row["cold_samples"].items())
                       for row in sampled[:5]) + (" …" if len(sampled) > 5 else "") + "."]
@@ -488,7 +506,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
 
     stamp = [f"base `{meta.get('base', '?')[:10]}` → PR `{meta.get('head', '?')[:10]}`",
              f"{meta.get('runs', summaries[0].get('runs'))} runs (first is cold), warm p50",
-             f"ranges {', '.join(meta.get('ranges', ['1h']))}",
+             f"ranges {', '.join(meta.get('ranges', ['1h']))}" + (
+                 f" (shapes with their own ranges: {', '.join(meta['cell_ranges'])})" if meta.get("cell_ranges") else ""),
              f"noise ±{meta.get('noise', 0.25) * 100:.0f}% and {meta.get('min_delta', 0.05) * 1000:.0f} ms",
              restarts_stamp(meta, summaries)]
     if meta.get("elapsed_s"):
@@ -505,6 +524,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     exit_code = 2 if not valid else (1 if failed or failed_2x else 0)
     verdict = {"state": state, "failed": failed or failed_2x or not valid, "exit": exit_code, "counts": counts,
                "new_differences": len(new_diffs), "preexisting_differences": pre, "rows": n}
+    if cold_slow:
+        verdict["cold_vs_base"] = {"slower": len(cold_slow), "rows": cold_slow}
     if prof_info:
         verdict["profiles"] = {p: {"ran": any(s.get("profile") == p for s in summaries),
                                    "not_like_for_like": sorted({t for s in summaries if s.get("profile") == p

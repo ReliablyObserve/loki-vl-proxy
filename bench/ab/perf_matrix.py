@@ -640,6 +640,9 @@ def main():
     ap.add_argument("--proxy-metrics", action="store_true",
                     help="read every proxy target's /metrics around each request: the cache reuse of the row (reuse.py)")
     ap.add_argument("--range-plan", default="", help="existing selection.json with required per-shape runtime cells")
+    ap.add_argument("--cells-plan", default="",
+                    help="existing selection.json whose \"cells\" give some shapes their own ranges (selection.range_cells); "
+                         "the other shapes run at --ranges")
     ap.add_argument("--exact-repeat", action="store_true",
                     help="with --proxy-metrics: for every shape and range ask each proxy target the same request twice in a "
                          "row at a settled window (EXACT_REPEAT_AGE before the end) and keep what the second one cost, "
@@ -651,6 +654,10 @@ def main():
     if args.range_plan:
         with open(args.range_plan) as f:
             range_plan = json.load(f).get("runtime_proof", {}).get("cells", {})
+    own_ranges = {}
+    if args.cells_plan and not range_plan:
+        with open(args.cells_plan) as f:
+            own_ranges = json.load(f).get("cells", {})
     logs = dict(x.split("=", 1) for x in args.quiet_log)
 
     with open(args.shapes_file) as f:
@@ -681,7 +688,8 @@ def main():
         return restarts() == ref
 
     end = (args.end or int(time.time()) - 60) // 60 * 60  # step-aligned for every range's step
-    problem = refresh_problem(args.refresh_s, args.runs, [range_defs[r][1] for r in ranges if r in range_defs])
+    problem = refresh_problem(args.refresh_s, args.runs, [range_defs[r][1] for r in {*ranges, *(
+        r for values in own_ranges.values() for r in values)} if r in range_defs])
     if problem:
         raise SystemExit(problem)
     sampler = CPUSampler(args.container)
@@ -698,6 +706,8 @@ def main():
         shape_ranges = ["instant"] if shape.get("instant") else ranges
         if range_plan:
             shape_ranges = [r for r in shape_ranges if r in range_plan.get(f"{args.set}/{shape['name']}", [])]
+        elif f"{args.set}/{shape['name']}" in own_ranges:
+            shape_ranges = own_ranges[f"{args.set}/{shape['name']}"]
         for rname in shape_ranges:
             pair += 1
             secs, step = range_defs.get(rname, (0, 0))
