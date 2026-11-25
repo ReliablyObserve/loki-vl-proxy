@@ -1326,3 +1326,55 @@ class MergeTest(unittest.TestCase):
         code, verdict, _, _ = self.merge([a, b])
         self.assertEqual(code, 2)
         self.assertEqual(verdict["state"], "invalid")
+
+
+class OwnRangesTest(unittest.TestCase):
+    """selection.range_cells in a run without a required proof: planned, split, seeded and passed to perf_matrix."""
+
+    def sel(self, path="internal/proxy/label_handlers.go"):
+        return pr_smoke.selection.select([path])
+
+    def test_the_shard_holding_the_shapes_keeps_their_cells_and_the_others_none(self):
+        sel = self.sel()
+        shards = pr_smoke.split_selection(sel, 4)
+        holding = [sh for sh in shards if "metadata-inventory" in sh["sets"]]
+        self.assertEqual(len(holding), 1)
+        self.assertEqual(holding[0]["cells"], sel["cells"])
+        self.assertTrue(all("cells" not in sh for sh in shards if sh is not holding[0]))
+        self.assertEqual(sorted(n for sh in shards for n in sh["sets"]), sorted(sel["sets"]))
+
+    def test_a_day_long_cell_counts_its_seed_and_is_not_a_long_history_set(self):
+        sel = self.sel("internal/cache/cache.go")
+        spec = pr_smoke.selection.load_shapes()
+        costs = pr_smoke.set_costs(sel, spec)
+        plain = pr_smoke.set_costs(dict(sel, cells={}), spec)
+        n = len(sel["sets"]["metadata-inventory"])
+        self.assertEqual(plain["metadata-inventory"], n)
+        self.assertEqual(costs["metadata-inventory"], n + 4 * 2 + pr_smoke.DAY_SEED_COST)
+        self.assertNotIn("metadata-inventory", pr_smoke.long_history_sets(sel, spec))
+
+    def test_the_plan_seeds_the_longest_own_range_and_its_cold_samples(self):
+        sel = self.sel("internal/cache/cache.go")
+        a = args(cold_samples=3, cell_ranges=["1h", "6h", "24h"])
+        plans, seed = pr_smoke.window_plan(a, sel, END)
+        self.assertGreater(seed, 24 * 3600 + pr_smoke.blocks_span(plans) + 3 * pr_smoke.cold.SAMPLE_SHIFT)
+        _, plain_seed = pr_smoke.window_plan(args(cold_samples=3), dict(sel, cells={}), END)
+        self.assertLess(plain_seed, 3 * 3600)
+        self.assertEqual(pr_smoke.max_range_secs(a), 86400)
+
+    def test_perf_matrix_gets_the_cells_without_the_proof_bookkeeping(self):
+        st = mock.Mock(vl_container="vl", vl="http://vl")
+        cmd = pr_smoke.matrix_cmd("metadata-inventory", None, [("base", "u1")], args(cells_plan="/out/selection.json"),
+                                  END, st, 4, None, "/out/raw.json")
+        self.assertEqual(cmd[cmd.index("--cells-plan") + 1], "/out/selection.json")
+        self.assertNotIn("--range-plan", cmd)
+        self.assertEqual(cmd[cmd.index("--ranges") + 1], "1h")
+        proof = pr_smoke.matrix_cmd("m", None, [("base", "u1")], args(runtime_range_plan="/p.json", cells_plan="/c.json"),
+                                    END, st, 4, None, "/out/raw.json")
+        self.assertIn("--range-plan", proof)
+        self.assertNotIn("--cells-plan", proof)
+
+    def test_merged_meta_keeps_the_union_of_own_ranges(self):
+        merged = pr_smoke.merge_meta([{"runs": 4}, {"runs": 4, "cell_ranges": ["1h", "6h", "24h"]}])
+        self.assertEqual(merged["cell_ranges"], ["1h", "6h", "24h"])
+        self.assertNotIn("cell_ranges", pr_smoke.merge_meta([{"runs": 4}]))

@@ -165,6 +165,15 @@ first pass's cold columns when Loki's cache answered.
   in the cold table, the samples under `cold_samples` in `summary-<set>-<profile>.json`), and the gate
   judges the row exactly as before. Loki's cold is not re-measured (its cache would answer).
 
+**Cold against the base build.** Some cold runs are never compared with Loki: the label browser's `/labels`
+answers the same names for every moved window, so its rows are marked stale (as if Loki's cache had
+answered) and no ratio judges them. A shape that carries `"cold_vs_base": true` in `shapes.json` holds its cold
+to the base build's instead (`over2x.cold_vs_base`): the PR build's cold may not be slower than the base
+build's beyond the gate's noise (30% and 100 ms, the warm verdict's). Such a row is re-measured like a cold
+finding (3 flushed samples of each build, the median of four) and then fails `perf-smoke`, listed under
+"Cold slower than the base build" in the comment and as `cold_vs_base` in `verdict.json`. The label browser
+shapes carry it; their cold against Loki is the open target `semantics/label-browser-cold-first-listing`.
+
 What that keeps. A real cold regression is slower in every sample: the median stays slow and the
 row stays a finding (`worsened` for a row already above 2× on the base or listed, `new` otherwise,
 locked rows judged at their bound). One slow sample among four never enters the median (it is the
@@ -578,6 +587,15 @@ or the items those link to, name it:
 | `bench/ab/shapes.json` | the shapes added or edited, plus smoke |
 | the harness (`bench/ab/*.py`, the compose files, Loki config, log generator, this workflow) | the smoke subset |
 | anything else, including the `Dockerfile` (the runs build host binaries) | nothing |
+
+A pull request run measures its shapes at 1h (a required runtime proof, at each shape's ranges up to 48h). A
+shape that declares its own `"ranges"` in `shapes.json` (a subset of its set's ranges, up to 48h) is measured
+at them whenever a pull request selects it, and only it: the selection carries them as `cells`, the shard
+that holds it seeds the longest of them (26 hours for 24h, about 6 minutes, counted as `DAY_SEED_COST` in the
+shard plan), and `perf_matrix.py --cells-plan` runs it at them while the run's other shapes stay at 1h. The
+label browser shapes of `metadata-inventory` (explore and refresh labels, with and without a selector) run at
+1h, 6h and 24h this way, so a label, metadata or cache change is judged by the warm lock of
+`semantics/label-browser-moved-window-from-memory` at 24h, where its 50 ms floor can fire.
 
 `python3 bench/ab/selection.py --base origin/main` prints the selection and
 the reason for each shape. `selection.py --check` runs in the conformance gate

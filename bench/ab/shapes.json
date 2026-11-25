@@ -523,6 +523,12 @@
     {
      "name": "explore labels (label browser)",
      "path": "/loki/api/v1/labels",
+     "ranges": [
+      "1h",
+      "6h",
+      "24h"
+     ],
+     "cold_vs_base": true,
      "covers": [
       "loki_api_v1_labels",
       "semantics/label-browser-latency-cold-and-refresh",
@@ -530,12 +536,18 @@
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-queue-429",
       "backend-admission-and-heavy-query-queueing",
-      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory"
+      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory", "semantics/label-browser-cold-first-listing"
      ]
     },
     {
      "name": "explore labels with selector",
      "path": "/loki/api/v1/labels",
+     "ranges": [
+      "1h",
+      "6h",
+      "24h"
+     ],
+     "cold_vs_base": true,
      "query": "{env=\"production\"}",
      "covers": [
       "loki_api_v1_labels",
@@ -544,7 +556,7 @@
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-queue-429",
       "backend-admission-and-heavy-query-queueing",
-      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory"
+      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory", "semantics/label-browser-cold-first-listing"
      ]
     },
     {
@@ -671,6 +683,12 @@
     {
      "name": "refresh labels (label browser)",
      "path": "/loki/api/v1/labels",
+     "ranges": [
+      "1h",
+      "6h",
+      "24h"
+     ],
+     "cold_vs_base": true,
      "shift": {
       "1h": 317,
       "6h": 317,
@@ -683,12 +701,18 @@
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit",
-      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory"
+      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory", "semantics/label-browser-cold-first-listing"
      ]
     },
     {
      "name": "refresh labels with selector",
      "path": "/loki/api/v1/labels",
+     "ranges": [
+      "1h",
+      "6h",
+      "24h"
+     ],
+     "cold_vs_base": true,
      "query": "{env=\"production\"}",
      "shift": {
       "1h": 317,
@@ -702,7 +726,7 @@
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit",
-      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory"
+      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory", "semantics/label-browser-cold-first-listing"
      ]
     },
     {
