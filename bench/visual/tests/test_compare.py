@@ -132,6 +132,41 @@ class CompareTest(unittest.TestCase):
             _, _, diffs, _, _, _ = compare.compare(main, unreadable)
             self.assertTrue(all("capture body unreadable" in d for d in diffs))
 
+    def test_a_fix_page_is_judged_against_loki_not_against_the_base_it_fixes(self):
+        regression = ["runtime regression: Grafana settlement 7060 -> 12564 ms", "runtime regression: browser thread CPU 1.7 -> 2.5"]
+        def row(extra=(), loki_compared=True):
+            return {"runtime_problems": [*regression, *extra], "loki_compared": loki_compared}
+        cap = lambda settle, cpu: {"settled": True, "settle_ms": settle, "runtime": {"browser_thread_seconds": cpu}}
+        # The base's findings are set aside and reported; the page passes when it is within twice Loki.
+        r = row()
+        moved = compare.fix_page_runtime(r, {"pr": cap(12564, 2.5), "loki": cap(11000, 2.4)})
+        self.assertEqual(moved, regression)
+        self.assertEqual(r["runtime_problems"], [])
+        self.assertEqual(r["main_not_a_reference"], regression)
+        self.assertIn("not a reference", r["base_comparison_note"])
+        # Over twice Loki (and over a second): a finding against Loki, whatever the base did.
+        r = row()
+        compare.fix_page_runtime(r, {"pr": cap(26000, 2.5), "loki": cap(11000, 2.4)})
+        self.assertEqual(len(r["runtime_problems"]), 1)
+        self.assertIn("vs Loki: Grafana settlement 11000 -> 26000 ms (over 2x Loki)", r["runtime_problems"][0])
+        # Twice Loki but under a second over is noise; the CPU rule has its own floor.
+        r = row()
+        compare.fix_page_runtime(r, {"pr": cap(1900, 0.7), "loki": cap(900, 0.3)})
+        self.assertEqual(r["runtime_problems"], [])
+        r = row()
+        compare.fix_page_runtime(r, {"pr": cap(2000, 2.0), "loki": cap(2000, 0.5)})
+        self.assertIn("browser thread CPU", r["runtime_problems"][0])
+        # No Loki capture (beyond its history), an unsettled Loki or a missing number: nothing against Loki, the base's are set aside.
+        for caps, compared in (({"pr": cap(26000, 9)}, False), ({"pr": cap(26000, 9), "loki": {**cap(1, 1), "settled": False}}, True),
+                               ({"pr": {"settled": True}, "loki": cap(11000, 2.4)}, True)):
+            r = row(loki_compared=compared)
+            compare.fix_page_runtime(r, caps)
+            self.assertEqual(r["runtime_problems"], [])
+        # A proof gap is never set aside by this rule.
+        r = row(["runtime proof: pr missing/invalid settle_ms"])
+        compare.fix_page_runtime(r, {"pr": cap(12564, 2.5), "loki": cap(11000, 2.4)})
+        self.assertEqual(r["runtime_problems"], ["runtime proof: pr missing/invalid settle_ms"])
+
     def test_an_answer_the_other_side_also_gave_one_more_time_is_no_difference(self):
         # explore-unwrap-conversion-error at 6h: Grafana asked the rejected query twice on the base and once on the PR.
         a, b = {("error", ""): ("error", "pipeline error")}, {("series", "x"): ("metric", {"a": 1})}

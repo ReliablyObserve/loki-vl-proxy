@@ -359,3 +359,11 @@ record holds `body_digest` (SHA-256, byte length, the first 16 KiB and last 4 Ki
 whole body once. `compare.py` takes it as the answer when it is well formed and looks like a successful JSON answer, and
 compares base and PR by digest and length; against a retained body (Loki's) it is not compared.
 
+## Pages the pull request fixes
+
+A page whose registry case the pull request turns to fixed is one the base answers wrongly, so the base's time is not a
+reference. Its main-relative resource and settlement findings are set aside (and listed in the row's note), and the page
+is judged against Loki where Loki was captured (the first 1.5 h): more than twice Loki's settle time and a second over,
+or twice its browser thread CPU and half a second over, is a regression. Beyond that history there is no Loki capture in
+a visual run; perf A/B seeds Loki for the full range and fails a shape above twice Loki.
+

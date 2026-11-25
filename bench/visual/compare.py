@@ -1074,6 +1074,40 @@ def base_cannot_answer(row, gap, pr_judged):
     return moved
 
 
+# A page whose registry case this pull request fixes is one the base answers wrongly, and the base's time is then not a
+# measure of anything: the page is judged against Loki, which is the reference of the answer. Over twice Loki's settle
+# time (and a second over) or browser thread CPU (and half a second) is a regression; the base's numbers stay in the
+# report. Beyond the history Loki holds there is no Loki capture here: perf A/B seeds Loki for the full range and fails
+# a shape above twice Loki.
+FIX_VS_LOKI_FACTOR = 2.0
+
+
+def fix_page_runtime(row, captures):
+    """Replace the main-relative resource findings of a fix page by findings against Loki; returns the findings set aside."""
+    problems = row["runtime_problems"]
+    moved = [x for x in problems if x.startswith("runtime regression:")]
+    if moved:
+        row["runtime_problems"] = [x for x in problems if x not in moved]
+        row["main_not_a_reference"] = moved
+        row["base_comparison_note"] = ("The base answers this page wrongly (the registry case this pull request fixes), so its "
+                                       "time is not a reference: the page is judged against Loki where Loki was captured, "
+                                       "and by perf A/B beyond. The base's findings: " + "; ".join(moved))
+    loki, pr = captures.get("loki"), captures.get("pr")
+    if row.get("loki_compared") and isinstance(loki, dict) and isinstance(pr, dict) and loki.get("settled") is True:
+        def number(capture, *path):
+            value = capture
+            for key in path:
+                value = value.get(key) if isinstance(value, dict) else None
+            return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+        for label, path, minimum, unit in (("Grafana settlement", ("settle_ms",), 1000, " ms"),
+                                           ("browser thread CPU", ("runtime", "browser_thread_seconds"), 0.5, "")):
+            before, after = number(loki, *path), number(pr, *path)
+            if before is not None and after is not None and after > before * FIX_VS_LOKI_FACTOR and after - before > minimum:
+                row["runtime_problems"].append(
+                    f"runtime regression vs Loki: {label} {before:g} -> {after:g}{unit} (over {FIX_VS_LOKI_FACTOR:g}x Loki)")
+    return moved
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
@@ -1226,6 +1260,7 @@ def main():
                                                              comparable=not corrected, client_error=client_error))
         if runtime_required and page in fix_pages:
             base_cannot_answer(row, gap, sp_judged)
+            fix_page_runtime(row, captures)
     md = render_md(rows)
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)
