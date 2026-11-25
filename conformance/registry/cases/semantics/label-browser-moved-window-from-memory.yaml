@@ -1,0 +1,107 @@
+id: semantics/label-browser-moved-window-from-memory
+title: The label browser's moved windows are answered from memory, faster than Loki, without losing a name
+proves:
+  - loki_api_v1_labels
+  - data-probing-and-freshness
+consumer: explore
+why: |
+  /labels is the first request a Grafana user makes against Loki: the label
+  browser and every label picker open with it, and every dashboard refresh or
+  time-range move asks again for a moved window. Since #1750 the proxy answers
+  a moved window from the label inventory in memory, with no VictoriaLogs call
+  on the request path, when every piece of the window is held by a cached
+  bucket of the same UTC day and every bucket used inside
+  -max-metadata-cache-freshness was read or confirmed within
+  -metadata-max-staleness (semantics/label-inventory-exact-and-incremental,
+  decision labels-memory-answers-at-loki-granularity). After an answer,
+  -metadata-inventory-prefetch reads in the background the hours the next
+  moved window needs, at most the window's own width.
+
+  This case holds that behaviour with gates, in two kinds:
+
+  Deterministic gates, Go tests in the required test job
+  (internal/proxy/label_browser_gates_test.go), for the A/B shape's windows at
+  1h, 6h and 24h: a warm moved window makes no VictoriaLogs call on its
+  request path; the background reads after a listing span at most the
+  window's width; and every answer lists every name of one full-range call
+  and no name of a UTC day whose part of the window holds no row (the extra
+  names are only those Loki's own day granularity lists), and a window after
+  the day's last row lists none, as Loki answers it. Each gate is run
+  again with the optimisation turned off (-metadata-max-staleness=0,
+  -metadata-inventory-prefetch=false) and must then fail its check, so a gate
+  that measures nothing cannot pass.
+
+  Timing gates, the perf A/B: this item's perf block locks the warm rows of
+  the label browser shapes (explore labels and refresh labels, with and
+  without a selector) at Loki's time (max_ratio 1.0), judged by the
+  harness's own rules (over2x.judge: slower than the bound and more than
+  MIN_GAP, 50 ms, slower; a flagged row is measured again before it is
+  reported). On the merged #1750 head (perf run 45690680132, loki-defaults,
+  1h) the warm p50 was 1 ms on all four label rows against Loki's 2-23 ms and
+  base's 17-32 ms: the bound holds with room to spare. The 50 ms floor means
+  the timing lock catches a 24h row falling back to reading VictoriaLogs
+  (273-306 ms against 64-66 ms before #1750) but not a 1h or 6h one (17-56 ms
+  against 2-3 ms); those are held by the deterministic gates. Cold first
+  loads (explore labels 1h cold: 72 ms against Loki's 4 ms) and the first
+  moved request (one warm run of about 28 ms) stay under the existing 2x
+  lock of semantics/label-browser-latency-cold-and-refresh and are reported,
+  not held to Loki: their spread across runs is not yet known.
+
+  The lock was shown to fail (e2e stack, 2026-11-25, Loki 3.7.10 aligned,
+  main at a3b5ad722 run twice, -metadata-max-staleness 10s and 0, judged with
+  over2x.bound_for and judge on this tree): with the memory answers off the
+  24h warm rows of refresh labels were 103 and 93 ms against Loki's 2 and
+  8 ms, above the lock, while the 1h rows (41 and 49 ms against 1 and 5 ms)
+  stayed within it by the 50 ms floor; with them on every locked warm row
+  was within (0-1 ms against 1-8 ms). Pull request runs measured only the
+  1h cells of these shapes on the #1750 head (perf run 45690680132), so
+  there the lock cannot fire and the deterministic gates hold the rows; the
+  timing lock binds at 24h in the baseline, daily and weekly runs.
+
+  Implemented in internal/proxy/metadata_inventory.go (answerNamesFromMemory,
+  fillTouchedDays, waitForInventoryFills), internal/proxy/label_handlers.go
+  (handleLabels, prefetch on a response-cache answer),
+  internal/proxy/label_metadata.go (fetchScopedLabelNames,
+  prefetchLabelsWindow) and the memory tier of internal/cache/cache.go (Peek),
+  so a change to any of them selects the label shapes in the perf A/B.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: now-24h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    A window read once, then the same window moved back by 3617 s (24h) or
+    317 s (1h, 6h), as the A/B shape refresh labels (label browser) asks.
+  verify:
+    blocked_by: moved_window
+    reason: "asks with windows moved back after a first read, timed"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    Every label name of one full-range listing, and at most the names the
+    window's UTC days hold where the window's part of the day holds rows;
+    the warm moved window answered with no VictoriaLogs call on its request
+    path and no slower than Loki.
+gap:
+  status: fixed
+  fixed_by: '#1750'
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a latency gate: the answer is held to the exact one and to Loki''s day granularity by the deterministic gates'
+  effort: S
+  area: 'internal/proxy/metadata_inventory.go answerNamesFromMemory; internal/proxy/label_browser_gates_test.go'
+  loki: 'Loki 3.7.10 lists the names of the window''s UTC day for stored data, from its index in 1-5 ms on the e2e stack and 2-66 ms in the CI A/B'
+  proxy: 'moved windows answered from the label inventory in memory, no request-path VictoriaLogs call, bounded staleness and background prefetch'
+  planned_test: 'TestLabelBrowserGates_MovedWindowNoRequestPathCalls, TestLabelBrowserGates_BackgroundReadsWithinTheWindow, TestLabelBrowserGates_AnswersBetweenExactAndTheDays, TestLabelBrowserGates_WindowWithoutRowsListsNothing (internal/proxy)'
+  clusters: []
+perf:
+  max_ratio: 1.0
+  target_ratio: 1.0
+  modes: [warm]
+  locked: true
+  locked_since: '2026-11-25'
+  effort_exception: null
