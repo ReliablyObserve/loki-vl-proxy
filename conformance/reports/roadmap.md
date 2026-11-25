@@ -17,7 +17,7 @@ Ranked by which clients depend on it.
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
 | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | — | 0 / 6 | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
-| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 9 / 12 | 34 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
+| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 9 / 12 | 35 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | — | 0 / 5 | 1 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 
 ## In progress
@@ -56,7 +56,7 @@ Held by at least one test that declares it.
 
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
-| `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 9 / 9 | 9 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
+| `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 9 / 9 | 10 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
 | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 4 / 4 | 13 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
 | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | — | 0 / 0 | 1 | internal/proxy/credential_passthrough_test.go: basic auth, forwarded OAuth (access and ID token), a custom header, cooki |
 | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | — | 0 / 0 | 2 | internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled with an empty or blank delete token (an admin |

@@ -683,7 +683,7 @@
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit",
-      "semantics/labels-end-inclusive-like-loki"
+      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory"
      ]
     },
     {
@@ -702,7 +702,7 @@
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit",
-      "semantics/labels-end-inclusive-like-loki"
+      "semantics/labels-end-inclusive-like-loki", "semantics/label-browser-moved-window-from-memory"
      ]
     },
     {
