@@ -299,6 +299,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/label-replace-instant-vector` — label_replace around a vector at an instant adds the destination label, like Loki (fixed) | #744 | 0 | 0 |
 | `semantics/label-replace-new-label` — label_replace adds its destination label to every series, instant and range (fixed) | #744 | 0 | 0 |
 | `semantics/label-replace-range-binary-marker` — label_replace around a binary expression on query_range evaluates the binary, then replaces the label, like Loki (fixed) | #744 | 0 | 0 |
+| `semantics/label-values-declared-non-stream-fields` — A label the operator declared lists its values when it is not a VictoriaLogs stream field | #1745 | 0 | 0 |
 | `semantics/labels-end-inclusive-like-loki` — /labels and /label/{name}/values include data at the request's end, so a zero-width request (Grafana "Show context") lists the row's labe... | #703 | 0 | 0 |
 | `semantics/labels-point-window-is-the-index-day` — /labels with start equal to end (Grafana "Show context") lists the ingester window or the index day, like Loki (fixed) | #1715 | 0 | 0 |
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 0 | 0 |

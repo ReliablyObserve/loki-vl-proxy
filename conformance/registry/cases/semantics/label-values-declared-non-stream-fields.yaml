@@ -1,0 +1,65 @@
+id: semantics/label-values-declared-non-stream-fields
+title: A label the operator declared lists its values when it is not a VictoriaLogs stream field
+pending: true
+proves:
+  - operator-configurable-limits
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  `/loki/api/v1/labels` lists every field declared with -stream-fields or -extra-label-fields, so the label picker
+  offers it, but `/loki/api/v1/label/{name}/values` answered an empty list for each declared field that is not a
+  VictoriaLogs stream field (level, k8s.pod.name, log.type and the like): the value dropdown and a
+  label_values() dashboard variable stayed empty although the field is stored and filters on it return lines
+  (issue #1745).
+
+  Cause. VictoriaLogs answers /select/logsql/stream_field_values only for a stream field, with 200 and an empty
+  list for any other field (verified on v1.54.0: level and k8s.pod.name empty, job listed), and
+  /select/logsql/field_values for every field. The lookup chose the stream endpoint whenever the backend has
+  the stream metadata endpoints and fell back to field_values only on an error, never on an empty answer; the
+  comments above it claimed the opposite.
+
+  Fixed, per candidate field:
+  - declared, VictoriaLogs v1.50.0 and later (capability vl.column_field_values, which says field_values
+    replaces stream_field_values for value lookups): field_values, one call; the stream fields are in the column
+    index and field_values answers them too;
+  - declared, before v1.50.0: stream_field_values first, and field_values when it had no values (one call for a
+    stream field, two for a non-stream one);
+  - not declared: stream_field_values, unchanged. An undeclared non-stream field keeps the empty answer, as Loki
+    answers /label/{name}/values for indexed labels only (detected_level keeps its own rule,
+    handleDetectedLevelLabelValues);
+  - field_values counts the rows that lack the field as an empty value; Loki has no label with an empty value, so
+    it is not listed.
+
+  The read is bounded as every label values read is: -label-values-max-response-bytes (Loki's ResourceExhausted
+  answer, limits/label-values-response-cap), the metadata scan admission and the bucketed listing cache
+  (field_values is one of the cached listings). A field-mapping alias of a declared field resolves to that field
+  and gets the same values. A repeat is answered from the response cache.
+request:
+  method: GET
+  path: /loki/api/v1/label/level/values
+  params:
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "no proxy of the e2e stack declares label fields, so no e2e group reaches this lookup; the proof is a tenant with a non-stream level field on a real VictoriaLogs (v1.54.0) and unit tests with a VictoriaLogs stand-in (TestLabelValues_DeclaredNonStreamFieldListsItsValues)"
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    The values of the declared field for the window, sorted, without an empty value; an undeclared non-stream
+    field answers an empty list.
+gap:
+  status: fixed
+  fixed_by: "#1745"
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/label_metadata.go fetchPreferredLabelValues'
+  loki: '/label/{name}/values lists the values of an indexed label; a label the picker offers has values'
+  proxy: 'field_values for a declared field (one call on v1.50.0 and later), stream_field_values otherwise'
+  planned_test: 'TestLabelValues_DeclaredNonStreamFieldListsItsValues, TestLabelValues_BackendWithoutStreamEndpointsReadsFieldValues, TestLabelValues_DeclaredNonStreamFieldIsBoundedByTheResponseCap'
+  clusters: []
+  visual: none
+  visual_reason: 'no proxy of the e2e stack declares label fields, so no capture reaches this lookup; the answer is checked on a real VictoriaLogs tenant and with a stand-in that answers as VictoriaLogs does'
