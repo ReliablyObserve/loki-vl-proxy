@@ -845,6 +845,67 @@ class ShardTest(unittest.TestCase):
         spec = {"sets": {"m": {"shapes": [{"name": "s0"}, {"name": "s1", "instant": True}]}}}
         self.assertEqual(pr_smoke.set_costs({"sets": {"m": ["s0", "s1"]}}, spec), {"m": 3})
 
+    def test_a_set_cost_factor_multiplies_its_cost_and_spreads_the_heavy_sets(self):
+        spec = {"sets": {"heavy-a": {"cost_factor": 20, "shapes": [{"name": "s0"}]},
+                         "heavy-b": {"cost_factor": 20, "shapes": [{"name": "s0"}]},
+                         **{f"plain-{i}": {"shapes": [{"name": "s0"}, {"name": "s1"}]} for i in range(6)}}}
+        sel = {"run": True, "sets": {name: [shape["name"] for shape in group["shapes"]] for name, group in spec["sets"].items()}}
+        costs = pr_smoke.set_costs(sel, spec)
+        self.assertEqual((costs["heavy-a"], costs["plain-0"]), (40, 4))  # a range shape counts twice, the factor multiplies
+        shards = pr_smoke.split_selection(sel, 4, spec, min_cost=4)
+        homes = {name: i for i, shard in enumerate(shards) for name in shard["sets"]}
+        self.assertNotEqual(homes["heavy-a"], homes["heavy-b"])
+        loads = [sum(costs[n] for n in shard["sets"]) for shard in shards]
+        self.assertLessEqual(max(loads), 40 + 4)
+
+    def test_the_heavy_sets_of_the_real_shapes_carry_their_measured_factor(self):
+        with open(os.path.join(pr_smoke.HERE, "shapes.json")) as f:
+            spec = json.load(f)
+        # series-level-fine-step and mixed-parser-metrics took ten and nine units a cell; a branch may not hold both.
+        heavy = [name for name in ("series-level-fine-step", "mixed-parser-metrics") if name in spec["sets"]]
+        self.assertIn("series-level-fine-step", heavy)
+        for name in heavy:
+            self.assertGreaterEqual(spec["sets"][name]["cost_factor"], 8)
+        sel = selection(*heavy, "level-filter", "json-detected-level")
+        shards = pr_smoke.split_selection(sel, 4, min_cost=1)
+        home = {n: i for i, sh in enumerate(shards) for n in sh["sets"]}
+        self.assertEqual(len({home[name] for name in heavy}), len(heavy))
+
+    def test_long_history_sets_share_shards_and_the_seed_counts_in_the_load(self):
+        # A 7d range makes a shard seed 50 hours (39 minutes); one such set in every shard is a seed in every shard.
+        spec = {"ranges": {"1h": [3600, 5], "24h": [86400, 60], "7d": [604800, 600]},
+                "sets": {**{f"long-{i}": {"ranges": ["1h", "7d"], "shapes": [{"name": "s0", "instant": True}]} for i in range(3)},
+                         **{f"short-{i}": {"ranges": ["1h", "24h"], "shapes": [{"name": "s0", "instant": True}] * 4} for i in range(8)}}}
+        sel = {"run": True, "sets": {name: ["s0"] for name in spec["sets"]}}
+        self.assertEqual(pr_smoke.long_history_sets(sel, spec), {"long-0", "long-1", "long-2"})
+        shards = pr_smoke.split_selection(sel, 4, spec, min_cost=1)
+        holding = [i for i, sh in enumerate(shards) if any(n.startswith("long-") for n in sh["sets"])]
+        self.assertEqual(holding, [0])  # three cheap long sets share one shard
+        self.assertFalse(any(n.startswith("short-") for n in shards[0]["sets"]))  # nothing else carries a seed that long
+        self.assertEqual(sorted(n for sh in shards for n in sh["sets"]), sorted(spec["sets"]))
+
+    def test_expensive_long_history_sets_take_a_second_shard(self):
+        spec = {"ranges": {"1h": [3600, 5], "7d": [604800, 600]},
+                "sets": {f"long-{i}": {"ranges": ["1h", "7d"], "shapes": [{"name": f"s{j}"} for j in range(12)]} for i in range(4)}}
+        sel = {"run": True, "sets": {name: [s["name"] for s in g["shapes"]] for name, g in spec["sets"].items()}}
+        shards = pr_smoke.split_selection(sel, 4, spec, min_cost=1)
+        self.assertEqual(sorted(len(sh["sets"]) for sh in shards), [2, 2])  # 96 units of measuring take two long shards, none is empty
+        self.assertTrue(all(sh["sets"] for sh in shards))
+
+    def test_a_selection_without_a_long_range_is_planned_as_before(self):
+        sizes = {"a": 30, "b": 5, "c": 22, "d": 18, "e": 9, "f": 40, "g": 3, "h": 12}
+        spec = self.spec(sizes)
+        spec["ranges"] = {"1h": [3600, 5]}
+        for group in spec["sets"].values():
+            group["ranges"] = ["1h"]
+        self.assertEqual(pr_smoke.long_history_sets(self.sel(sizes), spec), set())
+
+    def test_the_real_seven_day_sets_are_found(self):
+        with open(os.path.join(pr_smoke.HERE, "shapes.json")) as f:
+            spec = json.load(f)
+        sel = selection("metadata-inventory", "level-filter", "json-detected-level")
+        self.assertEqual(pr_smoke.long_history_sets(sel, spec), {"metadata-inventory"})
+
     def test_a_selection_that_does_not_run_is_one_shard(self):
         sel = {"run": False, "sets": {}}
         self.assertEqual(pr_smoke.split_selection(sel, 4, {"sets": {}}), [sel])

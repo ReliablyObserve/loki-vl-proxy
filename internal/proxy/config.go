@@ -45,6 +45,7 @@ type HandlerConfig struct {
 	adminAuthToken                        string
 	rangeMetricRowLimit                   int
 	orderedJSONMaxBytes                   int64 // ordered JSON metric byte cap (0=1 GiB)
+	orderedJSONMaxSamples                 int64 // proxy-evaluated metric sample cap (0=10,000,000)
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool

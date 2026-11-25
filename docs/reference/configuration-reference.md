@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (284), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (285), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -185,6 +185,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-multi-tenant-max-fanout` | int | `64` | `extraArgs.multi-tenant-max-fanout` | Maximum tenants one multi-tenant request may fan out to; more returns HTTP 400 naming this flag. 0 uses the built-in default of 64 |
 | `-multi-tenant-max-merged-response-bytes` | int | `33554432` | `extraArgs.multi-tenant-max-merged-response-bytes` | Maximum bytes of a merged multi-tenant response; more returns HTTP 413 naming this flag. 0 uses the built-in default of 32 MiB |
 | `-ordered-json-metric-max-bytes` | int64 | `1073741824` | `extraArgs.ordered-json-metric-max-bytes` | Safety cap on the VictoriaLogs raw rows response read, and the response built, by the proxy-side ordered JSON metric evaluator (0 = default 1 GiB, no upper bound). Exceeding it rejects the query instead of returning partial results. Grafana logs volume shapes are computed from VictoriaLogs stats buckets and do not read raw rows. |
+| `-ordered-json-metric-max-samples` | int64 | `10000000` | `extraArgs.ordered-json-metric-max-samples` | Safety cap on the samples (points of all series) a proxy-evaluated metric answer holds (0 = default 10,000,000). The effective cap is also bounded by a quarter of GOMEMLIMIT at about 96 bytes per sample, and is never below 1,000,000. Exceeding it rejects the query with Loki's response-too-large answer instead of returning partial results; the request error log line names this flag. |
 | `-patterns-max-backend-rows` | int | `20000` | `extraArgs.patterns-max-backend-rows` | Maximum log lines /patterns reads from VictoriaLogs for one request. 0 uses the built-in default of 20000 |
 | `-patterns-max-counts-rows` | int | `250000` | `extraArgs.patterns-max-counts-rows` | Maximum rows (distinct step, level and collapsed message groups) the /patterns counts query may return; past it the request samples lines instead. 0 uses the built-in default of 250000 |
 | `-patterns-second-pass-max-rows` | int | `8000` | `extraArgs.patterns-second-pass-max-rows` | Maximum log lines the /patterns second pass reads when the first pass mined too few patterns. 0 uses the built-in default of 8000 |

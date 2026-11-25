@@ -24,7 +24,11 @@ only; the parser understands the block layout the workflows use) and assert:
   commits anything.
 """
 
+import json
+import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -450,7 +454,7 @@ class ScopeWiringTest(unittest.TestCase):
         full = sel("perf-ab/full")
         for body in (plan["body"], job["body"]):
             self.assertIn("BASELINE: ${{ needs.scope.outputs.baseline == 'true' || %s }}" % full, body)
-        self.assertIn("timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || %s) && 60 || 45 }}" % full,
+        self.assertIn("timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || %s) && 90 || 75 }}" % full,
                       shard["body"])
         self.assertIn('if [ "$BASELINE" = "true" ]; then\n            python3 bench/ab/selection.py --all', plan["body"])
         self.assertIn('selection.py --base "$BASE"', plan["body"])  # an ordinary pull request keeps the selection
@@ -461,10 +465,24 @@ class ScopeWiringTest(unittest.TestCase):
             self.assertEqual(jobs[name]["if"], "${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || %s) }}"
                              % sel("perf-ab/perf-smoke"))
 
+    def test_runtime_proof_selects_the_shard_ceiling_from_the_actual_workflow(self):
+        plan = parse_jobs((WORKFLOWS / "perf-ab.yaml").read_text())["perf-plan"]["body"]
+        selector = next(line.strip() for line in plan.splitlines() if line.strip().startswith("MAX_SHARDS="))
+        for selection, expected in (({"runtime_proof": {"required": True}}, "12"),
+                                    ({"runtime_proof": {"required": False}}, "4"),
+                                    ({"runtime_proof": {"required": 1}}, "4"),
+                                    ({"runtime_proof": {}}, "4"), ({}, "4")):
+            with self.subTest(selection=selection), tempfile.TemporaryDirectory() as out:
+                (Path(out) / "selection.json").write_text(json.dumps(selection))
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", selector + '\nprintf "%s" "$MAX_SHARDS"'],
+                                        env=dict(os.environ, OUT=out), capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, expected)
+
     def test_the_perf_smoke_shards_measure_and_the_fan_in_decides(self):
         jobs = parse_jobs((WORKFLOWS / "perf-ab.yaml").read_text())
         plan, shard, fan_in = jobs["perf-plan"]["body"], jobs["perf-smoke-shard"], jobs["perf-smoke"]
-        self.assertIn("pr_smoke.py --split 4", plan)
+        self.assertIn('pr_smoke.py --split "$MAX_SHARDS"', plan)
         self.assertIn("shard: ${{ fromJSON(needs.perf-plan.outputs.shards) }}", shard["body"])
         self.assertEqual(shard["if"], "${{ !cancelled() && needs.perf-plan.result == 'success' && "
                                       "needs.perf-plan.outputs.run == 'true' }}")

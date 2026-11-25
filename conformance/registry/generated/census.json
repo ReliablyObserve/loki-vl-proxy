@@ -140,6 +140,7 @@
     "limits/metric-grpc-send-message-cap | compare:observed",
     "limits/metric-grpc-send-message-cap | gap:open",
     "limits/metric-grpc-send-message-cap | query",
+    "limits/metric-sample-cap-is-a-flag-and-memory-bound | compare:exact",
     "limits/multi-tenant-limit-combination | applies_to",
     "limits/multi-tenant-limit-combination | compare:exact",
     "limits/parser-metric-raw-rows-body-cap | compare:observed",
@@ -2089,6 +2090,9 @@
     "internal/proxy/metadata_scan_sim_scenarios_test.go | backend-admission-and-heavy-query-queueing",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/metadata-scan-adaptive-limit",
+    "internal/proxy/metric_sample_limit_bench_test.go | limits/metric-sample-cap-is-a-flag-and-memory-bound",
+    "internal/proxy/metric_sample_limit_test.go | limits/every-cap-is-a-flag",
+    "internal/proxy/metric_sample_limit_test.go | limits/metric-sample-cap-is-a-flag-and-memory-bound",
     "internal/proxy/multitenant_subrequest_scope_test.go | tenant-numeric-routing",
     "internal/proxy/multitenant_tenant_failure_test.go | semantics/vl-refusal-is-plan-defect",
     "internal/proxy/multitenant_tenant_label_test.go | semantics/tenant-label-default-aliases",
@@ -3596,10 +3600,10 @@
       "drilldown": 63,
       "explore": 257,
       "grafana-datasource": 4,
-      "operator": 4
+      "operator": 5
     },
     "claiming_tests": {
-      "go": 810,
+      "go": 812,
       "playwright": 3
     },
     "page_kinds": {
@@ -3620,7 +3624,7 @@
     "shape_covers_distinct": 111,
     "shapes_path_only": 8,
     "unwired_items": 151,
-    "wired_items": 475
+    "wired_items": 476
   },
   "gates": [
     "A/B shape selection",

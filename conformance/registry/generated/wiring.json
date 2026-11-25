@@ -304,7 +304,8 @@
     ],
     "limits/every-cap-is-a-flag": [
       "cmd/proxy/main_test.go",
-      "internal/config/registry_test.go"
+      "internal/config/registry_test.go",
+      "internal/proxy/metric_sample_limit_test.go"
     ],
     "limits/heavy-query-queue-429": [
       "internal/proxy/backend_heavy_test.go",
@@ -369,6 +370,10 @@
       "internal/proxy/metadata_inventory_test.go",
       "internal/proxy/metadata_scan_admission_test.go",
       "test/e2e-compat/metadata_scan_admission_test.go"
+    ],
+    "limits/metric-sample-cap-is-a-flag-and-memory-bound": [
+      "internal/proxy/metric_sample_limit_bench_test.go",
+      "internal/proxy/metric_sample_limit_test.go"
     ],
     "limits/multi-tenant-limit-combination": [
       "internal/proxy/tenant_query_limits_test.go"
@@ -3104,7 +3109,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 740,
+  "registry_items": 741,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4271,6 +4276,13 @@
       "backend-admission-and-heavy-query-queueing",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit"
+    ],
+    "internal/proxy/metric_sample_limit_bench_test.go": [
+      "limits/metric-sample-cap-is-a-flag-and-memory-bound"
+    ],
+    "internal/proxy/metric_sample_limit_test.go": [
+      "limits/every-cap-is-a-flag",
+      "limits/metric-sample-cap-is-a-flag-and-memory-bound"
     ],
     "internal/proxy/multitenant_subrequest_scope_test.go": [
       "tenant-numeric-routing"
@@ -6886,7 +6898,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 813,
+  "tests_with_markers": 815,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7041,5 +7053,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 475
+  "wired_items": 476
 }
