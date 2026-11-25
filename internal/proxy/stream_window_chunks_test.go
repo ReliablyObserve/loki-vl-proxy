@@ -216,7 +216,6 @@ type streamChunkCase struct {
 	start, end           int64
 	lines                int
 	rows                 []vlemu.Row
-	unchunked, chunked   string
 	chunks, hintedChunks int
 }
 

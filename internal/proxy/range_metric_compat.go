@@ -850,14 +850,8 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 		readCtx, meter := withStatsReadMeter(r.Context())
 		series, ok, err := collect(readCtx, fetchStart, endTS)
-		if meter.overBytes && !chunkReads.overflowed {
-			// The whole range's buckets passed the stats body bound: the steps are read again in time chunks, each
-			// folded as it is read, where the answer (the folded groups) fits (listed_window_chunks.go).
-			chunkReads.overflowed = true
-			p.noteWindowReadOverflow(r, startTS, endTS, step, bucket)
-			if p.listedWindowChunksRoute(w, r, chunkReads, spec, origSpec, manualFunc, windowAggFunc, startTS, endTS, step, bucket, sampleShift) {
-				return true
-			}
+		if p.rereadOverflowedInChunks(w, r, meter, &chunkReads, spec, origSpec, manualFunc, windowAggFunc, startTS, endTS, step, bucket, sampleShift) {
+			return true
 		}
 		if err != nil {
 			p.writeErr(w, r.Context(), err)

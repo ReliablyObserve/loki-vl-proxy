@@ -125,6 +125,19 @@ type listedChunkReads struct {
 	overflowed                   bool
 }
 
+// rereadOverflowedInChunks follows a whole-range read of a window metric's buckets that passed the stats body bound:
+// the replica remembers it, and the steps are read again in time chunks, each folded as it is read, where the answer
+// (the folded groups) fits. It reports whether that answered the request; a read within the bound, or one already in
+// chunks, is left alone.
+func (p *Proxy) rereadOverflowedInChunks(w http.ResponseWriter, r *http.Request, meter *statsReadMeter, reads *listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
+	if !meter.overBytes || reads.overflowed {
+		return false
+	}
+	reads.overflowed = true
+	p.noteWindowReadOverflow(r, start, end, step, bucket)
+	return p.listedWindowChunksRoute(w, r, *reads, spec, origSpec, manualFunc, statsAggFunc, start, end, step, bucket, shift)
+}
+
 // listedWindowChunksRoute answers a window metric in time chunks when the request folds it (a matrix fold), its
 // windows are read from stats buckets, and its series identity is an extraction list's or its read over the whole
 // range passed the stats body bound (reads.overflowed: the stream's series of a count, min, max or avg over a range
