@@ -53,11 +53,16 @@ func unpackStage(sel *queryplan.LogSelect) int {
 	return -1
 }
 
-// unpackRange is the range aggregation to lower for one over an unpack: ra itself when it has none, a copy whose
+// unpackRange is unpackRangeFor for a range aggregation lowered on its own.
+func unpackRange(ra *queryplan.RangeAgg) (*queryplan.RangeAgg, error) {
+	return unpackRangeFor(ra, "RangeAgg")
+}
+
+// unpackRangeFor is the range aggregation to lower for one over an unpack: ra itself when it has none, a copy whose
 // unpack stage is the json stage the translator writes the same pipe for when its result reads neither the line nor
 // the labels the unpack makes, and a NotLoweredError naming what it reads otherwise, under owner, the construct of
 // the aggregation that lowers it.
-func unpackRange(ra *queryplan.RangeAgg, owner string) (*queryplan.RangeAgg, error) {
+func unpackRangeFor(ra *queryplan.RangeAgg, owner string) (*queryplan.RangeAgg, error) {
 	at := unpackStage(ra.In)
 	if at < 0 {
 		return ra, nil

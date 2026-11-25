@@ -118,11 +118,11 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 		return builtVector{}, &NotLoweredError{Construct: "VectorAgg " + string(va.Op)}
 	}
 	// A sum with no clause adds up every series of a count or an absence check, so it reads nothing an unpack splits
-	// the series by: it is lowered over an unpack where the range aggregation under it is (unpackRange). A sum of a
+	// the series by: it is lowered over an unpack where the range aggregation under it is (unpackRangeFor). A sum of a
 	// rate stays delegated: the handlers answer it at an instant with one series per stream
 	// (TestUnpackSumMatchesLoki). src still holds the stages as the client wrote them, an unwrap included.
 	if sumReadsNoSeries(va, ra) && unwrapStage(src) == nil {
-		unpacked, err := unpackRange(ra, "VectorAgg")
+		unpacked, err := unpackRangeFor(ra, "VectorAgg")
 		if err != nil {
 			return builtVector{}, err
 		}

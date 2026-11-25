@@ -130,12 +130,10 @@ gap:
   status: open
   impact: edge
   effort: M
-  area: 'internal/translator (`unpack` is written as unpack_json); closed when the query plan lowers the stages after an unpack with a packed-line test and the line replacement, and serves queries with a parser'
+  area: 'internal/translator (`unpack` is written as unpack_json); the query plan side is internal/queryplan/lower/unpack.go and internal/queryplan/lower/vector_agg.go (the ungrouped sum); closed when the plan lowers the stages after an unpack with a packed-line test and the line replacement, and serves queries with a parser'
   loki: 'an unpack promotes the string keys of a line holding a string _entry and replaces the line with it'
   proxy: 'unpack_json promotes the keys of every JSON line and keeps the packed line'
   planned_test: 'TestUnpackFamiliesMatchLoki (internal/queryplan/lower) holds the families to Loki''s recorded answers; an e2e row against Loki on a packed stream when the plan serves queries with a parser'
-  visual: none
-  visual_reason: 'packed streams only exist where an agent packs them; no Grafana panel of the compose stack sends them'
   clusters:
     - "002a7567"
     - "04e48111"
@@ -191,3 +189,10 @@ gap:
     - 'f5f3d3bc'
     - 'faf50493'
     - 'ff5a5d1e'
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

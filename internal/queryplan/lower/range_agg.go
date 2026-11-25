@@ -35,7 +35,7 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if prof.spent() {
 		return nil, ErrBudgetExhausted
 	}
-	ra, err := unpackRange(ra, "RangeAgg")
+	ra, err := unpackRange(ra)
 	if err != nil {
 		return nil, err
 	}

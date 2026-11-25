@@ -47,7 +47,8 @@ func unpackSumQueries() []string {
 		}
 		out = append(out, `sum(absent_over_time(`+job+` | unpack [1m]))`)
 	}
-	return out
+	// An absence check over a selector with no line: the sum answers 1.
+	return append(out, `sum(absent_over_time({job="none"} | unpack [1m]))`)
 }
 
 func unpackSumFixture() metricFixture {

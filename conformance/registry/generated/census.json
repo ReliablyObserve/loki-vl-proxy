@@ -1192,6 +1192,7 @@
     "semantics/translator-writes-signed-number-with-blank | query",
     "semantics/translator-writes-unpack-as-unpack-json | compare:observed",
     "semantics/translator-writes-unpack-as-unpack-json | gap:open",
+    "semantics/translator-writes-unpack-as-unpack-json | perf",
     "semantics/translator-writes-unpack-as-unpack-json | query",
     "semantics/tumbling-window-single-grid | compare:exact",
     "semantics/tumbling-window-single-grid | query",
@@ -3675,7 +3676,7 @@
     },
     "page_kinds": {
       "drilldown": 22,
-      "explore": 141,
+      "explore": 143,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3689,7 +3690,7 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 112,
+    "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 153,
     "wired_items": 482
@@ -3811,6 +3812,8 @@
     "explore-topk-over-log-selector",
     "explore-topk-sum-without",
     "explore-topk-without-keeps-labels",
+    "explore-unpack-sum-absent",
+    "explore-unpack-sum-count",
     "explore-unwrap-conversion-error",
     "explore-unwrap-duration-seconds",
     "explore-unwrap-first-last-range-longer-than-step",
@@ -4545,6 +4548,9 @@
     "sub-second-step/SS1 count_over_time 5s window on a 200ms step",
     "sub-second-step/SS2 json duration_ms avg by service, 5m window on a 200ms step",
     "sub-second-step/SS3 rate by service, 1s window on a 200ms step",
+    "unpack-sum/UP1 sum count_over_time over unpack",
+    "unpack-sum/UP2 sum count_over_time over unpack and a drop, instant",
+    "unpack-sum/UP3 sum absent_over_time over unpack with no stream",
     "unwrap-conversion-error/E1 json duration_ms sum by service",
     "unwrap-conversion-error/E2 json duration_ms p95 by service",
     "unwrap-conversion-error/E3 logfmt latency_ms rate, production",
