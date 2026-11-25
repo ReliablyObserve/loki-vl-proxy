@@ -183,6 +183,7 @@ type proxyRuntimeConfig struct {
 	metricsTrustProxyHeaders            bool
 	metricsExportSensitiveLabels        bool
 	metricsMaxConcurrency               int
+	metricsDurationBuckets              string
 	logRequestSampleRate                int
 	logBuffered                         bool
 	logStatsInterval                    time.Duration
@@ -753,6 +754,7 @@ func run(
 	metricsMaxClients := fs.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
 	metricsTrustProxyHeaders := fs.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
 	metricsExportSensitiveLabels := fs.Bool("metrics.export-sensitive-labels", false, "Export per-tenant and per-client identity metrics on /metrics and OTLP")
+	metricsDurationBuckets := fs.String("metrics.duration-buckets", "", "Comma-separated upper bounds, in seconds, of the duration histograms on /metrics and OTLP (request, backend, tenant and client request duration, request phase, internal operation and query_range window durations): finite numbers above zero in ascending order, at most 32; +Inf is added. Empty uses 0.001,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,15,20,30,45,60,90,120. Each bound adds one series to every duration histogram series")
 	metricsMaxConcurrency := fs.Int("server.metrics-max-concurrency", 1, "Maximum concurrent /metrics scrapes served at once (0 disables the cap)")
 
 	// Label translation
@@ -1072,6 +1074,7 @@ func run(
 			metricsTrustProxyHeaders:            *metricsTrustProxyHeaders,
 			metricsExportSensitiveLabels:        *metricsExportSensitiveLabels,
 			metricsMaxConcurrency:               *metricsMaxConcurrency,
+			metricsDurationBuckets:              *metricsDurationBuckets,
 			logRequestSampleRate:                *logRequestSampleRate,
 			logBuffered:                         *logBuffered,
 			logStatsInterval:                    *logStatsInterval,
@@ -2260,6 +2263,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err != nil {
 		return proxy.Config{}, err
 	}
+	durationBuckets, err := metrics.ParseDurationBuckets(cfg.metricsDurationBuckets)
+	if err != nil {
+		return proxy.Config{}, fmt.Errorf("parse -metrics.duration-buckets: %w", err)
+	}
 	if cfg.queryStatsMode != "" && cfg.queryStatsMode != proxy.QueryStatsModeLoki && cfg.queryStatsMode != proxy.QueryStatsModeVictoriaLogs {
 		return proxy.Config{}, fmt.Errorf("invalid -query-stats-mode: %q (must be 'loki' or 'victorialogs')", cfg.queryStatsMode)
 	}
@@ -2464,6 +2471,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		LogRateThreshold:                   cfg.logRateThreshold,
 		MetricsExportSensitiveLabels:       cfg.metricsExportSensitiveLabels,
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
+		MetricsDurationBuckets:             durationBuckets,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
 		DisableLabelsCacheWarm:             !cfg.labelsCacheWarm,

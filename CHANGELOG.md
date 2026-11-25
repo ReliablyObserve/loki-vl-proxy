@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The duration histograms reach 120 s: `15, 20, 30, 45, 60, 90, 120` follow the earlier bounds (all kept) in `loki_vl_proxy_request_duration_seconds`, `backend_duration_seconds`, `tenant_request_duration_seconds`, `client_request_duration_seconds`, `request_phase_seconds`, `internal_operation_duration_seconds` and the `window_*` duration histograms, on `/metrics` and OTLP. Before, every request over 10 s counted only in `+Inf`, so a quantile read exactly `10` and could not tell a slow request from a timeout. Each duration histogram series gains 7 series: a replica that just started goes from 1,538 to 1,895 series (`/metrics` gzip 10.6 kB to 11.8 kB). Count histograms are unchanged. The chart alert `LokiVLProxyHighLatency` (p99 over 10 s) can now fire: with the highest finite bound at 10 s its condition was never true ([#1765](https://github.com/ReliablyObserve/Loki-VL-proxy/issues/1765)).
+- **Behaviour change in the Helm chart:** the `ServiceMonitor` now sets `honorLabels: true` (new value `serviceMonitor.honorLabels`, default `true`; the VictoriaMetrics operator carries it into the converted `VMServiceScrape`). The proxy's `endpoint` label (`query_range`, `labels`, `select_logsql_query`, ...) was stored as `exported_endpoint` while `endpoint` read `metrics` on every series, so the chart dashboard and alerts that select or group by `endpoint` showed one series or matched nothing. Queries, alerts or relabeling rules of your own that read `exported_endpoint` must read `endpoint` for new samples; the affected series start anew under the new labels. Set `serviceMonitor.honorLabels: false` to keep the earlier labels. A scrape config you maintain yourself needs `honor_labels: true`. See `docs/observability.md`, "Scrape label collisions".
+
+### Added
+
+- `-metrics.duration-buckets` (Helm `observability.metrics.durationBuckets`) sets the bounds of the duration histograms: comma-separated finite seconds above zero, ascending, at most 32. Empty keeps the defaults; startup fails on any other value.
+
+### Performance
+
+- Rendering `/metrics` takes about half the time and 57% less memory per scrape, although the answer is 26% larger with the new bounds: the buffer is sized from the previous answer and histogram bucket lines are written without `fmt` (`BenchmarkMetricsRender`: 1.00 ms to 0.46 ms with default labels, 2.97 ms to 1.34 ms with sensitive labels).
+
+### Fixed
+
+- The three `System Pressure` panels of the packaged dashboard matched no series: they selected `window="10"` where the proxy writes `window="10s"`.
+- The dashboard panels fed only by `-metrics.export-sensitive-labels=true` (client query length, client latency, in-flight requests per client and the tenant panels) now say so in their description instead of staying empty without a reason.
+
 ## [2.364.1] - 2026-11-25
 
 ### Fixed

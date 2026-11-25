@@ -171,6 +171,9 @@ spec:
             {{- if and (not (hasKey .Values.extraArgs "log-user-header-trusted-cidrs")) (ne (default "" (get $observabilityQueryUser "trustedCIDRs")) "") }}
             - {{ printf "-log-user-header-trusted-cidrs=%v" (get $observabilityQueryUser "trustedCIDRs") | quote }}
             {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "metrics.duration-buckets")) (ne (toString (default "" (get $observabilityMetrics "durationBuckets"))) "") }}
+            - {{ printf "-metrics.duration-buckets=%v" (get $observabilityMetrics "durationBuckets") | quote }}
+            {{- end }}
             {{- if not (hasKey .Values.extraArgs "server.register-instrumentation") }}
             - {{ printf "-server.register-instrumentation=%s" (ternary "true" "false" (default true (get $observabilityServer "registerInstrumentation"))) | quote }}
             {{- end }}

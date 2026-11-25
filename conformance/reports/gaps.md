@@ -82,6 +82,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | 8 | 0 | unknown |
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 53 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
+| observability | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | 7 | 4 | unknown |
 | observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 6 | 5 | unknown |
 | observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 8 | 5 | unknown |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 11 | proven |

@@ -431,6 +431,7 @@ extraArgs:
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"
   # metrics.export-sensitive-labels: "false"    # include tenant/client labels in all Prometheus metrics
+  # metrics.duration-buckets: ""                # comma-separated duration histogram bounds in seconds (ascending, at most 32); empty = 0.001 … 10,15,20,30,45,60,90,120
   # server.metrics-max-concurrency: "1"         # bound concurrent /metrics scrapes (binary default 1; 0 disables the cap)
   # --- /metrics + admin/debug listener topology (v1.56.0 BREAKING) ---
   # Binary defaults flipped: server.register-instrumentation is now false in the
@@ -527,6 +528,11 @@ observability:
   metrics:
     maxTenants: 256
     maxClients: 256
+    # Bounds, in seconds, of the duration histograms (-metrics.duration-buckets), as one comma-separated string,
+    # for example "0.01,0.1,1,10,30,60,120": above zero, ascending, at most 32. Empty keeps the binary default
+    # (0.001 0.005 0.01 0.025 0.05 0.1 0.25 0.5 1 2.5 5 10 15 20 30 45 60 90 120). Each bound adds one series
+    # to every duration histogram series.
+    durationBuckets: ""
     trustProxyHeaders: false
     exportSensitiveLabels: false
   # Who ran a query: the Grafana user on the request, upstream_request, slow_request and
@@ -760,6 +766,12 @@ peerService:
 # Disabled by default to keep the chart generic outside Prometheus-Operator clusters.
 serviceMonitor:
   enabled: false
+  # Keep the proxy's own label values when they collide with the scrape target's. The proxy's request, backend
+  # and cache metrics carry an "endpoint" label (query_range, labels, ...) and the Prometheus Operator adds a
+  # target label of the same name (the Service port name): with false the proxy's value arrives as
+  # "exported_endpoint" and "endpoint" is "metrics" on every series, so the chart's dashboard and alerts that
+  # select or group by endpoint do not work. A Prometheus or VMAgent "overrideHonorLabels" setting overrides this.
+  honorLabels: true
   namespace: ""
   annotations: {}
   interval: "30s"

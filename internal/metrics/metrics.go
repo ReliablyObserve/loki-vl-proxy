@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/http"
@@ -120,6 +121,8 @@ type Metrics struct {
 	windowDegradedBatches         atomic.Int64
 	windowPartialResponses        atomic.Int64
 	windowPrefilterDuration       *histogram
+	durationBuckets               []float64    // bounds of every duration histogram, in seconds
+	renderSize                    atomic.Int64 // bytes to reserve for the next /metrics answer
 	windowAdaptiveParallelCurrent atomic.Int64
 	windowAdaptiveLatencyEWMAms   atomic.Int64
 	windowAdaptiveErrorEWMAppm    atomic.Int64
@@ -179,6 +182,8 @@ type histogram struct {
 	counts  []int64
 }
 
+// defaultBuckets bound the histograms that count something other than seconds (query length, windows per
+// request). Duration histograms take the instance's duration buckets (newDurationHistogram).
 var defaultBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 var countBuckets = []float64{1, 2, 4, 8, 16, 32, 64, 128}
 
@@ -333,6 +338,10 @@ func newHistogramWithBuckets(buckets []float64) *histogram {
 	}
 }
 
+func (m *Metrics) newDurationHistogram() *histogram {
+	return newHistogramWithBuckets(m.durationBuckets)
+}
+
 func newCountHistogram() *histogram {
 	return newHistogramWithBuckets(countBuckets)
 }
@@ -366,10 +375,18 @@ func (h *histogram) observe(v float64) {
 	h.mu.Lock()
 	h.sum += v
 	h.count++
-	for i, b := range h.buckets {
-		if v <= b {
-			h.counts[i]++
+	// The bounds ascend: search for the first one that holds v, then count it and every one above it. A NaN
+	// fits none.
+	first, end := 0, len(h.buckets)
+	for first < end {
+		if mid := int(uint(first+end) >> 1); v <= h.buckets[mid] {
+			end = mid
+		} else {
+			first = mid + 1
 		}
+	}
+	for counts, i := h.counts, first; i < len(counts); i++ {
+		counts[i]++
 	}
 	h.mu.Unlock()
 }
@@ -383,6 +400,16 @@ func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
 }
 
 func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitiveLabels bool) *Metrics {
+	return NewMetricsWithDurationBuckets(maxTenantLabels, maxClientLabels, exportSensitiveLabels, nil)
+}
+
+// NewMetricsWithDurationBuckets is NewMetricsWithOptions with the bounds, in seconds, of the duration
+// histograms (-metrics.duration-buckets, as ParseDurationBuckets returns them); none means the defaults.
+func NewMetricsWithDurationBuckets(maxTenantLabels, maxClientLabels int, exportSensitiveLabels bool, durationBuckets []float64) *Metrics {
+	if len(durationBuckets) == 0 {
+		durationBuckets = defaultDurationBuckets
+	}
+	durationBuckets = append([]float64(nil), durationBuckets...)
 	if maxTenantLabels <= 0 {
 		maxTenantLabels = defaultMaxTenantLabels
 	}
@@ -404,7 +431,8 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		internalOperationDurations: make(map[string]*histogram),
 		loweringShadowTotal:        make(map[string]*atomic.Int64),
 		planDefectsTotal:           make(map[string]*atomic.Int64),
-		flow:                       newFlowMetrics(),
+		flow:                       newFlowMetrics(durationBuckets),
+		durationBuckets:            durationBuckets,
 		tupleModes:                 make(map[string]*atomic.Int64),
 		clientRequests:             make(map[string]*atomic.Int64),
 		clientDurations:            make(map[string]*histogram),
@@ -417,10 +445,10 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		connectionRotations:        make(map[string]*atomic.Int64),
 		parserMetricEvaluators:     make(map[string]*atomic.Int64),
 		slowRequests:               make(map[string]*atomic.Int64),
-		windowFetch:                newHistogram(),
-		windowMerge:                newHistogram(),
+		windowFetch:                newHistogramWithBuckets(durationBuckets),
+		windowMerge:                newHistogramWithBuckets(durationBuckets),
 		windowCount:                newHistogram(),
-		windowPrefilterDuration:    newHistogram(),
+		windowPrefilterDuration:    newHistogramWithBuckets(durationBuckets),
 		system:                     NewSystemMetrics(),
 		startTime:                  time.Now(),
 		maxTenantLabels:            maxTenantLabels,
@@ -485,11 +513,11 @@ func (m *Metrics) preRegisterZeroSeries() {
 	for _, seed := range defaultMetricSeedRoutes {
 		requestRouteKey := joinMetricKey(lokiSystemLabel, downstreamDirection, seed.endpoint, seed.route)
 		if _, ok := m.requestDurations[requestRouteKey]; !ok {
-			m.requestDurations[requestRouteKey] = newHistogram()
+			m.requestDurations[requestRouteKey] = m.newDurationHistogram()
 		}
 		routeKey := joinMetricKey(seed.endpoint, seed.route)
 		if _, ok := m.backendDurations[routeKey]; !ok {
-			m.backendDurations[routeKey] = newHistogram()
+			m.backendDurations[routeKey] = m.newDurationHistogram()
 		}
 		if _, ok := m.upstreamCallsPerRequest[routeKey]; !ok {
 			m.upstreamCallsPerRequest[routeKey] = newCountHistogram()
@@ -525,14 +553,14 @@ func (m *Metrics) preRegisterZeroSeries() {
 			}
 			tdk := joinMetricKey("__none__", seed.endpoint, seed.route)
 			if _, ok := m.tenantDurations[tdk]; !ok {
-				m.tenantDurations[tdk] = newHistogram()
+				m.tenantDurations[tdk] = m.newDurationHistogram()
 			}
 			cdk := joinMetricKey("__none__", seed.endpoint, seed.route)
 			if _, ok := m.clientRequests[cdk]; !ok {
 				m.clientRequests[cdk] = &atomic.Int64{}
 			}
 			if _, ok := m.clientDurations[cdk]; !ok {
-				m.clientDurations[cdk] = newHistogram()
+				m.clientDurations[cdk] = m.newDurationHistogram()
 			}
 			if _, ok := m.clientQueryLengths[cdk]; !ok {
 				m.clientQueryLengths[cdk] = newHistogram()
@@ -670,7 +698,7 @@ func (m *Metrics) recordRequestWithLabels(system, direction, endpoint, route str
 		m.mu.Lock()
 		hist, hok = m.requestDurations[histKey]
 		if !hok {
-			hist = newHistogram()
+			hist = m.newDurationHistogram()
 			m.requestDurations[histKey] = hist
 		}
 		m.mu.Unlock()
@@ -737,7 +765,7 @@ func (m *Metrics) RecordTenantRequestWithRoute(tenant, endpoint, route string, s
 		m.mu.Lock()
 		hist, hok = m.tenantDurations[durKey]
 		if !hok {
-			hist = newHistogram()
+			hist = m.newDurationHistogram()
 			m.tenantDurations[durKey] = hist
 		}
 		m.mu.Unlock()
@@ -837,7 +865,7 @@ func (m *Metrics) RecordClientIdentityWithRoute(clientID, endpoint, route string
 		m.mu.Lock()
 		hist, hok = m.clientDurations[key]
 		if !hok {
-			hist = newHistogram()
+			hist = m.newDurationHistogram()
 			m.clientDurations[key] = hist
 		}
 		m.mu.Unlock()
@@ -1474,7 +1502,7 @@ func (m *Metrics) RecordBackendDurationWithRoute(endpoint, route string, d time.
 		m.mu.Lock()
 		h, ok = m.backendDurations[key]
 		if !ok {
-			h = newHistogram()
+			h = m.newDurationHistogram()
 			m.backendDurations[key] = h
 		}
 		m.mu.Unlock()
@@ -1587,7 +1615,7 @@ func (m *Metrics) RecordInternalOperation(operation, outcome string, d time.Dura
 		if !hok {
 			hist, hok = m.internalOperationDurations[key]
 			if !hok {
-				hist = newHistogram()
+				hist = m.newDurationHistogram()
 				m.internalOperationDurations[key] = hist
 			}
 		}
@@ -1727,6 +1755,8 @@ func snapshotHistogramMap(m map[string]*histogram) map[string]histogramSnapshot 
 //nolint:gocyclo // serializes ~30 separate Prometheus metric families with per-family help/type/sort/iterate blocks; complexity is inherent to the exposition format.
 func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	var sb strings.Builder
+	// The answer is hundreds of kilobytes: size the buffer from the last one instead of growing it by doubling.
+	sb.Grow(int(m.renderSize.Load()))
 
 	// Snapshot map pointers under the lock, then release immediately.
 	// Values are *atomic.Int64 (read via .Load()) or *histogram (has its own mu),
@@ -1804,10 +1834,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		h := sRequestDurations[key]
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", parts[0], parts[1], parts[2], parts[3], b, h.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", parts[0], parts[1], parts[2], parts[3], h.loadCount())
+		writeBucketLines(&sb, "loki_vl_proxy_request_duration_seconds",
+			fmt.Sprintf(`system=%q,direction=%q,endpoint=%q,route=%q`, parts[0], parts[1], parts[2], parts[3]), h)
 		fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", parts[0], parts[1], parts[2], parts[3], h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_count{system=%q,direction=%q,endpoint=%q,route=%q} %d\n", parts[0], parts[1], parts[2], parts[3], h.loadCount())
 	}
@@ -2132,12 +2160,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			}
 			tenant, endpoint, route := parts[0], parts[1], parts[2]
 			h := sTenantDurations[key]
-			for i, b := range h.buckets {
-				fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, tenant, endpoint, route, b, h.counts[i])
-			}
-			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.loadCount())
+			writeBucketLines(&sb, "loki_vl_proxy_tenant_request_duration_seconds",
+				fmt.Sprintf(`system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q`, lokiSystemLabel, downstreamDirection, tenant, endpoint, route), h)
 			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_sum{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %g\n",
 				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.loadSum())
 			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_count{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %d\n",
@@ -2209,10 +2233,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		endpoint := parts[0]
 		route := parts[1]
 		h := sBackendDurations[key]
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, b, h.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, h.loadCount())
+		writeBucketLines(&sb, "loki_vl_proxy_backend_duration_seconds",
+			fmt.Sprintf(`system=%q,direction=%q,endpoint=%q,route=%q`, vlSystemLabel, upstreamDirection, endpoint, route), h)
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", vlSystemLabel, upstreamDirection, endpoint, route, h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_count{system=%q,direction=%q,endpoint=%q,route=%q} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, h.loadCount())
 	}
@@ -2232,10 +2254,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		endpoint := parts[0]
 		route := parts[1]
 		h := sUpstreamCallsPerRequest[key]
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, b, h.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.loadCount())
+		writeBucketLines(&sb, "loki_vl_proxy_upstream_calls_per_request",
+			fmt.Sprintf(`system=%q,direction=%q,endpoint=%q,route=%q`, lokiSystemLabel, downstreamDirection, endpoint, route), h)
 		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_count{system=%q,direction=%q,endpoint=%q,route=%q} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.loadCount())
 	}
@@ -2298,10 +2318,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		h := sInternalOperationDurations[key]
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"%g\"} %d\n", parts[0], parts[1], b, h.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"+Inf\"} %d\n", parts[0], parts[1], h.loadCount())
+		writeBucketLines(&sb, "loki_vl_proxy_internal_operation_duration_seconds",
+			fmt.Sprintf(`operation=%q,outcome=%q`, parts[0], parts[1]), h)
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_sum{operation=%q,outcome=%q} %g\n", parts[0], parts[1], h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_count{operation=%q,outcome=%q} %d\n", parts[0], parts[1], h.loadCount())
 	}
@@ -2492,12 +2510,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			}
 			client, endpoint, route := parts[0], parts[1], parts[2]
 			h := sClientDurations[key]
-			for i, b := range h.buckets {
-				fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
-			}
-			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadCount())
+			writeBucketLines(&sb, "loki_vl_proxy_client_request_duration_seconds",
+				fmt.Sprintf(`system=%q,direction=%q,client=%q,endpoint=%q,route=%q`, lokiSystemLabel, downstreamDirection, client, endpoint, route), h)
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_sum{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %g\n",
 				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadSum())
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_count{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
@@ -2518,12 +2532,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			}
 			client, endpoint, route := parts[0], parts[1], parts[2]
 			h := sClientQueryLengths[key]
-			for i, b := range h.buckets {
-				fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
-			}
-			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadCount())
+			writeBucketLines(&sb, "loki_vl_proxy_client_query_length_chars",
+				fmt.Sprintf(`system=%q,direction=%q,client=%q,endpoint=%q,route=%q`, lokiSystemLabel, downstreamDirection, client, endpoint, route), h)
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_sum{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %g\n",
 				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadSum())
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_count{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
@@ -2553,5 +2563,6 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	m.system.WritePrometheus(&sb)
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	_, _ = w.Write([]byte(sb.String()))
+	m.renderSize.Store(int64(sb.Len() + sb.Len()/16))
+	_, _ = io.WriteString(w, sb.String())
 }
