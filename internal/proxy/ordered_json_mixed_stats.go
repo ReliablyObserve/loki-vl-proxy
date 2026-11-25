@@ -367,6 +367,9 @@ func (p *Proxy) orderedMixedJSONStatsRange(ctx context.Context, plan *orderedJSO
 	if maxBytes > math.MaxInt {
 		return nil, false, nil
 	}
+	// The points of the answer are bounded by the configured cap (-ordered-json-metric-max-samples), carried to the
+	// evaluators that have no Proxy.
+	ctx = withMetricSampleLimit(ctx, p.maxMetricSamples())
 	series, served, err := p.collectOrderedMixedJSONStats(ctx, plan, start, end, step)
 	if errors.Is(err, errBodyTooLarge) || errors.Is(err, errStatsGroupGuard) || errors.Is(err, causeOrderedResponse) {
 		// An intermediate native read is not the final series set. Preserve
@@ -397,7 +400,11 @@ func buildMixedJSONStatsMatrixContext(ctx context.Context, plan *orderedJSONMetr
 	// The shared stats estimate deliberately overcounts timestamp bytes. The
 	// old mixed evaluator applies this flag to exact serialized bytes, so keep
 	// its point/context bounds here and apply the unchanged byte cap below.
-	results, err := hitsRangeMetricSeriesBounded(plan.function, series, start, end, step, plan.window, math.MaxInt, nil, ctx, maxMetricEvalSamples)
+	maxPoints := metricSampleLimit(ctx)
+	if maxPoints > math.MaxInt32 { // the reducer counts points in an int
+		maxPoints = math.MaxInt32
+	}
+	results, err := hitsRangeMetricSeriesBounded(plan.function, series, start, end, step, plan.window, math.MaxInt, nil, ctx, int(maxPoints))
 	if err != nil {
 		return nil, err
 	}

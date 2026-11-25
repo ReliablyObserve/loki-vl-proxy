@@ -17,6 +17,7 @@ const (
 	flagManualRangeMetricRowLimit       = "-manual-range-metric-row-limit"
 	flagMaxStatsQuerySeries             = "-max-stats-query-series"
 	flagOrderedJSONMetricMaxBytes       = "-ordered-json-metric-max-bytes"
+	flagOrderedJSONMetricMaxSamples     = "-ordered-json-metric-max-samples"
 	flagMaxQueryLengthBytes             = "-max-query-length-bytes"
 	flagMaxQueryASTNodes                = "-max-query-ast-nodes"
 	flagMaxQueryNestingDepth            = "-max-query-nesting-depth"
@@ -61,6 +62,7 @@ var (
 	causeBinaryOperandWriter = bufferCause("binary operand response", flagBackendMaxBufferedResponseBytes, nil)
 	causeOrderedResponse     = bufferCause("ordered JSON metric response", flagOrderedJSONMetricMaxBytes, nil)
 	causeOrderedOutput       = bufferCause("ordered JSON metric output", flagOrderedJSONMetricMaxBytes, nil)
+	causeOrderedSamples      = bufferCause("ordered JSON metric output samples", flagOrderedJSONMetricMaxSamples, nil)
 )
 
 // newBufferLimitError is a response the proxy would buffer above limit bytes:

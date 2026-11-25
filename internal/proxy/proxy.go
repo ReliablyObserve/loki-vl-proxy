@@ -204,6 +204,9 @@ type Config struct {
 	// OrderedJSONMetricMaxBytes caps the raw rows response read and the response
 	// built by the ordered JSON metric evaluator. 0 means 1 GiB.
 	OrderedJSONMetricMaxBytes int64
+	// OrderedJSONMetricMaxSamples caps the samples a proxy-evaluated metric answer holds. 0 means 10,000,000;
+	// the effective cap is also bounded by the runtime memory limit (see effectiveMetricSampleLimit).
+	OrderedJSONMetricMaxSamples int64
 	// LabelFilterRefillMaxPages is how many more pages of rows a log query
 	// reads when a Loki label filter dropped rows VictoriaLogs matched
 	// (-label-filter-refill-max-pages). 0 reads none: such a page can come
@@ -850,6 +853,7 @@ type Proxy struct {
 	metricsConcurrencyLimiter             chan struct{}
 	rangeMetricRowLimit                   int           // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
 	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
+	orderedJSONMaxSamples                 int64         // proxy-evaluated metric sample cap (0=10,000,000)
 	labelFilterRefillMaxPages             int           // extra pages read to fill a filtered log page (0=none)
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=1000)
 	drilldownSeriesLimitMode              string        // -drilldown-series-limit-mode: loki (default) or busiest
@@ -1529,6 +1533,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
 		orderedJSONMaxBytes:                   cfg.OrderedJSONMetricMaxBytes,
+		orderedJSONMaxSamples:                 cfg.OrderedJSONMetricMaxSamples,
 		labelFilterRefillMaxPages:             max(cfg.LabelFilterRefillMaxPages, 0),
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		drilldownSeriesLimitMode:              cfg.DrilldownSeriesLimitMode,
@@ -1791,6 +1796,7 @@ func New(cfg Config) (*Proxy, error) {
 			adminAuthToken:                        p.adminAuthToken,
 			rangeMetricRowLimit:                   p.rangeMetricRowLimit,
 			orderedJSONMaxBytes:                   p.orderedJSONMaxBytes,
+			orderedJSONMaxSamples:                 p.orderedJSONMaxSamples,
 			tailAllowedOrigins:                    p.tailAllowedOrigins,
 			tailMode:                              p.tailMode,
 			metricsTrustProxyHeaders:              p.metricsTrustProxyHeaders,

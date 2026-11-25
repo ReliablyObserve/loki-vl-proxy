@@ -17,15 +17,15 @@ operational caveats that still matter in the current codebase.
 
 <!-- verified-numbers:start -->
 
-Verified 2026-11-24 on `b283a405a88d` (Loki 3.7.10, VictoriaLogs v1.49.0 and v1.54.0), 48 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
+Verified 2026-11-25 on `ab92c9758814` (Loki 3.7.10, VictoriaLogs v1.49.0 and v1.54.0), 50 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
 
-- Registry: 199 open, 171 fixed, 16 documented, 7 owner-kept, 3 upstream; open by impact: 112 explore-visible, 18 drilldown-visible, 2 grafana-datasource, 21 api-only, 46 edge.
-- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 188 match, 89 differ on equal data, 38 not comparable on that day's data, 120 blocked; v1.54.0: 186 match, 91 differ on equal data, 38 not comparable on that day's data, 120 blocked.
+- Registry: 199 open, 173 fixed, 16 documented, 7 owner-kept, 3 upstream; open by impact: 111 explore-visible, 18 drilldown-visible, 2 grafana-datasource, 21 api-only, 47 edge.
+- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 187 match, 91 differ on equal data, 38 not comparable on that day's data, 121 blocked; v1.54.0: 187 match, 91 differ on equal data, 38 not comparable on that day's data, 121 blocked.
 - Errors: 242 of 248 recorded Loki answers match, 6 known differences, 0 known leaks; 0 of 0 rows answered as recorded by the live Loki.
-- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-24 (failure): 383 VictoriaLogs rejects the translator text, 32 accepted, translation fails, 24 error text differs, 23 proxy accepts, Loki rejects, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 10 proxy rejects, Loki accepts, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
+- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-25 (failure): 383 VictoriaLogs rejects the translator text, 32 accepted, translation fails, 24 error text differs, 23 proxy accepts, Loki rejects, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 10 proxy rejects, Loki accepts, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
 - Performance, weekly full run verified 2026-11-23 (Loki 3.7.10): 525 comparable shape x range pairs, 329 faster, 171 on par, 25 slower; 5 rows above 2x Loki.
-- Performance, daily smoke verified 2026-11-24: 217 rows, 1 above 2x Loki, 6 weekly ratchet rows lost.
-- Cache reuse, verified 2026-11-24: registry cases on v1.49.0: 254 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); registry cases on v1.54.0: 254 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); perf smoke: 14 of 217 rows repeat without calling VictoriaLogs.
+- Performance, daily smoke verified 2026-11-25: 217 rows, 0 above 2x Loki, 7 weekly ratchet rows lost.
+- Cache reuse, verified 2026-11-25: registry cases on v1.49.0: 257 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); registry cases on v1.54.0: 257 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); perf smoke: 8 of 217 rows repeat without calling VictoriaLogs.
 
 <!-- verified-numbers:end -->
 

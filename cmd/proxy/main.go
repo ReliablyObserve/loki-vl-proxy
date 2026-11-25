@@ -87,6 +87,7 @@ type proxyRuntimeConfig struct {
 	maxLines                            int
 	rangeMetricRowLimit                 int
 	orderedJSONMetricMaxBytes           int64
+	orderedJSONMetricMaxSamples         int64
 	labelFilterRefillMaxPages           int
 	backendTimeout                      time.Duration
 	cbFailThreshold                     int
@@ -604,6 +605,7 @@ func run(
 	// Grafana datasource compatibility
 	maxLines := fs.Int("max-lines", proxy.DefaultMaxLines, "Entries of a log query (query_range) that sends no limit; Loki's default is 100")
 	orderedJSONMetricMaxBytes := fs.Int64("ordered-json-metric-max-bytes", 1<<30, "Safety cap on the VictoriaLogs raw rows response read, and the response built, by the proxy-side ordered JSON metric evaluator (0 = default 1 GiB, no upper bound). Exceeding it rejects the query instead of returning partial results. Grafana logs volume shapes are computed from VictoriaLogs stats buckets and do not read raw rows.")
+	orderedJSONMetricMaxSamples := fs.Int64("ordered-json-metric-max-samples", 10_000_000, "Safety cap on the samples (points of all series) a proxy-evaluated metric answer holds (0 = default 10,000,000). The effective cap is also bounded by a quarter of GOMEMLIMIT at about 96 bytes per sample, and is never below 1,000,000. Exceeding it rejects the query with Loki's response-too-large answer instead of returning partial results; the request error log line names this flag.")
 	labelFilterRefillMaxPages := fs.Int("label-filter-refill-max-pages", proxy.DefaultLabelFilterRefillMaxPages, "Loki-compatible profile: more pages of at most limit rows a log query reads when a Loki label filter on a log line key no earlier stage exposes dropped rows VictoriaLogs matched, so the page still holds limit lines. A response reads at most (1 + N) x limit rows; 0 reads no further page, and such a page can return fewer lines than the limit.")
 	rangeMetricRowLimit := fs.Int("manual-range-metric-row-limit", 1_000_000, "Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries.")
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend. The remaining budget is also passed to VictoriaLogs as its per-query timeout argument, so VictoriaLogs stops work the proxy has given up on")
@@ -972,6 +974,7 @@ func run(
 			maxLines:                            *maxLines,
 			rangeMetricRowLimit:                 *rangeMetricRowLimit,
 			orderedJSONMetricMaxBytes:           *orderedJSONMetricMaxBytes,
+			orderedJSONMetricMaxSamples:         *orderedJSONMetricMaxSamples,
 			labelFilterRefillMaxPages:           *labelFilterRefillMaxPages,
 			backendTimeout:                      *backendTimeout,
 			cbFailThreshold:                     *cbFailThreshold,
@@ -2329,30 +2332,31 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	}
 
 	return proxy.Config{
-		BackendURL:                cfg.backendURL,
-		RulerBackendURL:           cfg.rulerBackendURL,
-		AlertsBackendURL:          alertsBackendURL,
-		Cache:                     cfg.cache,
-		CompatCache:               cfg.compatCache,
-		LogLevel:                  cfg.logLevel,
-		MaxConcurrent:             cfg.maxConcurrent,
-		RatePerSecond:             cfg.ratePerSecond,
-		RateBurst:                 cfg.rateBurst,
-		TenantMap:                 tenantMap,
-		TenantMapFile:             cfg.tenantMapFile,
-		TenantLabel:               cfg.tenantLabel,
-		TenantLimitsAllowPublish:  parseCSV(cfg.tenantLimitsAllowPublish),
-		TenantDefaultLimits:       tenantDefaultLimits,
-		TenantLimits:              tenantLimits,
-		MaxLines:                  cfg.maxLines,
-		RangeMetricRowLimit:       cfg.rangeMetricRowLimit,
-		OrderedJSONMetricMaxBytes: cfg.orderedJSONMetricMaxBytes,
-		LabelFilterRefillMaxPages: cfg.labelFilterRefillMaxPages,
-		BackendTimeout:            cfg.backendTimeout,
-		CBFailThreshold:           cfg.cbFailThreshold,
-		CBOpenDuration:            cfg.cbOpenDuration,
-		CBWindowDuration:          cfg.cbWindowDuration,
-		CoalescerDisabled:         cfg.coalescerDisabled,
+		BackendURL:                  cfg.backendURL,
+		RulerBackendURL:             cfg.rulerBackendURL,
+		AlertsBackendURL:            alertsBackendURL,
+		Cache:                       cfg.cache,
+		CompatCache:                 cfg.compatCache,
+		LogLevel:                    cfg.logLevel,
+		MaxConcurrent:               cfg.maxConcurrent,
+		RatePerSecond:               cfg.ratePerSecond,
+		RateBurst:                   cfg.rateBurst,
+		TenantMap:                   tenantMap,
+		TenantMapFile:               cfg.tenantMapFile,
+		TenantLabel:                 cfg.tenantLabel,
+		TenantLimitsAllowPublish:    parseCSV(cfg.tenantLimitsAllowPublish),
+		TenantDefaultLimits:         tenantDefaultLimits,
+		TenantLimits:                tenantLimits,
+		MaxLines:                    cfg.maxLines,
+		RangeMetricRowLimit:         cfg.rangeMetricRowLimit,
+		OrderedJSONMetricMaxBytes:   cfg.orderedJSONMetricMaxBytes,
+		OrderedJSONMetricMaxSamples: cfg.orderedJSONMetricMaxSamples,
+		LabelFilterRefillMaxPages:   cfg.labelFilterRefillMaxPages,
+		BackendTimeout:              cfg.backendTimeout,
+		CBFailThreshold:             cfg.cbFailThreshold,
+		CBOpenDuration:              cfg.cbOpenDuration,
+		CBWindowDuration:            cfg.cbWindowDuration,
+		CoalescerDisabled:           cfg.coalescerDisabled,
 		ErrorCache: proxy.ErrorCacheConfig{
 			Disabled:     !cfg.errorCacheEnabled,
 			TransientTTL: cfg.errorCacheTransientTTL,
@@ -2640,6 +2644,9 @@ func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
 	}
 	if cfg.backendMaxConcurrentHeavyQueries < 0 {
 		return fmt.Errorf("invalid -backend-max-concurrent-heavy-queries: %d (must be >= 0; 0 disables the limiter)", cfg.backendMaxConcurrentHeavyQueries)
+	}
+	if cfg.orderedJSONMetricMaxSamples < 0 {
+		return fmt.Errorf("invalid -ordered-json-metric-max-samples: %d (must be >= 0; 0 uses the default)", cfg.orderedJSONMetricMaxSamples)
 	}
 	if cfg.backendHeavyQueryQueueWait < 0 {
 		return fmt.Errorf("invalid -backend-heavy-query-queue-wait: %s (must be >= 0)", cfg.backendHeavyQueryQueueWait)

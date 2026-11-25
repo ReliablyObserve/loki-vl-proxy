@@ -845,10 +845,16 @@ func TestOrderedMixedStatsMatrixPreservesGlobalPointBudget(t *testing.T) {
 		metric := map[string]string{"k": fmt.Sprintf("group_%03d", i)}
 		series[canonicalLabelsKey(metric)] = manualSeriesSamples{Metric: metric, Samples: []rangeMetricSample{{ts: at.Add(-time.Second).UnixNano(), value: 1}}}
 	}
-	_, err := buildMixedJSONStatsMatrix(plan, series, at, at.Add(9999*time.Second), time.Second, 512<<20)
+	// The budget is global across series (101 series of 10,000 points are 1,010,000 samples) and follows the cap
+	// of the request (-ordered-json-metric-max-samples; 1,000,000 was the fixed one before it was a flag).
+	capped := withMetricSampleLimit(context.Background(), maxMetricEvalSamples)
+	_, err := buildMixedJSONStatsMatrixContext(capped, plan, series, at, at.Add(9999*time.Second), time.Second, 512<<20)
 	want := fmt.Sprintf("ordered JSON metric output exceeds %d samples", maxMetricEvalSamples)
 	if err == nil || err.Error() != want {
-		t.Fatalf("old mixed point budget changed: got %v want %s", err, want)
+		t.Fatalf("mixed point budget changed: got %v want %s", err, want)
+	}
+	if _, err := buildMixedJSONStatsMatrixContext(withMetricSampleLimit(context.Background(), 2*maxMetricEvalSamples), plan, series, at, at.Add(9999*time.Second), time.Second, 512<<20); err != nil {
+		t.Fatalf("a cap of two million refused 1,010,000 samples: %v", err)
 	}
 }
 

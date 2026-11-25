@@ -264,7 +264,7 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
-			body, err = buildOrderedJSONMetric(r.Context(), plan, series, start, end, step, isRange, p.orderedJSONMetricMaxBytes())
+			body, err = buildOrderedJSONMetric(withMetricSampleLimit(r.Context(), p.maxMetricSamples()), plan, series, start, end, step, isRange, p.orderedJSONMetricMaxBytes())
 		}
 		if err == nil && isRange {
 			route := "ordered-json-raw"
@@ -2251,7 +2251,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
-			body, err = buildOrderedJSONMetric(r.Context(), plan, series, start, end, step, true, p.orderedJSONMetricMaxBytes())
+			body, err = buildOrderedJSONMetric(withMetricSampleLimit(r.Context(), p.maxMetricSamples()), plan, series, start, end, step, true, p.orderedJSONMetricMaxBytes())
 		}
 	}
 	status := http.StatusOK
@@ -4236,6 +4236,7 @@ func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, se
 	}
 	result := make([]map[string]interface{}, 0, len(keys))
 	totalPoints := 0
+	sampleLimit := int64(metricSampleLimit(ctx)) // read once: the loop below runs for every point of every series
 	for _, key := range keys {
 		entry := series[key]
 		sort.Slice(entry.Samples, func(i, j int) bool { return entry.Samples[i].ts < entry.Samples[j].ts })
@@ -4256,8 +4257,8 @@ func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, se
 			}
 			if right > left {
 				totalPoints++
-				if totalPoints > maxMetricEvalSamples {
-					return nil, fmt.Errorf("ordered JSON metric output exceeds %d samples", maxMetricEvalSamples)
+				if int64(totalPoints) > sampleLimit {
+					return nil, newBufferLimitError(flagOrderedJSONMetricMaxSamples, int64(totalPoints), sampleLimit, causeOrderedSamples)
 				}
 				value := metricWindowValue(plan.function, total, plan.window)
 				points = append(points, []interface{}{lokiSampleSeconds(eval.UnixNano()), formatMetricSampleValue(value)})
