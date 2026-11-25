@@ -431,6 +431,10 @@ and `-probes.json`.
      in `shapes.json` (default 1; the unit is about 20 seconds). `series-level-fine-step`
      (10) and `mixed-parser-metrics` (9) carry the factor their measured cells need, so
      a shard of four of them no longer runs an hour next to shards of 90 ordinary cells.
+     A shard seeds the history its longest range needs: about 6 minutes for the 26 hours of
+     the 24h ranges, about 40 for the 50 hours of a 7d range. Sets with a range over 24h
+     therefore share as few shards as keep their measuring in reach, and that seed counts in
+     those shards' load; a shard's budget is 75 minutes (90 on a baseline).
    - Each `perf-smoke-shard` runs steps 2 to 5 below for its sets, on its own
      runner and fresh stack, so a shape's three targets always share one
      stack.

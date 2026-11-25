@@ -665,12 +665,36 @@ def set_costs(sel, spec):
     return costs
 
 
+# A shard seeds the history its longest range needs before it measures anything, and seeding is slow and grows
+# faster than the history: about 6 minutes for the 26 hours that 24h ranges need, 39 minutes for the 50 hours that
+# a 7d range gets (shard 4 of a run seeded 181,325 s in 2,354 s and was cancelled at the 45 minute limit after six
+# minutes of measuring). Sets with a range over LONG_HISTORY_S therefore share as few shards as keep their
+# measuring in reach (LONG_SHARD_COST), and the seed counts as LONG_SEED_COST units of about 20 seconds in those
+# shards' load, so other sets go elsewhere instead of one long set landing in every shard.
+LONG_HISTORY_S = 24 * 3600
+LONG_SEED_COST = 120
+# A shard of long-history sets measures up to this many units on top of its seed; more of them take a second one.
+LONG_SHARD_COST = 60
+
+
+def long_history_sets(sel, spec):
+    """The selected sets with a cell over LONG_HISTORY_S: they decide how much history a shard has to seed."""
+    cells = sel.get("runtime_proof", {}).get("cells", {})
+    out = set()
+    for name, shapes in sel.get("sets", {}).items():
+        ranges = {r for n in shapes for r in cells.get(f"{name}/{n}", [])} or set(spec["sets"][name].get("ranges", []))
+        if any(spec.get("ranges", {}).get(r, [0])[0] > LONG_HISTORY_S for r in ranges if r != "instant"):
+            out.add(name)
+    return out
+
+
 def split_selection(sel, n, spec=None, min_cost=SHARD_MIN_COST):
     """Up to n shard selections of `sel`, each a copy with a subset of its sets, every set in exactly one.
 
-    The number of shards is n, at most one per set and per min_cost of the total cost. Sets go, most costly
-    first, to the least loaded shard (ties to the lower shard), and each shard keeps the selection's set order,
-    so the split is the same for the same selection. A selection that does not run is one shard.
+    The number of shards is n, at most one per set and per min_cost of the total cost. Sets with a range over
+    LONG_HISTORY_S share the first shards (see long_history_sets); the others go, most costly first, to the least
+    loaded shard (ties to the lower shard), and each shard keeps the selection's set order, so the split is the
+    same for the same selection. A selection that does not run is one shard.
     """
     if spec is None:
         spec = selection.load_shapes()
@@ -680,10 +704,24 @@ def split_selection(sel, n, spec=None, min_cost=SHARD_MIN_COST):
     costs = set_costs(sel, spec)
     k = max(1, min(n, len(sets), -(-sum(costs.values()) // min_cost)))
     loads, members = [0] * k, [set() for _ in range(k)]
-    for name in sorted(sets, key=lambda s: (-costs[s], s)):
+    long_sets = long_history_sets(sel, spec)
+    if k > 1 and long_sets:
+        # The long-history sets share as few shards as keep their measuring in reach (each pays the seed once);
+        # the others are placed around them, by load, which counts that seed.
+        total = sum(costs[s] for s in long_sets)
+        m = min(max(1, -(-total // LONG_SHARD_COST)), len(long_sets), k if len(long_sets) == len(sets) else k - 1)
+        for j in range(m):
+            loads[j] = LONG_SEED_COST
+        for name in sorted(long_sets, key=lambda s: (-costs[s], s)):
+            i = min(range(m), key=lambda j: (loads[j], j))
+            loads[i] += costs[name]
+            members[i].add(name)
+    placed = set().union(*members)
+    for name in sorted((s for s in sets if s not in placed), key=lambda s: (-costs[s], s)):
         i = min(range(k), key=lambda j: (loads[j], j))
         loads[i] += costs[name]
         members[i].add(name)
+    members = [member for member in members if member]  # all-long selections may leave a shard with nothing
     shards = []
     for member in members:
         shard = dict(sel, sets={name: shapes for name, shapes in sets.items() if name in member})

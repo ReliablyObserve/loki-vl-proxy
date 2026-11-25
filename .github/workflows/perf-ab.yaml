@@ -111,7 +111,10 @@ jobs:
     # Required runtime proof permits up to twelve shards (eight left the slowest ones at the 60 minute limit on a
     # full baseline of 310 shapes); other selections permit four.
     # The cost heuristic can use fewer. Every shard still pays for its own stack and seed.
-    timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 60 || 45 }}
+    # A shard with a set that has a 7d range seeds 50 hours of history, about 40 minutes of a run, before it measures
+    # (pr_smoke.py puts those sets together); its budget is 75 minutes, 90 on a baseline, and ordinary shards end
+    # in 6 to 30.
+    timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 90 || 75 }}
     permissions:
       contents: read
     strategy:
