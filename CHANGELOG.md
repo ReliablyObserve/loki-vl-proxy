@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The `Query Corpus` live check of the metric differential also accepts a `topk` or `bottomk` tie between series with different label names, when a recorded Loki answer of the query holds those names, and a `sort` or `sort_desc` vector that returns series of one value in another order; the tie rules apply to those operators only.
+
 ## [2.363.1] - 2026-11-25
 
 ### Fixed
 
-- The `Query Corpus` live check of the metric differential also accepts a `topk` or `bottomk` tie between series with different label names, when a recorded Loki answer of the query holds those names, and a `sort` or `sort_desc` vector that returns series of one value in another order; the tie rules apply to those operators only.
 - `/loki/api/v1/label/{name}/values` lists the values of a field declared with `-stream-fields` or `-extra-label-fields` that is not a VictoriaLogs stream field (`level`, `k8s.pod.name`, `log.type` and the like), which `/labels` already listed but whose value dropdown and `label_values()` variable were empty (#1745). VictoriaLogs answers `stream_field_values` with an empty list, not an error, for a field that is not a stream field, and the lookup fell back to `field_values` only on an error. On VictoriaLogs v1.50.0 and later a declared field is read with one `field_values` call (the stream fields are in the column index: the `vl.column_field_values` gate, which said so but was used only by `detected_labels`); before v1.50.0 the stream endpoint is read first and `field_values` when it had no values. An undeclared non-stream field keeps Loki's empty answer, and `detected_level` its own rule. The empty value `field_values` counts for the rows without the field is not listed, as Loki has no label with an empty value. The read is bounded like every label values read: `-label-values-max-response-bytes` answers with Loki's ResourceExhausted error, the metadata scan admission and the bucketed listing cache apply. Tests with a VictoriaLogs stand-in cover both release lines, a declared stream field, an alias, an undeclared field, the backend without the stream endpoints, the cap and the repeat served from the cache.
 
 ## [2.363.0] - 2026-11-25
@@ -211,7 +214,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     on v1.54.0 and v1.49.0, and the whole request 0.52-0.67x. The read's answer is 1.3-5x larger (up to 0.6 MB for
     24 hours), so a read reaches the stats answer bound sooner and is then read in smaller time chunks.
   - A read that VictoriaLogs stops at its timeout answers Loki's 504 `request timed out` text, instead of a 500.
-
 
 ## [2.350.0] - 2026-11-19
 
