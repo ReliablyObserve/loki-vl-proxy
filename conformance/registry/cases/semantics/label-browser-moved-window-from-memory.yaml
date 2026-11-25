@@ -42,10 +42,13 @@ why: |
   the timing lock catches a 24h row falling back to reading VictoriaLogs
   (273-306 ms against 64-66 ms before #1750) but not a 1h or 6h one (17-56 ms
   against 2-3 ms); those are held by the deterministic gates. Cold first
-  loads (explore labels 1h cold: 72 ms against Loki's 4 ms) and the first
-  moved request (one warm run of about 28 ms) stay under the existing 2x
-  lock of semantics/label-browser-latency-cold-and-refresh and are reported,
-  not held to Loki: their spread across runs is not yet known.
+  loads (explore labels 1h cold: 72 ms against Loki's 4 ms) are never
+  compared with Loki by the harness (a label list is the same for every
+  moved window, so its cold is marked stale): the shapes hold their cold to
+  the base build instead (shapes.json cold_vs_base), and the cold against
+  Loki is the open item semantics/label-browser-cold-first-listing. The
+  first moved request (one warm run of about 28 ms) is reported, not held
+  to Loki.
 
   The lock was shown to fail (e2e stack, 2026-11-25, Loki 3.7.10 aligned,
   main at a3b5ad722 run twice, -metadata-max-staleness 10s and 0, judged with
@@ -54,9 +57,10 @@ why: |
   8 ms, above the lock, while the 1h rows (41 and 49 ms against 1 and 5 ms)
   stayed within it by the 50 ms floor; with them on every locked warm row
   was within (0-1 ms against 1-8 ms). Pull request runs measured only the
-  1h cells of these shapes on the #1750 head (perf run 45690680132), so
-  there the lock cannot fire and the deterministic gates hold the rows; the
-  timing lock binds at 24h in the baseline, daily and weekly runs.
+  1h cells of these shapes on the #1750 head (perf run 45690680132); since
+  the shapes declare their own ranges (shapes.json, selection.range_cells)
+  every pull request that selects them, any label, metadata or cache change,
+  measures them at 1h, 6h and 24h, so the lock binds at 24h there too.
 
   Implemented in internal/proxy/metadata_inventory.go (answerNamesFromMemory,
   fillTouchedDays, waitForInventoryFills), internal/proxy/label_handlers.go
