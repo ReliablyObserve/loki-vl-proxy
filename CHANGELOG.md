@@ -12,11 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `count_over_time`, `rate`, `bytes_over_time` or `bytes_rate` over `| unpack` whose window holds a line that is not a JSON object answers Loki's 400 `JSONParserErr`, where it answered 200, under every function above it; a `sum` with no grouping and a `drop __error__` answer as before. The check rides on the query's own VictoriaLogs reads.
 - An unwrapped metric over `| unpack` no longer answers 400 `SampleExtractionErr` for a value on a line Loki's unpack promotes nothing from (a numeric, object or nested `_entry`).
 - An instant `sum(rate(… | unpack [r]))` answers one series, as Loki does, where it answered one series per stream. An instant `sum` of a `rate` or `count_over_time` over `| unpack` with no `by` or `without` now reads VictoriaLogs stats, as the range query does, instead of every log line of the window. Metric answers over `unpack` cached before this are not served.
-- The `Query Corpus` live check of the metric differential also accepts a `topk` or `bottomk` tie between series with different label names, when a recorded Loki answer of the query holds those names, and a `sort` or `sort_desc` vector that returns series of one value in another order; the tie rules apply to those operators only.
 
 ### Changed
 
 - The query plan now lowers a `sum` with no `by` or `without` of `count_over_time`, `rate` or `absent_over_time` over `| unpack` (only `drop` and `keep` after the unpack), writing the same VictoriaLogs query as before. Queries over `| unpack` are still not served from the plan. A differential against real Loki holds these sums.
+
+## [2.364.1] - 2026-11-25
+
+### Fixed
+
+- The `Query Corpus` live check of the metric differential also accepts a `topk` or `bottomk` tie between series with different label names, when a recorded Loki answer of the query holds those names, and a `sort` or `sort_desc` vector that returns series of one value in another order; the tie rules apply to those operators only.
 
 ## [2.364.0] - 2026-11-25
 
