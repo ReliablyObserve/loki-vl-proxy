@@ -42,9 +42,51 @@ why: |
   warm-up and keep-warm run as the /labels request of a client without a
   tenant header, so the buckets they fill are the ones such requests read.
 
+  /labels reads only the set of names (sorted, without hits), so its listing
+  is names-only (2026-11-25): once the window's own hour and day buckets are
+  cached, a run of pieces finer than an hour inside an hour that ended more
+  than an hour ago (edges, minute and 5-minute buckets) is answered by that
+  hour when it saves calls and reads at most about twice what the pieces read
+  (the hour is cached and every name it holds is among the names of the
+  window's own buckets, or the pieces span at least half the hour and would
+  take more than one round of parallel calls). Within the live window the
+  query must be countable and the hour must carry its row count, so the run
+  count of every listing confirms the hour and a row written into a covered
+  end makes the hour, and then the pieces (whatever their own schedule
+  says), be read again on the next request. A piece's names are a subset of its hour's names, so an
+  hour whose names all appear in the rest of the window adds none; when one
+  would add a name, the pieces are read exactly. The names equal one
+  full-range call's; the hits and order of the merged listing are not
+  VictoriaLogs' (nothing reads them), and the names-only answers are cached
+  under their own keys, apart from the exact field-name and label inventory
+  entries that detected labels, the stream label cache and targetLabels
+  resolution read in VictoriaLogs' order. Label values and every other
+  listing keep every piece.
+
+  With -metadata-max-staleness above 0 (2026-11-25), a names-only listing is
+  first tried from memory (answerNamesFromMemory): every plan piece from its
+  own entry or from the smallest bucket of the same UTC day that holds it,
+  every live-window entry read or confirmed within the bound, and a holding
+  bucket used for a day only when the window's part of that day holds a
+  non-empty bucket of its own. Such an answer lists every name of one
+  full-range call and at most names the same UTC day holds outside the
+  window. That is Loki's own granularity for stored data, measured on Loki
+  3.7.10 (stack data of 2026-11-24/25): every window inside a day, of 1 minute
+  to 15 hours, lists the day's names (26 on 11-25, 86 on 11-24, a label whose
+  only row is at 06:40 listed for 07:30-09:00), a window after the day's last
+  row lists none, a two-day window lists the union (92), and the exact answer
+  is a subset of Loki's in every one of 12 windows (20 of 26, 46 of 86). Over
+  120 random windows the memory answers were all between the exact answer and
+  Loki's, 3 of them listing names beyond the exact one. After a listing, the
+  hours holding the window's start and end and the hour before it, at most
+  the window's width per listing, are read in the background inventory lane
+  (fillTouchedDays).
+
   Implemented in internal/proxy/metadata_inventory.go (bucket plan, merge,
-  revalidation, counted buckets) and internal/proxy/label_metadata.go
-  (fetchScopedLabelNames, fetchScopedLabelValues).
+  revalidation, counted buckets, coverFinePieces, coverPays, resolveCovers,
+  answerNamesFromMemory, fillTouchedDays, confirmInBackground)
+  and internal/proxy/label_metadata.go (fetchScopedLabelNames,
+  fetchScopedLabelValues).
 request:
   method: GET
   path: /loki/api/v1/labels
@@ -66,7 +108,10 @@ compare:
     Every answer equals the answer of the same build with the inventory off
     (-metadata-inventory-parallelism=0), values, hits and order included, for
     stream field names and values, field names and values, unfiltered and
-    selector queries, windows from 37 minutes to 50 hours ending at any time;
+    selector queries, windows from 37 minutes to 50 hours ending at any time
+    (the names-only /labels listing: the same names, on the fake and on
+    VictoriaLogs v1.49.0 and v1.54.0; answered from memory, every name of one
+    call and no name beyond the UTC days of the window that hold rows in it);
     a window moved by seconds reads only its edges from VictoriaLogs; a row
     written late into a revalidated hour appears; a failed bucket fails the
     listing, never a partial answer; a request sharing a bucket with a

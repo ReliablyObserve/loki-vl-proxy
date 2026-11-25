@@ -35,6 +35,16 @@ why: |
   again after the bound. The owner approved the deviation on 2026-10-27:
   bounded-stale answers by default, exact answers with
   -metadata-max-staleness=0.
+
+  Since 2026-11-25 the same bound covers /labels answered from the label
+  inventory in memory (semantics/label-inventory-exact-and-incremental): a
+  window is answered with no VictoriaLogs call when every bucket it uses,
+  inside -max-metadata-cache-freshness, was read or confirmed by a row count
+  within -metadata-max-staleness; older entries are confirmed in the
+  background and the request reads VictoriaLogs. A row written with an old
+  timestamp into a bucket such an answer uses is listed once the bound has
+  passed and a count finds it (TestLabelsInventory_MemoryAnswersKeepTheStalenessBound),
+  as for a near-now answer.
 request:
   method: GET
   path: /loki/api/v1/labels

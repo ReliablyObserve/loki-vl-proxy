@@ -607,6 +607,12 @@ type Config struct {
 	// built-in default (4); a negative value turns the inventory off, so every
 	// listing is one VictoriaLogs call over the whole range.
 	MetadataInventoryParallelism int
+	// MetadataInventoryPrefetch (-metadata-inventory-prefetch) reads, in the
+	// background after a /labels listing, the inventory buckets a moved
+	// window of it needs to be answered from memory: the hours of its ends,
+	// the hour before it and the sealed UTC days it only partly covers, at
+	// most the window's own width per listing.
+	MetadataInventoryPrefetch bool
 	// DrilldownBurstWindowMs is the time window in milliseconds during which
 	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
 	// are coalesced into a single fused VL conditional-stats call.
@@ -865,6 +871,9 @@ type Proxy struct {
 	backendRetry                          *backendRetryPolicy
 	labelWarmBackoff                      *labelWarmBackoff  // per preset window retry delay after a failed warm
 	metadataInventoryParallelism          int                // bucket listings in flight per request; 0 = inventory off
+	metadataInventoryPrefetch             bool               // -metadata-inventory-prefetch
+	inventoryBackgroundRunning            atomic.Int64       // background inventory reads running (runInventoryBackground)
+	inventoryInflight                     sync.Map           // bucket key -> chan closed when its background read ends
 	inventoryGroup                        singleflight.Group // one fill per inventory bucket
 	inventoryCountGroup                   singleflight.Group // one row count per tenant, query and range at a time
 	selectCallsInFlight                   atomic.Int64       // VictoriaLogs select calls this replica has in flight
@@ -1723,6 +1732,7 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	p.backendRetry = newBackendRetryPolicy(cfg.BackendRetryAttempts, cfg.BackendRetryMaxWait, cfg.BackendRetryBudgetRatio)
 	p.metadataInventoryParallelism = resolveMetadataInventoryParallelism(cfg.MetadataInventoryParallelism)
+	p.metadataInventoryPrefetch = cfg.MetadataInventoryPrefetch
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)
 	}

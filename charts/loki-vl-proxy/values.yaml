@@ -194,6 +194,10 @@ extraArgs:
   # from VictoriaLogs; answers equal one full-range call. Bucket listings in
   # flight per request; 0 turns the inventory off.
   metadata-inventory-parallelism: "4"
+  # After a /labels listing, read in the background the hour buckets its
+  # moved windows need to be answered from memory (at most the window's
+  # width per listing); false keeps memory answers to what requests read.
+  # metadata-inventory-prefetch: "true"
   backend-heavy-query-queue-wait: "20s"
   # backend-heavy-query-min-range: "6h"     # time range from which stats, hits and unbounded raw calls count as heavy (> 0)
   # cb-fail-threshold: "5"                  # circuit breaker failure threshold within window
