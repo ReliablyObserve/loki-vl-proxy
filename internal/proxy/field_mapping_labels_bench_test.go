@@ -2,8 +2,12 @@ package proxy
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // BenchmarkFieldMappingLabels measures the label paths that read a mapped
@@ -50,5 +54,61 @@ func BenchmarkFieldMappingLabels(b *testing.B) {
 				_ = p.volumeNamesForRow(req, plan, row, metrics)
 			}
 		})
+	}
+}
+
+// BenchmarkFieldMappingLabelRoutes measures the label routes through their
+// handlers in each mode, with the VictoriaLogs calls of a request: cold (a new
+// window with the response cache off) and repeat (the same request again).
+func BenchmarkFieldMappingLabelRoutes(b *testing.B) {
+	routes := []struct{ name, path, extra string }{
+		{"labels", "/loki/api/v1/labels", ""},
+		{"labelValues", "/loki/api/v1/label/pod/values", ""},
+		{"detectedLabels", "/loki/api/v1/detected_labels", ""},
+		{"volume", "/loki/api/v1/index/volume", "&targetLabels=pod"},
+		{"volumeRange", "/loki/api/v1/index/volume_range", "&targetLabels=pod&step=600"},
+	}
+	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+		for _, route := range routes {
+			for _, state := range []string{"cold", "repeat"} {
+				b.Run(route.name+"/"+state+"/"+string(mode), func(b *testing.B) {
+					vl := mappingVLData()
+					var c *cache.Cache
+					if state == "cold" {
+						c = cache.NewDisabled()
+					}
+					p := newMappingProxy(b, vl.server(b).URL, c, Config{LabelStyle: LabelStyleUnderscores,
+						FieldMappingLabelMode: mode, FieldMappings: mappingTestMappings()})
+					mux := http.NewServeMux()
+					p.RegisterProxyRoutes(mux)
+					request := func(window int) {
+						// Windows ten days apart share no cached listing.
+						start := int64(1_600_000_000) + int64(window)*864_000
+						target := fmt.Sprintf("%s?query=%%7Bpod%%3D%%22api-1%%22%%7D&start=%d000000000&end=%d000000000%s",
+							route.path, start, start+3600, route.extra)
+						rec := httptest.NewRecorder()
+						mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+						if rec.Code != http.StatusOK {
+							b.Fatalf("%d %s", rec.Code, rec.Body.String())
+						}
+					}
+					request(0)
+					vl.snapshot()
+					b.ReportAllocs()
+					n := 0
+					for b.Loop() {
+						if state == "cold" {
+							n++
+						}
+						request(n)
+					}
+					calls := 0
+					for _, count := range vl.snapshot() {
+						calls += count
+					}
+					b.ReportMetric(float64(calls)/float64(b.N), "vl-calls/op")
+				})
+			}
+		}
 	}
 }

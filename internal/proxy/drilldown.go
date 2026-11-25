@@ -2400,8 +2400,9 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	}
 
 	type labelResult struct {
-		vlName string
-		values []string
+		vlName    string
+		lokiLabel string
+		values    []string
 	}
 	resultsCh := make(chan labelResult, len(labelNames))
 
@@ -2410,11 +2411,12 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	var firstErr error
 	sem := make(chan struct{}, 8)
 	for _, name := range labelNames {
-		if p.labelTranslator.ToLoki(name) == "" {
+		lokiLabel := p.labelTranslator.ToLoki(name)
+		if lokiLabel == "" {
 			continue
 		}
 		wg.Add(1)
-		go func(vlName string) {
+		go func(vlName, lokiName string) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -2432,8 +2434,8 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 			if len(vals) == 0 {
 				return
 			}
-			resultsCh <- labelResult{vlName: vlName, values: vals}
-		}(name)
+			resultsCh <- labelResult{vlName: vlName, lokiLabel: lokiName, values: vals}
+		}(name, lokiLabel)
 	}
 	wg.Wait()
 	close(resultsCh)
@@ -2446,7 +2448,12 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	summaries := make(map[string]*detectedLabelSummary, len(labelNames))
 	var one [1]string
 	for r := range resultsCh {
-		for _, lokiLabel := range p.labelTranslator.listedNames(r.vlName, &one) {
+		one[0] = r.lokiLabel
+		names := one[:]
+		if listed, ok := p.labelTranslator.listing[r.vlName]; ok {
+			names = listed
+		}
+		for _, lokiLabel := range names {
 			summary := summaries[lokiLabel]
 			// Two fields listed under one name share its values in the alias
 			// and both modes, as the stream and scan reads do.
