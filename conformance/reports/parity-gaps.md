@@ -303,7 +303,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/label-values-declared-non-stream-fields` — A label the operator declared lists its values when it is not a VictoriaLogs stream field | #1745 | 0 | 0 |
 | `semantics/labels-end-inclusive-like-loki` — /labels and /label/{name}/values include data at the request's end, so a zero-width request (Grafana "Show context") lists the row's labe... | #703 | 0 | 0 |
 | `semantics/labels-point-window-is-the-index-day` — /labels with start equal to end (Grafana "Show context") lists the ingester window or the index day, like Loki (fixed) | #1715 | 0 | 0 |
-| `semantics/level-filter-after-stage` — `\| detected_level=` after a stage filtered the parsed or stored level field (fixed) | #0000 | 0 | 0 |
+| `semantics/level-filter-after-stage` — `\| detected_level=` after a stage filtered the parsed or stored level field (fixed) | #1768 | 0 | 0 |
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 0 | 0 |
 | `semantics/logfmt-existence-filter-ungrouped-sum` — An ungrouped sum over `\| logfmt \| key!=""` retains parsed fields (fixed) | #968 | 0 | 0 |
 | `semantics/lower-bound-exclusive` — the raw-row range evaluator reads the window (t-range, t] for every range function (fixed) | TBD-PR | 0 | 0 |

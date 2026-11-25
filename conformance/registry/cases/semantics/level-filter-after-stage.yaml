@@ -61,7 +61,7 @@ compare:
     line's own level key says.
 gap:
   status: fixed
-  fixed_by: '#0000'
+  fixed_by: '#1768'
   impact: explore-visible
   effort: M
   area: 'internal/proxy/level_after_stage_fence.go, internal/proxy/query_lowering.go, internal/proxy/response_key_fences.go, internal/queryplan/lower/delete_filter.go, internal/queryplan/lower/detected_level.go, internal/queryplan/lower/level_after_stage.go, internal/queryplan/lower/log_screen.go, internal/queryplan/lower/lower.go, internal/queryplan/lower/metric_screen.go'
