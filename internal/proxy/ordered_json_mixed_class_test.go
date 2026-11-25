@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"math/rand"
 	"os"
 	"reflect"
 	"regexp"
@@ -267,7 +268,9 @@ func TestMixedJSONRowClassRelevantAliasesRetainsSafety(t *testing.T) {
 		if alias.Field != "_msg" || alias.Op != logsql.FieldOpRegexp || !alias.Negate {
 			t.Fatal("missing production key-alias guard")
 		}
-		if pattern := orderedJSONKeyAliasPattern([]string{key}); pattern != "" && alias.Value != pattern {
+		// The existing alias pattern, with the Unicode key space spelled as the space it is on the printable ASCII
+		// text the class's first guard admits (see mixedClassASCIIKeySpace).
+		if pattern := orderedJSONKeyAliasPattern([]string{key}); pattern != "" && alias.Value != mixedClassASCIIKeySpace(pattern) {
 			t.Fatal("production does not reuse existing alias guard")
 		}
 		for _, body := range []string{`{" ` + key + ` ":"alias","` + key + `":"blue"}`, `{"` + key + `":"blue"," ` + key + ` ":null}`, `{"":"empty","` + key + `":"blue"}`, `{"prefix":{" ":{}} ,"` + key + `":"blue"}`} {
@@ -821,6 +824,38 @@ func TestMixedClassFieldNamesCleanImpliesEnvelopeKeyGuards(t *testing.T) {
 		}
 		if accepted < 100 {
 			t.Fatalf("label=%s: only %d names accepted; the test lost its coverage", label, accepted)
+		}
+	}
+}
+
+// conformance: semantics/two-parsers-keep-one
+func TestMixedClassASCIIKeySpaceMatchesLikeTheUnicodePattern(t *testing.T) {
+	for _, label := range []string{"user_id", "a_b_c", "tenant_id", "x", "service_name", "k_"} {
+		unicode := orderedJSONKeyAliasPattern([]string{label})
+		if unicode == "" {
+			continue
+		}
+		ascii := mixedClassASCIIKeySpace(unicode)
+		if strings.Contains(ascii, `\p{Z}`) || strings.Contains(ascii, `\x{85}`) {
+			t.Fatalf("%s: the ASCII pattern still has a Unicode class: %s", label, ascii)
+		}
+		re, reASCII := regexp.MustCompile(unicode), regexp.MustCompile(ascii)
+		pieces := append(strings.Split(label, "_"), "_", "-", ".", " ", "  ", `"`, `":`, `" :`, `: "`, "{", "}", ",", "id", "user", "0", "Z")
+		rng := rand.New(rand.NewSource(7))
+		for i := 0; i < 40000; i++ {
+			var b strings.Builder
+			for n := rng.Intn(9) + 1; n > 0; n-- {
+				b.WriteString(pieces[rng.Intn(len(pieces))])
+			}
+			text := b.String()
+			for j := 0; j < len(text); j++ {
+				if text[j] < 0x20 || text[j] > 0x7e {
+					t.Fatalf("generator left printable ASCII: %q", text)
+				}
+			}
+			if re.MatchString(text) != reASCII.MatchString(text) {
+				t.Fatalf("%s: %q matches %v with the Unicode pattern and %v with the ASCII one", label, text, re.MatchString(text), reASCII.MatchString(text))
+			}
 		}
 	}
 }
