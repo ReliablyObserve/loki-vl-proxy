@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `detected_level` filter behind a stage selects the entries Loki selects. Loki attaches `detected_level` at ingest, so a `json`, `logfmt`, `regexp` or `pattern` parser, a line filter, `line_format`, `decolorize`, and a `drop`, `keep` or `label_format` that does not name it leave it unchanged. The proxy filtered the level field those stages leave instead: after `| json` or `| logfmt` it kept entries by the line's own `level` key, and after `drop` or `decolorize` it read the line as logfmt. Such a filter is now written ahead of the stages from the query plan; behind a `drop detected_level`, or a `keep` without it, it compares the empty value. A `sum by (detected_level)` over a filter behind a parser groups by the ingest level even when the line has a `detected_level` key. Log queries with `decolorize` are now served from the query plan (same VictoriaLogs query). Still read as before: a filter behind a stage that writes the label, and a metric query behind a stage that does not group by `detected_level` and is not evaluated from ordered JSON rows. Cached answers of affected queries are fenced (`@level-filter-after-stage-v1:`).
+
 ## [2.364.1] - 2026-11-25
 
 ### Fixed
 
-- A `detected_level` filter behind a stage selects the entries Loki selects. Loki attaches `detected_level` at ingest, so a `json`, `logfmt`, `regexp` or `pattern` parser, a line filter, `line_format`, `decolorize`, and a `drop`, `keep` or `label_format` that does not name it leave it unchanged. The proxy filtered the level field those stages leave instead: after `| json` or `| logfmt` it kept entries by the line's own `level` key, and after `drop` or `decolorize` it read the line as logfmt. Such a filter is now written ahead of the stages from the query plan; behind a `drop detected_level`, or a `keep` without it, it compares the empty value. A `sum by (detected_level)` over a filter behind a parser groups by the ingest level even when the line has a `detected_level` key. Log queries with `decolorize` are now served from the query plan (same VictoriaLogs query). Still read as before: a filter behind a stage that writes the label, and a metric query behind a stage that does not group by `detected_level` and is not evaluated from ordered JSON rows. Cached answers of affected queries are fenced (`@level-filter-after-stage-v1:`).
 - The `Query Corpus` live check of the metric differential also accepts a `topk` or `bottomk` tie between series with different label names, when a recorded Loki answer of the query holds those names, and a `sort` or `sort_desc` vector that returns series of one value in another order; the tie rules apply to those operators only.
 
 ## [2.364.0] - 2026-11-25
