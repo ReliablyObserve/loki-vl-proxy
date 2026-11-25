@@ -103,7 +103,7 @@ decisions:
         measured: '24h 273-306 ms against Loki 64-66 ms (4.1-4.8x, above the locked 2x bound); 6h 21-56 ms against 2-3 ms'
         cause: 'each new unaligned end of a moved window was read as an edge plus up to three minute and eleven 5-minute buckets that no request had cached: 19-20 calls, five rounds at four in parallel'
         effect: 'every label browser over an earlier window paid five rounds of VictoriaLogs calls'
-        fixed_by: 'this change'
+        fixed_by: '#1750'
         after: 'to be measured by the perf A/B of this change'
     quality: '/labels lists exactly the names of one full-range listing (fake, random differential and fuzz; VictoriaLogs v1.49.0 and v1.54.0); label values and every other listing keep every piece with hits and order; a row backfilled into a covered end is listed on the next near-now request.'
     performance:
