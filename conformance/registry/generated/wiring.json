@@ -1977,7 +1977,8 @@
     ],
     "semantics/level-filter-after-stage": [
       "internal/proxy/level_after_stage_test.go",
-      "internal/queryplan/lower/level_after_stage_oracle_test.go"
+      "internal/queryplan/lower/level_after_stage_oracle_test.go",
+      "test/e2e-compat/level_after_stage_test.go"
     ],
     "semantics/line-filter-error-quotes-the-run": [
       "internal/logql/line_filter_runs_loki_test.go",
@@ -2910,6 +2911,7 @@
       "test/e2e-compat/detected_level_filter_test.go",
       "test/e2e-compat/detected_level_golden_test.go",
       "test/e2e-compat/detected_level_test.go",
+      "test/e2e-compat/level_after_stage_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go"
     ],
     "severity-exposure-surfaces": [
@@ -6567,6 +6569,10 @@
     "test/e2e-compat/labels_zero_width_test.go": [
       "semantics/labels-end-inclusive-like-loki"
     ],
+    "test/e2e-compat/level_after_stage_test.go": [
+      "semantics/level-filter-after-stage",
+      "severity-detected-level-derivation"
+    ],
     "test/e2e-compat/line_fields_parity_test.go": [
       "loki_api_v1_detected_fields",
       "loki_api_v1_index_stats",
@@ -7064,7 +7070,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 835,
+  "tests_with_markers": 836,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

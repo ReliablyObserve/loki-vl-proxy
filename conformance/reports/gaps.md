@@ -102,7 +102,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | observability | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | 14 | 8 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 13 | 13 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 12 | 22 | partial |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 12 | 23 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 5 | partial |
 | resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 2 | 5 | unknown |
 | semantics | `tail-reads-settled-rows` — A live tail reads only rows VictoriaLogs has made searchable, so no line of a stream is skipped | 2 | 3 | unknown |
@@ -180,4 +180,3 @@ newest weekly run did not re-measure (listed apart in performance.md).
 | `quality/unwrap-logfmt-narrowed-unpack` | 1 | 0.29s (G8 bytes() of a number, 24h) | 0.20s | 0.01s | 0.01s | — |
 | `semantics/unwrap-gate-parsefloat-divergences` | 1 | 0.29s (G8 bytes() of a number, 24h) | 0.20s | 0.01s | 0.01s | — |
 | `semantics/pattern-line-filter-anchoring` | 1 | 0.24s (A5 drilldown exclude, volume by detected_level, 24h) | 0.19s | 0.01s | 0.01s | — |
-| `semantics/level-filter-after-stage` | 1 | 0.11s (LF21 logfmt count by detected_level, level filter, 6h) | 0.06s | 0.01s | 0.01s | — |
