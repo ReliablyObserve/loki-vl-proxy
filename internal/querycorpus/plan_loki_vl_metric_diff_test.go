@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -586,12 +588,14 @@ func recordMetricAnswers(t *testing.T, path string, queries []metricQuery) {
 	t.Logf("recorded %s: %d queries", path, len(recs))
 }
 
-// lokiTieOnlyDifference reports a live record that differs from the committed one only in which of the series tied at
-// the cut of a ranking Loki keeps: Loki breaks such a tie by the order of a Go map, so two runs of the same engine on
-// the same data keep different series of the same values (the check failed on main on ten to twelve of the
-// recorded rankings at random). Everything else must be equal: the inputs, every VictoriaLogs answer, every Loki
-// status and error, and for each Loki answer the same ranked values at every step with the same label names
-// (rankedTieOnly).
+// lokiTieOnlyDifference reports a live record that differs from the committed one only in how Loki broke a tie: which of
+// the series tied at the cut of a ranking it keeps, or the order sort and sort_desc return series of one value in. Loki
+// follows the order of a Go map there, so two runs of the same engine on the same data differ (the check failed on main
+// on such recorded rankings at random). Everything else must be equal: the inputs, every VictoriaLogs answer and every
+// Loki status and error. A sorted vector must hold the committed series with the committed values in the committed value
+// order (reorderedTie). A topk or bottomk must keep the committed values at every step (sameRankedValues); tied series
+// may differ in their label names too, so a kept series is accepted when some committed Loki answer of the query holds a
+// series with the same label names.
 func lokiTieOnlyDifference(live, committed *metricRecord) bool {
 	if live == nil || committed == nil || live.Inputs != committed.Inputs || len(live.Loki) != len(committed.Loki) {
 		return false
@@ -603,6 +607,16 @@ func lokiTieOnlyDifference(live, committed *metricRecord) bool {
 	if string(ja) != string(jb) {
 		return false
 	}
+	ranked := strings.Contains(live.Q, "topk") || strings.Contains(live.Q, "bottomk")
+	sorted := strings.Contains(live.Q, "sort(") || strings.Contains(live.Q, "sort_desc(")
+	recorded := map[string]bool{}
+	for _, c := range committed.Loki {
+		if r, err := decodeMetricBody(c.Body); err == nil {
+			for _, s := range r.series {
+				recorded[strings.Join(sortedKeys(s.labels), ",")] = true
+			}
+		}
+	}
 	differed := false
 	for kind, l := range live.Loki {
 		c, ok := committed.Loki[kind]
@@ -612,12 +626,54 @@ func lokiTieOnlyDifference(live, committed *metricRecord) bool {
 		if string(l.Body) == string(c.Body) {
 			continue
 		}
-		if !rankedTieOnly(c, metricHandlerRun{status: l.Status, body: string(l.Body)}) {
+		if sorted && l.Status == http.StatusOK && reorderedTie(c.Body, l.Body) {
+			differed = true
+			continue
+		}
+		want, got, ok := rankedAnswers(c, metricHandlerRun{status: l.Status, body: string(l.Body)})
+		if !ranked || !ok || !sameRankedValues(want, got) {
 			return false
+		}
+		for _, s := range got.series {
+			if !recorded[strings.Join(sortedKeys(s.labels), ",")] {
+				return false
+			}
 		}
 		differed = true
 	}
 	return differed
+}
+
+// reorderedTie reports two vectors that hold the same samples, with the same values at every position: they differ only
+// in which of the series sharing a value comes first.
+func reorderedTie(a, b json.RawMessage) bool {
+	read := func(body json.RawMessage) (samples, values []string, ok bool) {
+		var answer struct {
+			Data struct {
+				ResultType string `json:"resultType"`
+				Result     []struct {
+					Metric map[string]string `json:"metric"`
+					Value  [2]any            `json:"value"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(body, &answer) != nil || answer.Data.ResultType != "vector" {
+			return nil, nil, false
+		}
+		for _, s := range answer.Data.Result {
+			sample, err := json.Marshal(s)
+			if err != nil {
+				return nil, nil, false
+			}
+			samples = append(samples, string(sample))
+			values = append(values, fmt.Sprint(s.Value[1]))
+		}
+		sort.Strings(samples)
+		return samples, values, true
+	}
+	as, av, okA := read(a)
+	bs, bv, okB := read(b)
+	return okA && okB && slices.Equal(as, bs) && slices.Equal(av, bv)
 }
 
 // ---- comparison ----
