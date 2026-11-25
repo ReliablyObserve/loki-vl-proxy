@@ -2512,6 +2512,10 @@
     "internal/proxy/stream_tag_restore_test.go | loki_api_v1_query_range",
     "internal/proxy/stream_tag_restore_test.go | semantics/stream-label-shadowed-by-ingest-json-key",
     "internal/proxy/stream_tag_restore_test.go | severity/detected-level-filter-json-level",
+    "internal/proxy/stream_window_chunks_test.go | loki_api_v1_query_range",
+    "internal/proxy/stream_window_chunks_test.go | metric-series-identity",
+    "internal/proxy/stream_window_chunks_test.go | semantics/aggregation-over-binary-dropped",
+    "internal/proxy/stream_window_chunks_test.go | semantics/series-level-aggregation-bounded-memory",
     "internal/proxy/strip_outer_calls_test.go | semantics/nested-calls-read-once",
     "internal/proxy/sub_second_step_precision_test.go | semantics/sub-second-step-grid",
     "internal/proxy/sub_second_step_test.go | semantics/sub-second-step-grid",
@@ -3644,7 +3648,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 825,
+      "go": 826,
       "playwright": 3
     },
     "page_kinds": {

@@ -63,6 +63,35 @@ why: |
   per-stream operands that are not a rate/count ratio is joined per step on the
   operands' matrices and keeps its range-splitting retry
   (internal/proxy/binary_aggregation_range.go).
+
+  The input read, at 24h. The fold bounds the answer, not the read before it:
+  the stats_query_range read of the stream's series over the whole range (one
+  series per stream, with its buckets) still had to fit the stats body bound
+  (64 MiB, maxStatsBucketResponseBytes). The bench/ab seed starts a new pod
+  stream per service every 10 s, about 320,000 streams a day, and that read
+  is about 109 MB at a 60s step (about 340 bytes per stream). B2 over 24h at
+  a 60s step (both Loki profiles) and the series-level-fine-step rows F1-F4 over
+  24h at 20s answered 500 `rpc error: code = ResourceExhausted desc = grpc:
+  trying to send message larger than max (67108865 vs. 67108864)` after about
+  15 s on main and on the pull request alike (perf-smoke of #1715, run
+  45633797620; reproduced on a 26h seed of the same generator on VictoriaLogs
+  v1.54.0): the read stopped at the bound, the window evaluator fell to the raw
+  rows, and those passed -backend-max-buffered-response-bytes. Loki 3.7.10
+  answered F2-F4 with 200 (39-77 s cold), so those were a 500 where Loki
+  answers; it did not answer B2 (and F1, the same query at 20s) within the
+  harness's 180 s, so those rows have no Loki reference at 24h.
+
+  Fixed: a folded window metric whose read over the whole range passes the
+  stats body bound is read again in time chunks, each folded as it is read
+  (internal/proxy/listed_window_chunks.go, the chunks of an extraction list's
+  series identity, now for every series identity after such an overflow). A
+  step's value depends only on the buckets in (t-range, t], so the chunked
+  answer is the one-read answer (TestStreamIdentityWindowsChunkedPastBodyBound
+  counts the active streams per step from the rows; on the 26h seed the
+  chunked 24h answer equals the one-read 6h answer at the same step on all
+  5,415 shared points). The replica keeps the chunk size for ten minutes, so a
+  repeat reads in chunks at once and throws no read away. A request whose read
+  fits the bound reads and answers exactly as before (no chunk).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -87,13 +116,13 @@ gap:
   fixed_by: "#1056"
   impact: explore-visible
   visual: none
-  visual_reason: 'the failure is one query_range wider than the visual ranges (Grafana splits a metric range at 24h, and each chunk fits the bound), and the captured shape compares main = PR (4/4) with a value difference to Loki that is the owner-accepted structured-metadata series split, which a fix proof cannot show; proven by the byte-for-byte differential against the previous fold, the tight-bound handler tests and the 48h check of the A/B run'
+  visual_reason: 'the 48h failure was one query_range wider than the visual ranges (Grafana splits a metric range at 24h), and the captured shape compares main = PR (4/4) with a value difference to Loki that is the owner-accepted structured-metadata series split, which a fix proof cannot show; proven by the byte-for-byte differential against the previous fold, the tight-bound handler tests and the 48h check of the A/B run. At the bench/ab seed''s density (about 320,000 streams a day) a 24h Explore panel at $__auto (60s) is itself the request that answered 500 on main (the stats read past its body bound) and answers 200 since that read is chunked; no real-Grafana capture of that panel was taken yet'
   effort: M
   area: 'internal/proxy/matrix_fold_sink.go (matrixFold, matrixFoldSink); internal/proxy/range_metric_compat.go buildHitsRangeMetricMatrixFolded; internal/proxy/typed_fold.go foldAccumulator; internal/proxy/vector_agg_fold.go foldVectorAggregations'
   loki: 'a count, min, max or avg folds one value per series per step; the groups of a step fold and the per-stream samples are not kept (test/e2e-compat series_level_aggregation_fine_step_test.go)'
   proxy: 'the bucket matrix builder folds each stream into its group as it builds it; the response bound and the series cap apply to the folded answer'
-  planned_test: 'TestCompat_SeriesLevelAggregationFineStep (test/e2e-compat, group core); TestMatrixFoldSinkMatchesFoldedMatrix, TestMatrixFoldSinkBuffersGroupsNotStreams, TestSeriesLevelAggregationStaysWithinResponseBudget, TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget, TestSeriesLevelAggregationRepeatedAndMovedWindows, TestVectorAggregationOverRangeFunctionDifferential (internal/proxy); FuzzMatrixFoldSink (internal/proxy, CI fuzz smoke)'
-  note: 'Found by the 48h perf pass on main 7eaf79ce (B2 answered 500 in all 7 runs and both Loki profiles). The e2e against Loki and the bench/ab 24h-20s set and the 48h B2 check are written, not yet run in a stack window.'
+  planned_test: 'TestCompat_SeriesLevelAggregationFineStep (test/e2e-compat, group core); TestStreamIdentityWindowsChunkedPastBodyBound, TestStreamIdentityWindowChunksMatchOneRead, FuzzStreamIdentityWindowChunks (internal/proxy, CI fuzz smoke); TestMatrixFoldSinkMatchesFoldedMatrix, TestMatrixFoldSinkBuffersGroupsNotStreams, TestSeriesLevelAggregationStaysWithinResponseBudget, TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget, TestSeriesLevelAggregationRepeatedAndMovedWindows, TestVectorAggregationOverRangeFunctionDifferential (internal/proxy); FuzzMatrixFoldSink (internal/proxy, CI fuzz smoke)'
+  note: 'Found by the 48h perf pass on main 7eaf79ce (B2 answered 500 in all 7 runs and both Loki profiles). The e2e against Loki and the bench/ab 24h-20s set and the 48h B2 check are written, not yet run in a stack window. The 24h read past the stats body bound (B2 24h at 60s, F1-F4 24h at 20s) was found by the perf-smoke of #1715 and is read in time chunks since.'
   clusters: []
 perf:
   max_ratio: 2.0
