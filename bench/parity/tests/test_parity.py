@@ -104,6 +104,45 @@ class DifferTest(unittest.TestCase):
         self.assertIn("loki-only parsed <line-or-metadata-key>", details)
         self.assertIn("proxy-only structuredMetadata <line-or-metadata-key>", details)
 
+    def test_ranked_answers_compare_the_values_at_each_step_not_which_tied_series_was_kept(self):
+        query = "topk(2, sum by (s) (count_over_time({a=\"b\"}[5m])))"
+        # Three series tie at 7 across the 2nd place: Loki keeps one, the proxy another.
+        loki = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "c"}, [[1, "7"], [2, "7"]]))
+        proxy = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "b"}, [[1, "7"], [2, "7"]]))
+        self.assertEqual(differ.diff("query_range", 200, loki, 200, proxy, query=query), [])
+        # The tie picked differently at different steps changes the union of series, not the ranked values.
+        loki = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "c"}, [[1, "7"]]), ({"s": "d"}, [[2, "7"]]))
+        proxy = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "b"}, [[1, "7"], [2, "7"]]))
+        self.assertEqual(differ.diff("query_range", 200, loki, 200, proxy, query=query), [])
+        # Without the ranked expression the same answers differ, as before.
+        self.assertTrue(differ.diff("query_range", 200, loki, 200, proxy))
+        self.assertTrue(differ.diff("query_range", 200, loki, 200, proxy, query="sum(count_over_time({a=\"b\"}[5m]))"))
+        # A wrong value, a missing or extra step, a different number of ranked series, a renamed label is still a difference.
+        base = matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "c"}, [[1, "7"], [2, "7"]]))
+        cases = {
+            "value": matrix(({"s": "a"}, [[1, "9"], [2, "9"]]), ({"s": "b"}, [[1, "7"], [2, "8"]])),
+            "missing step": matrix(({"s": "a"}, [[1, "9"]]), ({"s": "b"}, [[1, "7"]])),
+            "extra step": matrix(({"s": "a"}, [[1, "9"], [2, "9"], [3, "9"]]), ({"s": "b"}, [[1, "7"], [2, "7"]])),
+            "fewer ranked series": matrix(({"s": "a"}, [[1, "9"], [2, "9"]])),
+            "renamed label": matrix(({"t": "a"}, [[1, "9"], [2, "9"]]), ({"t": "b"}, [[1, "7"], [2, "7"]])),
+        }
+        for name, proxy in cases.items():
+            self.assertTrue(differ.diff("query_range", 200, base, 200, proxy, query=query), name)
+        self.assertTrue(differ.is_ranked_query(" BottomK(1, x)") and not differ.is_ranked_query("sum(topk(1, x))"))
+
+    def test_a_shape_documents_the_value_difference_it_names_and_no_other(self):
+        loki = matrix(({"s": "a"}, [[1, "3.12"]]))
+        proxy = matrix(({"s": "a"}, [[1, "0.15"]]))
+        plain = differ.diff("query_range", 200, loki, 200, proxy)
+        self.assertEqual([f["kind"] for f in plain], ["values"])
+        self.assertIsNone(plain[0].get("documented"))
+        named = differ.diff("query_range", 200, loki, 200, proxy, documented_values=differ.DOC_METADATA_SPLIT)
+        self.assertEqual(named[0]["documented"], differ.DOC_METADATA_SPLIT)
+        # A missing point stays undocumented whatever the shape names.
+        short = matrix(({"s": "a"}, []))
+        self.assertTrue(any(f["kind"] == "points" and not f.get("documented")
+                            for f in differ.diff("query_range", 200, loki, 200, short, documented_values=differ.DOC_METADATA_SPLIT)))
+
     def test_metric_values_and_series(self):
         a = matrix(({"level": "info"}, [[60, "2"], [120, "3"]]))
         b = matrix(({"level": "info"}, [[60, "2"], [120, "4"]]))

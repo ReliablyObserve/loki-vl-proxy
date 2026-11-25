@@ -391,14 +391,22 @@ func TestMixedJSONRowClassLocalPredicates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			matched := true
 			for _, filter := range filters {
-				if filter.Field != tc.field || filter.Op != logsql.FieldOpRegexp {
+				value := tc.value
+				switch {
+				case filter.Field == mixedClassDupField && tc.field == "_msg":
+					// What prepare makes of the message: a copy without the first occurrence of the quoted name.
+					value = strings.Replace(tc.value, `"user_id"`, "", 1)
+				case filter.Field != tc.field:
+					continue
+				}
+				if filter.Op != logsql.FieldOpRegexp {
 					continue
 				}
 				re, err := regexp.Compile(filter.Value)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if re.MatchString(tc.value) == filter.Negate {
+				if re.MatchString(value) == filter.Negate {
 					matched = false
 				}
 			}
@@ -420,7 +428,7 @@ func TestMixedJSONRowClassLongKeyValidJSONDomain(t *testing.T) {
 		if filter.Field == "_msg" && filter.Op == logsql.FieldOpRegexp && strings.Contains(filter.Value, "{129}") {
 			guard = filter
 		}
-		if filter.Field == mixedClassValidField && filter.Op == logsql.FieldOpAny {
+		if filter.Field == mixedClassTargetPrefix+mixedClassValidField && filter.Op == logsql.FieldOpAny {
 			validityRetained = true
 		}
 	}

@@ -255,7 +255,7 @@ def main():
                          "with the same value a run is reproducible window for window")
     ap.add_argument("--noise", type=float, default=0.30, help="relative p50 change still counted as noise")
     ap.add_argument("--min-delta", type=float, default=0.10, help="absolute p50 change (s) still counted as noise")
-    ap.add_argument("--timeout", type=int, default=90)
+    ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--service", default="loki-vl-proxy-underscore", help="stack proxy service whose flags to use")
     ap.add_argument("--proxy-port", type=int, default=23190, help="base listens here, PR on +2 (admin +1)")
     ap.add_argument("--keep-stack", action="store_true", help="leave the stack running (for a re-run)")

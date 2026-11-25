@@ -83,6 +83,21 @@ class RuntimeProofTest(unittest.TestCase):
                         self.assertEqual(pr_smoke.report.correctness_parity(shape, [bad]), "differs")
                 else:
                     self.assertEqual(pr_smoke.report.correctness_parity(shape, [bad]), "differs")
+        # A shape that names the registry deviation its values differ by (B2: Loki splits a stream's series per
+        # structured-metadata set) is documented for exactly that facet on a range query, and nothing else.
+        split = differ.DOC_METADATA_SPLIT
+        named = {"query": "sum(x)", "documented_values": split}
+        values = differ.facet("values", "values differ (proxy lower)", "a @1: loki 3 proxy 1", split)
+        self.assertEqual(pr_smoke.report.correctness_parity(named, [values]), "documented")
+        self.assertEqual(pr_smoke.report.correctness_parity({"query": "sum(x)"}, [differ.facet("values", "values differ (proxy lower)", "e")]), "differs")
+        self.assertEqual(pr_smoke.report.correctness_parity({"query": "sum(x)"}, [values]), "differs")
+        self.assertEqual(pr_smoke.report.correctness_parity(named, [differ.facet("values", "values differ (proxy lower)", "e")]), "differs")
+        self.assertEqual(pr_smoke.report.correctness_parity(named, [differ.facet("points", "timestamps differ in matched series", "e")]), "differs")
+        self.assertEqual(pr_smoke.report.correctness_parity(named, [values, differ.facet("series", "different series, same count", "e")]), "differs")
+        with mock.patch.dict(pr_smoke.report.correctness_parity.statuses, {split: "open"}):
+            self.assertEqual(pr_smoke.report.correctness_parity(named, [values]), "differs")
+        shapes = {s["name"]: s for sh in pr_smoke.selection.load_shapes()["sets"].values() for s in sh["shapes"]}
+        self.assertEqual(shapes["B2 sum by over a ratio of two per-stream metrics"]["documented_values"], split)
         self.assertEqual(pr_smoke.report.correctness_parity({"path": "/loki/api/v1/patterns"},
                          [{"kind": "patterns", "detail": "different patterns", "documented": "drilldown/patterns-mined-differently"}]), "differs")
 

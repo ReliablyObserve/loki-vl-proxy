@@ -44,8 +44,12 @@ DOC_INDEX_STATS_LOKI_CHUNKS = "quality/index-stats-loki-chunk-accounting"
 DOC_VOLUME_BYTES = "profiles/volume-bytes-accounting"
 DOC_DETECTED_LABELS_CARDINALITY = "drilldown/detected-labels-sampled-cardinality"
 DOC_DETECTED_FIELDS_SERVICE = "profiles/detected-fields-no-extracted-suffix"
+# Loki splits a stream's metric series per structured-metadata set, the proxy keeps the stream (owner-accepted): a count of
+# series, such as a sum over a ratio of two per-stream metrics, differs by that split. A shape names it (shapes.json
+# "documented_values"); no other value difference is covered by it.
+DOC_METADATA_SPLIT = "metric-identity/structured-metadata-splits-series"
 DOCUMENTED = (DOC_INDEX_STATS_BYTES, DOC_INDEX_STATS_LOKI_CHUNKS, DOC_VOLUME_BYTES, DOC_DETECTED_LABELS_CARDINALITY,
-              DOC_DETECTED_FIELDS_SERVICE)
+              DOC_DETECTED_FIELDS_SERVICE, DOC_METADATA_SPLIT)
 # The owner's decision covers only the service name: detected_fields lists `service` / `service.name` where Loki
 # lists their `_extracted` collision. Every other `_extracted` field is an ordinary difference.
 SERVICE_EXTRACTED = {"service_extracted": ("service",), "service_name_extracted": ("service", "service.name")}
@@ -309,7 +313,56 @@ def valid_volume_result(body):
     return valid_metric_result(body, nonnegative=True)
 
 
-def diff_series(loki, proxy, stream_labels=(), documented_values=None):
+def is_ranked_query(query):
+    """True for a topk or bottomk expression (it starts with the operator, as bench/visual's is_ranked reads it)."""
+    return str(query or "").lstrip().lower().startswith(("topk", "bottomk"))
+
+
+def ranked_steps(m):
+    """{timestamp: sorted values} of a series map: what a top-k answer holds at each step, whichever series carry it."""
+    def number(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return math.inf  # a value that is no number sorts last and is compared as written by same_number
+    out = {}
+    for points in m.values():
+        for t, v in points.items():
+            out.setdefault(t, []).append(v)
+    return {t: sorted(vs, key=number) for t, vs in out.items()}
+
+
+def diff_ranked(a, b):
+    """Facets of two top-k/bottom-k answers that compare the ranked values at every step and not the series kept.
+
+    When several series tie across the k-th place at a step, Loki keeps the tied one its own iteration yields, and that
+    differs between equivalent spellings of the same query on one Loki, while the ranked values never do; the proxy
+    breaks the tie on the label key. Which tied series carries a value is therefore not a difference: a different
+    value, a missing or extra step, a different number of ranked series at a step is."""
+    out = []
+    sa, sb = ranked_steps(a), ranked_steps(b)
+    if set(sa) != set(sb):
+        missing, extra = sorted(set(sa) - set(sb)), sorted(set(sb) - set(sa))
+        out.append(facet("points", "timestamps differ in ranked answer",
+                         f"loki {len(sa)} steps, proxy {len(sb)}; loki-only {missing[:2]} proxy-only {extra[:2]}"))
+    counts = values = 0
+    example = None
+    for t in set(sa) & set(sb):
+        u, v = sa[t], sb[t]
+        if len(u) != len(v):
+            counts += 1
+            example = example or f"@{t}: loki {len(u)} ranked series, proxy {len(v)}"
+        elif any(not same_number(x, y) for x, y in zip(u, v)):
+            values += 1
+            example = example or f"@{t}: loki {u} proxy {v}"
+    if counts:
+        out.append(facet("series", "ranked series count differs at a step", short(example)))
+    if values:
+        out.append(facet("values", "ranked values differ", short(example)))
+    return out
+
+
+def diff_series(loki, proxy, stream_labels=(), documented_values=None, ranked=False):
     out = []
     a, b = series_map(loki), series_map(proxy)
     dup_a, dup_b = raw_series_count(loki) - len(a), raw_series_count(proxy) - len(b)
@@ -330,6 +383,8 @@ def diff_series(loki, proxy, stream_labels=(), documented_values=None):
     if keys_b - keys_a:
         names = sorted(keys_b - keys_a)
         out.append(facet("labels", "proxy-only " + ",".join(classes(names, stream_labels)), f"label names {names[:6]}"))
+    if ranked:
+        return out + diff_ranked(a, b)
     only_a, only_b = sorted(set(a) - set(b)), sorted(set(b) - set(a))
     if (only_a or only_b) and not (keys_a ^ keys_b):
         out.append(facet("series", size_class(len(a), len(b)) if len(a) != len(b) else "different series, same count",
@@ -563,8 +618,12 @@ def result_type(body):
     return ((body.get("data") or {}).get("resultType")) if isinstance(body, dict) else None
 
 
-def diff(endpoint, loki_status, loki, proxy_status, proxy, stream_labels=(), limit=0, direction="backward"):
-    """Facets of the difference between two answers to one request (an empty list: equivalent)."""
+def diff(endpoint, loki_status, loki, proxy_status, proxy, stream_labels=(), limit=0, direction="backward", query="",
+         documented_values=None):
+    """Facets of the difference between two answers to one request (an empty list: equivalent).
+
+    query is the request's expression: a top-k answer is compared by its ranked values (diff_ranked). documented_values
+    is the registry id of a deviation a shape declares for its value differences (DOC_METADATA_SPLIT)."""
     if loki_status != proxy_status:
         return [facet("status", f"loki {loki_status} proxy {proxy_status}",
                       f"loki {short(error_text(loki) or '-', 160)} | proxy {short(error_text(proxy) or '-', 160)}")]
@@ -590,7 +649,7 @@ def diff(endpoint, loki_status, loki, proxy_status, proxy, stream_labels=(), lim
             # A tail merges frames as they arrive, so only a query answer has an entry order to compare.
             out += diff_streams(loki, proxy, stream_labels, limit, direction, check_order=endpoint != "tail")
         elif ta in ("matrix", "vector"):
-            out += diff_series(loki, proxy, stream_labels)
+            out += diff_series(loki, proxy, stream_labels, documented_values=documented_values, ranked=is_ranked_query(query))
         else:
             a, b = (loki.get("data") or {}).get("result"), (proxy.get("data") or {}).get("result")
             if not same_sample(a, b):

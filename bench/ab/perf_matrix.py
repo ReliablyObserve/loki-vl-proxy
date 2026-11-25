@@ -418,7 +418,8 @@ def first_window_correctness(responses, shape, rng, query, secs, step, end, targ
         if not answer or parsed is None or isinstance(parsed, dict) and parsed.get("warnings"):
             return {**proof, "problem": "measured proxy answer incomplete"}
         facets = differ.diff(endpoint, ref["status"], decoded, status, parsed,
-                             limit=shape.get("limit", 0), direction=shape.get("direction", "backward"))
+                             limit=shape.get("limit", 0), direction=shape.get("direction", "backward"), query=query,
+                             documented_values=shape.get("documented_values"))
         proof["targets"][name] = dict(status=status, response_bytes=len(body), body_sha256=hashlib.sha256(body).hexdigest(),
                                       answer_proof=answer, parity_vs_reference=report.correctness_parity(shape, facets), facets=facets)
     proof["complete"] = True

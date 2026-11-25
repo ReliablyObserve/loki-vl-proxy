@@ -12,6 +12,7 @@ const (
 	mixedClassStreamField    = "__vlmc_stream"
 	mixedClassBodyField      = "__vlmc_body"
 	mixedClassValidField     = "__vlmc_valid"
+	mixedClassDupField       = "__vlmc_dup"
 	mixedClassTargetPrefix   = "__vlmc_target_"
 	mixedClassMaxBytes       = "4096"
 	mixedClassInvalidBodyKey = `"(?:[ !#-~]*[\x20-\x21\x23-\x2f\x3a-\x40\x5b-\x5e\x60\x7b-\x7e][ !#-~]*|[0-9][ !#-~]*|)"\s*:`
@@ -109,14 +110,18 @@ func newMixedJSONRowClassFor(label string, explicit bool) (*mixedJSONRowClass, b
 		regex(mixedClassStreamField, `^\{(?:`+streamPair+`(?:,`+streamPair+`)*)?\}$`, false),
 		mixedClassLiteralGuard(mixedClassStreamField, `(?:^\{|,)`+aliasedName+`=`, "__", "_="),
 		mixedClassLiteralGuard(mixedClassStreamField, `(?:^\{|,)`+name+`=`, label+"="),
-		logsql.FieldFilter{Field: mixedClassValidField, Op: logsql.FieldOpAny},
+		logsql.FieldFilter{Field: mixedClassTargetPrefix + mixedClassValidField, Op: logsql.FieldOpAny},
 		logsql.FieldFilter{Field: mixedClassTargetPrefix + label, Op: logsql.FieldOpAny},
 		// VL stats grouping may canonicalize numeric-looking STRING values
 		// (notably "-0" to "0"). Admit categorical values only; the exact
 		// original mixed evaluator keeps every other value in the complement.
 		regex(mixedClassTargetPrefix+label, `^[A-Za-z_][A-Za-z0-9_-]*$`, false),
 		regex(mixedClassTargetPrefix+label, `(?i)^(?:nan|inf|infinity|true|false|null)$`, true),
-		regex("_msg", marker+`(?s:.*)`+marker, true),
+		// The quoted name twice in the message (the key twice, or the key and a value of the same name): the copy has
+		// its first occurrence removed (see prepare), so a second one is still there. Stricter than two keys, which
+		// only sends such a row to the exact complement, and a literal search instead of a lazy regexp between two
+		// matches.
+		regex(mixedClassDupField, regexp.QuoteMeta(`"`+label+`"`), true),
 		mixedClassLiteralGuard("_msg", `"__vlmc_[A-Za-z0-9_]*"\s*:`, "__vlmc_"),
 		// This admission bound is deliberately stricter than Loki's accepted
 		// keys; longer names retain the original exact mixed execution. The
@@ -156,12 +161,14 @@ func newMixedJSONRowClassFor(label string, explicit bool) (*mixedJSONRowClass, b
 		// The raw consumer restores this envelope instead of deleting
 		// scratch fields and losing original collision/provenance data.
 		logsql.PipePackJSON{ResultField: mixedClassOriginalField},
-		logsql.PipeCopy{Pairs: [][2]string{{"_stream", mixedClassStreamField}, {"_msg", mixedClassBodyField}}},
+		logsql.PipeCopy{Pairs: [][2]string{{"_stream", mixedClassStreamField}, {"_msg", mixedClassBodyField}, {"_msg", mixedClassDupField}}},
+		logsql.PipeReplace{Field: mixedClassDupField, Old: `"` + label + `"`, New: "", Limit: 1},
 		// The same complete-object sentinel splice as jsonValidityPipes,
 		// expressed in the existing AST and applied to the message COPY.
 		logsql.PipeReplaceRegexp{Field: mixedClassBodyField, Regex: `^\{`, Replacement: `{"` + mixedClassValidField + `":1,`},
-		logsql.PipeUnpackJSON{From: mixedClassBodyField, Fields: []string{mixedClassValidField}},
-		logsql.PipeUnpackJSON{From: "_msg", Fields: []string{label}, ResultPrefix: mixedClassTargetPrefix},
+		// One parse of the spliced body gives both the sentinel (present only when the whole text parsed) and the
+		// target: the spliced body holds the message's keys and one more.
+		logsql.PipeUnpackJSON{From: mixedClassBodyField, Fields: []string{mixedClassValidField, label}, ResultPrefix: mixedClassTargetPrefix},
 	}
 	return &mixedJSONRowClass{
 		label:         label,

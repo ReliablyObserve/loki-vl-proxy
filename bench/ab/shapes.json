@@ -2839,6 +2839,7 @@
     {
      "name": "B2 sum by over a ratio of two per-stream metrics",
      "query": "sum by (service_name) (rate({env=\"production\"}[5m]) / count_over_time({env=\"production\"}[5m]))",
+     "documented_values": "metric-identity/structured-metadata-splits-series",
      "covers": [
       "semantics/aggregation-over-binary-dropped",
       "semantics/series-level-aggregation-bounded-memory",

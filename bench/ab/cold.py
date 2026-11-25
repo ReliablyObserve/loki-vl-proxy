@@ -185,7 +185,8 @@ def resample(proxies, shape, rng, ranges, cold_end, n, base, cand, tenant="0", t
                 return None
             for target in (base, cand):
                 facets = differ.diff(endpoint, reference["status"], decoded, 200, replies[target],
-                                     limit=shape.get("limit", 0), direction=shape.get("direction", "backward"))
+                                     limit=shape.get("limit", 0), direction=shape.get("direction", "backward"), query=query,
+                                     documented_values=shape.get("documented_values"))
                 if evidence is not None:
                     evidence[target][-1]["parity_vs_reference"] = perf_matrix.report.correctness_parity(shape, facets)
                     evidence[target][-1]["parity_facets"] = facets

@@ -132,6 +132,9 @@ def correctness_parity(shape, facets):
                ("detected_fields", "field", "loki-only service *_extracted"): differ.DOC_DETECTED_FIELDS_SERVICE}
     for facet in facets:
         expected = differ.DOC_VOLUME_BYTES if endpoint in ("volume", "volume_range") and facet.get("kind") == "values" and facet.get("detail", "").startswith("values differ (") else allowed.get((endpoint, facet.get("kind"), facet.get("detail")))
+        if (not expected and shape.get("documented_values") and endpoint in ("query_range", "query") and facet.get("kind") == "values"
+                and facet.get("detail", "").startswith("values differ (")):
+            expected = shape["documented_values"]  # the shape names the registry deviation its values differ by
         if not expected or facet.get("documented") != expected or correctness_parity.statuses.get(expected) not in ("documented", "owner-kept", "upstream"):
             return "differs"
     return "documented"

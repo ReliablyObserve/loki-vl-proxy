@@ -869,6 +869,16 @@ The mode is set in `perf-ab.yaml` by `--over-2x-loki`:
   at the top of the comment and `::warning::` annotations only. The weekly run
   only ever warns.
 
+Two kinds of difference from Loki are not a proxy defect and the runtime proof accepts them, each for exactly what it
+names. A `topk` or `bottomk` answer is compared by the ranked values at every step and the label names, not by which of
+several series tied at the cutoff was kept: Loki's own pick between them changes with the spelling of an equivalent
+query (`bench/parity/differ.py diff_ranked`; a wrong value, a missing or extra step and a different number of ranked
+series still differ). A shape may name, in `shapes.json` as `documented_values`, the registry deviation its *value*
+differences come from (B2, a count of series: `metric-identity/structured-metadata-splits-series`, owner-accepted);
+only a `values differ` facet of a range or instant query is covered, and only while the registry case is documented,
+owner-kept or upstream. The Loki reference of a pull request run waits 180 s per request, as the daily run does: a
+first ask on a fresh Loki answered B2 at 1h after more than 90 s.
+
 To clear a flagged row: fix the path so the shape is within 2× Loki (target 1×)
 on cold, warm and refresh, and check the comment's PR ÷ Loki column; a row the
 re-measure does not confirm is gone on the next push. A row that is above 2×
