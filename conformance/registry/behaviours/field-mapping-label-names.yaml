@@ -1,0 +1,47 @@
+id: field-mapping-label-names
+kind: semantics
+title: A mapped field has one name in answers, and the operator chooses the names the label pickers list
+pending: true
+
+loki: |
+  Loki has no field mapping: a label has the name it was written with, the
+  pickers list it, and a series carries it once.
+
+victorialogs: |
+  VictoriaLogs stores one field (for example k8s.namespace.name) and lists it
+  under that name only.
+
+proxy: |
+  -field-mapping may give one field several Loki names. Queries and label
+  values accept every one. Stream and series labels carry one per field.
+  -field-mapping-label-mode selects the names /labels, detected_labels and the
+  volume target labels show: original (default, one name per field, the last
+  mapping's), alias or both. The names are derived from the VictoriaLogs
+  listings the default reads, and the cache identities of alias and both carry
+  the mode and its names.
+
+implementation:
+  - internal/proxy/field_mapping_labels.go
+  - internal/proxy/labels.go
+  - internal/proxy/drilldown.go
+  - internal/proxy/volume.go
+  - internal/proxy/request_scope.go
+
+cases:
+  - semantics/field-mapping-label-modes
+
+decisions:
+  - id: listing-names-by-mode-one-answer-name
+    chosen: 'A mode (original, alias, both) for the listed names; answers keep one name per field, in alias and both the last alias in -field-mapping order, else the -label-style name; original is the behaviour without the setting'
+    over: [listing every mapping name by default (changes the pickers of every deployment that has mappings), putting every name into stream and series labels (one attribute twice per series, and grouping by name changes), answering with the first alias (differs from the precedence the default applies, the last mapping)]
+    why: |
+      A migration needs the old Loki names in the pickers, and a deployment
+      that does not set the flag must see no change, answers and cache keys
+      included. The last alias keeps the default's precedence among the
+      aliases. A declared mapping name is listed as declared, and the mode
+      adds an alias only for a field VictoriaLogs' stream field listing holds.
+    evidence: 'internal/proxy/field_mapping_labels_test.go (2026-11-25): the issue reproduction per mode, every mode and label endpoint for both label styles and three metadata field modes with equal VictoriaLogs call counts, one shared cache between modes; test/e2e-compat TestCompat_FieldMappingLabelModes on VictoriaLogs v1.49.0 and v1.54.0'
+    code: [internal/proxy/field_mapping_labels.go, internal/proxy/labels.go, internal/proxy/request_scope.go]
+    tests: [TestFieldMappingLabelMode_IssueReproduction, TestFieldMappingLabelMode_Endpoints, TestFieldMappingLabelMode_DeclaredMappingNames, TestFieldMappingLabelMode_SharedCacheTier, FuzzFieldMappingLabelMode, TestCompat_FieldMappingLabelModes]
+    quality: 'The default mode answers and keys are unchanged; answers carry one name per field in every mode; every listed name has values.'
+    performance: 'No VictoriaLogs call added on any label route. BenchmarkFieldMappingLabels (Apple M5 Pro, GOMAXPROCS=2, 2026-11-25, 8 interleaved runs): original equals the base build in time, bytes and allocations; alias and both add 8 allocations to a 66-field /labels listing.'

@@ -78,6 +78,7 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-patterns-startup-stale-threshold` | — | `60s` | Freshness threshold used by startup warm logic/peer snapshot cache |
 | `-patterns-startup-peer-warm-timeout` | — | `5s` | Startup timeout for peer warm merge of pattern snapshots |
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
+| `-field-mapping-label-mode` | `FIELD_MAPPING_LABEL_MODE` | `original` | Which names of a mapped field the label listings show: `original`, `alias` or `both`. See [Field mapping label modes](#field-mapping-label-modes) |
 | `-stream-fields` | — | — | Comma-separated `_stream_fields` labels used for stream selector optimization and label-surface hints |
 | `-extra-label-fields` | `EXTRA_LABEL_FIELDS` | — | Comma-separated additional VL fields to expose on label-facing APIs and alias resolution paths (for example `host.id,k8s.cluster.name`) |
 
@@ -96,6 +97,40 @@ Configure `-label-style` and `-metadata-field-mode` with flags (or Helm `extraAr
 ./loki-vl-proxy -label-style=underscores \
   -field-mapping='[{"vl_field":"my_trace_id","loki_label":"traceID"}]'
 ```
+
+A field can have more than one mapping. Queries and `/loki/api/v1/label/{name}/values` accept every `loki_label`, and stream and series labels carry one name per field.
+
+### Field mapping label modes
+
+`-field-mapping-label-mode` (env `FIELD_MAPPING_LABEL_MODE`, Helm `extraArgs.field-mapping-label-mode`) selects the names of mapped fields that the label listings show. It applies to `/loki/api/v1/labels`, `/loki/api/v1/detected_labels` and the volume `targetLabels`.
+
+Two terms:
+
+- the **base name** of a field is what `-label-style` gives it without a mapping (`k8s.namespace.name` is `k8s_namespace_name` with `underscores`, itself with `passthrough`);
+- its **aliases** are the `loki_label`s of its mappings that differ from the base name, in `-field-mapping` order. A `loki_label` given to two fields belongs to the later mapping only.
+
+| Mode | Listed for a mapped field | Name in stream and series labels |
+|---|---|---|
+| `original` (default) | one name: the `loki_label` of the field's last mapping | the same |
+| `alias` | every alias; the base name when there is none | the last alias in `-field-mapping`; the base name when there is none |
+| `both` | every alias and the base name | as in `alias` |
+
+With two mappings of `k8s.namespace.name`, `namespace` then `k8s_namespace_name`, `/labels` shows `k8s_namespace_name` in `original`, `namespace` in `alias`, and both names in `both`. A field without a mapping is listed the same way in every mode.
+
+```bash
+./loki-vl-proxy -field-mapping-label-mode=both \
+  -field-mapping='[{"vl_field":"k8s.namespace.name","loki_label":"namespace"},
+                   {"vl_field":"k8s.namespace.name","loki_label":"k8s_namespace_name"}]'
+```
+
+In `alias` and `both`:
+
+- The base name of a mapped field is also a query name for it (`{custom_team="core"}` for `custom.team` mapped to `team`), unless a mapping gives that name to another field. A separate stored field of that name (`custom_team` beside `custom.team`) is then no longer queried by it.
+- `/labels` lists the aliases of a field only when VictoriaLogs reports the field in the window. Declared names (`-stream-fields`, `-extra-label-fields`) are listed whenever the window has data: a declared mapping name as declared (a declared `namespace` stays `namespace`), and another declared field that VictoriaLogs does not report under its base name. A field that is not a VictoriaLogs stream field is never reported, so declare an alias to list it.
+- `detected_labels` shows each listed name with the field's cardinality. A volume request answers under whichever name `targetLabels` (or the selector) asks for, and `aggregateBy=labels` without `targetLabels` counts every listed name.
+- When an alias is also the name of a stored field, listings hold it once and queries for it read the mapped field. A stream that carries both fields has one label of that name in answers, so give aliases names no stored field uses.
+
+The mode changes no VictoriaLogs request count on the label routes. Replicas in `alias` or `both` keep their own cache entries (memory, disk and peers); `original` shares them with replicas that do not set the flag.
 
 ### Custom Drilldown Patterns
 

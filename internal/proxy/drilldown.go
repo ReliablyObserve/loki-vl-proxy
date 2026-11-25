@@ -1780,20 +1780,22 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) (map[str
 		fillDetectedLabelsFJ(fjVal, labelBuf)
 		vlFJParserPool.Put(fjParser)
 
+		var one [1]string
 		for key, value := range labelBuf {
-			lokiLabel := lt.ToLoki(key)
-			if lokiLabel == "" {
-				continue
-			}
-			summary := summaries[lokiLabel]
-			if summary == nil {
-				summary = &detectedLabelSummary{
-					label:  lokiLabel,
-					values: map[string]struct{}{},
+			for _, lokiLabel := range lt.listedNames(key, &one) {
+				if lokiLabel == "" {
+					continue
 				}
-				summaries[lokiLabel] = summary
+				summary := summaries[lokiLabel]
+				if summary == nil {
+					summary = &detectedLabelSummary{
+						label:  lokiLabel,
+						values: map[string]struct{}{},
+					}
+					summaries[lokiLabel] = summary
+				}
+				summary.values[value] = struct{}{}
 			}
-			summary.values[value] = struct{}{}
 		}
 	}
 	if err := scanBodyError(scanner, badRows); err != nil {
@@ -2345,17 +2347,19 @@ func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string
 	for _, item := range parsed.Values {
 		labels := parseStreamLabels(item.Value)
 		ensureSyntheticServiceName(labels)
+		var one [1]string
 		for key, value := range labels {
-			lokiLabel := p.labelTranslator.ToLoki(key)
-			if lokiLabel == "" {
-				continue
+			for _, lokiLabel := range p.labelTranslator.listedNames(key, &one) {
+				if lokiLabel == "" {
+					continue
+				}
+				summary := summaries[lokiLabel]
+				if summary == nil {
+					summary = &detectedLabelSummary{label: lokiLabel, values: map[string]struct{}{}}
+					summaries[lokiLabel] = summary
+				}
+				summary.values[value] = struct{}{}
 			}
-			summary := summaries[lokiLabel]
-			if summary == nil {
-				summary = &detectedLabelSummary{label: lokiLabel, values: map[string]struct{}{}}
-				summaries[lokiLabel] = summary
-			}
-			summary.values[value] = struct{}{}
 		}
 	}
 	return summaries, nil
@@ -2396,8 +2400,8 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	}
 
 	type labelResult struct {
-		lokiLabel string
-		values    []string
+		vlName string
+		values []string
 	}
 	resultsCh := make(chan labelResult, len(labelNames))
 
@@ -2406,12 +2410,11 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	var firstErr error
 	sem := make(chan struct{}, 8)
 	for _, name := range labelNames {
-		lokiLabel := p.labelTranslator.ToLoki(name)
-		if lokiLabel == "" {
+		if p.labelTranslator.ToLoki(name) == "" {
 			continue
 		}
 		wg.Add(1)
-		go func(vlName, lokiName string) {
+		go func(vlName string) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -2429,8 +2432,8 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 			if len(vals) == 0 {
 				return
 			}
-			resultsCh <- labelResult{lokiLabel: lokiName, values: vals}
-		}(name, lokiLabel)
+			resultsCh <- labelResult{vlName: vlName, values: vals}
+		}(name)
 	}
 	wg.Wait()
 	close(resultsCh)
@@ -2441,15 +2444,23 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	}
 
 	summaries := make(map[string]*detectedLabelSummary, len(labelNames))
+	var one [1]string
 	for r := range resultsCh {
-		summary := &detectedLabelSummary{
-			label:  r.lokiLabel,
-			values: make(map[string]struct{}, len(r.values)),
+		for _, lokiLabel := range p.labelTranslator.listedNames(r.vlName, &one) {
+			summary := summaries[lokiLabel]
+			// Two fields listed under one name share its values in the alias
+			// and both modes, as the stream and scan reads do.
+			if summary == nil || !p.labelTranslator.listsAliases() {
+				summary = &detectedLabelSummary{
+					label:  lokiLabel,
+					values: make(map[string]struct{}, len(r.values)),
+				}
+				summaries[lokiLabel] = summary
+			}
+			for _, v := range r.values {
+				summary.values[v] = struct{}{}
+			}
 		}
-		for _, v := range r.values {
-			summary.values[v] = struct{}{}
-		}
-		summaries[r.lokiLabel] = summary
 	}
 	return summaries, nil
 }

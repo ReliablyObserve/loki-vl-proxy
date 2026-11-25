@@ -542,6 +542,8 @@
     "semantics/extraction-list-empty-label | compare:observed",
     "semantics/extraction-list-empty-label | gap:open",
     "semantics/extraction-list-empty-label | query",
+    "semantics/field-mapping-label-modes | compare:exact",
+    "semantics/field-mapping-label-modes | gap:fixed",
     "semantics/first-last-over-time-translation | compare:observed",
     "semantics/first-last-over-time-translation | gap:fixed",
     "semantics/first-last-over-time-translation | query",
@@ -1451,6 +1453,8 @@
   ],
   "claim_cells": [
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
+    "cmd/proxy/field_mapping_label_mode_test.go | field-mapping-label-names",
+    "cmd/proxy/field_mapping_label_mode_test.go | semantics/field-mapping-label-modes",
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
     "cmd/proxy/main_test.go | operator-configurable-limits",
     "cmd/proxy/main_test.go | semantics/query-range-step-alignment",
@@ -1920,6 +1924,10 @@
     "internal/proxy/fail_fast_unicode_test.go | semantics/stage-after-unwrap-accepted",
     "internal/proxy/fail_fast_unicode_test.go | semantics/stage-name-followed-by-more-of-stage",
     "internal/proxy/fail_fast_unicode_test.go | semantics/unwrap-in-log-query",
+    "internal/proxy/field_mapping_labels_test.go | field-mapping-label-names",
+    "internal/proxy/field_mapping_labels_test.go | loki_api_v1_label_name_values",
+    "internal/proxy/field_mapping_labels_test.go | loki_api_v1_labels",
+    "internal/proxy/field_mapping_labels_test.go | semantics/field-mapping-label-modes",
     "internal/proxy/first_last_range_longer_than_step_test.go | loki_api_v1_query_range",
     "internal/proxy/first_last_range_longer_than_step_test.go | semantics/unwrap-first-last-range-longer-than-step",
     "internal/proxy/first_last_range_longer_than_step_test.go | semantics/unwrap-first-last-range-timestamps",
@@ -3252,6 +3260,8 @@
     "test/e2e-compat/extracted_suffix_collision_test.go | profiles/json-extraction-list-exposes-only-listed",
     "test/e2e-compat/extracted_suffix_collision_test.go | profiles/structured-metadata-label-collision",
     "test/e2e-compat/extracted_suffix_collision_test.go | semantics/extracted-suffix-collision",
+    "test/e2e-compat/field_mapping_label_mode_test.go | field-mapping-label-names",
+    "test/e2e-compat/field_mapping_label_mode_test.go | semantics/field-mapping-label-modes",
     "test/e2e-compat/first_last_range_longer_than_step_test.go | loki_api_v1_query_range",
     "test/e2e-compat/first_last_range_longer_than_step_test.go | semantics/unwrap-first-last-range-longer-than-step",
     "test/e2e-compat/first_last_range_timestamps_test.go | loki_api_v1_query_range",
@@ -3665,12 +3675,12 @@
       "any": 50,
       "api": 124,
       "drilldown": 63,
-      "explore": 262,
+      "explore": 263,
       "grafana-datasource": 4,
       "operator": 5
     },
     "claiming_tests": {
-      "go": 830,
+      "go": 833,
       "playwright": 3
     },
     "page_kinds": {
@@ -3692,7 +3702,7 @@
     "shape_covers_distinct": 113,
     "shapes_path_only": 10,
     "unwired_items": 152,
-    "wired_items": 481
+    "wired_items": 483
   },
   "gates": [
     "A/B shape selection",
