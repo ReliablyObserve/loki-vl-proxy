@@ -1889,16 +1889,17 @@ func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string
 		})
 		return true
 	case logqlpkg.ParserUnpack:
-		if !strings.Contains(line, `"_entry"`) {
+		if err := unpackLineError(line); err != nil {
+			labels[errorLabel], labels[errorDetailsLabel] = "JSONParserErr", err.Error()
+			if generated != nil {
+				*generated = "JSONParserErr"
+			}
+			if preserveError {
+				labels["__preserve_error__"] = "true"
+			}
 			return true
 		}
-		_ = jsonparser.ObjectEach([]byte(line), func(key, value []byte, kind jsonparser.ValueType, _ int) error {
-			if kind != jsonparser.String || string(key) == "_entry" {
-				return nil
-			}
-			add(orderedJSONLabelName(string(key), true), orderedJSONScalar(value, kind), true)
-			return nil
-		})
+		unwrapPackedLabels(line, add)
 		return true
 	case logqlpkg.ParserRegexp:
 		re, err := regexp.Compile(unwrapRegexpParam(stage.Param))

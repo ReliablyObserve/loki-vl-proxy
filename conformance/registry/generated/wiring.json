@@ -2586,6 +2586,11 @@
       "internal/proxy/unwrap_bytes_gate_property_test.go",
       "internal/proxy/unwrap_recorded_loki_test.go"
     ],
+    "semantics/unwrap-conversion-check-reads-unpack-unlike-loki": [
+      "internal/proxy/unpack_parser_error_test.go",
+      "internal/querycorpus/unpack_sum_loki_diff_test.go",
+      "test/e2e-compat/unpack_metrics_test.go"
+    ],
     "semantics/unwrap-conversion-error": [
       "internal/proxy/backend_read_bounds_test.go",
       "internal/proxy/label_filter_readers_differential_test.go",
@@ -5275,7 +5280,8 @@
       "semantics/proxy-accepts-operators-not-in-loki"
     ],
     "internal/proxy/unpack_parser_error_test.go": [
-      "semantics/unpack-parser-error-not-raised"
+      "semantics/unpack-parser-error-not-raised",
+      "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
     ],
     "internal/proxy/unpack_sum_rate_test.go": [
       "semantics/unpack-instant-sum-rate-per-stream"
@@ -5778,7 +5784,8 @@
     "internal/querycorpus/unpack_sum_loki_diff_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json",
       "semantics/unpack-instant-sum-rate-per-stream",
-      "semantics/unpack-parser-error-not-raised"
+      "semantics/unpack-parser-error-not-raised",
+      "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
     ],
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
@@ -6929,7 +6936,8 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/unpack-instant-sum-rate-per-stream",
-      "semantics/unpack-parser-error-not-raised"
+      "semantics/unpack-parser-error-not-raised",
+      "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
     ],
     "test/e2e-compat/unwrap_conversion_error_test.go": [
       "loki_api_v1_query",
@@ -7221,7 +7229,6 @@
     "semantics/unpack-logfmt-negative-ip-filter-selection",
     "semantics/unwrap-avg-overflow",
     "semantics/unwrap-bytes-pushdown-near-2-64",
-    "semantics/unwrap-conversion-check-reads-unpack-unlike-loki",
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
@@ -7243,5 +7250,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 483
+  "wired_items": 484
 }

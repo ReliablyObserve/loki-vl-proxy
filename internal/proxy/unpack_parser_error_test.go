@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 // The proxy reads a line an unpack parses as Loki does: the same verdict and, for an error, Loki's details, on the
@@ -97,4 +99,48 @@ func FuzzUnpackLineError(f *testing.F) {
 			}
 		}
 	})
+}
+
+// The unwrap check reads from a line an unpack parses the labels Loki reads, and its error, on the recorded lines of
+// the lowering's grid (internal/queryplan/lower/testdata/unpack-oracles.json, the plain unpack).
+//
+// conformance: semantics/unwrap-conversion-check-reads-unpack-unlike-loki
+func TestUnwrapPackedLabelsMatchRecordedLoki(t *testing.T) {
+	b, err := os.ReadFile("../queryplan/lower/testdata/unpack-oracles.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var families []struct {
+		Query string `json:"q"`
+		Loki  []struct {
+			Labels map[string]string `json:"labels"`
+		} `json:"loki"`
+	}
+	if err := json.Unmarshal(b, &families); err != nil {
+		t.Fatal(err)
+	}
+	// The grid's lines (internal/queryplan/lower unpack_test.go unpackLines).
+	lines := []string{`{"a":"1","b":"x","_entry":"hello world"}`, `{"a":"1","b":"x"}`, `{"a":"1","_entry":""}`,
+		`{"a":1,"b":true,"c":null,"d":{"e":"f"},"_entry":"L"}`, `not json`, `{"a":"1","_entry":5}`, `{"a":"1","_entry":{"x":"y"}}`,
+		`{"_entry":"only"}`, `{"a":"1","n":{"_entry":"z"}}`, `{}`, ``, `{"a":"1","_entry":"say \"hi\" {x}"}`,
+		`{"a":"2","_entry":"hello again"}`, `{"a":"hello","_entry":"bye"}`, `{"a":"1","_entry":"{\"z\":\"2\"}"}`}
+	if len(families) == 0 || families[0].Query != `{app="s"} | unpack` || len(families[0].Loki) != len(lines) {
+		t.Fatalf("the recorded grid changed: %d families", len(families))
+	}
+	for i, line := range lines {
+		labels := map[string]string{"app": "s"}
+		if !unwrapParseLine(&logqlpkg.ParserStage{Type: logqlpkg.ParserUnpack}, line, labels, map[string]bool{}, false, false, nil) {
+			t.Fatalf("%q: not read", line)
+		}
+		want := families[0].Loki[i].Labels
+		if len(labels) != len(want) {
+			t.Errorf("%q: labels %v, Loki %v", line, labels, want)
+			continue
+		}
+		for name, value := range want {
+			if labels[name] != value {
+				t.Errorf("%q: %s=%q, Loki %q", line, name, labels[name], value)
+			}
+		}
+	}
 }

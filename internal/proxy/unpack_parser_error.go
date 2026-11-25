@@ -32,6 +32,20 @@ func unpackLineError(line string) error {
 	})
 }
 
+// unwrapPackedLabels adds the labels an unpack reads from a line: the string members of a line a packing agent
+// wrote, an object whose top-level `_entry` is a string, and none of any other line.
+func unwrapPackedLabels(line string, add func(name, value string, last bool)) {
+	if _, kind, _, err := jsonparser.Get([]byte(line), "_entry"); err != nil || kind != jsonparser.String {
+		return
+	}
+	_ = jsonparser.ObjectEach([]byte(line), func(key, value []byte, kind jsonparser.ValueType, _ int) error {
+		if kind == jsonparser.String && string(key) != "_entry" {
+			add(orderedJSONLabelName(string(key), true), orderedJSONScalar(value, kind), true)
+		}
+		return nil
+	})
+}
+
 // unpackErrorProbeFor describes a count, a rate or a byte count over a log query whose only parser is an unpack and
 // whose parser errors reach the result (semantics/unpack-parser-error-not-raised); ok is false when they cannot:
 // a sum with no grouping (Loki parses no line for it), a label filter on __error__ or a drop of it after the

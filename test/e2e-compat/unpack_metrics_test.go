@@ -114,7 +114,7 @@ func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
 // with one series per stream there. A count over a line an unpack rejects fails with Loki's pipeline error under any
 // function but a sum with no grouping, where the proxy answered.
 //
-// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-parser-error-not-raised, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-parser-error-not-raised, semantics/unwrap-conversion-check-reads-unpack-unlike-loki, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_UnpackSumsLikeLoki(t *testing.T) {
 	app, now := unpackFixture(t, "unpacksum")
 	selector := fmt.Sprintf(`{app=%q}`, app)
@@ -132,6 +132,13 @@ func TestCompat_UnpackSumsLikeLoki(t *testing.T) {
 				unpackAgainstLoki(t, query, endpoint, badNow)
 			})
 		}
+	}
+	// A value beside a numeric `_entry` is no label in Loki, so it converts nothing and fails nothing.
+	unwrapApp, unwrapNow := unpackFixture(t, "unpackunwrap", `{"a":"2","_entry":"x%d"}`, `{"a":"oops","_entry":%d}`)
+	for _, endpoint := range []string{"query", "query_range"} {
+		t.Run("unwrap/"+endpoint, func(t *testing.T) {
+			unpackAgainstLoki(t, fmt.Sprintf(`sum(sum_over_time({app=%q} | unpack | unwrap a [5m]))`, unwrapApp), endpoint, unwrapNow)
+		})
 	}
 	for i, query := range []string{
 		`sum(rate(` + selector + ` | unpack [5m]))`,

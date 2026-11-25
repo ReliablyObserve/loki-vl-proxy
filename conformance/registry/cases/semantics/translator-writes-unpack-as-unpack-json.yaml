@@ -69,10 +69,13 @@ why: |
   values that are not strings, and it takes about twice the translator text's
   time for a count over 600k packed rows.
 
-  The proxy's own evaluation of an unwrapped value (internal/proxy
-  ordered_json_metric.go) reads an unpack as a json parser; the unwrap
-  conversion check reads it unlike Loki on four kinds of line
-  (semantics/unwrap-conversion-check-reads-unpack-unlike-loki).
+  The proxy's own evaluation of an unwrapped value reads an unpack as a json
+  parser: an unwrap_over_time over a line that is not packed reads a value Loki
+  does not (sum_over_time over a stream with an unpacked "a":"1000" line
+  answered 1003 where Loki answers 3 with Loki's engine and VictoriaLogs
+  v1.49.0 and v1.54.0), and a sum over a max_over_time adds the
+  proxy's per-stream maxima where Loki adds those of its series, split by the
+  promoted labels.
 
   Twelve additional historical series facets exercise unsupported unpack compositions on
   both endpoints: unpack before named JSON/unwrap, before raw unwrap with filters, after

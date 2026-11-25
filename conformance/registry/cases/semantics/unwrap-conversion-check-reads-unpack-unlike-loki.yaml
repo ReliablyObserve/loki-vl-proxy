@@ -1,5 +1,5 @@
 id: semantics/unwrap-conversion-check-reads-unpack-unlike-loki
-title: "The unwrap conversion check reads an unpack unlike Loki on four kinds of line (open)"
+title: "The unwrap conversion check reads an unpack as Loki does"
 pending: true
 proves:
   - parser-unpack
@@ -8,26 +8,30 @@ proves:
 consumer: explore
 why: |
   The proxy's unwrap conversion check runs the parser stages over a line itself (unwrap_conversion_error.go,
-  unwrapParseLine). For unpack it promotes the string keys of any line holding the text "_entry" and sets no error
-  on a line that is not JSON. Against Loki's recorded labels over the 15 lines of
-  internal/queryplan/lower/testdata/unpack-oracles.json it differs on four: a numeric `_entry`, an object `_entry`
-  and an `_entry` only in a nested object promote labels Loki does not, and a plain text line gets no __error__
-  where Loki sets JSONParserErr. Measured by calling the function over those lines; the effect on a query answer
-  is not measured.
+  unwrapParseLine). For unpack it promoted the string keys of any line holding the text "_entry" and set no error on
+  a line that is not JSON, so a sum_over_time over an unwrapped label answered 400 SampleExtractionErr where Loki
+  answers: a line with a numeric, object or nested `_entry` gave the check a label Loki does not promote. It now
+  reads labels only from a packed line (an object whose top-level `_entry` is a string) and marks a line that is no
+  JSON object. Held to Loki by TestUnpackSumMatchesLoki (job=uw and job=uwbad, VictoriaLogs v1.49.0 and v1.54.0),
+  TestUnwrapPackedLabelsMatchRecordedLoki and TestCompat_UnpackSumsLikeLoki.
+
+  Not covered, and visible in the values: the unwrapped metric itself still reads the labels VictoriaLogs'
+  unpack_json makes, which come from any JSON line (semantics/translator-writes-unpack-as-unpack-json).
 request:
   scope: query-grammar
-  entry: "internal/proxy unwrapParseLine over the lines of unpack-oracles.json"
-  setup: "Run an unwrapped metric over an unpack of a line whose _entry is a number."
+  entry: "TestUnpackSumMatchesLoki (internal/querycorpus): sum_over_time over job=uw"
+  setup: "Send an unwrapped sum_over_time over an unpack of a line whose _entry is a number and whose value is text."
 compare:
   mode: exact
-  fields: [status, error_text]
-  expect: "The labels Loki's unpack gives each line."
+  fields: [status, error_text, values]
+  expect: "Loki's status."
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1758"
   impact: edge
-  effort: M
-  area: 'internal/proxy unwrap_conversion_error.go (unwrapParseLine, ParserUnpack)'
-  loki: 'labels only from a line with a top-level string _entry'
-  proxy: 'labels from any line holding the text "_entry"'
-  planned_test: 'a unit table over the recorded unpack lines'
+  effort: S
+  area: 'internal/proxy/unwrap_conversion_error.go (unwrapParseLine, ParserUnpack); internal/proxy/unpack_parser_error.go (unwrapPackedLabels)'
+  loki: 'labels only from a line with a top-level string _entry; JSONParserErr on a line that is no object'
+  proxy: 'the same'
+  planned_test: 'TestUnpackSumMatchesLoki (internal/querycorpus); TestUnwrapPackedLabelsMatchRecordedLoki (internal/proxy); TestCompat_UnpackSumsLikeLoki (test/e2e-compat, group semantics)'
   clusters: []
