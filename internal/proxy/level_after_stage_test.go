@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,6 +52,31 @@ func TestLevelAfterStageServedFromPlan(t *testing.T) {
 				t.Errorf("served a filter on the parsed level: %s", got)
 			}
 		})
+	}
+}
+
+// A line key called detected_level never hides the label from a filter, which Loki attaches at ingest; behind a
+// drop of it, or a keep without it, a filter reads what a parser then takes from the line, as before.
+//
+// conformance: semantics/level-filter-after-stage
+func TestDetectedLevelFilterIsNoLineFieldFilter(t *testing.T) {
+	for q, want := range map[string]bool{
+		`{a="b"} | detected_level="x"`:                              false,
+		`{a="b"} | detected_level!="x" | level="y"`:                 false,
+		`{a="b"} | json | detected_level="x"`:                       false,
+		`{a="b"} | keep detected_level | detected_level="x"`:        false,
+		`{a="b"} | drop detected_level | json | detected_level="x"`: true,
+		`{a="b"} | keep a | logfmt | detected_level="x"`:            true,
+	} {
+		lq, err := parsedLogQuery(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exposure := pipelineAddsLabels(lq.Pipeline)
+		got := slices.ContainsFunc(exposure.filters, func(f lineFieldFilter) bool { return f.name == detectedLevelLabel })
+		if got != want {
+			t.Errorf("%s: a line field filter on detected_level %v, want %v", q, got, want)
+		}
 	}
 }
 

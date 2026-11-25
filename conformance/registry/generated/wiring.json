@@ -731,6 +731,7 @@
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_around_ranking_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
+      "test/e2e-compat/level_after_stage_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/line_filter_error_runs_test.go",
       "test/e2e-compat/line_filter_invalid_utf8_test.go",
@@ -3180,7 +3181,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 749,
+  "registry_items": 750,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -6570,6 +6571,7 @@
       "semantics/labels-end-inclusive-like-loki"
     ],
     "test/e2e-compat/level_after_stage_test.go": [
+      "loki_api_v1_query_range",
       "semantics/level-filter-after-stage",
       "severity-detected-level-derivation"
     ],
@@ -7140,6 +7142,7 @@
     "semantics/composed-parser-count-rate-bytes-vector-fold-values",
     "semantics/decolorize-derived-level-content",
     "semantics/detected-fields-extracted-suffix",
+    "semantics/detected-level-labels-after-parser",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
     "semantics/empty-line-format-unpack-content",

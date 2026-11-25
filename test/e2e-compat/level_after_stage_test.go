@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -109,3 +110,86 @@ func TestCompat_LevelAfterStageIngestLevels(t *testing.T) {
 	}
 }
 
+// levelAfterStageStages and levelAfterStageFilters span the queries of TestCompat_LevelFilterAfterStageLikeLoki: a
+// stage the filter stands behind, and the filter.
+var (
+	levelAfterStageStages = []string{`json`, `logfmt`, `json a="a"`, `regexp "a=(?P<n>\\d)"`, `pattern "<_> a=<n>"`, `drop a | decolorize`,
+		`drop level`, `keep detected_level, a`, `line_format "{{.a}} info"`, `label_format b=a`, `json | drop __error__, __error_details__`,
+		`drop detected_level`, `keep a`}
+	levelAfterStageFilters = []string{`detected_level="error"`, `detected_level!="info"`, `detected_level=~"error|warn"`}
+)
+
+// A filter on detected_level behind a stage selects the entries Loki selects, through the proxy, and behind a stage
+// other than a json or logfmt parser the proxy's entries carry the detected_level labels Loki's do, category by
+// category. Behind those parsers the labels differ on lines with a level key of their own
+// (semantics/detected-level-labels-after-parser, open): only the selection is held there.
+//
+// conformance: semantics/level-filter-after-stage, severity-detected-level-derivation, loki_api_v1_query_range
+func TestCompat_LevelFilterAfterStageLikeLoki(t *testing.T) {
+	raw, err := os.ReadFile(levelAfterStagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []levelAfterStageEntry
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		t.Fatal(err)
+	}
+	run := fmt.Sprintf("lasq%d", time.Now().UnixNano())
+	base := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	stamps := pushLevelAfterStage(t, lokiURL, run, entries, base)
+	pushLevelAfterStage(t, vlURL, run, entries, base)
+	forceVLFlush(t)
+	window := dlFixture{start: base, end: base.Add(time.Minute)}
+	selector := fmt.Sprintf(`{cr_las=%q}`, run)
+	lokiEntriesWhenAll(t, lokiURL, selector, window, len(entries))
+	lokiEntriesWhenAll(t, proxyURL, selector, window, len(entries))
+	names := map[string]string{}
+	for i, e := range entries {
+		names[stamps[i]] = e.Name
+	}
+	headers := map[string]string{"X-Loki-Response-Encoding-Flags": "categorize-labels"}
+	level := func(e dlEntry) string {
+		var out []string
+		for _, c := range []struct {
+			name   string
+			labels map[string]string
+		}{{"stream", e.stream}, {"metadata", e.metadata}, {"parsed", e.parsed}} {
+			for _, k := range []string{"detected_level", "detected_level_extracted"} {
+				if v, ok := c.labels[k]; ok {
+					out = append(out, c.name+"."+k+"="+v)
+				}
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	for _, stage := range levelAfterStageStages {
+		for _, filter := range levelAfterStageFilters {
+			query := selector + " | " + stage + " | " + filter
+			t.Run(stage+" | "+filter, func(t *testing.T) {
+				loki := dlGoldenEntries(t, lokiURL, query, window, headers)
+				proxy := dlGoldenEntries(t, proxyURL, query, window, headers)
+				for stamp, want := range loki {
+					got, ok := proxy[stamp]
+					if !ok {
+						t.Errorf("%s: Loki selects it, the proxy does not", names[stamp])
+						continue
+					}
+					if strings.HasPrefix(stage, "json") || stage == "logfmt" {
+						continue
+					}
+					if g, w := level(got), level(want); g != w {
+						t.Errorf("%s: proxy %q, Loki %q", names[stamp], g, w)
+					}
+				}
+				if len(loki) == 0 && !strings.Contains(stage, "keep a") && !strings.Contains(stage, "drop detected_level") {
+					t.Fatal("Loki selects no entry: refusing an empty comparison")
+				}
+				for stamp := range proxy {
+					if _, ok := loki[stamp]; !ok {
+						t.Errorf("%s: the proxy selects it, Loki does not", names[stamp])
+					}
+				}
+			})
+		}
+	}
+}
