@@ -1220,7 +1220,7 @@
     "semantics/unpack-non-string-values | gap:open",
     "semantics/unpack-non-string-values | query",
     "semantics/unpack-parser-error-not-raised | compare:exact",
-    "semantics/unpack-parser-error-not-raised | gap:open",
+    "semantics/unpack-parser-error-not-raised | gap:fixed",
     "semantics/unwrap-avg-overflow | compare:exact",
     "semantics/unwrap-avg-overflow | gap:open",
     "semantics/unwrap-bare-range-exposes-parsed-labels | compare:observed",
@@ -2647,6 +2647,7 @@
     "internal/proxy/typed_fold_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/unknown_logql_names_test.go | semantics/comments-signed-compound-offsets",
     "internal/proxy/unknown_logql_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
+    "internal/proxy/unpack_parser_error_test.go | semantics/unpack-parser-error-not-raised",
     "internal/proxy/unpack_sum_rate_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "internal/proxy/unwrap_binary_operand_loki_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/unwrap_binary_operand_loki_test.go | semantics/unwrap-conversion-error-binary-operand",
@@ -2934,6 +2935,7 @@
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/typed_pair_blank_test.go | semantics/blank-before-call-parenthesis-read-unlike-loki",
     "internal/querycorpus/typed_pair_blank_test.go | semantics/translator-reads-only-space-between-tokens",
+    "internal/querycorpus/unpack_error_lines_test.go | semantics/unpack-parser-error-not-raised",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/unpack-parser-error-not-raised",
@@ -3575,6 +3577,7 @@
     "test/e2e-compat/unpack_metrics_test.go | loki_api_v1_query",
     "test/e2e-compat/unpack_metrics_test.go | loki_api_v1_query_range",
     "test/e2e-compat/unpack_metrics_test.go | semantics/unpack-instant-sum-rate-per-stream",
+    "test/e2e-compat/unpack_metrics_test.go | semantics/unpack-parser-error-not-raised",
     "test/e2e-compat/unwrap_conversion_error_test.go | loki_api_v1_query",
     "test/e2e-compat/unwrap_conversion_error_test.go | loki_api_v1_query_range",
     "test/e2e-compat/unwrap_conversion_error_test.go | parser-error-and-label-collision",
@@ -3684,7 +3687,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 833,
+      "go": 835,
       "playwright": 3
     },
     "page_kinds": {

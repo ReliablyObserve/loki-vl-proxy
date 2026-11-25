@@ -2573,7 +2573,10 @@
       "internal/proxy/compat_oversized_reply_test.go"
     ],
     "semantics/unpack-parser-error-not-raised": [
-      "internal/querycorpus/unpack_sum_loki_diff_test.go"
+      "internal/proxy/unpack_parser_error_test.go",
+      "internal/querycorpus/unpack_error_lines_test.go",
+      "internal/querycorpus/unpack_sum_loki_diff_test.go",
+      "test/e2e-compat/unpack_metrics_test.go"
     ],
     "semantics/unwrap-bare-range-exposes-parsed-labels": [
       "internal/querycorpus/extraction_list_identity_loki_diff_test.go"
@@ -5271,6 +5274,9 @@
       "semantics/comments-signed-compound-offsets",
       "semantics/proxy-accepts-operators-not-in-loki"
     ],
+    "internal/proxy/unpack_parser_error_test.go": [
+      "semantics/unpack-parser-error-not-raised"
+    ],
     "internal/proxy/unpack_sum_rate_test.go": [
       "semantics/unpack-instant-sum-rate-per-stream"
     ],
@@ -5765,6 +5771,9 @@
     "internal/querycorpus/typed_pair_blank_test.go": [
       "semantics/blank-before-call-parenthesis-read-unlike-loki",
       "semantics/translator-reads-only-space-between-tokens"
+    ],
+    "internal/querycorpus/unpack_error_lines_test.go": [
+      "semantics/unpack-parser-error-not-raised"
     ],
     "internal/querycorpus/unpack_sum_loki_diff_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json",
@@ -6919,7 +6928,8 @@
     "test/e2e-compat/unpack_metrics_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
-      "semantics/unpack-instant-sum-rate-per-stream"
+      "semantics/unpack-instant-sum-rate-per-stream",
+      "semantics/unpack-parser-error-not-raised"
     ],
     "test/e2e-compat/unwrap_conversion_error_test.go": [
       "loki_api_v1_query",
@@ -7076,7 +7086,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 836,
+  "tests_with_markers": 838,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -58,9 +58,9 @@ func TestUnpackErrorProbes(t *testing.T) {
 		`count_over_time({a="b"} | unpack | __error__="" [1m])`:                      0,
 		`absent_over_time({a="b"} | unpack [1m])`:                                    0,
 		// Another parser beside the unpack: not covered yet (semantics/translator-writes-unpack-as-unpack-json).
-		`count_over_time({a="b"} | unpack | json [1m])`:                              0,
-		`count_over_time({a="b"}[1m])`:                                               0,
-		`sum_over_time({a="b"} | unpack | unwrap x [1m])`:                            0,
+		`count_over_time({a="b"} | unpack | json [1m])`:   0,
+		`count_over_time({a="b"}[1m])`:                    0,
+		`sum_over_time({a="b"} | unpack | unwrap x [1m])`: 0,
 	} {
 		expr, ok := sharedLogQLExpr(RequestQueryText(q))
 		if !ok {
