@@ -64,7 +64,7 @@ gap:
   fixed_by: '#0000'
   impact: explore-visible
   effort: M
-  area: 'internal/queryplan/lower/level_after_stage.go, detected_level.go; internal/proxy/level_after_stage_fence.go'
+  area: 'internal/proxy/level_after_stage_fence.go, internal/proxy/query_lowering.go, internal/proxy/response_key_fences.go, internal/queryplan/lower/delete_filter.go, internal/queryplan/lower/detected_level.go, internal/queryplan/lower/level_after_stage.go, internal/queryplan/lower/log_screen.go, internal/queryplan/lower/lower.go, internal/queryplan/lower/metric_screen.go'
   loki: 'detected_level is structured metadata set at ingest; later parsers write detected_level_extracted'
   proxy: 'the plan writes the filter ahead of the stages, or compares the empty value on a removed label'
   planned_test: 'TestLevelFilterAfterStageMatchesLoki (internal/queryplan/lower), TestDetectedLevelStagesEdges, TestLevelAfterStageServedFromPlan (internal/proxy)'
