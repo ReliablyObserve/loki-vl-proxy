@@ -155,18 +155,7 @@ func mixedClassBodyAliasPattern(label string) string {
 		// the conservative all-key guard instead of growing backend SQL.
 		return mixedClassInvalidBodyKey
 	}
-	return mixedClassASCIIKeySpace(pattern)
-}
-
-// mixedClassASCIIKeySpace is the alias pattern for a message that is printable ASCII (0x20 to 0x7e), which the class's
-// own first guard on the message requires: there the runes Loki trims around a key (\s, \v, U+0085, \p{Z}) can only be
-// the space. A Unicode class is the dearest part of the pattern per row (about a fifth of the native count's time on a
-// day of 1.26 million rows), a space is a literal. For every message the guard admits the two patterns match alike
-// (TestMixedClassASCIIKeySpaceMatchesLikeTheUnicodePattern); a message the guard rejects is rejected whatever this
-// pattern says, as the class is an AND of its guards and the raw route is its negation.
-func mixedClassASCIIKeySpace(pattern string) string {
-	pattern = strings.ReplaceAll(pattern, jsonKeySpace, " ")
-	return strings.ReplaceAll(pattern, `\s`, " ")
+	return pattern
 }
 
 // Each positive pattern necessarily contains one of its literal prefilters.
