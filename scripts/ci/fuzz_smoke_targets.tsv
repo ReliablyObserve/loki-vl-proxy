@@ -224,3 +224,4 @@ smoke	internal/logql	FuzzArgumentReaderMatchesFirstArgumentLen	12s	-	the bracket
 smoke	internal/proxy	FuzzStripOuterCallsMatchesRescanning	12s	-	the strip of outer label_replace calls reads a nesting through one bracket table as reading each call from its text
 smoke	internal/proxy	FuzzCutLokiSplits	12s	-	the per-split Loki cut of a Drilldown partial answer terminates on any body, limit and split and never adds a series or a point
 smoke	internal/proxy	FuzzCutLokiSplitsMatchesReference	12s	-	the in-place per-split Loki cut keeps exactly the series and points of the plain cut over decoded JSON
+smoke	internal/proxy	FuzzLabelsInventoryCover	12s	-	names-only /labels listing with ends answered by their hours equals one full-range call
