@@ -273,12 +273,8 @@ func TestRankOverBinaryMatchesLoki(t *testing.T) {
 // keeps: the same status, and at every step the same values kept, as a multiset (a tie Loki breaks by the order of a
 // Go map, so any of the tied series is its answer).
 func rankedTieOnly(loki metricLokiAnswer, run metricHandlerRun) bool {
-	if loki.Status != http.StatusOK || run.status != http.StatusOK {
-		return false
-	}
-	l, errL := decodeMetricBody(loki.Body)
-	p, errP := decodeMetricBody([]byte(run.body))
-	if errL != nil || errP != nil || l.resultType != p.resultType {
+	l, p, ok := rankedAnswers(loki, run)
+	if !ok {
 		return false
 	}
 	// The kept series carry the same label names as Loki's: a tie changes which series, never its labels' shape.
@@ -289,16 +285,23 @@ func rankedTieOnly(loki metricLokiAnswer, run metricHandlerRun) bool {
 				seen[k] = true
 			}
 		}
-		out := make([]string, 0, len(seen))
-		for k := range seen {
-			out = append(out, k)
-		}
-		sort.Strings(out)
-		return strings.Join(out, ",")
+		return strings.Join(sortedKeysOf(seen), ",")
 	}
-	if names(l) != names(p) {
-		return false
+	return names(l) == names(p) && sameRankedValues(l, p)
+}
+
+// rankedAnswers decodes two successful answers of the same result type.
+func rankedAnswers(loki metricLokiAnswer, run metricHandlerRun) (l, p metricResult, ok bool) {
+	if loki.Status != http.StatusOK || run.status != http.StatusOK {
+		return l, p, false
 	}
+	l, errL := decodeMetricBody(loki.Body)
+	p, errP := decodeMetricBody([]byte(run.body))
+	return l, p, errL == nil && errP == nil && l.resultType == p.resultType
+}
+
+// sameRankedValues reports that two answers hold the same values at every step, whichever series carry them.
+func sameRankedValues(l, p metricResult) bool {
 	byStep := func(r metricResult) map[string][]string {
 		out := map[string][]string{}
 		for _, s := range r.series {
