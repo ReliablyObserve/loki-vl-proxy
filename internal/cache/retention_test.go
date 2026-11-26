@@ -571,6 +571,12 @@ func FuzzRetentionOperations(f *testing.F) {
 			checkSegments(t, c)
 		}
 		c.drainPromotions()
+		// A lookup that finds an expired or unreadable disk record asks the
+		// flush worker to drop it; that flush runs in the background and
+		// applies the layer counter and its reason in one locked step, which a
+		// lock-free snapshot can split. Flush waits for it, so the counters
+		// are at rest when they are compared.
+		dc.Flush()
 		checkSegments(t, c)
 		assertSignalsBalance(t, c, dc)
 	})
