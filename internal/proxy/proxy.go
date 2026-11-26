@@ -285,7 +285,7 @@ type Config struct {
 	ServiceNameStreamLabelOnly bool
 	// ServiceNameStreamRoute turns on the automatic service_name stream filter (service_name_route.go): a log query
 	// read narrowed to the streams that can hold its service, kept only when a VictoriaLogs read beside it finds no
-	// row the narrowing leaves out. -service-name-stream-route, on by default; the zero value is off.
+	// row the narrowing leaves out. -service-name-stream-route, off by default (as the zero value).
 	ServiceNameStreamRoute bool
 	// ServiceNameStreamRouteMinWindow is the shortest read window the automatic route narrows (0: every window).
 	ServiceNameStreamRouteMinWindow time.Duration

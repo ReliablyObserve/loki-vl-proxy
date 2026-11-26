@@ -20,7 +20,7 @@ proxy_usage: |
   (translate.ServiceNameStreamFilter). The answer is the same as without it only if VictoriaLogs reads the groups,
   the missing label and the stream labels as above; the flag's documentation names the duplicate-field case as a row
   the operator's declaration excludes.
-  The automatic route (-service-name-stream-route, default on) sends the same stream filter in extra_filters, an
+  The automatic route (-service-name-stream-route, default off) sends the same stream filter in extra_filters, an
   argument VictoriaLogs parses as a filter (a value not starting with `{"`) and ANDs with the query and its
   subqueries (v1.49.0 and v1.54.0, app/vlselect/logsql parseCommonArgs); the stream filter there selects the streams
   from the stream index as it does in the query text (measured equal timings and answers). Its answer is used only
