@@ -489,8 +489,8 @@ var retentionDocPolicies = []string{"lru", "protect20", "protect50", "protect80"
 // retentionDocFile holds the published table, between the markers.
 const (
 	retentionDocFile  = "../../docs/cache-troubleshooting.md"
-	retentionDocBegin = "<!-- retention-trace-table:begin (TestRetentionTraceReplay; LVP_RETENTION_TABLE_UPDATE=1 rewrites it) -->"
-	retentionDocEnd   = "<!-- retention-trace-table:end -->"
+	retentionDocBegin = "[//]: # 'retention-trace-table:begin (TestRetentionTraceReplay; LVP_RETENTION_TABLE_UPDATE=1 rewrites it)'"
+	retentionDocEnd   = "[//]: # 'retention-trace-table:end'"
 )
 
 // checkRetentionDocTable holds the published table to the replay: the docs
