@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -298,8 +300,8 @@ func TestCredentialScopedKeyReuseAcrossProcesses(t *testing.T) {
 
 // Distinct credentials never share a cache key: two requests get one
 // fingerprint exactly when their tenant scope, forwarded headers and
-// forwarded cookies are the same, and a credential fingerprint is always
-// keyed.
+// forwarded cookies are the same bytes (invalid UTF-8 included), and a
+// credential fingerprint is always keyed.
 //
 // conformance: cache-key-credential-digest
 func FuzzCredentialFingerprintsNeverCollide(f *testing.F) {
@@ -308,6 +310,8 @@ func FuzzCredentialFingerprintsNeverCollide(f *testing.F) {
 	f.Add("", `a","b`, "", "", `a"`, `session=","b`)
 	f.Add("a", "b", "session=c; session=d", "a", "b", "session=d; session=c")
 	f.Add("x", "", "", "x", "", "")
+	// Two different invalid UTF-8 header values: JSON spells both U+FFFD.
+	f.Add("team-a", "Basic \xff", "", "team-a", "Basic \xfe", "")
 	p := credentialTestProxy(f, func(c *Config) {
 		c.CacheKeySecret = "fuzz"
 		c.ForwardHeaders = []string{"Authorization", "X-Id-Token"}
@@ -325,8 +329,26 @@ func FuzzCredentialFingerprintsNeverCollide(f *testing.F) {
 				cookies = append(cookies, [2]string{c.Name, c.Value})
 			}
 		}
-		data, _ := json.Marshal([]any{scope, p.forwardedIdentityHeaders(r), cookies})
-		return r, string(data), len(cookies) > 0 || p.forwardsCredentialHeader(r)
+		// The oracle compares raw bytes (strconv.Quote is injective, also on
+		// invalid UTF-8, where JSON writes U+FFFD for any bad byte).
+		var in strings.Builder
+		in.WriteString(strconv.Quote(scope))
+		identity := p.forwardedIdentityHeaders(r)
+		names := make([]string, 0, len(identity))
+		for name := range identity {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			in.WriteString(" h" + strconv.Quote(name))
+			for _, v := range identity[name] {
+				in.WriteString("=" + strconv.Quote(v))
+			}
+		}
+		for _, c := range cookies {
+			in.WriteString(" c" + strconv.Quote(c[0]) + "=" + strconv.Quote(c[1]))
+		}
+		return r, in.String(), len(cookies) > 0 || p.forwardsCredentialHeader(r)
 	}
 	f.Fuzz(func(t *testing.T, org1, auth1, cookie1, org2, auth2, cookie2 string) {
 		r1, in1, cred1 := inputs(org1, auth1, cookie1)
@@ -380,5 +402,22 @@ func TestCredentialDigestConcurrentRequests(t *testing.T) {
 		if e := <-errs; e != "" {
 			t.Fatal(e)
 		}
+	}
+}
+
+// Header values that are not valid UTF-8 stay apart: two credentials that
+// differ only in such bytes never share a fingerprint (JSON would spell both
+// as U+FFFD).
+//
+// conformance: cache-key-credential-digest
+func TestCredentialFingerprintKeepsInvalidUTF8Apart(t *testing.T) {
+	p := credentialTestProxy(t, func(c *Config) { c.CacheKeySecret = "fleet-1" })
+	a := p.forwardedAuthFingerprint(credentialRequest("team-a", "Basic \xff", ""))
+	b := p.forwardedAuthFingerprint(credentialRequest("team-a", "Basic \xfe", ""))
+	if a == b {
+		t.Fatalf("two credentials differing in invalid UTF-8 bytes share fingerprint %q", a)
+	}
+	if again := p.forwardedAuthFingerprint(credentialRequest("team-a", "Basic \xff", "")); again != a {
+		t.Fatalf("the same bytes gave %q and %q", a, again)
 	}
 }
