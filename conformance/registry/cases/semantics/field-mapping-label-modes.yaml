@@ -46,7 +46,7 @@ request:
     X-Scope-OrgID: "0"
   verify:
     blocked_by: fixture
-    reason: "no proxy of the e2e stack sets field mappings; TestCompat_FieldMappingLabelModes runs the three modes in process against the stack's VictoriaLogs, and unit tests hold every endpoint, the cache identities and the call counts"
+    reason: "no proxy of the e2e stack sets field mappings; TestCompat_FieldMappingLabelModes runs the three modes in process against the stack's VictoriaLogs, TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers runs a ring of replicas in different modes over the peer tier, and unit tests hold every endpoint, the cache identities and the call counts"
 compare:
   mode: exact
   fields: [status, data]
@@ -61,7 +61,7 @@ gap:
   area: 'internal/proxy/field_mapping_labels.go, TranslateLabelsList, detected_labels, volume targetLabels'
   loki: 'a label the picker offers has values and selects lines; a series has one label per attribute'
   proxy: 'the mode selects the listed names of a mapped field; answers carry one name per field'
-  planned_test: 'TestFieldMappingLabelMode_IssueReproduction, TestFieldMappingLabelMode_Endpoints, TestFieldMappingLabelMode_SharedCacheTier, TestCompat_FieldMappingLabelModes'
+  planned_test: 'TestFieldMappingLabelMode_IssueReproduction, TestFieldMappingLabelMode_Endpoints, TestFieldMappingLabelMode_SharedCacheTier, TestCompat_FieldMappingLabelModes, TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers'
   clusters: []
   visual: none
-  visual_reason: 'no proxy of the e2e stack sets field mappings, so no capture reaches the setting; the answers are checked on a real VictoriaLogs by TestCompat_FieldMappingLabelModes'
+  visual_reason: 'no proxy of the e2e or visual-smoke stack sets field mappings, so no CI capture reaches the setting; the names the pickers list are checked on a real VictoriaLogs by TestCompat_FieldMappingLabelModes and TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers'
