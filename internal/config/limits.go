@@ -6,6 +6,16 @@ package config
 // flag disappears or a limit entry is missing its Helm value.
 var Limits = []Limit{
 	{
+		Flag:       "server.auth-max-concurrent-verifications",
+		Unit:       "concurrent verifications",
+		Bounds:     "bcrypt password verifications of caller authentication (-server.auth-users-file) running at once per replica. A Basic credential verified in the last -server.auth-cache-ttl, or refused in the last minute, is answered from memory without a slot, so a flood of new or wrong passwords never delays callers already verified; bearer tokens never take a slot (one SHA-256)",
+		Error:      "429 `too many outstanding requests` (Loki's text) when a request waited a second for a slot; the request error log line says `every password verification slot stayed busy (-server.auth-max-concurrent-verifications)`",
+		Metric:     "loki_vl_proxy_auth_failures_total{reason=\"busy\"}",
+		Alert:      "none",
+		LokiParity: "",
+		Sizing:     "One verification at bcrypt cost 12 takes about 0.2 s of one core (cost 10 about 50 ms), so 4 slots cap what wrong passwords can cost at 4 cores and admit about 20 new credentials a second at cost 12. Grafana sends the same credential on every request, so after the first request each datasource is a cache hit. Raise it only for many distinct callers that start at once; lower it to protect a small replica.",
+	},
+	{
 		Flag:       "backend-max-concurrent-heavy-queries",
 		Unit:       "concurrent calls",
 		Bounds:     "heavy VictoriaLogs calls running at once per replica: raw-row metric fetches above 10,000 rows, and stats, hits or unbounded query calls spanning at least -backend-heavy-query-min-range, finer than 11,000 buckets, or without a time range",

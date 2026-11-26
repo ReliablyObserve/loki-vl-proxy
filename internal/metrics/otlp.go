@@ -1061,6 +1061,15 @@ func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	if len(rotationPoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_http_connection_rotations_total", "Downstream HTTP/1.x connection rotations triggered by the proxy.", "", rotationPoints...))
 	}
+	if p.metrics.authEnabled.Load() {
+		authPoints := make([]map[string]interface{}, 0, len(AuthFailureReasons))
+		for i, reason := range AuthFailureReasons {
+			authPoints = append(authPoints, p.counterDP("loki_vl_proxy_auth_failures_total", p.metrics.authFailures[i].Load(), now, attr("reason", reason)))
+		}
+		metrics = append(metrics,
+			p.sumMetric("loki_vl_proxy_auth_failures_total", "Requests refused by caller authentication (-server.auth-users-file), by reason.", "", authPoints...),
+			p.sumMetric("loki_vl_proxy_auth_users_reload_failures_total", "Users file reloads that failed and kept the last good users.", "", p.counterDP("loki_vl_proxy_auth_users_reload_failures_total", p.metrics.authReloadFailures.Load(), now)))
+	}
 	durationKeys := sortedKeys(mapsFromHists(p.metrics.clientDurations))
 	durationPoints := make([]map[string]interface{}, 0, len(durationKeys))
 	for _, key := range durationKeys {

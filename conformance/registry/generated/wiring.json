@@ -198,8 +198,16 @@
       "internal/metrics/cache_sizing_metrics_test.go",
       "internal/proxy/cache_layer_metrics_test.go"
     ],
+    "client-authentication": [
+      "cmd/proxy/client_auth_test.go",
+      "internal/clientauth/clientauth_test.go",
+      "internal/clientauth/fuzz_test.go",
+      "internal/proxy/client_auth_test.go",
+      "test/helm/client_auth_test.go"
+    ],
     "credential-passthrough-as-configured": [
       "cmd/proxy/secret_flags_test.go",
+      "internal/proxy/client_auth_test.go",
       "internal/proxy/credential_passthrough_test.go"
     ],
     "data-probing-and-freshness": [
@@ -210,6 +218,7 @@
     "delete-api-requires-token": [
       "cmd/proxy/delete_api_validation_test.go",
       "cmd/proxy/secret_flags_test.go",
+      "internal/proxy/client_auth_test.go",
       "internal/proxy/delete_route_test.go"
     ],
     "drilldown/client-detection-captured-header-sets": [
@@ -3080,6 +3089,7 @@
     ],
     "tenant-auth-follows-loki": [
       "cmd/proxy/tenant_routing_test.go",
+      "internal/proxy/client_auth_test.go",
       "internal/proxy/tenant_auth_parity_test.go",
       "internal/proxy/tenant_header_fuzz_test.go",
       "internal/proxy/tenant_isolation_leak_test.go",
@@ -3240,11 +3250,14 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 761,
+  "registry_items": 763,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
       "cache-restart-handover"
+    ],
+    "cmd/proxy/client_auth_test.go": [
+      "client-authentication"
     ],
     "cmd/proxy/delete_api_validation_test.go": [
       "delete-api-requires-token"
@@ -3363,6 +3376,12 @@
     "internal/capability/version_source_test.go": [
       "backend-version-source",
       "vl-backend-version-source"
+    ],
+    "internal/clientauth/clientauth_test.go": [
+      "client-authentication"
+    ],
+    "internal/clientauth/fuzz_test.go": [
+      "client-authentication"
     ],
     "internal/clientprofile/detect_test.go": [
       "drilldown/client-detection-captured-header-sets"
@@ -3854,6 +3873,12 @@
     "internal/proxy/chunked_range_windows_loki_test.go": [
       "drilldown/long-range-pieces-answer-like-loki",
       "loki_api_v1_query_range"
+    ],
+    "internal/proxy/client_auth_test.go": [
+      "client-authentication",
+      "credential-passthrough-as-configured",
+      "delete-api-requires-token",
+      "tenant-auth-follows-loki"
     ],
     "internal/proxy/client_profile_capture_test.go": [
       "drilldown/client-detection-captured-header-sets",
@@ -7220,6 +7245,9 @@
       "cache-key-credential-digest",
       "secrets-outside-process-arguments"
     ],
+    "test/helm/client_auth_test.go": [
+      "client-authentication"
+    ],
     "test/helm/image_test.go": [
       "release-image-pinned-by-digest"
     ],
@@ -7230,7 +7258,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 866,
+  "tests_with_markers": 871,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7389,5 +7417,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 492
+  "wired_items": 493
 }
