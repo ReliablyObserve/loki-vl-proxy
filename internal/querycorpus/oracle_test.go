@@ -339,6 +339,13 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	if err != nil {
 		return "", "", false
 	}
+	if lower.WritesLevelAfterStage(plan) {
+		// The plan reads the filter on detected_level as Loki does, the translator reads the field the stages leave:
+		// the two do not mean the same, by design (semantics/level-filter-after-stage; held to Loki by
+		// TestLevelFilterAfterStageMatchesLoki). The reference is the translator's text of the spelling with the
+		// filter ahead of the stages, where there is one.
+		return hoistedPair(q, op, caps)
+	}
 	levels, operand := physical.SplitEval(op)
 	vq, isQuery := operand.(physical.VLQuery)
 	if !isQuery {
@@ -378,6 +385,30 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	// pair is the plan's text and the translator's made right.
 	built = lower.QuoteKeywordFieldText(built)
 	return guardedPair(vq.Text, built)
+}
+
+// hoistedPair is the pair of a query with a filter on detected_level after a stage: the plan's text and the
+// translator's text of its hoisted spelling (hoistedSpelling), the flag a metric row's parser behind the level
+// derivation takes left out of both. A query with no such spelling, an evaluated route or a marker has no pair.
+func hoistedPair(q string, op physical.Op, caps logsql.Capabilities) (typed, built string, ok bool) {
+	spelled, ok := hoistedSpelling(q)
+	if !ok {
+		return "", "", false
+	}
+	levels, operand := physical.SplitEval(op)
+	vq, isQuery := operand.(physical.VLQuery)
+	if len(levels) > 0 || !isQuery || strings.Contains(vq.Text, rateCounterMarker) {
+		return "", "", false
+	}
+	built, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(spelledAsTranslatorReads(spelled)),
+		func(s string) string { return s }, nil, caps)
+	if err != nil || strings.HasPrefix(built, `"`) {
+		return "", "", false
+	}
+	if strings.HasPrefix(built, "|") {
+		built = "* " + built
+	}
+	return guardedPair(withoutKeptOriginals(vq.Text), withoutKeptOriginals(lower.QuoteKeywordFieldText(built)))
 }
 
 // spelledAsTranslatorReads is q in the spelling the string translator reads as Loki does: each run of the blanks Loki's
