@@ -340,9 +340,11 @@ func (data *lruEntry) age(now time.Time) time.Duration {
 }
 
 // countEvictionLocked counts why an L1 entry of layer leaves; data is its LRU
-// node, nil when unknown. Called with c.mu held, before removeEntryLocked.
+// node, nil when unknown. A node with no admission time (0: an entry the
+// restart warm-up admitted) is counted without an age, like a disk record the
+// start-up scan found. Called with c.mu held, before removeEntryLocked.
 func (c *Cache) countEvictionLocked(layer Layer, reason EvictionReason, data *lruEntry, now time.Time) {
-	if data == nil || !observedEviction(reason) {
+	if data == nil || data.admitted == 0 || !observedEviction(reason) {
 		c.signals.count(layer, reason)
 		return
 	}

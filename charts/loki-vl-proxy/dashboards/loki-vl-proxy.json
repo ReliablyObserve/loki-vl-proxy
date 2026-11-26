@@ -969,7 +969,7 @@
       "type": "timeseries",
       "id": 19,
       "title": "Client Query Length (chars)",
-      "description": "Query character length distribution. Very long queries signal complex pipeline stages.",
+      "description": "Query character length distribution. Very long queries signal complex pipeline stages. Empty unless the proxy runs with -metrics.export-sensitive-labels=true (off by default; Helm observability.metrics.exportSensitiveLabels).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1031,7 +1031,7 @@
       "type": "timeseries",
       "id": 20,
       "title": "Client Latency by Route (P99)",
-      "description": "P99 client latency per route. Identify which endpoints are slow for clients.",
+      "description": "P99 client latency per route. Identify which endpoints are slow for clients. Empty unless the proxy runs with -metrics.export-sensitive-labels=true (off by default; Helm observability.metrics.exportSensitiveLabels).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1075,7 +1075,7 @@
       "type": "timeseries",
       "id": 21,
       "title": "Inflight Requests per Client",
-      "description": "Active in-flight requests per client. Helps identify heavy consumers.",
+      "description": "Active in-flight requests per client. Helps identify heavy consumers. Empty unless the proxy runs with -metrics.export-sensitive-labels=true (off by default; Helm observability.metrics.exportSensitiveLabels).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1317,7 +1317,7 @@
       "type": "timeseries",
       "id": 27,
       "title": "Tenant Request Rate",
-      "description": "Request rate per tenant (X-Scope-OrgID). Identify dominant tenants for capacity planning.",
+      "description": "Request rate per tenant (X-Scope-OrgID). Identify dominant tenants for capacity planning. Empty unless the proxy runs with -metrics.export-sensitive-labels=true (off by default; Helm observability.metrics.exportSensitiveLabels).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2043,7 +2043,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "loki_vl_proxy_process_pressure_cpu_some_ratio{window=\"10\"}",
+          "expr": "loki_vl_proxy_process_pressure_cpu_some_ratio{window=\"10s\"}",
           "legendFormat": "CPU pressure (10s)",
           "refId": "A"
         },
@@ -2052,7 +2052,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "loki_vl_proxy_process_pressure_memory_some_ratio{window=\"10\"}",
+          "expr": "loki_vl_proxy_process_pressure_memory_some_ratio{window=\"10s\"}",
           "legendFormat": "Mem pressure (10s)",
           "refId": "A"
         },
@@ -2061,7 +2061,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "loki_vl_proxy_process_pressure_io_some_ratio{window=\"10\"}",
+          "expr": "loki_vl_proxy_process_pressure_io_some_ratio{window=\"10s\"}",
           "legendFormat": "IO pressure (10s)",
           "refId": "A"
         }
@@ -3822,7 +3822,7 @@
       "type": "timeseries",
       "id": 76,
       "title": "Per-Tenant Request Rate",
-      "description": "Request rate per X-Scope-OrgID tenant. Identify dominant tenants.",
+      "description": "Request rate per X-Scope-OrgID tenant. Identify dominant tenants. Empty unless the proxy runs with -metrics.export-sensitive-labels=true (off by default; Helm observability.metrics.exportSensitiveLabels).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -3866,7 +3866,7 @@
       "type": "timeseries",
       "id": 77,
       "title": "Per-Tenant P99 Latency",
-      "description": "P99 latency by tenant. Noisy-tenant isolation: one tenant's slow queries don't explain another's.",
+      "description": "P99 latency by tenant. Noisy-tenant isolation: one tenant's slow queries don't explain another's. Empty unless the proxy runs with -metrics.export-sensitive-labels=true (off by default; Helm observability.metrics.exportSensitiveLabels).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -3910,7 +3910,7 @@
       "type": "timeseries",
       "id": 78,
       "title": "Per-Tenant Error Rate",
-      "description": "Error rate per tenant. Tenant-scoped backend failures or bad queries.",
+      "description": "Error rate per tenant. Tenant-scoped backend failures or bad queries. Empty unless the proxy runs with -metrics.export-sensitive-labels=true (off by default; Helm observability.metrics.exportSensitiveLabels).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

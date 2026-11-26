@@ -40,8 +40,27 @@ Metrics moved to a dedicated port:
 
 ----
 
+The ServiceMonitor now sets `honorLabels: true`:
+  the proxy's `endpoint` label (query_range, labels, ...) arrives as
+  `endpoint` instead of `exported_endpoint`, and the scrape target's port name
+  no longer overwrites it. Change `exported_endpoint` to `endpoint` in your own
+  queries, or set serviceMonitor.honorLabels=false to keep the old labels.
+  A scrape config you manage yourself needs `honor_labels: true` (Prometheus),
+  or `honorLabels: true` (VMServiceScrape).
+
+----
+
 Peer cache shared token is required by default:
   The chart auto-generated Secret `{{ .Release.Name }}-peer-auth` holding a
   random token used for peer-to-peer cache auth. To rotate, replace, or
   externally manage this Secret, see
   docs/configuration.md#peer-cache-token-management.
+
+----
+
+Secrets are mounted as files:
+  the peer, admin, delete and basic-auth Secrets reach the proxy through
+  -...-file flags, not through process arguments or environment variables.
+  The image must be of this chart's release or newer; an older proxy exits on
+  the unknown flag. The proxy reads the files at startup, so restart the pods
+  after rotating a Secret.

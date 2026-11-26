@@ -55,10 +55,15 @@ const (
 	SourceMetrics        // the VictoriaLogs /metrics endpoint
 	SourceHeader         // a response header
 	SourceConfig         // the operator or a test named it
+	// SourceVersionURL is the /metrics endpoint the operator named with -backend-version-url. Its address need not be
+	// the one queried, so it enables only what probes confirm (see decide).
+	SourceVersionURL
+	// SourceDeclared is the release the operator wrote with -backend-version: it enables only what probes confirm.
+	SourceDeclared
 	numSources
 )
 
-var sourceLabels = [...]string{"none", "metrics", "header", "config"}
+var sourceLabels = [...]string{"none", "metrics", "header", "config", "version_url", "declared"}
 
 // String is the source's label.
 func (s Source) String() string {
@@ -353,6 +358,48 @@ func ParseMetrics(text string) (Release, bool) {
 		}
 	}
 	return Release{}, false
+}
+
+// maxForeign bounds the text DescribeMetrics repeats from a /metrics payload.
+const maxForeign = 80
+
+// DescribeMetrics says what a /metrics payload without a VictoriaLogs release holds, for a log line: the version of
+// the other program that answered (vmauth in front of VictoriaLogs answers /metrics itself), cut to the characters
+// of a version and to maxForeign bytes because the payload is not the proxy's.
+func DescribeMetrics(text string) string {
+	for len(text) > 0 {
+		line := text
+		if i := strings.IndexByte(text, '\n'); i >= 0 {
+			line, text = text[:i], text[i+1:]
+		} else {
+			text = ""
+		}
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "vm_app_version{") {
+			continue
+		}
+		// The full version names the program ("vmauth-..."), so it is preferred to the short one.
+		for _, label := range []string{`version="`, `short_version="`} {
+			for from := 0; ; {
+				i := strings.Index(line[from:], label)
+				if i < 0 {
+					break
+				}
+				i += from
+				from = i + len(label)
+				if i > 0 && isLabelNameByte(line[i-1]) {
+					continue // "short_version" is not "version"
+				}
+				value := line[from:]
+				if j := strings.IndexByte(value, '"'); j >= 0 {
+					if v := sanitizeSuffix(value[:min(j, maxForeign)]); v != "" {
+						return "found " + v
+					}
+				}
+			}
+		}
+	}
+	return "no vm_app_version or victorialogs_build_info series names VictoriaLogs"
 }
 
 // isLabelNameByte reports whether c continues a label name ("short_version" must not match "version").

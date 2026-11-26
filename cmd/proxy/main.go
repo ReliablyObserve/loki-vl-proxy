@@ -97,6 +97,9 @@ type proxyRuntimeConfig struct {
 	backendAllowUnsupportedVersion      bool
 	backendVersionCheckTimeout          time.Duration
 	backendVersionStrict                bool
+	backendVersionURL                   string
+	backendVersionBasicAuth             string
+	backendVersion                      string
 	backendVersionReprobeInterval       time.Duration
 	backendFeatureProbes                bool
 	backendBasicAuth                    string
@@ -183,6 +186,7 @@ type proxyRuntimeConfig struct {
 	metricsTrustProxyHeaders            bool
 	metricsExportSensitiveLabels        bool
 	metricsMaxConcurrency               int
+	metricsDurationBuckets              string
 	logRequestSampleRate                int
 	logBuffered                         bool
 	logStatsInterval                    time.Duration
@@ -193,6 +197,10 @@ type proxyRuntimeConfig struct {
 	labelBrowseExtensions               string
 	errorResponseMessageField           bool
 	warmupMaxJitter                     time.Duration
+	cacheShutdownFlushTimeout           time.Duration
+	cacheStartupWarmBytes               int64
+	cacheStartupWarmTimeout             time.Duration
+	cacheHandoverScope                  func() string
 	labelStyle                          string
 	metadataFieldMode                   string
 	translateOTel                       *bool
@@ -553,6 +561,9 @@ func run(
 	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
 	diskCacheMinTTL := fs.Duration("disk-cache-min-ttl", 30*time.Second, "Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies")
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages")
+	cacheShutdownFlushTimeout := fs.Duration("cache-shutdown-flush-timeout", 0, "Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds")
+	cacheStartupWarmBytes := fs.Int64("cache-startup-warm-bytes", 0, "Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none")
+	cacheStartupWarmTimeout := fs.Duration("cache-startup-warm-timeout", 120*time.Second, "Longest /ready answers 503 (response cache warming) while the start-up warm-up runs: the replica reports ready when the warm-up finishes, or after this timeout, whichever comes first; the warm-up stops at this deadline with the hottest entries restored")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 	tenantMapFile := fs.String("tenant-map-file", "", "Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes.")
@@ -646,8 +657,13 @@ func run(
 	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
 	backendVersionReprobeInterval := fs.Duration("backend-version-reprobe-interval", proxy.DefaultBackendVersionReprobeInterval, "How often the proxy reads the VictoriaLogs release again (/metrics) and probes the feature gates (-backend-feature-probes), jittered by 10%, one round at a time per replica, so an upgrade or a rollback of VictoriaLogs changes the gates without a proxy restart. A release leaves the lowest-release window after six intervals without being seen (behind a load balancer each read reaches one random member). 0 disables the periodic round (the release is still read at startup and, while unknown, retried on traffic every 5 minutes); a non-zero value below 10s is raised to 10s. GET /admin/capabilities shows the result")
 	backendFeatureProbes := fs.Bool("backend-feature-probes", true, "Probe VictoriaLogs for the features the proxy's gates depend on (a few tiny read-only queries over an empty one-second window at startup and every -backend-version-reprobe-interval, sent with the proxy's own backend auth and never counted as client requests). A probe decides a gate when no release is readable (behind vmauth without a /metrics route) and cross-checks it when one is: a gate the observed behaviour contradicts is turned by the behaviour and reported. false decides the gates from the release alone; an unreadable release then holds the v1.49.0 floor")
+	backendVersionURL := fs.String("backend-version-url", "", "VictoriaLogs /metrics URL to read the release from instead of the backend's, for example http://vlselect:9471/metrics: behind vmauth the backend's /metrics is vmauth's own, so the gates that need the release stay off. Name the same VictoriaLogs the proxy queries (vlselect in a cluster); it is read at startup and every -backend-version-reprobe-interval, the lowest release read in the window decides, a feature probe that contradicts the release discards it, and the release enables only the gates a probe confirms (so none newer than every probed feature, such as vl.extra_filters_len). No backend auth, header or tenant is sent to it, redirects are not followed, at most 2 MiB of the answer are read within -backend-version-check-timeout, and credentials in the URL are refused (-backend-version-basic-auth). Needs -backend-feature-probes=true")
+	backendVersionBasicAuth := fs.String("backend-version-basic-auth", "", "Basic auth (user:password) sent to -backend-version-url and nowhere else. When neither this flag nor -backend-version-basic-auth-file is given, read from the BACKEND_VERSION_BASIC_AUTH environment variable. A flag value is readable in the process command line")
+	backendVersionBasicAuthFile := fs.String("backend-version-basic-auth-file", "", "File holding the -backend-version-basic-auth value, read once at startup")
+	backendVersion := fs.String("backend-version", "", "VictoriaLogs release behind the proxy, for example v1.54.0, when no endpoint reports it. A claim, not a reading: it enables only the gates a feature probe confirms (a gate newer than every probed feature, such as vl.extra_filters_len, stays off), it is discarded when a probe contradicts it, and against a release read from the backend or -backend-version-url the lower one decides. Prefer -backend-version-url, and update this on every VictoriaLogs upgrade. Needs -backend-feature-probes=true")
 	backendVersionStrict := fs.Bool("backend-version-strict", false, "When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set.")
-	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
+	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password). When neither this flag nor -backend-basic-auth-file is given, read from the BACKEND_BASIC_AUTH environment variable. A flag value is readable in the process command line")
+	backendBasicAuthFile := fs.String("backend-basic-auth-file", "", "File holding the -backend-basic-auth value, read once at startup")
 	backendCompression := fs.String("backend-compression", "auto", "Backend HTTP compression preference: auto, gzip, zstd, none")
 	backendTLSSkip := fs.Bool("backend-tls-skip-verify", false, "Skip TLS verification for VL backend")
 	forwardHeaders := fs.String("forward-headers", "", "Comma-separated list of HTTP headers to forward to VL backend")
@@ -660,7 +676,8 @@ func run(
 	jsonLineFieldsAsLineKeys := fs.Bool("json-line-fields-as-line-keys", false, "Read every stored field of a row whose _msg is VictoriaLogs' missing-message placeholder (its -defaultMsgValue, or -backend-default-msg-value) as a key of the row's JSON line, as Loki holds a JSON line pushed to VictoriaLogs' Loki push route without disable_message_parsing=1: the fields are no labels until `| json` (structured metadata without a parser, parsed labels after `| logfmt` otherwise), and a query that reads a label no stage can give such a line (an unwrap or a label filter after `| logfmt` or without a parser) leaves those rows out, in VictoriaLogs. VictoriaLogs cannot tell such a line's keys from structured metadata pushed beside it, so with this on that structured metadata is hidden too, and so are the fields of any other row stored without a message (jsonline rows and OpenTelemetry map bodies without one, attributes included): leave it off when such rows carry structured metadata or attributes, and prefer pushing with disable_message_parsing=1, which keeps the line and needs no flag. Acts in the Loki-compatible profile only (-label-style=underscores with -metadata-field-mode=translated, the defaults) and needs a non-empty VictoriaLogs -defaultMsgValue")
 	detectedLevelBodyScan := fs.Bool("detected-level-body-scan", true, "Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
-	deleteAPIAuthToken := fs.String("delete-api-auth-token", "", "Token every /loki/api/v1/delete request must carry, in X-Delete-Token or Authorization: Bearer (constant-time compare); required by -delete-api-enabled. It is the delete API's own credential: the admin token and the admin listener are unaffected. Prefer the Helm value deleteAuth.existingSecret, which keeps it out of the pod spec")
+	deleteAPIAuthToken := fs.String("delete-api-auth-token", "", "Token every /loki/api/v1/delete request must carry, in X-Delete-Token or Authorization: Bearer (constant-time compare); required by -delete-api-enabled. It is the delete API's own credential: the admin token and the admin listener are unaffected. Prefer the Helm value deleteAuth.existingSecret, which keeps it out of the pod spec. When neither this flag nor -delete-api-auth-token-file is given, read from the DELETE_API_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
+	deleteAPIAuthTokenFile := fs.String("delete-api-auth-token-file", "", "File holding the -delete-api-auth-token value, read once at startup")
 	deleteAPIEnabled := fs.Bool("delete-api-enabled", false, "Register /loki/api/v1/delete and run Loki's delete requests as VictoriaLogs delete tasks (VictoriaLogs needs -delete.enable). Requires -delete-api-auth-token: every delete request must carry it in X-Delete-Token or Authorization: Bearer, and the proxy refuses to start without one. When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off)")
 	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
 	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
@@ -741,7 +758,8 @@ func run(
 	registerInstrumentation := fs.Bool("server.register-instrumentation", false, "Register instrumentation handlers such as /metrics. Default false (BREAKING in v1.56.0; was true). Set true and optionally pair with --metrics-listen for a dedicated scrape port. The Helm chart sets this to true automatically so ServiceMonitor scrapes keep working without operator action.")
 	enablePprof := fs.Bool("server.enable-pprof", false, "Expose /debug/pprof/* handlers")
 	enableQueryAnalytics := fs.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
-	adminAuthToken := fs.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set")
+	adminAuthToken := fs.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set. When neither this flag nor -server.admin-auth-token-file is given, read from the ADMIN_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
+	adminAuthTokenFile := fs.String("server.admin-auth-token-file", "", "File holding the -server.admin-auth-token value, read once at startup")
 	tailAllowedOrigins := fs.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
 	tailMode := fs.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
 	tailBackendRetryWindow := fs.Duration("tail.backend-retry-window", 30*time.Second, "How long a live tail keeps its websocket open while VictoriaLogs fails for a reason a retry can fix (connection refused or reset, a timeout, a stream that ends or breaks, a 429 or 5xx answer): the proxy reopens the stream, or polls again, with a jittered backoff from 250 ms up to 5 s, and resumes from the last line sent without repeating or skipping one. Past the window, and at once for a failure no retry fixes (a malformed or oversize row, a 4xx VictoriaLogs answer), the tail closes with 1011 and Loki's text. 0 closes on the first failure.")
@@ -753,6 +771,7 @@ func run(
 	metricsMaxClients := fs.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
 	metricsTrustProxyHeaders := fs.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
 	metricsExportSensitiveLabels := fs.Bool("metrics.export-sensitive-labels", false, "Export per-tenant and per-client identity metrics on /metrics and OTLP")
+	metricsDurationBuckets := fs.String("metrics.duration-buckets", "", "Comma-separated upper bounds, in seconds, of the duration histograms on /metrics and OTLP (request, backend, tenant and client request duration, request phase, internal operation and query_range window durations): finite numbers above zero in ascending order, at most 32; +Inf is added. Empty uses 0.001,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,15,20,30,45,60,90,120. Each bound adds one series to every duration histogram series")
 	metricsMaxConcurrency := fs.Int("server.metrics-max-concurrency", 1, "Maximum concurrent /metrics scrapes served at once (0 disables the cap)")
 
 	// Label translation
@@ -799,7 +818,8 @@ func run(
 	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
 	peerReadHedgeMaxDelay := fs.Duration("peer-read-hedge-max-delay", 200*time.Millisecond, "Longest a peer-cache read waits on one replica's response headers before it also asks the key's next replica or, with none left, goes on as a miss (VictoriaLogs or a local compute) while that call finishes in the background, where its -peer-timeout still suspends a paused peer. The delay used is twice the p99 of the measured peer header latencies, at least 5ms and at most this value and half of -peer-timeout. 0 turns hedging off: a read waits up to -peer-timeout on each replica.")
-	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
+	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set. When neither this flag nor -peer-auth-token-file is given, read from the PEER_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
+	peerAuthTokenFile := fs.String("peer-auth-token-file", "", "File holding the -peer-auth-token value, read once at startup")
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerReplicationFactor := fs.Int("peer-replication-factor", 2, "Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner.")
@@ -818,16 +838,17 @@ func run(
 	peerHotReadAheadTenantFairShare := fs.Int("peer-hot-read-ahead-tenant-fair-share", 50, "Maximum per-tenant share (percent) of key budget in fairness pass")
 	peerHotReadAheadErrorBackoff := fs.Duration("peer-hot-read-ahead-error-backoff", 15*time.Second, "Base read-ahead cooldown applied after peer/index errors")
 
-	if err := fs.Parse(args); err != nil {
+	// Secrets are resolved here, before any check or component reads them.
+	explicitFlags, err := parseFlagsAndSecrets(fs, args, getenv, []secretFlag{
+		{name: "peer-auth-token", value: peerAuthToken, file: peerAuthTokenFile, env: "PEER_AUTH_TOKEN"},
+		{name: "server.admin-auth-token", value: adminAuthToken, file: adminAuthTokenFile, env: "ADMIN_AUTH_TOKEN"},
+		{name: "delete-api-auth-token", value: deleteAPIAuthToken, file: deleteAPIAuthTokenFile, env: "DELETE_API_AUTH_TOKEN"},
+		{name: "backend-basic-auth", value: backendBasicAuth, file: backendBasicAuthFile, env: "BACKEND_BASIC_AUTH"},
+		{name: "backend-version-basic-auth", value: backendVersionBasicAuth, file: backendVersionBasicAuthFile, env: "BACKEND_VERSION_BASIC_AUTH"},
+	})
+	if err != nil {
 		return err
 	}
-
-	// Track which flags the operator explicitly passed on the command line so
-	// we can distinguish "left at default" from "explicitly set to the same
-	// value as the default" — needed by resolveHostProcRoot to honor an
-	// explicit --host-proc-root=/proc over the legacy --proc-root fallback.
-	explicitFlags := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) { explicitFlags[f.Name] = true })
 
 	resolvedResponseCompression, err := resolveResponseCompression(*responseCompression, *enableGzip)
 	if err != nil {
@@ -835,6 +856,9 @@ func run(
 	}
 	if *responseCompressionMinBytes < 0 {
 		return fmt.Errorf("invalid -response-compression-min-bytes: must be >= 0")
+	}
+	if err := validateCacheHandoverFlags(*cacheShutdownFlushTimeout, *cacheStartupWarmBytes, *cacheStartupWarmTimeout); err != nil {
+		return err
 	}
 	if *patternsScope != "stream" && *patternsScope != "selector" {
 		return fmt.Errorf("invalid -patterns-scope: %q (must be 'stream' or 'selector')", *patternsScope)
@@ -986,6 +1010,9 @@ func run(
 			backendAllowUnsupportedVersion:      *backendAllowUnsupportedVersion,
 			backendVersionCheckTimeout:          *backendVersionCheckTimeout,
 			backendVersionStrict:                *backendVersionStrict,
+			backendVersionURL:                   *backendVersionURL,
+			backendVersionBasicAuth:             *backendVersionBasicAuth,
+			backendVersion:                      *backendVersion,
 			backendVersionReprobeInterval:       *backendVersionReprobeInterval,
 			backendFeatureProbes:                *backendFeatureProbes,
 			backendBasicAuth:                    *backendBasicAuth,
@@ -1072,6 +1099,7 @@ func run(
 			metricsTrustProxyHeaders:            *metricsTrustProxyHeaders,
 			metricsExportSensitiveLabels:        *metricsExportSensitiveLabels,
 			metricsMaxConcurrency:               *metricsMaxConcurrency,
+			metricsDurationBuckets:              *metricsDurationBuckets,
 			logRequestSampleRate:                *logRequestSampleRate,
 			logBuffered:                         *logBuffered,
 			logStatsInterval:                    *logStatsInterval,
@@ -1082,6 +1110,10 @@ func run(
 			labelBrowseExtensions:               *labelBrowseExtensions,
 			errorResponseMessageField:           *errorResponseMessageField,
 			warmupMaxJitter:                     *warmupMaxJitter,
+			cacheShutdownFlushTimeout:           *cacheShutdownFlushTimeout,
+			cacheStartupWarmBytes:               *cacheStartupWarmBytes,
+			cacheStartupWarmTimeout:             *cacheStartupWarmTimeout,
+			cacheHandoverScope:                  lazyCacheHandoverScope(fs, envCfg, *cacheShutdownFlushTimeout, *cacheStartupWarmBytes),
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			translateOTel:                       envCfg.translateOTel,
@@ -1303,6 +1335,7 @@ func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, disabled bool,
 	}
 
 	c := cache.NewWithMaxBytes(ttl, maxEntries, maxBytes)
+	c.TrackStartupWindow()
 	if diskCfg.Path == "" {
 		return c, func() { c.Close() }, nil
 	}
@@ -2260,6 +2293,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err != nil {
 		return proxy.Config{}, err
 	}
+	durationBuckets, err := metrics.ParseDurationBuckets(cfg.metricsDurationBuckets)
+	if err != nil {
+		return proxy.Config{}, fmt.Errorf("parse -metrics.duration-buckets: %w", err)
+	}
 	if cfg.queryStatsMode != "" && cfg.queryStatsMode != proxy.QueryStatsModeLoki && cfg.queryStatsMode != proxy.QueryStatsModeVictoriaLogs {
 		return proxy.Config{}, fmt.Errorf("invalid -query-stats-mode: %q (must be 'loki' or 'victorialogs')", cfg.queryStatsMode)
 	}
@@ -2376,6 +2413,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
 		BackendVersionStrict:               cfg.backendVersionStrict,
+		BackendVersionURL:                  cfg.backendVersionURL,
+		BackendVersionBasicAuth:            cfg.backendVersionBasicAuth,
+		BackendVersion:                     cfg.backendVersion,
 		BackendVersionReprobeInterval:      cfg.backendVersionReprobeInterval,
 		BackendFeatureProbesDisabled:       !cfg.backendFeatureProbes,
 		BackendBasicAuth:                   cfg.backendBasicAuth,
@@ -2464,8 +2504,13 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		LogRateThreshold:                   cfg.logRateThreshold,
 		MetricsExportSensitiveLabels:       cfg.metricsExportSensitiveLabels,
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
+		MetricsDurationBuckets:             durationBuckets,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
+		CacheShutdownFlushTimeout:          cfg.cacheShutdownFlushTimeout,
+		CacheStartupWarmBytes:              cfg.cacheStartupWarmBytes,
+		CacheStartupWarmTimeout:            cfg.cacheStartupWarmTimeout,
+		CacheHandoverScope:                 cfg.cacheHandoverScope,
 		DisableLabelsCacheWarm:             !cfg.labelsCacheWarm,
 		LogQLDottedNames:                   cfg.logqlDottedNames,
 		LabelBrowseExtensions:              cfg.labelBrowseExtensions,

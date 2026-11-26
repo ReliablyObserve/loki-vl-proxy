@@ -49,7 +49,9 @@ why: |
 
   With the memory answers of semantics/label-inventory-exact-and-incremental
   (2026-11-25, decision labels-memory-answers-at-loki-granularity) the moved
-  windows of this shape make no VictoriaLogs call on the request path. On
+  windows of this shape make no VictoriaLogs call on the request path, except
+  next to a UTC day boundary or an hour the background reads did not read
+  (semantics/label-browser-moved-window-from-memory). On
   the e2e stack (Loki 3.7.10 aligned profile, VictoriaLogs v1.54, data of
   2026-11-24/25), timed per request with interleaved targets over three
   rounds, the warm p50 was 0.50-0.55 ms (1h), 0.50-0.52 ms (6h) and

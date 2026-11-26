@@ -3,8 +3,10 @@ package cache
 import (
 	"encoding/binary"
 	"fmt"
-	bolt "go.etcd.io/bbolt"
 	"io"
+
+	bolt "go.etcd.io/bbolt"
+	boltErrors "go.etcd.io/bbolt/errors"
 )
 
 // Intrusive links avoid an extra list.Element allocation per index entry.
@@ -143,10 +145,19 @@ func deleteDiskKey(tx *bolt.Tx, key string) error {
 	return nil
 }
 
-// Startup order is deterministic bucket/key order, not persisted recency. Scan
+// Startup order is deterministic bucket/key order, then the ranks a restart
+// hand-over left (the memory tier's recency before a graceful shutdown). Scan
 // with bounded in-memory metadata, pruning overflow and expired/malformed frames.
 func (dc *DiskCache) rebuildIndex() error {
 	return dc.db.Update(func(tx *bolt.Tx) error {
+		// Read first: the hand-over is valid only if no transaction followed
+		// the one that wrote its manifest.
+		handover, drop := dc.loadHandoverLocked(tx)
+		if drop {
+			if err := tx.DeleteBucket(handoverBucket); err != nil && err != boltErrors.ErrBucketNotFound {
+				return err
+			}
+		}
 		for _, name := range [][]byte{dataBucket, legacyDataBucket} {
 			if _, err := tx.CreateBucketIfNotExists(name); err != nil {
 				return err
@@ -193,6 +204,10 @@ func (dc *DiskCache) rebuildIndex() error {
 				}
 				dc.addIndex(k, size, expiry)
 			}
+		}
+		if handover != nil {
+			dc.applyHandoverRanksLocked(handover)
+			dc.handover = handover
 		}
 		return nil
 	})

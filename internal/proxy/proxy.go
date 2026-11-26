@@ -239,6 +239,12 @@ type Config struct {
 	// BackendAllowUnsupportedVersion allows startup to continue when detected
 	// backend version is lower than BackendMinVersion. Use at your own risk.
 	BackendAllowUnsupportedVersion bool
+	// BackendVersionURL is a VictoriaLogs /metrics URL the release is read from instead of the backend's (behind
+	// vmauth the backend's is vmauth's own); BackendVersionBasicAuth ("user:password") is sent to that URL only.
+	BackendVersionURL       string
+	BackendVersionBasicAuth string
+	// BackendVersion is the release the operator declares; it enables only the gates a feature probe confirms.
+	BackendVersion string
 	// BackendVersionCheckTimeout bounds startup backend version checks.
 	BackendVersionCheckTimeout time.Duration
 	// BackendVersionReprobeInterval is how often the capability loop reads the VictoriaLogs release and probes the
@@ -410,6 +416,23 @@ type Config struct {
 	// keep-warm refresh of the labels cache (-labels-cache-warm=false). Label
 	// requests are still cached and served; only the proactive scans stop.
 	DisableLabelsCacheWarm bool
+	// CacheShutdownFlushTimeout bounds the restart hand-over a graceful
+	// Shutdown writes to the response cache's disk tier: the memory tier's
+	// recency order and hit counts, the records the disk lacks, and the
+	// restorable memory-only answers (up to CacheStartupWarmBytes). 0 (the
+	// default) writes none.
+	CacheShutdownFlushTimeout time.Duration
+	// CacheStartupWarmBytes is the most bytes Init's warm-up loads into the
+	// memory tier from the hand-over a previous graceful shutdown left; /ready
+	// answers 503 until it finishes or CacheStartupWarmTimeout passes. 0 (the
+	// default) loads none.
+	CacheStartupWarmBytes   int64
+	CacheStartupWarmTimeout time.Duration
+	// CacheHandoverScope returns the build and configuration identity:
+	// memory-only answers are restored only by a process with the same scope.
+	// It is called at most once, by the warm-up or the flush (off the start-up
+	// path, as computing it can read the executable); nil or "" restores none.
+	CacheHandoverScope func() string
 
 	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
 	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error
@@ -517,6 +540,9 @@ type Config struct {
 	MetricsTrustProxyHeaders     bool
 	MetricsExportSensitiveLabels bool
 	MetricsMaxConcurrency        int
+	// MetricsDurationBuckets are the bounds, in seconds, of the duration histograms
+	// (-metrics.duration-buckets); empty means metrics.DefaultDurationBuckets.
+	MetricsDurationBuckets []float64
 
 	// LogRequestSampleRate controls per-request access log sampling for successful (2xx)
 	// requests. 0 or 1 logs every request (default). N > 1 logs 1 in every N requests,
@@ -973,10 +999,14 @@ type Proxy struct {
 	caps                               *capability.Layer // every gate: the VictoriaLogs release(s), probes, client profile
 	backendReprobeInterval             time.Duration
 	backendFeatureProbesDisabled       bool
-	backendVersionProbedAt             atomic.Int64 // Unix ns of the last probe round a traffic trigger started
-	capProbing                         atomic.Bool  // a probe round is running
+	backendVersionProbedAt             atomic.Int64   // Unix ns of the last probe round a traffic trigger started
+	versionSource                      *versionSource // -backend-version-url; nil reads the backend's /metrics
+	versionLogMu                       sync.Mutex
+	versionLogged                      versionLog
+	capProbing                         atomic.Bool // a probe round is running
 	capLoopStarted                     atomic.Bool
 	labelValuesIndexWarmReady          atomic.Bool
+	cacheHandover                      *cacheHandoverState
 	labelValuesIndexPersistStarted     atomic.Bool
 	labelValuesIndexPersistDirty       atomic.Bool
 	labelValuesIndexPersistStop        chan struct{}
@@ -1286,6 +1316,10 @@ func New(cfg Config) (*Proxy, error) {
 	// the header phase; subsequent body reads (NDJSON streaming) are not affected, so
 	// the forwarded WebSocket session can live as long as the client remains connected.
 	tailTransport.ResponseHeaderTimeout = 5 * time.Second
+	versionFrom, declaredRelease, err := newVersionSource(cfg, transport)
+	if err != nil {
+		return nil, err
+	}
 
 	maxLines := cfg.MaxLines
 	if maxLines <= 0 {
@@ -1493,7 +1527,7 @@ func New(cfg Config) (*Proxy, error) {
 		return nil, err
 	}
 	patternsCustom := normalizeCustomPatterns(cfg.PatternsCustom)
-	proxyMetrics := metrics.NewMetricsWithOptions(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels)
+	proxyMetrics := metrics.NewMetricsWithDurationBuckets(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels, cfg.MetricsDurationBuckets)
 	if cfg.Cache != nil {
 		proxyMetrics.SetCacheStatsProvider(cfg.Cache.Stats)
 	}
@@ -1504,6 +1538,7 @@ func New(cfg Config) (*Proxy, error) {
 	}
 
 	p := &Proxy{
+		versionSource: versionFrom,
 		backend:       u,
 		rulerBackend:  rulerURL,
 		alertsBackend: alertsURL,
@@ -1655,6 +1690,7 @@ func New(cfg Config) (*Proxy, error) {
 		warmupMaxJitter:                       warmupMaxJitter,
 		labelsCacheWarm:                       !cfg.DisableLabelsCacheWarm,
 		labelValuesIndexedCache:               cfg.LabelValuesIndexedCache,
+		cacheHandover:                         newCacheHandoverState(cfg),
 		labelValuesHotLimit:                   labelValuesHotLimit,
 		labelValuesIndexMaxEntries:            labelValuesIndexMaxEntries,
 		labelValuesIndexPersistPath:           labelValuesPersistPath,
@@ -1718,6 +1754,7 @@ func New(cfg Config) (*Proxy, error) {
 		p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
 	}
 	p.caps.Subscribe(p.onCapabilityChange)
+	p.caps.Declare(declaredRelease)
 	p.metrics.SetCapabilityStatsProvider(p.capabilityStats)
 	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {
 		// This coalescer's integrated call sites wrap raw VL HTTP operations;
@@ -2065,6 +2102,7 @@ func (p *Proxy) Init() {
 	p.metrics.SetCircuitBreakerFunc(p.breaker.State)
 	p.labelValuesIndexWarmReady.Store(true)
 	p.patternsWarmReady.Store(true)
+	p.startResponseCacheWarm()
 	if p.labelValuesIndexedCache {
 		p.warmLabelValuesIndexOnStartup()
 		p.startLabelValuesIndexPersistenceLoop()
@@ -2107,6 +2145,8 @@ func (p *Proxy) rejectAdmission(w http.ResponseWriter, r *http.Request, err *lok
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
+	// The start-up warm-up stops first: nothing loads while the flush runs.
+	p.stopResponseCacheWarm()
 	p.loweringShadow.close(ctx)
 	p.statsExtentStores.close()
 	p.keepWarmMu.Lock()
@@ -2150,6 +2190,9 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 	if p.tailClient != nil {
 		p.tailClient.CloseIdleConnections()
 	}
+	// After every background writer stopped: the hand-over the next start
+	// warms from (the disk tier's Close writes its manifest last).
+	p.flushResponseCacheHandover()
 	if err := p.persistPatternsNow("shutdown"); err != nil {
 		return err
 	}

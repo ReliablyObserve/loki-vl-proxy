@@ -1,4 +1,8 @@
-{{- if .Values.podDisruptionBudget.enabled }}
+{{- $pdb := .Values.podDisruptionBudget }}
+{{- /* podDisruptionBudget.enabled unset: the restart hand-over with more than one
+       replica (or HPA) gets one that evicts one pod at a time. */}}
+{{- $handover := and (kindIs "invalid" $pdb.enabled) .Values.cacheHandover.enabled (or .Values.horizontalPodAutoscaling.enabled (gt (int .Values.replicaCount) 1)) }}
+{{- if or $pdb.enabled $handover }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -6,11 +10,23 @@ metadata:
   labels:
     {{- include "loki-vl-proxy.labels" . | nindent 4 }}
 spec:
+  {{- if $handover }}
+  {{- /* One of the two fields only. A configured maxUnavailable wins, then a
+         minAvailable changed from the default 1. */}}
+  {{- if not (kindIs "invalid" $pdb.maxUnavailable) }}
+  maxUnavailable: {{ $pdb.maxUnavailable }}
+  {{- else if and (not (kindIs "invalid" $pdb.minAvailable)) (ne (toString $pdb.minAvailable) "1") }}
+  minAvailable: {{ $pdb.minAvailable }}
+  {{- else }}
+  maxUnavailable: 1
+  {{- end }}
+  {{- else }}
   {{- if .Values.podDisruptionBudget.minAvailable }}
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   {{- end }}
   {{- if .Values.podDisruptionBudget.maxUnavailable }}
   maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
   {{- end }}
   selector:
     matchLabels:

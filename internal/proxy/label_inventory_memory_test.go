@@ -122,15 +122,17 @@ func listingBase(p *Proxy) string {
 //
 // conformance: semantics/label-browser-latency-cold-and-refresh, semantics/label-inventory-exact-and-incremental, loki_api_v1_labels
 func TestLabelsInventory_MovedWindowsAreAnsweredFromMemory(t *testing.T) {
-	now := time.Now()
+	// Pinned: moved from other places in the hour or the UTC day, a window
+	// still reads VictoriaLogs (MovedWindowsAtHourAndDayBoundaries).
+	end0 := labelBrowserEnd(12, 26)
+	now := pinnedNow(end0)
 	vl := &fakeVictoriaLogs{}
 	seedStableLabels(vl, now)
-	end0 := now.Truncate(time.Hour).Add(-2*time.Hour + 26*time.Minute + 50*time.Second)
 	for _, tc := range []struct {
 		width, shift time.Duration
 	}{{24 * time.Hour, 3617 * time.Second}, {6 * time.Hour, 317 * time.Second}, {time.Hour, 317 * time.Second}} {
 		t.Run(tc.width.String(), func(t *testing.T) {
-			p := newMemoryInventoryProxy(t, vl, 10*time.Second)
+			p := newPinnedLabelProxy(t, vl, 10*time.Second, now)
 			full := newInventoryTestProxy(t, vl, -1)
 			_ = namesOnlyListing(t, p, end0.Add(-tc.width), end0)
 			settleBackground(t, p) // the hours the moved windows start in
@@ -222,9 +224,14 @@ func TestLabelsInventory_MemoryAnswersStayBetweenTheWindowAndItsDays(t *testing.
 
 // counterValue reads the metadata inventory outcome counter of p.
 func counterValue(p *Proxy, outcome string) float64 {
+	return internalOperationCount(p, "metadata_inventory", outcome)
+}
+
+// internalOperationCount reads an internal operation counter of p.
+func internalOperationCount(p *Proxy, operation, outcome string) float64 {
 	w := httptest.NewRecorder()
 	p.metrics.Handler(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	prefix := `loki_vl_proxy_internal_operation_total{operation="metadata_inventory",outcome="` + outcome + `"} `
+	prefix := `loki_vl_proxy_internal_operation_total{operation="` + operation + `",outcome="` + outcome + `"} `
 	for _, line := range strings.Split(w.Body.String(), "\n") {
 		if v, ok := strings.CutPrefix(line, prefix); ok {
 			f, _ := strconv.ParseFloat(v, 64)

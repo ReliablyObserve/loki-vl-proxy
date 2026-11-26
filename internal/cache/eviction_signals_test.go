@@ -161,6 +161,27 @@ func TestEvictionSignalsMemoryReasons(t *testing.T) {
 		}
 		assertSignalsBalance(t, c, nil)
 	})
+	t.Run("restored_without_admission_time", func(t *testing.T) {
+		// The restart warm-up admits entries without an admission time: their
+		// eviction is counted, with no age (not the time since 1970).
+		c := NewWithMaxBytes(time.Hour, 2, 1<<20)
+		defer c.Close()
+		generation, _ := c.diskPromotionGeneration()
+		var restored int64
+		entry := &restoreEntry{key: "query:r", value: []byte("v"), expiry: clockNow().Add(time.Second).UnixNano()}
+		if !c.admitRestoreBatch([]*restoreEntry{entry}, generation, &restored, 1<<20, nil) || restored == 0 {
+			t.Fatalf("restore not admitted: %+v", entry)
+		}
+		restore := AdvanceClockForTesting(2 * time.Second)
+		defer restore()
+		c.Set("query:b", []byte("b"))
+		c.Set("query:c", []byte("c")) // full: the expiry sweep removes r
+		s := signalsL1(c, layer)
+		if s.Evictions[EvictionExpired] != 1 || s.AgeAtEviction[0].Count != 0 || s.HitsAtEviction[0].Count != 0 {
+			t.Fatalf("restored entry eviction %+v", s)
+		}
+		assertSignalsBalance(t, c, nil)
+	})
 }
 
 // conformance: cache-eviction-signals
