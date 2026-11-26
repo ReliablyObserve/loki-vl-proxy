@@ -1,0 +1,63 @@
+id: semantics/ranked-parser-window-fine-step
+title: A topk or sum over a windowed metric with a parser stage on a short range at Grafana's fine step answers Loki's values instead of a limit error (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - heavy-metric-fetch-bounds
+consumer: explore
+why: |
+  Issue #1795. `topk(20, sum by (client_ip) (count_over_time({app="edge-gateway"}
+  | regexp `...` [1h])))` over a fixed 80 s range at Grafana's step (about 53 ms)
+  answered 500 `rpc error: code = ResourceExhausted desc = grpc: trying to send
+  message larger than max`, and 400 `maximum number of series (500) reached` at
+  1 s and 10 s, where Loki answers. A gcd(step, window) bucket grid of a 1h window
+  at 53 ms is 3.68 million buckets per series, past the 11,000-bucket bound, and
+  the window recurrence (one seed bucket and two step-sized grids read through a
+  `/select/logsql/query` stats pipe, sliding_window_stats.go) refused every query
+  with a parser stage, so the request read the raw rows of the hour (past the
+  buffered body bound) or the bucket grid of every series (past the series limit,
+  which Loki applies to the ranked answer, not to its input).
+
+  Fixed (internal/proxy/sliding_window_stats.go, sliding_window_chunks.go,
+  internal/logsql/parser_keeps_fields.go): the recurrence reads a query with one
+  parser stage (regexp, pattern, logfmt; json where no parser error check is
+  attached) too. Its grids keep the parser
+  stage in the stats pipe with keep_original_fields, so a parsed name that a
+  stream label or structured metadata of the line already holds groups by the
+  line's own value, as Loki names the parsed label name_extracted. A query of
+  several parser stages, and a `| json` metric checked for parser errors (its
+  bucket reads carry the check's marks), keep the bucket reads; the `| json`
+  shapes of the differential are answered by the ordered JSON evaluator. A
+  ranking reads its grids in time
+  chunks when one read would pass -manual-range-metric-row-limit, carrying each
+  series' window from chunk to chunk; a single step over the bound is the only
+  refusal left. The read's step, window and bucket grid are in the error log
+  line (read_route, query_step, range_window, read_bucket, read_buckets_per_series).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topk(20, sum by (client_ip) (count_over_time({app="edge-gateway"} | regexp `(?P<peer_ip>\S+) - - .* "(?P<client_ip>[^"]+)"$` [1h])))'
+    start: '2025-12-31T23:58:40Z'
+    end: '2026-01-01T00:00:00Z'
+    step: '53ms'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  expect: |
+    Loki's matrix: the same series and the same value at every step, on
+    VictoriaLogs v1.49 and v1.54, from the window grids only (no
+    stats_query_range read, no raw rows).
+gap:
+  status: fixed
+  fixed_by: '#1795'
+  impact: explore-visible
+  visual: none
+  visual_reason: 'an error answer becomes Loki''s answer; the values are pinned by the recorded Loki and VictoriaLogs differential TestRankedParserWindowMatchesLoki'
+  effort: M
+  area: 'internal/proxy/sliding_window_stats.go slidingWindowStatsApplies, sliding_window_chunks.go rankSlidingWindowChunks'
+  loki: 'Loki engine oracle (test/oracle/loki), 200 at every step'
+  proxy: 'Loki''s values at 53 ms, 50 ms, 1 s and 10 s, with a row bound below the hour, as Drilldown, and in time chunks'
+  planned_test: 'TestRankedParserWindowMatchesLoki (internal/querycorpus, recorded Loki engine and VictoriaLogs v1.49/v1.54), TestSlidingWindowChunks_* (internal/proxy)'
+  clusters: []

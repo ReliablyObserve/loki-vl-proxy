@@ -183,6 +183,9 @@
     "parsed-identity/dynamic-key-parsers | compare:observed",
     "parsed-identity/dynamic-key-parsers | gap:owner-kept",
     "parsed-identity/dynamic-key-parsers | query",
+    "parsed-identity/extracted-name-held-by-the-line | compare:observed",
+    "parsed-identity/extracted-name-held-by-the-line | gap:open",
+    "parsed-identity/extracted-name-held-by-the-line | query",
     "parsed-identity/regexp-partial-match-series-count | compare:observed",
     "parsed-identity/regexp-partial-match-series-count | gap:open",
     "parsed-identity/regexp-partial-match-series-count | query",
@@ -988,6 +991,9 @@
     "semantics/ranked-parser-metric-identity-residual | compare:observed",
     "semantics/ranked-parser-metric-identity-residual | gap:open",
     "semantics/ranked-parser-metric-identity-residual | query",
+    "semantics/ranked-parser-window-fine-step | compare:exact",
+    "semantics/ranked-parser-window-fine-step | gap:fixed",
+    "semantics/ranked-parser-window-fine-step | query",
     "semantics/ranked-rate-ratio-point-grid-residual | compare:observed",
     "semantics/ranked-rate-ratio-point-grid-residual | gap:open",
     "semantics/ranked-rate-ratio-point-grid-residual | query",
@@ -1591,6 +1597,7 @@
     "internal/logsql/json_mark_test.go | semantics/json-parser-error-under-wrappers",
     "internal/logsql/keyword_fields_test.go | semantics/translator-writes-keyword-field-names-bare",
     "internal/logsql/outbound_guard_test.go | semantics/reserved-field-name-case-outbound",
+    "internal/logsql/parser_keeps_fields_test.go | semantics/ranked-parser-window-fine-step",
     "internal/logsql/parser_read_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_stats_funcs_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
@@ -2487,6 +2494,9 @@
     "internal/proxy/series_limit_routes_test.go | loki_api_v1_query",
     "internal/proxy/series_limit_routes_test.go | loki_api_v1_query_range",
     "internal/proxy/series_limit_routes_test.go | series-limits-and-partial-results",
+    "internal/proxy/sliding_window_chunks_test.go | heavy-metric-fetch-bounds",
+    "internal/proxy/sliding_window_chunks_test.go | limits/stats-row-limit-per-grid",
+    "internal/proxy/sliding_window_chunks_test.go | semantics/ranked-parser-window-fine-step",
     "internal/proxy/sliding_window_stats_test.go | heavy-metric-fetch-bounds",
     "internal/proxy/sliding_window_stats_test.go | limits/stats-row-limit-per-grid",
     "internal/proxy/sliding_window_stats_test.go | limits/top-n-ranking-not-silent",
@@ -2938,6 +2948,7 @@
     "internal/querycorpus/rank_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/rank_step_alloc_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/rank_step_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/ranked_parser_window_loki_diff_test.go | semantics/ranked-parser-window-fine-step",
     "internal/querycorpus/series_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/series_agg_grid_test.go | semantics/stddev-stdvar-nested-or-binary",
     "internal/querycorpus/series_fold_bounds_vl_test.go | semantics/unwrap-per-series-identity-raw-rows",
@@ -3700,12 +3711,12 @@
       "any": 50,
       "api": 124,
       "drilldown": 63,
-      "explore": 263,
+      "explore": 265,
       "grafana-datasource": 4,
       "operator": 6
     },
     "claiming_tests": {
-      "go": 853,
+      "go": 856,
       "playwright": 3
     },
     "page_kinds": {
@@ -3726,8 +3737,8 @@
     },
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
-    "unwired_items": 154,
-    "wired_items": 489
+    "unwired_items": 155,
+    "wired_items": 490
   },
   "gates": [
     "A/B shape selection",

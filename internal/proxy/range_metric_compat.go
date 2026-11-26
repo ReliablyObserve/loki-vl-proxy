@@ -802,6 +802,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
 		bucket, bucketsOK = slidingStatsBucket(step, step)
 	}
+	noteReadGrid(r.Context(), "buckets", step, origSpec.Window, bucket, readGridBuckets(startTS, endTS, origSpec.Window, bucket))
 	if !forceRawLevelRows && p.slidingWindowStatsApplies(r.Context(), spec, field, startTS, endTS, step, origSpec.Window, bucket, bucketsOK) {
 		if !p.writeRankedRangeFromBuckets(w, r.Context(), spec, statsAggFunc, field, manualFunc, fetchStart, startTS, endTS, step, origSpec.Window, bucket, bucketsOK, sampleShift) {
 			p.writeSlidingStatsRoute(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)

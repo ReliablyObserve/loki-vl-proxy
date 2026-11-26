@@ -262,6 +262,7 @@
     "heavy-metric-fetch-bounds": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/range_metric_row_limit_error_test.go",
+      "internal/proxy/sliding_window_chunks_test.go",
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
@@ -457,6 +458,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
     "limits/stats-row-limit-per-grid": [
+      "internal/proxy/sliding_window_chunks_test.go",
       "internal/proxy/sliding_window_stats_test.go"
     ],
     "limits/top-n-ranking-not-silent": [
@@ -2293,6 +2295,11 @@
       "internal/querycorpus/loki_tie_check_test.go",
       "internal/querycorpus/rank_binary_loki_diff_test.go"
     ],
+    "semantics/ranked-parser-window-fine-step": [
+      "internal/logsql/parser_keeps_fields_test.go",
+      "internal/proxy/sliding_window_chunks_test.go",
+      "internal/querycorpus/ranked_parser_window_loki_diff_test.go"
+    ],
     "semantics/raw-nul-in-string-literal-accepted": [
       "internal/logql/lexer_edges_loki_test.go"
     ],
@@ -3219,7 +3226,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 757,
+  "registry_items": 759,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3533,6 +3540,9 @@
     ],
     "internal/logsql/outbound_guard_test.go": [
       "semantics/reserved-field-name-case-outbound"
+    ],
+    "internal/logsql/parser_keeps_fields_test.go": [
+      "semantics/ranked-parser-window-fine-step"
     ],
     "internal/logsql/parser_read_test.go": [
       "architecture-syntax-package-layering"
@@ -5070,6 +5080,11 @@
       "loki_api_v1_query_range",
       "series-limits-and-partial-results"
     ],
+    "internal/proxy/sliding_window_chunks_test.go": [
+      "heavy-metric-fetch-bounds",
+      "limits/stats-row-limit-per-grid",
+      "semantics/ranked-parser-window-fine-step"
+    ],
     "internal/proxy/sliding_window_stats_test.go": [
       "heavy-metric-fetch-bounds",
       "limits/stats-row-limit-per-grid",
@@ -5826,6 +5841,9 @@
     ],
     "internal/querycorpus/rank_step_grid_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/ranked_parser_window_loki_diff_test.go": [
+      "semantics/ranked-parser-window-fine-step"
     ],
     "internal/querycorpus/series_agg_grid_test.go": [
       "architecture-syntax-package-layering",
@@ -7174,7 +7192,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 856,
+  "tests_with_markers": 859,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7212,6 +7230,7 @@
     "loki_api_v1_push",
     "loki_api_v1_status_buildinfo",
     "metric-identity/structured-metadata-splits-series",
+    "parsed-identity/extracted-name-held-by-the-line",
     "profiles/detected-fields-no-extracted-suffix",
     "profiles/empty-label-format-target-compositions",
     "profiles/existence-filter-on-sanitized-key",
@@ -7332,5 +7351,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 489
+  "wired_items": 490
 }

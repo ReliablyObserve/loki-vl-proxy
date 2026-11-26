@@ -2815,6 +2815,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
+	// The window evaluator notes the step and bucket grid it reads, for the error log line (read_budget.go).
+	r = r.WithContext(withReadGridNote(r.Context()))
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while
