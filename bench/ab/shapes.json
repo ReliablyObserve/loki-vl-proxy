@@ -3545,7 +3545,7 @@
    ]
   },
   "keep-matchers": {
-   "description": "`| keep` with matchers (semantics/keep-names-and-matchers): a label stays when listed bare or matched, later stages read only what the keep left, and the series of a metric query are the kept labels. KM1 is a log query mixing a matcher and a name, KM2 a filter after the keep (the plan blanks the rejected values in VictoriaLogs), KM3 the metric grouped by the matched label, KM4 the ungrouped metric, KM5 a matcher on the derived detected_level. Run with the control set.",
+   "description": "`| keep` with matchers (semantics/keep-names-and-matchers): a label stays when listed bare or matched, later stages read only what the keep left, and the series of a metric query are the kept labels. KM1 is a log query mixing a matcher and a name, KM2 a filter after the keep (the plan blanks the rejected values in VictoriaLogs), KM3 the metric grouped by the matched label, KM4 the ungrouped metric, KM5 a matcher on the derived detected_level, KM6 a filter after a drop matcher. Run with the control set.",
    "ranges": [
     "1h",
     "6h",
@@ -3598,6 +3598,16 @@
       "operator-keep",
       "loki_api_v1_query_range"
      ]
+    },
+    {
+     "name": "KM6 logs, filter after a drop matcher",
+     "query": "{service_name=\"api-gateway\"} | drop level=\"error\" | level!=\"warn\"",
+     "covers": [
+      "semantics/drop-matcher-later-stage-reads-dropped-value",
+      "operator-drop",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
     }
    ]
   },

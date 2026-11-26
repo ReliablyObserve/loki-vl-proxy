@@ -492,6 +492,7 @@
     "semantics/drop-keep-plain-name-after-parser | query",
     "semantics/drop-matcher-later-stage-reads-dropped-value | compare:observed",
     "semantics/drop-matcher-later-stage-reads-dropped-value | gap:fixed",
+    "semantics/drop-matcher-later-stage-reads-dropped-value | perf",
     "semantics/drop-matcher-metric-series | compare:observed",
     "semantics/drop-matcher-metric-series | gap:open",
     "semantics/drop-read-remaining-shapes | compare:observed",
@@ -3705,7 +3706,7 @@
     },
     "page_kinds": {
       "drilldown": 22,
-      "explore": 144,
+      "explore": 145,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3719,7 +3720,7 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 116,
+    "shape_covers_distinct": 117,
     "shapes_path_only": 10,
     "unwired_items": 157,
     "wired_items": 485
@@ -3775,6 +3776,7 @@
     "explore-absent-over-time",
     "explore-bare-json-metric-labels",
     "explore-binary-operand-literals",
+    "explore-drop-read-later",
     "explore-empty-pattern-filter",
     "explore-extracted-filter-metric",
     "explore-extracted-group-metric",
@@ -4410,6 +4412,7 @@
     "keep-matchers/KM3 count by level over a matcher keep",
     "keep-matchers/KM4 count over a matcher keep",
     "keep-matchers/KM5 count over a detected_level matcher keep",
+    "keep-matchers/KM6 logs, filter after a drop matcher",
     "keep-series-grouping/K1 logs, json, keep level",
     "keep-series-grouping/K2 logs, logfmt, keep level, msg",
     "keep-series-grouping/K3 count of series, json, keep foo",

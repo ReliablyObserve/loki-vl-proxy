@@ -23,10 +23,15 @@ gap:
   fixed_by: "#1776"
   impact: explore-visible
   effort: M
-  area: 'internal/queryplan/lower/drop_blank.go, internal/proxy/response_key_fences.go dropReadResponseKeyVersion'
+  area: 'internal/queryplan/lower/drop_blank.go, internal/queryplan/lower/lower.go and internal/queryplan/lower/parser.go (stage pipes), internal/translate/parser.go (level fields), internal/proxy/response_key_fences.go dropReadResponseKeyVersion'
   loki: 'no line'
   proxy: 'the same entries and labels'
-  visual: none
-  visual_reason: 'a query that keeps no line in Loki shows an empty panel on both sides; the e2e comparison holds the entries and labels'
   planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core), TestDropReadByLaterStage (internal/queryplan/lower), TestKeepMatchersMetricMatchLoki (internal/querycorpus)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

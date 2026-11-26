@@ -2344,6 +2344,22 @@
    ]
   },
   {
+   "id": "explore-drop-read-later",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | drop level=\"error\" | level!=\"warn\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/drop-matcher-later-stage-reads-dropped-value",
+    "operator-drop",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/drop-matcher-later-stage-reads-dropped-value"
+   ]
+  },
+  {
    "id": "explore-keep-series-count",
    "kind": "explore",
    "query": "count(rate({service_name=\"api-gateway\"} | json | keep foo [$__auto]))",
