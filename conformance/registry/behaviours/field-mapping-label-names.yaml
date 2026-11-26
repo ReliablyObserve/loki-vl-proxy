@@ -37,10 +37,21 @@ implementation:
   - internal/queryplan/lower/label_filter_parsed.go
   - internal/queryplan/lower/parser_labels.go
   - internal/queryplan/lower/metric_screen.go
+  - internal/queryplan/lower/lower.go
+  - internal/queryplan/lower/range_agg.go
+  - internal/queryplan/lower/label_replace.go
   - internal/proxy/query_lowering.go
 
 cases:
   - semantics/field-mapping-label-modes
+
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
 
 decisions:
   - id: listing-names-by-mode-one-answer-name
@@ -75,7 +86,7 @@ decisions:
       of a renamed key, count and rate), which the default mode leaves to the
       string translator; the lowering unpacks the key again for the grouping.
     evidence: 'Live on Loki 3.7.10 and VictoriaLogs v1.54.0 (2026-11-26): 156 requests over logfmt, json, mixed (half the streams without the mapped field) and plain services, detected_fields, field values, log filters, instant and range groupings; alias equals the pre-migration Loki on every collision row, unset equals main on every row; the LogsQL it writes accepted and round-tripped by VictoriaLogs v1.49.0 and v1.54.0 (test/oracle/vl check, roundtrip: 28/28); TestCompat_FieldMappingAliasCollisionsMatchLoki'
-    code: [internal/proxy/drilldown.go, internal/proxy/field_mapping_labels.go, internal/translate/extracted_label.go, internal/queryplan/lower/parser_labels.go, internal/queryplan/lower/label_filter_parsed.go, internal/queryplan/lower/metric_screen.go, internal/proxy/query_lowering.go]
+    code: [internal/proxy/drilldown.go, internal/proxy/field_mapping_labels.go, internal/translate/extracted_label.go, internal/queryplan/lower/parser_labels.go, internal/queryplan/lower/label_filter_parsed.go, internal/queryplan/lower/metric_screen.go, internal/queryplan/lower/lower.go, internal/queryplan/lower/range_agg.go, internal/queryplan/lower/label_replace.go, internal/proxy/query_lowering.go]
     tests: [TestFieldMappingLabelMode_ParsedAliasCollisionDetectedFields, TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL, TestFieldMappingLabelMode_NoUnderscoreFallbackForAlias, TestExtractedFilterAliased, TestStreamLabelPattern, FuzzFieldMappingLabelMode, TestCompat_FieldMappingAliasCollisionsMatchLoki]
     quality: 'alias and both answer the collision rows as Loki with the pre-migration names; original and unset write the same LogsQL and answers as before.'
     performance: 'BenchmarkFieldMappingAliasCollision. Main versus this change on the paths it touches in the default mode (detected_fields, translation, lowering; Apple M5 Pro, GOMAXPROCS=4, 6 runs, 2026-11-26): allocs/op identical, B/op -0.14% (geomean), time within noise; the alias modes allocate 30% more in a detected_fields scan of keys named like aliases (892 vs 686), the lowering the same.'

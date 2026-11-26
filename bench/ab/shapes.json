@@ -3636,6 +3636,72 @@
      ]
     }
    ]
+  },
+  "field-mapping-alias-collision": {
+   "description": "Issue #1762 (-field-mapping-label-mode): the query shapes whose lowering the alias rules change, on the generator's collision data (level is a stream label and a key of the json and logfmt lines). The A/B stack sets no field mapping and main has no such flag, so these rows run the default mode, which the rules must leave unchanged (field-mapping-label-names: original and unset write the same text): FA1-FA3 are the Logs Drilldown breakdown of a renamed key (a filter on an _extracted name with a grouping by a parser key: count, rate, and a stream label beside it), which the metric screen admits in alias and both mode and leaves to the string translator in the default mode; FA4-FA6 are lowered from the plan in every mode through the changed functions (a filter on an _extracted name under a grouping by the stream label, label_replace over a grouping by an _extracted name, a log query filtering an _extracted name). The alias and both answers are proven against Loki by TestCompat_FieldMappingAliasCollisionsMatchLoki. Shapes are written as the LogQL printer prints them. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h"
+   ],
+   "shapes": [
+    {
+     "name": "FA1 breakdown of a renamed key, logfmt count",
+     "query": "sum by (level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\"[1m]))",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA2 breakdown of a renamed key, json rate",
+     "query": "sum by (level_extracted) (rate({service_name=\"api-gateway\"} | json | level_extracted!=\"\"[1m]))",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA3 breakdown of a renamed key beside its stream label, logfmt count",
+     "query": "sum by (level, level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\"[1m]))",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA4 logfmt filter on a renamed key, by the stream label",
+     "query": "sum by (level) (count_over_time({service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\"[1m]))",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "semantics/json-extracted-metric-pushdown",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA5 label_replace over a grouping by a renamed key",
+     "query": "label_replace(sum by (level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt [1m])), \"lvl\", \"$1\", \"level_extracted\", \"(.*)\")",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA6 logs, logfmt filter on a renamed key",
+     "query": "{service_name=\"cache-redis\"} | logfmt | level_extracted=~\"err.*\"",
+     "logs": true,
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

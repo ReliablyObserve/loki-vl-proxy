@@ -3734,8 +3734,8 @@
       "playwright": 3
     },
     "page_kinds": {
-      "drilldown": 22,
-      "explore": 141,
+      "drilldown": 23,
+      "explore": 142,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3749,7 +3749,7 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 114,
+    "shape_covers_distinct": 115,
     "shapes_path_only": 10,
     "unwired_items": 154,
     "wired_items": 493
@@ -3775,6 +3775,7 @@
     "visual-smoke entry selection"
   ],
   "pages": [
+    "dd-field-level-extracted-logfmt",
     "dd-field-pipeline",
     "dd-field-service_version",
     "dd-fields",
@@ -3856,6 +3857,7 @@
     "explore-plain-level-metric",
     "explore-rate-detected-level-unknown",
     "explore-rate-drop-detected-level",
+    "explore-renamed-key-beside-stream-label",
     "explore-sliding-sum-without-stream-fold",
     "explore-stddev-by-app",
     "explore-stddev-parsed-method",
@@ -4405,6 +4407,12 @@
     "extracted-suffix/E6 logfmt count by level_extracted",
     "extracted-suffix/E7 json count by level_extracted",
     "extracted-suffix/E8 instant logfmt by level_extracted",
+    "field-mapping-alias-collision/FA1 breakdown of a renamed key, logfmt count",
+    "field-mapping-alias-collision/FA2 breakdown of a renamed key, json rate",
+    "field-mapping-alias-collision/FA3 breakdown of a renamed key beside its stream label, logfmt count",
+    "field-mapping-alias-collision/FA4 logfmt filter on a renamed key, by the stream label",
+    "field-mapping-alias-collision/FA5 label_replace over a grouping by a renamed key",
+    "field-mapping-alias-collision/FA6 logs, logfmt filter on a renamed key",
     "ip-label-filter/BL1 ratio, json status>=4e2 / all",
     "ip-label-filter/IP1 logs, addr=ip(single), label absent",
     "ip-label-filter/IP2 logs, json ip=ip(CIDR)",
