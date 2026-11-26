@@ -640,8 +640,9 @@ type Config struct {
 	// MetadataInventoryPrefetch (-metadata-inventory-prefetch) reads, in the
 	// background after a /labels listing, the inventory buckets a moved
 	// window of it needs to be answered from memory: the hours of its ends,
-	// the hour before it and the sealed UTC days it only partly covers, at
-	// most the window's own width per listing.
+	// the hour before it (and the hour two before it when the listing found a
+	// bucket it needed still being read) and the sealed UTC days it only
+	// partly covers, at most the window's own width per listing.
 	MetadataInventoryPrefetch bool
 	// DrilldownBurstWindowMs is the time window in milliseconds during which
 	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
