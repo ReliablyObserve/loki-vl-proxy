@@ -55,3 +55,12 @@ Peer cache shared token is required by default:
   random token used for peer-to-peer cache auth. To rotate, replace, or
   externally manage this Secret, see
   docs/configuration.md#peer-cache-token-management.
+
+----
+
+Secrets are mounted as files:
+  the peer, admin, delete and basic-auth Secrets reach the proxy through
+  -...-file flags, not through process arguments or environment variables.
+  The image must be of this chart's release or newer; an older proxy exits on
+  the unknown flag. The proxy reads the files at startup, so restart the pods
+  after rotating a Secret.

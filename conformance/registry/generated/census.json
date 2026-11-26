@@ -1465,6 +1465,9 @@
     "cmd/proxy/peer_config_test.go | peer-cache-push-replay",
     "cmd/proxy/peer_config_test.go | peer-cache-read-hedge",
     "cmd/proxy/query_complexity_flags_test.go | query-complexity-limits",
+    "cmd/proxy/secret_flags_test.go | credential-passthrough-as-configured",
+    "cmd/proxy/secret_flags_test.go | delete-api-requires-token",
+    "cmd/proxy/secret_flags_test.go | secrets-outside-process-arguments",
     "cmd/proxy/tenant_routing_test.go | limits/max-query-length-default",
     "cmd/proxy/tenant_routing_test.go | tenant-auth-follows-loki",
     "cmd/proxy/tenant_routing_test.go | tenant-numeric-routing",
@@ -3681,6 +3684,7 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
     "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
     "test/helm/cache_handover_test.go | cache-restart-handover",
+    "test/helm/secrets_test.go | secrets-outside-process-arguments",
     "test/helm/servicemonitor_test.go | observability-metrics-histograms-and-labels"
   ],
   "counts": {
@@ -3693,7 +3697,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 844,
+      "go": 846,
       "playwright": 3
     },
     "page_kinds": {
@@ -3715,7 +3719,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 485
+    "wired_items": 486
   },
   "gates": [
     "A/B shape selection",
