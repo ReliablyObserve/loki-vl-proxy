@@ -345,6 +345,7 @@ phase's times 1.10 plus 1 ms, with no errors.
 |---|---|---|
 | 1,100 requests/s, 37-50% of its core | all pass, 0 errors | throttled to about 1.5 MB/s, partial (61-79% of entries) at their 180 s deadline |
 | 220 requests/s, about 10% of its core | all pass, 0 errors | one replica: complete at 60 MB/s; two at once: throttled, partial (72-78%) at the deadline |
+| 3,400 requests/s (paced driver), 56-64% of its core, two runs | all pass, 0 errors | see below |
 | 2,200 requests/s target (about 1,900 delivered), 4 CPUs (about 0.45 of a core busy) | all pass, 0 errors | one replica: complete at 60 MB/s; two at once: throttled, partial (81-87%) at the deadline |
 
 At a 2,200 requests/s target on one CPU (the replica at 37-64% of its core), two runs
@@ -354,20 +355,25 @@ prove neither way. No restore phase exceeded its worst control, and the
 governor held the restores under 1 MB/s.
 
 Two reruns on an idle host, with 120 s control phases and the same rule, both
-passed for every class with 0 errors. The driver sent about 1,900 and 2,180
-requests/s (targets 2,200 and 3,400), and the serving replica averaged 37% and
-41% of its core (peaks 45% and 53%). Peer-read p99 during restores was
-3.86-5.06 ms against controls of 4.81-5.26 ms in the first run, and
-5.00-5.74 ms against 5.16-5.46 ms in the second, where the bound was 7.01 ms.
-The governor halved its rate
-about 400 times on peer-read pressure and sent at a mean of about 1 MB/s.
-Restore c completed both times. Restores d and e ran together: in the first
-rerun they stopped at their deadline with 67-72% of entries, and in the second
-they completed with 91-92%. The replica did not reach half a core on average, because the driver
-delivered less than its target. Its in-flight cap was never reached (a send
-that finds it full counts as an error, and there were none), so the shortfall
-is in its pacing of one request per ticker tick; the exact ceiling was not
-measured.
+passed for every class with 0 errors. However, the replica averaged only 37%
+and 41% of its core, because the load driver sent one request per ticker tick
+and lost the ticks it missed: it delivered about 855 and 990 requests/s per
+class against targets of 1,000 and 1,600. Since 2026-11-27 the driver sends
+every request owed since the start of its schedule on each 1 ms tick. In the
+same VM it delivers its target exactly (1,600 and 2,500 per second per class,
+against 827 before).
+
+With the paced driver, two runs at 1,600 hit, 1,600 peer and 200 neighbour
+requests/s (3,400 delivered), on an idle host with 120 s controls and the same
+rule, both passed for every class with 0 errors:
+
+| Run | Replica CPU, mean (peak) | Worst restore-phase p99 vs its bound | Governor | Restores |
+|---|---|---|---|---|
+| 1 | 56-64% (up to 64%) | peer 5.41 ms vs 7.35 ms | idle (no pressure) | all three complete at about 60 MB/s in 7-8 s |
+| 2 | 60-61% (up to 69%) | peer 5.80 ms vs 7.60 ms; hit 2.08 ms vs 3.27 ms | 343 halvings on peer-read pressure, mean 0.7-1.6 MB/s | c complete; d and e partial at their deadline (87%, 79%) |
+
+The two runs show both cases: in run 1 a full-speed restore stayed within the
+bound and the governor did not slow it; in run 2 the governor throttled it.
 
 A looser threshold for the peer-request tail was tried and reverted: on one
 CPU at a 2,200 requests/s target it let a restore run at full speed while the

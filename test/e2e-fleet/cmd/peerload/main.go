@@ -119,20 +119,13 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			t := time.NewTicker(time.Duration(float64(time.Second) / c.qps))
-			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-				}
+			pace(ctx, c.qps, func() {
 				target, header := c.next()
 				select {
 				case inflight <- struct{}{}:
 				default:
 					record(time.Now(), c.name, 0, -1) // the driver itself was saturated
-					continue
+					return
 				}
 				wg.Add(1)
 				go func() {
@@ -140,7 +133,7 @@ func main() {
 					defer func() { <-inflight }()
 					do(c.name, target, header)
 				}()
-			}
+			})
 		}()
 	}
 	<-ctx.Done()
