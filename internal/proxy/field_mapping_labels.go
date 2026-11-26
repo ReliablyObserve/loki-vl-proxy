@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // FieldMappingLabelMode controls which names of a -field-mapping field the
@@ -120,6 +122,55 @@ func (lt *LabelTranslator) listedNames(vlField string, one *[1]string) []string 
 	}
 	one[0] = lt.ToLoki(vlField)
 	return one[:]
+}
+
+// aliasAnswer returns the alias a VictoriaLogs field carries in answers in the
+// alias and both modes: a stream field of that field is the stream label of
+// the alias, as in a Loki that stored the alias, so a parsed key of the same
+// name is renamed name_extracted beside it. false for a field without an alias
+// and in the original mode.
+func (lt *LabelTranslator) aliasAnswer(vlField string) (string, bool) {
+	if !lt.listsAliases() {
+		return "", false
+	}
+	if _, mapped := lt.listing[vlField]; !mapped {
+		return "", false
+	}
+	answer := lt.vlToLoki[vlField]
+	return answer, answer != "" && answer != lt.baseName(vlField)
+}
+
+// isAliasLabel reports a label that is the alias a mapped field carries in
+// answers (aliasAnswer): its stream label lives in that stored field, which no
+// parser overwrites.
+func (lt *LabelTranslator) isAliasLabel(label string) bool {
+	return lt.aliasField(label) != ""
+}
+
+// aliasField returns the stored field an alias label is the stream label of
+// (isAliasLabel), "" for any other label and in the original mode.
+func (lt *LabelTranslator) aliasField(label string) string {
+	if !lt.listsAliases() {
+		return ""
+	}
+	field, ok := lt.lokiToVL[label]
+	if !ok {
+		return ""
+	}
+	if answer, ok := lt.aliasAnswer(field); !ok || answer != label {
+		return ""
+	}
+	return field
+}
+
+// streamAliasProbe answers translate.StreamAliasProbe for base: the stored
+// field whose presence in _stream makes base a stream label in the alias and
+// both modes, so a parsed key base is renamed base_extracted beside it.
+func (lt *LabelTranslator) streamAliasProbe(base string) string {
+	if field := lt.aliasField(base); field != "" {
+		return translate.StreamAliasProbe + "=" + field
+	}
+	return ""
 }
 
 // answerName is the name answers carry for the field a mapped label name reads.

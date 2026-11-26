@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // LabelStyle controls how VL field names are translated to Loki label names in responses,
@@ -116,6 +118,9 @@ func (lt *LabelTranslator) ToLoki(vlField string) string {
 
 // ToVL translates a Loki label name to a VL field name (query direction).
 func (lt *LabelTranslator) ToVL(lokiLabel string) string {
+	if strings.HasPrefix(lokiLabel, translate.StreamAliasProbe) {
+		return lt.streamAliasProbe(lokiLabel[len(translate.StreamAliasProbe):])
+	}
 	// Custom mapping takes precedence
 	if mapped, ok := lt.lokiToVL[lokiLabel]; ok {
 		return mapped

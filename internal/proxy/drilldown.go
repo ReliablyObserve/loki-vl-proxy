@@ -1444,6 +1444,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	streamLabelSet := make(map[string]string)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	anyOTelWithServiceName := false
+	// rowAliases holds the aliases the row's stream carries (alias and both
+	// modes): a parsed key named like one is listed as name_extracted.
+	rowAliases := make(map[string]struct{})
 	rowLevels := p.newLogRowLevels()
 	badRows := 0
 
@@ -1477,11 +1480,15 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				anyOTelWithServiceName = true
 			}
 		}
+		clear(rowAliases)
 		for key, value := range rawStreamLabels {
 			lokiLabel := key
 			if p.labelTranslator != nil {
 				if t := p.labelTranslator.ToLoki(key); t != "" {
 					lokiLabel = t
+				}
+				if alias, ok := p.labelTranslator.aliasAnswer(key); ok {
+					rowAliases[alias] = struct{}{}
 				}
 			}
 			labelNames[lokiLabel] = struct{}{}
@@ -1519,6 +1526,10 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 									stored := strings.Join(path, ".")
 									msgJSONKeys[stored] = struct{}{}
 									label := lokiJSONPathLabel(path)
+									if _, alias := rowAliases[label]; alias {
+										addDetectedField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(leaf), path, formatDetectedValueFJ(leaf))
+										return
+									}
 									if shouldSuppressDetectedField(stored) {
 										return
 									}
@@ -1534,12 +1545,17 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 						}
 						key := string(keyBytes)
 						msgJSONKeys[key] = struct{}{}
-						if shouldSuppressDetectedField(key) {
-							return
-						}
 						// Loki names a parsed key by its sanitized label and
 						// keeps the key itself in jsonPath (-logql-dotted-names).
 						label := p.detectedFieldName(key)
+						if _, alias := rowAliases[label]; alias {
+							// Named like an alias the row's stream carries.
+							addDetectedField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+							return
+						}
+						if shouldSuppressDetectedField(key) {
+							return
+						}
 						if _, conflict := labelNames[label]; conflict {
 							return
 						}
@@ -1564,6 +1580,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				}
 				if !shouldExposeStructuredField(key, rawStreamLabels, p.labelTranslator) {
 					return
+				}
+				if _, alias := p.labelTranslator.aliasAnswer(key); alias {
+					return // the stream label of the alias, as Loki lists no stream label
 				}
 				stringValue, ok := stringifyFJValue(v)
 				if !ok {
@@ -1605,11 +1624,16 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 
 		for key, value := range parseLogfmtFields(msg) {
+			// Loki's logfmt parser sanitizes keys like its json parser does.
+			label := p.detectedFieldName(key)
+			if _, alias := rowAliases[label]; alias {
+				// Named like an alias the row's stream carries.
+				addDetectedField(fields, label+extractedSuffix, "logfmt", inferDetectedType(value), nil, value)
+				continue
+			}
 			if shouldSuppressDetectedField(key) {
 				continue
 			}
-			// Loki's logfmt parser sanitizes keys like its json parser does.
-			label := p.detectedFieldName(key)
 			if _, conflict := labelNames[label]; conflict {
 				continue
 			}
@@ -1635,6 +1659,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 		if !isOTelSemantic {
 			continue
+		}
+		if _, alias := p.labelTranslator.aliasAnswer(key); alias {
+			continue // the stream label of the alias
 		}
 		for _, exposure := range p.metadataFieldExposures(key) {
 			if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {

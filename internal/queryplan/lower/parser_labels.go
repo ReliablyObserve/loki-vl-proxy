@@ -136,7 +136,8 @@ func (m metricLog) extractedPipes(b *strings.Builder, bases, labels []string, ow
 			logfmt = append(logfmt, m.logfmtMask&(1<<i) != 0)
 		}
 	}
-	return translate.ExtractedStatsText(b, logfmt, bases, labels), nil
+	aliases := func(base string) []string { return translate.StreamAliasFields(m.label, base) }
+	return translate.ExtractedStatsTextAliased(b, logfmt, bases, labels, aliases), nil
 }
 
 // The texts keyPipes writes, taken from the typed pipes: the head of a filter pipe (` | filter `) and the tails of

@@ -185,6 +185,9 @@ type metricLog struct {
 	// levelChain says the pipes derive detected_level for a filter on it (detectedLevelStages): a grouping by it
 	// reads that value, the translator derives it once.
 	levelChain bool
+	// label is the profile's label translation, asked for the stored fields that carry a stream label under an
+	// alias (translate.StreamAliasFields).
+	label func(string) string
 }
 
 // metricLogQuery lowers the log query of a range aggregation the way the string translator writes a metric row's
@@ -259,7 +262,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 		}
 	}
 	m := metricLog{head: head, restore: restore, pipes: pipesText, parser: hasParser(in), copies: copies, bareLogfmt: bare,
-		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, levelChain: levelChain}
+		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, levelChain: levelChain, label: prof.Label}
 	// The translator narrows the unpack when its text of the query holds exactly one unpack pipe, quoted text included.
 	if unpacks != 1 || strings.Count(head, "| unpack_")+strings.Count(restore, "| unpack_")+strings.Count(m.pipes, "| unpack_") != 1 {
 		m.bareLogfmt = -1

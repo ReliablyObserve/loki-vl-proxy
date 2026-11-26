@@ -61,6 +61,12 @@ func ParsedKeyPipesText(b *strings.Builder, label string) {
 // where it has not), and the scratch fields deleted. labels and bases are in step. It reports whether it wrote a
 // copy pipe.
 func ExtractedStatsText(b *strings.Builder, logfmt []bool, bases, labels []string) (copies bool) {
+	return ExtractedStatsTextAliased(b, logfmt, bases, labels, nil)
+}
+
+// ExtractedStatsTextAliased is ExtractedStatsText where aliasFields gives, per base, the stored fields that also
+// make it a stream label (StreamAliasFields); nil for none.
+func ExtractedStatsTextAliased(b *strings.Builder, logfmt []bool, bases, labels []string, aliasFields func(string) []string) (copies bool) {
 	for i, lf := range logfmt {
 		b.WriteString(" | unpack_")
 		if lf {
@@ -115,7 +121,11 @@ func ExtractedStatsText(b *strings.Builder, logfmt []bool, bases, labels []strin
 		if base != "service_name" {
 			b.WriteString(ExtractedScratch)
 			b.WriteString("_stream:~")
-			b.WriteString(strconv.Quote("[{,]" + dotOrUnderscore(base) + "=\""))
+			var fields []string
+			if aliasFields != nil {
+				fields = aliasFields(base)
+			}
+			b.WriteString(strconv.Quote(streamLabelPattern(base, fields)))
 			b.WriteByte(' ')
 		}
 		b.WriteString(ExtractedScratch)

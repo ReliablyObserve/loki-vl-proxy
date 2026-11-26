@@ -894,6 +894,11 @@ func (p *Proxy) addUnderscorefallbackByLabels(logsqlQuery string, origGroupBy []
 				p.labelTranslator.ToVL(lokiLabel) != vlField {
 				continue
 			}
+			// An alias (alias and both modes) is no underscore spelling of the
+			// field: after a parser a field of that name is the parsed key.
+			if p.labelTranslator.isAliasLabel(lokiLabel) {
+				continue
+			}
 			if len(origGroupBy) > 0 && !containsString(origGroupBy, lokiLabel) {
 				continue
 			}
