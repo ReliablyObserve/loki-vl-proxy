@@ -20,9 +20,11 @@ import (
 // under -detected-level-body-scan=false: DetectedLevelFilterStored); a metric row writes it into detected_level
 // with the grouping chain (DetectedLevelFilterMetric), which a grouping by detected_level then reuses (metricLog).
 //
-// Every other filter on detected_level is left to the string translator under a construct name: one after a parser,
-// a drop (other than of the parser error labels), a keep or a formatting stage, which the translator reads as the
-// stored or parsed level field (an open Loki difference, severity/detected-level-stage-side-effects); a comparison
+// A filter after a stage is read as Loki reads it (semantics/level-filter-after-stage, level_after_stage.go): on
+// the ingest value it is written ahead of the stages, and on a label a drop or a keep removed it compares "".
+//
+// Every other filter on detected_level is left to the string translator under a construct name: one after a stage
+// that may write the label (severity/detected-level-stage-side-effects); a comparison
 // or ip() filter, an invalid regexp and a log query's empty raw string, which take the same path; an and/or tree
 // holding one; a label name the translator reads as detected_level only after sanitizing it; and `detected_level=""`
 // and `!=""`, which a log query reads as the presence of the label (no row and every row before a stage that drops,
@@ -83,26 +85,30 @@ func levelFilterMode(prof Profile) translate.DetectedLevelFilterMode {
 }
 
 // detectedLevelStages checks the label filter stages of sel that filter on detected_level, and answers the construct
-// of the first one the lowering does not write.
-func detectedLevelStages(sel *queryplan.LogSelect, prof Profile) (levelStages, string) {
+// of the first one the lowering does not write. The select it answers is the one to lower: sel itself, or sel with
+// each filter that reads Loki's ingest value after a stage moved ahead of the stages (levelAfterStage).
+func detectedLevelStages(sel *queryplan.LogSelect, prof Profile) (*queryplan.LogSelect, levelStages, string) {
 	var res levelStages
-	// intact holds while every stage so far left the line and the stored fields as VictoriaLogs stored them: label
-	// filters and a drop of the parser error labels (line filters are not stages here).
-	intact := true
-	for _, st := range sel.Stages {
-		switch s := st.(type) {
-		case *queryplan.LineFilter:
-			continue
-		case *queryplan.Drop:
-			intact = intact && dropsOnlyErrorLabels(s)
-			continue
-		case *queryplan.LabelFilter:
+	state := levelIngest
+	// first is the first stage a filter on the ingest value cannot stay behind (-1: none yet).
+	first := -1
+	moves := false
+	for i, st := range sel.Stages {
+		if s, ok := st.(*queryplan.LabelFilter); ok {
 			if s.Expr == nil {
 				continue
 			}
-			plan, c := checkLevelStage(s.Expr, intact, prof)
+			var plan *levelFilterNodes
+			var c string
+			switch {
+			case first < 0:
+				plan, c = checkLevelStage(s.Expr, prof)
+			case namesLevel(s.Expr):
+				plan, c = checkLevelAfterStage(s.Expr, state, prof)
+				moves = moves || c == "" && !isConstantLevelPlan(plan)
+			}
 			if c != "" {
-				return levelStages{}, c
+				return sel, levelStages{}, c
 			}
 			if plan != nil {
 				res.any, res.mode = true, levelFilterMode(prof)
@@ -110,14 +116,22 @@ func detectedLevelStages(sel *queryplan.LogSelect, prof Profile) (levelStages, s
 			}
 			continue
 		}
-		intact = false
+		if next, changes := levelTransition(state, st); changes {
+			state = next
+			if first < 0 {
+				first = i
+			}
+		}
 	}
-	return res, ""
+	if !moves {
+		return sel, res, ""
+	}
+	return hoistLevelFilters(sel, &res, first), res, ""
 }
 
-// checkLevelStage is the plan of a label filter on detected_level the lowering writes (levelStage), or the construct
-// of one it does not; nil and "" for a filter on another label.
-func checkLevelStage(e *logql.LabelFilterExpr, intact bool, prof Profile) (*levelFilterNodes, string) {
+// checkLevelStage is the plan of a label filter on detected_level that no stage precedes (levelStage), or the
+// construct of one the lowering does not write; nil and "" for a filter on another label.
+func checkLevelStage(e *logql.LabelFilterExpr, prof Profile) (*levelFilterNodes, string) {
 	if !e.IsLeaf() {
 		if namesLevel(e) {
 			return nil, levelTreeConstruct
@@ -129,9 +143,6 @@ func checkLevelStage(e *logql.LabelFilterExpr, intact bool, prof Profile) (*leve
 			return nil, levelSpellingConstruct
 		}
 		return nil, ""
-	}
-	if !intact {
-		return nil, levelAfterStageConstruct
 	}
 	return levelStage(e, prof)
 }

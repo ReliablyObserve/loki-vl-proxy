@@ -57,21 +57,19 @@ func TestDetectedLevelFilterLoweringIsTheTranslatorsText(t *testing.T) {
 		`count_over_time({app="a"} | detected_level="err" [5m])`,
 	}
 	delegated := map[string]string{
-		`{app="a"} | json | detected_level="error"`:                      levelAfterStageConstruct,
-		`{app="a"} | logfmt | drop __error__ | detected_level="info"`:    levelAfterStageConstruct,
-		`{app="a"} | drop level | detected_level="info"`:                 levelAfterStageConstruct,
-		`{app="a"} | line_format "x" | detected_level="info"`:            levelAfterStageConstruct,
-		`{app="a"} | detected_level>5`:                                   levelFormConstruct,
-		`{app="a"} | detected_level=ip("10.0.0.1")`:                      levelFormConstruct,
-		`{app="a"} | detected_level=~"("`:                                levelFormConstruct,
-		"{app=\"a\"} | detected_level=``":                                levelFormConstruct,
-		`{app="a"} | detected_level="error" or detected_level="warn"`:    levelTreeConstruct,
-		`{app="a"} | app="x", detected_level="warn"`:                     levelTreeConstruct,
-		`{app="a"} | detected_level.="error"`:                            levelSpellingConstruct,
-		`{app="a"} | detected_level=""`:                                  levelPresenceConstruct,
-		`{app="a"} | detected_level!=""`:                                 levelPresenceConstruct,
-		`sum(count_over_time({app="a"} | detected_level="" [5m]))`:       "VectorAgg " + levelPresenceConstruct,
-		`count_over_time({app="a"} | json | detected_level="info" [1m])`: "RangeAgg " + levelAfterStageConstruct,
+		`{app="a"} | drop detected_level | json | detected_level="info"`:                    levelAfterStageConstruct,
+		`{app="a"} | label_format detected_level="x" | detected_level="x"`:                  levelAfterStageConstruct,
+		`count_over_time({app="a"} | drop detected_level="e" | detected_level="info" [1m])`: "RangeAgg " + levelAfterStageConstruct,
+		`{app="a"} | detected_level>5`:                                                      levelFormConstruct,
+		`{app="a"} | detected_level=ip("10.0.0.1")`:                                         levelFormConstruct,
+		`{app="a"} | detected_level=~"("`:                                                   levelFormConstruct,
+		"{app=\"a\"} | detected_level=``":                                                   levelFormConstruct,
+		`{app="a"} | detected_level="error" or detected_level="warn"`:                       levelTreeConstruct,
+		`{app="a"} | app="x", detected_level="warn"`:                                        levelTreeConstruct,
+		`{app="a"} | detected_level.="error"`:                                               levelSpellingConstruct,
+		`{app="a"} | detected_level=""`:                                                     levelPresenceConstruct,
+		`{app="a"} | detected_level!=""`:                                                    levelPresenceConstruct,
+		`sum(count_over_time({app="a"} | detected_level="" [5m]))`:                          "VectorAgg " + levelPresenceConstruct,
 	}
 	for name, prof := range detectedLevelProfiles() {
 		for _, q := range native {
@@ -91,7 +89,8 @@ func TestDetectedLevelFilterLoweringIsTheTranslatorsText(t *testing.T) {
 			if strings.HasPrefix(want, "|") {
 				want = "* " + want
 			}
-			if got := physical.Encode(op); got != want {
+			// A metric row's parser behind the derivation keeps the derived level.
+			if got := strings.Replace(physical.Encode(op), " | unpack_json keep_original_fields", " | unpack_json", 1); got != want {
 				t.Errorf("%s: %q:\n lowered %s\n  string %s", name, q, got, want)
 			}
 		}
@@ -152,9 +151,26 @@ func TestDetectedLevelStagesEdges(t *testing.T) {
 		{`{a="b"} | detected_level=~"("`, true, levelFormConstruct},
 		{`{a="b"} | detected_level>=1`, false, levelFormConstruct},
 		{`{a="b"} | drop __error__, __error_details__ | detected_level="x"`, false, ""},
-		{`{a="b"} | drop __error__="x" | detected_level="x"`, false, levelAfterStageConstruct},
-		{`{a="b"} | keep detected_level | detected_level="x"`, false, levelAfterStageConstruct},
-		{`{a="b"} | decolorize | detected_level="x"`, false, levelAfterStageConstruct},
+		{`{a="b"} | drop __error__="x" | detected_level="x"`, false, ""},
+		{`{a="b"} | keep detected_level | detected_level="x"`, false, ""},
+		{`{a="b"} | decolorize | detected_level="x"`, false, ""},
+		{`{a="b"} | json | detected_level=""`, false, ""},
+		{`{a="b"} | drop detected_level | detected_level=""`, false, ""},
+		{`{a="b"} | keep a | detected_level!~"x.*"`, true, ""},
+		{`{a="b"} | keep a | detected_level>1`, false, levelFormConstruct},
+		{`{a="b"} | json | detected_level>1`, false, levelFormConstruct},
+		{`{a="b"} | json | detected_level=~"("`, false, levelFormConstruct},
+		{`{a="b"} | keep a | detected_level=~"("`, false, levelFormConstruct},
+		{`{a="b"} | json | detected_level.="x"`, false, levelSpellingConstruct},
+		{`{a="b"} | json | detected_level="x" or a="y"`, false, levelTreeConstruct},
+		{`{a="b"} | drop detected_level | json | detected_level="x"`, false, levelAfterStageConstruct},
+		{`{a="b"} | drop detected_level="y" | detected_level="x"`, false, levelAfterStageConstruct},
+		{`{a="b"} | keep detected_level="y" | detected_level="x"`, false, levelAfterStageConstruct},
+		{`{a="b"} | label_format detected_level="y" | detected_level="x"`, false, levelAfterStageConstruct},
+		{`{a="b"} | label_format y=detected_level | detected_level="x"`, false, levelAfterStageConstruct},
+		{`{a="b"} | label_format y=level | detected_level="x"`, false, ""},
+		{`{a="b"} | unpack | detected_level="x"`, false, levelAfterStageConstruct},
+		{`{a="b"} | json detected_level="level" | detected_level="x"`, false, ""},
 		{`{a="b"} | Detected_level="x"`, false, ""},
 		{`{a="b"} | detected_level_x="x"`, false, ""},
 		{`{a="b"} | detected_level.="x"`, false, levelSpellingConstruct},
@@ -165,7 +181,7 @@ func TestDetectedLevelStagesEdges(t *testing.T) {
 			t.Fatalf("%q does not parse", tc.q)
 		}
 		sel := p.Root.(*queryplan.LogSelect)
-		res, c := detectedLevelStages(sel, Profile{metric: tc.metric})
+		_, res, c := detectedLevelStages(sel, Profile{metric: tc.metric})
 		if c != tc.construct {
 			t.Errorf("%q (metric %v): construct %q, want %q", tc.q, tc.metric, c, tc.construct)
 			continue
@@ -343,7 +359,8 @@ func holdsLevelFilter(n queryplan.Node) bool {
 }
 
 // FuzzDetectedLevelLowering holds the lowering of label filters on detected_level to the string translator on any
-// operator, value and quoting, alone or in a row with a line filter, another label filter or a parser, as a log query
+// operator, value and quoting, alone or in a row with a line filter, another label filter or a parser (a filter
+// behind it reads as one ahead of it), as a log query
 // and under a range and a vector aggregation, under every profile of detectedLevelProfiles: both write the same text,
 // or the lowering leaves the query to the translator. A value or label name holding detected_level or service_name
 // is left out: the translator reads the query text for those words (semantics/translator-reads-quoted-text-as-syntax).
@@ -399,9 +416,19 @@ func FuzzDetectedLevelLowering(f *testing.F) {
 		if p == nil {
 			return
 		}
+		// A filter behind the parser is written ahead of it: the reference is the translator's text for that spelling.
+		reference := q
+		if shape%6 == 4 {
+			// A comparison with "" behind a parser is a constant the string translator has no spelling for
+			// (TestLevelFilterAfterStageMatchesLoki holds it to Loki).
+			if op := (ops >> 3) % 6; v2 == "" && op != 2 && op != 3 {
+				return
+			}
+			reference = strings.Replace(q, l1+` | json | `+l2, l1+` | `+l2+` | json`, 1)
+		}
 		for name, prof := range detectedLevelProfiles() {
 			op, lerr := PlanQuery(q, p, prof)
-			legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.Label, prof.StreamFields, prof.Caps)
+			legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(reference), prof.Label, prof.StreamFields, prof.Caps)
 			if errors.Is(lerr, ErrNotLowered) || terr != nil {
 				if lerr == nil && terr != nil {
 					t.Fatalf("%s: %s: lowered, the translator rejects it: %v", name, q, terr)
@@ -414,7 +441,10 @@ func FuzzDetectedLevelLowering(f *testing.F) {
 			if strings.HasPrefix(legacy, "|") {
 				legacy = "* " + legacy
 			}
-			if got := physical.Encode(op); got != QuoteKeywordFieldText(legacy) {
+			got := physical.Encode(op)
+			// A metric row keeps the derived level over the parser.
+			got = strings.Replace(got, ` | unpack_json keep_original_fields`, " | unpack_json", 1)
+			if got != QuoteKeywordFieldText(legacy) {
 				t.Fatalf("%s: %s:\n lowered %s\n  string %s", name, q, got, legacy)
 			}
 		}

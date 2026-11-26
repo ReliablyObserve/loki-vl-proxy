@@ -266,6 +266,17 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence semantics/label-filter-numeric-equality"]++
 				continue
 			}
+			if lower.WritesLevelAfterStage(plan) && !sameAsTranslator(got, legacy) {
+				// A filter on detected_level after a stage is written as Loki reads it: held to the translator's text of
+				// the query with the filter written ahead of the stages, where there is such a spelling, and to Loki
+				// (TestLevelFilterAfterStageMatchesLoki).
+				if msg := hoistedSpellingHeld(q, prof, got); msg != "" {
+					problems = append(problems, msg)
+					continue
+				}
+				delegated["known divergence "+knownLevelAfterStage]++
+				continue
+			}
 			if translatorReadsBlankGrouping(q, prof) {
 				// A `by` clause of only blanks: the translator reads no clause, Loki and the plan `by ()`.
 				delegated["known divergence semantics/translator-reads-blank-grouping-as-none"]++

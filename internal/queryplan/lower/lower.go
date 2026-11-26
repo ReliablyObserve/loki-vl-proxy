@@ -142,7 +142,7 @@ func PlanLogText(p *queryplan.Plan, prof Profile) (string, error) {
 // logSelectQuery is the typed query logSelect prints: a range aggregation appends its stats pipe to it. The bool says
 // it holds the pipes that derive detected_level for a filter on it.
 func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool, error) {
-	levels, c := detectedLevelStages(sel, prof)
+	sel, levels, c := detectedLevelStages(sel, prof)
 	if c != "" {
 		return logsql.Query{}, false, &NotLoweredError{Construct: c}
 	}
@@ -184,10 +184,12 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 			// A parser, a drop, a keep and decolorize are pipes (stagePipes); a drop of matchers and a
 			// wildcard pattern write none.
 			if len(staged) > 0 && len(staged[i]) > 0 {
+				pipes := staged[i]
 				if _, ok := st.(*queryplan.Parse); ok {
 					afterParser = true
+					pipes = level.guard(pipes)
 				}
-				q.pipe(staged[i]...)
+				q.pipe(pipes...)
 			}
 			continue
 		}

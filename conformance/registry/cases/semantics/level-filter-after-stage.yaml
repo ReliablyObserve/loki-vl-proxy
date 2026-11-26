@@ -1,0 +1,78 @@
+id: semantics/level-filter-after-stage
+title: '`| detected_level=` after a stage filtered the parsed or stored level field (fixed)'
+pending: true
+proves:
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki attaches detected_level to every entry at ingest. A json, logfmt,
+  regexp or pattern parser behind it never writes it (a key or capture of
+  that name becomes detected_level_extracted), and line filters, line_format,
+  decolorize, and a drop, keep or label_format that does not name it leave it
+  alone. A filter on it therefore selects the same entries wherever it stands
+  behind those stages. A drop of the label, or a keep without it, removes it:
+  a filter that follows compares the empty value.
+
+  The proxy rendered such a filter as a filter on the level field the stages
+  leave: after `| json` or `| logfmt` it kept entries by their line's own
+  level key, and after drop or decolorize it unpacked the line as logfmt.
+
+  The query plan now writes a filter on the ingest value ahead of the stages
+  (the same text as the filter written first), and a constant filter for a
+  removed label. In a metric query whose filter moved ahead of a parser, the
+  derived value is held across the parser, so `sum by (detected_level)` groups
+  by it and not by a key of that name on the line.
+  TestLevelFilterAfterStageMatchesLoki compares the entries (and the counts
+  per level) with Loki's pipeline on VictoriaLogs v1.49.0 and v1.54.0: 158
+  queries, no differences for the plan.
+
+  Not covered, each still open (severity/detected-level-stage-side-effects): a
+  filter behind a stage that writes the label (a drop or keep matcher on it, a
+  label_format from or to it, a parser after it was removed, unpack), an
+  and/or tree, a comparison or ip() form, and the labels of the response.
+corpus:
+  size: 8
+  dimensions:
+    shapes:
+      - query: '{service_name="worker-service"} | logfmt | detected_level="error"'
+      - query: '{service_name="api-gateway"} | json | detected_level!="info"'
+      - query: '{service_name="api-gateway"} | pattern "<_> <m>" | detected_level=~"error|warn"'
+      - query: '{namespace="prod"} | drop level | detected_level="error"'
+      - query: '{namespace="prod"} | decolorize | detected_level="error"'
+      - query: '{service_name="api-gateway"} | drop detected_level | detected_level=""'
+      - query: '{service_name="api-gateway"} | keep app | detected_level="error"'
+      - query: 'sum by (detected_level) (count_over_time({service_name="api-gateway"} | logfmt | detected_level!="info" [5m]))'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="worker-service"} | logfmt | detected_level="error"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    The entries Loki selects: those whose ingest level is error, whatever the
+    line's own level key says.
+gap:
+  status: fixed
+  fixed_by: '#1768'
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/level_after_stage_fence.go, internal/proxy/query_lowering.go, internal/proxy/response_key_fences.go, internal/queryplan/lower/delete_filter.go, internal/queryplan/lower/detected_level.go, internal/queryplan/lower/level_after_stage.go, internal/queryplan/lower/log_screen.go, internal/queryplan/lower/lower.go, internal/queryplan/lower/metric_screen.go'
+  loki: 'detected_level is structured metadata set at ingest; later parsers write detected_level_extracted'
+  proxy: 'the plan writes the filter ahead of the stages, or compares the empty value on a removed label'
+  planned_test: 'TestLevelFilterAfterStageMatchesLoki (internal/queryplan/lower), TestDetectedLevelStagesEdges, TestLevelAfterStageServedFromPlan (internal/proxy)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

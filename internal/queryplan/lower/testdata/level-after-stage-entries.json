@@ -1,0 +1,145 @@
+[
+  {
+    "name": "json level error",
+    "line": "{\"level\":\"error\",\"a\":\"1\"}",
+    "level": "error"
+  },
+  {
+    "name": "json level info",
+    "line": "{\"level\":\"info\",\"a\":\"2\"}",
+    "level": "info"
+  },
+  {
+    "name": "stored info, body level error",
+    "fields": {
+      "level": "info"
+    },
+    "line": "{\"level\":\"error\",\"a\":\"1\"}",
+    "level": "info"
+  },
+  {
+    "name": "stored error, body level info",
+    "fields": {
+      "level": "error"
+    },
+    "line": "{\"level\":\"info\",\"a\":\"1\"}",
+    "level": "error"
+  },
+  {
+    "name": "stored info, body detected_level error",
+    "fields": {
+      "level": "info"
+    },
+    "line": "{\"detected_level\":\"error\",\"a\":\"1\"}",
+    "level": "info"
+  },
+  {
+    "name": "stored error, body detected_level info",
+    "fields": {
+      "level": "error"
+    },
+    "line": "{\"detected_level\":\"info\",\"a\":\"1\"}",
+    "level": "error"
+  },
+  {
+    "name": "json body detected_level only",
+    "line": "{\"detected_level\":\"error\",\"a\":\"1\"}",
+    "level": "error"
+  },
+  {
+    "name": "json body detected_level only, no keyword",
+    "line": "{\"detected_level\":\"fatal\",\"a\":\"1\"}",
+    "level": "fatal"
+  },
+  {
+    "name": "json body detected_level custom word",
+    "line": "{\"detected_level\":\"loud\",\"a\":\"1\"}",
+    "level": "unknown"
+  },
+  {
+    "name": "json body detected_level empty",
+    "line": "{\"detected_level\":\"\",\"a\":\"1\"}",
+    "level": "unknown"
+  },
+  {
+    "name": "logfmt body detected_level, stored info",
+    "fields": {
+      "level": "info"
+    },
+    "line": "level=error detected_level=error a=1",
+    "level": "info"
+  },
+  {
+    "name": "logfmt error",
+    "line": "level=error msg=\"job failed\" a=1",
+    "level": "error"
+  },
+  {
+    "name": "logfmt info",
+    "line": "level=info msg=ok a=2",
+    "level": "info"
+  },
+  {
+    "name": "stored WARN, plain body detected_level",
+    "fields": {
+      "level": "WARN"
+    },
+    "line": "a=1 detected_level=info",
+    "level": "warn"
+  },
+  {
+    "name": "logfmt body detected_level only",
+    "line": "detected_level=error a=1",
+    "level": "error"
+  },
+  {
+    "name": "logfmt body detected_level only, no keyword",
+    "line": "detected_level=loud a=1",
+    "level": "unknown"
+  },
+  {
+    "name": "plain keyword",
+    "line": "2026 [1] db ERROR: deadlock",
+    "level": "error"
+  },
+  {
+    "name": "plain info",
+    "line": "info a=1",
+    "level": "info"
+  },
+  {
+    "name": "plain no level",
+    "line": "ordinary sample 7",
+    "level": "unknown"
+  },
+  {
+    "name": "broken json",
+    "line": "{\"a\":",
+    "level": "unknown"
+  },
+  {
+    "name": "stream detected_level, body detected_level",
+    "stream": {
+      "detected_level": "debug"
+    },
+    "line": "{\"detected_level\":\"fatal\",\"a\":\"1\"}",
+    "level": "debug",
+    "extracted": "fatal"
+  },
+  {
+    "name": "body scratch names",
+    "fields": {
+      "level": "error"
+    },
+    "line": "{\"__dl_keep\":\"x\",\"__dl\":\"y\",\"__dl_s\":\"z\",\"__j_level\":\"fatal\",\"a\":\"1\"}",
+    "level": "error"
+  },
+  {
+    "name": "stored detected_level metadata",
+    "fields": {
+      "detected_level": "warn"
+    },
+    "line": "{\"level\":\"error\",\"a\":\"1\"}",
+    "level": "warn"
+  }
+]

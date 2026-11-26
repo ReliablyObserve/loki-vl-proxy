@@ -25,7 +25,7 @@ import (
 
 // logStageFlipCandidates are the stage families of log queries the tests serve from the lowering on a proxy of their
 // own (withFlippedLogStages), to prove a flip of them ready.
-var logStageFlipCandidates = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "DropKeep", "LabelFormat", "LineFormat", "RegexpPattern"}
+var logStageFlipCandidates = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "DropKeep", "LabelFormat", "LineFormat", "RegexpPattern", "Decolorize"}
 
 // unspacedParserRE finds a regexp or pattern parser written with no blank before its quoted expression.
 var unspacedParserRE = regexp.MustCompile("(\\|\\s*(?:regexp|pattern))([\"`])")
@@ -107,7 +107,11 @@ func TestQueryPlanLowering_LogCorpusTextParity(t *testing.T) {
 				}
 				got, gotErr := on.translateLogResponseQuery(ctx, q)
 				want, wantErr := off.translateLogResponseQuery(ctx, respaced(q))
-				if got != want || (gotErr == nil) != (wantErr == nil) {
+				// A filter on detected_level after a stage is written ahead of it
+				// (semantics/level-filter-after-stage, held to Loki by TestLevelFilterAfterStageMatchesLoki).
+				plan0 := resolvedPlan(q)
+				ahead := plan0 != nil && lower.WritesLevelAfterStage(plan0)
+				if !ahead && (got != want || (gotErr == nil) != (wantErr == nil)) {
 					if differs++; differs <= 10 {
 						t.Errorf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
 					}
@@ -303,7 +307,7 @@ func logFlipGateHolds(on, off *Proxy, q string) string {
 	ctx := context.Background()
 	// A numeric equality after a parser is served from the plan, which compares the value as a number where the
 	// translator writes the literal's text (semantics/label-filter-numeric-equality): held to Loki by its differential.
-	if plan := resolvedPlan(q); plan != nil && lower.WritesNumericEquality(plan) {
+	if plan := resolvedPlan(q); plan != nil && (lower.WritesNumericEquality(plan) || lower.WritesLevelAfterStage(plan)) {
 		return ""
 	}
 	reads := spelledAsTranslatorReads(q)
@@ -447,7 +451,7 @@ func TestQueryPlanLowering_ServesUnspacedParsers(t *testing.T) {
 		}
 	}
 	// Left to the string translator: a stage the plan does not serve.
-	if q := `{app="a"} |pattern"<_> <m>" | decolorize`; true {
+	if q := `{app="a"} |pattern"<_> <m>" | unpack`; true {
 		got, _ := p.translateLogResponseQuery(ctx, q)
 		want, _ := off.translateLogResponseQuery(ctx, q)
 		if got != want {
@@ -500,13 +504,13 @@ var parserFormatFamilies = []struct {
 		`{app="a"} | json m="a.b", n="c" | m="x"`, `{app="a"} | json | (status="500" or level!="info")`,
 		`{app="a"} | json | k8s.pod.name="p"`,
 	}, []string{
-		`{app="a"} | json | detected_level="error"`, `{app="a"} | json | service_name="x"`,
+		`{app="a"} | drop detected_level | json | detected_level="error"`, `{app="a"} | json | service_name="x"`,
 		`{app="a"} | json | unpack`,
 	}},
 	{"Logfmt", []string{
 		`{app="a"} | logfmt`, `{app="a"} | logfmt | status >= 500 | path = "/api"`, `{app="a"} | logfmt --strict | level="error"`,
 		`{app="a"} | logfmt a="b" | a!="x"`,
-	}, []string{`{app="a"} | logfmt | detected_level="x"`}},
+	}, []string{`{app="a"} | drop detected_level | logfmt | detected_level="x"`}},
 	{"DropKeep", []string{
 		`{app="a"} | drop a, b`, `{app="a"} | keep c, d`, `{app="a"} | drop a="x", b`, `{app="a"} | keep a="x", b="y"`,
 		`{app="a"} |= "x" | drop detected_level`,

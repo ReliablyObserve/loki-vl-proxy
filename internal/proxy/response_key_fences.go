@@ -56,6 +56,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		}
 		b.add(markerBytesFence(query, words.markerQuoted))
 		b.add(numericEqualityResponseKeyVersion(query))
+		b.add(levelAfterStageResponseKeyVersion(query))
 		return b.String()
 	}
 	other := spelledOtherwise(query)
@@ -68,6 +69,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		b.add(logfmtPresenceFence(r, query, logfmtWord))
 	}
 	b.add(detectedLevelMutationResponseKeyVersion(query))
+	b.add(levelAfterStageResponseKeyVersion(query))
 	if keep {
 		b.add(keepMetadataProjectionResponseVersion)
 	}

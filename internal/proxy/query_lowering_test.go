@@ -108,11 +108,11 @@ var loweringParityQueries = []struct {
 	{"label filters among line filters", `{app="a"} |= "x" | status="200" |> "<_> y" | code != "z" != "w"`, true, "", ""},
 	{"dotted label filter", `{app="a"} | k8s.pod.name = "p"`, true, "loki compatible", ""},
 	// Not covered by the lowering: the string translator answers in both runs.
-	// A filter on detected_level: served once its stage family (LevelFilter) is flipped. One after a parser and one on
-	// service_name are not lowered: the string translator answers in both runs.
+	// A filter on detected_level: served once its stage family (LevelFilter) is flipped. One on service_name is not
+	// lowered: the string translator answers in both runs. One after a stage is served where the string translator
+	// writes another filter (TestLevelAfterStageServedFromPlan), so it is no row here.
 	{"detected_level filter", `{app="a"} | detected_level="error"`, false, "", "LevelFilter"},
 	{"detected_level filters among line filters", `{app="a"} |= "x" | detected_level=~"error|warn" != "y" | status >= 500`, false, "", "LevelFilter"},
-	{"detected_level filter after a parser", `{app="a"} | logfmt | detected_level="error"`, false, "", ""},
 	{"service_name label filter", `{app="a"} | service_name="x"`, false, "", ""},
 	{"json", `{app="a"} | json | status="200"`, false, "", "JSON"},
 	{"logfmt", `{app="a"} | logfmt | level="error"`, false, "", "Logfmt"},
@@ -120,8 +120,8 @@ var loweringParityQueries = []struct {
 	{"line_format", `{app="a"} | line_format "{{.status}}"`, false, "loki compatible", "LineFormat"},
 	// The lowering writes these natively (the corpus shadow holds it to the translator), but the flip's screen turns
 	// every parser and formatting stage away: they stay on the string translator.
-	{"decolorize", `{app="a"} | decolorize`, false, "", ""},
-	{"decolorize then filter", `{app="a"} | decolorize | status="200" |= "x"`, false, "", ""},
+	{"decolorize", `{app="a"} | decolorize`, false, "", "Decolorize"},
+	{"decolorize then filter", `{app="a"} | decolorize | status="200" |= "x"`, false, "", "Decolorize"},
 	{"regexp", "{app=\"a\"} | regexp `(?P<s>\\d+)` | s=\"200\"", false, "", "RegexpPattern"},
 	{"pattern", "{app=\"a\"} | pattern `<_> <s> <_>` | s=\"200\"", false, "", "RegexpPattern"},
 	{"label_format", `{app="a"} | label_format s=status | s="200"`, false, "", "LabelFormat"},
@@ -132,7 +132,7 @@ var loweringParityQueries = []struct {
 	{"keep line", `{app="a"} | line_format "{{.status}}" | line_format "{{.app}}: {{.__line__}}"`, false, "", "LineFormat"},
 	{"keep line with filters", `{app="a"} |= "x" | line_format "{{.a}}" | status="200" | line_format "{{.b}}"`, false, "", "LineFormat"},
 	{"detected_level and service_name filters", `{service_name="a"} |= "x" | detected_level="error" | service_name="a"`, false, "", ""},
-	{"decolorize", `{app="a"} | decolorize |= "x"`, false, "", ""},
+	{"decolorize", `{app="a"} | decolorize |= "x"`, false, "", "Decolorize"},
 	// Asked again: answered from the translation cache, with no translation.
 	{"drop", `{app="a"} | drop status`, false, "", ""},
 	// Metric queries: served from the lowering once their construct is flipped, with the string translator's text.
@@ -329,7 +329,7 @@ func TestQueryPlanLowering_ServesDetectedLevelFilters(t *testing.T) {
 				t.Errorf("lowerLogSelect(%q) = %q, %v; want the translator's text %q", q, got, ok, want)
 			}
 		}
-		for _, q := range []string{`{a="b"} | json | detected_level="error"`, `{a="b"} | service_name="x"`, `{a="b"} | detected_level`} {
+		for _, q := range []string{`{a="b"} | drop detected_level | json | detected_level="error"`, `{a="b"} | service_name="x"`, `{a="b"} | detected_level`} {
 			if got, ok := p.lowerLogSelect(context.Background(), q, prof); ok {
 				t.Errorf("lowerLogSelect(%q) = %q, want the translator to answer", q, got)
 			}

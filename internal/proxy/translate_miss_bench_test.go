@@ -38,9 +38,19 @@ var translateMissShapes = []struct {
 	{"native label filters", func(i string) string { return `{app="api"} |= "x" | status >= 500 | path =~ "/api/` + i + `.*"` }},
 	{"derived level filter", func(i string) string { return `{service_name="api"} |= "error ` + i + `" | detected_level="error"` }},
 	// The log stage families the lowering serves (QueryPlanFlippedLogStages), and the log shapes their screen turns away.
-	{"level filter after parser (turned away)", func(i string) string {
+	{"level filter after parser", func(i string) string {
 		return `{app="api"} |= "error ` + i + `" | logfmt | detected_level="error"`
 	}},
+	{"level filter after drop and decolorize", func(i string) string {
+		return `{app="api"} |= "error ` + i + `" | drop a | decolorize | detected_level="error"`
+	}},
+	{"level metric after parser", func(i string) string {
+		return `sum by (detected_level) (count_over_time({app="api"} |= "e` + i + `" | logfmt | detected_level="error" [1m]))`
+	}},
+	{"level metric after parser (turned away)", func(i string) string {
+		return `count_over_time({app="api"} |= "e` + i + `" | logfmt | detected_level="error" [1m])`
+	}},
+	{"decolorize", func(i string) string { return `{app="api"} |= "` + i + `" | decolorize` }},
 	{"service_name filter (turned away)", func(i string) string { return `{app="api"} |= "error ` + i + `" | service_name="api"` }},
 	// The translator-only known divergences the plan serves: a marker byte in a label filter value behind a parser, a
 	// reserved field name under a metric query; and a backslash escape the screens read through.

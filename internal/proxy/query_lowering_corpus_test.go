@@ -93,6 +93,11 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					numeric++
 					continue
 				}
+				// A filter on detected_level after a stage: the plan writes it ahead of the stages, held to Loki by
+				// TestLevelFilterAfterStageMatchesLoki (semantics/level-filter-after-stage).
+				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.WritesLevelAfterStage(plan) && gotErr == nil && got != want {
+					continue
+				}
 				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.ReadsReservedField(plan, lower.Profile{}) && gotErr == nil {
 					reserved++
 					if got == want {
@@ -270,6 +275,10 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// translator writes the literal's text (semantics/label-filter-numeric-equality): held to Loki by its
 		// differential, not to the translator's text.
 		if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.WritesNumericEquality(plan) {
+			return
+		}
+		// A filter on detected_level after a stage (semantics/level-filter-after-stage) is held to Loki too.
+		if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.WritesLevelAfterStage(plan) {
 			return
 		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)

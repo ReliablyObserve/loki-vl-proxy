@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -494,7 +495,12 @@ func pipelineAddsLabels(pipeline []logqlpkg.Stage) lineFieldExposure {
 				exposure.unpack = true
 			}
 		case *logqlpkg.LabelFilterStage:
-			exposure.filters = append(exposure.filters, labelFilterConditions(s.Expr, exposureBefore(pipeline[:i]))...)
+			conditions := labelFilterConditions(s.Expr, exposureBefore(pipeline[:i]))
+			if !removesDetectedLevel(pipeline[:i]) {
+				// Loki attaches detected_level at ingest: a line key of that name never hides the label.
+				conditions = slices.DeleteFunc(conditions, func(f lineFieldFilter) bool { return f.name == detectedLevelLabel })
+			}
+			exposure.filters = append(exposure.filters, conditions...)
 		case *logqlpkg.LabelFormatStage:
 			before := exposureBefore(pipeline[:i])
 			for _, f := range s.Formats {
@@ -520,6 +526,21 @@ func exposureBefore(prefix []logqlpkg.Stage) lineFieldExposure {
 	before := pipelineAddsLabels(prefix)
 	before.filters, before.labelFormats, before.extractions = nil, nil, nil
 	return before
+}
+
+// removesDetectedLevel reports a drop or a keep that may remove detected_level: a drop naming it, or any keep that
+// does not list it.
+func removesDetectedLevel(pipeline []logqlpkg.Stage) bool {
+	return slices.ContainsFunc(pipeline, func(st logqlpkg.Stage) bool {
+		switch s := st.(type) {
+		case *logqlpkg.DropStage:
+			return slices.Contains(s.Labels, detectedLevelLabel) ||
+				slices.ContainsFunc(s.Matchers, func(m logqlpkg.DropMatcher) bool { return m.Name == detectedLevelLabel })
+		case *logqlpkg.KeepStage:
+			return !slices.Contains(s.Labels, detectedLevelLabel)
+		}
+		return false
+	})
 }
 
 // labelFilterConditions returns the conditions of a label filter stage that

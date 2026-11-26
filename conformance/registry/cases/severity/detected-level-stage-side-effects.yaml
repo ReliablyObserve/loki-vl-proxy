@@ -9,16 +9,14 @@ why: |
   `| drop detected_level`, `| drop level`, and presence filters
   `| detected_level!=""` / `| detected_level=""` across stored level
   fields, stream labels, and ordinary or categorize-labels responses.
-  An exact value filter that no parser, line rewrite or label stage
-  precedes compares the same per-entry derived value the response path
-  exposes (severity/detected-level-filter-json-level). Value filters after
-  a parser, drop, keep or label_format stage, and later
-  `label_format detected_level=...` stage ordering, remain open: after
-  `| logfmt` or `| json` the filter still reads the parsed level key
-  (`{service_name="worker-service"} | logfmt | detected_level="error"`
-  keeps lines Loki labels info, whose logfmt `level` becomes
-  `level_extracted`), and a label_format target may be classified as a
-  parsed label instead of Loki's structured metadata.
+  A value filter behind a parser, a formatting stage or a drop or keep that
+  leaves the label, and any value filter on a removed label, selects Loki's
+  entries (semantics/level-filter-after-stage). Value filters behind a stage
+  that writes the label remain open: a drop or keep matcher on it, a
+  `label_format` from or to it, a parser after it was removed (the line's key
+  of that name becomes the label) and unpack still filter the stored or parsed
+  level field, and a label_format target may be classified as a parsed label
+  instead of Loki's structured metadata.
 
   The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
   VictoriaLogs v1.53.0) shows two more on a line whose level is structured
@@ -41,7 +39,7 @@ request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{service_name="worker-service"} | logfmt | detected_level="error"'
+    query: '{service_name="visual-detected-level-stage"} | keep detected_level'
     start: 'now-15m'
     end: 'now'
     limit: '100'
@@ -52,16 +50,14 @@ compare:
   mode: observed
   fields: [status, streams.stream, streams.values]
   expect: |
-    Loki's labels and entries: after `| logfmt` the filter reads the stage's
-    own detected_level, so the lines Loki labels info (their logfmt `level`
-    becomes `level_extracted`) are not kept.
+    Loki's entries, each with detected_level in its structured metadata.
 gap:
   status: open
   impact: explore-visible
   effort: S
   area: 'internal/proxy/detected_level.go, internal/translator/translator.go, internal/proxy/loki_profile.go (derived value filters and stage ordering)'
   loki: 'detected_level is ordinary structured metadata, so keep and drop act on it'
-  proxy: 'bare keep/drop, presence filters and value filters before any stage corrected; value filters after a parser, drop, keep or label_format and later label_format ordering remain open'
+  proxy: 'bare keep/drop, presence filters and value filters before or behind stages that leave the label corrected; value filters behind a stage that writes it and later label_format ordering remain open'
   planned_test: 'TestCompat_DetectedLevelKeepDrop and TestCompat_DetectedLevelPresenceFilters (test/e2e-compat core); extend the live Loki comparison for exact-value filters and label_format ordering when fixed'
   note: 'The remaining value-filter and label_format differences reproduce with the existing dual-ingest fixture; they are not asserted as passing.'
   clusters:

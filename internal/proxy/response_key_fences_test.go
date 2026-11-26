@@ -23,6 +23,7 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 	return orderedJSONVectorResponseKeyVersion(r, query) +
 		bareJSONMetricResponseKeyVersion(r, query) +
 		detectedLevelMutationResponseKeyVersion(query) +
+		levelAfterStageResponseKeyVersion(query) +
 		keepMetadataProjectionResponseKeyVersion(query) +
 		ipLabelFilterResponseKeyVersion(query) +
 		repeatedLabelFilterResponseKeyVersion(query) +
@@ -61,6 +62,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(bareJSONMetricResponseKeyVersion(r, query))
 	key.WriteString(logfmtPresenceResponseKeyVersion(r, query))
 	key.WriteString(detectedLevelMutationResponseKeyVersion(query))
+	key.WriteString(levelAfterStageResponseKeyVersion(query))
 	key.WriteString(keepMetadataProjectionResponseKeyVersion(query))
 	key.WriteString(ipLabelFilterResponseKeyVersion(query))
 	key.WriteString(repeatedLabelFilterResponseKeyVersion(query))
@@ -238,14 +240,14 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			if got := responseKeyFences(r, query, responseKeyInnerQueryRange); got != oldInner {
 				t.Errorf("inner query_range fences differ for %q (%s): got %q want %q", query, shape.name, got, oldInner)
 			}
-			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+keywordLabelResponseKeyVersion(query)+reservedFieldCaseResponseKeyVersion(query)+reservedFieldLabelResponseKeyVersion(query)+markerBytesLabelValueResponseKeyVersion(query)+numericEqualityResponseKeyVersion(query); got != want {
+			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+keywordLabelResponseKeyVersion(query)+reservedFieldCaseResponseKeyVersion(query)+reservedFieldLabelResponseKeyVersion(query)+markerBytesLabelValueResponseKeyVersion(query)+numericEqualityResponseKeyVersion(query)+levelAfterStageResponseKeyVersion(query); got != want {
 				t.Errorf("window shape fences differ for %q: got %q want %q", query, got, want)
 			}
 			for _, f := range []string{
 				orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
 				streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion,
-				markerBytesLabelValueResponseVersion, numericEqualityResponseVersion,
+				markerBytesLabelValueResponseVersion, numericEqualityResponseVersion, levelAfterStageResponseVersion,
 			} {
 				if strings.Contains(oldInner, f) {
 					fired[f] = true
@@ -278,7 +280,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 		orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 		detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
 		streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion,
-		markerBytesLabelValueResponseVersion, numericEqualityResponseVersion,
+		markerBytesLabelValueResponseVersion, numericEqualityResponseVersion, levelAfterStageResponseVersion,
 	} {
 		if !fired[f] {
 			t.Errorf("no corpus query fires %s: the differential does not cover it", f)

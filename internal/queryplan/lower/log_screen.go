@@ -34,6 +34,8 @@ const (
 	LogLabelFormat
 	// LogLineFormat is a line_format stage.
 	LogLineFormat
+	// LogDecolorize is a decolorize stage.
+	LogDecolorize
 )
 
 // logStageNames are the names of the stage families, as LogStagesOf reads them.
@@ -49,6 +51,7 @@ var logStageNames = [...]struct {
 	{"DropKeep", LogDropKeep},
 	{"LabelFormat", LogLabelFormat},
 	{"LineFormat", LogLineFormat},
+	{"Decolorize", LogDecolorize},
 }
 
 // LogStagesOf is the set of the stage families among the names; a name that is not one adds nothing.
@@ -71,12 +74,13 @@ func LogStagesOf(names []string) LogStages {
 //
 // It reads the pipeline as ScreenMetric reads one inside a range function, and answers 0 for a query with any of the
 // classes it turns away there (outside quoted strings, unless said otherwise):
-//   - a stage the lowering leaves to the translator (unpack, decolorize, unwrap), a family outside the set the caller
+//   - a stage the lowering leaves to the translator (unpack, unwrap), a family outside the set the caller
 //     serves, a regexp or pattern parser with no blank before its expression (unless the set holds LogUnspacedParser)
 //     and a spaced one whose expression is not spelled plainly (plainParserArg), a line_format with no blank before
 //     its template, a line_format or label_format template that is more than text and {{.name}} fields
 //     (plainTemplate), and a keep of names and matchers together;
-//   - a filter on service_name (the lowering leaves it to the translator) and a level filter after a parser;
+//   - a filter on service_name (the lowering leaves it to the translator), and detected_level named by a drop or
+//     keep matcher, a label_format or an extraction list;
 //   - a comparison with a signed number;
 //   - a word VictoriaLogs reserves as a field name before a parser (ReadsReservedField);
 //   - a quoted string with detected_level or service_name in it, a byte from \x00 to \x02 or an escape that could
@@ -132,6 +136,8 @@ func PlanLogStages(p *queryplan.Plan) (LogStages, bool) {
 			set |= LogLabelFormat
 		case *queryplan.LineFormat:
 			set |= LogLineFormat
+		case *queryplan.Decolorize:
+			set |= LogDecolorize
 		case *queryplan.LabelFilter:
 			if v.Expr == nil {
 				return 0, false
@@ -170,7 +176,9 @@ func (s *metricScan) logKeyword(q, w string, j int) (done, ok bool) {
 		if s.names && s.staged && s.stages&LogDropKeep != 0 && !comparisonFollows(q, j) {
 			return true, true
 		}
-		if s.staged || !comparisonFollows(q, j) || s.allowed&LogLevelFilter == 0 {
+		// A label filter, after any stage: the lowering writes it as Loki reads it unless a stage writes the label
+		// (level_after_stage.go). A stage that names the label with a comparison is turned away here.
+		if s.names || !comparisonFollows(q, j) || s.allowed&LogLevelFilter == 0 {
 			return true, false
 		}
 		s.stages |= LogLevelFilter
@@ -212,7 +220,14 @@ func (s *metricScan) logKeyword(q, w string, j int) (done, ok bool) {
 		s.keepStage, s.template = w == "keep", st&(LogLabelFormat|LogLineFormat) != 0
 		s.stages |= st
 		return true, true
-	case "service_name", "unwrap", "by", "without", "unpack", "decolorize":
+	case "decolorize":
+		if s.allowed&LogDecolorize == 0 {
+			return true, false
+		}
+		s.staged, s.names = true, false
+		s.stages |= LogDecolorize
+		return true, true
+	case "service_name", "unwrap", "by", "without", "unpack":
 		// A filter on service_name, and a stage the lowering leaves to the translator in a log query.
 		return true, false
 	}

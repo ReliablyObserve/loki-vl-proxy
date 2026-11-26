@@ -1,0 +1,46 @@
+id: semantics/detected-level-labels-after-parser
+title: Behind `| json` or `| logfmt` the detected_level labels of an entry differ from Loki's (open)
+pending: true
+proves:
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki attaches detected_level at ingest and names a parsed key of that name
+  detected_level_extracted. The proxy reads the entry's fields after
+  VictoriaLogs' unpack pipe, which writes the line's keys over the stored
+  fields: behind a parser, an entry with a stored level and another level key
+  on the line carries the line's level, and an entry whose line has a
+  detected_level key lacks the parsed detected_level_extracted and may carry
+  the line's word as its level. The entries selected are Loki's.
+
+  Measured by TestCompat_LevelFilterAfterStageLikeLoki against Loki 3.7.10 and
+  VictoriaLogs v1.54.0 on 23 entries recorded at ingest: 12 of its 39 queries
+  differ in labels, all behind a json or logfmt parser; behind every other
+  stage the labels match.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | json | detected_level="error"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.stream, streams.values]
+  expect: |
+    Loki's labels: the ingest level, and the line's key as
+    detected_level_extracted among the parsed labels.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/stream_processing.go classifyEntryFieldsWithFlags, internal/proxy/detected_level.go'
+  loki: 'a parser never writes structured metadata; a colliding key gets the _extracted suffix'
+  proxy: 'the level is derived from the fields the unpack pipe left'
+  planned_test: 'TestCompat_LevelFilterAfterStageLikeLoki (test/e2e-compat core): compare labels behind the parsers too'
+  clusters: []
