@@ -495,7 +495,7 @@ peerCache:
   selfAZ: "us-east-1a"
 ```
 
-When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags and `-peer-auth-token=$(PEER_AUTH_TOKEN)`. The token Secret is resolved in this order:
+When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags and `-peer-auth-token-file` (the token Secret mounted as a file). The token Secret is resolved in this order:
 
 1. `peerCache.authToken` set: the chart renders `<release>-peer-auth-literal` with that value.
 2. `peerCache.existingSecret` set: the chart references your Secret (key `peerCache.existingSecretKey`, default `token`) and renders none.

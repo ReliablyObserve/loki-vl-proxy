@@ -294,34 +294,64 @@ a metrics port the binary never serves, or the binary would refuse to start
 {{- end -}}
 
 {{/*
+loki-vl-proxy.secretFiles — the secrets the chart takes from a Secret, as a
+JSON list. Each is mounted as one read-only file and passed to the proxy as
+-<flag>=<dir>/<path>.
+*/}}
+{{- define "loki-vl-proxy.secretFiles" -}}
+{{- $out := list -}}
+{{- if .Values.peerCache.enabled -}}
+{{- $name := .Values.peerCache.existingSecret -}}
+{{- $key := .Values.peerCache.existingSecretKey | default "token" -}}
+{{- if not $name -}}
+{{- $name = printf "%s-peer-auth%s" .Release.Name (ternary "-literal" "" (not (empty .Values.peerCache.authToken))) -}}
+{{- $key = "token" -}}
+{{- end -}}
+{{- $out = append $out (dict "flag" "peer-auth-token-file" "volume" "secret-peer-auth" "path" "token" "secretName" $name "key" $key) -}}
+{{- end -}}
+{{- range $spec := list
+    (dict "values" "adminAuth" "flag" "server.admin-auth-token-file" "volume" "secret-admin-auth" "path" "token")
+    (dict "values" "deleteAuth" "flag" "delete-api-auth-token-file" "volume" "secret-delete-auth" "path" "token")
+    (dict "values" "backendAuth" "flag" "backend-basic-auth-file" "volume" "secret-backend-auth" "path" "basic-auth")
+    (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth-file" "volume" "secret-backend-version-auth" "path" "basic-auth") -}}
+{{- $auth := default (dict) (get $.Values $spec.values) -}}
+{{- if $auth.existingSecret -}}
+{{- $out = append $out (dict "flag" $spec.flag "volume" $spec.volume "path" $spec.path "secretName" $auth.existingSecret "key" (default $spec.path $auth.existingSecretKey)) -}}
+{{- end -}}
+{{- end -}}
+{{- range $secret := $out -}}
+{{- $_ := set $secret "dir" (printf "/var/run/secrets/loki-vl-proxy/%s" (trimPrefix "secret-" $secret.volume)) -}}
+{{- end -}}
+{{- toJson $out -}}
+{{- end }}
+
+{{/*
 loki-vl-proxy.validateSecrets — fail-fast when a secret is configured twice:
-once as a plain value (extraArgs / observability.otlp.headers) and once from an
-existing Secret. The Go flag package fatals on a duplicate flag, and for OTLP
-headers the plain flag would silently win over the Secret-backed env var.
-Invoked from the deployment.
+once through extraArgs (value or -file flag) or observability.otlp.headers, and
+once from an existing Secret. The proxy refuses a value flag next to a file
+flag, and for OTLP headers the plain flag would silently win over the
+Secret-backed env var. Invoked from the deployment.
 */}}
 {{- define "loki-vl-proxy.validateSecrets" -}}
 {{- $extraArgs := default (dict) .Values.extraArgs -}}
-{{- $adminAuth := default (dict) .Values.adminAuth -}}
-{{- if and $adminAuth.existingSecret (hasKey $extraArgs "server.admin-auth-token") -}}
-{{- fail "adminAuth.existingSecret cannot be combined with extraArgs.\"server.admin-auth-token\"; the chart renders -server.admin-auth-token from the Secret. Remove the extraArgs entry." -}}
+{{- range $spec := list
+    (dict "values" "adminAuth" "flag" "server.admin-auth-token" "quoted" true)
+    (dict "values" "backendAuth" "flag" "backend-basic-auth")
+    (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth")
+    (dict "values" "deleteAuth" "flag" "delete-api-auth-token") -}}
+{{- $auth := default (dict) (get $.Values $spec.values) -}}
+{{- range $flag := list $spec.flag (printf "%s-file" $spec.flag) -}}
+{{- if and $auth.existingSecret (hasKey $extraArgs $flag) -}}
+{{- $key := ternary (printf "extraArgs.%q" $flag) (printf "extraArgs.%s" $flag) (hasKey $spec "quoted") -}}
+{{- fail (printf "%s.existingSecret cannot be combined with %s; the chart renders -%s-file from the Secret. Remove the extraArgs entry." $spec.values $key $spec.flag) -}}
 {{- end -}}
-{{- $backendAuth := default (dict) .Values.backendAuth -}}
-{{- if and $backendAuth.existingSecret (hasKey $extraArgs "backend-basic-auth") -}}
-{{- fail "backendAuth.existingSecret cannot be combined with extraArgs.backend-basic-auth; the chart renders -backend-basic-auth from the Secret. Remove the extraArgs entry." -}}
 {{- end -}}
-{{- $backendVersionAuth := default (dict) .Values.backendVersionAuth -}}
-{{- if and $backendVersionAuth.existingSecret (hasKey $extraArgs "backend-version-basic-auth") -}}
-{{- fail "backendVersionAuth.existingSecret cannot be combined with extraArgs.backend-version-basic-auth; the chart renders -backend-version-basic-auth from the Secret. Remove the extraArgs entry." -}}
 {{- end -}}
 {{- $deleteAuth := default (dict) .Values.deleteAuth -}}
-{{- if and $deleteAuth.existingSecret (hasKey $extraArgs "delete-api-auth-token") -}}
-{{- fail "deleteAuth.existingSecret cannot be combined with extraArgs.delete-api-auth-token; the chart renders -delete-api-auth-token from the Secret. Remove the extraArgs entry." -}}
-{{- end -}}
 {{- /* The delete API answers only requests that carry its own token; the
 proxy refuses to start with it enabled and no token (validateDeleteAPI). */ -}}
-{{- if and (eq (toString (get $extraArgs "delete-api-enabled")) "true") (not $deleteAuth.existingSecret) (eq (trim (toString (default "" (get $extraArgs "delete-api-auth-token")))) "") -}}
-{{- fail "extraArgs.delete-api-enabled=true requires a delete token: set deleteAuth.existingSecret (or extraArgs.delete-api-auth-token). Every delete request must carry it in X-Delete-Token or Authorization: Bearer." -}}
+{{- if and (eq (toString (get $extraArgs "delete-api-enabled")) "true") (not $deleteAuth.existingSecret) (eq (trim (toString (default "" (get $extraArgs "delete-api-auth-token")))) "") (eq (trim (toString (default "" (get $extraArgs "delete-api-auth-token-file")))) "") -}}
+{{- fail "extraArgs.delete-api-enabled=true requires a delete token: set deleteAuth.existingSecret (or extraArgs.delete-api-auth-token / extraArgs.delete-api-auth-token-file). Every delete request must carry it in X-Delete-Token or Authorization: Bearer." -}}
 {{- end -}}
 {{- /* Per-tenant limits are keyed by X-Scope-OrgID, which the proxy ignores while
 tenancy is off; it refuses to start then (validateTenantLimitsNeedTenancy). */ -}}
