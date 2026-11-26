@@ -1457,6 +1457,7 @@
   "claim_cells": [
     "cmd/proxy/cache_handover_scope_test.go | cache-restart-handover",
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
+    "cmd/proxy/main_test.go | cache-reuse-retention",
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
     "cmd/proxy/main_test.go | observability-metrics-histograms-and-labels",
     "cmd/proxy/main_test.go | operator-configurable-limits",
@@ -1495,6 +1496,8 @@
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
     "internal/cache/restore_test.go | cache-restart-handover",
+    "internal/cache/retention_test.go | cache-reuse-retention",
+    "internal/cache/retention_trace_test.go | cache-reuse-retention",
     "internal/capability/docs_test.go | vl-capability-layer",
     "internal/capability/gates_test.go | vl-capability-layer",
     "internal/capability/layer_test.go | vl-capability-layer",
@@ -3701,7 +3704,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 850,
+      "go": 852,
       "playwright": 3
     },
     "page_kinds": {
@@ -3723,7 +3726,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 487
+    "wired_items": 488
   },
   "gates": [
     "A/B shape selection",

@@ -1,0 +1,12 @@
+id: cache-reuse-retention
+state: partial
+pending: true
+reason: |
+  Unit-proven in internal/cache, internal/metrics and cmd/proxy: the segment
+  invariants over random and concurrent operations, the TTL left unchanged,
+  demotion's TTL and exclusions, and five deterministic trace replays whose
+  table the docs publish. Not yet proven on a running fleet (compose stack,
+  e2e-fleet, real Grafana) and the issue's prefetch of neighbouring entries
+  and batched disk reads are not delivered.
+owner_decision: null
+waiver: null

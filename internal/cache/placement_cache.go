@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"container/list"
 	"time"
 )
 
@@ -10,7 +9,9 @@ import (
 const nonOwnerShadowBudgetDivisor = 10
 
 func (c *Cache) removeEntryLocked(key string) {
+	size := 0
 	if old, ok := c.entries[key]; ok {
+		size = old.sizeBytes
 		c.curBytes -= old.sizeBytes
 		stats := &c.layerL1[c.layer(key)]
 		stats.entries.Add(-1)
@@ -29,9 +30,7 @@ func (c *Cache) removeEntryLocked(key string) {
 	}
 	if elem, ok := c.lruIndex[key]; ok {
 		data := elem.Value.(*lruEntry)
-		if data.shadowElem != nil {
-			c.shadowList.Remove(data.shadowElem)
-		}
+		c.leaveSegmentLocked(data, size)
 		c.lruList.Remove(elem)
 		delete(c.lruIndex, key)
 	}
@@ -42,10 +41,11 @@ func (c *Cache) shadowRoomLocked(size int, now time.Time) bool {
 		return false
 	}
 	for c.shadowEntries >= maxEntries || c.shadowBytes+size > maxBytes || len(c.entries) >= c.maxEntries || c.curBytes+size > c.maxBytes {
-		if c.shadowList == nil || c.shadowList.Back() == nil {
+		back := c.shadowList.back
+		if back == nil {
 			return false
 		}
-		data := c.shadowList.Back().Value.(*lruEntry)
+		data := back.data
 		layer := c.layer(data.key)
 		c.layerL1[layer].evictions.Add(1)
 		c.countEvictionLocked(layer, EvictionCapacity, data, now)
@@ -144,9 +144,6 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 			c.signals.reject(c.layer(key), RejectionShadowBudget)
 			return false
 		}
-		if c.shadowList == nil {
-			c.shadowList = list.New()
-		}
 	} else {
 		c.evictIfNeeded(size)
 	}
@@ -160,9 +157,12 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	data := &lruEntry{key: key, admitted: uint32(now.Unix())}
 	c.lruIndex[key] = c.lruList.PushFront(data)
 	if shadow {
-		data.shadowElem = c.shadowList.PushFront(data)
+		data.seg, data.node = segShadow, c.newSegNodeLocked(data)
+		c.shadowList.pushFront(data.node)
 		c.shadowBytes += size
 		c.shadowEntries++
+	} else if c.retention != nil {
+		c.enterProbationLocked(data)
 	}
 	return true
 }
@@ -201,7 +201,9 @@ func (c *Cache) replaceEntryLocked(key string, next entry, now time.Time) (repla
 	c.lruList.MoveToFront(elem)
 	if next.shadow {
 		c.shadowBytes += delta
-		c.shadowList.MoveToFront(elem.Value.(*lruEntry).shadowElem)
+		c.shadowList.moveToFront(data.node)
+	} else if c.retention != nil {
+		c.resizedSegmentLocked(data, delta)
 	}
 	return true, true
 }

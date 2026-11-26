@@ -169,6 +169,9 @@ func (m *Metrics) cacheSignalMetricSnapshots() []signalMetric {
 				for p := range c.Promotions {
 					sum[l].Promotions[p] += c.Promotions[p]
 				}
+				for d := range c.Demotions {
+					sum[l].Demotions[d] += c.Demotions[d]
+				}
 				readSeconds[l].add(c.DiskReadSeconds, 1e-9)
 				readBytes[l].add(c.DiskReadBytes, 1)
 			}
@@ -179,6 +182,8 @@ func (m *Metrics) cacheSignalMetricSnapshots() []signalMetric {
 			help: "Values a tier did not store, by semantic layer, tier and reason. memory_only and not_replica are L2 placement skips (memory-only answers, non-owner shadow copies), not refused writes; the other reasons sum to loki_vl_proxy_cache_layer_rejections_total."}
 		promotions := signalMetric{name: "loki_vl_proxy_cache_promotions_total", kind: "counter",
 			help: "Lower-tier hits copied to a higher tier, by semantic layer: from l2_disk or l3_peer to l1_memory, and l3_peer hits handed to the local l2_disk write queue."}
+		demotions := signalMetric{name: "loki_vl_proxy_cache_demotions_total", kind: "counter",
+			help: "L1 capacity evictions of entries read at least once handed to L2 by -cache-demote-on-evict, by semantic layer and result: retained (L2 held a current copy and keeps it newest in its recency order) or written (L2 held none and queued the value with the TTL it had left). Always 0 with the flag off."}
 		ageMetric := signalMetric{name: "loki_vl_proxy_cache_entry_age_at_eviction_seconds", kind: "histogram", unit: "s",
 			help: "Time an entry spent in a tier before it was evicted for expiry or capacity, by semantic layer, tier and reason. L2 records found by the start-up scan have no known admission time and are not observed."}
 		hitsMetric := signalMetric{name: "loki_vl_proxy_cache_entry_hits_at_eviction", kind: "histogram",
@@ -207,6 +212,9 @@ func (m *Metrics) cacheSignalMetricSnapshots() []signalMetric {
 				from, to := p.Tiers()
 				promotions.points = append(promotions.points, signalPoint{labels: []signalLabel{layer, {"from", from}, {"to", to}}, value: sum[l].Promotions[p]})
 			}
+			for d := cache.Demotion(0); d < cache.DemotionCount; d++ {
+				demotions.points = append(demotions.points, signalPoint{labels: []signalLabel{layer, {"from", "l1_memory"}, {"to", "l2_disk"}, {"result", d.Result()}}, value: sum[l].Demotions[d]})
+			}
 		}
 		readSecondsMetric := signalMetric{name: "loki_vl_proxy_cache_l2_read_seconds", kind: "histogram", unit: "s",
 			help: "Time of one L2 lookup that read a record from bbolt (the index lock, the read and the decode), by semantic layer. L2 hits served from the pending write queue are not reads; the request-level cache lookup time is loki_vl_proxy_cache_lookup_seconds."}
@@ -217,7 +225,7 @@ func (m *Metrics) cacheSignalMetricSnapshots() []signalMetric {
 			readSecondsMetric.points = append(readSecondsMetric.points, signalPoint{labels: layer, hist: readSeconds[l]})
 			readBytesMetric.points = append(readBytesMetric.points, signalPoint{labels: layer, hist: readBytes[l]})
 		}
-		out = append(out, evictions, rejections, ageMetric, hitsMetric, promotions, readSecondsMetric, readBytesMetric)
+		out = append(out, evictions, rejections, ageMetric, hitsMetric, promotions, demotions, readSecondsMetric, readBytesMetric)
 	}
 	if ttlFn != nil {
 		ttl := signalMetric{name: "loki_vl_proxy_cache_ttl_seconds", kind: "gauge", unit: "s",

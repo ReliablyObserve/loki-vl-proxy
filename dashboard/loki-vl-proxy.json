@@ -4775,6 +4775,50 @@
           "instant": true
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "id": 96,
+      "title": "Demotions to Disk",
+      "description": "L1 capacity evictions of entries read at least once that -cache-demote-on-evict handed to L2: retained (L2 kept its copy, newest in its recency order) or written (L2 held none; queued with the TTL left). Always 0 with the flag off.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 225,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (result) (rate(loki_vl_proxy_cache_demotions_total[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
