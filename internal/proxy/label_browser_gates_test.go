@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,16 +17,42 @@ import (
 // labels (label browser)" windows at 1h, 6h and 24h, moved back by 317 s or
 // 3617 s per run. Each gate also runs with the optimisation off and must then
 // see its check fail: a gate that cannot fail proves nothing.
+//
+// The gates run at pinned instants, never at the wall clock's: which pieces of
+// a moved window are cached depends on where the window lies in its hour and
+// its UTC day. TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries holds
+// the two places where a moved window still reads VictoriaLogs.
 
 // labelBrowserShapes are the A/B shape's ranges and per-run moves.
 var labelBrowserShapes = []struct {
 	width, shift time.Duration
 }{{time.Hour, 317 * time.Second}, {6 * time.Hour, 317 * time.Second}, {24 * time.Hour, 3617 * time.Second}}
 
-// labelBrowserEnd is a sealed, unaligned window end at a fixed place in an
-// hour two hours back, so every run plans the same pieces.
-func labelBrowserEnd(now time.Time) time.Time {
-	return now.Truncate(time.Hour).Add(-2*time.Hour + 26*time.Minute + 50*time.Second)
+// labelBrowserEnd is the pinned window end hour:minute:50 of a past UTC day:
+// sealed and unaligned.
+func labelBrowserEnd(hour, minute int) time.Time {
+	return time.Date(2026, 3, 10, hour, minute, 50, 0, time.UTC)
+}
+
+// labelBrowserClearEnds are pinned ends at which every moved window of every
+// shape is answered from memory.
+var labelBrowserClearEnds = []time.Time{
+	labelBrowserEnd(4, 26), labelBrowserEnd(12, 26), labelBrowserEnd(18, 45), labelBrowserEnd(23, 26),
+}
+
+// pinnedNow is the clock a window ending at end0 is asked at: two hours later.
+func pinnedNow(end0 time.Time) time.Time { return end0.Add(2 * time.Hour) }
+
+// newPinnedLabelProxy is newMemoryInventoryProxy for windows pinned around
+// now: its live window reaches 24 hours before now, as the shipped
+// -max-metadata-cache-freshness does from the wall clock. Bucket revalidation
+// ages still follow the wall clock; an entry read during the test is fresh on
+// every schedule.
+func newPinnedLabelProxy(t *testing.T, vl *fakeVictoriaLogs, staleness time.Duration, now time.Time) *Proxy {
+	t.Helper()
+	p := newMemoryInventoryProxy(t, vl, staleness)
+	p.metadataCacheFreshness = time.Since(now) + 24*time.Hour
+	return p
 }
 
 // movedWindowCalls reads the shape's first window, then three moved windows,
@@ -46,41 +73,127 @@ func movedWindowCalls(t *testing.T, p *Proxy, end0 time.Time, width, shift time.
 }
 
 // Gate: a warm moved window of the label browser makes no VictoriaLogs call
-// on its request path, at 1h, 6h and 24h. With -metadata-max-staleness=0 (no
-// memory answers) or -metadata-inventory-prefetch=false (no background reads)
-// the same windows read VictoriaLogs: the gate goes red without the
-// optimisation.
+// on its request path, at 1h, 6h and 24h, away from the hour and UTC day
+// boundaries of MovedWindowsAtHourAndDayBoundaries. With
+// -metadata-max-staleness=0 (no memory answers) or
+// -metadata-inventory-prefetch=false (no background reads) the same windows
+// read VictoriaLogs: the gate goes red without the optimisation.
 //
 // conformance: semantics/label-browser-moved-window-from-memory, semantics/label-browser-latency-cold-and-refresh, loki_api_v1_labels
 func TestLabelBrowserGates_MovedWindowNoRequestPathCalls(t *testing.T) {
-	now := time.Now()
-	vl := &fakeVictoriaLogs{}
-	seedStableLabels(vl, now)
-	end0 := labelBrowserEnd(now)
-	for _, tc := range labelBrowserShapes {
-		t.Run(tc.width.String(), func(t *testing.T) {
-			p := newMemoryInventoryProxy(t, vl, 10*time.Second)
-			for run, n := range movedWindowCalls(t, p, end0, tc.width, tc.shift) {
-				if n != 0 {
-					t.Fatalf("moved window %d made %d VictoriaLogs calls on its request path, want 0", run+1, n)
+	for _, end0 := range labelBrowserClearEnds {
+		now := pinnedNow(end0)
+		vl := &fakeVictoriaLogs{}
+		seedStableLabels(vl, now)
+		at := end0.Format("15:04")
+		for _, tc := range labelBrowserShapes {
+			t.Run(at+"/"+tc.width.String(), func(t *testing.T) {
+				p := newPinnedLabelProxy(t, vl, 10*time.Second, now)
+				for run, n := range movedWindowCalls(t, p, end0, tc.width, tc.shift) {
+					if n != 0 {
+						t.Fatalf("moved window %d made %d VictoriaLogs calls on its request path, want 0", run+1, n)
+					}
 				}
-			}
-		})
-		t.Run(tc.width.String()+"/without memory answers", func(t *testing.T) {
-			p := newMemoryInventoryProxy(t, vl, 0)
-			if sum(movedWindowCalls(t, p, end0, tc.width, tc.shift)) == 0 {
-				t.Fatal("with -metadata-max-staleness=0 the moved windows made no VictoriaLogs call: the gate cannot fail")
+			})
+			t.Run(at+"/"+tc.width.String()+"/without memory answers", func(t *testing.T) {
+				p := newPinnedLabelProxy(t, vl, 0, now)
+				if sum(movedWindowCalls(t, p, end0, tc.width, tc.shift)) == 0 {
+					t.Fatal("with -metadata-max-staleness=0 the moved windows made no VictoriaLogs call: the gate cannot fail")
+				}
+			})
+		}
+		// The 1h window's next start lies in an hour only the prefetch reads.
+		t.Run(at+"/1h/without prefetch", func(t *testing.T) {
+			p := newPinnedLabelProxy(t, vl, 10*time.Second, now)
+			p.metadataInventoryPrefetch = false
+			if sum(movedWindowCalls(t, p, end0, time.Hour, 317*time.Second)) == 0 {
+				t.Fatal("with -metadata-inventory-prefetch=false the moved 1h windows made no VictoriaLogs call: the gate cannot fail")
 			}
 		})
 	}
-	// The 1h window's next start lies in an hour only the prefetch reads.
-	t.Run("1h/without prefetch", func(t *testing.T) {
-		p := newMemoryInventoryProxy(t, vl, 10*time.Second)
-		p.metadataInventoryPrefetch = false
-		if sum(movedWindowCalls(t, p, end0, time.Hour, 317*time.Second)) == 0 {
-			t.Fatal("with -metadata-inventory-prefetch=false the moved 1h windows made no VictoriaLogs call: the gate cannot fail")
-		}
-	})
+}
+
+// Gate: where a moved window is not answered from memory, and why. Two cases,
+// at every hour or around every UTC midnight:
+//
+//   - "no_rows_evidence": the window's part of a UTC day is shorter than an
+//     hour and holds no bucket of its own that an earlier listing read, so
+//     nothing in memory proves it has rows, and a window without rows in a day
+//     must not get that day's names. A 24h window meets this when an end lies
+//     between 23:00 and 01:00, a 6h or 1h window when it has just crossed
+//     midnight or its start is about to.
+//   - "uncached": the moved window starts in an hour that no earlier listing
+//     read whole or in the background, because the background reads span at most
+//     the window's width: a 1h window (one hour read per listing) whose start
+//     moves back into an hour not read yet, a 24h window whose start moves back
+//     over two hour boundaries.
+//
+// Both conditions are necessary, not sufficient: many windows that meet them
+// are still answered from memory, from buckets earlier listings read.
+//
+// Such a window takes the path that reads VictoriaLogs (for the pieces not
+// cached: none when an earlier moved window already read them) and still lists
+// every name of one full-range call. A moved window of the same row that needs
+// neither is answered from memory. The reasons and the calls are exact, so a
+// change in either direction shows here; a change that answers one of these
+// from memory turns its entry into memory and 0.
+//
+// conformance: semantics/label-browser-moved-window-from-memory, semantics/label-inventory-exact-and-incremental, loki_api_v1_labels
+func TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries(t *testing.T) {
+	const memory, thinDay, unreadHour = "", "no_rows_evidence", "uncached"
+	hour, six, day := labelBrowserShapes[0], labelBrowserShapes[1], labelBrowserShapes[2]
+	for _, tc := range []struct {
+		shape struct{ width, shift time.Duration }
+		end0  time.Time
+		want  [3]string // moved windows 1 to 3: the memory miss reason
+		calls [3]int    // their request-path VictoriaLogs calls
+	}{
+		{day, labelBrowserEnd(0, 0), [3]string{thinDay, memory, unreadHour}, [3]int{1, 0, 2}},
+		{day, labelBrowserEnd(0, 26), [3]string{thinDay, memory, memory}, [3]int{1, 0, 0}}, // the wall clock at 02:27 UTC
+		{day, labelBrowserEnd(1, 26), [3]string{thinDay, thinDay, memory}, [3]int{1, 1, 0}},
+		{day, labelBrowserEnd(2, 26), [3]string{memory, thinDay, thinDay}, [3]int{0, 1, 1}},
+		{day, labelBrowserEnd(3, 26), [3]string{memory, memory, thinDay}, [3]int{0, 0, 1}},
+		{day, labelBrowserEnd(12, 0), [3]string{memory, memory, unreadHour}, [3]int{0, 0, 2}}, // just after an hour
+		{six, labelBrowserEnd(0, 7), [3]string{thinDay, memory, memory}, [3]int{1, 0, 0}},
+		{six, labelBrowserEnd(0, 17), [3]string{memory, memory, thinDay}, [3]int{0, 0, 1}},
+		{six, labelBrowserEnd(1, 7), [3]string{memory, thinDay, thinDay}, [3]int{0, 1, 0}},
+		{six, labelBrowserEnd(6, 2), [3]string{thinDay, thinDay, thinDay}, [3]int{1, 0, 0}}, // starts just after midnight
+		{hour, labelBrowserEnd(0, 7), [3]string{thinDay, memory, memory}, [3]int{7, 0, 0}},
+		{hour, labelBrowserEnd(1, 2), [3]string{unreadHour, thinDay, memory}, [3]int{7, 7, 0}},
+		{hour, labelBrowserEnd(12, 2), [3]string{unreadHour, memory, memory}, [3]int{7, 0, 0}}, // just after an hour
+	} {
+		t.Run(tc.shape.width.String()+"/"+tc.end0.Format("15:04"), func(t *testing.T) {
+			now := pinnedNow(tc.end0)
+			vl := &fakeVictoriaLogs{}
+			seedStableLabels(vl, now)
+			p := newPinnedLabelProxy(t, vl, 10*time.Second, now)
+			full := newInventoryTestProxy(t, vl, -1)
+			_ = namesOnlyListing(t, p, tc.end0.Add(-tc.shape.width), tc.end0)
+			for run, want := range tc.want {
+				settleBackground(t, p)
+				end := tc.end0.Add(-time.Duration(run+1) * tc.shape.shift)
+				start := end.Add(-tc.shape.width)
+				missed := map[string]float64{thinDay: 0, unreadHour: 0, "unconfirmed": 0}
+				for why := range missed {
+					missed[why] = internalOperationCount(p, "metadata_inventory_memory_miss", why)
+				}
+				got, n := namesOnlyListingCalls(t, p, start, end)
+				why := memory
+				for reason, before := range missed {
+					if internalOperationCount(p, "metadata_inventory_memory_miss", reason) > before {
+						why = reason
+					}
+				}
+				if why != want || n != tc.calls[run] {
+					t.Fatalf("moved window %d: %d VictoriaLogs calls on its request path, memory miss %q, want %d and %q", run+1, n, why, tc.calls[run], want)
+				}
+				if exact := namesOnlyListing(t, full, start, end); strings.Join(got, ",") != strings.Join(exact, ",") {
+					t.Fatalf("moved window %d listed %v, one call %v", run+1, got, exact)
+				}
+			}
+			settleBackground(t, p)
+		})
+	}
 }
 
 func sum(xs []int) int {
@@ -98,10 +211,16 @@ func sum(xs []int) int {
 //
 // conformance: semantics/label-browser-moved-window-from-memory, limits/concurrent-full-retention-scans-exhaust-backend
 func TestLabelBrowserGates_BackgroundReadsWithinTheWindow(t *testing.T) {
-	now := time.Now()
+	// Mid-hour, just after an hour and just after midnight.
+	for _, end := range []time.Time{labelBrowserEnd(12, 26), labelBrowserEnd(12, 0), labelBrowserEnd(0, 26)} {
+		t.Run(end.Format("15:04"), func(t *testing.T) { backgroundReadsWithinTheWindow(t, end) })
+	}
+}
+
+func backgroundReadsWithinTheWindow(t *testing.T, end time.Time) {
+	now := pinnedNow(end)
 	vl := &fakeVictoriaLogs{}
 	seedStableLabels(vl, now)
-	end := labelBrowserEnd(now)
 	for _, tc := range []struct {
 		width, max time.Duration
 		prefetch   bool
@@ -113,7 +232,7 @@ func TestLabelBrowserGates_BackgroundReadsWithinTheWindow(t *testing.T) {
 		{24 * time.Hour, 0, false},
 	} {
 		t.Run(tc.width.String()+"/prefetch="+strconv.FormatBool(tc.prefetch), func(t *testing.T) {
-			p := newMemoryInventoryProxy(t, vl, 10*time.Second)
+			p := newPinnedLabelProxy(t, vl, 10*time.Second, now)
 			p.metadataInventoryPrefetch = tc.prefetch
 			start := end.Add(-tc.width)
 			params := url.Values{"query": {"*"}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
@@ -140,7 +259,14 @@ func TestLabelBrowserGates_BackgroundReadsWithinTheWindow(t *testing.T) {
 //
 // conformance: semantics/label-browser-moved-window-from-memory, semantics/label-inventory-exact-and-incremental, loki_api_v1_labels
 func TestLabelBrowserGates_AnswersBetweenExactAndTheDays(t *testing.T) {
-	now := time.Now()
+	// Mid-day, and around UTC midnight, where some windows read VictoriaLogs.
+	for _, end0 := range []time.Time{labelBrowserEnd(12, 26), labelBrowserEnd(0, 26), labelBrowserEnd(1, 2)} {
+		t.Run(end0.Format("15:04"), func(t *testing.T) { answersBetweenExactAndTheDays(t, end0) })
+	}
+}
+
+func answersBetweenExactAndTheDays(t *testing.T, end0 time.Time) {
+	now := pinnedNow(end0)
 	rng := rand.New(rand.NewPCG(31, 37))
 	vl := &fakeVictoriaLogs{}
 	seedRows(vl, now, rng)
@@ -149,9 +275,8 @@ func TestLabelBrowserGates_AnswersBetweenExactAndTheDays(t *testing.T) {
 		vl.add(fakeVLRow{ts: ts.UnixNano(), stream: map[string]string{"gate_only_" + strconv.Itoa(i): "x"}})
 	}
 	full := newInventoryTestProxy(t, vl, -1)
-	end0 := labelBrowserEnd(now)
 	for _, tc := range labelBrowserShapes {
-		p := newMemoryInventoryProxy(t, vl, 10*time.Second)
+		p := newPinnedLabelProxy(t, vl, 10*time.Second, now)
 		ends := []time.Time{end0}
 		for run := 1; run <= 6; run++ {
 			ends = append(ends, end0.Add(-time.Duration(run)*tc.shift))
@@ -187,19 +312,25 @@ func TestLabelBrowserGates_AnswersBetweenExactAndTheDays(t *testing.T) {
 //
 // conformance: semantics/label-browser-moved-window-from-memory, semantics/label-inventory-exact-and-incremental
 func TestLabelBrowserGates_WindowWithoutRowsListsNothing(t *testing.T) {
-	now := time.Now()
-	hour := now.Truncate(time.Hour).Add(-5 * time.Hour)
-	vl := &fakeVictoriaLogs{}
-	for ts := hour.Add(-3 * time.Hour); ts.Before(hour.Add(7 * time.Minute)); ts = ts.Add(20 * time.Second) {
-		vl.add(fakeVLRow{ts: ts.UnixNano(), stream: map[string]string{"app": "api", "env": "prod"}})
-	}
-	p := newMemoryInventoryProxy(t, vl, 10*time.Second)
-	// A listing that reads the hour whole: it is cached with its names.
-	_ = namesOnlyListing(t, p, hour.Add(-2*time.Hour), hour.Add(2*time.Hour))
-	settleBackground(t, p)
-	// After the last row: the window's pieces in that hour are held by it.
-	start, end := hour.Add(30*time.Minute+13*time.Second), hour.Add(90*time.Minute+13*time.Second)
-	if got := namesOnlyListing(t, p, start, end); len(got) != 0 {
-		t.Fatalf("a window after the last row listed %v, want none", got)
+	// The rows end mid-day, or before midnight so the window crosses it.
+	for _, hour := range []time.Time{labelBrowserEnd(7, 0), labelBrowserEnd(23, 0)} {
+		hour := hour.Truncate(time.Hour)
+		t.Run(hour.Format("15:04"), func(t *testing.T) {
+			now := hour.Add(5 * time.Hour)
+			vl := &fakeVictoriaLogs{}
+			for ts := hour.Add(-3 * time.Hour); ts.Before(hour.Add(7 * time.Minute)); ts = ts.Add(20 * time.Second) {
+				vl.add(fakeVLRow{ts: ts.UnixNano(), stream: map[string]string{"app": "api", "env": "prod"}})
+			}
+			p := newPinnedLabelProxy(t, vl, 10*time.Second, now)
+			// A listing that reads the hour whole: it is cached with its names.
+			_ = namesOnlyListing(t, p, hour.Add(-2*time.Hour), hour.Add(2*time.Hour))
+			settleBackground(t, p)
+			// After the last row: the window's pieces in that hour are held by it.
+			start, end := hour.Add(30*time.Minute+13*time.Second), hour.Add(90*time.Minute+13*time.Second)
+			if got := namesOnlyListing(t, p, start, end); len(got) != 0 {
+				t.Fatalf("a window after the last row listed %v, want none", got)
+			}
+			settleBackground(t, p)
+		})
 	}
 }

@@ -106,7 +106,7 @@ larger deployments still requires measurement.
 | Identical eligible repeat | Local final response, primary RAM/disk, or a peer copy | Expired, evicted, ineligible or missing entries |
 | Shifted historical window | Eligible settled windows, metric extents and evaluation steps already read | Missing ranges, new steps and freshness-sensitive portions |
 | Dashboard refresh | Reuse settled fragments across overlapping ranges | Recent data and newly exposed ranges |
-| Process restart with retained disk | Persisted compatible records, then RAM promotion | Entries not persisted, expired or rejected |
+| Process restart with retained disk | Persisted compatible records, then RAM promotion; with the restart hand-over on, the previous memory hot set loaded before `/ready` | Entries not persisted, expired or rejected |
 | Owner loss | RF=2 backup when fresh and reachable | RF=1 misses, or no usable replica |
 
 Reuse preserves the applicable tenant/authentication identity, query semantics, parser behavior, evaluation step/phase, time boundaries, error behavior and limits. A fragment fetched with insufficient limits is not a substitute for a complete answer. Changing an end time does not make arbitrary queries shareable.
@@ -149,6 +149,7 @@ This is not a fleet-wide miss lease or a hard backend rate limit. Several proxie
 For rollout and restart protection:
 
 - Preserve per-node cache disks when practical, and keep the replica configuration consistent across peers.
+- Turn on the restart hand-over (`-cache-shutdown-flush-timeout`, `-cache-startup-warm-bytes`; see [Disk cache](disk-cache.md#restart-hand-over)) so a restarted replica starts with its previous memory hot set. Give the pod a `terminationGracePeriodSeconds` longer than the HTTP drain plus the flush timeout. It covers a replica that keeps its disk; a replica with a new disk still refills from peers and VictoriaLogs. The Helm chart's `cacheHandover.enabled=true` sets the flags (a 120 s warm-up timeout), the grace period, a preStop sleep and a startup probe on `/health`, and restarts one replica at a time (a StatefulSet's rolling update, or a Deployment with `maxUnavailable: 1` and `maxSurge: 0`; with more than one replica, a PodDisruptionBudget with `maxUnavailable: 1`), so `/ready` holds the rollout until each replica is warm or the warm-up timeout passes. With a Deployment and one replica the rollout has a gap (see the chart README, "Rolling restarts with a warm cache").
 - Use `-warmup-max-jitter` to spread startup work (default `0` adds no jitter). This staggers work; it does not coordinate a single fleet-wide fill.
 - Account for `-labels-cache-warm=true`: startup and periodic warming cover the 1h/6h/24h/7d label-picker presets, including scans up to seven days. Replicas that serve no interactive label pickers can use `-labels-cache-warm=false` and fill on demand.
 - Keep freshness settings aligned with acceptable late-data visibility. The default near-now bypass still reads VictoriaLogs for current data.

@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // OTLPCompression defines the compression algorithm for OTLP push.
@@ -344,7 +346,7 @@ func (p *OTLPPusher) cacheTierMetrics(now int64) []map[string]interface{} {
 	if !ok {
 		return nil
 	}
-	return []map[string]interface{}{
+	out := []map[string]interface{}{
 		p.sumMetric(
 			"loki_vl_proxy_cache_tier_requests_total",
 			"Cache tier lookup attempts by tier. tier=l0 is the hot-key index sidecar (not a lookup tier — counts every cache request that touched it).",
@@ -409,6 +411,62 @@ func (p *OTLPPusher) cacheTierMetrics(now int64) []map[string]interface{} {
 			p.gaugeDP("loki_vl_proxy_cache_bytes", float64(stats.DiskBytes), now, attr("tier", "l2_disk")),
 		),
 	}
+	return append(out, p.cacheRestartMetrics(stats.Handover, now)...)
+}
+
+// cacheRestartMetrics mirrors writeCacheRestartMetrics.
+func (p *OTLPPusher) cacheRestartMetrics(h cache.HandoverStats, now int64) []map[string]interface{} {
+	out := []map[string]interface{}{
+		p.gaugeMetric("loki_vl_proxy_cache_restart_previous_flush_records",
+			"Records the previous graceful shutdown left in the restart hand-over, by kind: ranked = disk records with their memory recency, disk_write = disk records it wrote because the disk lacked them, memory = memory-only answers.", "",
+			p.gaugeDP("loki_vl_proxy_cache_restart_previous_flush_records", float64(h.PreviousFlushRanked), now, attr("kind", "ranked")),
+			p.gaugeDP("loki_vl_proxy_cache_restart_previous_flush_records", float64(h.PreviousFlushDiskWrites), now, attr("kind", "disk_write")),
+			p.gaugeDP("loki_vl_proxy_cache_restart_previous_flush_records", float64(h.PreviousFlushMemoryEntries), now, attr("kind", "memory")),
+		),
+		p.gaugeMetric("loki_vl_proxy_cache_restart_previous_flush_memory_bytes",
+			"Memory-only answer bytes the previous graceful shutdown left in the restart hand-over.", "By",
+			p.gaugeDP("loki_vl_proxy_cache_restart_previous_flush_memory_bytes", float64(h.PreviousFlushMemoryBytes), now),
+		),
+		p.gaugeMetric("loki_vl_proxy_cache_restart_previous_flush_duration_seconds",
+			"How long the previous graceful shutdown's hand-over flush took.", "s",
+			p.gaugeDP("loki_vl_proxy_cache_restart_previous_flush_duration_seconds", h.PreviousFlushDuration.Seconds(), now),
+		),
+		p.gaugeMetric("loki_vl_proxy_cache_restart_previous_flush_complete",
+			"1 when this process started from a valid hand-over whose flush finished within -cache-shutdown-flush-timeout, else 0.", "",
+			p.gaugeDP("loki_vl_proxy_cache_restart_previous_flush_complete", float64(boolGauge(h.PreviousFlushFound && h.PreviousFlushComplete)), now),
+		),
+		p.gaugeMetric("loki_vl_proxy_cache_restart_warm_entries",
+			"Entries the start-up warm-up restored into the memory cache, by kind (disk, memory), and ranked entries it skipped (skipped).", "",
+			p.gaugeDP("loki_vl_proxy_cache_restart_warm_entries", float64(h.WarmDiskEntries), now, attr("kind", "disk")),
+			p.gaugeDP("loki_vl_proxy_cache_restart_warm_entries", float64(h.WarmMemoryEntries), now, attr("kind", "memory")),
+			p.gaugeDP("loki_vl_proxy_cache_restart_warm_entries", float64(h.WarmSkipped), now, attr("kind", "skipped")),
+		),
+		p.gaugeMetric("loki_vl_proxy_cache_restart_warm_bytes",
+			"Bytes the start-up warm-up restored into the memory cache.", "By",
+			p.gaugeDP("loki_vl_proxy_cache_restart_warm_bytes", float64(h.WarmBytes), now),
+		),
+		p.gaugeMetric("loki_vl_proxy_cache_restart_warm_duration_seconds",
+			"How long the start-up warm-up took.", "s",
+			p.gaugeDP("loki_vl_proxy_cache_restart_warm_duration_seconds", h.WarmDuration.Seconds(), now),
+		),
+		p.gaugeMetric("loki_vl_proxy_cache_restart_warm_done",
+			"1 once the start-up warm-up finished (or found no hand-over), else 0.", "",
+			p.gaugeDP("loki_vl_proxy_cache_restart_warm_done", float64(boolGauge(h.WarmDone)), now),
+		),
+	}
+	if !h.StartupTracked {
+		return out
+	}
+	return append(out,
+		p.gaugeMetric("loki_vl_proxy_cache_startup_l1_requests",
+			"Memory cache lookups in the first 10 minutes after start (frozen after them); with loki_vl_proxy_cache_startup_l1_hits, the start-up hit ratio.", "",
+			p.gaugeDP("loki_vl_proxy_cache_startup_l1_requests", float64(h.StartupL1Requests), now),
+		),
+		p.gaugeMetric("loki_vl_proxy_cache_startup_l1_hits",
+			"Memory cache hits in the first 10 minutes after start (frozen after them).", "",
+			p.gaugeDP("loki_vl_proxy_cache_startup_l1_hits", float64(h.StartupL1Hits), now),
+		),
+	)
 }
 
 func (p *OTLPPusher) connectionMetrics(now int64) []map[string]interface{} {
@@ -587,14 +645,14 @@ func (p *OTLPPusher) histogramMetric(name, description, unit string, dataPoints 
 func (p *OTLPPusher) histogramDP(h *histogram, timeUnixNano int64, attrs ...map[string]interface{}) map[string]interface{} {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	bucketCounts := make([]int64, 0, len(h.counts)+1)
-	prev := int64(0)
-	for i := range h.counts {
-		c := h.counts[i]
-		bucketCounts = append(bucketCounts, c-prev)
-		prev = c
+	// OTLP counts per bucket, as the histogram does; the last one holds what lies above every bound.
+	bucketCounts := make([]int64, len(h.counts)+1)
+	above := h.loadCount()
+	for i, c := range h.counts {
+		bucketCounts[i] = c
+		above -= c
 	}
-	bucketCounts = append(bucketCounts, h.loadCount()-prev)
+	bucketCounts[len(h.counts)] = above
 	dp := map[string]interface{}{
 		"timeUnixNano":   fmt.Sprintf("%d", timeUnixNano),
 		"count":          fmt.Sprintf("%d", h.loadCount()),

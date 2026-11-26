@@ -226,3 +226,6 @@ smoke	internal/proxy	FuzzCutLokiSplits	12s	-	the per-split Loki cut of a Drilldo
 smoke	internal/proxy	FuzzCutLokiSplitsMatchesReference	12s	-	the in-place per-split Loki cut keeps exactly the series and points of the plain cut over decoded JSON
 smoke	internal/proxy	FuzzLabelsInventoryCover	12s	-	names-only /labels listing with ends answered by their hours equals one full-range call
 smoke	internal/translate	FuzzServiceNameStreamFilterKeepsEveryDerivedRow	12s	-	the service_name stream filter keeps every row the derived service_name filter keeps where -service-name-stream-label-only holds
+smoke	internal/cache	FuzzHandoverManifestDecode	12s	-	cache restart hand-over manifest decode
+smoke	internal/cache	FuzzHandoverRecordDecode	12s	-	cache restart hand-over record decode
+smoke	internal/metrics	FuzzParseDurationBuckets	12s	-	-metrics.duration-buckets accepts only a bounded, finite, ascending list of bounds above zero

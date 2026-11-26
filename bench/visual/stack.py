@@ -400,6 +400,9 @@ def up(a):
             # Also when a start failed: `down` stops only the PIDs recorded here, and a proxy left running holds its
             # port against the retry of the whole bring-up ("port is taken: a stale process would answer").
             state["pids"] = {p.name: p.proc.pid for p in procs if p.proc is not None}
+            # Where each build's cache flush answers, from its own flags (ci_run.flush_proxies): a stack file that
+            # gives the proxy an admin token moves the admin routes to the main listener and starts no other one.
+            state["flush"] = {p.name: dict(zip(("url", "token"), p.flush_target())) for p in procs}
             save()
         base, ids = grafana.result()
     state["grafana"] = base

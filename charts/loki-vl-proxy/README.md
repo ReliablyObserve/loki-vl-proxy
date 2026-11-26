@@ -46,9 +46,12 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `deleteAuth.existingSecretKey` | `token` | Key within `deleteAuth.existingSecret` |
 | `backendAuth.existingSecret` | `""` | Existing Secret holding the VictoriaLogs basic-auth credentials as one `user:password` value. The chart renders `-backend-basic-auth=$(BACKEND_BASIC_AUTH)` from a `secretKeyRef`. Setting it together with `extraArgs.backend-basic-auth` fails rendering |
 | `backendAuth.existingSecretKey` | `basic-auth` | Key within `backendAuth.existingSecret` |
+| `backendVersionAuth.existingSecret` | `""` | Existing Secret holding the `user:password` of `extraArgs.backend-version-url`. The chart renders `-backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH)` from a `secretKeyRef`. Setting it together with `extraArgs.backend-version-basic-auth` fails rendering |
+| `backendVersionAuth.existingSecretKey` | `basic-auth` | Key within `backendVersionAuth.existingSecret` |
 | `observability.otlp.existingSecret` | `""` | Existing Secret holding the OTLP exporter headers (`key=value[,key=value]`, usually an `Authorization` value), exposed to the proxy as `OTLP_HEADERS` from a `secretKeyRef`. Setting it together with `observability.otlp.headers` or `extraArgs.otlp-headers` fails rendering |
 | `observability.otlp.existingSecretKey` | `headers` | Key within `observability.otlp.existingSecret` |
 | `serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitor |
+| `serviceMonitor.honorLabels` | `true` | Keep the proxy's `endpoint` label instead of the scrape target's (`false`: it arrives as `exported_endpoint`) |
 | `networkPolicy.enabled` | `true` | Restrict ingress to Grafana pods on port 3100 and egress to port 9428 (VictoriaLogs) and DNS |
 | `networkPolicy.monitoringNamespace` | `""` | Namespace allowed to scrape the metrics port when ServiceMonitor is enabled |
 | `networkPolicy.monitoringFrom` | `[]` | Explicit NetworkPolicy peers allowed to scrape the metrics port |
@@ -60,7 +63,18 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `replicaCount` | `1` | Number of proxy replicas |
 | `workload.kind` | `Deployment` | Workload type: `Deployment` or `StatefulSet` |
 | `horizontalPodAutoscaling.enabled` | `false` | Enable HPA (omits `spec.replicas` from workload) |
-| `podDisruptionBudget.enabled` | `false` | Enable PodDisruptionBudget |
+| `podDisruptionBudget.enabled` | unset | `true` renders a PodDisruptionBudget from `minAvailable` / `maxUnavailable`, `false` none; unset renders none, except with `cacheHandover.enabled` and `replicaCount > 1` or HPA (`maxUnavailable: 1`) |
+| `probe.startup.enabled` | unset | Startup probe; unset is off, or on with `cacheHandover.enabled` |
+| `probe.startup.path` / `periodSeconds` | `/health` / `5` | What the startup probe asks and how often; never `/ready`, which also checks VictoriaLogs |
+| `probe.startup.failureThreshold` | unset | Unset is `30`, or `60` with `cacheHandover.enabled` (305 s with the 5 s initial delay and period) |
+| `terminationGracePeriodSeconds` | `30` | Pod grace period; with `cacheHandover.enabled` raised to at least the preStop sleep + 60 (HTTP drain of the main, then the admin/metrics listeners) + `shutdownFlushTimeoutSeconds` + 5 |
+| `lifecycle` | `{}` | Container lifecycle hooks; a non-empty value replaces the preStop sleep `cacheHandover` adds |
+| `cacheHandover.enabled` | `false` | Keep the response cache warm across restarts: flush the memory hot set to the disk cache on SIGTERM and load it back before `/ready`; needs `persistence.enabled` or `extraArgs.disk-cache-path`. See [Rolling restarts with a warm cache](#rolling-restarts-with-a-warm-cache) |
+| `cacheHandover.shutdownFlushTimeoutSeconds` | `15` | `-cache-shutdown-flush-timeout` |
+| `cacheHandover.startupWarmBytes` | `134217728` | `-cache-startup-warm-bytes`, integer bytes (at most half of `-cache-max-bytes` is warmed) |
+| `cacheHandover.startupWarmTimeoutSeconds` | `120` | `-cache-startup-warm-timeout`: the pod is ready when the warm-up finishes, or partly warm after this long |
+| `cacheHandover.preStopSleepSeconds` | `5` | preStop sleep (native `sleep` action, rendered on Kubernetes 1.30+ only) before SIGTERM; `0` adds none |
+| `cacheHandover.minReadySeconds` | `15` | Workload `minReadySeconds` with the hand-over on; `0` renders none |
 | `systemMetrics.hostProc.enabled` | `false` | Mount five host `/proc` files (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) read-only as `hostPath` volumes and pass `-host-proc-root`, for host-level CPU, memory and PSI metrics. Off by default so the pod passes Pod Security `restricted`; see [Host system metrics](#host-system-metrics-opt-in) |
 | `systemMetrics.hostProc.mountPath` | `/host/proc` | Where those files are mounted, and the value passed to `-host-proc-root` |
 
@@ -92,6 +106,9 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
+cacheHandover:
+  enabled: true
+
 horizontalPodAutoscaling:
   enabled: true
   minReplicas: 2
@@ -105,6 +122,49 @@ resources:
     cpu: 2000m
     memory: 1Gi
 ```
+
+## Rolling restarts with a warm cache
+
+`cacheHandover.enabled=true` keeps each replica's memory cache warm across a restart that keeps its disk (a rollout, a config change, a node drain with a StatefulSet PVC):
+
+1. The preStop sleep (`preStopSleepSeconds`) lets the endpoint removal reach clients before the proxy receives SIGTERM.
+2. On SIGTERM the proxy drains its HTTP listeners (up to 30 s for the main one, then up to 30 s for the admin and metrics ones), then writes its memory hot set to the disk cache within `shutdownFlushTimeoutSeconds`; the chart raises `terminationGracePeriodSeconds` to cover that sequence (85 s with the defaults; the pod exits as soon as the proxy is done). A configured exec or httpGet preStop hook is not counted: raise `terminationGracePeriodSeconds` yourself for it. A flush that does not finish leaves no hand-over, and the replica starts cold as before.
+3. The new process loads that hot set back into memory while `/ready` answers 503. The pod becomes ready when the warm-up finishes, or partly warm after `startupWarmTimeoutSeconds` (120; the warm-up stops there and keeps what it loaded). The timeout counts from before the listener opens. The readiness probe holds the rollout meanwhile, so the next replica restarts only after this one is ready.
+
+### Startup probe
+
+Before it listens, the proxy opens the disk cache and rebuilds its index (a scan of every record), checks the VictoriaLogs version (bounded by short timeouts; an unreachable backend does not hold it, unless `-backend-version-strict` makes it fail) and restores the label values and patterns snapshots when those are enabled. Without a startup probe the liveness probe (5 s delay, 3 failures 15 s apart) would restart a pod whose listener is not up within about 50 s, and the rebuild would start over. So `cacheHandover.enabled` renders a startup probe on `/health`: every 5 s after a 5 s delay, 60 failures, so 305 s. Set `probe.startup.failureThreshold` higher for a large cache on a slow volume.
+
+While the startup probe has not succeeded, Kubernetes runs neither the liveness nor the readiness probe, and their `initialDelaySeconds` count from its success ([Kubernetes probes](https://kubernetes.io/docs/concepts/workloads/pods/probes/)). The warm-up runs behind an open listener, where only readiness holds traffic. Keep the startup probe on `/health` or `/alive`: `/ready` also checks VictoriaLogs, so a backend outage would restart every proxy. `probe.startup.enabled=false` renders none, and any other `probe.startup` value you set is used as set. A values file copied from an earlier chart sets `probe.startup.enabled: false`, `probe.startup.failureThreshold: 30` and `podDisruptionBudget.enabled: false` explicitly: remove those keys (or set them as you want them) when you turn the hand-over on, or it renders no startup probe and no PodDisruptionBudget.
+
+### One replica at a time
+
+With `cacheHandover.enabled` the chart renders this, so the other replicas keep serving from their caches:
+
+| Rendered | When | Your setting that replaces it |
+|---|---|---|
+| Deployment `strategy`: `RollingUpdate`, `maxSurge: 0`, `maxUnavailable: 1` | Deployment | any non-empty `workload.deploymentStrategy` (used alone: set both fields of `rollingUpdate`) |
+| nothing: the default `updateStrategy` `RollingUpdate` updates one pod at a time, whatever `podManagementPolicy` is ([StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#rolling-updates)) | StatefulSet | `workload.statefulSet.updateStrategy` |
+| PodDisruptionBudget with `maxUnavailable: 1` | `replicaCount > 1` or HPA | `podDisruptionBudget.enabled` (`true`: your `minAvailable` / `maxUnavailable`; `false`: none) |
+| `minReadySeconds: 15` | always | `cacheHandover.minReadySeconds` |
+
+- `maxSurge: 0` stops the old pod before the new one starts. A surge pod on the same volume would wait, without listening, for the file lock the old pod holds on the disk cache, while the rollout waits for the surge pod. **With `replicaCount: 1` a rollout therefore has a gap**: no proxy serves from the old pod's termination until the new one is ready.
+- With `podDisruptionBudget.enabled` unset, a changed `maxUnavailable` or `minAvailable` is used in place of `maxUnavailable: 1`; an explicit `minAvailable: 1` cannot be told from the default, so set `enabled: true` for it. If you already manage a budget for these pods, set `enabled: false`: Kubernetes refuses to evict a pod that two budgets cover.
+- `/ready` also checks VictoriaLogs. While the backend is down no pod is ready, so a rollout waits and the budget blocks node drains.
+- A Deployment with `persistence.enabled` mounts one claim in every replica, and one process at a time can open the disk cache file. For more than one replica use `workload.kind: StatefulSet`, which gives each pod its own claim.
+- `helm upgrade --wait` must allow every replica its termination, start, warm-up and `minReadySeconds` in turn: raise `--timeout` above the 5 m default for several replicas with large caches.
+
+```yaml
+cacheHandover:
+  enabled: true
+persistence:
+  enabled: true
+replicaCount: 3
+workload:
+  kind: StatefulSet    # one pod at a time; per-pod PVCs
+```
+
+The hand-over covers a replica that keeps its disk; one that starts with a new disk refills from its peers and VictoriaLogs. What is restored, and the safety rules, are in [Disk cache](../../docs/disk-cache.md#restart-hand-over); the `loki_vl_proxy_cache_restart_*` metrics show each flush and warm-up.
 
 ## Multi-Tenant Setup
 
@@ -143,6 +203,10 @@ prometheusRule:
 ```
 
 The ServiceMonitor scrapes the `metrics` port (`extraArgs.metrics-listen`, default `:9091`). To push metrics over OTLP without a scrape endpoint, set `extraArgs.server.register-instrumentation: "false"`, `extraArgs.metrics-listen: ""` and `service.metrics.enabled: false` together.
+
+The ServiceMonitor sets `honorLabels: true` (`serviceMonitor.honorLabels`), so the proxy's `endpoint` label (`query_range`, `labels`, `select_logsql_query`, ...) is stored under that name and the dashboard and alerts can select and group by it. The VictoriaMetrics operator copies the setting into the `VMServiceScrape` it converts the ServiceMonitor to. A scrape object you write yourself needs `honorLabels: true` on its endpoint (`honor_labels: true` in a Prometheus or vmagent scrape config). See [Scrape label collisions](../../docs/observability.md#scrape-label-collisions-endpoint) before an upgrade if your own queries use `exported_endpoint`.
+
+`observability.metrics.durationBuckets` (flag `-metrics.duration-buckets`) replaces the bounds of the duration histograms; empty keeps the defaults, which reach 120 s.
 
 ## Host system metrics (opt-in)
 

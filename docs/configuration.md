@@ -451,8 +451,11 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | `-disk-cache-flush-interval` | — | `5s` | Write buffer flush interval |
 | `-disk-cache-min-ttl` | — | `30s` | Minimum TTL required before an entry is eligible for L2 disk-cache writes. Empty `/labels` and `/label/{name}/values` answers are cached for max(`30s`, this, `-peer-write-through-min-ttl`), so they still overwrite an older non-empty copy on disk and peers when either minimum is raised (new labels can then take that long to appear after an empty answer) |
 | `-disk-cache-max-bytes` | — | `0` | Logical encoded record and key byte cap (`0` disables the byte cap); bbolt retains free pages |
+| `-cache-shutdown-flush-timeout` | — | `0` | Time budget for the restart hand-over a graceful shutdown writes to the disk cache (`0` writes none); keep it inside `terminationGracePeriodSeconds` |
+| `-cache-startup-warm-bytes` | — | `0` | Bytes the start-up warm-up loads into the memory cache from that hand-over, at most half of `-cache-max-bytes` (`0` loads none); also the most memory-only answer bytes the shutdown keeps |
+| `-cache-startup-warm-timeout` | — | `10s` | Longest `/ready` answers 503 while the warm-up runs |
 
-See [Disk cache](disk-cache.md) for memory accounting, format upgrades and purge behavior.
+See [Disk cache](disk-cache.md) for memory accounting, format upgrades, purge behavior and the restart hand-over.
 
 ## Cold Storage Backend
 
@@ -764,6 +767,9 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | `-backend-version-check-timeout` | — | `5s` | Timeout for startup backend version compatibility check (`/health`) and for each version or feature probe |
 | `-backend-version-reprobe-interval` | — | `5m` | How often the proxy reads the VictoriaLogs release again (`/metrics`) and probes the feature gates, jittered by 10%, one round at a time per replica. A release that is not seen for six intervals leaves the lowest-release window (behind a load balancer each read reaches one random member). `0` disables the periodic round (a release that is still unknown is retried on traffic every 5 minutes); a non-zero value below `10s` is raised to `10s` |
 | `-backend-feature-probes` | — | `true` | Probe VictoriaLogs for the features the gates depend on: a few tiny read-only queries over an empty one-second window at startup and every re-probe interval, sent with the proxy's own backend auth and never counted as client requests. A probe decides a gate when no release is readable (behind `vmauth` without a `/metrics` route) and cross-checks it when one is (a probe can only turn a gate off below what the release allows, and an absent answer holds for the window). `false` decides the gates from the release alone |
+| `-backend-version-url` | — | — | A VictoriaLogs `/metrics` URL the release is read from instead of the backend's (see [Backend version behind vmauth](#backend-version-behind-vmauth)). `http` or `https`, no credentials in the URL; redirects are not followed |
+| `-backend-version-basic-auth` | — | — | `user:password` sent to `-backend-version-url` and nowhere else (Helm `backendVersionAuth.existingSecret`) |
+| `-backend-version` | — | — | The VictoriaLogs release behind the proxy, for example `v1.54.0`, when no endpoint reports it. Like `-backend-version-url` it enables only the gates a feature probe confirms |
 | `-stream-response` | — | `false` | Stream via chunked transfer. The status line goes out with the first row, so a VictoriaLogs body that is broken before it (not JSON, cut off, a row above 8 MiB) is answered with Loki's `500`; one that breaks after it ends the response abnormally (the connection is aborted, no closing JSON, counted in `loki_vl_proxy_internal_operation_total{operation="stream_response",outcome="aborted"}`), never as a complete-looking partial result |
 | `-response-compression` | — | `auto` | Response compression codec: `auto`, `gzip`, `none` |
 | `-response-compression-min-bytes` | — | `1024` | Minimum response size before frontend compression starts; smaller responses stay identity |
@@ -810,7 +816,45 @@ Backend version gate notes:
 - If version cannot be detected from headers, proxy logs a warning and continues startup.
 - Only a version that names VictoriaLogs counts: the `victoria-logs-<date>-<time>-tags-vX.Y.Z[-enterprise[-fips]]-<n>-g<hash>` build string reported by the VictoriaLogs `/metrics` endpoint (`vm_app_version`, `victorialogs_build_info`) or `VictoriaLogs/vX.Y.Z`-style headers. The version of `vmauth`, `vlagent`, `vmagent` or VictoriaMetrics that answers in front of VictoriaLogs, and a bare semver, are ignored.
 - The release behind the proxy is not pinned at the first one seen: the lowest release observed in the last window decides every gate (a pool or a rolling upgrade never enables a feature one member lacks), the proxy reads it again every `-backend-version-reprobe-interval`, and an upgrade or a rollback changes the gates, the digest in cross-replica keys and the `capability set changed` log line without a restart. `GET /admin/capabilities` (admin-protected) shows the releases seen and every gate; see [capability gates](reference/capability-gates.md).
-- An unknown version behaves as the `v1.49.0` floor: range metrics use `stats_query_range` buckets anchored with the `offset` argument, the metadata substring filter (`q` + `filter=substring`) is forwarded and `ip()` filters use `ipv4_range()`. Only the `v1.50`+ behaviour (dense pattern windowing, column-index `field_values`, `coalesce`) waits for the version. While the version remains unknown, for example when the startup probe ran before VictoriaLogs was ready or `/metrics` is not routed through a proxy in front of it, the proxy retries the `/metrics` version probe in the background at most once every 5 minutes, bounded by `-backend-version-check-timeout`. There is no version override flag; make `/metrics` or a version response header reachable to enable the version-gated paths.
+- An unknown version behaves as the `v1.49.0` floor: range metrics use `stats_query_range` buckets anchored with the `offset` argument, the metadata substring filter (`q` + `filter=substring`) is forwarded and `ip()` filters use `ipv4_range()`. Only the `v1.50`+ behaviour (dense pattern windowing, column-index `field_values`, `coalesce`) waits for the version. While the version remains unknown, for example when the startup probe ran before VictoriaLogs was ready or `/metrics` is not routed through a proxy in front of it, the proxy retries the `/metrics` version probe in the background at most once every 5 minutes, bounded by `-backend-version-check-timeout`. Make `/metrics` or a version response header reachable, or name another source (below).
+
+### Backend version behind vmauth
+
+`vmauth` answers `/metrics` and `/health` itself on its listen address (unless its `-httpInternalListenAddr` moves them elsewhere), so a route for `/metrics` in the vmauth configuration is never used: the proxy reads vmauth's own version, learns no VictoriaLogs release, and the gates that only a release decides (`vl.extra_filters_len`, `vl.math_quoted_constant_clone`, `vl.mixed_json_row_stats`) stay off. The proxy says so at startup in the `backend version compatibility check partial` (or `unavailable`) WARN line, whose `reason` names what answered (`metrics probe found no VictoriaLogs release (found vmauth-...)`), the HTTP status or the error, and in `loki_vl_proxy_backend_version_known 0`.
+
+Choose one:
+
+1. Set `-httpInternalListenAddr` on vmauth, so that its own `/metrics` moves to that address and the listen address forwards `/metrics` to VictoriaLogs according to the user's `url_map` (the same then holds for `/health`, so map both). No proxy flag is needed.
+2. Point the proxy at a VictoriaLogs `/metrics` endpoint that is not behind vmauth (in a cluster, the `vlselect` service the queries go to):
+
+   ```bash
+   -backend=http://vmauth:8427
+   -backend-version-url=http://vlselect:9471/metrics
+   -backend-version-basic-auth=reader:password   # only when that endpoint needs it
+   ```
+
+3. Declare the release: `-backend-version=v1.54.0`. Use it only when no endpoint can be reached, and change it with every VictoriaLogs upgrade.
+
+Only option 1 (a release VictoriaLogs reports through the address the proxy queries) turns on every gate of the release. Options 2 and 3 name a release the proxy cannot tie to that address, so they turn on only what the feature probes confirm: on `v1.54.0` that is `vl.math_quoted_constant_clone` and `vl.mixed_json_row_stats`, and not `vl.extra_filters_len`.
+
+How a named release (`-backend-version-url` or `-backend-version`) is used; both flags need `-backend-feature-probes=true`, the default, and the proxy refuses to start otherwise:
+
+| Case | Result |
+|---|---|
+| A probe finds present a feature of a gate's release or a later one, and the named release carries the gate | the gate is on, crash guards included |
+| No probe confirms the gate | the gate stays as it is with no release known |
+| A probe finds absent a feature the named release carries | the named release is not used (logged at WARN, marked `rejected` in `GET /admin/capabilities`) |
+| The named release is older than a gate | the gate is off, and nothing is predicted from it |
+| A release is also read from the backend (a response header) | the lowest release decides |
+
+- The newest probed feature is from `v1.53.0`, so a named release never turns on `vl.extra_filters_len` (`v1.54.0`). With it off VictoriaLogs answers such a call itself, so answers do not change. On a `v1.49.0` or `v1.50.x` VictoriaLogs no probed feature proves the release, so a named one turns on no further gate there.
+- The lowest release wins: among the releases the version URL answered in the window (a mixed cluster, or a URL that reaches different pods), between it and `-backend-version`, and against a release read from the backend.
+- When the probes find a feature newer than the named release, the proxy logs a WARN asking to update it (`named_behind` in `GET /admin/capabilities`).
+- `-backend-version` is reported as written (`backend_version_info`, `/loki/api/v1/drilldown-limits`) and satisfies strict mode: a release above every probe, such as one that does not exist, cannot be contradicted.
+- `-backend-version-url` follows upgrades and rollbacks; `-backend-version` changes only with the configuration. Name the VictoriaLogs the proxy queries.
+- The version URL is operator configuration. Its request carries none of the backend credentials, headers or tenant and nothing from a client request; it follows no redirect, reads at most 2 MiB and gives up after `-backend-version-check-timeout`. `-backend-tls-skip-verify` applies to it too. Logs never show its query string or credential.
+- A failed read keeps what is already known. A periodic round logs `backend version read failed` at WARN when the reason changes. A contradicted or differing named release is logged at WARN once per change, and `GET /admin/capabilities` marks it `rejected`.
+- `-backend-version-strict=true` accepts a release from either flag, and `-backend-min-version` applies to it.
 
 ## Built-In Protection Defaults
 
@@ -1002,6 +1046,7 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 | `-server.metrics-max-concurrency` | — | `1` | Maximum concurrent `/metrics` scrapes served at once (`0` disables the cap) |
 | `-metrics.max-tenants` | — | `256` | Max unique tenant labels retained in `/metrics` before using `__overflow__` |
 | `-metrics.max-clients` | — | `256` | Max unique client labels retained in `/metrics` before using `__overflow__` |
+| `-metrics.duration-buckets` | — | — | Bounds, in seconds, of the duration histograms: comma-separated finite numbers above zero, ascending, at most 32; empty = `0.001,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,15,20,30,45,60,90,120`. Startup fails on any other value. Helm: `observability.metrics.durationBuckets`. See [Histogram buckets](observability.md#histogram-buckets) |
 | `-metrics.export-sensitive-labels` | — | `false` | Export per-tenant and per-client identity metrics on `/metrics` and OTLP |
 | `-metrics.trust-proxy-headers` | — | `false` | Trust user/proxy headers (`X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User`, `X-Auth-Request-User`, `X-Forwarded-*`) for client metrics/log attribution and backend context forwarding |
 | `-log-user-header` | — | — | Header naming the end user who ran a query (`X-Grafana-User` with Grafana's `[dataproxy] send_user_header = true`): `enduser.id` on the `request`, `upstream_request`, `slow_request` and `slow_upstream_request` lines and the user in `/debug/queries`. Logs and the admin view only: never a metric label, never sent to VictoriaLogs, never part of a cache key. Client-sent and spoofable: restrict it with `-log-user-header-trusted-cidrs`. See [Who is loading the proxy or VictoriaLogs](observability.md#who-is-loading-the-proxy-or-victorialogs). |
