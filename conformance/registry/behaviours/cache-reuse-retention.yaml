@@ -1,0 +1,103 @@
+id: cache-reuse-retention
+kind: performance
+title: Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer
+pending: true
+
+loki: |
+  Loki's results and chunk caches (embedded cache, memcached) evict by LRU or
+  by the backend's own policy and expose only hit and miss counts. This item
+  covers the proxy's own memory and disk caches and changes no Loki answer:
+  which answer a request gets, and how long it may be served, are the same.
+
+victorialogs: |
+  VictoriaLogs keeps no answer cache the proxy reads; it is not involved. A
+  higher hit ratio means fewer VictoriaLogs reads for the same requests.
+
+proxy: |
+  -cache-reuse-protection-percent (default 20; 0 is plain LRU) keeps a
+  protected share of the L1 and Tier0 entry and byte budgets for entries read
+  again since they were stored: a segmented LRU beside the cache's one recency
+  list. A new entry starts on probation; its first hit moves it to the
+  protected segment; when the protected segment exceeds its share, its least
+  recently read entry goes back to probation. A capacity eviction takes, after
+  the non-owner shadows (as before), the least recently used probation entry,
+  then the least recently used protected one; an entry the restart warm-up
+  admitted and nobody read is taken first. Segment nodes are reused, so a
+  cache that evicts as it stores allocates nothing more per write, and a hit
+  allocates nothing.
+  -cache-demote-on-evict (default false) hands an entry read at least once that
+  a capacity eviction removes from L1 to L2: L2 keeps a current copy newest in
+  its recency order, or queues the value with the TTL it has left (the earlier
+  of its memory and source deadlines) when it holds none; never a memory-only,
+  patterns or shadow entry, an entry with less than -disk-cache-min-ttl left,
+  or during a purge. Counted by loki_vl_proxy_cache_demotions_total
+  {layer,from,to,result}.
+  Neither changes a TTL, a key, a freshness rule or which answer is served,
+  and neither acts while the cache is below its budgets: expiry evictions are
+  the same with any setting.
+
+implementation:
+  - internal/cache/retention.go
+  - internal/cache/cache.go
+  - internal/cache/placement_cache.go
+  - internal/cache/disk.go
+  - internal/cache/eviction_signals.go
+  - internal/metrics/cache_signal_metrics.go
+  - cmd/proxy/main.go
+
+decisions:
+  - id: segmented-lru-beside-the-recency-list
+    chosen: 'A probation and a protected segment as intrusive lists beside the one recency list, the protected share 20% of the entry and byte budgets'
+    over: ['two-segment SLRU replacing the recency list (the restart hand-over walks it for recency and the warm-up appends to it)', 'second chance (CLOCK) on the recency list (weaker against a flood longer than the cache)', 'W-TinyLFU admission sketch (more state and an admission decision per write)', 'protected shares of 35, 50 and 80 percent (each lowered a ratio on one trace)']
+    why: |
+      Issue #1767 asks that entries hit several times stay longer than entries
+      read once, inside the TTL rules. A segmented LRU does exactly that under
+      capacity pressure and nothing else. Keeping the recency list untouched
+      leaves the restart hand-over order and the warm-up as they are. The
+      share is the largest measured that lowered no ratio on any trace: the
+      larger shares protect more against a flood but hold the old set longer
+      after the working set moves.
+    evidence: |
+      TestRetentionTraceReplay replays five deterministic traces (Drilldown
+      Zipf, dashboard refresh with step buckets, a one-scan flood, a working
+      set shift, and an expiry-bound trace) through a real memory and disk
+      cache with every policy and holds the default to no ratio below plain
+      LRU, the expiry-bound trace equal, and the flood's recovery above LRU;
+      the published table in docs/cache-troubleshooting.md is the test's
+      output. One-scan flood: hit ratio 22.92% -> 23.67%, L1 hit ratio after
+      the flood 83.46% -> 84.54%.
+    code: [internal/cache/retention.go]
+    tests: [TestRetentionTraceReplay, TestRetentionTraceReplayDeterministic, TestRetentionPolicyValidation, TestRetentionProtectsReusedEntriesFromAFlood, TestRetentionProtectedShareIsBounded, TestRetentionProtectedByteShare, TestRetentionNeverExtendsTTL, TestRetentionRestoredEntries, TestRetentionRandomOperations, TestRetentionConcurrent, TestBuildRuntime_CacheRetention]
+    quality: |
+      Answers, keys and TTLs are unchanged (TestRetentionNeverExtendsTTL, the
+      expiry-bound trace). The gains are small on Zipf traces (0.03 to 0.2
+      points of hit ratio, about 1 point of L1 hit ratio) and largest after a
+      flood; an expiry-bound cache (the production shape of #1767) sees none.
+    performance:
+      tracked: ['cache set/get/evict paths with the policy off and on: ns/op, B/op, allocs/op (benchstat)']
+      bound: 'policy off: the plain paths unchanged; policy on: no allocation on a hit or an evicting write, one 24-byte node per stored entry while the cache fills'
+      measured: 'see the pull request benchstat tables (Apple M5 Pro, GOMAXPROCS=4, 8 interleaved runs, 2026-11-26)'
+      benchmarks: [BenchmarkRetentionSetEvict, BenchmarkRetentionGetHitPromote, BenchmarkRetentionReplace, BenchmarkRetentionEvictWithDisk, BenchmarkCacheSetEvictCapacity, BenchmarkCacheGetHitParallel, BenchmarkCacheSetReplace]
+  - id: demote-on-evict-off-by-default
+    chosen: 'Demotion behind -cache-demote-on-evict, off by default, only for entries read at least once'
+    over: ['on by default', 'demoting every evicted entry (a flood of entries read once would fill the disk queue and evict reused disk records)', 'writing without keeping an existing disk copy newest (measured: lowers the hit ratio after a shift as well, and helps the Zipf trace less)']
+    why: |
+      On the measured traces demotion raised the hit ratio of the Drilldown and
+      flood traces by 0.05 to 0.2 points and lowered it after a working-set
+      shift (92.14% -> 92.10%; after the shift 92.27% -> 92.04%), where it
+      keeps the old set on disk. With protection on, most capacity victims
+      were never read and are not demoted. A policy that lowers any trace is
+      not a default.
+    evidence: |
+      TestRetentionTraceReplay (demote and protect20+demote rows);
+      TestRetentionDemoteKeepsTheDiskCopy, TestRetentionDemoteWritesWithTheRemainingTTL
+      and TestRetentionDemoteSkips pin what is handed over, with which TTL,
+      and what never is.
+    code: [internal/cache/retention.go]
+    tests: [TestRetentionDemoteKeepsTheDiskCopy, TestRetentionDemoteWritesWithTheRemainingTTL, TestRetentionDemoteSkips, TestRetentionTraceReplay]
+    quality: 'A demoted copy never outlives the memory entry it came from (TestRetentionDemoteWritesWithTheRemainingTTL).'
+    performance:
+      tracked: ['capacity evictions with a disk below, demotion off and on (benchstat)']
+      bound: 'one disk index touch or one queued write per demoted eviction, under the memory lock as every write-through already is'
+      measured: 'see the pull request benchstat tables'
+      benchmarks: [BenchmarkRetentionEvictWithDisk]

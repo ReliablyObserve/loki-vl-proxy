@@ -20,6 +20,7 @@ var signalFamilies = map[string]string{
 	"loki_vl_proxy_cache_evictions_total":               "counter",
 	"loki_vl_proxy_cache_admission_rejections_total":    "counter",
 	"loki_vl_proxy_cache_promotions_total":              "counter",
+	"loki_vl_proxy_cache_demotions_total":               "counter",
 	"loki_vl_proxy_cache_entry_age_at_eviction_seconds": "histogram",
 	"loki_vl_proxy_cache_entry_hits_at_eviction":        "histogram",
 	"loki_vl_proxy_cache_l2_read_seconds":               "histogram",
@@ -56,6 +57,9 @@ func signalFixture() []CacheComponentSignals {
 			for p := range s.Promotions {
 				s.Promotions[p] = n * int64(p+1)
 			}
+			for d := range s.Demotions {
+				s.Demotions[d] = n * int64(d+1)
+			}
 			s.DiskReadSeconds = signalHistogramFixture(len(cache.DiskReadSecondsBounds), n)
 			s.DiskReadBytes = signalHistogramFixture(len(cache.DiskReadBytesBounds), n)
 		}
@@ -73,7 +77,7 @@ func ttlFixture() []CacheTTL {
 	return out
 }
 
-var signalSampleLabels = map[string]bool{"layer": true, "tier": true, "reason": true, "from": true, "to": true, "class": true, "le": true}
+var signalSampleLabels = map[string]bool{"layer": true, "tier": true, "reason": true, "from": true, "to": true, "result": true, "class": true, "le": true}
 
 // scrapeSignalMetrics returns every sample of the signal families, keyed by
 // name and sorted labels, and the families' TYPE lines.
@@ -238,7 +242,7 @@ func TestCacheSignalMetricsExporterParityAndCardinality(t *testing.T) {
 		}
 	}
 	// The series set is fixed: 3 layers x (L1 5 + L2 5 eviction reasons, L1 3 +
-	// L2 9 rejection reasons, 3 promotions, 2 tiers x 2 reasons x (age 11+3,
+	// L2 9 rejection reasons, 3 promotions, 2 demotion results, 2 tiers x 2 reasons x (age 11+3,
 	// hits 8+3), disk reads 12+3 and 9+3), plus 20 TTL classes.
 	perFamily := map[string]int{}
 	for key := range prom {
@@ -249,6 +253,7 @@ func TestCacheSignalMetricsExporterParityAndCardinality(t *testing.T) {
 		"loki_vl_proxy_cache_evictions_total":               30,
 		"loki_vl_proxy_cache_admission_rejections_total":    36,
 		"loki_vl_proxy_cache_promotions_total":              9,
+		"loki_vl_proxy_cache_demotions_total":               6,
 		"loki_vl_proxy_cache_entry_age_at_eviction_seconds": 168,
 		"loki_vl_proxy_cache_entry_hits_at_eviction":        132,
 		"loki_vl_proxy_cache_l2_read_seconds":               45,
@@ -260,11 +265,12 @@ func TestCacheSignalMetricsExporterParityAndCardinality(t *testing.T) {
 	}
 	// Components are summed, a duplicate component name counted once.
 	for key, value := range map[string]float64{
-		`loki_vl_proxy_cache_evictions_total{layer="loki",reason="expired",tier="l1_memory"}`:            202,  // (1+100) x 2 x 1
-		`loki_vl_proxy_cache_admission_rejections_total{layer="vl",reason="memory_only",tier="l2_disk"}`: 9090, // 3 x 30 + 300 x 30
-		`loki_vl_proxy_cache_promotions_total{from="l3_peer",layer="unknown",to="l2_disk"}`:              303,
-		`loki_vl_proxy_cache_ttl_seconds{class="query_range"}`:                                           1,
-		`loki_vl_proxy_cache_l2_read_seconds_sum{layer="unknown"}`:                                       101,
+		`loki_vl_proxy_cache_evictions_total{layer="loki",reason="expired",tier="l1_memory"}`:              202,  // (1+100) x 2 x 1
+		`loki_vl_proxy_cache_admission_rejections_total{layer="vl",reason="memory_only",tier="l2_disk"}`:   9090, // 3 x 30 + 300 x 30
+		`loki_vl_proxy_cache_promotions_total{from="l3_peer",layer="unknown",to="l2_disk"}`:                303,
+		`loki_vl_proxy_cache_demotions_total{from="l1_memory",layer="loki",result="written",to="l2_disk"}`: 404, // (2+200) x 2
+		`loki_vl_proxy_cache_ttl_seconds{class="query_range"}`:                                             1,
+		`loki_vl_proxy_cache_l2_read_seconds_sum{layer="unknown"}`:                                         101,
 	} {
 		if got := prom[key]; got != value {
 			t.Errorf("%s=%g want %g", key, got, value)
@@ -301,7 +307,7 @@ func TestCacheSignalMetricsAbsentProviders(t *testing.T) {
 			t.Fatalf("%s=%g from an empty snapshot", key, value)
 		}
 	}
-	if len(prom) != 456 {
-		t.Fatalf("empty snapshot series %d, want 456", len(prom))
+	if len(prom) != 462 { // 456 + 6 demotion series
+		t.Fatalf("empty snapshot series %d, want 462", len(prom))
 	}
 }

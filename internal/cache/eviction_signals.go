@@ -109,6 +109,30 @@ func (p Promotion) Tiers() (from, to string) {
 	return "unknown", "unknown"
 }
 
+// Demotion is what a capacity eviction from L1 did with the entry's disk copy
+// under the retention policy's demote-on-evict (retention.go).
+type Demotion uint8
+
+const (
+	// DemotionRetained: L2 held a current copy and kept it, newest in its
+	// recency order.
+	DemotionRetained Demotion = iota
+	// DemotionWritten: L2 held none and admitted the value to its write queue
+	// with the TTL it had left.
+	DemotionWritten
+	DemotionCount
+)
+
+var demotionResults = [DemotionCount]string{"retained", "written"}
+
+// Result returns the demotion's result label.
+func (d Demotion) Result() string {
+	if d < DemotionCount {
+		return demotionResults[d]
+	}
+	return "unknown"
+}
+
 // Only expiry and capacity evictions are observed by the age and hit
 // histograms: they answer whether the cache is too small or the TTL too short.
 const evictionObservedCount = 2
@@ -203,11 +227,12 @@ func (s *tierSignals) reject(layer Layer, reason RejectionReason) {
 	s.rejections[layer][reason].Add(1)
 }
 
-// cacheSignals are a Cache's L1 signals and promotions. Its methods accept a
-// nil receiver: a Cache built as a literal (tests) counts nothing.
+// cacheSignals are a Cache's L1 signals, promotions and demotions. Its methods
+// accept a nil receiver: a Cache built as a literal (tests) counts nothing.
 type cacheSignals struct {
 	l1         tierSignals
 	promotions [LayerCount][PromotionCount]atomic.Int64
+	demotions  [LayerCount][DemotionCount]atomic.Int64
 }
 
 func (s *cacheSignals) reject(layer Layer, reason RejectionReason) {
@@ -231,6 +256,12 @@ func (s *cacheSignals) evict(layer Layer, reason EvictionReason, age time.Durati
 func (s *cacheSignals) promote(layer Layer, p Promotion) {
 	if s != nil {
 		s.promotions[layer][p].Add(1)
+	}
+}
+
+func (s *cacheSignals) demote(layer Layer, d Demotion) {
+	if s != nil {
+		s.demotions[layer][d].Add(1)
 	}
 }
 
@@ -280,6 +311,8 @@ func (s *tierSignals) snapshot(layer Layer) (out TierSignalsSnapshot) {
 type LayerSignalsSnapshot struct {
 	L1, L2     TierSignalsSnapshot
 	Promotions [PromotionCount]int64
+	// Demotions are L1 capacity evictions handed to L2 (always L1 to L2).
+	Demotions [DemotionCount]int64
 	// DiskReadSeconds and DiskReadBytes observe each L2 lookup that read a record
 	// from bbolt (the index lock, the read and the decode) and the record's
 	// encoded size; L2 hits served from the pending write queue are not reads.
@@ -308,6 +341,9 @@ func (c *Cache) SignalStats() (out [LayerCount]LayerSignalsSnapshot) {
 		out[l].L1 = c.signals.l1.snapshot(l)
 		for p := range out[l].Promotions {
 			out[l].Promotions[p] = c.signals.promotions[l][p].Load()
+		}
+		for d := range out[l].Demotions {
+			out[l].Demotions[d] = c.signals.demotions[l][d].Load()
 		}
 	}
 	if c.l2 != nil {
@@ -348,7 +384,7 @@ func (c *Cache) countEvictionLocked(layer Layer, reason EvictionReason, data *lr
 		c.signals.count(layer, reason)
 		return
 	}
-	c.signals.evict(layer, reason, data.age(now), data.hits)
+	c.signals.evict(layer, reason, data.age(now), uint32(data.hits))
 }
 
 // lruNodeLocked is key's LRU node, nil when it has none.

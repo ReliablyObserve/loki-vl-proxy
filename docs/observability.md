@@ -929,6 +929,7 @@ is in the [sizing guide](cache-troubleshooting.md#size-the-cache-from-its-evicti
 | `loki_vl_proxy_cache_entry_age_at_eviction_seconds` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | time since the value entered the tier on this replica; buckets 1s to 24h |
 | `loki_vl_proxy_cache_entry_hits_at_eviction` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | lookups the entry answered from that tier; buckets 0 to 100 |
 | `loki_vl_proxy_cache_promotions_total` | counter | `layer`, `from`, `to` | lower-tier hits copied up: `l2_disk` or `l3_peer` to `l1_memory`, and `l3_peer` hits handed to the local `l2_disk` queue |
+| `loki_vl_proxy_cache_demotions_total` | counter | `layer`, `from` (`l1_memory`), `to` (`l2_disk`), `result` | L1 capacity evictions of entries read at least once handed to L2 by `-cache-demote-on-evict`: `retained` (L2 held a current copy and keeps it newest in its recency order) or `written` (L2 held none and queued the value with the TTL it had left); always 0 with the flag off |
 | `loki_vl_proxy_cache_l2_read_seconds` | histogram | `layer` | one L2 lookup that read a record from bbolt: the index lock, the read and the decode; hits from the pending write queue are not reads; buckets 50µs to 500ms |
 | `loki_vl_proxy_cache_l2_read_bytes` | histogram | `layer` | encoded bytes of one L2 record read; buckets 256 B to 16 MiB |
 | `loki_vl_proxy_cache_ttl_seconds` | gauge | `class` | base TTL each answer class is stored with (table below) |
@@ -954,8 +955,10 @@ The age and hits histograms observe expiry and capacity evictions only. L1
 counts a hit when its deferred LRU promotion is applied; the promotion buffer
 drops under bursts and `Peek` does not promote, so L1 hits are a lower bound.
 An L2 record found by the start-up scan has no known admission time and is
-counted by reason without an age. Demotions (an L1 eviction kept in L2) are
-not exported: L1 and L2 copies are written together, so nothing is demoted.
+counted by reason without an age, as is an L1 entry the restart warm-up
+admitted. Demotions happen only with `-cache-demote-on-evict` (off by
+default): L1 and L2 copies are otherwise written together, so an L1 eviction
+leaves the L2 copy where it was.
 
 | `class` | Cache | TTL |
 |---|---|---|

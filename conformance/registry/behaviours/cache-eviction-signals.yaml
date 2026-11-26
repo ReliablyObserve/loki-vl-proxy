@@ -36,11 +36,12 @@ proxy: |
   loki_vl_proxy_cache_l2_read_bytes; loki_vl_proxy_cache_ttl_seconds{class}
   states the base TTL of 20 answer classes. All labels come from fixed sets
   (no tenant, query or key text); the families are summed over components, a
-  shared disk is counted once, and the series set is fixed (476 per replica).
+  shared disk is counted once, and the series set is fixed (482 per replica).
   The counters are atomics read without the cache's locks, in Prometheus
   scrape and OTLP push alike. L2 reasons and histograms of a flush are applied
-  only when its bbolt transaction commits. Demotions are not exported: L1 and
-  L2 copies are written together. The chart dashboard has a Cache efficiency
+  only when its bbolt transaction commits. Demotions (-cache-demote-on-evict,
+  cache-reuse-retention) are loki_vl_proxy_cache_demotions_total. The chart
+  dashboard has a Cache efficiency
   row and docs/cache-troubleshooting.md a sizing guide.
 
 implementation:
@@ -64,7 +65,7 @@ decisions:
       series as it was, and the invariant (expired + capacity = layer
       evictions; refusals = layer rejections) ties the two together. The reason
       families drop the component label: the question is per tier and layer,
-      and summing over components keeps the set fixed at 476 series.
+      and summing over components keeps the set fixed (476 series then; 482 with the demotion family).
     evidence: |
       TestEvictionSignalsRandomOperationsBalance and
       TestEvictionSignalsConcurrentBalance hold the invariant over random and

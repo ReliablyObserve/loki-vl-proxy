@@ -323,19 +323,20 @@ func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
 // set is Set with the write's recency: 0 takes the next sequence, the shutdown
 // flush passes the access planHandover reserved for the key's rank and its
 // hand-over generation (non-zero), which a purge moves: such a write is then
-// dropped, so a value captured before a purge is never written after it.
-func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, handoverGen uint64) {
+// dropped, so a value captured before a purge is never written after it. It
+// reports whether the write queue admitted the value.
+func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, handoverGen uint64) bool {
 	layer := LayerForKey(key)
 	dc.writeMu.Lock()
 	if handoverGen != 0 && dc.handoverGen != handoverGen {
 		dc.writeMu.Unlock()
-		return
+		return false
 	}
 	if dc.closed || dc.closing {
 		dc.layerL2[layer].rejections.Add(1)
 		dc.signals.reject(layer, RejectionClosed)
 		dc.writeMu.Unlock()
-		return
+		return false
 	}
 	charge := diskQueueCharge(key, value)
 	used := dc.bufferBytes
@@ -346,7 +347,7 @@ func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, ha
 		dc.rejectLocked(key, reason)
 		dc.writeMu.Unlock()
 		dc.requestFlush()
-		return
+		return false
 	}
 	if old, ok := dc.writeBuf[key]; ok {
 		dc.layerQueueBytes[layer] -= diskQueueCharge(key, old.Value)
@@ -368,6 +369,7 @@ func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, ha
 	if shouldFlush {
 		dc.requestFlush()
 	}
+	return true
 }
 
 // admissionRejection is why Set refuses a write, false when it admits it. The
