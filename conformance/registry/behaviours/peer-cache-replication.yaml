@@ -38,8 +38,10 @@ proxy: |
   only when this instance is a replica or write-through is off and the
   writer did not keep it in memory only (query_range windows), and is never
   pushed again. Values above the peers' body limit (8 MiB) are not pushed,
-  and entries computed with a user's forwarded credentials (an auth
-  fingerprint starting with fwdid.) are never pushed. SetReplicatedWithTTL
+  and entries computed with a user's forwarded credentials (a key holding
+  the fingerprint prefix fwdid. in any spelling, or the mark keys that hash
+  the fingerprint append) are never pushed, listed in the hot index or
+  prefetched by read-ahead. SetReplicatedWithTTL
   pushes to the replicas whatever -peer-write-through says, for values a
   replica that lost its disk must find on its peers. There is no background
   reseed: a replica that lost its disk refills on first lookup, one peer

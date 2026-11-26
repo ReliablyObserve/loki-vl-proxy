@@ -228,6 +228,7 @@ type proxyRuntimeConfig struct {
 	peerTimeout                         time.Duration
 	peerReadHedgeMaxDelay               time.Duration
 	peerAuthToken                       string
+	cacheKeySecret                      string
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
 	peerReplicationFactor               int
@@ -823,6 +824,8 @@ func run(
 	peerReadHedgeMaxDelay := fs.Duration("peer-read-hedge-max-delay", 200*time.Millisecond, "Longest a peer-cache read waits on one replica's response headers before it also asks the key's next replica or, with none left, goes on as a miss (VictoriaLogs or a local compute) while that call finishes in the background, where its -peer-timeout still suspends a paused peer. The delay used is twice the p99 of the measured peer header latencies, at least 5ms and at most this value and half of -peer-timeout. 0 turns hedging off: a read waits up to -peer-timeout on each replica.")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set. When neither this flag nor -peer-auth-token-file is given, read from the PEER_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
 	peerAuthTokenFile := fs.String("peer-auth-token-file", "", "File holding the -peer-auth-token value, read once at startup")
+	cacheKeySecret := fs.String("cache-key-secret", "", "Secret keying the digests of credentials in cache keys (forwarded Authorization headers and cookies, -backend-basic-auth), so cache keys stored on disk, in snapshots or on peers cannot be used to test credential guesses. Set the same value on every replica to share credential-scoped cache entries across replicas and restarts. Empty: a key derived from -peer-auth-token, else a random key per process (credential-scoped entries are then not reused after a restart or by other replicas). When neither this flag nor -cache-key-secret-file is given, read from the CACHE_KEY_SECRET environment variable. A flag value is readable in the process command line")
+	cacheKeySecretFile := fs.String("cache-key-secret-file", "", "File holding the -cache-key-secret value, read once at startup")
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerReplicationFactor := fs.Int("peer-replication-factor", 2, "Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner.")
@@ -844,6 +847,7 @@ func run(
 	// Secrets are resolved here, before any check or component reads them.
 	explicitFlags, err := parseFlagsAndSecrets(fs, args, getenv, []secretFlag{
 		{name: "peer-auth-token", value: peerAuthToken, file: peerAuthTokenFile, env: "PEER_AUTH_TOKEN"},
+		{name: "cache-key-secret", value: cacheKeySecret, file: cacheKeySecretFile, env: "CACHE_KEY_SECRET"},
 		{name: "server.admin-auth-token", value: adminAuthToken, file: adminAuthTokenFile, env: "ADMIN_AUTH_TOKEN"},
 		{name: "delete-api-auth-token", value: deleteAPIAuthToken, file: deleteAPIAuthTokenFile, env: "DELETE_API_AUTH_TOKEN"},
 		{name: "backend-basic-auth", value: backendBasicAuth, file: backendBasicAuthFile, env: "BACKEND_BASIC_AUTH"},
@@ -1145,6 +1149,7 @@ func run(
 			peerTimeout:                         *peerTimeout,
 			peerReadHedgeMaxDelay:               *peerReadHedgeMaxDelay,
 			peerAuthToken:                       *peerAuthToken,
+			cacheKeySecret:                      *cacheKeySecret,
 			peerInsecureIPAllowlist:             *peerInsecureIPAllowlist,
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
@@ -2553,6 +2558,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		PatternsPeerWarmTimeout:            cfg.patternsPeerWarmTimeout,
 		PeerCache:                          peerCache,
 		PeerAuthToken:                      cfg.peerAuthToken,
+		CacheKeySecret:                     cfg.cacheKeySecret,
 		PeerInsecureIPAllowlist:            cfg.peerInsecureIPAllowlist,
 		ColdBackend: proxy.ColdBackendConfig{
 			URL:             cfg.coldBackendURL,

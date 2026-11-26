@@ -1491,6 +1491,8 @@
     "internal/cache/peer_push_buffer_test.go | peer-cache-push-replay",
     "internal/cache/peer_push_buffer_test.go | peer-cache-replication",
     "internal/cache/peer_push_buffer_test.go | shutdown-releases-background-work",
+    "internal/cache/peer_push_filter_hot_test.go | cache-key-credential-digest",
+    "internal/cache/peer_push_filter_hot_test.go | peer-cache-replication",
     "internal/cache/peer_replication_test.go | peer-cache-push-replay",
     "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
@@ -1736,6 +1738,7 @@
     "internal/proxy/cache_handover_log_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | shutdown-releases-background-work",
+    "internal/proxy/cache_key_fingerprint_golden_test.go | cache-key-credential-digest",
     "internal/proxy/cache_layer_metrics_test.go | cache-eviction-signals",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-blank-before-range-call-as-text",
@@ -1763,7 +1766,9 @@
     "internal/proxy/compat_oversized_reply_test.go | semantics/quantile-over-time-out-of-range",
     "internal/proxy/compat_oversized_reply_test.go | semantics/unpack-non-string-values",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
+    "internal/proxy/credential_digest_test.go | cache-key-credential-digest",
     "internal/proxy/credential_passthrough_test.go | credential-passthrough-as-configured",
+    "internal/proxy/credential_scoped_entries_test.go | cache-key-credential-digest",
     "internal/proxy/default_entry_limit_test.go | semantics/log-query-default-limit",
     "internal/proxy/default_max_query_length_test.go | limits/effective-limit-resolution",
     "internal/proxy/default_max_query_length_test.go | limits/max-query-length-default",
@@ -3691,6 +3696,8 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
     "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
     "test/helm/cache_handover_test.go | cache-restart-handover",
+    "test/helm/cache_key_secret_test.go | cache-key-credential-digest",
+    "test/helm/cache_key_secret_test.go | secrets-outside-process-arguments",
     "test/helm/image_test.go | release-image-pinned-by-digest",
     "test/helm/secrets_test.go | secrets-outside-process-arguments",
     "test/helm/servicemonitor_test.go | observability-metrics-histograms-and-labels"
@@ -3705,7 +3712,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 853,
+      "go": 858,
       "playwright": 3
     },
     "page_kinds": {
@@ -3727,7 +3734,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 489
+    "wired_items": 490
   },
   "gates": [
     "A/B shape selection",
