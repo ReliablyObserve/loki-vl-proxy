@@ -798,12 +798,17 @@ func (p *Proxy) inventoryConfirmedSince(key string, notBefore int64) bool {
 // fillTouchedDays reads, in the background, the hour buckets a later moved
 // window needs to be answered from memory (answerNamesFromMemory) and that a
 // names-only listing touches without reading them whole, in this order: the
-// hour holding the window's start, the hour before it and the hour holding
-// its end. The label browser moved back by a few minutes or by an hour then
-// finds every piece of its ends held by a cached hour (each listing reads the
-// hour the next one moved back by an hour starts in). The hours read per
-// listing span at most the window's own width: a window of six hours or more
-// reads up to three, a window under an hour none. Each read is one row count
+// hour holding the window's start, the hour before it, the hour holding its
+// end and the hour two before the start, skipping hours cached or being read.
+// The label browser moved back by a few minutes or by an hour then finds
+// every piece of its ends held by a cached hour (each listing reads the hour
+// the next one moved back by an hour starts in). When its windows come back
+// to back, faster than a background read, the next window's hour is still
+// being read; the hour two before the start is the one the window after next
+// starts in, read a request earlier (gate BackToBackMovedWindows). The hours
+// read per listing are at most three and span at most the window's own
+// width: a window of six hours or more reads up to three, a window under an
+// hour none. Each read is one row count
 // and one listing, cached like every bucket (memory, disk and peers) and
 // shared by every later listing of the same query and scope, in the
 // background inventory lane (skipped when the metadata-scan limiter is
@@ -823,15 +828,22 @@ func (p *Proxy) fillTouchedDays(ctx context.Context, path string, params url.Val
 		holding(first, hour, 1),
 		holding(first-hour, hour, 1),
 		holding(last-1, hour, 1),
+		holding(first-2*hour, hour, 1),
 	}
 	budget := last - first
 	var fills []inventorySegment
 	for _, seg := range candidates {
+		if len(fills) == 3 {
+			break
+		}
 		if seg.end > sealBefore || (first <= seg.start && seg.end <= last) || slices.Contains(fills, seg) {
 			continue // not sealed, read whole by the plan, or listed
 		}
 		if _, ok := p.cache.Peek(inventoryBucketKey(base, seg)); ok {
 			continue
+		}
+		if _, running := p.inventoryInflight.Load(inventoryBucketKey(base, seg)); running {
+			continue // an earlier listing's read
 		}
 		if seg.end-seg.start > budget {
 			continue

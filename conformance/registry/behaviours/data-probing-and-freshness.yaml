@@ -122,7 +122,8 @@ decisions:
       background. With -metadata-inventory-prefetch (default on, its own flag
       so background VictoriaLogs work can be turned off apart from staleness),
       after a listing the hours
-      holding the window's start and end and the hour before it, at most the
+      holding the window's start and end, the hour before it and, once those
+      are cached or being read, the hour two before it, at most three and the
       window's width, are read in the background inventory lane.
     over: ['reading the moved ends from VictoriaLogs on every request (base: 7, 3-7 and 20 calls per moved 1h, 6h and 24h window)', 'exact answers only from memory (the new end of a window moved back has no cached piece, so every moved request still read VictoriaLogs)', 'answering from memory past -metadata-max-staleness (rows written into a used bucket would stay unlisted for the bucket schedule, up to 15 minutes)', 'filling the partly covered UTC day in the background (a 24h cold load read its day again: 2,880 listed minutes instead of 1,440)', 'background reads unbounded by the window (a 10-minute window over yesterday would read a whole day)']
     why: |
@@ -135,8 +136,15 @@ decisions:
       day keeps the answer between the exact one and Loki's.
     evidence: 'Loki 3.7.10 on the e2e stack, 2026-11-25 (data of 11-24 and 11-25): 12 windows; Loki lists the whole day (26 / 86 / 92 for two days) for every window that overlaps the day''s data, none after the last row; the exact answer is a subset of Loki''s in every window. 120 random windows: memory answers between exact and Loki in all, 3 beyond exact. Local A/B harness, final build, four passes of the set metadata-inventory (ends 13:35-15:50): refresh labels warm p50 6h 0 ms and 24h 1 ms with no request-path call in 4 of 4 passes (Loki 1-3 ms, base 22-25 and 180-205 ms); 1h 1 ms in 3 of 4 (40 ms in one pass: two moved windows arrived before the background read of the hour their ends needed finished; Loki 1-2 ms, base 39-51 ms). Per-request timing, three rounds: 0.26-0.63 ms against Loki 1.07-2.39 ms. Two replicas with the peer tier, requests alternating: 0.7-0.9 ms once each replica read once; the first moved request on a replica without the entries in memory reads VictoriaLogs (1h: 78 ms in the first round). Near-now windows were not probed on Loki (no live writes on the stack); CI''s 1h and 6h windows end minutes ago.'
     code: [internal/proxy/metadata_inventory.go]
-    tests: [TestLabelsInventory_MovedWindowsAreAnsweredFromMemory, TestLabelsInventory_MemoryAnswersStayBetweenTheWindowAndItsDays, TestLabelsInventory_MemoryAnswersKeepTheStalenessBound, TestLabelsInventory_MemoryAnswersOffWithoutStaleness, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow, TestLabelBrowserGates_MovedWindowNoRequestPathCalls, TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries]
+    tests: [TestLabelsInventory_MovedWindowsAreAnsweredFromMemory, TestLabelsInventory_MemoryAnswersStayBetweenTheWindowAndItsDays, TestLabelsInventory_MemoryAnswersKeepTheStalenessBound, TestLabelsInventory_MemoryAnswersOffWithoutStaleness, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow, TestLabelBrowserGates_MovedWindowNoRequestPathCalls, TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries, TestLabelBrowserGates_BackToBackMovedWindows]
     history:
+      - date: '2026-11-26'
+        what: 'perf-smoke row refresh labels (label browser), warm, 24h, on the CI A/B of pull request runs'
+        measured: '177 ms on one build against 1 ms on the other in the same run, whichever build the harness order gave the shorter gap between its own requests'
+        cause: 'a window asked before the background read of the hour it starts in had finished waited -metadata-edge-refresh-budget for it, then read VictoriaLogs for its pieces (in process, row count 25 ms and listing 100 ms: 127-335 ms and 1-8 request-path calls per window back to back, 0 calls with the reads settled)'
+        effect: 'the locked warm row failed on a build that did not change the label path'
+        fixed_by: 'this change: the listing also reads the hour two before its start, a request ahead'
+        after: 'in process with 30 ms between requests 3-94 ms and no request-path call from the second window on, with 60 ms 2-4 ms from the third on; held without timing by TestLabelBrowserGates_BackToBackMovedWindows'
       - date: '2026-11-25'
         what: 'perf A/B rows metadata-inventory / refresh labels (label browser), warm, 1h / 6h / 24h (loki-defaults)'
         measured: '15-29 ms / 21-56 ms / 273-306 ms against Loki 3 / 2-3 / 64-66 ms, with 7 / 3-7 / 20 VictoriaLogs calls per repeat'
