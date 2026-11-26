@@ -28,9 +28,9 @@
    86400,
    20
   ],
-  "80s-53ms": [
+  "80s-50ms": [
    80,
-   0.053
+   0.05
   ]
  },
  "sets": {
@@ -3642,9 +3642,9 @@
    ]
   },
   "ranked-parser-fine-step": {
-   "description": "Issue #1795: a ranking or a sum over a [1h] window metric with a parser stage on a short range at Grafana's step (53 ms over 80 s, 200 ms over 5 minutes). A gcd(step, window) bucket grid there is past the 11,000-bucket bound, so the proxy answers from the window recurrence's step-sized grids with the parser stage kept in the stats pipe (semantics/ranked-parser-window-fine-step) instead of the raw rows of the hour. RP1 ranks the nginx-ingress status codes from a regexp, RP2 the same from a pattern stage (both written as the LogQL printer prints them, so the frozen string translator's reading of a ranking's spelling, reprint_translation_test.go, does not change when the proxy prints them again), RP3 sums a pattern stage by method. Run with the control set.",
+   "description": "Issue #1795: a ranking or a sum over a [1h] window metric with a parser stage on a short range at a fine step (50 ms over 80 s, 200 ms over 5 minutes). Grafana's own step over 80 s is about 53 ms; the A/B runs 50 ms, a step that divides the whole-second ends, so Loki's frontend and the proxy lay the same grid: at 53 ms Loki with its defaults answered one step more than the proxy's step-aligned grid in every run (1511 or 1512 steps where 80 s holds 1510 or 1511), so its ranking holds more than k series per step, which the harness takes as no computed answer, and a sum has one timestamp more per series: no 53 ms row had a usable Loki reference. 53 ms itself is pinned against the Loki engine by TestRankedParserWindowMatchesLoki (53 ms, 50 ms, 1 s, 10 s). A gcd(step, window) bucket grid there is past the 11,000-bucket bound, so the proxy answers from the window recurrence's step-sized grids with the parser stage kept in the stats pipe (semantics/ranked-parser-window-fine-step) instead of the raw rows of the hour. RP1 ranks the nginx-ingress status codes from a regexp, RP2 the same from a pattern stage (both written as the LogQL printer prints them, so the frozen string translator's reading of a ranking's spelling, reprint_translation_test.go, does not change when the proxy prints them again), RP3 sums a pattern stage by method. Run with the control set.",
    "ranges": [
-    "80s-53ms",
+    "80s-50ms",
     "5m-200ms"
    ],
    "shapes": [
