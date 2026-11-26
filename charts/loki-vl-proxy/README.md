@@ -40,13 +40,13 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `persistence.enabled` | `false` | Enable bbolt disk cache via PVC |
 | `persistence.size` | `10Gi` | PVC size for disk cache |
 | `peerCache.enabled` | `false` | Enable distributed cache sharing across replicas |
-| `adminAuth.existingSecret` | `""` | Existing Secret holding the admin/debug bearer token. The chart renders `-server.admin-auth-token=$(ADMIN_AUTH_TOKEN)` from a `secretKeyRef`, so the token is not in the pod spec or `helm get values`. Setting it together with `extraArgs."server.admin-auth-token"` fails rendering |
+| `adminAuth.existingSecret` | `""` | Existing Secret holding the admin/debug bearer token. The chart mounts the key as a file and renders `-server.admin-auth-token-file`, so the token is not in the pod spec, `helm get values` or the process arguments. Setting it together with `extraArgs."server.admin-auth-token"` fails rendering |
 | `adminAuth.existingSecretKey` | `token` | Key within `adminAuth.existingSecret` |
-| `deleteAuth.existingSecret` | `""` | Existing Secret holding the delete API's token, required by `extraArgs.delete-api-enabled: "true"` (rendering fails without it or `extraArgs.delete-api-auth-token`). The chart renders `-delete-api-auth-token=$(DELETE_API_AUTH_TOKEN)` from a `secretKeyRef`. Every delete request must carry the token in `X-Delete-Token` or `Authorization: Bearer`. It is separate from the admin token: enabling deletes leaves the admin listener on loopback. Setting it together with `extraArgs.delete-api-auth-token` fails rendering |
+| `deleteAuth.existingSecret` | `""` | Existing Secret holding the delete API's token, required by `extraArgs.delete-api-enabled: "true"` (rendering fails without it or `extraArgs.delete-api-auth-token`). The chart mounts the key as a file and renders `-delete-api-auth-token-file`. Every delete request must carry the token in `X-Delete-Token` or `Authorization: Bearer`. It is separate from the admin token: enabling deletes leaves the admin listener on loopback. Setting it together with `extraArgs.delete-api-auth-token` fails rendering |
 | `deleteAuth.existingSecretKey` | `token` | Key within `deleteAuth.existingSecret` |
-| `backendAuth.existingSecret` | `""` | Existing Secret holding the VictoriaLogs basic-auth credentials as one `user:password` value. The chart renders `-backend-basic-auth=$(BACKEND_BASIC_AUTH)` from a `secretKeyRef`. Setting it together with `extraArgs.backend-basic-auth` fails rendering |
+| `backendAuth.existingSecret` | `""` | Existing Secret holding the VictoriaLogs basic-auth credentials as one `user:password` value. The chart mounts the key as a file and renders `-backend-basic-auth-file`. Setting it together with `extraArgs.backend-basic-auth` fails rendering |
 | `backendAuth.existingSecretKey` | `basic-auth` | Key within `backendAuth.existingSecret` |
-| `backendVersionAuth.existingSecret` | `""` | Existing Secret holding the `user:password` of `extraArgs.backend-version-url`. The chart renders `-backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH)` from a `secretKeyRef`. Setting it together with `extraArgs.backend-version-basic-auth` fails rendering |
+| `backendVersionAuth.existingSecret` | `""` | Existing Secret holding the `user:password` of `extraArgs.backend-version-url`. The chart mounts the key as a file and renders `-backend-version-basic-auth-file`. Setting it together with `extraArgs.backend-version-basic-auth` fails rendering |
 | `backendVersionAuth.existingSecretKey` | `basic-auth` | Key within `backendVersionAuth.existingSecret` |
 | `observability.otlp.existingSecret` | `""` | Existing Secret holding the OTLP exporter headers (`key=value[,key=value]`, usually an `Authorization` value), exposed to the proxy as `OTLP_HEADERS` from a `secretKeyRef`. Setting it together with `observability.otlp.headers` or `extraArgs.otlp-headers` fails rendering |
 | `observability.otlp.existingSecretKey` | `headers` | Key within `observability.otlp.existingSecret` |
@@ -228,11 +228,11 @@ This mounts exactly five files read-only as `hostPath` volumes of type `File` (`
 - **Proxy listener** — `extraArgs.listen` (`:3100`), exposed by the Service for Grafana and peer-cache traffic.
 - **Metrics listener** — `extraArgs.metrics-listen` (`:9091`) serves only `/metrics` and is exposed as the `metrics` Service port.
 - **Admin listener** — `extraArgs.admin-listen` (`127.0.0.1:3101`) serves `/admin/cache/flush` and, when enabled, `/debug/pprof/*` and `/debug/queries`. It is loopback-only and not exposed; reach it with `kubectl port-forward`. Setting `extraArgs.server.admin-auth-token` moves these routes onto the main listener behind that token.
-- **Peer auth token** — with `peerCache.enabled=true` the proxy requires a shared token. The chart creates a `<release>-peer-auth` Secret (key `token`, random 32 characters, reused on upgrade through Helm `lookup`) unless `peerCache.authToken` (rendered as `<release>-peer-auth-literal`) or `peerCache.existingSecret` is set. Pin the token with one of those two values for render-only GitOps flows or restricted RBAC, where `lookup` cannot read the existing Secret. Do not set `extraArgs.peer-auth-token` together with `peerCache.enabled=true`; the chart fails rendering.
+- **Peer auth token** — with `peerCache.enabled=true` the proxy requires a shared token. The chart creates a `<release>-peer-auth` Secret (key `token`, random 32 characters, reused on upgrade through Helm `lookup`) unless `peerCache.authToken` (rendered as `<release>-peer-auth-literal`) or `peerCache.existingSecret` is set. Pin the token with one of those two values for render-only GitOps flows or restricted RBAC, where `lookup` cannot read the existing Secret. The token is mounted as a file (`-peer-auth-token-file`). Do not set `extraArgs.peer-auth-token` or `extraArgs.peer-auth-token-file` together with `peerCache.enabled=true`; the chart fails rendering.
 
 ### Secrets from an existing Secret
 
-The plain values `extraArgs."server.admin-auth-token"`, `extraArgs.delete-api-auth-token`, `extraArgs.backend-basic-auth` and `observability.otlp.headers` still work, but they are written into the pod spec and are readable with `helm get values` and `kubectl get pod -o yaml`. To keep them out of both, create the Secret yourself (Vault, External Secrets Operator, sealed-secrets, SOPS) and reference it:
+The plain values `extraArgs."server.admin-auth-token"`, `extraArgs.delete-api-auth-token`, `extraArgs.backend-basic-auth` and `observability.otlp.headers` still work, but they are written into the pod spec, are readable with `helm get values` and `kubectl get pod -o yaml`, and flag values are in the process command line. To keep them out of all three, create the Secret yourself (Vault, External Secrets Operator, sealed-secrets, SOPS) and reference it:
 
 ```yaml
 adminAuth:
@@ -244,12 +244,14 @@ observability:
     existingSecret: loki-vl-proxy-otlp     # key "headers", value "Authorization=Bearer ..."
 ```
 
-The chart adds a `secretKeyRef` environment variable (`ADMIN_AUTH_TOKEN`, `BACKEND_BASIC_AUTH`, `OTLP_HEADERS`) and, for the first two, passes the flag as `$(VAR)`, which the kubelet expands at container start. `OTLP_HEADERS` is read by the proxy itself when `-otlp-headers` is unset. Setting the plain value and `existingSecret` for the same item fails rendering. The peer-cache token has the same option as `peerCache.existingSecret`.
+For `adminAuth`, `deleteAuth`, `backendAuth`, `backendVersionAuth` and the peer token, the chart mounts the Secret key as a read-only file under `/var/run/secrets/loki-vl-proxy/` and passes the proxy its path with the matching `-...-file` flag, so the value is in no process argument or environment variable. The proxy reads the file once at startup: restart the pods after rotating a Secret. `OTLP_HEADERS` stays a `secretKeyRef` environment variable, read by the proxy when `-otlp-headers` is unset. Setting the plain value (or the `-file` flag) in `extraArgs` and `existingSecret` for the same item fails rendering.
+
+**Image version:** the `-...-file` flags need an image of the same release as the chart or newer. An older proxy exits with `flag provided but not defined` instead of starting without the credential, so a pinned older `image.tag` with any of these secrets does not roll out: keep chart and image together, or stay on the older chart.
 
 Other sensitive inputs need no extra chart value:
 
 - **TLS** — `tls-cert-file`, `tls-key-file` and `tls-client-ca-file` are file paths, so no key material is in the pod spec. Mount a TLS Secret with `extraVolumes` and `extraVolumeMounts` and point the flags at it.
-- **Other flags** (for example a backend URL with credentials): put the value in a Secret, expose it with `extraEnv` (`valueFrom.secretKeyRef`) and reference it as `$(NAME)` in the `extraArgs` value.
+- **Other flags** (for example a backend URL with credentials): put the value in a Secret, expose it with `extraEnv` (`valueFrom.secretKeyRef`) and reference it as `$(NAME)` in the `extraArgs` value. This keeps it out of the pod spec but not out of the process command line.
 - The proxy has no tenant credentials, OAuth or OIDC settings: `tenant-map` holds account and project IDs, not secrets.
 
 ## Cold Storage (Victoria Lakehouse)
