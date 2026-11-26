@@ -289,8 +289,11 @@ answer is held only for its class's TTL (`cache.Policy`). Keep it that way:
   release; `docs/reference/capability-gates.md` is regenerated
   (`go run ./cmd/configdoc`). Only a version that names VictoriaLogs counts as
   its release, the lowest release seen in the window decides, and an outage
-  never flips a gate. Cross-replica keys carry `Set.Digest()`, never a
-  per-process counter.
+  never flips a gate. A release the operator names (`-backend-version-url`,
+  `-backend-version`) enables only the gates a probe confirms; a probed gate
+  never gains release lines or flavours without revisiting that proof
+  (`TestProbedGatesProveTheirRelease`). Cross-replica keys carry
+  `Set.Digest()`, never a per-process counter.
 - Only a failure a peer would pay a VictoriaLogs call for, held 30 s or more,
   is pushed to peers (the peer cache's everywhere class); its peer key carries
   the build, the VictoriaLogs release and the routing digest, never a

@@ -67,7 +67,10 @@ type Layer struct {
 	changes    uint64
 	subs       []func(old, now Set)
 	lokiTarget string
-	clients    clientCounts // its own lock: the request path counts clients
+	// declared is the release the operator named (-backend-version): kept apart from seen, so it never ages out and
+	// never counts as a sign that an observed release left the backend.
+	declared Release
+	clients  clientCounts // its own lock: the request path counts clients
 }
 
 // fastSlots is how many distinct release texts the repeat path remembers.
@@ -114,6 +117,20 @@ func (l *Layer) Subscribe(fn func(old, now Set)) {
 	l.mu.Unlock()
 }
 
+// Declare records the release the operator declared (-backend-version). decide says what it may do: nothing a probe
+// does not confirm. A release that is not Known clears it.
+func (l *Layer) Declare(r Release) {
+	r.Source = SourceDeclared
+	l.mu.Lock()
+	l.declared = r
+	old, nw, changed := l.recomputeLocked()
+	subs := l.subs
+	l.mu.Unlock()
+	if changed {
+		notify(subs, old, nw)
+	}
+}
+
 // SetLokiTarget records the Loki compatibility target the status reports (a hook: no gate reads it yet).
 func (l *Layer) SetLokiTarget(v string) {
 	l.mu.Lock()
@@ -155,7 +172,9 @@ func (l *Layer) observe(backend string, r Release) *observed {
 	l.mu.Lock()
 	var entry *observed
 	for _, o := range l.seen {
-		if o.backend == backend && o.rel.Compare(r) == 0 {
+		// A release read from the version URL is kept apart from the same one read from the backend: only the
+		// former is discarded when a probe contradicts it.
+		if o.backend == backend && o.rel.Compare(r) == 0 && (o.rel.Source == SourceVersionURL) == (r.Source == SourceVersionURL) {
 			entry = o
 			break
 		}
@@ -244,15 +263,31 @@ func (l *Layer) countedLocked(now time.Time) map[*observed]bool {
 	return out
 }
 
-// effectiveLocked is the lowest release seen in the window.
-func (l *Layer) effectiveLocked() Release {
-	var eff Release
-	for i, o := range l.seen {
-		if i == 0 || o.rel.Compare(eff) < 0 {
-			eff = o.rel
+// effectiveLocked is the lowest release seen in the window, read from the backend (observed) and from the version
+// URL (fromURL), which is kept apart because it is a claim about the backend (see decide). A version URL release
+// that a probe contradicts is left out, and the contradicting gates are returned.
+func (l *Layer) effectiveLocked(probes verdicts) (observed, fromURL Release, rejected []GateID) {
+	for _, o := range l.seen {
+		into := &observed
+		if o.rel.Source == SourceVersionURL {
+			if c := contradicts(o.rel, probes); len(c) > 0 {
+				rejected = append(rejected, c...)
+				continue
+			}
+			into = &fromURL
+		}
+		if !into.Known || o.rel.Compare(*into) < 0 {
+			*into = o.rel
 		}
 	}
-	return eff
+	return observed, fromURL, rejected
+}
+
+// decideLocked is the set of the releases and verdicts held at now.
+func (l *Layer) decideLocked(now time.Time) Set {
+	probes := l.verdictsLocked(now)
+	observed, fromURL, rejected := l.effectiveLocked(probes)
+	return decide(observed, fromURL, l.declared, probes, rejected)
 }
 
 // ProbeResult is one probe's answer for a gate.
@@ -319,7 +354,7 @@ func (l *Layer) verdictsLocked(now time.Time) verdicts {
 // digest does, so a mixed pool under the lowest-in-window rule, or a probe that repeats its verdict, does not flap.
 func (l *Layer) recomputeLocked() (old, nw Set, changed bool) {
 	cur := *l.cur.Load()
-	nw = compute(l.effectiveLocked(), l.verdictsLocked(l.now()))
+	nw = l.decideLocked(l.now())
 	for i := range gates {
 		mm := nw.meta.why[i] == ReasonMismatch
 		if mm && !l.mismatch[i] {
@@ -329,7 +364,7 @@ func (l *Layer) recomputeLocked() (old, nw Set, changed bool) {
 	}
 	if nw.meta.digest == cur.meta.digest {
 		nw.epoch = cur.epoch
-		if nw.meta.why != cur.meta.why {
+		if nw.meta.why != cur.meta.why || nw.meta.observed != cur.meta.observed || nw.meta.behind != cur.meta.behind {
 			l.cur.Store(&nw) // the reasons moved (a probe agreed with the release): no gate did
 		}
 		return cur, nw, false
@@ -376,9 +411,12 @@ type ReleaseView struct {
 	Flavour   string    `json:"flavour"`
 	Source    string    `json:"source"`
 	Backend   string    `json:"backend"`
-	FirstSeen time.Time `json:"first_seen"`
-	LastSeen  time.Time `json:"last_seen"`
+	FirstSeen time.Time `json:"first_seen,omitzero"`
+	LastSeen  time.Time `json:"last_seen,omitzero"`
 	InWindow  bool      `json:"in_window"`
+	// Rejected: a release the operator named (-backend-version, -backend-version-url) that a feature probe
+	// contradicts, so it decides nothing.
+	Rejected bool `json:"rejected,omitempty"`
 }
 
 // backendID names a backend in the status without showing its address: a short hash of it.
@@ -412,6 +450,9 @@ type Status struct {
 	Releases   []ReleaseView `json:"releases"`
 	Gates      []GateView    `json:"gates"`
 	Mismatches []string      `json:"mismatches"`
+	// NamedBehind is the named release (-backend-version, -backend-version-url) the probes show the backend to be
+	// newer than: the gates above it are off.
+	NamedBehind string `json:"named_behind,omitempty"`
 	// Probing is whether feature probes run (set by the caller).
 	Probing bool `json:"feature_probes"`
 }
@@ -424,10 +465,20 @@ func (l *Layer) Status() Status {
 	cur := *l.cur.Load()
 	st := Status{Epoch: cur.epoch, Digest: cur.Digest(), Effective: cur.release.String(), Known: cur.release.Known, Changes: l.changes, LokiTarget: l.lokiTarget,
 		Releases: make([]ReleaseView, 0, len(l.seen)), Gates: make([]GateView, 0, numGates), Mismatches: []string{}}
+	if cur.meta != nil {
+		st.NamedBehind = cur.meta.behind
+	}
 	counted := l.countedLocked(now)
+	probes := l.verdictsLocked(now)
 	for _, o := range l.seen {
+		rejected := o.rel.Source == SourceVersionURL && len(contradicts(o.rel, probes)) > 0
 		st.Releases = append(st.Releases, ReleaseView{Raw: o.rel.Raw, Release: o.rel.String(), Flavour: o.rel.Flavour.String(), Source: o.rel.Source.String(),
-			Backend: backendID(o.backend), FirstSeen: o.firstSeen, LastSeen: o.lastSeen(), InWindow: counted[o]})
+			Backend: backendID(o.backend), FirstSeen: o.firstSeen, LastSeen: o.lastSeen(), InWindow: counted[o] && !rejected, Rejected: rejected})
+	}
+	if d := l.declared; d.Known {
+		rejected := len(contradicts(d, probes)) > 0
+		st.Releases = append(st.Releases, ReleaseView{Raw: d.Raw, Release: d.String(), Flavour: d.Flavour.String(), Source: d.Source.String(),
+			InWindow: !rejected, Rejected: rejected})
 	}
 	sort.Slice(st.Releases, func(i, j int) bool { return st.Releases[i].FirstSeen.Before(st.Releases[j].FirstSeen) })
 	for i := range gates {
@@ -435,7 +486,7 @@ func (l *Layer) Status() Status {
 		id := GateID(i)
 		gv := GateView{Name: g.Name, Side: g.Side.String(), Kind: g.Kind.String(), On: cur.On(id), Decided: cur.Decided(id), Source: cur.Why(id).String(),
 			From: g.FromString(), Registry: g.Registry, LastProbe: l.probeAt[i]}
-		if v := l.verdictsLocked(now)[i]; v != VerdictNone {
+		if v := probes[i]; v != VerdictNone {
 			gv.ProbeVerdict = v.String()
 		}
 		st.Gates = append(st.Gates, gv)

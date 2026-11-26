@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # validate_helm_secrets.sh — CI gate for the chart's "secret from an existing
-# Secret" values (adminAuth, deleteAuth, backendAuth, observability.otlp), and
+# Secret" values (adminAuth, deleteAuth, backendAuth, backendVersionAuth, observability.otlp), and
 # for the delete API's own token.
 #
 #   1) With each existingSecret set, the rendered manifest references the Secret
@@ -23,6 +23,7 @@ fail() { echo "FAIL: $*"; FAIL=1; }
 OUT="$(helm template rel "$CHART" \
   --set adminAuth.existingSecret=admin-sec \
   --set backendAuth.existingSecret=backend-sec \
+  --set backendVersionAuth.existingSecret=version-sec \
   --set observability.otlp.existingSecret=otlp-sec)"
 
 expect() {
@@ -30,7 +31,8 @@ expect() {
 }
 expect '"-server.admin-auth-token=$(ADMIN_AUTH_TOKEN)"'
 expect '"-backend-basic-auth=$(BACKEND_BASIC_AUTH)"'
-for pair in ADMIN_AUTH_TOKEN:admin-sec:token BACKEND_BASIC_AUTH:backend-sec:basic-auth OTLP_HEADERS:otlp-sec:headers; do
+expect '"-backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH)"'
+for pair in ADMIN_AUTH_TOKEN:admin-sec:token BACKEND_BASIC_AUTH:backend-sec:basic-auth OTLP_HEADERS:otlp-sec:headers BACKEND_VERSION_BASIC_AUTH:version-sec:basic-auth; do
   IFS=: read -r var name key <<<"$pair"
   block="$(grep -A5 -F -- "- name: $var" <<<"$OUT" || true)"
   grep -qF "name: \"$name\"" <<<"$block" || fail "$var does not reference Secret $name"
@@ -49,6 +51,7 @@ must_fail() {
 }
 must_fail --set adminAuth.existingSecret=s --set 'extraArgs.server\.admin-auth-token=plain'
 must_fail --set backendAuth.existingSecret=s --set extraArgs.backend-basic-auth=user:plain
+must_fail --set backendVersionAuth.existingSecret=s --set extraArgs.backend-version-basic-auth=user:plain
 must_fail --set observability.otlp.existingSecret=s --set observability.otlp.headers=a=b
 must_fail --set observability.otlp.existingSecret=s --set extraArgs.otlp-headers=a=b
 
@@ -90,7 +93,7 @@ grep -qF '"-backend-basic-auth=user:plain"' <<<"$PLAIN" || fail "plain backend b
 if grep -qE 'ADMIN_AUTH_TOKEN|BACKEND_BASIC_AUTH' <<<"$PLAIN"; then fail "plain values must not add the secretKeyRef env vars"; fi
 
 # --- defaults must not mention the new env vars ------------------------------
-if helm template rel "$CHART" | grep -qE 'ADMIN_AUTH_TOKEN|DELETE_API_AUTH_TOKEN|BACKEND_BASIC_AUTH|OTLP_HEADERS'; then
+if helm template rel "$CHART" | grep -qE 'ADMIN_AUTH_TOKEN|DELETE_API_AUTH_TOKEN|BACKEND_BASIC_AUTH|BACKEND_VERSION_BASIC_AUTH|OTLP_HEADERS'; then
   fail "default render must not reference the secret env vars"
 fi
 

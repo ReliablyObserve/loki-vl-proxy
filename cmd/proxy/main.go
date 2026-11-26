@@ -98,6 +98,9 @@ type proxyRuntimeConfig struct {
 	backendAllowUnsupportedVersion      bool
 	backendVersionCheckTimeout          time.Duration
 	backendVersionStrict                bool
+	backendVersionURL                   string
+	backendVersionBasicAuth             string
+	backendVersion                      string
 	backendVersionReprobeInterval       time.Duration
 	backendFeatureProbes                bool
 	backendBasicAuth                    string
@@ -184,6 +187,7 @@ type proxyRuntimeConfig struct {
 	metricsTrustProxyHeaders            bool
 	metricsExportSensitiveLabels        bool
 	metricsMaxConcurrency               int
+	metricsDurationBuckets              string
 	logRequestSampleRate                int
 	logBuffered                         bool
 	logStatsInterval                    time.Duration
@@ -194,6 +198,10 @@ type proxyRuntimeConfig struct {
 	labelBrowseExtensions               string
 	errorResponseMessageField           bool
 	warmupMaxJitter                     time.Duration
+	cacheShutdownFlushTimeout           time.Duration
+	cacheStartupWarmBytes               int64
+	cacheStartupWarmTimeout             time.Duration
+	cacheHandoverScope                  func() string
 	labelStyle                          string
 	metadataFieldMode                   string
 	translateOTel                       *bool
@@ -555,6 +563,9 @@ func run(
 	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
 	diskCacheMinTTL := fs.Duration("disk-cache-min-ttl", 30*time.Second, "Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies")
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages")
+	cacheShutdownFlushTimeout := fs.Duration("cache-shutdown-flush-timeout", 0, "Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds")
+	cacheStartupWarmBytes := fs.Int64("cache-startup-warm-bytes", 0, "Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none")
+	cacheStartupWarmTimeout := fs.Duration("cache-startup-warm-timeout", 120*time.Second, "Longest /ready answers 503 (response cache warming) while the start-up warm-up runs: the replica reports ready when the warm-up finishes, or after this timeout, whichever comes first; the warm-up stops at this deadline with the hottest entries restored")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 	tenantMapFile := fs.String("tenant-map-file", "", "Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes.")
@@ -648,6 +659,9 @@ func run(
 	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
 	backendVersionReprobeInterval := fs.Duration("backend-version-reprobe-interval", proxy.DefaultBackendVersionReprobeInterval, "How often the proxy reads the VictoriaLogs release again (/metrics) and probes the feature gates (-backend-feature-probes), jittered by 10%, one round at a time per replica, so an upgrade or a rollback of VictoriaLogs changes the gates without a proxy restart. A release leaves the lowest-release window after six intervals without being seen (behind a load balancer each read reaches one random member). 0 disables the periodic round (the release is still read at startup and, while unknown, retried on traffic every 5 minutes); a non-zero value below 10s is raised to 10s. GET /admin/capabilities shows the result")
 	backendFeatureProbes := fs.Bool("backend-feature-probes", true, "Probe VictoriaLogs for the features the proxy's gates depend on (a few tiny read-only queries over an empty one-second window at startup and every -backend-version-reprobe-interval, sent with the proxy's own backend auth and never counted as client requests). A probe decides a gate when no release is readable (behind vmauth without a /metrics route) and cross-checks it when one is: a gate the observed behaviour contradicts is turned by the behaviour and reported. false decides the gates from the release alone; an unreadable release then holds the v1.49.0 floor")
+	backendVersionURL := fs.String("backend-version-url", "", "VictoriaLogs /metrics URL to read the release from instead of the backend's, for example http://vlselect:9471/metrics: behind vmauth the backend's /metrics is vmauth's own, so the gates that need the release stay off. Name the same VictoriaLogs the proxy queries (vlselect in a cluster); it is read at startup and every -backend-version-reprobe-interval, the lowest release read in the window decides, a feature probe that contradicts the release discards it, and the release enables only the gates a probe confirms (so none newer than every probed feature, such as vl.extra_filters_len). No backend auth, header or tenant is sent to it, redirects are not followed, at most 2 MiB of the answer are read within -backend-version-check-timeout, and credentials in the URL are refused (-backend-version-basic-auth). Needs -backend-feature-probes=true")
+	backendVersionBasicAuth := fs.String("backend-version-basic-auth", "", "Basic auth (user:password) sent to -backend-version-url and nowhere else")
+	backendVersion := fs.String("backend-version", "", "VictoriaLogs release behind the proxy, for example v1.54.0, when no endpoint reports it. A claim, not a reading: it enables only the gates a feature probe confirms (a gate newer than every probed feature, such as vl.extra_filters_len, stays off), it is discarded when a probe contradicts it, and against a release read from the backend or -backend-version-url the lower one decides. Prefer -backend-version-url, and update this on every VictoriaLogs upgrade. Needs -backend-feature-probes=true")
 	backendVersionStrict := fs.Bool("backend-version-strict", false, "When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set.")
 	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
 	backendCompression := fs.String("backend-compression", "auto", "Backend HTTP compression preference: auto, gzip, zstd, none")
@@ -755,6 +769,7 @@ func run(
 	metricsMaxClients := fs.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
 	metricsTrustProxyHeaders := fs.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
 	metricsExportSensitiveLabels := fs.Bool("metrics.export-sensitive-labels", false, "Export per-tenant and per-client identity metrics on /metrics and OTLP")
+	metricsDurationBuckets := fs.String("metrics.duration-buckets", "", "Comma-separated upper bounds, in seconds, of the duration histograms on /metrics and OTLP (request, backend, tenant and client request duration, request phase, internal operation and query_range window durations): finite numbers above zero in ascending order, at most 32; +Inf is added. Empty uses 0.001,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,15,20,30,45,60,90,120. Each bound adds one series to every duration histogram series")
 	metricsMaxConcurrency := fs.Int("server.metrics-max-concurrency", 1, "Maximum concurrent /metrics scrapes served at once (0 disables the cap)")
 
 	// Label translation
@@ -838,6 +853,9 @@ func run(
 	}
 	if *responseCompressionMinBytes < 0 {
 		return fmt.Errorf("invalid -response-compression-min-bytes: must be >= 0")
+	}
+	if err := validateCacheHandoverFlags(*cacheShutdownFlushTimeout, *cacheStartupWarmBytes, *cacheStartupWarmTimeout); err != nil {
+		return err
 	}
 	if *patternsScope != "stream" && *patternsScope != "selector" {
 		return fmt.Errorf("invalid -patterns-scope: %q (must be 'stream' or 'selector')", *patternsScope)
@@ -990,6 +1008,9 @@ func run(
 			backendAllowUnsupportedVersion:      *backendAllowUnsupportedVersion,
 			backendVersionCheckTimeout:          *backendVersionCheckTimeout,
 			backendVersionStrict:                *backendVersionStrict,
+			backendVersionURL:                   *backendVersionURL,
+			backendVersionBasicAuth:             *backendVersionBasicAuth,
+			backendVersion:                      *backendVersion,
 			backendVersionReprobeInterval:       *backendVersionReprobeInterval,
 			backendFeatureProbes:                *backendFeatureProbes,
 			backendBasicAuth:                    *backendBasicAuth,
@@ -1076,6 +1097,7 @@ func run(
 			metricsTrustProxyHeaders:            *metricsTrustProxyHeaders,
 			metricsExportSensitiveLabels:        *metricsExportSensitiveLabels,
 			metricsMaxConcurrency:               *metricsMaxConcurrency,
+			metricsDurationBuckets:              *metricsDurationBuckets,
 			logRequestSampleRate:                *logRequestSampleRate,
 			logBuffered:                         *logBuffered,
 			logStatsInterval:                    *logStatsInterval,
@@ -1086,6 +1108,10 @@ func run(
 			labelBrowseExtensions:               *labelBrowseExtensions,
 			errorResponseMessageField:           *errorResponseMessageField,
 			warmupMaxJitter:                     *warmupMaxJitter,
+			cacheShutdownFlushTimeout:           *cacheShutdownFlushTimeout,
+			cacheStartupWarmBytes:               *cacheStartupWarmBytes,
+			cacheStartupWarmTimeout:             *cacheStartupWarmTimeout,
+			cacheHandoverScope:                  lazyCacheHandoverScope(fs, envCfg, *cacheShutdownFlushTimeout, *cacheStartupWarmBytes),
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			translateOTel:                       envCfg.translateOTel,
@@ -1308,6 +1334,7 @@ func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, disabled bool,
 	}
 
 	c := cache.NewWithMaxBytes(ttl, maxEntries, maxBytes)
+	c.TrackStartupWindow()
 	if diskCfg.Path == "" {
 		return c, func() { c.Close() }, nil
 	}
@@ -2272,6 +2299,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err != nil {
 		return proxy.Config{}, err
 	}
+	durationBuckets, err := metrics.ParseDurationBuckets(cfg.metricsDurationBuckets)
+	if err != nil {
+		return proxy.Config{}, fmt.Errorf("parse -metrics.duration-buckets: %w", err)
+	}
 	if cfg.queryStatsMode != "" && cfg.queryStatsMode != proxy.QueryStatsModeLoki && cfg.queryStatsMode != proxy.QueryStatsModeVictoriaLogs {
 		return proxy.Config{}, fmt.Errorf("invalid -query-stats-mode: %q (must be 'loki' or 'victorialogs')", cfg.queryStatsMode)
 	}
@@ -2388,6 +2419,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
 		BackendVersionStrict:               cfg.backendVersionStrict,
+		BackendVersionURL:                  cfg.backendVersionURL,
+		BackendVersionBasicAuth:            cfg.backendVersionBasicAuth,
+		BackendVersion:                     cfg.backendVersion,
 		BackendVersionReprobeInterval:      cfg.backendVersionReprobeInterval,
 		BackendFeatureProbesDisabled:       !cfg.backendFeatureProbes,
 		BackendBasicAuth:                   cfg.backendBasicAuth,
@@ -2476,8 +2510,13 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		LogRateThreshold:                   cfg.logRateThreshold,
 		MetricsExportSensitiveLabels:       cfg.metricsExportSensitiveLabels,
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
+		MetricsDurationBuckets:             durationBuckets,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
+		CacheShutdownFlushTimeout:          cfg.cacheShutdownFlushTimeout,
+		CacheStartupWarmBytes:              cfg.cacheStartupWarmBytes,
+		CacheStartupWarmTimeout:            cfg.cacheStartupWarmTimeout,
+		CacheHandoverScope:                 cfg.cacheHandoverScope,
 		DisableLabelsCacheWarm:             !cfg.labelsCacheWarm,
 		LogQLDottedNames:                   cfg.logqlDottedNames,
 		LabelBrowseExtensions:              cfg.labelBrowseExtensions,

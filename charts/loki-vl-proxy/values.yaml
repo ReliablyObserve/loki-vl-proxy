@@ -294,6 +294,10 @@ extraArgs:
   # disk-cache-max-index-bytes: "16777216"
   # disk-cache-flush-interval: "5s"
   # disk-cache-max-bytes: "21474836480" # 20Gi logical LRU cap; bbolt retains free pages
+  # Restart hand-over of the response cache (needs disk-cache-path; off by default).
+  # cache-shutdown-flush-timeout: "60s" # keep inside terminationGracePeriodSeconds
+  # cache-startup-warm-bytes: "268435456" # at most half of cache-max-bytes is warmed
+  # cache-startup-warm-timeout: "120s" # ready when the warm-up finishes, or after this, whichever is first
   # otlp-endpoint: "http://otel-collector:4318/v1/metrics"
   # otlp-interval: "30s"
   # otlp-compression: "gzip"
@@ -301,6 +305,10 @@ extraArgs:
   # otlp-tls-skip-verify: "false"
   # Backend auth to VictoriaLogs
   # backend-basic-auth: "user:password"   # plain value is visible in the pod spec and `helm get values`; prefer backendAuth.existingSecret
+  # VictoriaLogs release behind vmauth (vmauth answers /metrics itself; see docs/configuration.md "Backend version behind vmauth")
+  # backend-version-url: "http://vlselect:9471/metrics"
+  # backend-version-basic-auth: "user:password"   # prefer backendVersionAuth.existingSecret
+  # backend-version: "v1.54.0"    # only when no endpoint reports the release
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
@@ -432,6 +440,7 @@ extraArgs:
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"
   # metrics.export-sensitive-labels: "false"    # include tenant/client labels in all Prometheus metrics
+  # metrics.duration-buckets: ""                # comma-separated duration histogram bounds in seconds (ascending, at most 32); empty = 0.001 … 10,15,20,30,45,60,90,120
   # server.metrics-max-concurrency: "1"         # bound concurrent /metrics scrapes (binary default 1; 0 disables the cap)
   # --- /metrics + admin/debug listener topology (v1.56.0 BREAKING) ---
   # Binary defaults flipped: server.register-instrumentation is now false in the
@@ -528,6 +537,11 @@ observability:
   metrics:
     maxTenants: 256
     maxClients: 256
+    # Bounds, in seconds, of the duration histograms (-metrics.duration-buckets), as one comma-separated string,
+    # for example "0.01,0.1,1,10,30,60,120": above zero, ascending, at most 32. Empty keeps the binary default
+    # (0.001 0.005 0.01 0.025 0.05 0.1 0.25 0.5 1 2.5 5 10 15 20 30 45 60 90 120). Each bound adds one series
+    # to every duration histogram series.
+    durationBuckets: ""
     trustProxyHeaders: false
     exportSensitiveLabels: false
   # Who ran a query: the Grafana user on the request, upstream_request, slow_request and
@@ -569,6 +583,13 @@ deleteAuth:
 # -backend-basic-auth=$(BACKEND_BASIC_AUTH) from a secretKeyRef. The plain value
 # (extraArgs.backend-basic-auth) keeps working; setting both fails rendering.
 backendAuth:
+  existingSecret: ""
+  existingSecretKey: "basic-auth"  # key within existingSecret
+
+# Basic auth of -backend-version-url (-backend-version-basic-auth) from an existing Secret holding "user:password".
+# The chart renders -backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH) from a secretKeyRef; setting it
+# together with extraArgs.backend-version-basic-auth fails rendering.
+backendVersionAuth:
   existingSecret: ""
   existingSecretKey: "basic-auth"  # key within existingSecret
 
@@ -763,6 +784,12 @@ peerService:
 # Disabled by default to keep the chart generic outside Prometheus-Operator clusters.
 serviceMonitor:
   enabled: false
+  # Keep the proxy's own label values when they collide with the scrape target's. The proxy's request, backend
+  # and cache metrics carry an "endpoint" label (query_range, labels, ...) and the Prometheus Operator adds a
+  # target label of the same name (the Service port name): with false the proxy's value arrives as
+  # "exported_endpoint" and "endpoint" is "metrics" on every series, so the chart's dashboard and alerts that
+  # select or group by endpoint do not work. A Prometheus or VMAgent "overrideHonorLabels" setting overrides this.
+  honorLabels: true
   namespace: ""
   annotations: {}
   interval: "30s"
@@ -808,8 +835,14 @@ resources:
 # - liveness:  /alive  (process is running)
 # - readiness: /ready  (backend + circuit-breaker checks)
 # - startup:   /health (basic process health)
-# Startup probe is disabled by default because the proxy starts quickly in the
-# common in-memory-cache case; enable it for slower cold starts.
+# Startup probe (startup.enabled unset): off, because the proxy starts quickly in
+# the common in-memory-cache case, and on with cacheHandover.enabled, because
+# the disk cache index is rebuilt before the listener opens. Set true or false to
+# decide yourself; every other probe.startup value you set is used as set.
+# While it has not succeeded, Kubernetes runs neither the liveness nor the
+# readiness probe, and their initialDelaySeconds count from its success.
+# Never point it at /ready: /ready also checks VictoriaLogs, so a backend outage
+# would restart every proxy.
 probe:
   liveness:
     enabled: true
@@ -828,17 +861,26 @@ probe:
     failureThreshold: 3
     successThreshold: 1
   startup:
-    enabled: false
+    # unset = off, or on with cacheHandover.enabled.
+    enabled: null
     path: /health
     initialDelaySeconds: 5
     periodSeconds: 5
     timeoutSeconds: 3
-    failureThreshold: 30
+    # unset = 30, or 60 with cacheHandover.enabled (5 s + 60 x 5 s = 305 s for
+    # the process to open its listener before it is restarted).
+    failureThreshold: null
 
 # --- Pod Disruption Budget ---
 # Recommended whenever replicaCount > 1 or HPA is enabled.
 podDisruptionBudget:
-  enabled: false
+  # unset = no PodDisruptionBudget, except with cacheHandover.enabled and
+  # replicaCount > 1 or HPA, which renders one with maxUnavailable: 1.
+  # true renders minAvailable / maxUnavailable as set here; false renders none
+  # (also when you manage a PodDisruptionBudget for these pods yourself: two
+  # budgets over one pod make its eviction fail).
+  enabled: null
+  # With maxUnavailable, set enabled: true and minAvailable: null.
   minAvailable: 1
   # maxUnavailable: 1
 
@@ -966,11 +1008,60 @@ podLabels: {}
 extraLabels: {}
 
 # --- Lifecycle ---
+# With cacheHandover.enabled the pod gets at least the preStop sleep + 60 (the
+# proxy's HTTP drain: 30 s for the main listener, 30 s for the admin and metrics
+# listeners) + shutdownFlushTimeoutSeconds + 5 seconds. The pod exits as soon as
+# the proxy is done; the grace period is only the upper bound.
 terminationGracePeriodSeconds: 30
+# A non-empty lifecycle replaces the preStop sleep cacheHandover adds.
+# The image is distroless (no shell): use the native sleep action.
 lifecycle: {}
   # preStop:
-  #   exec:
-  #     command: ["/bin/sh", "-c", "sleep 5"]
+  #   sleep:
+  #     seconds: 5
+
+# --- Response cache restart hand-over ---
+# Keeps a replica's memory cache warm across rolling restarts: on SIGTERM the
+# proxy writes its memory hot set to the disk cache (after the HTTP drain,
+# within shutdownFlushTimeoutSeconds), and the next start loads it back before
+# /ready answers 200. A pod becomes ready when it is warm, or partly warm after
+# startupWarmTimeoutSeconds, so the readiness probe holds the rollout until
+# then. Needs the disk cache (persistence.enabled, or extraArgs.disk-cache-path
+# on a volume that survives the restart). See
+# docs/disk-cache.md#restart-hand-over.
+# Enabled, the chart also renders (your own settings win):
+# - one pod at a time: a Deployment without workload.deploymentStrategy gets
+#   RollingUpdate with maxSurge: 0 and maxUnavailable: 1 (a surge pod would wait
+#   forever for the disk cache file lock of the old pod); with one replica the
+#   rollout therefore has a gap. A StatefulSet updates one pod at a time
+#   already.
+# - a PodDisruptionBudget with maxUnavailable: 1 when replicaCount > 1 or HPA
+#   is on (podDisruptionBudget.enabled unset);
+# - a startup probe (probe.startup);
+# - minReadySeconds.
+cacheHandover:
+  enabled: false
+  # -cache-shutdown-flush-timeout. Set it here rather than in extraArgs, so the
+  # grace period follows it.
+  shutdownFlushTimeoutSeconds: 60
+  # -cache-startup-warm-bytes, integer bytes: at most half of -cache-max-bytes
+  # is warmed (128 MiB at the default 256 MiB); also the most memory-only
+  # answer bytes the shutdown keeps.
+  startupWarmBytes: 134217728
+  # -cache-startup-warm-timeout: the longest /ready answers 503 for the warm-up.
+  # The pod is ready when the warm-up finishes, or partly warm once this passes
+  # (counted from before the listener opens). Generous, so a full warm-up
+  # finishes; raise it with startupWarmBytes on a slow volume.
+  startupWarmTimeoutSeconds: 120
+  # preStop sleep (the native sleep action, rendered on Kubernetes 1.30+ only)
+  # so endpoint removal reaches clients before the HTTP drain starts; 0 adds
+  # none.
+  preStopSleepSeconds: 5
+  # minReadySeconds of the workload: a restarted replica stays ready this long
+  # before the rollout stops the next one, so a crash right after ready halts the
+  # rollout and the other replicas refresh their peer list (every 15 s) first.
+  # 0 renders none.
+  minReadySeconds: 15
 
 # --- Additional containers/volumes ---
 # Escape hatches for sidecars, init containers, extra config volumes, and

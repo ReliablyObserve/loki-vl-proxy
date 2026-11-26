@@ -1450,15 +1450,19 @@
     "versions/rejected-stats-query-wording-vl-1.47 | compare:exact",
     "versions/rejected-stats-query-wording-vl-1.47 | gap:fixed",
     "versions/rejected-stats-query-wording-vl-1.47 | query",
+    "versions/release-unknown-behind-vmauth | compare:observed",
+    "versions/release-unknown-behind-vmauth | gap:fixed",
     "versions/stats-bucket-label-v1.45 | compare:exact",
     "versions/stats-bucket-label-v1.45 | gap:owner-kept",
     "versions/stats-bucket-label-v1.45 | query"
   ],
   "claim_cells": [
+    "cmd/proxy/cache_handover_scope_test.go | cache-restart-handover",
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
     "cmd/proxy/field_mapping_label_mode_test.go | field-mapping-label-names",
     "cmd/proxy/field_mapping_label_mode_test.go | semantics/field-mapping-label-modes",
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
+    "cmd/proxy/main_test.go | observability-metrics-histograms-and-labels",
     "cmd/proxy/main_test.go | operator-configurable-limits",
     "cmd/proxy/main_test.go | semantics/query-range-step-alignment",
     "cmd/proxy/main_test.go | tail-reads-settled-rows",
@@ -1474,6 +1478,8 @@
     "internal/cache/error_flights_test.go | semantics/error-cache-bounded-memory",
     "internal/cache/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/cache/error_flights_test.go | semantics/error-coalescing-request-flights",
+    "internal/cache/handover_peak_test.go | cache-restart-handover",
+    "internal/cache/handover_test.go | cache-restart-handover",
     "internal/cache/peer_close_conn_test.go | shutdown-releases-background-work",
     "internal/cache/peer_everywhere_test.go | semantics/error-cache-vl-refusal-peer-sync",
     "internal/cache/peer_hedge_test.go | peer-cache-patterns",
@@ -1488,6 +1494,7 @@
     "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
+    "internal/cache/restore_test.go | cache-restart-handover",
     "internal/capability/docs_test.go | vl-capability-layer",
     "internal/capability/gates_test.go | vl-capability-layer",
     "internal/capability/layer_test.go | vl-capability-layer",
@@ -1497,6 +1504,8 @@
     "internal/capability/probes_oracle_test.go | vl-stats-pipe-after-stats",
     "internal/capability/probes_oracle_test.go | vl-stats-range-pipe-before-stats",
     "internal/capability/release_test.go | vl-capability-layer",
+    "internal/capability/version_source_test.go | backend-version-source",
+    "internal/capability/version_source_test.go | vl-backend-version-source",
     "internal/clientprofile/detect_test.go | drilldown/client-detection-captured-header-sets",
     "internal/config/generate_edge_test.go | operator-configurable-limits",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
@@ -1615,10 +1624,13 @@
     "internal/lokierr/lokierr_test.go | status-405",
     "internal/lokierr/lokierr_test.go | status-429",
     "internal/lokierr/lokierr_test.go | status-500",
+    "internal/metrics/cache_restart_metrics_test.go | cache-restart-handover",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/capability_test.go | vl-capability-layer",
+    "internal/metrics/duration_buckets_test.go | observability-metrics-histograms-and-labels",
     "internal/metrics/query_complexity_test.go | query-complexity-limits",
     "internal/metrics/request_flow_test.go | observability-query-flow",
+    "internal/metrics/scrape_assets_test.go | observability-metrics-histograms-and-labels",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/middleware/coalescer_cancel_test.go | semantics/error-coalescing-no-inherited-cancel",
@@ -1675,6 +1687,8 @@
     "internal/proxy/backend_stale_cancel_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/backend_stale_cancel_test.go | semantics/live-request-not-cancelled-by-sibling",
     "internal/proxy/backend_url_test.go | backend-url-path-prefix",
+    "internal/proxy/backend_version_source_test.go | backend-version-source",
+    "internal/proxy/backend_version_source_test.go | vl-backend-version-source",
     "internal/proxy/bare_instant_detected_level_gap_test.go | semantics/instant-bare-range-detected-level-unknown",
     "internal/proxy/binary_aggregation_differential_test.go | loki_api_v1_query",
     "internal/proxy/binary_aggregation_differential_test.go | loki_api_v1_query_range",
@@ -1714,6 +1728,9 @@
     "internal/proxy/build_phase_replay_test.go | semantics/loki-build-phase-window",
     "internal/proxy/build_phase_replay_test.go | semantics/loki-error-phase-order",
     "internal/proxy/build_phase_window_loki_test.go | semantics/loki-build-phase-window",
+    "internal/proxy/cache_handover_log_test.go | cache-restart-handover",
+    "internal/proxy/cache_handover_test.go | cache-restart-handover",
+    "internal/proxy/cache_handover_test.go | shutdown-releases-background-work",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-parenthesized-metric-as-text",
@@ -3662,6 +3679,7 @@
     "test/e2e-fleet/peer_push_replay_test.go | peer-cache-fleet-recovery",
     "test/e2e-fleet/peer_push_replay_test.go | peer-cache-push-replay",
     "test/e2e-fleet/query_range_window_moved_reuse_test.go | semantics/query-range-window-full-limit-reads",
+    "test/e2e-fleet/restart_handover_test.go | cache-restart-handover",
     "test/e2e-fleet/settled_steps_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
@@ -3671,7 +3689,9 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
-    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki"
+    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
+    "test/helm/cache_handover_test.go | cache-restart-handover",
+    "test/helm/servicemonitor_test.go | observability-metrics-histograms-and-labels"
   ],
   "counts": {
     "case_consumers": {
@@ -3680,10 +3700,10 @@
       "drilldown": 63,
       "explore": 264,
       "grafana-datasource": 4,
-      "operator": 5
+      "operator": 6
     },
     "claiming_tests": {
-      "go": 833,
+      "go": 847,
       "playwright": 3
     },
     "page_kinds": {
@@ -3704,8 +3724,8 @@
     },
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
-    "unwired_items": 153,
-    "wired_items": 483
+    "unwired_items": 154,
+    "wired_items": 487
   },
   "gates": [
     "A/B shape selection",

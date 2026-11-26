@@ -31,6 +31,16 @@ groups:
           summary: "High 5xx error rate ({{ $value | printf \"%.1f\" }}%)"
           description: "Loki-VL-proxy 5xx error rate is above 5% for 5 minutes."
 
+      - alert: LokiVLProxyBackendVersionUnknown
+        expr: loki_vl_proxy_backend_version_known{job="loki-vl-proxy"} == 0
+        for: 30m
+        labels:
+          severity: warning
+          component: loki-vl-proxy
+        annotations:
+          summary: "VictoriaLogs release unknown to the proxy"
+          description: "Loki-VL-proxy instance {{ $labels.instance }} has not learned the VictoriaLogs release, so the capability gates that need it stay off. See the 'backend version compatibility check' WARN line."
+
       - alert: LokiVLProxyCriticalErrorRate
         expr: |
           100 * sum(rate(loki_vl_proxy_requests_total{status=~"5.."}[5m])) by (job)

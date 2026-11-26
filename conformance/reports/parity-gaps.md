@@ -430,3 +430,4 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/vector-call-blank-before-parenthesis-as-query` — A vector(n) operand spelled with blanks around its parenthesis is answered from the constant, as Loki reads it (fixed: the request rewrit... | #1644 | 0 | 0 |
 | `semantics/zero-range-metric` — A range metric over a zero range is answered with Loki's empty result, and absent_over_time over one with Loki's 1 at every step (fixed) | TBD-PR | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |
+| `versions/release-unknown-behind-vmauth` — Behind vmauth the proxy never learned the VictoriaLogs release, so release-only gates stayed off (fixed by naming the version source) | #1769 | 0 | 0 |
