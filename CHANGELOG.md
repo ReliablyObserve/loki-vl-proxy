@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A proxy kept a second full read-cache key memo (16,384 entries, about 8 MB in the memory-leak test) alive for its whole lifetime after the memo first reached its cap. The reset swapped in a new map while the handler state still held the old one; it now empties the shared map in place. Present since #419; growth is bounded to one memo again, and repeated memo misses (one reset per 16,384 calls) run 8.5% faster with 27% fewer bytes per call (`BenchmarkCanonicalReadCacheKey_MemoMissesWithResets`).
+- CI: the memory-leak, stress, load and scale-benchmark steps, the conformance registry report, the coverage report, the query-corpus build and the weekly grammar sweep piped their output into `tee` or `tail` without `pipefail`, so they passed when their tests failed. The memory-leak job hid two failures this way: the memo above, and, since #617, a goroutine check that counted the idle keep-alive connections the label inventory's parallel bucket listings leave open (three goroutines each; it now closes them before counting). These steps now run under `shell: bash`. A test in `test/ciworkflows` rejects any new step that pipes into `tee` or `tail` without `pipefail`.
+
 ## [2.370.0] - 2026-11-26
 
 ### Changed
