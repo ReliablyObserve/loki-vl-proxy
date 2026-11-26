@@ -13,6 +13,7 @@ import (
 	"hash/crc32"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,7 +50,7 @@ const (
 	DefaultPeerBulkServeMaxBytesPerSecond int64 = 64 << 20
 
 	peerBulkMaxRequestBytes = 256 << 10
-	peerBulkMaxPeers        = 1024
+	peerBulkMaxPeers        = 512
 	peerBulkMaxAddrBytes    = 256
 	// peerBulkWriteTimeout bounds one batch's write to the requester; the
 	// server's -http-write-timeout would otherwise end a long stream.
@@ -117,21 +118,34 @@ func decodeBulkRequest(body io.Reader) (bulkRequest, error) {
 	return req, nil
 }
 
-// ringFor builds the requester's ring; it fails when this replica or the
-// requester is not on it.
-func (req bulkRequest) ringFor(self string) (*bulkRing, error) {
+// onRing reports whether this replica and the requester are both on the
+// requester's ring.
+func (req bulkRequest) onRing(self string) bool {
+	var hasSelf, hasFor bool
+	for _, p := range req.Peers {
+		hasSelf, hasFor = hasSelf || p == self, hasFor || p == req.For
+	}
+	return hasSelf && hasFor && self != req.For
+}
+
+// ringFor builds the requester's ring as PeerCache.setPeers does (the same
+// virtual nodes in the same order), sorting once.
+func (req bulkRequest) ringFor(self string) *bulkRing {
 	peers := filterValidPeers(req.Peers)
 	ring := newHashRing(150)
 	seen := make(map[string]bool, len(peers))
 	for _, p := range peers {
-		if !seen[p] {
-			seen[p] = true
-			ring.add(p)
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		for i := 0; i < ring.vnodes; i++ {
+			h := hashKey(fmt.Sprintf("%s#%d", p, i))
+			ring.ring = append(ring.ring, h)
+			ring.nodeMap[h] = p
 		}
 	}
-	if !seen[self] || !seen[req.For] || self == req.For {
-		return nil, fmt.Errorf("this replica and the requester must both be on the requester's ring")
-	}
+	sort.Slice(ring.ring, func(i, j int) bool { return ring.ring[i] < ring.ring[j] })
 	br := &bulkRing{ring: ring, rf: req.Replication, self: self, target: req.For}
 	if len(req.Sources) > 0 {
 		br.sources = make(map[string]bool, len(req.Sources))
@@ -139,7 +153,7 @@ func (req bulkRequest) ringFor(self string) (*bulkRing, error) {
 			br.sources[strings.TrimSpace(s)] = true
 		}
 	}
-	return br, nil
+	return br
 }
 
 // designated reports whether this replica sends key: the requester is one of
@@ -324,8 +338,7 @@ func (pc *PeerCache) serveBulk(w http.ResponseWriter, r *http.Request, local *Ca
 		pc.bulkReject(w, http.StatusServiceUnavailable, bulkRejectRestoring, "restoring from peers")
 		return
 	}
-	ring, err := req.ringFor(pc.selfAddr)
-	if err != nil {
+	if !req.onRing(pc.selfAddr) {
 		pc.bulkReject(w, http.StatusConflict, bulkRejectBadRequest, "not on the requester's ring")
 		return
 	}
@@ -355,7 +368,7 @@ func (pc *PeerCache) serveBulk(w http.ResponseWriter, r *http.Request, local *Ca
 		}
 	}()
 	memOK := req.Scope != "" && req.Scope == pc.bulkScope()
-	outcome := pc.streamBulk(ctx, w, local, req, ring, memOK)
+	outcome := pc.streamBulk(ctx, w, local, req, req.ringFor(pc.selfAddr), memOK)
 	pc.bulk.streams[outcome].Add(1)
 }
 
@@ -508,8 +521,10 @@ func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec) []b
 }
 
 // readBulkRecords copies the committed native records the batch needs out of
-// one read transaction, checked as a lookup checks them. Legacy records are
-// not sent.
+// one read transaction, checked as a lookup checks them. The keys are looked
+// up in order and the records copied by at most min(GOMAXPROCS, 4)
+// goroutines, so a file that is not in the page cache is read with that much
+// parallelism (as the warm-up decodes). Legacy records are not sent.
 func (dc *DiskCache) readBulkRecords(recs []bulkRecord) {
 	need := false
 	for i := range recs {
@@ -523,15 +538,34 @@ func (dc *DiskCache) readBulkRecords(recs []bulkRecord) {
 		if b == nil {
 			return nil
 		}
+		raws := make([][]byte, len(recs))
 		for i := range recs {
-			r := &recs[i]
-			if !r.disk {
-				continue
-			}
-			if v := b.Get([]byte(r.key)); v != nil && dc.validateStoredDiskRecord(v, true) == nil {
-				r.record = bytes.Clone(v)
+			if recs[i].disk {
+				raws[i] = b.Get([]byte(recs[i].key))
 			}
 		}
+		var next atomic.Int64
+		copyOut := func() {
+			for {
+				i := int(next.Add(1) - 1)
+				if i >= len(recs) {
+					return
+				}
+				if v := raws[i]; v != nil && dc.validateStoredDiskRecord(v, true) == nil {
+					recs[i].record = bytes.Clone(v)
+				}
+			}
+		}
+		var wg sync.WaitGroup
+		for n := 1; n < restoreWorkers(); n++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				copyOut()
+			}()
+		}
+		copyOut()
+		wg.Wait()
 		return nil
 	})
 	if err != nil {

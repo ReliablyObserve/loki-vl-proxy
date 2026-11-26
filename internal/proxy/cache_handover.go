@@ -121,9 +121,13 @@ func (p *Proxy) restoreResponseCacheFromPeers(ctx context.Context, h *cacheHando
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout = max(time.Until(deadline), 0)
 	}
+	known := 0
+	if p.peerCache != nil {
+		known = len(p.peerCache.Peers())
+	}
 	p.log.Info("response cache restore from peers started",
 		"source", string(cache.RestoreSourcePeer),
-		"peers", len(p.peerCache.Peers()),
+		"peers", known,
 		"budget_bytes", h.warmBytes,
 		"timeout_ms", timeout.Milliseconds(),
 		"concurrency", h.peerConcurrency,

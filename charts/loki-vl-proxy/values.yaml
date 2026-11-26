@@ -305,6 +305,8 @@ extraArgs:
   # cache-shutdown-flush-timeout: "60s" # keep inside terminationGracePeriodSeconds
   # cache-startup-warm-bytes: "268435456" # at most half of cache-max-bytes is warmed
   # cache-startup-warm-timeout: "120s" # ready when the warm-up finishes, or after this, whichever is first
+  # cache-startup-peer-restore: "true" # with nothing local to warm from (new or no disk), pull this replica's entries from its peers within the warm-up's bytes and timeout
+  # cache-startup-peer-restore-concurrency: "4" # peers that peer restore streams from at once
   # otlp-endpoint: "http://otel-collector:4318/v1/metrics"
   # otlp-interval: "30s"
   # otlp-compression: "gzip"
@@ -481,6 +483,8 @@ extraArgs:
   # peer-write-through: "true"                  # push eligible writes to the key's replicas
   # peer-push-buffer-max-entries: "8192"       # pushes kept (all peers) while a peer's breaker is open or it restarts, replayed when it answers; 0 = off
   # peer-push-buffer-max-bytes: "33554432"     # bytes of those buffered pushes (32 MiB); 0 = off
+  # peer-bulk-serve-max-streams: "2"            # peer restore streams (a replica with a new disk pulling its entries) served at once; beyond them 429 and the requester retries; 0 = serve none
+  # peer-bulk-serve-max-bytes-per-second: "67108864" # bytes per second those streams send together (64 MiB/s); 0 = no rate
   # peer-write-through-min-ttl: "30s"           # only TTL >= threshold is pushed to owner peer
   # peer-hot-read-ahead-enabled: "false"        # bounded periodic prefetch from peer hot indexes
   # peer-hot-read-ahead-interval: "30s"         # base period for hot-index pull cycle
@@ -1067,6 +1071,12 @@ cacheHandover:
   # (counted from before the listener opens). Generous, so a full warm-up
   # finishes; raise it with startupWarmBytes on a slow volume.
   startupWarmTimeoutSeconds: 120
+  # A replica with nothing local to warm from (a new volume, an emptyDir disk)
+  # pulls the entries it owns or replicates from its peers instead, within the
+  # same startupWarmBytes and startupWarmTimeoutSeconds (needs peerCache);
+  # false renders -cache-startup-peer-restore=false. See
+  # docs/disk-cache.md#restore-from-peers.
+  peerRestore: true
   # preStop sleep (the native sleep action, rendered on Kubernetes 1.30+ only)
   # so endpoint removal reaches clients before the HTTP drain starts; 0 adds
   # none.

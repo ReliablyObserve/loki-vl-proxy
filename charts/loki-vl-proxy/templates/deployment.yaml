@@ -213,6 +213,9 @@ spec:
             {{- if not (hasKey .Values.extraArgs "cache-startup-warm-timeout") }}
             - {{ printf "-cache-startup-warm-timeout=%ds" (int .Values.cacheHandover.startupWarmTimeoutSeconds) | quote }}
             {{- end }}
+            {{- if and (eq (toString .Values.cacheHandover.peerRestore) "false") (not (hasKey .Values.extraArgs "cache-startup-peer-restore")) }}
+            - "-cache-startup-peer-restore=false"
+            {{- end }}
             {{- end }}
             {{- if and (gt (len .Values.patternsCustom.inline) 0) (not (hasKey .Values.extraArgs "patterns-custom")) }}
             - {{ printf "-patterns-custom=%s" (toJson .Values.patternsCustom.inline) | quote }}

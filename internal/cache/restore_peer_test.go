@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"testing"
@@ -489,3 +490,93 @@ func TestPeerRestore_LeavesNoGoroutines(t *testing.T) {
 }
 
 var _ = io.Discard
+
+// The requester's ring built by a serving peer places every key as the
+// requester's own peer cache does.
+//
+// conformance: cache-restart-handover
+func TestPeerBulkRequest_RingMatchesThePeerCacheRing(t *testing.T) {
+	peers := []string{"10.0.0.3:3100", "10.0.0.1:3100", "10.0.0.2:3100", "10.0.0.4:3100"}
+	pc := NewPeerCache(PeerConfig{SelfAddr: peers[0], DiscoveryType: "static", StaticPeers: strings.Join(peers, ","), ReplicationFactor: 3})
+	defer pc.Close()
+	req := bulkRequest{Version: 1, For: peers[0], Peers: pc.Peers(), Replication: 3}
+	ring := req.ringFor(peers[1])
+	for i := 0; i < 2000; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		if fmt.Sprint(ring.ring.getN(key, 3)) != fmt.Sprint(pc.replicasOf(key)) {
+			t.Fatalf("%s: %v vs %v", key, ring.ring.getN(key, 3), pc.replicasOf(key))
+		}
+	}
+}
+
+// Bulk requests outside the bounds are refused before any work.
+//
+// conformance: cache-restart-handover
+func TestPeerBulkRequest_Validation(t *testing.T) {
+	many := make([]string, peerBulkMaxPeers+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("10.0.%d.%d:3100", i/250, i%250)
+	}
+	for name, body := range map[string]string{
+		"version":     `{"version":2,"for":"a:1","peers":["a:1","b:1"],"replication":2}`,
+		"replication": `{"version":1,"for":"a:1","peers":["a:1","b:1"],"replication":9}`,
+		"no peers":    `{"version":1,"for":"a:1","peers":[],"replication":2}`,
+		"bad addr":    `{"version":1,"for":"a:1","peers":["a:1","nohost"],"replication":2}`,
+		"negative":    `{"version":1,"for":"a:1","peers":["a:1","b:1"],"replication":2,"max_bytes":-1}`,
+		"not json":    `{`,
+		"too many":    fmt.Sprintf(`{"version":1,"for":"a:1","peers":["%s"],"replication":2}`, strings.Join(many, `","`)),
+	} {
+		if _, err := decodeBulkRequest(strings.NewReader(body)); err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+	}
+	ok, err := decodeBulkRequest(strings.NewReader(`{"version":1,"for":"a:1","peers":["a:1","b:1"],"replication":2}`))
+	if err != nil || !ok.onRing("b:1") || ok.onRing("c:1") || ok.onRing("a:1") {
+		t.Fatalf("valid request: %v", err)
+	}
+}
+
+// discardWriter is a response writer that drops the body, so a test measures
+// what the serving side holds and not the body.
+type discardWriter struct {
+	header http.Header
+	bytes  int64
+}
+
+func (w *discardWriter) Header() http.Header         { return w.header }
+func (w *discardWriter) WriteHeader(int)             {}
+func (w *discardWriter) Write(p []byte) (int, error) { w.bytes += int64(len(p)); return len(p), nil }
+
+// Serving a stream holds about one batch, whatever the size of what it sends:
+// 64 MiB of disk records stream with a live heap below 24 MiB above the
+// cache's own.
+//
+// conformance: cache-restart-handover
+func TestPeerBulkServe_PeakMemoryIsOneBatch(t *testing.T) {
+	quietRestoreLogs(t)
+	f := newReplFleet(t, 2, 2, true, time.Second)
+	server := f.nodes[0]
+	value := restoreCorpus(1 << 20)
+	for i := 0; i < 64; i++ {
+		server.dc.Set(fmt.Sprintf("big-%03d", i), value, time.Hour)
+	}
+	server.dc.Flush()
+	req := bulkRequest{Version: 1, For: f.addr(1), Peers: []string{f.addr(0), f.addr(1)}, Replication: 2}
+	ring := req.ringFor(f.addr(0))
+	debug.FreeOSMemory()
+	runtime.GC()
+	var base runtime.MemStats
+	runtime.ReadMemStats(&base)
+	previous := debug.SetGCPercent(5)
+	defer debug.SetGCPercent(previous)
+	stop := heapPeakSampler()
+	w := &discardWriter{header: http.Header{}}
+	outcome := server.pc.streamBulk(context.Background(), w, server.c, req, ring, false)
+	peak := stop()
+	if outcome != bulkEndDone || w.bytes < 64<<20 {
+		t.Fatalf("outcome %s, %d bytes", bulkEndName(outcome), w.bytes)
+	}
+	if grew := int64(peak) - int64(base.HeapAlloc); grew > 24<<20 {
+		t.Fatalf("serving 64 MiB grew the live heap by %d MiB", grew>>20)
+	}
+}

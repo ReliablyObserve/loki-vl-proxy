@@ -10,7 +10,11 @@ reason: |
   helm), and the disk cache's startup window and progress deadline by
   TestDiskCacheStartupWindowAndProgressDeadline; a real rollout on Kubernetes
   is not run, and neither the restore nor the index rebuild is measured on a
-  network volume (the EBS targets are emulated and estimated). Not covered
-  yet: the hand-over of hot keys to peers when a replica's disk is new.
+  network volume (the EBS targets are emulated and estimated). A replica
+  with a new or no disk restores from its peers (restore-from-peers-by-pull),
+  unit- and lifecycle-proven; its fleet proof
+  TestFleet_PeerRestoreRefillsAWipedDisk is in test/e2e-fleet, and the peer
+  restore is not measured over a real pod network (loopback measured, pod
+  networks computed).
 owner_decision: null
 waiver: null

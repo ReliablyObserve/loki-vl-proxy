@@ -59,6 +59,19 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 				t.Fatalf("args %s: missing %s", args, want)
 			}
 		}
+		// The peer restore follows the flag default (on) unless turned off.
+		if strings.Contains(args, "-cache-startup-peer-restore") {
+			t.Fatalf("args %s: the peer restore flag rendered at its default", args)
+		}
+		for _, sets := range [][]string{
+			{"cacheHandover.enabled=true", "persistence.enabled=true", "cacheHandover.peerRestore=false"},
+			{"cacheHandover.enabled=true", "persistence.enabled=true", "cacheHandover.peerRestore=false", "extraArgs.cache-startup-peer-restore=true"},
+		} {
+			off := containerArgs(renderPodSpec(t, sets))
+			if got := strings.Count(off, "-cache-startup-peer-restore"); got != 1 {
+				t.Fatalf("%v: peer restore flag rendered %d times: %s", sets, got, off)
+			}
+		}
 		// preStop 5 + HTTP drain 30 + 30 + flush 60 + close 5.
 		if got := pod["terminationGracePeriodSeconds"]; got != 130 {
 			t.Fatalf("terminationGracePeriodSeconds %v, want 130", got)

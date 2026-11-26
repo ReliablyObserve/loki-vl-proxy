@@ -111,6 +111,59 @@ proxy: |
   measured; EBS targets rest on a throttled local VM without added latency and
   on latency estimates, with no EBS measurement.
 
+  Restore from peers (internal/cache/restore_peer.go, peer_bulk_serve.go,
+  peer_bulk_wire.go): a replica with nothing local to warm from (no valid
+  hand-over, a disk cache that held no record at start or none) and a peer
+  cache pulls the entries it owns or replicates from its peers inside the same
+  -cache-startup-warm-bytes and -cache-startup-warm-timeout (on whenever the
+  warm-up is: -cache-startup-peer-restore, default true; chart
+  cacheHandover.peerRestore), so /ready, the startup probe and the chart's
+  progress deadline are unchanged; the disk warm-up and the peer restore never
+  both run. Every peer is probed once (older builds without the route, serving
+  off, a peer restoring itself, a wrong token, an unreachable peer after three
+  quick tries: skipped at once), then at most
+  -cache-startup-peer-restore-concurrency streams run (POST /_cache/bulk, the
+  peer token). The requester sends its ring (peers, itself, replication
+  factor); a peer sends the keys the requester replicates for which it is the
+  first other replica among the sources, so each key crosses once; memory hot
+  set in recency order, then its disk records, newest first, up to the
+  requester's remaining budget; a busy peer (429) is asked again after
+  Retry-After until the timeout. Records go as stored (native disk records
+  with their CRC32C), in frames whose header and payload carry CRC32C: a bad
+  payload or record skips that record, a bad header ends the stream, a missing
+  end frame is truncated and keeps what arrived. Batches go through
+  admitRestoreBatch (budget, never over a held entry, behind live entries, a
+  purge since the start stops it) with the TTL the peer had left (clocks never
+  compared, under 5 s skipped), then to the local disk while memory still holds
+  the restored value and the disk nothing for the key, hottest newest; memory-
+  only answers only from the same scope and kept memory-only; push-filtered
+  (forwarded-credential) keys, shadows and patterns entries never sent. A
+  serving replica runs at most -peer-bulk-serve-max-streams streams (429 before
+  any work beyond), -peer-bulk-serve-max-bytes-per-second for all, one batch
+  per stream in memory, copies disk records out of one read transaction per
+  batch with at most min(GOMAXPROCS, 4) goroutines, counts no lookup and moves
+  no recency, refuses while it restores itself (no deadlock when all start
+  together) and ends its streams when its HTTP server starts shutting down.
+  Progress is the warm-up's metrics with source="peer"; the serving side has
+  loki_vl_proxy_peer_cache_bulk_serve_*.
+  Unit proof (internal/cache/restore_peer_test.go, peer_bulk_wire_test.go):
+  a wiped disk refills exactly the replicated keys into memory and disk with
+  the remaining TTL, each key crosses once at RF 3, serving moves no counter or
+  recency, fresher local data wins, memory-only answers only for the same scope
+  and never on disk, push-filtered keys stay, a purge during the restore wins,
+  the deadline and the budget keep the hottest, older/unreachable/restoring
+  peers fall back fast, replicas restoring together finish at once, a busy peer
+  is retried, a restoring server refuses and StopBulk ends streams, no
+  goroutine is left; corrupt payloads and records are skipped, a corrupt header
+  ends the stream, truncation keeps whole records, too-large, near-expiry and
+  out-of-scope records are skipped, oversized headers are refused
+  (FuzzPeerBulkStream). Proxy lifecycle (internal/proxy/cache_peer_restore_test.go):
+  Init restores an empty disk from a peer while /ready answers 503, nothing
+  runs with the flag or the warm-up off, the route needs the peer token, a
+  stopped server is skipped. Fleet proof TestFleet_PeerRestoreRefillsAWipedDisk
+  (test/e2e-fleet): replica b removed with its volume restores from replica a
+  before ready and repeats with 0 VictoriaLogs calls from memory.
+
 implementation:
   - internal/cache/handover.go
   - internal/cache/disk_handover.go
@@ -119,8 +172,21 @@ implementation:
   - internal/cache/disk_restore_readahead.go
   - internal/proxy/cache_handover.go
   - cmd/proxy/cache_handover_scope.go
+  - internal/cache/restore_peer.go
+  - internal/cache/peer_bulk_serve.go
+  - internal/cache/peer_bulk_wire.go
 
 decisions:
+  - id: restore-from-peers-by-pull
+    chosen: 'A replica with nothing local to warm from pulls the entries it owns or replicates from its peers before ready: a probe of every peer, then at most 4 streamed, checksummed bulk transfers (POST /_cache/bulk) of records as stored, each key from one designated source on the requester''s ring, admitted through admitRestoreBatch within the warm-up''s budget and timeout; on whenever -cache-startup-warm-bytes is set (-cache-startup-peer-restore, default true); serving bounded per replica to 2 streams and 64 MiB/s'
+    over: ['a stopping replica pushing its hot keys to the replicas that own them (issue #1766 item 3 as written: a crash or a lost volume never pushes, and the receiver may not be up)', 'filling a new disk lazily through single-key peer reads (one round trip per key on first lookup)', 'the hot-key read-ahead (8 MiB per 30 s)', 'a separate timeout and readiness gate for the peer restore (would change the chart''s progress deadline)']
+    why: 'Owner decision 2026-11-26: a replica restores from peers when needed by pulling, which also covers crashes and lost volumes; a bulk transfer moves gigabytes before ready where per-key reads cost one round trip each after ready.'
+    evidence: 'BenchmarkPeerBulkRestore, 2026-11-26, Apple M5 Pro, GOMAXPROCS=4, loopback (no network limit, no rate limit), served from the serving disk: 2 GiB s2 in 0.80 s (2.15 s with the receiver''s disk on), raw 1.17 s (1.49 s); 4 GiB s2 1.82 s (4.50 s). Pod networks computed: 2 GiB s2 at the default 64 MiB/s per serving replica 11 s from one peer, 5.6 s from two, 2.8 s from four.'
+    code: [internal/cache/restore_peer.go, internal/cache/peer_bulk_serve.go, internal/cache/peer_bulk_wire.go, internal/proxy/cache_handover.go]
+    tests: [TestPeerRestore_WipedDiskRefillsReplicatedKeys, TestPeerRestore_EachKeyCrossesTheNetworkOnce, TestPeerRestore_ServingTouchesNoCounterOrRecency, TestPeerRestore_NeverOverwritesFresherLocalData, TestPeerRestore_MemoryOnlyScopeAndPushFilter, TestPeerRestore_PurgeDuringTheRestoreWins, TestPeerRestore_OldUnreachableAndRestoringPeersFallBackFast, TestPeerRestore_AllRestartingTogetherNoDeadlock, TestPeerBulkStream_CorruptHeaderEndsTheStream, TestCachePeerRestore_InitRestoresAnEmptyDiskFromPeers, TestFleet_PeerRestoreRefillsAWipedDisk]
+    quality: 'Only keys the requester replicates, never over fresher local data, expiry never lengthened, memory-only answers only for the same scope and never on disk, forwarded-credential keys never leave their replica, a purge wins, corrupt records rejected one by one; /ready never waits past -cache-startup-warm-timeout.'
+    performance: 'BenchmarkPeerBulkRestore (internal/cache/restore_peer_bench_test.go); opt-in gate TestPeerRestore_ThroughputGate (200 MiB/s over loopback at 2 GiB). Serving: at most -peer-bulk-serve-max-streams streams and -peer-bulk-serve-max-bytes-per-second per replica; no VictoriaLogs call on either side.'
+    pending: true
   - id: restore-targets-and-probe-window-per-storage
     chosen: 'Restore time targets per storage profile, split into the index rebuild (startup probe) and the warm-up (warm-up timeout); with a disk cache a 605 s startup window and a Deployment progress deadline derived from it; warm-up timeout 120 s and flush budget 60 s unchanged'
     over: ['one pair of targets for every disk (2 GiB in 5 s, 4 GiB in 10 s)', 'a startup probe only with the restart hand-over, 305 s']

@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (298), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (302), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -14,6 +14,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-cache-max` | int | `10000` | `extraArgs.cache-max` | Maximum cache entries |
 | `-cache-max-bytes` | int | `defaultCacheMaxBytes` | `extraArgs.cache-max-bytes` | Maximum in-memory L1 cache size in bytes |
 | `-cache-shutdown-flush-timeout` | duration | `0` | `extraArgs.cache-shutdown-flush-timeout` | Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds |
+| `-cache-startup-peer-restore` | bool | `true` | `extraArgs.cache-startup-peer-restore` | With nothing local to warm from (no restart hand-over, and a disk cache that held no record at start, for example a new volume, or no disk cache), the start-up warm-up pulls the entries this replica owns or replicates from its peers in one streamed, checksummed transfer per peer before /ready answers 200: within -cache-startup-warm-bytes and -cache-startup-warm-timeout, so only when -cache-startup-warm-bytes is set and a peer cache is configured. Peers of an older build, or that do not answer, are skipped at once. false never restores from peers |
+| `-cache-startup-peer-restore-concurrency` | int | `cache.DefaultPeerRestoreConcurrency` | `extraArgs.cache-startup-peer-restore-concurrency` | Peers the start-up peer restore streams from at once (-cache-startup-peer-restore). Each stream holds at most one batch (256 entries or about 4 MiB) in memory |
 | `-cache-startup-warm-bytes` | int64 | `0` | `extraArgs.cache-startup-warm-bytes` | Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none |
 | `-cache-startup-warm-timeout` | duration | `2m0s` | `extraArgs.cache-startup-warm-timeout` | Longest /ready answers 503 (response cache warming) while the start-up warm-up runs: the replica reports ready when the warm-up finishes, or after this timeout, whichever comes first; the warm-up stops at this deadline with the hottest entries restored |
 | `-cache-ttl` | duration | `1m0s` | `extraArgs.cache-ttl` | Cache TTL for label/metadata queries |
@@ -245,6 +247,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 |---|---|---|---|---|
 | `-peer-auth-token` | string | (empty) | `extraArgs.peer-auth-token` | Shared token required on /_cache/get and /_cache/set peer-cache requests when set. When neither this flag nor -peer-auth-token-file is given, read from the PEER_AUTH_TOKEN environment variable. A flag value is readable in the process command line |
 | `-peer-auth-token-file` | string | (empty) | `extraArgs.peer-auth-token-file` | File holding the -peer-auth-token value, read once at startup |
+| `-peer-bulk-serve-max-bytes-per-second` | int64 | `cache.DefaultPeerBulkServeMaxBytesPerSecond` | `extraArgs.peer-bulk-serve-max-bytes-per-second` | Bytes per second all peer bulk restore streams this replica serves send together (records as stored, compressed when the disk cache compresses). 0 sets no rate |
+| `-peer-bulk-serve-max-streams` | int | `cache.DefaultPeerBulkServeMaxStreams` | `extraArgs.peer-bulk-serve-max-streams` | Peer bulk restore streams (a replica that starts with an empty disk pulling its entries, -cache-startup-peer-restore) this replica serves at once; a request beyond them is answered 429 at once and the requester asks again. 0 serves none: restoring peers skip this replica |
 | `-peer-discovery` | string | (empty) | `peerCache.* (chart-managed)` | dns |
 | `-peer-dns` | string | (empty) | `peerCache.* (chart-managed)` | dns |
 | `-peer-hot-read-ahead-enabled` | bool | `false` | `extraArgs.peer-hot-read-ahead-enabled` | Enable bounded hot read-ahead from peer hot index to prewarm local shadows |

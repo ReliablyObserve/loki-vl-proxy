@@ -74,6 +74,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `cacheHandover.shutdownFlushTimeoutSeconds` | `60` | `-cache-shutdown-flush-timeout` |
 | `cacheHandover.startupWarmBytes` | `134217728` | `-cache-startup-warm-bytes`, integer bytes (at most half of `-cache-max-bytes` is warmed) |
 | `cacheHandover.startupWarmTimeoutSeconds` | `120` | `-cache-startup-warm-timeout`: the pod is ready when the warm-up finishes, or partly warm after this long |
+| `cacheHandover.peerRestore` | `true` | A pod with nothing local to warm from (a new volume, an `emptyDir` disk) pulls the entries it owns or replicates from its peers instead, within the same bytes and timeout (needs `peerCache`); `false` renders `-cache-startup-peer-restore=false`. See [Restore from peers](../../docs/disk-cache.md#restore-from-peers) |
 | `cacheHandover.preStopSleepSeconds` | `5` | preStop sleep (native `sleep` action, rendered on Kubernetes 1.30+ only) before SIGTERM; `0` adds none |
 | `cacheHandover.minReadySeconds` | `15` | Workload `minReadySeconds` with the hand-over on; `0` renders none |
 | `systemMetrics.hostProc.enabled` | `false` | Mount five host `/proc` files (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) read-only as `hostPath` volumes and pass `-host-proc-root`, for host-level CPU, memory and PSI metrics. Off by default so the pod passes Pod Security `restricted`; see [Host system metrics](#host-system-metrics-opt-in) |
