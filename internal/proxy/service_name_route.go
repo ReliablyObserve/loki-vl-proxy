@@ -245,11 +245,11 @@ func (p *Proxy) sendServiceNameRouted(ctx context.Context, st *serviceNameRoute,
 		_ = resp.Body.Close()
 	}
 	outcome := "proof_failed"
-	switch {
-	case verdict == serviceNameProofFound:
+	switch verdict {
+	case serviceNameProofFound:
 		outcome = "violation"
 		p.rememberServiceNameRouteOff(inner, st.value)
-	case verdict == serviceNameProofClean:
+	case serviceNameProofClean:
 		outcome = "narrowed_read_failed"
 	}
 	full, err := send(inner, params)
