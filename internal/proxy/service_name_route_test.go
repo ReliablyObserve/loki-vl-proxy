@@ -430,6 +430,20 @@ func TestServiceNameRoute_ViolationReachesPeers(t *testing.T) {
 	if _, _, ok := b.cache.GetWithTTL("response:anything"); ok {
 		t.Error("a peer push wrote a key that is no violation key")
 	}
+	// A violation of a scope of a user's forwarded credentials is never pushed, nor taken from a peer.
+	credKey := serviceNameRouteOffKeyPrefix + "x:scope:t0:auth:" + identityFingerprintPrefix + "abc"
+	rejected := snRouteMetric(b, "peer_violation_rejected")
+	b.receiveEverywhere(serviceNameRouteSyncKeyPrefix+"y", []byte(`{"k":"`+credKey+`","x":9999999999999}`), time.Hour)
+	if snRouteMetric(b, "peer_violation_rejected") == rejected {
+		t.Error("a pushed violation of a credential scope was not rejected")
+	}
+	if _, _, ok := b.cache.GetWithTTL(credKey); ok {
+		t.Error("a peer push wrote a violation of a credential scope")
+	}
+	// The send side keeps such a key local through the same filter (rememberServiceNameRouteOff).
+	if peerPushAllowed(credKey) {
+		t.Fatal("the credential scope key is not one the push filter keeps local")
+	}
 }
 
 // formVL records every data read's whole form (path and every argument, sorted).

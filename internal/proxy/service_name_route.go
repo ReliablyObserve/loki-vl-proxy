@@ -294,7 +294,8 @@ func (p *Proxy) rememberServiceNameRouteOff(ctx context.Context, value string) {
 		return // already held (and pushed when it was found)
 	}
 	p.cache.SetLocalOnlyWithTTL(key, []byte("1"), p.serviceNameRouteViolationTTL)
-	if p.peerCache == nil {
+	if p.peerCache == nil || !peerPushAllowed(key) {
+		// A scope of a user's forwarded credentials stays on this replica, as every answer computed with them does.
 		return
 	}
 	msg, err := json.Marshal(serviceNameRouteSync{Key: key, Expires: cache.Now().Add(p.serviceNameRouteViolationTTL).UnixMilli()})
@@ -327,7 +328,8 @@ func (p *Proxy) receiveServiceNameRouteOff(_ string, value []byte, _ time.Durati
 		return
 	}
 	var msg serviceNameRouteSync
-	if err := json.Unmarshal(value, &msg); err != nil || !strings.HasPrefix(msg.Key, serviceNameRouteOffKeyPrefix) || len(msg.Key) > 512 {
+	if err := json.Unmarshal(value, &msg); err != nil || !strings.HasPrefix(msg.Key, serviceNameRouteOffKeyPrefix) || len(msg.Key) > 512 ||
+		!peerPushAllowed(msg.Key) {
 		return
 	}
 	ttl := time.UnixMilli(msg.Expires).Sub(cache.Now())
