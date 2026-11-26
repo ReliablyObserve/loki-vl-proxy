@@ -259,9 +259,9 @@ Set from the computed figures above, not from measurements on EBS:
 
 The index rebuild reads the disk one record at a time: about one 4 KiB read per
 record, one after another, because the cache file is mapped without read-ahead.
-On an emulated EBS volume (a local VM with the disk throttled, 2026-11-26; not
-EBS, and without added latency) it took 32 s for 94,000 records (a 10 GiB file)
-at 3,000 IOPS, and the number of IOPS set it, not the throughput. On a volume
+On an emulated EBS volume (a local VM with the disk throttled per container,
+2026-11-26, commit `82271617e`; not EBS, and without added latency) it took 32 s
+for 94,000 records (a 10 GiB file) at 3,000 IOPS, and the number of IOPS set it, not the throughput. On a volume
 with real latency each read also waits that latency, which more IOPS do not
 shorten: at 1 to 3 ms a read, 96,000 reads are an estimated 1.5 to 5 minutes.
 Watch `loki_vl_proxy_cache_restart_index_rebuild_duration_seconds` and raise
