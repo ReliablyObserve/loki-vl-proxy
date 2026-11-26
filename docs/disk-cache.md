@@ -347,6 +347,12 @@ phase's times 1.10 plus 1 ms, with no errors.
 | 220 requests/s, about 10% of its core | all pass, 0 errors | one replica: complete at 60 MB/s; two at once: throttled, partial (72-78%) at the deadline |
 | 2,200 requests/s, 4 CPUs (about 0.45 of a core busy) | all pass, 0 errors | one replica: complete at 60 MB/s; two at once: throttled, partial (81-87%) at the deadline |
 
+At 2,200 requests/s on one CPU (the replica at 37-64% of its core), two runs
+were INVALID under the same rule: the replica's own latency drifted between
+control phases by more than the bound (once with no restore running), so they
+prove neither way. No restore phase exceeded its worst control, and the
+governor held the restores under 1 MB/s.
+
 A looser threshold for the peer-request tail was tried and reverted: on one
 CPU at 2,200 requests/s it let a restore run at full speed while the
 replica's peer-read p99 rose beyond the bound. Under load a restore is slow
