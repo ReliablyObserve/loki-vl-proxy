@@ -68,6 +68,14 @@ var tailPipelineQueries = []string{
 	`| decolorize`,
 	// A template that fails keeps the entry with Loki's error labels.
 	`| logfmt | line_format "{{.a.b}}"`,
+	// Drop and keep stages apply to the labels a tail sends as to a query's.
+	`| keep app`,
+	`| keep env="tail", app`,
+	`| keep app, env="nope"`,
+	`| drop env`,
+	`| drop env="tail"`,
+	`| logfmt | keep msg, app`,
+	`| logfmt | drop msg, level="warn"`,
 }
 
 type tailPipelineEntry struct {
@@ -173,7 +181,7 @@ func tailPipelineLokiCount(t *testing.T, query string, start, end time.Time) int
 	return n
 }
 
-// conformance: loki_api_v1_tail, semantics/tail-delivers-rows-visible-out-of-order, tail-reads-settled-rows
+// conformance: loki_api_v1_tail, semantics/tail-delivers-rows-visible-out-of-order, tail-reads-settled-rows, semantics/tail-ignores-drop-keep
 func TestFeature_Tail_PipelineParity(t *testing.T) {
 	for _, target := range []struct{ name, url string }{
 		{"loki-profile", patternsAutodetectProxyURL},

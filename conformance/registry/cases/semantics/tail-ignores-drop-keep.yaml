@@ -1,12 +1,14 @@
 id: semantics/tail-ignores-drop-keep
-title: 'Live tail applies no drop or keep stage to the labels it sends (open)'
+title: 'Live tail applies drop and keep stages to the labels it sends (fixed)'
 pending: true
 proves:
   - loki_api_v1_tail
 consumer: explore
 why: |
-  The tail converter reads no drop or keep stage; log queries do (internal/proxy/stream_processing.go). Read from
-  the code; no live comparison recorded.
+  A tail converts its rows as a log query does, drop and keep stages included.
+  Compared live with Loki in the synthetic and native tail modes: the keep
+  matcher rows differed before semantics/keep-names-and-matchers and match now;
+  the other drop and keep rows match.
 request:
   scope: keep and drop stages
   entry: "a tail query with a keep stage"
@@ -16,11 +18,14 @@ compare:
   fields: [streams.stream labels, series labels, values]
   expect: "Loki's answer."
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1776"
   impact: explore-visible
-  effort: M
-  area: 'internal/proxy/tail.go'
+  effort: S
+  area: 'internal/proxy/tail.go, internal/proxy/stream_processing.go'
   loki: 'the kept labels only'
-  proxy: 'the stored labels'
-  planned_test: 'TestCompat_Tail drop and keep row (test/e2e-compat, group tail-multitenancy)'
+  proxy: 'the same labels'
+  visual: none
+  visual_reason: 'a live tail has no settled Grafana panel to capture; the e2e tail comparison holds it'
+  planned_test: 'TestFeature_Tail_PipelineParity (test/e2e-compat, group tail-multitenancy)'
   clusters: []
