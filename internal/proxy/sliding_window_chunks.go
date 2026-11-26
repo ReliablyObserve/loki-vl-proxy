@@ -103,8 +103,16 @@ func (p *Proxy) rankSlidingWindowChunks(ctx context.Context, r *slidingRanker, s
 // smaller size for the same read (a hint from the local cache, held to [1, buckets]).
 func (p *Proxy) slidingChunkStartSize(ctx context.Context, key string, buckets int) int {
 	size := max(1, buckets)
-	if known, measured := p.listedChunkSize(ctx, key); measured && !slidingChunksOff && known < int64(size) {
-		size = int(known) // 1 <= known < size: listedChunkSize keeps positive values only
+	if p.cache == nil || slidingChunksOff {
+		return size
+	}
+	raw, ok := p.cachePeek(ctx, p.cache, key)
+	if !ok {
+		return size
+	}
+	// Read as an int: a value past the int range is an error, not a wrapped number.
+	if known, err := strconv.Atoi(string(raw)); err == nil && known > 0 && known < size {
+		size = known
 	}
 	return size
 }
