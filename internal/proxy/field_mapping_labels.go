@@ -173,6 +173,15 @@ func (lt *LabelTranslator) streamAliasProbe(base string) string {
 	return ""
 }
 
+// streamAliasNameProbe answers translate.StreamAliasNameProbe for a stored
+// field: the alias whose stream label it holds in the alias and both modes.
+func (lt *LabelTranslator) streamAliasNameProbe(field string) string {
+	if alias, ok := lt.aliasAnswer(field); ok {
+		return translate.StreamAliasNameProbe + "=" + alias
+	}
+	return ""
+}
+
 // answerName is the name answers carry for the field a mapped label name reads.
 func (lt *LabelTranslator) answerName(label string) (string, bool) {
 	if !lt.listsAliases() {

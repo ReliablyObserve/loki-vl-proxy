@@ -121,6 +121,9 @@ func (lt *LabelTranslator) ToVL(lokiLabel string) string {
 	if strings.HasPrefix(lokiLabel, translate.StreamAliasProbe) {
 		return lt.streamAliasProbe(lokiLabel[len(translate.StreamAliasProbe):])
 	}
+	if strings.HasPrefix(lokiLabel, translate.StreamAliasNameProbe) {
+		return lt.streamAliasNameProbe(lokiLabel[len(translate.StreamAliasNameProbe):])
+	}
 	// Custom mapping takes precedence
 	if mapped, ok := lt.lokiToVL[lokiLabel]; ok {
 		return mapped

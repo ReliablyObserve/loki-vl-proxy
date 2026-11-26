@@ -70,6 +70,24 @@ func extractedCollides(base string, aliasFields []string) logsql.FilterExpr {
 // joined by commas; any other answer means none.
 const StreamAliasProbe = "\x04"
 
+// StreamAliasNameProbe is the label name a label translation function answers, followed by a stored field, with
+// the alias that field carries as its stream label (StreamAliasProbe the other way round): StreamAliasNameProbe,
+// "=" and the alias; any other answer means none.
+const StreamAliasNameProbe = "\x05"
+
+// StreamAliasName returns the alias whose stream label the stored field holds, as labelFn answers
+// StreamAliasNameProbe; "" when it answers none.
+func StreamAliasName(labelFn func(string) string, field string) string {
+	if labelFn == nil {
+		return ""
+	}
+	alias, ok := strings.CutPrefix(labelFn(StreamAliasNameProbe+field), StreamAliasNameProbe+"=")
+	if !ok {
+		return ""
+	}
+	return alias
+}
+
 // StreamAliasFields returns the stored fields whose presence in _stream makes base a stream label besides base
 // itself, as labelFn answers StreamAliasProbe; nil when it answers none.
 func StreamAliasFields(labelFn func(string) string, base string) []string {

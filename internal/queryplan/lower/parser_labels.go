@@ -56,13 +56,18 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 	if !m.unpacked() {
 		return keyed{}, nil
 	}
+	// A grouping field that holds an alias's stream label (-field-mapping-label-mode alias and both) reads, on an
+	// entry whose stream lacks it, the parsed key of the alias's name, as Loki's label of that name does.
+	aliases := m.aliasCoalesce(by)
 	// A count of one label behind its existence check keeps the exact key the field breakdown of Grafana Drilldown
 	// relies on. A rate sums that count by the same label next, which then resolves it in the middle of the query.
 	if _, count := fn.(logsql.Count); count && len(by) == 1 && m.breakdownShape(by[0]) {
-		if again {
+		if again && aliases == "" {
 			return keyed{}, &NotLoweredError{Construct: owner + existsConstruct}
 		}
-		return keyed{}, nil
+		if aliases == "" {
+			return keyed{}, nil
+		}
 	}
 	var labelBuf [6]string
 	labels := labelBuf[:0]
@@ -73,10 +78,11 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 	// The aggregated label of a stats function is dropped when empty if a pipe resolved it or a copy defined it.
 	filterArg := arg != "" && (slices.Contains(labels, arg) || m.holdsCopy() && m.hasJoined(asPipe, arg, ""))
 	if len(labels) == 0 && !filterArg {
-		return keyed{}, nil
+		return keyed{text: aliases}, nil
 	}
 	var b strings.Builder
-	b.Grow(len(labels)*192 + 64)
+	b.Grow(len(labels)*192 + 64 + len(aliases))
+	b.WriteString(aliases)
 	copies := false
 	var bases, extracted []string
 	for _, l := range labels {
@@ -104,6 +110,25 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 		b.WriteString(anyTail)
 	}
 	return keyed{text: b.String(), copies: copies}, nil
+}
+
+// aliasCoalesce is the pipes that fill each grouping field holding an alias's stream label from the parsed key of
+// the alias's name where the entry's stream lacks the field (translate.StreamAliasName); "" without such a field.
+func (m metricLog) aliasCoalesce(by []string) string {
+	var b strings.Builder
+	for _, field := range by {
+		alias := translate.StreamAliasName(m.label, field)
+		if alias == "" {
+			continue
+		}
+		b.WriteByte(' ')
+		b.WriteString(logsql.PipeFormat{
+			If:          logsql.NotExpr{Expr: logsql.FieldFilter{Field: translate.LogsQLFieldName(field), Op: logsql.FieldOpAny}},
+			Template:    "<" + alias + ">",
+			ResultField: translate.LogsQLFieldName(field),
+		}.String())
+	}
+	return b.String()
 }
 
 // addResolvable appends label to labels when it is a name, not there yet, that the translator resolves.

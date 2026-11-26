@@ -264,10 +264,17 @@ func (p *Proxy) metadataFieldExposures(vlField string) []metadataFieldExposure {
 }
 
 func addDetectedField(fields map[string]*detectedFieldSummary, label, parser, typ string, jsonPath []string, value string) {
-	if label == "" || strings.TrimSpace(value) == "" {
+	if shouldSuppressDetectedField(label) {
 		return
 	}
-	if shouldSuppressDetectedField(label) {
+	addParsedAliasField(fields, label, parser, typ, jsonPath, value)
+}
+
+// addParsedAliasField is addDetectedField for a parsed label named like an
+// alias (-field-mapping-label-mode alias and both): Loki lists it whatever its
+// name, so the suppressed names (namespace, cluster, app) are listed too.
+func addParsedAliasField(fields map[string]*detectedFieldSummary, label, parser, typ string, jsonPath []string, value string) {
+	if label == "" || strings.TrimSpace(value) == "" {
 		return
 	}
 	summary := fields[label]
@@ -1489,6 +1496,8 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				}
 				if alias, ok := p.labelTranslator.aliasAnswer(key); ok {
 					rowAliases[alias] = struct{}{}
+				} else if p.labelTranslator.isAliasLabel(lokiLabel) {
+					rowAliases[lokiLabel] = struct{}{} // a stored field named like the alias
 				}
 			}
 			labelNames[lokiLabel] = struct{}{}
@@ -1527,7 +1536,12 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 									msgJSONKeys[stored] = struct{}{}
 									label := lokiJSONPathLabel(path)
 									if _, alias := rowAliases[label]; alias {
-										addDetectedField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(leaf), path, formatDetectedValueFJ(leaf))
+										addParsedAliasField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(leaf), path, formatDetectedValueFJ(leaf))
+										return
+									}
+									if p.labelTranslator.isAliasLabel(label) {
+										// A stream label of other rows only: this row's parsed label.
+										addParsedAliasField(fields, label, "json", inferDetectedTypeFJ(leaf), path, formatDetectedValueFJ(leaf))
 										return
 									}
 									if shouldSuppressDetectedField(stored) {
@@ -1550,7 +1564,12 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 						label := p.detectedFieldName(key)
 						if _, alias := rowAliases[label]; alias {
 							// Named like an alias the row's stream carries.
-							addDetectedField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+							addParsedAliasField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+							return
+						}
+						if p.labelTranslator.isAliasLabel(label) {
+							// An alias other rows' streams carry: this row's parsed label.
+							addParsedAliasField(fields, label, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
 							return
 						}
 						if shouldSuppressDetectedField(key) {
@@ -1628,7 +1647,12 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			label := p.detectedFieldName(key)
 			if _, alias := rowAliases[label]; alias {
 				// Named like an alias the row's stream carries.
-				addDetectedField(fields, label+extractedSuffix, "logfmt", inferDetectedType(value), nil, value)
+				addParsedAliasField(fields, label+extractedSuffix, "logfmt", inferDetectedType(value), nil, value)
+				continue
+			}
+			if p.labelTranslator.isAliasLabel(label) {
+				// An alias other rows' streams carry: this row's parsed label.
+				addParsedAliasField(fields, label, "logfmt", inferDetectedType(value), nil, value)
 				continue
 			}
 			if shouldSuppressDetectedField(key) {
