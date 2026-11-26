@@ -48,7 +48,8 @@ func screenMetric(query string, aliases bool) string {
 	var s metricScan
 	if !s.scan(query) || s.ranges == 0 || s.needsUnwrap && !s.unwrap || s.keep && s.unwrap ||
 		s.nestedVector && s.unwrap ||
-		s.exists && s.candidate && (s.rate || s.existsThen) && !(aliases && s.extractedFilter) || s.extractedFilter && s.candidate && !aliases || s.jsonPath {
+		s.exists && s.candidate && (s.rate || s.existsThen) && (!aliases || !s.extractedFilter) ||
+		s.extractedFilter && s.candidate && !aliases || s.jsonPath {
 		return ""
 	}
 	if s.binary {
