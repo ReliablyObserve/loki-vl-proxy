@@ -422,9 +422,11 @@ type Config struct {
 	// default) loads none.
 	CacheStartupWarmBytes   int64
 	CacheStartupWarmTimeout time.Duration
-	// CacheHandoverScope identifies the build and configuration: memory-only
-	// answers are restored only by a process with the same scope.
-	CacheHandoverScope string
+	// CacheHandoverScope returns the build and configuration identity:
+	// memory-only answers are restored only by a process with the same scope.
+	// It is called at most once, by the warm-up or the flush (off the start-up
+	// path, as computing it can read the executable); nil or "" restores none.
+	CacheHandoverScope func() string
 
 	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
 	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error

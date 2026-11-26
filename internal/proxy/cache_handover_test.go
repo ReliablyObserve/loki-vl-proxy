@@ -86,7 +86,7 @@ func waitWarmDone(t *testing.T, p *Proxy) {
 func TestCacheHandover_ShutdownFlushesAndInitWarms(t *testing.T) {
 	backend := healthyBackend(t)
 	path := filepath.Join(t.TempDir(), "cache.db")
-	cfg := Config{CacheShutdownFlushTimeout: 5 * time.Second, CacheStartupWarmBytes: 1 << 20, CacheHandoverScope: "build-a"}
+	cfg := Config{CacheShutdownFlushTimeout: 5 * time.Second, CacheStartupWarmBytes: 1 << 20, CacheHandoverScope: func() string { return "build-a" }}
 	first := openHandoverProxy(t, path, backend.URL, cfg)
 	first.p.Init()
 	first.c.SetWithTTL("query_range:t:answer", []byte("disk answer"), time.Minute)
@@ -189,7 +189,7 @@ func TestCacheHandover_ReadyNeverWaitsPastTheTimeout(t *testing.T) {
 func TestCacheHandover_ShutdownStopsTheWarmUp(t *testing.T) {
 	backend := healthyBackend(t)
 	path := filepath.Join(t.TempDir(), "cache.db")
-	cfg := Config{CacheShutdownFlushTimeout: 5 * time.Second, CacheStartupWarmBytes: 1 << 20, CacheHandoverScope: "s"}
+	cfg := Config{CacheShutdownFlushTimeout: 5 * time.Second, CacheStartupWarmBytes: 1 << 20, CacheHandoverScope: func() string { return "s" }}
 	first := openHandoverProxy(t, path, backend.URL, cfg)
 	first.p.Init()
 	for i := 0; i < 200; i++ {

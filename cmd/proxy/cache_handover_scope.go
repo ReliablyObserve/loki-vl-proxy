@@ -64,6 +64,12 @@ func cacheHandoverScope(fs *flag.FlagSet, env envConfig, flushTimeout time.Durat
 	return version + "|" + revision + "|" + exe + "|" + hex.EncodeToString(h.Sum(nil)[:16])
 }
 
+// lazyCacheHandoverScope defers cacheHandoverScope to its first call, off the
+// start-up path (the proxy calls it once, from the warm-up or the flush).
+func lazyCacheHandoverScope(fs *flag.FlagSet, env envConfig, flushTimeout time.Duration, warmBytes int64) func() string {
+	return func() string { return cacheHandoverScope(fs, env, flushTimeout, warmBytes) }
+}
+
 func executableDigest() (string, error) {
 	path, err := os.Executable()
 	if err != nil {

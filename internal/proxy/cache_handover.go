@@ -20,7 +20,7 @@ type cacheHandoverState struct {
 	flushTimeout time.Duration
 	warmBytes    int64
 	warmTimeout  time.Duration
-	scope        string
+	scope        func() string
 
 	// ready is false while the start-up warm-up runs; /ready also stops
 	// waiting once warmDeadline (UnixNano) passes, whatever the goroutine does.
@@ -40,7 +40,10 @@ func newCacheHandoverState(cfg Config) *cacheHandoverState {
 		flushTimeout: max(cfg.CacheShutdownFlushTimeout, 0),
 		warmBytes:    max(cfg.CacheStartupWarmBytes, 0),
 		warmTimeout:  timeout,
-		scope:        cfg.CacheHandoverScope,
+		scope:        sync.OnceValue(func() string { return "" }),
+	}
+	if cfg.CacheHandoverScope != nil {
+		s.scope = sync.OnceValue(cfg.CacheHandoverScope)
 	}
 	s.ready.Store(true)
 	if s.flushTimeout > 0 && cfg.Cache != nil {
@@ -71,7 +74,7 @@ func (p *Proxy) startResponseCacheWarm() {
 		defer close(done)
 		defer cancel()
 		defer h.ready.Store(true)
-		report := p.cache.WarmFromHandover(ctx, cache.HandoverWarmOptions{Scope: h.scope, MaxBytes: h.warmBytes})
+		report := p.cache.WarmFromHandover(ctx, cache.HandoverWarmOptions{Scope: h.scope(), MaxBytes: h.warmBytes})
 		p.log.Info("response cache warmed from the restart hand-over",
 			"outcome", report.Reason,
 			"disk_entries", report.DiskEntries,
@@ -115,7 +118,7 @@ func (p *Proxy) flushResponseCacheHandover() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), h.flushTimeout)
 	defer cancel()
-	report, err := p.cache.FlushHandover(ctx, cache.HandoverFlushOptions{Scope: h.scope, MemoryBytes: h.warmBytes})
+	report, err := p.cache.FlushHandover(ctx, cache.HandoverFlushOptions{Scope: h.scope(), MemoryBytes: h.warmBytes})
 	if err != nil {
 		p.log.Warn("response cache hand-over flush failed", "error", err)
 		return

@@ -196,7 +196,7 @@ type proxyRuntimeConfig struct {
 	cacheShutdownFlushTimeout           time.Duration
 	cacheStartupWarmBytes               int64
 	cacheStartupWarmTimeout             time.Duration
-	cacheHandoverScope                  string
+	cacheHandoverScope                  func() string
 	labelStyle                          string
 	metadataFieldMode                   string
 	translateOTel                       *bool
@@ -1095,7 +1095,7 @@ func run(
 			cacheShutdownFlushTimeout:           *cacheShutdownFlushTimeout,
 			cacheStartupWarmBytes:               *cacheStartupWarmBytes,
 			cacheStartupWarmTimeout:             *cacheStartupWarmTimeout,
-			cacheHandoverScope:                  cacheHandoverScope(fs, envCfg, *cacheShutdownFlushTimeout, *cacheStartupWarmBytes),
+			cacheHandoverScope:                  lazyCacheHandoverScope(fs, envCfg, *cacheShutdownFlushTimeout, *cacheStartupWarmBytes),
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			translateOTel:                       envCfg.translateOTel,
