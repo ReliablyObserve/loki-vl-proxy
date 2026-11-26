@@ -389,7 +389,7 @@ func (c *Cache) bulkPlan(keep func(string) bool, memOK bool) ([]bulkItem, int64)
 	for elem := c.lruList.Front(); elem != nil; elem = elem.Next() {
 		key := elem.Value.(*lruEntry).key
 		e, ok := c.entries[key]
-		if !ok || e.shadow || skipL2WriteForKey(key) || !handoverKeyFits(key) || (e.memOnly && !(e.restorable && memOK)) {
+		if !ok || !bulkSendable(e, memOK) || skipL2WriteForKey(key) || !handoverKeyFits(key) {
 			continue
 		}
 		if bulkRemaining(e, now) < MinUsableTTL {
@@ -425,6 +425,13 @@ func (c *Cache) bulkPlan(keep func(string) bool, memOK bool) ([]bulkItem, int64)
 		bytes += it.size
 	}
 	return out, bytes
+}
+
+// bulkSendable reports whether a memory entry may go to a restoring peer: not
+// a non-owner shadow, and memory-only only when restorable and the scopes
+// match.
+func bulkSendable(e entry, memOK bool) bool {
+	return !e.shadow && (!e.memOnly || (e.restorable && memOK))
 }
 
 func bulkRemaining(e entry, now time.Time) time.Duration {
@@ -466,7 +473,7 @@ func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec) []b
 		recs[i].key = it.key
 		e, ok := c.entries[it.key]
 		held[i] = ok
-		if !ok || e.shadow || (e.memOnly && !(e.restorable && memOK)) {
+		if !ok || !bulkSendable(e, memOK) {
 			continue
 		}
 		if remaining := bulkRemaining(e, now); remaining >= MinUsableTTL {

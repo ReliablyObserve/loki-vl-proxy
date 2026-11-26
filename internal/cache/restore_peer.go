@@ -499,15 +499,7 @@ func (r *peerRestore) receive(body io.Reader, res *PeerRestorePeer) string {
 			r.publish()
 			continue
 		case bulkFrameEnd:
-			outcome := PeerRestoreDone
-			switch f.flags {
-			case bulkEndBudget:
-				outcome = PeerRestoreBudget
-			case bulkEndPurged:
-				outcome = PeerRestorePurged
-			case bulkEndStopped:
-				outcome = PeerRestoreStopped
-			}
+			outcome := peerEndOutcome(f.flags)
 			if r.budgetFilled() {
 				outcome = PeerRestoreBudget
 			}
@@ -534,33 +526,18 @@ func (r *peerRestore) receive(body io.Reader, res *PeerRestorePeer) string {
 			skip(RestoreSkipUnreadable, size)
 			continue
 		}
-		memOnly := f.flags&bulkFlagMemoryOnly != 0
-		ttl := time.Duration(min(f.c, uint64(math64MaxMillis))) * time.Millisecond
-		switch {
-		case memOnly && r.scope == "":
-			skip(RestoreSkipOtherScope, size)
-			continue
-		case ttl < MinUsableTTL:
-			skip(RestoreSkipExpired, size)
-			continue
-		}
-		if _, decodedSize, _, err := diskRecordHeader(record, diskRecordMaxDecoded); err == nil && int64(decodedSize+len(key)) > r.maxEntry {
-			skip(RestoreSkipTooLarge, size)
-			continue
-		}
-		decoded, err := decodeNativeDiskRecordLimit(record, int(r.maxEntry))
-		if err != nil {
-			skip(RestoreSkipUnreadable, size)
-			continue
-		}
 		e := &backing[len(batch)]
-		*e = restoreEntry{key: key, value: decoded.Value, expiry: clockNow().Add(ttl).UnixNano(), memOnly: memOnly}
+		if *e = r.decodeRecord(f, key, record); e.skip != restoreKeep {
+			skip(e.skip, size)
+			*e = restoreEntry{}
+			continue
+		}
 		if len(batch) == 0 {
 			batchStarted = time.Now()
 		}
 		batch = append(batch, e)
 		sizes = append(sizes, size)
-		batchBytes += int64(entrySize(key, decoded.Value))
+		batchBytes += int64(entrySize(key, e.value))
 		// A slow stream still lands what it sent within peerRestoreBatchWait.
 		if len(batch) >= restoreBatchKeys || batchBytes >= restoreBatchBytes || time.Since(batchStarted) >= peerRestoreBatchWait {
 			if !flush() {
@@ -571,6 +548,40 @@ func (r *peerRestore) receive(body io.Reader, res *PeerRestorePeer) string {
 }
 
 const math64MaxMillis = int64(^uint64(0)>>1) / int64(time.Millisecond)
+
+// decodeRecord checks and decodes one record frame's payload; a skip reason
+// keeps it out.
+func (r *peerRestore) decodeRecord(f bulkFrame, key string, record []byte) restoreEntry {
+	memOnly := f.flags&bulkFlagMemoryOnly != 0
+	ttl := time.Duration(min(f.c, uint64(math64MaxMillis))) * time.Millisecond
+	switch {
+	case memOnly && r.scope == "":
+		return restoreEntry{skip: RestoreSkipOtherScope}
+	case ttl < MinUsableTTL:
+		return restoreEntry{skip: RestoreSkipExpired}
+	}
+	if _, decodedSize, _, err := diskRecordHeader(record, diskRecordMaxDecoded); err == nil && int64(decodedSize+len(key)) > r.maxEntry {
+		return restoreEntry{skip: RestoreSkipTooLarge}
+	}
+	decoded, err := decodeNativeDiskRecordLimit(record, int(r.maxEntry))
+	if err != nil {
+		return restoreEntry{skip: RestoreSkipUnreadable}
+	}
+	return restoreEntry{key: key, value: decoded.Value, expiry: clockNow().Add(ttl).UnixNano(), memOnly: memOnly}
+}
+
+// peerEndOutcome is a peer's outcome for its end frame.
+func peerEndOutcome(flags byte) string {
+	switch flags {
+	case bulkEndBudget:
+		return PeerRestoreBudget
+	case bulkEndPurged:
+		return PeerRestorePurged
+	case bulkEndStopped:
+		return PeerRestoreStopped
+	}
+	return PeerRestoreDone
+}
 
 func (r *peerRestore) budgetFilled() bool {
 	r.mu.Lock()

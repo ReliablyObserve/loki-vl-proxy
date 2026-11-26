@@ -559,8 +559,11 @@ func TestPeerBulkServe_PeakMemoryIsOneBatch(t *testing.T) {
 	value := restoreCorpus(1 << 20)
 	for i := 0; i < 64; i++ {
 		server.dc.Set(fmt.Sprintf("big-%03d", i), value, time.Hour)
+		server.dc.Flush()
 	}
-	server.dc.Flush()
+	if entries, _ := server.dc.Size(); entries != 64 {
+		t.Fatalf("the disk holds %d records", entries)
+	}
 	req := bulkRequest{Version: 1, For: f.addr(1), Peers: []string{f.addr(0), f.addr(1)}, Replication: 2}
 	ring := req.ringFor(f.addr(0))
 	debug.FreeOSMemory()
