@@ -28,6 +28,8 @@ type routeVL struct {
 	found          bool
 	proofFails     bool
 	refuseNarrowed bool
+	// throttleNarrowed answers a narrowed read 429, as vmauth or an overloaded VictoriaLogs may.
+	throttleNarrowed bool
 }
 
 type routeRead struct {
@@ -58,7 +60,7 @@ func (v *routeVL) handler(t *testing.T, value string) http.Handler {
 		}
 		v.mu.Lock()
 		v.reads = append(v.reads, read)
-		found, fails, refuse := v.found, v.proofFails, v.refuseNarrowed
+		found, fails, refuse, throttle := v.found, v.proofFails, v.refuseNarrowed, v.throttleNarrowed
 		v.mu.Unlock()
 		switch {
 		case read.proof && fails:
@@ -66,6 +68,8 @@ func (v *routeVL) handler(t *testing.T, value string) http.Handler {
 		case read.proof && found:
 			_, _ = w.Write([]byte(`{"_time":"2026-11-19T23:30:00Z","_msg":"x","service_name":"` + value + `"}` + "\n"))
 		case read.proof:
+		case read.narrowed && throttle:
+			http.Error(w, "too many requests", http.StatusTooManyRequests)
 		case read.narrowed && refuse:
 			http.Error(w, "cannot parse extra_filters", http.StatusBadRequest)
 		case r.URL.Path == "/select/logsql/query":
@@ -227,9 +231,9 @@ func TestServiceNameRoute_ViolationFallsBackAndIsRemembered(t *testing.T) {
 	}
 }
 
-// TestServiceNameRoute_DoubtKeepsTheDerivedFilter: a failed proof, and a narrowed read VictoriaLogs refuses, send
-// the read again without the stream filter; a failed proof is not remembered (the next read is proven again), a
-// refused narrowing is.
+// TestServiceNameRoute_DoubtKeepsTheDerivedFilter: a failed proof, a throttled narrowed read and a narrowed read
+// VictoriaLogs refuses send the read again without the stream filter; a failed proof and a throttle are not
+// remembered (the next read is narrowed and proven again), a refused narrowing (400) is.
 //
 // conformance: semantics/service-name-stream-route
 func TestServiceNameRoute_DoubtKeepsTheDerivedFilter(t *testing.T) {
@@ -242,7 +246,17 @@ func TestServiceNameRoute_DoubtKeepsTheDerivedFilter(t *testing.T) {
 	if reads := vl.take(); len(reads) != 3 || reads[2].narrowed || reads[2].proof {
 		t.Fatalf("failed proof: %+v; want narrowed, proof, unnarrowed", reads)
 	}
-	vl.set(func(v *routeVL) { v.proofFails, v.refuseNarrowed = false, true })
+	vl.set(func(v *routeVL) { v.proofFails, v.throttleNarrowed = false, true })
+	routeQuery(t, on, q, time.Hour, 30*time.Second, "0", "")
+	if reads := vl.take(); len(reads) != 3 || reads[2].narrowed {
+		t.Fatalf("a throttled narrowed read falls back: %+v", reads)
+	}
+	vl.set(func(v *routeVL) { v.throttleNarrowed = false })
+	routeQuery(t, on, q, time.Hour, 45*time.Second, "0", "")
+	if d, n, pr := countReads(vl.take()); d != 1 || n != 1 || pr != 1 {
+		t.Fatalf("a throttle is not remembered: %d reads, %d narrowed, %d proofs; want 1, 1, 1", d, n, pr)
+	}
+	vl.set(func(v *routeVL) { v.refuseNarrowed = true })
 	routeQuery(t, on, q, time.Hour, time.Minute, "0", "")
 	if reads := vl.take(); len(reads) != 3 || reads[2].narrowed {
 		t.Fatalf("a failed proof is not remembered, a refused narrowing falls back: %+v", reads)

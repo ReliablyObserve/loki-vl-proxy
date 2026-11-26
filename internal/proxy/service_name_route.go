@@ -168,14 +168,14 @@ func (st *serviceNameRoute) proofFor(p *Proxy, ctx context.Context, scope string
 		return nil
 	}
 	e := &serviceNameProof{scope: scope, from: from, to: to, start: params.Get("start"), end: params.Get("end"), done: make(chan struct{})}
-	if len(st.proofs) > 0 && st.hasReq {
+	if first := st.proofs; len(first) > 0 && st.hasReq {
 		// The first read of a request proves its own window (a split log read that fills its limit in the newest
-		// window reads no other); a read past it proves the whole request, so every later window joins one proof.
-		if st.reqFrom < e.from {
-			e.from = st.reqFrom
-		}
-		if st.reqTo > e.to {
-			e.to = st.reqTo
+		// window reads no other); a read past it proves the rest of the request on its side of the first window
+		// (older for a backward read, newer for a forward one), so every later window joins one proof.
+		if from < first[0].from {
+			e.from, e.to = min64(from, st.reqFrom), max64(to, first[0].from)
+		} else if to > first[0].to {
+			e.from, e.to = min64(from, first[0].to), max64(to, st.reqTo)
 		}
 		e.start = time.Unix(0, e.from).UTC().Format(time.RFC3339Nano)
 		e.end = time.Unix(0, e.to).UTC().Format(time.RFC3339Nano)
@@ -238,7 +238,9 @@ func (p *Proxy) sendServiceNameRouted(ctx context.Context, st *serviceNameRoute,
 		p.observeInternalOperation(ctx, serviceNameRouteOperation, "narrowed", time.Since(began))
 		return resp, nil
 	}
-	refused := err == nil && resp.StatusCode >= http.StatusBadRequest && resp.StatusCode < http.StatusInternalServerError
+	// Only a refusal of the text (400, 422) says the release cannot read the stream filter; a throttle (429), a
+	// timeout (408) or a server error says nothing about it.
+	refused := err == nil && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
@@ -279,4 +281,11 @@ func (p *Proxy) rememberServiceNameRouteOff(ctx context.Context, value string) {
 		return
 	}
 	p.cache.SetReplicatedWithTTL(p.serviceNameRouteOffKey(ctx, value), []byte("1"), p.serviceNameRouteViolationTTL)
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
