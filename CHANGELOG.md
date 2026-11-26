@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Cache sizing signals (#1767), off by default: `-cache-sizing-signals` exports, for the primary cache, `loki_vl_proxy_cache_ghost_hits_total{tier,scenario}` (misses of the memory or disk tier that twice its budget, `2x_bytes`, or every TTL doubled, `2x_ttl`, would have answered), `loki_vl_proxy_cache_working_set_keys` and `_bytes{window="5m"|"1h"|"24h"}`, `loki_vl_proxy_cache_reuse_interval_seconds{layer}`, and `loki_vl_proxy_cache_hit_bytes_total{class,tier}` with `loki_vl_proxy_cache_requested_bytes_total{class}` for the byte hit ratio of eight answer classes. The ghosts, working set and reuse intervals follow a 1-in-16 hash sample of the keys on one goroutine, with memory bounded by construction (at most 16384 sampled keys per ghost and for the working set); the byte counters are exact; 86 fixed series. It costs about 50 ns per lookup, so it is a sizing mode; with it off, the cache paths are unchanged. `docs/cache-troubleshooting.md` gains a sizing procedure (which signal to watch, which flag to raise) and the Cache efficiency dashboard row six panels.
 
+### Security
+
+- CI tooling: the Semgrep scan environment installs `wcmatch` 11.2 instead of 8.5.2 (CVE-2026-132276 / GHSA-53pm-wgxf-c6qf, pattern matching that can take very long on crafted file names). Semgrep still declares `wcmatch~=8.3`, so the release is set by an override of the hashed lock. The proxy, its image and its chart do not include this package.
+
 ## [2.371.0] - 2026-11-26
 
 ### Added
