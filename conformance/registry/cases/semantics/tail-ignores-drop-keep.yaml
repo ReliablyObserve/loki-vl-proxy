@@ -1,0 +1,26 @@
+id: semantics/tail-ignores-drop-keep
+title: 'Live tail applies no drop or keep stage to the labels it sends (open)'
+pending: true
+proves:
+  - loki_api_v1_tail
+consumer: explore
+why: |
+  The tail converter reads no drop or keep stage; log queries do (internal/proxy/stream_processing.go). Read from
+  the code; no live comparison recorded.
+request:
+  scope: keep and drop stages
+  entry: "a tail query with a keep stage"
+  setup: "tail a stream selector followed by a keep stage"
+compare:
+  mode: observed
+  fields: [streams.stream labels, series labels, values]
+  expect: "Loki's answer."
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/tail.go'
+  loki: 'the kept labels only'
+  proxy: 'the stored labels'
+  planned_test: 'TestCompat_Tail drop and keep row (test/e2e-compat, group tail-multitenancy)'
+  clusters: []
