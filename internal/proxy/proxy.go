@@ -1972,8 +1972,9 @@ func New(cfg Config) (*Proxy, error) {
 		// Entries computed with a user's forwarded credentials stay on the
 		// replica that computed them.
 		p.peerCache.SetPushFilter(peerPushAllowed)
-		// Held VictoriaLogs refusals pushed by peers (vl_refusal.go).
-		p.peerCache.HandleEverywhere(p.receiveRefusal)
+		// Held VictoriaLogs refusals (vl_refusal.go) and service_name route violations (service_name_route.go)
+		// pushed by peers.
+		p.peerCache.HandleEverywhere(p.receiveEverywhere)
 	}
 	return p, nil
 }

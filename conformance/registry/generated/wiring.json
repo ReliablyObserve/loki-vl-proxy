@@ -2337,7 +2337,9 @@
     "semantics/service-name-stream-route": [
       "internal/proxy/service_name_route_oracle_test.go",
       "internal/proxy/service_name_route_test.go",
-      "internal/translate/service_name_stream_filter_proof_test.go"
+      "internal/translate/service_name_stream_filter_proof_test.go",
+      "test/e2e-compat/service_name_stream_filter_test.go",
+      "test/e2e-fleet/service_name_route_test.go"
     ],
     "semantics/set-operation-folded-literal-operand": [
       "internal/proxy/query_tree_validation_test.go",
@@ -6928,6 +6930,7 @@
     ],
     "test/e2e-compat/service_name_stream_filter_test.go": [
       "semantics/service-name-stream-filter",
+      "semantics/service-name-stream-route",
       "service-name-derivation",
       "vl-stream-filter-or-groups-and-missing-label"
     ],
@@ -7157,6 +7160,9 @@
     "test/e2e-fleet/restart_handover_test.go": [
       "cache-restart-handover"
     ],
+    "test/e2e-fleet/service_name_route_test.go": [
+      "semantics/service-name-stream-route"
+    ],
     "test/e2e-fleet/settled_steps_test.go": [
       "quality/query-range-settled-steps"
     ],
@@ -7192,7 +7198,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 858,
+  "tests_with_markers": 859,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

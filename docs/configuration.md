@@ -1183,41 +1183,115 @@ first non-empty of `service_name`, `service.name`, `service`, `app`, `applicatio
 filter over those fields, which VictoriaLogs evaluates on every stream of the window: Logs Drilldown sends every
 query of a service with that selector.
 
-Two ways let VictoriaLogs pick a service's streams from its stream index instead.
+Two ways let VictoriaLogs pick a service's streams from its stream index instead. Both are off by default:
 
-**Automatic, proven per read (`-service-name-stream-route`, off by default until its VictoriaLogs load is measured).** A log query (`query_range` with no
-metric function) whose selector has a positive `service_name="x"` matcher with a value, and no matcher of a
-declared `-stream-fields` label, sends each log read (`/select/logsql/query`, and the `/select/logsql/hits`
-prefilter of a split read) at least `-service-name-stream-route-min-window` long with the stream filter
+- `-service-name-stream-label-only` is a declaration. It needs no read beside each read and lowers VictoriaLogs'
+  work, but it is exact only while the declaration holds. Prefer it where the declaration holds.
+- `-service-name-stream-route` checks each read and is always exact, but adds a read and VictoriaLogs work. It is
+  for a large, mostly idle VictoriaLogs where the declaration cannot be made.
+
+### Automatic route: `-service-name-stream-route` (off by default, opt in)
+
+The automatic route is **off by default**. Turn it on with `-service-name-stream-route=true` (Helm
+`extraArgs.service-name-stream-route: "true"`); turn it off again by removing the flag or setting it to `false`.
+Off, every query text, cache key and VictoriaLogs call is what the proxy sends without it.
+
+**How it works.** For a log query of one service, each VictoriaLogs log read gets the stream filter
 `{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` in `extra_filters`.
-Beside it, at the same time and over the same window and tenant, it reads the rows that filter leaves out and the
-derived filter keeps:
+That argument is ANDed with the query, so VictoriaLogs reads only the streams that can hold the service, through
+its stream index. At the same time, over the same window and tenant, the proxy reads the rows that filter leaves out
+and the derived filter keeps:
 
 ```
 (service_name:="x" OR (service_name:="" "service.name":="x")) -{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""} | limit 1
 ```
 
-The narrowed answer is used only when that read returns no row. A row, an error, a timeout or a narrowed read
-VictoriaLogs refuses sends the read again without the stream filter, the read the proxy makes with the route off,
-so every answer is the derived filter's. A found row (or a refused narrowing) is remembered for that tenant and
-service for `-service-name-stream-route-violation-ttl` (memory, pushed to the peers): its log reads then go to
-VictoriaLogs once, unnarrowed, with no read beside them. No verdict that a window is clean is kept: each request
-proves its own reads, so a row written later, also into an earlier window, is seen by the next request. A row that
-arrives while a request runs may be in or out of its answer, as for any VictoriaLogs read. The query text, the
-translation and every cache key stay the same as with the route off.
+- The narrowed answer is used only when that read returns no row.
+- A row, an error, a timeout or a narrowed read VictoriaLogs refuses (400, 422) sends the read again without the
+  stream filter. That is the read the proxy makes with the route off, so every answer is the derived filter's.
+- A found row (or a refused narrowing) is remembered per tenant and service for
+  `-service-name-stream-route-violation-ttl` (default `1h`). It is kept in memory and pushed to every peer, so
+  every replica then sends that service's log reads once, unnarrowed, with no read beside them.
+- No verdict that a window is clean is ever kept: each request proves its own reads. A row written later, also
+  into an earlier window, is seen by the next request. A row that arrives while a request runs may be in or out
+  of its answer, as for any VictoriaLogs read.
+- A request makes at most two proof reads: its first window, then the rest of the request on that side.
 
-What it costs: the read beside the narrowed one reads the other streams of the window, so the route shortens log
-reads (the sort and the parser pipes run on the service's rows only) and adds one VictoriaLogs call per read; it
-does not lower VictoriaLogs' total work. A request makes at most two such reads, whatever its number of windows
-(its first window, then the rest of the request). On reads shorter than the minimum window the extra read costs
-about what the derived filter costs, so those keep the derived filter alone. Metric queries, instant queries and the
-other endpoints (detected fields and labels, volume, patterns, label values, tail) keep the derived filter alone:
-a metric read's proof costs as much as the derived filter at 1h and below, so it would not be faster. Each decision is counted in
-`loki_vl_proxy_internal_operation_total{operation="service_name_stream_route"}` with the outcome `narrowed`,
-`violation`, `proof_failed`, `narrowed_read_failed`, `narrowed_read_refused`, `proof_bound` or
-`remembered_violation`.
+**What is eligible.**
+- `query_range` log queries (no metric function).
+- The selector has a positive `service_name="x"` matcher with a value, and no matcher of a declared
+  `-stream-fields` label.
+- Only log reads (`/select/logsql/query`, and the `/select/logsql/hits` prefilter of a split read) at least
+  `-service-name-stream-route-min-window` (default `30m`) long are narrowed.
+- Everything else keeps the derived filter alone, with no read beside it:
+  - metric queries and instant queries;
+  - detected fields and labels, volume, patterns, label values and tail;
+  - `!=`, `=~`, `!~` and empty matchers;
+  - shorter reads;
+  - reads the handler makes before the log read, such as the parser probe of `| json | logfmt`.
 
-**Declared (`-service-name-stream-label-only`, off by default).** It writes the same stream filter into every
+**What it costs.** Measured on an isolated stack: VictoriaLogs v1.54.0, 598k rows, 28k streams, 15 services,
+`service_name` a stream label on every row.
+
+- **Bytes read.** The read beside the narrowed one processes every row the derived filter processes. Per read,
+  narrowed plus proof read 1.20x to 1.46x the bytes of the derived filter alone, for example 6.2 MB instead of
+  4.9 MB for a 1h read of the largest service.
+- **Calls.** One more VictoriaLogs call per narrowed read: 2 instead of 1 for a plain log query, 3 instead of 2
+  with `| json`. An exact repeat is answered from the cache with 0 calls either way.
+- **Load.** With 8 concurrent clients for 60 s, mostly cache misses:
+
+  | route | requests/s | p50 | p95 | VictoriaLogs CPU-s per request | VictoriaLogs calls per request |
+  |---|---|---|---|---|---|
+  | off | 231 / 216 | 26 / 28 ms | 78 / 86 ms | 0.028 / 0.029 | 1.33 |
+  | on | 176 / 113 | 36 / 54 ms | 101 / 170 ms | 0.036 / 0.052 | 2.27 |
+
+  That is 24% to 48% lower throughput, 30% to 98% higher latency, and 29% to 77% more VictoriaLogs CPU per
+  request.
+- **Single requests on that stack** were the same or slower cold: up to 3x on 30m windows.
+- **In-process VictoriaLogs (v1.49.0 and v1.54.0, 11.5M rows, one service of 1200)**, with one read at a time,
+  showed the case it is built for: log and `| json | logfmt` reads of 30m to 24h, 1.5x to 3x faster on a first
+  read and 2x to 4x on repeats. Its sort and parser pipes run on the service's rows only. **That was not tested
+  under concurrent load.**
+
+**When to opt in.** All of these should hold:
+- VictoriaLogs is large and mostly idle, so a read beside each read costs latency but not throughput.
+- Log panels of one service read long windows with parser pipes.
+- `-service-name-stream-label-only` cannot be used, because its declaration is false for some tenant or cannot be
+  checked.
+
+**When not to opt in.** Do not turn it on when VictoriaLogs is busy or CPU-bound, when most reads are short, or
+when the declaration of `-service-name-stream-label-only` holds. In the last case prefer that flag: it narrows
+log and metric reads alike with no extra read, so it lowers VictoriaLogs' work (reads 1.3x to 3.7x faster on a first read and 3.7x to 9.4x on repeats, measured),
+while the route never does.
+
+**Check it on your own deployment.**
+1. Enable it on one replica, or in a staging stack, with `-debug-vl-calls-header`.
+2. Compare the same Logs Drilldown and Explore views with it on and off:
+   - `X-Loki-VL-Backend-Calls` per request;
+   - the request duration histograms (`loki_vl_proxy_request_duration_seconds{endpoint="query_range"}`);
+   - VictoriaLogs' own `process_cpu_seconds_total` and `vl_http_requests_total{path="/select/logsql/query"}`.
+3. Watch what the route decides, by outcome, in `loki_vl_proxy_internal_operation_total{operation="service_name_stream_route"}`
+   and its `_duration_seconds` histogram:
+
+   | outcome | meaning |
+   |---|---|
+   | `narrowed` | the proof was clean and the narrowed answer was used |
+   | `violation` | the proof found a row; the read went out again without the filter |
+   | `proof_failed` | the proof erred or timed out; the read went out again |
+   | `narrowed_read_failed` | the narrowed read failed; the read went out again |
+   | `narrowed_read_refused` | VictoriaLogs refused the filter; remembered |
+   | `proof_bound` | the request reached its proof bound; the read went out unnarrowed |
+   | `remembered_violation` | a held violation sent the request to the derived filter alone |
+   | `violation_sent_to_peers` / `peer_violation_received` / `peer_violation_rejected` | the peer push of a violation |
+
+   The per-request log line carries these as `proxy.operations_by_type` at `DEBUG` (see [observability](observability.md)).
+4. Keep it only if `narrowed` dominates, latency drops, and VictoriaLogs CPU per request does not rise beyond what
+   you accept. Many `violation` or `remembered_violation` outcomes mean the deployment stores `service_name` or
+   `service.name` as regular fields, and the route then only adds reads.
+
+### Declared: `-service-name-stream-label-only` (off by default)
+
+It writes the same stream filter into every
 plan-served selector with a positive matcher, log and metric queries alike, with no read beside it, and replaces
 the automatic route when set. It relies on a statement about how the deployment ingests; turn it on only when both
 hold for every tenant:

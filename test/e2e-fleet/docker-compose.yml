@@ -107,6 +107,9 @@ services:
       - "-label-values-index-persist-interval=2s"
       - "-label-values-index-startup-stale-threshold=10m"
       - "-label-values-index-startup-peer-warm-timeout=5s"
+      # The automatic service_name route, opted in, so its remembered violations are proven across replicas
+      # (TestFleet_ServiceNameRouteViolationReachesPeers); it only changes log queries of a service_name selector.
+      - "-service-name-stream-route=true"
       # One extra flag for the build under test, e.g.
       # FLEET_PROXY_EXTRA_ARG=-peer-replication-factor=1 on a build that has
       # replication; the default repeats a flag above, a no-op on any build.
@@ -168,6 +171,9 @@ services:
       - "-label-values-index-persist-interval=2s"
       - "-label-values-index-startup-stale-threshold=10m"
       - "-label-values-index-startup-peer-warm-timeout=5s"
+      # The automatic service_name route, opted in, so its remembered violations are proven across replicas
+      # (TestFleet_ServiceNameRouteViolationReachesPeers); it only changes log queries of a service_name selector.
+      - "-service-name-stream-route=true"
       # One extra flag for the build under test, e.g.
       # FLEET_PROXY_EXTRA_ARG=-peer-replication-factor=1 on a build that has
       # replication; the default repeats a flag above, a no-op on any build.
@@ -229,6 +235,9 @@ services:
       - "-label-values-index-persist-interval=2s"
       - "-label-values-index-startup-stale-threshold=10m"
       - "-label-values-index-startup-peer-warm-timeout=5s"
+      # The automatic service_name route, opted in, so its remembered violations are proven across replicas
+      # (TestFleet_ServiceNameRouteViolationReachesPeers); it only changes log queries of a service_name selector.
+      - "-service-name-stream-route=true"
       # One extra flag for the build under test, e.g.
       # FLEET_PROXY_EXTRA_ARG=-peer-replication-factor=1 on a build that has
       # replication; the default repeats a flag above, a no-op on any build.

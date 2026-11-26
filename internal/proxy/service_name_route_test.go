@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -359,5 +360,137 @@ func BenchmarkWithServiceNameRoute(b *testing.B) {
 				_ = p.withServiceNameRoute(r, parsed)
 			}
 		})
+	}
+}
+
+// snRouteMetric reads p's count of a service_name route outcome from its /metrics.
+func snRouteMetric(p *Proxy, outcome string) string {
+	rec := httptest.NewRecorder()
+	p.metrics.Handler(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		if strings.HasPrefix(line, `loki_vl_proxy_internal_operation_total{operation="service_name_stream_route",outcome="`+outcome+`"}`) {
+			return line[strings.LastIndexByte(line, ' ')+1:]
+		}
+	}
+	return "0"
+}
+
+// TestServiceNameRoute_ViolationReachesPeers: a violation one replica finds is pushed to its peers (the everywhere
+// class), so another replica's first log read of that tenant's service goes to VictoriaLogs once, unnarrowed, with
+// no proof read; a pushed key that is not a violation key is rejected.
+//
+// conformance: semantics/service-name-stream-route
+func TestServiceNameRoute_ViolationReachesPeers(t *testing.T) {
+	vl := &routeVL{found: true}
+	srv := httptest.NewServer(vl.handler(t, "svc-a"))
+	defer srv.Close()
+	listeners := make([]net.Listener, 2)
+	for i := range listeners {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		listeners[i] = ln
+	}
+	static := listeners[0].Addr().String() + "," + listeners[1].Addr().String()
+	replicas := make([]*Proxy, 2)
+	for i, ln := range listeners {
+		pc := cache.NewPeerCache(cache.PeerConfig{SelfAddr: ln.Addr().String(), DiscoveryType: "static", StaticPeers: static, AuthToken: "peer-token", Timeout: 2 * time.Second})
+		t.Cleanup(pc.Close)
+		c := cache.New(60*time.Second, 1000)
+		c.SetL3(pc)
+		replicas[i] = serviceNameRouteProxy(t, srv.URL, func(cfg *Config) { cfg.Cache, cfg.PeerCache, cfg.PeerAuthToken = c, pc, "peer-token" })
+		mux := http.NewServeMux()
+		replicas[i].RegisterRoutes(mux)
+		hs := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+		go func() { _ = hs.Serve(ln) }()
+		t.Cleanup(func() { _ = hs.Close() })
+	}
+	a, b := replicas[0], replicas[1]
+	q := `{service_name="svc-a"}`
+	routeQuery(t, a, q, time.Hour, 0, "0", "")
+	if d, n, pr := countReads(vl.take()); d != 2 || n != 1 || pr != 1 {
+		t.Fatalf("replica a: %d reads, %d narrowed, %d proofs; want the narrowed read, the proof and the read without the filter", d, n, pr)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for snRouteMetric(b, "peer_violation_received") == "0" {
+		if time.Now().After(deadline) {
+			t.Fatal("the violation did not reach replica b")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	routeQuery(t, b, q, time.Hour, time.Minute, "0", "")
+	if d, n, pr := countReads(vl.take()); d != 1 || n != 0 || pr != 0 {
+		t.Errorf("replica b after a's violation: %d reads, %d narrowed, %d proofs; want 1, 0, 0", d, n, pr)
+	}
+	b.receiveEverywhere(serviceNameRouteSyncKeyPrefix+"x", []byte(`{"k":"response:anything","x":9999999999999}`), time.Hour)
+	if snRouteMetric(b, "peer_violation_rejected") == "0" {
+		t.Error("a pushed key that is no violation key was not rejected")
+	}
+	if _, _, ok := b.cache.GetWithTTL("response:anything"); ok {
+		t.Error("a peer push wrote a key that is no violation key")
+	}
+}
+
+// formVL records every data read's whole form (path and every argument, sorted).
+type formVL struct {
+	mu    sync.Mutex
+	reads []string
+}
+
+func (v *formVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	switch r.URL.Path {
+	case "/select/logsql/query", "/select/logsql/hits", "/select/logsql/stats_query", "/select/logsql/stats_query_range":
+		v.mu.Lock()
+		v.reads = append(v.reads, r.URL.Path+"?"+r.Form.Encode())
+		v.mu.Unlock()
+	}
+	switch {
+	case strings.Contains(r.URL.Path, "stats_query_range"):
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+	case strings.Contains(r.URL.Path, "stats_query"):
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+	case r.URL.Path == "/select/logsql/hits":
+		_, _ = w.Write([]byte(`{"hits":[]}`))
+	}
+}
+
+func (v *formVL) take() []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	out := v.reads
+	v.reads = nil
+	return out
+}
+
+// TestServiceNameRoute_OffSendsWhatTheProxyWithoutItSends: with the route off (the default) every VictoriaLogs
+// read of the Drilldown shapes, log and metric, over short and long windows, carries exactly the path and
+// arguments of the proxy built without the route's configuration at all: no extra_filters, no proof read.
+//
+// conformance: semantics/service-name-stream-route
+func TestServiceNameRoute_OffSendsWhatTheProxyWithoutItSends(t *testing.T) {
+	vl := &formVL{}
+	srv := httptest.NewServer(vl)
+	defer srv.Close()
+	off := serviceNameRouteProxy(t, srv.URL, func(c *Config) { c.ServiceNameStreamRoute = false })
+	plain := serviceNameRouteProxy(t, srv.URL, func(c *Config) {
+		c.ServiceNameStreamRoute, c.ServiceNameStreamRouteMinWindow, c.ServiceNameStreamRouteViolationTTL = false, 0, 0
+	})
+	for _, c := range serviceNameDrilldownShapes {
+		for _, window := range []time.Duration{15 * time.Minute, time.Hour, 6 * time.Hour} {
+			routeQuery(t, plain, c.query, window, 0, "0", c.step)
+			want := vl.take()
+			routeQuery(t, off, c.query, window, 0, "0", c.step)
+			got := vl.take()
+			if strings.Join(got, "\n") != strings.Join(want, "\n") {
+				t.Errorf("%s over %s: the route off sends\n%s\nthe proxy without it\n%s", c.query, window, strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+			for _, read := range got {
+				if strings.Contains(read, "extra_filters=%7Bservice_name") {
+					t.Errorf("%s: the route off sent the stream filter: %s", c.query, read)
+				}
+			}
+		}
 	}
 }

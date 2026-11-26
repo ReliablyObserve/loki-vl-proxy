@@ -5,10 +5,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -262,10 +266,13 @@ func (p *Proxy) sendServiceNameRouted(ctx context.Context, st *serviceNameRoute,
 	return full, err
 }
 
+// serviceNameRouteOffKeyPrefix starts the key of a remembered violation.
+const serviceNameRouteOffKeyPrefix = "service-name-route-off:v1:"
+
 // serviceNameRouteOffKey is the key of a remembered violation: per tenant scope and service.
 func (p *Proxy) serviceNameRouteOffKey(ctx context.Context, value string) string {
 	sum := sha256.Sum256([]byte(value))
-	return "service-name-route-off:v1:" + hex.EncodeToString(sum[:12]) + ":scope:" + p.contextScopeFingerprint(ctx)
+	return serviceNameRouteOffKeyPrefix + hex.EncodeToString(sum[:12]) + ":scope:" + p.contextScopeFingerprint(ctx)
 }
 
 func (p *Proxy) serviceNameRouteOff(ctx context.Context, value string) bool {
@@ -276,11 +283,62 @@ func (p *Proxy) serviceNameRouteOff(ctx context.Context, value string) bool {
 	return ok
 }
 
+// rememberServiceNameRouteOff keeps a found violation in this replica's memory and pushes it to every peer (the
+// everywhere class: each replica reads it from its own memory before a read, so it must hold it).
 func (p *Proxy) rememberServiceNameRouteOff(ctx context.Context, value string) {
 	if p.cache == nil || p.serviceNameRouteViolationTTL <= 0 {
 		return
 	}
-	p.cache.SetReplicatedWithTTL(p.serviceNameRouteOffKey(ctx, value), []byte("1"), p.serviceNameRouteViolationTTL)
+	key := p.serviceNameRouteOffKey(ctx, value)
+	if _, _, held := p.cache.GetWithTTL(key); held {
+		return // already held (and pushed when it was found)
+	}
+	p.cache.SetLocalOnlyWithTTL(key, []byte("1"), p.serviceNameRouteViolationTTL)
+	if p.peerCache == nil {
+		return
+	}
+	msg, err := json.Marshal(serviceNameRouteSync{Key: key, Expires: cache.Now().Add(p.serviceNameRouteViolationTTL).UnixMilli()})
+	if err != nil {
+		return
+	}
+	sum := sha256.Sum256([]byte(key))
+	if p.peerCache.Broadcast(serviceNameRouteSyncKeyPrefix+hex.EncodeToString(sum[:16]), msg, p.serviceNameRouteViolationTTL) {
+		p.observeInternalOperation(ctx, serviceNameRouteOperation, "violation_sent_to_peers", 0)
+	}
+}
+
+// serviceNameRouteSyncKeyPrefix starts the peer keys of service_name route violations.
+const serviceNameRouteSyncKeyPrefix = cache.EverywherePrefix + "snroute:v1:"
+
+// serviceNameRouteSync is a violation pushed to the peers: the local key (it carries the tenant scope's
+// fingerprint, the same on every replica) and when it expires.
+type serviceNameRouteSync struct {
+	Key     string `json:"k"`
+	Expires int64  `json:"x"`
+}
+
+// receiveServiceNameRouteOff holds a violation a peer found, for at most this replica's own TTL. A held one only
+// sends that tenant's service to the derived filter alone, the read without the route, so a peer can make this
+// replica skip a narrowing but never narrow a read.
+func (p *Proxy) receiveServiceNameRouteOff(_ string, value []byte, _ time.Duration) {
+	outcome := "peer_violation_rejected"
+	defer func() { p.observeInternalOperation(context.Background(), serviceNameRouteOperation, outcome, 0) }()
+	if p.cache == nil || p.serviceNameRouteViolationTTL <= 0 || len(value) > 1024 {
+		return
+	}
+	var msg serviceNameRouteSync
+	if err := json.Unmarshal(value, &msg); err != nil || !strings.HasPrefix(msg.Key, serviceNameRouteOffKeyPrefix) || len(msg.Key) > 512 {
+		return
+	}
+	ttl := time.UnixMilli(msg.Expires).Sub(cache.Now())
+	if ttl <= 0 {
+		return
+	}
+	if ttl > p.serviceNameRouteViolationTTL {
+		ttl = p.serviceNameRouteViolationTTL
+	}
+	p.cache.SetLocalOnlyWithTTL(msg.Key, []byte("1"), ttl)
+	outcome = "peer_violation_received"
 }
 
 func max64(a, b int64) int64 {
