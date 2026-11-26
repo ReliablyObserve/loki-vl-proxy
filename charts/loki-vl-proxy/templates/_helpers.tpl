@@ -22,6 +22,40 @@ Create a default fully qualified app name.
 {{- end }}
 
 {{/*
+loki-vl-proxy.image — every container image reference of the chart, from a dict
+of repository, tag and digest: repository:tag, repository:tag@digest or
+repository@digest.
+*/}}
+{{- define "loki-vl-proxy.image" -}}
+{{- $tag := .tag | default "" | toString -}}
+{{- $digest := .digest | default "" | toString -}}
+{{- if $digest -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $digest) -}}
+{{- fail (printf "image.digest %q is not sha256:<64 lowercase hex characters>" $digest) -}}
+{{- end -}}
+{{- if or (contains "@" (toString .repository)) (contains "@" $tag) -}}
+{{- fail "image.digest is set, so image.repository and image.tag must not hold a digest of their own" -}}
+{{- end -}}
+{{- end -}}
+{{- .repository -}}
+{{- with $tag }}:{{ . }}{{ end -}}
+{{- with $digest }}@{{ . }}{{ end -}}
+{{- end }}
+
+{{/*
+The proxy's image. Without a digest the tag defaults to the chart's appVersion;
+with one, only a tag set by the operator is kept, so the reference never names a
+version the digest may not be.
+*/}}
+{{- define "loki-vl-proxy.proxyImage" -}}
+{{- $tag := .Values.image.tag -}}
+{{- if and (not $tag) (not .Values.image.digest) -}}
+{{- $tag = .Chart.AppVersion -}}
+{{- end -}}
+{{- include "loki-vl-proxy.image" (dict "repository" .Values.image.repository "tag" $tag "digest" .Values.image.digest) -}}
+{{- end }}
+
+{{/*
 Common labels
 */}}
 {{- define "loki-vl-proxy.labels" -}}
