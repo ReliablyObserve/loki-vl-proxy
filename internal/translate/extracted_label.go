@@ -101,8 +101,12 @@ func StreamAliasFields(labelFn func(string) string, base string) []string {
 	return []string{field}
 }
 
-// streamLabelPattern is the regexp a _stream copy matches when it holds the stream label base: the label under its
+// StreamLabelPattern is the regexp a _stream copy matches when it holds the stream label base: the label under its
 // own name in either spelling, or one of aliasFields.
+func StreamLabelPattern(base string, aliasFields []string) string {
+	return streamLabelPattern(base, aliasFields)
+}
+
 func streamLabelPattern(base string, aliasFields []string) string {
 	name := dotOrUnderscore(base)
 	if len(aliasFields) > 0 {

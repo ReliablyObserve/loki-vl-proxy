@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
@@ -180,6 +181,29 @@ func (lt *LabelTranslator) streamAliasNameProbe(field string) string {
 		return translate.StreamAliasNameProbe + "=" + alias
 	}
 	return ""
+}
+
+// aliasCollisionText gives the string translator's text, for a query the
+// lowering leaves to it, the collision check the lowering writes in the alias
+// and both modes: the translator matches a stream label name_extracted
+// collides with in _stream under its own name only, where an alias's stream
+// label is stored under its field. It rewrites only the exact checks the
+// translator prints (`__lxp_stream:~"[{,]name="`, the name with its
+// underscores as [._]), and returns text unchanged in the original mode.
+func (lt *LabelTranslator) aliasCollisionText(text string) string {
+	if !lt.listsAliases() || !strings.Contains(text, translate.ExtractedScratch+"_stream:~") {
+		return text
+	}
+	for field, alias := range lt.vlToLoki {
+		if answer, ok := lt.aliasAnswer(field); !ok || answer != alias {
+			continue
+		}
+		plain := translate.ExtractedScratch + "_stream:~" + strconv.Quote(`[{,]`+strings.ReplaceAll(alias, "_", "[._]")+`="`)
+		if strings.Contains(text, plain) {
+			text = strings.ReplaceAll(text, plain, translate.ExtractedScratch+"_stream:~"+strconv.Quote(translate.StreamLabelPattern(alias, []string{field})))
+		}
+	}
+	return text
 }
 
 // answerName is the name answers carry for the field a mapped label name reads.

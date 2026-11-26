@@ -240,6 +240,9 @@ func TestCompat_FieldMappingAliasCollisionsMatchLoki(t *testing.T) {
 			m := fmt.Sprintf("sum by (%s) (count_over_time(%s [10m]))", by, q)
 			reqs = append(reqs, request{"instant " + m, "/loki/api/v1/query", url.Values{"query": {m}, "time": {at}}, collisionVectorNorm})
 		}
+		// The Logs Drilldown field breakdown of a renamed key.
+		m := fmt.Sprintf(`sum by (pod_extracted) (count_over_time(%s | pod_extracted!="" [10m]))`, q)
+		reqs = append(reqs, request{"instant " + m, "/loki/api/v1/query", url.Values{"query": {m}, "time": {at}}, collisionVectorNorm})
 	}
 
 	// Loki answers the pushed lines (its ingester holds them right away).

@@ -125,15 +125,17 @@ func TestFieldMappingLabelMode_ParsedAliasCollisionDetectedFields(t *testing.T) 
 // conformance: field-mapping-label-names, semantics/field-mapping-label-modes
 func TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL(t *testing.T) {
 	queries := map[string][]string{
-		`{service_name="s"} | logfmt | pod_extracted=~".+-1"`:                                 {`[{,](?:pod|k8s\\.pod\\.name)=\"`},
-		`sum by (pod_extracted) (count_over_time({service_name="s"} | json [5m]))`:            {`[{,](?:pod|k8s\\.pod\\.name)=\"`},
-		`{service_name="s"} | logfmt | pod="x"`:                                               {`(k8s.pod.name:* "k8s.pod.name":="x") OR (NOT k8s.pod.name:* pod:="x")`},
-		`sum by (pod) (count_over_time({service_name="s"} | logfmt [5m]))`:                    {`format if (NOT k8s.pod.name:*) "<pod>" as k8s.pod.name | stats by (k8s.pod.name)`},
-		`sum by (namespace) (rate({service_name="s"} | json [5m]))`:                           {`format if (NOT k8s.namespace.name:*) "<namespace>" as k8s.namespace.name`},
-		`sum by (pod) (count_over_time({service_name="s"} [5m]))`:                             nil,                                                        // no parser: the stream label alone
-		`sum by (k8s_pod_name) (count_over_time({service_name="s"} | logfmt [5m]))`:           {`format if (NOT k8s.pod.name:*) "<pod>" as k8s.pod.name`}, // the field, answered as pod
-		`{service_name="s"} | logfmt | k8s_pod_name="x"`:                                      nil,                                                        // the base name is no stream label name: the field
-		`sum by (k8s_pod_name_extracted) (count_over_time({service_name="s"} | logfmt [5m]))`: nil,
+		`{service_name="s"} | logfmt | pod_extracted=~".+-1"`:                      {`[{,](?:pod|k8s\\.pod\\.name)=\"`},
+		`sum by (pod_extracted) (count_over_time({service_name="s"} | json [5m]))`: {`[{,](?:pod|k8s\\.pod\\.name)=\"`},
+		`{service_name="s"} | logfmt | pod="x"`:                                    {`(k8s.pod.name:* "k8s.pod.name":="x") OR (NOT k8s.pod.name:* pod:="x")`},
+		`sum by (pod) (count_over_time({service_name="s"} | logfmt [5m]))`:         {`format if (NOT k8s.pod.name:*) "<pod>" as k8s.pod.name | stats by (k8s.pod.name)`},
+		`sum by (namespace) (rate({service_name="s"} | json [5m]))`:                {`format if (NOT k8s.namespace.name:*) "<namespace>" as k8s.namespace.name`},
+		// The Drilldown field breakdown, which the lowering leaves to the string translator (aliasCollisionText).
+		`sum by (pod_extracted) (count_over_time({service_name="s"} | logfmt | pod_extracted!="" [5m]))`: {`__lxp_stream:~"[{,](?:pod|k8s\\.pod\\.name)=\""`},
+		`sum by (pod) (count_over_time({service_name="s"} [5m]))`:                                        nil,                                                        // no parser: the stream label alone
+		`sum by (k8s_pod_name) (count_over_time({service_name="s"} | logfmt [5m]))`:                      {`format if (NOT k8s.pod.name:*) "<pod>" as k8s.pod.name`}, // the field, answered as pod
+		`{service_name="s"} | logfmt | k8s_pod_name="x"`:                                                 nil,                                                        // the base name is no stream label name: the field
+		`sum by (k8s_pod_name_extracted) (count_over_time({service_name="s"} | logfmt [5m]))`:            nil,
 	}
 	translate := func(mode FieldMappingLabelMode, q string) string {
 		p := newMappingProxy(t, "http://127.0.0.1:1", nil, Config{LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated,
