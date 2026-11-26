@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -480,46 +479,4 @@ func (dc *DiskCache) holds(key string) bool {
 	}
 	e := dc.index[key]
 	return e != nil && !e.invalid
-}
-
-// storedSize returns a committed record's key and encoded value bytes (0 when
-// the index does not hold it).
-func (dc *DiskCache) storedSize(key string) int64 {
-	dc.writeMu.Lock()
-	defer dc.writeMu.Unlock()
-	if e := dc.index[key]; e != nil {
-		return e.size - diskRecordHeaderSize
-	}
-	return 0
-}
-
-// readHandoverMemory reads and decodes one memory-only value of the
-// hand-over. The encoded value is copied out before decoding so a large value
-// does not extend the read transaction.
-func (dc *DiskCache) readHandoverMemory(key string) ([]byte, int64, bool) {
-	var raw []byte
-	err := dc.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(handoverBucket)
-		if b == nil {
-			return nil
-		}
-		bucketKey := handoverBucketKey(handoverClassMemory, key)
-		v := b.Get(bucketKey)
-		if v == nil {
-			return nil
-		}
-		if _, _, _, _, _, err := decodeHandoverRecordHeader(bucketKey, v); err != nil {
-			return err
-		}
-		raw = bytes.Clone(v[handoverRecordHeaderSize:])
-		return nil
-	})
-	if err != nil || raw == nil {
-		return nil, 0, false
-	}
-	decoded, err := decodeNativeDiskRecordLimit(raw, dc.maxEntryBytes)
-	if err != nil {
-		return nil, 0, false
-	}
-	return decoded.Value, decoded.ExpiresAt, true
 }

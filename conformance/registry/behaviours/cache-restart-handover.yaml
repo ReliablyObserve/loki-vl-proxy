@@ -36,7 +36,30 @@ proxy: |
   revision, hash of every flag value and environment override except the pod
   identity and credentials), and it stays memory-only. Nothing is restored
   when the clock reads earlier than the flush started. Restored entries go
-  behind what live requests stored and never evict them.
+  behind what live requests stored and never evict them. The replica reports
+  ready when the warm-up finishes, or after the timeout, whichever comes first.
+  The warm-up restores in batches of at most 256 entries or about 4 MiB of
+  decoded values: one bbolt read transaction per batch with at most
+  min(GOMAXPROCS, 4) goroutines reading and decoding, one hold of the memory
+  lock to admit the batch, and a read-ahead of the next records into the page
+  cache (positioned reads in file order, at most 64 MiB ahead, eight 512 KiB
+  buffers). The deadline is checked before every batch; a purge that started
+  after the warm-up began stops it; a value queued for the disk wins over its
+  record, and a record queued, rewritten or dropped after the batch read it is
+  not restored. The warm-up counts no disk lookup and leaves the disk recency
+  as the ranks set it. Its plan, progress, estimate and outcome are metrics
+  (loki_vl_proxy_cache_restart_warm_*, with source="disk"), as is the start-up
+  index rebuild's duration; the log has the plan with an estimate, progress
+  every 2 s, a warning when the timeout will cut it, and the end with the skips
+  by reason.
+  Batch proof (internal/cache/restore_test.go): batches are bounded, limits
+  skip without losing later entries, queued and rewritten values win, a purge
+  between batches or between a read and its admission wins, the disk order is
+  unchanged, a full memory tier stops it, progress reads right mid-way, the
+  read-ahead covers the records and joins its goroutines, no second copy of
+  the values is held, and a batch holds the memory lock briefly. The real-size
+  throughput gate is TestRestoreWarm_ThroughputGate (LVP_RESTORE_GATE=1, not in
+  CI: it needs gigabytes of disk and memory).
   Unit proof (internal/cache/handover_test.go): recency order and hit counts
   survive, scope mismatch restores disk entries only, a write after the
   manifest, records without a manifest (crash before Close), a corrupt or
@@ -60,5 +83,8 @@ proxy: |
 implementation:
   - internal/cache/handover.go
   - internal/cache/disk_handover.go
+  - internal/cache/restore.go
+  - internal/cache/disk_restore.go
+  - internal/cache/disk_restore_readahead.go
   - internal/proxy/cache_handover.go
   - cmd/proxy/cache_handover_scope.go

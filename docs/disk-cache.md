@@ -116,8 +116,23 @@ At start the index rebuild orders ranked records by their rank, so the hottest
 are newest and evicted last. With `-cache-startup-warm-bytes` (a byte budget,
 at most half of `-cache-max-bytes`) a warm-up in the background then loads
 ranked entries back into L1, hottest first, until the budget or
-`-cache-startup-warm-timeout` (default `10s`) is reached; `/ready` answers
-503 `response cache warming` meanwhile and never longer than the timeout:
+`-cache-startup-warm-timeout` (default `10s`) is reached. The replica reports
+ready when the warm-up finishes, or after the timeout, whichever comes first:
+`/ready` answers 503 `response cache warming` meanwhile and never longer than
+the timeout.
+
+The warm-up restores in batches of at most 256 entries or about 4 MiB of
+decoded values (a larger entry is a batch of its own):
+
+- one read transaction per batch, with at most `min(GOMAXPROCS, 4)` goroutines
+  reading and decoding its records;
+- a read-ahead of the next records into the page cache (plain reads in file
+  order, at most 64 MiB ahead, eight 512 KiB buffers), so a cold disk is read
+  in parallel;
+- one short hold of the memory cache's lock per batch to admit it. Beside the
+  restored entries the warm-up holds about one batch and the read-ahead buffers;
+- the deadline is checked before every batch (it stops at most one batch late),
+  and a purge that starts at any time after the warm-up began stops it.
 
 - a disk record exactly as a disk hit would promote it: its own expiry, an
   unknown age (freshness rules derive it from the TTL), never over a fresher
@@ -137,12 +152,76 @@ grow by that much at shutdown; bbolt keeps the freed pages for reuse after the
 next start deletes the bucket.
 
 Restored entries go in behind what live requests stored and never evict them;
-the warm-up reads the disk without counting disk hits. Disk records are
+the warm-up reads the disk without counting disk hits and leaves the disk
+recency as the ranks set it. Disk records are
 restored by any build, as a disk hit would serve them, because their keys carry
 the versions of what decides the answer; a version rollout therefore restores
 the disk records and drops the memory-only replies. The metrics are listed in
 [Observability](observability.md) (`loki_vl_proxy_cache_restart_*` and
 `loki_vl_proxy_cache_startup_l1_*`).
+
+### Limits on how much is restored
+
+All of these apply; the first one reached ends the restore or skips the entry
+(`loki_vl_proxy_cache_restart_warm_skipped_entries{reason}`):
+
+| Limit | Default | Effect | For a 2 GiB restore |
+|---|---|---|---|
+| `-cache-startup-warm-bytes` | `0` (off) | decoded bytes restored | `2147483648` |
+| half of `-cache-max-bytes` | 128 MiB (of 256 MiB) | caps the warm budget | `-cache-max-bytes` at least `4294967296` |
+| `-cache-max` | 10,000 | memory entries; the rest is `memory_full` | at least the entry count (2 GiB at 100 KiB an entry is about 21,000) |
+| a tenth of `-cache-max-bytes` | 25.6 MiB | larger entries are `too_large` | not a limit at 4 GiB (410 MiB) |
+| `-disk-cache-max-entries` | 100,000 | records the disk keeps, so ranked ones to restore | at least the entry count |
+| `-disk-cache-max-index-bytes` | 16 MiB | 128 bytes plus the key per record: about 50,000 records at 200-byte keys, 37,000 at 320 | `67108864` holds about 140,000 at 320-byte keys |
+| `-disk-cache-max-bytes` | `0` (no cap) | stored record bytes the disk keeps | at least the stored size of the hot set, with room |
+
+Set the pod's memory limit and `GOMEMLIMIT` for the memory cache you configure,
+not only for the warm budget.
+
+### Estimating the restore time
+
+Before a restart, the time is about the larger of:
+
+- reading: the stored bytes of the hot set (at most the warm budget) divided by
+  the disk's sequential read throughput. A page cache that is still warm (a
+  container restart on the same node) removes most of it;
+- decoding and admitting: the decoded bytes divided by the CPU rate (several
+  GiB/s with four cores on the default `s2` codec; `zstd` decoding runs on one
+  core at a time).
+
+Add the index rebuild, which runs before the proxy listens and grows with the
+number of records (one read per record on a cold disk), and give the startup
+probe room for both. A warm-up that cannot finish in time is not lost work: the
+hottest entries are restored first.
+
+While it runs, the log has a `response cache warm-up started` line (the plan,
+with an estimate at 125 MB/s of disk throughput), a `response cache warm-up
+progress` line every 2 seconds (percent, bytes per second, estimated time and
+time left), a `will not finish before its timeout` warning, and a final
+`response cache warmed from the restart hand-over` line with the outcome, rate
+and skipped entries by reason (a warning when the deadline cut it). The same
+figures are metrics:
+
+```promql
+# share done (the further of stored bytes processed and budget filled)
+loki_vl_proxy_cache_restart_warm_processed_bytes
+  / loki_vl_proxy_cache_restart_warm_planned_bytes
+# seconds left, and whether that fits the timeout
+loki_vl_proxy_cache_restart_warm_remaining_seconds
+loki_vl_proxy_cache_restart_warm_timeout_seconds
+  - loki_vl_proxy_cache_restart_warm_duration_seconds
+# the last restart's rate, to size the timeout
+loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second
+# a restart the deadline cut
+loki_vl_proxy_cache_restart_warm_outcome{outcome="deadline"} == 1
+```
+
+`BenchmarkRestoreWarm`, `BenchmarkRestoreShutdownFlush` and
+`BenchmarkRestoreIndexRebuild` (`internal/cache/restore_bench_test.go`) measure
+this on your disk: `LVP_RESTORE_BENCH_MB` sets the decoded size,
+`LVP_RESTORE_COLD=1` drops the file from the page cache first, and
+`LVP_RESTORE_GATE=1 go test -run TestRestoreWarm_ThroughputGate ./internal/cache/`
+fails below 400 MiB/s (2 GiB in about 5 s).
 
 ## Upgrades, restarts and purge
 

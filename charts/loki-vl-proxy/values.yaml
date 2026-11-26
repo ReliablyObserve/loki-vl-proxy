@@ -297,7 +297,7 @@ extraArgs:
   # Restart hand-over of the response cache (needs disk-cache-path; off by default).
   # cache-shutdown-flush-timeout: "15s" # keep inside terminationGracePeriodSeconds
   # cache-startup-warm-bytes: "268435456" # at most half of cache-max-bytes is warmed
-  # cache-startup-warm-timeout: "10s" # longest /ready waits for the warm-up
+  # cache-startup-warm-timeout: "10s" # ready when the warm-up finishes, or after this, whichever is first
   # otlp-endpoint: "http://otel-collector:4318/v1/metrics"
   # otlp-interval: "30s"
   # otlp-compression: "gzip"

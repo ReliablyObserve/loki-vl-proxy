@@ -82,6 +82,10 @@ type DiskCache struct {
 	pendingManifest    *HandoverManifest
 	handoverCorrupt    int64
 	handoverOverflow   int64
+
+	// The start-up index rebuild, set once before NewDiskCache returns.
+	rebuildDuration time.Duration
+	rebuildEntries  int64
 }
 
 type diskEntry struct {
@@ -157,10 +161,17 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		maxEntries: cfg.MaxEntries, maxIndexBytes: cfg.MaxIndexBytes, index: make(map[string]*diskLRUEntry),
 		done: make(chan struct{}), workerDone: make(chan struct{}), flushRequest: make(chan struct{}, 1),
 		log: slog.Default().With("component", "disk_cache")}
+	rebuildStart := time.Now()
 	if err = dc.rebuildIndex(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("initialize disk cache: %w", err)
 	}
+	dc.rebuildDuration, dc.rebuildEntries = time.Since(rebuildStart), int64(len(dc.index))
+	dc.log.Info("disk cache index rebuilt",
+		"entries", dc.rebuildEntries,
+		"record_bytes", dc.logicalBytes,
+		"duration_ms", dc.rebuildDuration.Milliseconds(),
+	)
 	go dc.backgroundFlush(cfg.FlushInterval)
 	return dc, nil
 }
