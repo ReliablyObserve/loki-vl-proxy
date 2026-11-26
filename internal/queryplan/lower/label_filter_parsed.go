@@ -208,8 +208,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		// A parsed label Loki renamed name_extracted where the stream has the label: its value is in a scratch
 		// field the parsers unpack the key into.
 		parsed := lb.parsedFieldLeaf(translate.ExtractedScratch+"_"+base, e)
-		var aliasFields []string
-		aliasFields = aliasFieldList(lb.aliasField, base)
+		aliasFields := aliasFieldList(lb.aliasField, base)
 		if f, ok = translate.ExtractedFilterAliased(base, aliasFields, parsed, f); !ok {
 			return logsql.FieldFilter{}, "LogSelect label filter _extracted"
 		}
