@@ -59,7 +59,7 @@ Setups, defaults and every option: [Tenancy and authentication](tenancy-and-auth
 
 By default `/loki/api/v1/delete` is not registered: every method answers `404` with the body `404 page not found`, which is what Loki returns when deletion is disabled (Loki registers the route only with `-compactor.retention-enabled=true`, off by default). No tenant header or other check runs first, as in Loki. With `-delete-api-enabled=true` the route is registered:
 
-- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers Loki's `401 no org id` before any other check, so an unauthenticated caller learns nothing about the route; the log line names the missing token. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
+- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token`, `-delete-api-auth-token-file` or `DELETE_API_AUTH_TOKEN` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers Loki's `401 no org id` before any other check, so an unauthenticated caller learns nothing about the route; the log line names the missing token. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
 - the tenant, as Loki checks it (`401 no org id`, Loki's tenant ID texts, `400 multiple org IDs present` for a multi-tenant header)
 - Loki's checks of the request, with Loki's texts (`query not set`, `invalid query expression`, `start time not set`, the time formats, `start time can't be greater than or equal to end time`, `max_interval`). Loki has no other guard, and neither has the proxy after the token: a token holder can delete every stream of a tenant (`{}`) over any range. Treat the token like a credential that can erase data
 - a create request runs as one VictoriaLogs delete task (`/delete/run_task`) scoped by the tenant's `AccountID`/`ProjectID` and a filter of the time range (both ends included) and the rows the same log query reads; a warning-level audit log line names the tenant, the query, the range, the client and the task id
@@ -222,6 +222,27 @@ The following are disabled by default and should stay restricted:
 Enable only for controlled troubleshooting windows. Without `-server.admin-auth-token`, admin/debug routes are served only on `-admin-listen` (default `127.0.0.1:3101`), and the proxy refuses to start when these routes are enabled on a non-loopback address without a token. With a token, they move onto the main listener and require `Authorization: Bearer <token>` or `X-Admin-Token`. The chart keeps `admin-listen` on loopback and never publishes it through the Service.
 
 `/metrics` is not served by default. Set `-server.register-instrumentation=true` to enable it on the main listener, or add `-metrics-listen` for a dedicated port (the chart uses `:9091`). The default export suppresses per-tenant and per-client identity labels. Opt back in with `-metrics.export-sensitive-labels=true` only on trusted scrape paths.
+
+## Secrets in Process Arguments
+
+A flag value is part of the process command line. `/proc/<pid>/cmdline` is readable by every user that can see the process (unless `/proc` is mounted with `hidepid`), so it shows up in `ps` on the node, in containers that share the pod's process namespace, and in process listings collected by crash reports or node diagnostics. A `$(VAR)` reference in Kubernetes `args` does not help: the kubelet expands it before the container starts, so the plain value is in the arguments. An environment variable is narrower: `/proc/<pid>/environ` is readable only by a process allowed to trace it (the same user or `CAP_SYS_PTRACE`). A file is readable by whoever can read the file in the container's filesystem.
+
+The five secrets can be given without a flag value:
+
+| Secret | File flag | Environment variable | Chart value |
+|---|---|---|---|
+| Peer cache token | `-peer-auth-token-file` | `PEER_AUTH_TOKEN` | `peerCache.authToken` / `peerCache.existingSecret` |
+| Admin token | `-server.admin-auth-token-file` | `ADMIN_AUTH_TOKEN` | `adminAuth.existingSecret` |
+| Delete API token | `-delete-api-auth-token-file` | `DELETE_API_AUTH_TOKEN` | `deleteAuth.existingSecret` |
+| VictoriaLogs basic auth | `-backend-basic-auth-file` | `BACKEND_BASIC_AUTH` | `backendAuth.existingSecret` |
+| Version URL basic auth | `-backend-version-basic-auth-file` | `BACKEND_VERSION_BASIC_AUTH` | `backendVersionAuth.existingSecret` |
+
+- The value flag wins, then the file flag, then the environment variable. A value flag and a file flag for the same secret stop startup.
+- A file flag whose file is missing, unreadable, empty or larger than 64 KiB stops startup. Line endings at the end of the file are dropped.
+- Files and variables are read once at startup. Restart the proxy after rotating a secret.
+- The environment variables are read whenever they are set. `ADMIN_AUTH_TOKEN` in the environment therefore has the effect of `-server.admin-auth-token`: the admin and debug routes move to the main listener behind that token.
+- The Helm chart mounts each Secret key as a read-only file and passes the `-...-file` flag. A proxy image older than the chart does not know these flags and exits, so it never serves without the credential.
+- Values passed through `extraArgs` (including `$(NAME)` references) keep working and stay visible in the command line: move them to the chart values above or to `-...-file` flags.
 
 ## Log and Error Redaction
 

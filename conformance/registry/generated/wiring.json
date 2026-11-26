@@ -174,6 +174,7 @@
       "test/helm/cache_handover_test.go"
     ],
     "credential-passthrough-as-configured": [
+      "cmd/proxy/secret_flags_test.go",
       "internal/proxy/credential_passthrough_test.go"
     ],
     "data-probing-and-freshness": [
@@ -183,6 +184,7 @@
     ],
     "delete-api-requires-token": [
       "cmd/proxy/delete_api_validation_test.go",
+      "cmd/proxy/secret_flags_test.go",
       "internal/proxy/delete_route_test.go"
     ],
     "drilldown/client-detection-captured-header-sets": [
@@ -1343,6 +1345,10 @@
     ],
     "range_function-rate": [
       "test/e2e-compat/query_semantics_matrix_test.go"
+    ],
+    "secrets-outside-process-arguments": [
+      "cmd/proxy/secret_flags_test.go",
+      "test/helm/secrets_test.go"
     ],
     "semantics/absent-over-time-semantics": [
       "internal/proxy/absent_label_replace_test.go",
@@ -3197,7 +3203,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 753,
+  "registry_items": 754,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3219,6 +3225,11 @@
     ],
     "cmd/proxy/query_complexity_flags_test.go": [
       "query-complexity-limits"
+    ],
+    "cmd/proxy/secret_flags_test.go": [
+      "credential-passthrough-as-configured",
+      "delete-api-requires-token",
+      "secrets-outside-process-arguments"
     ],
     "cmd/proxy/tenant_routing_test.go": [
       "limits/max-query-length-default",
@@ -7112,11 +7123,14 @@
     "test/helm/cache_handover_test.go": [
       "cache-restart-handover"
     ],
+    "test/helm/secrets_test.go": [
+      "secrets-outside-process-arguments"
+    ],
     "test/helm/servicemonitor_test.go": [
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 845,
+  "tests_with_markers": 847,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7274,5 +7288,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 485
+  "wired_items": 486
 }
