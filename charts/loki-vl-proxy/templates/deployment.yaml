@@ -130,7 +130,7 @@ spec:
           {{- if and (hasKey .Values "otelResourceAttributes") (hasKey .Values.otelResourceAttributes "injectFromPod") }}
           {{- $injectOTELFromPod = .Values.otelResourceAttributes.injectFromPod }}
           {{- end }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ include "loki-vl-proxy.proxyImage" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}

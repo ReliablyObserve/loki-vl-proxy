@@ -1,0 +1,37 @@
+id: release-image-pinned-by-digest
+kind: semantics
+title: The chart can pin the released image by digest, and each release publishes that digest as a file
+
+loki: |
+  An operational rule of the proxy's chart and release; Loki's API has no
+  counterpart.
+
+victorialogs: |
+  Nothing is sent to or read from VictoriaLogs.
+
+proxy: |
+  image.digest renders <repository>@<digest>, or <repository>:<tag>@<digest>
+  when image.tag is set; without it the reference is <repository>:<tag, else
+  appVersion>. Every image of the chart is built by the loki-vl-proxy.image
+  template. The release workflows attach image-digests.txt, one
+  <repository>@<digest> per line.
+
+implementation:
+  - charts/loki-vl-proxy/templates/_helpers.tpl
+  - charts/loki-vl-proxy/templates/deployment.yaml
+  - charts/loki-vl-proxy/templates/tests/test-connection.yaml
+  - scripts/ci/collect_release_assets.sh
+
+decisions:
+  - id: digest-is-its-own-value-and-keeps-only-an-explicit-tag
+    chosen: 'A separate image.digest value; the appVersion default tag is dropped when it is set; the existing image-digests.txt release asset is the machine-readable source'
+    over: ['a digest appended to image.tag (tools that read the tag as a version break)', 'keeping the appVersion tag next to the digest (the reference would name a version the digest may not be)', 'a new release asset (image-digests.txt already lists the same references)']
+    why: |
+      The digest decides what runs. A tag the operator did not set could name
+      another release than the pinned digest.
+    evidence: 'TestProxyImageReference, TestProxyImageDigestRejected, TestEveryImageUsesTheHelper, test_collect_release_assets.py; helm template output without image.digest identical to the previous chart (2026-11-26)'
+    code: [charts/loki-vl-proxy/templates/_helpers.tpl, charts/loki-vl-proxy/templates/deployment.yaml, charts/loki-vl-proxy/templates/tests/test-connection.yaml]
+    tests: [TestProxyImageReference, TestProxyImageDigestRejected, TestEveryImageUsesTheHelper]
+    quality: 'The default render is unchanged; a malformed or doubled digest fails rendering.'
+    performance: 'Rendering only; no proxy code changes.'
+    pending: true
