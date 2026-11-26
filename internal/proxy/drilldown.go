@@ -263,8 +263,18 @@ func (p *Proxy) metadataFieldExposures(vlField string) []metadataFieldExposure {
 	return p.labelTranslator.metadataFieldExposures(vlField, p.metadataFieldMode)
 }
 
+// addRowAlias records an alias the row's stream carries, allocating the set on
+// first use.
+func addRowAlias(set map[string]struct{}, alias string) map[string]struct{} {
+	if set == nil {
+		set = make(map[string]struct{}, 4)
+	}
+	set[alias] = struct{}{}
+	return set
+}
+
 func addDetectedField(fields map[string]*detectedFieldSummary, label, parser, typ string, jsonPath []string, value string) {
-	if shouldSuppressDetectedField(label) {
+	if label == "" || strings.TrimSpace(value) == "" || shouldSuppressDetectedField(label) {
 		return
 	}
 	addParsedAliasField(fields, label, parser, typ, jsonPath, value)
@@ -1453,7 +1463,8 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	anyOTelWithServiceName := false
 	// rowAliases holds the aliases the row's stream carries (alias and both
 	// modes): a parsed key named like one is listed as name_extracted.
-	rowAliases := make(map[string]struct{})
+	// Allocated on first use: only the alias and both modes write it.
+	var rowAliases map[string]struct{}
 	rowLevels := p.newLogRowLevels()
 	badRows := 0
 
@@ -1495,9 +1506,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 					lokiLabel = t
 				}
 				if alias, ok := p.labelTranslator.aliasAnswer(key); ok {
-					rowAliases[alias] = struct{}{}
+					rowAliases = addRowAlias(rowAliases, alias)
 				} else if p.labelTranslator.isAliasLabel(lokiLabel) {
-					rowAliases[lokiLabel] = struct{}{} // a stored field named like the alias
+					rowAliases = addRowAlias(rowAliases, lokiLabel) // a stored field named like the alias
 				}
 			}
 			labelNames[lokiLabel] = struct{}{}
@@ -1559,22 +1570,25 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 						}
 						key := string(keyBytes)
 						msgJSONKeys[key] = struct{}{}
-						// Loki names a parsed key by its sanitized label and
-						// keeps the key itself in jsonPath (-logql-dotted-names).
-						label := p.detectedFieldName(key)
-						if _, alias := rowAliases[label]; alias {
-							// Named like an alias the row's stream carries.
-							addParsedAliasField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
-							return
-						}
-						if p.labelTranslator.isAliasLabel(label) {
-							// An alias other rows' streams carry: this row's parsed label.
-							addParsedAliasField(fields, label, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
-							return
+						if p.labelTranslator.listsAliases() {
+							label := p.detectedFieldName(key)
+							if _, alias := rowAliases[label]; alias {
+								// Named like an alias the row's stream carries.
+								addParsedAliasField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+								return
+							}
+							if p.labelTranslator.isAliasLabel(label) {
+								// An alias other rows' streams carry: this row's parsed label.
+								addParsedAliasField(fields, label, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+								return
+							}
 						}
 						if shouldSuppressDetectedField(key) {
 							return
 						}
+						// Loki names a parsed key by its sanitized label and
+						// keeps the key itself in jsonPath (-logql-dotted-names).
+						label := p.detectedFieldName(key)
 						if _, conflict := labelNames[label]; conflict {
 							return
 						}
@@ -1587,6 +1601,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 
 		obj, objErr := fjVal.Object()
 		if objErr == nil {
+			aliases := rowAliases // read by the closure: the loop variable stays off the heap
 			obj.Visit(func(keyBytes []byte, v *fj.Value) {
 				// Use string(keyBytes) directly in map lookups — compiler avoids
 				// allocation when the converted string is used only as a map key.
@@ -1600,9 +1615,6 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				if !shouldExposeStructuredField(key, rawStreamLabels, p.labelTranslator) {
 					return
 				}
-				if _, alias := p.labelTranslator.aliasAnswer(key); alias {
-					return // the stream label of the alias, as Loki lists no stream label
-				}
 				stringValue, ok := stringifyFJValue(v)
 				if !ok {
 					return
@@ -1614,6 +1626,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
 					if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
 						continue
+					}
+					if _, alias := aliases[exposure.name]; alias && exposure.isAlias {
+						continue // the stream label of an alias, as Loki lists no stream label
 					}
 					addDetectedField(fields, exposure.name, "", inferDetectedTypeFJ(v), nil, stringValue)
 					if summary := fields[exposure.name]; summary != nil {
@@ -1643,21 +1658,24 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 
 		for key, value := range parseLogfmtFields(msg) {
-			// Loki's logfmt parser sanitizes keys like its json parser does.
-			label := p.detectedFieldName(key)
-			if _, alias := rowAliases[label]; alias {
-				// Named like an alias the row's stream carries.
-				addParsedAliasField(fields, label+extractedSuffix, "logfmt", inferDetectedType(value), nil, value)
-				continue
-			}
-			if p.labelTranslator.isAliasLabel(label) {
-				// An alias other rows' streams carry: this row's parsed label.
-				addParsedAliasField(fields, label, "logfmt", inferDetectedType(value), nil, value)
-				continue
+			if p.labelTranslator.listsAliases() {
+				label := p.detectedFieldName(key)
+				if _, alias := rowAliases[label]; alias {
+					// Named like an alias the row's stream carries.
+					addParsedAliasField(fields, label+extractedSuffix, "logfmt", inferDetectedType(value), nil, value)
+					continue
+				}
+				if p.labelTranslator.isAliasLabel(label) {
+					// An alias other rows' streams carry: this row's parsed label.
+					addParsedAliasField(fields, label, "logfmt", inferDetectedType(value), nil, value)
+					continue
+				}
 			}
 			if shouldSuppressDetectedField(key) {
 				continue
 			}
+			// Loki's logfmt parser sanitizes keys like its json parser does.
+			label := p.detectedFieldName(key)
 			if _, conflict := labelNames[label]; conflict {
 				continue
 			}
