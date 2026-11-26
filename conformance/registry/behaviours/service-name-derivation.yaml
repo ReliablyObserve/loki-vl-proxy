@@ -36,6 +36,7 @@ cases:
   - service-name/label-values-list
   - profiles/keep-removes-derived-service-name
   - semantics/service-name-stream-filter
+  - semantics/service-name-stream-route
 
 implementation:
   - internal/translate/selector.go
@@ -45,6 +46,8 @@ implementation:
   - internal/logsql/ast.go
   - internal/logsql/parser.go
   - internal/proxy/query_translation.go
+  - internal/proxy/service_name_route.go
+  - internal/proxy/backend.go
 
 decisions:
   - id: service-name-stream-filter-by-declaration
@@ -70,6 +73,29 @@ decisions:
     tests: [TestServiceNameStreamFilterAnswersOnVictoriaLogs, TestServiceNameStreamFilterRoundTripsOnVictoriaLogs, TestServiceNameStreamFilterKeepsEveryDerivedRow, FuzzServiceNameStreamFilterKeepsEveryDerivedRow, TestServiceNameStreamFilterSelectors, TestServiceNameStreamLabelOnly_SendsTheStreamFilter, TestServiceNameStreamLabelOnly_KeysApartOnlyWithTheFlag, TestServiceNameStreamLabelOnly_DeleteKeepsTheDerivedFilter, TestStreamFilterAnyPrintsAndParses]
     quality: 'Answers with the flag equal the answers without it wherever the declaration holds (real VictoriaLogs v1.49.0 and v1.54.0, single and multi-tenant, every source layout, quoted values); without the flag every query, key and read is unchanged.'
     performance: 'Off: no change (the selector builder takes one more bool; BenchmarkStreamSelectorFilterServiceName off and BenchmarkTranslateQueryMissShapes base vs branch). On: VictoriaLogs reads only the streams of the service; see evidence.'
+  - id: service-name-stream-route-proven-per-read
+    chosen: 'An automatic route, -service-name-stream-route (default on, owner decision 2026-11-26, beside the flag): a log query (query_range, no metric function) of a selector with a positive service_name="x" matcher and no declared stream-field matcher sends each /select/logsql/query and /select/logsql/hits read of at least -service-name-stream-route-min-window (30m) with the stream filter in extra_filters, and at the same time a proof read over the same window and tenant, translate.ServiceNameStreamFilterProof(x) | limit 1: the rows the narrowing leaves out that the derived filter keeps. The narrowed answer is used only when the proof is empty; a row, an error, a timeout or a refused narrowed read sends the read again without the stream filter (the read with the route off). A found row or refused narrowing is remembered per tenant scope and service for -service-name-stream-route-violation-ttl (memory, pushed to the peers); clean verdicts are never kept. At most two proof reads per request: the first read proves its own window, a later one the whole request. Query text, translation and every cache key are those of the route off.'
+    over:
+      - "reusing a clean verdict across requests (a cached per-window proof): the only form that cuts the cold first read below the derived filter, but wrong for a row written later into the proven window (late rows, ingestion lag), which the owner's zero-difference rule excludes"
+      - "proving before the read, then reading (sequential): one more call in the latency of every read, slower than the derived filter at 30m and below on v1.49"
+      - "writing the stream filter into the query text and falling back by re-running the handler: the query text differs from the route off (translation and VictoriaLogs-facing keys split), and a refuted attempt would record a failed request in the request metrics before its rerun; extra_filters keeps the text and lets the read itself fall back"
+      - "a proof independent of the queried service (every stream compared with its labels): a stats read over every stream per window, no cheaper than the proof of one service, and it cannot be reused either"
+      - "routing metric queries: their proof costs what the derived filter costs at 10m to 1h (v1.49 1.13x to 1.28x slower cold, v1.54 at par), so they keep the derived filter alone"
+    why: |
+      Owner decision 2026-11-26: keep the flag and add an automatic route that uses the stream index when VictoriaLogs
+      shows the answer is the derived filter's, with at most one more call, falling back on any doubt. Every exact
+      proof reads the blocks of every other stream in the window, so it costs about what the derived filter costs
+      (five proof forms measured, all within the derived filter's band on v1.49.0 and v1.54.0); no verdict computed
+      before a request may serve it, as a row written later into the window would be missed. So the proof runs with
+      each read, at the same time: the read's latency becomes the slower of the narrowed read and the proof, which is
+      shorter than the derived filter for log reads of 30 minutes and more (their sort and parser pipes run on the
+      service's rows only) and not shorter for short reads and metric reads, which keep the derived filter alone.
+      The route does not lower VictoriaLogs' work; the flag does, where its declaration holds.
+    evidence: 'scratch A/B over VictoriaLogs v1.49.0 and v1.54.0 in process (their storage and query handlers), 2026-11-26, Apple M-series, GOMAXPROCS=2, 1200 services x 8 streams x 1200 rows (11.5M rows, 24 h), one service queried; cold = first read of a fresh process, median of 3; repeat = median of 24. Derived filter vs narrowed read with the proof beside it (cold / repeat ms): log 30m 16.8/13.9 -> 11.1/5.9 (v1.49), 43.5/42.1 -> 22.8/17.5 (v1.54); log 1h 24.8/17.3 -> 12.2/6.1, 63.8/60.3 -> 24.2/18.9; log 24h 28.8/25.2 -> 17.1/12.1, 57.7/54.9 -> 18.9/12.4; json|logfmt 1h 18.9/17.3 -> 11.5/6.6, 59.8/60.1 -> 27.0/19.5; log 10m 8.7 -> 10.1 (v1.49, 1.17x), 25.2 -> 22.7 (v1.54); level stats 1h 8.1 -> 9.3 (v1.49, 1.15x), 22.5 -> 21.4 (v1.54); level stats 24h 23.3 -> 16.2, 18.3 -> 16.0. Proof alone: 7-9 ms (v1.49) and 18-22 ms (v1.54) at 10m-1h, the derived filter''s band. Answers equal on every row; the proof finds a row exactly where the narrowed and derived answers differ (mixed and duplicate-field data sets, both versions).'
+    code: [internal/proxy/service_name_route.go, internal/proxy/backend.go, internal/proxy/proxy.go, internal/translate/selector.go, cmd/proxy/main.go]
+    tests: [TestServiceNameRouteAnswersOnVictoriaLogs, TestServiceNameStreamFilterProofFindsEveryDroppedRow, FuzzServiceNameStreamFilterProofFindsEveryDroppedRow, TestServiceNameRoute_CleanWindowIsNarrowed, TestServiceNameRoute_ViolationFallsBackAndIsRemembered, TestServiceNameRoute_DoubtKeepsTheDerivedFilter, TestServiceNameRoute_KeepsTheDerivedFilter, TestServiceNameRoute_SplitWindowsShareTheirProofs]
+    quality: 'Every answer with the route equals the answer without it: real VictoriaLogs v1.49.0 and v1.54.0, clean, multi-tenant and violating tenants, every derived value, concurrent identical requests; the proof property holds on every row layout, duplicate stream label and regular field included.'
+    performance: 'Log reads of 30m and more: 1.5x to 3x faster cold, 2x to 4x on repeats (evidence). One more VictoriaLogs call per narrowed read (at most two per request); on a violating tenant the first read per service and TTL costs the narrowed read, the proof and the read without the filter, then one call. Shorter reads and metric queries: unchanged (no proof).'
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

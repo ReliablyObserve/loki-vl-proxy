@@ -145,6 +145,8 @@ type snFront struct {
 	version, upstream string
 	mu                sync.Mutex
 	reads             []string
+	narrowed          int // reads carrying the service_name stream filter in extra_filters (service_name_route.go)
+	proofRows         int // proof reads of that route that found a row
 }
 
 func (f *snFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +162,11 @@ func (f *snFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if form, err := url.ParseQuery(string(body)); err == nil && form.Get("query") != "" {
 		f.mu.Lock()
 		f.reads = append(f.reads, form.Get("query"))
+		for _, x := range form["extra_filters"] {
+			if strings.HasPrefix(x, "{service_name=") {
+				f.narrowed++
+			}
+		}
 		f.mu.Unlock()
 	}
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, f.upstream+r.URL.RequestURI(), strings.NewReader(string(body)))
@@ -182,6 +189,17 @@ func (f *snFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
+	if form, err := url.ParseQuery(string(body)); err == nil && strings.Contains(form.Get("query"), " -{service_name=") {
+		// A proof read of the automatic route (service_name_route.go): count the ones that find a row.
+		answer, _ := io.ReadAll(resp.Body)
+		if len(strings.TrimSpace(string(answer))) > 0 {
+			f.mu.Lock()
+			f.proofRows++
+			f.mu.Unlock()
+		}
+		_, _ = w.Write(answer)
+		return
+	}
 	_, _ = io.Copy(w, resp.Body)
 }
 

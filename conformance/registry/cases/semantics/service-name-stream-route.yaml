@@ -1,0 +1,34 @@
+id: semantics/service-name-stream-route
+title: A one-service log query reads that service's streams when VictoriaLogs shows, beside the read, that nothing is left out
+pending: true
+proves:
+  - service-name-derivation
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  `{service_name="x"}` is the derived service_name filter, which VictoriaLogs evaluates on every stream of the
+  window (issue #1763). With -service-name-stream-route (default on) each log read of such a query of at least
+  -service-name-stream-route-min-window is sent with the stream filter
+  `{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` in extra_filters
+  and, at the same time, a proof read over the same window and tenant: the rows that filter leaves out and the
+  derived filter keeps. The narrowed answer is used only when the proof is empty; a row, an error, a timeout or a
+  refused narrowing sends the read again without the stream filter. A found row is remembered per tenant and
+  service for -service-name-stream-route-violation-ttl. So the answer is the derived filter's, which is the answer
+  the proxy gives with the route off; only the VictoriaLogs reads change. Metric queries, instant queries, other
+  endpoints, negated, regexp and empty matchers and selectors with a declared stream field keep the derived filter
+  alone.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"}'
+    start: now-1h
+    end: now
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    Loki's answer, which is the proxy's answer with the route off: the same streams, lines and values.

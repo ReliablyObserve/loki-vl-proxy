@@ -104,7 +104,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | 8 | 10 | unknown |
 | observability | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | 14 | 8 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 13 | 13 | partial |
-| identity | `service-name-derivation` — service_name follows Loki's discovery order | 17 | 1 | partial |
+| identity | `service-name-derivation` — service_name follows Loki's discovery order | 20 | 1 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 12 | 22 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 5 | partial |
 | resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 3 | 6 | unknown |

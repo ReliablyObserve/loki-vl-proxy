@@ -309,6 +309,7 @@
         "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
+        "internal/proxy/service_name_route.go",
         "internal/proxy/unwrap_conversion_error.go"
       ]
     },

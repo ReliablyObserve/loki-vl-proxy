@@ -446,6 +446,25 @@ func ServiceNameStreamFilter(value string) logsql.FilterExpr {
 	}}
 }
 
+// ServiceNameStreamFilterProof is the filter of the rows that a read narrowed by ServiceNameStreamFilter(value)
+// leaves out and the derived filter of value (ServiceNameDerivedFilterExpr) keeps, for a non-empty value: a row of a
+// stream the stream filter drops whose service_name is value, or whose service_name is empty and whose service.name
+// is value. A dropped stream has a service_name label other than value, or no service_name label and a
+// service.name label other than value. VictoriaLogs stores a stream label as a field of each of the stream's rows
+// (a regular field of the same name overrides it, never with an empty value), so a row of a dropped stream has a
+// non-empty service_name or service.name and its derivation never reaches a later source. No row matches it
+// exactly when the narrowed read keeps every row the derived filter keeps.
+func ServiceNameStreamFilterProof(value string) logsql.FilterExpr {
+	derived := logsql.AnyOf{
+		logsql.FieldFilter{Field: SyntheticServiceNameFields[0], Op: logsql.FieldOpExact, Value: value, GoQuoted: true},
+		logsql.Group{Expr: logsql.AllOf{
+			logsql.FieldFilter{Field: SyntheticServiceNameFields[0], Op: logsql.FieldOpExact},
+			logsql.FieldFilter{Field: `"` + SyntheticServiceNameFields[1] + `"`, Op: logsql.FieldOpExact, Value: value, GoQuoted: true},
+		}},
+	}
+	return logsql.AllOf{logsql.Group{Expr: derived}, logsql.Exclude{Expr: ServiceNameStreamFilter(value)}}
+}
+
 // matchNoStreams is matchNoStreamsFilter as a filter node.
 var matchNoStreams = logsql.Exclude{Expr: logsql.Wildcard{}}
 

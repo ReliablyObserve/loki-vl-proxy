@@ -359,6 +359,9 @@ extraArgs:
   # Stream selector optimization — list VL _stream_fields labels for fast index path
   # stream-fields: "app,env,namespace"
   # service-name-stream-label-only: "false"  # declare service_name is stored only as a stream label and service.name never as a regular field beside a service.name stream label: {service_name="x"} then also sends a stream filter (VictoriaLogs reads only that service's streams); see the configuration reference before turning it on
+  # service-name-stream-route: "true"  # read a one-service log query from that service's streams when a VictoriaLogs read beside it shows nothing is left out; else the derived filter alone
+  # service-name-stream-route-min-window: "30m"  # shortest log read window the route narrows (0: every window)
+  # service-name-stream-route-violation-ttl: "1h"  # how long a found row keeps that tenant's service on the derived filter (0: not remembered)
   # Indexed label-values browse cache (high-cardinality UX hardening)
   # label-values-indexed-cache: "true"
   # label-values-hot-limit: "200"

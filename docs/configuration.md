@@ -80,6 +80,9 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
 | `-stream-fields` | — | — | Comma-separated `_stream_fields` labels used for stream selector optimization and label-surface hints |
 | `-service-name-stream-label-only` | — | `false` | Declare that VictoriaLogs stores `service_name` only as a stream label (or not at all) and `service.name` never as a regular field of a row whose stream has a `service.name` label. A positive `{service_name="x"}` matcher then also sends the stream filter `{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` beside the derived `service_name` filter, so VictoriaLogs reads only the streams that can hold that service (with `service.name` as an OpenTelemetry stream field, that service's streams) instead of every stream in the window. Answers are unchanged while the declaration holds; where it does not, rows can be missed. See [service_name stream filter](#service_name-stream-filter) for the checks to run before turning it on |
+| `-service-name-stream-route` | — | `true` | Read a log query of one service (`{service_name="x"}`, a positive matcher with a value) from the streams that can hold it, through VictoriaLogs' stream index, when a VictoriaLogs read sent beside it over the same window and tenant finds no row the narrowing leaves out; otherwise the read is sent again with the derived filter alone. Answers are those of the derived filter. One more VictoriaLogs read per log read, which reads the other streams: log reads get shorter, VictoriaLogs' work does not drop. See [service_name stream filter](#service_name-stream-filter) |
+| `-service-name-stream-route-min-window` | — | `30m` | Shortest log read window `-service-name-stream-route` narrows. `0` narrows every window |
+| `-service-name-stream-route-violation-ttl` | — | `1h` | How long a found row keeps that tenant's service on the derived filter alone, with no read beside it (memory, pushed to the peers). `0` remembers nothing |
 | `-extra-label-fields` | `EXTRA_LABEL_FIELDS` | — | Comma-separated additional VL fields to expose on label-facing APIs and alias resolution paths (for example `host.id,k8s.cluster.name`) |
 
 Configure `-label-style` and `-metadata-field-mode` with flags (or Helm `extraArgs`). The `LABEL_STYLE` and `METADATA_FIELD_MODE` environment variables do not override the current defaults.
@@ -1180,9 +1183,44 @@ first non-empty of `service_name`, `service.name`, `service`, `app`, `applicatio
 filter over those fields, which VictoriaLogs evaluates on every stream of the window: Logs Drilldown sends every
 query of a service with that selector.
 
-`-service-name-stream-label-only` lets VictoriaLogs pick the streams from its stream index. It is off by default
-because it relies on a statement about how the deployment ingests, which the proxy cannot check for every row of
-every request at a cost lower than what it saves. Turn it on only when both hold for every tenant:
+Two ways let VictoriaLogs pick a service's streams from its stream index instead.
+
+**Automatic, proven per read (`-service-name-stream-route`, on by default).** A log query (`query_range` with no
+metric function) whose selector has a positive `service_name="x"` matcher with a value, and no matcher of a
+declared `-stream-fields` label, sends each log read (`/select/logsql/query`, and the `/select/logsql/hits`
+prefilter of a split read) at least `-service-name-stream-route-min-window` long with the stream filter
+`{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` in `extra_filters`.
+Beside it, at the same time and over the same window and tenant, it reads the rows that filter leaves out and the
+derived filter keeps:
+
+```
+(service_name:="x" OR (service_name:="" "service.name":="x")) -{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""} | limit 1
+```
+
+The narrowed answer is used only when that read returns no row. A row, an error, a timeout or a narrowed read
+VictoriaLogs refuses sends the read again without the stream filter, the read the proxy makes with the route off,
+so every answer is the derived filter's. A found row (or a refused narrowing) is remembered for that tenant and
+service for `-service-name-stream-route-violation-ttl` (memory, pushed to the peers): its log reads then go to
+VictoriaLogs once, unnarrowed, with no read beside them. No verdict that a window is clean is kept: each request
+proves its own reads, so a row written later, also into an earlier window, is seen by the next request. A row that
+arrives while a request runs may be in or out of its answer, as for any VictoriaLogs read. The query text, the
+translation and every cache key stay the same as with the route off.
+
+What it costs: the read beside the narrowed one reads the other streams of the window, so the route shortens log
+reads (the sort and the parser pipes run on the service's rows only) and adds one VictoriaLogs call per read; it
+does not lower VictoriaLogs' total work. A request makes at most two such reads, whatever its number of windows
+(its first window, then the rest of the request). On reads shorter than the minimum window the extra read costs
+about what the derived filter costs, so those keep the derived filter alone. Metric queries, instant queries and the
+other endpoints (detected fields and labels, volume, patterns, label values, tail) keep the derived filter alone:
+a metric read's proof costs as much as the derived filter at 1h and below, so it would not be faster. Each decision is counted in
+`loki_vl_proxy_internal_operation_total{operation="service_name_stream_route"}` with the outcome `narrowed`,
+`violation`, `proof_failed`, `narrowed_read_failed`, `narrowed_read_refused`, `proof_bound` or
+`remembered_violation`.
+
+**Declared (`-service-name-stream-label-only`, off by default).** It writes the same stream filter into every
+plan-served selector with a positive matcher, log and metric queries alike, with no read beside it, and replaces
+the automatic route when set. It relies on a statement about how the deployment ingests; turn it on only when both
+hold for every tenant:
 
 - `service_name` is stored only as a stream label, or not at all: no structured metadata, OpenTelemetry log
   attribute or JSON key named `service_name` outside the stream fields (the Loki push route keeps the
@@ -1202,8 +1240,8 @@ service_name:* -{service_name=~".+"} | limit 1
 {service.name=~".+"} | extract_regexp `service\.name="(?P<__sd_tag>[^"]*)"` from _stream | filter -"service.name":eq_field(__sd_tag) | limit 1
 ```
 
-The selector keeps its derived filter, so the rows kept are those it keeps without the flag; only the streams
-VictoriaLogs reads change. The stream filter is written for a positive matcher with a value; `!=`, `=~`, `!~`,
+With the flag the selector keeps its derived filter, so the rows kept are those it keeps without the flag; only
+the streams VictoriaLogs reads change. The stream filter is written for a positive matcher with a value; `!=`, `=~`, `!~`,
 `service_name=""`, a selector that already has a stream filter from `-stream-fields`, the delete API and queries
 the string translator serves keep the derived filter alone. Answers read with the flag are cached under keys of
 their own, so turning it off never serves one. With `service.name` stored as a regular field only, the flag has

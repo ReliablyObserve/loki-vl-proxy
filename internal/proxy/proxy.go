@@ -283,6 +283,15 @@ type Config struct {
 	// a positive service_name selector matcher then also sends the stream filter of the streams that can hold its
 	// rows (translate.ServiceNameStreamFilter). Zero value: the derivation's filter alone.
 	ServiceNameStreamLabelOnly bool
+	// ServiceNameStreamRoute turns on the automatic service_name stream filter (service_name_route.go): a log query
+	// read narrowed to the streams that can hold its service, kept only when a VictoriaLogs read beside it finds no
+	// row the narrowing leaves out. -service-name-stream-route, on by default; the zero value is off.
+	ServiceNameStreamRoute bool
+	// ServiceNameStreamRouteMinWindow is the shortest read window the automatic route narrows (0: every window).
+	ServiceNameStreamRouteMinWindow time.Duration
+	// ServiceNameStreamRouteViolationTTL is how long a found row the narrowing leaves out keeps a tenant's service on
+	// the derived filter alone (0: not remembered).
+	ServiceNameStreamRouteViolationTTL time.Duration
 	// TranslateShadowSample is the share (0-1) of the string translator's cache misses that the typed lowering
 	// also translates in the background to be compared with it (see lowering_shadow.go). 0 turns it off.
 	TranslateShadowSample float64
@@ -849,6 +858,9 @@ type Proxy struct {
 	jsonLineFieldsAsLineKeys              bool
 	detectedLevelBodyScan                 bool
 	serviceNameStreamLabelOnly            bool
+	serviceNameStreamRoute                bool
+	serviceNameRouteMinWindow             time.Duration
+	serviceNameRouteViolationTTL          time.Duration
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	deleteAPIAuthToken                    string
@@ -1614,6 +1626,9 @@ func New(cfg Config) (*Proxy, error) {
 		jsonLineFieldsAsLineKeys:              cfg.JSONLineFieldsAsLineKeys,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		serviceNameStreamLabelOnly:            cfg.ServiceNameStreamLabelOnly,
+		serviceNameStreamRoute:                cfg.ServiceNameStreamRoute,
+		serviceNameRouteMinWindow:             cfg.ServiceNameStreamRouteMinWindow,
+		serviceNameRouteViolationTTL:          cfg.ServiceNameStreamRouteViolationTTL,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
 		flippedConstructs:                     QueryPlanFlippedConstructs,
@@ -3151,6 +3166,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		stepsRun.arm()
 		p.proxyStatsQueryRange(sc, r, stats)
 	} else {
+		// A log query of one service reads the streams that can hold it when VictoriaLogs shows, beside each read,
+		// that the narrowing leaves out no row (service_name_route.go).
+		r = p.withServiceNameRoute(r, parsedForRouting)
 		if !p.proxyLogQueryWindowed(sc, r, logsqlQuery) {
 			if p.coldRouter != nil {
 				p.proxyLogQueryWithCold(sc, r, logsqlQuery)

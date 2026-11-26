@@ -117,6 +117,9 @@ type proxyRuntimeConfig struct {
 	jsonLineFieldsAsLineKeys            bool
 	detectedLevelBodyScan               bool
 	serviceNameStreamLabelOnly          bool
+	serviceNameStreamRoute              bool
+	serviceNameRouteMinWindow           time.Duration
+	serviceNameRouteViolationTTL        time.Duration
 	translateShadowSample               float64
 	queryPlanLowering                   bool
 	queryStatsMode                      string
@@ -674,6 +677,9 @@ func run(
 	backendDefaultMsgValue := fs.String("backend-default-msg-value", "", "VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default \"missing _msg field\" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields")
 	jsonLineFieldsAsLineKeys := fs.Bool("json-line-fields-as-line-keys", false, "Read every stored field of a row whose _msg is VictoriaLogs' missing-message placeholder (its -defaultMsgValue, or -backend-default-msg-value) as a key of the row's JSON line, as Loki holds a JSON line pushed to VictoriaLogs' Loki push route without disable_message_parsing=1: the fields are no labels until `| json` (structured metadata without a parser, parsed labels after `| logfmt` otherwise), and a query that reads a label no stage can give such a line (an unwrap or a label filter after `| logfmt` or without a parser) leaves those rows out, in VictoriaLogs. VictoriaLogs cannot tell such a line's keys from structured metadata pushed beside it, so with this on that structured metadata is hidden too, and so are the fields of any other row stored without a message (jsonline rows and OpenTelemetry map bodies without one, attributes included): leave it off when such rows carry structured metadata or attributes, and prefer pushing with disable_message_parsing=1, which keeps the line and needs no flag. Acts in the Loki-compatible profile only (-label-style=underscores with -metadata-field-mode=translated, the defaults) and needs a non-empty VictoriaLogs -defaultMsgValue")
 	serviceNameStreamLabelOnly := fs.Bool("service-name-stream-label-only", false, "Declare that VictoriaLogs stores service_name only as a stream label (or not at all) and service.name never as a regular field of a row whose stream has a service.name label (no structured metadata, log attribute or JSON key named service_name, none named service.name beside a service.name resource attribute or stream field). A {service_name=\"x\"} selector then also sends a stream filter, so VictoriaLogs reads only the streams whose service_name or service.name stream label can give x (with service.name as a stream field, the streams of that service). Answers stay the same while the declaration holds; a row it does not hold for can be missed. Off: the derived service_name filter alone, which VictoriaLogs evaluates over every stream of the window")
+	serviceNameStreamRoute := fs.Bool("service-name-stream-route", true, "Read a log query of one service ({service_name=\"x\"}, a positive matcher with a value) from the streams that can hold that service, through VictoriaLogs' stream index, when a VictoriaLogs read sent beside it over the same window and tenant finds no row the narrowing leaves out (a regular service_name field, or a regular service.name beside a service.name stream label of another value); otherwise the read is sent again with the derived service_name filter alone. Answers are those of the derived filter. Costs one more VictoriaLogs read per log read, which reads the other streams of the window: it shortens log reads, it does not lower VictoriaLogs' work. Metric queries, other endpoints and windows shorter than -service-name-stream-route-min-window keep the derived filter alone. -service-name-stream-label-only, when set, replaces it")
+	serviceNameRouteMinWindow := fs.Duration("service-name-stream-route-min-window", 30*time.Minute, "Shortest log read window -service-name-stream-route narrows; a shorter read gains nothing on a first read (the read beside it costs what the derived filter costs). 0 narrows every window")
+	serviceNameRouteViolationTTL := fs.Duration("service-name-stream-route-violation-ttl", time.Hour, "How long a row -service-name-stream-route found the narrowing leaves out keeps that tenant's service on the derived service_name filter alone, with no read beside it (kept in memory and pushed to the peers). 0 remembers nothing: every log read of the service is narrowed and proven again")
 	detectedLevelBodyScan := fs.Bool("detected-level-body-scan", true, "Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
 	deleteAPIAuthToken := fs.String("delete-api-auth-token", "", "Token every /loki/api/v1/delete request must carry, in X-Delete-Token or Authorization: Bearer (constant-time compare); required by -delete-api-enabled. It is the delete API's own credential: the admin token and the admin listener are unaffected. Prefer the Helm value deleteAuth.existingSecret, which keeps it out of the pod spec")
@@ -1026,6 +1032,9 @@ func run(
 			jsonLineFieldsAsLineKeys:            *jsonLineFieldsAsLineKeys,
 			detectedLevelBodyScan:               *detectedLevelBodyScan,
 			serviceNameStreamLabelOnly:          *serviceNameStreamLabelOnly,
+			serviceNameStreamRoute:              *serviceNameStreamRoute,
+			serviceNameRouteMinWindow:           *serviceNameRouteMinWindow,
+			serviceNameRouteViolationTTL:        *serviceNameRouteViolationTTL,
 			translateShadowSample:               *translateShadowSample,
 			queryPlanLowering:                   *queryPlanLowering,
 			queryStatsMode:                      *queryStatsMode,
@@ -2429,6 +2438,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		JSONLineFieldsAsLineKeys:           cfg.jsonLineFieldsAsLineKeys,
 		DisableDetectedLevelBodyScan:       !cfg.detectedLevelBodyScan,
 		ServiceNameStreamLabelOnly:         cfg.serviceNameStreamLabelOnly,
+		ServiceNameStreamRoute:             cfg.serviceNameStreamRoute,
+		ServiceNameStreamRouteMinWindow:    cfg.serviceNameRouteMinWindow,
+		ServiceNameStreamRouteViolationTTL: cfg.serviceNameRouteViolationTTL,
 		TranslateShadowSample:              cfg.translateShadowSample,
 		DisableQueryPlanLowering:           !cfg.queryPlanLowering,
 		QueryStatsMode:                     cfg.queryStatsMode,

@@ -308,7 +308,7 @@ Each step has a `kind`:
 | `kind` | Fields |
 |---|---|
 | `upstream` | one VictoriaLogs call: `route` (the VictoriaLogs path), `query` (the LogsQL), `window` (`start`, `end`, `step` as sent), `status`, `bytes` (decoded body bytes), `outcome` (`eof`, `closed`, `canceled`, `timeout`, `error`), `duration_ms` (to the end of the body) |
-| `operation` | a proxy-side operation or route decision: `operation`, `outcome`, `duration_ms` (for example `patterns_state`, `json_metric_evaluator` with `vl_stats_buckets/pushdown` or `raw_rows/probe`, `translate_query`) |
+| `operation` | a proxy-side operation or route decision: `operation`, `outcome`, `duration_ms` (for example `patterns_state`, `json_metric_evaluator` with `vl_stats_buckets/pushdown` or `raw_rows/probe`, `translate_query`, `service_name_stream_route` with `narrowed`, `violation`, `proof_failed`, `narrowed_read_failed`, `narrowed_read_refused`, `proof_bound` or `remembered_violation`: see [service_name stream filter](configuration.md#service_name-stream-filter)) |
 | `rewrite` | a handler rewrote the request's LogQL: `from`, `to` |
 | `cache` | one cache lookup: `tier` (`l1_memory`, `l2_disk`, `l3_peer` or `unknown`), `result` (`hit`, `miss`, `stale`), `bytes` returned, `duration_ms` |
 

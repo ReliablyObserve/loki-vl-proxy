@@ -1042,6 +1042,8 @@
     "semantics/series-level-aggregation-bounded-memory | query",
     "semantics/service-name-stream-filter | compare:exact",
     "semantics/service-name-stream-filter | query",
+    "semantics/service-name-stream-route | compare:exact",
+    "semantics/service-name-stream-route | query",
     "semantics/set-operation-folded-literal-operand | compare:observed",
     "semantics/set-operation-folded-literal-operand | gap:fixed",
     "semantics/set-operation-folded-literal-operand | query",
@@ -2478,6 +2480,9 @@
     "internal/proxy/series_limit_routes_test.go | loki_api_v1_query",
     "internal/proxy/series_limit_routes_test.go | loki_api_v1_query_range",
     "internal/proxy/series_limit_routes_test.go | series-limits-and-partial-results",
+    "internal/proxy/service_name_route_oracle_test.go | semantics/service-name-stream-route",
+    "internal/proxy/service_name_route_oracle_test.go | vl-stream-filter-or-groups-and-missing-label",
+    "internal/proxy/service_name_route_test.go | semantics/service-name-stream-route",
     "internal/proxy/service_name_stream_filter_oracle_test.go | semantics/service-name-stream-filter",
     "internal/proxy/service_name_stream_filter_oracle_test.go | vl-stream-filter-or-groups-and-missing-label",
     "internal/proxy/service_name_stream_filter_test.go | semantics/service-name-stream-filter",
@@ -3093,6 +3098,7 @@
     "internal/translate/selector_filters_test.go | architecture-syntax-package-layering",
     "internal/translate/selector_filters_test.go | semantics/label-filter-expression-syntax",
     "internal/translate/selector_test.go | architecture-syntax-package-layering",
+    "internal/translate/service_name_stream_filter_proof_test.go | semantics/service-name-stream-route",
     "internal/translate/service_name_stream_filter_test.go | semantics/service-name-stream-filter",
     "internal/translate/unwrap_gate_syntax_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/translate/vector_test.go | architecture-syntax-package-layering",
@@ -3695,13 +3701,13 @@
     "case_consumers": {
       "any": 50,
       "api": 124,
-      "drilldown": 64,
+      "drilldown": 65,
       "explore": 263,
       "grafana-datasource": 4,
       "operator": 6
     },
     "claiming_tests": {
-      "go": 847,
+      "go": 850,
       "playwright": 3
     },
     "page_kinds": {
@@ -3723,7 +3729,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 488
+    "wired_items": 489
   },
   "gates": [
     "A/B shape selection",
