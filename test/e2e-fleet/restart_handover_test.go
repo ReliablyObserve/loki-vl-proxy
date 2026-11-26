@@ -153,6 +153,21 @@ func TestFleet_RestartHandoverKeepsTheResponseCacheWarm(t *testing.T) {
 	if warmDisk < 1 || warmMemory < 1 {
 		t.Fatalf("warm-up restored %v disk and %v memory entries, want both kinds", warmDisk, warmMemory)
 	}
+	// The warm-up's plan and progress: everything planned was processed, the
+	// restore ended "done", and the index rebuild was measured.
+	disk := map[string]string{"source": "disk"}
+	planned := m.sum("loki_vl_proxy_cache_restart_warm_planned_entries", disk)
+	processed := m.sum("loki_vl_proxy_cache_restart_warm_processed_entries", disk)
+	skipped := m.sum("loki_vl_proxy_cache_restart_warm_skipped_entries", disk)
+	if planned < warmDisk+warmMemory || processed != planned || planned != warmDisk+warmMemory+skipped {
+		t.Fatalf("warm-up planned %v, processed %v, restored %v+%v, skipped %v", planned, processed, warmDisk, warmMemory, skipped)
+	}
+	if got := m.sum("loki_vl_proxy_cache_restart_warm_outcome", map[string]string{"source": "disk", "outcome": "done"}); got != 1 {
+		t.Fatalf("warm-up outcome done = %v, want 1", got)
+	}
+	if got := m.sum("loki_vl_proxy_cache_restart_index_rebuild_entries", disk); got < warmDisk {
+		t.Fatalf("index rebuild held %v records, the warm-up restored %v from disk", got, warmDisk)
+	}
 	t.Logf("restart %s, previous flush %.3fs, warm-up %.3fs: %v disk + %v memory entries, %v bytes",
 		restartTook.Round(time.Millisecond),
 		m.sum("loki_vl_proxy_cache_restart_previous_flush_duration_seconds", nil),

@@ -454,6 +454,7 @@ func (p *OTLPPusher) cacheRestartMetrics(h cache.HandoverStats, now int64) []map
 			p.gaugeDP("loki_vl_proxy_cache_restart_warm_done", float64(boolGauge(h.WarmDone)), now),
 		),
 	}
+	out = append(out, p.cacheRestoreMetrics(h, now)...)
 	if !h.StartupTracked {
 		return out
 	}
@@ -1233,3 +1234,23 @@ func sortedKeys[V any](m map[string]V) []string {
 
 func mapsFromCounters(m map[string]*atomic.Int64) map[string]*atomic.Int64 { return m }
 func mapsFromHists(m map[string]*histogram) map[string]*histogram          { return m }
+
+// cacheRestoreMetrics mirrors writeCacheRestoreProgress.
+func (p *OTLPPusher) cacheRestoreMetrics(h cache.HandoverStats, now int64) []map[string]interface{} {
+	source := attr("source", restoreSourceOfDisk)
+	var out []map[string]interface{}
+	for _, m := range restoreMetrics(h) {
+		out = append(out, p.gaugeMetric(m.name, m.help, m.unit, p.gaugeDP(m.name, m.value, now, source)))
+	}
+	var skipped, outcomes []map[string]interface{}
+	for _, reason := range cache.RestoreSkipReasons() {
+		skipped = append(skipped, p.gaugeDP(restoreSkippedName, float64(h.Restore.Skipped[reason]), now, source, attr("reason", reason.String())))
+	}
+	for _, outcome := range cache.RestoreOutcomes() {
+		outcomes = append(outcomes, p.gaugeDP(restoreOutcomeName, float64(boolGauge(h.Restore.Outcome == outcome)), now, source, attr("outcome", outcome)))
+	}
+	return append(out,
+		p.gaugeMetric(restoreSkippedName, restoreSkippedHelp, "", skipped...),
+		p.gaugeMetric(restoreOutcomeName, restoreOutcomeHelp, "", outcomes...),
+	)
+}

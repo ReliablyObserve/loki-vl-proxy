@@ -693,6 +693,7 @@ func writeCacheRestartMetrics(sb *strings.Builder, h cache.HandoverStats) {
 	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_done 1 once the start-up warm-up finished (or found no hand-over), else 0.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_done gauge\n")
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_done %d\n", boolGauge(h.WarmDone))
+	writeCacheRestoreProgress(sb, h)
 	if !h.StartupTracked {
 		return
 	}
@@ -702,6 +703,54 @@ func writeCacheRestartMetrics(sb *strings.Builder, h cache.HandoverStats) {
 	sb.WriteString("# HELP loki_vl_proxy_cache_startup_l1_hits Memory cache hits in the first 10 minutes after start (frozen after them).\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_startup_l1_hits gauge\n")
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_startup_l1_hits %d\n", h.StartupL1Hits)
+}
+
+// restoreMetric is one gauge of the warm-up's plan and progress; both
+// exporters write the same list.
+type restoreMetric struct {
+	name, help, unit string
+	value            float64
+}
+
+// restoreMetrics lists the warm-up's plan, progress and the disk index
+// rebuild, as gauges updated after every batch.
+func restoreMetrics(h cache.HandoverStats) []restoreMetric {
+	p := h.Restore
+	remaining, _ := p.Remaining()
+	return []restoreMetric{
+		{"loki_vl_proxy_cache_restart_warm_planned_entries", "Entries the restart warm-up found to restore.", "", float64(p.PlannedEntries)},
+		{"loki_vl_proxy_cache_restart_warm_planned_bytes", "Bytes of the entries the restart warm-up found to restore: encoded disk bytes, and the decoded size of memory-only answers.", "By", float64(p.PlannedBytes)},
+		{"loki_vl_proxy_cache_restart_warm_budget_bytes", "Most decoded bytes this warm-up may restore (-cache-startup-warm-bytes, at most half of -cache-max-bytes).", "By", float64(p.BudgetBytes)},
+		{"loki_vl_proxy_cache_restart_warm_processed_entries", "Planned entries restored or skipped so far.", "", float64(p.ProcessedEntries)},
+		{"loki_vl_proxy_cache_restart_warm_processed_bytes", "Stored bytes of the planned entries restored or skipped so far.", "By", float64(p.ProcessedBytes)},
+		{"loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second", "Decoded bytes restored per second: so far while the warm-up runs, over the whole warm-up after it.", "By/s", p.BytesPerSecond()},
+		{"loki_vl_proxy_cache_restart_warm_remaining_seconds", "Estimated seconds the running warm-up still needs, from its rate so far; 0 when none runs or nothing is measured yet.", "s", remaining.Seconds()},
+		{"loki_vl_proxy_cache_restart_warm_timeout_seconds", "Time the warm-up was given (-cache-startup-warm-timeout).", "s", p.Timeout.Seconds()},
+		{"loki_vl_proxy_cache_restart_index_rebuild_duration_seconds", "How long the disk cache's index rebuild took at start, before the proxy listened.", "s", h.IndexRebuildDuration.Seconds()},
+		{"loki_vl_proxy_cache_restart_index_rebuild_entries", "Records the disk cache's index held after the start-up rebuild.", "", float64(h.IndexRebuildEntries)},
+	}
+}
+
+const (
+	restoreSkippedName  = "loki_vl_proxy_cache_restart_warm_skipped_entries"
+	restoreSkippedHelp  = "Planned entries the restart warm-up did not restore, by reason."
+	restoreOutcomeName  = "loki_vl_proxy_cache_restart_warm_outcome"
+	restoreOutcomeHelp  = "1 for the restart warm-up's state: running, or why it ended (done, deadline, purged, clock_behind_flush, none)."
+	restoreSourceOfDisk = string(cache.RestoreSourceDisk)
+)
+
+func writeCacheRestoreProgress(sb *strings.Builder, h cache.HandoverStats) {
+	for _, m := range restoreMetrics(h) {
+		fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n%s{source=%q} %g\n", m.name, m.help, m.name, m.name, restoreSourceOfDisk, m.value)
+	}
+	fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n", restoreSkippedName, restoreSkippedHelp, restoreSkippedName)
+	for _, reason := range cache.RestoreSkipReasons() {
+		fmt.Fprintf(sb, "%s{source=%q,reason=%q} %d\n", restoreSkippedName, restoreSourceOfDisk, reason.String(), h.Restore.Skipped[reason])
+	}
+	fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n", restoreOutcomeName, restoreOutcomeHelp, restoreOutcomeName)
+	for _, outcome := range cache.RestoreOutcomes() {
+		fmt.Fprintf(sb, "%s{source=%q,outcome=%q} %d\n", restoreOutcomeName, restoreSourceOfDisk, outcome, boolGauge(h.Restore.Outcome == outcome))
+	}
 }
 
 // SetCircuitBreakerFunc sets the function to query CB state for metrics export.
