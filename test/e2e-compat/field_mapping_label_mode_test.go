@@ -240,9 +240,16 @@ func TestCompat_FieldMappingAliasCollisionsMatchLoki(t *testing.T) {
 			m := fmt.Sprintf("sum by (%s) (count_over_time(%s [10m]))", by, q)
 			reqs = append(reqs, request{"instant " + m, "/loki/api/v1/query", url.Values{"query": {m}, "time": {at}}, collisionVectorNorm})
 		}
-		// The Logs Drilldown field breakdown of a renamed key.
-		m := fmt.Sprintf(`sum by (pod_extracted) (count_over_time(%s | pod_extracted!="" [10m]))`, q)
-		reqs = append(reqs, request{"instant " + m, "/loki/api/v1/query", url.Values{"query": {m}, "time": {at}}, collisionVectorNorm})
+		// The Logs Drilldown field breakdown of a renamed key, in count and rate
+		// form, and with a stream label in the grouping too: the plan writes these
+		// in alias and both mode.
+		for _, m := range []string{
+			fmt.Sprintf(`sum by (pod_extracted) (count_over_time(%s | pod_extracted!="" [10m]))`, q),
+			fmt.Sprintf(`sum by (pod_extracted) (rate(%s | pod_extracted!="" [10m]))`, q),
+			fmt.Sprintf(`sum by (pod, namespace_extracted) (count_over_time(%s | pod_extracted!="" [10m]))`, q),
+		} {
+			reqs = append(reqs, request{"instant " + m, "/loki/api/v1/query", url.Values{"query": {m}, "time": {at}}, collisionVectorNorm})
+		}
 	}
 
 	// Loki answers the pushed lines (its ingester holds them right away).
