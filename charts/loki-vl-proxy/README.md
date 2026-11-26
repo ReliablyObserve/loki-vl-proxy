@@ -40,6 +40,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `extraArgs.log-level` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `persistence.enabled` | `false` | Enable bbolt disk cache via PVC |
 | `persistence.size` | `10Gi` | PVC size for disk cache |
+| `image.digest` | `""` | Pins the image as `sha256:<64 hex>`, the multi-arch index digest in the release's `image-digests.txt`. Renders `<repository>@<digest>`, or `<repository>:<tag>@<digest>` when `image.tag` is set; the digest decides what runs. See [Verify before deploying](../../SECURITY.md#verify-before-deploying) |
 | `peerCache.enabled` | `false` | Enable distributed cache sharing across replicas |
 | `adminAuth.existingSecret` | `""` | Existing Secret holding the admin/debug bearer token. The chart mounts the key as a file and renders `-server.admin-auth-token-file`, so the token is not in the pod spec, `helm get values` or the process arguments. Setting it together with `extraArgs."server.admin-auth-token"` fails rendering |
 | `adminAuth.existingSecretKey` | `token` | Key within `adminAuth.existingSecret` |

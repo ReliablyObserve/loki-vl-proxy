@@ -3696,6 +3696,7 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
     "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
     "test/helm/cache_handover_test.go | cache-restart-handover",
+    "test/helm/image_test.go | release-image-pinned-by-digest",
     "test/helm/secrets_test.go | secrets-outside-process-arguments",
     "test/helm/servicemonitor_test.go | observability-metrics-histograms-and-labels"
   ],
@@ -3709,7 +3710,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 850,
+      "go": 851,
       "playwright": 3
     },
     "page_kinds": {
@@ -3731,7 +3732,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 488
+    "wired_items": 489
   },
   "gates": [
     "A/B shape selection",

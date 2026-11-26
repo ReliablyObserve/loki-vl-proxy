@@ -42,6 +42,11 @@ workload:
 image:
   repository: ghcr.io/reliablyobserve/loki-vl-proxy
   tag: ""  # defaults to Chart.appVersion
+  # digest pins the image, as sha256:<64 hex>: the multi-arch index digest of a
+  # release (image-digests.txt on the release page). Set, the chart renders
+  # <repository>@<digest>, or <repository>:<tag>@<digest> with a tag; the digest
+  # decides what runs. See "Verify before deploying" in SECURITY.md.
+  digest: ""
   pullPolicy: IfNotPresent
   pullSecrets: []
 
