@@ -343,15 +343,15 @@ phase's times 1.10 plus 1 ms, with no errors.
 
 | Serving replica (1 CPU) | Query classes vs the bound | Restores |
 |---|---|---|
-| 1,100 requests/s, 23-32% of its core | all pass, 0 errors | complete, 60-63 MB/s |
-| 220 requests/s | all pass, 0 errors | complete, 17-40 MB/s |
-| 1,100 requests/s, 37-50% of its core (an earlier, stricter peer threshold) | all pass, 0 errors | throttled to about 1.5 MB/s, partial (61-79%) at their 180 s deadline |
+| 1,100 requests/s, 37-50% of its core | all pass, 0 errors | throttled to about 1.5 MB/s, partial (61-79% of entries) at their 180 s deadline |
+| 220 requests/s | all pass, 0 errors | partly throttled |
+| 2,200 requests/s, 4 CPUs | all pass, 0 errors | one restore at full speed, the next throttled |
 
-How fast a restore runs under load is decided by the replica's own signals:
-in the third row (an earlier, stricter threshold for the peer-request tail)
-the busier replica slowed it to a crawl and the query latencies held; in the
-first, the same request rate left the replica less busy and the restore ran at
-full speed.
+A looser threshold for the peer-request tail was tried and reverted: on one
+CPU at 2,200 requests/s it let a restore run at full speed while the
+replica's peer-read p99 rose beyond the bound. Under load a restore is slow
+and partial by design; what it did not get is read from peers or VictoriaLogs
+on first lookup.
 
 When many replicas start at once (a scale-out, a node loss, a whole fleet on new
 volumes), each serving replica still sends at most its ceiling in at most two
