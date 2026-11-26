@@ -410,6 +410,21 @@ type Config struct {
 	// keep-warm refresh of the labels cache (-labels-cache-warm=false). Label
 	// requests are still cached and served; only the proactive scans stop.
 	DisableLabelsCacheWarm bool
+	// CacheShutdownFlushTimeout bounds the restart hand-over a graceful
+	// Shutdown writes to the response cache's disk tier: the memory tier's
+	// recency order and hit counts, the records the disk lacks, and the
+	// restorable memory-only answers (up to CacheStartupWarmBytes). 0 (the
+	// default) writes none.
+	CacheShutdownFlushTimeout time.Duration
+	// CacheStartupWarmBytes is the most bytes Init's warm-up loads into the
+	// memory tier from the hand-over a previous graceful shutdown left; /ready
+	// answers 503 until it finishes or CacheStartupWarmTimeout passes. 0 (the
+	// default) loads none.
+	CacheStartupWarmBytes   int64
+	CacheStartupWarmTimeout time.Duration
+	// CacheHandoverScope identifies the build and configuration: memory-only
+	// answers are restored only by a process with the same scope.
+	CacheHandoverScope string
 
 	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
 	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error
@@ -977,6 +992,7 @@ type Proxy struct {
 	capProbing                         atomic.Bool  // a probe round is running
 	capLoopStarted                     atomic.Bool
 	labelValuesIndexWarmReady          atomic.Bool
+	cacheHandover                      *cacheHandoverState
 	labelValuesIndexPersistStarted     atomic.Bool
 	labelValuesIndexPersistDirty       atomic.Bool
 	labelValuesIndexPersistStop        chan struct{}
@@ -1655,6 +1671,7 @@ func New(cfg Config) (*Proxy, error) {
 		warmupMaxJitter:                       warmupMaxJitter,
 		labelsCacheWarm:                       !cfg.DisableLabelsCacheWarm,
 		labelValuesIndexedCache:               cfg.LabelValuesIndexedCache,
+		cacheHandover:                         newCacheHandoverState(cfg),
 		labelValuesHotLimit:                   labelValuesHotLimit,
 		labelValuesIndexMaxEntries:            labelValuesIndexMaxEntries,
 		labelValuesIndexPersistPath:           labelValuesPersistPath,
@@ -2063,6 +2080,7 @@ func (p *Proxy) Init() {
 	p.metrics.SetCircuitBreakerFunc(p.breaker.State)
 	p.labelValuesIndexWarmReady.Store(true)
 	p.patternsWarmReady.Store(true)
+	p.startResponseCacheWarm()
 	if p.labelValuesIndexedCache {
 		p.warmLabelValuesIndexOnStartup()
 		p.startLabelValuesIndexPersistenceLoop()
@@ -2105,6 +2123,8 @@ func (p *Proxy) rejectAdmission(w http.ResponseWriter, r *http.Request, err *lok
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
+	// The start-up warm-up stops first: nothing loads while the flush runs.
+	p.stopResponseCacheWarm()
 	p.loweringShadow.close(ctx)
 	p.statsExtentStores.close()
 	p.keepWarmMu.Lock()
@@ -2148,6 +2168,9 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 	if p.tailClient != nil {
 		p.tailClient.CloseIdleConnections()
 	}
+	// After every background writer stopped: the hand-over the next start
+	// warms from (the disk tier's Close writes its manifest last).
+	p.flushResponseCacheHandover()
 	if err := p.persistPatternsNow("shutdown"); err != nil {
 		return err
 	}

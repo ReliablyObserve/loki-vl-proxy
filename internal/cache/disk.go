@@ -73,6 +73,15 @@ type DiskCache struct {
 	RejectedWrites  atomic.Int64
 	FlushCount      atomic.Int64
 	BytesOnDisk     atomic.Int64
+
+	// Restart hand-over (disk_handover.go), guarded by writeMu.
+	handover           *handoverState
+	previousFlush      HandoverManifest
+	previousFlushFound bool
+	handoverGen        uint64
+	pendingManifest    *HandoverManifest
+	handoverCorrupt    int64
+	handoverOverflow   int64
 }
 
 type diskEntry struct {
@@ -279,8 +288,20 @@ func (dc *DiskCache) MinTTL() time.Duration {
 // Set only admits to the bounded raw queue. A single worker performs threshold
 // flushes, so calls under the L1 mutex never commit disk transactions.
 func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
+	dc.set(key, value, ttl, 0, 0)
+}
+
+// set is Set with the write's recency: 0 takes the next sequence, the shutdown
+// flush passes the access planHandover reserved for the key's rank and its
+// hand-over generation (non-zero), which a purge moves: such a write is then
+// dropped, so a value captured before a purge is never written after it.
+func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, handoverGen uint64) {
 	layer := LayerForKey(key)
 	dc.writeMu.Lock()
+	if handoverGen != 0 && dc.handoverGen != handoverGen {
+		dc.writeMu.Unlock()
+		return
+	}
 	if dc.closed || dc.closing {
 		dc.layerL2[layer].rejections.Add(1)
 		dc.writeMu.Unlock()
@@ -307,8 +328,11 @@ func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
 	dc.layerQueueBytes[layer] += charge
 	dc.layerL2[layer].admissions.Add(1)
 	dc.layerL2[layer].writeBytes.Add(int64(len(value)))
-	dc.sequence++
-	dc.writeBuf[key] = diskEntry{Value: value, ExpiresAt: clockNow().Add(ttl).UnixNano(), state: &diskEntryState{lastAccess: dc.sequence}}
+	if access == 0 {
+		dc.sequence++
+		access = dc.sequence
+	}
+	dc.writeBuf[key] = diskEntry{Value: value, ExpiresAt: clockNow().Add(ttl).UnixNano(), state: &diskEntryState{lastAccess: access}}
 	dc.bufferBytes = used + charge
 	if item := dc.index[key]; item != nil {
 		item.invalid = false
@@ -375,6 +399,11 @@ func (dc *DiskCache) Purge() {
 	dc.newest, dc.oldest = nil, nil
 	dc.indexBytes, dc.logicalBytes, dc.nextExpiry = 0, 0, 0
 	dc.dirty = false
+	// A purge also removes the restart hand-over and supersedes a flush in
+	// progress: nothing it captured before the purge may come back.
+	dc.handoverGen++
+	dc.pendingManifest = nil
+	dc.handover = nil
 	for l := LayerUnknown; l < LayerCount; l++ {
 		dc.layerL2[l].entries.Store(0)
 		dc.layerL2[l].bytes.Store(0)
@@ -390,6 +419,9 @@ func (dc *DiskCache) Purge() {
 			if _, err := tx.CreateBucket(name); err != nil {
 				return err
 			}
+		}
+		if err := tx.DeleteBucket(handoverBucket); err != nil && err != boltErrors.ErrBucketNotFound {
+			return err
 		}
 		return nil
 	}); err != nil {
@@ -413,6 +445,8 @@ func (dc *DiskCache) Close() error {
 				break
 			}
 		}
+		// The hand-over manifest is the file's last transaction.
+		dc.writeHandoverManifestLocked()
 		dc.writeMu.Lock()
 		dc.closed = true
 		dc.writeMu.Unlock()

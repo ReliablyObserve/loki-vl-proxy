@@ -450,8 +450,11 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | `-disk-cache-flush-interval` | — | `5s` | Write buffer flush interval |
 | `-disk-cache-min-ttl` | — | `30s` | Minimum TTL required before an entry is eligible for L2 disk-cache writes. Empty `/labels` and `/label/{name}/values` answers are cached for max(`30s`, this, `-peer-write-through-min-ttl`), so they still overwrite an older non-empty copy on disk and peers when either minimum is raised (new labels can then take that long to appear after an empty answer) |
 | `-disk-cache-max-bytes` | — | `0` | Logical encoded record and key byte cap (`0` disables the byte cap); bbolt retains free pages |
+| `-cache-shutdown-flush-timeout` | — | `0` | Time budget for the restart hand-over a graceful shutdown writes to the disk cache (`0` writes none); keep it inside `terminationGracePeriodSeconds` |
+| `-cache-startup-warm-bytes` | — | `0` | Bytes the start-up warm-up loads into the memory cache from that hand-over, at most half of `-cache-max-bytes` (`0` loads none); also the most memory-only answer bytes the shutdown keeps |
+| `-cache-startup-warm-timeout` | — | `10s` | Longest `/ready` answers 503 while the warm-up runs |
 
-See [Disk cache](disk-cache.md) for memory accounting, format upgrades and purge behavior.
+See [Disk cache](disk-cache.md) for memory accounting, format upgrades, purge behavior and the restart hand-over.
 
 ## Cold Storage Backend
 

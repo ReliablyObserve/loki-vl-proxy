@@ -747,6 +747,15 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_cache_bytes` | gauge | `tier` | `Low` | stored bytes per cache tier (`l1_memory`, `l2_disk`) |
 | `loki_vl_proxy_cache_objects` | gauge | `tier` | `Low` | object count per cache tier (`l0`, `l1_memory`, `l2_disk`) |
 | `loki_vl_proxy_cache_backend_fallthrough_total` | counter | none | `Low` | requests that missed every cache tier and fell through to the backend |
+| `loki_vl_proxy_cache_restart_previous_flush_records` | gauge | `kind` | `Low` | records the previous graceful shutdown left in the response cache's restart hand-over (`-cache-shutdown-flush-timeout`), read from its manifest at start: `ranked` (disk records with their memory recency), `disk_write` (disk records the flush wrote because the disk lacked them), `memory` (memory-only answers); all 0 when the process started without a valid hand-over |
+| `loki_vl_proxy_cache_restart_previous_flush_memory_bytes` | gauge | none | `Low` | memory-only answer bytes in that hand-over |
+| `loki_vl_proxy_cache_restart_previous_flush_duration_seconds` | gauge | none | `Low` | how long that shutdown flush took |
+| `loki_vl_proxy_cache_restart_previous_flush_complete` | gauge | none | `Low` | 1 when the process started from a valid hand-over whose flush finished inside its timeout, else 0 |
+| `loki_vl_proxy_cache_restart_warm_entries` | gauge | `kind` | `Low` | entries the start-up warm-up (`-cache-startup-warm-bytes`) restored into the memory cache: `disk`, `memory`, and ranked entries it `skipped` (expired, a fresher live entry, over the budget, another build or configuration, unreadable, past the deadline) |
+| `loki_vl_proxy_cache_restart_warm_bytes` | gauge | none | `Low` | bytes the start-up warm-up restored |
+| `loki_vl_proxy_cache_restart_warm_duration_seconds` | gauge | none | `Low` | how long the start-up warm-up took; `/ready` answers 503 `response cache warming` meanwhile, at most `-cache-startup-warm-timeout` |
+| `loki_vl_proxy_cache_restart_warm_done` | gauge | none | `Low` | 1 once the start-up warm-up finished or found no hand-over |
+| `loki_vl_proxy_cache_startup_l1_requests`, `loki_vl_proxy_cache_startup_l1_hits` | gauge | none | `Low` | memory cache lookups and hits in the first 10 minutes after start, frozen after them: the start-up hit ratio with and without the warm-up |
 | `loki_vl_proxy_translations_total` | counter | none | `Low` | successful LogQL to LogsQL translations |
 | `loki_vl_proxy_translation_errors_total` | counter | none | `Low` | failed translations |
 | `loki_vl_proxy_internal_operation_total` | counter | `operation`, `outcome` | `Medium` | named internal operations including translation, parser preference, rewrites and upstream body completion |

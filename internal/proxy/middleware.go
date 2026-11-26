@@ -856,12 +856,15 @@ func (p *Proxy) compatCaptureLimit(sharedKey string) int {
 // Without it such a reply was cached nowhere on the Loki side when its range
 // ends within -query-range-freshness or it answers an instant query, and every
 // repeat asked VictoriaLogs again. It stays in this replica's memory: not on
-// disk and not pushed to peers, like the edge cache.
+// disk and not pushed to peers, like the edge cache. The shared key carries
+// the tenant, routing scope and request, so a restart hand-over may keep the
+// reply for a process of the same build and configuration
+// (-cache-shutdown-flush-timeout).
 func (p *Proxy) storeCompatOversizedReply(sharedKey, cacheKey string, value []byte, ttl time.Duration) {
 	if sharedKey == "" || p.cache == nil || len(cacheKey)+len(value) <= p.compatCache.MaxEntrySizeBytes() {
 		return
 	}
-	p.cache.SetLocalOnlyWithTTL(sharedKey, value, ttl)
+	p.cache.SetLocalOnlyRestorableWithTTL(sharedKey, value, ttl)
 }
 
 func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerFunc) http.HandlerFunc {

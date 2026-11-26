@@ -43,7 +43,8 @@ L2 evicts the least recently used persisted entries when admitting a new record
 would exceed any configured capacity. Reads update recency in RAM, without a
 database write. Expired records are removed during bounded maintenance. Startup
 rebuilds the recency index and enforces the configured limits; values survive a
-restart, but their previous in-memory recency order does not.
+restart. Their previous recency order survives only a graceful shutdown with the
+restart hand-over on (below); otherwise the index starts in key order.
 
 | Budget | Default | What it bounds |
 |---|---:|---|
@@ -84,6 +85,58 @@ both metadata and decoded contents. Readers validate size limits before
 allocating and reject malformed records. The checksum detects corruption; it
 is not authentication or encryption. Protect the cache directory and use the
 storage platform’s encryption controls where required.
+
+## Restart hand-over
+
+Off by default. With `-cache-shutdown-flush-timeout` (a time budget) a graceful
+shutdown (SIGTERM), after the HTTP server drained and every background writer
+stopped, walks the memory cache (L1) from the most to the least recently used
+entry and, within the budget:
+
+- gives every entry the disk tier would hold the disk recency of its rank and
+  writes the ones the disk lacks (a write the queue refused under load, a
+  record the disk evicted while memory kept the entry), hottest first;
+- keeps each entry's rank and memory hit count in a `cache_handover_v1` bucket
+  of the same bbolt file;
+- keeps there, up to `-cache-startup-warm-bytes`, the completed `query`,
+  `query_range` and `series` replies that stay in memory only because they are
+  larger than one edge cache entry (keyed by tenant, routing scope and request).
+
+Other memory-only entries (helper markers, probes, the exact-response edge
+cache, non-owner shadows of peer writes) and patterns entries are never kept.
+The disk tier's close then writes a manifest as the file's last transaction:
+it holds that transaction's id, so any later write to the file (an older binary,
+which does not know the bucket, a purge, a process that crashed after it
+started) invalidates the hand-over, and the next start drops it whole. A flush
+that fails or a process killed before the disk tier closes leaves no manifest.
+The bucket is never read by lookups, stale lookups, peer reads or the index
+rebuild, and a purge deletes it.
+
+At start the index rebuild orders ranked records by their rank, so the hottest
+are newest and evicted last. With `-cache-startup-warm-bytes` (a byte budget,
+at most half of `-cache-max-bytes`) a warm-up in the background then loads
+ranked entries back into L1, hottest first, until the budget or
+`-cache-startup-warm-timeout` (default `10s`) is reached; `/ready` answers
+503 `response cache warming` meanwhile and never longer than the timeout:
+
+- a disk record exactly as a disk hit would promote it: its own expiry, an
+  unknown age (freshness rules derive it from the TTL), never over a fresher
+  memory entry, and not after a purge started;
+- a kept memory-only reply only when the writer's scope equals this process's
+  (the build's version and revision and a hash of every flag value and
+  environment override except the pod identity and credentials), and it stays
+  memory-only: peers never copy it to their disks;
+- nothing when this process's clock reads earlier than the flush started, so
+  a clock that moved back cannot lengthen an entry; a clock that moved forward
+  only expires entries sooner.
+
+Restored entries go in behind what live requests stored and never evict them;
+the warm-up reads the disk without counting disk hits. Disk records are
+restored by any build, as a disk hit would serve them, because their keys carry
+the versions of what decides the answer; a version rollout therefore restores
+the disk records and drops the memory-only replies. The metrics are listed in
+[Observability](observability.md) (`loki_vl_proxy_cache_restart_*` and
+`loki_vl_proxy_cache_startup_l1_*`).
 
 ## Upgrades, restarts and purge
 
