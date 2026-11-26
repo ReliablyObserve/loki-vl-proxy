@@ -17,10 +17,10 @@ import (
 // (peer_bulk_serve.go) at a lower priority than everything else it does. One
 // governor per replica paces all its streams together:
 //
-//   - the rate starts low (bulkStartRate), grows by a quarter per tick
-//     (200 ms) after three ticks without pressure, up to the configured
-//     ceiling (-peer-bulk-serve-max-bytes-per-second), and halves after two
-//     ticks with pressure (never below bulkFloorRate);
+//   - the rate starts low (bulkStartRate), grows by 15% per tick (200 ms)
+//     after five ticks without pressure, up to the configured ceiling
+//     (-peer-bulk-serve-max-bytes-per-second), and halves after two ticks
+//     with pressure (never below bulkFloorRate);
 //   - a severe signal pauses every stream at once; a stream paused longer
 //     than the maximum pause ends with outcome "throttled" and the requester
 //     keeps what it received;
@@ -28,15 +28,16 @@ import (
 //     with a growing, jittered Retry-After.
 //
 // Pressure is read each tick from signals the serving work could disturb,
-// each against its own recent baseline and an absolute floor:
+// each against its own baseline (an average of its values on ticks without
+// pressure) and an absolute floor:
 //
-//   - CPU: the Go scheduler latency p99 of the tick (runnable goroutines
-//     waiting for a thread) against its 30 s minimum, and the busy share of
-//     the process's CPU budget (GOMAXPROCS);
+//   - CPU: the Go scheduler latency p99 over the last second (runnable
+//     goroutines waiting for a thread), and the busy share of the process's
+//     CPU budget (GOMAXPROCS);
 //   - GC: the share of the CPU budget spent in GC;
 //   - memory: the live heap against GOMEMLIMIT;
-//   - client requests: the mean latency of the queries completed in the tick
-//     (BulkLoad, without tails), against a baseline learned on clean ticks;
+//   - client requests: the p99 of the queries completed in the last second
+//     (BulkLoad's histogram, without tails);
 //   - peer requests: the same for the /_cache/get, /has and /set this replica
 //     served;
 //   - disk: the mean latency of the disk cache's lookups;

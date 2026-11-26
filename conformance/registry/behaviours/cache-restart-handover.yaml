@@ -147,18 +147,20 @@ proxy: |
   Progress is the warm-up's metrics with source="peer"; the serving side has
   loki_vl_proxy_peer_cache_bulk_serve_*.
   Lower priority than queries (peer_bulk_governor.go): one governor per
-  serving replica paces all its streams, starting at 2 MiB/s, growing by a
-  quarter per 200 ms tick after three clean ticks up to
+  serving replica paces all its streams, starting at 2 MiB/s, growing by 15%
+  per 200 ms tick after five clean ticks up to
   -peer-bulk-serve-max-bytes-per-second (a ceiling), halving after two
   pressured ticks (floor 256 KiB/s) and pausing every stream on a severe
   signal; a stream paused past -peer-bulk-serve-max-pause ends as throttled
   (the requester counts the rest peer_busy). Signals per tick, each against
-  its baseline and a floor: Go scheduler latency p99, busy and GC share of the
-  CPU budget, live heap against GOMEMLIMIT, mean latency of completed queries
-  (metrics RequestLoad, tails excluded), peer requests and disk lookups, and a
-  write slower than its bytes allow. While paused or pressured new streams get
-  429 (Retry-After 2-10 s). Batches hold 100 ms of the current rate and are
-  copied by one goroutine below the ceiling; the plan walks the memory LRU and
+  its baseline learned without pressure and a floor: p99 over the last second
+  of completed queries (metrics RequestLoad histogram, tails excluded) and of
+  peer requests, Go scheduler latency p99 over the last second, busy and GC
+  share of the CPU budget, live heap against GOMEMLIMIT, mean disk lookup
+  latency, and a write slower than its bytes allow. While paused or pressured new streams get
+  429 (Retry-After 2-10 s). Batches hold 100 ms of the current rate (at most
+  512 KiB per GOMAXPROCS), are copied into a reused buffer by one goroutine
+  below the ceiling, and the stream yields after every record; the plan walks the memory LRU and
   the disk index 4,096 entries per lock hold; no lock or disk transaction is
   held while a stream waits. The requester caps its intake at
   -cache-startup-peer-restore-max-bytes-per-second and sends its deadline, so
@@ -197,7 +199,7 @@ implementation:
 
 decisions:
   - id: restore-at-lower-priority-than-queries
-    chosen: 'An adaptive governor per serving replica (start 2 MiB/s, x1.25 per 200 ms tick after three clean ticks up to the configured ceiling, halve after two pressured ticks, pause on a severe signal, end a stream paused past 30 s as throttled, refuse new streams while paused or pressured), with pressure read from scheduler latency, CPU and GC share, heap against GOMEMLIMIT, query, peer-read and disk-lookup latency against baselines and write stalls; batches paced to 100 ms of the rate; a requester intake cap'
+    chosen: 'An adaptive governor per serving replica (start 2 MiB/s, x1.15 per 200 ms tick after five clean ticks up to the configured ceiling, halve after two pressured ticks, pause on a severe signal, end a stream paused past 30 s as throttled, refuse new streams while paused or pressured), with pressure read from the query and peer-request p99 over the last second, scheduler latency p99, CPU and GC share, heap against GOMEMLIMIT, disk lookup latency and write stalls, each against a baseline learned without pressure; batches paced to 100 ms of the rate in small bursts; a requester intake cap'
     over: ['fixed 2 streams and 64 MiB/s per serving replica (owner, 2026-11-26: not enough, it does not back off when the replica is busy)', 'a fixed low rate (restores slow on idle fleets, still harmful on busy ones)', 'OS-level priorities (not available per goroutine)']
     why: 'Owner requirement 2026-11-26: the restore must never degrade other proxies or their latency; it may use spare resources and must back off automatically when the serving proxy is busy.'
     evidence: 'LOAD_EVIDENCE'

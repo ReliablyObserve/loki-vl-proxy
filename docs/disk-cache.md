@@ -236,27 +236,32 @@ replicas that restore:
 - at most `-peer-bulk-serve-max-streams` (default 2) at once, a request
   beyond them answered 429 before any work;
 - one governor per replica paces all its streams: it starts them at 2 MiB/s,
-  grows the rate by a quarter every 200 ms after three ticks without pressure,
+  grows the rate by 15% every 200 ms after five ticks without pressure,
   up to `-peer-bulk-serve-max-bytes-per-second` (default 64 MiB/s, a ceiling
   reached only on an idle replica), halves it after two ticks with pressure
   (down to 256 KiB/s) and pauses every stream at once on a severe signal; a
   stream paused longer than `-peer-bulk-serve-max-pause` (default 30 s) ends
   as `throttled` and the restoring replica keeps what it received;
-- pressure is read every tick, each signal against its own recent baseline and
-  an absolute floor: the Go scheduler latency p99 (goroutines waiting for a
-  CPU; its 30 s minimum is the baseline), the busy and GC share of the
-  process's CPU budget, the live heap against `GOMEMLIMIT`, the mean latency of
-  the queries, peer reads and disk lookups completed in the tick (each against
-  a baseline learned while there was no pressure), and a write to the
+- pressure is read every tick, each signal against its own baseline (learned
+  while there was no pressure) and an absolute floor: the p99 of the queries
+  and of the peer requests the replica completed over the last second (above
+  1.5 times the baseline plus 0.5 ms is pressure, 3 times plus 5 ms severe),
+  the Go scheduler latency p99 over the last second (goroutines waiting for a
+  CPU; 3 times plus 1 ms, severe 6 times plus 10 ms), the busy share of the
+  process's CPU budget (85%, severe 95%) and its GC share (10%, severe 25%),
+  the live heap against `GOMEMLIMIT` (80%, severe 90%), the mean disk lookup
+  latency (2 times plus 2 ms, severe 5 times plus 20 ms), and a write to the
   requester that took far longer than its bytes allow (a congested network or
   receiver);
 - while it is paused or under pressure a replica refuses new streams (429,
   Retry-After 2 to 10 s), so tens of replicas asking cost almost nothing;
-- a batch holds about 100 ms of the current rate (at least 64 KiB, at most 256
-  entries or 4 MiB), read in one read transaction and copied by one goroutine
-  (`min(GOMAXPROCS, 4)` only at the ceiling with no pressure), so the reads and
-  copies are paced as the sending is; records go as stored (nothing is
-  decoded) and memory values are encoded once;
+- a batch holds about 100 ms of the current rate (at least 64 KiB, at most
+  256 entries, 512 KiB per `GOMAXPROCS` and 4 MiB), read in one read
+  transaction into a buffer the stream reuses and copied by one goroutine (a
+  quarter of `GOMAXPROCS`, at most 4, only at the ceiling with no pressure);
+  the stream yields to other goroutines after every record, so on a replica
+  with one core a batch never holds it for long; records go as stored
+  (nothing is decoded) and memory values are encoded once;
 - the stream's plan (one entry per key the replica holds) walks the memory
   tier and the disk index 4,096 entries per hold of their locks, so a query's
   write waits at most one chunk; waiting for the governor holds no cache lock
@@ -300,19 +305,19 @@ serving file out of the page cache, its reads decide.
 That is the cost of the two ends with the governor out of the way, not what
 a fleet gets. On a real fleet the restore is at most as fast as the stored
 bytes divided by the smallest of: the serving replicas' rates (each grows from
-2 MiB/s to its 64 MiB/s ceiling in about 4 s, and only while it shows no
+2 MiB/s to its 64 MiB/s ceiling in about 6 s, and only while it shows no
 pressure), the restoring replica's intake cap (64 MiB/s), the node's network,
 and its disk write rate when its disk is on. These are upper bounds for idle
 serving replicas, computed, not measured:
 
 | Restore | 1 serving replica, idle | 2 or more, idle (the 64 MiB/s intake cap) | serving replicas under load |
 |---|---|---|---|
-| 2 GiB `s2` (720 MiB stored) | about 15 s | about 15 s | longer, possibly partial at the timeout |
-| 2 GiB `raw` (2 GiB) | about 36 s | about 36 s | longer, possibly partial |
-| 4 GiB `s2` (1.41 GiB) | about 27 s | about 27 s | longer, possibly partial |
-| 4 GiB `raw` (4 GiB) | about 68 s | about 68 s | partial at the 120 s timeout is likely |
+| 2 GiB `s2` (720 MiB stored) | about 17 s | about 17 s | longer, possibly partial at the timeout |
+| 2 GiB `raw` (2 GiB) | about 38 s | about 38 s | longer, possibly partial |
+| 4 GiB `s2` (1.41 GiB) | about 29 s | about 29 s | longer, possibly partial |
+| 4 GiB `raw` (4 GiB) | about 70 s | about 70 s | partial at the 120 s timeout is likely |
 
-(The stored bytes at 64 MiB/s plus about 4 s of ramp.) Under query load the
+(The stored bytes at 64 MiB/s plus about 6 s of ramp.) Under query load the
 governor keeps the serving replicas below their ceiling or pauses them: the
 restore then takes longer, and ends at `-cache-startup-warm-timeout` with the
 hottest entries it received, which is the intended trade (queries first). What
