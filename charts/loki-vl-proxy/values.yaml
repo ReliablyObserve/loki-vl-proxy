@@ -402,7 +402,7 @@ extraArgs:
   #
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
-  # cache-reuse-protection-percent: "20"       # share of the memory caches kept for entries read again; capacity evictions take entries read once first (0 = plain LRU, max 90; TTLs unchanged)
+  # cache-reuse-protection-percent: "0"        # share of the memory caches kept for entries read again; capacity evictions take entries read once first (0 = plain LRU, the default; 20 recommended against floods; max 90; TTLs unchanged)
   # cache-demote-on-evict: "false"             # a capacity eviction of an entry read at least once keeps or writes its disk copy with the TTL it has left (needs disk-cache-path)
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
   # labels-cache-warm: "true"                  # warm the 1h/6h/24h/7d label presets at startup and keep them warm; "false" on replicas without interactive label pickers

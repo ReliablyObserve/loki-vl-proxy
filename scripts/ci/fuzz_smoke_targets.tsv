@@ -228,3 +228,4 @@ smoke	internal/proxy	FuzzLabelsInventoryCover	12s	-	names-only /labels listing w
 smoke	internal/cache	FuzzHandoverManifestDecode	12s	-	cache restart hand-over manifest decode
 smoke	internal/cache	FuzzHandoverRecordDecode	12s	-	cache restart hand-over record decode
 smoke	internal/metrics	FuzzParseDurationBuckets	12s	-	-metrics.duration-buckets accepts only a bounded, finite, ascending list of bounds above zero
+smoke	internal/cache	FuzzRetentionOperations	12s	-	cache reuse retention segments

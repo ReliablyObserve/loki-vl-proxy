@@ -14,7 +14,7 @@ victorialogs: |
   higher hit ratio means fewer VictoriaLogs reads for the same requests.
 
 proxy: |
-  -cache-reuse-protection-percent (default 20; 0 is plain LRU) keeps a
+  -cache-reuse-protection-percent (default 0, plain LRU; 20 recommended) keeps a
   protected share of the L1 and Tier0 entry and byte budgets for entries read
   again since they were stored: a segmented LRU beside the cache's one recency
   list. A new entry starts on probation; its first hit moves it to the
@@ -47,52 +47,54 @@ implementation:
 
 decisions:
   - id: segmented-lru-beside-the-recency-list
-    chosen: 'A probation and a protected segment as intrusive lists beside the one recency list, the protected share 20% of the entry and byte budgets'
-    over: ['two-segment SLRU replacing the recency list (the restart hand-over walks it for recency and the warm-up appends to it)', 'second chance (CLOCK) on the recency list (weaker against a flood longer than the cache)', 'W-TinyLFU admission sketch (more state and an admission decision per write)', 'protected shares of 35, 50 and 80 percent (each lowered a ratio on one trace)']
+    chosen: 'A probation and a protected segment as intrusive lists beside the one recency list, opt-in (-cache-reuse-protection-percent, default 0), 20 recommended'
+    over: ['on by default with 20 (lowered a ratio on some trace and seed)', 'two-segment SLRU replacing the recency list (the restart hand-over walks it for recency and the warm-up appends to it)', 'second chance (CLOCK) on the recency list (weaker against a flood longer than the cache)', 'W-TinyLFU admission sketch (more state and an admission decision per write)', 'protected shares of 35, 50 and 80 percent (larger losses after a working-set shift)']
     why: |
       Issue #1767 asks that entries hit several times stay longer than entries
       read once, inside the TTL rules. A segmented LRU does exactly that under
       capacity pressure and nothing else. Keeping the recency list untouched
-      leaves the restart hand-over order and the warm-up as they are. The
-      share is the largest measured that lowered no ratio on any trace: the
-      larger shares protect more against a flood but hold the old set longer
-      after the working set moves.
+      leaves the restart hand-over order and the warm-up as they are. No share
+      was at or above plain LRU on every ratio of every trace over five seeds,
+      so protection is opt-in: 20 raised the hit ratio after a flood on every
+      seed and lost at most a fraction of a point (the docs table states the
+      largest loss); larger shares lost more after a working-set shift.
     evidence: |
-      TestRetentionTraceReplay replays five deterministic traces (Drilldown
-      Zipf, dashboard refresh with step buckets, a one-scan flood, a working
-      set shift, and an expiry-bound trace) through a real memory and disk
-      cache with every policy and holds the default to no ratio below plain
-      LRU, the expiry-bound trace equal, and the flood's recovery above LRU;
-      the published table in docs/cache-troubleshooting.md is the test's
-      output. One-scan flood: hit ratio 22.92% -> 23.67%, L1 hit ratio after
-      the flood 83.46% -> 84.54%.
+      TestRetentionTraceReplay replays six deterministic traces (Drilldown
+      Zipf, dashboard refresh with step buckets, a one-scan flood, two working
+      set shifts, an expiry-bound trace) over five seeds through a real memory
+      and disk cache, with integer-only samplers so every architecture gives
+      the same numbers. It holds the default (plain LRU) as the baseline, the
+      expiry-bound trace equal under every policy, and 20 above plain LRU after
+      the flood on every seed; the published table in
+      docs/cache-troubleshooting.md is the test's output and is checked by it.
+      Seed 0, one-scan flood: hit ratio after the flood 83.71% -> 85.00%,
+      memory hit ratio 82.25% -> 83.67%.
     code: [internal/cache/retention.go]
     tests: [TestRetentionTraceReplay, TestRetentionTraceReplayDeterministic, TestRetentionPolicyValidation, TestRetentionProtectsReusedEntriesFromAFlood, TestRetentionProtectedShareIsBounded, TestRetentionProtectedByteShare, TestRetentionNeverExtendsTTL, TestRetentionRestoredEntries, TestRetentionRandomOperations, TestRetentionConcurrent, TestBuildRuntime_CacheRetention]
     quality: |
       Answers, keys and TTLs are unchanged (TestRetentionNeverExtendsTTL, the
-      expiry-bound trace). The gains are small on Zipf traces (0.03 to 0.2
-      points of hit ratio, about 1 point of L1 hit ratio) and largest after a
-      flood; an expiry-bound cache (the production shape of #1767) sees none.
+      expiry-bound trace). With the flag at 0 the eviction order is plain LRU,
+      as before. The gains with 20 are largest after a flood and about a point
+      of memory hit ratio on the Zipf traces; an expiry-bound cache (the
+      production shape of #1767) sees none.
     performance:
-      tracked: ['cache set/get/evict paths with the policy off and on: ns/op, B/op, allocs/op (benchstat)']
+      tracked: ['cache set/get/evict paths with the policy off and on: ns/op, B/op, allocs/op (benchstat)', 'parallel hits and evicting writes with the policy on']
       bound: 'policy off: the plain paths unchanged; policy on: no allocation on a hit or an evicting write, one 24-byte node per stored entry while the cache fills'
       measured: 'see the pull request benchstat tables (Apple M5 Pro, GOMAXPROCS=4, 8 interleaved runs, 2026-11-26)'
-      benchmarks: [BenchmarkRetentionSetEvict, BenchmarkRetentionGetHitPromote, BenchmarkRetentionReplace, BenchmarkRetentionEvictWithDisk, BenchmarkCacheSetEvictCapacity, BenchmarkCacheGetHitParallel, BenchmarkCacheSetReplace]
+      benchmarks: [BenchmarkRetentionSetEvict, BenchmarkRetentionGetHitPromote, BenchmarkRetentionReplace, BenchmarkRetentionEvictWithDisk, BenchmarkRetentionGetHitParallel, BenchmarkRetentionSetEvictParallel, BenchmarkCacheSetEvictCapacity, BenchmarkCacheGetHitParallel, BenchmarkCacheSetReplace]
   - id: demote-on-evict-off-by-default
     chosen: 'Demotion behind -cache-demote-on-evict, off by default, only for entries read at least once'
     over: ['on by default', 'demoting every evicted entry (a flood of entries read once would fill the disk queue and evict reused disk records)', 'writing without keeping an existing disk copy newest (measured: lowers the hit ratio after a shift as well, and helps the Zipf trace less)']
     why: |
-      On the measured traces demotion raised the hit ratio of the Drilldown and
-      flood traces by 0.05 to 0.2 points and lowered it after a working-set
-      shift (92.14% -> 92.10%; after the shift 92.27% -> 92.04%), where it
-      keeps the old set on disk. With protection on, most capacity victims
-      were never read and are not demoted. A policy that lowers any trace is
-      not a default.
+      On the measured traces demotion raised the hit ratio of the Drilldown,
+      flood and wide working-set traces and lowered it after the 800-query
+      working-set shift, where it keeps the old set on disk (seed 0, after the
+      shift: 91.98% -> 91.65%). A policy that lowers any trace is not a default.
     evidence: |
-      TestRetentionTraceReplay (demote and protect20+demote rows);
-      TestRetentionDemoteKeepsTheDiskCopy, TestRetentionDemoteWritesWithTheRemainingTTL
-      and TestRetentionDemoteSkips pin what is handed over, with which TTL,
-      and what never is.
+      TestRetentionTraceReplay (demote and protect20+demote rows of the docs
+      table); TestRetentionDemoteKeepsTheDiskCopy,
+      TestRetentionDemoteWritesWithTheRemainingTTL and TestRetentionDemoteSkips
+      pin what is handed over, with which TTL, and what never is.
     code: [internal/cache/retention.go]
     tests: [TestRetentionDemoteKeepsTheDiskCopy, TestRetentionDemoteWritesWithTheRemainingTTL, TestRetentionDemoteSkips, TestRetentionTraceReplay]
     quality: 'A demoted copy never outlives the memory entry it came from (TestRetentionDemoteWritesWithTheRemainingTTL).'

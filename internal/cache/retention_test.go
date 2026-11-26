@@ -513,3 +513,65 @@ func TestRetentionConcurrent(t *testing.T) {
 	checkSegments(t, c)
 	assertSignalsBalance(t, c, dc)
 }
+
+// FuzzRetentionOperations drives the memory cache with protection (and
+// demotion) through byte-coded operations and holds the segment invariants and
+// the eviction counters after every step.
+func FuzzRetentionOperations(f *testing.F) {
+	f.Add([]byte{20, 0, 1, 10, 3, 1, 10, 0, 2, 20, 3, 2, 40, 5, 0, 0, 0, 3})
+	f.Add([]byte{90, 0, 0, 200, 0, 1, 200, 3, 0, 0, 2, 0, 9, 6, 0, 0, 8, 1, 0, 4, 0, 0, 7, 0, 0})
+	f.Add([]byte{1, 2, 5, 5, 1, 5, 5, 3, 5, 0, 6, 9, 9, 0, 9, 9, 3, 9, 0})
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) == 0 || len(data) > 600 {
+			return
+		}
+		pct := int(data[0]) % (MaxRetentionProtectPercent + 1)
+		c := NewWithMaxBytes(time.Hour, 8, 2048)
+		defer c.Close()
+		if err := c.SetRetention(RetentionPolicy{ProtectPercent: pct, DemoteOnEvict: data[0]%2 == 0}); err != nil {
+			t.Fatal(err)
+		}
+		dc := policyDisk(t, DiskCacheConfig{MaxEntries: 6, MinTTL: time.Second})
+		c.SetL2(dc)
+		var advanced time.Duration
+		defer func() { AdvanceClockForTesting(-advanced) }()
+		for i := 1; i+2 < len(data); i += 3 {
+			op, key, arg := data[i]%10, fmt.Sprintf("query:%d", data[i+1]%16), int(data[i+2])
+			value := bytes.Repeat([]byte("v"), arg)
+			ttl := time.Duration(arg%64+1) * time.Second
+			switch op {
+			case 0, 1:
+				c.SetWithTTL(key, value, ttl)
+			case 2, 3:
+				c.Get(key)
+				c.drainPromotions()
+			case 4:
+				c.SetLocalOnlyWithTTL(key, value, ttl)
+			case 5:
+				c.mu.Lock()
+				c.storeEntryLocked(key, value, ttl, entrySize(key, value), false, false, true, 0)
+				c.mu.Unlock()
+			case 6:
+				generation, _ := c.diskPromotionGeneration()
+				var restored int64
+				c.admitRestoreBatch([]*restoreEntry{{key: key, value: value, expiry: clockNow().Add(ttl).UnixNano()}}, generation, &restored, 1<<20, nil)
+			case 7:
+				c.Invalidate(key)
+			case 8:
+				d := time.Duration(arg%30) * time.Second
+				AdvanceClockForTesting(d)
+				advanced += d
+			default:
+				if arg%5 == 0 {
+					c.PurgeAll()
+				} else {
+					dc.Flush()
+				}
+			}
+			checkSegments(t, c)
+		}
+		c.drainPromotions()
+		checkSegments(t, c)
+		assertSignalsBalance(t, c, dc)
+	})
+}

@@ -162,26 +162,56 @@ func replayTrace(t testing.TB, policy RetentionPolicy, budget traceBudget, reqs 
 // the clock and reading it would decide.
 func traceTTL(d time.Duration) time.Duration { return d - 37*time.Millisecond }
 
-// traceSize is a key's answer size: log-normal around median bytes, from a
-// hash of the key so every policy sees the same sizes.
+// traceSize is a key's answer size: about log-normal around median bytes
+// (quarter-octave steps from a sum of four hash bytes), from a hash of the key
+// so every policy sees the same sizes. Integer arithmetic only, so a replay
+// gives the same numbers on every architecture.
 func traceSize(key string, median int) int {
 	h := uint64(14695981039346656037)
 	for i := 0; i < len(key); i++ {
 		h = (h ^ uint64(key[i])) * 1099511628211
 	}
-	u1 := (float64(h>>11) + 0.5) / float64(1<<53)
-	u2 := (float64((h*6364136223846793005+1442695040888963407)>>11) + 0.5) / float64(1<<53)
-	z := math.Sqrt(-2*math.Log(u1)) * math.Cos(2*math.Pi*u2)
-	size := int(float64(median) * math.Exp(0.8*z))
+	sum := int(h&0xff) + int(h>>8&0xff) + int(h>>16&0xff) + int(h>>24&0xff) // mean 510, sd 148
+	steps := (sum - 510) / 37                                               // about four steps per sd
+	size := median
+	for ; steps > 0; steps-- {
+		size = size * 1189 / 1000 // 2^(1/4)
+	}
+	for ; steps < 0; steps++ {
+		size = size * 1000 / 1189
+	}
 	return min(max(size, 256), 24*median)
+}
+
+// zipf draws ranks 0..n-1 with weight 1/(rank+1) from integer weights, so the
+// draws are the same on every architecture (math/rand's Zipf uses floating
+// point, which arm64 may fuse differently).
+type zipf struct {
+	rng *rand.Rand
+	cum []int64
+}
+
+func newZipf(rng *rand.Rand, n int) *zipf {
+	z := &zipf{rng: rng, cum: make([]int64, n)}
+	total := int64(0)
+	for k := 0; k < n; k++ {
+		total += (1 << 40) / int64(k+1)
+		z.cum[k] = total
+	}
+	return z
+}
+
+func (z *zipf) Uint64() uint64 {
+	r := z.rng.Int63n(z.cum[len(z.cum)-1])
+	return uint64(sort.Search(len(z.cum), func(i int) bool { return z.cum[i] > r }))
 }
 
 // drilldownTrace: users open Logs Drilldown service pages, picked by a Zipf
 // law over services; each visit asks the page's panels (volume, logs, labels,
 // fields, patterns, ...). A visit every two seconds for 2h20m.
-func drilldownTrace() []traceRequest {
-	rng := rand.New(rand.NewSource(1767))
-	services := rand.NewZipf(rng, 1.07, 1, 399)
+func drilldownTrace(seed int64) []traceRequest {
+	rng := rand.New(rand.NewSource(1767 + 1000*seed))
+	services := newZipf(rng, 400)
 	const panels = 8
 	var out []traceRequest
 	for i := 0; i < 4200; i++ {
@@ -199,9 +229,9 @@ func drilldownTrace() []traceRequest {
 // each panel asking its last hour as twelve 5m buckets (settled buckets live
 // 2h, the open bucket 15s, below the disk's minimum TTL), beside Explore
 // queries (a Zipf law over 1500 queries, one every two seconds, 5m TTL).
-func dashboardTrace() []traceRequest {
-	rng := rand.New(rand.NewSource(1768))
-	explore := rand.NewZipf(rng, 1.1, 1, 1499)
+func dashboardTrace(seed int64) []traceRequest {
+	rng := rand.New(rand.NewSource(1768 + 1000*seed))
+	explore := newZipf(rng, 1500)
 	var out []traceRequest
 	const duration = 2 * time.Hour
 	for at := time.Duration(0); at < duration; at += time.Second {
@@ -234,9 +264,9 @@ func dashboardTrace() []traceRequest {
 // a second) and, from 30m to 40m, a one-time scan of 18000 distinct answers
 // (thirty a second: a crawler or a sweep over every service and range). The
 // window figures are the 20 minutes after the flood.
-func floodTrace() ([]traceRequest, time.Duration) {
-	rng := rand.New(rand.NewSource(1769))
-	hot := rand.NewZipf(rng, 1.05, 1, 599)
+func floodTrace(seed int64) ([]traceRequest, time.Duration) {
+	rng := rand.New(rand.NewSource(1769 + 1000*seed))
+	hot := newZipf(rng, 600)
 	var out []traceRequest
 	const duration = 60 * time.Minute
 	scan := 0
@@ -256,15 +286,16 @@ func floodTrace() ([]traceRequest, time.Duration) {
 	return out, 40 * time.Minute
 }
 
-// shiftTrace: the working set moves: a Zipf law over 800 queries for 40
-// minutes, then over 800 other queries for 40 minutes, four a second, 2h TTL
-// (no expiry clears the first set). Protection can only hurt here: the window
-// figures are the 40 minutes after the shift.
-func shiftTrace() ([]traceRequest, time.Duration) {
-	rng := rand.New(rand.NewSource(1770))
-	zipf := rand.NewZipf(rng, 1.05, 1, 799)
+// shiftTrace: the working set moves: a Zipf law over keys queries for 40
+// minutes, then over as many other queries for 40 minutes, perSecond lookups
+// a second, 2h TTL (no expiry clears the first set). Protection can only hurt
+// here: the window figures are the 40 minutes after the shift.
+func shiftTrace(seed int64, keys, perSecond int) ([]traceRequest, time.Duration) {
+	rng := rand.New(rand.NewSource(1770 + 1000*seed))
+	zipf := newZipf(rng, keys)
 	var out []traceRequest
-	for at := time.Duration(0); at < 80*time.Minute; at += 250 * time.Millisecond {
+	step := time.Second / time.Duration(perSecond)
+	for at := time.Duration(0); at < 80*time.Minute; at += step {
 		set := "a"
 		if at >= 40*time.Minute {
 			set = "b"
@@ -278,9 +309,9 @@ func shiftTrace() ([]traceRequest, time.Duration) {
 // ttlTrace: the production shape of #1767: budgets far above the working set,
 // so every eviction is an expiry; a Zipf law over 3000 queries, one a second,
 // 60s TTL.
-func ttlTrace() []traceRequest {
-	rng := rand.New(rand.NewSource(1771))
-	zipf := rand.NewZipf(rng, 1.1, 1, 2999)
+func ttlTrace(seed int64) []traceRequest {
+	rng := rand.New(rand.NewSource(1771 + 1000*seed))
+	zipf := newZipf(rng, 3000)
 	var out []traceRequest
 	for at := time.Duration(0); at < time.Hour; at += time.Second {
 		key := fmt.Sprintf("query_range:ttl:q%d", zipf.Uint64())
@@ -312,28 +343,36 @@ type retentionTrace struct {
 // retentionTraces sizes each trace's memory tier to a fraction of its distinct
 // bytes and the disk to a larger one, so capacity binds on both tiers (the
 // policy only acts on capacity evictions), except ttl-bound.
-func retentionTraces() []retentionTrace {
+func retentionTraces(seed int64) []retentionTrace {
 	sized := func(reqs []traceRequest, l1, l2 float64) traceBudget {
 		keys, bytes := distinctBytes(reqs)
 		entries := max(1, int(math.Ceil(l2))) * keys
 		return traceBudget{l1Entries: entries, l1Bytes: int(float64(bytes) * l1), l2Entries: entries, l2Bytes: int64(float64(bytes) * l2)}
 	}
-	dd := drilldownTrace()
-	dash := dashboardTrace()
-	flood, floodWindow := floodTrace()
-	shift, shiftWindow := shiftTrace()
-	ttl := ttlTrace()
+	dd := drilldownTrace(seed)
+	dash := dashboardTrace(seed)
+	flood, floodWindow := floodTrace(seed)
+	shift, shiftWindow := shiftTrace(seed, 800, 4)
+	wide, wideWindow := shiftTrace(seed, 2400, 8)
+	ttl := ttlTrace(seed)
 	return []retentionTrace{
 		{name: "drilldown-zipf", reqs: dd, window: time.Hour, budget: sized(dd, 0.10, 0.25)},
 		{name: "dashboard-refresh", reqs: dash, window: time.Hour, budget: sized(dash, 0.15, 0.35)},
 		{name: "one-scan-flood", reqs: flood, window: floodWindow, budget: sized(flood, 0.03, 0.06)},
 		{name: "working-set-shift", reqs: shift, window: shiftWindow, budget: sized(shift, 0.25, 0.45)},
+		{name: "working-set-shift-wide", reqs: wide, window: wideWindow, budget: sized(wide, 0.15, 0.30)},
 		{name: "ttl-bound", reqs: ttl, window: 30 * time.Minute, budget: sized(ttl, 4, 8)},
 	}
 }
 
-// retentionTraceDefault is the policy the flags' defaults select.
-const retentionTraceDefault = "protect20"
+// retentionTraceDefault is the policy the flags' defaults select: plain LRU,
+// because every protected share measured lowered some ratio on some seed.
+// retentionTraceRecommended is the share the docs recommend where capacity
+// evictions of reused entries or floods are seen.
+const (
+	retentionTraceDefault     = "lru"
+	retentionTraceRecommended = "protect20"
+)
 
 var retentionPolicies = []struct {
 	name   string
@@ -358,59 +397,90 @@ var retentionPolicies = []struct {
 // conformance: cache-reuse-retention
 func TestRetentionTraceReplay(t *testing.T) {
 	if raceDetectorEnabled {
-		// About 400k lookups; the replay is single-threaded, so the race
-		// detector adds nothing but time. The coverage run (no -race) runs it,
-		// and TestRetentionTraceReplayDeterministic runs under -race.
+		// About two million lookups; the replay is single-threaded, so the
+		// race detector adds nothing but time. The coverage run (no -race)
+		// runs it; TestRetentionTraceReplayDeterministic runs under -race.
 		t.Skip("trace replay runs without the race detector")
 	}
+	allSeeds := os.Getenv("LVP_RETENTION_ALL_SEEDS") == "1"
 	var rows []string
-	results := map[string]map[string]traceResult{}
-	for _, tr := range retentionTraces() {
-		results[tr.name] = map[string]traceResult{}
-		for _, p := range retentionPolicies {
-			r := replayTrace(t, p.policy, tr.budget, tr.reqs, tr.window)
-			results[tr.name][p.name] = r
-			rows = append(rows, fmt.Sprintf("| %s | %s | %d | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %d | %d/%d |",
-				tr.name, p.name, r.requests, r.hitRatio(), r.byteHitRatio(), r.l1Ratio(), r.windowRatio(), r.windowByteRatio(), r.windowL1Ratio(),
-				r.l2Writes, r.demoted[DemotionRetained], r.demoted[DemotionWritten]))
+	var table map[string]map[string]traceResult
+	// worst is, per policy, the lowest margin over plain LRU of any ratio on
+	// any trace and seed, and where it was.
+	worst := map[string]float64{}
+	worstAt := map[string]string{}
+	for seed := int64(0); seed < retentionTraceSeeds; seed++ {
+		results := map[string]map[string]traceResult{}
+		for _, tr := range retentionTraces(seed) {
+			results[tr.name] = map[string]traceResult{}
+			for _, p := range retentionPolicies {
+				if seed > 0 && !allSeeds && p.name != "lru" && p.name != retentionTraceRecommended {
+					continue
+				}
+				r := replayTrace(t, p.policy, tr.budget, tr.reqs, tr.window)
+				results[tr.name][p.name] = r
+				if seed == 0 {
+					rows = append(rows, fmt.Sprintf("| %s | %s | %d | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %d | %d/%d |",
+						tr.name, p.name, r.requests, r.hitRatio(), r.byteHitRatio(), r.l1Ratio(), r.windowRatio(), r.windowByteRatio(), r.windowL1Ratio(),
+						r.l2Writes, r.demoted[DemotionRetained], r.demoted[DemotionWritten]))
+				}
+			}
+			base := results[tr.name]["lru"]
+			for name, got := range results[tr.name] {
+				for what, m := range retentionMargins(base, got) {
+					if prev, ok := worst[name]; !ok || m < prev {
+						worst[name], worstAt[name] = m, fmt.Sprintf("seed %d %s %s", seed, tr.name, what)
+					}
+				}
+			}
+			if ttl := results["ttl-bound"]; ttl != nil {
+				for name, r := range ttl {
+					if r.l1Hits != ttl["lru"].l1Hits || r.l2Hits != ttl["lru"].l2Hits {
+						t.Errorf("seed %d ttl-bound: %s hits %d/%d differ from lru %d/%d: expiry evictions must be unaffected", seed, name, r.l1Hits, r.l2Hits, ttl["lru"].l1Hits, ttl["lru"].l2Hits)
+					}
+				}
+			}
+		}
+		if f := results["one-scan-flood"]; f[retentionTraceRecommended].windowRatio() <= f["lru"].windowRatio() || f[retentionTraceRecommended].windowL1Ratio() <= f["lru"].windowL1Ratio() {
+			t.Errorf("seed %d one-scan-flood: %s after the flood %.4f (memory %.4f) not above lru %.4f (%.4f)", seed, retentionTraceRecommended,
+				f[retentionTraceRecommended].windowRatio(), f[retentionTraceRecommended].windowL1Ratio(), f["lru"].windowRatio(), f["lru"].windowL1Ratio())
+		}
+		if seed == 0 {
+			table = results
 		}
 	}
 	t.Logf("\n| trace | policy | requests | hit ratio | byte hit ratio | L1 hit ratio | window hit ratio | window byte hit ratio | window L1 hit ratio | L2 writes | demoted retained/written |\n|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n%s", strings.Join(rows, "\n"))
+	names := make([]string, 0, len(worst))
+	for name := range worst {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		t.Logf("worst margin over lru (seeds replayed): %-18s %+.4f points (%s)", name, 100*worst[name], worstAt[name])
+	}
+	// The default is plain LRU: protection is opt-in because no share was
+	// at or above LRU on every ratio of every trace and seed. Should a later
+	// change make one so, this is where a default-on proposal is proven.
+	if worst[retentionTraceDefault] < 0 {
+		t.Errorf("%s is below lru by %.4f points (%s)", retentionTraceDefault, -100*worst[retentionTraceDefault], worstAt[retentionTraceDefault])
+	}
+	checkRetentionDocTable(t, table, worst[retentionTraceRecommended], worstAt[retentionTraceRecommended])
+}
 
-	def := retentionTraceDefault
-	for name, byPolicy := range results {
-		base, got := byPolicy["lru"], byPolicy[def]
-		for _, m := range []struct {
-			what      string
-			base, got float64
-		}{
-			{"hit ratio", base.hitRatio(), got.hitRatio()},
-			{"byte hit ratio", base.byteHitRatio(), got.byteHitRatio()},
-			{"window hit ratio", base.windowRatio(), got.windowRatio()},
-			{"window byte hit ratio", base.windowByteRatio(), got.windowByteRatio()},
-			{"memory hit ratio", base.l1Ratio(), got.l1Ratio()},
-			{"window memory hit ratio", base.windowL1Ratio(), got.windowL1Ratio()},
-		} {
-			if m.got < m.base {
-				t.Errorf("%s: %s %s %.4f below lru %.4f", name, def, m.what, m.got, m.base)
-			}
-		}
+// retentionTraceSeeds is how many seeds of every trace the default is held
+// over (seed 0 is the published table).
+const retentionTraceSeeds = 5
+
+// retentionMargins is got minus base for every ratio the default is held to.
+func retentionMargins(base, got traceResult) map[string]float64 {
+	return map[string]float64{
+		"hit ratio":               got.hitRatio() - base.hitRatio(),
+		"byte hit ratio":          got.byteHitRatio() - base.byteHitRatio(),
+		"window hit ratio":        got.windowRatio() - base.windowRatio(),
+		"window byte hit ratio":   got.windowByteRatio() - base.windowByteRatio(),
+		"memory hit ratio":        got.l1Ratio() - base.l1Ratio(),
+		"window memory hit ratio": got.windowL1Ratio() - base.windowL1Ratio(),
 	}
-	ttl := results["ttl-bound"]
-	keys := make([]string, 0, len(ttl))
-	for k := range ttl {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		if r := ttl[k]; r.l1Hits != ttl["lru"].l1Hits || r.l2Hits != ttl["lru"].l2Hits {
-			t.Errorf("ttl-bound: %s hits %d/%d differ from lru %d/%d: expiry evictions must be unaffected", k, r.l1Hits, r.l2Hits, ttl["lru"].l1Hits, ttl["lru"].l2Hits)
-		}
-	}
-	if f := results["one-scan-flood"]; f[def].windowRatio() <= f["lru"].windowRatio() {
-		t.Errorf("one-scan-flood: %s window hit ratio %.4f not above lru %.4f", def, f[def].windowRatio(), f["lru"].windowRatio())
-	}
-	checkRetentionDocTable(t, results)
 }
 
 // retentionDocPolicies are the policies the published table shows.
@@ -426,17 +496,18 @@ const (
 // checkRetentionDocTable holds the published table to the replay: the docs
 // show these numbers, so a change to the policy or the traces must update
 // them (LVP_RETENTION_TABLE_UPDATE=1).
-func checkRetentionDocTable(t *testing.T, results map[string]map[string]traceResult) {
+func checkRetentionDocTable(t *testing.T, results map[string]map[string]traceResult, worst float64, worstAt string) {
 	t.Helper()
 	pct := func(v float64) string { return fmt.Sprintf("%.2f%%", 100*v) }
 	var b strings.Builder
 	b.WriteString("| Trace | Policy | Hit ratio | Byte hit ratio | L1 hit ratio | After the event: hit ratio | After the event: L1 hit ratio |\n|---|---|---:|---:|---:|---:|---:|\n")
-	for _, tr := range []string{"drilldown-zipf", "dashboard-refresh", "one-scan-flood", "working-set-shift", "ttl-bound"} {
+	for _, tr := range []string{"drilldown-zipf", "dashboard-refresh", "one-scan-flood", "working-set-shift", "working-set-shift-wide", "ttl-bound"} {
 		for _, p := range retentionDocPolicies {
 			r := results[tr][p]
 			fmt.Fprintf(&b, "| `%s` | `%s` | %s | %s | %s | %s | %s |\n", tr, p, pct(r.hitRatio()), pct(r.byteHitRatio()), pct(r.l1Ratio()), pct(r.windowRatio()), pct(r.windowL1Ratio()))
 		}
 	}
+	fmt.Fprintf(&b, "\nOver %d seeds of every trace, `%s`'s largest loss against `lru` on any of these ratios is %.2f points (%s).\n", retentionTraceSeeds, retentionTraceRecommended, -100*min(worst, 0), worstAt)
 	want := retentionDocBegin + "\n" + b.String() + retentionDocEnd
 	raw, err := os.ReadFile(retentionDocFile)
 	if err != nil {
@@ -463,8 +534,8 @@ func checkRetentionDocTable(t *testing.T, results map[string]map[string]traceRes
 //
 // conformance: cache-reuse-retention
 func TestRetentionTraceReplayDeterministic(t *testing.T) {
-	reqs, window := floodTrace()
-	budget := retentionTraces()[2].budget
+	reqs, window := floodTrace(0)
+	budget := retentionTraces(0)[2].budget
 	for _, p := range retentionPolicies {
 		if p.name != "lru" && p.name != retentionTraceDefault && p.name != "protect20+demote" {
 			continue

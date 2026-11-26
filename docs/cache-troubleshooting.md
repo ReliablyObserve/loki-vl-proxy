@@ -215,7 +215,7 @@ observed.
 
 The memory caches (L1 and Tier0) keep a protected share of their budgets for
 entries read again since they were stored (`-cache-reuse-protection-percent`,
-20 by default; 0 is plain LRU). A capacity eviction takes an entry stored but
+off by default; 20 recommended where it helps, below). A capacity eviction takes an entry stored but
 never read again first, then the least recently used protected one; when the
 protected share is full its least recently read entry goes back to the
 unprotected part. `-cache-demote-on-evict` (off by default) also hands a
@@ -238,36 +238,44 @@ traces, simulated clock, both tiers smaller than the distinct answers except
 <!-- retention-trace-table:begin (TestRetentionTraceReplay; LVP_RETENTION_TABLE_UPDATE=1 rewrites it) -->
 | Trace | Policy | Hit ratio | Byte hit ratio | L1 hit ratio | After the event: hit ratio | After the event: L1 hit ratio |
 |---|---|---:|---:|---:|---:|---:|
-| `drilldown-zipf` | `lru` | 67.80% | 69.21% | 54.46% | 68.77% | 55.27% |
-| `drilldown-zipf` | `protect20` | 67.83% | 69.23% | 55.38% | 68.78% | 56.16% |
-| `drilldown-zipf` | `protect50` | 67.93% | 69.34% | 56.63% | 68.93% | 57.16% |
-| `drilldown-zipf` | `protect80` | 67.98% | 69.38% | 56.85% | 69.00% | 57.36% |
-| `drilldown-zipf` | `demote` | 67.85% | 69.26% | 54.32% | 68.85% | 55.20% |
-| `drilldown-zipf` | `protect20+demote` | 67.86% | 69.27% | 55.23% | 68.89% | 56.11% |
-| `dashboard-refresh` | `lru` | 88.56% | 86.76% | 0.70% | 89.26% | 0.72% |
-| `dashboard-refresh` | `protect20` | 88.56% | 86.76% | 0.84% | 89.26% | 0.85% |
-| `dashboard-refresh` | `protect50` | 88.56% | 86.76% | 0.84% | 89.26% | 0.85% |
-| `dashboard-refresh` | `protect80` | 88.56% | 86.76% | 0.84% | 89.26% | 0.85% |
-| `dashboard-refresh` | `demote` | 88.56% | 86.76% | 0.70% | 89.26% | 0.72% |
-| `dashboard-refresh` | `protect20+demote` | 88.56% | 86.76% | 0.84% | 89.26% | 0.85% |
-| `one-scan-flood` | `lru` | 22.92% | 19.37% | 22.50% | 84.12% | 83.46% |
-| `one-scan-flood` | `protect20` | 23.67% | 20.24% | 23.46% | 85.00% | 84.54% |
-| `one-scan-flood` | `protect50` | 23.86% | 20.42% | 23.64% | 84.96% | 84.50% |
-| `one-scan-flood` | `protect80` | 23.87% | 20.42% | 23.64% | 84.96% | 84.50% |
-| `one-scan-flood` | `demote` | 23.13% | 19.60% | 22.50% | 84.33% | 83.46% |
-| `one-scan-flood` | `protect20+demote` | 23.67% | 20.23% | 23.45% | 84.96% | 84.50% |
-| `working-set-shift` | `lru` | 92.14% | 94.12% | 84.78% | 92.27% | 85.33% |
-| `working-set-shift` | `protect20` | 92.18% | 94.14% | 84.94% | 92.30% | 85.45% |
-| `working-set-shift` | `protect50` | 92.22% | 94.17% | 85.11% | 92.31% | 85.11% |
-| `working-set-shift` | `protect80` | 92.26% | 94.20% | 83.53% | 92.31% | 81.94% |
-| `working-set-shift` | `demote` | 92.10% | 94.08% | 84.78% | 92.04% | 85.33% |
-| `working-set-shift` | `protect20+demote` | 92.13% | 94.11% | 84.94% | 92.04% | 85.45% |
-| `ttl-bound` | `lru` | 38.22% | 45.30% | 38.22% | 38.78% | 38.78% |
-| `ttl-bound` | `protect20` | 38.22% | 45.30% | 38.22% | 38.78% | 38.78% |
-| `ttl-bound` | `protect50` | 38.22% | 45.30% | 38.22% | 38.78% | 38.78% |
-| `ttl-bound` | `protect80` | 38.22% | 45.30% | 38.22% | 38.78% | 38.78% |
-| `ttl-bound` | `demote` | 38.22% | 45.30% | 38.22% | 38.78% | 38.78% |
-| `ttl-bound` | `protect20+demote` | 38.22% | 45.30% | 38.22% | 38.78% | 38.78% |
+| `drilldown-zipf` | `lru` | 63.59% | 63.23% | 48.66% | 64.11% | 48.06% |
+| `drilldown-zipf` | `protect20` | 63.82% | 63.45% | 50.01% | 64.44% | 49.73% |
+| `drilldown-zipf` | `protect50` | 64.10% | 63.91% | 51.37% | 64.82% | 50.73% |
+| `drilldown-zipf` | `protect80` | 64.32% | 64.13% | 51.66% | 64.98% | 50.57% |
+| `drilldown-zipf` | `demote` | 63.93% | 63.59% | 48.51% | 64.58% | 48.01% |
+| `drilldown-zipf` | `protect20+demote` | 63.95% | 63.61% | 49.61% | 64.54% | 49.10% |
+| `dashboard-refresh` | `lru` | 88.41% | 85.83% | 0.59% | 89.10% | 0.62% |
+| `dashboard-refresh` | `protect20` | 88.41% | 85.83% | 0.69% | 89.10% | 0.72% |
+| `dashboard-refresh` | `protect50` | 88.41% | 85.83% | 0.69% | 89.10% | 0.72% |
+| `dashboard-refresh` | `protect80` | 88.41% | 85.83% | 0.69% | 89.10% | 0.72% |
+| `dashboard-refresh` | `demote` | 88.41% | 85.83% | 0.59% | 89.10% | 0.62% |
+| `dashboard-refresh` | `protect20+demote` | 88.41% | 85.83% | 0.69% | 89.10% | 0.72% |
+| `one-scan-flood` | `lru` | 22.62% | 22.32% | 21.83% | 83.71% | 82.25% |
+| `one-scan-flood` | `protect20` | 23.32% | 23.16% | 22.72% | 85.00% | 83.67% |
+| `one-scan-flood` | `protect50` | 23.56% | 23.48% | 22.93% | 85.00% | 83.83% |
+| `one-scan-flood` | `protect80` | 23.66% | 23.61% | 22.98% | 84.83% | 83.54% |
+| `one-scan-flood` | `demote` | 22.84% | 22.54% | 21.83% | 83.79% | 82.25% |
+| `one-scan-flood` | `protect20+demote` | 23.35% | 23.20% | 22.71% | 84.96% | 83.62% |
+| `working-set-shift` | `lru` | 91.83% | 91.16% | 82.88% | 91.98% | 83.20% |
+| `working-set-shift` | `protect20` | 91.86% | 91.20% | 83.06% | 91.97% | 83.40% |
+| `working-set-shift` | `protect50` | 92.01% | 91.40% | 83.30% | 92.00% | 83.28% |
+| `working-set-shift` | `protect80` | 92.06% | 91.46% | 81.97% | 92.03% | 80.00% |
+| `working-set-shift` | `demote` | 91.80% | 91.19% | 82.88% | 91.65% | 83.20% |
+| `working-set-shift` | `protect20+demote` | 91.81% | 91.20% | 83.06% | 91.62% | 83.40% |
+| `working-set-shift-wide` | `lru` | 85.82% | 81.67% | 76.97% | 85.81% | 77.19% |
+| `working-set-shift-wide` | `protect20` | 85.99% | 81.93% | 77.61% | 86.05% | 77.79% |
+| `working-set-shift-wide` | `protect50` | 86.73% | 82.82% | 78.56% | 86.68% | 78.41% |
+| `working-set-shift-wide` | `protect80` | 87.78% | 84.01% | 77.28% | 87.48% | 74.68% |
+| `working-set-shift-wide` | `demote` | 86.55% | 82.41% | 76.97% | 86.48% | 77.19% |
+| `working-set-shift-wide` | `protect20+demote` | 86.72% | 82.58% | 77.61% | 86.64% | 77.79% |
+| `ttl-bound` | `lru` | 29.11% | 21.13% | 29.11% | 29.44% | 29.44% |
+| `ttl-bound` | `protect20` | 29.11% | 21.13% | 29.11% | 29.44% | 29.44% |
+| `ttl-bound` | `protect50` | 29.11% | 21.13% | 29.11% | 29.44% | 29.44% |
+| `ttl-bound` | `protect80` | 29.11% | 21.13% | 29.11% | 29.44% | 29.44% |
+| `ttl-bound` | `demote` | 29.11% | 21.13% | 29.11% | 29.44% | 29.44% |
+| `ttl-bound` | `protect20+demote` | 29.11% | 21.13% | 29.11% | 29.44% | 29.44% |
+
+Over 5 seeds of every trace, `protect20`'s largest loss against `lru` on any of these ratios is 0.10 points (seed 3 working-set-shift window memory hit ratio).
 <!-- retention-trace-table:end -->
 
 - `drilldown-zipf`: Logs Drilldown service pages picked by a Zipf law, eight
@@ -280,12 +288,19 @@ traces, simulated clock, both tiers smaller than the distinct answers except
   the flood.
 - `working-set-shift`: one set of 800 queries for 40 minutes, then another;
   L1 25%, L2 45%. "After the event" is the 40 minutes after the shift.
+  `working-set-shift-wide`: the same with 2400 queries per set, eight lookups
+  a second, L1 15%, L2 30%.
 - `ttl-bound`: budgets four times the distinct bytes, 60s TTL: every eviction
   is an expiry, and every policy gives the same answers and hits.
 
-The default share (20) is the largest of those measured that is not below
-plain LRU on any trace and ratio; larger shares protect more against a flood
-but hold the old set longer after a shift. Demotion is off by default: it
-raised the hit ratio of the Zipf and flood traces a little, and lowered it
-after the shift, where it keeps the old set on disk. Count demotions with
+Both are off by default. A protected share raised the hit ratio after the
+flood on every seed, and the memory hit ratio on the Zipf traces by about a
+point, but no share was at or above plain LRU on every ratio of every trace
+and seed (the line under the table gives `protect20`'s largest loss); larger
+shares protect more against a flood but hold the old set longer after a
+shift. Turn it on (20) where `evictions{reason="capacity"}` is a real share and
+`entry_hits_at_eviction{reason="capacity"}` is above 0, or where one-time
+floods push out what users read again. Demotion raised the hit ratio of the
+Zipf and flood traces a little and lowered it after the shift, where it keeps
+the old set on disk. Count demotions with
 `loki_vl_proxy_cache_demotions_total{result}`.

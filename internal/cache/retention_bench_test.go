@@ -3,6 +3,7 @@ package cache
 import (
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -33,7 +34,7 @@ func BenchmarkRetentionSetEvict(b *testing.B) {
 	value := []byte(`{"status":"success","data":["app","env","level"]}`)
 	keys := retentionBenchKeys(4096, "query:evict-")
 	for _, p := range retentionBenchPolicies {
-		b.Run(p.name, func(b *testing.B) {
+		b.Run("policy="+p.name, func(b *testing.B) {
 			c := NewWithMaxBytes(time.Hour, 1024, 1<<30)
 			defer c.Close()
 			if err := c.SetRetention(p.policy); err != nil {
@@ -59,7 +60,7 @@ func BenchmarkRetentionGetHitPromote(b *testing.B) {
 	value := []byte(`{"status":"success","data":["app","env","level"]}`)
 	keys := retentionBenchKeys(2048, "query:hit-")
 	for _, p := range retentionBenchPolicies {
-		b.Run(p.name, func(b *testing.B) {
+		b.Run("policy="+p.name, func(b *testing.B) {
 			c := NewWithMaxBytes(time.Hour, 4096, 1<<30)
 			defer c.Close()
 			if err := c.SetRetention(p.policy); err != nil {
@@ -86,7 +87,7 @@ func BenchmarkRetentionReplace(b *testing.B) {
 	value := []byte(`{"data":"test"}`)
 	keys := retentionBenchKeys(256, "query:replace-")
 	for _, p := range retentionBenchPolicies {
-		b.Run(p.name, func(b *testing.B) {
+		b.Run("policy="+p.name, func(b *testing.B) {
 			c := NewWithMaxBytes(time.Hour, 1024, 1<<30)
 			defer c.Close()
 			if err := c.SetRetention(p.policy); err != nil {
@@ -108,7 +109,7 @@ func BenchmarkRetentionEvictWithDisk(b *testing.B) {
 	value := []byte(`{"status":"success","data":["app","env","level"]}`)
 	keys := retentionBenchKeys(4096, "query:disk-")
 	for _, p := range retentionBenchPolicies {
-		b.Run(p.name, func(b *testing.B) {
+		b.Run("policy="+p.name, func(b *testing.B) {
 			dc, err := NewDiskCache(DiskCacheConfig{Path: filepath.Join(b.TempDir(), "bench.db"), FlushInterval: time.Hour})
 			if err != nil {
 				b.Fatal(err)
@@ -128,6 +129,65 @@ func BenchmarkRetentionEvictWithDisk(b *testing.B) {
 				c.Get(k)
 				i++
 			}
+		})
+	}
+}
+
+// Parallel hits on a resident set larger than the protected share: every
+// hit's deferred promotion may move entries between segments under the lock
+// the readers share.
+func BenchmarkRetentionGetHitParallel(b *testing.B) {
+	value := []byte(`{"status":"success"}`)
+	keys := retentionBenchKeys(2048, "query:par-hit-")
+	for _, p := range retentionBenchPolicies {
+		b.Run("policy="+p.name, func(b *testing.B) {
+			c := NewWithMaxBytes(time.Hour, 4096, 1<<30)
+			defer c.Close()
+			if err := c.SetRetention(p.policy); err != nil {
+				b.Fatal(err)
+			}
+			for _, k := range keys {
+				c.SetWithTTL(k, value, time.Hour)
+			}
+			var next atomic.Int64
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				i := int(next.Add(1)) * 7919
+				for pb.Next() {
+					c.Get(keys[i%len(keys)])
+					i++
+				}
+			})
+		})
+	}
+}
+
+// Parallel writers that keep evicting, one lookup in four a hit.
+func BenchmarkRetentionSetEvictParallel(b *testing.B) {
+	value := []byte(`{"data":"test"}`)
+	keys := retentionBenchKeys(8192, "query:par-evict-")
+	for _, p := range retentionBenchPolicies {
+		b.Run("policy="+p.name, func(b *testing.B) {
+			c := NewWithMaxBytes(time.Hour, 1024, 1<<30)
+			defer c.Close()
+			if err := c.SetRetention(p.policy); err != nil {
+				b.Fatal(err)
+			}
+			var next atomic.Int64
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				i := int(next.Add(1)) * 104729
+				for pb.Next() {
+					k := keys[i%len(keys)]
+					c.SetWithTTL(k, value, time.Hour)
+					if i%4 == 0 {
+						c.Get(k)
+					}
+					i++
+				}
+			})
 		})
 	}
 }
