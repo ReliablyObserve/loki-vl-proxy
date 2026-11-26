@@ -198,7 +198,8 @@ probe room for both. A warm-up that cannot finish in time is not lost work: the
 hottest entries are restored first.
 
 While it runs, the log has a `response cache warm-up started` line (the plan,
-with an estimate at 125 MB/s of disk throughput), a `response cache warm-up
+with an estimate at 125 MB/s of disk throughput, slightly
+below gp3's included 125 MiB/s), a `response cache warm-up
 progress` line every 2 seconds (percent, bytes per second, estimated time and
 time left), a `will not finish before its timeout` warning, and a final
 `response cache warmed from the restart hand-over` line with the outcome, rate
@@ -225,6 +226,25 @@ this on your disk: `LVP_RESTORE_BENCH_MB` sets the decoded size,
 `LVP_RESTORE_COLD=1` drops the file from the page cache first, and
 `LVP_RESTORE_GATE=1 go test -run TestRestoreWarm_ThroughputGate ./internal/cache/`
 fails below 400 MiB/s (2 GiB in about 5 s).
+
+### Lowest read time on EBS
+
+Lowest possible time to read the stored data from an EBS volume (stored size
+divided by throughput; computed, not measured on EBS). Index rebuild, I/O
+latency, request limits, decompression and filling memory come on top.
+
+| Restore into memory (read from disk) | 125 MiB/s | 250 MiB/s | 500 MiB/s |
+|---|---|---|---|
+| 2 GiB, compressed (721 MiB) | 5.8 s ❌ | 2.9 s | 1.4 s |
+| 2 GiB, uncompressed (2 GiB) | 16.4 s ❌ | 8.2 s ❌ | 4.1 s |
+| 4 GiB, compressed (1.41 GiB) | 11.6 s ❌ | 5.8 s | 2.9 s |
+| 4 GiB, uncompressed (4 GiB) | 32.8 s ❌ | 16.4 s ❌ | 8.2 s |
+
+❌ = the target (2 GiB under 5 s, 4 GiB under 10 s) cannot be met at that speed.
+gp3 includes 125 MiB/s and 3,000 IOPS by default and can be provisioned higher.
+The compressed rows assume the benchmark data's `s2` ratio of about 2.8x. The
+instance's EBS bandwidth can cap the volume, and a volume created from a
+snapshot is slower until it is initialised.
 
 ## Upgrades, restarts and purge
 
