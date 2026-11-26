@@ -80,6 +80,25 @@ proxy: |
   memory tier with X-Loki-VL-Backend-Calls 0 and no disk read, equal to the
   first answers, and the other replica answers the same data.
 
+  Helm (TestCacheHandoverChartOptions): cacheHandover.enabled=true renders the
+  three flags, a grace period of at least the preStop sleep + 60 s of HTTP
+  drain (main, then admin and metrics listeners) + flush + 5 s (a larger
+  configured one is kept), a preStop sleep on Kubernetes 1.30+ unless
+  lifecycle is set (a configured sleep counts toward the grace period),
+  lets extraArgs override each flag and refuses to render without a disk
+  cache. It also renders a warm-up timeout of 120 s (a pod is ready when
+  warm, or partly warm after it); a startup probe on /health (never /ready,
+  which also checks VictoriaLogs) with 60 failures 5 s apart, covering the
+  disk index rebuild before the listener opens; for a Deployment without a
+  configured strategy RollingUpdate with maxSurge 0 and maxUnavailable 1 (a
+  surge pod on the same file would wait for the bbolt lock; one replica has a
+  rollout gap), while a StatefulSet's RollingUpdate already updates one pod
+  at a time; with more than one replica or HPA a PodDisruptionBudget with
+  maxUnavailable 1; and minReadySeconds 15 (one peer discovery interval).
+  Explicit probe.startup, workload.deploymentStrategy,
+  podDisruptionBudget and cacheHandover.minReadySeconds settings win, and
+  with the hand-over off the chart renders none of these.
+
 implementation:
   - internal/cache/handover.go
   - internal/cache/disk_handover.go

@@ -116,10 +116,10 @@ At start the index rebuild orders ranked records by their rank, so the hottest
 are newest and evicted last. With `-cache-startup-warm-bytes` (a byte budget,
 at most half of `-cache-max-bytes`) a warm-up in the background then loads
 ranked entries back into L1, hottest first, until the budget or
-`-cache-startup-warm-timeout` (default `10s`) is reached. The replica reports
-ready when the warm-up finishes, or after the timeout, whichever comes first:
-`/ready` answers 503 `response cache warming` meanwhile and never longer than
-the timeout.
+`-cache-startup-warm-timeout` (default `10s`; the Helm chart sets `120s`) is
+reached. The replica reports ready when the warm-up finishes, or after the
+timeout, whichever comes first: `/ready` answers 503 `response cache warming`
+meanwhile and never longer than the timeout.
 
 The warm-up restores in batches of at most 256 entries or about 4 MiB of
 decoded values (a larger entry is a batch of its own):
@@ -153,10 +153,13 @@ next start deletes the bucket.
 
 Restored entries go in behind what live requests stored and never evict them;
 the warm-up reads the disk without counting disk hits and leaves the disk
-recency as the ranks set it. Disk records are
-restored by any build, as a disk hit would serve them, because their keys carry
-the versions of what decides the answer; a version rollout therefore restores
-the disk records and drops the memory-only replies. The metrics are listed in
+recency as the ranks set it. Disk records are restored by any build, as a disk
+hit would serve them, because their keys carry the versions of what decides the
+answer; a version rollout therefore restores the disk records and drops the
+memory-only replies. The Helm chart sets the flags, a grace period covering the
+HTTP drain and the flush, a preStop sleep, a startup probe for the index
+rebuild and a one-replica-at-a-time rollout with `cacheHandover.enabled=true`
+(chart README, "Rolling restarts with a warm cache"). The metrics are listed in
 [Observability](observability.md) (`loki_vl_proxy_cache_restart_*` and
 `loki_vl_proxy_cache_startup_l1_*`).
 
