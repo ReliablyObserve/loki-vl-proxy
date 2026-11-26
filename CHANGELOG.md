@@ -7,14 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `-backend-version-url` (with `-backend-version-basic-auth`, Helm `backendVersionAuth.existingSecret`) names a VictoriaLogs `/metrics` endpoint the release is read from instead of the backend's, and `-backend-version` declares it. Behind vmauth, which answers `/metrics` itself, the proxy learned no release, so `vl.extra_filters_len`, `vl.math_quoted_constant_clone` and `vl.mixed_json_row_stats` stayed off (#1769). A named release turns on only the gates the feature probes confirm, so `vl.math_quoted_constant_clone` and `vl.mixed_json_row_stats` on `v1.54.0` but not `vl.extra_filters_len`, which no probe reaches (it needs a release VictoriaLogs reports through the queried address, for example with vmauth `-httpInternalListenAddr`); a probe contradiction discards it, the lowest release wins, and a named release the probes show to be behind the backend is logged. Both flags need `-backend-feature-probes=true`.
+- Metric `loki_vl_proxy_backend_version_known` (0/1) and alert `LokiVLProxyBackendVersionUnknown` with a runbook.
+- `-metrics.duration-buckets` (Helm `observability.metrics.durationBuckets`) sets the bounds of the duration histograms: comma-separated finite seconds above zero, ascending, at most 32. Empty keeps the defaults; startup fails on any other value.
+
 ### Changed
 
+- The `backend version compatibility check partial` and `unavailable` WARN lines name why no release was read (the other program found, the HTTP status or the error) in `reason`; the inferred-profile text moved to `note`. A later change of that reason is logged once as `backend version read failed`.
 - The duration histograms reach 120 s: `15, 20, 30, 45, 60, 90, 120` follow the earlier bounds (all kept) in `loki_vl_proxy_request_duration_seconds`, `backend_duration_seconds`, `tenant_request_duration_seconds`, `client_request_duration_seconds`, `request_phase_seconds`, `internal_operation_duration_seconds` and the `window_*` duration histograms, on `/metrics` and OTLP. Before, every request over 10 s counted only in `+Inf`, so a quantile read exactly `10` and could not tell a slow request from a timeout. Each duration histogram series gains 7 series: a replica that just started goes from 1,538 to 1,895 series (`/metrics` gzip 10.6 kB to 11.8 kB). Count histograms are unchanged. The chart alert `LokiVLProxyHighLatency` (p99 over 10 s) can now fire: with the highest finite bound at 10 s its condition was never true ([#1765](https://github.com/ReliablyObserve/Loki-VL-proxy/issues/1765)).
 - **Behaviour change in the Helm chart:** the `ServiceMonitor` now sets `honorLabels: true` (new value `serviceMonitor.honorLabels`, default `true`; the VictoriaMetrics operator carries it into the converted `VMServiceScrape`). The proxy's `endpoint` label (`query_range`, `labels`, `select_logsql_query`, ...) was stored as `exported_endpoint` while `endpoint` read `metrics` on every series, so the chart dashboard and alerts that select or group by `endpoint` showed one series or matched nothing. Queries, alerts or relabeling rules of your own that read `exported_endpoint` must read `endpoint` for new samples; the affected series start anew under the new labels. Set `serviceMonitor.honorLabels: false` to keep the earlier labels. A scrape config you maintain yourself needs `honor_labels: true`. See `docs/observability.md`, "Scrape label collisions".
 
-### Added
+### Security
 
-- `-metrics.duration-buckets` (Helm `observability.metrics.durationBuckets`) sets the bounds of the duration histograms: comma-separated finite seconds above zero, ascending, at most 32. Empty keeps the defaults; startup fails on any other value.
+- `-backend-version-url` is operator configuration: its request carries none of the backend credentials, headers or tenant, follows no redirect, reads at most 2 MiB within `-backend-version-check-timeout`, refuses credentials in the URL, and neither its query string nor its credential is logged.
 
 ### Performance
 

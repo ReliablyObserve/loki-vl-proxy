@@ -46,6 +46,8 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `deleteAuth.existingSecretKey` | `token` | Key within `deleteAuth.existingSecret` |
 | `backendAuth.existingSecret` | `""` | Existing Secret holding the VictoriaLogs basic-auth credentials as one `user:password` value. The chart renders `-backend-basic-auth=$(BACKEND_BASIC_AUTH)` from a `secretKeyRef`. Setting it together with `extraArgs.backend-basic-auth` fails rendering |
 | `backendAuth.existingSecretKey` | `basic-auth` | Key within `backendAuth.existingSecret` |
+| `backendVersionAuth.existingSecret` | `""` | Existing Secret holding the `user:password` of `extraArgs.backend-version-url`. The chart renders `-backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH)` from a `secretKeyRef`. Setting it together with `extraArgs.backend-version-basic-auth` fails rendering |
+| `backendVersionAuth.existingSecretKey` | `basic-auth` | Key within `backendVersionAuth.existingSecret` |
 | `observability.otlp.existingSecret` | `""` | Existing Secret holding the OTLP exporter headers (`key=value[,key=value]`, usually an `Authorization` value), exposed to the proxy as `OTLP_HEADERS` from a `secretKeyRef`. Setting it together with `observability.otlp.headers` or `extraArgs.otlp-headers` fails rendering |
 | `observability.otlp.existingSecretKey` | `headers` | Key within `observability.otlp.existingSecret` |
 | `serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitor |

@@ -124,6 +124,25 @@ rules:
       action: "Investigate backend stability and recent 5xx bursts."
       runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-circuit-breaker-open.md'
 
+  - alert: LokiVLProxyBackendVersionUnknown
+    expr: loki_vl_proxy_backend_version_known{job="{{ include "loki-vl-proxy.fullname" . }}"} == 0
+    for: 30m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: compatibility
+      category: dependency
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "VictoriaLogs release unknown to the proxy"
+      description: "The proxy has not learned the VictoriaLogs release (for example behind vmauth, which answers /metrics itself)."
+      impact: "Capability gates that need the release stay off: some queries are answered by slower paths."
+      action: "Read the reason on the 'backend version compatibility check' WARN line, then make /metrics reachable or set -backend-version-url or -backend-version."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-backend-version-unknown.md'
+
   - alert: LokiVLProxyTenantHighErrorRate
     expr: |
       100 * sum(rate(loki_vl_proxy_tenant_requests_total{status=~"5.."}[5m])) by (tenant)

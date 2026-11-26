@@ -24,6 +24,7 @@ Alert runbooks are split per alert under this directory so each alert annotation
 - [LokiVLProxyBackendHighLatency](loki-vl-proxy-backend-high-latency.md)
 - [LokiVLProxyBackendUnreachable](loki-vl-proxy-backend-unreachable.md)
 - [LokiVLProxyCircuitBreakerOpen](loki-vl-proxy-circuit-breaker-open.md)
+- [LokiVLProxyBackendVersionUnknown](loki-vl-proxy-backend-version-unknown.md)
 - [LokiVLProxyTenantHighErrorRate](loki-vl-proxy-tenant-high-error-rate.md)
 - [LokiVLProxyRateLimiting](loki-vl-proxy-rate-limiting.md)
 - [LokiVLProxyClientBadRequestBurst](loki-vl-proxy-client-bad-request-burst.md)

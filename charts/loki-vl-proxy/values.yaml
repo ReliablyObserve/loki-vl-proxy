@@ -301,6 +301,10 @@ extraArgs:
   # otlp-tls-skip-verify: "false"
   # Backend auth to VictoriaLogs
   # backend-basic-auth: "user:password"   # plain value is visible in the pod spec and `helm get values`; prefer backendAuth.existingSecret
+  # VictoriaLogs release behind vmauth (vmauth answers /metrics itself; see docs/configuration.md "Backend version behind vmauth")
+  # backend-version-url: "http://vlselect:9471/metrics"
+  # backend-version-basic-auth: "user:password"   # prefer backendVersionAuth.existingSecret
+  # backend-version: "v1.54.0"    # only when no endpoint reports the release
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
@@ -574,6 +578,13 @@ deleteAuth:
 # -backend-basic-auth=$(BACKEND_BASIC_AUTH) from a secretKeyRef. The plain value
 # (extraArgs.backend-basic-auth) keeps working; setting both fails rendering.
 backendAuth:
+  existingSecret: ""
+  existingSecretKey: "basic-auth"  # key within existingSecret
+
+# Basic auth of -backend-version-url (-backend-version-basic-auth) from an existing Secret holding "user:password".
+# The chart renders -backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH) from a secretKeyRef; setting it
+# together with extraArgs.backend-version-basic-auth fails rendering.
+backendVersionAuth:
   existingSecret: ""
   existingSecretKey: "basic-auth"  # key within existingSecret
 
