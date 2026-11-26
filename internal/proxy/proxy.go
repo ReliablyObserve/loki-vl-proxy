@@ -441,6 +441,9 @@ type Config struct {
 	// is the peers streamed from at once (0: the default).
 	CacheStartupPeerRestore            bool
 	CacheStartupPeerRestoreConcurrency int
+	// CacheStartupPeerRestoreMaxBytesPS caps the bytes per second the peer
+	// restore reads from all its streams (0: none).
+	CacheStartupPeerRestoreMaxBytesPS int64
 
 	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
 	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error

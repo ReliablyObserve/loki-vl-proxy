@@ -12,8 +12,12 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log/slog"
+	"math"
 	"net/http"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,6 +60,8 @@ const (
 	// server's -http-write-timeout would otherwise end a long stream.
 	peerBulkWriteTimeout = 30 * time.Second
 	peerBulkWriteBuffer  = 64 << 10
+	// bulkPlanChunk bounds the entries a plan walks per hold of a cache lock.
+	bulkPlanChunk = 4096
 )
 
 // bulkRequest is the requester's view of the ring and what it wants.
@@ -77,6 +83,8 @@ type bulkRequest struct {
 	Scope string `json:"scope,omitempty"`
 	// MaxBytes stops the stream after about this many record bytes (0: none).
 	MaxBytes int64 `json:"max_bytes,omitempty"`
+	// DeadlineMs is the requester's time left: the stream never runs past it.
+	DeadlineMs int64 `json:"deadline_ms,omitempty"`
 }
 
 type bulkRing struct {
@@ -112,8 +120,8 @@ func decodeBulkRequest(body io.Reader) (bulkRequest, error) {
 			}
 		}
 	}
-	if req.MaxBytes < 0 {
-		return req, fmt.Errorf("negative max_bytes")
+	if req.MaxBytes < 0 || req.DeadlineMs < 0 {
+		return req, fmt.Errorf("negative max_bytes or deadline_ms")
 	}
 	return req, nil
 }
@@ -220,7 +228,7 @@ func (l *byteRate) wait(ctx context.Context, n int) error {
 // peerBulkServe is the serving side's state.
 type peerBulkServe struct {
 	slots    chan struct{} // nil: serving is off
-	rate     *byteRate
+	gov      *bulkGovernor
 	stop     chan struct{}
 	stopOnce sync.Once
 	scope    atomic.Pointer[func() string]
@@ -237,12 +245,15 @@ const (
 	bulkRejectRestoring
 	bulkRejectDisabled
 	bulkRejectBadRequest
+	// bulkRejectThrottled is a request refused because the governor is
+	// paused or under pressure.
+	bulkRejectThrottled
 	bulkRejectCount
 )
 
-var bulkRejectNames = [bulkRejectCount]string{"busy", "restoring", "disabled", "bad_request"}
+var bulkRejectNames = [bulkRejectCount]string{"busy", "restoring", "disabled", "bad_request", "throttled"}
 
-func newPeerBulkServe(maxStreams int, bytesPerSecond int64) *peerBulkServe {
+func newPeerBulkServe(maxStreams int, bytesPerSecond int64, maxPause time.Duration, signals *bulkSignals, log *slog.Logger) *peerBulkServe {
 	s := &peerBulkServe{stop: make(chan struct{})}
 	if maxStreams == 0 {
 		maxStreams = DefaultPeerBulkServeMaxStreams
@@ -253,7 +264,7 @@ func newPeerBulkServe(maxStreams int, bytesPerSecond int64) *peerBulkServe {
 	if bytesPerSecond == 0 {
 		bytesPerSecond = DefaultPeerBulkServeMaxBytesPerSecond
 	}
-	s.rate = newByteRate(bytesPerSecond)
+	s.gov = newBulkGovernor(max(bytesPerSecond, 0), maxPause, signals, log)
 	return s
 }
 
@@ -298,7 +309,7 @@ func (pc *PeerCache) StopBulk() {
 func (pc *PeerCache) bulkReject(w http.ResponseWriter, status int, reason int, msg string) {
 	pc.bulk.rejected[reason].Add(1)
 	w.Header().Set(peerBulkStateHeader, bulkRejectNames[reason])
-	if reason == bulkRejectBusy {
+	if reason == bulkRejectBusy && w.Header().Get("Retry-After") == "" {
 		w.Header().Set("Retry-After", "1")
 	}
 	http.Error(w, msg, status)
@@ -347,6 +358,13 @@ func (pc *PeerCache) serveBulk(w http.ResponseWriter, r *http.Request, local *Ca
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// Lower priority than everything else: no new stream while the serving
+	// side is paused or under pressure.
+	if ok, retry := pc.bulk.gov.admit(); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry/time.Second)))
+		pc.bulkReject(w, http.StatusTooManyRequests, bulkRejectThrottled, "bulk restore throttled")
+		return
+	}
 	select {
 	case pc.bulk.slots <- struct{}{}:
 	default:
@@ -356,7 +374,12 @@ func (pc *PeerCache) serveBulk(w http.ResponseWriter, r *http.Request, local *Ca
 	defer func() { <-pc.bulk.slots }()
 	pc.bulk.active.Add(1)
 	defer pc.bulk.active.Add(-1)
+	pc.bulk.gov.begin()
+	defer pc.bulk.gov.end()
 	ctx, cancel := context.WithCancel(r.Context())
+	if req.DeadlineMs > 0 {
+		ctx, cancel = context.WithTimeout(r.Context(), time.Duration(req.DeadlineMs)*time.Millisecond)
+	}
 	defer cancel()
 	go func() {
 		select {
@@ -384,27 +407,54 @@ type bulkItem struct {
 // filter) runs outside them.
 func (c *Cache) bulkPlan(keep func(string) bool, memOK bool) ([]bulkItem, int64) {
 	now := clockNow()
+	var items []bulkItem
+	// The memory walk, bulkPlanChunk entries per hold of the read lock: a
+	// query's write waits at most one chunk. It goes on from the element it
+	// stopped at while that is still in the list, and ends otherwise (the
+	// disk walk below covers most of the rest).
 	c.mu.RLock()
-	items := make([]bulkItem, 0, len(c.entries))
-	for elem := c.lruList.Front(); elem != nil; elem = elem.Next() {
+	items = make([]bulkItem, 0, len(c.entries))
+	for elem := c.lruList.Front(); elem != nil; {
+		for n := 0; elem != nil && n < bulkPlanChunk; elem, n = elem.Next(), n+1 {
+			key := elem.Value.(*lruEntry).key
+			e, ok := c.entries[key]
+			if !ok || !bulkSendable(e, memOK) || skipL2WriteForKey(key) || !handoverKeyFits(key) || bulkRemaining(e, now) < MinUsableTTL {
+				continue
+			}
+			items = append(items, bulkItem{key: key, size: int64(len(key) + diskRecordHeaderSize + len(e.value))})
+		}
+		if elem == nil {
+			break
+		}
 		key := elem.Value.(*lruEntry).key
-		e, ok := c.entries[key]
-		if !ok || !bulkSendable(e, memOK) || skipL2WriteForKey(key) || !handoverKeyFits(key) {
-			continue
+		c.mu.RUnlock()
+		runtime.Gosched()
+		c.mu.RLock()
+		if c.lruIndex[key] != elem {
+			elem = nil
 		}
-		if bulkRemaining(e, now) < MinUsableTTL {
-			continue
-		}
-		items = append(items, bulkItem{key: key, size: int64(len(key) + diskRecordHeaderSize + len(e.value))})
 	}
 	c.mu.RUnlock()
 	memoryItems := len(items)
 	if dc := c.l2; dc != nil {
+		// The disk index walk, the same way under the disk lock, which a
+		// query's write takes while it queues its disk record.
 		cutoff := now.Add(MinUsableTTL).UnixNano()
 		dc.writeMu.Lock()
-		for e := dc.newest; e != nil; e = e.next {
-			if !e.invalid && e.expiresAt > cutoff {
-				items = append(items, bulkItem{key: e.key, size: e.size})
+		for e := dc.newest; e != nil; {
+			for n := 0; e != nil && n < bulkPlanChunk; e, n = e.next, n+1 {
+				if !e.invalid && e.expiresAt > cutoff {
+					items = append(items, bulkItem{key: e.key, size: e.size})
+				}
+			}
+			if e == nil {
+				break
+			}
+			dc.writeMu.Unlock()
+			runtime.Gosched()
+			dc.writeMu.Lock()
+			if dc.index[e.key] != e {
+				e = nil
 			}
 		}
 		dc.writeMu.Unlock()
@@ -413,6 +463,9 @@ func (c *Cache) bulkPlan(keep func(string) bool, memOK bool) ([]bulkItem, int64)
 	out := items[:0]
 	var bytes int64
 	for i, it := range items {
+		if i%bulkPlanChunk == bulkPlanChunk-1 {
+			runtime.Gosched() // the ownership hashes, a chunk at a time
+		}
 		if i < memoryItems {
 			seen[it.key] = struct{}{}
 		} else if _, dup := seen[it.key]; dup {
@@ -462,7 +515,7 @@ type bulkRecord struct {
 // transaction. Nothing it reads counts as a lookup or moves a recency. It
 // returns the records to send; the rest of the batch was removed, expired or
 // unreadable since it was planned.
-func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec) []bulkRecord {
+func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec, workers int) []bulkRecord {
 	now := clockNow()
 	recs := make([]bulkRecord, len(items))
 	// held marks keys the memory tier holds: its value is the current one,
@@ -509,7 +562,7 @@ func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec) []b
 			}
 		}
 		dc.writeMu.Unlock()
-		dc.readBulkRecords(recs)
+		dc.readBulkRecords(recs, workers)
 	}
 	out := recs[:0]
 	for _, r := range recs {
@@ -532,7 +585,7 @@ func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec) []b
 // up in order and the records copied by at most min(GOMAXPROCS, 4)
 // goroutines, so a file that is not in the page cache is read with that much
 // parallelism (as the warm-up decodes). Legacy records are not sent.
-func (dc *DiskCache) readBulkRecords(recs []bulkRecord) {
+func (dc *DiskCache) readBulkRecords(recs []bulkRecord, workers int) {
 	need := false
 	for i := range recs {
 		need = need || recs[i].disk
@@ -564,7 +617,7 @@ func (dc *DiskCache) readBulkRecords(recs []bulkRecord) {
 			}
 		}
 		var wg sync.WaitGroup
-		for n := 1; n < restoreWorkers(); n++ {
+		for n := 1; n < workers; n++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -590,9 +643,12 @@ type bulkWriter struct {
 	ctx   context.Context
 	bw    *bufio.Writer
 	rc    *http.ResponseController
-	rate  *byteRate
+	gov   *bulkGovernor
 	scrap []byte
 	err   error
+	// waited is the time spent waiting for the governor since it was reset,
+	// so a write's own time can be told from the pacing.
+	waited time.Duration
 }
 
 func (w *bulkWriter) write(p []byte) {
@@ -610,7 +666,10 @@ func (w *bulkWriter) record(r bulkRecord) {
 	if w.err != nil {
 		return
 	}
-	if err := w.rate.wait(w.ctx, len(r.key)+len(r.record)+bulkMaxHeaderBytes); err != nil {
+	start := time.Now()
+	err := w.gov.wait(w.ctx, len(r.key)+len(r.record)+bulkMaxHeaderBytes)
+	w.waited += time.Since(start)
+	if err != nil {
 		w.err = err
 		return
 	}
@@ -659,7 +718,8 @@ func (pc *PeerCache) streamBulk(ctx context.Context, w http.ResponseWriter, loca
 	w.Header().Set("Content-Type", peerBulkContentType)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	out := &bulkWriter{ctx: ctx, bw: bufio.NewWriterSize(w, peerBulkWriteBuffer), rc: http.NewResponseController(w), rate: pc.bulk.rate}
+	gov := pc.bulk.gov
+	out := &bulkWriter{ctx: ctx, bw: bufio.NewWriterSize(w, peerBulkWriteBuffer), rc: http.NewResponseController(w), gov: gov}
 	out.extend()
 	out.write([]byte(peerBulkMagic))
 	out.frame(bulkFrame{typ: bulkFramePlan, a: uint64(len(items)), b: uint64(planned)})
@@ -681,15 +741,19 @@ func (pc *PeerCache) streamBulk(ctx context.Context, w http.ResponseWriter, loca
 			outcome = bulkEndBudget
 			continue
 		}
-		j, batchBytes := i, int64(0)
-		for j < len(items) && j-i < restoreBatchKeys && (j == i || batchBytes+items[j].size <= restoreBatchBytes) {
+		// A batch holds about bulkBatchWindow of the current rate, so the
+		// reads, copies and encoding are paced as the sending is.
+		j, batchBytes, limit := i, int64(0), gov.batchBytes()
+		for j < len(items) && j-i < restoreBatchKeys && (j == i || batchBytes+items[j].size <= limit) {
 			batchBytes += items[j].size
 			j++
 		}
 		readAt := time.Now()
-		recs := local.bulkReadBatch(items[i:j], memOK, codec)
+		recs := local.bulkReadBatch(items[i:j], memOK, codec, gov.workers())
 		skipped += int64(j-i) - int64(len(recs))
 		out.extend()
+		out.waited = 0
+		var wrote int
 		for _, r := range recs {
 			// The TTL left when the record is sent, not when its batch was
 			// read: the rate limit may hold it back, and the receiver starts
@@ -704,11 +768,16 @@ func (pc *PeerCache) streamBulk(ctx context.Context, w http.ResponseWriter, loca
 			}
 			sent++
 			sentBytes += int64(len(r.key) + len(r.record))
+			wrote += len(r.key) + len(r.record)
 		}
 		out.flush()
+		gov.wrote(wrote, time.Since(readAt)-out.waited)
 		i = j
 	}
-	if out.err != nil || ctx.Err() != nil {
+	switch {
+	case errors.Is(out.err, errBulkThrottled):
+		outcome, out.err = bulkEndThrottled, nil
+	case out.err != nil || ctx.Err() != nil:
 		outcome = bulkEndStopped
 	}
 	pc.bulk.records.Add(sent)
@@ -727,12 +796,12 @@ func (pc *PeerCache) bulkServeText() string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("# HELP loki_vl_proxy_peer_cache_bulk_serve_streams_total Peer bulk restore streams this replica served, by how they ended: done, budget (the requester's byte budget), purged (a local purge), stopped (the requester went away, a write failed, or this replica began shutting down).\n")
+	b.WriteString("# HELP loki_vl_proxy_peer_cache_bulk_serve_streams_total Peer bulk restore streams this replica served, by how they ended: done, budget (the requester's byte budget), purged (a local purge), stopped (the requester went away, a write failed, the deadline passed, or this replica began shutting down), throttled (paused under pressure past -peer-bulk-serve-max-pause).\n")
 	b.WriteString("# TYPE loki_vl_proxy_peer_cache_bulk_serve_streams_total counter\n")
 	for i, name := range bulkEndNames {
 		fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_bulk_serve_streams_total{outcome=%q} %d\n", name, pc.bulk.streams[i].Load())
 	}
-	b.WriteString("# HELP loki_vl_proxy_peer_cache_bulk_serve_rejected_total Peer bulk restore requests this replica did not stream, by reason: busy (-peer-bulk-serve-max-streams in use), restoring (it restores from peers itself), disabled, bad_request.\n")
+	b.WriteString("# HELP loki_vl_proxy_peer_cache_bulk_serve_rejected_total Peer bulk restore requests this replica did not stream, by reason: busy (-peer-bulk-serve-max-streams in use), throttled (the serving side is paused or under pressure), restoring (it restores from peers itself), disabled, bad_request.\n")
 	b.WriteString("# TYPE loki_vl_proxy_peer_cache_bulk_serve_rejected_total counter\n")
 	for i, name := range bulkRejectNames {
 		fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_bulk_serve_rejected_total{reason=%q} %d\n", name, pc.bulk.rejected[i].Load())
@@ -740,5 +809,46 @@ func (pc *PeerCache) bulkServeText() string {
 	fmt.Fprintf(&b, "# HELP loki_vl_proxy_peer_cache_bulk_serve_records_total Records this replica sent in peer bulk restore streams.\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_records_total counter\nloki_vl_proxy_peer_cache_bulk_serve_records_total %d\n", pc.bulk.records.Load())
 	fmt.Fprintf(&b, "# HELP loki_vl_proxy_peer_cache_bulk_serve_bytes_total Key and record bytes this replica sent in peer bulk restore streams (under -peer-bulk-serve-max-bytes-per-second).\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_bytes_total counter\nloki_vl_proxy_peer_cache_bulk_serve_bytes_total %d\n", pc.bulk.bytes.Load())
 	fmt.Fprintf(&b, "# HELP loki_vl_proxy_peer_cache_bulk_serve_active Peer bulk restore streams this replica serves now.\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_active gauge\nloki_vl_proxy_peer_cache_bulk_serve_active %d\n", pc.bulk.active.Load())
+	g := pc.bulk.gov
+	fmt.Fprintf(&b, "# HELP loki_vl_proxy_peer_cache_bulk_serve_rate_bytes_per_second The rate the bulk governor lets this replica's restore streams send now (0 while idle or paused).\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_rate_bytes_per_second gauge\nloki_vl_proxy_peer_cache_bulk_serve_rate_bytes_per_second %d\n", min(g.rateNow.Load(), math.MaxInt64))
+	b.WriteString("# HELP loki_vl_proxy_peer_cache_bulk_serve_state 1 for the bulk governor's state: idle, ramping, ceiling (-peer-bulk-serve-max-bytes-per-second), throttled (pressure halved the rate), paused.\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_state gauge\n")
+	for i, name := range bulkStateNames {
+		fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_bulk_serve_state{state=%q} %d\n", name, boolInt(g.stateNow.Load() == int64(i)))
+	}
+	b.WriteString("# HELP loki_vl_proxy_peer_cache_bulk_serve_pressure_total Governor ticks (200 ms) that saw pressure, by signal: scheduler_latency, cpu, gc, memory, request_latency, peer_latency, disk_latency, network.\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_pressure_total counter\n")
+	for i, name := range bulkPressureNames {
+		fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_bulk_serve_pressure_total{signal=%q} %d\n", name, g.pressure[i].Load())
+	}
+	fmt.Fprintf(&b, "# HELP loki_vl_proxy_peer_cache_bulk_serve_rate_decreases_total Times pressure halved the bulk restore rate.\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_rate_decreases_total counter\nloki_vl_proxy_peer_cache_bulk_serve_rate_decreases_total %d\n", g.decreases.Load())
+	fmt.Fprintf(&b, "# HELP loki_vl_proxy_peer_cache_bulk_serve_pauses_total Times a severe signal paused every bulk restore stream.\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_pauses_total counter\nloki_vl_proxy_peer_cache_bulk_serve_pauses_total %d\n", g.pauses.Load())
+	fmt.Fprintf(&b, "# HELP loki_vl_proxy_peer_cache_bulk_serve_paused_seconds_total Time the bulk restore streams spent paused.\n# TYPE loki_vl_proxy_peer_cache_bulk_serve_paused_seconds_total counter\nloki_vl_proxy_peer_cache_bulk_serve_paused_seconds_total %g\n", time.Duration(g.pausedNs.Load()).Seconds())
 	return b.String()
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// SetBulkLoad gives the bulk governor this replica's client request counters
+// (completed requests and their total latency).
+func (pc *PeerCache) SetBulkLoad(load func() BulkLoad) {
+	if pc == nil || pc.bulk == nil || pc.bulk.gov.signals == nil {
+		return
+	}
+	if load != nil {
+		pc.bulk.gov.signals.load.Store(&load)
+	}
+}
+
+// localDisk is the attached local cache's disk tier, for the governor.
+func (pc *PeerCache) localDisk() *DiskCache {
+	pc.mu.RLock()
+	defer pc.mu.RUnlock()
+	if pc.localCache == nil {
+		return nil
+	}
+	return pc.localCache.l2
 }

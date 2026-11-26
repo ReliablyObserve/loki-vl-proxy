@@ -198,3 +198,15 @@ func TestCachePeerRestore_StopPeerBulkStreamsRefusesNewStreams(t *testing.T) {
 		t.Fatalf("restored from a stopped server: %+v", p)
 	}
 }
+
+// SetPeerBulkLoad hands the client request counters to the bulk governor.
+//
+// conformance: cache-restart-handover
+func TestCachePeerRestore_SetPeerBulkLoad(t *testing.T) {
+	serving, restoring := newPeerRestorePair(t)
+	serving.open(t, []string{serving.addr(), restoring.addr()}, "peer-secret", Config{})
+	serving.p.SetPeerBulkLoad(func() (int64, int64) { return 3, 3e6 })
+	serving.p.SetPeerBulkLoad(nil)
+	var nilProxy *Proxy
+	nilProxy.SetPeerBulkLoad(func() (int64, int64) { return 0, 0 })
+}

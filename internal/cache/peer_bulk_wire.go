@@ -61,10 +61,13 @@ const (
 	bulkEndBudget
 	bulkEndPurged
 	bulkEndStopped
+	// bulkEndThrottled ends a stream the governor paused longer than its
+	// maximum pause.
+	bulkEndThrottled
 	bulkEndCount
 )
 
-var bulkEndNames = [bulkEndCount]string{"done", "budget", "purged", "stopped"}
+var bulkEndNames = [bulkEndCount]string{"done", "budget", "purged", "stopped", "throttled"}
 
 var bulkCRC = crc32.MakeTable(crc32.Castagnoli)
 

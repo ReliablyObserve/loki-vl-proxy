@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -60,6 +61,12 @@ func openPeerBenchServer(tb testing.TB, f restoreFixture, codec string, rate int
 	addr := s.srv.Listener.Addr().String()
 	s.pc = NewPeerCache(PeerConfig{SelfAddr: addr, DiscoveryType: "static", StaticPeers: addr + ",127.0.0.1:1", ReplicationFactor: 2, WriteThrough: true, Timeout: 5 * time.Second, BulkServeMaxBytesPerSecond: rate})
 	s.c.SetL3(s.pc)
+	// The benchmark measures the transfer: the governor sends at the given
+	// rate (or none) from the start instead of ramping up under signals.
+	s.pc.bulk.gov.fixed = math.Inf(1)
+	if rate > 0 {
+		s.pc.bulk.gov.fixed = float64(rate)
+	}
 	*handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.pc.ServeHTTP(w, r, s.c) })
 	return s
 }
@@ -182,4 +189,21 @@ func TestPeerRestore_ThroughputGate(t *testing.T) {
 		}
 		s.close()
 	}
+}
+
+// TestWritePeerLoadFixture writes the disk cache file the peer restore latency
+// proof (test/e2e-fleet/peer_restore_load_test.go) serves from: LVP_RESTORE_BENCH_MB
+// of mixed-size s2 records keyed restoreKey(0..n-1), at LVP_PEER_LOAD_FIXTURE,
+// and the record count to LVP_PEER_LOAD_FIXTURE.entries. Opt-in.
+func TestWritePeerLoadFixture(t *testing.T) {
+	path := os.Getenv("LVP_PEER_LOAD_FIXTURE")
+	if path == "" {
+		t.Skip("set LVP_PEER_LOAD_FIXTURE to write the peer restore load fixture")
+	}
+	quietRestoreLogs(t)
+	f := buildRestoreFixture(t, path, "s2", restoreBenchSize(t))
+	if err := os.WriteFile(path+".entries", []byte(fmt.Sprintln(f.entries)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%d entries, %d MiB decoded, %d MiB stored", f.entries, f.decoded>>20, f.encoded>>20)
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -284,7 +285,7 @@ func TestPeerRestore_MemoryOnlyScopeAndPushFilter(t *testing.T) {
 func TestPeerRestore_PurgeDuringTheRestoreWins(t *testing.T) {
 	f := newReplFleet(t, 2, 2, true, time.Second)
 	fillFleet(t, f, 0, 400, 4096, 10*time.Minute)
-	f.nodes[0].pc.bulk.rate = newByteRate(256 << 10) // about 6 s for the set
+	f.nodes[0].pc.bulk.gov.fixed = 256 << 10 // about 6 s for the set
 	f.restart(1, true)
 	nd := f.nodes[1]
 	done := make(chan PeerRestoreReport)
@@ -313,7 +314,7 @@ func TestPeerRestore_PurgeDuringTheRestoreWins(t *testing.T) {
 func TestPeerRestore_DeadlineStopsAndKeepsTheHottest(t *testing.T) {
 	f := newReplFleet(t, 2, 2, true, time.Second)
 	fillFleet(t, f, 0, 400, 4096, 10*time.Minute)
-	f.nodes[0].pc.bulk.rate = newByteRate(256 << 10)
+	f.nodes[0].pc.bulk.gov.fixed = 256 << 10
 	f.restart(1, true)
 	nd := f.nodes[1]
 	start := time.Now()
@@ -455,7 +456,7 @@ func TestPeerRestore_ServerRefusesWhileRestoringAndStopsOnShutdown(t *testing.T)
 		t.Fatalf("outcome %q peers %+v", report.Outcome, report.Peers)
 	}
 	f.nodes[0].c.handoverStats.peerRestoring.Store(false)
-	f.nodes[0].pc.bulk.rate = newByteRate(256 << 10)
+	f.nodes[0].pc.bulk.gov.fixed = 256 << 10
 	done := make(chan PeerRestoreReport)
 	go func() {
 		done <- f.nodes[1].c.RestoreFromPeers(restoreCtx(t, 20*time.Second), PeerRestoreOptions{MaxBytes: 32 << 20})
@@ -574,7 +575,10 @@ func TestPeerBulkServe_PeakMemoryIsOneBatch(t *testing.T) {
 	defer debug.SetGCPercent(previous)
 	stop := heapPeakSampler()
 	w := &discardWriter{header: http.Header{}}
+	server.pc.bulk.gov.fixed = math.Inf(1)
+	server.pc.bulk.gov.begin()
 	outcome := server.pc.streamBulk(context.Background(), w, server.c, req, ring, false)
+	server.pc.bulk.gov.end()
 	peak := stop()
 	if outcome != bulkEndDone || w.bytes < 64<<20 {
 		t.Fatalf("outcome %s, %d bytes", bulkEndName(outcome), w.bytes)

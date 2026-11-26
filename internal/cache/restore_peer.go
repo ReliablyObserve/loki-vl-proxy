@@ -50,7 +50,10 @@ const (
 	peerRestoreProbeConcurrency   = 8
 	peerRestoreProbeAttempts      = 3
 	peerRestoreProbeBackoff       = 300 * time.Millisecond
-	peerRestoreMaxRetryAfter      = 5 * time.Second
+	peerRestoreMaxRetryAfter      = 10 * time.Second
+	// peerRestoreServeGrace is how much longer than the restore's deadline a
+	// serving peer keeps the stream open.
+	peerRestoreServeGrace = 2 * time.Second
 	// peerRestoreBatchWait is the longest a received entry waits for its
 	// batch to fill before the batch is admitted anyway.
 	peerRestoreBatchWait = 100 * time.Millisecond
@@ -58,10 +61,13 @@ const (
 
 // Per-peer outcomes of a restore.
 const (
-	PeerRestoreDone         = "done"
-	PeerRestoreBudget       = "budget"
-	PeerRestorePurged       = "purged"
-	PeerRestoreStopped      = "stopped"
+	PeerRestoreDone    = "done"
+	PeerRestoreBudget  = "budget"
+	PeerRestorePurged  = "purged"
+	PeerRestoreStopped = "stopped"
+	// PeerRestoreThrottled is a peer whose bulk governor paused its stream
+	// longer than its maximum pause: it was too busy to send the rest.
+	PeerRestoreThrottled    = "throttled"
 	PeerRestoreTruncated    = "truncated"
 	PeerRestoreCorrupt      = "corrupt"
 	PeerRestoreDeadline     = "deadline"
@@ -84,6 +90,9 @@ type PeerRestoreOptions struct {
 	MaxBytes int64
 	// Concurrency is the peers streamed from at once (0: the default).
 	Concurrency int
+	// MaxBytesPerSecond caps the bytes read from all streams together, so a
+	// restore leaves the network of its node to its neighbours (0: none).
+	MaxBytesPerSecond int64
 }
 
 // PeerRestorePeer is what one peer gave.
@@ -142,6 +151,7 @@ type peerRestore struct {
 	maxEntry   int64
 	scope      string
 	request    bulkRequest
+	intake     *byteRate
 
 	mu        sync.Mutex
 	progress  RestoreProgress
@@ -167,7 +177,7 @@ func (c *Cache) RestoreFromPeers(ctx context.Context, opts PeerRestoreOptions) P
 	pc := c.l3
 	c.handoverStats.peerRestoring.Store(true)
 	defer c.handoverStats.peerRestoring.Store(false)
-	r := &peerRestore{c: c, pc: pc, maxEntry: int64(c.maxBytes / 10), scope: bulkScopeHash(opts.Scope)}
+	r := &peerRestore{c: c, pc: pc, maxEntry: int64(c.maxBytes / 10), scope: bulkScopeHash(opts.Scope), intake: newByteRate(opts.MaxBytesPerSecond)}
 	r.ctx, r.cancel = context.WithCancel(ctx)
 	defer r.cancel()
 	r.progress = RestoreProgress{Source: RestoreSourcePeer, Outcome: RestoreRunning, Started: clockNow()}
@@ -372,6 +382,11 @@ func (r *peerRestore) streamRequest() bulkRequest {
 	r.mu.Lock()
 	req.MaxBytes = max(r.budget-r.progress.RestoredBytes, 1)
 	r.mu.Unlock()
+	if deadline, ok := r.ctx.Deadline(); ok {
+		// A backstop: the restore ends at its own deadline, the serving side
+		// a little later at the latest.
+		req.DeadlineMs = max((time.Until(deadline) + peerRestoreServeGrace).Milliseconds(), 1)
+	}
 	return req
 }
 
@@ -469,6 +484,8 @@ func (r *peerRestore) receive(body io.Reader, res *PeerRestorePeer) string {
 			reason = RestoreSkipPurged
 		case PeerRestoreDeadline:
 			reason = RestoreSkipDeadline
+		case PeerRestoreThrottled:
+			reason = RestoreSkipPeerBusy
 		}
 		r.progress.Skipped[reason] += left - fromServer
 		r.progress.ProcessedEntries += left
@@ -522,6 +539,11 @@ func (r *peerRestore) receive(body io.Reader, res *PeerRestorePeer) string {
 			return end(r.streamError(err), 0)
 		}
 		res.Received, res.Bytes, receivedBytes = res.Received+1, res.Bytes+size, receivedBytes+size
+		// The intake cap: reading slower holds the stream back through TCP.
+		if werr := r.intake.wait(r.ctx, int(size)); werr != nil && r.ctx.Err() != nil {
+			flush()
+			return end(r.stoppedOutcome(), 0)
+		}
 		if err != nil {
 			skip(RestoreSkipUnreadable, size)
 			continue
@@ -579,6 +601,8 @@ func peerEndOutcome(flags byte) string {
 		return PeerRestorePurged
 	case bulkEndStopped:
 		return PeerRestoreStopped
+	case bulkEndThrottled:
+		return PeerRestoreThrottled
 	}
 	return PeerRestoreDone
 }

@@ -35,6 +35,7 @@ type cacheHandoverState struct {
 	// local to warm from; peerConcurrency is the peers streamed at once.
 	peerRestore     bool
 	peerConcurrency int
+	peerMaxBPS      int64
 	// progressEvery is the progress log's interval.
 	progressEvery time.Duration
 
@@ -60,6 +61,7 @@ func newCacheHandoverState(cfg Config) *cacheHandoverState {
 
 		peerRestore:     cfg.CacheStartupPeerRestore,
 		peerConcurrency: max(cfg.CacheStartupPeerRestoreConcurrency, 0),
+		peerMaxBPS:      max(cfg.CacheStartupPeerRestoreMaxBytesPS, 0),
 
 		progressEvery: cacheWarmProgressInterval,
 	}
@@ -133,7 +135,7 @@ func (p *Proxy) restoreResponseCacheFromPeers(ctx context.Context, h *cacheHando
 		"concurrency", h.peerConcurrency,
 	)
 	stopProgress := p.logResponseCacheWarmProgress(ctx, h.progressEvery, func(s cache.HandoverStats) cache.RestoreProgress { return s.PeerRestore })
-	report := p.cache.RestoreFromPeers(ctx, cache.PeerRestoreOptions{Scope: h.scope(), MaxBytes: h.warmBytes, Concurrency: h.peerConcurrency})
+	report := p.cache.RestoreFromPeers(ctx, cache.PeerRestoreOptions{Scope: h.scope(), MaxBytes: h.warmBytes, Concurrency: h.peerConcurrency, MaxBytesPerSecond: h.peerMaxBPS})
 	stopProgress()
 	progress := report.Progress
 	var reasons, peers []any
@@ -289,6 +291,18 @@ func (p *Proxy) StopPeerBulkStreams() {
 	if p != nil && p.peerCache != nil {
 		p.peerCache.StopBulk()
 	}
+}
+
+// SetPeerBulkLoad gives the peer bulk governor the client request counters
+// (completed requests and their total time) it reads as a pressure signal.
+func (p *Proxy) SetPeerBulkLoad(load func() (requests, nanos int64)) {
+	if p == nil || p.peerCache == nil || load == nil {
+		return
+	}
+	p.peerCache.SetBulkLoad(func() cache.BulkLoad {
+		n, ns := load()
+		return cache.BulkLoad{Requests: n, Nanos: ns}
+	})
 }
 
 // stopResponseCacheWarm cancels a running warm-up and waits for it.

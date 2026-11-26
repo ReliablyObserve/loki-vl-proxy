@@ -138,6 +138,11 @@ type Metrics struct {
 	clientInflight     map[string]*atomic.Int64 // "client" → in-flight requests
 	clientQueryLengths map[string]*histogram    // "client<sep>endpoint<sep>route" → query length histogram
 
+	// loadRequests and loadNanos count the client requests completed and
+	// their total time (tails left out): the peer bulk restore's pressure
+	// signal (RequestLoad).
+	loadRequests, loadNanos atomic.Int64
+
 	// Server-side request and connection visibility.
 	activeRequests            atomic.Int64
 	connectionStates          map[string]*atomic.Int64 // "state" -> current connections
@@ -836,6 +841,9 @@ func (m *Metrics) recordRequestWithLabels(system, direction, endpoint, route str
 		m.mu.Unlock()
 	}
 	counter.Add(1)
+	if direction == downstreamDirection {
+		m.countLoad(endpoint, duration)
+	}
 
 	if !hok {
 		m.mu.Lock()
@@ -869,7 +877,24 @@ func (m *Metrics) recordSeededRequest(endpoint string, statusCode int, duration 
 
 	counter.Add(1)
 	hist.observe(duration.Seconds())
+	m.countLoad(endpoint, duration)
 	return true
+}
+
+func (m *Metrics) countLoad(endpoint string, duration time.Duration) {
+	if endpoint != "tail" {
+		m.loadRequests.Add(1)
+		m.loadNanos.Add(int64(duration))
+	}
+}
+
+// RequestLoad returns the client requests completed so far and their total
+// time in nanoseconds.
+func (m *Metrics) RequestLoad() (requests, nanos int64) {
+	if m == nil {
+		return 0, 0
+	}
+	return m.loadRequests.Load(), m.loadNanos.Load()
 }
 
 // RecordTenantRequest records a request for a specific tenant (X-Scope-OrgID).

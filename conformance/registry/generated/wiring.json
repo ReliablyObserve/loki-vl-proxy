@@ -174,6 +174,7 @@
       "cmd/proxy/cache_handover_scope_test.go",
       "internal/cache/handover_peak_test.go",
       "internal/cache/handover_test.go",
+      "internal/cache/peer_bulk_governor_test.go",
       "internal/cache/peer_bulk_wire_test.go",
       "internal/cache/restore_peer_test.go",
       "internal/cache/restore_test.go",
@@ -181,6 +182,7 @@
       "internal/proxy/cache_handover_log_test.go",
       "internal/proxy/cache_handover_test.go",
       "internal/proxy/cache_peer_restore_test.go",
+      "test/e2e-fleet/peer_restore_load_test.go",
       "test/e2e-fleet/peer_restore_test.go",
       "test/e2e-fleet/restart_handover_test.go",
       "test/helm/cache_handover_test.go"
@@ -3276,6 +3278,9 @@
       "cache-restart-handover"
     ],
     "internal/cache/handover_test.go": [
+      "cache-restart-handover"
+    ],
+    "internal/cache/peer_bulk_governor_test.go": [
       "cache-restart-handover"
     ],
     "internal/cache/peer_bulk_wire_test.go": [
@@ -7146,6 +7151,9 @@
       "peer-cache-fleet-recovery",
       "peer-cache-push-replay"
     ],
+    "test/e2e-fleet/peer_restore_load_test.go": [
+      "cache-restart-handover"
+    ],
     "test/e2e-fleet/peer_restore_test.go": [
       "cache-restart-handover"
     ],
@@ -7190,7 +7198,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 860,
+  "tests_with_markers": 862,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -229,17 +229,46 @@ their own CRC32C. The restoring replica:
   replica, as with pushes; non-owner shadows and patterns entries are never
   sent.
 
-On the serving side, every bulk stream together is bounded whatever the number
-of replicas that start: at most `-peer-bulk-serve-max-streams` (default 2) at
-once, a request beyond them answered 429 before any work, at most
-`-peer-bulk-serve-max-bytes-per-second` (default 64 MiB/s) for all of them, one
-batch (256 entries or about 4 MiB) and a 64 KiB write buffer in memory per
-stream, plus the stream's plan (one entry per key it holds). Disk records are
-read in batches of one read transaction, copied out by at most
-`min(GOMAXPROCS, 4)` goroutines, and sent as stored: nothing is decoded, and
-memory values are encoded once. Serving counts no lookup, moves neither its
-memory LRU nor its disk recency and touches no breaker. Its streams end when its
-HTTP server starts shutting down, so they never hold the drain.
+On the serving side the restore has a lower priority than every query and
+peer read, and a replica's streams together are bounded whatever the number of
+replicas that restore:
+
+- at most `-peer-bulk-serve-max-streams` (default 2) at once, a request
+  beyond them answered 429 before any work;
+- one governor per replica paces all its streams: it starts them at 2 MiB/s,
+  grows the rate by a quarter every 200 ms after three ticks without pressure,
+  up to `-peer-bulk-serve-max-bytes-per-second` (default 64 MiB/s, a ceiling
+  reached only on an idle replica), halves it after two ticks with pressure
+  (down to 256 KiB/s) and pauses every stream at once on a severe signal; a
+  stream paused longer than `-peer-bulk-serve-max-pause` (default 30 s) ends
+  as `throttled` and the restoring replica keeps what it received;
+- pressure is read every tick, each signal against its own recent baseline and
+  an absolute floor: the Go scheduler latency p99 (goroutines waiting for a
+  CPU; its 30 s minimum is the baseline), the busy and GC share of the
+  process's CPU budget, the live heap against `GOMEMLIMIT`, the mean latency of
+  the queries, peer reads and disk lookups completed in the tick (each against
+  a baseline learned while there was no pressure), and a write to the
+  requester that took far longer than its bytes allow (a congested network or
+  receiver);
+- while it is paused or under pressure a replica refuses new streams (429,
+  Retry-After 2 to 10 s), so tens of replicas asking cost almost nothing;
+- a batch holds about 100 ms of the current rate (at least 64 KiB, at most 256
+  entries or 4 MiB), read in one read transaction and copied by one goroutine
+  (`min(GOMAXPROCS, 4)` only at the ceiling with no pressure), so the reads and
+  copies are paced as the sending is; records go as stored (nothing is
+  decoded) and memory values are encoded once;
+- the stream's plan (one entry per key the replica holds) walks the memory
+  tier and the disk index 4,096 entries per hold of their locks, so a query's
+  write waits at most one chunk; waiting for the governor holds no cache lock
+  and no disk transaction;
+- serving counts no lookup, moves neither its memory LRU nor its disk recency
+  and touches no breaker; its streams end when its HTTP server starts shutting
+  down, so they never hold the drain, and never run more than 2 s past the
+  requester's deadline.
+
+On the restoring side, `-cache-startup-peer-restore-max-bytes-per-second`
+(default 64 MiB/s) caps what it reads from all its streams together, so a
+restore leaves the network of its node to the pods beside it.
 
 While it runs, the log has `response cache restore from peers started`, the
 same progress line every 2 seconds, and `response cache restored from peers`
@@ -268,40 +297,45 @@ replica's new disk:
 An earlier run of the same code gave 4 GiB `raw` in 1.42 s and 2.77 s: with the
 serving file out of the page cache, its reads decide.
 
-That is the cost of the two ends, not what a pod network carries. On a real
-fleet the time is about the stored bytes divided by the smallest of: the
-serving rate times the peers streaming at once (64 MiB/s each by default, up
-to 4 peers), the restoring node's network bandwidth, and the restoring
-replica's disk write rate when its disk is on. Computed, not measured:
+That is the cost of the two ends with the governor out of the way, not what
+a fleet gets. On a real fleet the restore is at most as fast as the stored
+bytes divided by the smallest of: the serving replicas' rates (each grows from
+2 MiB/s to its 64 MiB/s ceiling in about 4 s, and only while it shows no
+pressure), the restoring replica's intake cap (64 MiB/s), the node's network,
+and its disk write rate when its disk is on. These are upper bounds for idle
+serving replicas, computed, not measured:
 
-| Restore | 1 peer at 64 MiB/s (2 replicas) | 2 peers (3 replicas) | 4 peers (5+ replicas) | 4 peers, no rate limit, 10 Gbit/s node |
-|---|---|---|---|---|
-| 2 GiB `s2` (720 MiB stored) | 11 s | 5.6 s | 2.8 s | under 1 s (CPU-bound, as loopback) |
-| 2 GiB `raw` (2 GiB) | 32 s | 16 s | 8 s | about 2 s |
-| 4 GiB `s2` (1.41 GiB) | 23 s | 11 s | 5.6 s | about 2 s |
-| 4 GiB `raw` (4 GiB) | 64 s | 32 s | 16 s | about 4 s |
+| Restore | 1 serving replica, idle | 2 or more, idle (the 64 MiB/s intake cap) | serving replicas under load |
+|---|---|---|---|
+| 2 GiB `s2` (720 MiB stored) | about 15 s | about 15 s | longer, possibly partial at the timeout |
+| 2 GiB `raw` (2 GiB) | about 36 s | about 36 s | longer, possibly partial |
+| 4 GiB `s2` (1.41 GiB) | about 27 s | about 27 s | longer, possibly partial |
+| 4 GiB `raw` (4 GiB) | about 68 s | about 68 s | partial at the 120 s timeout is likely |
 
-All fit the 120 s warm-up timeout. A node's baseline network bandwidth can be
-far below what it bursts to (check your instance type's baseline): keep the
-serving rate below that baseline, so
-the serving replicas keep bandwidth for their clients and VictoriaLogs. With the
-restoring replica's disk on, a gp3 volume's 125 MiB/s of writes bounds it at
-about 6 s for 2 GiB `s2` and 12 s for 4 GiB `s2` (the stored bytes): about the default
-rate of two peers, so with more peers streaming the volume is the limit. A serving
-replica whose disk is not in its page cache reads one record after another per
-copy goroutine: on a network volume its read latency then decides (about one
-read per record), like the index rebuild (see the targets below).
+(The stored bytes at 64 MiB/s plus about 4 s of ramp.) Under query load the
+governor keeps the serving replicas below their ceiling or pauses them: the
+restore then takes longer, and ends at `-cache-startup-warm-timeout` with the
+hottest entries it received, which is the intended trade (queries first). What
+it did not receive is read from peers or VictoriaLogs on first lookup, as
+before. A node's baseline network bandwidth can be far below what it bursts to
+(check your instance type's baseline): keep both rates below that baseline.
+With the restoring replica's disk on, a gp3 volume's 125 MiB/s of writes is
+above the default intake cap. A serving replica whose disk is not in its page
+cache reads one record after another: on a network volume its read latency
+then decides, and the disk lookup latency signal slows the stream when its
+reads compete with queries.
 
 When many replicas start at once (a scale-out, a node loss, a whole fleet on new
-volumes), each serving replica still sends at most 64 MiB/s in at most two
-streams; the others are answered 429 at once and ask again. K restoring
-replicas holding about D bytes each, served by N replicas, take about
-K x D / (N x 64 MiB/s): ten new replicas of 720 MiB from twenty serving ones
-about 6 s. Replicas that restore refuse to serve, so a fleet that starts empty
-everywhere finishes at once with nothing restored and fills from VictoriaLogs
-as before. A peer stream costs the serving replica one plan per request (its
-keys, with a hash per key to decide ownership: about 50 ms of CPU for 100,000
-keys); no VictoriaLogs call is made on either side.
+volumes), each serving replica still sends at most its ceiling in at most two
+streams and less under load, and refuses the rest at once; each restoring
+replica takes at most its intake cap. K restoring replicas holding about D
+bytes each, served by N idle replicas, take at least K x D / (N x 64 MiB/s):
+ten new replicas of 720 MiB from twenty idle ones about 6 s, longer under load.
+Replicas that restore refuse to serve, so a fleet that starts empty everywhere
+finishes at once with nothing restored and fills from VictoriaLogs as before.
+A peer stream costs the serving replica one plan per request (its keys, with a
+hash per key to decide ownership: about 50 ms of CPU for 100,000 keys, in
+chunks); no VictoriaLogs call is made on either side.
 
 `LVP_PEER_RESTORE_GATE=1 go test -run TestPeerRestore_ThroughputGate ./internal/cache/`
 fails below 200 MiB/s over loopback for 2 GiB (with and without the receiver's

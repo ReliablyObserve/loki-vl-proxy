@@ -146,3 +146,22 @@ func TestOTLPPusher_IncludesCacheRestartMetrics(t *testing.T) {
 		}
 	}
 }
+
+// RequestLoad counts the completed client requests and their time, seeded and
+// unseeded endpoints alike, without tails and upstream calls: the peer bulk
+// restore's query latency signal.
+// conformance: cache-restart-handover
+func TestMetrics_RequestLoadCountsClientRequests(t *testing.T) {
+	m := NewMetrics()
+	m.RecordRequest("query_range", 200, 3*time.Millisecond)
+	m.RecordRequestWithRoute("detected_fields", "/loki/api/v1/detected_fields", 200, 5*time.Millisecond)
+	m.RecordRequest("tail", 200, time.Minute)
+	m.RecordUpstreamRequest("vl", "query", "/select/logsql/query", 200, time.Second)
+	if n, ns := m.RequestLoad(); n != 2 || time.Duration(ns) != 8*time.Millisecond {
+		t.Fatalf("load %d requests, %v", n, time.Duration(ns))
+	}
+	var nilMetrics *Metrics
+	if n, ns := nilMetrics.RequestLoad(); n != 0 || ns != 0 {
+		t.Fatal("nil metrics")
+	}
+}

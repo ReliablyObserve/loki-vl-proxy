@@ -556,7 +556,7 @@ func TestRestore_ReasonsAndOutcomesAreFixedLabels(t *testing.T) {
 	for _, reason := range RestoreSkipReasons() {
 		names = append(names, reason.String())
 	}
-	if got := fmt.Sprint(names); got != "[expired superseded too_large over_budget memory_full other_scope unreadable deadline purged clock_behind_flush]" {
+	if got := fmt.Sprint(names); got != "[expired superseded too_large over_budget memory_full other_scope unreadable deadline purged clock_behind_flush peer_busy]" {
 		t.Fatalf("reasons %s", got)
 	}
 	if got := fmt.Sprint(RestoreOutcomes()); got != "[running done deadline purged clock_behind_flush none]" {
