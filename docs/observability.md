@@ -924,7 +924,7 @@ is in the [sizing guide](cache-troubleshooting.md#size-the-cache-from-its-evicti
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
-| `loki_vl_proxy_cache_evictions_total` | counter | `layer`, `tier`, `reason` | entries that left a tier; `expired` + `capacity` equals `loki_vl_proxy_cache_layer_evictions_total` summed over components |
+| `loki_vl_proxy_cache_evictions_total` | counter | `layer`, `tier`, `reason` | entries that left a tier; `expired` + `capacity` equals `loki_vl_proxy_cache_layer_evictions_total` summed over components (between L2 flushes: a scrape taken while one commits can see its layer count before its reasons) |
 | `loki_vl_proxy_cache_admission_rejections_total` | counter | `layer`, `tier`, `reason` | values a tier did not store; every reason but `memory_only` and `not_replica` sums to `loki_vl_proxy_cache_layer_rejections_total` |
 | `loki_vl_proxy_cache_entry_age_at_eviction_seconds` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | time since the value entered the tier on this replica; buckets 1s to 24h |
 | `loki_vl_proxy_cache_entry_hits_at_eviction` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | lookups the entry answered from that tier; buckets 0 to 100 |
