@@ -12,7 +12,8 @@ Two steps, both bounded:
                queries on a window no shape uses, repeated until the time stops moving, then the build's log
                goes quiet. It removes the start-up state from the first cold cell of every set.
   recold       for the shape x range pairs whose first-pass cold is a new or worse above-2× finding (the gate's
-               own call, bounds and locks included): n more cold samples of each build on windows below every
+               own call, bounds and locks included) or slower than the base build's on a shape that holds its cold
+               to the base (over2x.cold_vs_base): n more cold samples of each build on windows below every
                block, each taken after the build's caches were flushed (/admin/cache/flush) and both builds' logs
                went quiet, the build asked first alternating (ABAB). The cell becomes the median of the first-pass
                sample and the n new ones; the gate then judges it exactly as before. A real cold regression is

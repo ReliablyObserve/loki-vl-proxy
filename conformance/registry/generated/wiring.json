@@ -3187,7 +3187,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 749,
+  "registry_items": 750,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -7165,6 +7165,7 @@
     "semantics/json-count-mixed-window-binary-failures",
     "semantics/json-empty-value-label-series",
     "semantics/keep-composition-retains-discarded-identity-in-count-metrics",
+    "semantics/label-browser-cold-first-listing",
     "semantics/label-format-function-composition-content-selection",
     "semantics/label-format-function-literal-output",
     "semantics/label-replace-around-vector",

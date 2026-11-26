@@ -667,6 +667,9 @@
     "semantics/keyword-fold-runes-read-as-keyword | compare:observed",
     "semantics/keyword-fold-runes-read-as-keyword | gap:fixed",
     "semantics/keyword-fold-runes-read-as-keyword | query",
+    "semantics/label-browser-cold-first-listing | compare:observed",
+    "semantics/label-browser-cold-first-listing | gap:open",
+    "semantics/label-browser-cold-first-listing | perf",
     "semantics/label-browser-latency-cold-and-refresh | compare:exact",
     "semantics/label-browser-latency-cold-and-refresh | perf",
     "semantics/label-browser-latency-cold-and-refresh | perf:locked",
@@ -3675,7 +3678,7 @@
       "any": 50,
       "api": 124,
       "drilldown": 64,
-      "explore": 262,
+      "explore": 263,
       "grafana-datasource": 4,
       "operator": 5
     },
@@ -3699,9 +3702,9 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 113,
+    "shape_covers_distinct": 114,
     "shapes_path_only": 10,
-    "unwired_items": 151,
+    "unwired_items": 152,
     "wired_items": 484
   },
   "gates": [
