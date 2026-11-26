@@ -422,6 +422,9 @@ cluster, so check at least:
   and recursion depth, fan-out, cache growth. Fuzz new parsers and decoders.
 - Tenant isolation: cache and plan keys carry the tenant scope; no answer is
   reused across tenants or served to a peer for another tenant.
+- Credentials in keys: a credential (forwarded header or cookie, backend
+  basic auth) reaches a cache key, snapshot or log line only through the keyed
+  digest in `internal/proxy/credential_digest.go`, never as a plain hash.
 - Query injection: LogsQL is built from typed nodes or properly quoted values,
   never by splicing client text; client text never becomes proxy-internal
   syntax.

@@ -124,6 +124,7 @@ The proxy trusts nothing about the caller unless you configure it:
 | `-admin-listen` | `extraArgs.admin-listen` | `127.0.0.1:3101` | no | none |
 | `-peer-auth-token` / `-peer-auth-token-file` / `PEER_AUTH_TOKEN` | `peerCache.authToken` / `peerCache.existingSecret` | empty, required with peers | no | none |
 | `-forward-authorization`, `-forward-headers`, `-forward-cookies` | `extraArgs.*` | off / empty | no | none |
+| `-cache-key-secret` / `-cache-key-secret-file` / `CACHE_KEY_SECRET` | `cacheKeySecret.existingSecret` / `extraArgs.cache-key-secret` | empty (derived from `-peer-auth-token`, else per process) | no | none |
 | `-metrics.trust-proxy-headers` | `observability.metrics.trustProxyHeaders` | `false` | no | none |
 | `-metrics.export-sensitive-labels` | `observability.metrics.exportSensitiveLabels` | `false` | no | none |
 | `-backend-basic-auth` / `-backend-basic-auth-file` / `BACKEND_BASIC_AUTH` | `backendAuth.existingSecret` / `extraArgs.backend-basic-auth` | empty | no | none |

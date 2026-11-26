@@ -44,6 +44,7 @@ Setups, defaults and every option: [Tenancy and authentication](tenancy-and-auth
 - numeric tenants are canonical: with numeric passthrough, `X-Scope-OrgID: 7` routes to VictoriaLogs account `7`, while `007`, `00`, `-1` and anything above `4294967295` is refused with `403 unknown tenant` unless the tenant map lists that exact string, because Loki keeps `007` and `7` as different tenants and VictoriaLogs would otherwise merge them (or receive an invalid `AccountID`). Admission and the `AccountID`/`ProjectID` headers the proxy sets come from one resolver, so an admitted org is never served from `0:0` by accident (the cold tier also receives `X-Scope-OrgID` and resolves it itself; mirror tenant-map entries in its own alias table); see [Numeric tenants](tenancy-and-auth.md#numeric-tenants-and-strict-routing)
 - label-routing mode enforces the tenant constraint through VictoriaLogs `extra_stream_filters`, so request parameters and query pipelines cannot override it; the configured tenant field must be a stream field
 - cache and coalescer keys (memory, disk, peer, window, metadata and label-value indexes) include the resolved tenant routing, backend identity and forwarded-identity fingerprint, so entries are never shared across tenants or authorization scopes
+- credentials enter cache keys only as keyed digests: forwarded `Authorization` headers, other `-forward-headers` and `-forward-cookies` values, and `-backend-basic-auth` are digested with HMAC-SHA256 under a key derived (HKDF-SHA256) from `-cache-key-secret`, else from `-peer-auth-token`, else from random bytes per process. A cache key read from the disk cache, a snapshot, a peer or a debug log line cannot be used to test credential guesses without that secret, which is never written to the cache volume. Replicas or restarts with the same secret share credential-scoped entries; with different or no secret they miss (never another caller's answer), and without any secret credential-scoped entries are not reused after a restart or by other replicas (the proxy logs a warning at start). Keys of requests that carry no credential are unchanged. See [Cache key secret](#cache-key-secret)
 
 **Lightweight tenant enforcement**: `-require-tenant-header=true` rejects any request missing an `X-Scope-OrgID` header with HTTP 401. This is a lighter alternative to full auth — it catches misconfigured clients without requiring a token/credential system.
 
@@ -227,7 +228,7 @@ Enable only for controlled troubleshooting windows. Without `-server.admin-auth-
 
 A flag value is part of the process command line. `/proc/<pid>/cmdline` is readable by every user that can see the process (unless `/proc` is mounted with `hidepid`), so it shows up in `ps` on the node, in containers that share the pod's process namespace, and in process listings collected by crash reports or node diagnostics. A `$(VAR)` reference in Kubernetes `args` does not help: the kubelet expands it before the container starts, so the plain value is in the arguments. An environment variable is narrower: `/proc/<pid>/environ` is readable only by a process allowed to trace it (the same user or `CAP_SYS_PTRACE`). A file is readable by whoever can read the file in the container's filesystem.
 
-The five secrets can be given without a flag value:
+The six secrets can be given without a flag value:
 
 | Secret | File flag | Environment variable | Chart value |
 |---|---|---|---|
@@ -236,6 +237,7 @@ The five secrets can be given without a flag value:
 | Delete API token | `-delete-api-auth-token-file` | `DELETE_API_AUTH_TOKEN` | `deleteAuth.existingSecret` |
 | VictoriaLogs basic auth | `-backend-basic-auth-file` | `BACKEND_BASIC_AUTH` | `backendAuth.existingSecret` |
 | Version URL basic auth | `-backend-version-basic-auth-file` | `BACKEND_VERSION_BASIC_AUTH` | `backendVersionAuth.existingSecret` |
+| Cache key secret | `-cache-key-secret-file` | `CACHE_KEY_SECRET` | `cacheKeySecret.existingSecret` |
 
 - The value flag wins, then the file flag, then the environment variable. A value flag and a file flag for the same secret stop startup.
 - A file flag whose file is missing, unreadable, empty or larger than 64 KiB stops startup. Line endings at the end of the file are dropped.
@@ -243,6 +245,22 @@ The five secrets can be given without a flag value:
 - The environment variables are read whenever they are set. `ADMIN_AUTH_TOKEN` in the environment therefore has the effect of `-server.admin-auth-token`: the admin and debug routes move to the main listener behind that token.
 - The Helm chart mounts each Secret key as a read-only file and passes the `-...-file` flag. A proxy image older than the chart does not know these flags and exits, so it never serves without the credential.
 - Values passed through `extraArgs` (including `$(NAME)` references) keep working and stay visible in the command line: move them to the chart values above or to `-...-file` flags.
+
+## Cache Key Secret
+
+Cache keys are stored with the answers: in the disk cache and its restart hand-over, in pattern and label-index snapshots, on peer replicas, in the peers' hot-key index and in debug log lines. When the proxy forwards credentials (`-forward-authorization`, `-forward-headers`, `-forward-cookies`) or authenticates to VictoriaLogs (`-backend-basic-auth`), those keys must keep different credentials apart without letting anyone who holds the keys check a guessed password. The proxy therefore digests credentials with HMAC-SHA256 under a key it derives at start:
+
+| Configured | Key | Credential-scoped entries |
+|---|---|---|
+| `-cache-key-secret` (or `-cache-key-secret-file`, `CACHE_KEY_SECRET`) | derived from that secret | reused by every replica and restart with the same secret |
+| else `-peer-auth-token` | derived from the peer token (never the token itself) | reused across a peer fleet, which shares the token already |
+| neither | random per process | not reused after a restart or by another replica |
+
+- Set `-cache-key-secret` to the same long random value on every replica that shares a disk cache or peers. A single replica with a persistent disk cache and forwarded or backend credentials needs it to keep those entries across restarts; with the chart, `cacheKeySecret.existingSecret` mounts it from a Secret. With `peerCache.enabled` the chart's peer token already provides a fleet-wide key.
+- Changing the secret, or the peer token it is derived from, makes credential-scoped entries miss once; nothing is served across the change.
+- Entries written by a build before keyed digests are never read by a later build: their keys have another form.
+- Requests that carry no credential (no forwarded header or cookie, no backend basic auth) have the same cache keys as before; only the tenant and routing scope is hashed for them, as before.
+- The restart hand-over scope never includes credential flags (`-backend-basic-auth`, `-backend-version-basic-auth`, tokens, secrets).
 
 ## Log and Error Redaction
 

@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (298), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (300), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -11,6 +11,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
 | `-cache-disabled` | bool | `false` | `extraArgs.cache-disabled` | Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement) |
+| `-cache-key-secret` | string | (empty) | `extraArgs.cache-key-secret` | Secret keying the digests of credentials in cache keys (forwarded Authorization headers and cookies, -backend-basic-auth), so cache keys stored on disk, in snapshots or on peers cannot be used to test credential guesses. Set the same value on every replica to share credential-scoped cache entries across replicas and restarts. Empty: a key derived from -peer-auth-token, else a random key per process (credential-scoped entries are then not reused after a restart or by other replicas). When neither this flag nor -cache-key-secret-file is given, read from the CACHE_KEY_SECRET environment variable. A flag value is readable in the process command line |
+| `-cache-key-secret-file` | string | (empty) | `extraArgs.cache-key-secret-file` | File holding the -cache-key-secret value, read once at startup |
 | `-cache-max` | int | `10000` | `extraArgs.cache-max` | Maximum cache entries |
 | `-cache-max-bytes` | int | `defaultCacheMaxBytes` | `extraArgs.cache-max-bytes` | Maximum in-memory L1 cache size in bytes |
 | `-cache-shutdown-flush-timeout` | duration | `0` | `extraArgs.cache-shutdown-flush-timeout` | Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds |

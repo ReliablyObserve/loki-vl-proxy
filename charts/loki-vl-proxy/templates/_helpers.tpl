@@ -313,7 +313,8 @@ JSON list. Each is mounted as one read-only file and passed to the proxy as
     (dict "values" "adminAuth" "flag" "server.admin-auth-token-file" "volume" "secret-admin-auth" "path" "token")
     (dict "values" "deleteAuth" "flag" "delete-api-auth-token-file" "volume" "secret-delete-auth" "path" "token")
     (dict "values" "backendAuth" "flag" "backend-basic-auth-file" "volume" "secret-backend-auth" "path" "basic-auth")
-    (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth-file" "volume" "secret-backend-version-auth" "path" "basic-auth") -}}
+    (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth-file" "volume" "secret-backend-version-auth" "path" "basic-auth")
+    (dict "values" "cacheKeySecret" "flag" "cache-key-secret-file" "volume" "secret-cache-key" "path" "secret") -}}
 {{- $auth := default (dict) (get $.Values $spec.values) -}}
 {{- if $auth.existingSecret -}}
 {{- $out = append $out (dict "flag" $spec.flag "volume" $spec.volume "path" $spec.path "secretName" $auth.existingSecret "key" (default $spec.path $auth.existingSecretKey)) -}}
@@ -338,6 +339,7 @@ Secret-backed env var. Invoked from the deployment.
     (dict "values" "adminAuth" "flag" "server.admin-auth-token" "quoted" true)
     (dict "values" "backendAuth" "flag" "backend-basic-auth")
     (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth")
+    (dict "values" "cacheKeySecret" "flag" "cache-key-secret")
     (dict "values" "deleteAuth" "flag" "delete-api-auth-token") -}}
 {{- $auth := default (dict) (get $.Values $spec.values) -}}
 {{- range $flag := list $spec.flag (printf "%s-file" $spec.flag) -}}

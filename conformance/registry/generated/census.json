@@ -1730,6 +1730,7 @@
     "internal/proxy/cache_handover_log_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | shutdown-releases-background-work",
+    "internal/proxy/cache_key_fingerprint_golden_test.go | cache-key-credential-digest",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-parenthesized-metric-as-text",
@@ -1756,6 +1757,7 @@
     "internal/proxy/compat_oversized_reply_test.go | semantics/quantile-over-time-out-of-range",
     "internal/proxy/compat_oversized_reply_test.go | semantics/unpack-non-string-values",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
+    "internal/proxy/credential_digest_test.go | cache-key-credential-digest",
     "internal/proxy/credential_passthrough_test.go | credential-passthrough-as-configured",
     "internal/proxy/default_entry_limit_test.go | semantics/log-query-default-limit",
     "internal/proxy/default_max_query_length_test.go | limits/effective-limit-resolution",
@@ -3698,7 +3700,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 847,
+      "go": 849,
       "playwright": 3
     },
     "page_kinds": {
@@ -3720,7 +3722,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 487
+    "wired_items": 488
   },
   "gates": [
     "A/B shape selection",

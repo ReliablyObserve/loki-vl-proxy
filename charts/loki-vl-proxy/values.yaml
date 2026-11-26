@@ -609,6 +609,17 @@ backendVersionAuth:
   existingSecret: ""
   existingSecretKey: "basic-auth"  # key within existingSecret
 
+# Secret keying the digests of credentials in cache keys
+# (-cache-key-secret-file): forwarded Authorization headers and cookies
+# (-forward-authorization, -forward-headers, -forward-cookies) and
+# backendAuth. Unset, the proxy derives the key from the peer token
+# (peerCache.enabled), else uses a random key per process, and then
+# credential-scoped cache entries are not reused after a restart. The Secret
+# key holds any long random string; every replica reads the same Secret.
+cacheKeySecret:
+  existingSecret: ""
+  existingSecretKey: "secret"      # key within existingSecret
+
 # Custom Drilldown patterns always prepended to /loki/api/v1/patterns.
 # Runtime supports:
 # - inline JSON/newline config via -patterns-custom

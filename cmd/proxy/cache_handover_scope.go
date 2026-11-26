@@ -30,8 +30,8 @@ func validateCacheHandoverFlags(flushTimeout time.Duration, warmBytes int64, war
 // value and the environment overrides. Left out: the per-pod identity
 // (-peer-self, -peer-self-az, the service instance id), which changes when
 // Kubernetes recreates a pod and decides no answer, and credentials
-// (-backend-basic-auth, -otlp-headers and flag names holding token, password
-// or secret), which decide no answer either and are never hashed onto the
+// (-otlp-headers and flag names holding basic-auth, token, password or
+// secret), which decide no answer either and are never hashed onto the
 // disk. It is computed only when the hand-over is on (hashing
 // the executable reads it once); "" restores no memory-only answer.
 func cacheHandoverScope(fs *flag.FlagSet, env envConfig, flushTimeout time.Duration, warmBytes int64) string {
@@ -91,11 +91,11 @@ func executableDigest() (string, error) {
 func handoverScopeFlag(name string) bool {
 	switch name {
 	case "peer-self", "peer-self-az", // the pod's address and zone (Kubernetes downward API)
-		"backend-basic-auth", "otlp-headers": // credentials whose names say nothing
+		"otlp-headers": // credentials whose name says nothing
 		return false
 	}
 	lower := strings.ToLower(name)
-	for _, secret := range []string{"token", "password", "secret"} {
+	for _, secret := range []string{"basic-auth", "token", "password", "secret"} {
 		if strings.Contains(lower, secret) {
 			return false
 		}

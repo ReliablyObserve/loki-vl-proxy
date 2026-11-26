@@ -1673,12 +1673,16 @@ func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
 	if len(identity) == 0 && len(cookies) == 0 {
 		return scope
 	}
+	if len(cookies) > 0 || p.forwardsCredentialHeader(r) {
+		// Credentials enter cache keys only through a keyed digest: a stored
+		// key cannot test guesses of them (credential_digest.go).
+		return p.credentialDigester().fingerprint(scope, identity, cookies)
+	}
+	// Trusted proxy identity alone (user names, client addresses) is no
+	// credential: the same SHA-256 on every replica, so peers share it.
 	// JSON encoding is unambiguous even when header values contain delimiters.
 	data, _ := json.Marshal([]any{scope, identity, cookies})
 	sum := sha256.Sum256(data)
-	if len(cookies) > 0 || p.forwardsCredentialHeader(r) {
-		return identityFingerprintPrefix + hex.EncodeToString(sum[:])
-	}
 	return hex.EncodeToString(sum[:])
 }
 
@@ -1699,7 +1703,9 @@ func (p *Proxy) forwardsCredentialHeader(r *http.Request) bool {
 // -forward-headers header or a -forward-cookies cookie). Cache keys carry
 // the fingerprint as ":auth:<fingerprint>", so entries computed with a
 // user's credentials are recognisable and never pushed to peer replicas
-// (peerPushAllowed): they stay on the replica that computed them.
+// (peerPushAllowed). A replica holding one still answers a peer's read of
+// that exact key (same credentials, same digest key). After the prefix comes
+// credentialDigestVersion and the keyed digest (credential_digest.go).
 const identityFingerprintPrefix = "fwdid."
 
 // peerPushAllowed reports whether a cache entry may be pushed to the key's

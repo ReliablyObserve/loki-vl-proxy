@@ -30,6 +30,7 @@ func secretCases() []secretCase {
 		{"peer-auth-token", "PEER_AUTH_TOKEN", "sentinel-peer-7c1e", func(c proxyRuntimeConfig) string { return c.peerAuthToken }},
 		{"server.admin-auth-token", "ADMIN_AUTH_TOKEN", "sentinel-admin-2b9d", func(c proxyRuntimeConfig) string { return c.adminAuthToken }},
 		{"delete-api-auth-token", "DELETE_API_AUTH_TOKEN", "sentinel-delete-5a40", func(c proxyRuntimeConfig) string { return c.deleteAPIAuthToken }},
+		{"cache-key-secret", "CACHE_KEY_SECRET", "sentinel-cache-key-91d2", func(c proxyRuntimeConfig) string { return c.cacheKeySecret }},
 		{"backend-basic-auth", "BACKEND_BASIC_AUTH", "vluser:sentinel-backend-e817", func(c proxyRuntimeConfig) string { return c.backendBasicAuth }},
 		{"backend-version-basic-auth", "BACKEND_VERSION_BASIC_AUTH", "veruser:sentinel-version-03fc", func(c proxyRuntimeConfig) string { return c.backendVersionBasicAuth }},
 	}
@@ -286,13 +287,13 @@ func TestRun_SecretsStayOutOfLogsAndEndpoints(t *testing.T) {
 			}
 			backendMu.Lock()
 			defer backendMu.Unlock()
-			for _, s := range cases[3:] {
+			for _, s := range cases[4:] {
 				want := "Basic " + base64.StdEncoding.EncodeToString([]byte(s.value))
 				if !strings.Contains(strings.Join(backendAuth, "\n"), want) {
 					t.Errorf("-%s never reached the backend", s.flag)
 				}
 			}
-			for _, s := range cases[:3] {
+			for _, s := range cases[:4] {
 				if strings.Contains(backendSaw.String(), s.value) {
 					t.Errorf("-%s was sent to the backend", s.flag)
 				}
