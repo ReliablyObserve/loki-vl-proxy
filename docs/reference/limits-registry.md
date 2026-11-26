@@ -128,7 +128,7 @@ What one scan costs depends on the data, so each replica learns the limit instea
 
 ### `-peer-bulk-serve-max-bytes-per-second`
 
-64 MiB/s (537 Mbit/s): about a third of the baseline bandwidth of a small cloud instance (1.5 to 3 Gbit/s on 2 to 8 vCPU general purpose instances, which burst higher), so the serving replica keeps the rest for its clients, VictoriaLogs reads and peer traffic. A replica pulls from up to -cache-startup-peer-restore-concurrency peers at once, each sending its share, so 2 GiB of s2-compressed answers (about 0.75 GiB stored) restore in about 6 s from two peers. Over loopback the transfer itself reaches 1.8 GB/s of decoded bytes (BenchmarkPeerBulkRestore), so this limit, the network and the disks decide. Raise it on 10 Gbit/s+ networks; 0 sets no rate.
+64 MiB/s (537 Mbit/s): well below the baseline network bandwidth of most cloud instances (check your instance type's baseline: many burst far above it), so the serving replica keeps the rest for its clients, VictoriaLogs reads and peer traffic. A replica pulls from up to -cache-startup-peer-restore-concurrency peers at once, each sending its share, so 2 GiB of s2-compressed answers (about 0.75 GiB stored) restore in about 6 s from two peers. Over loopback the transfer itself reaches 1.8 GB/s of decoded bytes (BenchmarkPeerBulkRestore), so this limit, the network and the disks decide. Raise it on 10 Gbit/s+ networks; 0 sets no rate.
 
 ### `-cache-startup-peer-restore-concurrency`
 

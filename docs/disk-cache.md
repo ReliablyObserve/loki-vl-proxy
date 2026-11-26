@@ -278,8 +278,8 @@ replica's disk write rate when its disk is on. Computed, not measured:
 | 4 GiB `raw` (4 GiB) | 64 s | 32 s | 16 s | about 4 s |
 
 All fit the 120 s warm-up timeout. A node's baseline network bandwidth can be
-below what it bursts to (small cloud instances sustain roughly 0.75 to 3
-Gbit/s, about 90 to 370 MiB/s): keep the serving rate below that baseline, so
+far below what it bursts to (check your instance type's baseline): keep the
+serving rate below that baseline, so
 the serving replicas keep bandwidth for their clients and VictoriaLogs. With the
 restoring replica's disk on, a gp3 volume's 125 MiB/s of writes bounds it at
 about 6 s for 2 GiB `s2` and 12 s for 4 GiB `s2` (the stored bytes): about the default

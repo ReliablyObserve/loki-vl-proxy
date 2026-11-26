@@ -1238,12 +1238,16 @@ func mapsFromHists(m map[string]*histogram) map[string]*histogram          { ret
 // cacheRestoreMetrics mirrors writeCacheRestoreProgress.
 func (p *OTLPPusher) cacheRestoreMetrics(h cache.HandoverStats, now int64) []map[string]interface{} {
 	sources := restoreSources(h)
+	var per [2][]restoreMetric
+	for s, rp := range sources {
+		per[s] = restoreMetrics(h, rp)
+	}
 	var out []map[string]interface{}
-	for i, m := range restoreMetrics(h, sources[0]) {
+	for i, m := range per[0] {
 		var points []map[string]interface{}
-		for _, rp := range sources {
-			if ms := restoreMetrics(h, rp); i < len(ms) {
-				points = append(points, p.gaugeDP(m.name, ms[i].value, now, attr("source", string(rp.Source))))
+		for s, rp := range sources {
+			if i < len(per[s]) {
+				points = append(points, p.gaugeDP(m.name, per[s][i].value, now, attr("source", string(rp.Source))))
 			}
 		}
 		out = append(out, p.gaugeMetric(m.name, m.help, m.unit, points...))

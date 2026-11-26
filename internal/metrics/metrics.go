@@ -713,10 +713,13 @@ type restoreMetric struct {
 }
 
 // restoreSources are the restores the metrics show, each under its source
-// label: the disk warm-up and the peer bulk restore.
+// label: the disk warm-up always, the peer bulk restore once one ran.
 func restoreSources(h cache.HandoverStats) []cache.RestoreProgress {
 	disk, peer := h.Restore, h.PeerRestore
 	disk.Source, peer.Source = cache.RestoreSource(restoreSourceOfDisk), cache.RestoreSource(restoreSourceOfPeer)
+	if peer.Outcome == "" {
+		return []cache.RestoreProgress{disk}
+	}
 	return []cache.RestoreProgress{disk, peer}
 }
 
@@ -724,7 +727,8 @@ func restoreSources(h cache.HandoverStats) []cache.RestoreProgress {
 // warm-up, the disk index rebuild, as gauges updated after every batch.
 func restoreMetrics(h cache.HandoverStats, p cache.RestoreProgress) []restoreMetric {
 	remaining, _ := p.Remaining()
-	out := []restoreMetric{
+	out := make([]restoreMetric, 0, 12)
+	out = append(out, []restoreMetric{
 		{"loki_vl_proxy_cache_restart_warm_planned_entries", "Entries the restart warm-up found to restore.", "", float64(p.PlannedEntries)},
 		{"loki_vl_proxy_cache_restart_warm_planned_bytes", "Bytes of the entries the restart warm-up found to restore: encoded disk bytes, and the decoded size of memory-only answers.", "By", float64(p.PlannedBytes)},
 		{"loki_vl_proxy_cache_restart_warm_budget_bytes", "Most decoded bytes this warm-up may restore (-cache-startup-warm-bytes, at most half of -cache-max-bytes).", "By", float64(p.BudgetBytes)},
@@ -733,7 +737,7 @@ func restoreMetrics(h cache.HandoverStats, p cache.RestoreProgress) []restoreMet
 		{"loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second", "Decoded bytes restored per second: so far while the warm-up runs, over the whole warm-up after it.", "By/s", p.BytesPerSecond()},
 		{"loki_vl_proxy_cache_restart_warm_remaining_seconds", "Estimated seconds the running warm-up still needs, from its rate so far; 0 when none runs or nothing is measured yet.", "s", remaining.Seconds()},
 		{"loki_vl_proxy_cache_restart_warm_timeout_seconds", "Time the warm-up was given (-cache-startup-warm-timeout).", "s", p.Timeout.Seconds()},
-	}
+	}...)
 	if p.Source != cache.RestoreSourceDisk {
 		return out
 	}
@@ -754,12 +758,18 @@ const (
 
 func writeCacheRestoreProgress(sb *strings.Builder, h cache.HandoverStats) {
 	sources := restoreSources(h)
+	var per [2][]restoreMetric
+	for s, p := range sources {
+		per[s] = restoreMetrics(h, p)
+	}
 	// One HELP/TYPE per metric name, then its series of every source.
-	for i, m := range restoreMetrics(h, sources[0]) {
-		fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n", m.name, m.help, m.name)
-		for _, p := range sources {
-			if ms := restoreMetrics(h, p); i < len(ms) {
-				fmt.Fprintf(sb, "%s{source=%q} %g\n", m.name, string(p.Source), ms[i].value)
+	for i, m := range per[0] {
+		for _, part := range [...]string{"# HELP ", m.name, " ", m.help, "\n# TYPE ", m.name, " gauge\n"} {
+			sb.WriteString(part)
+		}
+		for s, p := range sources {
+			if i < len(per[s]) {
+				fmt.Fprintf(sb, "%s{source=%q} %g\n", m.name, string(p.Source), per[s][i].value)
 			}
 		}
 	}

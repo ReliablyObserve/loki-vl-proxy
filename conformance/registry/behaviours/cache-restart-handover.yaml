@@ -161,8 +161,9 @@ proxy: |
   Init restores an empty disk from a peer while /ready answers 503, nothing
   runs with the flag or the warm-up off, the route needs the peer token, a
   stopped server is skipped. Fleet proof TestFleet_PeerRestoreRefillsAWipedDisk
-  (test/e2e-fleet): replica b removed with its volume restores from replica a
-  before ready and repeats with 0 VictoriaLogs calls from memory.
+  (test/e2e-fleet, written, not yet run on a stack nor in CI): replica b
+  removed with its volume is to restore from replica a before ready and repeat
+  with 0 VictoriaLogs calls from memory.
 
 implementation:
   - internal/cache/handover.go
@@ -183,7 +184,7 @@ decisions:
     why: 'Owner decision 2026-11-26: a replica restores from peers when needed by pulling, which also covers crashes and lost volumes; a bulk transfer moves gigabytes before ready where per-key reads cost one round trip each after ready.'
     evidence: 'BenchmarkPeerBulkRestore, 2026-11-26, Apple M5 Pro, GOMAXPROCS=4, loopback (no network limit, no rate limit), served from the serving disk, mean of 3: 2 GiB s2 in 0.80 s (1.97 s with the receiver''s disk on), raw 0.78 s (2.52 s); 4 GiB s2 2.04 s (3.61 s), raw 3.80 s (4.41 s; 1.42 s and 2.77 s in an earlier run, page cache pressure on a shared laptop). Pod networks computed: 2 GiB s2 at the default 64 MiB/s per serving replica 11 s from one peer, 5.6 s from two, 2.8 s from four.'
     code: [internal/cache/restore_peer.go, internal/cache/peer_bulk_serve.go, internal/cache/peer_bulk_wire.go, internal/proxy/cache_handover.go]
-    tests: [TestPeerRestore_WipedDiskRefillsReplicatedKeys, TestPeerRestore_EachKeyCrossesTheNetworkOnce, TestPeerRestore_ServingTouchesNoCounterOrRecency, TestPeerRestore_NeverOverwritesFresherLocalData, TestPeerRestore_MemoryOnlyScopeAndPushFilter, TestPeerRestore_PurgeDuringTheRestoreWins, TestPeerRestore_OldUnreachableAndRestoringPeersFallBackFast, TestPeerRestore_AllRestartingTogetherNoDeadlock, TestPeerBulkStream_CorruptHeaderEndsTheStream, TestCachePeerRestore_InitRestoresAnEmptyDiskFromPeers, TestFleet_PeerRestoreRefillsAWipedDisk]
+    tests: [TestPeerRestore_WipedDiskRefillsReplicatedKeys, TestPeerRestore_EachKeyCrossesTheNetworkOnce, TestPeerRestore_ServingTouchesNoCounterOrRecency, TestPeerRestore_NeverOverwritesFresherLocalData, TestPeerRestore_MemoryOnlyScopeAndPushFilter, TestPeerRestore_PurgeDuringTheRestoreWins, TestPeerRestore_OldUnreachableAndRestoringPeersFallBackFast, TestPeerRestore_AllRestartingTogetherNoDeadlock, TestPeerBulkStream_CorruptHeaderEndsTheStream, TestCachePeerRestore_InitRestoresAnEmptyDiskFromPeers]
     quality: 'Only keys the requester replicates, never over fresher local data, expiry never lengthened, memory-only answers only for the same scope and never on disk, forwarded-credential keys never leave their replica, a purge wins, corrupt records rejected one by one; /ready never waits past -cache-startup-warm-timeout.'
     performance: 'BenchmarkPeerBulkRestore (internal/cache/restore_peer_bench_test.go); opt-in gate TestPeerRestore_ThroughputGate (200 MiB/s over loopback at 2 GiB). Serving: at most -peer-bulk-serve-max-streams streams and -peer-bulk-serve-max-bytes-per-second per replica; no VictoriaLogs call on either side.'
     pending: true
