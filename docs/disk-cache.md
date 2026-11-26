@@ -247,17 +247,22 @@ serving side's `loki_vl_proxy_peer_cache_bulk_serve_*`
 ([Observability](observability.md)).
 
 Measured over loopback (one process, both ends on an Apple M5 Pro laptop SSD,
-`GOMAXPROCS=4`, no network limit, no rate limit, 2026-11-26;
+`GOMAXPROCS=4`, no network limit, no rate limit, 2026-11-26, a laptop shared
+with other work, so the page cache was under pressure at 4 GiB;
 `BenchmarkPeerBulkRestore` in `internal/cache/restore_peer_bench_test.go`, the
 mixed-size fixture of `BenchmarkRestoreWarm`, served from the serving replica's
-disk). "Disk on" also writes every entry to the restoring replica's new disk:
+disk; mean of 3 runs). "Disk on" also writes every entry to the restoring
+replica's new disk:
 
 | Restored (decoded) | Codec, bytes on the wire | Disk off | Disk on |
 |---|---|---|---|
-| 2 GiB, 19,085 entries | `s2`, 755 MB | 0.80 s | 2.15 s |
-| 2 GiB | `raw`, 2,148 MB | 1.17 s | 1.49 s |
-| 4 GiB, 37,701 entries | `s2`, 1,511 MB | 1.82 s | 4.50 s |
-| 4 GiB | `raw`, 4,296 MB | RAW4_OFF | RAW4_ON |
+| 2 GiB, 19,085 entries | `s2`, 755 MB | 0.80 s | 1.97 s |
+| 2 GiB | `raw`, 2,148 MB | 0.78 s | 2.52 s |
+| 4 GiB, 37,701 entries | `s2`, 1,511 MB | 2.04 s | 3.61 s |
+| 4 GiB | `raw`, 4,296 MB | 3.80 s | 4.41 s |
+
+An earlier run of the same code gave 4 GiB `raw` in 1.42 s and 2.77 s: with the
+serving file out of the page cache, its reads decide.
 
 That is the cost of the two ends, not what a pod network carries. On a real
 fleet the time is about the stored bytes divided by the smallest of: the

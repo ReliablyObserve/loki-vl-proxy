@@ -148,7 +148,7 @@ type peerRestore struct {
 	purged    bool
 	budgetHit bool
 	// access is the next disk recency handed to a restored value, counting
-	// down so the hottest restored values end newest (diskAccessBase).
+	// down so the hottest restored values end newest (nextAccess).
 	access      atomic.Int64
 	accessFloor int64
 	diskWrites  atomic.Int64
