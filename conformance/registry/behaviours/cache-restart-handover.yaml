@@ -99,4 +99,5 @@ decisions:
     tests: [TestRestore_BatchesAreBoundedByBytes, TestRestore_APurgeDuringTheWarmUpWins, TestRestore_QueuedAndRewrittenValuesWinOverTheBatch, TestHandover_WarmPeakMemoryIsOneBatch, TestRestore_ReadAheadCoversTheRecordsAndStops]
     quality: 'The same entries restored, hottest first, under the same budgets, expiry, purge and no-overwrite rules; the disk recency stays as the ranks set it.'
     performance: 'BenchmarkRestoreWarm, BenchmarkRestoreShutdownFlush and BenchmarkRestoreIndexRebuild (internal/cache/restore_bench_test.go); opt-in gate TestRestoreWarm_ThroughputGate (400 MiB/s).'
+    pending: true
 
