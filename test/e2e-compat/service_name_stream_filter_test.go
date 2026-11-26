@@ -107,7 +107,9 @@ func TestCompat_ServiceNameStreamFilterLikeLoki(t *testing.T) { runServiceNameSt
 // and the stream labels read as the rows' fields, on every supported VictoriaLogs release.
 //
 // conformance: vl-stream-filter-or-groups-and-missing-label, semantics/service-name-stream-filter
-func TestVLCapability_ServiceNameStreamFilterLikeLoki(t *testing.T) { runServiceNameStreamFilterLikeLoki(t) }
+func TestVLCapability_ServiceNameStreamFilterLikeLoki(t *testing.T) {
+	runServiceNameStreamFilterLikeLoki(t)
+}
 
 func runServiceNameStreamFilterLikeLoki(t *testing.T) {
 	run := fmt.Sprintf("snsf-%d", time.Now().UnixNano())
