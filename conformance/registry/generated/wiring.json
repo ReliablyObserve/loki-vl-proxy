@@ -1348,6 +1348,9 @@
     "range_function-rate": [
       "test/e2e-compat/query_semantics_matrix_test.go"
     ],
+    "release-image-pinned-by-digest": [
+      "test/helm/image_test.go"
+    ],
     "secrets-outside-process-arguments": [
       "cmd/proxy/secret_flags_test.go",
       "test/helm/secrets_test.go"
@@ -3225,7 +3228,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 757,
+  "registry_items": 758,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -7179,6 +7182,9 @@
     "test/helm/cache_handover_test.go": [
       "cache-restart-handover"
     ],
+    "test/helm/image_test.go": [
+      "release-image-pinned-by-digest"
+    ],
     "test/helm/secrets_test.go": [
       "secrets-outside-process-arguments"
     ],
@@ -7186,7 +7192,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 857,
+  "tests_with_markers": 858,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7343,5 +7349,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 490
+  "wired_items": 491
 }

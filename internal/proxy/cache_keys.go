@@ -132,8 +132,13 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 		}
 		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...)
 		p.readCacheKeyMemoMu.Lock()
-		if p.readCacheKeyMemo == nil || len(p.readCacheKeyMemo) >= maxReadCacheKeyMemoEntries {
+		if p.readCacheKeyMemo == nil {
 			p.readCacheKeyMemo = make(map[canonicalReadCacheMemoKey]string, 2048)
+		} else if len(p.readCacheKeyMemo) >= maxReadCacheKeyMemoEntries {
+			// Empty the map in place: Handler.State holds the same map, and a
+			// new map would leave it pinning the full old one for the
+			// process lifetime.
+			clear(p.readCacheKeyMemo)
 		}
 		p.readCacheKeyMemo[memoKey] = computed
 		p.readCacheKeyMemoMu.Unlock()
