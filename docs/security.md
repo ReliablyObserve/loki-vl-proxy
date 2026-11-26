@@ -13,7 +13,7 @@ description: Security model, network exposure, tenant isolation, header forwardi
 - write ingestion API (`/loki/api/v1/push`) blocked (`405`)
 - admin/debug APIs disabled unless explicitly enabled
 - `/metrics` not served unless `-server.register-instrumentation=true`
-- query callers are not authenticated (see [Caller authentication](#caller-authentication))
+- query callers are not authenticated unless `-server.auth-users-file` is set (see [Caller authentication](#caller-authentication))
 
 `/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it behind its own token (`-delete-api-auth-token`, required: the proxy refuses to start without it) and runs Loki's delete requests as VictoriaLogs delete tasks (see [Delete API](#3-delete-api)).
 
@@ -30,6 +30,35 @@ In production, run the proxy behind an authenticating gateway (an ingress or rev
 - covers every route Grafana uses, including the `/loki/api/v1/tail` WebSocket upgrade.
 
 Where a gateway is not available, require client certificates at the proxy: `-tls-cert-file`, `-tls-key-file`, `-tls-client-ca-file` and `-tls-require-client-cert=true`. A client certificate proves which client connected, not which tenant it may read, so combine it with a tenant map that only routes the tenants those clients are allowed to see.
+
+### Credentials checked by the proxy
+
+Without a gateway or TLS, `-server.auth-users-file` (Helm `clientAuth.existingSecret`) makes the proxy itself require Basic or bearer credentials; the file format, the routes it covers and the tenant pin are in [Tenancy and authentication](tenancy-and-auth.md#caller-authentication). It is off by default, and with it off the listeners serve exactly as before. What it guarantees:
+
+- **Default deny.** The check sits in front of every listener's router and decides by the route the router itself matches: only `/ready`, `/health`, `/healthz`, `/alive`, `/livez`, `/metrics` and the `/_cache/*` peer routes (`-peer-auth-token`) are open. A route added later is protected unless it is added to the exempt list; a test registers every route of every listener topology and checks each one.
+- **No user enumeration.** Every refusal is `401 unauthorized` with the same text. A Basic credential with an unknown name is compared with the most expensive bcrypt hash in the file, so it costs what a known name costs; bearer tokens are compared as SHA-256 digests in constant time against every token user. If the file mixes bcrypt costs, a wrong password answers faster for a cheaper hash, which tells a caller a known user's cost class (not whether a name exists): the proxy warns at start; hash every password at one cost (12 is a good default; it also warns below 10). bcrypt reads at most 72 bytes, so a longer password is refused.
+- **Bounded bcrypt cost.** Grafana sends the same credential on every request. A verified Basic credential is answered from a cache for `-server.auth-cache-ttl` (`5m`), keyed by HMAC-SHA256 with a random per-process key, so no password and no offline-attackable hash is kept; a refused one is refused from a second cache for at most a minute. Both caches hold at most 4096 entries and are checked before a verification slot is taken: at most `-server.auth-max-concurrent-verifications` (`4`) bcrypt runs happen at once, a request that waits a second for a slot gets `429 too many outstanding requests`, and callers already verified never wait behind a flood of wrong passwords. A reload of the users file clears both caches, so a removed user or rotated password stops working at the next reload.
+- **Fails closed.** A missing, empty or invalid file stops the start. A bad version later keeps the last good users and is reported (log line, `loki_vl_proxy_auth_users_reload_failures_total`).
+- **No secret leaves the check.** The credential is removed before VictoriaLogs unless `-forward-authorization` is set; no log line, metric, error or `/debug/queries` entry carries a password, token or hash (errors about the users file name the entry, never its value).
+- **Network path.** Keep the default chart `networkPolicy` (only pods labelled `app.kubernetes.io/name: grafana` reach port 3100) so the credential is not the only control, for example:
+
+  ```yaml
+  networkPolicy:
+    enabled: true
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: grafana
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: grafana
+        ports:
+          - port: 3100
+            protocol: TCP
+  ```
+
+  Without TLS a credential crosses the cluster network in clear text; use TLS (`-tls-cert-file`, `-tls-key-file`) where the network is not trusted.
 
 ## High-Impact Controls
 
@@ -59,7 +88,7 @@ Setups, defaults and every option: [Tenancy and authentication](tenancy-and-auth
 
 By default `/loki/api/v1/delete` is not registered: every method answers `404` with the body `404 page not found`, which is what Loki returns when deletion is disabled (Loki registers the route only with `-compactor.retention-enabled=true`, off by default). No tenant header or other check runs first, as in Loki. With `-delete-api-enabled=true` the route is registered:
 
-- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token`, `-delete-api-auth-token-file` or `DELETE_API_AUTH_TOKEN` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers Loki's `401 no org id` before any other check, so an unauthenticated caller learns nothing about the route; the log line names the missing token. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
+- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (only `X-Delete-Token` with caller authentication on, next to the caller's credential; constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token`, `-delete-api-auth-token-file` or `DELETE_API_AUTH_TOKEN` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers Loki's `401 no org id` before any other check, so an unauthenticated caller learns nothing about the route; the log line names the missing token. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
 - the tenant, as Loki checks it (`401 no org id`, Loki's tenant ID texts, `400 multiple org IDs present` for a multi-tenant header)
 - Loki's checks of the request, with Loki's texts (`query not set`, `invalid query expression`, `start time not set`, the time formats, `start time can't be greater than or equal to end time`, `max_interval`). Loki has no other guard, and neither has the proxy after the token: a token holder can delete every stream of a tenant (`{}`) over any range. Treat the token like a credential that can erase data
 - a create request runs as one VictoriaLogs delete task (`/delete/run_task`) scoped by the tenant's `AccountID`/`ProjectID` and a filter of the time range (both ends included) and the rows the same log query reads; a warning-level audit log line names the tenant, the query, the range, the client and the task id
@@ -219,7 +248,7 @@ The following are disabled by default and should stay restricted:
 - `/debug/pprof/*` (`-server.enable-pprof`)
 - `/admin/cache/flush` and `GET /admin/capabilities` (the VictoriaLogs releases seen and every capability gate; registered with `-server.register-instrumentation=true`, admin-token protected like the flush, and showing no secret, backend address or tenant)
 
-Enable only for controlled troubleshooting windows. Without `-server.admin-auth-token`, admin/debug routes are served only on `-admin-listen` (default `127.0.0.1:3101`), and the proxy refuses to start when these routes are enabled on a non-loopback address without a token. With a token, they move onto the main listener and require `Authorization: Bearer <token>` or `X-Admin-Token`. The chart keeps `admin-listen` on loopback and never publishes it through the Service.
+Enable only for controlled troubleshooting windows. Without `-server.admin-auth-token`, admin/debug routes are served only on `-admin-listen` (default `127.0.0.1:3101`), and the proxy refuses to start when these routes are enabled on a non-loopback address without a token. With a token, they move onto the main listener and require `Authorization: Bearer <token>` or `X-Admin-Token` (only `X-Admin-Token` with caller authentication on, which then also requires the caller's credential, on every listener). The chart keeps `admin-listen` on loopback and never publishes it through the Service.
 
 `/metrics` is not served by default. Set `-server.register-instrumentation=true` to enable it on the main listener, or add `-metrics-listen` for a dedicated port (the chart uses `:9091`). The default export suppresses per-tenant and per-client identity labels. Opt back in with `-metrics.export-sensitive-labels=true` only on trusted scrape paths.
 
@@ -253,7 +282,7 @@ The five secrets can be given without a flag value:
 
 ## Recommended Production Baseline
 
-- an authenticating gateway in front of the proxy that sets `X-Scope-OrgID` (see [Caller authentication](#caller-authentication)), or client certificates required at the proxy
+- an authenticating gateway in front of the proxy that sets `X-Scope-OrgID` (see [Caller authentication](#caller-authentication)), client certificates required at the proxy, or credentials checked by the proxy (`-server.auth-users-file`, with tenant pins)
 - explicit tenancy (`-tenant-map` or `-tenant-map-file`, with `-auth.enabled`): the default is one shared tenant
 - keep `-tenant.allow-global=false` unless you intentionally need wildcard backend-default access
 - strict `/tail` origin allowlist

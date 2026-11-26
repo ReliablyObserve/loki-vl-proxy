@@ -16,7 +16,7 @@ The answers are those of Grafana Loki 3.7.10, recorded over HTTP on 2026-11-18. 
 | Errors that match Loki | 97.6% (242/248) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 58.9% (73/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
 | Cells that match | 102/124 | cells where every comparable row matches and no known leak remains |
-| Messages recorded | 36/48 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
+| Messages recorded | 36/49 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
 141 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
 
@@ -116,6 +116,7 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-step-overflow` | 400 | param | 1 | 1/1 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-step-too-many-points` | 400 | param | 3 | 3/3 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-tail-not-websocket` | 400 | route | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-unauthorized` | 401 | route | 0 | - | documented | TestClientAuth_AnswersAndMetrics, TestClientAuth_EveryRegisteredRouteIsProtectedOrExempt, TestClientAuth_TenantPinAndCacheIsolation | - |
 | `unmapped-evaluator-unexpected-expr` | 500 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `unmapped-index-shards-target-bytes` | 400 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `unmapped-path-cleaning-redirect` | 301 | unmapped | 7 | 7/7 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |

@@ -27,6 +27,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientauth"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -313,6 +314,9 @@ type proxyRuntimeConfig struct {
 	metadataEdgeRefreshBudget           time.Duration
 	drilldownScanTimeout                time.Duration
 	peerInsecureIPAllowlist             bool
+	authUsersFile                       string
+	authCacheTTL                        time.Duration
+	authMaxConcurrentVerifications      int
 }
 
 type otlpRuntimeConfig struct {
@@ -760,6 +764,10 @@ func run(
 	enableQueryAnalytics := fs.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
 	adminAuthToken := fs.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set. When neither this flag nor -server.admin-auth-token-file is given, read from the ADMIN_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
 	adminAuthTokenFile := fs.String("server.admin-auth-token-file", "", "File holding the -server.admin-auth-token value, read once at startup")
+	authUsersFile := fs.String("server.auth-users-file", "", "Caller authentication: path of a YAML users file (users: [{name, password_hash (bcrypt) or token_sha256 (hex SHA-256 of a bearer token), tenant (optional pin)}]). Set, every route on every listener except /ready, /health, /healthz, /alive, /livez, /metrics and the /_cache/* peer routes (-peer-auth-token) needs Authorization: Basic or Bearer, and a missing or wrong credential gets 401 with WWW-Authenticate (a difference from Loki, which has no caller authentication). A missing, empty or invalid file stops the start; the file is re-read every -server.auth-users-reload-interval and a bad version keeps the last good users. A user with a tenant may only send that X-Scope-OrgID (none sends it for them). The credential is removed before VictoriaLogs unless -forward-authorization is set; admin and delete tokens then go in X-Admin-Token and X-Delete-Token. Empty: no caller authentication")
+	authUsersReloadInterval := fs.Duration("server.auth-users-reload-interval", 30*time.Second, "How often -server.auth-users-file is re-read; a changed file that parses replaces the users (verified credentials are verified again), one that does not keeps the last good users and is reported (log, loki_vl_proxy_auth_users_reload_failures_total). 0 reads it at start only")
+	authCacheTTL := fs.Duration("server.auth-cache-ttl", 5*time.Minute, "How long a verified Basic credential skips bcrypt (keyed by an HMAC with a per-process random key, so no password is kept); a refused one is refused without bcrypt for at most a minute. Grafana sends the same credential on every request, so this keeps bcrypt off the request path. 0 verifies every request with bcrypt")
+	authMaxConcurrentVerifications := fs.Int("server.auth-max-concurrent-verifications", 4, "Most bcrypt password verifications in flight at once, so a flood of wrong passwords costs at most this many cores; cached credentials never wait for a slot. A request that waits a second for a slot gets 429 too many outstanding requests")
 	tailAllowedOrigins := fs.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
 	tailMode := fs.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
 	tailBackendRetryWindow := fs.Duration("tail.backend-retry-window", 30*time.Second, "How long a live tail keeps its websocket open while VictoriaLogs fails for a reason a retry can fix (connection refused or reset, a timeout, a stream that ends or breaks, a 429 or 5xx answer): the proxy reopens the stream, or polls again, with a jittered backoff from 250 ms up to 5 s, and resumes from the last line sent without repeating or skipping one. Past the window, and at once for a failure no retry fixes (a malformed or oversize row, a 4xx VictoriaLogs answer), the tail closes with 1011 and Loki's text. 0 closes on the first failure.")
@@ -1226,6 +1234,9 @@ func run(
 			metadataMaxStaleness:                *metadataMaxStaleness,
 			metadataEdgeRefreshBudget:           *metadataEdgeRefreshBudget,
 			drilldownScanTimeout:                *drilldownScanTimeout,
+			authUsersFile:                       *authUsersFile,
+			authCacheTTL:                        *authCacheTTL,
+			authMaxConcurrentVerifications:      *authMaxConcurrentVerifications,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1276,6 +1287,7 @@ func run(
 	if *tenantMapFile != "" && *tenantMapReloadInterval > 0 {
 		go watchTenantMapFile(ctx, *tenantMapFile, *tenantMapReloadInterval, runtime.proxy, logger)
 	}
+	startClientAuthWatcher(ctx, runtime.proxy, *authUsersFile, *authUsersReloadInterval, logger)
 	go runServerLoopFn(runtime.server, serverLoopOptions{
 		listenAddr:  envCfg.listenAddr,
 		backendURL:  envCfg.backendURL,
@@ -1476,7 +1488,7 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	if rotator != nil {
 		serverOpts.connContext = rotator.ConnContextHook()
 	}
-	serverOpts.handler = wrapHandler(mux, opts.maxBodyBytes, opts.responseCompression, opts.responseCompressionMinBytes, rotator, p.GetMetrics())
+	serverOpts.handler = wrapHandler(p.WithClientAuth(mux), opts.maxBodyBytes, opts.responseCompression, opts.responseCompressionMinBytes, rotator, p.GetMetrics())
 	srv, err := buildHTTPServer(serverOpts)
 	if err != nil {
 		stopOTLP()
@@ -1510,12 +1522,12 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	if splitAdmin {
 		adminMux := http.NewServeMux()
 		p.RegisterAdminRoutes(adminMux)
-		auxServers = append(auxServers, buildAux(adminAddr, "admin", adminMux))
+		auxServers = append(auxServers, buildAux(adminAddr, "admin", p.WithClientAuth(adminMux)))
 	}
 	if splitMetrics {
 		metricsMux := http.NewServeMux()
 		p.RegisterMetricsRoute(metricsMux)
-		auxServers = append(auxServers, buildAux(metricsAddr, "metrics", metricsMux))
+		auxServers = append(auxServers, buildAux(metricsAddr, "metrics", p.WithClientAuth(metricsMux)))
 	}
 
 	reloadCh, shutdownCh := buildSignalChannels(notify)
@@ -2256,6 +2268,10 @@ func startOTLPMetricsPusher(cfg otlpRuntimeConfig, m *metrics.Metrics, logger *s
 }
 
 func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
+	clientAuth, err := buildClientAuth(cfg.authUsersFile, cfg.authCacheTTL, cfg.authMaxConcurrentVerifications)
+	if err != nil {
+		return proxy.Config{}, err
+	}
 	alertsBackendURL := cfg.alertsBackendURL
 	if alertsBackendURL == "" {
 		alertsBackendURL = cfg.rulerBackendURL
@@ -2489,6 +2505,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		EnablePprof:                        cfg.enablePprof,
 		EnableQueryAnalytics:               cfg.enableQueryAnalytics,
 		AdminAuthToken:                     cfg.adminAuthToken,
+		ClientAuth:                         clientAuth,
 		TailAllowedOrigins:                 parseCSV(cfg.tailAllowedOrigins),
 		TailMode:                           tailMode,
 		TailBackendRetryWindow:             cfg.tailBackendRetryWindow,
@@ -3030,5 +3047,63 @@ func logTenantRouting(logger *slog.Logger, cfg proxy.Config) {
 	default:
 		logger.Info("tenant routing", "mode", "default", "numeric_passthrough", true,
 			"detail", "a canonical decimal org (7, not 007) routes to the VictoriaLogs account of that number; non-canonical numbers are refused with 403 unless listed in the tenant map")
+	}
+}
+
+// buildClientAuth loads -server.auth-users-file; nil when it is not set. A
+// file that is missing, empty or invalid stops the start: with authentication
+// asked for, the proxy never opens without it.
+func buildClientAuth(path string, cacheTTL time.Duration, maxVerifications int) (*clientauth.Authenticator, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	if maxVerifications <= 0 {
+		return nil, fmt.Errorf("-server.auth-max-concurrent-verifications must be at least 1, got %d", maxVerifications)
+	}
+	if cacheTTL < 0 {
+		return nil, fmt.Errorf("-server.auth-cache-ttl must not be negative, got %s", cacheTTL)
+	}
+	users, err := clientauth.LoadFile(path, proxy.ValidateTenantPin)
+	if err != nil {
+		return nil, fmt.Errorf("-server.auth-users-file: %w", err)
+	}
+	return clientauth.New(users, clientauth.Options{
+		MaxConcurrentVerifications: maxVerifications,
+		CacheTTL:                   cacheTTL,
+		VerifyWait:                 clientauth.DefaultVerifyWait,
+	})
+}
+
+// startClientAuthWatcher reports the users caller authentication starts with
+// and re-reads the users file every interval until ctx is done.
+func startClientAuthWatcher(ctx context.Context, p *proxy.Proxy, path string, interval time.Duration, logger *slog.Logger) {
+	a := p.ClientAuth()
+	if a == nil {
+		return
+	}
+	logClientAuthUsers(logger, "caller authentication on", path, a.Users())
+	if interval <= 0 {
+		return
+	}
+	w := clientauth.NewWatcher(a, path, proxy.ValidateTenantPin, func(res clientauth.ReloadResult) {
+		if res.Err != nil {
+			p.GetMetrics().RecordAuthReloadFailure()
+			logger.Error("auth users file reload failed; keeping the last good users", "path", path, "error", res.Err, "users", res.Users.Len())
+			return
+		}
+		logClientAuthUsers(logger, "auth users file reloaded", path, res.Users)
+	})
+	go w.Run(ctx, interval)
+}
+
+// logClientAuthUsers says what the users file holds: counts only, never a
+// name, hash or token.
+func logClientAuthUsers(logger *slog.Logger, msg, path string, u *clientauth.Users) {
+	logger.Info(msg, "path", path, "users", u.Len(), "basic", u.HasBasic(), "bearer", u.HasBearer(), "tenant_pins", u.Pins())
+	if u.MixedCosts() {
+		logger.Warn("auth users file mixes bcrypt costs: a wrong password answers faster for a cheaper hash, which tells a caller the cost class of a known user; hash every password at one cost", "path", path)
+	}
+	if c := u.LowestCost(); c > 0 && c < 10 {
+		logger.Warn("auth users file holds bcrypt hashes below cost 10, cheap to brute-force if the file leaks; rehash them, for example with htpasswd -nbBC 12", "path", path, "lowest_cost", c)
 	}
 }

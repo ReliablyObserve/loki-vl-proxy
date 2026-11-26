@@ -1456,6 +1456,7 @@
   ],
   "claim_cells": [
     "cmd/proxy/cache_handover_scope_test.go | cache-restart-handover",
+    "cmd/proxy/client_auth_test.go | client-authentication",
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
     "cmd/proxy/main_test.go | observability-metrics-histograms-and-labels",
@@ -1505,6 +1506,8 @@
     "internal/capability/release_test.go | vl-capability-layer",
     "internal/capability/version_source_test.go | backend-version-source",
     "internal/capability/version_source_test.go | vl-backend-version-source",
+    "internal/clientauth/clientauth_test.go | client-authentication",
+    "internal/clientauth/fuzz_test.go | client-authentication",
     "internal/clientprofile/detect_test.go | drilldown/client-detection-captured-header-sets",
     "internal/config/generate_edge_test.go | operator-configurable-limits",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
@@ -1741,6 +1744,10 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
     "internal/proxy/chunked_range_windows_loki_test.go | drilldown/long-range-pieces-answer-like-loki",
     "internal/proxy/chunked_range_windows_loki_test.go | loki_api_v1_query_range",
+    "internal/proxy/client_auth_test.go | client-authentication",
+    "internal/proxy/client_auth_test.go | credential-passthrough-as-configured",
+    "internal/proxy/client_auth_test.go | delete-api-requires-token",
+    "internal/proxy/client_auth_test.go | tenant-auth-follows-loki",
     "internal/proxy/client_profile_capture_test.go | drilldown/client-detection-captured-header-sets",
     "internal/proxy/client_profile_capture_test.go | observability-slow-query-log",
     "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
@@ -3684,6 +3691,7 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
     "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
     "test/helm/cache_handover_test.go | cache-restart-handover",
+    "test/helm/client_auth_test.go | client-authentication",
     "test/helm/secrets_test.go | secrets-outside-process-arguments",
     "test/helm/servicemonitor_test.go | observability-metrics-histograms-and-labels"
   ],
@@ -3697,7 +3705,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 846,
+      "go": 851,
       "playwright": 3
     },
     "page_kinds": {
@@ -3719,7 +3727,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 486
+    "wired_items": 487
   },
   "gates": [
     "A/B shape selection",

@@ -25,7 +25,6 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/klauspost/compress/zstd"
@@ -1620,7 +1619,7 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		}
 	}
 	if origReq, ok := vlReq.Context().Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		clientID, clientSource := metrics.ResolveClientContext(origReq, p.metricsTrustProxyHeaders)
+		clientID, clientSource := p.resolveClient(origReq)
 		vlReq.Header[hdrVLClientID] = []string{clientID}
 		vlReq.Header[hdrVLClientSource] = []string{clientSource}
 		gp := grafanaClientProfileFromContext(origReq.Context())
@@ -1640,7 +1639,7 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		// reaches VictoriaLogs only when the operator trusts and forwards
 		// client identity (-metrics.trust-proxy-headers), never by default.
 		if p.metricsTrustProxyHeaders {
-			if authUser, authSource := metrics.ResolveAuthContext(origReq); authUser != "" {
+			if authUser, authSource := p.resolveAuth(origReq); authUser != "" {
 				vlReq.Header[hdrVLAuthUser] = []string{authUser}
 				vlReq.Header[hdrVLAuthSource] = []string{authSource}
 			}

@@ -285,7 +285,9 @@ func (p *Proxy) adminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p.adminAuthToken != "" {
 			got := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
-			if got == "" {
+			// With caller authentication on, Authorization is the caller's
+			// credential: the admin token is read from X-Admin-Token only.
+			if got == "" && p.clientAuth == nil {
 				auth := strings.TrimSpace(r.Header.Get("Authorization"))
 				if strings.HasPrefix(auth, "Bearer ") {
 					got = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
@@ -325,7 +327,9 @@ func (p *Proxy) deleteTokenMatches(r *http.Request) bool {
 		return false
 	}
 	got := strings.TrimSpace(r.Header.Get(deleteTokenHeader))
-	if got == "" {
+	// With caller authentication on, Authorization is the caller's
+	// credential: the delete token is read from X-Delete-Token only.
+	if got == "" && p.clientAuth == nil {
 		got = bearerToken(r)
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(p.deleteAPIAuthToken)) == 1
@@ -363,7 +367,7 @@ func (p *Proxy) deleteAuthMiddleware(next http.Handler) http.Handler {
 		r.Header.Del(deleteTokenHeader)
 		// An Authorization that carries the token goes too, also when the
 		// token was read from X-Delete-Token.
-		if subtle.ConstantTimeCompare([]byte(bearerToken(r)), []byte(p.deleteAPIAuthToken)) == 1 {
+		if p.clientAuth == nil && subtle.ConstantTimeCompare([]byte(bearerToken(r)), []byte(p.deleteAPIAuthToken)) == 1 {
 			r.Header.Del("Authorization")
 		}
 		next.ServeHTTP(w, r)
