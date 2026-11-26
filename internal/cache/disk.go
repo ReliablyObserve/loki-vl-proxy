@@ -74,6 +74,12 @@ type DiskCache struct {
 	FlushCount      atomic.Int64
 	BytesOnDisk     atomic.Int64
 
+	// signals are why records leave or never enter L2 and the record reads
+	// (eviction_signals.go), allocated apart like Cache.signals.
+	signals *diskSignals
+	// sizing are the owning memory cache's sizing signals, nil unless enabled.
+	sizing *sizingSignals
+
 	// Restart hand-over (disk_handover.go), guarded by writeMu.
 	handover           *handoverState
 	previousFlush      HandoverManifest
@@ -95,7 +101,10 @@ type diskEntry struct {
 }
 
 type diskEntryState struct {
-	cancelled  atomic.Bool
+	cancelled atomic.Bool
+	// hits are the lookups that found the queued value, protected by writeMu;
+	// next to cancelled so the state keeps its 16-byte size class.
+	hits       uint32
 	lastAccess uint64 // protected by writeMu; shared by pending/flushing readers
 }
 
@@ -160,7 +169,7 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		maxEntryBytes: cfg.MaxEntryBytes, minTTL: cfg.MinTTL, maxBytes: cfg.MaxBytes,
 		maxEntries: cfg.MaxEntries, maxIndexBytes: cfg.MaxIndexBytes, index: make(map[string]*diskLRUEntry),
 		done: make(chan struct{}), workerDone: make(chan struct{}), flushRequest: make(chan struct{}, 1),
-		log: slog.Default().With("component", "disk_cache")}
+		log: slog.Default().With("component", "disk_cache"), signals: &diskSignals{}}
 	rebuildStart := time.Now()
 	if err = dc.rebuildIndex(); err != nil {
 		_ = db.Close()
@@ -188,21 +197,30 @@ func (dc *DiskCache) getWithTTL(key string, allowStale bool) (value []byte, ttl 
 		return nil, 0, false
 	}
 	start := time.Now()
+	var readBytes int
 	defer func() {
-		s := &dc.layerL2[LayerForKey(key)]
+		layer := LayerForKey(key)
+		s := &dc.layerL2[layer]
+		elapsed := time.Since(start)
 		s.lookup(value, found, found && ttl <= 0)
-		s.lookupNanoseconds.Add(time.Since(start).Nanoseconds())
+		s.lookupNanoseconds.Add(elapsed.Nanoseconds())
+		if readBytes > 0 {
+			dc.signals.reads.observe(layer, elapsed, readBytes)
+		}
 	}()
-	return dc.lookupWithTTL(key, allowStale)
+	value, ttl, found, readBytes = dc.lookupRecord(key, allowStale)
+	return
 }
 
-// lookupWithTTL implements storage lookup without the observation wrapper.
-func (dc *DiskCache) lookupWithTTL(key string, allowStale bool) ([]byte, time.Duration, bool) {
+// lookupRecord implements storage lookup without the observation wrapper. It
+// also returns the encoded bytes of the record it read from bbolt, 0 when it
+// read none (a queued value, no record).
+func (dc *DiskCache) lookupRecord(key string, allowStale bool) ([]byte, time.Duration, bool, int) {
 	dc.writeMu.Lock()
 	if dc.closed || dc.closing {
 		dc.writeMu.Unlock()
 		dc.Misses.Add(1)
-		return nil, 0, false
+		return nil, 0, false, 0
 	}
 	entry, ok := dc.writeBuf[key]
 	if !ok {
@@ -213,21 +231,22 @@ func (dc *DiskCache) lookupWithTTL(key string, allowStale bool) ([]byte, time.Du
 		if entry.state != nil && !cancelled {
 			dc.sequence++
 			entry.state.lastAccess = dc.sequence
+			entry.state.hits++
 		}
 		dc.writeMu.Unlock()
 		remaining := time.Unix(0, entry.ExpiresAt).Sub(clockNow())
 		if cancelled || (remaining <= 0 && !allowStale) {
 			dc.Misses.Add(1)
-			return nil, 0, false
+			return nil, 0, false, 0
 		}
 		dc.Hits.Add(1)
-		return entry.Value, remaining, true
+		return entry.Value, remaining, true, 0
 	}
 	item := dc.index[key]
 	if item == nil || item.invalid {
 		dc.writeMu.Unlock()
 		dc.Misses.Add(1)
-		return nil, 0, false
+		return nil, 0, false, 0
 	}
 	generation := item.generation
 	dc.writeMu.Unlock()
@@ -276,17 +295,18 @@ func (dc *DiskCache) lookupWithTTL(key string, allowStale bool) ([]byte, time.Du
 		dc.writeMu.Unlock()
 		dc.requestFlush()
 		dc.Misses.Add(1)
-		return nil, 0, false
+		return nil, 0, false, len(raw)
 	}
 	dc.writeMu.Lock()
 	if current := dc.index[key]; current != nil && current.generation == generation {
 		dc.sequence++
 		current.lastAccess = dc.sequence
+		current.hits++
 		dc.touch(current)
 	}
 	dc.writeMu.Unlock()
 	dc.Hits.Add(1)
-	return decoded.Value, remaining, true
+	return decoded.Value, remaining, true, len(raw)
 }
 
 func (dc *DiskCache) MinTTL() time.Duration {
@@ -305,33 +325,31 @@ func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
 // set is Set with the write's recency: 0 takes the next sequence, the shutdown
 // flush passes the access planHandover reserved for the key's rank and its
 // hand-over generation (non-zero), which a purge moves: such a write is then
-// dropped, so a value captured before a purge is never written after it.
-func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, handoverGen uint64) {
+// dropped, so a value captured before a purge is never written after it. It
+// reports whether the write queue admitted the value.
+func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, handoverGen uint64) bool {
 	layer := LayerForKey(key)
 	dc.writeMu.Lock()
 	if handoverGen != 0 && dc.handoverGen != handoverGen {
 		dc.writeMu.Unlock()
-		return
+		return false
 	}
 	if dc.closed || dc.closing {
 		dc.layerL2[layer].rejections.Add(1)
+		dc.signals.reject(layer, RejectionClosed)
 		dc.writeMu.Unlock()
-		return
+		return false
 	}
 	charge := diskQueueCharge(key, value)
 	used := dc.bufferBytes
 	if old, ok := dc.writeBuf[key]; ok {
 		used -= diskQueueCharge(key, old.Value)
 	}
-	reject := key == "" || len(key) > bolt.MaxKeySize || ttl <= 0 || (dc.minTTL > 0 && ttl < dc.minTTL) || len(value) > dc.maxEntryBytes || charge > dc.maxBufferBytes || used > dc.maxBufferBytes-charge
-	if !reject && dc.codec == diskCodecRaw && dc.maxBytes > 0 {
-		reject = int64(len(key))+int64(diskRecordHeaderSize)+int64(len(value)) > dc.maxBytes
-	}
-	if reject {
-		dc.rejectLocked(key)
+	if reason, reject := dc.admissionRejection(key, value, ttl, charge, used); reject {
+		dc.rejectLocked(key, reason)
 		dc.writeMu.Unlock()
 		dc.requestFlush()
-		return
+		return false
 	}
 	if old, ok := dc.writeBuf[key]; ok {
 		dc.layerQueueBytes[layer] -= diskQueueCharge(key, old.Value)
@@ -344,6 +362,9 @@ func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, ha
 		access = dc.sequence
 	}
 	dc.writeBuf[key] = diskEntry{Value: value, ExpiresAt: clockNow().Add(ttl).UnixNano(), state: &diskEntryState{lastAccess: access}}
+	if s := dc.sizing; s != nil {
+		s.storeL2(key, entrySize(key, value), ttl)
+	}
 	dc.bufferBytes = used + charge
 	if item := dc.index[key]; item != nil {
 		item.invalid = false
@@ -353,15 +374,36 @@ func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, ha
 	if shouldFlush {
 		dc.requestFlush()
 	}
+	return true
+}
+
+// admissionRejection is why Set refuses a write, false when it admits it. The
+// checks are the ones Set ran as one condition, in their order, so the decision
+// is unchanged; the first failing check names the reason.
+func (dc *DiskCache) admissionRejection(key string, value []byte, ttl time.Duration, charge, used int64) (RejectionReason, bool) {
+	switch {
+	case key == "" || len(key) > bolt.MaxKeySize:
+		return RejectionInvalidKey, true
+	case ttl <= 0 || (dc.minTTL > 0 && ttl < dc.minTTL):
+		return RejectionTTLBelowMinimum, true
+	case len(value) > dc.maxEntryBytes:
+		return RejectionTooLarge, true
+	case charge > dc.maxBufferBytes || used > dc.maxBufferBytes-charge:
+		return RejectionQueueFull, true
+	case dc.codec == diskCodecRaw && dc.maxBytes > 0 && int64(len(key))+int64(diskRecordHeaderSize)+int64(len(value)) > dc.maxBytes:
+		return RejectionTooLarge, true
+	}
+	return 0, false
 }
 
 func diskQueueCharge(key string, value []byte) int64 {
 	return 128 + int64(len(key)) + int64(len(value))
 }
 func (dc *DiskCache) pendingChargeLocked() int64 { return dc.bufferBytes - dc.flushingBytes }
-func (dc *DiskCache) rejectLocked(key string) {
+func (dc *DiskCache) rejectLocked(key string, reason RejectionReason) {
 	dc.RejectedWrites.Add(1)
 	dc.layerL2[LayerForKey(key)].rejections.Add(1)
+	dc.signals.reject(LayerForKey(key), reason)
 	if old, ok := dc.writeBuf[key]; ok {
 		dc.bufferBytes -= diskQueueCharge(key, old.Value)
 		dc.layerQueueBytes[LayerForKey(key)] -= diskQueueCharge(key, old.Value)
@@ -416,6 +458,7 @@ func (dc *DiskCache) Purge() {
 	dc.pendingManifest = nil
 	dc.handover = nil
 	for l := LayerUnknown; l < LayerCount; l++ {
+		dc.signals.evictions[l][EvictionFlush].Add(dc.layerL2[l].entries.Load())
 		dc.layerL2[l].entries.Store(0)
 		dc.layerL2[l].bytes.Store(0)
 		dc.layerIndexBytes[l] = 0

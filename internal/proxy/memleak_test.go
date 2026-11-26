@@ -611,7 +611,17 @@ func TestMemLeak_BackgroundRefresh_GoroutinesBounded(t *testing.T) {
 	// Allow goroutines to finish.
 	time.Sleep(100 * time.Millisecond)
 
+	// Idle keep-alive connections to the backend are not refresh goroutines:
+	// each one holds three (client read and write loops, server conn), and the
+	// label inventory lists buckets on metadataInventoryParallelism connections
+	// at once. Close them so only goroutines the refreshes left behind count;
+	// their teardown is asynchronous, so wait for it within a deadline.
+	p.client.CloseIdleConnections()
 	goroutinesAfter := runtime.NumGoroutine()
+	for deadline := time.Now().Add(time.Second); goroutinesAfter > goroutinesBefore+10 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+		goroutinesAfter = runtime.NumGoroutine()
+	}
 	mlAssert(t, "background-refresh/labels-goroutine-heap", before, mlHeapAfter(), fires, boundMB)
 
 	// Goroutine count must not grow indefinitely — singleflight deduplicates.

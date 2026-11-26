@@ -422,6 +422,11 @@ cluster, so check at least:
   and recursion depth, fan-out, cache growth. Fuzz new parsers and decoders.
 - Tenant isolation: cache and plan keys carry the tenant scope; no answer is
   reused across tenants or served to a peer for another tenant.
+- Credentials in keys: a credential (forwarded header or cookie, backend
+  basic auth) reaches a cache key, snapshot or log line only through the keyed
+  digest in `internal/proxy/credential_digest.go`, never as a plain hash. A
+  key that hashes the fingerprint appends `credentialScopeMark`, so the peer
+  cache keeps the entry on its replica (`peerPushAllowed`).
 - Query injection: LogsQL is built from typed nodes or properly quoted values,
   never by splicing client text; client text never becomes proxy-internal
   syntax.
@@ -625,6 +630,15 @@ with Loki is the model: `conformance/scripts/perf_evidence.py --quality-summary`
 - State the current measured position only. README, docs and marketing pages do not compare with earlier
   versions of the proxy ("regression", "no longer", "improved from") or explain why a past build was slower; that
   history belongs to pull requests and the changelog.
+
+## Workflow steps fail when their commands fail
+
+A workflow step that pipes a command into `tee` or `tail` runs with `shell: bash`, which GitHub starts with
+`-eo pipefail`. A step with no shell gets `bash -e`, and its pipeline exits with the status of `tee` or `tail`, so
+the step passes when the tests behind it fail. Leave pipelines into early-exit consumers (`head`, `grep -q`) under
+the default shell, because pipefail turns their writer's SIGPIPE into a failure.
+`TestWorkflowStepsDoNotMaskPipeFailures` (`test/ciworkflows`) holds the rule. Its allowlist names the steps that
+still hide failures on main. Each entry is removed in the same pull request that fixes that step's failures.
 
 ## Production investigations
 

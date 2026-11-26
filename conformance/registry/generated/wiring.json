@@ -150,6 +150,19 @@
       "internal/capability/version_source_test.go",
       "internal/proxy/backend_version_source_test.go"
     ],
+    "cache-eviction-signals": [
+      "internal/cache/eviction_signals_test.go",
+      "internal/metrics/cache_signal_dashboard_test.go",
+      "internal/metrics/cache_signal_metrics_test.go",
+      "internal/proxy/cache_layer_metrics_test.go"
+    ],
+    "cache-key-credential-digest": [
+      "internal/cache/peer_push_filter_hot_test.go",
+      "internal/proxy/cache_key_fingerprint_golden_test.go",
+      "internal/proxy/credential_digest_test.go",
+      "internal/proxy/credential_scoped_entries_test.go",
+      "test/helm/cache_key_secret_test.go"
+    ],
     "cache-response-key-versions": [
       "internal/proxy/binary_empty_without_test.go",
       "internal/proxy/detected_level_one_value_test.go",
@@ -174,6 +187,16 @@
       "internal/proxy/cache_handover_test.go",
       "test/e2e-fleet/restart_handover_test.go",
       "test/helm/cache_handover_test.go"
+    ],
+    "cache-reuse-retention": [
+      "cmd/proxy/main_test.go",
+      "internal/cache/retention_test.go",
+      "internal/cache/retention_trace_test.go"
+    ],
+    "cache-sizing-signals": [
+      "internal/cache/sizing_signals_test.go",
+      "internal/metrics/cache_sizing_metrics_test.go",
+      "internal/proxy/cache_layer_metrics_test.go"
     ],
     "client-authentication": [
       "cmd/proxy/client_auth_test.go",
@@ -1085,6 +1108,7 @@
     "peer-cache-replication": [
       "internal/cache/peer_protocol_edges_test.go",
       "internal/cache/peer_push_buffer_test.go",
+      "internal/cache/peer_push_filter_hot_test.go",
       "internal/cache/peer_replication_test.go",
       "internal/proxy/patterns_persistence_test.go",
       "internal/proxy/peer_push_identity_test.go",
@@ -1357,8 +1381,12 @@
     "range_function-rate": [
       "test/e2e-compat/query_semantics_matrix_test.go"
     ],
+    "release-image-pinned-by-digest": [
+      "test/helm/image_test.go"
+    ],
     "secrets-outside-process-arguments": [
       "cmd/proxy/secret_flags_test.go",
+      "test/helm/cache_key_secret_test.go",
       "test/helm/secrets_test.go"
     ],
     "semantics/absent-over-time-semantics": [
@@ -3215,7 +3243,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 756,
+  "registry_items": 761,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3228,6 +3256,7 @@
       "delete-api-requires-token"
     ],
     "cmd/proxy/main_test.go": [
+      "cache-reuse-retention",
       "limits/every-cap-is-a-flag",
       "observability-metrics-histograms-and-labels",
       "operator-configurable-limits",
@@ -3263,6 +3292,9 @@
       "semantics/error-cache-classes-and-ttl",
       "semantics/error-coalescing-request-flights"
     ],
+    "internal/cache/eviction_signals_test.go": [
+      "cache-eviction-signals"
+    ],
     "internal/cache/handover_peak_test.go": [
       "cache-restart-handover"
     ],
@@ -3291,6 +3323,10 @@
       "peer-cache-replication",
       "shutdown-releases-background-work"
     ],
+    "internal/cache/peer_push_filter_hot_test.go": [
+      "cache-key-credential-digest",
+      "peer-cache-replication"
+    ],
     "internal/cache/peer_replication_test.go": [
       "peer-cache-push-replay",
       "peer-cache-read-hedge",
@@ -3301,6 +3337,15 @@
     ],
     "internal/cache/restore_test.go": [
       "cache-restart-handover"
+    ],
+    "internal/cache/retention_test.go": [
+      "cache-reuse-retention"
+    ],
+    "internal/cache/retention_trace_test.go": [
+      "cache-reuse-retention"
+    ],
+    "internal/cache/sizing_signals_test.go": [
+      "cache-sizing-signals"
     ],
     "internal/capability/docs_test.go": [
       "vl-capability-layer"
@@ -3588,6 +3633,15 @@
     "internal/metrics/cache_restart_metrics_test.go": [
       "cache-restart-handover"
     ],
+    "internal/metrics/cache_signal_dashboard_test.go": [
+      "cache-eviction-signals"
+    ],
+    "internal/metrics/cache_signal_metrics_test.go": [
+      "cache-eviction-signals"
+    ],
+    "internal/metrics/cache_sizing_metrics_test.go": [
+      "cache-sizing-signals"
+    ],
     "internal/metrics/callertracker_test.go": [
       "observability-slow-query-log"
     ],
@@ -3786,6 +3840,13 @@
       "cache-restart-handover",
       "shutdown-releases-background-work"
     ],
+    "internal/proxy/cache_key_fingerprint_golden_test.go": [
+      "cache-key-credential-digest"
+    ],
+    "internal/proxy/cache_layer_metrics_test.go": [
+      "cache-eviction-signals",
+      "cache-sizing-signals"
+    ],
     "internal/proxy/canonical_spelling_loki_test.go": [
       "loki_api_v1_query_range",
       "semantics/translator-reads-blank-before-range-call-as-text",
@@ -3838,8 +3899,14 @@
     "internal/proxy/count_values_test.go": [
       "semantics/count-values-unsupported"
     ],
+    "internal/proxy/credential_digest_test.go": [
+      "cache-key-credential-digest"
+    ],
     "internal/proxy/credential_passthrough_test.go": [
       "credential-passthrough-as-configured"
+    ],
+    "internal/proxy/credential_scoped_entries_test.go": [
+      "cache-key-credential-digest"
     ],
     "internal/proxy/default_entry_limit_test.go": [
       "semantics/log-query-default-limit"
@@ -7156,8 +7223,15 @@
     "test/helm/cache_handover_test.go": [
       "cache-restart-handover"
     ],
+    "test/helm/cache_key_secret_test.go": [
+      "cache-key-credential-digest",
+      "secrets-outside-process-arguments"
+    ],
     "test/helm/client_auth_test.go": [
       "client-authentication"
+    ],
+    "test/helm/image_test.go": [
+      "release-image-pinned-by-digest"
     ],
     "test/helm/secrets_test.go": [
       "secrets-outside-process-arguments"
@@ -7166,7 +7240,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 854,
+  "tests_with_markers": 868,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7324,5 +7398,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 487
+  "wired_items": 492
 }

@@ -1031,3 +1031,17 @@ class GateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RangeOrderTest(unittest.TestCase):
+    def test_every_spec_range_has_an_order(self):
+        # A scene captured at a range the spec defines (5m for a short Explore panel) must sort and render.
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "spec.json"), encoding="utf-8") as f:
+            spec = json.load(f)
+        self.assertEqual(sorted(set(spec["ranges"]) - set(comment.ORDER)), [])
+        self.assertEqual(sorted(comment.ORDER, key=comment.ORDER.get), ["5m", "15m", "1h", "6h", "24h", "7d", "live"])
+
+    def test_a_5m_row_renders(self):
+        rows = [row(page="explore-a", rng="5m"), row(page="explore-a", rng="1h")]
+        items, verdict = comment.evaluate(rows, {}, plan(("explore-a", "5m"), ("explore-a", "1h")))
+        self.assertEqual([i["row"]["range"] for i in items], ["5m", "1h"])

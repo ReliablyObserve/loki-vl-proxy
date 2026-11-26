@@ -494,6 +494,10 @@ type Config struct {
 	// Peer cache (fleet distribution)
 	PeerCache     *cache.PeerCache // optional peer cache for distributed fleet
 	PeerAuthToken string
+	// CacheKeySecret (-cache-key-secret) keys the digests of credentials in
+	// cache keys (credential_digest.go). Empty: a key derived from
+	// PeerAuthToken, else a random key per process.
+	CacheKeySecret string
 	// PeerInsecureIPAllowlist, when true, falls back to source-IP membership
 	// check on /_cache/* endpoints if no token is provided. Default false:
 	// requests without a valid X-Peer-Token are rejected with 401. Operators
@@ -642,8 +646,9 @@ type Config struct {
 	// MetadataInventoryPrefetch (-metadata-inventory-prefetch) reads, in the
 	// background after a /labels listing, the inventory buckets a moved
 	// window of it needs to be answered from memory: the hours of its ends,
-	// the hour before it and the sealed UTC days it only partly covers, at
-	// most the window's own width per listing.
+	// the hour before it (and the hour two before it when the listing found a
+	// bucket it needed still being read) and the sealed UTC days it only
+	// partly covers, at most the window's own width per listing.
 	MetadataInventoryPrefetch bool
 	// DrilldownBurstWindowMs is the time window in milliseconds during which
 	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
@@ -835,6 +840,9 @@ type Proxy struct {
 	forwardHeaders                        []string          // headers to copy from client request to VL
 	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
 	backendHeaders                        map[string]string // static headers on all VL requests
+	backendHeadersInKeys                  map[string]string // backendHeaders with keyed digests for values, for the routing namespace
+	credentialDigest                      *credentialDigest // keys credential digests in cache keys
+	backendKeyText                        string            // urlInKeys(backend): the backend URL as cache keys spell it
 	backendCompression                    string
 	backendLoopback                       bool // true when backend host resolves to a loopback address
 	clientResponseCompression             string
@@ -1334,6 +1342,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxLines = DefaultMaxLines
 	}
 
+	credDigest := newCredentialDigest(cfg.CacheKeySecret, cfg.PeerAuthToken)
 	backendHeaders := maps.Clone(cfg.BackendHeaders)
 	if backendHeaders == nil {
 		backendHeaders = make(map[string]string)
@@ -1601,6 +1610,8 @@ func New(cfg Config) (*Proxy, error) {
 		forwardHeaders:                        append([]string(nil), cfg.ForwardHeaders...),
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
+		credentialDigest:                      credDigest,
+		backendHeadersInKeys:                  credDigest.headerValues(backendHeaders),
 		backendCompression:                    normalizeBackendCompression(cfg.BackendCompression),
 		backendLoopback:                       computeBackendLoopback(u),
 		clientResponseCompression:             cfg.ClientResponseCompression,
@@ -1745,6 +1756,9 @@ func New(cfg Config) (*Proxy, error) {
 		p.countVLCalls()
 	}
 	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
+	p.metrics.SetCacheSignalStatsProvider(p.cacheSignalStats)
+	p.metrics.SetCacheTTLProvider(p.cacheTTLs)
+	p.metrics.SetCacheSizingStatsProvider(p.cacheSizingStats)
 	coalescerStats := func() metrics.CoalescerStats {
 		return metrics.CoalescerStats{
 			Total:     p.coalescer.CoalescedTotal.Load(),
@@ -1955,7 +1969,11 @@ func New(cfg Config) (*Proxy, error) {
 		},
 	}
 
+	p.backendKeyText = p.urlInKeys(p.backend)
 	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
+	if credDigest.source == credentialKeyEphemeral && (len(p.backendHeaders) > 0 || len(p.forwardHeaders) > 0 || len(p.forwardCookies) > 0) {
+		p.log.Warn("cache keys digest credentials under a per-process key: entries scoped by credentials are not reused after a restart or by other replicas; set -cache-key-secret (or -peer-auth-token) to the same value on every replica to keep them")
+	}
 	if p.peerCache != nil {
 		// Entries computed with a user's forwarded credentials stay on the
 		// replica that computed them.

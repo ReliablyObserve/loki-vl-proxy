@@ -22,6 +22,40 @@ Create a default fully qualified app name.
 {{- end }}
 
 {{/*
+loki-vl-proxy.image — every container image reference of the chart, from a dict
+of repository, tag and digest: repository:tag, repository:tag@digest or
+repository@digest.
+*/}}
+{{- define "loki-vl-proxy.image" -}}
+{{- $tag := .tag | default "" | toString -}}
+{{- $digest := .digest | default "" | toString -}}
+{{- if $digest -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $digest) -}}
+{{- fail (printf "image.digest %q is not sha256:<64 lowercase hex characters>" $digest) -}}
+{{- end -}}
+{{- if or (contains "@" (toString .repository)) (contains "@" $tag) -}}
+{{- fail "image.digest is set, so image.repository and image.tag must not hold a digest of their own" -}}
+{{- end -}}
+{{- end -}}
+{{- .repository -}}
+{{- with $tag }}:{{ . }}{{ end -}}
+{{- with $digest }}@{{ . }}{{ end -}}
+{{- end }}
+
+{{/*
+The proxy's image. Without a digest the tag defaults to the chart's appVersion;
+with one, only a tag set by the operator is kept, so the reference never names a
+version the digest may not be.
+*/}}
+{{- define "loki-vl-proxy.proxyImage" -}}
+{{- $tag := .Values.image.tag -}}
+{{- if and (not $tag) (not .Values.image.digest) -}}
+{{- $tag = .Chart.AppVersion -}}
+{{- end -}}
+{{- include "loki-vl-proxy.image" (dict "repository" .Values.image.repository "tag" $tag "digest" .Values.image.digest) -}}
+{{- end }}
+
+{{/*
 Common labels
 */}}
 {{- define "loki-vl-proxy.labels" -}}
@@ -260,6 +294,31 @@ a metrics port the binary never serves, or the binary would refuse to start
 {{- end -}}
 
 {{/*
+loki-vl-proxy.cacheKeyGenerated — how the chart provides the cache key secret
+when cacheKeySecret.existingSecret is unset: "reuse" when <release>-cache-key
+already holds one (lookup), "create" when the render reaches a cluster but
+finds none (first install, or the Secret was deleted), "" otherwise. A render
+without cluster access (helm template, Argo CD, any renderer where lookup
+returns nothing) gets "" and renders no key at all, so rendering never
+replaces the key with a new random one. Off with cacheKeySecret.generate=false
+or when extraArgs set -cache-key-secret(-file) themselves.
+*/}}
+{{- define "loki-vl-proxy.cacheKeyGenerated" -}}
+{{- $cfg := default (dict) .Values.cacheKeySecret -}}
+{{- $extra := default (dict) .Values.extraArgs -}}
+{{- if and (not $cfg.existingSecret) (ne (toString $cfg.generate) "false") (not (hasKey $extra "cache-key-secret")) (not (hasKey $extra "cache-key-secret-file")) -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace (printf "%s-cache-key" .Release.Name) -}}
+{{- if and $existing $existing.data (hasKey $existing.data "secret") -}}
+reuse
+{{- else if not (empty (lookup "v1" "Secret" .Release.Namespace "")) -}}
+{{- /* Listing Secrets answers only with cluster access (Helm itself keeps
+       its releases as Secrets of this namespace, so it may list them). */ -}}
+create
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 loki-vl-proxy.secretFiles — the secrets the chart takes from a Secret, as a
 JSON list. Each is mounted as one read-only file and passed to the proxy as
 -<flag>=<dir>/<path>.
@@ -279,11 +338,15 @@ JSON list. Each is mounted as one read-only file and passed to the proxy as
     (dict "values" "adminAuth" "flag" "server.admin-auth-token-file" "volume" "secret-admin-auth" "path" "token")
     (dict "values" "deleteAuth" "flag" "delete-api-auth-token-file" "volume" "secret-delete-auth" "path" "token")
     (dict "values" "backendAuth" "flag" "backend-basic-auth-file" "volume" "secret-backend-auth" "path" "basic-auth")
-    (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth-file" "volume" "secret-backend-version-auth" "path" "basic-auth") -}}
+    (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth-file" "volume" "secret-backend-version-auth" "path" "basic-auth")
+    (dict "values" "cacheKeySecret" "flag" "cache-key-secret-file" "volume" "secret-cache-key" "path" "secret") -}}
 {{- $auth := default (dict) (get $.Values $spec.values) -}}
 {{- if $auth.existingSecret -}}
 {{- $out = append $out (dict "flag" $spec.flag "volume" $spec.volume "path" $spec.path "secretName" $auth.existingSecret "key" (default $spec.path $auth.existingSecretKey)) -}}
 {{- end -}}
+{{- end -}}
+{{- if and (not (default (dict) .Values.cacheKeySecret).existingSecret) (include "loki-vl-proxy.cacheKeyGenerated" .) -}}
+{{- $out = append $out (dict "flag" "cache-key-secret-file" "volume" "secret-cache-key" "path" "secret" "secretName" (printf "%s-cache-key" .Release.Name) "key" "secret") -}}
 {{- end -}}
 {{- range $secret := $out -}}
 {{- $_ := set $secret "dir" (printf "/var/run/secrets/loki-vl-proxy/%s" (trimPrefix "secret-" $secret.volume)) -}}
@@ -304,6 +367,7 @@ Secret-backed env var. Invoked from the deployment.
     (dict "values" "adminAuth" "flag" "server.admin-auth-token" "quoted" true)
     (dict "values" "backendAuth" "flag" "backend-basic-auth")
     (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth")
+    (dict "values" "cacheKeySecret" "flag" "cache-key-secret")
     (dict "values" "deleteAuth" "flag" "delete-api-auth-token") -}}
 {{- $auth := default (dict) (get $.Values $spec.values) -}}
 {{- range $flag := list $spec.flag (printf "%s-file" $spec.flag) -}}

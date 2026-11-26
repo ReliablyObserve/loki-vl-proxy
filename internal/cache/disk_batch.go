@@ -5,6 +5,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 	boltErrors "go.etcd.io/bbolt/errors"
 	"sort"
+	"time"
 )
 
 type diskMutation struct {
@@ -14,6 +15,9 @@ type diskMutation struct {
 	// originalRemoved tracks deletion of a record present before this batch,
 	// including expiry/invalidation before a new value for the same key.
 	originalRemoved bool
+	// replacing marks a staged value over a committed record the batch had not
+	// removed, counted in diskBatch.replaced.
+	replacing bool
 }
 type diskVictim struct {
 	key    string
@@ -59,6 +63,99 @@ type diskBatch struct {
 	layerEvictions             [LayerCount]int64
 	layerRejections            [LayerCount]int64
 	layerEncodedWrites         [LayerCount]int64
+	// replaced counts committed records a committed value of the batch
+	// replaces; signals the other removals and refusals, allocated on the
+	// first one so a flush that removes nothing allocates nothing more. Both
+	// are applied only on commit.
+	replaced [LayerCount]int64
+	signals  *batchSignals
+	// now is the commit's start, the time eviction ages are measured at.
+	now int64
+}
+
+// batchSignals are a batch's eviction and rejection reasons and eviction
+// histograms, counted into the disk's signals only when the batch commits,
+// like layerEvictions.
+type batchSignals struct {
+	evictions  [LayerCount][EvictionReasonCount]int64
+	rejections [LayerCount][RejectionReasonCount]int64
+	age, hits  [LayerCount][evictionObservedCount][maxHistogramBuckets]int64
+	ageSum     [LayerCount][evictionObservedCount]int64
+	hitsSum    [LayerCount][evictionObservedCount]int64
+}
+
+func (batch *diskBatch) batchSignals() *batchSignals {
+	if batch.signals == nil {
+		batch.signals = &batchSignals{}
+	}
+	return batch.signals
+}
+
+// evicted counts the removal of a committed record e. An unknown admission
+// time (0, a record found by the startup scan) is counted without an age.
+func (batch *diskBatch) evicted(e *diskLRUEntry, layer Layer, reason EvictionReason, now int64) {
+	s := batch.batchSignals()
+	s.evictions[layer][reason]++
+	if observedEviction(reason) && e.admitted != 0 {
+		age, hits := time.Duration(now-e.admitted), int64(e.hits)
+		s.age[layer][reason][bucketOf(EvictionAgeBounds[:], age)]++
+		s.ageSum[layer][reason] += int64(age)
+		s.hits[layer][reason][bucketOf(EvictionHitsBounds[:], hits)]++
+		s.hitsSum[layer][reason] += hits
+	}
+}
+
+func (batch *diskBatch) rejected(key string, reason RejectionReason) {
+	batch.batchSignals().rejections[LayerForKey(key)][reason]++
+}
+
+// originalLeaves counts the committed record of key that a refused or expired
+// newer write removes, unless the batch removed it already.
+func (batch *diskBatch) originalLeaves(key string) {
+	if e := batch.cache.index[key]; e != nil && !batch.changes[key].originalRemoved {
+		batch.evicted(e, LayerForKey(key), EvictionInvalidated, clockNow().UnixNano())
+	}
+}
+
+func (batch *diskBatch) applySignals() {
+	dc := batch.cache
+	for l := LayerUnknown; l < LayerCount; l++ {
+		if n := batch.replaced[l]; n != 0 {
+			dc.signals.evictions[l][EvictionReplaced].Add(n)
+		}
+	}
+	s := batch.signals
+	if s == nil {
+		return
+	}
+	for l := LayerUnknown; l < LayerCount; l++ {
+		for r, n := range s.evictions[l] {
+			if n != 0 {
+				dc.signals.evictions[l][r].Add(n)
+			}
+		}
+		for r, n := range s.rejections[l] {
+			if n != 0 {
+				dc.signals.rejections[l][r].Add(n)
+			}
+		}
+		for r := range s.age[l] {
+			for b := range s.age[l][r] {
+				if n := s.age[l][r][b]; n != 0 {
+					dc.signals.age[l][r].counts[b].Add(n)
+				}
+				if n := s.hits[l][r][b]; n != 0 {
+					dc.signals.hits[l][r].counts[b].Add(n)
+				}
+			}
+			if n := s.ageSum[l][r]; n != 0 {
+				dc.signals.age[l][r].sum.Add(n)
+			}
+			if n := s.hitsSum[l][r]; n != 0 {
+				dc.signals.hits[l][r].sum.Add(n)
+			}
+		}
+	}
 }
 
 // flushLocked is called with flushMu held. No live index mutation precedes a
@@ -138,6 +235,7 @@ func (batch *diskBatch) encode() {
 }
 func (batch *diskBatch) commit(tx *bolt.Tx) error {
 	dc := batch.cache
+	batch.now = clockNow().UnixNano()
 	dc.writeMu.Lock()
 	batch.plannedBytes, batch.plannedIndex, batch.plannedCount = dc.logicalBytes, dc.indexBytes, len(dc.index)
 	// Stable snapshots order pending/flushing hits; heap victims refresh any
@@ -168,8 +266,12 @@ func (batch *diskBatch) deleteExpired(tx *bolt.Tx) error {
 	defer dc.writeMu.Unlock()
 	for _, e := range batch.expired {
 		if current := dc.index[e.key]; current == e && (current.invalid || current.expiresAt <= clockNow().UnixNano()) {
-			if e.expiresAt <= clockNow().UnixNano() {
-				batch.layerEvictions[LayerForKey(e.key)]++
+			now, layer := clockNow().UnixNano(), LayerForKey(e.key)
+			if e.expiresAt <= now {
+				batch.layerEvictions[layer]++
+				batch.evicted(e, layer, EvictionExpired, now)
+			} else {
+				batch.evicted(e, layer, EvictionInvalidated, now)
 			}
 			if err := batch.remove(tx, e.key); err != nil {
 				return err
@@ -213,12 +315,15 @@ func (batch *diskBatch) putRecord(tx *bolt.Tx, record diskEncodedEntry) error {
 	defer dc.writeMu.Unlock()
 	key, entry, raw := record.key, record.entry, record.record
 	if entry.state.cancelled.Load() || raw == nil {
+		batch.originalLeaves(key)
 		return batch.remove(tx, key)
 	}
 	size := int64(len(key)) + int64(len(raw))
 	if !dc.fitsEntry(key, size) {
 		dc.RejectedWrites.Add(1)
 		dc.layerL2[LayerForKey(key)].rejections.Add(1)
+		batch.rejected(key, RejectionTooLarge)
+		batch.originalLeaves(key)
 		return batch.remove(tx, key)
 	}
 	if oldSize, _, ok := batch.existing(key); ok {
@@ -226,8 +331,12 @@ func (batch *diskBatch) putRecord(tx *bolt.Tx, record diskEncodedEntry) error {
 		batch.plannedIndex -= diskIndexCharge(key)
 		batch.plannedCount--
 	}
-	originalRemoved := batch.changes[key].originalRemoved
-	batch.changes[key] = diskMutation{size: size, expiry: entry.ExpiresAt, entry: entry, originalRemoved: originalRemoved}
+	previous, changed := batch.changes[key]
+	replacing := !changed && dc.index[key] != nil
+	if replacing {
+		batch.replaced[LayerForKey(key)]++
+	}
+	batch.changes[key] = diskMutation{size: size, expiry: entry.ExpiresAt, entry: entry, originalRemoved: previous.originalRemoved, replacing: replacing}
 	batch.order = append(batch.order, key)
 	batch.plannedBytes += size
 	batch.plannedIndex += diskIndexCharge(key)
@@ -297,11 +406,17 @@ func (batch *diskBatch) evictOverflow(tx *bolt.Tx) error {
 		// Reject its staged value and also count the original committed
 		// record if this removal deletes one not already removed by the batch.
 		change, staged := batch.changes[victim.key]
+		layer := LayerForKey(victim.key)
 		if staged {
-			batch.layerRejections[LayerForKey(victim.key)]++
+			batch.layerRejections[layer]++
+			batch.rejected(victim.key, RejectionCapacity)
+			if change.replacing { // its original is counted as a capacity eviction below
+				batch.replaced[layer]--
+			}
 		}
-		if batch.cache.index[victim.key] != nil && !change.originalRemoved {
-			batch.layerEvictions[LayerForKey(victim.key)]++
+		if e := batch.cache.index[victim.key]; e != nil && !change.originalRemoved {
+			batch.layerEvictions[layer]++
+			batch.evicted(e, layer, EvictionCapacity, batch.now)
 		}
 		if err := batch.remove(tx, victim.key); err != nil {
 			return err
@@ -311,6 +426,7 @@ func (batch *diskBatch) evictOverflow(tx *bolt.Tx) error {
 }
 func (batch *diskBatch) apply() {
 	dc := batch.cache
+	now := clockNow().UnixNano()
 	for key := range batch.changes {
 		dc.removeIndex(key)
 	}
@@ -321,6 +437,7 @@ func (batch *diskBatch) apply() {
 			continue
 		}
 		node := dc.newIndexEntry(key, change.size, change.expiry, change.entry.state.lastAccess)
+		node.admitted, node.hits = now, change.entry.state.hits
 		if change.entry.state.cancelled.Load() {
 			node.invalid = true
 			dc.dirty = true
@@ -351,6 +468,7 @@ func (batch *diskBatch) finish(err error) {
 			dc.layerL2[l].rejections.Add(batch.layerRejections[l])
 			dc.layerEncodedWriteBytes[l].Add(batch.layerEncodedWrites[l])
 		}
+		batch.applySignals()
 	} else {
 		batch.restore()
 	}
@@ -380,6 +498,7 @@ func (dc *DiskCache) rejectFlushingLocked(key string, entry diskEntry) {
 	entry.state.cancelled.Store(true)
 	dc.RejectedWrites.Add(1)
 	dc.layerL2[LayerForKey(key)].rejections.Add(1)
+	dc.signals.reject(LayerForKey(key), RejectionEncodeFailed)
 	if item := dc.index[key]; item != nil {
 		item.invalid = true
 		dc.dirty = true

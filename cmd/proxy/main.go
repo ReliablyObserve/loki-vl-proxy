@@ -229,6 +229,7 @@ type proxyRuntimeConfig struct {
 	peerTimeout                         time.Duration
 	peerReadHedgeMaxDelay               time.Duration
 	peerAuthToken                       string
+	cacheKeySecret                      string
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
 	peerReplicationFactor               int
@@ -398,6 +399,8 @@ type runtimeOptions struct {
 	cacheMax                    int
 	cacheMaxBytes               int
 	cacheDisabled               bool
+	cacheRetention              cache.RetentionPolicy
+	cacheSizingSignals          bool
 	compatCacheEnabled          bool
 	compatCacheMaxPercent       int
 	diskCfg                     cache.DiskCacheConfig
@@ -541,6 +544,9 @@ func run(
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
+	cacheReuseProtectionPercent := fs.Int("cache-reuse-protection-percent", 0, "Share (percent, 0-90) of the memory caches' entry and byte budgets kept for entries read again since they were stored: under capacity pressure an entry stored but not read again is evicted first, so a one-time flood does not push out reused answers. Never changes a TTL or which answer is served; expiry evictions are unaffected. 0 (default) is plain LRU; 20 is the measured recommendation where capacity evictions of reused entries or one-time floods are seen")
+	cacheSizingSignals := fs.Bool("cache-sizing-signals", false, "Export the cache sizing signals of the primary cache: ghost hits (would twice the memory or disk budget, or twice the TTL, have answered a miss), the working set over 5m/1h/24h, the reuse interval between two lookups of a key, and hit and requested bytes per answer class (byte hit ratio). Costs about 50 ns per lookup (a key hash and two shared counters) and a bounded sample of at most 16384 keys per ghost and window; never changes what is cached or served")
+	cacheDemoteOnEvict := fs.Bool("cache-demote-on-evict", false, "When a capacity eviction removes an entry read at least once from memory, keep its disk copy newest in the disk cache's recency order, or write it to the disk cache with the TTL it has left when the disk holds none (never a longer TTL; never memory-only, patterns or non-owner shadow entries). Needs -disk-cache-path")
 	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead. It also turns off the request-level join: identical read requests in flight then run each on their own (held failures are still answered, see -error-cache-enabled)")
 	errorCacheEnabled := fs.Bool("error-cache-enabled", true, "Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held, except VictoriaLogs' refusal of the query the proxy wrote, which the same release always gives (see -error-cache-vl-refusal-ttl). Identical requests in flight share one run either way (see -coalescer-disabled)")
 	errorCacheTransientTTL := fs.Duration("error-cache-transient-ttl", proxy.DefaultErrorCacheTransientTTL, "How long a backend failure (VictoriaLogs 5xx, 429 or queue timeout, a refused or reset connection) is held per request; 0 holds none. A timeout or an aborted body is never held. Each replica asks VictoriaLogs at most once per this TTL per failing request, and the first request after VictoriaLogs recovers answers within it")
@@ -650,7 +656,7 @@ func run(
 	backendMinConcurrentMetadataScans := fs.Int("backend-min-concurrent-metadata-scans", proxy.DefaultBackendMinConcurrentMetadataScans, "Floor of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: latency and failure feedback never shrink the limit below it, and below it a replica may start a scan while others' long work uses up to a quarter of VictoriaLogs' select slots. VictoriaLogs' full select slots, memory headroom and a silent /metrics still hold scans back. Must be <= -backend-max-concurrent-metadata-scans; 0 uses the default")
 	backendMetadataScanMemoryHeadroom := fs.Float64("backend-metadata-scan-memory-headroom", proxy.DefaultBackendMetadataScanMemoryHeadroom, "Fraction of the memory available to VictoriaLogs (vm_available_memory_bytes on its /metrics) that long-range metadata scans must leave free: a scan is admitted only while the memory VictoriaLogs has in use, plus the estimated cost of in-flight scans, of the selects it runs for others and of this one, stays below 1 minus this fraction. Costs are learned per endpoint, range and tenant from the memory growth while scans ran; a listing never measured runs alone. 0 disables the memory gate (latency and failure feedback remain)")
 	backendMetadataScanLatencyTolerance := fs.Float64("backend-metadata-scan-latency-tolerance", proxy.DefaultBackendMetadataScanLatencyTolerance, "How many times its no-load duration (per row when the rows are known) a long-range metadata scan that ran beside others may take before the adaptive limit shrinks by 20%. Must be >= 1; 0 uses the default")
-	metadataInventoryPrefetch := fs.Bool("metadata-inventory-prefetch", true, "After a /labels listing, read in the background the label inventory buckets that let a moved window of it be answered from memory (with -metadata-max-staleness above 0): the hour buckets holding the window's start and end and the hour before it, at most the window's own width of hours per listing (a window of 6h or more: up to three hours; 1h: one; under an hour: none). Each read is one row count and one listing, cached and shared by every later listing and peer, run in the background inventory lane (skipped when the metadata-scan limiter is closed). false keeps the memory answers to buckets the requests themselves read.")
+	metadataInventoryPrefetch := fs.Bool("metadata-inventory-prefetch", true, "After a /labels listing, read in the background the label inventory buckets that let a moved window of it be answered from memory (with -metadata-max-staleness above 0): the hour buckets holding the window's start and end and the hour before its start and, when the listing found a bucket it needed still being read by an earlier listing, the hour two before it, at most three and at most the window's own width of hours per listing (a window of 6h or more: up to three hours; 1h: one; under an hour: none). Each read is one row count and one listing, cached and shared by every later listing and peer, run in the background inventory lane (skipped when the metadata-scan limiter is closed). false keeps the memory answers to buckets the requests themselves read.")
 	metadataInventoryParallelism := fs.Int("metadata-inventory-parallelism", proxy.DefaultMetadataInventoryParallelism, "Label names and values (/labels, /label/{name}/values, detected field names) are listed from a time-bucketed inventory: day, hour, 5-minute and minute buckets cached in the read cache (memory, disk and peers) and merged, so a window moved by seconds reads only its edges from VictoriaLogs. This is how many bucket listings one request may have in flight, and how many segment reads an instant /index/volume may have in flight (-max-stats-cache-freshness). 0 turns the inventory and the volume segments off, making every listing and volume one VictoriaLogs call over the whole range")
 	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries, and metadata listings count as long-range for -backend-max-concurrent-metadata-scans. Must be > 0")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
@@ -828,6 +834,8 @@ func run(
 	peerReadHedgeMaxDelay := fs.Duration("peer-read-hedge-max-delay", 200*time.Millisecond, "Longest a peer-cache read waits on one replica's response headers before it also asks the key's next replica or, with none left, goes on as a miss (VictoriaLogs or a local compute) while that call finishes in the background, where its -peer-timeout still suspends a paused peer. The delay used is twice the p99 of the measured peer header latencies, at least 5ms and at most this value and half of -peer-timeout. 0 turns hedging off: a read waits up to -peer-timeout on each replica.")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set. When neither this flag nor -peer-auth-token-file is given, read from the PEER_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
 	peerAuthTokenFile := fs.String("peer-auth-token-file", "", "File holding the -peer-auth-token value, read once at startup")
+	cacheKeySecret := fs.String("cache-key-secret", "", "Secret keying the digests of credentials in cache keys (forwarded Authorization headers and cookies, -backend-basic-auth), so cache keys stored on disk, in snapshots or on peers cannot be used to test credential guesses. Set the same value on every replica to share credential-scoped cache entries across replicas and restarts. Empty: a key derived from -peer-auth-token, else a random key per process (credential-scoped entries are then not reused after a restart or by other replicas). When neither this flag nor -cache-key-secret-file is given, read from the CACHE_KEY_SECRET environment variable. A flag value is readable in the process command line")
+	cacheKeySecretFile := fs.String("cache-key-secret-file", "", "File holding the -cache-key-secret value, read once at startup")
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerReplicationFactor := fs.Int("peer-replication-factor", 2, "Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner.")
@@ -849,6 +857,7 @@ func run(
 	// Secrets are resolved here, before any check or component reads them.
 	explicitFlags, err := parseFlagsAndSecrets(fs, args, getenv, []secretFlag{
 		{name: "peer-auth-token", value: peerAuthToken, file: peerAuthTokenFile, env: "PEER_AUTH_TOKEN"},
+		{name: "cache-key-secret", value: cacheKeySecret, file: cacheKeySecretFile, env: "CACHE_KEY_SECRET"},
 		{name: "server.admin-auth-token", value: adminAuthToken, file: adminAuthTokenFile, env: "ADMIN_AUTH_TOKEN"},
 		{name: "delete-api-auth-token", value: deleteAPIAuthToken, file: deleteAPIAuthTokenFile, env: "DELETE_API_AUTH_TOKEN"},
 		{name: "backend-basic-auth", value: backendBasicAuth, file: backendBasicAuthFile, env: "BACKEND_BASIC_AUTH"},
@@ -974,6 +983,8 @@ func run(
 		cacheMax:              *cacheMax,
 		cacheMaxBytes:         *cacheMaxBytes,
 		cacheDisabled:         *cacheDisabled,
+		cacheRetention:        cache.RetentionPolicy{ProtectPercent: *cacheReuseProtectionPercent, DemoteOnEvict: *cacheDemoteOnEvict},
+		cacheSizingSignals:    *cacheSizingSignals,
 		compatCacheEnabled:    *compatCacheEnabled && !*cacheDisabled,
 		compatCacheMaxPercent: *compatCacheMaxPercent,
 		diskCfg: cache.DiskCacheConfig{
@@ -1149,6 +1160,7 @@ func run(
 			peerTimeout:                         *peerTimeout,
 			peerReadHedgeMaxDelay:               *peerReadHedgeMaxDelay,
 			peerAuthToken:                       *peerAuthToken,
+			cacheKeySecret:                      *cacheKeySecret,
 			peerInsecureIPAllowlist:             *peerInsecureIPAllowlist,
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
@@ -1424,6 +1436,26 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	if err != nil {
 		cacheCleanup()
 		return nil, fmt.Errorf("build compatibility cache: %w", err)
+	}
+	// Both memory caches are empty here; the compatibility cache has no disk,
+	// so demotion applies to the primary cache only.
+	for _, c := range []*cache.Cache{cacheLayer, compatCacheLayer} {
+		if err := c.SetRetention(opts.cacheRetention); err != nil {
+			cacheCleanup()
+			compatCleanup()
+			return nil, fmt.Errorf("cache retention: %w", err)
+		}
+	}
+	if opts.cacheSizingSignals {
+		// After SetL2, so the disk ghosts take the disk's budgets.
+		cacheLayer.EnableSizingSignals()
+	}
+	if !opts.cacheDisabled {
+		logger.Info("cache retention policy",
+			"reuse_protection_percent", opts.cacheRetention.ProtectPercent,
+			"demote_on_evict", opts.cacheRetention.DemoteOnEvict && opts.diskCfg.Path != "",
+			"sizing_signals", cacheLayer.SizingStats().Enabled,
+		)
 	}
 
 	proxyCfg := opts.proxyCfg
@@ -2551,6 +2583,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		PatternsPeerWarmTimeout:            cfg.patternsPeerWarmTimeout,
 		PeerCache:                          peerCache,
 		PeerAuthToken:                      cfg.peerAuthToken,
+		CacheKeySecret:                     cfg.cacheKeySecret,
 		PeerInsecureIPAllowlist:            cfg.peerInsecureIPAllowlist,
 		ColdBackend: proxy.ColdBackendConfig{
 			URL:             cfg.coldBackendURL,

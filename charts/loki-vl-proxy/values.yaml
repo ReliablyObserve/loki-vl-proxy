@@ -42,6 +42,11 @@ workload:
 image:
   repository: ghcr.io/reliablyobserve/loki-vl-proxy
   tag: ""  # defaults to Chart.appVersion
+  # digest pins the image, as sha256:<64 hex>: the multi-arch index digest of a
+  # release (image-digests.txt on the release page). Set, the chart renders
+  # <repository>@<digest>, or <repository>:<tag>@<digest> with a tag; the digest
+  # decides what runs. See "Verify before deploying" in SECURITY.md.
+  digest: ""
   pullPolicy: IfNotPresent
   pullSecrets: []
 
@@ -317,6 +322,8 @@ extraArgs:
   # backend-version-url: "http://vlselect:9471/metrics"
   # backend-version-basic-auth: "user:password"   # prefer backendVersionAuth.existingSecret
   # backend-version-basic-auth-file: ""         # file holding user:password (backendVersionAuth.existingSecret renders it)
+  # cache-key-secret: ""                        # keys the credential digests in cache keys; prefer cacheKeySecret.existingSecret
+  # cache-key-secret-file: ""                   # file holding the secret (cacheKeySecret.existingSecret renders it)
   # backend-version: "v1.54.0"    # only when no endpoint reports the release
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
@@ -402,6 +409,9 @@ extraArgs:
   #
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
+  # cache-reuse-protection-percent: "0"        # share of the memory caches kept for entries read again; capacity evictions take entries read once first (0 = plain LRU, the default; 20 recommended against floods; max 90; TTLs unchanged)
+  # cache-sizing-signals: "false"              # export ghost hits (2x budget, 2x TTL), working set, reuse interval and byte hit ratio of the primary cache (about 50 ns per lookup)
+  # cache-demote-on-evict: "false"             # a capacity eviction of an entry read at least once keeps or writes its disk copy with the TTL it has left (needs disk-cache-path)
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
   # labels-cache-warm: "true"                  # warm the 1h/6h/24h/7d label presets at startup and keep them warm; "false" on replicas without interactive label pickers
   # max-metadata-cache-freshness: "24h"       # Loki max_metadata_cache_freshness, applied to all tenants: /labels, /label/{name}/values and /series requests ending within this window of now refetch a cached answer older than recent-tail-refresh-max-staleness, so streams written in the window appear as in Loki (the newest minute and due revalidations are read live; sealed buckets stay cached); 0 keeps the previous caching
@@ -628,6 +638,22 @@ backendAuth:
 backendVersionAuth:
   existingSecret: ""
   existingSecretKey: "basic-auth"  # key within existingSecret
+
+# Secret keying the digests of credentials in cache keys
+# (-cache-key-secret-file): forwarded Authorization headers and cookies
+# (-forward-authorization, -forward-headers, -forward-cookies) and
+# backendAuth. With existingSecret unset and generate=true, the chart keeps a
+# random value in <release>-cache-key: created on the first install, kept on
+# every upgrade (lookup), shared by every replica, so a replica with a
+# persistent cache keeps credential-scoped entries across restarts. A render
+# without cluster access (helm template, Argo CD) renders and mounts no key
+# rather than a new one per render: set existingSecret there. Deleting the
+# Secret rotates the key on the next upgrade (credential-scoped entries miss
+# once). See docs/security.md#cache-key-secret.
+cacheKeySecret:
+  existingSecret: ""
+  existingSecretKey: "secret"      # key within existingSecret
+  generate: true                   # keep a chart-generated key when existingSecret is unset
 
 # Custom Drilldown patterns always prepended to /loki/api/v1/patterns.
 # Runtime supports:

@@ -2,6 +2,7 @@ package cache
 
 import (
 	"container/list"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -80,9 +81,9 @@ type Cache struct {
 	maxBytes       int
 	shadowBytes    int
 	shadowEntries  int
-	shadowList     *list.List
-	diskGeneration uint64 // guarded by mu; fences L2 results crossing a local purge
-	diskPurges     uint64 // overlapping local purges keep promotion disabled until all finish
+	shadowList     segList // non-owner shadows, most recently used first
+	diskGeneration uint64  // guarded by mu; fences L2 results crossing a local purge
+	diskPurges     uint64  // overlapping local purges keep promotion disabled until all finish
 	curBytes       int
 	disabled       bool
 	l2             *DiskCache    // optional L2 disk cache
@@ -129,6 +130,22 @@ type Cache struct {
 	l2Stats            tierStats
 	l3Stats            tierStats
 	backendFallthrough atomic.Int64
+
+	// signals are why entries leave or never enter L1 and the copies from
+	// lower tiers (eviction_signals.go), allocated apart so the counters a
+	// scrape reads share no cache line with the fields every lookup writes.
+	signals *cacheSignals
+
+	// retention is the reuse-aware retention policy (retention.go), nil for
+	// plain LRU: the default, and every cache SetRetention was not called on.
+	retention *retentionState
+	// sizing are the sizing signals (sizing_signals.go), nil unless enabled;
+	// set once by EnableSizingSignals before the cache is shared.
+	sizing *sizingSignals
+	// segFree are segment nodes of removed entries kept for reuse (at most
+	// segFreeMax), so a cache that evicts as it stores allocates no node.
+	segFree  *segNode
+	segFreeN int
 }
 
 // MaxEntrySizeBytes returns the largest object this cache will retain.
@@ -142,8 +159,20 @@ func (c *Cache) MaxEntrySizeBytes() int {
 }
 
 type lruEntry struct {
-	key        string
-	shadowElem *list.Element
+	key string
+	// node links the entry into its segment list: the shadow list for a
+	// non-owner shadow, the probation or protected list under the retention
+	// policy (seg says which); nil when the entry is in none (plain LRU, or an
+	// entry the restart warm-up admitted). Allocated once per entry: moving
+	// between segments relinks it.
+	node *segNode
+	// admitted is when the value entered L1 (unix seconds, wrapping) and hits
+	// the promotions the promoter applied since (saturating): the age and hits
+	// at eviction. The promotion buffer is lossy and Peek does not promote, so
+	// hits is a lower bound. The fields keep the node in its 32-byte size class.
+	admitted uint32
+	hits     uint16
+	seg      segment
 }
 
 type hotStat struct {
@@ -229,6 +258,7 @@ func newWithMaxBytesForLayer(ttl time.Duration, maxEntries, maxBytes int, layer 
 		hotMax:       defaultHotIndexMaxEntries,
 		promoteBuf:   make(chan string, 512),
 		promoteFlush: make(chan chan struct{}, 1),
+		signals:      &cacheSignals{},
 	}
 	go c.cleanup()
 	go c.runPromoter()
@@ -242,10 +272,12 @@ func (c *Cache) runPromoter() {
 		c.mu.Lock()
 		elem, found := c.lruIndex[key]
 		if found {
-			c.lruList.MoveToFront(elem)
-			if shadow := elem.Value.(*lruEntry).shadowElem; shadow != nil {
-				c.shadowList.MoveToFront(shadow)
+			data := elem.Value.(*lruEntry)
+			if data.hits < math.MaxUint16 {
+				data.hits++
 			}
+			c.lruList.MoveToFront(elem)
+			c.hitSegmentLocked(data)
 		}
 		if c.hotOn {
 			c.recordHotLocked(key)
@@ -306,6 +338,9 @@ func (c *Cache) Close() {
 		c.startupTimer.Stop()
 	}
 	c.mu.Unlock()
+	if s := c.sizing; s != nil {
+		s.stop()
+	}
 }
 
 // Peek returns a fresh value from the memory tier without promoting it in
@@ -377,6 +412,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 		c.recordTierRequest("l1")
 		c.recordTierHit("l1")
 		c.Hits.Add(1)
+		c.sizingLookup(key, "l1_memory", v)
 		return v, ttl, age, "l1_memory", true
 	}
 	c.recordTierRequest("l1")
@@ -387,6 +423,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 		if v, ttl, ok := c.getDiskWithTTL(key); ok {
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
+			c.sizingLookup(key, "l2_disk", v)
 			return v, ttl, -1, "l2_disk", true
 		}
 		c.recordTierMiss("l2")
@@ -405,6 +442,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 			c.storePeerCopy(key, v, shadowTTL, memOnly)
 			c.recordTierHit("l3")
 			c.Hits.Add(1)
+			c.sizingLookup(key, "l3_peer", v)
 			return v, shadowTTL, -1, "l3_peer", true
 		}
 		c.recordTierMiss("l3")
@@ -412,6 +450,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 
 	c.backendFallthrough.Add(1)
 	c.Misses.Add(1)
+	c.sizingLookup(key, "", nil)
 	return nil, 0, 0, "", false
 }
 
@@ -485,6 +524,7 @@ func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 		case c.promoteBuf <- key:
 		default:
 		}
+		c.sizingLookup(key, "l1_memory", v)
 		return v, "l1_memory", true
 	}
 	c.mu.RUnlock()
@@ -498,6 +538,7 @@ func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 		if v, _, ok := c.getDiskWithTTL(key); ok {
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
+			c.sizingLookup(key, "l2_disk", v)
 			return v, "l2_disk", true
 		}
 		c.recordTierMiss("l2")
@@ -516,6 +557,7 @@ func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 			c.storePeerCopy(key, v, shadowTTL, memOnly)
 			c.recordTierHit("l3")
 			c.Hits.Add(1)
+			c.sizingLookup(key, "l3_peer", v)
 			return v, "l3_peer", true
 		}
 		c.recordTierMiss("l3")
@@ -523,6 +565,7 @@ func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 
 	c.backendFallthrough.Add(1)
 	c.Misses.Add(1)
+	c.sizingLookup(key, "", nil)
 	return nil, "", false
 }
 
@@ -560,8 +603,10 @@ func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stampe
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return
 	}
+	c.skipDisk(key, RejectionMemoryOnly)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.storeEntryLocked(key, value, ttl, size, stamped, memOnly, false, 0)
@@ -578,6 +623,7 @@ func (c *Cache) storePeerCopy(key string, value []byte, ttl time.Duration, memOn
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return
 	}
 	replica := c.l3 == nil || c.l3.IsReplica(key)
@@ -591,9 +637,18 @@ func (c *Cache) storePeerCopy(key string, value []byte, ttl time.Duration, memOn
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.storeEntryLocked(key, value, storedTTL, size, false, memOnly, shadow, sourceExpiry)
-	if !memOnly && !shadow && c.l2 != nil && !skipL2WriteForKey(key) {
+	if c.storeEntryLocked(key, value, storedTTL, size, false, memOnly, shadow, sourceExpiry) {
+		c.signals.promote(c.layer(key), PromotionPeerToMemory)
+	}
+	switch {
+	case c.l2 == nil:
+	case memOnly || skipL2WriteForKey(key):
+		c.skipDisk(key, RejectionMemoryOnly)
+	case shadow:
+		c.skipDisk(key, RejectionNotReplica)
+	default:
 		c.l2.Set(key, value, ttl)
+		c.signals.promote(LayerForKey(key), PromotionPeerToDisk)
 	}
 }
 
@@ -659,6 +714,7 @@ func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Durati
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return
 	}
 
@@ -668,6 +724,8 @@ func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Durati
 	c.storeLocalLocked(key, value, ttl, size, true)
 	if c.l2 != nil && !skipL2WriteForKey(key) {
 		c.l2.Set(key, value, ttl)
+	} else {
+		c.skipDisk(key, RejectionMemoryOnly)
 	}
 }
 
@@ -699,6 +757,9 @@ func skipL2WriteForKey(key string) bool {
 func (c *Cache) Invalidate(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if _, ok := c.entries[key]; ok {
+		c.countEvictionLocked(c.layer(key), EvictionInvalidated, nil, time.Time{})
+	}
 	c.removeEntryLocked(key)
 }
 
@@ -710,6 +771,7 @@ func (c *Cache) PurgeAll() {
 	c.diskGeneration++
 	c.diskPurges++
 	for key := range c.entries {
+		c.countEvictionLocked(c.layer(key), EvictionFlush, nil, time.Time{})
 		c.removeEntryLocked(key)
 	}
 	c.mu.Unlock()
@@ -729,6 +791,7 @@ func (c *Cache) InvalidatePrefix(prefix string) {
 	defer c.mu.Unlock()
 	for key := range c.entries {
 		if strings.HasPrefix(key, prefix) {
+			c.countEvictionLocked(c.layer(key), EvictionInvalidated, nil, time.Time{})
 			c.removeEntryLocked(key)
 		}
 	}
@@ -746,7 +809,9 @@ func (c *Cache) evictIfNeeded(incomingSize int) {
 	if len(c.entries) >= c.maxEntries || c.curBytes+incomingSize > c.maxBytes {
 		for key, e := range c.entries {
 			if now.After(e.expiresAt) {
-				c.layerL1[c.layer(key)].evictions.Add(1)
+				layer := c.layer(key)
+				c.layerL1[layer].evictions.Add(1)
+				c.countEvictionLocked(layer, EvictionExpired, c.lruNodeLocked(key), now)
 				c.removeEntryLocked(key)
 				c.Evictions.Add(1)
 			}
@@ -754,14 +819,22 @@ func (c *Cache) evictIfNeeded(incomingSize int) {
 	}
 	for len(c.entries) >= c.maxEntries || c.curBytes+incomingSize > c.maxBytes {
 		back := c.lruList.Back()
-		if c.shadowList != nil && c.shadowList.Back() != nil {
-			back = c.lruIndex[c.shadowList.Back().Value.(*lruEntry).key]
+		if b := c.shadowList.back; b != nil {
+			back = c.lruIndex[b.data.key]
+		} else if c.retention != nil {
+			back = c.retentionVictimLocked(back)
 		}
 		if back == nil {
 			break
 		}
-		c.layerL1[c.layer(back.Value.(*lruEntry).key)].evictions.Add(1)
-		c.removeEntryLocked(back.Value.(*lruEntry).key)
+		data := back.Value.(*lruEntry)
+		layer := c.layer(data.key)
+		c.layerL1[layer].evictions.Add(1)
+		c.countEvictionLocked(layer, EvictionCapacity, data, now)
+		if c.retention != nil && c.retention.demote {
+			c.demoteLocked(data, now)
+		}
+		c.removeEntryLocked(data.key)
 		c.Evictions.Add(1)
 	}
 }
@@ -778,7 +851,9 @@ func (c *Cache) cleanup() {
 		now := clockNow()
 		for key, e := range c.entries {
 			if now.After(e.expiresAt) {
-				c.layerL1[c.layer(key)].evictions.Add(1)
+				layer := c.layer(key)
+				c.layerL1[layer].evictions.Add(1)
+				c.countEvictionLocked(layer, EvictionExpired, c.lruNodeLocked(key), now)
 				c.removeEntryLocked(key)
 			}
 		}

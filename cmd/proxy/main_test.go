@@ -2621,3 +2621,33 @@ func TestBuildProxyConfig_MetricsDurationBuckets(t *testing.T) {
 		}
 	}
 }
+
+// The retention flags reach both memory caches; an invalid share fails the
+// start.
+//
+// conformance: cache-reuse-retention
+func TestBuildRuntime_CacheRetention(t *testing.T) {
+	opts := func(p cache.RetentionPolicy) runtimeOptions {
+		return runtimeOptions{
+			cacheTTL: 10 * time.Second, cacheMax: 50, cacheMaxBytes: defaultCacheMaxBytes,
+			cacheRetention: p, cacheSizingSignals: true, compatCacheEnabled: true, compatCacheMaxPercent: defaultCompatCachePercent,
+			proxyCfg:   proxyRuntimeConfig{backendURL: "http://example.com", labelStyle: "passthrough", metadataFieldMode: "hybrid"},
+			serverOpts: serverRuntimeOptions{listenAddr: ":0"},
+		}
+	}
+	notify := func(chan<- os.Signal, ...os.Signal) {}
+	pusher := func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher { return &fakeOTLPPusher{} }
+	if _, err := buildRuntime(opts(cache.RetentionPolicy{ProtectPercent: cache.MaxRetentionProtectPercent + 1}), slog.New(slog.NewJSONHandler(io.Discard, nil)), notify, pusher); err == nil || !strings.Contains(err.Error(), "cache retention") {
+		t.Fatalf("invalid protection share: %v", err)
+	}
+	buf := &bytes.Buffer{}
+	rt, err := buildRuntime(opts(cache.RetentionPolicy{ProtectPercent: 20, DemoteOnEvict: true}), slog.New(slog.NewJSONHandler(buf, nil)), notify, pusher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.cacheCleanup()
+	defer rt.stopOTLP()
+	if !strings.Contains(buf.String(), `"msg":"cache retention policy","reuse_protection_percent":20,"demote_on_evict":false,"sizing_signals":true`) {
+		t.Fatalf("retention log (no disk cache: demotion off): %s", buf.String())
+	}
+}

@@ -39,6 +39,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `extraArgs.log-level` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `persistence.enabled` | `false` | Enable bbolt disk cache via PVC |
 | `persistence.size` | `10Gi` | PVC size for disk cache |
+| `image.digest` | `""` | Pins the image as `sha256:<64 hex>`, the multi-arch index digest in the release's `image-digests.txt`. Renders `<repository>@<digest>`, or `<repository>:<tag>@<digest>` when `image.tag` is set; the digest decides what runs. See [Verify before deploying](../../SECURITY.md#verify-before-deploying) |
 | `peerCache.enabled` | `false` | Enable distributed cache sharing across replicas |
 | `adminAuth.existingSecret` | `""` | Existing Secret holding the admin/debug bearer token. The chart mounts the key as a file and renders `-server.admin-auth-token-file`, so the token is not in the pod spec, `helm get values` or the process arguments. Setting it together with `extraArgs."server.admin-auth-token"` fails rendering |
 | `adminAuth.existingSecretKey` | `token` | Key within `adminAuth.existingSecret` |
@@ -51,6 +52,9 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `backendAuth.existingSecretKey` | `basic-auth` | Key within `backendAuth.existingSecret` |
 | `backendVersionAuth.existingSecret` | `""` | Existing Secret holding the `user:password` of `extraArgs.backend-version-url`. The chart mounts the key as a file and renders `-backend-version-basic-auth-file`. Setting it together with `extraArgs.backend-version-basic-auth` fails rendering |
 | `backendVersionAuth.existingSecretKey` | `basic-auth` | Key within `backendVersionAuth.existingSecret` |
+| `cacheKeySecret.existingSecret` | `""` | Existing Secret holding the key for credential digests in cache keys (forwarded `Authorization` headers and cookies, `backendAuth`). The chart mounts the key as a file and renders `-cache-key-secret-file`. Unset, the chart keeps a generated key (`cacheKeySecret.generate`). Setting it together with `extraArgs.cache-key-secret` fails rendering |
+| `cacheKeySecret.existingSecretKey` | `secret` | Key within `cacheKeySecret.existingSecret` |
+| `cacheKeySecret.generate` | `true` | With `existingSecret` unset, keep a random 64-character key in `<release>-cache-key`: created on the first install, kept on upgrades (`lookup`), so restarts keep credential-scoped cache entries. A render without cluster access (`helm template`, Argo CD) renders and mounts no key rather than a new one per render; use `existingSecret` there. Deleting the Secret rotates the key (credential-scoped entries miss once). `false`: the proxy derives the key from the peer token, else per process |
 | `observability.otlp.existingSecret` | `""` | Existing Secret holding the OTLP exporter headers (`key=value[,key=value]`, usually an `Authorization` value), exposed to the proxy as `OTLP_HEADERS` from a `secretKeyRef`. Setting it together with `observability.otlp.headers` or `extraArgs.otlp-headers` fails rendering |
 | `observability.otlp.existingSecretKey` | `headers` | Key within `observability.otlp.existingSecret` |
 | `serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitor |
@@ -252,7 +256,7 @@ observability:
     existingSecret: loki-vl-proxy-otlp     # key "headers", value "Authorization=Bearer ..."
 ```
 
-For `adminAuth`, `deleteAuth`, `backendAuth`, `backendVersionAuth` and the peer token, the chart mounts the Secret key as a read-only file under `/var/run/secrets/loki-vl-proxy/` and passes the proxy its path with the matching `-...-file` flag, so the value is in no process argument or environment variable. The proxy reads the file once at startup: restart the pods after rotating a Secret. `OTLP_HEADERS` stays a `secretKeyRef` environment variable, read by the proxy when `-otlp-headers` is unset. Setting the plain value (or the `-file` flag) in `extraArgs` and `existingSecret` for the same item fails rendering.
+For `adminAuth`, `deleteAuth`, `backendAuth`, `backendVersionAuth`, `cacheKeySecret` and the peer token, the chart mounts the Secret key as a read-only file under `/var/run/secrets/loki-vl-proxy/` and passes the proxy its path with the matching `-...-file` flag, so the value is in no process argument or environment variable. The proxy reads the file once at startup: restart the pods after rotating a Secret. `OTLP_HEADERS` stays a `secretKeyRef` environment variable, read by the proxy when `-otlp-headers` is unset. Setting the plain value (or the `-file` flag) in `extraArgs` and `existingSecret` for the same item fails rendering.
 
 **Image version:** the `-...-file` flags need an image of the same release as the chart or newer. An older proxy exits with `flag provided but not defined` instead of starting without the credential, so a pinned older `image.tag` with any of these secrets does not roll out: keep chart and image together, or stay on the older chart.
 

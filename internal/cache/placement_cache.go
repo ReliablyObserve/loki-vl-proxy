@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"container/list"
 	"time"
 )
 
@@ -10,7 +9,9 @@ import (
 const nonOwnerShadowBudgetDivisor = 10
 
 func (c *Cache) removeEntryLocked(key string) {
+	size := 0
 	if old, ok := c.entries[key]; ok {
+		size = old.sizeBytes
 		c.curBytes -= old.sizeBytes
 		stats := &c.layerL1[c.layer(key)]
 		stats.entries.Add(-1)
@@ -29,25 +30,26 @@ func (c *Cache) removeEntryLocked(key string) {
 	}
 	if elem, ok := c.lruIndex[key]; ok {
 		data := elem.Value.(*lruEntry)
-		if data.shadowElem != nil {
-			c.shadowList.Remove(data.shadowElem)
-		}
+		c.leaveSegmentLocked(data, size)
 		c.lruList.Remove(elem)
 		delete(c.lruIndex, key)
 	}
 }
-func (c *Cache) shadowRoomLocked(size int) bool {
+func (c *Cache) shadowRoomLocked(size int, now time.Time) bool {
 	maxEntries, maxBytes := c.maxEntries/nonOwnerShadowBudgetDivisor, c.maxBytes/nonOwnerShadowBudgetDivisor
 	if maxEntries == 0 || size > maxBytes {
 		return false
 	}
 	for c.shadowEntries >= maxEntries || c.shadowBytes+size > maxBytes || len(c.entries) >= c.maxEntries || c.curBytes+size > c.maxBytes {
-		if c.shadowList == nil || c.shadowList.Back() == nil {
+		back := c.shadowList.back
+		if back == nil {
 			return false
 		}
-		key := c.shadowList.Back().Value.(*lruEntry).key
-		c.layerL1[c.layer(key)].evictions.Add(1)
-		c.removeEntryLocked(key)
+		data := back.data
+		layer := c.layer(data.key)
+		c.layerL1[layer].evictions.Add(1)
+		c.countEvictionLocked(layer, EvictionCapacity, data, now)
+		c.removeEntryLocked(data.key)
 		c.Evictions.Add(1)
 	}
 	return true
@@ -69,6 +71,9 @@ func (c *Cache) getDiskWithTTL(key string) ([]byte, time.Duration, bool) {
 		return nil, 0, false
 	}
 	value, ttl, ok := c.l2.GetWithTTL(key)
+	if s := c.sizing; s != nil {
+		s.lookupL2(key, ok)
+	}
 	// Starting before the read conservatively charges lookup/scheduling time
 	// against the remaining TTL reported by disk.
 	deadline := start.Add(ttl)
@@ -102,12 +107,15 @@ func (c *Cache) promoteDiskWithDeadline(key string, value []byte, deadline time.
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return true
 	}
 	if old, ok := c.entries[key]; ok && old.expiresAt.After(clockNow()) {
 		return true
 	}
-	c.storeEntryLocked(key, value, remaining, size, false, false, false, expiry)
+	if c.storeEntryLocked(key, value, remaining, size, false, false, false, expiry) {
+		c.signals.promote(c.layer(key), PromotionDiskToMemory)
+	}
 	return true
 }
 func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, size int, stamped, memOnly, shadow bool, sourceExpiry int64) bool {
@@ -116,6 +124,7 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 		remaining := time.Unix(0, sourceExpiry).Sub(now)
 		if remaining <= 0 {
 			c.layerL1[c.layer(key)].rejections.Add(1)
+			c.signals.reject(c.layer(key), RejectionSourceExpired)
 			return false
 		}
 		ttl = min(ttl, remaining)
@@ -124,17 +133,22 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	if stamped {
 		e.storedAt = now
 	}
-	if c.replaceEntryLocked(key, e) {
+	replaced, existed := c.replaceEntryLocked(key, e, now)
+	if replaced {
+		if s := c.sizing; s != nil {
+			s.storeL1(key, len(value), size, ttl)
+		}
 		return true
+	}
+	if existed { // a value of another storage class
+		c.countEvictionLocked(c.layer(key), EvictionReplaced, nil, now)
 	}
 	c.removeEntryLocked(key)
 	if shadow {
-		if !c.shadowRoomLocked(size) {
+		if !c.shadowRoomLocked(size, now) {
 			c.layerL1[c.layer(key)].rejections.Add(1)
+			c.signals.reject(c.layer(key), RejectionShadowBudget)
 			return false
-		}
-		if c.shadowList == nil {
-			c.shadowList = list.New()
 		}
 	} else {
 		c.evictIfNeeded(size)
@@ -146,50 +160,67 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	stats.bytes.Add(int64(size))
 	stats.admissions.Add(1)
 	stats.writeBytes.Add(int64(len(value)))
-	data := &lruEntry{key: key}
+	data := &lruEntry{key: key, admitted: uint32(now.Unix())}
 	c.lruIndex[key] = c.lruList.PushFront(data)
+	if s := c.sizing; s != nil {
+		s.storeL1(key, len(value), size, ttl)
+	}
 	if shadow {
-		data.shadowElem = c.shadowList.PushFront(data)
+		data.seg, data.node = segShadow, c.newSegNodeLocked(data)
+		c.shadowList.pushFront(data.node)
 		c.shadowBytes += size
 		c.shadowEntries++
+	} else if c.retention != nil {
+		c.enterProbationLocked(data)
 	}
 	return true
 }
 
 // Replacing a hot entry in the same storage class reuses its list nodes.
-func (c *Cache) replaceEntryLocked(key string, next entry) bool {
+// existed says the key held a value, replaced or not.
+func (c *Cache) replaceEntryLocked(key string, next entry, now time.Time) (replaced, existed bool) {
 	old, ok := c.entries[key]
-	if !ok || old.shadow != next.shadow || old.memOnly != next.memOnly {
-		return false
+	if !ok {
+		return false, false
+	}
+	if old.shadow != next.shadow || old.memOnly != next.memOnly {
+		return false, true
 	}
 	delta := next.sizeBytes - old.sizeBytes
 	if c.curBytes+delta > c.maxBytes {
-		return false
+		return false, true
 	}
 	if next.shadow && c.shadowBytes+delta > c.maxBytes/nonOwnerShadowBudgetDivisor {
-		return false
+		return false, true
 	}
 	elem, ok := c.lruIndex[key]
 	if !ok {
-		return false
+		return false, true
 	}
+	data := elem.Value.(*lruEntry)
+	data.admitted, data.hits = uint32(now.Unix()), 0
 	c.entries[key] = next
 	c.curBytes += delta
-	stats := &c.layerL1[c.layer(key)]
+	layer := c.layer(key)
+	c.signals.count(layer, EvictionReplaced)
+	stats := &c.layerL1[layer]
 	stats.bytes.Add(int64(delta))
 	stats.admissions.Add(1)
 	stats.writeBytes.Add(int64(len(next.value)))
 	c.lruList.MoveToFront(elem)
 	if next.shadow {
 		c.shadowBytes += delta
-		c.shadowList.MoveToFront(elem.Value.(*lruEntry).shadowElem)
+		c.shadowList.moveToFront(data.node)
+	} else if c.retention != nil {
+		c.resizedSegmentLocked(data, delta)
 	}
-	return true
+	return true, true
 }
 func (c *Cache) setPlacedWithTTL(key string, value []byte, ttl time.Duration, propagate, stamped, force bool) {
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return
 	}
 	publishable := c.l3 != nil && c.l3.publicationEligible(key, value, ttl, force)
@@ -204,7 +235,13 @@ func (c *Cache) setPlacedWithTTL(key string, value []byte, ttl time.Duration, pr
 	}
 	c.mu.Lock()
 	c.storeEntryLocked(key, value, storedTTL, size, stamped, false, shadow, sourceExpiry)
-	if !shadow && c.l2 != nil && !skipL2WriteForKey(key) {
+	switch {
+	case c.l2 == nil:
+	case shadow:
+		c.skipDisk(key, RejectionNotReplica)
+	case skipL2WriteForKey(key):
+		c.skipDisk(key, RejectionMemoryOnly)
+	default:
 		c.l2.Set(key, value, ttl)
 	}
 	c.mu.Unlock()

@@ -19,8 +19,8 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-61860%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-92.1%25-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-61937%20passed-brightgreen)](#tests)
+[![Coverage](https://img.shields.io/badge/coverage-92.2%25-brightgreen)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -217,7 +217,7 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints with tests that compare the proxy against Loki | **19 of 27** (70%) |
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 14 of 25 |
-| Behaviour and feature items | 11 proven, 24 partial, 3 gaps |
+| Behaviour and feature items | 11 proven, 27 partial, 3 gaps |
 | Known differences from Loki (ranked) | **228**: 200 open, 16 documented, 7 owner-kept, 5 upstream |
 | Open differences visible in Grafana (registry impact) | **132 of 200**: 112 Explore, 18 Logs Drilldown, 2 Grafana datasource; 21 API only, 47 edge cases |
 

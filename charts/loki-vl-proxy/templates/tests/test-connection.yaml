@@ -1,3 +1,4 @@
+{{- $testImage := include "loki-vl-proxy.image" (dict "repository" "busybox" "tag" "1.36" "digest" "sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662") -}}
 apiVersion: v1
 kind: Pod
 metadata:
@@ -18,7 +19,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: test-ready
-      image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+      image: {{ $testImage }}
       securityContext:
         readOnlyRootFilesystem: true
         allowPrivilegeEscalation: false
@@ -35,7 +36,7 @@ spec:
         - '--timeout=5'
         - 'http://{{ include "loki-vl-proxy.fullname" . }}:{{ .Values.service.port }}/ready'
     - name: test-labels
-      image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+      image: {{ $testImage }}
       securityContext:
         readOnlyRootFilesystem: true
         allowPrivilegeEscalation: false
@@ -52,7 +53,7 @@ spec:
         - '--timeout=10'
         - 'http://{{ include "loki-vl-proxy.fullname" . }}:{{ .Values.service.port }}/loki/api/v1/labels'
     - name: test-metrics
-      image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+      image: {{ $testImage }}
       securityContext:
         readOnlyRootFilesystem: true
         allowPrivilegeEscalation: false
