@@ -51,3 +51,24 @@ func TestCacheHandoverScope(t *testing.T) {
 		t.Fatal("with the hand-over off no scope is computed")
 	}
 }
+
+// conformance: cache-restart-handover
+func TestCacheHandoverFlagsAndLazyScope(t *testing.T) {
+	if err := validateCacheHandoverFlags(0, 0, time.Second); err != nil {
+		t.Fatalf("defaults refused: %v", err)
+	}
+	for _, bad := range [][3]int64{{-1, 0, 1}, {0, -1, 1}, {0, 0, 0}} {
+		if err := validateCacheHandoverFlags(time.Duration(bad[0]), bad[1], time.Duration(bad[2])); err == nil {
+			t.Fatalf("%v accepted", bad)
+		}
+	}
+	env := envConfig{backendURL: "http://vl:9428"}
+	lazy := lazyCacheHandoverScope(handoverScopeFlags(t), env, time.Second, 0)
+	if got, want := lazy(), cacheHandoverScope(handoverScopeFlags(t), env, time.Second, 0); got != want || got == "" {
+		t.Fatalf("lazy scope %q, want %q", got, want)
+	}
+	digest, err := executableDigest()
+	if err != nil || len(digest) != 32 {
+		t.Fatalf("executable digest %q %v", digest, err)
+	}
+}

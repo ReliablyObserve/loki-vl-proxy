@@ -94,6 +94,10 @@ type handoverRecord struct {
 	hits    uint32
 	payload []byte
 	size    int // a memory record's decoded value length
+	// value and expiry are a memory record's value before encoding (the
+	// memory tier's slice) and its expiry; payload is encoded per chunk.
+	value  []byte
+	expiry int64
 }
 
 var errHandoverSuperseded = errors.New("cache hand-over superseded by a purge or close")
