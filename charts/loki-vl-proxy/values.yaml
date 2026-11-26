@@ -17,6 +17,13 @@ workload:
   kind: Deployment
   # Deployment-only rollout strategy. Leave empty to use the Kubernetes default.
   deploymentStrategy: {}
+  # Deployment-only progressDeadlineSeconds. Unset renders none (the Kubernetes
+  # default, 600 s), except with a disk cache and its startup probe, where the
+  # chart renders: terminationGracePeriodSeconds + the startup probe window +
+  # (with cacheHandover) startupWarmTimeoutSeconds and minReadySeconds + 300 s,
+  # when that exceeds 600 (935 with a disk cache, 1170 with the hand-over, at
+  # the defaults). A warm-up timeout set through extraArgs is not counted.
+  progressDeadlineSeconds: null
   statefulSet:
     # Headless service name used by StatefulSet network identity.
     # Empty = <release>-headless.
@@ -868,14 +875,18 @@ probe:
     failureThreshold: 3
     successThreshold: 1
   startup:
-    # unset = off, or on with cacheHandover.enabled.
+    # unset = off, or on with a disk cache (persistence.enabled or
+    # extraArgs.disk-cache-path): the cache index is rebuilt before the
+    # listener opens, one disk read per record.
     enabled: null
     path: /health
     initialDelaySeconds: 5
     periodSeconds: 5
     timeoutSeconds: 3
-    # unset = 30, or 60 with cacheHandover.enabled (5 s + 60 x 5 s = 305 s for
-    # the process to open its listener before it is restarted).
+    # unset = 30, or 120 with a disk cache (5 s + 120 x 5 s = 605 s for the
+    # process to open its listener before it is restarted; about twice the
+    # estimated rebuild of 94,000 records on a volume with 3 ms reads). A pod
+    # that hangs before listening is restarted only after that long.
     failureThreshold: null
 
 # --- Pod Disruption Budget ---
@@ -1044,7 +1055,8 @@ lifecycle: {}
 #   already.
 # - a PodDisruptionBudget with maxUnavailable: 1 when replicaCount > 1 or HPA
 #   is on (podDisruptionBudget.enabled unset);
-# - a startup probe (probe.startup);
+# - a startup probe (probe.startup; a disk cache without the hand-over renders
+#   it too);
 # - minReadySeconds.
 cacheHandover:
   enabled: false
