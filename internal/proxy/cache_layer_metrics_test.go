@@ -149,3 +149,72 @@ func TestCacheLayerMetricsSharedDiskCountedOnce(t *testing.T) {
 		t.Fatalf("shared disk records=%d, want one physical record", objects)
 	}
 }
+
+// conformance: cache-eviction-signals
+func TestCacheSignalMetricsSharedDiskCountedOnce(t *testing.T) {
+	disk, err := cache.NewDiskCache(cache.DiskCacheConfig{Path: filepath.Join(t.TempDir(), "shared.db"), MinTTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = disk.Close() }()
+	primary, compat := cache.New(time.Hour, 100), cache.New(time.Hour, 100)
+	defer primary.Close()
+	defer compat.Close()
+	primary.SetL2(disk)
+	compat.SetL2(disk)
+	p, err := New(Config{BackendURL: "http://unused", Cache: primary, CompatCache: compat, LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	disk.Set("vlinv-v1:short", []byte("backend-bucket"), time.Second)
+	var rejected int64
+	for _, component := range p.cacheSignalStats() {
+		rejected += component.Layers[cache.LayerVL].L2.Rejections[cache.RejectionTTLBelowMinimum]
+	}
+	if rejected != 1 {
+		t.Fatalf("shared disk rejections=%d, want one", rejected)
+	}
+	body := scrapeProxyCacheLayers(t, p)
+	if !strings.Contains(body, `loki_vl_proxy_cache_admission_rejections_total{layer="vl",tier="l2_disk",reason="ttl_below_minimum"} 1`+"\n") {
+		t.Fatalf("scrape does not hold the one rejection:\n%s", body)
+	}
+}
+
+// The TTL gauge states what the handlers store with: the configured inner TTLs
+// and the Loki answer cache's fixed ones.
+//
+// conformance: cache-eviction-signals
+func TestCacheTTLGaugeMatchesTheConfiguredTTLs(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Hour, 100), LogLevel: "error",
+		LabelCacheTTL: 7 * time.Minute, QueryRangeRecentCacheTTL: 3 * time.Second, QueryRangeHistoryCacheTTL: 2 * time.Hour, QueryRangeExtentCacheTTL: 45 * time.Minute, ParseRiskProbeCacheTTL: 20 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	got := map[string]time.Duration{}
+	for _, entry := range p.cacheTTLs() {
+		got[entry.Class] = entry.TTL
+	}
+	for class, want := range map[string]time.Duration{
+		"query_range": 5 * time.Minute, "query": 5 * time.Minute, "labels": CacheTTLs["labels"], "volume": CacheTTLs["volume"],
+		"labels_handler": 7 * time.Minute, "label_values_handler": 7 * time.Minute, "metadata_negative": p.metadataNegativeTTL(),
+		"query_range_window_recent": 3 * time.Second, "query_range_window_history": 2 * time.Hour, "query_range_extent": 45 * time.Minute, "parse_risk_probe": 20 * time.Minute,
+	} {
+		if got[class] != want {
+			t.Errorf("%s=%s want %s", class, got[class], want)
+		}
+	}
+	if len(got) != 20 {
+		t.Fatalf("classes %d: %v", len(got), got)
+	}
+	for _, endpoint := range []string{"query_range", "query", "labels", "series"} {
+		if compatAnswerTTL(endpoint) != got[endpoint] {
+			t.Fatalf("%s: gauge %s, answer cache %s", endpoint, got[endpoint], compatAnswerTTL(endpoint))
+		}
+	}
+	body := scrapeProxyCacheLayers(t, p)
+	if !strings.Contains(body, `loki_vl_proxy_cache_ttl_seconds{class="labels_handler"} 420`+"\n") {
+		t.Fatal("scrape does not state the label handler TTL")
+	}
+}

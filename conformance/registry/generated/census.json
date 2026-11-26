@@ -1457,6 +1457,7 @@
   "claim_cells": [
     "cmd/proxy/cache_handover_scope_test.go | cache-restart-handover",
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
+    "cmd/proxy/main_test.go | cache-reuse-retention",
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
     "cmd/proxy/main_test.go | observability-metrics-histograms-and-labels",
     "cmd/proxy/main_test.go | operator-configurable-limits",
@@ -1477,6 +1478,7 @@
     "internal/cache/error_flights_test.go | semantics/error-cache-bounded-memory",
     "internal/cache/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/cache/error_flights_test.go | semantics/error-coalescing-request-flights",
+    "internal/cache/eviction_signals_test.go | cache-eviction-signals",
     "internal/cache/handover_peak_test.go | cache-restart-handover",
     "internal/cache/handover_test.go | cache-restart-handover",
     "internal/cache/peer_close_conn_test.go | shutdown-releases-background-work",
@@ -1494,6 +1496,8 @@
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
     "internal/cache/restore_test.go | cache-restart-handover",
+    "internal/cache/retention_test.go | cache-reuse-retention",
+    "internal/cache/retention_trace_test.go | cache-reuse-retention",
     "internal/capability/docs_test.go | vl-capability-layer",
     "internal/capability/gates_test.go | vl-capability-layer",
     "internal/capability/layer_test.go | vl-capability-layer",
@@ -1624,6 +1628,8 @@
     "internal/lokierr/lokierr_test.go | status-429",
     "internal/lokierr/lokierr_test.go | status-500",
     "internal/metrics/cache_restart_metrics_test.go | cache-restart-handover",
+    "internal/metrics/cache_signal_dashboard_test.go | cache-eviction-signals",
+    "internal/metrics/cache_signal_metrics_test.go | cache-eviction-signals",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/capability_test.go | vl-capability-layer",
     "internal/metrics/duration_buckets_test.go | observability-metrics-histograms-and-labels",
@@ -1730,6 +1736,7 @@
     "internal/proxy/cache_handover_log_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | shutdown-releases-background-work",
+    "internal/proxy/cache_layer_metrics_test.go | cache-eviction-signals",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-parenthesized-metric-as-text",
@@ -3698,7 +3705,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 847,
+      "go": 853,
       "playwright": 3
     },
     "page_kinds": {
@@ -3720,7 +3727,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 487
+    "wired_items": 489
   },
   "gates": [
     "A/B shape selection",

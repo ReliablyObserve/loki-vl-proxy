@@ -1,0 +1,12 @@
+id: cache-eviction-signals
+state: partial
+pending: true
+reason: |
+  Unit-proven in internal/cache, internal/metrics and internal/proxy (every
+  reason, the invariant with the layer counters over random and concurrent
+  operations, exporter parity and the fixed series set, the dashboard row).
+  Not covered yet: the sizing signals of #1767 (ghost hits, working set, reuse
+  interval, byte hit ratio) and the retention policy changes, which follow in
+  their own pull requests.
+owner_decision: null
+waiver: null
