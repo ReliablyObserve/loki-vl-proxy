@@ -65,14 +65,15 @@ func (v patternWindowCacheValue) stats() patternExtractionStats {
 
 func (p *Proxy) patternWindowCacheKey(r *http.Request, query, step string, patternLimit, limit int, startNs, endNs int64) string {
 	scope := p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID"))
+	fp := p.fingerprintFromCtx(r.Context(), r)
 	identity, _ := json.Marshal([]any{
 		scope,
-		p.fingerprintFromCtx(r.Context(), r),
-		p.backend.String(), query, normalizePatternCacheStep(step), patternLimit, limit, startNs, endNs,
+		fp,
+		p.backendInKeys(), query, normalizePatternCacheStep(step), patternLimit, limit, startNs, endNs,
 		p.detectedLevelCacheKey(), p.defaultMsgValue(), p.patternGateKey(),
 	})
 	digest := sha256.Sum256(identity)
-	return fmt.Sprintf("patterns_window:%s:v4:%x", scope, digest)
+	return fmt.Sprintf("patterns_window:%s:v4:%x", scope, digest) + credentialScopeMark(fp)
 }
 
 func (d *patternFetchDiagnostics) recordExtraction(limit int, stats patternExtractionStats, windowed bool) {

@@ -14,6 +14,9 @@ func handoverScopeFlags(t *testing.T, args ...string) *flag.FlagSet {
 	fs.String("peer-self", "", "")
 	fs.String("peer-self-az", "", "")
 	fs.String("backend-basic-auth", "", "")
+	fs.String("backend-version-basic-auth", "", "")
+	fs.String("cache-key-secret", "", "")
+	fs.String("cold-backend", "", "")
 	fs.String("otlp-headers", "", "")
 	fs.String("peer-auth-token", "", "")
 	fs.String("server.admin-auth-token", "", "")
@@ -35,11 +38,17 @@ func TestCacheHandoverScope(t *testing.T) {
 	}
 	for name, args := range map[string][]string{
 		"pod identity": {"-peer-self=10.0.0.7:3100", "-peer-self-az=zone-b"},
-		"credentials":  {"-peer-auth-token=new", "-server.admin-auth-token=new", "-backend-basic-auth=user:pw", "-otlp-headers=Authorization=Bearer x"},
+		"credentials":  {"-peer-auth-token=new", "-server.admin-auth-token=new", "-backend-basic-auth=user:pw", "-backend-version-basic-auth=ver:pw", "-cache-key-secret=new", "-otlp-headers=Authorization=Bearer x"},
 	} {
 		if got := cacheHandoverScope(handoverScopeFlags(t, args...), env, time.Second, 0); got != base {
 			t.Fatalf("%s changed the scope: it decides no answer", name)
 		}
+	}
+	if got := cacheHandoverScope(handoverScopeFlags(t), envConfig{backendURL: "http://vlreader:correct-horse@vl:9428"}, time.Second, 0); got != base {
+		t.Fatal("credentials in the backend URL changed the scope: they decide no answer and are never hashed onto the disk")
+	}
+	if got := cacheHandoverScope(handoverScopeFlags(t, "-cold-backend=http://u:pw@cold:9428"), env, time.Second, 0); got != cacheHandoverScope(handoverScopeFlags(t, "-cold-backend=http://cold:9428"), env, time.Second, 0) {
+		t.Fatal("credentials in a URL flag changed the scope")
 	}
 	if got := cacheHandoverScope(handoverScopeFlags(t, "-max-stats-query-series=500"), env, time.Second, 0); got == base {
 		t.Fatal("a flag that decides answers must change the scope")
