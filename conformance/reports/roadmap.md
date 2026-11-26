@@ -28,7 +28,7 @@ Proven in part; the rest is named in the item's cases.
 |---|---|---:|---:|---|
 | `drilldown-service-landing` — Logs Drilldown ranks services on the landing page | drilldown | 1 / 5 | 1 | 1/3 deltas proven. |
 | `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | explore | 9 / 17 | 7 | 3/6 deltas proven. |
-| `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | — | 0 / 0 | 4 | Unit-proven in internal/cache and internal/proxy; the stack proof is TestFleet_RestartHandoverKeepsTheResponseCacheWarm  |
+| `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | — | 0 / 0 | 5 | Unit-proven in internal/cache and internal/proxy; the stack proof is TestFleet_RestartHandoverKeepsTheResponseCacheWarm  |
 | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 6 / 6 | 10 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
 | `json-metric-unparsed-line-lookup-once` — A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests | — | 0 / 0 | 1 | Unit-proven against a fake VictoriaLogs (internal/proxy/ ordered_json_unparsed_row_test.go). The stack check is the per- |
 | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 15 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |

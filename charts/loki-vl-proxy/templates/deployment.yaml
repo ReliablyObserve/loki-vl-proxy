@@ -56,7 +56,7 @@ spec:
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
-      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ include "loki-vl-proxy.terminationGracePeriodSeconds" . }}
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -182,6 +182,20 @@ spec:
             {{- end }}
             {{- if and .Values.persistence.enabled (not (hasKey .Values.extraArgs "disk-cache-path")) }}
             - {{ printf "-disk-cache-path=%s" (include "loki-vl-proxy.diskCachePath" .) | quote }}
+            {{- end }}
+            {{- if .Values.cacheHandover.enabled }}
+            {{- if not (or .Values.persistence.enabled (hasKey .Values.extraArgs "disk-cache-path")) }}
+            {{- fail "cacheHandover.enabled=true needs the disk cache: set persistence.enabled=true or extraArgs.disk-cache-path" }}
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "cache-shutdown-flush-timeout") }}
+            - {{ printf "-cache-shutdown-flush-timeout=%ds" (int .Values.cacheHandover.shutdownFlushTimeoutSeconds) | quote }}
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "cache-startup-warm-bytes") }}
+            - {{ printf "-cache-startup-warm-bytes=%d" (int64 .Values.cacheHandover.startupWarmBytes) | quote }}
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "cache-startup-warm-timeout") }}
+            - {{ printf "-cache-startup-warm-timeout=%ds" (int .Values.cacheHandover.startupWarmTimeoutSeconds) | quote }}
+            {{- end }}
             {{- end }}
             {{- if and (gt (len .Values.patternsCustom.inline) 0) (not (hasKey .Values.extraArgs "patterns-custom")) }}
             - {{ printf "-patterns-custom=%s" (toJson .Values.patternsCustom.inline) | quote }}
@@ -373,6 +387,13 @@ spec:
           {{- with .Values.lifecycle }}
           lifecycle:
             {{- toYaml . | nindent 12 }}
+          {{- else }}
+          {{- if and .Values.cacheHandover.enabled (gt (int .Values.cacheHandover.preStopSleepSeconds) 0) }}
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ int .Values.cacheHandover.preStopSleepSeconds }}
+          {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

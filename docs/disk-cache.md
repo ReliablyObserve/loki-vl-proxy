@@ -140,7 +140,10 @@ Restored entries go in behind what live requests stored and never evict them;
 the warm-up reads the disk without counting disk hits. Disk records are
 restored by any build, as a disk hit would serve them, because their keys carry
 the versions of what decides the answer; a version rollout therefore restores
-the disk records and drops the memory-only replies. The metrics are listed in
+the disk records and drops the memory-only replies. The Helm chart sets the
+flags, a grace period covering the HTTP drain and the flush, and a preStop
+sleep with `cacheHandover.enabled=true` (chart README, "Rolling restarts with a
+warm cache"). The metrics are listed in
 [Observability](observability.md) (`loki_vl_proxy_cache_restart_*` and
 `loki_vl_proxy_cache_startup_l1_*`).
 

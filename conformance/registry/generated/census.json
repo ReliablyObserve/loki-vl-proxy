@@ -3666,7 +3666,8 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
-    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki"
+    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
+    "test/helm/cache_handover_test.go | cache-restart-handover"
   ],
   "counts": {
     "case_consumers": {
@@ -3678,7 +3679,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 834,
+      "go": 835,
       "playwright": 3
     },
     "page_kinds": {

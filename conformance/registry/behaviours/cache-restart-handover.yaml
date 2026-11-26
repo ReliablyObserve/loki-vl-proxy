@@ -57,6 +57,12 @@ proxy: |
   memory tier with X-Loki-VL-Backend-Calls 0 and no disk read, equal to the
   first answers, and the other replica answers the same data.
 
+  Helm (TestCacheHandoverChartOptions): cacheHandover.enabled=true renders the
+  three flags, a grace period of at least preStop + 30 s drain + flush + 5 s
+  (a larger configured one is kept), a preStop sleep unless lifecycle is set,
+  lets extraArgs override each flag and refuses to render without a disk
+  cache.
+
 implementation:
   - internal/cache/handover.go
   - internal/cache/disk_handover.go

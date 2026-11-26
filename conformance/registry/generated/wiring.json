@@ -164,7 +164,8 @@
       "cmd/proxy/cache_handover_scope_test.go",
       "internal/cache/handover_test.go",
       "internal/proxy/cache_handover_test.go",
-      "test/e2e-fleet/restart_handover_test.go"
+      "test/e2e-fleet/restart_handover_test.go",
+      "test/helm/cache_handover_test.go"
     ],
     "credential-passthrough-as-configured": [
       "internal/proxy/credential_passthrough_test.go"
@@ -7070,9 +7071,12 @@
     ],
     "test/e2e-ui/tests/explore-long-range-pieces.spec.ts": [
       "drilldown/long-range-pieces-answer-like-loki"
+    ],
+    "test/helm/cache_handover_test.go": [
+      "cache-restart-handover"
     ]
   },
-  "tests_with_markers": 837,
+  "tests_with_markers": 838,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -299,3 +299,19 @@ tenancy is off; it refuses to start then (validateTenantLimitsNeedTenancy). */ -
 {{- fail "observability.otlp.existingSecret cannot be combined with observability.otlp.headers or extraArgs.otlp-headers; the OTLP headers are read from the Secret. Remove the plain value." -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+terminationGracePeriodSeconds: the configured value, raised with the restart
+hand-over on to cover the preStop sleep, the proxy's 30 s HTTP drain, the
+shutdown flush and 5 s for the disk cache to close.
+*/}}
+{{- define "loki-vl-proxy.terminationGracePeriodSeconds" -}}
+{{- $grace := int .Values.terminationGracePeriodSeconds -}}
+{{- if .Values.cacheHandover.enabled -}}
+{{- $preStop := 0 -}}
+{{- if not .Values.lifecycle -}}{{- $preStop = int .Values.cacheHandover.preStopSleepSeconds -}}{{- end -}}
+{{- $need := add $preStop 30 (int .Values.cacheHandover.shutdownFlushTimeoutSeconds) 5 -}}
+{{- if gt (int $need) $grace -}}{{- $grace = int $need -}}{{- end -}}
+{{- end -}}
+{{- $grace -}}
+{{- end -}}

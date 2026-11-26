@@ -967,11 +967,41 @@ podLabels: {}
 extraLabels: {}
 
 # --- Lifecycle ---
+# With cacheHandover.enabled the pod gets at least preStopSleepSeconds + 30
+# (the proxy's HTTP drain) + shutdownFlushTimeoutSeconds + 5 seconds.
 terminationGracePeriodSeconds: 30
+# A non-empty lifecycle replaces the preStop sleep cacheHandover adds.
+# The image is distroless (no shell): use the native sleep action.
 lifecycle: {}
   # preStop:
-  #   exec:
-  #     command: ["/bin/sh", "-c", "sleep 5"]
+  #   sleep:
+  #     seconds: 5
+
+# --- Response cache restart hand-over ---
+# Keeps a replica's memory cache warm across rolling restarts: on SIGTERM the
+# proxy writes its memory hot set to the disk cache (after the HTTP drain,
+# within shutdownFlushTimeoutSeconds), and the next start loads it back before
+# /ready answers 200 (within startupWarmTimeoutSeconds), so the readiness probe
+# holds the rollout until the replica is warm. Needs the disk cache
+# (persistence.enabled, or extraArgs.disk-cache-path on a volume that survives
+# the restart). See docs/disk-cache.md#restart-hand-over.
+# For one replica at a time also set podDisruptionBudget.enabled=true with
+# maxUnavailable: 1 (voluntary evictions such as node drains) and, for a
+# Deployment, workload.deploymentStrategy.rollingUpdate.maxUnavailable: 1 with
+# maxSurge: 0 (a ReadWriteOnce disk cannot be mounted by a surge pod); a
+# StatefulSet updates one pod at a time already.
+cacheHandover:
+  enabled: false
+  # -cache-shutdown-flush-timeout.
+  shutdownFlushTimeoutSeconds: 15
+  # -cache-startup-warm-bytes: at most half of -cache-max-bytes is warmed; also
+  # the most memory-only answer bytes the shutdown keeps.
+  startupWarmBytes: 268435456
+  # -cache-startup-warm-timeout: the longest /ready answers 503 for the warm-up.
+  startupWarmTimeoutSeconds: 10
+  # preStop sleep (Kubernetes 1.30+ native sleep action) so endpoint removal
+  # reaches clients before the HTTP drain starts; 0 adds none.
+  preStopSleepSeconds: 5
 
 # --- Additional containers/volumes ---
 # Escape hatches for sidecars, init containers, extra config volumes, and

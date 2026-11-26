@@ -61,6 +61,13 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `workload.kind` | `Deployment` | Workload type: `Deployment` or `StatefulSet` |
 | `horizontalPodAutoscaling.enabled` | `false` | Enable HPA (omits `spec.replicas` from workload) |
 | `podDisruptionBudget.enabled` | `false` | Enable PodDisruptionBudget |
+| `terminationGracePeriodSeconds` | `30` | Pod grace period; with `cacheHandover.enabled` raised to at least `preStopSleepSeconds` + 30 (HTTP drain) + `shutdownFlushTimeoutSeconds` + 5 |
+| `lifecycle` | `{}` | Container lifecycle hooks; a non-empty value replaces the preStop sleep `cacheHandover` adds |
+| `cacheHandover.enabled` | `false` | Keep the response cache warm across restarts: flush the memory hot set to the disk cache on SIGTERM and load it back before `/ready`; needs `persistence.enabled` or `extraArgs.disk-cache-path`. See [Rolling restarts with a warm cache](#rolling-restarts-with-a-warm-cache) |
+| `cacheHandover.shutdownFlushTimeoutSeconds` | `15` | `-cache-shutdown-flush-timeout` |
+| `cacheHandover.startupWarmBytes` | `268435456` | `-cache-startup-warm-bytes` (at most half of `-cache-max-bytes` is warmed) |
+| `cacheHandover.startupWarmTimeoutSeconds` | `10` | `-cache-startup-warm-timeout`: the longest `/ready` waits for the warm-up |
+| `cacheHandover.preStopSleepSeconds` | `5` | preStop sleep (native `sleep` action, Kubernetes 1.30+) before SIGTERM; `0` adds none |
 | `systemMetrics.hostProc.enabled` | `false` | Mount five host `/proc` files (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) read-only as `hostPath` volumes and pass `-host-proc-root`, for host-level CPU, memory and PSI metrics. Off by default so the pod passes Pod Security `restricted`; see [Host system metrics](#host-system-metrics-opt-in) |
 | `systemMetrics.hostProc.mountPath` | `/host/proc` | Where those files are mounted, and the value passed to `-host-proc-root` |
 
@@ -92,6 +99,9 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
+cacheHandover:
+  enabled: true
+
 horizontalPodAutoscaling:
   enabled: true
   minReplicas: 2
@@ -105,6 +115,36 @@ resources:
     cpu: 2000m
     memory: 1Gi
 ```
+
+## Rolling restarts with a warm cache
+
+`cacheHandover.enabled=true` keeps each replica's memory cache warm across a restart that keeps its disk (a rollout, a config change, a node drain with a StatefulSet PVC):
+
+1. The preStop sleep (`preStopSleepSeconds`) lets the endpoint removal reach clients before the proxy receives SIGTERM.
+2. On SIGTERM the proxy drains its HTTP server (up to 30 s), then writes its memory hot set to the disk cache within `shutdownFlushTimeoutSeconds`; the chart raises `terminationGracePeriodSeconds` to cover both.
+3. The new process loads that hot set back into memory before `/ready` answers 200, within `startupWarmTimeoutSeconds`; the readiness probe holds the rollout meanwhile, so the next replica restarts only when this one is warm.
+
+Restart one replica at a time so the others keep serving from their caches:
+
+```yaml
+cacheHandover:
+  enabled: true
+persistence:
+  enabled: true
+podDisruptionBudget:   # voluntary evictions (node drains)
+  enabled: true
+  minAvailable: null
+  maxUnavailable: 1
+workload:
+  kind: StatefulSet    # updates one pod at a time; per-pod PVCs
+# For a Deployment with a ReadWriteOnce volume instead:
+#   workload:
+#     deploymentStrategy:
+#       type: RollingUpdate
+#       rollingUpdate: {maxUnavailable: 1, maxSurge: 0}
+```
+
+The hand-over covers a replica that keeps its disk; one that starts with a new disk refills from its peers and VictoriaLogs. What is restored, and the safety rules, are in [Disk cache](../../docs/disk-cache.md#restart-hand-over); the `loki_vl_proxy_cache_restart_*` metrics show each flush and warm-up.
 
 ## Multi-Tenant Setup
 
