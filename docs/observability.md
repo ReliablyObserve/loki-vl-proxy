@@ -934,6 +934,27 @@ is in the [sizing guide](cache-troubleshooting.md#size-the-cache-from-its-evicti
 | `loki_vl_proxy_cache_l2_read_bytes` | histogram | `layer` | encoded bytes of one L2 record read; buckets 256 B to 16 MiB |
 | `loki_vl_proxy_cache_ttl_seconds` | gauge | `class` | base TTL each answer class is stored with (table below) |
 
+Sizing signals, with `-cache-sizing-signals` (off by default; the primary cache only):
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `loki_vl_proxy_cache_ghost_hits_total` | counter | `tier` (`l1_memory`, `l2_disk`), `scenario` (`2x_bytes`, `2x_ttl`) | estimated misses of the tier that twice its entry and byte budgets, or every TTL doubled, would have answered (a ghost cache of keys only; never served) |
+| `loki_vl_proxy_cache_working_set_keys`, `loki_vl_proxy_cache_working_set_bytes` | gauge | `window` (`5m`, `1h`, `24h`) | estimated distinct memory-cache keys looked up or stored in the window, and their answer and key bytes |
+| `loki_vl_proxy_cache_reuse_interval_seconds` | histogram | `layer` | time between two request-level lookups of one key (hit or miss), from the sample (not scaled) |
+| `loki_vl_proxy_cache_hit_bytes_total` | counter | `class`, `tier` (`l1_memory`, `l2_disk`, `l3_peer`) | answer bytes request-level lookups got from each tier |
+| `loki_vl_proxy_cache_requested_bytes_total` | counter | `class` | answer bytes asked for: the hit bytes plus the bytes stored in memory after a full miss |
+| `loki_vl_proxy_cache_sizing_dropped_events_total` | counter | `tier` | sampled events a full buffer dropped; while above 0 the sampled figures are a lower bound |
+
+`class` is the answer class from the key's namespace: `query_range` (also the
+settled steps and windows), `query`, `series`, `labels` (label names, values
+and inventories), `volume` (also `index_stats`), `detected`, `patterns`,
+`other`. The ghosts, the working set and the reuse intervals follow a
+1-in-16 hash sample of the keys, scaled by 16 (the reuse histogram counts
+sampled lookups); lookups reach them through a lossy buffer, so under bursts
+they are a lower bound. Request-level lookups are the full-stack ones
+(`GetWithTier`, `GetSharedWithAge`) the cache tier requests count. The series
+set is fixed: 86 series.
+
 | `reason` | Tier | Cause |
 |---|---|---|
 | `expired` | eviction, L1 and L2 | the TTL ran out (the cleanup sweep, the expiry sweep before a capacity eviction, an L2 expiry delete or the start-up scan) |

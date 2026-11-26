@@ -1,0 +1,77 @@
+id: cache-sizing-signals
+kind: observability
+title: The cache says whether a larger budget or a longer TTL would answer more, how large the working set is, how long until a key is asked again, and its byte hit ratio per answer class
+pending: true
+
+loki: |
+  Loki's caches export hit, miss and request counts; they have no ghost-cache
+  or working-set estimate. This item covers the proxy's own caches and changes
+  no Loki answer.
+
+victorialogs: |
+  Not involved: the signals estimate how many VictoriaLogs reads a different
+  cache size or TTL would save.
+
+proxy: |
+  With -cache-sizing-signals (off by default; the primary cache) the proxy
+  exports loki_vl_proxy_cache_ghost_hits_total{tier,scenario}: misses of the
+  memory or disk tier that twice its entry and byte budgets (2x_bytes) or every
+  TTL doubled (2x_ttl) would have answered, from key-only LRU simulations;
+  loki_vl_proxy_cache_working_set_keys and _bytes{window=5m|1h|24h};
+  loki_vl_proxy_cache_reuse_interval_seconds{layer}; and
+  loki_vl_proxy_cache_hit_bytes_total{class,tier} with
+  loki_vl_proxy_cache_requested_bytes_total{class} (hit bytes plus the bytes
+  stored after a full miss), the byte hit ratio per answer class (8 classes
+  from the key namespace). The ghosts, working set and reuse intervals follow
+  a 1-in-16 hash sample of the keys (SHARDS), scaled by 16, through a lossy
+  buffer to one goroutine (loki_vl_proxy_cache_sizing_dropped_events_total
+  counts drops); the byte counters are exact. Every label comes from a fixed
+  set; the series set is fixed (86). Memory is bounded by construction: at
+  most 16384 sampled keys per ghost and for the working set, 4096 pending
+  misses. docs/cache-troubleshooting.md has the sizing procedure: which ratio
+  to watch and which flag to raise.
+
+implementation:
+  - internal/cache/sizing_signals.go
+  - internal/cache/cache.go
+  - internal/cache/placement_cache.go
+  - internal/cache/disk.go
+  - internal/metrics/cache_sizing_metrics.go
+  - internal/proxy/cache_layer_metrics.go
+  - cmd/proxy/main.go
+
+decisions:
+  - id: sampled-ghosts-off-by-default
+    chosen: 'SHARDS-style spatial sampling (1 key in 16) feeding key-only ghost LRUs, a working-set map and a reuse histogram on one goroutine; exact byte counters; all behind -cache-sizing-signals, off by default'
+    over: ['tracking every key (memory grows with the key space)', 'temporal sampling (every Nth lookup; breaks ghost-cache hit estimates)', 'a HyperLogLog working-set sketch (no byte estimate, no reuse intervals from the same state)', 'on by default (about 50 ns per lookup)']
+    why: |
+      Issue #1767 asks whether a bigger cache or a longer TTL would help, how
+      large the working set is, the reuse interval and the byte hit ratio.
+      Spatial sampling keeps every access of a sampled key, so a ghost LRU of
+      the sample with scaled budgets estimates the hit ratio of a larger cache
+      (the standard SHARDS method); the same sample gives the working set and
+      the reuse intervals. Memory is bounded by construction. The cost per
+      lookup (a key hash, two shared counters, a non-blocking send) is small
+      but measurable, so the signals are a sizing mode, not always on.
+    evidence: |
+      TestSizingGhostDoubleBytes, TestSizingGhostDoubleTTL and TestSizingGhostDisk
+      hold the ghost hits to the exact sampled count of a cycle a larger cache
+      or a longer TTL would answer (and the other scenario to 0);
+      TestSizingWorkingSet and TestSizingReuseInterval hold the windows and the
+      intervals; TestSizingByteHitRatio the byte counters;
+      TestSizingBounded and TestSizingPendingMissesBounded the memory bounds;
+      TestCacheSizingMetricsExporterParityAndCardinality the series set and
+      Prometheus/OTLP agreement.
+    code: [internal/cache/sizing_signals.go, internal/metrics/cache_sizing_metrics.go]
+    tests: [TestSizingEndpointClassForKey, TestSizingOffByDefault, TestSizingByteHitRatio, TestSizingPendingMissesBounded, TestSizingGhostDoubleBytes, TestSizingGhostDoubleTTL, TestSizingGhostDisk, TestSizingWorkingSet, TestSizingReuseInterval, TestSizingBounded, TestSizingCloseStopsTheGoroutine, TestCacheSizingMetricsExporterParityAndCardinality, TestCacheSizingMetricsFromTheProxy, TestBuildRuntime_CacheRetention]
+    quality: |
+      Estimates: the sample is 1 key in 16 (fewer sampled keys, wider error);
+      the ghosts are plain LRU while the real memory tier may use reuse
+      protection; under bursts events drop (counted) and the sampled figures
+      are a lower bound. The byte hit ratio's requested bytes count the store
+      that fills a full miss; a miss never stored counts no bytes.
+    performance:
+      tracked: ['request-level lookups and miss fills with the signals off and on (benchstat)']
+      bound: 'off: one atomic pointer load per lookup and store; on: about 50 ns per lookup, no allocation per lookup'
+      measured: 'see the pull request benchstat tables (Apple M5 Pro, GOMAXPROCS=4, 2026-11-26)'
+      benchmarks: [BenchmarkSizingGetHit, BenchmarkSizingGetHitParallel, BenchmarkSizingMissFill, BenchmarkCache_Get_Hit, BenchmarkCacheGetHitParallel, BenchmarkCacheSetEvictCapacity]
