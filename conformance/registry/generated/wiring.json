@@ -873,6 +873,12 @@
     "numeric-and-response-formatting": [
       "internal/proxy/manual_metric_encoding_test.go"
     ],
+    "observability-metrics-histograms-and-labels": [
+      "cmd/proxy/main_test.go",
+      "internal/metrics/duration_buckets_test.go",
+      "internal/metrics/scrape_assets_test.go",
+      "test/helm/servicemonitor_test.go"
+    ],
     "observability-query-flow": [
       "internal/cache/cache_coverage_test.go",
       "internal/metrics/request_flow_test.go",
@@ -3173,7 +3179,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 748,
+  "registry_items": 749,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3181,6 +3187,7 @@
     ],
     "cmd/proxy/main_test.go": [
       "limits/every-cap-is-a-flag",
+      "observability-metrics-histograms-and-labels",
       "operator-configurable-limits",
       "semantics/query-range-step-alignment",
       "tail-reads-settled-rows"
@@ -3518,11 +3525,17 @@
     "internal/metrics/capability_test.go": [
       "vl-capability-layer"
     ],
+    "internal/metrics/duration_buckets_test.go": [
+      "observability-metrics-histograms-and-labels"
+    ],
     "internal/metrics/query_complexity_test.go": [
       "query-complexity-limits"
     ],
     "internal/metrics/request_flow_test.go": [
       "observability-query-flow"
+    ],
+    "internal/metrics/scrape_assets_test.go": [
+      "observability-metrics-histograms-and-labels"
     ],
     "internal/middleware/coalescer_body_limit_test.go": [
       "limits/label-values-response-cap"
@@ -7050,9 +7063,12 @@
     ],
     "test/e2e-ui/tests/explore-long-range-pieces.spec.ts": [
       "drilldown/long-range-pieces-answer-like-loki"
+    ],
+    "test/helm/servicemonitor_test.go": [
+      "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 833,
+  "tests_with_markers": 836,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7209,5 +7225,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 481
+  "wired_items": 482
 }

@@ -40,6 +40,16 @@ Metrics moved to a dedicated port:
 
 ----
 
+The ServiceMonitor now sets `honorLabels: true`:
+  the proxy's `endpoint` label (query_range, labels, ...) arrives as
+  `endpoint` instead of `exported_endpoint`, and the scrape target's port name
+  no longer overwrites it. Change `exported_endpoint` to `endpoint` in your own
+  queries, or set serviceMonitor.honorLabels=false to keep the old labels.
+  A scrape config you manage yourself needs `honor_labels: true` (Prometheus),
+  or `honorLabels: true` (VMServiceScrape).
+
+----
+
 Peer cache shared token is required by default:
   The chart auto-generated Secret `{{ .Release.Name }}-peer-auth` holding a
   random token used for peer-to-peer cache auth. To rotate, replace, or

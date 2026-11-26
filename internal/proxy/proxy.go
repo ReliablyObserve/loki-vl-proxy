@@ -517,6 +517,9 @@ type Config struct {
 	MetricsTrustProxyHeaders     bool
 	MetricsExportSensitiveLabels bool
 	MetricsMaxConcurrency        int
+	// MetricsDurationBuckets are the bounds, in seconds, of the duration histograms
+	// (-metrics.duration-buckets); empty means metrics.DefaultDurationBuckets.
+	MetricsDurationBuckets []float64
 
 	// LogRequestSampleRate controls per-request access log sampling for successful (2xx)
 	// requests. 0 or 1 logs every request (default). N > 1 logs 1 in every N requests,
@@ -1493,7 +1496,7 @@ func New(cfg Config) (*Proxy, error) {
 		return nil, err
 	}
 	patternsCustom := normalizeCustomPatterns(cfg.PatternsCustom)
-	proxyMetrics := metrics.NewMetricsWithOptions(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels)
+	proxyMetrics := metrics.NewMetricsWithDurationBuckets(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels, cfg.MetricsDurationBuckets)
 	if cfg.Cache != nil {
 		proxyMetrics.SetCacheStatsProvider(cfg.Cache.Stats)
 	}

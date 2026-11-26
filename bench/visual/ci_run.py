@@ -360,11 +360,16 @@ def judge_runtime_repeat(row, repeat, n=RUNTIME_REPEATS):
 
 
 def flush_proxies(state):
-    """POST /admin/cache/flush to both proxies (their admin listener, port + 1, as bench/ab/stack.proxy_command starts
-    them); then wait until both proxies' logs are quiet, so no background work a flush started runs into a capture."""
+    """POST /admin/cache/flush to both proxies, at the URL and with the admin token stack.py recorded for each build
+    (state["flush"], bench/ab/stack.Proxy.flush_target); then wait until both proxies' logs are quiet, so no
+    background work a flush started runs into a capture."""
     for side in ("main", "pr"):
-        url = f"http://127.0.0.1:{state['ports'][side] + 1}/admin/cache/flush"
-        req = urllib.request.Request(url, data=b"", method="POST")
+        target = (state.get("flush") or {}).get(side)
+        if not target:
+            raise OSError(f"no cache flush target recorded for the {side} proxy")
+        url, token = target["url"], target["token"]
+        req = urllib.request.Request(url, data=b"", method="POST",
+                                     headers={"X-Admin-Token": token} if token else {})
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 status = resp.status

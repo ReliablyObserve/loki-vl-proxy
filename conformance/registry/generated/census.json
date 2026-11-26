@@ -1455,6 +1455,7 @@
   "claim_cells": [
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
+    "cmd/proxy/main_test.go | observability-metrics-histograms-and-labels",
     "cmd/proxy/main_test.go | operator-configurable-limits",
     "cmd/proxy/main_test.go | semantics/query-range-step-alignment",
     "cmd/proxy/main_test.go | tail-reads-settled-rows",
@@ -1613,8 +1614,10 @@
     "internal/lokierr/lokierr_test.go | status-500",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/capability_test.go | vl-capability-layer",
+    "internal/metrics/duration_buckets_test.go | observability-metrics-histograms-and-labels",
     "internal/metrics/query_complexity_test.go | query-complexity-limits",
     "internal/metrics/request_flow_test.go | observability-query-flow",
+    "internal/metrics/scrape_assets_test.go | observability-metrics-histograms-and-labels",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/middleware/coalescer_cancel_test.go | semantics/error-coalescing-no-inherited-cancel",
@@ -3661,7 +3664,8 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
-    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki"
+    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
+    "test/helm/servicemonitor_test.go | observability-metrics-histograms-and-labels"
   ],
   "counts": {
     "case_consumers": {
@@ -3673,7 +3677,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 830,
+      "go": 833,
       "playwright": 3
     },
     "page_kinds": {
@@ -3695,7 +3699,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 481
+    "wired_items": 482
   },
   "gates": [
     "A/B shape selection",
