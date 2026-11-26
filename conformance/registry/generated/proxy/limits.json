@@ -190,7 +190,7 @@
       "type": "Duration",
       "default": "cache.DefaultPeerBulkServeMaxPause",
       "unit": "duration",
-      "bounds": "how long a peer bulk restore stream stays paused (every stream of a replica pauses at once on a severe pressure signal: the query or peer-request p99 above 3 times its baseline plus 5 ms, the scheduler latency p99 above 6 times its baseline plus 10 ms, the CPU budget 95% busy, GC above a quarter of it, the live heap above 90% of GOMEMLIMIT, or the disk lookup latency 5 times its baseline plus 20 ms) before it ends with outcome throttled. A paused stream holds one batch in memory and no cache lock or disk transaction",
+      "bounds": "how long a peer bulk restore stream stays paused (every stream of a replica pauses at once on a severe pressure signal: the query p99 above 3 times its baseline plus 5 ms or the peer-request p99 above 4 times its baseline plus 10 ms, the scheduler latency p99 above 6 times its baseline plus 10 ms, the CPU budget 95% busy, GC above a quarter of it, the live heap above 90% of GOMEMLIMIT, or the disk lookup latency 5 times its baseline plus 20 ms) before it ends with outcome throttled. A paused stream holds one batch in memory and no cache lock or disk transaction",
       "error": "none for clients; the requester counts the entries it did not get as peer_busy and keeps the rest",
       "metric": "loki_vl_proxy_peer_cache_bulk_serve_streams_total{outcome=\"throttled\"}; loki_vl_proxy_peer_cache_bulk_serve_pauses_total; loki_vl_proxy_peer_cache_bulk_serve_paused_seconds_total",
       "alert": "none",

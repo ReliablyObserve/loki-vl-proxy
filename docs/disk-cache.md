@@ -244,8 +244,10 @@ replicas that restore:
   as `throttled` and the restoring replica keeps what it received;
 - pressure is read every tick, each signal against its own baseline (learned
   while there was no pressure) and an absolute floor: the p99 of the queries
-  and of the peer requests the replica completed over the last second (above
-  1.5 times the baseline plus 0.5 ms is pressure, 3 times plus 5 ms severe),
+  the replica completed over the last second (above 1.5 times the baseline
+  plus 0.5 ms is pressure, 3 times plus 5 ms severe) and of its peer requests
+  (2 times plus 1 ms, severe 4 times plus 10 ms: reads of large values have a
+  noisy tail of their own),
   the Go scheduler latency p99 over the last second (goroutines waiting for a
   CPU; 3 times plus 1 ms, severe 6 times plus 10 ms), the busy share of the
   process's CPU budget (85%, severe 95%) and its GC share (10%, severe 25%),

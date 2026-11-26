@@ -570,7 +570,9 @@ func (s *bulkSignals) latencies(reasons *[bulkPressureCount]bool, severe *bool, 
 		reason                                          int
 	}{
 		{reqP99, 1.5, 0.5e6, 3, 5e6, &s.reqTail.base, bulkPressureRequests},
-		{peerP99, 1.5, 0.5e6, 3, 5e6, &s.peerTail.base, bulkPressurePeer},
+		// Peer reads of large values have a noisy tail of their own: one
+		// histogram bucket (a factor of two) is not pressure.
+		{peerP99, 2, 1e6, 4, 10e6, &s.peerTail.base, bulkPressurePeer},
 		{diskMean, 2, 2e6, 5, 20e6, &s.diskBase, bulkPressureDisk},
 		{s.schedP99 * 1e9, 3, 1e6, 6, 10e6, &s.schedBase, bulkPressureSched},
 	} {
