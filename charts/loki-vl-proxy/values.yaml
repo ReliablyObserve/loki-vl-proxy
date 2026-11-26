@@ -967,8 +967,10 @@ podLabels: {}
 extraLabels: {}
 
 # --- Lifecycle ---
-# With cacheHandover.enabled the pod gets at least preStopSleepSeconds + 30
-# (the proxy's HTTP drain) + shutdownFlushTimeoutSeconds + 5 seconds.
+# With cacheHandover.enabled the pod gets at least the preStop sleep + 60 (the
+# proxy's HTTP drain: 30 s for the main listener, 30 s for the admin and metrics
+# listeners) + shutdownFlushTimeoutSeconds + 5 seconds. The pod exits as soon as
+# the proxy is done; the grace period is only the upper bound.
 terminationGracePeriodSeconds: 30
 # A non-empty lifecycle replaces the preStop sleep cacheHandover adds.
 # The image is distroless (no shell): use the native sleep action.
@@ -992,15 +994,18 @@ lifecycle: {}
 # StatefulSet updates one pod at a time already.
 cacheHandover:
   enabled: false
-  # -cache-shutdown-flush-timeout.
+  # -cache-shutdown-flush-timeout. Set it here rather than in extraArgs, so the
+  # grace period follows it.
   shutdownFlushTimeoutSeconds: 15
-  # -cache-startup-warm-bytes: at most half of -cache-max-bytes is warmed; also
-  # the most memory-only answer bytes the shutdown keeps.
-  startupWarmBytes: 268435456
+  # -cache-startup-warm-bytes, integer bytes: at most half of -cache-max-bytes
+  # is warmed (128 MiB at the default 256 MiB); also the most memory-only
+  # answer bytes the shutdown keeps.
+  startupWarmBytes: 134217728
   # -cache-startup-warm-timeout: the longest /ready answers 503 for the warm-up.
   startupWarmTimeoutSeconds: 10
-  # preStop sleep (Kubernetes 1.30+ native sleep action) so endpoint removal
-  # reaches clients before the HTTP drain starts; 0 adds none.
+  # preStop sleep (the native sleep action, rendered on Kubernetes 1.30+ only)
+  # so endpoint removal reaches clients before the HTTP drain starts; 0 adds
+  # none.
   preStopSleepSeconds: 5
 
 # --- Additional containers/volumes ---

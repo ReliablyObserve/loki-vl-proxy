@@ -34,14 +34,14 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true"})
 		args := containerArgs(pod)
-		for _, want := range []string{"-cache-shutdown-flush-timeout=15s", "-cache-startup-warm-bytes=268435456", "-cache-startup-warm-timeout=10s", "-disk-cache-path="} {
+		for _, want := range []string{"-cache-shutdown-flush-timeout=15s", "-cache-startup-warm-bytes=134217728", "-cache-startup-warm-timeout=10s", "-disk-cache-path="} {
 			if !strings.Contains(args, want) {
 				t.Fatalf("args %s: missing %s", args, want)
 			}
 		}
-		// preStop 5 + HTTP drain 30 + flush 15 + close 5.
-		if got := pod["terminationGracePeriodSeconds"]; got != 55 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want 55", got)
+		// preStop 5 + HTTP drain 30 + 30 + flush 15 + close 5.
+		if got := pod["terminationGracePeriodSeconds"]; got != 85 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 85", got)
 		}
 		preStop, _ := container(pod)["lifecycle"].(map[string]any)["preStop"].(map[string]any)
 		if sleep, _ := preStop["sleep"].(map[string]any); sleep["seconds"] != 5 {
@@ -67,6 +67,21 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 			t.Fatalf("preStop %v, want the configured lifecycle", preStop)
 		}
 	})
+	t.Run("no preStop sleep before Kubernetes 1.30", func(t *testing.T) {
+		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true"}, "--kube-version", "1.29.0")
+		if _, ok := container(pod)["lifecycle"]; ok {
+			t.Fatal("preStop sleep rendered for Kubernetes 1.29")
+		}
+		if got := pod["terminationGracePeriodSeconds"]; got != 80 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 80 without the sleep", got)
+		}
+	})
+	t.Run("a configured sleep counts", func(t *testing.T) {
+		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true", "lifecycle.preStop.sleep.seconds=20"})
+		if got := pod["terminationGracePeriodSeconds"]; got != 100 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 100 (20 + 60 + 15 + 5)", got)
+		}
+	})
 	t.Run("needs a disk cache", func(t *testing.T) {
 		out, err := helmTemplate(t, []string{"cacheHandover.enabled=true"})
 		if err == nil || !strings.Contains(out, "cacheHandover.enabled=true needs the disk cache") {
@@ -78,7 +93,7 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 	})
 }
 
-func helmTemplate(t *testing.T, sets []string) (string, error) {
+func helmTemplate(t *testing.T, sets []string, extra ...string) (string, error) {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
@@ -89,13 +104,14 @@ func helmTemplate(t *testing.T, sets []string) (string, error) {
 	for _, s := range sets {
 		args = append(args, "--set", s)
 	}
+	args = append(args, extra...)
 	out, err := exec.Command("helm", args...).CombinedOutput()
 	return string(out), err
 }
 
-func renderPodSpec(t *testing.T, sets []string) map[string]any {
+func renderPodSpec(t *testing.T, sets []string, extra ...string) map[string]any {
 	t.Helper()
-	out, err := helmTemplate(t, sets)
+	out, err := helmTemplate(t, sets, extra...)
 	if err != nil {
 		t.Fatalf("helm template: %v\n%s", err, out)
 	}

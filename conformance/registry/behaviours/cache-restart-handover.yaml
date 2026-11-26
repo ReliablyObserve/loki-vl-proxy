@@ -58,8 +58,10 @@ proxy: |
   first answers, and the other replica answers the same data.
 
   Helm (TestCacheHandoverChartOptions): cacheHandover.enabled=true renders the
-  three flags, a grace period of at least preStop + 30 s drain + flush + 5 s
-  (a larger configured one is kept), a preStop sleep unless lifecycle is set,
+  three flags, a grace period of at least the preStop sleep + 60 s of HTTP
+  drain (main, then admin and metrics listeners) + flush + 5 s (a larger
+  configured one is kept), a preStop sleep on Kubernetes 1.30+ unless
+  lifecycle is set (a configured sleep counts toward the grace period),
   lets extraArgs override each flag and refuses to render without a disk
   cache.
 

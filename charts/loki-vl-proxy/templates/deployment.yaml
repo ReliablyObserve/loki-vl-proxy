@@ -388,7 +388,7 @@ spec:
           lifecycle:
             {{- toYaml . | nindent 12 }}
           {{- else }}
-          {{- if and .Values.cacheHandover.enabled (gt (int .Values.cacheHandover.preStopSleepSeconds) 0) }}
+          {{- if and .Values.cacheHandover.enabled (gt (int .Values.cacheHandover.preStopSleepSeconds) 0) (semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version) }}
           lifecycle:
             preStop:
               sleep:

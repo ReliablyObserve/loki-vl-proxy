@@ -302,15 +302,27 @@ tenancy is off; it refuses to start then (validateTenantLimitsNeedTenancy). */ -
 
 {{/*
 terminationGracePeriodSeconds: the configured value, raised with the restart
-hand-over on to cover the preStop sleep, the proxy's 30 s HTTP drain, the
-shutdown flush and 5 s for the disk cache to close.
+hand-over on to cover the preStop sleep (the chart's, or a configured
+lifecycle.preStop.sleep), the proxy's HTTP drain of the main listener (30 s)
+and of the admin and metrics listeners (30 s), the shutdown flush and 5 s for
+the disk cache to close. A configured exec or httpGet preStop is not counted.
 */}}
+{{- define "loki-vl-proxy.preStopSleepSeconds" -}}
+{{- if .Values.lifecycle -}}
+{{- $sleep := dig "preStop" "sleep" "seconds" 0 .Values.lifecycle -}}
+{{- int $sleep -}}
+{{- else if semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version -}}
+{{- int .Values.cacheHandover.preStopSleepSeconds -}}
+{{- else -}}
+0
+{{- end -}}
+{{- end -}}
+
 {{- define "loki-vl-proxy.terminationGracePeriodSeconds" -}}
 {{- $grace := int .Values.terminationGracePeriodSeconds -}}
 {{- if .Values.cacheHandover.enabled -}}
-{{- $preStop := 0 -}}
-{{- if not .Values.lifecycle -}}{{- $preStop = int .Values.cacheHandover.preStopSleepSeconds -}}{{- end -}}
-{{- $need := add $preStop 30 (int .Values.cacheHandover.shutdownFlushTimeoutSeconds) 5 -}}
+{{- $preStop := int (include "loki-vl-proxy.preStopSleepSeconds" .) -}}
+{{- $need := add $preStop 60 (int .Values.cacheHandover.shutdownFlushTimeoutSeconds) 5 -}}
 {{- if gt (int $need) $grace -}}{{- $grace = int $need -}}{{- end -}}
 {{- end -}}
 {{- $grace -}}
