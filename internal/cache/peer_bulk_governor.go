@@ -417,9 +417,9 @@ type bulkSignals struct {
 	prevGC, prevCPU, prevIdle float64
 	reqTail, peerTail         tailWindow
 	prevDiskN, prevDiskNs     int64
-	schedMins                 [150]float64 // 30 s of tick p99s, a ring
+	schedRing                 [tailTicks][]uint64 // the last second's deltas
 	schedAt                   int
-	schedSeen                 int
+	schedP99, schedBase       float64 // seconds; the base is the EWMA on clean ticks
 	diskBase                  float64 // EWMA of clean ticks' mean disk lookup latency, ns
 	started                   bool
 }
@@ -452,41 +452,47 @@ func (s *bulkSignals) read() (reasons [bulkPressureCount]bool, severe bool) {
 	first := !s.started
 	s.started = true
 
-	// Scheduler latency p99 of this tick.
+	// Scheduler latency p99 over the last second (5 ticks), against its p99
+	// on clean ticks: a tick alone is too noisy on a busy replica.
 	if s.samples[sigSched].Value.Kind() == metrics.KindFloat64Histogram {
 		h := s.samples[sigSched].Value.Float64Histogram()
 		if len(s.prevSched) != len(h.Counts) {
 			s.prevSched = make([]uint64, len(h.Counts))
+			for i := range s.schedRing {
+				s.schedRing[i] = make([]uint64, len(h.Counts))
+			}
 			copy(s.prevSched, h.Counts)
 		} else {
-			var total uint64
+			d := s.schedRing[s.schedAt]
 			for i, c := range h.Counts {
-				total += c - s.prevSched[i]
+				d[i] = c - s.prevSched[i]
 			}
-			if total >= 20 {
+			s.schedAt = (s.schedAt + 1) % len(s.schedRing)
+			copy(s.prevSched, h.Counts)
+			var total uint64
+			for _, r := range s.schedRing {
+				for _, c := range r {
+					total += c
+				}
+			}
+			if total >= 100 {
 				target, seen := total-total/100, uint64(0)
-				p99 := 0.0
-				for i, c := range h.Counts {
-					seen += c - s.prevSched[i]
+				p99 := h.Buckets[len(h.Buckets)-2]
+			find:
+				for i := range h.Counts {
+					for _, r := range s.schedRing {
+						seen += r[i]
+					}
 					if seen >= target {
 						p99 = h.Buckets[i+1]
-						break
+						break find
 					}
 				}
 				if math.IsInf(p99, 1) {
 					p99 = h.Buckets[len(h.Buckets)-2]
 				}
-				base := p99
-				for _, m := range s.schedMins[:min(s.schedSeen, len(s.schedMins))] {
-					base = min(base, m)
-				}
-				s.schedMins[s.schedAt] = p99
-				s.schedAt = (s.schedAt + 1) % len(s.schedMins)
-				s.schedSeen++
-				reasons[bulkPressureSched] = p99 > 0.0005 && p99 > 2*base
-				severe = severe || (p99 > 0.005 && p99 > 4*base)
+				s.schedP99 = p99
 			}
-			copy(s.prevSched, h.Counts)
 		}
 	}
 
@@ -565,6 +571,7 @@ func (s *bulkSignals) latencies(reasons *[bulkPressureCount]bool, severe *bool, 
 		{reqP99, 1.5, 0.5e6, 3, 5e6, &s.reqTail.base, bulkPressureRequests},
 		{peerP99, 1.5, 0.5e6, 3, 5e6, &s.peerTail.base, bulkPressurePeer},
 		{diskMean, 2, 2e6, 5, 20e6, &s.diskBase, bulkPressureDisk},
+		{s.schedP99 * 1e9, 3, 1e6, 6, 10e6, &s.schedBase, bulkPressureSched},
 	} {
 		if sig.value <= 0 {
 			continue
@@ -584,6 +591,7 @@ func (s *bulkSignals) latencies(reasons *[bulkPressureCount]bool, severe *bool, 
 		s.reqTail.base = ewma(s.reqTail.base, reqP99)
 		s.peerTail.base = ewma(s.peerTail.base, peerP99)
 		s.diskBase = ewma(s.diskBase, diskMean)
+		s.schedBase = ewma(s.schedBase, s.schedP99*1e9)
 	}
 	return false
 }
