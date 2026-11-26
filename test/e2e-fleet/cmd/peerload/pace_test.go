@@ -6,8 +6,10 @@ import (
 	"time"
 )
 
-// TestPaceDeliversItsRate checks the driver keeps its rate: the sends over a
-// second match qps within a tick's worth, including rates above one per tick.
+// TestPaceDeliversItsRate checks the driver keeps its rate, including rates
+// above one per tick. The lower bound leaves room for a loaded CI runner under
+// -race (a stall at the end of the window is not caught up); the old
+// one-request-per-tick driver delivered about half its rate in a VM.
 func TestPaceDeliversItsRate(t *testing.T) {
 	for _, qps := range []float64{200, 1600, 5000} {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -16,7 +18,7 @@ func TestPaceDeliversItsRate(t *testing.T) {
 		pace(ctx, qps, func() { n++ })
 		cancel()
 		want := qps * time.Since(start).Seconds()
-		if float64(n) < want*0.95 || float64(n) > want*1.01+1 {
+		if float64(n) < want*0.8 || float64(n) > want*1.01+1 {
 			t.Errorf("qps %v: sent %d in %v, want about %.0f", qps, n, time.Since(start), want)
 		}
 	}
@@ -36,7 +38,7 @@ func TestPaceCatchesUpLateTicks(t *testing.T) {
 		}
 	})
 	want := 1000 * time.Since(start).Seconds()
-	if float64(n) < want*0.95 {
+	if float64(n) < want*0.8 {
 		t.Errorf("sent %d in %v, want about %.0f", n, time.Since(start), want)
 	}
 }

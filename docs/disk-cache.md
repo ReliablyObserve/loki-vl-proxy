@@ -331,12 +331,14 @@ then decides, and the disk lookup latency signal slows the stream when its
 reads compete with queries.
 
 Measured under query load (`TestFleet_PeerRestoreUnderQueryLoad`, opt-in with
-`LVP_PEER_LOAD=1`, 2026-11-26): an 8 vCPU VM shared with other work,
+`LVP_PEER_LOAD=1`, 2026-11-26 and 27): an 8 vCPU VM (shared with other work
+unless noted as idle),
 VictoriaLogs v1.54.0, the two serving replicas limited to one CPU each and
 holding a 2 GiB `s2` fixture (720 MiB stored); a load driver on the compose
 network sends cached `query_range` hits and `/_cache/get` to one serving
 replica, VictoriaLogs-backed misses and hits to the other, and restores run
-first by one replica, then by two at once, between three 45 s control phases.
+first by one replica, then by two at once, between three control phases (45 s,
+or 120 s where noted).
 The pass bound, fixed before the runs: for each class, the p50, p95 and p99 of
 the requests sent while a stream was served are at most the worst control
 phase's times 1.10 plus 1 ms, with no errors.
