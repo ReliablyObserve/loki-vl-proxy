@@ -77,9 +77,11 @@ func TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers(t *testing.T) {
 	}
 
 	// Rows older than -max-metadata-cache-freshness (24h), so every listing
-	// is settled and kept like the peer cache proof's fixture.
+	// is settled and kept, and older than the peer cache proof's fixture
+	// (26-34h), whose windows they must stay out of: every request here is
+	// scoped by its own service names anyway.
 	run := fmt.Sprintf("%d", time.Now().UnixNano())
-	end := time.Now().Add(-25 * time.Hour).Truncate(time.Hour)
+	end := time.Now().Add(-49 * time.Hour).Truncate(time.Hour)
 	start := end.Add(-3 * time.Hour)
 	namespaces := []string{"lm-" + run + "-x", "lm-" + run + "-y"}
 	apps := []string{"lm-" + run + "-first-a", "lm-" + run + "-first-c"}
