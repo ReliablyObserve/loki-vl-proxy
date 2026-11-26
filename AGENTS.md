@@ -618,6 +618,15 @@ with Loki is the model: `conformance/scripts/perf_evidence.py --quality-summary`
   versions of the proxy ("regression", "no longer", "improved from") or explain why a past build was slower; that
   history belongs to pull requests and the changelog.
 
+## Workflow steps fail when their commands fail
+
+A workflow step that pipes a command into `tee` or `tail` runs with `shell: bash`, which GitHub starts with
+`-eo pipefail`. A step with no shell gets `bash -e`, and its pipeline exits with the status of `tee` or `tail`, so
+the step passes when the tests behind it fail. Leave pipelines into early-exit consumers (`head`, `grep -q`) under
+the default shell, because pipefail turns their writer's SIGPIPE into a failure.
+`TestWorkflowStepsDoNotMaskPipeFailures` (`test/ciworkflows`) holds the rule. Its allowlist names the steps that
+still hide failures on main. Each entry is removed in the same pull request that fixes that step's failures.
+
 ## Production investigations
 
 Cache investigations and operational checks must be reproducible in a deployed
