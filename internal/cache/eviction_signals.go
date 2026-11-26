@@ -49,9 +49,8 @@ const (
 	// RejectionTTLBelowMinimum: an L2 write with a TTL under -disk-cache-min-ttl
 	// (or no TTL at all).
 	RejectionTTLBelowMinimum
-	// RejectionSourceExpired: the value's source deadline passed before it was
-	// stored (a peer or disk copy, or a queued L2 write that expired before its
-	// flush).
+	// RejectionSourceExpired: an L1 copy (from a peer or the disk) whose source
+	// deadline passed before it was stored.
 	RejectionSourceExpired
 	// RejectionShadowBudget: no room in the L1 non-owner shadow budget.
 	RejectionShadowBudget

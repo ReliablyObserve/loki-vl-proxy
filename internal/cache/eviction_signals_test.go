@@ -361,6 +361,48 @@ func TestEvictionSignalsPlacementAndPromotion(t *testing.T) {
 	assertSignalsBalance(t, c, dc)
 }
 
+// A record the codec cannot encode is refused at flush, and the record it was
+// to replace leaves as invalidated on the next flush.
+//
+// conformance: cache-eviction-signals
+func TestEvictionSignalsDiskEncodeFailed(t *testing.T) {
+	dc := policyDisk(t, DiskCacheConfig{})
+	dc.Set("query:a", []byte("v"), time.Hour)
+	dc.Flush()
+	dc.codec = diskCodec(255)
+	dc.Set("query:a", []byte("v2"), time.Hour)
+	dc.Flush()
+	dc.Flush()
+	s := signalsL2(dc, LayerLoki)
+	if s.Rejections[RejectionEncodeFailed] != 1 || s.Evictions[EvictionInvalidated] != 1 {
+		t.Fatalf("encode failure %+v / %+v", s.Rejections, s.Evictions)
+	}
+	if _, ok := dc.Get("query:a"); ok {
+		t.Fatal("the old record outlived its refused replacement")
+	}
+	assertSignalsBalance(t, nil, dc)
+}
+
+// A non-owner's write keeps only a memory shadow: the disk counts a
+// not_replica skip and admits nothing.
+//
+// conformance: cache-eviction-signals
+func TestEvictionSignalsNotReplicaSkip(t *testing.T) {
+	c, pc := placementLocal(t, 100, 10000)
+	dc := policyDisk(t, DiskCacheConfig{})
+	c.SetL2(dc)
+	key := placementKeys(pc, "b:3100", 1)[0]
+	c.SetWithTTL(key, []byte("value"), time.Minute)
+	layer := LayerForKey(key)
+	if got := signalsL2(dc, layer).Rejections[RejectionNotReplica]; got != 1 {
+		t.Fatalf("not_replica %d", got)
+	}
+	if s := dc.LayerStats()[layer].L2; s.Admissions != 0 || s.Rejections != 0 {
+		t.Fatalf("disk admitted or refused a shadow: %+v", s)
+	}
+	assertSignalsBalance(t, c, dc)
+}
+
 // conformance: cache-eviction-signals
 func TestEvictionSignalsPeerPromotion(t *testing.T) {
 	pool := newCapacityFleet(t, 1, 20, capacityFleetBytes)
