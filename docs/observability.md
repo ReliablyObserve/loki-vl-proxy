@@ -913,6 +913,70 @@ sum by (layer) (rate(loki_vl_proxy_cache_layer_disk_encoded_write_bytes_total[5m
 sum by (layer, tier) (rate(loki_vl_proxy_cache_layer_evictions_total[5m]))
 ```
 
+### Why entries leave or never enter
+
+These families break the layer counters down by cause. They carry `layer`
+(`loki`, `vl`, `unknown`) and `tier` (`l1_memory`, `l2_disk`) plus `reason`,
+summed over the cache components, with no tenant, query or key values: a
+fixed set of about 480 series per replica. They are read from atomics without
+the cache's locks, in both Prometheus scrape and OTLP push. How to act on them
+is in the [sizing guide](cache-troubleshooting.md#size-the-cache-from-its-eviction-signals).
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `loki_vl_proxy_cache_evictions_total` | counter | `layer`, `tier`, `reason` | entries that left a tier; `expired` + `capacity` equals `loki_vl_proxy_cache_layer_evictions_total` summed over components |
+| `loki_vl_proxy_cache_admission_rejections_total` | counter | `layer`, `tier`, `reason` | values a tier did not store; every reason but `memory_only` and `not_replica` sums to `loki_vl_proxy_cache_layer_rejections_total` |
+| `loki_vl_proxy_cache_entry_age_at_eviction_seconds` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | time since the value entered the tier on this replica; buckets 1s to 24h |
+| `loki_vl_proxy_cache_entry_hits_at_eviction` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | lookups the entry answered from that tier; buckets 0 to 100 |
+| `loki_vl_proxy_cache_promotions_total` | counter | `layer`, `from`, `to` | lower-tier hits copied up: `l2_disk` or `l3_peer` to `l1_memory`, and `l3_peer` hits handed to the local `l2_disk` queue |
+| `loki_vl_proxy_cache_demotions_total` | counter | `layer`, `from` (`l1_memory`), `to` (`l2_disk`), `result` | L1 capacity evictions of entries read at least once handed to L2 by `-cache-demote-on-evict`: `retained` (L2 held a current copy and keeps it newest in its recency order) or `written` (L2 held none and queued the value with the TTL it had left); always 0 with the flag off |
+| `loki_vl_proxy_cache_l2_read_seconds` | histogram | `layer` | one L2 lookup that read a record from bbolt: the index lock, the read and the decode; hits from the pending write queue are not reads; buckets 50µs to 500ms |
+| `loki_vl_proxy_cache_l2_read_bytes` | histogram | `layer` | encoded bytes of one L2 record read; buckets 256 B to 16 MiB |
+| `loki_vl_proxy_cache_ttl_seconds` | gauge | `class` | base TTL each answer class is stored with (table below) |
+
+| `reason` | Tier | Cause |
+|---|---|---|
+| `expired` | eviction, L1 and L2 | the TTL ran out (the cleanup sweep, the expiry sweep before a capacity eviction, an L2 expiry delete or the start-up scan) |
+| `capacity` | eviction, L1 and L2 | least recently used when a new entry needed room: `-cache-max`, `-cache-max-bytes`, the non-owner shadow tenth, `-disk-cache-max-entries`, `-disk-cache-max-bytes`, `-disk-cache-max-index-bytes` |
+| `replaced` | eviction, L1 and L2 | a newer value for the same key took its place |
+| `invalidated` | eviction, L1 and L2 | L1: an explicit invalidation; L2: a record whose newer write could not be stored, or that could not be read back |
+| `flush` | eviction, L1 and L2 | a purge of the tier |
+| `single_entry_budget` | rejection, L1 | value above a tenth of `-cache-max-bytes` |
+| `source_expired` | rejection, L1 | a peer or disk copy whose source deadline passed before it was stored |
+| `shadow_budget` | rejection, L1 | no room in the non-owner shadow tenth |
+| `too_large` | rejection, L2 | value above the L2 entry limit (a tenth of `-cache-max-bytes`) or `-disk-cache-max-bytes` |
+| `queue_full` | rejection, L2 | no room in `-disk-cache-max-buffer-bytes` |
+| `ttl_below_minimum` | rejection, L2 | TTL under `-disk-cache-min-ttl` |
+| `capacity` | rejection, L2 | a queued write that lost to entries used after it was queued when the flush did not fit |
+| `invalid_key`, `encode_failed`, `closed` | rejection, L2 | an empty or over-long key, a record that could not be encoded, a write after shutdown began |
+| `memory_only`, `not_replica` | L2 placement skip | a memory-only answer (including patterns entries), a non-owner shadow copy; not refused writes |
+
+The age and hits histograms observe expiry and capacity evictions only. L1
+counts a hit when its deferred LRU promotion is applied; the promotion buffer
+drops under bursts and `Peek` does not promote, so L1 hits are a lower bound.
+An L2 record found by the start-up scan has no known admission time and is
+counted by reason without an age, as is an L1 entry the restart warm-up
+admitted. Demotions happen only with `-cache-demote-on-evict` (off by
+default): L1 and L2 copies are otherwise written together, so an L1 eviction
+leaves the L2 copy where it was.
+
+| `class` | Cache | TTL |
+|---|---|---|
+| `query_range`, `query` | Loki answer cache | 5m fixed |
+| `labels`, `label_values`, `series`, `detected_fields`, `detected_field_values`, `detected_labels`, `index_stats`, `volume`, `volume_range` | Loki answer cache | fixed per endpoint (5m, 5m, 30s, 90s, 90s, 90s, 10s, 10s, 10s) |
+| `patterns` | Loki answer cache | kept until replaced (about 100 years) |
+| `labels_handler`, `label_values_handler` | label list and value caches | `-labels-cache-ttl` (5m when 0) |
+| `label_inventory` | label inventory | 5m fixed |
+| `metadata_negative` | empty label lists | max(30s, `-disk-cache-min-ttl`, `-peer-write-through-min-ttl`) |
+| `query_range_window_recent`, `query_range_window_history` | split `query_range` windows | `-query-range-recent-cache-ttl` (windows within `-query-range-freshness`), `-query-range-history-cache-ttl` |
+| `query_range_extent` | settled buckets and steps | `-query-range-extent-cache-ttl` |
+| `parse_risk_probe` | parse-risk and level-presence verdicts | `-parse-risk-probe-cache-ttl` |
+
+The label list, label value, detected field and detected label handler caches
+scale their base TTL with the request window: x3 up to 6h, x10 up to 24h, x20
+up to 7d, never above 1h, and 1h beyond 7d. The Loki answer cache keeps the
+fixed TTL.
+
 ### Query-Range Windowing Metrics
 
 These are the primary signals for long-range query performance and backend protection:

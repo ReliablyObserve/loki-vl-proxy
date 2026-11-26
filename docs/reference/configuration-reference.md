@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (302), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (304), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -10,9 +10,11 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
+| `-cache-demote-on-evict` | bool | `false` | `extraArgs.cache-demote-on-evict` | When a capacity eviction removes an entry read at least once from memory, keep its disk copy newest in the disk cache's recency order, or write it to the disk cache with the TTL it has left when the disk holds none (never a longer TTL; never memory-only, patterns or non-owner shadow entries). Needs -disk-cache-path |
 | `-cache-disabled` | bool | `false` | `extraArgs.cache-disabled` | Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement) |
 | `-cache-max` | int | `10000` | `extraArgs.cache-max` | Maximum cache entries |
 | `-cache-max-bytes` | int | `defaultCacheMaxBytes` | `extraArgs.cache-max-bytes` | Maximum in-memory L1 cache size in bytes |
+| `-cache-reuse-protection-percent` | int | `0` | `extraArgs.cache-reuse-protection-percent` | Share (percent, 0-90) of the memory caches' entry and byte budgets kept for entries read again since they were stored: under capacity pressure an entry stored but not read again is evicted first, so a one-time flood does not push out reused answers. Never changes a TTL or which answer is served; expiry evictions are unaffected. 0 (default) is plain LRU; 20 is the measured recommendation where capacity evictions of reused entries or one-time floods are seen |
 | `-cache-shutdown-flush-timeout` | duration | `0` | `extraArgs.cache-shutdown-flush-timeout` | Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds |
 | `-cache-startup-peer-restore` | bool | `true` | `extraArgs.cache-startup-peer-restore` | With nothing local to warm from (no restart hand-over, and a disk cache that held no record at start, for example a new volume, or no disk cache), the start-up warm-up pulls the entries this replica owns or replicates from its peers in one streamed, checksummed transfer per peer before /ready answers 200: within -cache-startup-warm-bytes and -cache-startup-warm-timeout, so only when -cache-startup-warm-bytes is set and a peer cache is configured. Peers of an older build, or that do not answer, are skipped at once. false never restores from peers |
 | `-cache-startup-peer-restore-concurrency` | int | `cache.DefaultPeerRestoreConcurrency` | `extraArgs.cache-startup-peer-restore-concurrency` | Peers the start-up peer restore streams from at once (-cache-startup-peer-restore). Each stream holds at most one batch (256 entries or about 4 MiB) in memory |

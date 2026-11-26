@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **11 proven**, 24 partial, 3 gaps, 0 waived, 14 with no state recorded
+- Behaviour and feature items: **11 proven**, 26 partial, 3 gaps, 0 waived, 15 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -28,7 +28,9 @@ Proven in part; the rest is named in the item's cases.
 |---|---|---:|---:|---|
 | `drilldown-service-landing` — Logs Drilldown ranks services on the landing page | drilldown | 1 / 5 | 1 | 1/3 deltas proven. |
 | `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | explore | 9 / 17 | 7 | 3/6 deltas proven. |
+| `cache-eviction-signals` — The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has | — | 0 / 0 | 4 | Unit-proven in internal/cache, internal/metrics and internal/proxy (every reason, the invariant with the layer counters  |
 | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | — | 0 / 0 | 13 | Unit-proven in internal/cache and internal/proxy; the stack proof is TestFleet_RestartHandoverKeepsTheResponseCacheWarm  |
+| `cache-reuse-retention` — Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer | — | 0 / 0 | 3 | Unit-proven in internal/cache, internal/metrics and cmd/proxy: the segment invariants over random and concurrent operati |
 | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 6 / 6 | 10 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
 | `json-metric-unparsed-line-lookup-once` — A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests | — | 0 / 0 | 1 | Unit-proven against a fake VictoriaLogs (internal/proxy/ ordered_json_unparsed_row_test.go). The stack check is the per- |
 | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 15 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |
@@ -86,6 +88,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 6 | — |
 | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | — | 0 / 0 | 10 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
+| `release-image-pinned-by-digest` — The chart can pin the released image by digest, and each release publishes that digest as a file | — | 0 / 0 | 1 | — |
 | `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | — | 0 / 0 | 2 | — |
 | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 6 | — |
 | `tail-reads-settled-rows` — A live tail reads only rows VictoriaLogs has made searchable, so no line of a stream is skipped | — | 0 / 0 | 3 | — |

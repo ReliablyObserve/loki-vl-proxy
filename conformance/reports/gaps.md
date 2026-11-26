@@ -70,8 +70,10 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 11 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
 | semantics | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | 3 | 2 | unknown |
+| observability | `cache-eviction-signals` — The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has | 8 | 4 | partial |
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 12 | unknown |
 | resource_control | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | 10 | 13 | partial |
+| performance | `cache-reuse-retention` — Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer | 7 | 3 | partial |
 | semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 2 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 12 | 3 | gap |
@@ -103,6 +105,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | 3 | 1 | partial |
 | semantics | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | 8 | 10 | unknown |
 | observability | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | 14 | 8 | unknown |
+| semantics | `release-image-pinned-by-digest` — The chart can pin the released image by digest, and each release publishes that digest as a file | 4 | 1 | unknown |
 | semantics | `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | 4 | 2 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 13 | 13 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |

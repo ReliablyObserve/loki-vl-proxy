@@ -197,6 +197,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Go test cache summary
+        shell: bash
         if: always()
         env:
           RESTORED_FROM: ${{ steps.gocache.outputs.cache-matched-key }}
@@ -300,6 +301,7 @@ jobs:
           python3 scripts/ci/merge_unit_shards.py --shards-dir shards --out-dir merged --shards "$SHARDS" ${complete[@]+"${complete[@]}"}
 
       - name: Coverage report
+        shell: bash
         run: go tool cover -func=merged/coverage.out | tail -1
 
       - name: Upload coverage
@@ -708,6 +710,7 @@ jobs:
             | tee bench-results.txt
 
       - name: Run label/field scale benchmarks (regression guard)
+        shell: bash
         run: |
           go test ./internal/proxy/ -run "^$" -bench 'BenchmarkProxy_Label(Keys|Values)_Scale_' -benchmem -count=1 -benchtime=200ms \
             | tee bench-label-fields.txt
@@ -780,6 +783,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run patterns scale benchmarks (regression guard)
+        shell: bash
         run: |
           go test ./internal/proxy/ -run "^$" -bench 'BenchmarkProxy_Patterns_Scale_' -benchmem -count=1 -benchtime=200ms \
             | tee bench-patterns.txt
@@ -848,6 +852,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run cache benchmarks (regression guard)
+        shell: bash
         run: |
           go test ./internal/cache -run "^$" -bench 'BenchmarkCache_(Get_Hit|SetWithTTL|TopHotKeys)$|BenchmarkPeerCache_(ThreePeers_ShadowCopyHit|ReadAheadCycle_Bounded)$' -benchmem -count=1 -benchtime=200ms \
             | tee bench-cache.txt
@@ -933,6 +938,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run stats translation benchmarks (regression guard)
+        shell: bash
         run: |
           go test ./internal/proxy/ -run "^$" -bench 'BenchmarkStatsTranslation_' -benchmem -count=1 -benchtime=200ms \
             | tee bench-stats-translation.txt
@@ -984,6 +990,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run load tests
+        shell: bash
         run: |
           go test ./internal/proxy/ -run "TestLoad" -v -timeout=120s -count=1 \
             | tee load-results.txt
@@ -1086,6 +1093,7 @@ jobs:
         run: python3 -m unittest discover -s bench/parity/tests
 
       - name: Registry report for this change
+        shell: bash
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -1554,6 +1562,7 @@ jobs:
           cache: true
 
       - name: Stress tests (concurrency + race detector)
+        shell: bash
         run: |
           go test -tags=stress -race -parallel=16 -timeout=120s -v ./internal/proxy/ \
             -run '^(TestTranslation|TestCoalescer|TestRangeMetric)' \
@@ -1581,6 +1590,7 @@ jobs:
           cache: true
 
       - name: Memory-leak tests (bounded heap growth + race detector)
+        shell: bash
         run: |
           go test -tags=memleak -race -run 'TestMemLeak_' -timeout=10m -v ./internal/proxy/ \
             | tee memleak-results.txt
