@@ -126,7 +126,9 @@ func TestFleet_PeerRestoreUnderQueryLoad(t *testing.T) {
 	stopStats := stats.poll(prefix)
 
 	phases := []loadPhase{}
-	mark := func(name string, from time.Time) { phases = append(phases, loadPhase{name: name, from: from, to: time.Now()}) }
+	mark := func(name string, from time.Time) {
+		phases = append(phases, loadPhase{name: name, from: from, to: time.Now()})
+	}
 	time.Sleep(10 * time.Second) // the hits become cached
 	from := time.Now()
 	time.Sleep(control)
