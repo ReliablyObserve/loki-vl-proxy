@@ -143,7 +143,10 @@ func (p *Proxy) slidingWindowStatsApplies(ctx context.Context, spec statsCompatS
 // other failure is the client's answer, as it is for the recurrence: the heavier
 // path is not tried against a backend that is failing.
 func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, statsAggFunc, field, manualFunc string, fetchStart, start, end time.Time, step, window, bucket time.Duration, bucketsOK bool, sampleShift time.Duration) bool {
-	if _, ranked := rangeTopKFromContext(ctx); !ranked || statsAggFunc == "" || window == step || requestKeepsPartialSeries(ctx) {
+	// A tumbling window (range == step) of a query without a parser stage is one grid already; with a parser stage
+	// the bucket read is the route such a ranking took before the window grids read parser stages, and the stats
+	// extent cache reuses it, so it is tried first there too.
+	if _, ranked := rangeTopKFromContext(ctx); !ranked || statsAggFunc == "" || window == step && !queryUsesParserStages(spec.BaseQuery) || requestKeepsPartialSeries(ctx) {
 		return false
 	}
 	unranked := context.WithValue(ctx, rangeTopKKey{}, rangeTopK{})
