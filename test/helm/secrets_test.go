@@ -122,8 +122,8 @@ func TestSecretMountsNestUnderNoMount(t *testing.T) {
 			}
 		}
 	}
-	if secrets != 5 {
-		t.Fatalf("want 5 secret mounts among %v", paths)
+	if secrets != 6 {
+		t.Fatalf("want 6 secret mounts, got %d among %v", secrets, paths)
 	}
 }
 
