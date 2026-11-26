@@ -239,7 +239,85 @@ sha256sum dist/loki-vl-proxy-linux-amd64    # compare with the line in the relea
 
 ### Pinning by digest
 
-Tags can be moved; digests cannot. Reference the image by the digest listed in the release notes, for example `ghcr.io/reliablyobserve/loki-vl-proxy@sha256:<digest>`, and verify the digest with the commands above before rolling it out. The base images in the `Dockerfile` are pinned by digest as well and are updated by Dependabot.
+Tags can be moved; digests cannot. Reference the image by the digest listed in the release notes, for example `ghcr.io/reliablyobserve/loki-vl-proxy@sha256:<digest>`, and verify the digest with the commands above before rolling it out. The Helm chart takes it as `image.digest`. The base images in the `Dockerfile` are pinned by digest as well and are updated by Dependabot.
+
+### Verify before deploying
+
+This covers an image pulled through your own registry (a mirror or a pull-through cache). A copy that keeps the multi-arch index keeps its digest, and the same digest is the same content in every registry. A copy of a single platform has another digest, which the release does not sign.
+
+The cosign, `gh` and admission policy examples in this section are written from the release workflows and the tools' documentation; they are not run by this repository's checks.
+
+1. Read the digest of the release. `image-digests.txt`, attached to the release, holds one `<repository>@<digest>` per line:
+
+```sh
+VERSION=X.Y.Z    # without the leading v
+gh release download "v${VERSION}" --repo ReliablyObserve/loki-vl-proxy --pattern image-digests.txt --clobber
+DIGEST="$(grep '^ghcr.io/reliablyobserve/loki-vl-proxy@' image-digests.txt | cut -d@ -f2)"
+```
+
+2. Verify that digest, with `ID_RE` and `ISSUER` from [Signing identity](#signing-identity). Verifying it at the publishing registry covers the mirrored copy, because the deployment names the same digest:
+
+```sh
+cosign verify "ghcr.io/reliablyobserve/loki-vl-proxy@${DIGEST}" \
+  --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$ID_RE"
+```
+
+To verify against the mirror itself, the mirror must also hold the signature, which cosign 3 stores as an OCI referrer of the digest. A mirror that copies only the image does not have it and the verification fails there; check what yours copies.
+
+```sh
+MIRROR=registry.example.com/reliablyobserve/loki-vl-proxy
+cosign verify "${MIRROR}@${DIGEST}" \
+  --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$ID_RE"
+```
+
+The build provenance can be checked for the mirrored reference too; `gh` reads the attestation from GitHub and matches it by digest:
+
+```sh
+gh attestation verify "oci://${MIRROR}@${DIGEST}" --repo ReliablyObserve/loki-vl-proxy
+```
+
+3. Deploy that digest:
+
+```yaml
+image:
+  repository: registry.example.com/reliablyobserve/loki-vl-proxy
+  digest: "sha256:<digest>"
+```
+
+#### Admission policy (Kyverno)
+
+An admission policy repeats the check in the cluster. This one requires the build provenance attestation that the release workflows push next to the image, signed by one of the two release workflows. It reads the attestation from the registry named in `imageReferences`, so a mirror must serve the referrers of the digest. Adjust the registry, and try it with `Audit` before `Enforce`.
+
+```yaml
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-loki-vl-proxy
+spec:
+  background: false
+  validationFailureAction: Audit
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: release-provenance
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "registry.example.com/reliablyobserve/loki-vl-proxy*"
+          type: SigstoreBundle
+          attestations:
+            - type: https://slsa.dev/provenance/v1
+              attestors:
+                - entries:
+                    - keyless:
+                        issuer: https://token.actions.githubusercontent.com
+                        subjectRegExp: ^https://github\.com/ReliablyObserve/loki-vl-proxy/\.github/workflows/(auto-release|release)\.yaml@refs/(heads/main|tags/v.+)$
+                        rekor:
+                          url: https://rekor.sigstore.dev
+```
 
 ## Related Docs
 
