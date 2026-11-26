@@ -41,7 +41,7 @@ import (
 
 // credentialDigestInfo separates the derived key from every other use of the
 // secret it comes from (the peer token also authenticates /_cache/* calls).
-const credentialDigestInfo = "loki-vl-proxy/cache-key-credential-digest/v1"
+const credentialDigestInfo = "loki-vl-proxy/cache-key-credential-digest/v1" // #nosec G101 -- a public HKDF context label, not a credential
 
 // credentialDigestVersion follows identityFingerprintPrefix in a keyed
 // fingerprint. '.' is not a hex digit, so a keyed fingerprint never equals the
@@ -50,7 +50,7 @@ const credentialDigestInfo = "loki-vl-proxy/cache-key-credential-digest/v1"
 const credentialDigestVersion = "k1."
 
 // Key sources, for the start-up log line.
-const (
+const ( // #nosec G101 -- names of where the key comes from, not credentials
 	credentialKeyFromSecret    = "cache-key-secret"
 	credentialKeyFromPeerToken = "peer-auth-token"
 	credentialKeyEphemeral     = "per-process"
