@@ -112,3 +112,35 @@ func BenchmarkFieldMappingLabelRoutes(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkFieldMappingAliasCollision measures what the alias collision rules
+// cost per mode: the detected_fields scan of rows whose lines carry keys named
+// like the aliases, and the lowering of a metric that groups by an alias after
+// a parser (the translation cache off).
+func BenchmarkFieldMappingAliasCollision(b *testing.B) {
+	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+		p := newMappingProxy(b, collisionVLFor(b), cache.NewDisabled(), Config{LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated,
+			FieldMappingLabelMode: mode, FieldMappings: collisionMappings()})
+		mux := http.NewServeMux()
+		p.RegisterProxyRoutes(mux)
+		b.Run("detectedFields/"+string(mode), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22svc%22%7D&start=1767222000000000000&end=1767225601000000000", nil))
+				if rec.Code != http.StatusOK {
+					b.Fatal(rec.Code)
+				}
+			}
+		})
+		b.Run("lowerGrouping/"+string(mode), func(b *testing.B) {
+			b.ReportAllocs()
+			p.translationCache = nil
+			for b.Loop() {
+				if _, err := p.translateQuery(`sum by (pod, namespace_extracted) (count_over_time({service_name="svc"} | logfmt | pod_extracted!="" [5m]))`); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

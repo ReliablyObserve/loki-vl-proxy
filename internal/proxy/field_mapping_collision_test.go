@@ -14,7 +14,10 @@ import (
 // collisionVL answers the detected_fields scan with one logfmt row whose
 // stream holds k8s.pod.name and one JSON row whose stream holds no mapped
 // field; both lines carry keys named like the aliases pod and namespace.
-func collisionVL(t *testing.T) string {
+func collisionVL(t *testing.T) string { return collisionVLFor(t) }
+
+// collisionVLFor is collisionVL for a benchmark too.
+func collisionVLFor(t testing.TB) string {
 	t.Helper()
 	rows := []map[string]string{
 		{"_time": "2026-01-01T00:00:01Z", "_stream": `{k8s.pod.name="pod-a",service.name="svc"}`, "_stream_id": "1",
