@@ -723,17 +723,21 @@ func TestHandover_DeadlinePartWay(t *testing.T) {
 	})
 	t.Run("warm-up", func(t *testing.T) {
 		f := openHandoverFixture(t, filepath.Join(t.TempDir(), "c.db"), 1<<20, DiskCacheConfig{})
-		for i := 0; i < 10; i++ {
-			f.c.SetWithTTL(fmt.Sprintf("query:t:%d", i), []byte("v"), time.Minute)
+		const n = 2*restoreBatchKeys + 40
+		for i := 0; i < n; i++ {
+			f.c.SetWithTTL(fmt.Sprintf("query:t:%03d", i), []byte("v"), time.Minute)
 		}
 		next, _ := f.restart(t, &HandoverFlushOptions{Scope: "s"})
+		// The context is checked before every batch: two batches, then done.
 		warm := next.c.WarmFromHandover(newCountdownCtx(2), HandoverWarmOptions{Scope: "s", MaxBytes: 1 << 20})
-		if warm.Reason != "deadline" || warm.DiskEntries != 2 || warm.Skipped != 8 {
-			t.Fatalf("warm %+v: want the two hottest, then the deadline", warm)
+		if warm.Reason != "deadline" || warm.DiskEntries != 2*restoreBatchKeys || warm.Skipped != 40 ||
+			warm.Progress.Skipped[RestoreSkipDeadline] != 40 || warm.Progress.ProcessedEntries != n {
+			t.Fatalf("warm %+v: want the two hottest batches, then the deadline", warm)
 		}
-		for _, k := range []string{"query:t:9", "query:t:8"} {
-			if _, ok := next.c.memoryEntry(k); !ok {
-				t.Fatalf("%s missing: the deadline must keep the hottest", k)
+		for i := 0; i < n; i++ {
+			_, ok := next.c.memoryEntry(fmt.Sprintf("query:t:%03d", i))
+			if want := i >= 40; ok != want { // the most recently stored are the hottest
+				t.Fatalf("entry %d restored=%v, want %v: the deadline must keep the hottest", i, ok, want)
 			}
 		}
 	})

@@ -71,11 +71,11 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
 | semantics | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | 3 | 2 | unknown |
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 12 | unknown |
-| resource_control | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | 4 | 7 | partial |
-| semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 1 | proven |
+| resource_control | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | 7 | 9 | partial |
+| semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 2 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 12 | 3 | gap |
-| semantics | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | 5 | 2 | proven |
+| semantics | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | 5 | 3 | proven |
 | resource_control | `error-coalescing-and-error-cache` — Identical requests share one run, and failed answers are held for their class's TTL | 14 | 0 | proven |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 6 | partial |
 | semantics | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | 2 | 2 | proven |
@@ -103,6 +103,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | 3 | 1 | partial |
 | semantics | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | 8 | 10 | unknown |
 | observability | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | 14 | 8 | unknown |
+| semantics | `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | 4 | 2 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 13 | 13 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 20 | 1 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 12 | 22 | partial |

@@ -54,14 +54,14 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true"})
 		args := containerArgs(pod)
-		for _, want := range []string{"-cache-shutdown-flush-timeout=15s", "-cache-startup-warm-bytes=134217728", "-cache-startup-warm-timeout=120s", "-disk-cache-path="} {
+		for _, want := range []string{"-cache-shutdown-flush-timeout=60s", "-cache-startup-warm-bytes=134217728", "-cache-startup-warm-timeout=120s", "-disk-cache-path="} {
 			if !strings.Contains(args, want) {
 				t.Fatalf("args %s: missing %s", args, want)
 			}
 		}
-		// preStop 5 + HTTP drain 30 + 30 + flush 15 + close 5.
-		if got := pod["terminationGracePeriodSeconds"]; got != 85 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want 85", got)
+		// preStop 5 + HTTP drain 30 + 30 + flush 60 + close 5.
+		if got := pod["terminationGracePeriodSeconds"]; got != 130 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 130", got)
 		}
 		preStop, _ := container(pod)["lifecycle"].(map[string]any)["preStop"].(map[string]any)
 		if sleep, _ := preStop["sleep"].(map[string]any); sleep["seconds"] != 5 {
@@ -71,7 +71,7 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 	t.Run("operator values win", func(t *testing.T) {
 		pod := renderPodSpec(t, []string{
 			"cacheHandover.enabled=true", "persistence.enabled=true",
-			"terminationGracePeriodSeconds=120",
+			"terminationGracePeriodSeconds=180",
 			"extraArgs.cache-shutdown-flush-timeout=40s",
 			"lifecycle.preStop.sleep.seconds=9",
 		})
@@ -79,21 +79,30 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 		if strings.Count(args, "-cache-shutdown-flush-timeout") != 1 || !strings.Contains(args, "-cache-shutdown-flush-timeout=40s") {
 			t.Fatalf("args %s: the extraArgs value must be the only one", args)
 		}
-		if got := pod["terminationGracePeriodSeconds"]; got != 120 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want the larger configured 120", got)
+		if got := pod["terminationGracePeriodSeconds"]; got != 180 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want the larger configured 180", got)
 		}
 		preStop, _ := container(pod)["lifecycle"].(map[string]any)["preStop"].(map[string]any)
 		if sleep, _ := preStop["sleep"].(map[string]any); sleep["seconds"] != 9 {
 			t.Fatalf("preStop %v, want the configured lifecycle", preStop)
 		}
 	})
+	t.Run("a configured flush budget wins", func(t *testing.T) {
+		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true", "cacheHandover.shutdownFlushTimeoutSeconds=15"})
+		if args := containerArgs(pod); !strings.Contains(args, "-cache-shutdown-flush-timeout=15s") {
+			t.Fatalf("args %s: the configured flush budget", args)
+		}
+		if got := pod["terminationGracePeriodSeconds"]; got != 85 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 85 for a 15 s flush", got)
+		}
+	})
 	on := []string{"cacheHandover.enabled=true", "persistence.enabled=true"}
 	with := func(sets ...string) []string { return append(append([]string{}, on...), sets...) }
 	t.Run("startup probe", func(t *testing.T) {
 		pod := renderPodSpec(t, on)
-		// 5 s + 60 x 5 s for the listener to open; never /ready, which also
+		// 5 s + 120 x 5 s for the listener to open; never /ready, which also
 		// checks VictoriaLogs.
-		assertProbe(t, pod, "/health", 5, 60)
+		assertProbe(t, pod, "/health", 5, 120)
 		if path := probeField(pod, "livenessProbe", "path"); path != "/alive" {
 			t.Fatalf("liveness path %v, want /alive", path)
 		}
@@ -177,14 +186,14 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 		if _, ok := container(pod)["lifecycle"]; ok {
 			t.Fatal("preStop sleep rendered for Kubernetes 1.29")
 		}
-		if got := pod["terminationGracePeriodSeconds"]; got != 80 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want 80 without the sleep", got)
+		if got := pod["terminationGracePeriodSeconds"]; got != 125 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 125 without the sleep", got)
 		}
 	})
 	t.Run("a configured sleep counts", func(t *testing.T) {
 		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true", "lifecycle.preStop.sleep.seconds=20"})
-		if got := pod["terminationGracePeriodSeconds"]; got != 100 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want 100 (20 + 60 + 15 + 5)", got)
+		if got := pod["terminationGracePeriodSeconds"]; got != 145 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 145 (20 + 60 + 60 + 5)", got)
 		}
 	})
 	t.Run("needs a disk cache", func(t *testing.T) {
@@ -194,6 +203,106 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 		}
 		if _, err := helmTemplate(t, []string{"cacheHandover.enabled=true", "extraArgs.disk-cache-path=/data/cache.db"}); err != nil {
 			t.Fatalf("extraArgs.disk-cache-path must be accepted: %v", err)
+		}
+	})
+}
+
+// The chart's startup window and Deployment progress deadline for a disk cache
+// (#1766): without one nothing changes, with one the startup probe allows
+// 605 s for the cache index rebuild before the listener opens and a Deployment's
+// progressDeadlineSeconds covers one replica's replacement; explicit probe and
+// deadline values win.
+// conformance: cache-restart-handover
+func TestDiskCacheStartupWindowAndProgressDeadline(t *testing.T) {
+	const (
+		persistence = "persistence.enabled=true"
+		handover    = "cacheHandover.enabled=true"
+	)
+	deadline := func(t *testing.T, sets []string, want int) {
+		t.Helper()
+		got, ok := workloadSpec(t, renderDocs(t, sets))["progressDeadlineSeconds"]
+		if want == 0 && ok {
+			t.Fatalf("%v: progressDeadlineSeconds %v rendered, want none", sets, got)
+		}
+		if want != 0 && got != want {
+			t.Fatalf("%v: progressDeadlineSeconds %v, want %d", sets, got, want)
+		}
+	}
+	t.Run("no disk cache", func(t *testing.T) {
+		for _, sets := range [][]string{
+			nil,
+			{"replicaCount=3"},
+			{"horizontalPodAutoscaling.enabled=true"},
+			{"workload.kind=StatefulSet", "replicaCount=3"},
+			{"extraArgs.disk-cache-path="},
+			// The chart passes no path of its own beside the key.
+			{persistence, "extraArgs.disk-cache-path="},
+		} {
+			if probe, ok := container(renderPodSpec(t, sets))["startupProbe"]; ok {
+				t.Fatalf("%v: startupProbe %v rendered without a disk cache", sets, probe)
+			}
+			deadline(t, sets, 0)
+		}
+		// A probe asked for without a disk cache keeps 30 failures.
+		enabled := []string{"probe.startup.enabled=true", "probe.startup.periodSeconds=60"}
+		assertProbe(t, renderPodSpec(t, enabled), "/health", 60, 30)
+		deadline(t, enabled, 0)
+	})
+	t.Run("disk cache without the hand-over", func(t *testing.T) {
+		for _, sets := range [][]string{{persistence}, {"extraArgs.disk-cache-path=/data/cache.db"}} {
+			pod := renderPodSpec(t, sets)
+			// 5 s + 120 x 5 s = 605 s.
+			assertProbe(t, pod, "/health", 5, 120)
+			if got := probeField(pod, "startupProbe", "initialDelaySeconds"); got != 5 {
+				t.Fatalf("%v: startupProbe initialDelaySeconds %v, want 5", sets, got)
+			}
+			if got := pod["terminationGracePeriodSeconds"]; got != 30 {
+				t.Fatalf("%v: terminationGracePeriodSeconds %v, want the default 30", sets, got)
+			}
+			// grace 30 + window 605 + margin 300.
+			deadline(t, sets, 935)
+			if v, ok := workloadSpec(t, renderDocs(t, sets))["minReadySeconds"]; ok {
+				t.Fatalf("%v: minReadySeconds %v rendered without the hand-over", sets, v)
+			}
+		}
+	})
+	t.Run("disk cache with the hand-over", func(t *testing.T) {
+		sets := []string{persistence, handover}
+		assertProbe(t, renderPodSpec(t, sets), "/health", 5, 120)
+		// grace 130 + window 605 + warm-up 120 + minReady 15 + margin 300.
+		deadline(t, sets, 1170)
+		deadline(t, append(sets, "cacheHandover.startupWarmTimeoutSeconds=600", "cacheHandover.minReadySeconds=0",
+			"terminationGracePeriodSeconds=200"), 200+605+600+300)
+	})
+	t.Run("probe values win and move the deadline", func(t *testing.T) {
+		sets := []string{persistence, "probe.startup.initialDelaySeconds=10", "probe.startup.periodSeconds=10", "probe.startup.failureThreshold=100"}
+		assertProbe(t, renderPodSpec(t, sets), "/health", 10, 100)
+		deadline(t, sets, 30+1010+300)
+		// A short window keeps the Kubernetes default of 600 s.
+		short := []string{persistence, "probe.startup.failureThreshold=7"}
+		assertProbe(t, renderPodSpec(t, short), "/health", 5, 7)
+		deadline(t, short, 0)
+		// No startup probe, no longer window.
+		for _, off := range [][]string{{persistence, "probe.startup.enabled=false"}, {persistence, handover, "probe.startup.enabled=false"}} {
+			if probe, ok := container(renderPodSpec(t, off))["startupProbe"]; ok {
+				t.Fatalf("%v: startupProbe %v rendered although disabled", off, probe)
+			}
+			deadline(t, off, 0)
+		}
+	})
+	t.Run("a configured deadline wins", func(t *testing.T) {
+		for _, sets := range [][]string{nil, {persistence}, {persistence, handover}, {persistence, "probe.startup.enabled=false"}} {
+			deadline(t, append(sets, "workload.progressDeadlineSeconds=700"), 700)
+		}
+	})
+	t.Run("a StatefulSet has no progress deadline", func(t *testing.T) {
+		for _, sets := range [][]string{
+			{"workload.kind=StatefulSet", persistence},
+			{"workload.kind=StatefulSet", persistence, handover},
+			{"workload.kind=StatefulSet", persistence, "workload.progressDeadlineSeconds=700"},
+		} {
+			assertProbe(t, renderPodSpec(t, sets), "/health", 5, 120)
+			deadline(t, sets, 0)
 		}
 	})
 }

@@ -795,6 +795,15 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_cache_restart_warm_bytes` | gauge | none | `Low` | bytes the start-up warm-up restored |
 | `loki_vl_proxy_cache_restart_warm_duration_seconds` | gauge | none | `Low` | how long the start-up warm-up took; `/ready` answers 503 `response cache warming` meanwhile, at most `-cache-startup-warm-timeout` |
 | `loki_vl_proxy_cache_restart_warm_done` | gauge | none | `Low` | 1 once the start-up warm-up finished or found no hand-over |
+| `loki_vl_proxy_cache_restart_warm_planned_entries`, `..._planned_bytes` | gauge | `source` | `Low` | entries the warm-up found to restore and their bytes as stored (encoded disk bytes; a memory-only answer of the hand-over counts its decoded size), set before any value is read; `source` is `disk` |
+| `loki_vl_proxy_cache_restart_warm_budget_bytes` | gauge | `source` | `Low` | most decoded bytes the warm-up may restore |
+| `loki_vl_proxy_cache_restart_warm_processed_entries`, `..._processed_bytes` | gauge | `source` | `Low` | planned entries restored or skipped so far, and their stored bytes; updated after every batch (about 256 entries or 4 MiB) |
+| `loki_vl_proxy_cache_restart_warm_skipped_entries` | gauge | `source`, `reason` | `Low` | planned entries not restored: `expired`, `superseded` (a fresher entry), `too_large` (over a tenth of `-cache-max-bytes`), `over_budget`, `memory_full` (`-cache-max` or `-cache-max-bytes`), `other_scope`, `unreadable`, `deadline`, `purged`, `clock_behind_flush` |
+| `loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second` | gauge | `source` | `Low` | decoded bytes restored per second: so far while it runs, over the whole warm-up after |
+| `loki_vl_proxy_cache_restart_warm_remaining_seconds` | gauge | `source` | `Low` | estimated seconds left while the warm-up runs (elapsed x remaining share / done share); 0 otherwise |
+| `loki_vl_proxy_cache_restart_warm_timeout_seconds` | gauge | `source` | `Low` | the time the warm-up was given (`-cache-startup-warm-timeout`) |
+| `loki_vl_proxy_cache_restart_warm_outcome` | gauge | `source`, `outcome` | `Low` | 1 for `running`, or why the warm-up ended: `done`, `deadline`, `purged`, `clock_behind_flush`, `none` (no hand-over) |
+| `loki_vl_proxy_cache_restart_index_rebuild_duration_seconds`, `..._index_rebuild_entries` | gauge | `source` | `Low` | how long the disk cache's index rebuild took at start, before the proxy listened, and the records it holds |
 | `loki_vl_proxy_cache_startup_l1_requests`, `loki_vl_proxy_cache_startup_l1_hits` | gauge | none | `Low` | memory cache lookups and hits in the first 10 minutes after start, frozen after them: the start-up hit ratio with and without the warm-up |
 | `loki_vl_proxy_translations_total` | counter | none | `Low` | successful LogQL to LogsQL translations |
 | `loki_vl_proxy_translation_errors_total` | counter | none | `Low` | failed translations |

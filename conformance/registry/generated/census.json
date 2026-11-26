@@ -1469,6 +1469,9 @@
     "cmd/proxy/peer_config_test.go | peer-cache-push-replay",
     "cmd/proxy/peer_config_test.go | peer-cache-read-hedge",
     "cmd/proxy/query_complexity_flags_test.go | query-complexity-limits",
+    "cmd/proxy/secret_flags_test.go | credential-passthrough-as-configured",
+    "cmd/proxy/secret_flags_test.go | delete-api-requires-token",
+    "cmd/proxy/secret_flags_test.go | secrets-outside-process-arguments",
     "cmd/proxy/tenant_routing_test.go | limits/max-query-length-default",
     "cmd/proxy/tenant_routing_test.go | tenant-auth-follows-loki",
     "cmd/proxy/tenant_routing_test.go | tenant-numeric-routing",
@@ -1494,6 +1497,7 @@
     "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
+    "internal/cache/restore_test.go | cache-restart-handover",
     "internal/capability/docs_test.go | vl-capability-layer",
     "internal/capability/gates_test.go | vl-capability-layer",
     "internal/capability/layer_test.go | vl-capability-layer",
@@ -1728,6 +1732,7 @@
     "internal/proxy/build_phase_replay_test.go | semantics/loki-build-phase-window",
     "internal/proxy/build_phase_replay_test.go | semantics/loki-error-phase-order",
     "internal/proxy/build_phase_window_loki_test.go | semantics/loki-build-phase-window",
+    "internal/proxy/cache_handover_log_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | shutdown-releases-background-work",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
@@ -3695,6 +3700,7 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
     "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
     "test/helm/cache_handover_test.go | cache-restart-handover",
+    "test/helm/secrets_test.go | secrets-outside-process-arguments",
     "test/helm/servicemonitor_test.go | observability-metrics-histograms-and-labels"
   ],
   "counts": {
@@ -3707,7 +3713,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 850,
+      "go": 854,
       "playwright": 3
     },
     "page_kinds": {
@@ -3729,7 +3735,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 489
+    "wired_items": 490
   },
   "gates": [
     "A/B shape selection",
