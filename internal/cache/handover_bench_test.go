@@ -97,3 +97,34 @@ func BenchmarkCache_Get_Hit_HandoverHits(b *testing.B) {
 		c.Get("bench-key")
 	}
 }
+
+// BenchmarkHandoverFlushLargeMemory flushes 32 MiB of memory-only answers
+// (64 of 512 KiB): the flush's own allocation stays near one 4 MiB chunk of
+// encoded copies plus the records, not the whole budget.
+func BenchmarkHandoverFlushLargeMemory(b *testing.B) {
+	dir := b.TempDir()
+	value := make([]byte, 512<<10)
+	for i := range value {
+		value[i] = byte(i * 7) // poorly compressible
+	}
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		dc, err := NewDiskCache(DiskCacheConfig{Path: filepath.Join(dir, fmt.Sprintf("large-%d.db", i)), FlushInterval: time.Hour})
+		if err != nil {
+			b.Fatal(err)
+		}
+		c := NewWithMaxBytes(time.Hour, 1000, 512<<20)
+		c.SetL2(dc)
+		for j := 0; j < 64; j++ {
+			c.SetLocalOnlyRestorableWithTTL(fmt.Sprintf("compat:t:%02d:routing:x", j), value, time.Hour)
+		}
+		b.StartTimer()
+		report, err := c.FlushHandover(context.Background(), HandoverFlushOptions{Scope: "s", MemoryBytes: 64 << 20})
+		if err != nil || report.MemoryEntries != 64 {
+			b.Fatalf("flush %+v %v", report, err)
+		}
+		b.StopTimer()
+		_ = dc.Close()
+		c.Close()
+	}
+}

@@ -368,7 +368,9 @@ func writeMissingDiskRecords(ctx context.Context, dc *DiskCache, gen uint64, can
 
 // handoverRecordsFor lists, in one rank order (the memory tier's recency), the
 // ranks of what the disk now holds and the restorable memory-only values
-// within the byte budget; it counts the disk writes that landed.
+// within the byte budget; it counts the disk writes that landed. Memory values
+// stay the memory tier's own slices here: putHandoverChunks encodes them one
+// chunk at a time, so the flush holds at most one chunk of encoded copies.
 func handoverRecordsFor(dc *DiskCache, candidates []handoverCandidate, written map[string]bool, memoryBudget int64, report *HandoverFlushReport) []handoverRecord {
 	records := make([]handoverRecord, 0, len(candidates))
 	var memoryBytes int64
@@ -385,11 +387,7 @@ func handoverRecordsFor(dc *DiskCache, candidates []handoverCandidate, written m
 		if memoryBudget <= 0 || memoryBytes+int64(len(cand.value)) > memoryBudget {
 			continue
 		}
-		encoded, err := encodeDiskRecord(diskEntry{Value: cand.value, ExpiresAt: cand.expiry}, dc.codec)
-		if err != nil {
-			continue
-		}
-		records = append(records, handoverRecord{key: cand.key, class: handoverClassMemory, rank: uint32(rank), hits: cand.hits, payload: encoded, size: len(cand.value)})
+		records = append(records, handoverRecord{key: cand.key, class: handoverClassMemory, rank: uint32(rank), hits: cand.hits, value: cand.value, expiry: cand.expiry, size: len(cand.value)})
 		memoryBytes += int64(len(cand.value))
 	}
 	return records
@@ -398,25 +396,38 @@ func handoverRecordsFor(dc *DiskCache, candidates []handoverCandidate, written m
 // putHandoverChunks commits the records in bounded transactions, checking the
 // deadline between them, and counts what reached the disk.
 func putHandoverChunks(ctx context.Context, dc *DiskCache, gen uint64, records []handoverRecord, report *HandoverFlushReport) error {
+	chunk := make([]handoverRecord, 0, min(len(records), handoverChunkRecords))
 	for start := 0; start < len(records); {
 		if ctx.Err() != nil {
 			return nil
 		}
 		end, chunkBytes := start, 0
-		for end < len(records) && end-start < handoverChunkRecords && (end == start || chunkBytes+len(records[end].payload) <= handoverChunkBytes) {
-			chunkBytes += len(records[end].payload)
+		for end < len(records) && end-start < handoverChunkRecords && (end == start || chunkBytes+records[end].size <= handoverChunkBytes) {
+			chunkBytes += records[end].size
 			end++
 		}
-		if err := dc.putHandoverRecords(gen, records[start:end]); err != nil {
+		chunk = chunk[:0]
+		for _, r := range records[start:end] {
+			if r.class == handoverClassMemory {
+				encoded, err := encodeDiskRecord(diskEntry{Value: r.value, ExpiresAt: r.expiry}, dc.codec)
+				if err != nil {
+					continue
+				}
+				r.payload = encoded
+			}
+			chunk = append(chunk, r)
+		}
+		if err := dc.putHandoverRecords(gen, chunk); err != nil {
 			return err
 		}
-		for _, r := range records[start:end] {
+		for i, r := range chunk {
 			if r.class == handoverClassDisk {
 				report.Ranked++
 			} else {
 				report.MemoryEntries++
 				report.MemoryBytes += int64(r.size)
 			}
+			chunk[i].payload = nil // the encoded copy is garbage once committed
 		}
 		start = end
 	}
