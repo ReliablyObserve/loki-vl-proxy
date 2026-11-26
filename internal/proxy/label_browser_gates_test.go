@@ -128,9 +128,8 @@ func TestLabelBrowserGates_MovedWindowNoRequestPathCalls(t *testing.T) {
 //   - "uncached": the moved window starts in an hour that no earlier listing
 //     read whole or in the background, because the background reads span at most
 //     the window's width: a 1h window (one hour read per listing) whose start
-//     moves back into an hour not read yet. A 24h window whose start moves back
-//     over two hour boundaries finds the hour two before an earlier start, which
-//     its listings read once the nearer hours are cached.
+//     moves back into an hour not read yet, a 24h window whose start moves back
+//     over two hour boundaries.
 //
 // Both conditions are necessary, not sufficient: many windows that meet them
 // are still answered from memory, from buckets earlier listings read.
@@ -152,12 +151,12 @@ func TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries(t *testing.T) {
 		want  [3]string // moved windows 1 to 3: the memory miss reason
 		calls [3]int    // their request-path VictoriaLogs calls
 	}{
-		{day, labelBrowserEnd(0, 0), [3]string{thinDay, memory, memory}, [3]int{1, 0, 0}},
+		{day, labelBrowserEnd(0, 0), [3]string{thinDay, memory, unreadHour}, [3]int{1, 0, 2}},
 		{day, labelBrowserEnd(0, 26), [3]string{thinDay, memory, memory}, [3]int{1, 0, 0}}, // the wall clock at 02:27 UTC
 		{day, labelBrowserEnd(1, 26), [3]string{thinDay, thinDay, memory}, [3]int{1, 1, 0}},
 		{day, labelBrowserEnd(2, 26), [3]string{memory, thinDay, thinDay}, [3]int{0, 1, 1}},
 		{day, labelBrowserEnd(3, 26), [3]string{memory, memory, thinDay}, [3]int{0, 0, 1}},
-		{day, labelBrowserEnd(12, 0), [3]string{memory, memory, memory}, [3]int{0, 0, 0}}, // just after an hour
+		{day, labelBrowserEnd(12, 0), [3]string{memory, memory, unreadHour}, [3]int{0, 0, 2}}, // just after an hour
 		{six, labelBrowserEnd(0, 7), [3]string{thinDay, memory, memory}, [3]int{1, 0, 0}},
 		{six, labelBrowserEnd(0, 17), [3]string{memory, memory, thinDay}, [3]int{0, 0, 1}},
 		{six, labelBrowserEnd(1, 7), [3]string{memory, thinDay, thinDay}, [3]int{0, 1, 0}},
@@ -414,7 +413,7 @@ func backgroundReadsWithinTheWindow(t *testing.T, end time.Time) {
 			params := url.Values{"query": {"*"}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
 			plan := planInventorySegments(start.UnixNano(), end.UnixNano(), now.Add(-metadataInventorySealLag).UnixNano())
 			vl.reset()
-			p.fillTouchedDays(withNamesOnlyListing(context.Background()), "/select/logsql/stream_field_names", params, listingBase(p), plan, now, true)
+			p.fillTouchedDays(withNamesOnlyListing(context.Background()), "/select/logsql/stream_field_names", params, listingBase(p), plan, now, true, false)
 			settleBackground(t, p)
 			_, spans := vl.reset()
 			var read time.Duration

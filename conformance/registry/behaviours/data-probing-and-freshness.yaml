@@ -122,9 +122,10 @@ decisions:
       background. With -metadata-inventory-prefetch (default on, its own flag
       so background VictoriaLogs work can be turned off apart from staleness),
       after a listing the hours
-      holding the window's start and end, the hour before it and, once those
-      are cached or being read, the hour two before it, at most three and the
-      window's width, are read in the background inventory lane.
+      holding the window's start and end and the hour before it and, when the
+      listing found a bucket it needed still being read by an earlier one, the
+      hour two before it, at most three and the window's width, are read in
+      the background inventory lane.
     over: ['reading the moved ends from VictoriaLogs on every request (base: 7, 3-7 and 20 calls per moved 1h, 6h and 24h window)', 'exact answers only from memory (the new end of a window moved back has no cached piece, so every moved request still read VictoriaLogs)', 'answering from memory past -metadata-max-staleness (rows written into a used bucket would stay unlisted for the bucket schedule, up to 15 minutes)', 'filling the partly covered UTC day in the background (a 24h cold load read its day again: 2,880 listed minutes instead of 1,440)', 'background reads unbounded by the window (a 10-minute window over yesterday would read a whole day)']
     why: |
       The owner asked for the label browser's moved windows to be faster than
@@ -143,8 +144,8 @@ decisions:
         measured: '177 ms on one build against 1 ms on the other in the same run, whichever build the harness order gave the shorter gap between its own requests'
         cause: 'a window asked before the background read of the hour it starts in had finished waited -metadata-edge-refresh-budget for it, then read VictoriaLogs for its pieces (in process, row count 25 ms and listing 100 ms: 127-335 ms and 1-8 request-path calls per window back to back, 0 calls with the reads settled)'
         effect: 'the locked warm row failed on a build that did not change the label path'
-        fixed_by: 'this change: the listing also reads the hour two before its start, a request ahead'
-        after: 'in process with 30 ms between requests 3-94 ms and no request-path call from the second window on, with 60 ms 2-4 ms from the third on; held without timing by TestLabelBrowserGates_BackToBackMovedWindows'
+        fixed_by: 'this change: a listing that finds a bucket it needs still being read also reads the hour two before its start, a request ahead'
+        after: 'in process, windows 2-7 at 12:26, 23:26 and 18:45, three passes (54 windows): back to back main 54 with request-path calls (148, median 228 ms), PR 36 (105, median 127 ms, 18 under 10 ms); 30 ms apart main 4 with calls (median 97 ms), PR none (median 66 ms, 18 under 10 ms); 60 ms apart neither makes a call, main median 66 ms, PR 6 ms (36 under 10 ms). Held without timing by TestLabelBrowserGates_BackToBackMovedWindows; background reads of cold, repeated and settled moved listings equal to the base'
       - date: '2026-11-25'
         what: 'perf A/B rows metadata-inventory / refresh labels (label browser), warm, 1h / 6h / 24h (loki-defaults)'
         measured: '15-29 ms / 21-56 ms / 273-306 ms against Loki 3 / 2-3 / 64-66 ms, with 7 / 3-7 / 20 VictoriaLogs calls per repeat'

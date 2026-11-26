@@ -258,7 +258,7 @@ func (p *Proxy) prefetchLabelsWindow(r *http.Request) {
 		return
 	}
 	_, countable := inventoryQueryShape(params.Get("query"))
-	p.fillTouchedDays(ctx, path, params, p.inventoryKeyBase(ctx, path, params), plan, now, countable)
+	p.fillTouchedDays(ctx, path, params, p.inventoryKeyBase(ctx, path, params), plan, now, countable, false)
 }
 
 func (p *Proxy) fetchScopedLabelValues(ctx context.Context, labelName, rawQuery, start, end, limit, search string) ([]string, error) {
