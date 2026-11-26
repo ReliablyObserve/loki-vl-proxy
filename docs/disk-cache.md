@@ -344,8 +344,8 @@ phase's times 1.10 plus 1 ms, with no errors.
 | Serving replica (1 CPU) | Query classes vs the bound | Restores |
 |---|---|---|
 | 1,100 requests/s, 37-50% of its core | all pass, 0 errors | throttled to about 1.5 MB/s, partial (61-79% of entries) at their 180 s deadline |
-| 220 requests/s | all pass, 0 errors | partly throttled |
-| 2,200 requests/s, 4 CPUs | all pass, 0 errors | one restore at full speed, the next throttled |
+| 220 requests/s, about 10% of its core | all pass, 0 errors | one replica: complete at 60 MB/s; two at once: throttled, partial (72-78%) at the deadline |
+| 2,200 requests/s, 4 CPUs (about 45% of one core of four) | all pass, 0 errors | one replica: complete at 60 MB/s; two at once: throttled, partial (81-87%) at the deadline |
 
 A looser threshold for the peer-request tail was tried and reverted: on one
 CPU at 2,200 requests/s it let a restore run at full speed while the
