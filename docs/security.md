@@ -254,9 +254,9 @@ Cache keys are stored with the answers: in the disk cache and its restart hand-o
 |---|---|---|
 | `-cache-key-secret` (or `-cache-key-secret-file`, `CACHE_KEY_SECRET`) | derived from that secret | reused by every replica and restart with the same secret |
 | else `-peer-auth-token` | derived from the peer token (never the token itself) | reused across a peer fleet, which shares the token already |
-| neither | random per process | not reused after a restart or by another replica |
+| neither | random per process | not reused after a restart or by another replica; a fleet on `-peer-insecure-ip-allowlist` stops sharing them between replicas, and with `-backend-basic-auth` that is every entry |
 
-- Set `-cache-key-secret` to the same long random value on every replica that shares a disk cache or peers. A single replica with a persistent disk cache and forwarded or backend credentials needs it to keep those entries across restarts; with the chart, `cacheKeySecret.existingSecret` mounts it from a Secret. With `peerCache.enabled` the chart's peer token already provides a fleet-wide key.
+- Set `-cache-key-secret` to the same long random value on every replica that shares a disk cache or peers. A single replica with a persistent disk cache and forwarded or backend credentials needs it to keep those entries across restarts, and so does a fleet without a peer token (`-peer-insecure-ip-allowlist`) to share them; with the chart, `cacheKeySecret.existingSecret` mounts it from a Secret. With `peerCache.enabled` the chart's peer token already provides a fleet-wide key.
 - Changing the secret, or the peer token it is derived from, makes credential-scoped entries miss once; nothing is served across the change.
 - Entries written by a build before keyed digests are never read by a later build: their keys have another form.
 - Requests that carry no credential (no forwarded header or cookie, no backend basic auth) have the same cache keys as before; only the tenant and routing scope is hashed for them, as before.

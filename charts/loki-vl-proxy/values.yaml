@@ -322,6 +322,8 @@ extraArgs:
   # backend-version-url: "http://vlselect:9471/metrics"
   # backend-version-basic-auth: "user:password"   # prefer backendVersionAuth.existingSecret
   # backend-version-basic-auth-file: ""         # file holding user:password (backendVersionAuth.existingSecret renders it)
+  # cache-key-secret: ""                        # keys the credential digests in cache keys; prefer cacheKeySecret.existingSecret
+  # cache-key-secret-file: ""                   # file holding the secret (cacheKeySecret.existingSecret renders it)
   # backend-version: "v1.54.0"    # only when no endpoint reports the release
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
