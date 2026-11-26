@@ -452,7 +452,7 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | `-disk-cache-max-bytes` | — | `0` | Logical encoded record and key byte cap (`0` disables the byte cap); bbolt retains free pages |
 | `-cache-shutdown-flush-timeout` | — | `0` | Time budget for the restart hand-over a graceful shutdown writes to the disk cache (`0` writes none); keep it inside `terminationGracePeriodSeconds` |
 | `-cache-startup-warm-bytes` | — | `0` | Bytes the start-up warm-up loads into the memory cache from that hand-over, at most half of `-cache-max-bytes` (`0` loads none); also the most memory-only answer bytes the shutdown keeps |
-| `-cache-startup-warm-timeout` | — | `10s` | The replica reports ready when the warm-up finishes, or after this timeout, whichever comes first: the longest `/ready` answers 503. The warm-up stops at it with the hottest entries restored. See [Estimating the restore time](disk-cache.md#estimating-the-restore-time) |
+| `-cache-startup-warm-timeout` | — | `120s` | The replica reports ready when the warm-up finishes, or after this timeout, whichever comes first: the longest `/ready` answers 503. The warm-up stops at it with the hottest entries restored. See [Estimating the restore time](disk-cache.md#estimating-the-restore-time) |
 
 See [Disk cache](disk-cache.md) for memory accounting, format upgrades, purge behavior and the restart hand-over.
 

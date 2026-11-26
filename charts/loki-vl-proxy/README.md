@@ -70,7 +70,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `terminationGracePeriodSeconds` | `30` | Pod grace period; with `cacheHandover.enabled` raised to at least the preStop sleep + 60 (HTTP drain of the main, then the admin/metrics listeners) + `shutdownFlushTimeoutSeconds` + 5 |
 | `lifecycle` | `{}` | Container lifecycle hooks; a non-empty value replaces the preStop sleep `cacheHandover` adds |
 | `cacheHandover.enabled` | `false` | Keep the response cache warm across restarts: flush the memory hot set to the disk cache on SIGTERM and load it back before `/ready`; needs `persistence.enabled` or `extraArgs.disk-cache-path`. See [Rolling restarts with a warm cache](#rolling-restarts-with-a-warm-cache) |
-| `cacheHandover.shutdownFlushTimeoutSeconds` | `15` | `-cache-shutdown-flush-timeout` |
+| `cacheHandover.shutdownFlushTimeoutSeconds` | `60` | `-cache-shutdown-flush-timeout` |
 | `cacheHandover.startupWarmBytes` | `134217728` | `-cache-startup-warm-bytes`, integer bytes (at most half of `-cache-max-bytes` is warmed) |
 | `cacheHandover.startupWarmTimeoutSeconds` | `120` | `-cache-startup-warm-timeout`: the pod is ready when the warm-up finishes, or partly warm after this long |
 | `cacheHandover.preStopSleepSeconds` | `5` | preStop sleep (native `sleep` action, rendered on Kubernetes 1.30+ only) before SIGTERM; `0` adds none |

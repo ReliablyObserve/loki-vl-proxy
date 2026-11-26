@@ -15,7 +15,7 @@ import (
 // next Init loads it back before /ready answers 200. Both are off by default
 // (-cache-shutdown-flush-timeout, -cache-startup-warm-bytes).
 
-const defaultCacheStartupWarmTimeout = 10 * time.Second
+const defaultCacheStartupWarmTimeout = 120 * time.Second
 
 const (
 	// cacheWarmProgressInterval is how often a running warm-up logs its
