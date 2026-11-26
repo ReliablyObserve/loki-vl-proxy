@@ -39,19 +39,18 @@ var slidingChunksObserve func(first, last, rows int, ok bool)
 // rankSlidingWindowChunks reads the grids of a ranked recurrence in time chunks and fills the ranker; stats keeps
 // the series names.
 func (p *Proxy) rankSlidingWindowChunks(ctx context.Context, r *slidingRanker, stats *slidingStats, baseQuery string, withBytes bool, scale float64, steps int, start time.Time, step, window time.Duration) error {
-	tumbling := window == step
+	c := &slidingChunkRun{p: p, ctx: ctx, r: r, stats: stats, baseQuery: baseQuery, withBytes: withBytes, scale: scale,
+		start: start, step: step, window: window, tumbling: window == step, buckets: steps}
 	// The buckets of the grids: steps+1 windows of a tumbling grid, steps A and C buckets otherwise.
-	buckets := steps
-	if tumbling {
+	if c.tumbling {
 		stats.windowGrid = true
-		buckets = steps + 1
+		c.buckets = steps + 1
 	}
-	var carried []slidingCarry
-	if !tumbling {
+	if !c.tumbling {
 		if err := p.fetchSlidingStatsGrid(ctx, stats, baseQuery, withBytes, slidingGridSeed, start.Add(-window), 1, window); err != nil {
 			return err
 		}
-		carried = carryWindows(nil, stats, len(stats.records))
+		c.carried = carryWindows(nil, stats, len(stats.records))
 		stats.records = stats.records[:0]
 	}
 	rowLimit, err := p.manualMetricRowBudget()
@@ -59,35 +58,12 @@ func (p *Proxy) rankSlidingWindowChunks(ctx context.Context, r *slidingRanker, s
 		return err
 	}
 	sizeKey := slidingChunkSizeKey(ctx, baseQuery, step, window, withBytes)
-	size := max(1, buckets)
-	if known, measured := p.listedChunkSize(ctx, sizeKey); measured && !slidingChunksOff {
-		size = min(size, int(known))
-	}
+	size := p.slidingChunkStartSize(ctx, sizeKey, c.buckets)
 	shrunk, fitted := false, 0
-	for first := 0; first < buckets || first == 0 && buckets == 0; {
-		last := min(buckets, first+size) // exclusive
+	for first := 0; first < c.buckets || first == 0 && c.buckets == 0; {
+		last := min(c.buckets, first+size) // exclusive
 		n := last - first
-		stats.records = stats.records[:0]
-		err := error(nil)
-		rowsC := 0
-		if n > 0 {
-			if tumbling {
-				err = p.fetchSlidingStatsGrid(ctx, stats, baseQuery, withBytes, slidingGridA, start.Add(-window).Add(time.Duration(first)*step), n, step)
-			} else {
-				// Lines leaving the windows are read before the lines entering them, as in one read. Across chunks a
-				// line ingested between two chunks' reads into a span one chunk read as entering lines and a later
-				// one as leaving lines is subtracted without being added; a series whose window falls to zero then
-				// drops out (a live range's newest data only, as a refresh reads it again).
-				err = p.fetchSlidingStatsGrid(ctx, stats, baseQuery, withBytes, slidingGridC, start.Add(-window).Add(time.Duration(first)*step), n, step)
-				rowsC = len(stats.records)
-				if err == nil {
-					err = p.fetchSlidingStatsGrid(ctx, stats, baseQuery, withBytes, slidingGridA, start.Add(time.Duration(first)*step), n, step)
-				}
-			}
-		}
-		if slidingChunksObserve != nil {
-			slidingChunksObserve(first, last, len(stats.records), err == nil)
-		}
+		rowsC, err := c.read(first, n)
 		var rows *rowLimitError
 		if err != nil && errors.As(err, &rows) && n > 1 && !slidingChunksOff {
 			size, shrunk = max(1, n/listedChunkShrink), true
@@ -103,39 +79,103 @@ func (p *Proxy) rankSlidingWindowChunks(ctx context.Context, r *slidingRanker, s
 		}
 		// The rows of the larger grid: the row bound holds each grid read on its own.
 		gridRows := max(rowsC, len(stats.records)-rowsC)
-		// The steps first..last-1 (and the last step after the last chunk): the windows of a tumbling grid are its
-		// buckets; otherwise W(first), carried, then the chunk's buckets.
-		final := last >= buckets
+		final := last >= c.buckets
 		if shrunk && (fitted == 0 || n < fitted) && (!final || fitted == 0) {
 			fitted = n // the smallest whole chunk a read held after the cut (a final remainder only when alone)
 		}
-		limit := int32(n)
-		localSteps := n
-		if tumbling {
-			localSteps = n - 1
-		} else if final {
-			limit = int32(n) + 1
-		}
-		if !tumbling {
-			for _, c := range carried {
-				stats.records = append(stats.records, slidingRecord{series: c.series, grid: slidingGridSeed, count: c.count, bytes: c.bytes})
-			}
-		}
-		if err := r.rank(ctx, stats, withBytes, scale, localSteps, int32(first), limit, n < buckets); err != nil {
+		if err := c.rank(first, n, final); err != nil {
 			return err
-		}
-		if !tumbling && !final {
-			carried = carryWindows(carried[:0], stats, len(stats.records))
 		}
 		if final {
 			break
 		}
 		first = last
-		size = int(nextListedChunkSize(int64(n), int64(buckets), statsReadMeter{series: gridRows}, rowLimit, 0))
+		size = int(nextListedChunkSize(int64(n), int64(c.buckets), statsReadMeter{series: gridRows}, rowLimit, 0))
 	}
 	if shrunk && fitted > 0 {
 		// A repeat starts at a chunk a read held after the cut instead of reading the whole range again.
 		p.setLocalReadCacheWithTTL(sizeKey, []byte(strconv.Itoa(fitted)), listedChunkSizeTTL)
+	}
+	return nil
+}
+
+// slidingChunkStartSize is the first chunk's size: the whole range of buckets, or less when this replica measured a
+// smaller size for the same read (a hint from the local cache, held to [1, buckets]).
+func (p *Proxy) slidingChunkStartSize(ctx context.Context, key string, buckets int) int {
+	size := max(1, buckets)
+	if known, measured := p.listedChunkSize(ctx, key); measured && !slidingChunksOff && known < int64(size) {
+		size = int(known) // 1 <= known < size: listedChunkSize keeps positive values only
+	}
+	return size
+}
+
+// slidingChunkRun is one ranked recurrence read in chunks: its request, grids and the window carried between chunks.
+type slidingChunkRun struct {
+	p            *Proxy
+	ctx          context.Context
+	r            *slidingRanker
+	stats        *slidingStats
+	baseQuery    string
+	withBytes    bool
+	scale        float64
+	start        time.Time
+	step, window time.Duration
+	tumbling     bool
+	buckets      int
+	carried      []slidingCarry
+}
+
+// read reads the buckets [first, first+n) of the chunk's grids into stats, and returns the rows of its C grid (the
+// rest are A's).
+func (c *slidingChunkRun) read(first, n int) (int, error) {
+	stats := c.stats
+	stats.records = stats.records[:0]
+	var err error
+	rowsC := 0
+	if n > 0 {
+		at := time.Duration(first) * c.step
+		if c.tumbling {
+			err = c.p.fetchSlidingStatsGrid(c.ctx, stats, c.baseQuery, c.withBytes, slidingGridA, c.start.Add(-c.window).Add(at), n, c.step)
+		} else {
+			// Lines leaving the windows are read before the lines entering them, as in one read. Across chunks a
+			// line ingested between two chunks' reads into a span one chunk read as entering lines and a later
+			// one as leaving lines is subtracted without being added; a series whose window falls to zero then
+			// drops out (a live range's newest data only, as a refresh reads it again).
+			err = c.p.fetchSlidingStatsGrid(c.ctx, stats, c.baseQuery, c.withBytes, slidingGridC, c.start.Add(-c.window).Add(at), n, c.step)
+			rowsC = len(stats.records)
+			if err == nil {
+				err = c.p.fetchSlidingStatsGrid(c.ctx, stats, c.baseQuery, c.withBytes, slidingGridA, c.start.Add(at), n, c.step)
+			}
+		}
+	}
+	if slidingChunksObserve != nil {
+		slidingChunksObserve(first, first+n, len(stats.records), err == nil)
+	}
+	return rowsC, err
+}
+
+// rank ranks the steps first..first+n-1 of the chunk just read (and the last step after the last chunk): the windows
+// of a tumbling grid are its buckets; otherwise W(first), carried, then the chunk's buckets, and W(first+n) is carried
+// on.
+func (c *slidingChunkRun) rank(first, n int, final bool) error {
+	stats := c.stats
+	limit := int32(n)
+	localSteps := n
+	if c.tumbling {
+		localSteps = n - 1
+	} else if final {
+		limit = int32(n) + 1
+	}
+	if !c.tumbling {
+		for _, w := range c.carried {
+			stats.records = append(stats.records, slidingRecord{series: w.series, grid: slidingGridSeed, count: w.count, bytes: w.bytes})
+		}
+	}
+	if err := c.r.rank(c.ctx, stats, c.withBytes, c.scale, localSteps, int32(first), limit, n < c.buckets); err != nil {
+		return err
+	}
+	if !c.tumbling && !final {
+		c.carried = carryWindows(c.carried[:0], stats, len(stats.records))
 	}
 	return nil
 }

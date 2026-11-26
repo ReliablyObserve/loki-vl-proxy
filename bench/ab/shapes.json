@@ -27,6 +27,10 @@
   "24h-20s": [
    86400,
    20
+  ],
+  "80s-53ms": [
+   80,
+   0.053
   ]
  },
  "sets": {
@@ -3633,6 +3637,39 @@
      "case_id": "mixed_parser_reverse_group",
      "covers": [
       "semantics/two-parsers-keep-one"
+     ]
+    }
+   ]
+  },
+  "ranked-parser-fine-step": {
+   "description": "Issue #1795: a ranking or a sum over a [1h] window metric with a parser stage on a short range at Grafana's step (53 ms over 80 s, 200 ms over 5 minutes). A gcd(step, window) bucket grid there is past the 11,000-bucket bound, so the proxy answers from the window recurrence's step-sized grids with the parser stage kept in the stats pipe (semantics/ranked-parser-window-fine-step) instead of the raw rows of the hour. RP1 ranks the nginx-ingress status codes from a regexp, RP2 the same from a pattern stage, RP3 sums a pattern stage by method. Run with the control set.",
+   "ranges": [
+    "80s-53ms",
+    "5m-200ms"
+   ],
+   "shapes": [
+    {
+     "name": "RP1 topk status by regexp, 1h window, fine step",
+     "query": "topk(3, sum by (status) (count_over_time({app=\"nginx-ingress\"} | regexp `\" (?P<status>[0-9]{3}) ` [1h])))",
+     "covers": [
+      "semantics/ranked-parser-window-fine-step",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "RP2 topk status by pattern, 1h window, fine step",
+     "query": "topk(3, sum by (status) (count_over_time({app=\"nginx-ingress\"} | pattern `<_> - <_> [<_>] \"<_>\" <status> <_>` [1h])))",
+     "covers": [
+      "semantics/ranked-parser-window-fine-step",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "RP3 sum by method of a pattern, 1h window, fine step",
+     "query": "sum by (method) (rate({app=\"nginx-ingress\"} | pattern `<_> - <_> [<_>] \"<method> <_>\" <_>` [1h]))",
+     "covers": [
+      "semantics/ranked-parser-window-fine-step",
+      "loki_api_v1_query_range"
      ]
     }
    ]

@@ -993,6 +993,7 @@
     "semantics/ranked-parser-metric-identity-residual | query",
     "semantics/ranked-parser-window-fine-step | compare:exact",
     "semantics/ranked-parser-window-fine-step | gap:fixed",
+    "semantics/ranked-parser-window-fine-step | perf",
     "semantics/ranked-parser-window-fine-step | query",
     "semantics/ranked-rate-ratio-point-grid-residual | compare:observed",
     "semantics/ranked-rate-ratio-point-grid-residual | gap:open",
@@ -3721,7 +3722,7 @@
     },
     "page_kinds": {
       "drilldown": 22,
-      "explore": 141,
+      "explore": 142,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3735,7 +3736,7 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 114,
+    "shape_covers_distinct": 115,
     "shapes_path_only": 10,
     "unwired_items": 155,
     "wired_items": 490
@@ -3840,6 +3841,7 @@
     "explore-numeric-equality-logs",
     "explore-pattern-filter-anchored",
     "explore-plain-level-metric",
+    "explore-ranked-parser-fine-step",
     "explore-rate-detected-level-unknown",
     "explore-rate-drop-detected-level",
     "explore-sliding-sum-without-stream-fold",
@@ -4564,6 +4566,9 @@
     "plain-name-after-parser/P7 json rate by level, level regexp",
     "plain-name-after-parser/P8 json count by a name that is no stream label",
     "plain-name-after-parser/P9 instant logfmt by level",
+    "ranked-parser-fine-step/RP1 topk status by regexp, 1h window, fine step",
+    "ranked-parser-fine-step/RP2 topk status by pattern, 1h window, fine step",
+    "ranked-parser-fine-step/RP3 sum by method of a pattern, 1h window, fine step",
     "series-level-fine-step/F1 sum by over a ratio of two per-stream metrics, 20s step",
     "series-level-fine-step/F2 count by service of count_over_time, 20s step",
     "series-level-fine-step/F3 avg by service of rate, 20s step",

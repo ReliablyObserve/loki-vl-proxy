@@ -331,3 +331,30 @@ func TestSlidingWindowChunks_SeriesOfSeveralReadsPassTheRowBound(t *testing.T) {
 		t.Fatalf("80 series over reads of at most 40 rows, a bound of 50: status %d, the one-read answer %v: %.200s", code, body == whole, body)
 	}
 }
+
+// The remembered chunk size is a hint read from the local cache: a value past the request's buckets (up to the
+// largest int64), zero, negative or not a number starts at the whole range; a smaller one starts there.
+// conformance: heavy-metric-fetch-bounds
+func TestSlidingWindowChunks_StartSizeHintIsBounded(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Minute, 1000), LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	for _, tc := range []struct {
+		hint string
+		want int
+	}{
+		{"9223372036854775807", 100}, {"18446744073709551615", 100}, {"101", 100}, {"100", 100},
+		{"40", 40}, {"1", 1}, {"0", 100}, {"-5", 100}, {"x", 100},
+	} {
+		key := "sliding-window-chunk:test:" + tc.hint
+		p.setLocalReadCacheWithTTL(key, []byte(tc.hint), time.Minute)
+		if got := p.slidingChunkStartSize(ctx, key, 100); got != tc.want {
+			t.Errorf("hint %q: start size %d, want %d", tc.hint, got, tc.want)
+		}
+	}
+	if got := p.slidingChunkStartSize(ctx, "sliding-window-chunk:test:none", 0); got != 1 {
+		t.Errorf("no buckets: start size %d, want 1", got)
+	}
+}

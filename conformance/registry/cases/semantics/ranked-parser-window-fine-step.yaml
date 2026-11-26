@@ -61,3 +61,10 @@ gap:
   proxy: 'Loki''s values at 53 ms, 50 ms, 1 s and 10 s, with a row bound below the hour, as Drilldown, and in time chunks'
   planned_test: 'TestRankedParserWindowMatchesLoki (internal/querycorpus, recorded Loki engine and VictoriaLogs v1.49/v1.54), TestSlidingWindowChunks_* (internal/proxy)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
