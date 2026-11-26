@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.371.0] - 2026-11-26
+
 ### Added
 
 - chart `image.digest` (#1785): pins the image by digest, rendering `<repository>@<digest>`, or `<repository>:<tag>@<digest>` when `image.tag` is set. A value that is not `sha256:<64 hex>`, or a second digest in `image.tag` or `image.repository`, fails rendering. With the value unset the chart renders as before. `SECURITY.md` adds "Verify before deploying": the digest from the release's `image-digests.txt`, verification of a mirrored image and a Kyverno policy example.
