@@ -266,6 +266,12 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence semantics/label-filter-numeric-equality"]++
 				continue
 			}
+			if lower.WritesKeepStreamValue(plan, prof.lowerProfile()) && !sameAsTranslator(got, legacy) {
+				// A keep behind a parser over a stream label the query reads: the plan keeps its stored value
+				// (semantics/keep-names-and-matchers).
+				delegated["known divergence semantics/keep-names-and-matchers"]++
+				continue
+			}
 			if lower.WritesKeepBlank(plan) {
 				// A keep matcher before a stage that reads its name, or under a metric: the plan blanks the values
 				// Loki's keep removes (semantics/keep-names-and-matchers).
