@@ -533,6 +533,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// A query the typed lowering covers is served from it: the same text, so the shadow has nothing to compare.
 		if p.queryPlanLowering {
 			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
+			prof.StreamAliases = p.labelTranslator.listsAliases()
 			// A root identity over a range longer than the step writes its series hash ahead of the gate.
 			prof.IdentityAhead = ahead
 			// The planning budget (query_budget.go) stops the lowering at a node; a stopped lowering must not fall back
@@ -974,6 +975,7 @@ func (p *Proxy) keepUnwrapIdentity(query string) (labels []string, ok bool) {
 	streamFields := p.streamFieldsMap
 	p.configMu.RUnlock()
 	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
+	prof.StreamAliases = p.labelTranslator.listsAliases()
 	if _, err := lower.PlanQuery(logqlpkg.CanonicalizeLogRanges(query), plan, prof); err != nil {
 		return nil, false
 	}

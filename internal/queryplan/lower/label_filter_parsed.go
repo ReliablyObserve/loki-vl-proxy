@@ -175,7 +175,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 	}
 	if keys == nil {
 		f := lb.leafFilter(e, lb.label)
-		if fields := translate.StreamAliasFields(lb.label, label); len(fields) > 0 && lb.keyParsers > 0 {
+		if fields := lb.streamAliasFields(label); len(fields) > 0 && lb.keyParsers > 0 {
 			// An alias's stream label (-field-mapping-label-mode alias and both) where the entry's stream holds its
 			// field, the parsed key of the alias's name where it does not, as Loki's label of that name reads.
 			has := logsql.FieldFilter{Field: translate.LogsQLFieldName(fields[0]), Op: logsql.FieldOpAny}
@@ -208,12 +208,24 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		// A parsed label Loki renamed name_extracted where the stream has the label: its value is in a scratch
 		// field the parsers unpack the key into.
 		parsed := lb.parsedFieldLeaf(translate.ExtractedScratch+"_"+base, e)
-		if f, ok = translate.ExtractedFilterAliased(base, translate.StreamAliasFields(lb.label, base), parsed, f); !ok {
+		var aliasFields []string
+		if lb.aliasProbe {
+			aliasFields = translate.StreamAliasFields(lb.label, base)
+		}
+		if f, ok = translate.ExtractedFilterAliased(base, aliasFields, parsed, f); !ok {
 			return logsql.FieldFilter{}, "LogSelect label filter _extracted"
 		}
 		lb.noteBase(base)
 	}
 	return f, ""
+}
+
+// streamAliasFields is translate.StreamAliasFields when the profile answers the probes, nil otherwise.
+func (lb *leafBuilder) streamAliasFields(label string) []string {
+	if !lb.aliasProbe {
+		return nil
+	}
+	return translate.StreamAliasFields(lb.label, label)
 }
 
 // noteBase records a label whose name_extracted rename the query's filters read, for the query and for the stage.

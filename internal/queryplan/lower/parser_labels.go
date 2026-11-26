@@ -115,6 +115,9 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 // aliasCoalesce is the pipes that fill each grouping field holding an alias's stream label from the parsed key of
 // the alias's name where the entry's stream lacks the field (translate.StreamAliasName); "" without such a field.
 func (m metricLog) aliasCoalesce(by []string) string {
+	if !m.aliasProbe {
+		return ""
+	}
 	var b strings.Builder
 	for _, field := range by {
 		alias := translate.StreamAliasName(m.label, field)
@@ -161,7 +164,10 @@ func (m metricLog) extractedPipes(b *strings.Builder, bases, labels []string, ow
 			logfmt = append(logfmt, m.logfmtMask&(1<<i) != 0)
 		}
 	}
-	aliases := func(base string) []string { return translate.StreamAliasFields(m.label, base) }
+	var aliases func(string) []string
+	if m.aliasProbe {
+		aliases = func(base string) []string { return translate.StreamAliasFields(m.label, base) }
+	}
 	return translate.ExtractedStatsTextAliased(b, logfmt, bases, labels, aliases), nil
 }
 

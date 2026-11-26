@@ -58,7 +58,7 @@ func labelReplaceOver(n *queryplan.LabelReplace, prof Profile, rankOK bool) (phy
 	if !rankOK && evaluates(x) {
 		return nil, &NotLoweredError{Construct: "LabelReplace operand " + Construct(x)}
 	}
-	inner := Profile{Label: prof.Label, KeepLine: prof.KeepLine}
+	inner := Profile{Label: prof.Label, KeepLine: prof.KeepLine, StreamAliases: prof.StreamAliases}
 	var op physical.Op
 	var err error
 	switch v := x.(type) {
