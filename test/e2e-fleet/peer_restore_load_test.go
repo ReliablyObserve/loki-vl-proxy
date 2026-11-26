@@ -188,6 +188,7 @@ func TestFleet_PeerRestoreUnderQueryLoad(t *testing.T) {
 			strings.Join(pressure, " ")))
 	}
 	report = append(report, stats.summary(phases)...)
+	report = append(report, tl.summary(phases, map[string]string{a: "proxy-load-a", b: "proxy-load-b"})...)
 	text := strings.Join(report, "\n")
 	_ = os.WriteFile(filepath.Join(out, "report.txt"), []byte(text+"\n"), 0o600)
 	t.Log("\n" + text)
@@ -209,23 +210,34 @@ type activityTimeline struct {
 	mu     sync.Mutex
 	active map[int64]float64 // Unix second -> streams served by a and b
 	now    float64
+	// per second and replica: Go heap in use and the governor's rate
+	heap, rate map[string]map[int64]float64
 }
 
 func (tl *activityTimeline) poll(addrs ...string) func() {
 	tl.active = map[int64]float64{}
+	tl.heap, tl.rate = map[string]map[int64]float64{}, map[string]map[int64]float64{}
+	for _, a := range addrs {
+		tl.heap[a], tl.rate[a] = map[int64]float64{}, map[int64]float64{}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for ctx.Err() == nil {
 			total := 0.0
+			sec := time.Now().Unix()
 			for _, a := range addrs {
 				if m, err := scrapeMetricsCtx(ctx, a); err == nil {
 					total += m.sum("loki_vl_proxy_peer_cache_bulk_serve_active", nil)
+					tl.mu.Lock()
+					tl.heap[a][sec] = m.sum("go_memstats_heap_inuse_bytes", nil)
+					tl.rate[a][sec] = m.sum("loki_vl_proxy_peer_cache_bulk_serve_rate_bytes_per_second", nil)
+					tl.mu.Unlock()
 				}
 			}
 			tl.mu.Lock()
-			tl.active[time.Now().Unix()] = total
+			tl.active[sec] = total
 			tl.now = total
 			tl.mu.Unlock()
 			select {
@@ -480,4 +492,37 @@ func waitProxyReadyWithin(t *testing.T, addr string, within time.Duration) {
 			t.Fatalf("%s not ready within %s", addr, within)
 		}
 	}
+}
+
+// summary is each phase's peak Go heap in use and mean governor rate while it
+// was not idle, per serving replica.
+func (tl *activityTimeline) summary(phases []loadPhase, names map[string]string) []string {
+	tl.mu.Lock()
+	defer tl.mu.Unlock()
+	out := []string{"replica | phase | Go heap in use peak MiB | governor rate mean MB/s (while streaming) | rate max MB/s"}
+	addrs := make([]string, 0, len(names))
+	for a := range names {
+		addrs = append(addrs, a)
+	}
+	sort.Strings(addrs)
+	for _, a := range addrs {
+		for _, ph := range phases {
+			var heap, rateSum, rateMax float64
+			n := 0
+			for sec := ph.from.Unix(); sec <= ph.to.Unix(); sec++ {
+				heap = max(heap, tl.heap[a][sec])
+				if r := tl.rate[a][sec]; r > 0 {
+					rateSum += r
+					rateMax = max(rateMax, r)
+					n++
+				}
+			}
+			mean := 0.0
+			if n > 0 {
+				mean = rateSum / float64(n)
+			}
+			out = append(out, fmt.Sprintf("%s | %s | %.0f | %.1f | %.1f", names[a], ph.name, heap/(1<<20), mean/1e6, rateMax/1e6))
+		}
+	}
+	return out
 }

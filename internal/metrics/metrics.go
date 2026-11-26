@@ -142,6 +142,7 @@ type Metrics struct {
 	// their total time (tails left out): the peer bulk restore's pressure
 	// signal (RequestLoad).
 	loadRequests, loadNanos atomic.Int64
+	loadLatency             cache.LatencyHist
 
 	// Server-side request and connection visibility.
 	activeRequests            atomic.Int64
@@ -885,16 +886,17 @@ func (m *Metrics) countLoad(endpoint string, duration time.Duration) {
 	if endpoint != "tail" {
 		m.loadRequests.Add(1)
 		m.loadNanos.Add(int64(duration))
+		m.loadLatency.Observe(duration)
 	}
 }
 
-// RequestLoad returns the client requests completed so far and their total
-// time in nanoseconds.
-func (m *Metrics) RequestLoad() (requests, nanos int64) {
+// RequestLoad returns the client requests completed so far, their total time
+// and their latency histogram.
+func (m *Metrics) RequestLoad() cache.BulkLoad {
 	if m == nil {
-		return 0, 0
+		return cache.BulkLoad{}
 	}
-	return m.loadRequests.Load(), m.loadNanos.Load()
+	return cache.BulkLoad{Requests: m.loadRequests.Load(), Nanos: m.loadNanos.Load(), Buckets: m.loadLatency.Snapshot()}
 }
 
 // RecordTenantRequest records a request for a specific tenant (X-Scope-OrgID).

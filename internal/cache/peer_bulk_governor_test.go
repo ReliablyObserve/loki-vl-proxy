@@ -48,7 +48,7 @@ func TestBulkGovernor_RampsFromLowToTheCeiling(t *testing.T) {
 			t.Fatalf("above the ceiling: %v", g.rate)
 		}
 	}
-	if g.rate != 64<<20 || ticks > 20 {
+	if g.rate != 64<<20 || ticks > 40 {
 		t.Fatalf("rate %v after %d ticks", g.rate, ticks)
 	}
 	// A ceiling below the start rate is the start rate.
@@ -181,34 +181,63 @@ func TestBulkGovernor_LifecycleStartsLowAndStops(t *testing.T) {
 	waitFor(t, "the controller to stop", func() bool { return runtime.NumGoroutine() <= before })
 }
 
-// The signals: a query latency far above its learned baseline is pressure,
-// and five times it is severe; the same for peer requests.
+// The signals: a query latency p99 over the last second far above its
+// learned baseline is pressure, and well above that severe; too few requests
+// are no sample.
 //
 // conformance: cache-restart-handover
 func TestBulkSignals_LatencyAgainstItsBaseline(t *testing.T) {
-	var load BulkLoad
+	var hist LatencyHist
 	s := newBulkSignals(nil, nil)
-	fn := func() BulkLoad { return load }
+	fn := func() BulkLoad { return BulkLoad{Buckets: hist.Snapshot()} }
 	s.load.Store(&fn)
 	tick := func(n int, each time.Duration) ([bulkPressureCount]bool, bool) {
-		load.Requests += int64(n)
-		load.Nanos += int64(n) * int64(each)
+		for i := 0; i < n; i++ {
+			hist.Observe(each)
+		}
 		return s.read()
 	}
 	tick(0, 0) // starts the deltas
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 10; i++ {
 		if r, _ := tick(50, time.Millisecond); r[bulkPressureRequests] {
 			t.Fatal("pressure at the baseline")
 		}
 	}
-	if r, severe := tick(50, 5*time.Millisecond); !r[bulkPressureRequests] || severe {
-		t.Fatalf("5x the baseline: pressure %v severe %v", r[bulkPressureRequests], severe)
+	// A tail: 5% of a second's requests at 4 ms.
+	var r [bulkPressureCount]bool
+	var severe bool
+	for i := 0; i < 5; i++ {
+		tick(47, time.Millisecond)
+		r, severe = tick(3, 4*time.Millisecond)
 	}
-	if _, severe := tick(50, 40*time.Millisecond); !severe {
-		t.Fatal("40x the baseline is not severe")
+	if !r[bulkPressureRequests] || severe {
+		t.Fatalf("a 4 ms tail over a 1 ms baseline: pressure %v severe %v", r[bulkPressureRequests], severe)
 	}
-	if r, _ := tick(2, time.Second); r[bulkPressureRequests] {
-		t.Fatal("two requests are not a sample")
+	for i := 0; i < 5; i++ {
+		r, severe = tick(50, 40*time.Millisecond)
+	}
+	if !severe {
+		t.Fatal("a 40 ms p99 is not severe")
+	}
+	quiet := newBulkSignals(nil, nil)
+	quiet.load.Store(&fn)
+	quiet.read()
+	if r, _ := quiet.read(); r[bulkPressureRequests] {
+		t.Fatal("no requests are no sample")
+	}
+}
+
+// The histogram buckets: bucket i holds latencies up to 64 µs << i.
+//
+// conformance: cache-restart-handover
+func TestLatencyHist_Buckets(t *testing.T) {
+	var h LatencyHist
+	for _, d := range []time.Duration{0, 64 * time.Microsecond, 65 * time.Microsecond, 128 * time.Microsecond, 3 * time.Millisecond, time.Hour} {
+		h.Observe(d)
+	}
+	got := h.Snapshot()
+	if got[0] != 2 || got[1] != 2 || got[6] != 1 || got[LatencyBuckets-1] != 1 {
+		t.Fatalf("buckets %v", got)
 	}
 }
 

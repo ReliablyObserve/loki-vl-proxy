@@ -2,7 +2,6 @@ package cache
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -515,7 +514,7 @@ type bulkRecord struct {
 // transaction. Nothing it reads counts as a lookup or moves a recency. It
 // returns the records to send; the rest of the batch was removed, expired or
 // unreadable since it was planned.
-func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec, workers int) []bulkRecord {
+func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec, workers int, arena *[]byte) []bulkRecord {
 	now := clockNow()
 	recs := make([]bulkRecord, len(items))
 	// held marks keys the memory tier holds: its value is the current one,
@@ -562,7 +561,7 @@ func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec, wor
 			}
 		}
 		dc.writeMu.Unlock()
-		dc.readBulkRecords(recs, workers)
+		dc.readBulkRecords(recs, workers, arena)
 	}
 	out := recs[:0]
 	for _, r := range recs {
@@ -585,7 +584,7 @@ func (c *Cache) bulkReadBatch(items []bulkItem, memOK bool, codec diskCodec, wor
 // up in order and the records copied by at most min(GOMAXPROCS, 4)
 // goroutines, so a file that is not in the page cache is read with that much
 // parallelism (as the warm-up decodes). Legacy records are not sent.
-func (dc *DiskCache) readBulkRecords(recs []bulkRecord, workers int) {
+func (dc *DiskCache) readBulkRecords(recs []bulkRecord, workers int, arena *[]byte) {
 	need := false
 	for i := range recs {
 		need = need || recs[i].disk
@@ -598,12 +597,24 @@ func (dc *DiskCache) readBulkRecords(recs []bulkRecord, workers int) {
 		if b == nil {
 			return nil
 		}
+		// The records are copied into one buffer the stream reuses for every
+		// batch (valid until the next one), so serving allocates no copy per
+		// record and adds little garbage for the queries' GC to collect.
 		raws := make([][]byte, len(recs))
+		offsets := make([]int, len(recs)+1)
 		for i := range recs {
 			if recs[i].disk {
 				raws[i] = b.Get([]byte(recs[i].key))
 			}
+			offsets[i+1] = offsets[i] + len(raws[i])
 		}
+		if arena == nil {
+			arena = new([]byte)
+		}
+		if cap(*arena) < offsets[len(recs)] {
+			*arena = make([]byte, offsets[len(recs)])
+		}
+		buf := (*arena)[:offsets[len(recs)]]
 		var next atomic.Int64
 		copyOut := func() {
 			for {
@@ -612,7 +623,8 @@ func (dc *DiskCache) readBulkRecords(recs []bulkRecord, workers int) {
 					return
 				}
 				if v := raws[i]; v != nil && dc.validateStoredDiskRecord(v, true) == nil {
-					recs[i].record = bytes.Clone(v)
+					recs[i].record = buf[offsets[i]:offsets[i+1]:offsets[i+1]]
+					copy(recs[i].record, v)
 				}
 			}
 		}
@@ -684,6 +696,9 @@ func (w *bulkWriter) record(r bulkRecord) {
 	sum := crc32.Update(crc32.Update(0, bulkCRC, []byte(r.key)), bulkCRC, r.record)
 	w.scrap = binary.BigEndian.AppendUint32(w.scrap[:0], sum)
 	w.write(w.scrap)
+	// Let queries run between records: on a replica with few cores a batch
+	// written in one go holds a thread for its whole length.
+	runtime.Gosched()
 }
 
 func (w *bulkWriter) flush() {
@@ -729,6 +744,7 @@ func (pc *PeerCache) streamBulk(ctx context.Context, w http.ResponseWriter, loca
 		outcome = bulkEndPurged
 	}
 	var sent, sentBytes, skipped int64
+	var arena []byte
 	for i := 0; i < len(items) && outcome == bulkEndDone; {
 		switch generationNow, idleNow := local.diskPromotionGeneration(); {
 		case ctx.Err() != nil || out.err != nil:
@@ -749,7 +765,7 @@ func (pc *PeerCache) streamBulk(ctx context.Context, w http.ResponseWriter, loca
 			j++
 		}
 		readAt := time.Now()
-		recs := local.bulkReadBatch(items[i:j], memOK, codec, gov.workers())
+		recs := local.bulkReadBatch(items[i:j], memOK, codec, gov.workers(), &arena)
 		skipped += int64(j-i) - int64(len(recs))
 		out.extend()
 		out.waited = 0

@@ -205,8 +205,8 @@ func TestCachePeerRestore_StopPeerBulkStreamsRefusesNewStreams(t *testing.T) {
 func TestCachePeerRestore_SetPeerBulkLoad(t *testing.T) {
 	serving, restoring := newPeerRestorePair(t)
 	serving.open(t, []string{serving.addr(), restoring.addr()}, "peer-secret", Config{})
-	serving.p.SetPeerBulkLoad(func() (int64, int64) { return 3, 3e6 })
+	serving.p.SetPeerBulkLoad(func() cache.BulkLoad { return cache.BulkLoad{Requests: 3, Nanos: 3e6} })
 	serving.p.SetPeerBulkLoad(nil)
 	var nilProxy *Proxy
-	nilProxy.SetPeerBulkLoad(func() (int64, int64) { return 0, 0 })
+	nilProxy.SetPeerBulkLoad(func() cache.BulkLoad { return cache.BulkLoad{} })
 }

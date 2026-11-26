@@ -157,11 +157,19 @@ func TestMetrics_RequestLoadCountsClientRequests(t *testing.T) {
 	m.RecordRequestWithRoute("detected_fields", "/loki/api/v1/detected_fields", 200, 5*time.Millisecond)
 	m.RecordRequest("tail", 200, time.Minute)
 	m.RecordUpstreamRequest("vl", "query", "/select/logsql/query", 200, time.Second)
-	if n, ns := m.RequestLoad(); n != 2 || time.Duration(ns) != 8*time.Millisecond {
-		t.Fatalf("load %d requests, %v", n, time.Duration(ns))
+	load := m.RequestLoad()
+	if load.Requests != 2 || time.Duration(load.Nanos) != 8*time.Millisecond {
+		t.Fatalf("load %+v", load)
+	}
+	var inBuckets int64
+	for _, c := range load.Buckets {
+		inBuckets += c
+	}
+	if inBuckets != 2 || load.Buckets[6] != 1 || load.Buckets[7] != 1 { // 3 ms <= 64µs<<6, 5 ms <= 64µs<<7
+		t.Fatalf("buckets %v", load.Buckets)
 	}
 	var nilMetrics *Metrics
-	if n, ns := nilMetrics.RequestLoad(); n != 0 || ns != 0 {
+	if nilMetrics.RequestLoad() != (cache.BulkLoad{}) {
 		t.Fatal("nil metrics")
 	}
 }

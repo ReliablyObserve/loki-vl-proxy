@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"math/bits"
+	"runtime"
 	"runtime/metrics"
 	"sync"
 	"sync/atomic"
@@ -48,22 +50,57 @@ const (
 	bulkTick         = 200 * time.Millisecond
 	bulkStartRate    = 2 << 20   // bytes per second when a stream starts
 	bulkFloorRate    = 256 << 10 // the lowest rate pressure halves to
-	bulkCleanToGrow  = 3         // clean ticks before the rate grows
-	bulkGrowFactor   = 1.25
+	bulkCleanToGrow  = 5         // clean ticks before the rate grows
+	bulkGrowFactor   = 1.15
 	bulkHitsToShrink = 2 // pressured ticks before the rate halves
 	// bulkBatchWindow sizes a batch to this much of the current rate, so the
 	// reads and copies of the serving side are paced too.
 	bulkBatchWindow   = 100 * time.Millisecond
 	bulkBatchMinBytes = 64 << 10
+	// bulkBatchBytesPerProc caps a batch per GOMAXPROCS, so one batch's reads
+	// and copies are short bursts on a replica with few cores.
+	bulkBatchBytesPerProc = 512 << 10
 	// DefaultPeerBulkServeMaxPause is how long a paused stream waits before
 	// it ends as throttled.
 	DefaultPeerBulkServeMaxPause = 30 * time.Second
 )
 
-// BulkLoad is the serving replica's completed client requests and their total
-// latency, cumulative (long-lived requests such as tails left out).
+// BulkLoad is the serving replica's completed client requests, their total
+// latency and their latency histogram, cumulative (long-lived requests such as
+// tails left out).
 type BulkLoad struct {
 	Requests, Nanos int64
+	Buckets         [LatencyBuckets]int64
+}
+
+// LatencyBuckets is the size of a LatencyHist: bucket i holds latencies up to
+// latencyBucketBase << i (64 µs to about 2 s; the last one also everything
+// above).
+const LatencyBuckets = 16
+
+const latencyBucketBase = 64 * time.Microsecond
+
+// LatencyHist is a lock-free log2 latency histogram: one atomic add per
+// observation.
+type LatencyHist struct {
+	b [LatencyBuckets]atomic.Int64
+}
+
+// Observe counts one latency.
+func (h *LatencyHist) Observe(d time.Duration) {
+	i := 0
+	if d > latencyBucketBase {
+		i = min(bits.Len64(uint64((d-1)/latencyBucketBase)), LatencyBuckets-1)
+	}
+	h.b[i].Add(1)
+}
+
+// Snapshot returns the counts.
+func (h *LatencyHist) Snapshot() (out [LatencyBuckets]int64) {
+	for i := range h.b {
+		out[i] = h.b[i].Load()
+	}
+	return out
 }
 
 // Pressure reasons (loki_vl_proxy_peer_cache_bulk_serve_pressure_total).
@@ -206,7 +243,8 @@ func (g *bulkGovernor) batchBytes() int64 {
 	g.mu.Lock()
 	rate := max(g.rate, float64(bulkFloorRate))
 	g.mu.Unlock()
-	return int64(min(max(rate*bulkBatchWindow.Seconds(), bulkBatchMinBytes), restoreBatchBytes))
+	limit := min(float64(restoreBatchBytes), float64(bulkBatchBytesPerProc*runtime.GOMAXPROCS(0)))
+	return int64(min(max(rate*bulkBatchWindow.Seconds(), bulkBatchMinBytes), limit))
 }
 
 // workers is how many goroutines copy a batch: one, unless the governor runs
@@ -215,7 +253,7 @@ func (g *bulkGovernor) workers() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.state == bulkStateCeiling {
-		return restoreWorkers()
+		return max(min(restoreWorkers(), runtime.GOMAXPROCS(0)/4), 1)
 	}
 	return 1
 }
@@ -377,14 +415,12 @@ type bulkSignals struct {
 
 	prevSched                 []uint64
 	prevGC, prevCPU, prevIdle float64
-	prevLoad                  BulkLoad
-	prevPeerN, prevPeerNs     int64
+	reqTail, peerTail         tailWindow
 	prevDiskN, prevDiskNs     int64
 	schedMins                 [150]float64 // 30 s of tick p99s, a ring
 	schedAt                   int
 	schedSeen                 int
-	reqBase, peerBase         float64 // EWMA of clean ticks' mean latency, ns
-	diskBase                  float64
+	diskBase                  float64 // EWMA of clean ticks' mean disk lookup latency, ns
 	started                   bool
 }
 
@@ -447,8 +483,8 @@ func (s *bulkSignals) read() (reasons [bulkPressureCount]bool, severe bool) {
 				s.schedMins[s.schedAt] = p99
 				s.schedAt = (s.schedAt + 1) % len(s.schedMins)
 				s.schedSeen++
-				reasons[bulkPressureSched] = p99 > 0.001 && p99 > 3*base
-				severe = severe || (p99 > 0.010 && p99 > 5*base)
+				reasons[bulkPressureSched] = p99 > 0.0005 && p99 > 2*base
+				severe = severe || (p99 > 0.005 && p99 > 4*base)
 			}
 			copy(s.prevSched, h.Counts)
 		}
@@ -495,21 +531,17 @@ func ewma(base, sample float64) float64 {
 	return base + 0.05*(sample-base)
 }
 
-// latencies adds the pressure of the latencies of what this replica serves,
-// each against its baseline learned on clean ticks; true on the first read
-// (no delta yet).
+// latencies adds the pressure of the latencies of what this replica serves:
+// the p99 of the queries and of the peer requests over the last second (5
+// ticks), each against the p99 it had on clean ticks, and the mean disk
+// lookup latency against its own. True on the first read (no delta yet).
 func (s *bulkSignals) latencies(reasons *[bulkPressureCount]bool, severe *bool, first bool) bool {
-	// Latencies of what this replica serves, against their clean baselines.
-	var reqMean, peerMean, diskMean float64
+	var reqP99, peerP99, diskMean float64
 	if load := s.load.Load(); load != nil {
-		l := (*load)()
-		reqMean = meanOver(l.Requests-s.prevLoad.Requests, l.Nanos-s.prevLoad.Nanos)
-		s.prevLoad = l
+		reqP99 = s.reqTail.add((*load)().Buckets)
 	}
 	if s.peer != nil {
-		n, ns := s.peer.served.Load(), s.peer.servedNanos.Load()
-		peerMean = meanOver(n-s.prevPeerN, ns-s.prevPeerNs)
-		s.prevPeerN, s.prevPeerNs = n, ns
+		peerP99 = s.peerTail.add(s.peer.served.Snapshot())
 	}
 	if s.disk != nil {
 		if dc := s.disk(); dc != nil {
@@ -526,28 +558,79 @@ func (s *bulkSignals) latencies(reasons *[bulkPressureCount]bool, severe *bool, 
 		return true
 	}
 	for _, sig := range []struct {
-		mean   float64
-		base   *float64
-		reason int
-	}{{reqMean, &s.reqBase, bulkPressureRequests}, {peerMean, &s.peerBase, bulkPressurePeer}, {diskMean, &s.diskBase, bulkPressureDisk}} {
-		if sig.mean <= 0 {
+		value, factor, floor, severeFactor, severeFloor float64
+		base                                            *float64
+		reason                                          int
+	}{
+		{reqP99, 1.5, 0.5e6, 3, 5e6, &s.reqTail.base, bulkPressureRequests},
+		{peerP99, 1.5, 0.5e6, 3, 5e6, &s.peerTail.base, bulkPressurePeer},
+		{diskMean, 2, 2e6, 5, 20e6, &s.diskBase, bulkPressureDisk},
+	} {
+		if sig.value <= 0 {
 			continue
 		}
 		if *sig.base == 0 {
-			*sig.base = sig.mean
+			*sig.base = sig.value
 			continue
 		}
-		reasons[sig.reason] = sig.mean > 2**sig.base+float64(2*time.Millisecond)
-		*severe = *severe || sig.mean > 5**sig.base+float64(20*time.Millisecond)
+		reasons[sig.reason] = sig.value > sig.factor**sig.base+sig.floor
+		*severe = *severe || sig.value > sig.severeFactor**sig.base+sig.severeFloor
 	}
 	clean := true
 	for _, on := range reasons {
 		clean = clean && !on
 	}
 	if clean {
-		s.reqBase = ewma(s.reqBase, reqMean)
-		s.peerBase = ewma(s.peerBase, peerMean)
+		s.reqTail.base = ewma(s.reqTail.base, reqP99)
+		s.peerTail.base = ewma(s.peerTail.base, peerP99)
 		s.diskBase = ewma(s.diskBase, diskMean)
 	}
 	return false
+}
+
+// tailWindow is the latency histogram of the last tailTicks ticks.
+type tailWindow struct {
+	prev    [LatencyBuckets]int64
+	ring    [tailTicks][LatencyBuckets]int64
+	at      int
+	started bool
+	// base is the EWMA of the p99 on clean ticks, ns.
+	base float64
+}
+
+const (
+	tailTicks   = 5  // one second
+	tailSamples = 50 // fewer is no p99
+)
+
+// add takes the cumulative counts and returns the window's p99 (the upper
+// bound of its bucket, ns), 0 under tailSamples.
+func (w *tailWindow) add(cum [LatencyBuckets]int64) float64 {
+	var d [LatencyBuckets]int64
+	if w.started {
+		for i := range cum {
+			d[i] = max(cum[i]-w.prev[i], 0)
+		}
+	}
+	w.prev, w.started = cum, true
+	w.ring[w.at] = d
+	w.at = (w.at + 1) % tailTicks
+	var sum [LatencyBuckets]int64
+	var n int64
+	for _, r := range w.ring {
+		for i, c := range r {
+			sum[i] += c
+			n += c
+		}
+	}
+	if n < tailSamples {
+		return 0
+	}
+	target, seen := n-n/100, int64(0)
+	for i, c := range sum {
+		if seen += c; seen >= target {
+			return float64(latencyBucketBase << i)
+		}
+	}
+	return float64(latencyBucketBase << (LatencyBuckets - 1))
 }

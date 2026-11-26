@@ -182,10 +182,9 @@ type PeerCache struct {
 	bulk           *peerBulkServe
 	bulkClientOnce sync.Once
 	bulkClient     atomic.Pointer[http.Client]
-	// served and servedNanos count the peer requests this replica answered
-	// (all but bulk streams) and their time: a pressure signal of the bulk
-	// governor.
-	served, servedNanos atomic.Int64
+	// served is the latency of the peer requests this replica answered (all
+	// but bulk streams): a pressure signal of the bulk governor.
+	served LatencyHist
 }
 
 type inflightEntry struct {
@@ -1048,8 +1047,7 @@ func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCach
 	}
 	start := time.Now()
 	pc.serveHTTP(w, r, localCache)
-	pc.served.Add(1)
-	pc.servedNanos.Add(int64(time.Since(start)))
+	pc.served.Observe(time.Since(start))
 }
 
 func (pc *PeerCache) serveHTTP(w http.ResponseWriter, r *http.Request, localCache *Cache) {

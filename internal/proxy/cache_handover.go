@@ -295,14 +295,11 @@ func (p *Proxy) StopPeerBulkStreams() {
 
 // SetPeerBulkLoad gives the peer bulk governor the client request counters
 // (completed requests and their total time) it reads as a pressure signal.
-func (p *Proxy) SetPeerBulkLoad(load func() (requests, nanos int64)) {
+func (p *Proxy) SetPeerBulkLoad(load func() cache.BulkLoad) {
 	if p == nil || p.peerCache == nil || load == nil {
 		return
 	}
-	p.peerCache.SetBulkLoad(func() cache.BulkLoad {
-		n, ns := load()
-		return cache.BulkLoad{Requests: n, Nanos: ns}
-	})
+	p.peerCache.SetBulkLoad(load)
 }
 
 // stopResponseCacheWarm cancels a running warm-up and waits for it.
