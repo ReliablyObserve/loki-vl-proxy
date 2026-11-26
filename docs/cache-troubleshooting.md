@@ -201,6 +201,42 @@ loki_vl_proxy_cache_ttl_seconds
 | `promotions{from="l2_disk"}` is low while L1 evicts on `expired` | A memory and a disk copy are written together with the same TTL, so they expire together; the disk answers after a restart, an L1 capacity eviction, or a promotion of a still-valid copy | Raise memory first; the disk does not extend a TTL |
 | `cache_l2_read_seconds` p99 is in milliseconds, or `cache_l2_read_bytes` is mostly under 4 KiB | The disk is slow, or many small records are read per request | Check the device; see cache lookups per request below |
 
+### Sizing procedure
+
+Turn on `-cache-sizing-signals` on one replica (about 50 ns per lookup), let it
+see a day of traffic, then read the signals in this order:
+
+```promql
+# 1. Is the cache bound by size or by TTL? (from the eviction reasons above)
+sum by (tier, reason) (rate(loki_vl_proxy_cache_evictions_total[1h]))
+# 2. What would more room, or longer TTLs, have answered? Compare with the misses.
+sum by (tier, scenario) (rate(loki_vl_proxy_cache_ghost_hits_total[1h]))
+sum by (tier) (rate(loki_vl_proxy_cache_tier_misses_total{tier=~"l1_memory|l2_disk"}[1h]))
+# 3. How large is what users ask for?
+max by (window) (loki_vl_proxy_cache_working_set_bytes)
+max by (window) (loki_vl_proxy_cache_working_set_keys)
+# 4. How long until a key is asked again? Compare with loki_vl_proxy_cache_ttl_seconds.
+histogram_quantile(0.5, sum by (le) (rate(loki_vl_proxy_cache_reuse_interval_seconds_bucket[1h])))
+# 5. Which answer classes are served from the cache, by bytes?
+sum by (class) (rate(loki_vl_proxy_cache_hit_bytes_total[1h]))
+  / sum by (class) (rate(loki_vl_proxy_cache_requested_bytes_total[1h]))
+```
+
+| What you see | What to change |
+|---|---|
+| `ghost_hits{tier="l1_memory",scenario="2x_bytes"}` is a large share of the L1 misses | Raise `-cache-max-bytes` (and `-cache-max` when `working_set_keys` is above it); up to `working_set_bytes{window="1h"}` is where more memory still helps |
+| `ghost_hits{tier="l2_disk",scenario="2x_bytes"}` is a large share of the L2 misses | Raise `-disk-cache-max-bytes` or `-disk-cache-max-entries`, toward `working_set_bytes{window="24h"}` |
+| `ghost_hits{scenario="2x_ttl"}` is high and `2x_bytes` low, with the reuse interval just above the class TTL | The cache is TTL-bound: raise the TTL of that class where it has a flag (see the table above); the Loki answer classes keep fixed TTLs that keep answers fresh, and a longer TTL serves staler answers |
+| Both ghosts are low | Neither more room nor longer TTLs would help: the misses are first asks or answers that are never reused |
+| `working_set_bytes{window="5m"}` is above `-cache-max-bytes` | Even the last five minutes do not fit in memory: raise it, or rely on L2 and the peers |
+| The byte hit ratio of a class is far below the request hit ratio (`cache_tier_hits_total / cache_tier_requests_total`) | Large answers of that class miss while small ones hit: check `admission_rejections{reason="single_entry_budget"}` and raise `-cache-max-bytes` |
+| `sizing_dropped_events_total` above 0 | The sampled figures are a lower bound for that period |
+
+The ghost caches are LRU simulations of a 1-in-16 sample of the keys with the
+tier's budgets doubled (or its TTLs doubled), fed by the same lookups and
+stores; with `-cache-reuse-protection-percent` the real memory tier is not
+plain LRU, so its ghosts approximate it.
+
 Cache lookups per client request are
 `loki_vl_proxy_request_fanout{kind="cache_lookup"}` (by route). The split of those
 lookups by tier is not measured. Requests that are never cached (the settled

@@ -924,7 +924,7 @@ is in the [sizing guide](cache-troubleshooting.md#size-the-cache-from-its-evicti
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
-| `loki_vl_proxy_cache_evictions_total` | counter | `layer`, `tier`, `reason` | entries that left a tier; `expired` + `capacity` equals `loki_vl_proxy_cache_layer_evictions_total` summed over components |
+| `loki_vl_proxy_cache_evictions_total` | counter | `layer`, `tier`, `reason` | entries that left a tier; `expired` + `capacity` equals `loki_vl_proxy_cache_layer_evictions_total` summed over components (between L2 flushes: a scrape taken while one commits can see its layer count before its reasons) |
 | `loki_vl_proxy_cache_admission_rejections_total` | counter | `layer`, `tier`, `reason` | values a tier did not store; every reason but `memory_only` and `not_replica` sums to `loki_vl_proxy_cache_layer_rejections_total` |
 | `loki_vl_proxy_cache_entry_age_at_eviction_seconds` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | time since the value entered the tier on this replica; buckets 1s to 24h |
 | `loki_vl_proxy_cache_entry_hits_at_eviction` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | lookups the entry answered from that tier; buckets 0 to 100 |
@@ -933,6 +933,27 @@ is in the [sizing guide](cache-troubleshooting.md#size-the-cache-from-its-evicti
 | `loki_vl_proxy_cache_l2_read_seconds` | histogram | `layer` | one L2 lookup that read a record from bbolt: the index lock, the read and the decode; hits from the pending write queue are not reads; buckets 50µs to 500ms |
 | `loki_vl_proxy_cache_l2_read_bytes` | histogram | `layer` | encoded bytes of one L2 record read; buckets 256 B to 16 MiB |
 | `loki_vl_proxy_cache_ttl_seconds` | gauge | `class` | base TTL each answer class is stored with (table below) |
+
+Sizing signals, with `-cache-sizing-signals` (off by default; the primary cache only):
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `loki_vl_proxy_cache_ghost_hits_total` | counter | `tier` (`l1_memory`, `l2_disk`), `scenario` (`2x_bytes`, `2x_ttl`) | estimated misses of the tier that twice its entry and byte budgets, or every TTL doubled, would have answered (a ghost cache of keys only; never served) |
+| `loki_vl_proxy_cache_working_set_keys`, `loki_vl_proxy_cache_working_set_bytes` | gauge | `window` (`5m`, `1h`, `24h`) | estimated distinct memory-cache keys looked up or stored in the window, and their answer and key bytes |
+| `loki_vl_proxy_cache_reuse_interval_seconds` | histogram | `layer` | time between two request-level lookups of one key (hit or miss), from the sample (not scaled) |
+| `loki_vl_proxy_cache_hit_bytes_total` | counter | `class`, `tier` (`l1_memory`, `l2_disk`, `l3_peer`) | answer bytes request-level lookups got from each tier |
+| `loki_vl_proxy_cache_requested_bytes_total` | counter | `class` | answer bytes asked for: the hit bytes plus the bytes stored in memory after a full miss |
+| `loki_vl_proxy_cache_sizing_dropped_events_total` | counter | `tier` | sampled events a full buffer dropped; while above 0 the sampled figures are a lower bound |
+
+`class` is the answer class from the key's namespace: `query_range` (also the
+settled steps and windows), `query`, `series`, `labels` (label names, values
+and inventories), `volume` (also `index_stats`), `detected`, `patterns`,
+`other`. The ghosts, the working set and the reuse intervals follow a
+1-in-16 hash sample of the keys, scaled by 16 (the reuse histogram counts
+sampled lookups); lookups reach them through a lossy buffer, so under bursts
+they are a lower bound. Request-level lookups are the full-stack ones
+(`GetWithTier`, `GetSharedWithAge`) the cache tier requests count. The series
+set is fixed: 86 series.
 
 | `reason` | Tier | Cause |
 |---|---|---|

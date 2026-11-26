@@ -139,6 +139,9 @@ type Cache struct {
 	// retention is the reuse-aware retention policy (retention.go), nil for
 	// plain LRU: the default, and every cache SetRetention was not called on.
 	retention *retentionState
+	// sizing are the sizing signals (sizing_signals.go), nil unless enabled;
+	// set once by EnableSizingSignals before the cache is shared.
+	sizing *sizingSignals
 	// segFree are segment nodes of removed entries kept for reuse (at most
 	// segFreeMax), so a cache that evicts as it stores allocates no node.
 	segFree  *segNode
@@ -335,6 +338,9 @@ func (c *Cache) Close() {
 		c.startupTimer.Stop()
 	}
 	c.mu.Unlock()
+	if s := c.sizing; s != nil {
+		s.stop()
+	}
 }
 
 // Peek returns a fresh value from the memory tier without promoting it in
@@ -406,6 +412,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 		c.recordTierRequest("l1")
 		c.recordTierHit("l1")
 		c.Hits.Add(1)
+		c.sizingLookup(key, "l1_memory", v)
 		return v, ttl, age, "l1_memory", true
 	}
 	c.recordTierRequest("l1")
@@ -416,6 +423,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 		if v, ttl, ok := c.getDiskWithTTL(key); ok {
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
+			c.sizingLookup(key, "l2_disk", v)
 			return v, ttl, -1, "l2_disk", true
 		}
 		c.recordTierMiss("l2")
@@ -434,6 +442,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 			c.storePeerCopy(key, v, shadowTTL, memOnly)
 			c.recordTierHit("l3")
 			c.Hits.Add(1)
+			c.sizingLookup(key, "l3_peer", v)
 			return v, shadowTTL, -1, "l3_peer", true
 		}
 		c.recordTierMiss("l3")
@@ -441,6 +450,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 
 	c.backendFallthrough.Add(1)
 	c.Misses.Add(1)
+	c.sizingLookup(key, "", nil)
 	return nil, 0, 0, "", false
 }
 
@@ -514,6 +524,7 @@ func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 		case c.promoteBuf <- key:
 		default:
 		}
+		c.sizingLookup(key, "l1_memory", v)
 		return v, "l1_memory", true
 	}
 	c.mu.RUnlock()
@@ -527,6 +538,7 @@ func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 		if v, _, ok := c.getDiskWithTTL(key); ok {
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
+			c.sizingLookup(key, "l2_disk", v)
 			return v, "l2_disk", true
 		}
 		c.recordTierMiss("l2")
@@ -545,6 +557,7 @@ func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 			c.storePeerCopy(key, v, shadowTTL, memOnly)
 			c.recordTierHit("l3")
 			c.Hits.Add(1)
+			c.sizingLookup(key, "l3_peer", v)
 			return v, "l3_peer", true
 		}
 		c.recordTierMiss("l3")
@@ -552,6 +565,7 @@ func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 
 	c.backendFallthrough.Add(1)
 	c.Misses.Add(1)
+	c.sizingLookup(key, "", nil)
 	return nil, "", false
 }
 

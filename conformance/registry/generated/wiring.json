@@ -192,6 +192,11 @@
       "internal/cache/retention_test.go",
       "internal/cache/retention_trace_test.go"
     ],
+    "cache-sizing-signals": [
+      "internal/cache/sizing_signals_test.go",
+      "internal/metrics/cache_sizing_metrics_test.go",
+      "internal/proxy/cache_layer_metrics_test.go"
+    ],
     "credential-passthrough-as-configured": [
       "cmd/proxy/secret_flags_test.go",
       "internal/proxy/credential_passthrough_test.go"
@@ -3225,7 +3230,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 757,
+  "registry_items": 758,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3327,6 +3332,9 @@
     ],
     "internal/cache/retention_trace_test.go": [
       "cache-reuse-retention"
+    ],
+    "internal/cache/sizing_signals_test.go": [
+      "cache-sizing-signals"
     ],
     "internal/capability/docs_test.go": [
       "vl-capability-layer"
@@ -3614,6 +3622,9 @@
     "internal/metrics/cache_signal_metrics_test.go": [
       "cache-eviction-signals"
     ],
+    "internal/metrics/cache_sizing_metrics_test.go": [
+      "cache-sizing-signals"
+    ],
     "internal/metrics/callertracker_test.go": [
       "observability-slow-query-log"
     ],
@@ -3813,7 +3824,8 @@
       "shutdown-releases-background-work"
     ],
     "internal/proxy/cache_layer_metrics_test.go": [
-      "cache-eviction-signals"
+      "cache-eviction-signals",
+      "cache-sizing-signals"
     ],
     "internal/proxy/cache_peer_restore_test.go": [
       "cache-restart-handover"
@@ -7198,7 +7210,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 862,
+  "tests_with_markers": 864,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7356,5 +7368,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 489
+  "wired_items": 490
 }

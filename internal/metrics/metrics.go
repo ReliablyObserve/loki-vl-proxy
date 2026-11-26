@@ -172,6 +172,7 @@ type Metrics struct {
 	cacheLayerCoalescerStatsProvider func() [cache.LayerCount]CoalescerStats
 	cacheSignalStatsProvider         func() []CacheComponentSignals
 	cacheTTLProvider                 func() []CacheTTL
+	cacheSizingStatsProvider         func() []cache.SizingSnapshot
 }
 
 // CoalescerStats is a process-wide snapshot of duplicate backend work avoided.
