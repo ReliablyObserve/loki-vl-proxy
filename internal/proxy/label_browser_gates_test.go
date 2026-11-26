@@ -3,9 +3,12 @@ package proxy
 import (
 	"context"
 	"math/rand/v2"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -196,6 +199,178 @@ func TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries(t *testing.T) {
 	}
 }
 
+// heldBackgroundHours is a VictoriaLogs transport that holds every
+// background read of an hour bucket's names (its row count passes) until the
+// test releases it: the label browser's next window then arrives while the
+// reads the previous listing started are still running, as it does when the
+// A/B run asks for windows back to back.
+type heldBackgroundHours struct {
+	inner   http.RoundTripper
+	mu      sync.Mutex
+	pending []chan struct{}
+	waiting atomic.Int64
+}
+
+func (h *heldBackgroundHours) RoundTrip(req *http.Request) (*http.Response, error) {
+	if isBackgroundInventory(req.Context()) && req.URL.Path == "/select/logsql/stream_field_names" {
+		q := req.URL.Query()
+		a, _ := strconv.ParseInt(q.Get("start"), 10, 64)
+		b, _ := strconv.ParseInt(q.Get("end"), 10, 64)
+		if time.Duration(b-a) == time.Hour {
+			release := make(chan struct{})
+			h.mu.Lock()
+			h.pending = append(h.pending, release)
+			h.mu.Unlock()
+			h.waiting.Add(1)
+			select {
+			case <-release:
+			case <-req.Context().Done():
+			}
+			h.waiting.Add(-1)
+		}
+	}
+	return h.inner.RoundTrip(req)
+}
+
+// held returns the reads held since the last call.
+func (h *heldBackgroundHours) held() []chan struct{} {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	gen := h.pending
+	h.pending = nil
+	return gen
+}
+
+// steady waits until every running background read of p is held: the others
+// have finished. Reads start only inside a listing, so none starts later.
+func (h *heldBackgroundHours) steady(t *testing.T, p *Proxy) {
+	t.Helper()
+	h.until(t, func() bool { return p.inventoryBackgroundRunning.Load() == h.waiting.Load() })
+}
+
+// release lets the reads of gen go on and waits until they have finished.
+func (h *heldBackgroundHours) release(t *testing.T, p *Proxy, gen []chan struct{}) {
+	t.Helper()
+	for _, c := range gen {
+		close(c)
+	}
+	h.until(t, func() bool {
+		h.mu.Lock()
+		unreleased := int64(len(h.pending))
+		h.mu.Unlock()
+		return h.waiting.Load() == unreleased && p.inventoryBackgroundRunning.Load() == unreleased
+	})
+}
+
+func (h *heldBackgroundHours) until(t *testing.T, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !done() {
+		if time.Now().After(deadline) {
+			t.Fatal("background inventory reads neither finished nor reached the hold")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// Gate: the label browser's windows asked back to back. Each background read
+// a listing starts lasts longer than one request and less than two: it is
+// held until the next listing has its answer, then finishes before the one
+// after. A moved window then finds the hour it starts in only when a listing
+// two requests back read it, which is why a listing also reads the hour two
+// before its start once the nearer hours are cached or being read. A 24h
+// window moved back 3617 s is then answered from memory from its third run
+// on, at the pinned instants of MovedWindowNoRequestPathCalls (12:26, 23:26,
+// 18:45); reading only up to the hour before the start, every run reads
+// VictoriaLogs.
+//
+// The windows that still read VictoriaLogs are listed exactly, and why: the
+// first two after the first load, whose hours only the listing one request
+// back read ("uncached"); a 24h window starting just after an hour, which
+// some runs move back over two hour boundaries; the 1h window, whose one hour
+// of background reads per listing leaves no room to read ahead; and the
+// windows whose part of a UTC day is too thin to prove rows
+// ("no_rows_evidence"). Every answer lists the names of one full-range call.
+// The edge refresh budget is short: a window waits at most that long for a
+// running read before it reads VictoriaLogs. With -metadata-max-staleness=0
+// nothing is read in the background and every moved window reads
+// VictoriaLogs.
+//
+// conformance: semantics/label-browser-moved-window-from-memory, semantics/label-browser-latency-cold-and-refresh, semantics/label-inventory-exact-and-incremental, loki_api_v1_labels
+func TestLabelBrowserGates_BackToBackMovedWindows(t *testing.T) {
+	hour, six, day := labelBrowserShapes[0], labelBrowserShapes[1], labelBrowserShapes[2]
+	const mem = "memory:0"
+	for _, tc := range []struct {
+		shape struct{ width, shift time.Duration }
+		end0  time.Time
+		want  []string // moved windows 1 to 7: the memory miss reason (or memory) and the request-path VictoriaLogs calls
+	}{
+		{day, labelBrowserEnd(12, 26), []string{"uncached:3", "uncached:2", mem, mem, mem, mem, mem}},
+		{day, labelBrowserEnd(23, 26), []string{"uncached:3", "uncached:2", mem, mem, mem, mem, mem}},
+		{day, labelBrowserEnd(18, 45), []string{"uncached:9", "uncached:8", mem, mem, mem, mem, mem}},
+		// Runs 4 and 5 end between 00:00 and 01:00 UTC.
+		{day, labelBrowserEnd(4, 26), []string{"uncached:3", "uncached:2", mem, "no_rows_evidence:1", "no_rows_evidence:1", mem, mem}},
+		{day, labelBrowserEnd(12, 0), []string{"uncached:3", "uncached:2", "uncached:2", "uncached:2", mem, mem, mem}},
+		{six, labelBrowserEnd(12, 26), []string{"uncached:4", mem, mem, mem, mem, mem, mem}},
+		{hour, labelBrowserEnd(12, 2), []string{"uncached:7", "uncached:7", mem, mem, mem, mem, mem}},
+		{hour, labelBrowserEnd(0, 7), []string{"uncached:7", "uncached:7", mem, mem, mem, mem, mem}},
+	} {
+		t.Run(tc.shape.width.String()+"/"+tc.end0.Format("15:04"), func(t *testing.T) {
+			now := pinnedNow(tc.end0)
+			vl := &fakeVictoriaLogs{}
+			seedStableLabels(vl, now)
+			full := newInventoryTestProxy(t, vl, -1)
+			for _, staleness := range []time.Duration{10 * time.Second, 0} {
+				got := backToBackMovedWindows(t, vl, full, staleness, now, tc.end0, tc.shape.width, tc.shape.shift, len(tc.want))
+				if staleness > 0 && strings.Join(got, " ") != strings.Join(tc.want, " ") {
+					t.Fatalf("moved windows (memory miss reason:request-path calls) %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// backToBackMovedWindows asks the first window, then runs moved windows, each
+// while the background reads the listing before it started are held, and
+// returns each moved window's memory miss reason and request-path calls.
+func backToBackMovedWindows(t *testing.T, vl *fakeVictoriaLogs, full *Proxy, staleness time.Duration, now, end0 time.Time, width, shift time.Duration, runs int) []string {
+	t.Helper()
+	p := newPinnedLabelProxy(t, vl, staleness, now)
+	p.metadataEdgeRefreshBudget = 5 * time.Millisecond
+	h := &heldBackgroundHours{inner: p.client.Transport}
+	p.client.Transport = h
+	_ = namesOnlyListing(t, p, end0.Add(-width), end0)
+	h.steady(t, p)
+	var got []string
+	for run := 1; run <= runs; run++ {
+		previous := h.held()
+		end := end0.Add(-time.Duration(run) * shift)
+		start := end.Add(-width)
+		missed := map[string]float64{"no_rows_evidence": 0, "uncached": 0, "unconfirmed": 0}
+		for why := range missed {
+			missed[why] = internalOperationCount(p, "metadata_inventory_memory_miss", why)
+		}
+		names, n := namesOnlyListingCalls(t, p, start, end)
+		why := "memory"
+		for reason, before := range missed {
+			if internalOperationCount(p, "metadata_inventory_memory_miss", reason) > before {
+				why = reason
+			}
+		}
+		h.steady(t, p)
+		h.release(t, p, previous)
+		if exact := namesOnlyListing(t, full, start, end); strings.Join(names, ",") != strings.Join(exact, ",") {
+			t.Fatalf("staleness %s, moved window %d listed %v, one call %v", staleness, run, names, exact)
+		}
+		if staleness == 0 && (n == 0 || p.inventoryBackgroundRunning.Load() != 0) {
+			t.Fatalf("with -metadata-max-staleness=0 moved window %d made %d VictoriaLogs calls with %d background reads running, want calls and none", run, n, p.inventoryBackgroundRunning.Load())
+		}
+		got = append(got, why+":"+strconv.Itoa(n))
+	}
+	h.release(t, p, h.held())
+	return got
+}
+
 func sum(xs []int) int {
 	n := 0
 	for _, x := range xs {
@@ -238,7 +413,7 @@ func backgroundReadsWithinTheWindow(t *testing.T, end time.Time) {
 			params := url.Values{"query": {"*"}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
 			plan := planInventorySegments(start.UnixNano(), end.UnixNano(), now.Add(-metadataInventorySealLag).UnixNano())
 			vl.reset()
-			p.fillTouchedDays(withNamesOnlyListing(context.Background()), "/select/logsql/stream_field_names", params, listingBase(p), plan, now, true)
+			p.fillTouchedDays(withNamesOnlyListing(context.Background()), "/select/logsql/stream_field_names", params, listingBase(p), plan, now, true, false)
 			settleBackground(t, p)
 			_, spans := vl.reset()
 			var read time.Duration
