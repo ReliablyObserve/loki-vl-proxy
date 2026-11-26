@@ -81,7 +81,7 @@ compare:
     Loki's label sets.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1776"
   impact: explore-visible
   effort: S
   area: 'internal/proxy/keep_rules.go (entry and stream labels), internal/queryplan/lower/keep_blank.go (rejected values ahead of later stages and metric series), internal/proxy/keep_series_grouping.go matcherKeepLabels'

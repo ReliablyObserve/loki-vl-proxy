@@ -63,7 +63,7 @@ compare:
     fixture is added; this observed record alone is not an exact full-response proof.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1776"
   impact: explore-visible
   effort: M
   area: Existing typed query planning, ordered stage execution and response label exposure; exact responsible route

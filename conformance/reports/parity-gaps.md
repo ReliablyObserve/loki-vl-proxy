@@ -257,7 +257,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `profiles/structured-metadata-label-collision` — Structured metadata named like a stream label gets Loki's _extracted suffix (fixed) | #660 | 7 | 52 |
 | `semantics/extracted-suffix-collision` — A parsed key named like a stream label is renamed with _extracted in query results (fixed; detected_fields decision unchanged) | #660 | 3 | 28 |
 | `semantics/topk-bottomk-range-series` — A plain topk/bottomk on query_range ranks every step like Loki; ties at the k-th place follow Loki's map order (fixed) | #736 | 5 | 17 |
-| `semantics/matcher-keep-stream-label-residual` — Matcher keep leaves stream labels in log and grouped metric results (fixed) | TBD-PR | 16 | 16 |
+| `semantics/matcher-keep-stream-label-residual` — Matcher keep leaves stream labels in log and grouped metric results (fixed) | #1776 | 16 | 16 |
 | `semantics/stddev-stdvar-grouped-values` — stddev and stdvar with by or without fold the series of each group, like Loki (fixed) | #738 | 4 | 12 |
 | `semantics/binary-ignoring-matching` — `+ ignoring(label)` between two sums joins the wrong series (fixed) | #741 | 2 | 9 |
 | `semantics/topk-grouped-spellings` — topk/bottomk with by()/without() rank k series per group at every step, in every spelling Loki accepts (fixed) | #736 | 1 | 8 |
@@ -297,7 +297,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/json-parser-error-under-wrappers` — A JSON parser error fails a metric under any function, as in Loki (fixed; strict logfmt open) | TBD-PR | 0 | 0 |
 | `semantics/keep-before-unwrap-series-identity` — A keep before an unwrap decides the series of first, last, quantile, stddev, stdvar, avg, max, sum and rate_counter over time (fixed) | this change | 0 | 0 |
 | `semantics/keep-leaves-labels-loki-drops` — `\| keep` leaves labels Loki drops: a parsed key renamed name_extracted, the stream labels under a vector aggregation (fixed) | #1100 | 0 | 0 |
-| `semantics/keep-names-and-matchers` — `\| keep` with matchers, alone or beside bare names, answers other labels, entries and metric series than Loki (fixed) | TBD-PR | 0 | 0 |
+| `semantics/keep-names-and-matchers` — `\| keep` with matchers, alone or beside bare names, answers other labels, entries and metric series than Loki (fixed) | #1776 | 0 | 0 |
 | `semantics/label-browser-moved-window-from-memory` — The label browser's moved windows are answered from memory, faster than Loki, without losing a name | #1750 | 0 | 0 |
 | `semantics/label-filter-expression-syntax` — Comma-joined and parenthesized label-filter expressions are rejected (open) | #995 | 0 | 0 |
 | `semantics/label-replace-duplicates-before-ranking` — topk, bottomk and stddev over label sets a label_replace made equal ranked merged series on query_range (fixed) | #744 | 0 | 0 |
@@ -311,7 +311,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/logfmt-existence-filter-ungrouped-sum` — An ungrouped sum over `\| logfmt \| key!=""` retains parsed fields (fixed) | #968 | 0 | 0 |
 | `semantics/lower-bound-exclusive` — the raw-row range evaluator reads the window (t-range, t] for every range function (fixed) | TBD-PR | 0 | 0 |
 | `semantics/marker-text-in-query-strings` — A string in a query that holds the proxy's post-processing marker text is matched as text | #1189 | 0 | 0 |
-| `semantics/matcher-keep-logfmt-filter-row-and-label-loss` — Matcher keep followed by keep-empty logfmt and a label filter loses a parsed label and a retained line (fixed) | TBD-PR | 0 | 0 |
+| `semantics/matcher-keep-logfmt-filter-row-and-label-loss` — Matcher keep followed by keep-empty logfmt and a label filter loses a parsed label and a retained line (fixed) | #1776 | 0 | 0 |
 | `semantics/nested-aggregation-outer-by-native-routes` — A vector aggregation over another one keeps every level's own by on the native routes (fixed) | #746 | 0 | 0 |
 | `semantics/non-sum-vector-aggregation-unreduced` — max, min, count and avg over a range function are one series per group on query_range, like Loki (fixed) | #734 | 0 | 0 |
 | `semantics/parenthesized-log-range` — A parenthesized log expression under a range function evaluates like the plain form | #669 | 0 | 0 |

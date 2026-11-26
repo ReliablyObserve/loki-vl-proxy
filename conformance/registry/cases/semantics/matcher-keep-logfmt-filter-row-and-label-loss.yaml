@@ -78,7 +78,7 @@ compare:
     matching only those two examples or only a 200 status is insufficient.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1776"
   impact: explore-visible
   effort: M
   area: Existing typed LogQL plan and ordered matcher-keep/logfmt/filter execution; responsible stage not isolated
