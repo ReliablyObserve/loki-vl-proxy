@@ -31,6 +31,10 @@ type cacheHandoverState struct {
 	warmBytes    int64
 	warmTimeout  time.Duration
 	scope        func() string
+	// peerRestore lets the warm-up restore from peers when there is nothing
+	// local to warm from; peerConcurrency is the peers streamed at once.
+	peerRestore     bool
+	peerConcurrency int
 	// progressEvery is the progress log's interval.
 	progressEvery time.Duration
 
@@ -54,6 +58,9 @@ func newCacheHandoverState(cfg Config) *cacheHandoverState {
 		warmTimeout:  timeout,
 		scope:        sync.OnceValue(func() string { return "" }),
 
+		peerRestore:     cfg.CacheStartupPeerRestore,
+		peerConcurrency: max(cfg.CacheStartupPeerRestoreConcurrency, 0),
+
 		progressEvery: cacheWarmProgressInterval,
 	}
 	if cfg.CacheHandoverScope != nil {
@@ -67,14 +74,22 @@ func newCacheHandoverState(cfg Config) *cacheHandoverState {
 }
 
 // startResponseCacheWarm starts the warm-up from a hand-over the disk tier
-// found, or drops the hand-over when the warm-up is off. Shutdown stops it.
+// found, or drops the hand-over when the warm-up is off. With nothing local to
+// warm from (no hand-over, an empty or no disk tier) and peers, it restores
+// from the peers instead (internal/cache/restore_peer.go), under the same
+// budget and deadline. Shutdown stops it.
 func (p *Proxy) startResponseCacheWarm() {
 	h := p.cacheHandover
-	if h == nil || p.cache == nil || !p.cache.HasHandover() {
+	if h == nil || p.cache == nil {
 		return
 	}
-	if h.warmBytes <= 0 {
+	fromDisk := p.cache.HasHandover()
+	if fromDisk && h.warmBytes <= 0 {
 		p.cache.DropHandover()
+		return
+	}
+	fromPeers := !fromDisk && h.warmBytes > 0 && h.peerRestore && p.cache.PeerRestoreWanted()
+	if !fromDisk && !fromPeers {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), h.warmTimeout)
@@ -88,11 +103,64 @@ func (p *Proxy) startResponseCacheWarm() {
 		defer close(done)
 		defer cancel()
 		defer h.ready.Store(true)
-		stopProgress := p.logResponseCacheWarmProgress(ctx, h.progressEvery)
+		if fromPeers {
+			p.restoreResponseCacheFromPeers(ctx, h)
+			return
+		}
+		stopProgress := p.logResponseCacheWarmProgress(ctx, h.progressEvery, func(s cache.HandoverStats) cache.RestoreProgress { return s.Restore })
 		report := p.cache.WarmFromHandover(ctx, cache.HandoverWarmOptions{Scope: h.scope(), MaxBytes: h.warmBytes, OnPlan: p.logResponseCacheWarmPlan})
 		stopProgress()
 		p.logResponseCacheWarmEnd(report)
 	}()
+}
+
+// restoreResponseCacheFromPeers runs the peer bulk restore and logs its start,
+// progress and end.
+func (p *Proxy) restoreResponseCacheFromPeers(ctx context.Context, h *cacheHandoverState) {
+	timeout := time.Duration(0)
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = max(time.Until(deadline), 0)
+	}
+	p.log.Info("response cache restore from peers started",
+		"source", string(cache.RestoreSourcePeer),
+		"peers", len(p.peerCache.Peers()),
+		"budget_bytes", h.warmBytes,
+		"timeout_ms", timeout.Milliseconds(),
+		"concurrency", h.peerConcurrency,
+	)
+	stopProgress := p.logResponseCacheWarmProgress(ctx, h.progressEvery, func(s cache.HandoverStats) cache.RestoreProgress { return s.PeerRestore })
+	report := p.cache.RestoreFromPeers(ctx, cache.PeerRestoreOptions{Scope: h.scope(), MaxBytes: h.warmBytes, Concurrency: h.peerConcurrency})
+	stopProgress()
+	progress := report.Progress
+	var reasons, peers []any
+	for _, reason := range cache.RestoreSkipReasons() {
+		if n := progress.Skipped[reason]; n > 0 {
+			reasons = append(reasons, slog.Int64(reason.String(), n))
+		}
+	}
+	for _, peer := range report.Peers {
+		peers = append(peers, slog.Group(peer.Addr, "outcome", peer.Outcome, "planned", peer.Planned, "received", peer.Received, "bytes", peer.Bytes, "attempts", peer.Attempts))
+	}
+	level := slog.LevelInfo
+	if report.Outcome == "deadline" {
+		level = slog.LevelWarn
+	}
+	p.log.Log(context.Background(), level, "response cache restored from peers",
+		"source", string(progress.Source),
+		"outcome", report.Outcome,
+		"entries", progress.RestoredEntries,
+		"planned_entries", progress.PlannedEntries,
+		"skipped", progress.SkippedEntries(),
+		slog.Group("skipped_by", reasons...),
+		"bytes", progress.RestoredBytes,
+		"wire_bytes_processed", progress.ProcessedBytes,
+		"bytes_per_second", int64(progress.BytesPerSecond()),
+		"disk_writes", report.DiskWrites,
+		"disk_writes_skipped", report.DiskSkipped,
+		"duration_ms", progress.Elapsed.Milliseconds(),
+		"timeout_ms", progress.Timeout.Milliseconds(),
+		slog.Group("peers", peers...),
+	)
 }
 
 // logResponseCacheWarmPlan logs what a warm-up is about to restore.
@@ -115,7 +183,7 @@ func (p *Proxy) logResponseCacheWarmPlan(plan cache.RestoreProgress) {
 // logResponseCacheWarmProgress logs the running warm-up every interval, and
 // warns once when it is not going to finish before ctx's deadline. The returned
 // function stops it and waits for it.
-func (p *Proxy) logResponseCacheWarmProgress(ctx context.Context, interval time.Duration) func() {
+func (p *Proxy) logResponseCacheWarmProgress(ctx context.Context, interval time.Duration, of func(cache.HandoverStats) cache.RestoreProgress) func() {
 	stop, done := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(done)
@@ -130,7 +198,7 @@ func (p *Proxy) logResponseCacheWarmProgress(ctx context.Context, interval time.
 				return
 			case <-ticker.C:
 			}
-			progress := p.cache.HandoverStats().Restore
+			progress := of(p.cache.HandoverStats())
 			if progress.Outcome != cache.RestoreRunning {
 				continue
 			}
@@ -208,6 +276,15 @@ func (p *Proxy) logResponseCacheWarmEnd(report cache.HandoverWarmReport) {
 func (p *Proxy) responseCacheWarming() bool {
 	h := p.cacheHandover
 	return h != nil && !h.ready.Load() && time.Now().UnixNano() < h.warmDeadline.Load()
+}
+
+// StopPeerBulkStreams ends the peer bulk restore streams this replica serves
+// and refuses new ones; the HTTP server calls it when it starts shutting
+// down, so a stream does not hold the drain.
+func (p *Proxy) StopPeerBulkStreams() {
+	if p != nil && p.peerCache != nil {
+		p.peerCache.StopBulk()
+	}
 }
 
 // stopResponseCacheWarm cancels a running warm-up and waits for it.

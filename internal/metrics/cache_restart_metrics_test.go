@@ -19,8 +19,20 @@ func restartStats(tracked bool) cache.StatsSnapshot {
 		WarmBytes: 2 << 20, WarmDuration: 6 * time.Millisecond,
 		StartupTracked: tracked, StartupL1Requests: 10, StartupL1Hits: 7,
 		IndexRebuildDuration: 2 * time.Millisecond, IndexRebuildEntries: 60,
-		Restore: runningRestore(),
+		Restore: runningRestore(), PeerRestore: peerRestoreDone(),
 	}}
+}
+
+// peerRestoreDone is a peer bulk restore that ended.
+func peerRestoreDone() cache.RestoreProgress {
+	p := cache.RestoreProgress{
+		Source: cache.RestoreSourcePeer, Outcome: cache.RestoreDone,
+		PlannedEntries: 30, PlannedBytes: 900, BudgetBytes: 1 << 20,
+		ProcessedEntries: 30, ProcessedBytes: 900, RestoredEntries: 29, RestoredBytes: 2000,
+		Timeout: 10 * time.Second, Elapsed: time.Second,
+	}
+	p.Skipped[cache.RestoreSkipSuperseded] = 1
+	return p
 }
 
 // runningRestore is a warm-up a quarter of the way through.
@@ -70,6 +82,12 @@ func TestMetrics_Handler_EmitsCacheRestartMetrics(t *testing.T) {
 			`loki_vl_proxy_cache_restart_warm_skipped_entries{source="disk",reason="deadline"} 0`,
 			`loki_vl_proxy_cache_restart_warm_outcome{source="disk",outcome="running"} 1`,
 			`loki_vl_proxy_cache_restart_warm_outcome{source="disk",outcome="done"} 0`,
+			`loki_vl_proxy_cache_restart_warm_planned_entries{source="peer"} 30`,
+			`loki_vl_proxy_cache_restart_warm_processed_bytes{source="peer"} 900`,
+			`loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second{source="peer"} 2000`,
+			`loki_vl_proxy_cache_restart_warm_skipped_entries{source="peer",reason="superseded"} 1`,
+			`loki_vl_proxy_cache_restart_warm_outcome{source="peer",outcome="done"} 1`,
+			`loki_vl_proxy_cache_restart_warm_outcome{source="peer",outcome="running"} 0`,
 		} {
 			if !strings.Contains(body, needle) {
 				t.Fatalf("missing %q", needle)

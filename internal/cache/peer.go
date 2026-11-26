@@ -176,6 +176,12 @@ type PeerCache struct {
 	RABytes       atomic.Int64
 	RABudget      atomic.Int64
 	RATenant      atomic.Int64
+
+	// bulk is the serving side of the peer bulk restore; bulkClient the
+	// requesting side's own client (restore_peer.go).
+	bulk           *peerBulkServe
+	bulkClientOnce sync.Once
+	bulkClient     atomic.Pointer[http.Client]
 }
 
 type inflightEntry struct {
@@ -223,7 +229,14 @@ type PeerConfig struct {
 	// (peer_hedge.go): 0 uses DefaultPeerReadHedgeMaxDelay, a negative value
 	// turns hedging off (a read waits up to Timeout on each replica).
 	ReadHedgeMaxDelay time.Duration
-	Logger            *slog.Logger
+	// Peer bulk restore streams this replica serves (peer_bulk_serve.go): at
+	// most BulkServeMaxStreams at once and BulkServeMaxBytesPerSecond
+	// together. 0 uses DefaultPeerBulkServeMaxStreams and
+	// DefaultPeerBulkServeMaxBytesPerSecond; a negative BulkServeMaxStreams
+	// serves none, a negative BulkServeMaxBytesPerSecond sets no rate.
+	BulkServeMaxStreams        int
+	BulkServeMaxBytesPerSecond int64
+	Logger                     *slog.Logger
 }
 
 type hotIndexResponse struct {
@@ -322,6 +335,7 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 		pc.wtMinTTL = 30 * time.Second
 	}
 	pc.hedgeMax = resolveReadHedgeMax(cfg.ReadHedgeMaxDelay)
+	pc.bulk = newPeerBulkServe(cfg.BulkServeMaxStreams, cfg.BulkServeMaxBytesPerSecond)
 	pc.replication = min(max(cfg.ReplicationFactor, 1), MaxReplicationFactor)
 	pc.pushQueue = make(chan pushJob, maxQueuedPushes)
 	pc.ctx, pc.cancel = context.WithCancel(context.Background())
@@ -1014,6 +1028,7 @@ const MinUsableTTL = 5 * time.Second
 // GET  /_cache/has?keys=k1,k2   — batch presence check; returns JSON presence+TTL map
 // GET  /_cache/hot              — hot key index
 // POST /_cache/set?key=...      — store a value
+// POST /_cache/bulk             — peer bulk restore stream (peer_bulk_serve.go)
 // GET  /_cache/peers            — current known peer list (diagnostic)
 // Header X-Cache-Ttl-Ms: remaining TTL in milliseconds (for shadow copy)
 func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCache *Cache) {
@@ -1026,6 +1041,9 @@ func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCach
 		return
 	case "/_cache/peers":
 		pc.servePeers(w, r)
+		return
+	case peerBulkPath:
+		pc.serveBulk(w, r, localCache)
 		return
 	}
 	if r.Method == http.MethodPost {
@@ -1766,11 +1784,15 @@ func (pc *PeerCache) Close() {
 	if pc.cancel != nil {
 		pc.cancel()
 	}
+	pc.StopBulk()
 	// The calls Close cancelled close their connections; the idle ones are
 	// closed here, and a dial still running when Close ran is closed by
 	// dialPeer, so no connection of the peer cache outlives it.
 	if pc.client != nil {
 		pc.client.CloseIdleConnections()
+	}
+	if client := pc.bulkClient.Load(); client != nil {
+		client.CloseIdleConnections()
 	}
 }
 
@@ -2514,5 +2536,6 @@ func (pc *PeerCache) FetchDurationText() string {
 		}
 	}
 	b.WriteString(pc.readHedgeText())
+	b.WriteString(pc.bulkServeText())
 	return b.String()
 }

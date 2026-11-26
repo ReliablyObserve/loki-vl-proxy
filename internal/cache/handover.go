@@ -96,8 +96,10 @@ type HandoverStats struct {
 	WarmSkipped                int64
 	WarmBytes                  int64
 	WarmDuration               time.Duration
-	// Restore is the warm-up's plan and progress, updated after every batch.
-	Restore RestoreProgress
+	// Restore is the warm-up's plan and progress, updated after every batch;
+	// PeerRestore the peer bulk restore's (restore_peer.go).
+	Restore     RestoreProgress
+	PeerRestore RestoreProgress
 	// IndexRebuildDuration and IndexRebuildEntries are the disk tier's start-up
 	// index rebuild, which runs before the proxy listens.
 	IndexRebuildDuration time.Duration
@@ -114,6 +116,8 @@ type handoverCounters struct {
 	// mu guards the warm-up's progress, written once per batch.
 	mu                sync.Mutex
 	progress          RestoreProgress
+	peerProgress      RestoreProgress
+	peerRestoring     atomic.Bool
 	warmDiskEntries   int64
 	warmMemoryEntries int64
 	warmDone          atomic.Bool
@@ -217,11 +221,14 @@ func (c *Cache) HandoverStats() HandoverStats {
 		StartupTracked: s.startupTracked.Load(),
 	}
 	s.mu.Lock()
-	out.Restore = s.progress
+	out.Restore, out.PeerRestore = s.progress, s.peerProgress
 	out.WarmDiskEntries, out.WarmMemoryEntries = s.warmDiskEntries, s.warmMemoryEntries
 	s.mu.Unlock()
 	if out.Restore.Outcome == RestoreRunning {
 		out.Restore.Elapsed = clockNow().Sub(out.Restore.Started)
+	}
+	if out.PeerRestore.Outcome == RestoreRunning {
+		out.PeerRestore.Elapsed = clockNow().Sub(out.PeerRestore.Started)
 	}
 	out.WarmSkipped, out.WarmBytes, out.WarmDuration = out.Restore.SkippedEntries(), out.Restore.RestoredBytes, out.Restore.Elapsed
 	if c.l2 != nil {

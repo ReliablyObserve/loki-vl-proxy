@@ -201,6 +201,10 @@ type proxyRuntimeConfig struct {
 	cacheStartupWarmBytes               int64
 	cacheStartupWarmTimeout             time.Duration
 	cacheHandoverScope                  func() string
+	cacheStartupPeerRestore             bool
+	cacheStartupPeerRestoreConcurrency  int
+	peerBulkServeMaxStreams             int
+	peerBulkServeMaxBytesPerSecond      int64
 	labelStyle                          string
 	metadataFieldMode                   string
 	translateOTel                       *bool
@@ -563,6 +567,8 @@ func run(
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages")
 	cacheShutdownFlushTimeout := fs.Duration("cache-shutdown-flush-timeout", 0, "Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds")
 	cacheStartupWarmBytes := fs.Int64("cache-startup-warm-bytes", 0, "Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none")
+	cacheStartupPeerRestore := fs.Bool("cache-startup-peer-restore", true, "With nothing local to warm from (no restart hand-over, and a disk cache that held no record at start, for example a new volume, or no disk cache), the start-up warm-up pulls the entries this replica owns or replicates from its peers in one streamed, checksummed transfer per peer before /ready answers 200: within -cache-startup-warm-bytes and -cache-startup-warm-timeout, so only when -cache-startup-warm-bytes is set and a peer cache is configured. Peers of an older build, or that do not answer, are skipped at once. false never restores from peers")
+	cacheStartupPeerRestoreConcurrency := fs.Int("cache-startup-peer-restore-concurrency", cache.DefaultPeerRestoreConcurrency, "Peers the start-up peer restore streams from at once (-cache-startup-peer-restore). Each stream holds at most one batch (256 entries or about 4 MiB) in memory")
 	cacheStartupWarmTimeout := fs.Duration("cache-startup-warm-timeout", 120*time.Second, "Longest /ready answers 503 (response cache warming) while the start-up warm-up runs: the replica reports ready when the warm-up finishes, or after this timeout, whichever comes first; the warm-up stops at this deadline with the hottest entries restored")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
@@ -818,6 +824,8 @@ func run(
 	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
 	peerReadHedgeMaxDelay := fs.Duration("peer-read-hedge-max-delay", 200*time.Millisecond, "Longest a peer-cache read waits on one replica's response headers before it also asks the key's next replica or, with none left, goes on as a miss (VictoriaLogs or a local compute) while that call finishes in the background, where its -peer-timeout still suspends a paused peer. The delay used is twice the p99 of the measured peer header latencies, at least 5ms and at most this value and half of -peer-timeout. 0 turns hedging off: a read waits up to -peer-timeout on each replica.")
+	peerBulkServeMaxStreams := fs.Int("peer-bulk-serve-max-streams", cache.DefaultPeerBulkServeMaxStreams, "Peer bulk restore streams (a replica that starts with an empty disk pulling its entries, -cache-startup-peer-restore) this replica serves at once; a request beyond them is answered 429 at once and the requester asks again. 0 serves none: restoring peers skip this replica")
+	peerBulkServeMaxBytesPerSecond := fs.Int64("peer-bulk-serve-max-bytes-per-second", cache.DefaultPeerBulkServeMaxBytesPerSecond, "Bytes per second all peer bulk restore streams this replica serves send together (records as stored, compressed when the disk cache compresses). 0 sets no rate")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set. When neither this flag nor -peer-auth-token-file is given, read from the PEER_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
 	peerAuthTokenFile := fs.String("peer-auth-token-file", "", "File holding the -peer-auth-token value, read once at startup")
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
@@ -1114,6 +1122,10 @@ func run(
 			cacheStartupWarmBytes:               *cacheStartupWarmBytes,
 			cacheStartupWarmTimeout:             *cacheStartupWarmTimeout,
 			cacheHandoverScope:                  lazyCacheHandoverScope(fs, envCfg, *cacheShutdownFlushTimeout, *cacheStartupWarmBytes),
+			cacheStartupPeerRestore:             *cacheStartupPeerRestore,
+			cacheStartupPeerRestoreConcurrency:  *cacheStartupPeerRestoreConcurrency,
+			peerBulkServeMaxStreams:             *peerBulkServeMaxStreams,
+			peerBulkServeMaxBytesPerSecond:      *peerBulkServeMaxBytesPerSecond,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			translateOTel:                       envCfg.translateOTel,
@@ -1485,6 +1497,8 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 		return nil, fmt.Errorf("build http server: %w", err)
 	}
 	srv.ConnState = p.GetMetrics().ConnStateHook()
+	// Peer bulk restore streams end when the drain starts instead of holding it.
+	srv.RegisterOnShutdown(p.StopPeerBulkStreams)
 
 	// Build any auxiliary listeners requested by the topology decision above.
 	// Each aux server uses the same hardening timeouts as the main listener
@@ -2368,6 +2382,11 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			ReadAheadMaxObjectBytes:  cfg.peerHotReadAheadMaxObjectBytes,
 			ReadAheadTenantFairShare: cfg.peerHotReadAheadTenantFairShare,
 			ReadAheadErrorBackoff:    cfg.peerHotReadAheadErrorBackoff,
+
+			// Peer bulk restore streams this replica serves: 0 serves none or
+			// sets no rate, a negative value there.
+			BulkServeMaxStreams:        peerPushBufferBound(cfg.peerBulkServeMaxStreams),
+			BulkServeMaxBytesPerSecond: peerPushBufferBound(cfg.peerBulkServeMaxBytesPerSecond),
 		})
 	}
 
@@ -2511,6 +2530,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		CacheStartupWarmBytes:              cfg.cacheStartupWarmBytes,
 		CacheStartupWarmTimeout:            cfg.cacheStartupWarmTimeout,
 		CacheHandoverScope:                 cfg.cacheHandoverScope,
+		CacheStartupPeerRestore:            cfg.cacheStartupPeerRestore,
+		CacheStartupPeerRestoreConcurrency: cfg.cacheStartupPeerRestoreConcurrency,
 		DisableLabelsCacheWarm:             !cfg.labelsCacheWarm,
 		LogQLDottedNames:                   cfg.logqlDottedNames,
 		LabelBrowseExtensions:              cfg.labelBrowseExtensions,
@@ -2659,6 +2680,9 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 	}
 	if cfg.peerReadHedgeMaxDelay < 0 {
 		return fmt.Errorf("invalid -peer-read-hedge-max-delay=%s (must be >= 0; 0 turns hedged peer reads off)", cfg.peerReadHedgeMaxDelay)
+	}
+	if cfg.cacheStartupPeerRestoreConcurrency < 0 || cfg.peerBulkServeMaxStreams < 0 || cfg.peerBulkServeMaxBytesPerSecond < 0 {
+		return fmt.Errorf("invalid -cache-startup-peer-restore-concurrency=%d / -peer-bulk-serve-max-streams=%d / -peer-bulk-serve-max-bytes-per-second=%d (must be >= 0)", cfg.cacheStartupPeerRestoreConcurrency, cfg.peerBulkServeMaxStreams, cfg.peerBulkServeMaxBytesPerSecond)
 	}
 	if cfg.peerPushBufferMaxEntries < 0 || cfg.peerPushBufferMaxBytes < 0 {
 		return fmt.Errorf("invalid -peer-push-buffer-max-entries=%d / -peer-push-buffer-max-bytes=%d (must be >= 0; 0 turns the peer push buffer off)", cfg.peerPushBufferMaxEntries, cfg.peerPushBufferMaxBytes)

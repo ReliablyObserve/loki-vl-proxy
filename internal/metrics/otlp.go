@@ -1237,17 +1237,26 @@ func mapsFromHists(m map[string]*histogram) map[string]*histogram          { ret
 
 // cacheRestoreMetrics mirrors writeCacheRestoreProgress.
 func (p *OTLPPusher) cacheRestoreMetrics(h cache.HandoverStats, now int64) []map[string]interface{} {
-	source := attr("source", restoreSourceOfDisk)
+	sources := restoreSources(h)
 	var out []map[string]interface{}
-	for _, m := range restoreMetrics(h) {
-		out = append(out, p.gaugeMetric(m.name, m.help, m.unit, p.gaugeDP(m.name, m.value, now, source)))
+	for i, m := range restoreMetrics(h, sources[0]) {
+		var points []map[string]interface{}
+		for _, rp := range sources {
+			if ms := restoreMetrics(h, rp); i < len(ms) {
+				points = append(points, p.gaugeDP(m.name, ms[i].value, now, attr("source", string(rp.Source))))
+			}
+		}
+		out = append(out, p.gaugeMetric(m.name, m.help, m.unit, points...))
 	}
 	var skipped, outcomes []map[string]interface{}
-	for _, reason := range cache.RestoreSkipReasons() {
-		skipped = append(skipped, p.gaugeDP(restoreSkippedName, float64(h.Restore.Skipped[reason]), now, source, attr("reason", reason.String())))
-	}
-	for _, outcome := range cache.RestoreOutcomes() {
-		outcomes = append(outcomes, p.gaugeDP(restoreOutcomeName, float64(boolGauge(h.Restore.Outcome == outcome)), now, source, attr("outcome", outcome)))
+	for _, rp := range sources {
+		source := attr("source", string(rp.Source))
+		for _, reason := range cache.RestoreSkipReasons() {
+			skipped = append(skipped, p.gaugeDP(restoreSkippedName, float64(rp.Skipped[reason]), now, source, attr("reason", reason.String())))
+		}
+		for _, outcome := range cache.RestoreOutcomes() {
+			outcomes = append(outcomes, p.gaugeDP(restoreOutcomeName, float64(boolGauge(rp.Outcome == outcome)), now, source, attr("outcome", outcome)))
+		}
 	}
 	return append(out,
 		p.gaugeMetric(restoreSkippedName, restoreSkippedHelp, "", skipped...),
