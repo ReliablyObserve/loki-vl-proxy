@@ -84,7 +84,7 @@ gap:
   fixed_by: "#1776"
   impact: explore-visible
   effort: S
-  area: 'internal/proxy/keep_rules.go (entry and stream labels), internal/queryplan/lower/keep_blank.go (rejected values ahead of later stages and metric series), internal/proxy/keep_series_grouping.go matcherKeepLabels'
+  area: 'internal/proxy/keep_rules.go (entry and stream labels), internal/queryplan/lower/keep_blank.go (rejected values ahead of later stages and metric series), internal/queryplan/lower/parser.go and internal/queryplan/lower/metric_stages.go (keep stages, stream values behind a parser), internal/queryplan/lower/log_screen.go and internal/queryplan/lower/metric_screen.go (keep lists served from the plan), internal/proxy/keep_series_grouping.go matcherKeepLabels'
   loki: 'a label survives a keep stage when listed bare or matched; later stages and metric series see only the survivors'
   proxy: 'the same entries, labels and series'
   planned_test: 'TestPlanMatchesLokiOnLogQueries and TestKeepMatchersMetricMatchLoki (internal/querycorpus), TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core), TestKeepRules (internal/proxy), TestKeepNamesAndMatchersText (internal/queryplan/lower), TestDropKeepListWrittenOrder (internal/logql)'
