@@ -146,6 +146,23 @@ proxy: |
   together) and ends its streams when its HTTP server starts shutting down.
   Progress is the warm-up's metrics with source="peer"; the serving side has
   loki_vl_proxy_peer_cache_bulk_serve_*.
+  Lower priority than queries (peer_bulk_governor.go): one governor per
+  serving replica paces all its streams, starting at 2 MiB/s, growing by a
+  quarter per 200 ms tick after three clean ticks up to
+  -peer-bulk-serve-max-bytes-per-second (a ceiling), halving after two
+  pressured ticks (floor 256 KiB/s) and pausing every stream on a severe
+  signal; a stream paused past -peer-bulk-serve-max-pause ends as throttled
+  (the requester counts the rest peer_busy). Signals per tick, each against
+  its baseline and a floor: Go scheduler latency p99, busy and GC share of the
+  CPU budget, live heap against GOMEMLIMIT, mean latency of completed queries
+  (metrics RequestLoad, tails excluded), peer requests and disk lookups, and a
+  write slower than its bytes allow. While paused or pressured new streams get
+  429 (Retry-After 2-10 s). Batches hold 100 ms of the current rate and are
+  copied by one goroutine below the ceiling; the plan walks the memory LRU and
+  the disk index 4,096 entries per lock hold; no lock or disk transaction is
+  held while a stream waits. The requester caps its intake at
+  -cache-startup-peer-restore-max-bytes-per-second and sends its deadline, so
+  a stream never outlives it by more than 2 s.
   Unit proof (internal/cache/restore_peer_test.go, peer_bulk_wire_test.go):
   a wiped disk refills exactly the replicated keys into memory and disk with
   the remaining TTL, each key crosses once at RF 3, serving moves no counter or
@@ -179,6 +196,16 @@ implementation:
   - internal/cache/peer_bulk_wire.go
 
 decisions:
+  - id: restore-at-lower-priority-than-queries
+    chosen: 'An adaptive governor per serving replica (start 2 MiB/s, x1.25 per 200 ms tick after three clean ticks up to the configured ceiling, halve after two pressured ticks, pause on a severe signal, end a stream paused past 30 s as throttled, refuse new streams while paused or pressured), with pressure read from scheduler latency, CPU and GC share, heap against GOMEMLIMIT, query, peer-read and disk-lookup latency against baselines and write stalls; batches paced to 100 ms of the rate; a requester intake cap'
+    over: ['fixed 2 streams and 64 MiB/s per serving replica (owner, 2026-11-26: not enough, it does not back off when the replica is busy)', 'a fixed low rate (restores slow on idle fleets, still harmful on busy ones)', 'OS-level priorities (not available per goroutine)']
+    why: 'Owner requirement 2026-11-26: the restore must never degrade other proxies or their latency; it may use spare resources and must back off automatically when the serving proxy is busy.'
+    evidence: 'LOAD_EVIDENCE'
+    code: [internal/cache/peer_bulk_governor.go, internal/cache/peer_bulk_serve.go, internal/cache/restore_peer.go, internal/metrics/metrics.go]
+    tests: [TestBulkGovernor_RampsFromLowToTheCeiling, TestBulkGovernor_HalvesUnderPressureWithDebounce, TestBulkGovernor_PausesResumesAndAborts, TestBulkGovernor_StreamsShareOneRate, TestBulkSignals_LatencyAgainstItsBaseline, TestPeerBulkServe_PausedStreamHoldsNoLock, TestPeerRestore_ThrottledStreamEndsPartial, TestPeerBulkServe_RefusesNewStreamsWhilePaused, TestPeerRestore_IntakeCap, TestFleet_PeerRestoreUnderQueryLoad]
+    quality: 'Queries and peer reads first: a busy replica slows, pauses or refuses restores, which then end partial at their deadline; correctness rules of restore-from-peers-by-pull unchanged.'
+    performance: 'TestFleet_PeerRestoreUnderQueryLoad (opt-in LVP_PEER_LOAD=1): p50/p95/p99 of cached query_range hits, /_cache/get and neighbour hits while a restore is served at most the worst control phase x 1.10 + 1 ms, no errors; BenchmarkPeerBulkRestore with the governor fixed off for the transfer cost.'
+    pending: true
   - id: restore-from-peers-by-pull
     chosen: 'A replica with nothing local to warm from pulls the entries it owns or replicates from its peers before ready: a probe of every peer, then at most 4 streamed, checksummed bulk transfers (POST /_cache/bulk) of records as stored, each key from one designated source on the requester''s ring, admitted through admitRestoreBatch within the warm-up''s budget and timeout; on whenever -cache-startup-warm-bytes is set (-cache-startup-peer-restore, default true); serving bounded per replica to 2 streams and 64 MiB/s'
     over: ['a stopping replica pushing its hot keys to the replicas that own them (issue #1766 item 3 as written: a crash or a lost volume never pushes, and the receiver may not be up)', 'filling a new disk lazily through single-key peer reads (one round trip per key on first lookup)', 'the hot-key read-ahead (8 MiB per 30 s)', 'a separate timeout and readiness gate for the peer restore (would change the chart''s progress deadline)']

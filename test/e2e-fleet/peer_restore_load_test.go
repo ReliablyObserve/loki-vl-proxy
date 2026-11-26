@@ -24,8 +24,8 @@ import (
 // restore's lower priority (opt-in: LVP_PEER_LOAD=1; not in the CI e2e-fleet
 // job, it runs for about ten minutes and needs a quiet machine).
 //
-// Two ready replicas hold the same fixture of LVP_PEER_LOAD_MB (default 512)
-// MiB of s2 records: proxy-load-a serves the restores and takes the query load,
+// Two ready replicas hold the same fixture of LVP_PEER_LOAD_MB (default 2048)
+// MiB of s2 records (about 720 MiB stored): proxy-load-a serves the restores and takes the query load,
 // proxy-load-b is its neighbour (it serves restores too and takes a smaller
 // load). A load driver in a container (test/e2e-fleet/cmd/peerload) sends an
 // open-loop mix all along: cached query_range hits and /_cache/get to a, a few
@@ -50,7 +50,7 @@ func TestFleet_PeerRestoreUnderQueryLoad(t *testing.T) {
 	if out == "" {
 		out = t.TempDir()
 	}
-	mb := envOr("LVP_PEER_LOAD_MB", "512")
+	mb := envOr("LVP_PEER_LOAD_MB", "2048")
 	control := 45 * time.Second
 	if v := os.Getenv("LVP_PEER_LOAD_CONTROL"); v != "" {
 		control, _ = time.ParseDuration(v)
@@ -82,6 +82,7 @@ func TestFleet_PeerRestoreUnderQueryLoad(t *testing.T) {
 	raw, _ := os.ReadFile(fixture + ".entries")
 	entries, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
 
+	compose("up", "-d", "--wait", "--wait-timeout", "120", "victorialogs")
 	// Lines for the query classes.
 	app := fmt.Sprintf("peer-load-%d", time.Now().UnixNano())
 	ingestLoadLines(t, app)
@@ -111,8 +112,8 @@ func TestFleet_PeerRestoreUnderQueryLoad(t *testing.T) {
 	run := exec.Command("docker", "run", "-d", "--name", prefix+"-peerload-driver", "--network", network, "--user", "root",
 		"-v", out+":/out", "--entrypoint", "/out/peerload", envOr("PROXY_IMAGE", "loki-vl-proxy:fleet-local"),
 		"-token", "e2e-test-token", "-app", app, "-keys", strconv.Itoa(entries), "-duration", "30m",
-		"-hit-qps", envOr("LVP_PEER_LOAD_HIT_QPS", "40"), "-peer-qps", envOr("LVP_PEER_LOAD_PEER_QPS", "40"),
-		"-miss-qps", envOr("LVP_PEER_LOAD_MISS_QPS", "2"), "-neighbour-qps", envOr("LVP_PEER_LOAD_NEIGHBOUR_QPS", "20"))
+		"-hit-qps", envOr("LVP_PEER_LOAD_HIT_QPS", "100"), "-peer-qps", envOr("LVP_PEER_LOAD_PEER_QPS", "100"),
+		"-miss-qps", envOr("LVP_PEER_LOAD_MISS_QPS", "2"), "-neighbour-qps", envOr("LVP_PEER_LOAD_NEIGHBOUR_QPS", "50"))
 	if b, err := run.CombinedOutput(); err != nil {
 		t.Fatalf("start the driver: %v\n%s", err, b)
 	}
