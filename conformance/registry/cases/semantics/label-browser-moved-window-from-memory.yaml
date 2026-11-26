@@ -17,12 +17,30 @@ why: |
   -metadata-inventory-prefetch reads in the background the hours the next
   moved window needs, at most the window's own width.
 
+  A moved window is not answered from memory in two cases, measured over
+  every minute of two pinned days as window ends, over a fixed set of rows.
+  It then takes the path that reads VictoriaLogs for the pieces not cached
+  (no call when an earlier moved window already read them) and lists every
+  name of one full-range call. First, the window's part of a UTC day is
+  shorter than an hour and holds no bucket of its own that an earlier listing
+  read (memory miss no_rows_evidence): nothing in memory proves that part has
+  rows, and a window without rows in a day must not get that day's names.
+  A 24h window meets it when an end lies between 23:00 and 01:00 UTC, a 6h
+  or 1h window with an end that close to midnight (up to 1 call per 24h or 6h
+  request and 10 per 1h request). Second, the moved window starts in an hour
+  no earlier listing read (memory miss uncached), because the background
+  reads span at most the window's width: a 1h window whose start moves back
+  over an hour boundary (7 calls), a 24h window whose start moves back over
+  two (2 calls). The second does not depend on the time of day.
+
   This case holds that behaviour with gates, in two kinds:
 
   Deterministic gates, Go tests in the required test job
   (internal/proxy/label_browser_gates_test.go), for the A/B shape's windows at
-  1h, 6h and 24h: a warm moved window makes no VictoriaLogs call on its
-  request path; the background reads after a listing span at most the
+  1h, 6h and 24h, at pinned instants: a warm moved window away from the two
+  cases above makes no VictoriaLogs call on its request path; the windows of
+  those cases are pinned too, with their calls, their memory miss reason and
+  their exact names; the background reads after a listing span at most the
   window's width; and every answer lists every name of one full-range call
   and no name of a UTC day whose part of the window holds no row (the extra
   names are only those Loki's own day granularity lists), and a window after
@@ -89,7 +107,8 @@ compare:
     Every label name of one full-range listing, and at most the names the
     window's UTC days hold where the window's part of the day holds rows;
     the warm moved window answered with no VictoriaLogs call on its request
-    path and no slower than Loki.
+    path, except next to a UTC day boundary or an unread hour (see why), and
+    no slower than Loki.
 gap:
   status: fixed
   fixed_by: '#1750'
@@ -100,7 +119,7 @@ gap:
   area: 'internal/proxy/metadata_inventory.go answerNamesFromMemory; internal/proxy/label_browser_gates_test.go'
   loki: 'Loki 3.7.10 lists the names of the window''s UTC day for stored data, from its index in 1-5 ms on the e2e stack and 2-66 ms in the CI A/B'
   proxy: 'moved windows answered from the label inventory in memory, no request-path VictoriaLogs call, bounded staleness and background prefetch'
-  planned_test: 'TestLabelBrowserGates_MovedWindowNoRequestPathCalls, TestLabelBrowserGates_BackgroundReadsWithinTheWindow, TestLabelBrowserGates_AnswersBetweenExactAndTheDays, TestLabelBrowserGates_WindowWithoutRowsListsNothing (internal/proxy)'
+  planned_test: 'TestLabelBrowserGates_MovedWindowNoRequestPathCalls, TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries, TestLabelBrowserGates_BackgroundReadsWithinTheWindow, TestLabelBrowserGates_AnswersBetweenExactAndTheDays, TestLabelBrowserGates_WindowWithoutRowsListsNothing (internal/proxy)'
   clusters: []
 perf:
   max_ratio: 1.0

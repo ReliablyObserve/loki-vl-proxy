@@ -135,7 +135,7 @@ decisions:
       day keeps the answer between the exact one and Loki's.
     evidence: 'Loki 3.7.10 on the e2e stack, 2026-11-25 (data of 11-24 and 11-25): 12 windows; Loki lists the whole day (26 / 86 / 92 for two days) for every window that overlaps the day''s data, none after the last row; the exact answer is a subset of Loki''s in every window. 120 random windows: memory answers between exact and Loki in all, 3 beyond exact. Local A/B harness, final build, four passes of the set metadata-inventory (ends 13:35-15:50): refresh labels warm p50 6h 0 ms and 24h 1 ms with no request-path call in 4 of 4 passes (Loki 1-3 ms, base 22-25 and 180-205 ms); 1h 1 ms in 3 of 4 (40 ms in one pass: two moved windows arrived before the background read of the hour their ends needed finished; Loki 1-2 ms, base 39-51 ms). Per-request timing, three rounds: 0.26-0.63 ms against Loki 1.07-2.39 ms. Two replicas with the peer tier, requests alternating: 0.7-0.9 ms once each replica read once; the first moved request on a replica without the entries in memory reads VictoriaLogs (1h: 78 ms in the first round). Near-now windows were not probed on Loki (no live writes on the stack); CI''s 1h and 6h windows end minutes ago.'
     code: [internal/proxy/metadata_inventory.go]
-    tests: [TestLabelsInventory_MovedWindowsAreAnsweredFromMemory, TestLabelsInventory_MemoryAnswersStayBetweenTheWindowAndItsDays, TestLabelsInventory_MemoryAnswersKeepTheStalenessBound, TestLabelsInventory_MemoryAnswersOffWithoutStaleness, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow]
+    tests: [TestLabelsInventory_MovedWindowsAreAnsweredFromMemory, TestLabelsInventory_MemoryAnswersStayBetweenTheWindowAndItsDays, TestLabelsInventory_MemoryAnswersKeepTheStalenessBound, TestLabelsInventory_MemoryAnswersOffWithoutStaleness, FuzzLabelsInventoryCover, BenchmarkLabelsShiftedWindow, TestLabelBrowserGates_MovedWindowNoRequestPathCalls, TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries]
     history:
       - date: '2026-11-25'
         what: 'perf A/B rows metadata-inventory / refresh labels (label browser), warm, 1h / 6h / 24h (loki-defaults)'
@@ -144,7 +144,7 @@ decisions:
         effect: 'every label browser over a moved window waited for VictoriaLogs'
         fixed_by: '#1750'
         after: 'to be measured by the perf A/B of #1750'
-    quality: '/labels never drops a name of the exact answer and never lists a name of a UTC day whose part of the window holds no row; label values and every other listing are unchanged; with -metadata-max-staleness=0 every listing reads VictoriaLogs as before.'
+    quality: '/labels never drops a name of the exact answer and never lists a name of a UTC day whose part of the window holds no row; label values and every other listing are unchanged; with -metadata-max-staleness=0 every listing reads VictoriaLogs as before. A moved window still reads VictoriaLogs when its part of a UTC day is shorter than an hour with no bucket of its own in memory (no_rows_evidence), or when it starts in an hour the background reads, bounded to the window width, did not read (uncached): semantics/label-browser-moved-window-from-memory.'
     performance:
       tracked: ['metadata-inventory refresh labels (label browser)', 'metadata-inventory refresh labels with selector']
       bound: 'perf block max_ratio 2.0, target 1.0; owner target for these rows: below Loki'
