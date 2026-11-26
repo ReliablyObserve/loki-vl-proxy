@@ -79,7 +79,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | — | 0 / 0 | 2 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 12 | — |
-| `field-mapping-label-names` — A mapped field has one name in answers, and the operator chooses the names the label pickers list | — | 1 / 1 | 4 | — |
+| `field-mapping-label-names` — A mapped field has one name in answers, and the operator chooses the names the label pickers list | — | 1 / 1 | 6 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |

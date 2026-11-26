@@ -1947,6 +1947,8 @@
     "internal/proxy/fail_fast_unicode_test.go | semantics/stage-after-unwrap-accepted",
     "internal/proxy/fail_fast_unicode_test.go | semantics/stage-name-followed-by-more-of-stage",
     "internal/proxy/fail_fast_unicode_test.go | semantics/unwrap-in-log-query",
+    "internal/proxy/field_mapping_collision_test.go | field-mapping-label-names",
+    "internal/proxy/field_mapping_collision_test.go | semantics/field-mapping-label-modes",
     "internal/proxy/field_mapping_labels_test.go | field-mapping-label-names",
     "internal/proxy/field_mapping_labels_test.go | loki_api_v1_label_name_values",
     "internal/proxy/field_mapping_labels_test.go | loki_api_v1_labels",
@@ -3100,6 +3102,7 @@
     "internal/translate/selector_filters_test.go | architecture-syntax-package-layering",
     "internal/translate/selector_filters_test.go | semantics/label-filter-expression-syntax",
     "internal/translate/selector_test.go | architecture-syntax-package-layering",
+    "internal/translate/stream_alias_test.go | field-mapping-label-names",
     "internal/translate/unwrap_gate_syntax_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/translate/vector_test.go | architecture-syntax-package-layering",
     "internal/translator/detected_level_filter_stage_test.go | severity-detected-level-derivation",
@@ -3710,7 +3713,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 851,
+      "go": 853,
       "playwright": 3
     },
     "page_kinds": {

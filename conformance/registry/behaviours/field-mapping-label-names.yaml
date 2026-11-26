@@ -18,7 +18,10 @@ proxy: |
   volume target labels show: original (default, one name per field, the last
   mapping's), alias or both. The names are derived from the VictoriaLogs
   listings the default reads, and the cache identities of alias and both carry
-  the mode and its names.
+  the mode and its names. In alias and both a key a json or logfmt stage
+  extracts under an alias's name is read as Loki reads a parsed label that
+  collides with a stream label: alias_extracted where the entry's stream holds
+  the alias's field, the alias where it does not.
 
 implementation:
   - internal/proxy/field_mapping_labels.go
@@ -26,6 +29,13 @@ implementation:
   - internal/proxy/drilldown.go
   - internal/proxy/volume.go
   - internal/proxy/request_scope.go
+  - internal/proxy/plain_stream_labels.go
+  - internal/proxy/metric_binary.go
+  - internal/proxy/cache_keys.go
+  - internal/translate/extracted_label.go
+  - internal/translate/parsed_labels.go
+  - internal/queryplan/lower/label_filter_parsed.go
+  - internal/queryplan/lower/parser_labels.go
 
 cases:
   - semantics/field-mapping-label-modes
@@ -45,3 +55,21 @@ decisions:
     tests: [TestFieldMappingLabelMode_IssueReproduction, TestFieldMappingLabelMode_Endpoints, TestFieldMappingLabelMode_DeclaredMappingNames, TestFieldMappingLabelMode_SharedCacheTier, FuzzFieldMappingLabelMode, TestCompat_FieldMappingLabelModes, TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers]
     quality: 'The default mode answers and keys are unchanged; answers carry one name per field in every mode; every listed name has values.'
     performance: 'No VictoriaLogs call added on any label route (BenchmarkFieldMappingLabelRoutes: labels 1, label values 2, detected_labels 7, volume 1 cold and 0 on a repeat in every mode). BenchmarkFieldMappingLabelRoutes and BenchmarkFieldMappingLabels (Apple M5 Pro, GOMAXPROCS=2, 2026-11-26, 8 interleaved runs): original equals the base build in time, bytes and allocations; with the fixture mappings a cold detected_labels allocates 2% more in alias and 10% more in both, which answer more names, and a 66-field /labels listing 8 allocations more.'
+  - id: alias-parsed-key-collision-extracted
+    chosen: 'In alias and both, a parsed key (json or logfmt) named like an alias is alias_extracted where the entry''s stream holds the alias''s field and the alias where it does not, in detected_fields, field values, log answers, label filters and groupings; the stored field of an alias is no detected field; original is unchanged'
+    over: [keeping the default rule of dropping a parsed key named like a stream label (the Fields tab then showed the stream field under the alias with no parser, and a filter or grouping on alias_extracted matched nothing), applying the rule in original too (the owner kept original unchanged byte for byte)]
+    why: |
+      Owner decision 2026-11-26 on #1762: alias mode answers what a Loki that
+      stored the alias answers. VictoriaLogs keeps the alias's stream label in
+      its own field (k8s.pod.name), which no parser overwrites, so the lowering
+      matches the collision against that field in _stream, fills a grouping
+      field from the parsed key where the stream lacks it, and reads a filter
+      on the alias from the field where the stream holds it and from the parsed
+      key elsewhere. The lowering learns the alias fields through two label
+      function probes that only the alias and both modes answer (Profile
+      StreamAliases), so the default mode asks nothing and writes the same text.
+    evidence: 'Live on Loki 3.7.10 and VictoriaLogs v1.54.0 (2026-11-26): 156 requests over logfmt, json, mixed (half the streams without the mapped field) and plain services, detected_fields, field values, log filters, instant and range groupings; alias equals the pre-migration Loki on every collision row, unset equals main on every row; the LogsQL it writes accepted and round-tripped by VictoriaLogs v1.49.0 and v1.54.0 (test/oracle/vl check, roundtrip: 28/28); TestCompat_FieldMappingAliasCollisionsMatchLoki'
+    code: [internal/proxy/drilldown.go, internal/proxy/field_mapping_labels.go, internal/translate/extracted_label.go, internal/queryplan/lower/parser_labels.go, internal/queryplan/lower/label_filter_parsed.go]
+    tests: [TestFieldMappingLabelMode_ParsedAliasCollisionDetectedFields, TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL, TestFieldMappingLabelMode_NoUnderscoreFallbackForAlias, TestExtractedFilterAliased, TestStreamAliasProbes, FuzzFieldMappingLabelMode, TestCompat_FieldMappingAliasCollisionsMatchLoki]
+    quality: 'alias and both answer the collision rows as Loki with the pre-migration names; original and unset write the same LogsQL and answers as before.'
+    performance: 'BenchmarkFieldMappingAliasCollision; the default mode asks no probe (no allocation added to the lowering), see the PR for main versus this change.'
