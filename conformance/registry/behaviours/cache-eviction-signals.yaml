@@ -72,7 +72,7 @@ decisions:
       TestCacheSignalMetricsExporterParityAndCardinality pins the series set
       and Prometheus/OTLP agreement.
     code: [internal/cache/eviction_signals.go, internal/metrics/cache_signal_metrics.go]
-    tests: [TestEvictionSignalsMemoryReasons, TestEvictionSignalsMemoryRejections, TestEvictionSignalsDiskRejections, TestEvictionSignalsDiskReasons, TestEvictionSignalsPlacementAndPromotion, TestEvictionSignalsPeerPromotion, TestEvictionSignalsRandomOperationsBalance, TestEvictionSignalsConcurrentBalance, TestDiskAdmissionRejectionKeepsTheDecision, TestCacheSignalMetricsExporterParityAndCardinality, TestCacheSignalMetricsAbsentProviders, TestCacheSignalMetricsSharedDiskCountedOnce, TestCacheTTLGaugeMatchesTheConfiguredTTLs, TestCacheEfficiencyDashboardRowMatchesTheExporters]
+    tests: [TestEvictionSignalsMemoryReasons, TestEvictionSignalsMemoryRejections, TestEvictionSignalsDiskRejections, TestEvictionSignalsDiskReasons, TestEvictionSignalsDiskEncodeFailed, TestEvictionSignalsNotReplicaSkip, TestEvictionSignalsPlacementAndPromotion, TestEvictionSignalsPeerPromotion, TestEvictionSignalsRandomOperationsBalance, TestEvictionSignalsConcurrentBalance, TestEvictionSignalsNoLeak, TestDiskAdmissionRejectionKeepsTheDecision, TestCacheSignalMetricsExporterParityAndCardinality, TestCacheSignalMetricsAbsentProviders, TestCacheSignalMetricsSharedDiskCountedOnce, TestCacheTTLGaugeMatchesTheConfiguredTTLs, TestCacheEfficiencyDashboardRowMatchesTheExporters]
     quality: |
       L1 hits at eviction are a lower bound (the promotion buffer drops under
       bursts, Peek does not promote). L1 age is kept to the second (two uint32
