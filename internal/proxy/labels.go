@@ -118,15 +118,16 @@ func (lt *LabelTranslator) ToLoki(vlField string) string {
 
 // ToVL translates a Loki label name to a VL field name (query direction).
 func (lt *LabelTranslator) ToVL(lokiLabel string) string {
+	// Custom mapping takes precedence
+	if mapped, ok := lt.lokiToVL[lokiLabel]; ok {
+		return mapped
+	}
+	// The lowering's collision probes (alias and both modes, field_mapping_labels.go).
 	if strings.HasPrefix(lokiLabel, translate.StreamAliasProbe) {
 		return lt.streamAliasProbe(lokiLabel[len(translate.StreamAliasProbe):])
 	}
 	if strings.HasPrefix(lokiLabel, translate.StreamAliasNameProbe) {
 		return lt.streamAliasNameProbe(lokiLabel[len(translate.StreamAliasNameProbe):])
-	}
-	// Custom mapping takes precedence
-	if mapped, ok := lt.lokiToVL[lokiLabel]; ok {
-		return mapped
 	}
 	if lokiLabel == "detected_level" {
 		return "level"
