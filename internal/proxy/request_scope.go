@@ -90,12 +90,9 @@ func (p *Proxy) scopeFingerprint(ctx context.Context, orgID string) string {
 // never become cache-key text, nor an unkeyed digest input. Including all mappings also invalidates sibling
 // tenant caches on reload, without any unbounded per-tenant memo table.
 func (p *Proxy) buildRoutingNamespace(routing requestRouting) string {
-	backend, cold := "", ""
-	if p.backend != nil {
-		backend = p.backend.String()
-	}
+	backend, cold := p.backendInKeys(), ""
 	if p.coldRouter != nil {
-		cold = p.coldRouter.coldBackend.String()
+		cold = p.urlInKeys(p.coldRouter.coldBackend)
 	}
 	var style LabelStyle
 	var fields map[string]string

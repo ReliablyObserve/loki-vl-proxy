@@ -835,6 +835,7 @@ type Proxy struct {
 	backendHeaders                        map[string]string // static headers on all VL requests
 	backendHeadersInKeys                  map[string]string // backendHeaders with keyed digests for values, for the routing namespace
 	credentialDigest                      *credentialDigest // keys credential digests in cache keys
+	backendKeyText                        string            // urlInKeys(backend): the backend URL as cache keys spell it
 	backendCompression                    string
 	backendLoopback                       bool // true when backend host resolves to a loopback address
 	clientResponseCompression             string
@@ -1956,6 +1957,7 @@ func New(cfg Config) (*Proxy, error) {
 		},
 	}
 
+	p.backendKeyText = p.urlInKeys(p.backend)
 	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	if credDigest.source == credentialKeyEphemeral && (len(p.backendHeaders) > 0 || len(p.forwardHeaders) > 0 || len(p.forwardCookies) > 0) {
 		p.log.Warn("cache keys digest credentials under a per-process key: entries scoped by credentials are not reused after a restart or by other replicas; set -cache-key-secret (or -peer-auth-token) to the same value on every replica to keep them")

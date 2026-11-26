@@ -202,12 +202,13 @@ func TestRun_SecretsStayOutOfLogsAndEndpoints(t *testing.T) {
 	for _, s := range cases {
 		secretText = append(secretText, s.value, base64.StdEncoding.EncodeToString([]byte(s.value)))
 	}
-	secretText = append(secretText, "sentinel")
+	// A password in the -backend URL is a credential too (http://user:password@host).
+	secretText = append(secretText, "sentinel-url-pw-6d1a", "sentinel")
 
 	for _, source := range []string{"flag", "file", "env"} {
 		t.Run(source, func(t *testing.T) {
 			args := []string{
-				"-backend=" + backend.URL, "-listen=127.0.0.1:0", "-log-level=debug", "-log-buffered=false",
+				"-backend=" + strings.Replace(backend.URL, "://", "://urluser:sentinel-url-pw-6d1a@", 1), "-listen=127.0.0.1:0", "-log-level=debug", "-log-buffered=false",
 				"-slow-query-threshold=1ns", "-slow-upstream-threshold=1ns", "-labels-cache-warm=false",
 				"-server.register-instrumentation=true", "-server.enable-pprof=true", "-server.enable-query-analytics=true",
 				"-delete-api-enabled=true", "-backend-version-url=" + backend.URL + "/metrics",
