@@ -1448,6 +1448,8 @@
     "versions/rejected-stats-query-wording-vl-1.47 | compare:exact",
     "versions/rejected-stats-query-wording-vl-1.47 | gap:fixed",
     "versions/rejected-stats-query-wording-vl-1.47 | query",
+    "versions/release-unknown-behind-vmauth | compare:observed",
+    "versions/release-unknown-behind-vmauth | gap:fixed",
     "versions/stats-bucket-label-v1.45 | compare:exact",
     "versions/stats-bucket-label-v1.45 | gap:owner-kept",
     "versions/stats-bucket-label-v1.45 | query"
@@ -1456,6 +1458,7 @@
     "cmd/proxy/cache_handover_scope_test.go | cache-restart-handover",
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
+    "cmd/proxy/main_test.go | observability-metrics-histograms-and-labels",
     "cmd/proxy/main_test.go | operator-configurable-limits",
     "cmd/proxy/main_test.go | semantics/query-range-step-alignment",
     "cmd/proxy/main_test.go | tail-reads-settled-rows",
@@ -1496,6 +1499,8 @@
     "internal/capability/probes_oracle_test.go | vl-stats-pipe-after-stats",
     "internal/capability/probes_oracle_test.go | vl-stats-range-pipe-before-stats",
     "internal/capability/release_test.go | vl-capability-layer",
+    "internal/capability/version_source_test.go | backend-version-source",
+    "internal/capability/version_source_test.go | vl-backend-version-source",
     "internal/clientprofile/detect_test.go | drilldown/client-detection-captured-header-sets",
     "internal/config/generate_edge_test.go | operator-configurable-limits",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
@@ -1617,8 +1622,10 @@
     "internal/metrics/cache_restart_metrics_test.go | cache-restart-handover",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/capability_test.go | vl-capability-layer",
+    "internal/metrics/duration_buckets_test.go | observability-metrics-histograms-and-labels",
     "internal/metrics/query_complexity_test.go | query-complexity-limits",
     "internal/metrics/request_flow_test.go | observability-query-flow",
+    "internal/metrics/scrape_assets_test.go | observability-metrics-histograms-and-labels",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/middleware/coalescer_cancel_test.go | semantics/error-coalescing-no-inherited-cancel",
@@ -1675,6 +1682,8 @@
     "internal/proxy/backend_stale_cancel_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/backend_stale_cancel_test.go | semantics/live-request-not-cancelled-by-sibling",
     "internal/proxy/backend_url_test.go | backend-url-path-prefix",
+    "internal/proxy/backend_version_source_test.go | backend-version-source",
+    "internal/proxy/backend_version_source_test.go | vl-backend-version-source",
     "internal/proxy/bare_instant_detected_level_gap_test.go | semantics/instant-bare-range-detected-level-unknown",
     "internal/proxy/binary_aggregation_differential_test.go | loki_api_v1_query",
     "internal/proxy/binary_aggregation_differential_test.go | loki_api_v1_query_range",
@@ -3668,7 +3677,8 @@
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
-    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki"
+    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki",
+    "test/helm/servicemonitor_test.go | observability-metrics-histograms-and-labels"
   ],
   "counts": {
     "case_consumers": {
@@ -3677,10 +3687,10 @@
       "drilldown": 63,
       "explore": 263,
       "grafana-datasource": 4,
-      "operator": 5
+      "operator": 6
     },
     "claiming_tests": {
-      "go": 836,
+      "go": 841,
       "playwright": 3
     },
     "page_kinds": {
@@ -3701,8 +3711,8 @@
     },
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
-    "unwired_items": 153,
-    "wired_items": 482
+    "unwired_items": 154,
+    "wired_items": 485
   },
   "gates": [
     "A/B shape selection",

@@ -101,6 +101,8 @@ spec:
       {{- $deleteAuthSecret := $deleteAuth.existingSecret }}
       {{- $backendAuth := default (dict) .Values.backendAuth }}
       {{- $backendAuthSecret := $backendAuth.existingSecret }}
+      {{- $backendVersionAuth := default (dict) .Values.backendVersionAuth }}
+      {{- $backendVersionAuthSecret := $backendVersionAuth.existingSecret }}
       {{- $otlpSecret := $observabilityOTLP.existingSecret }}
       {{- if and (hasKey .Values "systemMetrics") (hasKey .Values.systemMetrics "hostProc") }}
       {{- $hostProcEnabled = .Values.systemMetrics.hostProc.enabled }}
@@ -171,6 +173,9 @@ spec:
             {{- if and (not (hasKey .Values.extraArgs "log-user-header-trusted-cidrs")) (ne (default "" (get $observabilityQueryUser "trustedCIDRs")) "") }}
             - {{ printf "-log-user-header-trusted-cidrs=%v" (get $observabilityQueryUser "trustedCIDRs") | quote }}
             {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "metrics.duration-buckets")) (ne (toString (default "" (get $observabilityMetrics "durationBuckets"))) "") }}
+            - {{ printf "-metrics.duration-buckets=%v" (get $observabilityMetrics "durationBuckets") | quote }}
+            {{- end }}
             {{- if not (hasKey .Values.extraArgs "server.register-instrumentation") }}
             - {{ printf "-server.register-instrumentation=%s" (ternary "true" "false" (default true (get $observabilityServer "registerInstrumentation"))) | quote }}
             {{- end }}
@@ -227,9 +232,12 @@ spec:
             {{- if $backendAuthSecret }}
             - {{ "-backend-basic-auth=$(BACKEND_BASIC_AUTH)" | quote }}
             {{- end }}
+            {{- if $backendVersionAuthSecret }}
+            - {{ "-backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH)" | quote }}
+            {{- end }}
           {{- $hasChartEnv := and (kindIs "slice" .Values.env) (gt (len .Values.env) 0) }}
           {{- $hasExtraEnv := and (kindIs "slice" .Values.extraEnv) (gt (len .Values.extraEnv) 0) }}
-          {{- if or .Values.peerCache.enabled $adminAuthSecret $deleteAuthSecret $backendAuthSecret $otlpSecret $hasChartEnv $hasExtraEnv $goMemLimitValue $injectOTELFromPod }}
+          {{- if or .Values.peerCache.enabled $adminAuthSecret $deleteAuthSecret $backendAuthSecret $backendVersionAuthSecret $otlpSecret $hasChartEnv $hasExtraEnv $goMemLimitValue $injectOTELFromPod }}
           env:
             {{- if $goMemLimitValue }}
             - name: GOMEMLIMIT
@@ -290,6 +298,13 @@ spec:
                 secretKeyRef:
                   name: {{ $backendAuthSecret | quote }}
                   key: {{ default "basic-auth" $backendAuth.existingSecretKey | quote }}
+            {{- end }}
+            {{- if $backendVersionAuthSecret }}
+            - name: BACKEND_VERSION_BASIC_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $backendVersionAuthSecret | quote }}
+                  key: {{ default "basic-auth" $backendVersionAuth.existingSecretKey | quote }}
             {{- end }}
             {{- if $otlpSecret }}
             {{- /* The binary reads OTLP_HEADERS when -otlp-headers is unset. */}}

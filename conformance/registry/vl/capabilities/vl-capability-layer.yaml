@@ -32,7 +32,8 @@ proxy_usage: |
   headers, the gates' probes at startup and every -backend-version-reprobe-interval),
   logs one `capability set changed` line per change, moves the flight key prefix and
   the refusal peer sync identity to the new digest, serves GET /admin/capabilities
-  (admin-protected) and the loki_vl_proxy_backend_version_info,
+  (admin-protected) and the loki_vl_proxy_backend_version_known,
+  loki_vl_proxy_backend_version_info,
   loki_vl_proxy_capability_gate, loki_vl_proxy_capability_mismatch_total,
   loki_vl_proxy_capability_epoch, loki_vl_proxy_backend_feature_probe_total and
   loki_vl_proxy_client_profile_requests_total metrics. logsql.PredictRefusal and
@@ -41,7 +42,8 @@ proxy_usage: |
   carries backend_version_semver (the effective release), backend_version_source and
   backend_capability_profile; behind vmauth (which answers /metrics with its own
   VictoriaMetrics build) the release is unknown, so it carries only a probed profile
-  (vl-probed-v1.49-plus) and no backend_version_semver
+  (vl-probed-v1.49-plus) and no backend_version_semver, unless the operator names a
+  version source (vl-backend-version-source)
   (TestProxyCompatibilitySurface/vmauth_proxy_drilldown_limits_backend_detection).
 fallback: |
   An unreadable release with probes off holds the v1.49.0 floor (every post-floor

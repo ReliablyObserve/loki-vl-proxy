@@ -674,6 +674,46 @@ scrape_configs:
           - loki-vl-proxy:9091
 ```
 
+#### Scrape label collisions (`endpoint`)
+
+The request, backend, cache-by-endpoint, client and tenant metrics carry an `endpoint` label (`query_range`, `labels`, `select_logsql_query`, ...). A Prometheus Operator `ServiceMonitor` and the `VMServiceScrape` converted from it add a target label with the same name (the Service port name, `metrics`). A scraper keeps its own target label unless told to honour the exposed one: the proxy's value is then stored as `exported_endpoint`, `endpoint` reads `metrics` on every series, and `by (endpoint)` returns one series.
+
+The chart's `ServiceMonitor` sets `honorLabels: true` (`serviceMonitor.honorLabels`, default `true`). The VictoriaMetrics operator copies it into the converted `VMServiceScrape`. A scrape object or scrape config you maintain yourself needs the same setting:
+
+```yaml
+# Prometheus / vmagent scrape config
+scrape_configs:
+  - job_name: loki-vl-proxy
+    honor_labels: true
+    # ...
+---
+# VMServiceScrape (or ServiceMonitor: same field)
+spec:
+  endpoints:
+    - port: metrics
+      path: /metrics
+      honorLabels: true
+```
+
+The `overrideHonorLabels` setting of a `Prometheus` or `VMAgent` resource turns it off for every target; the proxy's value then arrives as `exported_endpoint` whatever the scrape object says.
+
+The proxy exposes no `job`, `instance`, `namespace`, `pod`, `service` or `container` label, so honouring its labels changes only `endpoint`. Series without an `endpoint` label of their own (process, runtime, cache-tier metrics) keep the target's `endpoint="metrics"`.
+
+Upgrading a chart install that was scraped without the setting:
+
+- queries, alerts, recording rules and relabeling rules that read `exported_endpoint` find nothing for new samples: read `endpoint` instead;
+- queries that selected `endpoint="metrics"` to mean "this proxy" now match only the series without their own `endpoint`: select by `job` instead;
+- the affected series start anew under their new labels, so a range that crosses the upgrade shows both names. A query that must span it can use `label_replace`, or `sum by (endpoint, exported_endpoint)`;
+- to keep the earlier labels, set `serviceMonitor.honorLabels: false` (the chart dashboard panels and alerts that read `endpoint` then do not work).
+
+#### Histogram buckets
+
+The duration histograms (`loki_vl_proxy_request_duration_seconds`, `backend_duration_seconds`, `tenant_request_duration_seconds`, `client_request_duration_seconds`, `request_phase_seconds`, `internal_operation_duration_seconds`, `window_fetch_seconds`, `window_merge_seconds` and `window_prefilter_duration_seconds`) have the bounds, in seconds, `0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 20, 30, 45, 60, 90, 120` and `+Inf`. A quantile that falls above the highest finite bound reads as that bound, so keep one at or above the longest timeout you wait for (`-backend-timeout` is `120s` by default). A request that ends at a 60 s timeout lands in `le="60"` when it was measured at 60 s or less, and in `le="90"` when it took a little longer.
+
+`-metrics.duration-buckets` (Helm `observability.metrics.durationBuckets`) replaces the list: finite numbers above zero, ascending, at most 32. It applies to `/metrics` and OTLP push. `cache_lookup_seconds`, `peer_cache_fetch_duration_seconds` and the count histograms (`upstream_calls_per_request`, `request_fanout`, `window_count`, `client_query_length_chars`) keep fixed bounds of their own.
+
+Each bound is one series per duration histogram series: per request route, backend route, phase and route, internal operation and outcome, and, with `-metrics.export-sensitive-labels`, per identity and route (the identity families are by far the largest). To spend fewer series, list fewer bounds. Roll a changed list out to every replica before reading quantiles: replicas with different `le` sets do not aggregate correctly.
+
 #### OTLP Push
 
 ```bash
@@ -972,7 +1012,8 @@ The capability layer (see [capability gates](reference/capability-gates.md)) exp
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `loki_vl_proxy_backend_version_info` | gauge | `version`, `flavour`, `source` | `1` per VictoriaLogs release seen within the capability window; the lowest one decides the gates |
-| `loki_vl_proxy_capability_gate` | gauge | `gate`, `side`, `source` | `1` when the gate is on; `source` is what decided it (`version`, `probe`, `both`, `implied`, `default`, `mismatch`) |
+| `loki_vl_proxy_backend_version_known` | gauge | none | `1` when the VictoriaLogs release is known (read from the backend or `-backend-version-url`, or declared with `-backend-version` and not contradicted by a probe); `0` when it is not, and the gates that need it stay off (alert `LokiVLProxyBackendVersionUnknown`) |
+| `loki_vl_proxy_capability_gate` | gauge | `gate`, `side`, `source` | `1` when the gate is on; `source` is what decided it (`version`, `probe`, `both`, `implied`, `named`, `default`, `mismatch`) |
 | `loki_vl_proxy_capability_mismatch_total` | counter | `gate` | times a feature probe contradicted the release for a gate |
 | `loki_vl_proxy_capability_epoch` | gauge | | changes of the gate set in this process (cache keys carry the set's digest, not this counter) |
 | `loki_vl_proxy_backend_feature_probe_total` | counter | `gate`, `verdict` | probe results (`on`, `off`, `inconclusive`); an inconclusive answer keeps the previous verdict |
@@ -1338,7 +1379,7 @@ Transport checklist:
 
 - Scrape mode:
   - `-server.register-instrumentation=true` (binary default is `false`; the chart sets `true`)
-  - Helm: `serviceMonitor.enabled=true`, scraping the `metrics` Service port (`extraArgs.metrics-listen`, default `:9091`)
+  - Helm: `serviceMonitor.enabled=true`, scraping the `metrics` Service port (`extraArgs.metrics-listen`, default `:9091`) with `honorLabels: true` ([why](#scrape-label-collisions-endpoint))
   - Helm with the default `networkPolicy.enabled=true`: also set `networkPolicy.monitoringNamespace` (or `networkPolicy.monitoringFrom`, or an explicit `networkPolicy.monitoringAllowAll=true`), otherwise templating fails
 - OTLP push mode:
   - `-otlp-endpoint` configured

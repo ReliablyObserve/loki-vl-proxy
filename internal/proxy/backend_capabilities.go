@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"math/rand/v2"
@@ -16,8 +17,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
-// The capability layer's runtime: how the proxy learns the VictoriaLogs release (the /metrics endpoint, response
-// headers) and what its probes observe, when it asks again, and how a change shows up (log line, flight key digest,
+// The capability layer's runtime: how the proxy learns the VictoriaLogs release (the /metrics endpoint or the source
+// the operator names, backend_version_source.go; response headers) and what its probes observe, when it asks again, and how a change shows up (log line, flight key digest,
 // metrics, the status route, the debug header). The decisions themselves live in internal/capability.
 //
 // Probe requests are the proxy's own: they use the backend client, its auth and TLS and its backend headers, and
@@ -158,11 +159,15 @@ func (p *Proxy) runCapabilityProbes(ctx context.Context, features bool) {
 		return // single flight
 	}
 	defer p.capProbing.Store(false)
-	p.probeBackendVersionFromMetrics(ctx)
+	reason := p.probeBackendVersionFromMetrics(ctx)
 	if features {
 		p.probeBackendFeatures(ctx)
 	}
 	p.caps.Prune()
+	if !errors.Is(ctx.Err(), context.Canceled) { // not a shutdown in progress
+		p.warnVersionReadFailure(reason)
+	}
+	p.warnNamedRelease()
 }
 
 // backendProbeGet sends a probe request to the backend and reads at most limit bytes of the answer.
@@ -200,29 +205,6 @@ func (p *Proxy) observeBackendVersionHeadersOnly(h http.Header) {
 			return
 		}
 	}
-}
-
-// probeBackendVersionFromMetrics reads the release from the VictoriaLogs /metrics endpoint. Only a VictoriaLogs
-// release counts: behind vmauth the endpoint is often vmauth's own.
-func (p *Proxy) probeBackendVersionFromMetrics(ctx context.Context) {
-	if p == nil {
-		return
-	}
-	status, body, err := p.backendProbeGet(ctx, "/metrics", nil, maxMetricsProbeBytes)
-	if err != nil {
-		p.log.Debug("backend version metrics probe failed", "error", err)
-		return
-	}
-	if status >= http.StatusBadRequest {
-		p.log.Debug("backend version metrics probe returned non-success status", "http.response.status_code", status)
-		return
-	}
-	rel, ok := capability.ParseMetrics(string(body))
-	if !ok {
-		p.log.Debug("backend version metrics probe found no VictoriaLogs release")
-		return
-	}
-	p.caps.Observe(p.backendKey(), rel)
 }
 
 // probeBackendFeatures runs each gate's feature probe once and tells the layer the verdicts. Disabled by
@@ -315,7 +297,7 @@ func serviceNameDerivationForm(coalesce bool) string {
 // capabilityStats converts the layer's counters for the metrics exporters.
 func (p *Proxy) capabilityStats() metrics.CapabilityStats {
 	st := p.caps.Stats()
-	out := metrics.CapabilityStats{Epoch: st.Epoch}
+	out := metrics.CapabilityStats{Epoch: st.Epoch, VersionKnown: p.caps.Backend().Release().Known}
 	for _, r := range st.Releases {
 		if r.InWindow {
 			out.Releases = append(out.Releases, metrics.CapabilityRelease{Version: r.Release, Flavour: r.Flavour, Source: r.Source})

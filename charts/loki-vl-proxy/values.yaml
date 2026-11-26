@@ -305,6 +305,10 @@ extraArgs:
   # otlp-tls-skip-verify: "false"
   # Backend auth to VictoriaLogs
   # backend-basic-auth: "user:password"   # plain value is visible in the pod spec and `helm get values`; prefer backendAuth.existingSecret
+  # VictoriaLogs release behind vmauth (vmauth answers /metrics itself; see docs/configuration.md "Backend version behind vmauth")
+  # backend-version-url: "http://vlselect:9471/metrics"
+  # backend-version-basic-auth: "user:password"   # prefer backendVersionAuth.existingSecret
+  # backend-version: "v1.54.0"    # only when no endpoint reports the release
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
@@ -435,6 +439,7 @@ extraArgs:
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"
   # metrics.export-sensitive-labels: "false"    # include tenant/client labels in all Prometheus metrics
+  # metrics.duration-buckets: ""                # comma-separated duration histogram bounds in seconds (ascending, at most 32); empty = 0.001 … 10,15,20,30,45,60,90,120
   # server.metrics-max-concurrency: "1"         # bound concurrent /metrics scrapes (binary default 1; 0 disables the cap)
   # --- /metrics + admin/debug listener topology (v1.56.0 BREAKING) ---
   # Binary defaults flipped: server.register-instrumentation is now false in the
@@ -531,6 +536,11 @@ observability:
   metrics:
     maxTenants: 256
     maxClients: 256
+    # Bounds, in seconds, of the duration histograms (-metrics.duration-buckets), as one comma-separated string,
+    # for example "0.01,0.1,1,10,30,60,120": above zero, ascending, at most 32. Empty keeps the binary default
+    # (0.001 0.005 0.01 0.025 0.05 0.1 0.25 0.5 1 2.5 5 10 15 20 30 45 60 90 120). Each bound adds one series
+    # to every duration histogram series.
+    durationBuckets: ""
     trustProxyHeaders: false
     exportSensitiveLabels: false
   # Who ran a query: the Grafana user on the request, upstream_request, slow_request and
@@ -572,6 +582,13 @@ deleteAuth:
 # -backend-basic-auth=$(BACKEND_BASIC_AUTH) from a secretKeyRef. The plain value
 # (extraArgs.backend-basic-auth) keeps working; setting both fails rendering.
 backendAuth:
+  existingSecret: ""
+  existingSecretKey: "basic-auth"  # key within existingSecret
+
+# Basic auth of -backend-version-url (-backend-version-basic-auth) from an existing Secret holding "user:password".
+# The chart renders -backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH) from a secretKeyRef; setting it
+# together with extraArgs.backend-version-basic-auth fails rendering.
+backendVersionAuth:
   existingSecret: ""
   existingSecretKey: "basic-auth"  # key within existingSecret
 
@@ -764,6 +781,12 @@ peerService:
 # Disabled by default to keep the chart generic outside Prometheus-Operator clusters.
 serviceMonitor:
   enabled: false
+  # Keep the proxy's own label values when they collide with the scrape target's. The proxy's request, backend
+  # and cache metrics carry an "endpoint" label (query_range, labels, ...) and the Prometheus Operator adds a
+  # target label of the same name (the Service port name): with false the proxy's value arrives as
+  # "exported_endpoint" and "endpoint" is "metrics" on every series, so the chart's dashboard and alerts that
+  # select or group by endpoint do not work. A Prometheus or VMAgent "overrideHonorLabels" setting overrides this.
+  honorLabels: true
   namespace: ""
   annotations: {}
   interval: "30s"
