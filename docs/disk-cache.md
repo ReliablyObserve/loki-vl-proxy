@@ -328,13 +328,14 @@ latency, request limits, decompression and filling memory come on top.
 
 | Restore into memory (read from disk) | 125 MiB/s | 250 MiB/s | 500 MiB/s |
 |---|---|---|---|
-| 2 GiB, compressed (721 MiB) | 5.8 s ❌ | 2.9 s | 1.4 s |
-| 2 GiB, uncompressed (2 GiB) | 16.4 s ❌ | 8.2 s ❌ | 4.1 s |
-| 4 GiB, compressed (1.41 GiB) | 11.6 s ❌ | 5.8 s | 2.9 s |
-| 4 GiB, uncompressed (4 GiB) | 32.8 s ❌ | 16.4 s ❌ | 8.2 s |
+| 2 GiB, compressed (721 MiB) | 5.8 s | 2.9 s | 1.4 s |
+| 2 GiB, uncompressed (2 GiB) | 16.4 s | 8.2 s | 4.1 s |
+| 4 GiB, compressed (1.41 GiB) | 11.6 s | 5.8 s | 2.9 s |
+| 4 GiB, uncompressed (4 GiB) | 32.8 s | 16.4 s | 8.2 s |
 
-❌ = the local-SSD ready target (2 GiB in 5 s, 4 GiB in 10 s) cannot be met at
-that speed; the EBS targets are in the table above. gp3 includes 125 MiB/s and 3,000 IOPS by default and can be provisioned higher.
+Each figure fits inside the EBS ready target for its restore above; six of the twelve
+exceed the local-SSD target. gp3 includes 125 MiB/s and 3,000
+IOPS by default and can be provisioned higher.
 The compressed rows assume the benchmark data's `s2` ratio of about 2.8x. The
 instance's EBS bandwidth can cap the volume, and a volume created from a
 snapshot is slower until it is initialised.
@@ -367,6 +368,16 @@ When a Deployment's replacement pod shares the old pod's volume and node (a
 claim with `maxSurge: 0`, as the chart sets with the hand-over), it can wait for
 the old pod's lock on the cache file while the old pod terminates, up to the
 grace period (130 s) of the startup window, which leaves 475 s.
+
+Without the hand-over the chart sets no Deployment `strategy`, and the
+Kubernetes default (25% surge and unavailable, so for one to three replicas one
+surge pod and none unavailable) keeps the old pod until the new one is ready.
+With a disk cache on one `ReadWriteOnce` claim the surge pod then waits for the
+old pod's file lock (on the same node) or for the volume (on another), and the
+rollout does not finish. The longer window reports this later: the pod is
+restarted after 605 s (before: about 50 s) and the deadline passes at 935 s
+(before: 600 s). Use a StatefulSet, the hand-over, or a
+`workload.deploymentStrategy` with `maxSurge: 0`.
 
 **Progress deadline.** The chart renders it only on a Deployment with a disk
 cache and a startup probe, and only above the Kubernetes default of 600 s;
