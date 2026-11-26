@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- A proxy kept a second full read-cache key memo (16,384 entries, about 8 MB in the memory-leak test) alive for its whole lifetime after the memo first reached its cap. The reset swapped in a new map while the handler state still held the old one; it now empties the shared map in place. Present since #419; growth is bounded to one memo again, and repeated memo misses (one reset per 16,384 calls) run 8.5% faster with 27% fewer bytes per call (`BenchmarkCanonicalReadCacheKey_MemoMissesWithResets`).
-- CI: the memory-leak, stress, load and scale-benchmark steps, the conformance registry report, the coverage report, the query-corpus build and the weekly grammar sweep piped their output into `tee` or `tail` without `pipefail`, so they passed when their tests failed. The memory-leak job hid two failures this way: the memo above, and, since #617, a goroutine check that counted the idle keep-alive connections the label inventory's parallel bucket listings leave open (three goroutines each; it now closes them before counting). These steps now run under `shell: bash`. A test in `test/ciworkflows` rejects any new step that pipes into `tee` or `tail` without `pipefail`.
-
 ### Added
 
 - chart `image.digest` (#1785): pins the image by digest, rendering `<repository>@<digest>`, or `<repository>:<tag>@<digest>` when `image.tag` is set. A value that is not `sha256:<64 hex>`, or a second digest in `image.tag` or `image.repository`, fails rendering. With the value unset the chart renders as before. `SECURITY.md` adds "Verify before deploying": the digest from the release's `image-digests.txt`, verification of a mirrored image and a Kyverno policy example.
@@ -22,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - proxy: credentials in cache keys are now digested with a keyed hash. With forwarded credentials (`-forward-authorization`, `-forward-headers`, `-forward-cookies`) or `-backend-basic-auth`, cache keys held a plain SHA-256 of the tenant scope and the credential values. Those keys are stored in the disk cache and its restart hand-over, in pattern and label-index snapshots, on peer replicas and in debug log lines, so anyone holding them could check guessed credentials offline. The credential part is now HMAC-SHA256 under a key derived (HKDF-SHA256) from the new `-cache-key-secret` (also `-cache-key-secret-file`, `CACHE_KEY_SECRET`; Helm `cacheKeySecret.existingSecret`), else from `-peer-auth-token`, else from random bytes per process; no key is written to the cache volume. Replicas and restarts with the same secret, or the same peer token, keep sharing credential-scoped entries; with different or no secret they miss, never serving another caller's answer, and without either secret those entries are not reused after a restart or by other replicas (the proxy logs a warning at start). Keys of requests without credentials are unchanged (pinned by recorded keys). Upgrade note: credential-scoped entries written by earlier builds are never read again and age out. With `-backend-basic-auth` every entry is credential-scoped: every key changes once at the upgrade, and without a peer token a deployment needs `-cache-key-secret` (the same value on every replica) to keep its disk cache across restarts and, for a fleet on `-peer-insecure-ip-allowlist`, to keep sharing entries between replicas. The keyed fingerprint is also cheaper to compute (credential path 1037 to 593 ns, 26 to 11 allocations per request).
 - proxy: the restart hand-over scope written to the disk cache no longer hashes `-backend-version-basic-auth`; every flag whose name holds `basic-auth`, `token`, `password` or `secret` stays out of it.
+
+## [2.370.1] - 2026-11-26
+
+### Fixed
+
+- A proxy kept a second full read-cache key memo (16,384 entries, about 8 MB in the memory-leak test) alive for its whole lifetime after the memo first reached its cap. The reset swapped in a new map while the handler state still held the old one; it now empties the shared map in place. Present since #419; growth is bounded to one memo again, and repeated memo misses (one reset per 16,384 calls) run 8.5% faster with 27% fewer bytes per call (`BenchmarkCanonicalReadCacheKey_MemoMissesWithResets`).
+- CI: the memory-leak, stress, load and scale-benchmark steps, the conformance registry report, the coverage report, the query-corpus build and the weekly grammar sweep piped their output into `tee` or `tail` without `pipefail`, so they passed when their tests failed. The memory-leak job hid two failures this way: the memo above, and, since #617, a goroutine check that counted the idle keep-alive connections the label inventory's parallel bucket listings leave open (three goroutines each; it now closes them before counting). These steps now run under `shell: bash`. A test in `test/ciworkflows` rejects any new step that pipes into `tee` or `tail` without `pipefail`.
 
 ## [2.370.0] - 2026-11-26
 
