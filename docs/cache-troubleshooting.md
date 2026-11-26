@@ -235,7 +235,7 @@ real disk cache (`TestRetentionTraceReplay` in `internal/cache`; seeded
 traces, simulated clock, both tiers smaller than the distinct answers except
 `ttl-bound`):
 
-<!-- retention-trace-table:begin (TestRetentionTraceReplay; LVP_RETENTION_TABLE_UPDATE=1 rewrites it) -->
+[//]: # 'retention-trace-table:begin (TestRetentionTraceReplay; LVP_RETENTION_TABLE_UPDATE=1 rewrites it)'
 | Trace | Policy | Hit ratio | Byte hit ratio | L1 hit ratio | After the event: hit ratio | After the event: L1 hit ratio |
 |---|---|---:|---:|---:|---:|---:|
 | `drilldown-zipf` | `lru` | 63.59% | 63.23% | 48.66% | 64.11% | 48.06% |
@@ -276,7 +276,7 @@ traces, simulated clock, both tiers smaller than the distinct answers except
 | `ttl-bound` | `protect20+demote` | 29.11% | 21.13% | 29.11% | 29.44% | 29.44% |
 
 Over 5 seeds of every trace, `protect20`'s largest loss against `lru` on any of these ratios is 0.10 points (seed 3 working-set-shift window memory hit ratio).
-<!-- retention-trace-table:end -->
+[//]: # 'retention-trace-table:end'
 
 - `drilldown-zipf`: Logs Drilldown service pages picked by a Zipf law, eight
   panels per visit; L1 10% and L2 25% of the distinct bytes.
