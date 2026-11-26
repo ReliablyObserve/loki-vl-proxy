@@ -197,6 +197,10 @@ type proxyRuntimeConfig struct {
 	labelBrowseExtensions               string
 	errorResponseMessageField           bool
 	warmupMaxJitter                     time.Duration
+	cacheShutdownFlushTimeout           time.Duration
+	cacheStartupWarmBytes               int64
+	cacheStartupWarmTimeout             time.Duration
+	cacheHandoverScope                  func() string
 	labelStyle                          string
 	metadataFieldMode                   string
 	translateOTel                       *bool
@@ -557,6 +561,9 @@ func run(
 	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
 	diskCacheMinTTL := fs.Duration("disk-cache-min-ttl", 30*time.Second, "Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies")
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages")
+	cacheShutdownFlushTimeout := fs.Duration("cache-shutdown-flush-timeout", 0, "Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds")
+	cacheStartupWarmBytes := fs.Int64("cache-startup-warm-bytes", 0, "Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none")
+	cacheStartupWarmTimeout := fs.Duration("cache-startup-warm-timeout", 10*time.Second, "Longest /ready answers 503 (response cache warming) while the start-up warm-up runs; the warm-up stops at this deadline")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 	tenantMapFile := fs.String("tenant-map-file", "", "Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes.")
@@ -844,6 +851,9 @@ func run(
 	if *responseCompressionMinBytes < 0 {
 		return fmt.Errorf("invalid -response-compression-min-bytes: must be >= 0")
 	}
+	if err := validateCacheHandoverFlags(*cacheShutdownFlushTimeout, *cacheStartupWarmBytes, *cacheStartupWarmTimeout); err != nil {
+		return err
+	}
 	if *patternsScope != "stream" && *patternsScope != "selector" {
 		return fmt.Errorf("invalid -patterns-scope: %q (must be 'stream' or 'selector')", *patternsScope)
 	}
@@ -1094,6 +1104,10 @@ func run(
 			labelBrowseExtensions:               *labelBrowseExtensions,
 			errorResponseMessageField:           *errorResponseMessageField,
 			warmupMaxJitter:                     *warmupMaxJitter,
+			cacheShutdownFlushTimeout:           *cacheShutdownFlushTimeout,
+			cacheStartupWarmBytes:               *cacheStartupWarmBytes,
+			cacheStartupWarmTimeout:             *cacheStartupWarmTimeout,
+			cacheHandoverScope:                  lazyCacheHandoverScope(fs, envCfg, *cacheShutdownFlushTimeout, *cacheStartupWarmBytes),
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			translateOTel:                       envCfg.translateOTel,
@@ -1315,6 +1329,7 @@ func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, disabled bool,
 	}
 
 	c := cache.NewWithMaxBytes(ttl, maxEntries, maxBytes)
+	c.TrackStartupWindow()
 	if diskCfg.Path == "" {
 		return c, func() { c.Close() }, nil
 	}
@@ -2486,6 +2501,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetricsDurationBuckets:             durationBuckets,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
+		CacheShutdownFlushTimeout:          cfg.cacheShutdownFlushTimeout,
+		CacheStartupWarmBytes:              cfg.cacheStartupWarmBytes,
+		CacheStartupWarmTimeout:            cfg.cacheStartupWarmTimeout,
+		CacheHandoverScope:                 cfg.cacheHandoverScope,
 		DisableLabelsCacheWarm:             !cfg.labelsCacheWarm,
 		LogQLDottedNames:                   cfg.logqlDottedNames,
 		LabelBrowseExtensions:              cfg.labelBrowseExtensions,

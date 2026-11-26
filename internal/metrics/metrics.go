@@ -650,6 +650,58 @@ func writeCacheTierMetrics(sb *strings.Builder, stats cache.StatsSnapshot) {
 	sb.WriteString("# TYPE loki_vl_proxy_cache_bytes gauge\n")
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l1_memory", stats.Bytes)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l2_disk", stats.DiskBytes)
+	writeCacheRestartMetrics(sb, stats.Handover)
+}
+
+func boolGauge(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+// writeCacheRestartMetrics writes the response cache's restart hand-over
+// state: what the previous graceful shutdown left (read from its manifest at
+// start, since a stopping process is not scraped), what the start-up warm-up
+// restored, and the memory tier's lookups and hits in the first minutes.
+func writeCacheRestartMetrics(sb *strings.Builder, h cache.HandoverStats) {
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_previous_flush_records Records the previous graceful shutdown left in the restart hand-over, by kind: ranked = disk records with their memory recency, disk_write = disk records it wrote because the disk lacked them, memory = memory-only answers.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_previous_flush_records gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_records{kind=%q} %d\n", "ranked", h.PreviousFlushRanked)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_records{kind=%q} %d\n", "disk_write", h.PreviousFlushDiskWrites)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_records{kind=%q} %d\n", "memory", h.PreviousFlushMemoryEntries)
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_previous_flush_memory_bytes Memory-only answer bytes the previous graceful shutdown left in the restart hand-over.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_previous_flush_memory_bytes gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_memory_bytes %d\n", h.PreviousFlushMemoryBytes)
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_previous_flush_duration_seconds How long the previous graceful shutdown's hand-over flush took.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_previous_flush_duration_seconds gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_duration_seconds %g\n", h.PreviousFlushDuration.Seconds())
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_previous_flush_complete 1 when this process started from a valid hand-over whose flush finished within -cache-shutdown-flush-timeout, else 0.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_previous_flush_complete gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_complete %d\n", boolGauge(h.PreviousFlushFound && h.PreviousFlushComplete))
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_entries Entries the start-up warm-up restored into the memory cache, by kind (disk, memory), and ranked entries it skipped (skipped).\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_entries gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_entries{kind=%q} %d\n", "disk", h.WarmDiskEntries)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_entries{kind=%q} %d\n", "memory", h.WarmMemoryEntries)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_entries{kind=%q} %d\n", "skipped", h.WarmSkipped)
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_bytes Bytes the start-up warm-up restored into the memory cache.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_bytes gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_bytes %d\n", h.WarmBytes)
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_duration_seconds How long the start-up warm-up took.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_duration_seconds gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_duration_seconds %g\n", h.WarmDuration.Seconds())
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_done 1 once the start-up warm-up finished (or found no hand-over), else 0.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_done gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_done %d\n", boolGauge(h.WarmDone))
+	if !h.StartupTracked {
+		return
+	}
+	sb.WriteString("# HELP loki_vl_proxy_cache_startup_l1_requests Memory cache lookups in the first 10 minutes after start (frozen after them); with loki_vl_proxy_cache_startup_l1_hits, the start-up hit ratio.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_startup_l1_requests gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_startup_l1_requests %d\n", h.StartupL1Requests)
+	sb.WriteString("# HELP loki_vl_proxy_cache_startup_l1_hits Memory cache hits in the first 10 minutes after start (frozen after them).\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_startup_l1_hits gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_startup_l1_hits %d\n", h.StartupL1Hits)
 }
 
 // SetCircuitBreakerFunc sets the function to query CB state for metrics export.

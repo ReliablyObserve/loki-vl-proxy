@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (290), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (293), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -13,6 +13,9 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-cache-disabled` | bool | `false` | `extraArgs.cache-disabled` | Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement) |
 | `-cache-max` | int | `10000` | `extraArgs.cache-max` | Maximum cache entries |
 | `-cache-max-bytes` | int | `defaultCacheMaxBytes` | `extraArgs.cache-max-bytes` | Maximum in-memory L1 cache size in bytes |
+| `-cache-shutdown-flush-timeout` | duration | `0` | `extraArgs.cache-shutdown-flush-timeout` | Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds |
+| `-cache-startup-warm-bytes` | int64 | `0` | `extraArgs.cache-startup-warm-bytes` | Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none |
+| `-cache-startup-warm-timeout` | duration | `10s` | `extraArgs.cache-startup-warm-timeout` | Longest /ready answers 503 (response cache warming) while the start-up warm-up runs; the warm-up stops at this deadline |
 | `-cache-ttl` | duration | `1m0s` | `extraArgs.cache-ttl` | Cache TTL for label/metadata queries |
 | `-compat-cache-enabled` | bool | `true` | `extraArgs.compat-cache-enabled` | Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints |
 | `-compat-cache-max-percent` | int | `defaultCompatCachePercent` | `extraArgs.compat-cache-max-percent` | Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1. One entry holds at most a tenth of this budget: a larger query, query_range or series answer is kept in primary L1 memory instead (up to a tenth of -cache-max-bytes), where it shares L1 with the other cached answers; such an answer stays on the replica that computed it (not on disk, not pushed to peers) |

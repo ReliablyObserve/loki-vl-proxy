@@ -1455,6 +1455,7 @@
     "versions/stats-bucket-label-v1.45 | query"
   ],
   "claim_cells": [
+    "cmd/proxy/cache_handover_scope_test.go | cache-restart-handover",
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
     "cmd/proxy/main_test.go | observability-metrics-histograms-and-labels",
@@ -1473,6 +1474,8 @@
     "internal/cache/error_flights_test.go | semantics/error-cache-bounded-memory",
     "internal/cache/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/cache/error_flights_test.go | semantics/error-coalescing-request-flights",
+    "internal/cache/handover_peak_test.go | cache-restart-handover",
+    "internal/cache/handover_test.go | cache-restart-handover",
     "internal/cache/peer_close_conn_test.go | shutdown-releases-background-work",
     "internal/cache/peer_everywhere_test.go | semantics/error-cache-vl-refusal-peer-sync",
     "internal/cache/peer_hedge_test.go | peer-cache-patterns",
@@ -1616,6 +1619,7 @@
     "internal/lokierr/lokierr_test.go | status-405",
     "internal/lokierr/lokierr_test.go | status-429",
     "internal/lokierr/lokierr_test.go | status-500",
+    "internal/metrics/cache_restart_metrics_test.go | cache-restart-handover",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/capability_test.go | vl-capability-layer",
     "internal/metrics/duration_buckets_test.go | observability-metrics-histograms-and-labels",
@@ -1719,6 +1723,8 @@
     "internal/proxy/build_phase_replay_test.go | semantics/loki-build-phase-window",
     "internal/proxy/build_phase_replay_test.go | semantics/loki-error-phase-order",
     "internal/proxy/build_phase_window_loki_test.go | semantics/loki-build-phase-window",
+    "internal/proxy/cache_handover_test.go | cache-restart-handover",
+    "internal/proxy/cache_handover_test.go | shutdown-releases-background-work",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-parenthesized-metric-as-text",
@@ -3661,6 +3667,7 @@
     "test/e2e-fleet/peer_push_replay_test.go | peer-cache-fleet-recovery",
     "test/e2e-fleet/peer_push_replay_test.go | peer-cache-push-replay",
     "test/e2e-fleet/query_range_window_moved_reuse_test.go | semantics/query-range-window-full-limit-reads",
+    "test/e2e-fleet/restart_handover_test.go | cache-restart-handover",
     "test/e2e-fleet/settled_steps_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
@@ -3683,7 +3690,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 835,
+      "go": 841,
       "playwright": 3
     },
     "page_kinds": {
@@ -3705,7 +3712,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 484
+    "wired_items": 485
   },
   "gates": [
     "A/B shape selection",

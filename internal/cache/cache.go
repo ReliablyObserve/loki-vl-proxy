@@ -20,6 +20,9 @@ type entry struct {
 	// (SetLocalOnlyWithTTL): a peer that fetches it keeps it off its disk too.
 	memOnly bool
 	shadow  bool
+	// restorable marks a memory-only answer a shutdown flush may keep for a
+	// process of the same build and configuration (SetLocalOnlyRestorableWithTTL).
+	restorable bool
 	// sourceExpiresAt is a source deadline, distinct from short shadow residency.
 	// Zero means residency TTL is also the source validity; unknown age stays -1.
 	sourceExpiresAt int64
@@ -62,6 +65,8 @@ type StatsSnapshot struct {
 	// HotEntries is the current bounded population of the L0 hot-key
 	// index. Equivalent of `loki_vl_proxy_cache_objects{tier="l0"}`.
 	HotEntries int
+	// Handover is the restart hand-over's state (handover.go).
+	Handover HandoverStats
 }
 
 // Cache is an in-memory TTL cache with per-key TTL override, max entries, and max bytes.
@@ -90,6 +95,15 @@ type Cache struct {
 	hot      map[string]hotStat       // lightweight per-key hotness index for peer read-ahead
 	hotMax   int                      // cap hot index growth
 	hotOn    bool                     // only enabled when peer hot read-ahead is enabled
+	// hits counts each entry's memory hits for the restart hand-over, off
+	// unless EnableHandoverHits was called (hitsOn). hitsMu guards the map, not
+	// mu, so the promoter counts outside the lock readers wait for; lock order
+	// is mu, then hitsMu.
+	hitsOn        atomic.Bool
+	hitsMu        sync.Mutex
+	hits          map[string]uint32
+	startupTimer  *time.Timer
+	handoverStats handoverCounters
 
 	// promoteBuf is a lossy ring buffer for deferred LRU promotion.
 	// Reads use RLock and send the accessed key here; a background goroutine
@@ -226,7 +240,8 @@ func newWithMaxBytesForLayer(ttl time.Duration, maxEntries, maxBytes int, layer 
 func (c *Cache) runPromoter() {
 	applyKey := func(key string) {
 		c.mu.Lock()
-		if elem, found := c.lruIndex[key]; found {
+		elem, found := c.lruIndex[key]
+		if found {
 			c.lruList.MoveToFront(elem)
 			if shadow := elem.Value.(*lruEntry).shadowElem; shadow != nil {
 				c.shadowList.MoveToFront(shadow)
@@ -236,6 +251,11 @@ func (c *Cache) runPromoter() {
 			c.recordHotLocked(key)
 		}
 		c.mu.Unlock()
+		if found && c.hitsOn.Load() {
+			c.hitsMu.Lock()
+			c.hits[key]++
+			c.hitsMu.Unlock()
+		}
 	}
 	for {
 		select {
@@ -281,6 +301,11 @@ func (c *Cache) Close() {
 	default:
 		close(c.done)
 	}
+	c.mu.Lock()
+	if c.startupTimer != nil {
+		c.startupTimer.Stop()
+	}
+	c.mu.Unlock()
 }
 
 // Peek returns a fresh value from the memory tier without promoting it in
@@ -757,6 +782,7 @@ func (c *Cache) cleanup() {
 				c.removeEntryLocked(key)
 			}
 		}
+		c.pruneHitsLocked()
 		c.mu.Unlock()
 	}
 }
@@ -999,6 +1025,7 @@ func (c *Cache) Stats() StatsSnapshot {
 		Bytes:              bytes,
 		DiskEntries:        diskEntries,
 		DiskBytes:          diskBytes,
+		Handover:           c.HandoverStats(),
 	}
 }
 
