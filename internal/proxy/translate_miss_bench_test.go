@@ -74,6 +74,10 @@ var translateMissShapes = []struct {
 	{"drop keep", func(i string) string { return `{app="api"} |= "` + i + `" | json | drop a, b | keep c, d` }},
 	{"keep names and matchers", func(i string) string { return `{app="api"} |= "` + i + `" | keep a="x", b` }},
 	{"keep matcher read later", func(i string) string { return `{app="api"} |= "` + i + `" | keep a="x", b | a!="y"` }},
+	{"metric keep detected level", func(i string) string {
+		return `count_over_time({app="api"} |= "` + i + `" | keep app, detected_level="error" [5m])`
+	}},
+	{"drop read later", func(i string) string { return `{app="api"} |= "` + i + `" | drop level="x" | level!="y"` }},
 	{"metric keep matcher", func(i string) string {
 		return `sum by (a) (count_over_time({app="api"} |= "` + i + `" | keep a="x", b [5m]))`
 	}},
