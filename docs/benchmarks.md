@@ -514,8 +514,9 @@ go test ./internal/cache/ -bench . -benchmem -run "^$" -count=3
 ### Measuring eviction pressure
 
 ```promql
-# Eviction rate — non-zero means L1 is too small
-rate(loki_vl_proxy_cache_evictions_total[5m])
+# Eviction rate by tier and reason: capacity evictions mean L1 is too small,
+# expired ones that the TTL is what ends reuse
+sum by (tier, reason) (rate(loki_vl_proxy_cache_evictions_total[5m]))
 
 # Hit rate — below 50% means cache too small or workload not cacheable
 rate(loki_vl_proxy_cache_hits_total[5m])
