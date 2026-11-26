@@ -13,6 +13,8 @@
 #                description (it runs as a seed-corpus test in `go test`). This list
 #                may only shrink (the script caps it); fix the reason and make the row
 #                `smoke`.
+smoke	internal/clientauth	FuzzParseUsersFile	12s	-	users file of caller authentication
+smoke	internal/clientauth	FuzzParseAuthorization	12s	-	Authorization header parsing of caller authentication
 smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadata normalization
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
 smoke	internal/proxy	FuzzFieldMappingLabelMode	12s	-	field-mapping label modes keep query names and list only names of their field

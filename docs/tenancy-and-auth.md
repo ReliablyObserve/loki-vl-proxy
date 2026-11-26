@@ -12,7 +12,7 @@ This is the operator guide for who can read what through Loki-VL-proxy. It lists
 | Surface | Default | Turn it on or open it with |
 |---|---|---|
 | Tenancy | **Off.** `X-Scope-OrgID` is ignored, every request reads VictoriaLogs account `0:0`, and every Grafana user sees all data, as Loki with `auth_enabled: false`. | Any one of: `-auth.enabled`, `-require-tenant-header`, `-tenant-map`, `-tenant-map-file`, `-tenant-label`, `-tenant.numeric-passthrough=true` (see [Choose a setup](#2-choose-a-setup)) |
-| Caller authentication | None. The proxy does not authenticate callers, and neither does Loki. | A gateway in front of the proxy, or client certificates (`-tls-client-ca-file`, `-tls-require-client-cert`) |
+| Caller authentication | Off. The proxy does not authenticate callers, and neither does Loki. | `-server.auth-users-file` (Helm `clientAuth.existingSecret`): Basic or bearer credentials checked by the proxy, see [Caller authentication](#caller-authentication). Or a gateway in front of the proxy, or client certificates (`-tls-client-ca-file`, `-tls-require-client-cert`) |
 | Write path `/loki/api/v1/push` | Blocked: `405` | Not available; send logs to VictoriaLogs |
 | Delete API `/loki/api/v1/delete` | Not registered: `404`, as Loki with deletion disabled | `-delete-api-enabled=true` plus its own token `-delete-api-auth-token` (Helm `deleteAuth.existingSecret`); the proxy refuses to start without the token. Every request must carry it in `X-Delete-Token` or `Authorization: Bearer`. |
 | Admin and debug (`/admin/cache/flush`, `/admin/capabilities`, `/debug/pprof/*`, `/debug/queries`) | Off. When enabled without a token they listen on the loopback `-admin-listen` (`127.0.0.1:3101`) only. | `-server.register-instrumentation`, `-server.enable-pprof`, `-server.enable-query-analytics`; `-server.admin-auth-token` (Helm `adminAuth.existingSecret`) moves them to the main listener behind the token. The proxy refuses to expose them on a non-loopback address without the token. |
@@ -102,6 +102,30 @@ The proxy trusts nothing about the caller unless you configure it:
 - **vmauth between the proxy and VictoriaLogs:** `-backend-basic-auth` (Helm `backendAuth.existingSecret`) authenticates the proxy to it. `-forward-tenant-header` (default `true`) forwards the routed `X-Scope-OrgID` for a backend that routes on it; with tenancy off the header is never forwarded. vmauth answers `/metrics` itself, so name the VictoriaLogs release source with `-backend-version-url` (its own `-backend-version-basic-auth`; the backend credentials are never sent to it), see [backend version behind vmauth](configuration.md#backend-version-behind-vmauth).
 - **TLS at the proxy:** `-tls-cert-file`, `-tls-key-file`, `-tls-client-ca-file`, `-tls-require-client-cert`. A client certificate proves which client connected, not which tenant it may read.
 
+### Caller authentication
+
+`-server.auth-users-file` (Helm `clientAuth.existingSecret`) makes the proxy check a credential on every request, without TLS between Grafana and the proxy. It is off by default; with it off nothing changes. The file lists users:
+
+```yaml
+users:
+  - name: grafana                  # letters, digits, - _ . @; at most 64 bytes
+    password_hash: "$2y$12$..."    # bcrypt: htpasswd -nbBC 12 grafana '<password>' | cut -d: -f2
+    tenant: team-a                 # optional: the only X-Scope-OrgID this user may send
+  - name: ci
+    token_sha256: "<64 hex>"       # SHA-256 of the bearer token: printf %s '<token>' | sha256sum
+```
+
+- **Tokens:** generate bearer tokens randomly (for example `openssl rand -hex 32`); the file keeps only their unsalted SHA-256, which is safe for a random token but not for a short or guessable one.
+- **Grafana:** turn on *Basic authentication* in the Loki data source (user and password), or send `Authorization: Bearer <token>` as a custom HTTP header. The proxy checks the live tail's WebSocket handshake like every other route.
+- **What is checked:** every route on every listener (main, `-admin-listen`, `-metrics-listen`) except `/ready`, `/health`, `/healthz`, `/alive`, `/livez` (the probes keep working), `/metrics` (protect the scrape path with the NetworkPolicy) and the `/_cache/*` peer routes (their own `-peer-auth-token`). A path no route serves needs a credential too, so the routes cannot be listed without one.
+- **Refusals:** a missing, malformed or wrong credential, or a pinned user asking for another tenant, gets `401 unauthorized` with `WWW-Authenticate: Basic` and/or `Bearer`. Loki has no caller authentication, so this answer is a deliberate difference that only exists with the file configured. The text is the same for every reason; the reason goes to `loki_vl_proxy_auth_failures_total{reason}` and the log line, never the user name, password, token or hash.
+- **Tenant pin:** a user with `tenant` may send no `X-Scope-OrgID` (the proxy sets the pin) or exactly the pin. Another tenant, a multi-tenant `a|b` value, two header lines or any other spelling is refused before any cache lookup, so the user never receives another tenant's cached answer. Without a pin a user may send any tenant, as without caller authentication. With tenancy off (setup a) every user reads the default tenant and the proxy logs a warning at start.
+- **Credential toward VictoriaLogs:** removed after the check, unless `-forward-authorization` (or `-forward-headers=Authorization`) forwards it; cache entries are then keyed by a hash of the credential and never pushed to peers, as for any forwarded credential.
+- **Admin and delete tokens:** with caller authentication on, `Authorization` carries the caller's credential, so the admin token is read from `X-Admin-Token` and the delete token from `X-Delete-Token` only. Those routes need both.
+- **Identity:** the authenticated name is the caller's `enduser.id` (`enduser.source=auth_user`) and the client label of the client metrics (bounded by `-metrics.max-clients`), ahead of `-metrics.trust-proxy-headers` headers and the tenant. `-log-user-header` still names the Grafana user on the log lines.
+- **Reloads:** the file is re-read every `-server.auth-users-reload-interval` (`30s`); the chart mounts the Secret's directory, so a changed Secret reaches the pod. A missing, empty or invalid file stops the start; a bad version later keeps the last good users, is logged and counts `loki_vl_proxy_auth_users_reload_failures_total`.
+- **Cost:** see [Caller authentication](security.md#caller-authentication) for the bcrypt bound and the verified-credential cache.
+
 ## 3. Every option
 
 | Flag | Helm | Default | Turns tenancy on | Loki equivalent |
@@ -122,6 +146,10 @@ The proxy trusts nothing about the caller unless you configure it:
 | `-delete-api-auth-token` / `-delete-api-auth-token-file` / `DELETE_API_AUTH_TOKEN` | `deleteAuth.existingSecret` / `extraArgs.delete-api-auth-token` | empty, required by the delete API | no | none |
 | `-server.admin-auth-token` / `-server.admin-auth-token-file` / `ADMIN_AUTH_TOKEN` | `adminAuth.existingSecret` / `extraArgs.server.admin-auth-token` | empty | no | none |
 | `-admin-listen` | `extraArgs.admin-listen` | `127.0.0.1:3101` | no | none |
+| `-server.auth-users-file` | `clientAuth.existingSecret` / `extraArgs.server.auth-users-file` | empty (off) | no | none (Loki has no caller authentication) |
+| `-server.auth-users-reload-interval` | `extraArgs.server.auth-users-reload-interval` | `30s` | no | none |
+| `-server.auth-cache-ttl` | `extraArgs.server.auth-cache-ttl` | `5m` | no | none |
+| `-server.auth-max-concurrent-verifications` | `extraArgs.server.auth-max-concurrent-verifications` | `4` | no | none |
 | `-peer-auth-token` / `-peer-auth-token-file` / `PEER_AUTH_TOKEN` | `peerCache.authToken` / `peerCache.existingSecret` | empty, required with peers | no | none |
 | `-forward-authorization`, `-forward-headers`, `-forward-cookies` | `extraArgs.*` | off / empty | no | none |
 | `-cache-key-secret` / `-cache-key-secret-file` / `CACHE_KEY_SECRET` | `cacheKeySecret.existingSecret` / `cacheKeySecret.generate` (default: a chart-generated `<release>-cache-key`) / `extraArgs.cache-key-secret` | empty (derived from `-peer-auth-token`, else per process) | no | none |
@@ -154,12 +182,13 @@ The delete API now needs its own token: set `-delete-api-auth-token` (Helm `dele
 - With `-metrics.trust-proxy-headers=true` the proxy takes the caller's identity from the first of `X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User` and `X-Auth-Request-User`, then `X-Scope-OrgID`, then `X-Forwarded-For`, then the remote address. Without the flag it is `X-Scope-OrgID`, then the remote address. The request log writes it as `enduser.id` / `enduser.source`. Per-client metric labels carry it only with `-metrics.export-sensitive-labels=true`.
 - With the same flag the proxy forwards those user and proxy-chain headers (`X-Forwarded-*`, `X-Real-Ip`, `Forwarded`) to VictoriaLogs, and the user name of a data source's basic authentication as `X-Loki-VL-Auth-User` (logged only as `auth.source`, never the name). Every backend request carries `X-Loki-VL-Client-ID` / `X-Loki-VL-Client-Source` with the identity above.
 - These headers are plain text the caller controls. Trust them only when the proxy is reachable solely through Grafana or a gateway that sets them and strips any value the client sent. If Grafana sits behind an auth proxy, keep `X-Forwarded-User`, `X-Grafana-User`, `X-Forwarded-*` and `Forwarded` end to end.
-- Identity never selects a tenant: the tenant comes from `X-Scope-OrgID` (setups b–d).
+- With caller authentication on, the authenticated user name is the identity (`enduser.source=auth_user`) and the client metric label, ahead of every header above; the Basic credential itself is gone before the request log, so `auth.source` names the mechanism (`basic_auth`, `bearer_token`).
+- Identity never selects a tenant: the tenant comes from `X-Scope-OrgID` (setups b–d), or from a user's pin with caller authentication on.
 
 | Grafana data source setting | Proxy side |
 |---|---|
 | No authentication | supported |
-| Basic authentication | not checked by the proxy; forwarded only with `-forward-authorization` |
+| Basic authentication | checked with `-server.auth-users-file` (otherwise not checked); forwarded only with `-forward-authorization` |
 | Forward OAuth Identity | not checked; forwarded with `-forward-headers=Authorization,X-Id-Token` |
 | TLS Client Auth | `-tls-client-ca-file`, `-tls-require-client-cert` |
 | Custom HTTP headers (`X-Scope-OrgID`, others) | tenant as in setups b–d; others forwarded only when listed in `-forward-headers` |

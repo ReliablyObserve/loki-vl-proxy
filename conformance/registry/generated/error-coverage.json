@@ -5195,6 +5195,19 @@
       "state": "matches",
       "status": 400
     },
+    "unauthorized": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-unauthorized",
+      "kind": "route",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "routing",
+      "state": "documented",
+      "status": 401
+    },
     "unmapped-evaluator-unexpected-expr": {
       "comparable_rows": 1,
       "e2e_rows": [
@@ -5408,8 +5421,8 @@
     "e2e_rows": 142,
     "match_ratio": 0.9758,
     "matching_rows": 242,
-    "messages": 48,
-    "messages_documented": 12,
+    "messages": 49,
+    "messages_documented": 13,
     "messages_recorded": 36,
     "not_comparable_rows": 141,
     "recorded_loki": "3.7.10",

@@ -23,7 +23,6 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -36,7 +35,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
 		query := r.FormValue("query")
-		clientID := metrics.ResolveClientID(r, p.metricsTrustProxyHeaders)
+		clientID, _ := p.resolveClient(r)
 		p.metrics.RecordClientInflight(clientID, 1)
 		defer p.metrics.RecordClientInflight(clientID, -1)
 
@@ -148,7 +147,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			return
 		}
 
-		authUser, authSource := metrics.ResolveAuthContext(r)
+		authUser, authSource := p.resolveAuth(r)
 		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
 		peerAddr, _ := splitHostPortValue(r.RemoteAddr)
 		grafanaVersion := grafanaProfile.version

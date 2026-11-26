@@ -485,3 +485,16 @@ cache.
 {{- end -}}
 {{- end -}}
 
+{{/*
+loki-vl-proxy.validateClientAuth — the users file of caller authentication
+comes from clientAuth.existingSecret or from extraArgs."server.auth-users-file",
+not both (the Go flag package fatals on a duplicate flag).
+*/}}
+{{- define "loki-vl-proxy.validateClientAuth" -}}
+{{- $extraArgs := default (dict) .Values.extraArgs -}}
+{{- $clientAuth := default (dict) .Values.clientAuth -}}
+{{- if and $clientAuth.existingSecret (hasKey $extraArgs "server.auth-users-file") -}}
+{{- fail "clientAuth.existingSecret cannot be combined with extraArgs.\"server.auth-users-file\"; the chart mounts the users file from the Secret and sets the flag. Remove the extraArgs entry." -}}
+{{- end -}}
+{{- end -}}
+

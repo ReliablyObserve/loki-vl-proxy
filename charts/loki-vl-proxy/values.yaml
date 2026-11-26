@@ -476,6 +476,9 @@ extraArgs:
   # server.enable-query-analytics: "false"
   # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints; prefer adminAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
   # server.admin-auth-token-file: ""            # file holding the admin token (adminAuth.existingSecret renders it)
+  # server.auth-users-reload-interval: "30s"    # caller authentication (clientAuth below): how often the users file is re-read
+  # server.auth-cache-ttl: "5m"                 # how long a verified Basic credential skips bcrypt; 0 runs bcrypt on every request
+  # server.auth-max-concurrent-verifications: "4"   # bcrypt verifications in flight; a flood of wrong passwords costs at most this many cores
   # tail.mode: "auto"                           # auto | native | synthetic
   # tail.allowed-origins: ""                    # comma-separated websocket origin allowlist
   # tail.backend-retry-window: "30s"            # how long a live tail stays open and retries while VictoriaLogs restarts or fails (resumes without repeating or skipping lines); 0 closes the tail on the first failure
@@ -595,6 +598,28 @@ observability:
 adminAuth:
   existingSecret: ""
   existingSecretKey: "token"       # key within existingSecret
+
+# Caller authentication (-server.auth-users-file), off by default. Set
+# existingSecret to a Secret whose key holds the users file:
+#   users:
+#     - name: grafana                 # letters, digits, - _ . @ (64 bytes max)
+#       password_hash: "$2y$12$..."   # bcrypt: htpasswd -nbBC 12 grafana '<password>' | cut -d: -f2
+#       tenant: team-a                # optional: the only X-Scope-OrgID this user may send
+#     - name: ci
+#       token_sha256: "<64 hex>"      # printf %s '<token>' | sha256sum
+# The chart mounts the Secret's directory read-only at mountPath (no subPath,
+# so a changed Secret reaches the pod and the proxy re-reads it) and sets
+# -server.auth-users-file. Every route then needs Authorization: Basic or
+# Bearer, except /ready, /health, /healthz, /alive, /livez (the probes keep
+# working), /metrics and the peer cache routes (peerCache's own token); a
+# missing or wrong credential gets 401 with WWW-Authenticate. In Grafana set
+# the Loki datasource's Basic authentication (or an Authorization header).
+# Admin and delete tokens are then sent in X-Admin-Token / X-Delete-Token.
+# The default networkPolicy already admits only Grafana pods on 3100.
+clientAuth:
+  existingSecret: ""
+  existingSecretKey: "users.yaml"
+  mountPath: /etc/loki-vl-proxy/auth
 
 # Delete API token (-delete-api-auth-token-file). Required by
 # extraArgs.delete-api-enabled: "true". Separate from adminAuth: enabling

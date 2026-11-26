@@ -148,6 +148,8 @@ func HelmKeyOf(name string) string {
 		return "peerCache.* (chart-managed)"
 	case "disk-cache-path":
 		return "persistence.* (chart-managed)"
+	case "server.auth-users-file":
+		return "clientAuth.existingSecret (chart-managed)"
 	}
 	return "extraArgs." + name
 }
