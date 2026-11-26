@@ -50,10 +50,10 @@ const credentialDigestInfo = "loki-vl-proxy/cache-key-credential-digest/v1" // #
 const credentialDigestVersion = "k1."
 
 // Key sources, for the start-up log line.
-const ( // #nosec G101 -- names of where the key comes from, not credentials
-	credentialKeyFromSecret    = "cache-key-secret"
-	credentialKeyFromPeerToken = "peer-auth-token"
-	credentialKeyEphemeral     = "per-process"
+const (
+	credentialKeyFromSecret    = "cache-key-secret" // #nosec G101 -- where the key comes from, not a credential
+	credentialKeyFromPeerToken = "peer-auth-token"  // #nosec G101 -- where the key comes from, not a credential
+	credentialKeyEphemeral     = "per-process"      // #nosec G101 -- where the key comes from, not a credential
 )
 
 type credentialDigest struct {
