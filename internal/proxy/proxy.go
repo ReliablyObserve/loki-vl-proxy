@@ -1744,6 +1744,8 @@ func New(cfg Config) (*Proxy, error) {
 		p.countVLCalls()
 	}
 	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
+	p.metrics.SetCacheSignalStatsProvider(p.cacheSignalStats)
+	p.metrics.SetCacheTTLProvider(p.cacheTTLs)
 	coalescerStats := func() metrics.CoalescerStats {
 		return metrics.CoalescerStats{
 			Total:     p.coalescer.CoalescedTotal.Load(),
