@@ -12,6 +12,9 @@ func handoverScopeFlags(t *testing.T, args ...string) *flag.FlagSet {
 	fs := flag.NewFlagSet("scope", flag.ContinueOnError)
 	fs.String("max-stats-query-series", "1000", "")
 	fs.String("peer-self", "", "")
+	fs.String("peer-self-az", "", "")
+	fs.String("backend-basic-auth", "", "")
+	fs.String("otlp-headers", "", "")
 	fs.String("peer-auth-token", "", "")
 	fs.String("server.admin-auth-token", "", "")
 	if err := fs.Parse(args); err != nil {
@@ -31,8 +34,8 @@ func TestCacheHandoverScope(t *testing.T) {
 		t.Fatal("the same build and configuration must give the same scope")
 	}
 	for name, args := range map[string][]string{
-		"pod identity": {"-peer-self=10.0.0.7:3100"},
-		"credentials":  {"-peer-auth-token=new", "-server.admin-auth-token=new"},
+		"pod identity": {"-peer-self=10.0.0.7:3100", "-peer-self-az=zone-b"},
+		"credentials":  {"-peer-auth-token=new", "-server.admin-auth-token=new", "-backend-basic-auth=user:pw", "-otlp-headers=Authorization=Bearer x"},
 	} {
 		if got := cacheHandoverScope(handoverScopeFlags(t, args...), env, time.Second, 0); got != base {
 			t.Fatalf("%s changed the scope: it decides no answer", name)

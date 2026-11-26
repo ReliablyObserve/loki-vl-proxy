@@ -203,6 +203,14 @@ func TestCacheHandover_ShutdownStopsTheWarmUp(t *testing.T) {
 	second := openHandoverProxy(t, path, backend.URL, cfg)
 	second.p.Init()
 	second.shutdown(t)
+	// Shutdown joined the warm-up: it finished (cancelled part-way or not)
+	// before the flush ran. The cancel itself is pinned in internal/cache
+	// (TestHandover_DeadlinePartWay).
+	if stats := second.c.HandoverStats(); !stats.WarmDone {
+		t.Fatal("Shutdown returned before the warm-up stopped")
+	} else {
+		t.Logf("warm-up stopped after %d of 200 entries (%d skipped)", stats.WarmDiskEntries, stats.WarmSkipped)
+	}
 	if second.p.responseCacheWarming() {
 		t.Fatal("a stopped warm-up must not hold /ready")
 	}

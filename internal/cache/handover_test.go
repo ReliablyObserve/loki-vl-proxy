@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -132,9 +133,7 @@ func TestHandover_RestoresHotSetInRecencyOrderWithHits(t *testing.T) {
 	if _, _, memOnly, ok := next.c.getForPeer("compat:t:big:routing:x"); !ok || !memOnly {
 		t.Fatal("a restored memory-only answer must stay memory-only for peers")
 	}
-	next.c.mu.RLock()
-	got := next.c.hits["query_range:t:k1"]
-	next.c.mu.RUnlock()
+	got := next.c.hitsOf("query_range:t:k1")
 	if got < 3 {
 		t.Fatalf("restored hits %d, want the 3 counted before the restart", got)
 	}
@@ -663,4 +662,113 @@ func FuzzHandoverRecordDecode(f *testing.F) {
 			_, _ = decodeNativeDiskRecordLimit(payload, 1<<20)
 		}
 	})
+}
+
+// countdownCtx is a context whose Err turns to Canceled after n calls: a
+// deadline that passes part-way through, at a deterministic point.
+type countdownCtx struct {
+	context.Context
+	left atomic.Int64
+}
+
+func newCountdownCtx(n int64) *countdownCtx {
+	c := &countdownCtx{Context: context.Background()}
+	c.left.Store(n)
+	return c
+}
+
+func (c *countdownCtx) Err() error {
+	if c.left.Add(-1) < 0 {
+		return context.Canceled
+	}
+	return nil
+}
+
+// A slow disk: the deadline passes after the first bounded commit of the
+// flush, or after two entries of the warm-up. What was written or loaded is
+// whole and the hottest, the report says incomplete.
+// conformance: cache-restart-handover
+func TestHandover_DeadlinePartWay(t *testing.T) {
+	t.Run("flush", func(t *testing.T) {
+		f := openHandoverFixture(t, filepath.Join(t.TempDir(), "c.db"), 64<<20, DiskCacheConfig{})
+		value := bytes.Repeat([]byte{'v'}, 512<<10)
+		const n = 20 // 10 MiB: three 4 MiB commits
+		for i := 0; i < n; i++ {
+			f.c.SetLocalOnlyRestorableWithTTL(fmt.Sprintf("compat:t:%02d:routing:x", i), value, time.Minute)
+		}
+		f.c.drainPromotions()
+		// Err calls: one after the disk writes, one before each commit.
+		report, err := f.c.FlushHandover(newCountdownCtx(2), HandoverFlushOptions{Scope: "s", MemoryBytes: 64 << 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.Complete || report.MemoryEntries == 0 || report.MemoryEntries >= n {
+			t.Fatalf("flush %+v: want one commit of a partial hand-over", report)
+		}
+		f.close()
+		next := openHandoverFixture(t, f.path, 64<<20, DiskCacheConfig{})
+		warm := next.c.WarmFromHandover(context.Background(), HandoverWarmOptions{Scope: "s", MaxBytes: 64 << 20})
+		if warm.MemoryEntries != report.MemoryEntries {
+			t.Fatalf("warm %+v after flush %+v", warm, report)
+		}
+		if stats := next.c.HandoverStats(); stats.PreviousFlushComplete {
+			t.Fatal("an incomplete flush reported complete")
+		}
+		for i := 0; i < report.MemoryEntries; i++ {
+			// The most recently stored are the hottest.
+			if _, ok := next.c.memoryEntry(fmt.Sprintf("compat:t:%02d:routing:x", n-1-i)); !ok {
+				t.Fatalf("entry %d of the hottest prefix not restored", n-1-i)
+			}
+		}
+	})
+	t.Run("warm-up", func(t *testing.T) {
+		f := openHandoverFixture(t, filepath.Join(t.TempDir(), "c.db"), 1<<20, DiskCacheConfig{})
+		for i := 0; i < 10; i++ {
+			f.c.SetWithTTL(fmt.Sprintf("query:t:%d", i), []byte("v"), time.Minute)
+		}
+		next, _ := f.restart(t, &HandoverFlushOptions{Scope: "s"})
+		warm := next.c.WarmFromHandover(newCountdownCtx(2), HandoverWarmOptions{Scope: "s", MaxBytes: 1 << 20})
+		if warm.Reason != "deadline" || warm.DiskEntries != 2 || warm.Skipped != 8 {
+			t.Fatalf("warm %+v: want the two hottest, then the deadline", warm)
+		}
+		for _, k := range []string{"query:t:9", "query:t:8"} {
+			if _, ok := next.c.memoryEntry(k); !ok {
+				t.Fatalf("%s missing: the deadline must keep the hottest", k)
+			}
+		}
+	})
+}
+
+// conformance: cache-restart-handover
+func TestHandover_HitCountsFollowTheEntries(t *testing.T) {
+	f := openHandoverFixture(t, filepath.Join(t.TempDir(), "c.db"), 1<<20, DiskCacheConfig{})
+	f.c.SetWithTTL("query:t:a", []byte("a"), time.Minute)
+	f.c.GetWithTTL("query:t:a")
+	f.c.drainPromotions()
+	if got := f.c.hitsOf("query:t:a"); got != 1 {
+		t.Fatalf("hits %d, want 1", got)
+	}
+	f.c.Invalidate("query:t:a")
+	if got := f.c.hitsOf("query:t:a"); got != 0 {
+		t.Fatal("a removed entry kept its hit count")
+	}
+	// A promotion counted after its entry was removed is pruned by the cleanup.
+	f.c.hitsMu.Lock()
+	f.c.hits["query:t:orphan"] = 3
+	f.c.hitsMu.Unlock()
+	f.c.mu.Lock()
+	f.c.pruneHitsLocked()
+	f.c.mu.Unlock()
+	if got := f.c.hitsOf("query:t:orphan"); got != 0 {
+		t.Fatal("an orphan hit count survived the prune")
+	}
+	off := NewWithMaxBytes(time.Minute, 10, 1<<20)
+	defer off.Close()
+	off.EnableHandoverHits() // no disk tier: stays off
+	off.SetWithTTL("query:t:a", []byte("a"), time.Minute)
+	off.GetWithTTL("query:t:a")
+	off.drainPromotions()
+	if off.hitsOn.Load() || off.hitsOf("query:t:a") != 0 {
+		t.Fatal("hit counting without a disk tier")
+	}
 }

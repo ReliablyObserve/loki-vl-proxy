@@ -130,6 +130,12 @@ ranked entries back into L1, hottest first, until the budget or
   a clock that moved back cannot lengthen an entry; a clock that moved forward
   only expires entries sooner.
 
+The hand-over bucket is outside `-disk-cache-max-bytes`: it holds up to
+`-cache-startup-warm-bytes` of memory-only replies (encoded with the disk
+codec) plus about 30 bytes and the key per ranked record, so the bbolt file can
+grow by that much at shutdown; bbolt keeps the freed pages for reuse after the
+next start deletes the bucket.
+
 Restored entries go in behind what live requests stored and never evict them;
 the warm-up reads the disk without counting disk hits. Disk records are
 restored by any build, as a disk hit would serve them, because their keys carry
@@ -147,7 +153,9 @@ identify their own codec, so changing codecs does not require a cold cache.
 New writes replace legacy copies of the same key atomically. A corrupt new
 record is a miss and cannot fall back to an older legacy value.
 
-Old binaries cannot read the new bucket. A downgrade can reuse legacy entries
+Old binaries cannot read the new bucket. They also ignore the restart
+hand-over bucket and leave it in the file; a later start of a current binary
+finds its manifest outdated and deletes it. A downgrade can reuse legacy entries
 that remain, but loses access to values written in the new format. The disk tier
 is disposable: bbolt uses asynchronous syncing, so a crash can lose recent
 cache writes. A miss recomputes the answer from the backend.

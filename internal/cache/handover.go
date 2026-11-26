@@ -118,11 +118,36 @@ func (c *Cache) EnableHandoverHits() {
 	if c == nil || c.disabled || c.l2 == nil {
 		return
 	}
-	c.mu.Lock()
+	c.hitsMu.Lock()
 	if c.hits == nil {
 		c.hits = make(map[string]uint32)
 	}
-	c.mu.Unlock()
+	c.hitsMu.Unlock()
+	c.hitsOn.Store(true)
+}
+
+// pruneHitsLocked drops counts of keys no longer stored (a promotion counted
+// after its entry was removed). Called with mu held, by the cleanup loop.
+func (c *Cache) pruneHitsLocked() {
+	if !c.hitsOn.Load() {
+		return
+	}
+	c.hitsMu.Lock()
+	for key := range c.hits {
+		if _, ok := c.entries[key]; !ok {
+			delete(c.hits, key)
+		}
+	}
+	c.hitsMu.Unlock()
+}
+
+func (c *Cache) hitsOf(key string) uint32 {
+	if !c.hitsOn.Load() {
+		return 0
+	}
+	c.hitsMu.Lock()
+	defer c.hitsMu.Unlock()
+	return c.hits[key]
 }
 
 // SetLocalOnlyRestorableWithTTL is SetLocalOnlyWithTTL for a completed answer
@@ -251,7 +276,7 @@ func (c *Cache) handoverCandidates() []handoverCandidate {
 		if !expiry.After(now) {
 			continue
 		}
-		out = append(out, handoverCandidate{key: key, value: e.value, expiry: expiry.UnixNano(), memory: e.memOnly, hits: c.hits[key]})
+		out = append(out, handoverCandidate{key: key, value: e.value, expiry: expiry.UnixNano(), memory: e.memOnly, hits: c.hitsOf(key)})
 	}
 	return out
 }
@@ -542,8 +567,10 @@ func (c *Cache) admitWarm(key string, value []byte, expiry int64, memOnly bool, 
 	stats.admissions.Add(1)
 	stats.writeBytes.Add(int64(len(value)))
 	c.lruIndex[key] = c.lruList.PushBack(&lruEntry{key: key})
-	if c.hits != nil && hits > 0 {
+	if hits > 0 && c.hitsOn.Load() {
+		c.hitsMu.Lock()
 		c.hits[key] = hits
+		c.hitsMu.Unlock()
 	}
 	return true
 }

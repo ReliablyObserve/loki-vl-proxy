@@ -22,8 +22,10 @@ func (c *Cache) removeEntryLocked(key string) {
 		delete(c.entries, key)
 	}
 	delete(c.hot, key)
-	if c.hits != nil {
+	if c.hitsOn.Load() {
+		c.hitsMu.Lock()
 		delete(c.hits, key)
+		c.hitsMu.Unlock()
 	}
 	if elem, ok := c.lruIndex[key]; ok {
 		data := elem.Value.(*lruEntry)
