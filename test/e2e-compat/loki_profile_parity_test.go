@@ -139,12 +139,27 @@ func TestCompat_LabelBrowseParamsIgnoredLikeLoki(t *testing.T) {
 		{"grafana-drilldown", patternsAutodetectProxyURL},
 	} {
 		for _, path := range []string{"/loki/api/v1/labels", "/loki/api/v1/label/app/values"} {
-			plain := get(target.base, path, nil)
-			if len(plain) < 2 {
-				t.Fatalf("%s %s: need at least two entries to prove limit/offset are ignored, got %v", target.name, path, plain)
+			// The window ends now, so a row an earlier test wrote can become visible between two reads: the browse
+			// answer is held to the plain answer read before and after it, and only when those two agree (the data
+			// did not move in between); a window whose data keeps moving is retried, never passed.
+			stable := false
+			for attempt := 0; attempt < 5 && !stable; attempt++ {
+				plain := get(target.base, path, nil)
+				if len(plain) < 2 {
+					t.Fatalf("%s %s: need at least two entries to prove limit/offset are ignored, got %v", target.name, path, plain)
+				}
+				withBrowse := get(target.base, path, browse)
+				if after := get(target.base, path, nil); fmt.Sprint(after) != fmt.Sprint(plain) {
+					time.Sleep(time.Second)
+					continue
+				}
+				stable = true
+				if fmt.Sprint(withBrowse) != fmt.Sprint(plain) {
+					t.Errorf("%s %s: limit/offset/search changed the answer: %d entries vs %d without", target.name, path, len(withBrowse), len(plain))
+				}
 			}
-			if withBrowse := get(target.base, path, browse); fmt.Sprint(withBrowse) != fmt.Sprint(plain) {
-				t.Errorf("%s %s: limit/offset/search changed the answer: %d entries vs %d without", target.name, path, len(withBrowse), len(plain))
+			if !stable {
+				t.Fatalf("%s %s: the plain answer changed between every pair of reads over 5 tries", target.name, path)
 			}
 		}
 	}
