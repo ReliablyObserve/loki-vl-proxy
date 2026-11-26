@@ -31,6 +31,9 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   {{- else }}
+  {{- with include "loki-vl-proxy.progressDeadlineSeconds" . }}
+  progressDeadlineSeconds: {{ . }}
+  {{- end }}
   {{- with .Values.workload.deploymentStrategy }}
   strategy:
     {{- toYaml . | nindent 4 }}
@@ -345,13 +348,9 @@ spec:
             failureThreshold: {{ .Values.probe.readiness.failureThreshold }}
             successThreshold: {{ .Values.probe.readiness.successThreshold }}
           {{- end }}
-          {{- /* Unset, the startup probe follows the restart hand-over: the disk
-                 cache index is rebuilt before the listener opens. */}}
-          {{- $startupEnabled := .Values.probe.startup.enabled }}
-          {{- if kindIs "invalid" $startupEnabled }}
-          {{- $startupEnabled = .Values.cacheHandover.enabled }}
-          {{- end }}
-          {{- if $startupEnabled }}
+          {{- /* Unset, the startup probe follows the disk cache: its index is
+                 rebuilt before the listener opens. */}}
+          {{- if include "loki-vl-proxy.startupProbeEnabled" . }}
           startupProbe:
             httpGet:
               path: {{ .Values.probe.startup.path | quote }}
@@ -359,7 +358,7 @@ spec:
             initialDelaySeconds: {{ .Values.probe.startup.initialDelaySeconds }}
             periodSeconds: {{ .Values.probe.startup.periodSeconds }}
             timeoutSeconds: {{ .Values.probe.startup.timeoutSeconds }}
-            failureThreshold: {{ .Values.probe.startup.failureThreshold | default (ternary 60 30 .Values.cacheHandover.enabled) }}
+            failureThreshold: {{ include "loki-vl-proxy.startupFailureThreshold" . }}
           {{- end }}
           {{- with .Values.lifecycle }}
           lifecycle:

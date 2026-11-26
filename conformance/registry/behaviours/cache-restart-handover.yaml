@@ -89,8 +89,7 @@ proxy: |
   lets extraArgs override each flag and refuses to render without a disk
   cache. It also renders a warm-up timeout of 120 s (a pod is ready when
   warm, or partly warm after it); a startup probe on /health (never /ready,
-  which also checks VictoriaLogs) with 60 failures 5 s apart, covering the
-  disk index rebuild before the listener opens; for a Deployment without a
+  which also checks VictoriaLogs); for a Deployment without a
   configured strategy RollingUpdate with maxSurge 0 and maxUnavailable 1 (a
   surge pod on the same file would wait for the bbolt lock; one replica has a
   rollout gap), while a StatefulSet's RollingUpdate already updates one pod
@@ -99,6 +98,18 @@ proxy: |
   Explicit probe.startup, workload.deploymentStrategy,
   podDisruptionBudget and cacheHandover.minReadySeconds settings win, and
   with the hand-over off the chart renders none of these.
+  A disk cache (persistence.enabled or a non-empty extraArgs.disk-cache-path),
+  with or without the hand-over, renders that startup probe with 120 failures
+  5 s apart (605 s) for the disk index rebuild before the listener opens, and
+  on a Deployment progressDeadlineSeconds = grace period + startup window +
+  (hand-over) warm-up timeout and minReadySeconds + 300 s, when above 600 (935
+  without the hand-over, 1170 with it, at the defaults);
+  workload.progressDeadlineSeconds replaces it, explicit probe.startup values
+  win, a StatefulSet gets no deadline, and without a disk cache the output is
+  unchanged (TestDiskCacheStartupWindowAndProgressDeadline).
+  Restore time targets per storage profile are in docs/disk-cache.md: local SSD
+  measured; EBS targets rest on a throttled local VM without added latency and
+  on latency estimates, with no EBS measurement.
 
 implementation:
   - internal/cache/handover.go
@@ -110,6 +121,16 @@ implementation:
   - cmd/proxy/cache_handover_scope.go
 
 decisions:
+  - id: restore-targets-and-probe-window-per-storage
+    chosen: 'Restore time targets per storage profile, split into the index rebuild (startup probe) and the warm-up (warm-up timeout); with a disk cache a 605 s startup window and a Deployment progress deadline derived from it; warm-up timeout 120 s and flush budget 60 s unchanged'
+    over: ['one pair of targets for every disk (2 GiB in 5 s, 4 GiB in 10 s)', 'a startup probe only with the restart hand-over, 305 s']
+    why: 'The index rebuild reads one record at a time, so on a network volume its time follows the read latency, which provisioned IOPS do not shorten; the liveness probe alone restarts a pod after about 35 to 50 s.'
+    evidence: '2026-11-26. Measured, Apple M5 Pro SSD, cold: s2 2 GiB rebuild 1.0 s + warm-up 0.47 s. Emulated on a throttled local VM without latency (not EBS), s2 2 GiB: 11.4 s at 125 MiB/s and 3,000 IOPS, 4.6 s at 375 and 6,500; 94,000 records rebuild in 31.9 s at 3,000 IOPS. Estimated at 3 ms a read: 288 s for 94,000 records, about 306 s for 100,000.'
+    code: [charts/loki-vl-proxy/templates/_helpers.tpl, charts/loki-vl-proxy/templates/deployment.yaml]
+    tests: [TestDiskCacheStartupWindowAndProgressDeadline, TestCacheHandoverChartOptions]
+    quality: 'Without a disk cache the rendered chart is unchanged; explicit probe and deadline values win. No restore or index rebuild code changed.'
+    performance: 'No code path changed; the restore benchmarks of restore-in-batches-with-read-ahead stand.'
+    pending: true
   - id: restore-in-batches-with-read-ahead
     chosen: 'Restore in batches (at most 256 entries or about 4 MiB per read transaction and per hold of the memory lock, decoded by at most min(GOMAXPROCS, 4) goroutines) with the next records read into the page cache by positioned reads in file order, at most 64 MiB ahead'
     over: ['one lookup, transaction, decode and admission per entry in one goroutine', 'batches and parallel decode without the read-ahead (a cold page cache is still read through page faults)']
