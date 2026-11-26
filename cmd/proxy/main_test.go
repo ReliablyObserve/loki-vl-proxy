@@ -2630,7 +2630,7 @@ func TestBuildRuntime_CacheRetention(t *testing.T) {
 	opts := func(p cache.RetentionPolicy) runtimeOptions {
 		return runtimeOptions{
 			cacheTTL: 10 * time.Second, cacheMax: 50, cacheMaxBytes: defaultCacheMaxBytes,
-			cacheRetention: p, compatCacheEnabled: true, compatCacheMaxPercent: defaultCompatCachePercent,
+			cacheRetention: p, cacheSizingSignals: true, compatCacheEnabled: true, compatCacheMaxPercent: defaultCompatCachePercent,
 			proxyCfg:   proxyRuntimeConfig{backendURL: "http://example.com", labelStyle: "passthrough", metadataFieldMode: "hybrid"},
 			serverOpts: serverRuntimeOptions{listenAddr: ":0"},
 		}
@@ -2647,7 +2647,7 @@ func TestBuildRuntime_CacheRetention(t *testing.T) {
 	}
 	defer rt.cacheCleanup()
 	defer rt.stopOTLP()
-	if !strings.Contains(buf.String(), `"msg":"cache retention policy","reuse_protection_percent":20,"demote_on_evict":false`) {
+	if !strings.Contains(buf.String(), `"msg":"cache retention policy","reuse_protection_percent":20,"demote_on_evict":false,"sizing_signals":true`) {
 		t.Fatalf("retention log (no disk cache: demotion off): %s", buf.String())
 	}
 }

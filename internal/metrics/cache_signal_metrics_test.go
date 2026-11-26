@@ -26,6 +26,22 @@ var signalFamilies = map[string]string{
 	"loki_vl_proxy_cache_l2_read_seconds":               "histogram",
 	"loki_vl_proxy_cache_l2_read_bytes":                 "histogram",
 	"loki_vl_proxy_cache_ttl_seconds":                   "gauge",
+	// sizing signals (-cache-sizing-signals)
+	"loki_vl_proxy_cache_ghost_hits_total":            "counter",
+	"loki_vl_proxy_cache_working_set_keys":            "gauge",
+	"loki_vl_proxy_cache_working_set_bytes":           "gauge",
+	"loki_vl_proxy_cache_reuse_interval_seconds":      "histogram",
+	"loki_vl_proxy_cache_hit_bytes_total":             "counter",
+	"loki_vl_proxy_cache_requested_bytes_total":       "counter",
+	"loki_vl_proxy_cache_sizing_dropped_events_total": "counter",
+}
+
+// sizingFamilies are the families only -cache-sizing-signals exports.
+var sizingFamilies = map[string]bool{
+	"loki_vl_proxy_cache_ghost_hits_total": true, "loki_vl_proxy_cache_working_set_keys": true,
+	"loki_vl_proxy_cache_working_set_bytes": true, "loki_vl_proxy_cache_reuse_interval_seconds": true,
+	"loki_vl_proxy_cache_hit_bytes_total": true, "loki_vl_proxy_cache_requested_bytes_total": true,
+	"loki_vl_proxy_cache_sizing_dropped_events_total": true,
 }
 
 func signalHistogramFixture(buckets int, seed int64) cache.HistogramSnapshot {
@@ -77,7 +93,7 @@ func ttlFixture() []CacheTTL {
 	return out
 }
 
-var signalSampleLabels = map[string]bool{"layer": true, "tier": true, "reason": true, "from": true, "to": true, "result": true, "class": true, "le": true}
+var signalSampleLabels = map[string]bool{"layer": true, "tier": true, "reason": true, "from": true, "to": true, "result": true, "class": true, "le": true, "scenario": true, "window": true}
 
 // scrapeSignalMetrics returns every sample of the signal families, keyed by
 // name and sorted labels, and the families' TYPE lines.
@@ -230,7 +246,13 @@ func TestCacheSignalMetricsExporterParityAndCardinality(t *testing.T) {
 	m.SetCacheTTLProvider(ttlFixture)
 	prom, promTypes := scrapeSignalMetrics(t, m)
 	otlp, otlpTypes := pushSignalMetrics(t, m)
-	if fmt.Sprint(promTypes) != fmt.Sprint(signalFamilies) || fmt.Sprint(otlpTypes) != fmt.Sprint(signalFamilies) {
+	withoutSizing := map[string]string{}
+	for name, kind := range signalFamilies {
+		if !sizingFamilies[name] {
+			withoutSizing[name] = kind
+		}
+	}
+	if fmt.Sprint(promTypes) != fmt.Sprint(withoutSizing) || fmt.Sprint(otlpTypes) != fmt.Sprint(withoutSizing) {
 		t.Fatalf("types: prom %v otlp %v", promTypes, otlpTypes)
 	}
 	if len(prom) != len(otlp) {

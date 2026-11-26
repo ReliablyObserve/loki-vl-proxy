@@ -77,6 +77,8 @@ type DiskCache struct {
 	// signals are why records leave or never enter L2 and the record reads
 	// (eviction_signals.go), allocated apart like Cache.signals.
 	signals *diskSignals
+	// sizing are the owning memory cache's sizing signals, nil unless enabled.
+	sizing *sizingSignals
 
 	// Restart hand-over (disk_handover.go), guarded by writeMu.
 	handover           *handoverState
@@ -360,6 +362,9 @@ func (dc *DiskCache) set(key string, value []byte, ttl time.Duration, access, ha
 		access = dc.sequence
 	}
 	dc.writeBuf[key] = diskEntry{Value: value, ExpiresAt: clockNow().Add(ttl).UnixNano(), state: &diskEntryState{lastAccess: access}}
+	if s := dc.sizing; s != nil {
+		s.storeL2(key, entrySize(key, value), ttl)
+	}
 	dc.bufferBytes = used + charge
 	if item := dc.index[key]; item != nil {
 		item.invalid = false

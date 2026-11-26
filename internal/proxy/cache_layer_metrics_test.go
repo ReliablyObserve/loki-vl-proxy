@@ -218,3 +218,29 @@ func TestCacheTTLGaugeMatchesTheConfiguredTTLs(t *testing.T) {
 		t.Fatal("scrape does not state the label handler TTL")
 	}
 }
+
+// The proxy exports the sizing signals of the caches that have them on, and
+// nothing while none has.
+//
+// conformance: cache-sizing-signals
+func TestCacheSizingMetricsFromTheProxy(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		primary := cache.New(time.Hour, 100)
+		if on {
+			primary.EnableSizingSignals()
+		}
+		p, err := New(Config{BackendURL: "http://unused", Cache: primary, LogLevel: "error"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		primary.SetWithTTL("query_range:a", []byte("12345"), time.Hour)
+		primary.GetWithTier("query_range:a")
+		body := scrapeProxyCacheLayers(t, p)
+		hit := `loki_vl_proxy_cache_hit_bytes_total{class="query_range",tier="l1_memory"} 5` + "\n"
+		if strings.Contains(body, hit) != on || strings.Contains(body, "loki_vl_proxy_cache_ghost_hits_total") != on {
+			t.Fatalf("sizing=%v: scrape:\n%s", on, body)
+		}
+		_ = p.Shutdown(context.Background())
+		primary.Close()
+	}
+}

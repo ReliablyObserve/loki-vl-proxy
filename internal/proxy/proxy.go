@@ -1738,6 +1738,7 @@ func New(cfg Config) (*Proxy, error) {
 	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
 	p.metrics.SetCacheSignalStatsProvider(p.cacheSignalStats)
 	p.metrics.SetCacheTTLProvider(p.cacheTTLs)
+	p.metrics.SetCacheSizingStatsProvider(p.cacheSizingStats)
 	coalescerStats := func() metrics.CoalescerStats {
 		return metrics.CoalescerStats{
 			Total:     p.coalescer.CoalescedTotal.Load(),
