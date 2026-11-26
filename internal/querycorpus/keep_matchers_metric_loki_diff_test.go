@@ -31,6 +31,13 @@ var keepMatcherMetricQueries = []string{
 	`count_over_time({app="x"} | keep cluster="c1" | keep app [5m])`,
 	`count_over_time({app="x"} | keep cluster="c1", app | keep cluster [5m])`,
 	`count_over_time({app="x"} | keep cluster="c1" |= "level" [5m])`,
+	`count_over_time({app="x"} | keep cluster="c1", app | app="x" [5m])`,
+	`count_over_time({app="x"} | keep cluster="c1", app | cluster="" [5m])`,
+	`count_over_time({app="x"} | keep level="error", app | level="error" [5m])`,
+	`count_over_time({app="x"} | keep app, service_name="x" [5m])`,
+	`count_over_time({app="x"} | keep service_name!~"x|y" [5m])`,
+	`sum by (service_name) (count_over_time({app="x"} | keep service_name="nope", app [5m]))`,
+	`sum(rate({app="x"} | keep level="error" [5m]))`,
 }
 
 // A metric query over a keep with matchers answers Loki's series and values: instant and range, on VictoriaLogs v1.49

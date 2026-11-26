@@ -2328,6 +2328,22 @@
    ]
   },
   {
+   "id": "explore-keep-derived-matcher-series",
+   "kind": "explore",
+   "query": "count_over_time({service_name=\"api-gateway\"} | keep app, detected_level=\"error\" [$__auto])",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/keep-derived-label-matcher-metric-series",
+    "operator-keep",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/keep-derived-label-matcher-metric-series"
+   ]
+  },
+  {
    "id": "explore-keep-series-count",
    "kind": "explore",
    "query": "count(rate({service_name=\"api-gateway\"} | json | keep foo [$__auto]))",

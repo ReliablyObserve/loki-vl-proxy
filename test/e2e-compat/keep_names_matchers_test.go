@@ -144,6 +144,15 @@ func TestCompat_KeepNamesAndMatchersLikeLoki(t *testing.T) {
 		`count(count_over_time(` + sel + ` | keep level="error" [5m]))`,
 		`count(count_over_time(` + sel + ` | json | keep code="500" [5m]))`,
 		`count_over_time(` + sel + ` | keep zone="z1", level="a=b" [5m])`,
+		`count_over_time(` + sel + ` | keep detected_level="error" [5m])`,
+		`count_over_time(` + sel + ` | keep app, detected_level!="error" [5m])`,
+		`rate(` + sel + ` | keep service_name="keep-matchers", zone [5m])`,
+		`bytes_over_time(` + sel + ` | keep app, service_name=~"nope|keep.*" [5m])`,
+		`count(count_over_time(` + sel + ` | keep detected_level="warn" [5m]))`,
+		`sum by (detected_level) (count_over_time(` + sel + ` | keep detected_level="error", app [5m]))`,
+		`count_over_time(` + sel + ` | keep detected_level="error", app | keep app [5m])`,
+		`count_over_time(` + sel + ` | keep app, zone="z1" | app="keep-matchers" [5m])`,
+		`count_over_time(` + sel + ` | keep detected_level="error", app |= "boom" | app="keep-matchers" [5m])`,
 	} {
 		t.Run("instant/"+query, func(t *testing.T) {
 			compare(t, "/loki/api/v1/query", url.Values{"query": {query}, "time": {end}},

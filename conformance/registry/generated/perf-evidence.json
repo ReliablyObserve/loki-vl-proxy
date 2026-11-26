@@ -99463,6 +99463,7 @@
       "warm_p50": 0.005
     }
   ],
+  "semantics/keep-derived-label-matcher-metric-series": [],
   "semantics/keep-leaves-labels-loki-drops": [
     {
       "baseline": "release",

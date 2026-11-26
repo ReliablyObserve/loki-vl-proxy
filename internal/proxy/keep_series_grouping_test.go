@@ -46,6 +46,11 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 		{`rate({app="x"} | keep level="error" [1m])`, `sum by (level) (rate({app="x"} | keep level="error"[1m]))`},
 		{`rate({app="x"} | keep level="error", a [1m])`, `sum by (a, level) (rate({app="x"} | keep level="error", a[1m]))`},
 		{`rate({app="x"} | keep level="error", a | keep a [1m])`, `sum by (a) (rate({app="x"} | keep level="error", a | keep a[1m]))`},
+		// Matchers on the labels derived on read group the series too: the plan blanks the derived fields.
+		{`rate({app="x"} | keep service_name="a" [1m])`, `sum by (service_name) (rate({app="x"} | keep service_name="a"[1m]))`},
+		{`rate({app="x"} | keep a, detected_level!="e" [1m])`, `sum by (a, detected_level) (rate({app="x"} | keep a, detected_level!="e"[1m]))`},
+		// A label filter after a matcher keep adds no label.
+		{`rate({app="x"} | keep level="error", a | a="1" [1m])`, `sum by (a, level) (rate({app="x"} | keep level="error", a | a="1"[1m]))`},
 		// Both sides of a binary operation.
 		{`rate({app="x"} | keep a [1m]) / rate({app="y"} | keep a [1m])`,
 			`sum by (a) (rate({app="x"} | keep a[1m])) / sum by (a) (rate({app="y"} | keep a[1m]))`},
@@ -63,7 +68,12 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 		`{app="x"} | json | keep level`,                                 // a log query
 		`rate({app="x"} | json [1m])`,                                   // no keep
 		`rate({app="x"} | keep level="error" | json [1m])`,              // a parser after a conditional keep
-		`rate({app="x"} | keep service_name="a" [1m])`,                  // a matcher on a label derived on read
+		`rate({app="x"} | logfmt | keep level="e", a | a="1" [1m])`,     // a filter behind a parser and a matcher keep
+		`rate({app="x"} | keep level="e", a | detected_level="e" [1m])`, // a filter on a derived label
+		`rate({app="x"} | keep level="e", a | service_name="e" [1m])`,
+		`rate({app="x"} | keep level="e", a | a>5 [1m])`, // a numeric filter may add __error__
+		`sum(rate({app="x"} | keep level="e" [1m]))`,     // the total of every series
+		`sum(rate({app="x"} | keep service_name="e" |= "a"[1m]))`,
 		`rate({app="x"} | keep a | json [1m])`,                          // a parser after the keep adds labels
 		`rate({app="x"} | keep a | label_format b="c" [1m])`,            // label_format adds one
 		`rate({app="x"} | keep a | drop a [1m])`,                        // drop removes one

@@ -1,0 +1,27 @@
+id: semantics/keep-matcher-unwrap-series
+title: 'A range function over an unwrapped label behind a keep matcher keeps one series per stream (open)'
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The typed unwrap series identity reads keeps of plain names only; a matcher keep
+  leaves the series grouped by stream and line.
+request:
+  scope: keep and drop stages
+  entry: "a sum_over_time of an unwrapped label after a logfmt parser and a keep level equals error stage"
+  setup: "sum_over_time over an unwrap behind a keep with a matcher"
+compare:
+  mode: observed
+  fields: [series labels, values]
+  expect: "Loki's answer."
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower trailingKeepLabels'
+  loki: 'series are the kept labels'
+  proxy: 'one series per stream'
+  planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core)'
+  clusters: []

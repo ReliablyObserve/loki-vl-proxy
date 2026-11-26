@@ -34,6 +34,12 @@ func TestKeepNamesAndMatchersText(t *testing.T) {
 		{query: `rate({app="a"} | keep level="e" [5m])`, blank: 1},
 		{query: `rate({app="a",level="e"} | keep level=~"e|w" [5m])`},
 		{query: `{app="a"} | keep level="e" | env="p"`},
+		// A metric query blanks the derived fields as well; a log query leaves them to the response.
+		{query: `rate({app="a"} | keep detected_level="e" [5m])`, blank: 1, want: []string{`| format if (NOT detected_level:="e") "" as detected_level`}},
+		{query: `rate({app="a"} | keep service_name="a", app [5m])`, blank: 1, want: []string{`| format if (NOT service_name:="a") "" as service_name`}},
+		{query: `rate({service_name="a"} | keep service_name="a" [5m])`},
+		{query: `{app="a"} | keep detected_level="e", app`},
+		{query: `{app="a"} | keep service_name="a" | line_format "x"`},
 	} {
 		expr, err := logql.Parse(tc.query)
 		if err != nil {

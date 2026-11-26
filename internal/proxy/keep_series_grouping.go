@@ -66,6 +66,9 @@ func keepSeriesGroupingExpr(expr logqlpkg.Expr) (logqlpkg.Expr, bool) {
 		if keepGrouped(e) {
 			return expr, false // rewritten already (a child request of a rewritten one)
 		}
+		if totalOfMatcherKeep(e) {
+			return expr, false
+		}
 		inner, changed := keepSeriesGroupingExpr(e.Inner)
 		if !changed {
 			return expr, false
@@ -143,6 +146,43 @@ func withoutBlankKeep(pipeline []logqlpkg.Stage) ([]logqlpkg.Stage, bool) {
 	return append(slices.Clip(pipeline[:last]), pipeline[last+1:]...), true
 }
 
+// totalOfMatcherKeep reports a sum with no grouping over a range aggregation behind a matcher keep with no label
+// filter after it: the sum folds the series whatever identifies them, and regrouping them first only reorders the
+// floating-point additions of a rate.
+func totalOfMatcherKeep(v *logqlpkg.VectorAggregation) bool {
+	ra, ok := v.Inner.(*logqlpkg.RangeAggregation)
+	if !ok || v.Op != logqlpkg.VectorSum || v.Grouping != nil || ra.Grouping != nil {
+		return false
+	}
+	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
+	if !ok {
+		return false
+	}
+	matched := false
+	for _, stage := range lq.Pipeline {
+		switch st := stage.(type) {
+		case *logqlpkg.KeepStage:
+			matched = matched || len(st.Matchers) > 0
+		case *logqlpkg.LineFilterStage, *logqlpkg.DecolorizeStage:
+		default:
+			return false
+		}
+	}
+	return matched
+}
+
+// storedStringFilter reports a label filter that only compares stored labels with strings: it neither adds an
+// error label (a numeric, duration, bytes or ip comparison does) nor reads a label derived on the read path.
+func storedStringFilter(e *logqlpkg.LabelFilterExpr) bool {
+	switch {
+	case e == nil:
+		return false
+	case e.IsLeaf():
+		return e.Kind == logqlpkg.LabelFilterValueString && e.Name != detectedLevelLabel && e.Name != "service_name"
+	}
+	return storedStringFilter(e.Left) && storedStringFilter(e.Right)
+}
+
 // keepGrouped reports whether v is the sum by (kept labels) keepSeriesGrouping
 // wraps a range aggregation in.
 func keepGrouped(v *logqlpkg.VectorAggregation) bool {
@@ -163,7 +203,7 @@ func keepGrouped(v *logqlpkg.VectorAggregation) bool {
 // metric whose series carries one is an error) and whether that keep decides
 // the series labels: the series identity the plan reads from the stages
 // (queryplan.SeriesLabels) is the keep's, and no stage after it adds, renames
-// or drops a label; or it is the only keep, has matchers on stored labels, and
+// or drops a label; or it is the only keep, has matchers, and
 // only line filters follow it (matcherKeepLabels). A pipeline
 // with an unwrap is left out: its series also drop the unwrapped label, and
 // the typed lowering answers it (keepUnwrapIdentity).
@@ -187,20 +227,18 @@ func trailingKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
 
 // matcherKeepLabels are the labels the keeps of a pipeline with a matcher keep
 // may leave on a series: the names every keep stage lists, bare or with a
-// matcher. ok is false when a stage other than a keep, a line filter or
-// decolorize follows the first keep, when a stage other than those, a parser or
-// a label filter precedes it, or when a matcher names a label derived on the
-// read path (the plan blanks stored and parsed fields only).
+// matcher. ok is false when a stage other than a keep, a line or label filter or
+// decolorize follows the first keep (a label filter does only without a parser and when it compares stored labels
+// with strings),
+// or when a stage other than those or a parser precedes it. A matcher on detected_level or service_name
+// counts too: the plan derives both ahead of the pipeline and blanks them.
 func matcherKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
-	first := true
+	first, parsed := true, false
 	for _, stage := range pipeline {
 		switch st := stage.(type) {
 		case *logqlpkg.KeepStage:
 			names := slices.Clone(st.Labels)
 			for _, m := range st.Matchers {
-				if m.Name == detectedLevelLabel || m.Name == "service_name" {
-					return nil, false
-				}
 				if !slices.Contains(names, m.Name) {
 					names = append(names, m.Name)
 				}
@@ -211,10 +249,16 @@ func matcherKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
 			}
 			kept = slices.DeleteFunc(kept, func(n string) bool { return !slices.Contains(names, n) })
 		case *logqlpkg.LineFilterStage, *logqlpkg.DecolorizeStage:
-		case *logqlpkg.LabelFilterStage, *logqlpkg.ParserStage:
+		case *logqlpkg.LabelFilterStage:
+			// Behind a parser, a filter after the keep takes the query to the evaluator of ordered rows.
+			if !first && (parsed || !storedStringFilter(st.Expr)) {
+				return nil, false
+			}
+		case *logqlpkg.ParserStage:
 			if !first {
 				return nil, false
 			}
+			parsed = true
 		default:
 			return nil, false
 		}

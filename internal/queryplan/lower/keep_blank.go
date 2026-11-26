@@ -64,7 +64,7 @@ func keepStreamReads(sel *queryplan.LogSelect, names []string) []string {
 				continue
 			}
 			for j, m := range st.Matchers {
-				if slices.Contains(names, m.Name) && !slices.Contains(out, m.Name) && blanksKeepName(sel, i, st, j) &&
+				if slices.Contains(names, m.Name) && !slices.Contains(out, m.Name) && blanksKeepName(sel, i, st, j, false) &&
 					stageReads(sel.Stages[i+1:], m.Name) {
 					out = append(out, m.Name)
 				}
@@ -120,7 +120,7 @@ func keepBlankPipes(sel *queryplan.LogSelect, i int, st *queryplan.Keep, label f
 	var out []logsql.Pipe
 	for j, m := range st.Matchers {
 		name := m.Name
-		if !blanksKeepName(sel, i, st, j) || !metric && !stageReads(sel.Stages[i+1:], name) {
+		if !blanksKeepName(sel, i, st, j, metric) || !metric && !stageReads(sel.Stages[i+1:], name) {
 			continue
 		}
 		// A stream label read from its copy: the copy holds the value Loki's keep reads and later stages filter on.
@@ -128,13 +128,23 @@ func keepBlankPipes(sel *queryplan.LogSelect, i int, st *queryplan.Keep, label f
 		if slices.Contains(copies, name) {
 			field, fieldLabel = translate.StreamValueScratch+name, nil
 		}
+		// A metric query's detected_level and service_name are the fields the derivations ahead of the pipeline set.
+		computed := metric && derivedName(name)
+		if computed {
+			fieldLabel = nil
+		}
 		var rejected logsql.FilterExpr
 		for _, other := range st.Matchers[j:] {
 			if other.Name != name {
 				continue
 			}
-			f := translate.MatcherFieldFilter(field, other.Op == "!=" || other.Op == "!~",
-				other.Op == "=~" || other.Op == "!~", other.Value, fieldLabel)
+			negate, isRe := other.Op == "!=" || other.Op == "!~", other.Op == "=~" || other.Op == "!~"
+			var f logsql.FilterExpr
+			if computed {
+				f = translate.ComputedFieldFilter(field, negate, isRe, other.Value)
+			} else {
+				f = translate.MatcherFieldFilter(field, negate, isRe, other.Value, fieldLabel)
+			}
 			if f == nil {
 				return out
 			}
@@ -155,15 +165,21 @@ func keepBlankPipes(sel *queryplan.LogSelect, i int, st *queryplan.Keep, label f
 }
 
 // blanksKeepName reports whether the j-th matcher of the keep at stage i is the first on a name whose field the
-// stage may remove: not listed bare, a stored label (detected_level and service_name are derived on the read path),
-// and one the selector does not already hold to a value a matcher accepts.
-func blanksKeepName(sel *queryplan.LogSelect, i int, st *queryplan.Keep, j int) bool {
+// stage may remove: not listed bare, and one the selector does not already hold to a value a matcher accepts. A log
+// query blanks stored fields only (detected_level and service_name are derived on the read path); a metric query also
+// blanks those two, whose derivations the lowering writes ahead of the pipeline so the series group by what is left.
+func blanksKeepName(sel *queryplan.LogSelect, i int, st *queryplan.Keep, j int, metric bool) bool {
 	name := st.Matchers[j].Name
-	if name == translate.DetectedLevelLabel || name == "service_name" || slices.Contains(st.Labels, name) {
+	if !metric && derivedName(name) || slices.Contains(st.Labels, name) {
 		return false
 	}
 	return !slices.ContainsFunc(st.Matchers[:j], func(m logql.DropMatcher) bool { return m.Name == name }) &&
 		!selectorHolds(sel, i, st, name)
+}
+
+// derivedName reports a label the read path derives.
+func derivedName(name string) bool {
+	return name == translate.DetectedLevelLabel || name == "service_name"
 }
 
 // selectorHolds reports a keep whose matchers on name accept every selected entry: the selector asks for one value of
@@ -264,7 +280,7 @@ func selectWritesKeepBlank(sel *queryplan.LogSelect, metric bool) bool {
 			if strings.ContainsAny(k.Matchers[j].Value, "\"`=~!") {
 				return true
 			}
-			if blanksKeepName(sel, i, k, j) && (metric || stageReads(sel.Stages[i+1:], k.Matchers[j].Name)) {
+			if blanksKeepName(sel, i, k, j, metric) && (metric || stageReads(sel.Stages[i+1:], k.Matchers[j].Name)) {
 				return true
 			}
 		}

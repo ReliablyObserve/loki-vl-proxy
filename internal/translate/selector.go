@@ -328,6 +328,13 @@ func MatcherFieldFilter(label string, negate, isRe bool, value string, labelFn L
 	return matcherFieldFilter(label, negate, isRe, value, labelFn, nil)
 }
 
+// ComputedFieldFilter is the filter for a matcher on a field the query computes under the label's own name (the
+// derived detected_level and service_name): the value is tested as it stands, with none of the stored-field
+// expansions of MatcherFieldFilter.
+func ComputedFieldFilter(field string, negate, isRe bool, value string) logsql.FilterExpr {
+	return translatedMatcherFieldFilter(field, negate, isRe, value, nil)
+}
+
 // matcherFieldFilter is MatcherFieldFilter with the field name passed through name (nil: as it is).
 func matcherFieldFilter(label string, negate, isRe bool, value string, labelFn LabelTranslateFunc, name func(string) string) logsql.FilterExpr {
 	if label == "" {

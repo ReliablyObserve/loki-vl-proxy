@@ -1,12 +1,14 @@
 id: semantics/keep-derived-label-matcher-metric-series
-title: 'A metric over a keep matcher on detected_level or service_name keeps one series per stream (open)'
+title: 'A metric over a keep matcher on detected_level or service_name keeps one series per stream (fixed)'
 pending: true
 proves:
   - loki_api_v1_query
 consumer: explore
 why: |
-  Both labels are derived on the read path, so the plan blanks no stored field for them and the series are not
-  regrouped by the labels the keep leaves.
+  Both labels are derived on the read path. A metric query derives them ahead of
+  the pipeline, blanks the values the keep's matchers reject, and groups the
+  series by the labels the keeps leave. A label filter after the matcher keep
+  keeps that grouping when no parser precedes it.
 request:
   scope: keep and drop stages
   entry: "count_over_time with a keep matcher on a derived label"
@@ -16,11 +18,19 @@ compare:
   fields: [streams.stream labels, series labels, values]
   expect: "Loki's answer."
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1776"
   impact: explore-visible
   effort: M
-  area: 'internal/queryplan/lower/keep_blank.go, internal/proxy/keep_series_grouping.go matcherKeepLabels'
+  area: 'internal/queryplan/lower/keep_blank.go, internal/proxy/keep_series_grouping.go matcherKeepLabels, internal/translate/selector.go ComputedFieldFilter'
   loki: 'series are the kept labels'
-  proxy: 'one series per stream'
-  planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core)'
+  proxy: 'the same series and values'
+  planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core), TestKeepNamesAndMatchersText (internal/queryplan/lower), TestKeepSeriesGrouping_Rewrite (internal/proxy)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
