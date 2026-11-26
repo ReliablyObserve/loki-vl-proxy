@@ -225,7 +225,100 @@ loki_vl_proxy_cache_restart_warm_outcome{outcome="deadline"} == 1
 this on your disk: `LVP_RESTORE_BENCH_MB` sets the decoded size,
 `LVP_RESTORE_COLD=1` drops the file from the page cache first, and
 `LVP_RESTORE_GATE=1 go test -run TestRestoreWarm_ThroughputGate ./internal/cache/`
-fails below 400 MiB/s (2 GiB in about 5 s).
+fails below 400 MiB/s of warm-up (2 GiB in about 5 s: the whole local-SSD ready
+target below, spent on the warm-up alone).
+
+### Restore time targets by storage
+
+A restarted replica is ready after two phases, one after the other:
+
+1. **index rebuild**, before the listener opens: one read of about 4 KiB per
+   record on disk, one at a time. Its time follows the number of records and the
+   volume's read latency. The startup probe covers it.
+2. **warm-up**, bounded by `-cache-startup-warm-timeout`: reading and decoding
+   the hot set. Its time follows throughput, IOPS and, about eight times less
+   than the rebuild, latency (eight reads in flight).
+
+The targets are for the benchmark's mix of answer sizes (about 19,000 records
+for 2 GiB restored and 38,000 for 4 GiB; `s2` compresses it about 2.8x), with a
+cache file that holds little beyond the hot set.
+
+| Storage | Restore | Index rebuild target | Warm-up target | Ready target (both) | Based on |
+|---|---|---:|---:|---:|---|
+| local SSD | 2 GiB, `s2` or `raw` | 3 s | 2 s | **5 s** | measured |
+| local SSD | 4 GiB, `s2` or `raw` | 6 s | 4 s | **10 s** | measured |
+| EBS, 375 MiB/s and 6,500 IOPS or more | 2 GiB, `s2` | 90 s | 10 s | **100 s** | emulated + estimated latency |
+| EBS, 375 MiB/s and 6,500 IOPS or more | 4 GiB, `s2` | 180 s | 20 s | **200 s** | emulated + estimated latency |
+| EBS, 375 MiB/s and 6,500 IOPS or more | 2 GiB, `raw` | 90 s | 20 s | **110 s** | computed + estimated latency |
+| EBS, 375 MiB/s and 6,500 IOPS or more | 4 GiB, `raw` | 180 s | 40 s | **220 s** | computed + estimated latency |
+| gp3 default, 125 MiB/s and 3,000 IOPS | 2 GiB, `s2` | 90 s | 15 s | **105 s** | emulated + estimated latency |
+| gp3 default, 125 MiB/s and 3,000 IOPS | 4 GiB, `s2` | 180 s | 30 s | **210 s** | emulated + estimated latency |
+| gp3 default, 125 MiB/s and 3,000 IOPS | 2 GiB, `raw` | 90 s | 35 s | **125 s** | emulated + estimated latency |
+| gp3 default, 125 MiB/s and 3,000 IOPS | 4 GiB, `raw` | 180 s | 75 s | **255 s** | emulated + estimated latency |
+
+No EBS volume has been measured. The EBS targets leave room above the estimate
+at 3 ms a read (below): about 1.4 times for the rebuild of `raw` records and 1.7
+for `s2`, and at least 1.4 times for the warm-up. A volume created from a
+snapshot that is not yet initialised, or an instance whose EBS bandwidth is
+below the volume's throughput, can miss them.
+
+**Local SSD, measured** (2026-11-26, Apple M5 Pro internal SSD,
+`GOMAXPROCS=4`, page cache dropped, `BenchmarkRestoreWarm` and
+`BenchmarkRestoreIndexRebuild`; a laptop, not a server): warm-up 0.47 s (`s2`)
+and 0.54 s (`raw`) for 2 GiB, 1.03 s and 1.25 s for 4 GiB; index rebuild 1.0 s
+for 19,000 records and 2.1 s for 38,000.
+
+**EBS profiles, emulated** (2026-11-26; a local Linux VM with the disk throttled
+per container, one run per cell, **no latency added**; the restore code of
+commit `52205cd63` plus timeout edits that were not yet committed). Index
+rebuild + warm-up:
+
+| Restore | 125 MiB/s, 3,000 IOPS | 375 MiB/s, 6,500 IOPS |
+|---|---:|---:|
+| 2 GiB, `s2` | 5.9 + 5.5 = 11.4 s | 2.7 + 1.9 = 4.6 s |
+| 4 GiB, `s2` | 11.8 + 11.0 = 22.8 s | 5.4 + 3.8 = 9.2 s |
+| 2 GiB, `raw` | 7.2 + 16.0 = 23.2 s | not run |
+| 4 GiB, `raw` | 14.4 + 33.8 = 48.2 s | not run |
+
+**With volume latency, estimated.** The rebuild waits the latency on every read
+(17,900 to 43,300 reads for these sets), so it takes about reads times latency
+however many IOPS are provisioned. The warm-up is taken as its time above plus
+its reads (11,800 to 43,500, counted in the 125 MiB/s runs) divided by eight,
+times the latency. For `raw` at
+375 MiB/s, which was not run, the warm-up starts from the computed read time of
+the stored size (5.6 s and 11.1 s).
+
+| Restore, storage | Ready at 1 ms (rebuild + warm-up) | Ready at 3 ms (rebuild + warm-up) |
+|---|---:|---:|
+| 2 GiB `s2`, 375 MiB/s | 18 + 3 = 21 s | 54 + 6 = 60 s |
+| 4 GiB `s2`, 375 MiB/s | 36 + 7 = 43 s | 107 + 13 = 120 s |
+| 2 GiB `raw`, 375 MiB/s | 22 + 8 = 30 s | 66 + 12 = 78 s |
+| 4 GiB `raw`, 375 MiB/s | 43 + 17 = 60 s | 130 + 27 = 157 s |
+| 2 GiB `s2`, gp3 default | 18 + 7 = 25 s | 54 + 10 = 64 s |
+| 4 GiB `s2`, gp3 default | 36 + 14 = 50 s | 107 + 20 = 127 s |
+| 2 GiB `raw`, gp3 default | 22 + 18 = 40 s | 66 + 23 = 89 s |
+| 4 GiB `raw`, gp3 default | 43 + 39 = 82 s | 130 + 50 = 180 s |
+
+### Sizing
+
+| What to set | 2 GiB restored | 4 GiB restored |
+|---|---|---|
+| ready within 5 s / 10 s | local SSD | local SSD |
+| ready within 100 s / 200 s (`s2`; `raw` 110 s / 220 s) | EBS with 375 MiB/s and 6,500 IOPS | the same |
+| ready within 105 s / 210 s (`s2`; `raw` 125 s / 255 s) | gp3 as included | the same |
+| `cacheHandover.startupWarmBytes` (`-cache-startup-warm-bytes`) | `2147483648` | `4294967296` |
+| `-cache-max-bytes`, at least | `4294967296` | `8589934592` |
+| `-cache-max`, at least the entry count (the benchmark mix) | `20000` | `40000` |
+| `-disk-cache-max-index-bytes` | the default 16 MiB holds about 37,000 records at 320-byte keys | `67108864` |
+| cache file holding only that hot set, benchmark mix (`s2` / `raw`) | 0.74 / 2.0 GiB | 1.48 / 4.1 GiB |
+| pod memory limit / `GOMEMLIMIT` used in the emulated runs (restore only, no traffic) | 6 GiB / `5GiB` | 12 GiB / `10GiB` |
+
+The volume must be larger than the cache file, which holds everything the disk
+tier keeps, not only the hot set. Throughput and IOPS shorten the warm-up. The
+index rebuild gets shorter only with fewer records (`-disk-cache-max-entries`,
+`-disk-cache-max-bytes`) or a volume with lower read latency: in the emulation a
+10 GiB file of 94,000 records, 1.9 GiB of them hot, rebuilt in 32 s at 3,000
+IOPS and in an estimated 288 s at 3 ms a read.
 
 ### Lowest read time on EBS
 
@@ -240,34 +333,48 @@ latency, request limits, decompression and filling memory come on top.
 | 4 GiB, compressed (1.41 GiB) | 11.6 s ❌ | 5.8 s | 2.9 s |
 | 4 GiB, uncompressed (4 GiB) | 32.8 s ❌ | 16.4 s ❌ | 8.2 s |
 
-❌ = the target (2 GiB under 5 s, 4 GiB under 10 s) cannot be met at that speed.
-gp3 includes 125 MiB/s and 3,000 IOPS by default and can be provisioned higher.
+❌ = the local-SSD ready target (2 GiB in 5 s, 4 GiB in 10 s) cannot be met at
+that speed; the EBS targets are in the table above. gp3 includes 125 MiB/s and 3,000 IOPS by default and can be provisioned higher.
 The compressed rows assume the benchmark data's `s2` ratio of about 2.8x. The
 instance's EBS bandwidth can cap the volume, and a volume created from a
 snapshot is slower until it is initialised.
 
 ### Timeouts
 
-Set from the computed figures above, not from measurements on EBS:
+Set from computed, emulated and estimated figures, not from measurements on EBS:
 
 | Setting | Value | Covers | Basis |
 |---|---|---|---|
-| `-cache-startup-warm-timeout` | `120s` (flag and chart) | the warm-up; the replica is ready as soon as it finishes | computed: the slowest cell above is 32.8 s to read |
+| `-cache-startup-warm-timeout` | `120s` (flag and chart) | the warm-up only (it starts after the index rebuild); the replica is ready as soon as it finishes | estimated: the slowest warm-up above is about 50 s (4 GiB `raw`, gp3 default, 3 ms) |
 | chart `cacheHandover.shutdownFlushTimeoutSeconds` | `60` (the flag stays `0`, off) | writing the records the disk lacks at shutdown | computed: 4 GiB uncompressed at 125 MiB/s is about 33 s |
 | chart `terminationGracePeriodSeconds` with the hand-over on | 130 s with the defaults | preStop 5 s, HTTP drain 30 + 30 s, the flush, 5 s to close | follows the two settings; a larger value of yours wins |
-| chart startup probe with the hand-over on | 60 failures, 5 s apart after 5 s (305 s) | the index rebuild, before the listener opens | see below |
+| chart startup probe with a disk cache, with or without the hand-over | 120 failures, 5 s apart after 5 s (605 s) | the index rebuild, before the listener opens | estimated: see below |
+| chart Deployment `progressDeadlineSeconds` with a disk cache | 935 s; 1170 s with the hand-over (defaults) | one replica's replacement | grace period + startup window + (hand-over) warm-up timeout and `minReadySeconds` + 300 s |
 
-The index rebuild reads the disk one record at a time: about one 4 KiB read per
-record, one after another, because the cache file is mapped without read-ahead.
-On an emulated EBS volume (a local VM with the disk throttled per container,
-2026-11-26, commit `82271617e`; not EBS, and without added latency) it took 32 s
-for 94,000 records (a 10 GiB file) at 3,000 IOPS, and the number of IOPS set it, not the throughput. On a volume
-with real latency each read also waits that latency, which more IOPS do not
-shorten: at 1 to 3 ms a read, 96,000 reads are an estimated 1.5 to 5 minutes.
-Watch `loki_vl_proxy_cache_restart_index_rebuild_duration_seconds` and raise
-`probe.startup.failureThreshold` for a large disk cache. Without the startup
-probe (a disk cache without `cacheHandover`), the chart's liveness probe
-restarts a pod whose listener is not open after about 35 to 50 s.
+**Startup probe.** The chart renders it on `/health` whenever the proxy has a
+disk cache (`persistence.enabled` or a non-empty `extraArgs.disk-cache-path`);
+without one the chart renders no startup probe unless you enable it. 605 s is
+2.1 times the estimated 288 s to rebuild 94,000 records at 3 ms a read, and just
+under twice the estimate for the default `-disk-cache-max-entries` of 100,000
+(about 306 s). With the default 16 MiB `-disk-cache-max-index-bytes` and keys of
+200 bytes or more the index holds about 50,000 records at most. Your
+`probe.startup.*` values win. Watch
+`loki_vl_proxy_cache_restart_index_rebuild_duration_seconds` and raise
+`probe.startup.failureThreshold` for a slower volume. The cost: a pod that hangs
+before it listens is restarted only after the whole window.
+
+When a Deployment's replacement pod shares the old pod's volume and node (a
+claim with `maxSurge: 0`, as the chart sets with the hand-over), it can wait for
+the old pod's lock on the cache file while the old pod terminates, up to the
+grace period (130 s) of the startup window, which leaves 475 s.
+
+**Progress deadline.** The chart renders it only on a Deployment with a disk
+cache and a startup probe, and only above the Kubernetes default of 600 s;
+`workload.progressDeadlineSeconds` replaces it. It restarts nothing: past it,
+the Deployment is reported `ProgressDeadlineExceeded` (and `helm --wait` or a
+deployment tool may fail), so a rollout that is stuck is reported later too. A
+warm-up timeout set through `extraArgs` is not counted. A StatefulSet has no such
+field: its rolling update waits for each pod to become ready without a deadline.
 
 ## Upgrades, restarts and purge
 

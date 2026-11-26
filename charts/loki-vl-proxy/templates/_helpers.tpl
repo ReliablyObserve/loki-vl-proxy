@@ -331,3 +331,63 @@ the disk cache to close. A configured exec or httpGet preStop is not counted.
 {{- end -}}
 {{- $grace -}}
 {{- end -}}
+
+{{/*
+"true" when the proxy runs with a disk cache the chart can see: a non-empty
+extraArgs.disk-cache-path, or persistence.enabled without that key (the chart
+then passes the flag). Empty otherwise.
+*/}}
+{{- define "loki-vl-proxy.diskCacheEnabled" -}}
+{{- if hasKey .Values.extraArgs "disk-cache-path" -}}
+{{- if ne (toString (default "" (get .Values.extraArgs "disk-cache-path"))) "" -}}true{{- end -}}
+{{- else if .Values.persistence.enabled -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+"true" when a startup probe is rendered: probe.startup.enabled as set, or,
+unset, with a disk cache or the restart hand-over (the disk cache index is
+rebuilt before the listener opens). Empty otherwise.
+*/}}
+{{- define "loki-vl-proxy.startupProbeEnabled" -}}
+{{- $enabled := .Values.probe.startup.enabled -}}
+{{- if kindIs "invalid" $enabled -}}
+{{- $enabled = or (eq (include "loki-vl-proxy.diskCacheEnabled" .) "true") .Values.cacheHandover.enabled -}}
+{{- end -}}
+{{- if $enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The startup probe's failureThreshold: the configured value, else 120 with a disk
+cache (605 s with the default delay and period), else 60 with the restart
+hand-over, else 30.
+*/}}
+{{- define "loki-vl-proxy.startupFailureThreshold" -}}
+{{- $default := ternary 60 30 .Values.cacheHandover.enabled -}}
+{{- if eq (include "loki-vl-proxy.diskCacheEnabled" .) "true" -}}{{- $default = 120 -}}{{- end -}}
+{{- .Values.probe.startup.failureThreshold | default $default -}}
+{{- end -}}
+
+{{/*
+A Deployment's progressDeadlineSeconds: workload.progressDeadlineSeconds as
+set. Unset, with a disk cache and a startup probe, the longest one replica may
+take to be replaced (grace period of the old pod, the new pod's startup window
+and, with the restart hand-over, its warm-up timeout and minReadySeconds) plus
+300 s for scheduling, volume attach, image pull and the readiness probe;
+empty when that is within the Kubernetes default of 600 s, and without a disk
+cache.
+*/}}
+{{- define "loki-vl-proxy.progressDeadlineSeconds" -}}
+{{- if not (kindIs "invalid" .Values.workload.progressDeadlineSeconds) -}}
+{{- int .Values.workload.progressDeadlineSeconds -}}
+{{- else if and (eq (include "loki-vl-proxy.diskCacheEnabled" .) "true") (eq (include "loki-vl-proxy.startupProbeEnabled" .) "true") -}}
+{{- $window := add (int .Values.probe.startup.initialDelaySeconds) (mul (int .Values.probe.startup.periodSeconds) (int (include "loki-vl-proxy.startupFailureThreshold" .))) -}}
+{{- $total := add (int (include "loki-vl-proxy.terminationGracePeriodSeconds" .)) $window 300 -}}
+{{- if .Values.cacheHandover.enabled -}}
+{{- $total = add $total (int .Values.cacheHandover.startupWarmTimeoutSeconds) (int .Values.cacheHandover.minReadySeconds) -}}
+{{- end -}}
+{{- if gt (int $total) 600 -}}{{- $total -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+
