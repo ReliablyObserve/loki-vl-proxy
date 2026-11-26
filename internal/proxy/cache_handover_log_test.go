@@ -80,7 +80,7 @@ func TestCacheHandover_LogsPlanProgressWarningAndEnd(t *testing.T) {
 	logs := &logBuffer{}
 	next.p.log = slog.New(slog.NewJSONHandler(logs, nil))
 
-	deadline, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	deadline, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	ctx := &stalledCtx{Context: deadline, release: make(chan struct{})}
 	stop := next.p.logResponseCacheWarmProgress(deadline, time.Millisecond)

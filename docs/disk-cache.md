@@ -185,8 +185,8 @@ Before a restart, the time is about the larger of:
 - reading: the stored bytes of the hot set (at most the warm budget) divided by
   the disk's sequential read throughput. A page cache that is still warm (a
   container restart on the same node) removes most of it;
-- decoding and admitting: the decoded bytes divided by the CPU rate (several
-  GiB/s with four cores on the default `s2` codec; `zstd` decoding runs on one
+- decoding and admitting: the decoded bytes divided by the CPU rate, which
+  `BenchmarkRestoreWarm` measures on your hardware (`zstd` decoding runs on one
   core at a time).
 
 Add the index rebuild, which runs before the proxy listens and grows with the

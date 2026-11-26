@@ -88,3 +88,15 @@ implementation:
   - internal/cache/disk_restore_readahead.go
   - internal/proxy/cache_handover.go
   - cmd/proxy/cache_handover_scope.go
+
+decisions:
+  - id: restore-in-batches-with-read-ahead
+    chosen: 'Restore in batches (at most 256 entries or about 4 MiB per read transaction and per hold of the memory lock, decoded by at most min(GOMAXPROCS, 4) goroutines) with the next records read into the page cache by positioned reads in file order, at most 64 MiB ahead'
+    over: ['one lookup, transaction, decode and admission per entry in one goroutine', 'batches and parallel decode without the read-ahead (a cold page cache is still read through page faults)']
+    why: 'A restart restores gigabytes before the replica is ready; a cold disk read through page faults is the bottleneck.'
+    evidence: 'BenchmarkRestoreWarm, 2026-11-26, Apple M5 Pro, GOMAXPROCS=4, s2: 2 GiB restored from a cold page cache in 0.47 s (one entry at a time: 4.06 s; batches without the read-ahead: 2.25 s), from a warm one in 0.42 s (0.81 s).'
+    code: [internal/cache/handover.go, internal/cache/restore.go, internal/cache/disk_restore.go, internal/cache/disk_restore_readahead.go]
+    tests: [TestRestore_BatchesAreBoundedByBytes, TestRestore_APurgeDuringTheWarmUpWins, TestRestore_QueuedAndRewrittenValuesWinOverTheBatch, TestHandover_WarmPeakMemoryIsOneBatch, TestRestore_ReadAheadCoversTheRecordsAndStops]
+    quality: 'The same entries restored, hottest first, under the same budgets, expiry, purge and no-overwrite rules; the disk recency stays as the ranks set it.'
+    performance: 'BenchmarkRestoreWarm, BenchmarkRestoreShutdownFlush and BenchmarkRestoreIndexRebuild (internal/cache/restore_bench_test.go); opt-in gate TestRestoreWarm_ThroughputGate (400 MiB/s).'
+

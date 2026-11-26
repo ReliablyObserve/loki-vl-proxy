@@ -719,7 +719,7 @@ func restoreMetrics(h cache.HandoverStats) []restoreMetric {
 	remaining, _ := p.Remaining()
 	return []restoreMetric{
 		{"loki_vl_proxy_cache_restart_warm_planned_entries", "Entries the restart warm-up found to restore.", "", float64(p.PlannedEntries)},
-		{"loki_vl_proxy_cache_restart_warm_planned_bytes", "Stored (on-disk, encoded) bytes of the entries the restart warm-up found to restore.", "By", float64(p.PlannedBytes)},
+		{"loki_vl_proxy_cache_restart_warm_planned_bytes", "Bytes of the entries the restart warm-up found to restore: encoded disk bytes, and the decoded size of memory-only answers.", "By", float64(p.PlannedBytes)},
 		{"loki_vl_proxy_cache_restart_warm_budget_bytes", "Most decoded bytes this warm-up may restore (-cache-startup-warm-bytes, at most half of -cache-max-bytes).", "By", float64(p.BudgetBytes)},
 		{"loki_vl_proxy_cache_restart_warm_processed_entries", "Planned entries restored or skipped so far.", "", float64(p.ProcessedEntries)},
 		{"loki_vl_proxy_cache_restart_warm_processed_bytes", "Stored bytes of the planned entries restored or skipped so far.", "By", float64(p.ProcessedBytes)},

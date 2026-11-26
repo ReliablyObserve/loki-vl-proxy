@@ -99,8 +99,8 @@ type RestoreProgress struct {
 	// ended.
 	Outcome string
 	// PlannedEntries and PlannedBytes are what the source holds to restore;
-	// the bytes are as stored (on disk, encoded), known before any value is
-	// read. BudgetBytes caps the decoded bytes restored.
+	// the bytes are known before any value is read: as stored (encoded) for a
+	// disk record, decoded for a memory-only answer. BudgetBytes caps the decoded bytes restored.
 	PlannedEntries int64
 	PlannedBytes   int64
 	BudgetBytes    int64
