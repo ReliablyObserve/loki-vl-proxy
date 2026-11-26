@@ -71,6 +71,9 @@ func (c *Cache) getDiskWithTTL(key string) ([]byte, time.Duration, bool) {
 		return nil, 0, false
 	}
 	value, ttl, ok := c.l2.GetWithTTL(key)
+	if s := c.sizing; s != nil {
+		s.lookupL2(key, ok)
+	}
 	// Starting before the read conservatively charges lookup/scheduling time
 	// against the remaining TTL reported by disk.
 	deadline := start.Add(ttl)
@@ -132,6 +135,9 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	}
 	replaced, existed := c.replaceEntryLocked(key, e, now)
 	if replaced {
+		if s := c.sizing; s != nil {
+			s.storeL1(key, len(value), size, ttl)
+		}
 		return true
 	}
 	if existed { // a value of another storage class
@@ -156,6 +162,9 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	stats.writeBytes.Add(int64(len(value)))
 	data := &lruEntry{key: key, admitted: uint32(now.Unix())}
 	c.lruIndex[key] = c.lruList.PushFront(data)
+	if s := c.sizing; s != nil {
+		s.storeL1(key, len(value), size, ttl)
+	}
 	if shadow {
 		data.seg, data.node = segShadow, c.newSegNodeLocked(data)
 		c.shadowList.pushFront(data.node)

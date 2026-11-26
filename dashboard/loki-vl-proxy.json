@@ -4819,6 +4819,279 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "id": 97,
+      "title": "Ghost Hits: Twice the Budget or the TTL",
+      "description": "Estimated misses per second that a tier twice as large (2x_bytes) or with every TTL doubled (2x_ttl) would have answered; compare with the tier misses. Needs -cache-sizing-signals.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 225,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (tier, scenario) (rate(loki_vl_proxy_cache_ghost_hits_total[5m]))",
+          "legendFormat": "{{tier}} {{scenario}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 98,
+      "title": "Working Set Bytes",
+      "description": "Estimated bytes of the distinct keys asked for in the last 5m, 1h and 24h; compare with -cache-max-bytes and -disk-cache-max-bytes. Needs -cache-sizing-signals.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 233,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (window) (loki_vl_proxy_cache_working_set_bytes)",
+          "legendFormat": "{{window}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 99,
+      "title": "Working Set Keys",
+      "description": "Estimated distinct keys asked for in the last 5m, 1h and 24h; compare with -cache-max and -disk-cache-max-entries. Needs -cache-sizing-signals.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 233,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (window) (loki_vl_proxy_cache_working_set_keys)",
+          "legendFormat": "{{window}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 100,
+      "title": "Reuse Interval",
+      "description": "Median and p90 time between two lookups of a key; compare with the TTL table. Needs -cache-sizing-signals.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 233,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, layer) (rate(loki_vl_proxy_cache_reuse_interval_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{layer}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.9, sum by (le, layer) (rate(loki_vl_proxy_cache_reuse_interval_seconds_bucket[5m])))",
+          "legendFormat": "p90 {{layer}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 101,
+      "title": "Byte Hit Ratio by Answer Class",
+      "description": "Answer bytes served by the cache over answer bytes asked for, per class. Needs -cache-sizing-signals.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 241,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (class) (rate(loki_vl_proxy_cache_hit_bytes_total[5m])) / sum by (class) (rate(loki_vl_proxy_cache_requested_bytes_total[5m]))",
+          "legendFormat": "{{class}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 102,
+      "title": "Sizing Events Dropped",
+      "description": "Sampled sizing events dropped by a full buffer: while above 0 the ghost, working-set and reuse figures are a lower bound. Needs -cache-sizing-signals.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 241,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (tier) (rate(loki_vl_proxy_cache_sizing_dropped_events_total[5m]))",
+          "legendFormat": "{{tier}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
