@@ -1490,6 +1490,7 @@
     "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
+    "internal/cache/restore_test.go | cache-restart-handover",
     "internal/capability/docs_test.go | vl-capability-layer",
     "internal/capability/gates_test.go | vl-capability-layer",
     "internal/capability/layer_test.go | vl-capability-layer",
@@ -1723,6 +1724,7 @@
     "internal/proxy/build_phase_replay_test.go | semantics/loki-build-phase-window",
     "internal/proxy/build_phase_replay_test.go | semantics/loki-error-phase-order",
     "internal/proxy/build_phase_window_loki_test.go | semantics/loki-build-phase-window",
+    "internal/proxy/cache_handover_log_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | cache-restart-handover",
     "internal/proxy/cache_handover_test.go | shutdown-releases-background-work",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
@@ -3691,7 +3693,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 842,
+      "go": 844,
       "playwright": 3
     },
     "page_kinds": {
