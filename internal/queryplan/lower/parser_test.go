@@ -91,6 +91,14 @@ func parserLowering(t testing.TB, q string, prof parserProfile) (lowered, legacy
 	if err != nil && translatorWritesUnicodeAsName(err) {
 		return "", "", "", false, false, false
 	}
+	if err != nil && WritesKeepBlank(p) {
+		// A keep matcher value with a quote, which the translator reads as part of the list
+		// (semantics/keep-names-and-matchers): the lowering's text must still parse.
+		if _, err := logsql.Parse(lowered); err != nil {
+			t.Fatalf("%s: the lowered %s does not parse: %v", q, lowered, err)
+		}
+		return "", "", "", false, false, false
+	}
 	if err != nil {
 		t.Fatalf("%s: the translator's %s does not parse: %v (the lowering writes %s)", q, legacy, err, lowered)
 	}
@@ -234,10 +242,6 @@ func TestPlanDelegatesParserShapes(t *testing.T) {
 		`{app="a"} | drop a="x" != "y"`:               "LogSelect line filter after parser arguments",
 		`{app="a"} | keep a="x" !~ "y"`:               "LogSelect line filter after parser arguments",
 		`{app="a"} | drop a="x\"y"`:                   "LogSelect drop matcher value",
-		`{app="a"} | keep a="x=~y"`:                   "LogSelect keep matcher value",
-		`{app="a"} | keep a="x!y"`:                    "LogSelect keep matcher value",
-		`{app="a"} | keep a, b="x"`:                   "LogSelect keep order",
-		`{app="a"} | keep b="x", a`:                   "LogSelect keep order",
 		`{app="a"} | drop level | detected_level="e"`: levelAfterStageConstruct,
 		`{app="a"} | json | detected_level="e"`:       levelAfterStageConstruct,
 	} {
@@ -464,7 +468,9 @@ func FuzzParserLowering(f *testing.F) {
 			q += ` ` + stage(which>>2, n1, v2, shape>>5&1)
 		}
 		for _, prof := range profiles {
-			if lowered, legacy, _, same, delegated, ok := parserLowering(t, q, prof); ok && !delegated && !same {
+			// A keep matcher a later stage reads lowers to the blanked field, not to the translator's text
+			// (semantics/keep-names-and-matchers, TestKeepNamesAndMatchersText).
+			if lowered, legacy, _, same, delegated, ok := parserLowering(t, q, prof); ok && !delegated && !same && !queryWritesKeepBlank(q) && !queryWritesKeepStreamValue(q, prof.label) {
 				t.Fatalf("%s: %s:\n lowered %s\n  string %s", prof.name, q, lowered, legacy)
 			}
 		}

@@ -183,9 +183,8 @@ type metricScan struct {
 	// names is set in a stage that lists names (a parser's extraction list, a drop or keep), until the next pipe.
 	names bool
 	// In a log query, until the next pipe: flags is set in a json or logfmt stage (its --strict and --keep-empty
-	// flags); keepStage in a keep, with keepName and keepMatcher for a name and a matcher read in it; and template in
-	// a line_format or label_format, whose quoted strings are templates.
-	flags, keepStage, keepName, keepMatcher, template bool
+	// flags); and template in a line_format or label_format, whose quoted strings are templates.
+	flags, template bool
 	// parserArg is set by a regexp or pattern parser in a log query, until its quoted expression is read.
 	parserArg bool
 	// stageStart is set by a pipe that opens a stage, until its first word; labelFilter is set by a stage whose first
@@ -244,7 +243,7 @@ func (s *metricScan) step(q string, i int) (int, bool) {
 		s.operand, s.names = false, false
 		s.existsThen = s.existsThen || s.exists
 		s.jsonArgs = false
-		s.flags, s.keepStage, s.keepName, s.keepMatcher, s.template = false, false, false, false, false
+		s.flags, s.template = false, false
 		return i, true
 	case c >= '0' && c <= '9' || c == '.':
 		return s.number(q, i)
@@ -428,18 +427,6 @@ func (s *metricScan) word(q string, i, j int) bool {
 	}
 	if s.parsed && s.pipeline() && strings.HasSuffix(w, "_extracted") && comparisonFollows(q, j) {
 		s.extractedFilter = true
-	}
-	if s.keepStage {
-		// A keep of names and matchers together loses the order they were written in (the lowering leaves it to
-		// the translator).
-		if comparisonFollows(q, dottedEnd(q, j)) {
-			s.keepMatcher = true
-		} else {
-			s.keepName = true
-		}
-		if s.keepName && s.keepMatcher {
-			return false
-		}
 	}
 	if s.log && !s.names && !comparisonFollows(q, dottedEnd(q, j)) && !callFollows(q, j) {
 		// In a log pipeline, a name (dotted ones included: k8s.pod.name) with no comparison after it: a label filter the

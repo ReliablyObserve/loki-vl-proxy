@@ -2293,6 +2293,41 @@
    ]
   },
   {
+   "id": "explore-keep-names-and-matchers",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | keep level=\"error\", app",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/keep-names-and-matchers",
+    "operator-keep",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/keep-names-and-matchers",
+    "semantics/matcher-keep-stream-label-residual",
+    "semantics/matcher-keep-logfmt-filter-row-and-label-loss"
+   ]
+  },
+  {
+   "id": "explore-keep-matcher-series",
+   "kind": "explore",
+   "query": "count_over_time({service_name=\"api-gateway\"} | keep app, level=\"error\" [$__auto])",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/keep-names-and-matchers",
+    "operator-keep",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/keep-names-and-matchers",
+    "semantics/matcher-keep-stream-label-residual"
+   ]
+  },
+  {
    "id": "explore-keep-series-count",
    "kind": "explore",
    "query": "count(rate({service_name=\"api-gateway\"} | json | keep foo [$__auto]))",

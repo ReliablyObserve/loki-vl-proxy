@@ -3520,6 +3520,54 @@
     }
    ]
   },
+  "keep-matchers": {
+   "description": "`| keep` with matchers (semantics/keep-names-and-matchers): a label stays when listed bare or matched, later stages read only what the keep left, and the series of a metric query are the kept labels. KM1 is a log query mixing a matcher and a name, KM2 a filter after the keep (the plan blanks the rejected values in VictoriaLogs), KM3 the metric grouped by the matched label, KM4 the ungrouped metric. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "KM1 logs, keep level matcher and app",
+     "query": "{service_name=\"api-gateway\"} | keep level=\"error\", app",
+     "covers": [
+      "semantics/keep-names-and-matchers",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "KM2 logs, filter after a matcher keep",
+     "query": "{service_name=\"api-gateway\"} | keep level=\"error\", app | level!=\"warn\"",
+     "covers": [
+      "semantics/keep-names-and-matchers",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "KM3 count by level over a matcher keep",
+     "query": "sum by (level) (count_over_time({service_name=\"api-gateway\"} | keep level=\"error\", app [$__auto]))",
+     "covers": [
+      "semantics/keep-names-and-matchers",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "KM4 count over a matcher keep",
+     "query": "count_over_time({service_name=\"api-gateway\"} | keep app, level=\"error\" [$__auto])",
+     "covers": [
+      "semantics/keep-names-and-matchers",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  },
   "keep-series-grouping": {
    "description": "`| keep` leaves only the labels it names (PR for semantics/keep-leaves-labels-loki-drops): a JSON or logfmt key named like a stream label is name_extracted and is gone after `| keep name`, and the streams that keep the same labels are one series. K1 and K2 are log queries (a json and a logfmt key colliding with the level stream label), K3 counts the series over a keep of a key no line has (Loki 1, one series per stream before), K4 is its instant form, K5 a rate over a keep of a stream label, K6 a count grouped by a kept key that a JSON key collides with. The metric shapes are grouped by the kept labels in VictoriaLogs' stats. Run with the control set.",
    "ranges": [

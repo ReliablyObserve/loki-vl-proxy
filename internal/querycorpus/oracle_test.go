@@ -321,6 +321,11 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		// VictoriaLogs answers to both are recorded in internal/queryplan/lower).
 		return "", "", false
 	}
+	if lower.WritesKeepBlank(plan) {
+		// The plan blanks the values a matcher keep removes ahead of the stages that read them, the translator reads
+		// the stored field: they do not mean the same, by design (semantics/keep-names-and-matchers).
+		return "", "", false
+	}
 	if lower.WritesKeepUnwrapIdentity(plan) || lower.WritesDynamicUnwrapIdentity(plan) || lower.WritesCountVarianceSeries(plan) {
 		// A keep before the unwrap, or a parser's labels, decide the series: the plan groups by the labels the keep
 		// leaves, or by the stream and a hash of the parsed labels, the translator by the stream

@@ -24,6 +24,7 @@ func FuzzParse(f *testing.F) {
 		// pipeline features
 		`{app="nginx"} | drop a, b | keep c | decolorize`,
 		`{app="nginx"} | logfmt | level="error"`,
+		`{app="nginx"} | keep level="e", app, level!~"w.*", env | drop a, b="c", d`,
 		`{app="nginx"} | unwrap bytes(size)`,
 		`{app="nginx"} | line_format "{{.msg}}"`,
 		`{app="nginx"} | label_format new=old`,

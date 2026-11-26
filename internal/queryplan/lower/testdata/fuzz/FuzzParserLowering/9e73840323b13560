@@ -1,0 +1,8 @@
+go test fuzz v1
+string("0")
+string("0")
+string("0")
+string("\",0")
+byte('³')
+byte('\u0084')
+byte('3')

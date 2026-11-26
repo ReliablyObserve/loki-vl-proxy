@@ -1,5 +1,5 @@
 id: semantics/matcher-keep-stream-label-residual
-title: Matcher keep leaves stream labels in log and grouped metric results (open)
+title: Matcher keep leaves stream labels in log and grouped metric results (fixed)
 pending: true
 proves:
   - loki_api_v1_query
@@ -62,20 +62,18 @@ compare:
     labels: proxy-only level. Keep full sample identity and points when a targeted
     fixture is added; this observed record alone is not an exact full-response proof.
 gap:
-  status: open
+  status: fixed
+  fixed_by: TBD-PR
   impact: explore-visible
   effort: M
   area: Existing typed query planning, ordered stage execution and response label exposure; exact responsible route
     not yet established
   loki: Recorded source facets preserve the label names, values and categories shown in the linked Loki excerpts
-  proxy: 'Recorded source facets differ as follows: category: proxy-only structuredMetadata detected_level; labels:
-    proxy-only <stream-label>,detected_level,level,service_name; labels: proxy-only level'
-  planned_test: Reuse bench/parity and the existing test/e2e-compat query-semantics matrix/source fixtures; add
-    the targeted full-response Loki oracle facet under this case when the paired row and route are isolated. Reuse
-    the existing visual harness only for a confirmed Grafana-visible fixture; do not create another catalog.
+  proxy: 'the kept labels of semantics/keep-names-and-matchers: a matcher keep removes stream labels, structured metadata and parsed labels it neither lists nor matches, in log answers and metric series'
   note: 'Unknown cause; keep every linked mismatch visible and open. References for investigation only: semantics/keep-leaves-labels-loki-drops.
     Split this scoped family if source-controlled oracle evidence establishes independent causes. Snapshot ref4a63b99e;
     run44910591975 artifact14714026577; full response bodies were not retained.'
+  planned_test: 'TestPlanMatchesLokiOnLogQueries and TestKeepMatchersMetricMatchLoki (internal/querycorpus), TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core)'
   clusters:
     - aa9f2369
     - 0b51164e

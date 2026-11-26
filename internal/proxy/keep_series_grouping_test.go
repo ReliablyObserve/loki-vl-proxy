@@ -42,6 +42,10 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 			`sum by (a) (rate({app="x"} | json | keep a |= "x" | a="1" | line_format "{{.a}}" | decolorize[1m]))`},
 		// The last keep decides; an earlier one already removed its labels in the pipeline.
 		{`rate({app="x"} | keep a, b | keep b [1m])`, `sum by (b) (rate({app="x"} | keep a, b | keep b[1m]))`},
+		// Matcher keeps: the series are the labels every keep stage may leave, whose rejected values the plan blanks.
+		{`rate({app="x"} | keep level="error" [1m])`, `sum by (level) (rate({app="x"} | keep level="error"[1m]))`},
+		{`rate({app="x"} | keep level="error", a [1m])`, `sum by (a, level) (rate({app="x"} | keep level="error", a[1m]))`},
+		{`rate({app="x"} | keep level="error", a | keep a [1m])`, `sum by (a) (rate({app="x"} | keep level="error", a | keep a[1m]))`},
 		// Both sides of a binary operation.
 		{`rate({app="x"} | keep a [1m]) / rate({app="y"} | keep a [1m])`,
 			`sum by (a) (rate({app="x"} | keep a[1m])) / sum by (a) (rate({app="y"} | keep a[1m]))`},
@@ -58,7 +62,8 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 	for _, q := range []string{
 		`{app="x"} | json | keep level`,                                 // a log query
 		`rate({app="x"} | json [1m])`,                                   // no keep
-		`rate({app="x"} | keep level="error" [1m])`,                     // a conditional keep
+		`rate({app="x"} | keep level="error" | json [1m])`,              // a parser after a conditional keep
+		`rate({app="x"} | keep service_name="a" [1m])`,                  // a matcher on a label derived on read
 		`rate({app="x"} | keep a | json [1m])`,                          // a parser after the keep adds labels
 		`rate({app="x"} | keep a | label_format b="c" [1m])`,            // label_format adds one
 		`rate({app="x"} | keep a | drop a [1m])`,                        // drop removes one
@@ -353,11 +358,11 @@ func TestKeepSeriesGrouping_InstantCount(t *testing.T) {
 
 // The answers of a keep query cached before the fix (level_extracted kept,
 // one series per stream) are not served after it: the response keys and the
-// log window fragments of a keep query carry the v2 namespace.
+// log window fragments of a keep query carry the v3 namespace.
 // conformance: semantics/keep-leaves-labels-loki-drops
 func TestKeepSeriesGrouping_CacheKeysFenced(t *testing.T) {
 	const query = `{namespace="prod"} | json | keep level`
-	if got := keepMetadataProjectionResponseKeyVersion(query); got != "@keep-metadata-projection-v2:" {
+	if got := keepMetadataProjectionResponseKeyVersion(query); got != "@keep-metadata-projection-v3:" {
 		t.Fatalf("response key version %q", got)
 	}
 	lq, err := logqlpkg.ParseLogQuery(query)

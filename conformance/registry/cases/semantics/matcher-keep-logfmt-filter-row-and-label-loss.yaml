@@ -1,5 +1,5 @@
 id: semantics/matcher-keep-logfmt-filter-row-and-label-loss
-title: Matcher keep followed by keep-empty logfmt and a label filter loses a parsed label and a retained line (open)
+title: Matcher keep followed by keep-empty logfmt and a label filter loses a parsed label and a retained line (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -77,24 +77,15 @@ compare:
     a="bz" of entry 35. Compare all remaining recorded entries and facets too;
     matching only those two examples or only a 200 status is insufficient.
 gap:
-  status: open
+  status: fixed
+  fixed_by: TBD-PR
   impact: explore-visible
   effort: M
   area: Existing typed LogQL plan and ordered matcher-keep/logfmt/filter execution; responsible stage not isolated
   loki: |
     Keeps fixture entries 35 and 36. Entry 35 has parsed a="bz"; entry 36 retains
     the parsed empty-value token labels. Full facts remain in the recorded oracle.
-  proxy: |
-    In the existing replay with either actual VL version, misses parsed a="bz"
-    on entry 35 and drops entry 36; the full composition also retains the explicit
-    stream-label, malformed-logfmt and empty-token facets described above.
-  planned_test: |
-    Extend the existing query-semantics matrix and shared fixture links, and reuse
-    TestPlanMatchesLokiOnLogQueries with this recorded q/fixture identity. Compare
-    full source-controlled plain and categorized answers against Loki for both
-    supported VL version profiles. Isolate stages with keep-only, parser-only and
-    pre/post-filter controls before assigning a cause or marking any facet fixed.
-    Do not introduce a second query catalog or a status-only comparison.
+  proxy: 'keeps entries 35 and 36 with their parsed labels (semantics/keep-names-and-matchers); the malformed-line and empty-token facets of this query are tracked by semantics/logfmt-malformed-lines and semantics/logfmt-keep-empty-json-token-labels'
   note: |
     Observed ordered-composition contract, not an established common root cause.
     No historical parity-discovery cluster is claimed. Existing OPEN cases are

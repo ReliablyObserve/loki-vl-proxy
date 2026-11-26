@@ -128,6 +128,7 @@ var loweringParityQueries = []struct {
 	{"label_format template", `{app="a"} | label_format s="{{.status}}-x"`, false, "", "LabelFormat"},
 	{"drop", `{app="a"} | drop status`, false, "", "DropKeep"},
 	{"keep", `{app="a"} | keep status`, false, "", "DropKeep"},
+	{"keep names and matchers", `{app="a"} | keep status="200", app`, false, "", "DropKeep"},
 	// Two line_format stages keep the stored line aside in the Loki-compatible profile (translateQueryOpts keepLine).
 	{"keep line", `{app="a"} | line_format "{{.status}}" | line_format "{{.app}}: {{.__line__}}"`, false, "", "LineFormat"},
 	{"keep line with filters", `{app="a"} |= "x" | line_format "{{.a}}" | status="200" | line_format "{{.b}}"`, false, "", "LineFormat"},

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A log query's `| keep` with matchers, alone or beside bare names, answers Loki's labels: a label stays when the stage lists its name bare or one of its matchers on that name matches the value, stream labels included (`keep level=~"error|warn", app` keeps a matching `level`, and `keep level="error"` removes every other stream label); several keep stages apply one after the other; a keep ahead of a parser no longer removes the labels that parser reads; and a label filter, `drop`, template or `label_format` after the keep no longer reads a value the keep removed (VictoriaLogs blanks the field in the query). A metric over a keep with matchers has the series Loki has (the labels the stages leave), counted by VictoriaLogs grouped by those labels. Such a query, and one mixing names and matchers in one keep, is served from the query plan. Cached answers of queries with a keep stage are keyed anew.
 - The `Query Corpus` live check of the metric differential also accepts a `topk` or `bottomk` tie between series with different label names, when a recorded Loki answer of the query holds those names, and a `sort` or `sort_desc` vector that returns series of one value in another order; the tie rules apply to those operators only.
 
 ## [2.364.0] - 2026-11-25

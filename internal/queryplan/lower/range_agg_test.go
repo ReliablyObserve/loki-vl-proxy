@@ -91,6 +91,11 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, false, true, terr == nil
 	}
+	// A keep whose rejected matcher values the lowering blanks is no translator text (semantics/keep-names-and-matchers,
+	// TestKeepNamesAndMatchersText).
+	if WritesKeepBlank(p) {
+		return "", "", false, false, false
+	}
 	if terr != nil || lerr != nil {
 		if (terr == nil) != (lerr == nil) {
 			t.Fatalf("%s: translator error %v, lowering error %v", q, terr, lerr)

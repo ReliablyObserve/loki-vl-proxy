@@ -23,10 +23,12 @@ import (
 // bytes_over_time and bytes_rate sum their samples per series, so
 // `f(X | keep a, b [r])` is `sum by (a, b) (f(X | keep a, b [r]))`.
 //
-// Only a keep with no matcher, after which no stage adds or removes a label
-// (a parser, label_format, drop, unwrap or another conditional keep), is
-// rewritten; the pipeline itself is left as it is, so the labels a keep
-// removed stay removed for every other stage.
+// Only a keep after which no stage adds or removes a label (a parser,
+// label_format, drop, unwrap or another conditional keep) is rewritten; the
+// pipeline itself is left as it is, so the labels a keep removed stay removed
+// for every other stage. A keep with matchers is rewritten when it is the
+// pipeline's only keep: the plan blanks the values its matchers reject
+// (lower.WritesKeepBlank), and a blank label is no label of the series.
 //
 // A query that names an error label (__error__, __error_details__,
 // __preserve_error__) anywhere is left as it is. Keep never removes the error
@@ -160,8 +162,9 @@ func keepGrouped(v *logqlpkg.VectorAggregation) bool {
 // (Loki's special error labels left out: keep never removes them, and a
 // metric whose series carries one is an error) and whether that keep decides
 // the series labels: the series identity the plan reads from the stages
-// (queryplan.SeriesLabels) is the keep's, no keep of the pipeline has a
-// matcher, and no stage after it adds, renames or drops a label. A pipeline
+// (queryplan.SeriesLabels) is the keep's, and no stage after it adds, renames
+// or drops a label; or it is the only keep, has matchers on stored labels, and
+// only line filters follow it (matcherKeepLabels). A pipeline
 // with an unwrap is left out: its series also drop the unwrapped label, and
 // the typed lowering answers it (keepUnwrapIdentity).
 func trailingKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
@@ -169,7 +172,7 @@ func trailingKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
 		switch st := stage.(type) {
 		case *logqlpkg.KeepStage:
 			if len(st.Matchers) > 0 {
-				return nil, false
+				return matcherKeepLabels(pipeline)
 			}
 		case *logqlpkg.UnwrapStage:
 			return nil, false
@@ -180,6 +183,43 @@ func trailingKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
 		return nil, false
 	}
 	return kept, true
+}
+
+// matcherKeepLabels are the labels the keeps of a pipeline with a matcher keep
+// may leave on a series: the names every keep stage lists, bare or with a
+// matcher. ok is false when a stage other than a keep, a line filter or
+// decolorize follows the first keep, when a stage other than those, a parser or
+// a label filter precedes it, or when a matcher names a label derived on the
+// read path (the plan blanks stored and parsed fields only).
+func matcherKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
+	first := true
+	for _, stage := range pipeline {
+		switch st := stage.(type) {
+		case *logqlpkg.KeepStage:
+			names := slices.Clone(st.Labels)
+			for _, m := range st.Matchers {
+				if m.Name == detectedLevelLabel || m.Name == "service_name" {
+					return nil, false
+				}
+				if !slices.Contains(names, m.Name) {
+					names = append(names, m.Name)
+				}
+			}
+			if first {
+				kept, first = names, false
+				continue
+			}
+			kept = slices.DeleteFunc(kept, func(n string) bool { return !slices.Contains(names, n) })
+		case *logqlpkg.LineFilterStage, *logqlpkg.DecolorizeStage:
+		case *logqlpkg.LabelFilterStage, *logqlpkg.ParserStage:
+			if !first {
+				return nil, false
+			}
+		default:
+			return nil, false
+		}
+	}
+	return kept, !first
 }
 
 // applyKeepSeriesGrouping rewrites the query of a metric request with

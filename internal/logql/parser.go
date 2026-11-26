@@ -1570,7 +1570,7 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 				err = e
 				return
 			}
-			matchers = append(matchers, DropMatcher{Name: name, Op: "=", Value: val})
+			matchers = append(matchers, DropMatcher{Name: name, Op: "=", Value: val, Bare: len(labels)})
 		case TokBangEq: // field!="value" (outside braces produces TokBangEq)
 			p.advance()
 			val, e := p.expectStringOrRaw()
@@ -1578,7 +1578,7 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 				err = e
 				return
 			}
-			matchers = append(matchers, DropMatcher{Name: name, Op: "!=", Value: val})
+			matchers = append(matchers, DropMatcher{Name: name, Op: "!=", Value: val, Bare: len(labels)})
 		case TokReMatch: // field=~"regex"
 			p.advance()
 			val, e := p.expectStringOrRaw()
@@ -1586,7 +1586,7 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 				err = e
 				return
 			}
-			matchers = append(matchers, DropMatcher{Name: name, Op: "=~", Value: val})
+			matchers = append(matchers, DropMatcher{Name: name, Op: "=~", Value: val, Bare: len(labels)})
 		case TokBangTilde: // field!~"regex" (outside braces produces TokBangTilde)
 			p.advance()
 			val, e := p.expectStringOrRaw()
@@ -1594,7 +1594,7 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 				err = e
 				return
 			}
-			matchers = append(matchers, DropMatcher{Name: name, Op: "!~", Value: val})
+			matchers = append(matchers, DropMatcher{Name: name, Op: "!~", Value: val, Bare: len(labels)})
 		default:
 			if blank {
 				p.keep(start) // a name of no label: see blankName
