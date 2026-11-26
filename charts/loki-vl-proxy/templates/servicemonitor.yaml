@@ -31,6 +31,8 @@ spec:
     */}}
     - port: {{ if .Values.service.metrics.enabled }}metrics{{ else }}http{{ end }}
       path: /metrics
+      {{- /* Default true, also when an upgrade reuses values that predate the key. */}}
+      honorLabels: {{ ne (toString .Values.serviceMonitor.honorLabels) "false" }}
       {{- with .Values.serviceMonitor.interval }}
       interval: {{ . }}
       {{- end }}
