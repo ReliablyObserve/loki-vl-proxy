@@ -4,8 +4,11 @@ pending: true
 reason: |
   Unit-proven in internal/cache and internal/proxy; the stack proof is
   TestFleet_RestartHandoverKeepsTheResponseCacheWarm (test/e2e-fleet, CI job
-  e2e-fleet). Not covered yet: the chart options (terminationGracePeriodSeconds,
-  preStop, readiness) and the hand-over of hot keys to peers when a replica's
-  disk is new.
+  e2e-fleet). The chart options (cacheHandover.*: flags, grace period, preStop
+  sleep, startup probe, one-replica-at-a-time rollout settings, disk cache
+  required) are rendered by TestCacheHandoverChartOptions (test/helm, CI job
+  helm); a real rollout on Kubernetes is not run, and the index rebuild of a
+  large cache is not timed against the startup probe. Not covered yet: the
+  hand-over of hot keys to peers when a replica's disk is new.
 owner_decision: null
 waiver: null
