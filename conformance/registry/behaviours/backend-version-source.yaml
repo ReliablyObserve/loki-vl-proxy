@@ -1,0 +1,36 @@
+id: backend-version-source
+kind: semantics
+title: The operator can name where the VictoriaLogs release comes from, and the probes check it
+
+loki: |
+  Not a Loki surface: the release of the backend is the proxy's own input.
+
+victorialogs: |
+  VictoriaLogs reports its release on /metrics. vmauth answers /metrics itself
+  on its listen address, so the release is not readable through it by default.
+
+proxy: |
+  -backend-version-url reads another /metrics endpoint; -backend-version
+  declares the release. Either enables only the gates a probe confirms; a probe
+  that contradicts a named release discards it; the lowest release wins.
+
+implementation:
+  - internal/proxy/backend_version_source.go
+  - internal/capability/set.go
+  - internal/capability/layer.go
+
+decisions:
+  - id: named-release-checked-by-probes
+    chosen: 'A named release (URL or manual) turns on only the gates the feature probes confirm; contradiction discards it; the lowest release wins'
+    over: [trusting the version URL as read from the queried backend, a version URL only with no manual flag, forwarding the backend credentials to the version URL]
+    why: |
+      Issue #1769: behind vmauth the release-only gates stay off. A wrong or
+      too-high configured version, or a URL naming another server, must not lift the
+      crash guard of vl.math_quoted_constant_clone or turn on a gate the backend
+      lacks. The cost is vl.extra_filters_len, which no probe reaches.
+    evidence: 'TestNamedReleaseNeverEnablesWhatTheBackendLacks: every named and actual release v1.49.0 to v1.54.0 with every subset of probe answers (2026-11-26)'
+    code: [internal/capability/set.go, internal/proxy/backend_version_source.go]
+    tests: [TestNamedReleaseNeverEnablesWhatTheBackendLacks, TestNamedReleaseGatesWhenTheProbesAgree, TestVersionURLAnswers]
+    quality: 'A named release never turns on a gate the queried backend lacks, crash guards included.'
+    performance: 'No significant change in BenchmarkRequestPathCapabilityReads, BenchmarkRequestPathObserveHeaders, BenchmarkRequestPathObserveHeadersNoVersion or BenchmarkLayerFor, zero allocations (Apple M5 Pro, GOMAXPROCS=2, n=8, 2026-11-26).'
+    pending: true

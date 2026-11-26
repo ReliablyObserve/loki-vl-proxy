@@ -151,6 +151,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'runbooks/loki-vl-proxy-down',
             'runbooks/loki-vl-proxy-backend-unreachable',
+            'runbooks/loki-vl-proxy-backend-version-unknown',
             'runbooks/loki-vl-proxy-backend-high-latency',
             'runbooks/loki-vl-proxy-high-latency',
             'runbooks/loki-vl-proxy-high-error-rate',

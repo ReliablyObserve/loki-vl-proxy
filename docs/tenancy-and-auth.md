@@ -99,7 +99,7 @@ The proxy trusts nothing about the caller unless you configure it:
 
   A request that forwards a credential gets cache entries keyed by a hash of it, and those entries are never pushed to peers. Credentials never appear in logs, metrics or the disk cache (`TestCredentialPassThrough_AsConfigured`).
 - **User identity headers** (`X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User`, `X-Auth-Request-User`, `X-Forwarded-For`): used and forwarded only with `-metrics.trust-proxy-headers=true` (see [Grafana user identity](#5-grafana-user-identity)).
-- **vmauth between the proxy and VictoriaLogs:** `-backend-basic-auth` (Helm `backendAuth.existingSecret`) authenticates the proxy to it. `-forward-tenant-header` (default `true`) forwards the routed `X-Scope-OrgID` for a backend that routes on it; with tenancy off the header is never forwarded.
+- **vmauth between the proxy and VictoriaLogs:** `-backend-basic-auth` (Helm `backendAuth.existingSecret`) authenticates the proxy to it. `-forward-tenant-header` (default `true`) forwards the routed `X-Scope-OrgID` for a backend that routes on it; with tenancy off the header is never forwarded. vmauth answers `/metrics` itself, so name the VictoriaLogs release source with `-backend-version-url` (its own `-backend-version-basic-auth`; the backend credentials are never sent to it), see [backend version behind vmauth](configuration.md#backend-version-behind-vmauth).
 - **TLS at the proxy:** `-tls-cert-file`, `-tls-key-file`, `-tls-client-ca-file`, `-tls-require-client-cert`. A client certificate proves which client connected, not which tenant it may read.
 
 ## 3. Every option
@@ -127,6 +127,7 @@ The proxy trusts nothing about the caller unless you configure it:
 | `-metrics.trust-proxy-headers` | `observability.metrics.trustProxyHeaders` | `false` | no | none |
 | `-metrics.export-sensitive-labels` | `observability.metrics.exportSensitiveLabels` | `false` | no | none |
 | `-backend-basic-auth` | `backendAuth.existingSecret` / `extraArgs.backend-basic-auth` | empty | no | none |
+| `-backend-version-basic-auth` | `backendVersionAuth.existingSecret` / `extraArgs.backend-version-basic-auth` | empty | no | none |
 
 `proxy.Config`, for library users, is unchanged: its zero value keeps numeric passthrough on (`StrictTenantRouting: false`), so tenancy is on unless `StrictTenantRouting` is set with no other tenant setting.
 

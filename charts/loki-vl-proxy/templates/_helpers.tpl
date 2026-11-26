@@ -276,6 +276,10 @@ Invoked from the deployment.
 {{- if and $backendAuth.existingSecret (hasKey $extraArgs "backend-basic-auth") -}}
 {{- fail "backendAuth.existingSecret cannot be combined with extraArgs.backend-basic-auth; the chart renders -backend-basic-auth from the Secret. Remove the extraArgs entry." -}}
 {{- end -}}
+{{- $backendVersionAuth := default (dict) .Values.backendVersionAuth -}}
+{{- if and $backendVersionAuth.existingSecret (hasKey $extraArgs "backend-version-basic-auth") -}}
+{{- fail "backendVersionAuth.existingSecret cannot be combined with extraArgs.backend-version-basic-auth; the chart renders -backend-version-basic-auth from the Secret. Remove the extraArgs entry." -}}
+{{- end -}}
 {{- $deleteAuth := default (dict) .Values.deleteAuth -}}
 {{- if and $deleteAuth.existingSecret (hasKey $extraArgs "delete-api-auth-token") -}}
 {{- fail "deleteAuth.existingSecret cannot be combined with extraArgs.delete-api-auth-token; the chart renders -delete-api-auth-token from the Secret. Remove the extraArgs entry." -}}

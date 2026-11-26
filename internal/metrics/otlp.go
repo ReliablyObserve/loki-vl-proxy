@@ -645,14 +645,14 @@ func (p *OTLPPusher) histogramMetric(name, description, unit string, dataPoints 
 func (p *OTLPPusher) histogramDP(h *histogram, timeUnixNano int64, attrs ...map[string]interface{}) map[string]interface{} {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	bucketCounts := make([]int64, 0, len(h.counts)+1)
-	prev := int64(0)
-	for i := range h.counts {
-		c := h.counts[i]
-		bucketCounts = append(bucketCounts, c-prev)
-		prev = c
+	// OTLP counts per bucket, as the histogram does; the last one holds what lies above every bound.
+	bucketCounts := make([]int64, len(h.counts)+1)
+	above := h.loadCount()
+	for i, c := range h.counts {
+		bucketCounts[i] = c
+		above -= c
 	}
-	bucketCounts = append(bucketCounts, h.loadCount()-prev)
+	bucketCounts[len(h.counts)] = above
 	dp := map[string]interface{}{
 		"timeUnixNano":   fmt.Sprintf("%d", timeUnixNano),
 		"count":          fmt.Sprintf("%d", h.loadCount()),

@@ -146,6 +146,10 @@
     "backend-url-path-prefix": [
       "internal/proxy/backend_url_test.go"
     ],
+    "backend-version-source": [
+      "internal/capability/version_source_test.go",
+      "internal/proxy/backend_version_source_test.go"
+    ],
     "cache-response-key-versions": [
       "internal/proxy/binary_empty_without_test.go",
       "internal/proxy/detected_level_one_value_test.go",
@@ -881,6 +885,12 @@
     ],
     "numeric-and-response-formatting": [
       "internal/proxy/manual_metric_encoding_test.go"
+    ],
+    "observability-metrics-histograms-and-labels": [
+      "cmd/proxy/main_test.go",
+      "internal/metrics/duration_buckets_test.go",
+      "internal/metrics/scrape_assets_test.go",
+      "test/helm/servicemonitor_test.go"
     ],
     "observability-query-flow": [
       "internal/cache/cache_coverage_test.go",
@@ -3066,6 +3076,10 @@
     "versions/stats-bucket-label-v1.45": [
       "internal/proxy/ordered_json_extracted_pushdown_test.go"
     ],
+    "vl-backend-version-source": [
+      "internal/capability/version_source_test.go",
+      "internal/proxy/backend_version_source_test.go"
+    ],
     "vl-capability-layer": [
       "internal/capability/docs_test.go",
       "internal/capability/gates_test.go",
@@ -3183,7 +3197,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 749,
+  "registry_items": 753,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3194,6 +3208,7 @@
     ],
     "cmd/proxy/main_test.go": [
       "limits/every-cap-is-a-flag",
+      "observability-metrics-histograms-and-labels",
       "operator-configurable-limits",
       "semantics/query-range-step-alignment",
       "tail-reads-settled-rows"
@@ -3276,6 +3291,10 @@
     ],
     "internal/capability/release_test.go": [
       "vl-capability-layer"
+    ],
+    "internal/capability/version_source_test.go": [
+      "backend-version-source",
+      "vl-backend-version-source"
     ],
     "internal/clientprofile/detect_test.go": [
       "drilldown/client-detection-captured-header-sets"
@@ -3540,11 +3559,17 @@
     "internal/metrics/capability_test.go": [
       "vl-capability-layer"
     ],
+    "internal/metrics/duration_buckets_test.go": [
+      "observability-metrics-histograms-and-labels"
+    ],
     "internal/metrics/query_complexity_test.go": [
       "query-complexity-limits"
     ],
     "internal/metrics/request_flow_test.go": [
       "observability-query-flow"
+    ],
+    "internal/metrics/scrape_assets_test.go": [
+      "observability-metrics-histograms-and-labels"
     ],
     "internal/middleware/coalescer_body_limit_test.go": [
       "limits/label-values-response-cap"
@@ -3635,6 +3660,10 @@
     ],
     "internal/proxy/backend_url_test.go": [
       "backend-url-path-prefix"
+    ],
+    "internal/proxy/backend_version_source_test.go": [
+      "backend-version-source",
+      "vl-backend-version-source"
     ],
     "internal/proxy/bare_instant_detected_level_gap_test.go": [
       "semantics/instant-bare-range-detected-level-unknown"
@@ -7082,9 +7111,12 @@
     ],
     "test/helm/cache_handover_test.go": [
       "cache-restart-handover"
+    ],
+    "test/helm/servicemonitor_test.go": [
+      "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 840,
+  "tests_with_markers": 845,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7239,7 +7271,8 @@
     "severity/otlp-severity-before-vl-1.50",
     "severity/stored-log-dot-level-in-metric-chain",
     "versions/capabilities-floor-vs-matrix",
-    "versions/rejected-stats-query-wording-vl-1.47"
+    "versions/rejected-stats-query-wording-vl-1.47",
+    "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 482
+  "wired_items": 485
 }
