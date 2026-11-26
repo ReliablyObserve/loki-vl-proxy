@@ -69,6 +69,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 11 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
+| semantics | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | 3 | 2 | unknown |
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 12 | unknown |
 | semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 1 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |

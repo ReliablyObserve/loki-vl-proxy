@@ -239,6 +239,12 @@ type Config struct {
 	// BackendAllowUnsupportedVersion allows startup to continue when detected
 	// backend version is lower than BackendMinVersion. Use at your own risk.
 	BackendAllowUnsupportedVersion bool
+	// BackendVersionURL is a VictoriaLogs /metrics URL the release is read from instead of the backend's (behind
+	// vmauth the backend's is vmauth's own); BackendVersionBasicAuth ("user:password") is sent to that URL only.
+	BackendVersionURL       string
+	BackendVersionBasicAuth string
+	// BackendVersion is the release the operator declares; it enables only the gates a feature probe confirms.
+	BackendVersion string
 	// BackendVersionCheckTimeout bounds startup backend version checks.
 	BackendVersionCheckTimeout time.Duration
 	// BackendVersionReprobeInterval is how often the capability loop reads the VictoriaLogs release and probes the
@@ -973,8 +979,11 @@ type Proxy struct {
 	caps                               *capability.Layer // every gate: the VictoriaLogs release(s), probes, client profile
 	backendReprobeInterval             time.Duration
 	backendFeatureProbesDisabled       bool
-	backendVersionProbedAt             atomic.Int64 // Unix ns of the last probe round a traffic trigger started
-	capProbing                         atomic.Bool  // a probe round is running
+	backendVersionProbedAt             atomic.Int64   // Unix ns of the last probe round a traffic trigger started
+	versionSource                      *versionSource // -backend-version-url; nil reads the backend's /metrics
+	versionLogMu                       sync.Mutex
+	versionLogged                      versionLog
+	capProbing                         atomic.Bool // a probe round is running
 	capLoopStarted                     atomic.Bool
 	labelValuesIndexWarmReady          atomic.Bool
 	labelValuesIndexPersistStarted     atomic.Bool
@@ -1286,6 +1295,10 @@ func New(cfg Config) (*Proxy, error) {
 	// the header phase; subsequent body reads (NDJSON streaming) are not affected, so
 	// the forwarded WebSocket session can live as long as the client remains connected.
 	tailTransport.ResponseHeaderTimeout = 5 * time.Second
+	versionFrom, declaredRelease, err := newVersionSource(cfg, transport)
+	if err != nil {
+		return nil, err
+	}
 
 	maxLines := cfg.MaxLines
 	if maxLines <= 0 {
@@ -1504,6 +1517,7 @@ func New(cfg Config) (*Proxy, error) {
 	}
 
 	p := &Proxy{
+		versionSource: versionFrom,
 		backend:       u,
 		rulerBackend:  rulerURL,
 		alertsBackend: alertsURL,
@@ -1716,6 +1730,7 @@ func New(cfg Config) (*Proxy, error) {
 		p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
 	}
 	p.caps.Subscribe(p.onCapabilityChange)
+	p.caps.Declare(declaredRelease)
 	p.metrics.SetCapabilityStatsProvider(p.capabilityStats)
 	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {
 		// This coalescer's integrated call sites wrap raw VL HTTP operations;

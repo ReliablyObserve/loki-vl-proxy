@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **11 proven**, 23 partial, 3 gaps, 0 waived, 11 with no state recorded
+- Behaviour and feature items: **11 proven**, 23 partial, 3 gaps, 0 waived, 12 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -76,6 +76,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 |---|---|---:|---:|---|
 | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 108 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
+| `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | — | 0 / 0 | 2 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 12 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |

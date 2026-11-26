@@ -154,9 +154,10 @@ func (p *Proxy) observeBackendVersionFromHeaders(headers http.Header) {
 			return
 		}
 	}
-	// No VictoriaLogs release in the response: while it stays unknown (a failed or pending startup probe) retry the
-	// metrics probe in the background. An unknown release behaves as the v1.49.0 floor.
-	if !p.caps.Backend().Release().Known {
+	// No VictoriaLogs release in the response: while none has been read (a failed or pending startup probe; a release
+	// only declared with -backend-version is not read) retry the metrics probe in the background. An unknown release
+	// behaves as the v1.49.0 floor.
+	if !p.caps.Backend().Observed() {
 		p.maybeReprobeBackendVersion(time.Now())
 	}
 }
@@ -318,39 +319,66 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 		return nil
 	}
 
-	if _, semver, _ := p.backendVersionState(); semver == "" {
-		p.probeBackendVersionFromMetrics(checkCtx)
+	reason := ""
+	if p.versionSource == nil && !p.caps.Backend().Observed() {
+		reason = p.probeBackendVersionFromMetrics(checkCtx)
 	}
 	// Feature probes decide the gates that have one when no release is readable, and cross-check the release when it
 	// is (-backend-feature-probes=false turns them off).
 	p.probeBackendFeatures(checkCtx)
+	if p.versionSource != nil {
+		// Read whatever the response headers said (the lowest release read decides), after the probes and within its
+		// own timeout: a slow version URL does not use up the time they need.
+		reason = p.probeBackendVersionFromMetrics(ctx)
+	}
+	p.noteVersionReadReason(reason) // logged below; a later round logs it only when it changes
+	rejected := p.warnNamedRelease()
 	raw, semver, profile := p.backendVersionState()
+	why := reason
+	switch {
+	case why != "":
+	case len(rejected) > 0:
+		why = "a feature probe contradicts the named release " + strings.Join(rejected, ", ")
+	default:
+		why = "backend did not expose version in response headers or /metrics payload"
+	}
 	if raw == "" {
 		raw = "feature-probe"
 	}
 	if semver == "" && profile != "" {
 		p.log.Warn(
 			"backend version compatibility check partial",
-			"reason", "explicit backend semver unavailable; inferred capability profile from runtime endpoint probes",
+			"reason", why,
+			"note", "explicit backend semver unavailable; inferred capability profile from runtime endpoint probes. Gates that need the release stay off: see -backend-version-url and -backend-version",
 			"backend.version.source", raw,
 			"backend.capability_profile", profile,
 			"minimum_supported_version", p.backendMinVersion,
 		)
 		if p.backendVersionStrict {
-			return fmt.Errorf("backend version check failed (strict mode): explicit backend semver unavailable (inferred profile %q); minimum required %s", profile, p.backendMinVersion)
+			return fmt.Errorf("backend version check failed (strict mode): explicit backend semver unavailable (inferred profile %q; %s); minimum required %s", profile, why, p.backendMinVersion)
 		}
 		return nil
 	}
 	if semver == "" {
 		p.log.Warn(
 			"backend version compatibility check unavailable",
-			"reason", "backend did not expose version in response headers or /metrics payload",
+			"reason", why,
 			"minimum_supported_version", p.backendMinVersion,
 		)
 		if p.backendVersionStrict {
-			return fmt.Errorf("backend version check failed (strict mode): backend did not expose version in response headers or /metrics payload; minimum required %s", p.backendMinVersion)
+			return fmt.Errorf("backend version check failed (strict mode): %s; minimum required %s", why, p.backendMinVersion)
 		}
 		return nil
+	}
+	if reason != "" && !p.caps.Backend().Observed() {
+		// Only -backend-version names a release: say that none was read, and why.
+		p.log.Warn(
+			"backend version compatibility check partial",
+			"reason", reason,
+			"note", "no release read from the backend; using -backend-version, which enables only the gates the feature probes confirm",
+			"backend.version.semver", semver,
+			"minimum_supported_version", p.backendMinVersion,
+		)
 	}
 	if !semverAtLeastSemver(semver, p.backendMinVersion) {
 		if p.backendAllowUnsupportedVersion && !p.backendVersionStrict {
