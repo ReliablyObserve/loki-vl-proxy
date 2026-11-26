@@ -1,7 +1,9 @@
 # uv --override file for requirements-semgrep.txt (see requirements-semgrep.in).
 # semgrep pins mcp and the OpenTelemetry packages to releases with open
 # advisories; no semgrep release up to 1.182.1 allows the fixed ones. These
-# requirements replace semgrep's own. The lock is therefore installed with
+# requirements replace semgrep's own. The same applies to wcmatch: semgrep
+# requires wcmatch~=8.3, and releases before 11.2 are affected by
+# CVE-2026-132276 (GHSA-53pm-wgxf-c6qf). The lock is therefore installed with
 # `pip install --no-deps --require-hashes`, because pip refuses a set that
 # contradicts semgrep's metadata. `semgrep scan` and `semgrep --trace` run
 # unchanged with them; remove this file when a semgrep release allows the fixed
@@ -12,3 +14,4 @@ opentelemetry-sdk==1.45.2
 opentelemetry-exporter-otlp-proto-http==1.45.2
 opentelemetry-instrumentation-requests==0.66b2
 opentelemetry-instrumentation-threading==0.66b2
+wcmatch==11.2
