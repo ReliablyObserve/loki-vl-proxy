@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **11 proven**, 24 partial, 3 gaps, 0 waived, 14 with no state recorded
+- Behaviour and feature items: **11 proven**, 24 partial, 3 gaps, 0 waived, 15 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -59,8 +59,8 @@ Held by at least one test that declares it.
 |---|---|---:|---:|---|
 | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 9 / 9 | 10 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
 | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 4 / 4 | 13 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
-| `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | — | 0 / 0 | 1 | internal/proxy/credential_passthrough_test.go: basic auth, forwarded OAuth (access and ID token), a custom header, cooki |
-| `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | — | 0 / 0 | 2 | internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled with an empty or blank delete token (an admin |
+| `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | — | 0 / 0 | 2 | internal/proxy/credential_passthrough_test.go: basic auth, forwarded OAuth (access and ID token), a custom header, cooki |
+| `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | — | 0 / 0 | 3 | internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled with an empty or blank delete token (an admin |
 | `error-coalescing-and-error-cache` — Identical requests share one run, and failed answers are held for their class's TTL | — | 9 / 9 | 7 | Unit and race tests drive real requests through the proxy's routes against a stub VictoriaLogs: TestErrorFlights_Concurr |
 | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | — | 0 / 0 | 2 | internal/proxy/instrumentation_secrets_test.go configures an admin token, a delete token, a peer token and peers, backen |
 | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 5 / 5 | 15 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
@@ -79,7 +79,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | — | 0 / 0 | 2 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 12 | — |
-| `field-mapping-label-names` — A mapped field has one name in answers, and the operator chooses the names the label pickers list | — | 1 / 1 | 3 | — |
+| `field-mapping-label-names` — A mapped field has one name in answers, and the operator chooses the names the label pickers list | — | 1 / 1 | 4 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |
@@ -87,6 +87,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 6 | — |
 | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | — | 0 / 0 | 10 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
+| `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | — | 0 / 0 | 2 | — |
 | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 6 | — |
 | `tail-reads-settled-rows` — A live tail reads only rows VictoriaLogs has made searchable, so no line of a stream is skipped | — | 0 / 0 | 3 | — |
 

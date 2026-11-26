@@ -1,13 +1,16 @@
 {{- /*
-  Guard: when peerCache.enabled=true the chart injects
-  -peer-auth-token=$(PEER_AUTH_TOKEN) automatically (sourced from the chart's
-  Secret or peerCache.existingSecret). The Go flag package fatals on duplicate
-  flag registration, so refuse to render if the operator also set
-  extraArgs.peer-auth-token. Token management belongs to peerCache.authToken /
-  peerCache.existingSecret.
+  Guard: when peerCache.enabled=true the chart injects -peer-auth-token-file
+  automatically (the chart's Secret or peerCache.existingSecret, mounted as a
+  file). The proxy refuses a value flag next to the file flag, so refuse to
+  render if the operator also set extraArgs.peer-auth-token or
+  extraArgs.peer-auth-token-file. Token management belongs to
+  peerCache.authToken / peerCache.existingSecret.
 */ -}}
 {{- if and .Values.peerCache.enabled (hasKey .Values.extraArgs "peer-auth-token") }}
 {{- fail "extraArgs.peer-auth-token cannot be combined with peerCache.enabled=true; chart manages the flag via peerCache.authToken / peerCache.existingSecret. Remove the extraArgs entry." }}
+{{- end }}
+{{- if and .Values.peerCache.enabled (hasKey .Values.extraArgs "peer-auth-token-file") }}
+{{- fail "extraArgs.peer-auth-token-file cannot be combined with peerCache.enabled=true; chart manages the flag via peerCache.authToken / peerCache.existingSecret. Remove the extraArgs entry." }}
 {{- end }}
 {{- include "loki-vl-proxy.validateMetrics" . }}
 {{- include "loki-vl-proxy.validateSecrets" . }}
@@ -28,6 +31,9 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   {{- else }}
+  {{- with include "loki-vl-proxy.progressDeadlineSeconds" . }}
+  progressDeadlineSeconds: {{ . }}
+  {{- end }}
   {{- with .Values.workload.deploymentStrategy }}
   strategy:
     {{- toYaml . | nindent 4 }}
@@ -108,14 +114,7 @@ spec:
       {{- $observabilityMetrics := default (dict) (get $observability "metrics") }}
       {{- $observabilityServer := default (dict) (get $observability "server") }}
 {{- $observabilityQueryUser := default (dict) (get $observability "queryUser") }}
-      {{- $adminAuth := default (dict) .Values.adminAuth }}
-      {{- $adminAuthSecret := $adminAuth.existingSecret }}
-      {{- $deleteAuth := default (dict) .Values.deleteAuth }}
-      {{- $deleteAuthSecret := $deleteAuth.existingSecret }}
-      {{- $backendAuth := default (dict) .Values.backendAuth }}
-      {{- $backendAuthSecret := $backendAuth.existingSecret }}
-      {{- $backendVersionAuth := default (dict) .Values.backendVersionAuth }}
-      {{- $backendVersionAuthSecret := $backendVersionAuth.existingSecret }}
+      {{- $secretFiles := include "loki-vl-proxy.secretFiles" . | fromJsonArray }}
       {{- $otlpSecret := $observabilityOTLP.existingSecret }}
       {{- if and (hasKey .Values "systemMetrics") (hasKey .Values.systemMetrics "hostProc") }}
       {{- $hostProcEnabled = .Values.systemMetrics.hostProc.enabled }}
@@ -242,29 +241,17 @@ spec:
             {{- else if eq .Values.peerCache.discovery "static" }}
             - {{ printf "-peer-static=%s" (join "," .Values.peerCache.peers) | quote }}
             {{- end }}
-            {{- /* Peer auth token sourced from a Secret env var. Required by default;
-                   the chart auto-generates a Secret when no values are provided
-                   (see templates/peer-secret.yaml). */}}
-            - {{ "-peer-auth-token=$(PEER_AUTH_TOKEN)" | quote }}
             {{- end }}
-            {{- /* Secrets sourced from an existing Secret: the flag value is an
-                   $(ENV) reference resolved by the kubelet, so the secret itself
-                   never appears in the pod spec or in `helm get values`. */}}
-            {{- if $adminAuthSecret }}
-            - {{ "-server.admin-auth-token=$(ADMIN_AUTH_TOKEN)" | quote }}
-            {{- end }}
-            {{- if $deleteAuthSecret }}
-            - {{ "-delete-api-auth-token=$(DELETE_API_AUTH_TOKEN)" | quote }}
-            {{- end }}
-            {{- if $backendAuthSecret }}
-            - {{ "-backend-basic-auth=$(BACKEND_BASIC_AUTH)" | quote }}
-            {{- end }}
-            {{- if $backendVersionAuthSecret }}
-            - {{ "-backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH)" | quote }}
+            {{- /* Secrets are mounted as files, so no secret is in the process
+                   arguments or environment. A binary too old to know a -file
+                   flag exits on it ("flag provided but not defined") and
+                   never serves without the credential. */}}
+            {{- range $secretFiles }}
+            - {{ printf "-%s=%s/%s" .flag .dir .path | quote }}
             {{- end }}
           {{- $hasChartEnv := and (kindIs "slice" .Values.env) (gt (len .Values.env) 0) }}
           {{- $hasExtraEnv := and (kindIs "slice" .Values.extraEnv) (gt (len .Values.extraEnv) 0) }}
-          {{- if or .Values.peerCache.enabled $adminAuthSecret $deleteAuthSecret $backendAuthSecret $backendVersionAuthSecret $otlpSecret $hasChartEnv $hasExtraEnv $goMemLimitValue $injectOTELFromPod }}
+          {{- if or .Values.peerCache.enabled $otlpSecret $hasChartEnv $hasExtraEnv $goMemLimitValue $injectOTELFromPod }}
           env:
             {{- if $goMemLimitValue }}
             - name: GOMEMLIMIT
@@ -291,47 +278,6 @@ spec:
                 fieldRef:
                   fieldPath: {{ printf "metadata.labels['%s']" .Values.peerCache.topologyLabel | quote }}
             {{- end }}
-            - name: PEER_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  {{- if .Values.peerCache.existingSecret }}
-                  name: {{ .Values.peerCache.existingSecret | quote }}
-                  key: {{ .Values.peerCache.existingSecretKey | default "token" | quote }}
-                  {{- else if .Values.peerCache.authToken }}
-                  name: {{ printf "%s-peer-auth-literal" .Release.Name | quote }}
-                  key: token
-                  {{- else }}
-                  name: {{ printf "%s-peer-auth" .Release.Name | quote }}
-                  key: token
-                  {{- end }}
-            {{- end }}
-            {{- if $adminAuthSecret }}
-            - name: ADMIN_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $adminAuthSecret | quote }}
-                  key: {{ default "token" $adminAuth.existingSecretKey | quote }}
-            {{- end }}
-            {{- if $deleteAuthSecret }}
-            - name: DELETE_API_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $deleteAuthSecret | quote }}
-                  key: {{ default "token" $deleteAuth.existingSecretKey | quote }}
-            {{- end }}
-            {{- if $backendAuthSecret }}
-            - name: BACKEND_BASIC_AUTH
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $backendAuthSecret | quote }}
-                  key: {{ default "basic-auth" $backendAuth.existingSecretKey | quote }}
-            {{- end }}
-            {{- if $backendVersionAuthSecret }}
-            - name: BACKEND_VERSION_BASIC_AUTH
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $backendVersionAuthSecret | quote }}
-                  key: {{ default "basic-auth" $backendVersionAuth.existingSecretKey | quote }}
             {{- end }}
             {{- if $otlpSecret }}
             {{- /* The binary reads OTLP_HEADERS when -otlp-headers is unset. */}}
@@ -402,13 +348,9 @@ spec:
             failureThreshold: {{ .Values.probe.readiness.failureThreshold }}
             successThreshold: {{ .Values.probe.readiness.successThreshold }}
           {{- end }}
-          {{- /* Unset, the startup probe follows the restart hand-over: the disk
-                 cache index is rebuilt before the listener opens. */}}
-          {{- $startupEnabled := .Values.probe.startup.enabled }}
-          {{- if kindIs "invalid" $startupEnabled }}
-          {{- $startupEnabled = .Values.cacheHandover.enabled }}
-          {{- end }}
-          {{- if $startupEnabled }}
+          {{- /* Unset, the startup probe follows the disk cache: its index is
+                 rebuilt before the listener opens. */}}
+          {{- if include "loki-vl-proxy.startupProbeEnabled" . }}
           startupProbe:
             httpGet:
               path: {{ .Values.probe.startup.path | quote }}
@@ -416,7 +358,7 @@ spec:
             initialDelaySeconds: {{ .Values.probe.startup.initialDelaySeconds }}
             periodSeconds: {{ .Values.probe.startup.periodSeconds }}
             timeoutSeconds: {{ .Values.probe.startup.timeoutSeconds }}
-            failureThreshold: {{ .Values.probe.startup.failureThreshold | default (ternary 60 30 .Values.cacheHandover.enabled) }}
+            failureThreshold: {{ include "loki-vl-proxy.startupFailureThreshold" . }}
           {{- end }}
           {{- with .Values.lifecycle }}
           lifecycle:
@@ -431,7 +373,7 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts $hostProcEnabled $customPatternsFileEnabled }}
+          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts $hostProcEnabled $customPatternsFileEnabled $secretFiles }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: cache-data
@@ -449,6 +391,11 @@ spec:
               mountPath: {{ $customPatternsMountDir | quote }}
               readOnly: true
             {{- end }}
+            {{- range $secretFiles }}
+            - name: {{ .volume }}
+              mountPath: {{ .dir }}
+              readOnly: true
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -456,7 +403,7 @@ spec:
         {{- with .Values.extraContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- if or .Values.extraVolumes $hostProcEnabled $customPatternsFileEnabled (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
+      {{- if or .Values.extraVolumes $hostProcEnabled $customPatternsFileEnabled $secretFiles (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
       volumes:
         {{- if and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet")) }}
         - name: cache-data
@@ -478,6 +425,14 @@ spec:
             items:
               - key: {{ default "custom-patterns.json" .Values.patternsCustom.file.key | quote }}
                 path: {{ $customPatternsFileName | quote }}
+        {{- end }}
+        {{- range $secretFiles }}
+        - name: {{ .volume }}
+          secret:
+            secretName: {{ .secretName | quote }}
+            items:
+              - key: {{ .key | quote }}
+                path: {{ .path }}
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}

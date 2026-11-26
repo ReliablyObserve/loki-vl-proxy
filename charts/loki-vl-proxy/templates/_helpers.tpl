@@ -260,34 +260,64 @@ a metrics port the binary never serves, or the binary would refuse to start
 {{- end -}}
 
 {{/*
+loki-vl-proxy.secretFiles — the secrets the chart takes from a Secret, as a
+JSON list. Each is mounted as one read-only file and passed to the proxy as
+-<flag>=<dir>/<path>.
+*/}}
+{{- define "loki-vl-proxy.secretFiles" -}}
+{{- $out := list -}}
+{{- if .Values.peerCache.enabled -}}
+{{- $name := .Values.peerCache.existingSecret -}}
+{{- $key := .Values.peerCache.existingSecretKey | default "token" -}}
+{{- if not $name -}}
+{{- $name = printf "%s-peer-auth%s" .Release.Name (ternary "-literal" "" (not (empty .Values.peerCache.authToken))) -}}
+{{- $key = "token" -}}
+{{- end -}}
+{{- $out = append $out (dict "flag" "peer-auth-token-file" "volume" "secret-peer-auth" "path" "token" "secretName" $name "key" $key) -}}
+{{- end -}}
+{{- range $spec := list
+    (dict "values" "adminAuth" "flag" "server.admin-auth-token-file" "volume" "secret-admin-auth" "path" "token")
+    (dict "values" "deleteAuth" "flag" "delete-api-auth-token-file" "volume" "secret-delete-auth" "path" "token")
+    (dict "values" "backendAuth" "flag" "backend-basic-auth-file" "volume" "secret-backend-auth" "path" "basic-auth")
+    (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth-file" "volume" "secret-backend-version-auth" "path" "basic-auth") -}}
+{{- $auth := default (dict) (get $.Values $spec.values) -}}
+{{- if $auth.existingSecret -}}
+{{- $out = append $out (dict "flag" $spec.flag "volume" $spec.volume "path" $spec.path "secretName" $auth.existingSecret "key" (default $spec.path $auth.existingSecretKey)) -}}
+{{- end -}}
+{{- end -}}
+{{- range $secret := $out -}}
+{{- $_ := set $secret "dir" (printf "/var/run/secrets/loki-vl-proxy/%s" (trimPrefix "secret-" $secret.volume)) -}}
+{{- end -}}
+{{- toJson $out -}}
+{{- end }}
+
+{{/*
 loki-vl-proxy.validateSecrets — fail-fast when a secret is configured twice:
-once as a plain value (extraArgs / observability.otlp.headers) and once from an
-existing Secret. The Go flag package fatals on a duplicate flag, and for OTLP
-headers the plain flag would silently win over the Secret-backed env var.
-Invoked from the deployment.
+once through extraArgs (value or -file flag) or observability.otlp.headers, and
+once from an existing Secret. The proxy refuses a value flag next to a file
+flag, and for OTLP headers the plain flag would silently win over the
+Secret-backed env var. Invoked from the deployment.
 */}}
 {{- define "loki-vl-proxy.validateSecrets" -}}
 {{- $extraArgs := default (dict) .Values.extraArgs -}}
-{{- $adminAuth := default (dict) .Values.adminAuth -}}
-{{- if and $adminAuth.existingSecret (hasKey $extraArgs "server.admin-auth-token") -}}
-{{- fail "adminAuth.existingSecret cannot be combined with extraArgs.\"server.admin-auth-token\"; the chart renders -server.admin-auth-token from the Secret. Remove the extraArgs entry." -}}
+{{- range $spec := list
+    (dict "values" "adminAuth" "flag" "server.admin-auth-token" "quoted" true)
+    (dict "values" "backendAuth" "flag" "backend-basic-auth")
+    (dict "values" "backendVersionAuth" "flag" "backend-version-basic-auth")
+    (dict "values" "deleteAuth" "flag" "delete-api-auth-token") -}}
+{{- $auth := default (dict) (get $.Values $spec.values) -}}
+{{- range $flag := list $spec.flag (printf "%s-file" $spec.flag) -}}
+{{- if and $auth.existingSecret (hasKey $extraArgs $flag) -}}
+{{- $key := ternary (printf "extraArgs.%q" $flag) (printf "extraArgs.%s" $flag) (hasKey $spec "quoted") -}}
+{{- fail (printf "%s.existingSecret cannot be combined with %s; the chart renders -%s-file from the Secret. Remove the extraArgs entry." $spec.values $key $spec.flag) -}}
 {{- end -}}
-{{- $backendAuth := default (dict) .Values.backendAuth -}}
-{{- if and $backendAuth.existingSecret (hasKey $extraArgs "backend-basic-auth") -}}
-{{- fail "backendAuth.existingSecret cannot be combined with extraArgs.backend-basic-auth; the chart renders -backend-basic-auth from the Secret. Remove the extraArgs entry." -}}
 {{- end -}}
-{{- $backendVersionAuth := default (dict) .Values.backendVersionAuth -}}
-{{- if and $backendVersionAuth.existingSecret (hasKey $extraArgs "backend-version-basic-auth") -}}
-{{- fail "backendVersionAuth.existingSecret cannot be combined with extraArgs.backend-version-basic-auth; the chart renders -backend-version-basic-auth from the Secret. Remove the extraArgs entry." -}}
 {{- end -}}
 {{- $deleteAuth := default (dict) .Values.deleteAuth -}}
-{{- if and $deleteAuth.existingSecret (hasKey $extraArgs "delete-api-auth-token") -}}
-{{- fail "deleteAuth.existingSecret cannot be combined with extraArgs.delete-api-auth-token; the chart renders -delete-api-auth-token from the Secret. Remove the extraArgs entry." -}}
-{{- end -}}
 {{- /* The delete API answers only requests that carry its own token; the
 proxy refuses to start with it enabled and no token (validateDeleteAPI). */ -}}
-{{- if and (eq (toString (get $extraArgs "delete-api-enabled")) "true") (not $deleteAuth.existingSecret) (eq (trim (toString (default "" (get $extraArgs "delete-api-auth-token")))) "") -}}
-{{- fail "extraArgs.delete-api-enabled=true requires a delete token: set deleteAuth.existingSecret (or extraArgs.delete-api-auth-token). Every delete request must carry it in X-Delete-Token or Authorization: Bearer." -}}
+{{- if and (eq (toString (get $extraArgs "delete-api-enabled")) "true") (not $deleteAuth.existingSecret) (eq (trim (toString (default "" (get $extraArgs "delete-api-auth-token")))) "") (eq (trim (toString (default "" (get $extraArgs "delete-api-auth-token-file")))) "") -}}
+{{- fail "extraArgs.delete-api-enabled=true requires a delete token: set deleteAuth.existingSecret (or extraArgs.delete-api-auth-token / extraArgs.delete-api-auth-token-file). Every delete request must carry it in X-Delete-Token or Authorization: Bearer." -}}
 {{- end -}}
 {{- /* Per-tenant limits are keyed by X-Scope-OrgID, which the proxy ignores while
 tenancy is off; it refuses to start then (validateTenantLimitsNeedTenancy). */ -}}
@@ -331,3 +361,63 @@ the disk cache to close. A configured exec or httpGet preStop is not counted.
 {{- end -}}
 {{- $grace -}}
 {{- end -}}
+
+{{/*
+"true" when the proxy runs with a disk cache the chart can see: a non-empty
+extraArgs.disk-cache-path, or persistence.enabled without that key (the chart
+then passes the flag). Empty otherwise.
+*/}}
+{{- define "loki-vl-proxy.diskCacheEnabled" -}}
+{{- if hasKey .Values.extraArgs "disk-cache-path" -}}
+{{- if ne (toString (default "" (get .Values.extraArgs "disk-cache-path"))) "" -}}true{{- end -}}
+{{- else if .Values.persistence.enabled -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+"true" when a startup probe is rendered: probe.startup.enabled as set, or,
+unset, with a disk cache or the restart hand-over (the disk cache index is
+rebuilt before the listener opens). Empty otherwise.
+*/}}
+{{- define "loki-vl-proxy.startupProbeEnabled" -}}
+{{- $enabled := .Values.probe.startup.enabled -}}
+{{- if kindIs "invalid" $enabled -}}
+{{- $enabled = or (eq (include "loki-vl-proxy.diskCacheEnabled" .) "true") .Values.cacheHandover.enabled -}}
+{{- end -}}
+{{- if $enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The startup probe's failureThreshold: the configured value, else 120 with a disk
+cache (605 s with the default delay and period), else 60 with the restart
+hand-over, else 30.
+*/}}
+{{- define "loki-vl-proxy.startupFailureThreshold" -}}
+{{- $default := ternary 60 30 .Values.cacheHandover.enabled -}}
+{{- if eq (include "loki-vl-proxy.diskCacheEnabled" .) "true" -}}{{- $default = 120 -}}{{- end -}}
+{{- .Values.probe.startup.failureThreshold | default $default -}}
+{{- end -}}
+
+{{/*
+A Deployment's progressDeadlineSeconds: workload.progressDeadlineSeconds as
+set. Unset, with a disk cache and a startup probe, the longest one replica may
+take to be replaced (grace period of the old pod, the new pod's startup window
+and, with the restart hand-over, its warm-up timeout and minReadySeconds) plus
+300 s for scheduling, volume attach, image pull and the readiness probe;
+empty when that is within the Kubernetes default of 600 s, and without a disk
+cache.
+*/}}
+{{- define "loki-vl-proxy.progressDeadlineSeconds" -}}
+{{- if not (kindIs "invalid" .Values.workload.progressDeadlineSeconds) -}}
+{{- int .Values.workload.progressDeadlineSeconds -}}
+{{- else if and (eq (include "loki-vl-proxy.diskCacheEnabled" .) "true") (eq (include "loki-vl-proxy.startupProbeEnabled" .) "true") -}}
+{{- $window := add (int .Values.probe.startup.initialDelaySeconds) (mul (int .Values.probe.startup.periodSeconds) (int (include "loki-vl-proxy.startupFailureThreshold" .))) -}}
+{{- $total := add (int (include "loki-vl-proxy.terminationGracePeriodSeconds" .)) $window 300 -}}
+{{- if .Values.cacheHandover.enabled -}}
+{{- $total = add $total (int .Values.cacheHandover.startupWarmTimeoutSeconds) (int .Values.cacheHandover.minReadySeconds) -}}
+{{- end -}}
+{{- if gt (int $total) 600 -}}{{- $total -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+

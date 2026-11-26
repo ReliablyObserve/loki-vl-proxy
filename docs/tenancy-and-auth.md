@@ -119,15 +119,15 @@ The proxy trusts nothing about the caller unless you configure it:
 | `-forward-tenant-header` / `FORWARD_TENANT_HEADER` | `extraArgs.forward-tenant-header` | `true` | no | none |
 | `-multi-tenant-max-fanout` | `extraArgs.multi-tenant-max-fanout` | `64` | no | `multi_tenant_queries_enabled` (Loki has no count cap) |
 | `-delete-api-enabled` | `extraArgs.delete-api-enabled` | `false` | no | compactor `retention_enabled` + deletion |
-| `-delete-api-auth-token` | `deleteAuth.existingSecret` / `extraArgs.delete-api-auth-token` | empty, required by the delete API | no | none |
-| `-server.admin-auth-token` | `adminAuth.existingSecret` / `extraArgs.server.admin-auth-token` | empty | no | none |
+| `-delete-api-auth-token` / `-delete-api-auth-token-file` / `DELETE_API_AUTH_TOKEN` | `deleteAuth.existingSecret` / `extraArgs.delete-api-auth-token` | empty, required by the delete API | no | none |
+| `-server.admin-auth-token` / `-server.admin-auth-token-file` / `ADMIN_AUTH_TOKEN` | `adminAuth.existingSecret` / `extraArgs.server.admin-auth-token` | empty | no | none |
 | `-admin-listen` | `extraArgs.admin-listen` | `127.0.0.1:3101` | no | none |
-| `-peer-auth-token` | `peerCache.authToken` / `peerCache.existingSecret` | empty, required with peers | no | none |
+| `-peer-auth-token` / `-peer-auth-token-file` / `PEER_AUTH_TOKEN` | `peerCache.authToken` / `peerCache.existingSecret` | empty, required with peers | no | none |
 | `-forward-authorization`, `-forward-headers`, `-forward-cookies` | `extraArgs.*` | off / empty | no | none |
 | `-metrics.trust-proxy-headers` | `observability.metrics.trustProxyHeaders` | `false` | no | none |
 | `-metrics.export-sensitive-labels` | `observability.metrics.exportSensitiveLabels` | `false` | no | none |
-| `-backend-basic-auth` | `backendAuth.existingSecret` / `extraArgs.backend-basic-auth` | empty | no | none |
-| `-backend-version-basic-auth` | `backendVersionAuth.existingSecret` / `extraArgs.backend-version-basic-auth` | empty | no | none |
+| `-backend-basic-auth` / `-backend-basic-auth-file` / `BACKEND_BASIC_AUTH` | `backendAuth.existingSecret` / `extraArgs.backend-basic-auth` | empty | no | none |
+| `-backend-version-basic-auth` / `-backend-version-basic-auth-file` / `BACKEND_VERSION_BASIC_AUTH` | `backendVersionAuth.existingSecret` / `extraArgs.backend-version-basic-auth` | empty | no | none |
 
 `proxy.Config`, for library users, is unchanged: its zero value keeps numeric passthrough on (`StrictTenantRouting: false`), so tenancy is on unless `StrictTenantRouting` is set with no other tenant setting.
 
