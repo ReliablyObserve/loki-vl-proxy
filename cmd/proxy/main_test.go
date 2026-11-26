@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -2588,6 +2589,35 @@ func TestExplicitDuration(t *testing.T) {
 	for in, want := range map[time.Duration]time.Duration{0: -1, -time.Second: -1, time.Minute: time.Minute} {
 		if got := explicitDuration(in); got != want {
 			t.Errorf("explicitDuration(%v) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// conformance: observability-metrics-histograms-and-labels
+func TestBuildProxyConfig_MetricsDurationBuckets(t *testing.T) {
+	for _, tc := range []struct {
+		raw     string
+		want    []float64
+		invalid bool
+	}{
+		{raw: "", want: metrics.DefaultDurationBuckets()},
+		{raw: "0.1, 1, 60, 300", want: []float64{0.1, 1, 60, 300}},
+		{raw: "60,10", invalid: true},
+		{raw: "0,10", invalid: true},
+		{raw: "1,1", invalid: true},
+		{raw: "1,+Inf", invalid: true},
+		{raw: "1m", invalid: true},
+		{raw: strings.Repeat("1,", 32) + "2", invalid: true},
+	} {
+		got, err := buildProxyConfig(proxyRuntimeConfig{labelStyle: "passthrough", metadataFieldMode: "hybrid", metricsDurationBuckets: tc.raw})
+		if tc.invalid {
+			if err == nil || !strings.Contains(err.Error(), "-metrics.duration-buckets") {
+				t.Errorf("%q: error = %v, want one naming the flag", tc.raw, err)
+			}
+			continue
+		}
+		if err != nil || !slices.Equal(got.MetricsDurationBuckets, tc.want) {
+			t.Errorf("%q: got %v, %v; want %v", tc.raw, got.MetricsDurationBuckets, err, tc.want)
 		}
 	}
 }

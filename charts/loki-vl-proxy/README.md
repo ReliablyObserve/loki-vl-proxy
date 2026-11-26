@@ -51,6 +51,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `observability.otlp.existingSecret` | `""` | Existing Secret holding the OTLP exporter headers (`key=value[,key=value]`, usually an `Authorization` value), exposed to the proxy as `OTLP_HEADERS` from a `secretKeyRef`. Setting it together with `observability.otlp.headers` or `extraArgs.otlp-headers` fails rendering |
 | `observability.otlp.existingSecretKey` | `headers` | Key within `observability.otlp.existingSecret` |
 | `serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitor |
+| `serviceMonitor.honorLabels` | `true` | Keep the proxy's `endpoint` label instead of the scrape target's (`false`: it arrives as `exported_endpoint`) |
 | `networkPolicy.enabled` | `true` | Restrict ingress to Grafana pods on port 3100 and egress to port 9428 (VictoriaLogs) and DNS |
 | `networkPolicy.monitoringNamespace` | `""` | Namespace allowed to scrape the metrics port when ServiceMonitor is enabled |
 | `networkPolicy.monitoringFrom` | `[]` | Explicit NetworkPolicy peers allowed to scrape the metrics port |
@@ -145,6 +146,10 @@ prometheusRule:
 ```
 
 The ServiceMonitor scrapes the `metrics` port (`extraArgs.metrics-listen`, default `:9091`). To push metrics over OTLP without a scrape endpoint, set `extraArgs.server.register-instrumentation: "false"`, `extraArgs.metrics-listen: ""` and `service.metrics.enabled: false` together.
+
+The ServiceMonitor sets `honorLabels: true` (`serviceMonitor.honorLabels`), so the proxy's `endpoint` label (`query_range`, `labels`, `select_logsql_query`, ...) is stored under that name and the dashboard and alerts can select and group by it. The VictoriaMetrics operator copies the setting into the `VMServiceScrape` it converts the ServiceMonitor to. A scrape object you write yourself needs `honorLabels: true` on its endpoint (`honor_labels: true` in a Prometheus or vmagent scrape config). See [Scrape label collisions](../../docs/observability.md#scrape-label-collisions-endpoint) before an upgrade if your own queries use `exported_endpoint`.
+
+`observability.metrics.durationBuckets` (flag `-metrics.duration-buckets`) replaces the bounds of the duration histograms; empty keeps the defaults, which reach 120 s.
 
 ## Host system metrics (opt-in)
 
