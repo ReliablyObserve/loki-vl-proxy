@@ -39,10 +39,11 @@ type Profile struct {
 	// step, which takes the function per series and per anchored bucket and merges the windows (the proxy's
 	// dynamicIdentityWindows). The instant and step-bucket texts keep the hash after the gate.
 	IdentityAhead bool
-	// StreamAliases says Label answers translate.StreamAliasProbe and StreamAliasNameProbe: a label may be the alias
-	// of a stored field (-field-mapping-label-mode alias and both), read after a parser as Loki reads that label. A
-	// profile without it asks no probe and writes the text it wrote before.
-	StreamAliases bool
+	// AliasField returns the stored field whose stream label a label is under an alias (-field-mapping-label-mode
+	// alias and both), "" for any other label, and FieldAlias the alias of such a field: after a parser such a label
+	// is read as Loki reads a stream label a parsed key collides with. Nil (the default mode) writes the text the
+	// lowering wrote before.
+	AliasField, FieldAlias func(string) string
 	// metric says the log query is the one of a metric row (metricLogQuery).
 	metric bool
 	// Budget, when set, is asked at every node the lowering visits whether the caller's time for planning is spent;
@@ -371,7 +372,7 @@ func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe)
 // label that translates to several parsed keys or to no field.
 func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stageDefs, levels bool) (filterStages, error) {
 	var res filterStages
-	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv, numericErrorMode: NumericEqualityErrorPipeline(sel.Stages), aliasProbe: prof.StreamAliases}
+	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv, numericErrorMode: NumericEqualityErrorPipeline(sel.Stages), aliasField: prof.AliasField}
 	var seenNumericErrors logsql.AnyOf
 	trackNumericErrors := lb.numericErrorMode && numericPipelineFiltersError(sel.Stages)
 	numericAlreadyFailed := false
@@ -567,8 +568,8 @@ type leafBuilder struct {
 	reserved, stageReserved []string
 	numericError            logsql.FilterExpr
 	numericErrorMode        bool
-	// aliasProbe is the profile's StreamAliases.
-	aliasProbe bool
+	// aliasField is the profile's AliasField.
+	aliasField func(string) string
 }
 
 // labelFilter is the filter of a label filter stage that checkLabelFilters accepted: the leaf, or the and/or

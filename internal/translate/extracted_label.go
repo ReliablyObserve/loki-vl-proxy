@@ -1,9 +1,7 @@
 package translate
 
 import (
-	"regexp"
 	"strconv"
-	"strings"
 	"unicode"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -52,7 +50,7 @@ func LogsQLFieldName(name string) string {
 
 // extractedCollides is the condition under which the label base is a stream label of the entry, so a parsed key
 // base is renamed: every stream has service_name in Loki; any other name is in _stream (a dotted spelling too), or
-// one of aliasFields is (StreamAliasFields).
+// one of aliasFields is (the stored fields of an alias, lower.Profile AliasField).
 func extractedCollides(base string, aliasFields []string) logsql.FilterExpr {
 	value := logsql.FieldFilter{Field: ExtractedScratch + "_" + base, Op: logsql.FieldOpAny}
 	if base == "service_name" {
@@ -64,43 +62,6 @@ func extractedCollides(base string, aliasFields []string) logsql.FilterExpr {
 	}
 }
 
-// StreamAliasProbe is the label name a label translation function answers, followed by a label, with the stored
-// fields that carry that label as their stream label under another name: a -field-mapping field whose answers name
-// it by an alias (-field-mapping-label-mode alias and both). The answer is StreamAliasProbe, "=" and the field;
-// any other answer means none.
-const StreamAliasProbe = "\x04"
-
-// StreamAliasNameProbe is the label name a label translation function answers, followed by a stored field, with
-// the alias that field carries as its stream label (StreamAliasProbe the other way round): StreamAliasNameProbe,
-// "=" and the alias; any other answer means none.
-const StreamAliasNameProbe = "\x05"
-
-// StreamAliasName returns the alias whose stream label the stored field holds, as labelFn answers
-// StreamAliasNameProbe; "" when it answers none.
-func StreamAliasName(labelFn func(string) string, field string) string {
-	if labelFn == nil {
-		return ""
-	}
-	alias, ok := strings.CutPrefix(labelFn(StreamAliasNameProbe+field), StreamAliasNameProbe+"=")
-	if !ok {
-		return ""
-	}
-	return alias
-}
-
-// StreamAliasFields returns the stored fields whose presence in _stream makes base a stream label besides base
-// itself, as labelFn answers StreamAliasProbe; nil when it answers none.
-func StreamAliasFields(labelFn func(string) string, base string) []string {
-	if labelFn == nil {
-		return nil
-	}
-	field, ok := strings.CutPrefix(labelFn(StreamAliasProbe+base), StreamAliasProbe+"=")
-	if !ok || field == "" {
-		return nil
-	}
-	return []string{field}
-}
-
 // StreamLabelPattern is the regexp a _stream copy matches when it holds the stream label base: the label under its
 // own name in either spelling, or one of aliasFields.
 func StreamLabelPattern(base string, aliasFields []string) string {
@@ -109,15 +70,25 @@ func StreamLabelPattern(base string, aliasFields []string) string {
 
 func streamLabelPattern(base string, aliasFields []string) string {
 	name := dotOrUnderscore(base)
-	if len(aliasFields) > 0 {
-		alts := make([]string, 0, len(aliasFields)+1)
-		alts = append(alts, name)
-		for _, f := range aliasFields {
-			alts = append(alts, regexp.QuoteMeta(f))
-		}
-		name = "(?:" + strings.Join(alts, "|") + ")"
+	if len(aliasFields) == 0 {
+		return `[{,]` + name + `="`
 	}
-	return `[{,]` + name + `="`
+	b := make([]byte, 0, len(name)+32)
+	b = append(b, "[{,](?:"...)
+	b = append(b, name...)
+	for _, f := range aliasFields {
+		b = append(b, '|')
+		for i := 0; i < len(f); i++ {
+			switch c := f[i]; c {
+			case '\\', '.', '+', '*', '?', '(', ')', '|', '[', ']', '{', '}', '^', '$':
+				b = append(b, '\\', c)
+			default:
+				b = append(b, c)
+			}
+		}
+	}
+	b = append(b, ")=\""...)
+	return string(b)
 }
 
 // ExtractedFilter is the filter on the label base_extracted: parsed, a filter on the scratch field that holds

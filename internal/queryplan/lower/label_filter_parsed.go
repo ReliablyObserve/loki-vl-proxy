@@ -209,9 +209,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		// field the parsers unpack the key into.
 		parsed := lb.parsedFieldLeaf(translate.ExtractedScratch+"_"+base, e)
 		var aliasFields []string
-		if lb.aliasProbe {
-			aliasFields = translate.StreamAliasFields(lb.label, base)
-		}
+		aliasFields = aliasFieldList(lb.aliasField, base)
 		if f, ok = translate.ExtractedFilterAliased(base, aliasFields, parsed, f); !ok {
 			return logsql.FieldFilter{}, "LogSelect label filter _extracted"
 		}
@@ -220,12 +218,20 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 	return f, ""
 }
 
-// streamAliasFields is translate.StreamAliasFields when the profile answers the probes, nil otherwise.
+// streamAliasFields is aliasFieldList of the profile's AliasField.
 func (lb *leafBuilder) streamAliasFields(label string) []string {
-	if !lb.aliasProbe {
+	return aliasFieldList(lb.aliasField, label)
+}
+
+// aliasFieldList is the stored field aliasField names for label as a list, nil for none or a nil aliasField.
+func aliasFieldList(aliasField func(string) string, label string) []string {
+	if aliasField == nil {
 		return nil
 	}
-	return translate.StreamAliasFields(lb.label, label)
+	if field := aliasField(label); field != "" {
+		return []string{field}
+	}
+	return nil
 }
 
 // noteBase records a label whose name_extracted rename the query's filters read, for the query and for the stage.

@@ -35,31 +35,21 @@ func TestExtractedFilterAliased(t *testing.T) {
 	}
 }
 
-// The probes read only their own answers: any other answer of a label function names no field and no alias.
+// The alias pattern escapes the regexp metacharacters of a stored field name.
 //
 // conformance: field-mapping-label-names
-func TestStreamAliasProbes(t *testing.T) {
-	answers := map[string]string{
-		StreamAliasProbe + "pod":              StreamAliasProbe + "=k8s.pod.name",
-		StreamAliasNameProbe + "k8s.pod.name": StreamAliasNameProbe + "=pod",
-		StreamAliasProbe + "odd":              "k8s.pod.name",
-		StreamAliasNameProbe + "odd":          "pod",
-		StreamAliasProbe + "with,comma":       StreamAliasProbe + "=a,b",
-	}
-	fn := func(label string) string { return answers[label] }
-	if got := StreamAliasFields(fn, "pod"); len(got) != 1 || got[0] != "k8s.pod.name" {
-		t.Fatalf("fields %v", got)
-	}
-	if got := StreamAliasName(fn, "k8s.pod.name"); got != "pod" {
-		t.Fatalf("name %q", got)
-	}
-	if StreamAliasFields(fn, "odd") != nil || StreamAliasName(fn, "odd") != "" || StreamAliasFields(nil, "pod") != nil || StreamAliasName(nil, "x") != "" {
-		t.Fatal("a foreign answer was read as a probe answer")
-	}
-	if got := StreamAliasFields(fn, "with,comma"); len(got) != 1 || got[0] != "a,b" {
-		t.Fatalf("a field with a comma: %v", got)
-	}
-	if got := streamLabelPattern("k8s_pod_name", nil); got != `[{,]k8s[._]pod[._]name="` {
-		t.Fatalf("pattern %s", got)
+func TestStreamLabelPattern(t *testing.T) {
+	for _, c := range []struct {
+		base   string
+		fields []string
+		want   string
+	}{
+		{"k8s_pod_name", nil, `[{,]k8s[._]pod[._]name="`},
+		{"pod", []string{"k8s.pod.name"}, `[{,](?:pod|k8s\.pod\.name)="`},
+		{"x", []string{`a+b(c)|d[e]{f}^$?*\`}, `[{,](?:x|a\+b\(c\)\|d\[e\]\{f\}\^\$\?\*\\)="`},
+	} {
+		if got := StreamLabelPattern(c.base, c.fields); got != c.want {
+			t.Errorf("%s %v: %s, want %s", c.base, c.fields, got, c.want)
+		}
 	}
 }

@@ -3,9 +3,10 @@ package proxy
 import (
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
@@ -164,23 +165,22 @@ func (lt *LabelTranslator) aliasField(label string) string {
 	return field
 }
 
-// streamAliasProbe answers translate.StreamAliasProbe for base: the stored
-// field whose presence in _stream makes base a stream label in the alias and
-// both modes, so a parsed key base is renamed base_extracted beside it.
-func (lt *LabelTranslator) streamAliasProbe(base string) string {
-	if field := lt.aliasField(base); field != "" {
-		return translate.StreamAliasProbe + "=" + field
+// fieldAlias is the alias a stored field carries as its stream label in the
+// alias and both modes, "" for any other field (lower.Profile FieldAlias).
+func (lt *LabelTranslator) fieldAlias(field string) string {
+	if alias, ok := lt.aliasAnswer(field); ok {
+		return alias
 	}
 	return ""
 }
 
-// streamAliasNameProbe answers translate.StreamAliasNameProbe for a stored
-// field: the alias whose stream label it holds in the alias and both modes.
-func (lt *LabelTranslator) streamAliasNameProbe(field string) string {
-	if alias, ok := lt.aliasAnswer(field); ok {
-		return translate.StreamAliasNameProbe + "=" + alias
+// withAliases gives a lowering profile the alias functions in the alias and
+// both modes; the original mode leaves them nil and its text unchanged.
+func (lt *LabelTranslator) withAliases(prof lower.Profile) lower.Profile {
+	if lt.listsAliases() {
+		prof.AliasField, prof.FieldAlias = lt.aliasField, lt.fieldAlias
 	}
-	return ""
+	return prof
 }
 
 // aliasCollisionText gives the string translator's text, for a query the
@@ -191,16 +191,18 @@ func (lt *LabelTranslator) streamAliasNameProbe(field string) string {
 // translator prints (`__lxp_stream:~"[{,]name="`, the name with its
 // underscores as [._]), and returns text unchanged in the original mode.
 func (lt *LabelTranslator) aliasCollisionText(text string) string {
-	if !lt.listsAliases() || !strings.Contains(text, translate.ExtractedScratch+"_stream:~") {
+	if !lt.listsAliases() {
 		return text
 	}
+	stream := translate.ExtractedScratch + "_stream"
 	for field, alias := range lt.vlToLoki {
 		if answer, ok := lt.aliasAnswer(field); !ok || answer != alias {
 			continue
 		}
-		plain := translate.ExtractedScratch + "_stream:~" + strconv.Quote(`[{,]`+strings.ReplaceAll(alias, "_", "[._]")+`="`)
+		plain := logsql.FieldFilter{Field: stream, Op: logsql.FieldOpRegexp, Value: translate.StreamLabelPattern(alias, nil)}.String()
 		if strings.Contains(text, plain) {
-			text = strings.ReplaceAll(text, plain, translate.ExtractedScratch+"_stream:~"+strconv.Quote(translate.StreamLabelPattern(alias, []string{field})))
+			aliased := logsql.FieldFilter{Field: stream, Op: logsql.FieldOpRegexp, Value: translate.StreamLabelPattern(alias, []string{field})}.String()
+			text = strings.ReplaceAll(text, plain, aliased)
 		}
 	}
 	return text

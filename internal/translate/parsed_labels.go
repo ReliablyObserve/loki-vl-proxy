@@ -65,7 +65,7 @@ func ExtractedStatsText(b *strings.Builder, logfmt []bool, bases, labels []strin
 }
 
 // ExtractedStatsTextAliased is ExtractedStatsText where aliasFields gives, per base, the stored fields that also
-// make it a stream label (StreamAliasFields); nil for none.
+// make it a stream label (lower.Profile AliasField); nil for none.
 func ExtractedStatsTextAliased(b *strings.Builder, logfmt []bool, bases, labels []string, aliasFields func(string) []string) (copies bool) {
 	for i, lf := range logfmt {
 		b.WriteString(" | unpack_")

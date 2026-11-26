@@ -297,7 +297,7 @@ func (p *Proxy) deleteFilter(ctx context.Context, req deleteRequest) (string, er
 		return "", notServed("delete-query", err)
 	}
 	prof := loweringProfile(labelFn, streamFields, caps, false)
-	prof.StreamAliases = p.labelTranslator.listsAliases()
+	prof = p.labelTranslator.withAliases(prof)
 	f, err := lower.PlanLogFilter(plan, prof)
 	if err != nil {
 		return "", notServed("delete-query", err)

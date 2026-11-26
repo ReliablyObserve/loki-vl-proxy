@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // mappingVL is a VictoriaLogs stand-in holding one stream whose fields are
@@ -648,9 +648,6 @@ func FuzzFieldMappingLabelMode(f *testing.F) {
 	f.Add("x.y", "app", "z.w", "app", true)
 	f.Add("service.name", "service_name", "k8s_pod_name", "pod", false)
 	f.Fuzz(func(t *testing.T, field1, label1, field2, label2 string, underscores bool) {
-		// A collision probe is a label that starts with a control character, which no Loki label name does: a
-		// mapping named so would answer the probe instead.
-		probes := strings.ContainsAny(field1+label1+field2+label2, translate.StreamAliasProbe+translate.StreamAliasNameProbe)
 		style := LabelStylePassthrough
 		if underscores {
 			style = LabelStyleUnderscores
@@ -686,35 +683,23 @@ func FuzzFieldMappingLabelMode(f *testing.F) {
 						t.Fatalf("%s: listed alias %q of %q reads %q", mode, name, m.VLField, lt.ToVL(name))
 					}
 				}
-				// The collision probes: an alias names its field both ways, any other label none.
-				for _, label := range probeLabels(probes, m.LokiLabel, lt.baseName(m.VLField), answer) {
-					fields := translate.StreamAliasFields(lt.ToVL, label)
-					if lt.isAliasLabel(label) != (len(fields) == 1) {
-						t.Fatalf("%s: alias %q answers fields %v", mode, label, fields)
+				// The alias functions of the lowering: an alias names its field both ways, any other label none.
+				for _, label := range []string{m.LokiLabel, lt.baseName(m.VLField), answer} {
+					field := lt.aliasField(label)
+					if lt.isAliasLabel(label) != (field != "") {
+						t.Fatalf("%s: alias %q names field %q", mode, label, field)
 					}
-					if len(fields) == 1 && translate.StreamAliasName(lt.ToVL, fields[0]) != label {
-						t.Fatalf("%s: field %q of alias %q names %q", mode, fields[0], label, translate.StreamAliasName(lt.ToVL, fields[0]))
+					if field != "" && lt.fieldAlias(field) != label {
+						t.Fatalf("%s: field %q of alias %q names %q", mode, field, label, lt.fieldAlias(field))
 					}
 				}
 			}
 		}
-		// The default mode answers no probe: its lowering is unchanged.
-		for _, m := range mappings {
-			if probes {
-				break
-			}
-			if translate.StreamAliasFields(original.ToVL, m.LokiLabel) != nil || translate.StreamAliasName(original.ToVL, m.VLField) != "" ||
-				translate.StreamAliasFields(plain.ToVL, m.LokiLabel) != nil || translate.StreamAliasName(plain.ToVL, m.VLField) != "" {
-				t.Fatalf("the default mode answered a collision probe for %+v", m)
+		// The default mode gives the lowering no alias functions: its text is unchanged.
+		for _, lt := range []*LabelTranslator{plain, original} {
+			if prof := lt.withAliases(lower.Profile{}); prof.AliasField != nil || prof.FieldAlias != nil {
+				t.Fatal("the default mode gave the lowering alias functions")
 			}
 		}
 	})
-}
-
-// probeLabels returns labels, or none when the mappings name a collision probe.
-func probeLabels(probes bool, labels ...string) []string {
-	if probes {
-		return nil
-	}
-	return labels
 }

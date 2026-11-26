@@ -185,10 +185,8 @@ type metricLog struct {
 	// levelChain says the pipes derive detected_level for a filter on it (detectedLevelStages): a grouping by it
 	// reads that value, the translator derives it once.
 	levelChain bool
-	// label is the profile's label translation, asked for the stored fields that carry a stream label under an
-	// alias (translate.StreamAliasFields) when aliasProbe (the profile's StreamAliases) is set.
-	label      func(string) string
-	aliasProbe bool
+	// aliasField and fieldAlias are the profile's AliasField and FieldAlias.
+	aliasField, fieldAlias func(string) string
 }
 
 // metricLogQuery lowers the log query of a range aggregation the way the string translator writes a metric row's
@@ -210,7 +208,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if keepsSpelling(in, Profile{Label: prof.Label}) {
 		return metricLog{}, &NotLoweredError{Construct: owner + " " + escapedSpellingConstruct}
 	}
-	q, levelChain, err := logSelectQuery(in, Profile{Label: prof.Label, metric: true, StreamAliases: prof.StreamAliases})
+	q, levelChain, err := logSelectQuery(in, Profile{Label: prof.Label, metric: true, AliasField: prof.AliasField, FieldAlias: prof.FieldAlias})
 	if err != nil {
 		if nl, ok := err.(*NotLoweredError); ok {
 			return metricLog{}, &NotLoweredError{Construct: owner + " " + nl.Construct}
@@ -263,7 +261,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 		}
 	}
 	m := metricLog{head: head, restore: restore, pipes: pipesText, parser: hasParser(in), copies: copies, bareLogfmt: bare,
-		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, levelChain: levelChain, label: prof.Label, aliasProbe: prof.StreamAliases}
+		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, levelChain: levelChain, aliasField: prof.AliasField, fieldAlias: prof.FieldAlias}
 	// The translator narrows the unpack when its text of the query holds exactly one unpack pipe, quoted text included.
 	if unpacks != 1 || strings.Count(head, "| unpack_")+strings.Count(restore, "| unpack_")+strings.Count(m.pipes, "| unpack_") != 1 {
 		m.bareLogfmt = -1

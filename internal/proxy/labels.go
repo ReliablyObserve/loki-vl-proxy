@@ -5,8 +5,6 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
-
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // LabelStyle controls how VL field names are translated to Loki label names in responses,
@@ -121,13 +119,6 @@ func (lt *LabelTranslator) ToVL(lokiLabel string) string {
 	// Custom mapping takes precedence
 	if mapped, ok := lt.lokiToVL[lokiLabel]; ok {
 		return mapped
-	}
-	// The lowering's collision probes (alias and both modes, field_mapping_labels.go).
-	if strings.HasPrefix(lokiLabel, translate.StreamAliasProbe) {
-		return lt.streamAliasProbe(lokiLabel[len(translate.StreamAliasProbe):])
-	}
-	if strings.HasPrefix(lokiLabel, translate.StreamAliasNameProbe) {
-		return lt.streamAliasNameProbe(lokiLabel[len(translate.StreamAliasNameProbe):])
 	}
 	if lokiLabel == "detected_level" {
 		return "level"
