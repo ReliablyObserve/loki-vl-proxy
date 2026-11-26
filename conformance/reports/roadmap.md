@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **11 proven**, 27 partial, 3 gaps, 0 waived, 16 with no state recorded
+- Behaviour and feature items: **11 proven**, 27 partial, 3 gaps, 0 waived, 17 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -62,12 +62,12 @@ Held by at least one test that declares it.
 |---|---|---:|---:|---|
 | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 9 / 9 | 10 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
 | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 4 / 4 | 13 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
-| `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | — | 0 / 0 | 2 | internal/proxy/credential_passthrough_test.go: basic auth, forwarded OAuth (access and ID token), a custom header, cooki |
-| `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | — | 0 / 0 | 3 | internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled with an empty or blank delete token (an admin |
+| `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | — | 0 / 0 | 3 | internal/proxy/credential_passthrough_test.go: basic auth, forwarded OAuth (access and ID token), a custom header, cooki |
+| `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | — | 0 / 0 | 4 | internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled with an empty or blank delete token (an admin |
 | `error-coalescing-and-error-cache` — Identical requests share one run, and failed answers are held for their class's TTL | — | 9 / 9 | 7 | Unit and race tests drive real requests through the proxy's routes against a stub VictoriaLogs: TestErrorFlights_Concurr |
 | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | — | 0 / 0 | 2 | internal/proxy/instrumentation_secrets_test.go configures an admin token, a delete token, a peer token and peers, backen |
 | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 5 / 5 | 15 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
-| `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | — | 1 / 1 | 5 | internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from Loki 3.7.9 with auth_enabled: true (13 read |
+| `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | — | 1 / 1 | 6 | internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from Loki 3.7.9 with auth_enabled: true (13 read |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 1 / 1 | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |
 | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 1 / 1 | 15 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
 | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 12 / 12 | 8 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
@@ -83,6 +83,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | — | 0 / 0 | 2 | — |
 | `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | — | 0 / 0 | 5 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 12 | — |
+| `client-authentication` — Caller authentication is off by default; on, every route but the probes, /metrics and the peer routes needs a Basic or bearer credential | — | 0 / 0 | 5 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |

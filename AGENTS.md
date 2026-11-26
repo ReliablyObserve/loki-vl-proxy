@@ -434,6 +434,14 @@ cluster, so check at least:
   messages, URLs or internal details.
 - Logs and telemetry: no credentials or tokens, bounded label cardinality.
 - Admin and peer routes keep their authentication.
+- Caller authentication (`-server.auth-users-file`) covers every route by
+  default: a new route is protected unless it is added to
+  `clientAuthExemptPatterns` (internal/proxy/client_auth.go), which holds only
+  probes, `/metrics` and routes with their own credential. A new listener puts
+  `WithClientAuth` in front of its mux. Never read `Authorization` for another
+  token while caller authentication is on (it is the caller's);
+  `TestClientAuth_EveryRegisteredRouteIsProtectedOrExempt` checks every
+  registered pattern.
 - Concurrency: no data races or goroutine leaks; work stops when its last
   waiter cancels.
 - Dependencies: no new module without review; versions and checksums pinned.

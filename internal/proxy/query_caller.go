@@ -173,7 +173,7 @@ func (p *Proxy) requestCallerFromContext(ctx context.Context) requestCaller {
 		return requestCaller{}
 	}
 	r := meta.req
-	clientID, clientSource := metrics.ResolveClientContext(r, p.metricsTrustProxyHeaders)
+	clientID, clientSource := p.resolveClient(r)
 	user, userSource := p.callerUser(r, clientID, clientSource)
 	return newRequestCaller(r, r.Header.Get("X-Scope-Orgid"), user, userSource, grafanaClientProfileFromContext(ctx))
 }

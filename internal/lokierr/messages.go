@@ -115,6 +115,10 @@ const (
 	MsgDeleteMaxIntervalTooLong
 	// MsgDeleteRequestNotFound: a cancel of a delete request the tenant does not have (404).
 	MsgDeleteRequestNotFound
+	// MsgUnauthorized: "unauthorized", a request refused by the proxy's caller
+	// authentication (-server.auth-users-file, 401). Loki has no caller
+	// authentication of its own, so the text is the proxy's.
+	MsgUnauthorized
 	msgCount
 )
 
@@ -181,6 +185,7 @@ var messages = [msgCount]message{
 	MsgDeleteMaxIntervalInvalid: {"delete-max-interval-invalid", KindParam, http.StatusBadRequest, ShapeHTTPError},
 	MsgDeleteMaxIntervalTooLong: {"delete-max-interval-too-long", KindParam, http.StatusBadRequest, ShapeHTTPError},
 	MsgDeleteRequestNotFound:    {"delete-request-not-found", KindRoute, http.StatusNotFound, ShapeHTTPError},
+	MsgUnauthorized:             {"unauthorized", KindRoute, http.StatusUnauthorized, ShapeHTTPError},
 }
 
 // ID is the message's stable name.
@@ -212,6 +217,7 @@ const (
 	textSemicolon     = "invalid semicolon separator in query"
 	textPostTooLarge  = "http: POST too large"
 	textPlanTime      = "query planning took longer than the limit"
+	textUnauthorized  = "unauthorized"
 	textLimitReached  = "limit reached while evaluating the query"
 	textSeriesLimit   = "reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()"
 )
@@ -501,6 +507,13 @@ const (
 	textDeleteMaxIntervalLong   = "max_interval can't be greater than the interval to be deleted ("
 	textDeleteNotFound          = "could not find delete request with given id"
 )
+
+// Unauthorized is a request the proxy's caller authentication refused: a
+// missing, malformed or wrong credential, or a tenant the user is not pinned
+// to. Every reason answers the same text, so the answer never tells a wrong
+// password from an unknown user; cause (a reason, never a credential) is for
+// the log line only.
+func Unauthorized(cause error) *Error { return newError(MsgUnauthorized, textUnauthorized, cause) }
 
 // NoOrgID is a request without the credential its route needs; cause says what was missing, for the log only.
 func NoOrgID(cause error) *Error { return newError(MsgNoOrgID, textNoOrgID, cause) }

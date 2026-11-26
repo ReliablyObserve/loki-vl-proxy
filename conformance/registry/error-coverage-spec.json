@@ -283,7 +283,8 @@
     "delete-max-interval-too-long": "parameters",
     "delete-request-not-found": "execution",
     "no-org-id": "routing",
-    "delete-end-in-future": "parameters"
+    "delete-end-in-future": "parameters",
+    "unauthorized": "routing"
   },
   "stage_rank": {
     "routing": 0,
@@ -398,6 +399,14 @@
       "tests": [
         "TestTenantAuth_AnswersLikeLoki",
         "TestDeleteAuth_TokenGatesTheHandler"
+      ]
+    },
+    "unauthorized": {
+      "reason": "Loki has no caller authentication, so there is no Loki answer to record. With -server.auth-users-file set the proxy answers a request without a valid credential, or a pinned user's request for another tenant, with 401 and its own text unauthorized (the same text for every reason, so a wrong password and an unknown user look alike), with WWW-Authenticate, before the route runs; with it unset the answer never occurs.",
+      "tests": [
+        "TestClientAuth_AnswersAndMetrics",
+        "TestClientAuth_EveryRegisteredRouteIsProtectedOrExempt",
+        "TestClientAuth_TenantPinAndCacheIsolation"
       ]
     }
   },

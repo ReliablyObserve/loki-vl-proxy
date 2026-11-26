@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (303), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (307), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -294,6 +294,10 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-forward-headers` | string | (empty) | `extraArgs.forward-headers` | Comma-separated list of HTTP headers to forward to VL backend |
 | `-server.admin-auth-token` | string | (empty) | `extraArgs.server.admin-auth-token` | Bearer token required for admin/debug endpoints when set. When neither this flag nor -server.admin-auth-token-file is given, read from the ADMIN_AUTH_TOKEN environment variable. A flag value is readable in the process command line |
 | `-server.admin-auth-token-file` | string | (empty) | `extraArgs.server.admin-auth-token-file` | File holding the -server.admin-auth-token value, read once at startup |
+| `-server.auth-cache-ttl` | duration | `5m0s` | `extraArgs.server.auth-cache-ttl` | How long a verified Basic credential skips bcrypt (keyed by an HMAC with a per-process random key, so no password is kept); a refused one is refused without bcrypt for at most a minute. Grafana sends the same credential on every request, so this keeps bcrypt off the request path. 0 verifies every request with bcrypt |
+| `-server.auth-max-concurrent-verifications` | int | `4` | `extraArgs.server.auth-max-concurrent-verifications` | Most bcrypt password verifications in flight at once, so a flood of wrong passwords costs at most this many cores; cached credentials never wait for a slot. A request that waits a second for a slot gets 429 too many outstanding requests |
+| `-server.auth-users-file` | string | (empty) | `clientAuth.existingSecret (chart-managed)` | Caller authentication: path of a YAML users file (users: [&#123;name, password_hash (bcrypt) or token_sha256 (hex SHA-256 of a bearer token), tenant (optional pin)&#125;]). Set, every route on every listener except /ready, /health, /healthz, /alive, /livez, /metrics and the /_cache/* peer routes (-peer-auth-token) needs Authorization: Basic or Bearer, and a missing or wrong credential gets 401 with WWW-Authenticate (a difference from Loki, which has no caller authentication). A missing, empty or invalid file stops the start; the file is re-read every -server.auth-users-reload-interval and a bad version keeps the last good users. A user with a tenant may only send that X-Scope-OrgID (none sends it for them). The credential is removed before VictoriaLogs unless -forward-authorization is set; admin and delete tokens then go in X-Admin-Token and X-Delete-Token. Empty: no caller authentication |
+| `-server.auth-users-reload-interval` | duration | `30s` | `extraArgs.server.auth-users-reload-interval` | How often -server.auth-users-file is re-read; a changed file that parses replaces the users (verified credentials are verified again), one that does not keeps the last good users and is reported (log, loki_vl_proxy_auth_users_reload_failures_total). 0 reads it at start only |
 | `-server.enable-pprof` | bool | `false` | `extraArgs.server.enable-pprof` | Expose /debug/pprof/* handlers |
 | `-server.enable-query-analytics` | bool | `false` | `extraArgs.server.enable-query-analytics` | Expose /debug/queries query analytics |
 | `-server.metrics-max-concurrency` | int | `1` | `extraArgs.server.metrics-max-concurrency` | Maximum concurrent /metrics scrapes served at once (0 disables the cap) |
