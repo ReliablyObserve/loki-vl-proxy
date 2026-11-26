@@ -395,6 +395,7 @@ type runtimeOptions struct {
 	cacheMaxBytes               int
 	cacheDisabled               bool
 	cacheRetention              cache.RetentionPolicy
+	cacheSizingSignals          bool
 	compatCacheEnabled          bool
 	compatCacheMaxPercent       int
 	diskCfg                     cache.DiskCacheConfig
@@ -539,6 +540,7 @@ func run(
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
 	cacheReuseProtectionPercent := fs.Int("cache-reuse-protection-percent", 0, "Share (percent, 0-90) of the memory caches' entry and byte budgets kept for entries read again since they were stored: under capacity pressure an entry stored but not read again is evicted first, so a one-time flood does not push out reused answers. Never changes a TTL or which answer is served; expiry evictions are unaffected. 0 (default) is plain LRU; 20 is the measured recommendation where capacity evictions of reused entries or one-time floods are seen")
+	cacheSizingSignals := fs.Bool("cache-sizing-signals", false, "Export the cache sizing signals of the primary cache: ghost hits (would twice the memory or disk budget, or twice the TTL, have answered a miss), the working set over 5m/1h/24h, the reuse interval between two lookups of a key, and hit and requested bytes per answer class (byte hit ratio). Costs about 50 ns per lookup (a key hash and two shared counters) and a bounded sample of at most 16384 keys per ghost and window; never changes what is cached or served")
 	cacheDemoteOnEvict := fs.Bool("cache-demote-on-evict", false, "When a capacity eviction removes an entry read at least once from memory, keep its disk copy newest in the disk cache's recency order, or write it to the disk cache with the TTL it has left when the disk holds none (never a longer TTL; never memory-only, patterns or non-owner shadow entries). Needs -disk-cache-path")
 	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead. It also turns off the request-level join: identical read requests in flight then run each on their own (held failures are still answered, see -error-cache-enabled)")
 	errorCacheEnabled := fs.Bool("error-cache-enabled", true, "Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held, except VictoriaLogs' refusal of the query the proxy wrote, which the same release always gives (see -error-cache-vl-refusal-ttl). Identical requests in flight share one run either way (see -coalescer-disabled)")
@@ -970,6 +972,7 @@ func run(
 		cacheMaxBytes:         *cacheMaxBytes,
 		cacheDisabled:         *cacheDisabled,
 		cacheRetention:        cache.RetentionPolicy{ProtectPercent: *cacheReuseProtectionPercent, DemoteOnEvict: *cacheDemoteOnEvict},
+		cacheSizingSignals:    *cacheSizingSignals,
 		compatCacheEnabled:    *compatCacheEnabled && !*cacheDisabled,
 		compatCacheMaxPercent: *compatCacheMaxPercent,
 		diskCfg: cache.DiskCacheConfig{
@@ -1426,10 +1429,15 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 			return nil, fmt.Errorf("cache retention: %w", err)
 		}
 	}
+	if opts.cacheSizingSignals {
+		// After SetL2, so the disk ghosts take the disk's budgets.
+		cacheLayer.EnableSizingSignals()
+	}
 	if !opts.cacheDisabled {
 		logger.Info("cache retention policy",
 			"reuse_protection_percent", opts.cacheRetention.ProtectPercent,
 			"demote_on_evict", opts.cacheRetention.DemoteOnEvict && opts.diskCfg.Path != "",
+			"sizing_signals", cacheLayer.SizingStats().Enabled,
 		)
 	}
 
