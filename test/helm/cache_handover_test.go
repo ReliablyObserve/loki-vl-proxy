@@ -54,14 +54,14 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true"})
 		args := containerArgs(pod)
-		for _, want := range []string{"-cache-shutdown-flush-timeout=15s", "-cache-startup-warm-bytes=134217728", "-cache-startup-warm-timeout=120s", "-disk-cache-path="} {
+		for _, want := range []string{"-cache-shutdown-flush-timeout=60s", "-cache-startup-warm-bytes=134217728", "-cache-startup-warm-timeout=120s", "-disk-cache-path="} {
 			if !strings.Contains(args, want) {
 				t.Fatalf("args %s: missing %s", args, want)
 			}
 		}
-		// preStop 5 + HTTP drain 30 + 30 + flush 15 + close 5.
-		if got := pod["terminationGracePeriodSeconds"]; got != 85 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want 85", got)
+		// preStop 5 + HTTP drain 30 + 30 + flush 60 + close 5.
+		if got := pod["terminationGracePeriodSeconds"]; got != 130 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 130", got)
 		}
 		preStop, _ := container(pod)["lifecycle"].(map[string]any)["preStop"].(map[string]any)
 		if sleep, _ := preStop["sleep"].(map[string]any); sleep["seconds"] != 5 {
@@ -71,7 +71,7 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 	t.Run("operator values win", func(t *testing.T) {
 		pod := renderPodSpec(t, []string{
 			"cacheHandover.enabled=true", "persistence.enabled=true",
-			"terminationGracePeriodSeconds=120",
+			"terminationGracePeriodSeconds=180",
 			"extraArgs.cache-shutdown-flush-timeout=40s",
 			"lifecycle.preStop.sleep.seconds=9",
 		})
@@ -79,12 +79,21 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 		if strings.Count(args, "-cache-shutdown-flush-timeout") != 1 || !strings.Contains(args, "-cache-shutdown-flush-timeout=40s") {
 			t.Fatalf("args %s: the extraArgs value must be the only one", args)
 		}
-		if got := pod["terminationGracePeriodSeconds"]; got != 120 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want the larger configured 120", got)
+		if got := pod["terminationGracePeriodSeconds"]; got != 180 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want the larger configured 180", got)
 		}
 		preStop, _ := container(pod)["lifecycle"].(map[string]any)["preStop"].(map[string]any)
 		if sleep, _ := preStop["sleep"].(map[string]any); sleep["seconds"] != 9 {
 			t.Fatalf("preStop %v, want the configured lifecycle", preStop)
+		}
+	})
+	t.Run("a configured flush budget wins", func(t *testing.T) {
+		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true", "cacheHandover.shutdownFlushTimeoutSeconds=15"})
+		if args := containerArgs(pod); !strings.Contains(args, "-cache-shutdown-flush-timeout=15s") {
+			t.Fatalf("args %s: the configured flush budget", args)
+		}
+		if got := pod["terminationGracePeriodSeconds"]; got != 85 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 85 for a 15 s flush", got)
 		}
 	})
 	on := []string{"cacheHandover.enabled=true", "persistence.enabled=true"}
@@ -177,14 +186,14 @@ func TestCacheHandoverChartOptions(t *testing.T) {
 		if _, ok := container(pod)["lifecycle"]; ok {
 			t.Fatal("preStop sleep rendered for Kubernetes 1.29")
 		}
-		if got := pod["terminationGracePeriodSeconds"]; got != 80 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want 80 without the sleep", got)
+		if got := pod["terminationGracePeriodSeconds"]; got != 125 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 125 without the sleep", got)
 		}
 	})
 	t.Run("a configured sleep counts", func(t *testing.T) {
 		pod := renderPodSpec(t, []string{"cacheHandover.enabled=true", "persistence.enabled=true", "lifecycle.preStop.sleep.seconds=20"})
-		if got := pod["terminationGracePeriodSeconds"]; got != 100 {
-			t.Fatalf("terminationGracePeriodSeconds %v, want 100 (20 + 60 + 15 + 5)", got)
+		if got := pod["terminationGracePeriodSeconds"]; got != 145 {
+			t.Fatalf("terminationGracePeriodSeconds %v, want 145 (20 + 60 + 60 + 5)", got)
 		}
 	})
 	t.Run("needs a disk cache", func(t *testing.T) {
