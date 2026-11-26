@@ -332,6 +332,27 @@ cache reads one record after another: on a network volume its read latency
 then decides, and the disk lookup latency signal slows the stream when its
 reads compete with queries.
 
+Measured under query load (`TestFleet_PeerRestoreUnderQueryLoad`, opt-in with
+`LVP_PEER_LOAD=1`, 2026-11-26): an 8 vCPU VM shared with other work,
+VictoriaLogs v1.54.0, the two serving replicas limited to one CPU each and
+holding a 2 GiB `s2` fixture (720 MiB stored); a load driver on the compose
+network sends cached `query_range` hits and `/_cache/get` to one serving
+replica, VictoriaLogs-backed misses and hits to the other, and restores run
+first by one replica, then by two at once, between three 45 s control phases.
+The pass bound, fixed before the runs: for each class, the p50, p95 and p99 of
+the requests sent while a stream was served are at most the worst control
+phase's times 1.10 plus 1 ms, with no errors.
+
+| Serving replica (1 CPU) | Query classes vs the bound | Restores |
+|---|---|---|
+| 1,100 requests/s, 23-32% of its core | all pass, 0 errors | complete, 60-63 MB/s |
+| 220 requests/s | all pass, 0 errors | complete, 17-40 MB/s |
+| 1,100 requests/s, 37-50% of its core (an earlier, stricter peer threshold) | all pass, 0 errors | throttled to about 1.5 MB/s, partial (61-79%) at their 180 s deadline |
+
+How fast a restore runs under load is decided by the replica's own signals,
+run to run: the same load slowed it to a crawl on a busier host and left it at
+full speed on a quieter one, and the query latencies held in both.
+
 When many replicas start at once (a scale-out, a node loss, a whole fleet on new
 volumes), each serving replica still sends at most its ceiling in at most two
 streams and less under load, and refuses the rest at once; each restoring
