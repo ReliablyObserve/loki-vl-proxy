@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
@@ -318,5 +319,31 @@ func TestServiceNameRoute_SplitWindowsShareTheirProofs(t *testing.T) {
 	d, n, pr := countReads(vl.take())
 	if d != base || n != d || pr == 0 || pr > 2 {
 		t.Errorf("split windows: %d reads (%d without the route), %d narrowed, %d proofs; want every read narrowed and 1 or 2 proofs", d, base, n, pr)
+	}
+}
+
+// BenchmarkWithServiceNameRoute is the work the route adds to a log query request before its reads: arming it for
+// a one-service selector, and the check that leaves any other selector alone.
+func BenchmarkWithServiceNameRoute(b *testing.B) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Minute, 1000), LogLevel: "error", ServiceNameStreamRoute: true, ServiceNameStreamRouteViolationTTL: time.Hour})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = p.Shutdown(b.Context()) })
+	for _, c := range []struct{ name, query string }{
+		{"one service", `{service_name="svc-a"} | json`},
+		{"other selector", `{app="x"} | json`},
+	} {
+		parsed, err := logqlpkg.Parse(c.query)
+		if err != nil {
+			b.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?start=1&end=3600000000000", nil)
+		b.Run(c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = p.withServiceNameRoute(r, parsed)
+			}
+		})
 	}
 }
