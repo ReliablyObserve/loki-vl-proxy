@@ -16,7 +16,7 @@ import (
 //   - a parser and a stream label the string translator copies aside because the pipeline reads it;
 //   - a stage whose text the string translator reads differently from the typed stage (translate.JSONAliasCopies,
 //     a keep that mixes names and matchers, a matcher value holding the characters its splitting trips on).
-func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [][]logsql.Pipe, read []string, err error) {
+func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [][]logsql.Pipe, read []string, restore []logsql.Pipe, err error) {
 	parsed := false
 	// keepLine is whether the first line_format still has to keep the stored line aside.
 	keepLine := prof.KeepLine
@@ -27,7 +27,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 		var ps []logsql.Pipe
 		names.note(defs, i)
 		if stageNamesReservedField(st) {
-			return nil, nil, &NotLoweredError{Construct: reservedStageConstruct}
+			return nil, nil, nil, &NotLoweredError{Construct: reservedStageConstruct}
 		}
 		switch st := st.(type) {
 		case *queryplan.LineFilter:
@@ -50,6 +50,11 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 				ps, err = metricDropPipes(st)
 			} else {
 				ps, err = dropPipes(st)
+			}
+			if err == nil {
+				blank, back := dropBlankPipes(sel, i, st, names.label(prof.Label), prof.metric)
+				// Level fields go back in the reverse order of their blanking.
+				ps, restore = append(ps, blank...), append(back, restore...)
 			}
 		case *queryplan.Keep:
 			var copies []string
@@ -75,7 +80,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 			err = &NotLoweredError{Construct: "LogSelect pipeline"}
 		}
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if len(ps) > 0 {
 			if built == nil {
@@ -85,9 +90,9 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 		}
 	}
 	if streamErr != nil {
-		return nil, nil, streamErr
+		return nil, nil, nil, streamErr
 	}
-	return built, read, nil
+	return built, read, restore, nil
 }
 
 // streamReads are the stream labels the pipeline of a query with a parser reads from their stored values, or why

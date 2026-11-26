@@ -24,6 +24,7 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 		bareJSONMetricResponseKeyVersion(r, query) +
 		detectedLevelMutationResponseKeyVersion(query) +
 		keepMetadataProjectionResponseKeyVersion(query) +
+		dropReadResponseKeyVersion(query, spelledOtherwise(query)) +
 		ipLabelFilterResponseKeyVersion(query) +
 		repeatedLabelFilterResponseKeyVersion(query) +
 		keywordLabelResponseKeyVersion(query) +
@@ -62,6 +63,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(logfmtPresenceResponseKeyVersion(r, query))
 	key.WriteString(detectedLevelMutationResponseKeyVersion(query))
 	key.WriteString(keepMetadataProjectionResponseKeyVersion(query))
+	key.WriteString(dropReadResponseKeyVersion(query, spelledOtherwise(query)))
 	key.WriteString(ipLabelFilterResponseKeyVersion(query))
 	key.WriteString(repeatedLabelFilterResponseKeyVersion(query))
 	key.WriteString(keywordLabelResponseKeyVersion(query))
@@ -238,7 +240,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			if got := responseKeyFences(r, query, responseKeyInnerQueryRange); got != oldInner {
 				t.Errorf("inner query_range fences differ for %q (%s): got %q want %q", query, shape.name, got, oldInner)
 			}
-			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+keywordLabelResponseKeyVersion(query)+reservedFieldCaseResponseKeyVersion(query)+reservedFieldLabelResponseKeyVersion(query)+markerBytesLabelValueResponseKeyVersion(query)+numericEqualityResponseKeyVersion(query); got != want {
+			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+dropReadResponseKeyVersion(query, spelledOtherwise(query))+keywordLabelResponseKeyVersion(query)+reservedFieldCaseResponseKeyVersion(query)+reservedFieldLabelResponseKeyVersion(query)+markerBytesLabelValueResponseKeyVersion(query)+numericEqualityResponseKeyVersion(query); got != want {
 				t.Errorf("window shape fences differ for %q: got %q want %q", query, got, want)
 			}
 			for _, f := range []string{

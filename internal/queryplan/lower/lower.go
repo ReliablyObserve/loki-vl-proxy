@@ -147,7 +147,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 		return logsql.Query{}, false, &NotLoweredError{Construct: c}
 	}
 	defs := definitions(sel)
-	staged, read, err := stagePipes(sel, prof, defs)
+	staged, read, restore, err := stagePipes(sel, prof, defs)
 	if err != nil {
 		return logsql.Query{}, false, err
 	}
@@ -235,6 +235,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 	}
 	level.flush(&q)
 	q.flush()
+	q.pipes = append(q.pipes, restore...)
 	q.pipes = appendScratchDeletes(q.pipes, lf, len(read) > 0)
 	f, err := translate.StreamSelectorFilterNamed(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteFieldName)
 	if err != nil {

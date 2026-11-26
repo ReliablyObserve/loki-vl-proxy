@@ -20,7 +20,8 @@ import (
 // one, on log entries and on the series of a metric query; later stages do not
 // read a removed value. The fixture is two streams with different level and zone
 // labels and JSON lines, ingested alike into Loki and VictoriaLogs.
-// conformance: semantics/keep-names-and-matchers, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/keep-names-and-matchers, semantics/keep-derived-label-matcher-metric-series,
+// semantics/drop-matcher-later-stage-reads-dropped-value, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_KeepNamesAndMatchersLikeLoki(t *testing.T) {
 	probe := fmt.Sprintf("keep-matchers-%d", time.Now().UnixNano())
 	stamp := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
@@ -122,6 +123,19 @@ func TestCompat_KeepNamesAndMatchersLikeLoki(t *testing.T) {
 		{pipeline: `| json | keep level="error", app | level="error"`},
 		{pipeline: `| json | keep level="warn", app | level!="warn"`},
 		{pipeline: `| json | keep level="debug", app | level="debug"`, empty: true},
+		// A stage after a drop does not read the value the drop removed.
+		{pipeline: `| drop level="warn" | level="warn"`, empty: true},
+		{pipeline: `| drop level="warn" | level!="warn"`},
+		{pipeline: `| drop level="warn" | level=""`},
+		{pipeline: `| drop level="warn" | level!=""`},
+		{pipeline: `| drop level | level=~".+"`, empty: true},
+		{pipeline: `| drop zone="z1" | zone="z1"`, empty: true},
+		{pipeline: `| drop zone="z1" | zone=""`},
+		{pipeline: `| drop zone!="z1" | zone="z2"`, empty: true},
+		{pipeline: `| drop level="warn" | drop level="error" | level!=""`, empty: true},
+		{pipeline: `| drop level="warn" | keep level="warn", app | level="warn"`, empty: true},
+		{pipeline: `| keep level="warn", app | drop level="warn" | level="warn"`, empty: true},
+		{pipeline: `| json | drop code="500" | code="500"`, empty: true},
 	} {
 		for _, categorized := range []bool{false, true} {
 			t.Run(fmt.Sprintf("logs/%s/categorized=%v", tc.pipeline, categorized), func(t *testing.T) {
@@ -144,6 +158,7 @@ func TestCompat_KeepNamesAndMatchersLikeLoki(t *testing.T) {
 		`count(count_over_time(` + sel + ` | keep level="error" [5m]))`,
 		`count(count_over_time(` + sel + ` | json | keep code="500" [5m]))`,
 		`count_over_time(` + sel + ` | keep zone="z1", level="a=b" [5m])`,
+		`sum(count_over_time(` + sel + ` | drop level="warn" | level!="warn" [5m]))`,
 		`count_over_time(` + sel + ` | keep detected_level="error" [5m])`,
 		`count_over_time(` + sel + ` | keep app, detected_level!="error" [5m])`,
 		`rate(` + sel + ` | keep service_name="keep-matchers", zone [5m])`,

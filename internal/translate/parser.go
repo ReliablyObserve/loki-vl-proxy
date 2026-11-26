@@ -91,6 +91,9 @@ func JSONAliasCopies(fields []logql.ExtractionField, param string) (pipes []logs
 	return pipes, true
 }
 
+// IsLevelSource reports a field detected_level is derived from.
+func IsLevelSource(name string) bool { return slices.Contains(levelSourceFields, name) }
+
 // DropDelete is the `| delete` pipe of a log query's drop stage over its bare labels: the labels detected_level
 // is derived from stay in the row, and a drop of matchers writes no pipe (the proxy applies it to the response).
 // ok is false when there is no pipe to write.

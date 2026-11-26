@@ -491,9 +491,11 @@
     "semantics/drop-keep-plain-name-after-parser | gap:open",
     "semantics/drop-keep-plain-name-after-parser | query",
     "semantics/drop-matcher-later-stage-reads-dropped-value | compare:observed",
-    "semantics/drop-matcher-later-stage-reads-dropped-value | gap:open",
+    "semantics/drop-matcher-later-stage-reads-dropped-value | gap:fixed",
     "semantics/drop-matcher-metric-series | compare:observed",
     "semantics/drop-matcher-metric-series | gap:open",
+    "semantics/drop-read-remaining-shapes | compare:observed",
+    "semantics/drop-read-remaining-shapes | gap:open",
     "semantics/eager-pipeline-validation | compare:observed",
     "semantics/eager-pipeline-validation | gap:documented",
     "semantics/eager-pipeline-validation | query",
@@ -2984,6 +2986,7 @@
     "internal/queryplan/lower/delete_filter_test.go | semantics/delete-api-via-victorialogs",
     "internal/queryplan/lower/detected_level_ast_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/detected_level_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/drop_blank_test.go | semantics/drop-matcher-later-stage-reads-dropped-value",
     "internal/queryplan/lower/exotic_field_names_test.go | semantics/translator-writes-exotic-field-names-bare",
     "internal/queryplan/lower/exotic_field_names_test.go | semantics/translator-writes-reserved-field-names",
     "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
@@ -3329,8 +3332,7 @@
     "test/e2e-compat/json_label_probe_gates_test.go | semantics/json-extracted-metric-pushdown",
     "test/e2e-compat/json_metric_step_wider_test.go | semantics/json-detected-level-error-split",
     "test/e2e-compat/json_metric_step_wider_test.go | semantics/json-metric-step-wider-than-range",
-    "test/e2e-compat/keep_names_matchers_test.go | loki_api_v1_query",
-    "test/e2e-compat/keep_names_matchers_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/keep_names_matchers_test.go | semantics/keep-derived-label-matcher-metric-series",
     "test/e2e-compat/keep_names_matchers_test.go | semantics/keep-names-and-matchers",
     "test/e2e-compat/keep_service_name_test.go | loki_api_v1_query",
     "test/e2e-compat/keep_service_name_test.go | loki_api_v1_query_range",
@@ -3693,12 +3695,12 @@
       "any": 50,
       "api": 124,
       "drilldown": 63,
-      "explore": 270,
+      "explore": 271,
       "grafana-datasource": 4,
       "operator": 5
     },
     "claiming_tests": {
-      "go": 835,
+      "go": 836,
       "playwright": 3
     },
     "page_kinds": {
@@ -3719,8 +3721,8 @@
     },
     "shape_covers_distinct": 116,
     "shapes_path_only": 10,
-    "unwired_items": 158,
-    "wired_items": 483
+    "unwired_items": 157,
+    "wired_items": 485
   },
   "gates": [
     "A/B shape selection",

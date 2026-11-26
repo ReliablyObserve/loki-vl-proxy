@@ -1,12 +1,15 @@
 id: semantics/drop-matcher-later-stage-reads-dropped-value
-title: 'A stage after a drop matcher reads the value the drop removed (open)'
+title: 'A stage after a drop reads the value the drop removed (fixed)'
 pending: true
 proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  A drop matcher writes no VictoriaLogs pipe: the proxy removes the label from the answer, but a later label
-  filter of the query reads the stored value.
+  A drop matcher wrote no VictoriaLogs pipe, so a later stage read the stored
+  value. The plan blanks the removed values behind the drop where a later stage
+  reads the name; a level field is put back after the last stage, so the entry's
+  detected_level stays as derived from the stored value. What stays open is in
+  semantics/drop-read-remaining-shapes.
 request:
   scope: keep and drop stages
   entry: "a label filter after a drop matcher"
@@ -16,11 +19,14 @@ compare:
   fields: [streams.stream labels, series labels, values]
   expect: "Loki's answer."
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#1776"
   impact: explore-visible
   effort: M
-  area: 'internal/queryplan/lower dropPipes'
+  area: 'internal/queryplan/lower/drop_blank.go, internal/proxy/response_key_fences.go dropReadResponseKeyVersion'
   loki: 'no line'
-  proxy: 'the line is kept'
-  planned_test: 'TestPlanMatchesLokiOnLogQueries (internal/querycorpus)'
+  proxy: 'the same entries and labels'
+  visual: none
+  visual_reason: 'a query that keeps no line in Loki shows an empty panel on both sides; the e2e comparison holds the entries and labels'
+  planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core), TestDropReadByLaterStage (internal/queryplan/lower), TestKeepMatchersMetricMatchLoki (internal/querycorpus)'
   clusters: []

@@ -583,7 +583,6 @@
       "test/e2e-compat/ip_label_filter_invalid_pattern_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
       "test/e2e-compat/ip_line_filter_test.go",
-      "test/e2e-compat/keep_names_matchers_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/label_filter_number_literal_test.go",
       "test/e2e-compat/label_list_trailing_comma_test.go",
@@ -722,7 +721,6 @@
       "test/e2e-compat/ip_label_filter_invalid_pattern_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
       "test/e2e-compat/ip_line_filter_test.go",
-      "test/e2e-compat/keep_names_matchers_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/keep_structured_metadata_test.go",
       "test/e2e-compat/keyword_label_names_test.go",
@@ -1480,6 +1478,9 @@
     "semantics/drop-keep-matcher-ip-value-accepted": [
       "internal/querycorpus/grammar_sweep_test.go"
     ],
+    "semantics/drop-matcher-later-stage-reads-dropped-value": [
+      "internal/queryplan/lower/drop_blank_test.go"
+    ],
     "semantics/error-cache-bounded-memory": [
       "internal/cache/error_flights_test.go",
       "internal/proxy/error_flights_edge_test.go"
@@ -1833,6 +1834,9 @@
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/queryplan/lower/unwrap_keep_test.go",
       "internal/queryplan/series_labels_test.go"
+    ],
+    "semantics/keep-derived-label-matcher-metric-series": [
+      "test/e2e-compat/keep_names_matchers_test.go"
     ],
     "semantics/keep-drop-blank-name-prints-back": [
       "internal/logql/keep_drop_blank_loki_test.go",
@@ -3185,7 +3189,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 755,
+  "registry_items": 756,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -5850,6 +5854,9 @@
     "internal/queryplan/lower/detected_level_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/drop_blank_test.go": [
+      "semantics/drop-matcher-later-stage-reads-dropped-value"
+    ],
     "internal/queryplan/lower/exotic_field_names_test.go": [
       "semantics/translator-writes-exotic-field-names-bare",
       "semantics/translator-writes-reserved-field-names"
@@ -6510,8 +6517,7 @@
       "semantics/json-metric-step-wider-than-range"
     ],
     "test/e2e-compat/keep_names_matchers_test.go": [
-      "loki_api_v1_query",
-      "loki_api_v1_query_range",
+      "semantics/keep-derived-label-matcher-metric-series",
       "semantics/keep-names-and-matchers"
     ],
     "test/e2e-compat/keep_service_name_test.go": [
@@ -7082,7 +7088,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 838,
+  "tests_with_markers": 839,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7153,8 +7159,8 @@
     "semantics/decolorize-derived-level-content",
     "semantics/detected-fields-extracted-suffix",
     "semantics/drop-keep-plain-name-after-parser",
-    "semantics/drop-matcher-later-stage-reads-dropped-value",
     "semantics/drop-matcher-metric-series",
+    "semantics/drop-read-remaining-shapes",
     "semantics/eager-pipeline-validation",
     "semantics/empty-line-format-unpack-content",
     "semantics/extracted-derived-labels-raw-evaluator",
@@ -7165,7 +7171,6 @@
     "semantics/json-count-mixed-window-binary-failures",
     "semantics/json-empty-value-label-series",
     "semantics/keep-composition-retains-discarded-identity-in-count-metrics",
-    "semantics/keep-derived-label-matcher-metric-series",
     "semantics/keep-derived-matcher-behind-parser",
     "semantics/keep-matcher-unwrap-series",
     "semantics/label-browser-cold-first-listing",
@@ -7244,5 +7249,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 483
+  "wired_items": 485
 }

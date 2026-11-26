@@ -246,11 +246,13 @@ func stageReads(stages []queryplan.Stage, name string) bool {
 	return false
 }
 
-// WritesKeepBlank reports a plan with a matcher keep the string translator writes otherwise: one whose matcher-named
-// field the plan blanks (a metric query's, or one a later stage of a log query reads), where the translator reads the
-// stored field, or one with a matcher value holding a quote or an operator character, which the translator reads as
-// part of the keep list.
-func WritesKeepBlank(p *queryplan.Plan) bool { return p != nil && writesKeepBlank(p.Root) }
+// WritesKeepBlank reports a plan with a keep or drop stage the string translator writes otherwise: one whose field the
+// plan blanks (a metric query's keep, or one a later stage reads), where the translator reads the stored field
+// (WritesDropBlank), or a keep with a matcher value holding a quote or an operator character, which the translator
+// reads as part of the keep list.
+func WritesKeepBlank(p *queryplan.Plan) bool {
+	return p != nil && (writesKeepBlank(p.Root) || writesDropBlank(p.Root))
+}
 
 func writesKeepBlank(n queryplan.Node) bool {
 	switch n := n.(type) {

@@ -47,6 +47,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		if keep {
 			b.add(keepMetadataProjectionResponseVersion)
 		}
+		b.add(dropReadResponseKeyVersion(query, spelledOtherwise(query)))
 		b.add(keywordLabelFromScan(query, words))
 		if words.reservedCase {
 			b.add(reservedFieldCaseResponseVersion)
@@ -71,6 +72,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	if keep {
 		b.add(keepMetadataProjectionResponseVersion)
 	}
+	b.add(dropReadResponseKeyVersion(query, other))
 	if ipFilterIn(query, other) {
 		b.add(ipLabelFilterResponseVersion)
 	}
@@ -557,4 +559,20 @@ func dynamicIdentityFenceScreen(query string, other bool) bool {
 		}
 	}
 	return false
+}
+
+// dropReadResponseVersion fences the answers cached before a stage after a drop stopped reading the value the drop
+// removed (semantics/drop-matcher-later-stage-reads-dropped-value).
+const dropReadResponseVersion = "@drop-later-read-v1:"
+
+// dropReadResponseKeyVersion is the fence of a query whose plan blanks a dropped field a later stage reads
+// (lower.WritesDropBlank); a query without the word drop is not planned.
+func dropReadResponseKeyVersion(query string, other bool) string {
+	if !containsWord(query, "drop", other) {
+		return ""
+	}
+	if plan := resolvedPlan(strings.TrimSpace(query)); plan != nil && lower.WritesDropBlank(plan) {
+		return dropReadResponseVersion
+	}
+	return ""
 }
