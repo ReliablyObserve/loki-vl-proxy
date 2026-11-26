@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **11 proven**, 23 partial, 3 gaps, 0 waived, 11 with no state recorded
+- Behaviour and feature items: **11 proven**, 24 partial, 3 gaps, 0 waived, 11 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -28,6 +28,7 @@ Proven in part; the rest is named in the item's cases.
 |---|---|---:|---:|---|
 | `drilldown-service-landing` — Logs Drilldown ranks services on the landing page | drilldown | 1 / 5 | 1 | 1/3 deltas proven. |
 | `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | explore | 9 / 17 | 7 | 3/6 deltas proven. |
+| `cache-eviction-signals` — The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has | — | 0 / 0 | 4 | Unit-proven in internal/cache, internal/metrics and internal/proxy (every reason, the invariant with the layer counters  |
 | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 6 / 6 | 10 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
 | `json-metric-unparsed-line-lookup-once` — A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests | — | 0 / 0 | 1 | Unit-proven against a fake VictoriaLogs (internal/proxy/ ordered_json_unparsed_row_test.go). The stack check is the per- |
 | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 15 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |

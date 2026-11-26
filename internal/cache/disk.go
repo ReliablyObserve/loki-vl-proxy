@@ -74,10 +74,9 @@ type DiskCache struct {
 	FlushCount      atomic.Int64
 	BytesOnDisk     atomic.Int64
 
-	// Why records leave or never enter L2, and the record reads
-	// (eviction_signals.go).
-	signals tierSignals
-	reads   diskReadSignals
+	// signals are why records leave or never enter L2 and the record reads
+	// (eviction_signals.go), allocated apart like Cache.signals.
+	signals *diskSignals
 }
 
 type diskEntry struct {
@@ -155,7 +154,7 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		maxEntryBytes: cfg.MaxEntryBytes, minTTL: cfg.MinTTL, maxBytes: cfg.MaxBytes,
 		maxEntries: cfg.MaxEntries, maxIndexBytes: cfg.MaxIndexBytes, index: make(map[string]*diskLRUEntry),
 		done: make(chan struct{}), workerDone: make(chan struct{}), flushRequest: make(chan struct{}, 1),
-		log: slog.Default().With("component", "disk_cache")}
+		log: slog.Default().With("component", "disk_cache"), signals: &diskSignals{}}
 	if err = dc.rebuildIndex(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("initialize disk cache: %w", err)
@@ -184,21 +183,16 @@ func (dc *DiskCache) getWithTTL(key string, allowStale bool) (value []byte, ttl 
 		s.lookup(value, found, found && ttl <= 0)
 		s.lookupNanoseconds.Add(elapsed.Nanoseconds())
 		if readBytes > 0 {
-			dc.reads.observe(layer, elapsed, readBytes)
+			dc.signals.reads.observe(layer, elapsed, readBytes)
 		}
 	}()
 	value, ttl, found, readBytes = dc.lookupRecord(key, allowStale)
 	return
 }
 
-// lookupWithTTL implements storage lookup without the observation wrapper.
-func (dc *DiskCache) lookupWithTTL(key string, allowStale bool) ([]byte, time.Duration, bool) {
-	value, ttl, found, _ := dc.lookupRecord(key, allowStale)
-	return value, ttl, found
-}
-
-// lookupRecord is lookupWithTTL plus the encoded bytes of the record it read
-// from bbolt, 0 when it read none (a queued value, no record).
+// lookupRecord implements storage lookup without the observation wrapper. It
+// also returns the encoded bytes of the record it read from bbolt, 0 when it
+// read none (a queued value, no record).
 func (dc *DiskCache) lookupRecord(key string, allowStale bool) ([]byte, time.Duration, bool, int) {
 	dc.writeMu.Lock()
 	if dc.closed || dc.closing {

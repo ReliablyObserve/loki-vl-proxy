@@ -204,6 +204,44 @@ func (s *tierSignals) reject(layer Layer, reason RejectionReason) {
 	s.rejections[layer][reason].Add(1)
 }
 
+// cacheSignals are a Cache's L1 signals and promotions. Its methods accept a
+// nil receiver: a Cache built as a literal (tests) counts nothing.
+type cacheSignals struct {
+	l1         tierSignals
+	promotions [LayerCount][PromotionCount]atomic.Int64
+}
+
+func (s *cacheSignals) reject(layer Layer, reason RejectionReason) {
+	if s != nil {
+		s.l1.reject(layer, reason)
+	}
+}
+
+func (s *cacheSignals) count(layer Layer, reason EvictionReason) {
+	if s != nil {
+		s.l1.evictions[layer][reason].Add(1)
+	}
+}
+
+func (s *cacheSignals) evict(layer Layer, reason EvictionReason, age time.Duration, hits uint32) {
+	if s != nil {
+		s.l1.evict(layer, reason, age, hits)
+	}
+}
+
+func (s *cacheSignals) promote(layer Layer, p Promotion) {
+	if s != nil {
+		s.promotions[layer][p].Add(1)
+	}
+}
+
+// diskSignals are a DiskCache's L2 signals and record-read histograms; a
+// DiskCache always has them (NewDiskCache).
+type diskSignals struct {
+	tierSignals
+	reads diskReadSignals
+}
+
 // evict counts one removal; age < 0 means the admission time is unknown (an L2
 // record found by the startup scan), so the histograms skip it.
 func (s *tierSignals) evict(layer Layer, reason EvictionReason, age time.Duration, hits uint32) {
@@ -264,13 +302,13 @@ func (s *diskReadSignals) observe(layer Layer, elapsed time.Duration, bytes int)
 // promotions and L2 record reads by semantic layer. It reads atomics only and
 // takes no cache lock.
 func (c *Cache) SignalStats() (out [LayerCount]LayerSignalsSnapshot) {
-	if c == nil || c.disabled {
+	if c == nil || c.disabled || c.signals == nil {
 		return
 	}
 	for l := LayerUnknown; l < LayerCount; l++ {
-		out[l].L1 = c.signalsL1.snapshot(l)
+		out[l].L1 = c.signals.l1.snapshot(l)
 		for p := range out[l].Promotions {
-			out[l].Promotions[p] = c.promotions[l][p].Load()
+			out[l].Promotions[p] = c.signals.promotions[l][p].Load()
 		}
 	}
 	if c.l2 != nil {
@@ -286,13 +324,13 @@ func (c *Cache) SignalStats() (out [LayerCount]LayerSignalsSnapshot) {
 
 // SignalStats returns the L2 part of Cache.SignalStats, without a lock.
 func (dc *DiskCache) SignalStats() (out [LayerCount]LayerSignalsSnapshot) {
-	if dc == nil {
+	if dc == nil || dc.signals == nil {
 		return
 	}
 	for l := LayerUnknown; l < LayerCount; l++ {
 		out[l].L2 = dc.signals.snapshot(l)
-		out[l].DiskReadSeconds = dc.reads.seconds[l].snapshot(len(DiskReadSecondsBounds) + 1)
-		out[l].DiskReadBytes = dc.reads.bytes[l].snapshot(len(DiskReadBytesBounds) + 1)
+		out[l].DiskReadSeconds = dc.signals.reads.seconds[l].snapshot(len(DiskReadSecondsBounds) + 1)
+		out[l].DiskReadBytes = dc.signals.reads.bytes[l].snapshot(len(DiskReadBytesBounds) + 1)
 	}
 	return
 }
@@ -306,10 +344,10 @@ func (data *lruEntry) age(now time.Time) time.Duration {
 // node, nil when unknown. Called with c.mu held, before removeEntryLocked.
 func (c *Cache) countEvictionLocked(layer Layer, reason EvictionReason, data *lruEntry, now time.Time) {
 	if data == nil || !observedEviction(reason) {
-		c.signalsL1.evictions[layer][reason].Add(1)
+		c.signals.count(layer, reason)
 		return
 	}
-	c.signalsL1.evict(layer, reason, data.age(now), data.hits)
+	c.signals.evict(layer, reason, data.age(now), data.hits)
 }
 
 // lruNodeLocked is key's LRU node, nil when it has none.

@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"fmt"
 	"path/filepath"
 	"strconv"
 	"sync/atomic"
@@ -67,26 +66,44 @@ func benchHitCache(b *testing.B) (*Cache, []string) {
 	return c, keys
 }
 
-// Parallel memory hits; with_scrape adds a goroutine that reads the cache's
-// metrics snapshots in a loop, as a scrape does, to expose any contention the
-// snapshot adds to the read path.
+// scrapeModes are the scrapers the parallel benchmarks run beside the
+// workload: none; layer_stats, the layer snapshots both checkouts have; full,
+// what this checkout's metrics scrape reads (benchScrape), in a tight loop
+// (the worst case: one of the Ps does nothing else); full_paced, the same every
+// millisecond (still about 15,000 times a 15 s scrape interval).
+var scrapeModes = []string{"none", "layer_stats", "full", "full_paced"}
+
+func startScraper(c *Cache, mode string) (stop func()) {
+	if mode == "none" {
+		return func() {}
+	}
+	var halt atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for !halt.Load() {
+			switch mode {
+			case "layer_stats":
+				_ = c.LayerStats()
+			case "full":
+				benchScrape(c)
+			case "full_paced":
+				benchScrape(c)
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}()
+	return func() { halt.Store(true); <-done }
+}
+
+// Parallel memory hits beside each scraper: a scrape that takes a lock the
+// read path needs, or writes a line it reads, slows the hits.
 func BenchmarkCacheGetHitParallel(b *testing.B) {
-	for _, scrape := range []bool{false, true} {
-		b.Run(fmt.Sprintf("with_scrape=%v", scrape), func(b *testing.B) {
+	for _, mode := range scrapeModes {
+		b.Run("scrape="+mode, func(b *testing.B) {
 			c, keys := benchHitCache(b)
 			defer c.Close()
-			var stop atomic.Bool
-			done := make(chan struct{})
-			if scrape {
-				go func() {
-					defer close(done)
-					for !stop.Load() {
-						benchScrape(c)
-					}
-				}()
-			} else {
-				close(done)
-			}
+			stop := startScraper(c, mode)
 			var next atomic.Int64
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -98,34 +115,22 @@ func BenchmarkCacheGetHitParallel(b *testing.B) {
 				}
 			})
 			b.StopTimer()
-			stop.Store(true)
-			<-done
+			stop()
 		})
 	}
 }
 
-// Parallel writers that keep evicting, with and without a concurrent scrape.
+// Parallel writers that keep evicting, beside each scraper.
 func BenchmarkCacheSetEvictParallel(b *testing.B) {
-	for _, scrape := range []bool{false, true} {
-		b.Run(fmt.Sprintf("with_scrape=%v", scrape), func(b *testing.B) {
+	for _, mode := range scrapeModes {
+		b.Run("scrape="+mode, func(b *testing.B) {
 			c := NewWithMaxBytes(time.Hour, 1024, 1<<30)
 			defer c.Close()
 			keys := make([]string, 8192)
 			for i := range keys {
 				keys[i] = "query:par-" + strconv.Itoa(i)
 			}
-			var stop atomic.Bool
-			done := make(chan struct{})
-			if scrape {
-				go func() {
-					defer close(done)
-					for !stop.Load() {
-						benchScrape(c)
-					}
-				}()
-			} else {
-				close(done)
-			}
+			stop := startScraper(c, mode)
 			value := []byte(`{"data":"test"}`)
 			var next atomic.Int64
 			b.ReportAllocs()
@@ -138,8 +143,7 @@ func BenchmarkCacheSetEvictParallel(b *testing.B) {
 				}
 			})
 			b.StopTimer()
-			stop.Store(true)
-			<-done
+			stop()
 		})
 	}
 }

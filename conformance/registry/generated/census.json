@@ -1470,6 +1470,7 @@
     "internal/cache/error_flights_test.go | semantics/error-cache-bounded-memory",
     "internal/cache/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/cache/error_flights_test.go | semantics/error-coalescing-request-flights",
+    "internal/cache/eviction_signals_test.go | cache-eviction-signals",
     "internal/cache/peer_close_conn_test.go | shutdown-releases-background-work",
     "internal/cache/peer_everywhere_test.go | semantics/error-cache-vl-refusal-peer-sync",
     "internal/cache/peer_hedge_test.go | peer-cache-patterns",
@@ -1611,6 +1612,8 @@
     "internal/lokierr/lokierr_test.go | status-405",
     "internal/lokierr/lokierr_test.go | status-429",
     "internal/lokierr/lokierr_test.go | status-500",
+    "internal/metrics/cache_signal_dashboard_test.go | cache-eviction-signals",
+    "internal/metrics/cache_signal_metrics_test.go | cache-eviction-signals",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/capability_test.go | vl-capability-layer",
     "internal/metrics/query_complexity_test.go | query-complexity-limits",
@@ -1710,6 +1713,7 @@
     "internal/proxy/build_phase_replay_test.go | semantics/loki-build-phase-window",
     "internal/proxy/build_phase_replay_test.go | semantics/loki-error-phase-order",
     "internal/proxy/build_phase_window_loki_test.go | semantics/loki-build-phase-window",
+    "internal/proxy/cache_layer_metrics_test.go | cache-eviction-signals",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-parenthesized-metric-as-text",
@@ -3673,7 +3677,7 @@
       "operator": 5
     },
     "claiming_tests": {
-      "go": 830,
+      "go": 834,
       "playwright": 3
     },
     "page_kinds": {
@@ -3695,7 +3699,7 @@
     "shape_covers_distinct": 114,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 481
+    "wired_items": 482
   },
   "gates": [
     "A/B shape selection",

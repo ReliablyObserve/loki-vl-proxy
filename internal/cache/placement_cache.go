@@ -99,14 +99,14 @@ func (c *Cache) promoteDiskWithDeadline(key string, value []byte, deadline time.
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
-		c.signalsL1.reject(c.layer(key), RejectionSingleEntryBudget)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return true
 	}
 	if old, ok := c.entries[key]; ok && old.expiresAt.After(clockNow()) {
 		return true
 	}
 	if c.storeEntryLocked(key, value, remaining, size, false, false, false, expiry) {
-		c.promotions[c.layer(key)][PromotionDiskToMemory].Add(1)
+		c.signals.promote(c.layer(key), PromotionDiskToMemory)
 	}
 	return true
 }
@@ -116,7 +116,7 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 		remaining := time.Unix(0, sourceExpiry).Sub(now)
 		if remaining <= 0 {
 			c.layerL1[c.layer(key)].rejections.Add(1)
-			c.signalsL1.reject(c.layer(key), RejectionSourceExpired)
+			c.signals.reject(c.layer(key), RejectionSourceExpired)
 			return false
 		}
 		ttl = min(ttl, remaining)
@@ -136,7 +136,7 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	if shadow {
 		if !c.shadowRoomLocked(size, now) {
 			c.layerL1[c.layer(key)].rejections.Add(1)
-			c.signalsL1.reject(c.layer(key), RejectionShadowBudget)
+			c.signals.reject(c.layer(key), RejectionShadowBudget)
 			return false
 		}
 		if c.shadowList == nil {
@@ -188,7 +188,7 @@ func (c *Cache) replaceEntryLocked(key string, next entry, now time.Time) (repla
 	c.entries[key] = next
 	c.curBytes += delta
 	layer := c.layer(key)
-	c.signalsL1.evictions[layer][EvictionReplaced].Add(1)
+	c.signals.count(layer, EvictionReplaced)
 	stats := &c.layerL1[layer]
 	stats.bytes.Add(int64(delta))
 	stats.admissions.Add(1)
@@ -204,7 +204,7 @@ func (c *Cache) setPlacedWithTTL(key string, value []byte, ttl time.Duration, pr
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
-		c.signalsL1.reject(c.layer(key), RejectionSingleEntryBudget)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return
 	}
 	publishable := c.l3 != nil && c.l3.publicationEligible(key, value, ttl, force)

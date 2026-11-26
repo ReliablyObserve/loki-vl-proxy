@@ -80,5 +80,6 @@ decisions:
       record found by the start-up scan has no age.
     performance:
       tracked: ['cache get/set/evict paths: ns/op, B/op, allocs/op (benchstat, 8 interleaved runs)', 'parallel get and set with a concurrent scrape (lock contention)']
-      bound: 'no allocation on any get or set path; +8 B per L1 entry (the LRU node 24 -> 32 bytes); at most one allocation per disk flush that evicts or refuses; no lock taken by the scrape of these families'
+      bound: 'get, miss and set paths unchanged with the same allocations; an expiry eviction about +12 ns and an in-place replacement about +3 ns (the counting); +8 B per L1 entry (the LRU node 24 -> 32 bytes); at most one allocation per disk flush that evicts or refuses; no lock taken by the scrape of these families (parallel hits and writes beside a scrape every millisecond unchanged)'
+      measured: 'Apple M5 Pro, GOMAXPROCS=2, 8 interleaved base/head runs, benchstat, 2026-11-26'
       benchmarks: [BenchmarkCacheSetEvictCapacity, BenchmarkCacheSetEvictExpired, BenchmarkCacheSetReplace, BenchmarkCacheGetHitParallel, BenchmarkCacheSetEvictParallel, BenchmarkDiskCacheFlushEvict, BenchmarkDiskCacheGetCommitted]

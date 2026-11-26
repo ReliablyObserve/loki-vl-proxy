@@ -132,7 +132,7 @@ func TestEvictionSignalsMemoryReasons(t *testing.T) {
 		c := NewWithMaxBytes(time.Hour, 10, 1<<20)
 		defer c.Close()
 		c.Set("query:a", []byte("a"))
-		c.Set("query:a", []byte("a2"))                           // in place
+		c.Set("query:a", []byte("a2"))                            // in place
 		c.SetLocalOnlyWithTTL("query:a", []byte("a3"), time.Hour) // another storage class
 		if s := signalsL1(c, layer); s.Evictions[EvictionReplaced] != 2 || s.AgeAtEviction[0].Count+s.AgeAtEviction[1].Count != 0 {
 			t.Fatalf("replacements %+v", s)

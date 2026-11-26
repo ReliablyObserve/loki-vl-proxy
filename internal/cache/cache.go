@@ -116,10 +116,10 @@ type Cache struct {
 	l3Stats            tierStats
 	backendFallthrough atomic.Int64
 
-	// Why entries leave or never enter L1, and copies from lower tiers
-	// (eviction_signals.go). Last, so the hot fields above keep their layout.
-	signalsL1  tierSignals
-	promotions [LayerCount][PromotionCount]atomic.Int64
+	// signals are why entries leave or never enter L1 and the copies from
+	// lower tiers (eviction_signals.go), allocated apart so the counters a
+	// scrape reads share no cache line with the fields every lookup writes.
+	signals *cacheSignals
 }
 
 // MaxEntrySizeBytes returns the largest object this cache will retain.
@@ -226,6 +226,7 @@ func newWithMaxBytesForLayer(ttl time.Duration, maxEntries, maxBytes int, layer 
 		hotMax:       defaultHotIndexMaxEntries,
 		promoteBuf:   make(chan string, 512),
 		promoteFlush: make(chan chan struct{}, 1),
+		signals:      &cacheSignals{},
 	}
 	go c.cleanup()
 	go c.runPromoter()
@@ -547,7 +548,7 @@ func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stampe
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
-		c.signalsL1.reject(c.layer(key), RejectionSingleEntryBudget)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return
 	}
 	c.skipDisk(key, RejectionMemoryOnly)
@@ -567,7 +568,7 @@ func (c *Cache) storePeerCopy(key string, value []byte, ttl time.Duration, memOn
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
-		c.signalsL1.reject(c.layer(key), RejectionSingleEntryBudget)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return
 	}
 	replica := c.l3 == nil || c.l3.IsReplica(key)
@@ -582,7 +583,7 @@ func (c *Cache) storePeerCopy(key string, value []byte, ttl time.Duration, memOn
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.storeEntryLocked(key, value, storedTTL, size, false, memOnly, shadow, sourceExpiry) {
-		c.promotions[c.layer(key)][PromotionPeerToMemory].Add(1)
+		c.signals.promote(c.layer(key), PromotionPeerToMemory)
 	}
 	switch {
 	case c.l2 == nil:
@@ -592,7 +593,7 @@ func (c *Cache) storePeerCopy(key string, value []byte, ttl time.Duration, memOn
 		c.skipDisk(key, RejectionNotReplica)
 	default:
 		c.l2.Set(key, value, ttl)
-		c.promotions[LayerForKey(key)][PromotionPeerToDisk].Add(1)
+		c.signals.promote(LayerForKey(key), PromotionPeerToDisk)
 	}
 }
 
@@ -658,7 +659,7 @@ func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Durati
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		c.layerL1[c.layer(key)].rejections.Add(1)
-		c.signalsL1.reject(c.layer(key), RejectionSingleEntryBudget)
+		c.signals.reject(c.layer(key), RejectionSingleEntryBudget)
 		return
 	}
 
