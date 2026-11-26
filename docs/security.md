@@ -45,6 +45,8 @@ Setups, defaults and every option: [Tenancy and authentication](tenancy-and-auth
 - label-routing mode enforces the tenant constraint through VictoriaLogs `extra_stream_filters`, so request parameters and query pipelines cannot override it; the configured tenant field must be a stream field
 - cache and coalescer keys (memory, disk, peer, window, metadata and label-value indexes) include the resolved tenant routing, backend identity and forwarded-identity fingerprint, so entries are never shared across tenants or authorization scopes
 - credentials enter cache keys only as keyed digests: forwarded `Authorization` headers, other `-forward-headers` and `-forward-cookies` values, and `-backend-basic-auth` are digested with HMAC-SHA256 under a key derived (HKDF-SHA256) from `-cache-key-secret`, else from `-peer-auth-token`, else from random bytes per process. A cache key read from the disk cache, a snapshot, a peer or a debug log line cannot be used to test credential guesses without that secret, which is never written to the cache volume. Replicas or restarts with the same secret share credential-scoped entries; with different or no secret they miss (never another caller's answer), and without any secret credential-scoped entries are not reused after a restart or by other replicas (the proxy logs a warning at start). Keys of requests that carry no credential are unchanged. See [Cache key secret](#cache-key-secret)
+- entries computed with a caller's forwarded credentials stay on the replica that computed them: every key built from such a request carries the credential fingerprint, or a mark when the key hashes it, and the peer cache neither pushes those keys, lists them in its hot index, nor prefetches them; `/patterns` requests with forwarded credentials are answered by the replica that receives them instead of being forwarded to the pattern state's owner. A peer still answers a read of the exact key, which only a request with the same credentials and cache key secret can name
+- user information in the `-backend` or cold backend URL (`http://user:password@host`) is still sent to VictoriaLogs, but cache keys and the restart hand-over scope hold the URL without it (cache keys add its keyed digest), and log lines mask it
 
 **Lightweight tenant enforcement**: `-require-tenant-header=true` rejects any request missing an `X-Scope-OrgID` header with HTTP 401. This is a lighter alternative to full auth — it catches misconfigured clients without requiring a token/credential system.
 
@@ -263,7 +265,7 @@ Cache keys are stored with the answers: in the disk cache and its restart hand-o
 - Changing the secret, or the peer token it is derived from, makes credential-scoped entries miss once; nothing is served across the change.
 - Entries written by a build before keyed digests are never read by a later build: their keys have another form.
 - Requests that carry no credential (no forwarded header or cookie, no backend basic auth) have the same cache keys as before; only the tenant and routing scope is hashed for them, as before.
-- The restart hand-over scope never includes credential flags (`-backend-basic-auth`, `-backend-version-basic-auth`, tokens, secrets).
+- The restart hand-over scope never includes credential flags (`-backend-basic-auth`, `-backend-version-basic-auth`, tokens, secrets) or the user information of a URL value.
 
 ## Log and Error Redaction
 

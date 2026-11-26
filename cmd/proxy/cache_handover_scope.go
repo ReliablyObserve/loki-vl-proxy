@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -47,7 +48,7 @@ func cacheHandoverScope(fs *flag.FlagSet, env envConfig, flushTimeout time.Durat
 		if !handoverScopeFlag(f.Name) {
 			return
 		}
-		fmt.Fprintf(h, "flag %s=%s\n", f.Name, f.Value.String())
+		fmt.Fprintf(h, "flag %s=%s\n", f.Name, withoutURLUserinfo(f.Value.String()))
 	})
 	translateOTel := "unset"
 	if env.translateOTel != nil {
@@ -60,7 +61,7 @@ func cacheHandoverScope(fs *flag.FlagSet, env envConfig, flushTimeout time.Durat
 		{"label-style", env.labelStyle}, {"field-mapping", env.fieldMappingJSON}, {"metadata-field-mode", env.metadataFieldMode},
 		{"translate-otel", translateOTel}, {"extra-label-fields", env.extraLabelFields},
 	} {
-		fmt.Fprintf(h, "env %s=%s\n", kv[0], kv[1])
+		fmt.Fprintf(h, "env %s=%s\n", kv[0], withoutURLUserinfo(kv[1]))
 	}
 	return version + "|" + revision + "|" + exe + "|" + hex.EncodeToString(h.Sum(nil)[:16])
 }
@@ -101,4 +102,19 @@ func handoverScopeFlag(name string) bool {
 		}
 	}
 	return true
+}
+
+// withoutURLUserinfo drops the user information of a URL value (a -backend
+// such as http://user:password@host): credentials decide no answer and are
+// never hashed onto the disk. Any other value is returned as it is.
+func withoutURLUserinfo(value string) string {
+	if !strings.Contains(value, "@") {
+		return value
+	}
+	u, err := url.Parse(value)
+	if err != nil || u.User == nil || u.Host == "" {
+		return value
+	}
+	u.User = nil
+	return u.String()
 }

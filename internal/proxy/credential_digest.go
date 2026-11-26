@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"hash"
 	"net/http"
+	"net/url"
 	"slices"
 	"sync"
 )
@@ -172,4 +173,35 @@ func (d *credentialDigest) headerValues(headers map[string]string) map[string]st
 		out[name] = d.digest(e, credentialDigestVersion)
 	}
 	return out
+}
+
+// credentialDomainURLUserinfo digests the user information of a backend URL.
+const credentialDomainURLUserinfo byte = 'u'
+
+// urlInKeys is how a backend URL enters cache keys: as it is when it holds no
+// user information (unchanged keys), else without it and with its keyed
+// digest after '#', so credentials in the URL still decide the key without
+// being in it or guessable from it.
+func (p *Proxy) urlInKeys(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	if u.User == nil {
+		return u.String()
+	}
+	bare := *u
+	bare.User = nil
+	d := p.credentialDigester()
+	e := d.pool.Get().(*credentialHasher)
+	defer d.pool.Put(e)
+	e.in = appendField(append(e.in, credentialDomainURLUserinfo), u.User.String())
+	return bare.String() + "#" + d.digest(e, credentialDigestVersion)
+}
+
+// backendInKeys is urlInKeys of the backend, computed once.
+func (p *Proxy) backendInKeys() string {
+	if p.backendKeyText != "" || p.backend == nil {
+		return p.backendKeyText
+	}
+	return p.urlInKeys(p.backend)
 }

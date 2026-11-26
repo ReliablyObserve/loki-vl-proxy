@@ -424,7 +424,9 @@ cluster, so check at least:
   reused across tenants or served to a peer for another tenant.
 - Credentials in keys: a credential (forwarded header or cookie, backend
   basic auth) reaches a cache key, snapshot or log line only through the keyed
-  digest in `internal/proxy/credential_digest.go`, never as a plain hash.
+  digest in `internal/proxy/credential_digest.go`, never as a plain hash. A
+  key that hashes the fingerprint appends `credentialScopeMark`, so the peer
+  cache keeps the entry on its replica (`peerPushAllowed`).
 - Query injection: LogsQL is built from typed nodes or properly quoted values,
   never by splicing client text; client text never becomes proxy-internal
   syntax.
