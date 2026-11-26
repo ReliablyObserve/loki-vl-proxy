@@ -248,7 +248,7 @@ func snOracleProxy(t *testing.T, backend string, on bool) *Proxy {
 // stream filter. On a tenant whose rows break the statement the answers differ, which is the boundary the flag
 // documents.
 //
-// conformance: semantics/service-name-stream-filter
+// conformance: semantics/service-name-stream-filter, vl-stream-filter-or-groups-and-missing-label
 func TestServiceNameStreamFilterAnswersOnVictoriaLogs(t *testing.T) {
 	if os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("LVP_RUN_ORACLES=1 runs VictoriaLogs")
@@ -320,7 +320,7 @@ func TestServiceNameStreamFilterAnswersOnVictoriaLogs(t *testing.T) {
 // VictoriaLogs v1.49.0 and v1.54.0 and survives its print and re-parse (Query.Clone, which every limit, tail,
 // hits and cluster query takes): no corpus or shadow row reaches this text, as no profile there sets the flag.
 //
-// conformance: semantics/service-name-stream-filter
+// conformance: semantics/service-name-stream-filter, vl-stream-filter-or-groups-and-missing-label
 func TestServiceNameStreamFilterRoundTripsOnVictoriaLogs(t *testing.T) {
 	if os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("LVP_RUN_ORACLES=1 runs VictoriaLogs' parser")

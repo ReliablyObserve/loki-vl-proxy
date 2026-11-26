@@ -2461,6 +2461,7 @@
     "internal/proxy/series_limit_routes_test.go | loki_api_v1_query_range",
     "internal/proxy/series_limit_routes_test.go | series-limits-and-partial-results",
     "internal/proxy/service_name_stream_filter_oracle_test.go | semantics/service-name-stream-filter",
+    "internal/proxy/service_name_stream_filter_oracle_test.go | vl-stream-filter-or-groups-and-missing-label",
     "internal/proxy/service_name_stream_filter_test.go | semantics/service-name-stream-filter",
     "internal/proxy/sliding_window_stats_test.go | heavy-metric-fetch-bounds",
     "internal/proxy/sliding_window_stats_test.go | limits/stats-row-limit-per-grid",
@@ -3512,6 +3513,7 @@
     "test/e2e-compat/series_level_aggregation_fine_step_test.go | semantics/series-level-aggregation-bounded-memory",
     "test/e2e-compat/service_name_stream_filter_test.go | semantics/service-name-stream-filter",
     "test/e2e-compat/service_name_stream_filter_test.go | service-name-derivation",
+    "test/e2e-compat/service_name_stream_filter_test.go | vl-stream-filter-or-groups-and-missing-label",
     "test/e2e-compat/sliding_sum_without_test.go | loki_api_v1_query_range",
     "test/e2e-compat/sliding_sum_without_test.go | metric-series-identity",
     "test/e2e-compat/sliding_sum_without_test.go | quality/stats-tumbling-relabel-one-parse",
@@ -3700,7 +3702,7 @@
     "shape_covers_distinct": 113,
     "shapes_path_only": 10,
     "unwired_items": 151,
-    "wired_items": 483
+    "wired_items": 484
   },
   "gates": [
     "A/B shape selection",

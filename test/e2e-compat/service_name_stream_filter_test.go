@@ -100,7 +100,16 @@ func snCount(t *testing.T, base string, query string, at time.Time) string {
 // without it (every answer, byte for byte after sorting): the flag changes the VictoriaLogs reads only.
 //
 // conformance: semantics/service-name-stream-filter, service-name-derivation
-func TestCompat_ServiceNameStreamFilterLikeLoki(t *testing.T) {
+func TestCompat_ServiceNameStreamFilterLikeLoki(t *testing.T) { runServiceNameStreamFilterLikeLoki(t) }
+
+// TestVLCapability_ServiceNameStreamFilterLikeLoki is TestCompat_ServiceNameStreamFilterLikeLoki in the VictoriaLogs
+// version matrix (compat-vl): the stream filter's or groups, the empty value matching a stream without the label,
+// and the stream labels read as the rows' fields, on every supported VictoriaLogs release.
+//
+// conformance: vl-stream-filter-or-groups-and-missing-label, semantics/service-name-stream-filter
+func TestVLCapability_ServiceNameStreamFilterLikeLoki(t *testing.T) { runServiceNameStreamFilterLikeLoki(t) }
+
+func runServiceNameStreamFilterLikeLoki(t *testing.T) {
 	run := fmt.Sprintf("snsf-%d", time.Now().UnixNano())
 	base := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
 	lines := func(kind string) []string {
