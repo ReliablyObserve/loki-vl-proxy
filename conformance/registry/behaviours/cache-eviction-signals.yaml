@@ -1,0 +1,84 @@
+id: cache-eviction-signals
+kind: observability
+title: The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has
+pending: true
+
+loki: |
+  Loki's results and chunk caches export hit, miss and request counts per
+  cache (and memcached or the embedded cache their own evictions). It has no
+  per-reason breakdown of why an entry left; operators size it from those
+  ratios. This item covers the proxy's own cache and adds nothing to Loki
+  answers.
+
+victorialogs: |
+  VictoriaLogs holds the data and keeps no answer cache the proxy can read; it
+  is not involved.
+
+proxy: |
+  Every removal from the memory (L1) and disk (L2) tiers is counted by reason
+  in loki_vl_proxy_cache_evictions_total{layer,tier,reason}: expired,
+  capacity, replaced, invalidated, flush. expired + capacity is exactly the
+  existing loki_vl_proxy_cache_layer_evictions_total (summed over components),
+  which is unchanged, as are the legacy cache_tier_* series. Every value a
+  tier does not store is counted in
+  loki_vl_proxy_cache_admission_rejections_total{layer,tier,reason}: L1
+  single_entry_budget, source_expired, shadow_budget; L2 too_large,
+  queue_full, ttl_below_minimum, capacity, invalid_key, encode_failed, closed;
+  and the L2 placement skips memory_only and not_replica, which are not part
+  of loki_vl_proxy_cache_layer_rejections_total (the other reasons sum to it).
+  Expiry and capacity evictions are observed in
+  loki_vl_proxy_cache_entry_age_at_eviction_seconds and
+  loki_vl_proxy_cache_entry_hits_at_eviction (L1 hits counted by the deferred
+  LRU promoter, a lower bound; an L2 record found by the start-up scan has no
+  known admission time and is counted without an age). Lower-tier hits copied
+  up are loki_vl_proxy_cache_promotions_total{layer,from,to}; an L2 lookup that
+  read a bbolt record is observed in loki_vl_proxy_cache_l2_read_seconds and
+  loki_vl_proxy_cache_l2_read_bytes; loki_vl_proxy_cache_ttl_seconds{class}
+  states the base TTL of 20 answer classes. All labels come from fixed sets
+  (no tenant, query or key text); the families are summed over components, a
+  shared disk is counted once, and the series set is fixed (476 per replica).
+  The counters are atomics read without the cache's locks, in Prometheus
+  scrape and OTLP push alike. L2 reasons and histograms of a flush are applied
+  only when its bbolt transaction commits. Demotions are not exported: L1 and
+  L2 copies are written together. The chart dashboard has a Cache efficiency
+  row and docs/cache-troubleshooting.md a sizing guide.
+
+implementation:
+  - internal/cache/eviction_signals.go
+  - internal/cache/cache.go
+  - internal/cache/placement_cache.go
+  - internal/cache/disk.go
+  - internal/cache/disk_batch.go
+  - internal/cache/disk_lru.go
+  - internal/metrics/cache_signal_metrics.go
+  - internal/proxy/cache_layer_metrics.go
+
+decisions:
+  - id: eviction-reasons-as-new-families
+    chosen: 'New families with a reason label beside the existing layer counters, which keep their series'
+    over: ['a reason label on loki_vl_proxy_cache_layer_evictions_total and cache_tier_evictions_total (changes series identity for dashboards, alerts and recording rules that select or join on them)', 'per-component reason series (about 4x the series)']
+    why: |
+      Issue #1767 asks why the cache evicts while nearly empty. Adding a label
+      to the existing families would split their series and break any query
+      that matches them without aggregation; new families leave every existing
+      series as it was, and the invariant (expired + capacity = layer
+      evictions; refusals = layer rejections) ties the two together. The reason
+      families drop the component label: the question is per tier and layer,
+      and summing over components keeps the set fixed at 476 series.
+    evidence: |
+      TestEvictionSignalsRandomOperationsBalance and
+      TestEvictionSignalsConcurrentBalance hold the invariant over random and
+      concurrent operations on both tiers;
+      TestCacheSignalMetricsExporterParityAndCardinality pins the series set
+      and Prometheus/OTLP agreement.
+    code: [internal/cache/eviction_signals.go, internal/metrics/cache_signal_metrics.go]
+    tests: [TestEvictionSignalsMemoryReasons, TestEvictionSignalsMemoryRejections, TestEvictionSignalsDiskRejections, TestEvictionSignalsDiskReasons, TestEvictionSignalsPlacementAndPromotion, TestEvictionSignalsPeerPromotion, TestEvictionSignalsRandomOperationsBalance, TestEvictionSignalsConcurrentBalance, TestDiskAdmissionRejectionKeepsTheDecision, TestCacheSignalMetricsExporterParityAndCardinality, TestCacheSignalMetricsAbsentProviders, TestCacheSignalMetricsSharedDiskCountedOnce, TestCacheTTLGaugeMatchesTheConfiguredTTLs, TestCacheEfficiencyDashboardRowMatchesTheExporters]
+    quality: |
+      L1 hits at eviction are a lower bound (the promotion buffer drops under
+      bursts, Peek does not promote). L1 age is kept to the second (two uint32
+      on the LRU node). An L2 queued value's hits carry into its record; a
+      record found by the start-up scan has no age.
+    performance:
+      tracked: ['cache get/set/evict paths: ns/op, B/op, allocs/op (benchstat, 8 interleaved runs)', 'parallel get and set with a concurrent scrape (lock contention)']
+      bound: 'no allocation on any get or set path; +8 B per L1 entry (the LRU node 24 -> 32 bytes); at most one allocation per disk flush that evicts or refuses; no lock taken by the scrape of these families'
+      benchmarks: [BenchmarkCacheSetEvictCapacity, BenchmarkCacheSetEvictExpired, BenchmarkCacheSetReplace, BenchmarkCacheGetHitParallel, BenchmarkCacheSetEvictParallel, BenchmarkDiskCacheFlushEvict, BenchmarkDiskCacheGetCommitted]

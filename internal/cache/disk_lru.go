@@ -16,6 +16,11 @@ type diskLRUEntry struct {
 	expiresAt  int64
 	lastAccess uint64
 	generation uint64
+	// admitted is when the record was committed on this replica (unix
+	// nanoseconds), 0 when unknown (found by the startup scan); hits are the
+	// lookups that read it since, plus those of its queued value.
+	admitted   int64
+	hits       uint32
 	invalid    bool
 	prev, next *diskLRUEntry
 }
@@ -175,9 +180,15 @@ func (dc *DiskCache) rebuildIndex() error {
 						return err
 					}
 					dc.Evictions.Add(1)
+					reason := EvictionInvalidated
 					if err == nil {
 						dc.layerL2[LayerForKey(k)].evictions.Add(1)
+						reason = EvictionCapacity
+						if expiry <= clockNow().UnixNano() {
+							reason = EvictionExpired
+						}
 					}
+					dc.signals.evict(LayerForKey(k), reason, -1, 0)
 					continue
 				}
 				dc.addIndex(k, size, expiry)

@@ -868,14 +868,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		cacheKey, cacheable := p.compatCacheKey(endpoint, r)
-		ttl := CacheTTLs[endpoint]
-		// For query_range (and query), use a fixed 5-minute TTL so the cache entry
-		// outlives the bucket used to generate the key (max(5min, step)) while keeping
-		// staleness imperceptible: on a 2-day chart a 5-min gap is 0.17% of width.
-		// Using step (up to 1h) as TTL caused visible empty spaces at the chart right edge.
-		if endpoint == "query_range" || endpoint == "query" {
-			ttl = 5 * time.Minute
-		}
+		ttl := compatAnswerTTL(endpoint)
 		if !cacheable || ttl <= 0 {
 			setCacheResult(r.Context(), "bypass")
 			// No response cache: identical requests in flight still share one

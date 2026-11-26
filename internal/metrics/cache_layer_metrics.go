@@ -201,10 +201,11 @@ func (m *Metrics) writeCacheLayerMetrics(sb *strings.Builder) {
 			}
 		}
 	}
+	m.writeCacheSignalMetrics(sb)
 }
 
 func (p *OTLPPusher) cacheLayerMetrics(now int64) []map[string]interface{} {
-	var out []map[string]interface{}
+	out := p.cacheSignalMetrics(now)
 	for _, metric := range p.metrics.cacheLayerMetricSnapshots() {
 		points := make([]map[string]interface{}, 0, len(metric.samples))
 		for _, sample := range metric.samples {

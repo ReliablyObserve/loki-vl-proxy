@@ -4369,6 +4369,412 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "type": "row",
+      "id": 87,
+      "title": "Cache efficiency",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 200,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 88,
+      "title": "Evictions by Reason",
+      "description": "Entries leaving memory (l1_memory) and disk (l2_disk) per second by reason. capacity means the budget is too small for what is reused; expired that the TTL ends reuse; replaced, invalidated and flush are rewrites, explicit removals and purges. See the cache sizing guide.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 201,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (tier, reason) (rate(loki_vl_proxy_cache_evictions_total[5m]))",
+          "legendFormat": "{{tier}} {{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 89,
+      "title": "Admission Rejections by Reason",
+      "description": "Values a tier did not store per second by reason. memory_only and not_replica are disk placement skips by design, not refusals; single_entry_budget and too_large are answers above a tenth of -cache-max-bytes; ttl_below_minimum are answers shorter than -disk-cache-min-ttl.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 201,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (tier, reason) (rate(loki_vl_proxy_cache_admission_rejections_total[5m]))",
+          "legendFormat": "{{tier}} {{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 90,
+      "title": "Entry Age at Eviction",
+      "description": "Time an entry spent in its tier before an expiry or capacity eviction. Compare expired with Cache TTL by Answer Class: an age at the TTL with hits above 0 means reused answers expire before their next use.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 209,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, tier, reason) (rate(loki_vl_proxy_cache_entry_age_at_eviction_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{tier}} {{reason}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.9, sum by (le, tier, reason) (rate(loki_vl_proxy_cache_entry_age_at_eviction_seconds_bucket[5m])))",
+          "legendFormat": "p90 {{tier}} {{reason}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 91,
+      "title": "Hits at Eviction (mean)",
+      "description": "Lookups an entry answered from its tier before an expiry or capacity eviction, on average. Above 0 for capacity evictions means reused entries are pushed out; 0 means one-time answers a bigger cache would not reuse. Memory hits are a lower bound.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 209,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (tier, reason) (rate(loki_vl_proxy_cache_entry_hits_at_eviction_sum[5m])) / sum by (tier, reason) (rate(loki_vl_proxy_cache_entry_hits_at_eviction_count[5m]))",
+          "legendFormat": "{{tier}} {{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 92,
+      "title": "Promotions Between Tiers",
+      "description": "Lower-tier hits copied up per second: disk or peer hits copied into memory, and peer hits handed to the local disk queue.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 209,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (from, to) (rate(loki_vl_proxy_cache_promotions_total[5m]))",
+          "legendFormat": "{{from}} -> {{to}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 93,
+      "title": "L2 Record Read Latency",
+      "description": "One disk lookup that read a record from bbolt: the index lock, the read and the decode (hits from the pending write queue are not reads). Milliseconds at p99 point at a slow device.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 217,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(loki_vl_proxy_cache_l2_read_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(loki_vl_proxy_cache_l2_read_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 94,
+      "title": "L2 Record Read Size",
+      "description": "Encoded bytes of one disk record read. Mostly small reads with many cache lookups per request mean a page costs many disk reads.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 217,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(loki_vl_proxy_cache_l2_read_bytes_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.9, sum by (le) (rate(loki_vl_proxy_cache_l2_read_bytes_bucket[5m])))",
+          "legendFormat": "p90",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "id": 95,
+      "title": "Cache TTL by Answer Class",
+      "description": "Base TTL each answer class is stored with. The label and detected field handler caches scale it with the request window (at most 1h); patterns are kept until replaced.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 217,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "TTL",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "class": "Class",
+              "Value": "TTL"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (class) (loki_vl_proxy_cache_ttl_seconds)",
+          "legendFormat": "",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ]
     }
   ],
   "refresh": "30s",

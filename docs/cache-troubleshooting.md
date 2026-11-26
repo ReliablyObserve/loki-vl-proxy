@@ -168,3 +168,44 @@ points preserves their original read age and extent TTL; it does not make late
 backfills immediately visible after the settle horizon. This is not distributed
 deletion invalidation. Check restart and peer-loss behavior separately from
 ordinary warm requests; RF=1 and RF=2 have different recovery costs.
+
+## Size the cache from its eviction signals
+
+A cache that uses a small part of its budget and still evicts all the time is
+usually limited by TTLs, not by size. The reason counters say which. All series
+carry only `layer`, `tier` and `reason` (or `from`/`to`, `class`); see the
+[metric definitions](observability.md#why-entries-leave-or-never-enter).
+
+```promql
+# Why entries leave L1 and L2.
+sum by (tier, reason) (rate(loki_vl_proxy_cache_evictions_total[1h]))
+# Why values never reach a tier.
+sum by (tier, reason) (rate(loki_vl_proxy_cache_admission_rejections_total[1h]))
+# How old an entry was, and how often it had been read, when it was evicted.
+histogram_quantile(0.5, sum by (le, tier, reason) (rate(loki_vl_proxy_cache_entry_age_at_eviction_seconds_bucket[1h])))
+sum by (tier, reason) (rate(loki_vl_proxy_cache_entry_hits_at_eviction_sum[1h]))
+  / sum by (tier, reason) (rate(loki_vl_proxy_cache_entry_hits_at_eviction_count[1h]))
+# The TTL each answer class is stored with.
+loki_vl_proxy_cache_ttl_seconds
+```
+
+| What you see | What it means | What to change |
+|---|---|---|
+| `evictions{reason="capacity"}` is a large share and `entry_hits_at_eviction{reason="capacity"}` is above 0 | Entries that were being reused are pushed out for room | Raise `-cache-max-bytes` (or `-cache-max` when the entry count is the limit) for L1, `-disk-cache-max-bytes` or `-disk-cache-max-entries` for L2 |
+| `evictions{reason="expired"}` dominates, the age at eviction sits at the class TTL and hits at eviction are above 0 | Reused answers expire before their next use | Compare with `cache_ttl_seconds{class}`; raise that class's flag where it has one (`-query-range-history-cache-ttl`, `-query-range-recent-cache-ttl`, `-query-range-extent-cache-ttl`, `-labels-cache-ttl`, `-parse-risk-probe-cache-ttl`). The Loki answer classes (`query_range`, `query`, `series`, `volume`, detected fields and labels) have fixed TTLs that keep answers fresh |
+| `evictions{reason="expired"}` dominates with 0 hits at eviction | One-time answers: a bigger cache or a longer TTL would not be reused | Nothing |
+| `admission_rejections{tier="l2_disk",reason="ttl_below_minimum"}` is high | Short-lived answers (TTL under `-disk-cache-min-ttl`, 30s by default; `volume` and `index_stats` answers live 10s) stay in memory only | Usually nothing: lowering `-disk-cache-min-ttl` writes answers to disk that expire before most rereads |
+| `admission_rejections{reason="single_entry_budget"}` (L1) or `{reason="too_large"}` (L2) is high | Answers above a tenth of `-cache-max-bytes` (the L2 entry limit is the same tenth) are never cached | Raise `-cache-max-bytes` |
+| `admission_rejections{tier="l2_disk",reason="queue_full"}` | The disk write queue is full between flushes | Raise `-disk-cache-max-buffer-bytes` or shorten `-disk-cache-flush-interval` |
+| `admission_rejections{tier="l2_disk",reason="memory_only"}` or `not_replica` | Placement, not refusal: memory-only answers and non-owner shadow copies are kept off the disk by design | Nothing |
+| `promotions{from="l2_disk"}` is low while L1 evicts on `expired` | A memory and a disk copy are written together with the same TTL, so they expire together; the disk answers after a restart, an L1 capacity eviction, or a promotion of a still-valid copy | Raise memory first; the disk does not extend a TTL |
+| `cache_l2_read_seconds` p99 is in milliseconds, or `cache_l2_read_bytes` is mostly under 4 KiB | The disk is slow, or many small records are read per request | Check the device; see cache lookups per request below |
+
+Cache lookups per client request are
+`loki_vl_proxy_request_fanout{kind="cache_lookup"}` (by route). The split of those
+lookups by tier is not measured. Requests that are never cached (the settled
+steps cache's `canceled`, `error`, `oversize`, `headers` and `evaluator`
+admission reasons above) are counted by the internal-operation metrics, not by
+these families. Eviction histograms observe only expiry and capacity evictions;
+an L2 record found by the start-up scan has no known admission time and is not
+observed.
