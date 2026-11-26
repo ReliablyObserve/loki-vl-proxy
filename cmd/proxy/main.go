@@ -396,6 +396,7 @@ type runtimeOptions struct {
 	cacheMax                    int
 	cacheMaxBytes               int
 	cacheDisabled               bool
+	cacheRetention              cache.RetentionPolicy
 	compatCacheEnabled          bool
 	compatCacheMaxPercent       int
 	diskCfg                     cache.DiskCacheConfig
@@ -539,6 +540,8 @@ func run(
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
+	cacheReuseProtectionPercent := fs.Int("cache-reuse-protection-percent", 0, "Share (percent, 0-90) of the memory caches' entry and byte budgets kept for entries read again since they were stored: under capacity pressure an entry stored but not read again is evicted first, so a one-time flood does not push out reused answers. Never changes a TTL or which answer is served; expiry evictions are unaffected. 0 (default) is plain LRU; 20 is the measured recommendation where capacity evictions of reused entries or one-time floods are seen")
+	cacheDemoteOnEvict := fs.Bool("cache-demote-on-evict", false, "When a capacity eviction removes an entry read at least once from memory, keep its disk copy newest in the disk cache's recency order, or write it to the disk cache with the TTL it has left when the disk holds none (never a longer TTL; never memory-only, patterns or non-owner shadow entries). Needs -disk-cache-path")
 	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead. It also turns off the request-level join: identical read requests in flight then run each on their own (held failures are still answered, see -error-cache-enabled)")
 	errorCacheEnabled := fs.Bool("error-cache-enabled", true, "Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held, except VictoriaLogs' refusal of the query the proxy wrote, which the same release always gives (see -error-cache-vl-refusal-ttl). Identical requests in flight share one run either way (see -coalescer-disabled)")
 	errorCacheTransientTTL := fs.Duration("error-cache-transient-ttl", proxy.DefaultErrorCacheTransientTTL, "How long a backend failure (VictoriaLogs 5xx, 429 or queue timeout, a refused or reset connection) is held per request; 0 holds none. A timeout or an aborted body is never held. Each replica asks VictoriaLogs at most once per this TTL per failing request, and the first request after VictoriaLogs recovers answers within it")
@@ -970,6 +973,7 @@ func run(
 		cacheMax:              *cacheMax,
 		cacheMaxBytes:         *cacheMaxBytes,
 		cacheDisabled:         *cacheDisabled,
+		cacheRetention:        cache.RetentionPolicy{ProtectPercent: *cacheReuseProtectionPercent, DemoteOnEvict: *cacheDemoteOnEvict},
 		compatCacheEnabled:    *compatCacheEnabled && !*cacheDisabled,
 		compatCacheMaxPercent: *compatCacheMaxPercent,
 		diskCfg: cache.DiskCacheConfig{
@@ -1417,6 +1421,21 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	if err != nil {
 		cacheCleanup()
 		return nil, fmt.Errorf("build compatibility cache: %w", err)
+	}
+	// Both memory caches are empty here; the compatibility cache has no disk,
+	// so demotion applies to the primary cache only.
+	for _, c := range []*cache.Cache{cacheLayer, compatCacheLayer} {
+		if err := c.SetRetention(opts.cacheRetention); err != nil {
+			cacheCleanup()
+			compatCleanup()
+			return nil, fmt.Errorf("cache retention: %w", err)
+		}
+	}
+	if !opts.cacheDisabled {
+		logger.Info("cache retention policy",
+			"reuse_protection_percent", opts.cacheRetention.ProtectPercent,
+			"demote_on_evict", opts.cacheRetention.DemoteOnEvict && opts.diskCfg.Path != "",
+		)
 	}
 
 	proxyCfg := opts.proxyCfg

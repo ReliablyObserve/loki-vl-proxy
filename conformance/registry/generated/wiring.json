@@ -150,6 +150,12 @@
       "internal/capability/version_source_test.go",
       "internal/proxy/backend_version_source_test.go"
     ],
+    "cache-eviction-signals": [
+      "internal/cache/eviction_signals_test.go",
+      "internal/metrics/cache_signal_dashboard_test.go",
+      "internal/metrics/cache_signal_metrics_test.go",
+      "internal/proxy/cache_layer_metrics_test.go"
+    ],
     "cache-response-key-versions": [
       "internal/proxy/binary_empty_without_test.go",
       "internal/proxy/detected_level_one_value_test.go",
@@ -174,6 +180,11 @@
       "internal/proxy/cache_handover_test.go",
       "test/e2e-fleet/restart_handover_test.go",
       "test/helm/cache_handover_test.go"
+    ],
+    "cache-reuse-retention": [
+      "cmd/proxy/main_test.go",
+      "internal/cache/retention_test.go",
+      "internal/cache/retention_trace_test.go"
     ],
     "credential-passthrough-as-configured": [
       "cmd/proxy/secret_flags_test.go",
@@ -3225,7 +3236,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 757,
+  "registry_items": 759,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3239,6 +3250,7 @@
       "semantics/field-mapping-label-modes"
     ],
     "cmd/proxy/main_test.go": [
+      "cache-reuse-retention",
       "limits/every-cap-is-a-flag",
       "observability-metrics-histograms-and-labels",
       "operator-configurable-limits",
@@ -3273,6 +3285,9 @@
       "semantics/error-cache-bounded-memory",
       "semantics/error-cache-classes-and-ttl",
       "semantics/error-coalescing-request-flights"
+    ],
+    "internal/cache/eviction_signals_test.go": [
+      "cache-eviction-signals"
     ],
     "internal/cache/handover_peak_test.go": [
       "cache-restart-handover"
@@ -3312,6 +3327,12 @@
     ],
     "internal/cache/restore_test.go": [
       "cache-restart-handover"
+    ],
+    "internal/cache/retention_test.go": [
+      "cache-reuse-retention"
+    ],
+    "internal/cache/retention_trace_test.go": [
+      "cache-reuse-retention"
     ],
     "internal/capability/docs_test.go": [
       "vl-capability-layer"
@@ -3593,6 +3614,12 @@
     "internal/metrics/cache_restart_metrics_test.go": [
       "cache-restart-handover"
     ],
+    "internal/metrics/cache_signal_dashboard_test.go": [
+      "cache-eviction-signals"
+    ],
+    "internal/metrics/cache_signal_metrics_test.go": [
+      "cache-eviction-signals"
+    ],
     "internal/metrics/callertracker_test.go": [
       "observability-slow-query-log"
     ],
@@ -3790,6 +3817,9 @@
     "internal/proxy/cache_handover_test.go": [
       "cache-restart-handover",
       "shutdown-releases-background-work"
+    ],
+    "internal/proxy/cache_layer_metrics_test.go": [
+      "cache-eviction-signals"
     ],
     "internal/proxy/canonical_spelling_loki_test.go": [
       "loki_api_v1_query_range",
@@ -7186,7 +7216,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 856,
+  "tests_with_markers": 862,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7344,5 +7374,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 489
+  "wired_items": 491
 }
