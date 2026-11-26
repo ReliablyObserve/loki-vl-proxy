@@ -832,8 +832,14 @@ resources:
 # - liveness:  /alive  (process is running)
 # - readiness: /ready  (backend + circuit-breaker checks)
 # - startup:   /health (basic process health)
-# Startup probe is disabled by default because the proxy starts quickly in the
-# common in-memory-cache case; enable it for slower cold starts.
+# Startup probe (startup.enabled unset): off, because the proxy starts quickly in
+# the common in-memory-cache case, and on with cacheHandover.enabled, because
+# the disk cache index is rebuilt before the listener opens. Set true or false to
+# decide yourself; every other probe.startup value you set is used as set.
+# While it has not succeeded, Kubernetes runs neither the liveness nor the
+# readiness probe, and their initialDelaySeconds count from its success.
+# Never point it at /ready: /ready also checks VictoriaLogs, so a backend outage
+# would restart every proxy.
 probe:
   liveness:
     enabled: true
@@ -852,17 +858,26 @@ probe:
     failureThreshold: 3
     successThreshold: 1
   startup:
-    enabled: false
+    # unset = off, or on with cacheHandover.enabled.
+    enabled: null
     path: /health
     initialDelaySeconds: 5
     periodSeconds: 5
     timeoutSeconds: 3
-    failureThreshold: 30
+    # unset = 30, or 60 with cacheHandover.enabled (5 s + 60 x 5 s = 305 s for
+    # the process to open its listener before it is restarted).
+    failureThreshold: null
 
 # --- Pod Disruption Budget ---
 # Recommended whenever replicaCount > 1 or HPA is enabled.
 podDisruptionBudget:
-  enabled: false
+  # unset = no PodDisruptionBudget, except with cacheHandover.enabled and
+  # replicaCount > 1 or HPA, which renders one with maxUnavailable: 1.
+  # true renders minAvailable / maxUnavailable as set here; false renders none
+  # (also when you manage a PodDisruptionBudget for these pods yourself: two
+  # budgets over one pod make its eviction fail).
+  enabled: null
+  # With maxUnavailable, set enabled: true and minAvailable: null.
   minAvailable: 1
   # maxUnavailable: 1
 
@@ -1006,15 +1021,21 @@ lifecycle: {}
 # Keeps a replica's memory cache warm across rolling restarts: on SIGTERM the
 # proxy writes its memory hot set to the disk cache (after the HTTP drain,
 # within shutdownFlushTimeoutSeconds), and the next start loads it back before
-# /ready answers 200 (within startupWarmTimeoutSeconds), so the readiness probe
-# holds the rollout until the replica is warm. Needs the disk cache
-# (persistence.enabled, or extraArgs.disk-cache-path on a volume that survives
-# the restart). See docs/disk-cache.md#restart-hand-over.
-# For one replica at a time also set podDisruptionBudget.enabled=true with
-# maxUnavailable: 1 (voluntary evictions such as node drains) and, for a
-# Deployment, workload.deploymentStrategy.rollingUpdate.maxUnavailable: 1 with
-# maxSurge: 0 (a ReadWriteOnce disk cannot be mounted by a surge pod); a
-# StatefulSet updates one pod at a time already.
+# /ready answers 200. A pod becomes ready when it is warm, or partly warm after
+# startupWarmTimeoutSeconds, so the readiness probe holds the rollout until
+# then. Needs the disk cache (persistence.enabled, or extraArgs.disk-cache-path
+# on a volume that survives the restart). See
+# docs/disk-cache.md#restart-hand-over.
+# Enabled, the chart also renders (your own settings win):
+# - one pod at a time: a Deployment without workload.deploymentStrategy gets
+#   RollingUpdate with maxSurge: 0 and maxUnavailable: 1 (a surge pod would wait
+#   forever for the disk cache file lock of the old pod); with one replica the
+#   rollout therefore has a gap. A StatefulSet updates one pod at a time
+#   already.
+# - a PodDisruptionBudget with maxUnavailable: 1 when replicaCount > 1 or HPA
+#   is on (podDisruptionBudget.enabled unset);
+# - a startup probe (probe.startup);
+# - minReadySeconds.
 cacheHandover:
   enabled: false
   # -cache-shutdown-flush-timeout. Set it here rather than in extraArgs, so the
@@ -1025,11 +1046,19 @@ cacheHandover:
   # answer bytes the shutdown keeps.
   startupWarmBytes: 134217728
   # -cache-startup-warm-timeout: the longest /ready answers 503 for the warm-up.
-  startupWarmTimeoutSeconds: 10
+  # The pod is ready when the warm-up finishes, or partly warm once this passes
+  # (counted from before the listener opens). Generous, so a full warm-up
+  # finishes; raise it with startupWarmBytes on a slow volume.
+  startupWarmTimeoutSeconds: 120
   # preStop sleep (the native sleep action, rendered on Kubernetes 1.30+ only)
   # so endpoint removal reaches clients before the HTTP drain starts; 0 adds
   # none.
   preStopSleepSeconds: 5
+  # minReadySeconds of the workload: a restarted replica stays ready this long
+  # before the rollout stops the next one, so a crash right after ready halts the
+  # rollout and the other replicas refresh their peer list (every 15 s) first.
+  # 0 renders none.
+  minReadySeconds: 15
 
 # --- Additional containers/volumes ---
 # Escape hatches for sidecars, init containers, extra config volumes, and

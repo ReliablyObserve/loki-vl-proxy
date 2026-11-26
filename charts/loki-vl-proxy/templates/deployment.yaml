@@ -31,7 +31,20 @@ spec:
   {{- with .Values.workload.deploymentStrategy }}
   strategy:
     {{- toYaml . | nindent 4 }}
+  {{- else }}
+  {{- if .Values.cacheHandover.enabled }}
+  {{- /* One pod at a time, the old one first: a surge pod on the same disk
+         would wait for the old pod's cache file lock before it listens. */}}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- if and .Values.cacheHandover.enabled (gt (int .Values.cacheHandover.minReadySeconds) 0) }}
+  minReadySeconds: {{ int .Values.cacheHandover.minReadySeconds }}
   {{- end }}
   {{- if not .Values.horizontalPodAutoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -389,7 +402,13 @@ spec:
             failureThreshold: {{ .Values.probe.readiness.failureThreshold }}
             successThreshold: {{ .Values.probe.readiness.successThreshold }}
           {{- end }}
-          {{- if .Values.probe.startup.enabled }}
+          {{- /* Unset, the startup probe follows the restart hand-over: the disk
+                 cache index is rebuilt before the listener opens. */}}
+          {{- $startupEnabled := .Values.probe.startup.enabled }}
+          {{- if kindIs "invalid" $startupEnabled }}
+          {{- $startupEnabled = .Values.cacheHandover.enabled }}
+          {{- end }}
+          {{- if $startupEnabled }}
           startupProbe:
             httpGet:
               path: {{ .Values.probe.startup.path | quote }}
@@ -397,7 +416,7 @@ spec:
             initialDelaySeconds: {{ .Values.probe.startup.initialDelaySeconds }}
             periodSeconds: {{ .Values.probe.startup.periodSeconds }}
             timeoutSeconds: {{ .Values.probe.startup.timeoutSeconds }}
-            failureThreshold: {{ .Values.probe.startup.failureThreshold }}
+            failureThreshold: {{ .Values.probe.startup.failureThreshold | default (ternary 60 30 .Values.cacheHandover.enabled) }}
           {{- end }}
           {{- with .Values.lifecycle }}
           lifecycle:
