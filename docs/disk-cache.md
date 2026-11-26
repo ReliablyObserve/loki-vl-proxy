@@ -116,7 +116,7 @@ At start the index rebuild orders ranked records by their rank, so the hottest
 are newest and evicted last. With `-cache-startup-warm-bytes` (a byte budget,
 at most half of `-cache-max-bytes`) a warm-up in the background then loads
 ranked entries back into L1, hottest first, until the budget or
-`-cache-startup-warm-timeout` (default `10s`; the Helm chart sets `120s`) is
+`-cache-startup-warm-timeout` (default `120s`, which the Helm chart also sets) is
 reached. The replica reports ready when the warm-up finishes, or after the
 timeout, whichever comes first: `/ready` answers 503 `response cache warming`
 meanwhile and never longer than the timeout.
@@ -245,6 +245,29 @@ gp3 includes 125 MiB/s and 3,000 IOPS by default and can be provisioned higher.
 The compressed rows assume the benchmark data's `s2` ratio of about 2.8x. The
 instance's EBS bandwidth can cap the volume, and a volume created from a
 snapshot is slower until it is initialised.
+
+### Timeouts
+
+Set from the computed figures above, not from measurements on EBS:
+
+| Setting | Value | Covers | Basis |
+|---|---|---|---|
+| `-cache-startup-warm-timeout` | `120s` (flag and chart) | the warm-up; the replica is ready as soon as it finishes | computed: the slowest cell above is 32.8 s to read |
+| chart `cacheHandover.shutdownFlushTimeoutSeconds` | `60` (the flag stays `0`, off) | writing the records the disk lacks at shutdown | computed: 4 GiB uncompressed at 125 MiB/s is about 33 s |
+| chart `terminationGracePeriodSeconds` with the hand-over on | 130 s with the defaults | preStop 5 s, HTTP drain 30 + 30 s, the flush, 5 s to close | follows the two settings; a larger value of yours wins |
+| chart startup probe with the hand-over on | 60 failures, 5 s apart after 5 s (305 s) | the index rebuild, before the listener opens | see below |
+
+The index rebuild reads the disk one record at a time: about one 4 KiB read per
+record, one after another, because the cache file is mapped without read-ahead.
+On an emulated EBS volume (a local VM with the disk throttled, 2026-11-26; not
+EBS, and without added latency) it took 32 s for 94,000 records (a 10 GiB file)
+at 3,000 IOPS, and the number of IOPS set it, not the throughput. On a volume
+with real latency each read also waits that latency, which more IOPS do not
+shorten: at 1 to 3 ms a read, 96,000 reads are an estimated 1.5 to 5 minutes.
+Watch `loki_vl_proxy_cache_restart_index_rebuild_duration_seconds` and raise
+`probe.startup.failureThreshold` for a large disk cache. Without the startup
+probe (a disk cache without `cacheHandover`), the chart's liveness probe
+restarts a pod whose listener is not open after about 35 to 50 s.
 
 ## Upgrades, restarts and purge
 

@@ -37,7 +37,8 @@ proxy: |
   identity and credentials), and it stays memory-only. Nothing is restored
   when the clock reads earlier than the flush started. Restored entries go
   behind what live requests stored and never evict them. The replica reports
-  ready when the warm-up finishes, or after the timeout, whichever comes first.
+  ready when the warm-up finishes, or after the timeout (default 120 s; the
+  chart gives the shutdown flush 60 s), whichever comes first.
   The warm-up restores in batches of at most 256 entries or about 4 MiB of
   decoded values: one bbolt read transaction per batch with at most
   min(GOMAXPROCS, 4) goroutines reading and decoding, one hold of the memory
