@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # validate_helm_secrets.sh — CI gate for the chart's "secret from an existing
-# Secret" values (adminAuth, deleteAuth, backendAuth, backendVersionAuth, observability.otlp), and
+# Secret" values (adminAuth, deleteAuth, backendAuth, backendVersionAuth, cacheKeySecret, observability.otlp), and
 # for the delete API's own token.
 #
 #   1) With each existingSecret set, the rendered manifest mounts the Secret key
@@ -25,6 +25,7 @@ OUT="$(helm template rel "$CHART" \
   --set adminAuth.existingSecret=admin-sec \
   --set backendAuth.existingSecret=backend-sec \
   --set backendVersionAuth.existingSecret=version-sec \
+  --set cacheKeySecret.existingSecret=cache-key-sec \
   --set observability.otlp.existingSecret=otlp-sec)"
 
 expect() {
@@ -33,7 +34,8 @@ expect() {
 expect '"-server.admin-auth-token-file=/var/run/secrets/loki-vl-proxy/admin-auth/token"'
 expect '"-backend-basic-auth-file=/var/run/secrets/loki-vl-proxy/backend-auth/basic-auth"'
 expect '"-backend-version-basic-auth-file=/var/run/secrets/loki-vl-proxy/backend-version-auth/basic-auth"'
-for pair in admin-auth:admin-sec:token backend-auth:backend-sec:basic-auth backend-version-auth:version-sec:basic-auth; do
+expect '"-cache-key-secret-file=/var/run/secrets/loki-vl-proxy/cache-key/secret"'
+for pair in admin-auth:admin-sec:token backend-auth:backend-sec:basic-auth backend-version-auth:version-sec:basic-auth cache-key:cache-key-sec:secret; do
   IFS=: read -r volume name key <<<"$pair"
   block="$(grep -A5 -F -- "- name: secret-$volume" <<<"$OUT" || true)"
   grep -qF "secretName: \"$name\"" <<<"$block" || fail "secret-$volume does not mount Secret $name"
@@ -42,7 +44,7 @@ done
 block="$(grep -A5 -F -- "- name: OTLP_HEADERS" <<<"$OUT" || true)"
 grep -qF 'name: "otlp-sec"' <<<"$block" || fail "OTLP_HEADERS does not reference Secret otlp-sec"
 grep -qF 'key: "headers"' <<<"$block" || fail "OTLP_HEADERS does not use key headers"
-if grep -qE '\$\((ADMIN_AUTH_TOKEN|DELETE_API_AUTH_TOKEN|BACKEND_BASIC_AUTH|BACKEND_VERSION_BASIC_AUTH|PEER_AUTH_TOKEN)\)|-(server\.admin-auth-token|delete-api-auth-token|backend-basic-auth|backend-version-basic-auth|peer-auth-token)=' <<<"$OUT"; then
+if grep -qE '\$\((ADMIN_AUTH_TOKEN|DELETE_API_AUTH_TOKEN|BACKEND_BASIC_AUTH|BACKEND_VERSION_BASIC_AUTH|PEER_AUTH_TOKEN|CACHE_KEY_SECRET)\)|-(server\.admin-auth-token|delete-api-auth-token|backend-basic-auth|backend-version-basic-auth|peer-auth-token|cache-key-secret)=' <<<"$OUT"; then
   fail "a secret is still passed in the process arguments"
 fi
 
@@ -62,6 +64,8 @@ must_fail --set backendVersionAuth.existingSecret=s --set extraArgs.backend-vers
 must_fail --set adminAuth.existingSecret=s --set 'extraArgs.server\.admin-auth-token-file=/mnt/token'
 must_fail --set backendAuth.existingSecret=s --set extraArgs.backend-basic-auth-file=/mnt/auth
 must_fail --set backendVersionAuth.existingSecret=s --set extraArgs.backend-version-basic-auth-file=/mnt/auth
+must_fail --set cacheKeySecret.existingSecret=s --set extraArgs.cache-key-secret=plain
+must_fail --set cacheKeySecret.existingSecret=s --set extraArgs.cache-key-secret-file=/mnt/secret
 must_fail --set peerCache.enabled=true --set extraArgs.peer-auth-token=plain
 must_fail --set peerCache.enabled=true --set extraArgs.peer-auth-token-file=/mnt/token
 must_fail --set observability.otlp.existingSecret=s --set observability.otlp.headers=a=b

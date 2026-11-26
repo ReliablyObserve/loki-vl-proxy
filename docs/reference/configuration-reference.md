@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (301), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (303), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -12,6 +12,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 |---|---|---|---|---|
 | `-cache-demote-on-evict` | bool | `false` | `extraArgs.cache-demote-on-evict` | When a capacity eviction removes an entry read at least once from memory, keep its disk copy newest in the disk cache's recency order, or write it to the disk cache with the TTL it has left when the disk holds none (never a longer TTL; never memory-only, patterns or non-owner shadow entries). Needs -disk-cache-path |
 | `-cache-disabled` | bool | `false` | `extraArgs.cache-disabled` | Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement) |
+| `-cache-key-secret` | string | (empty) | `extraArgs.cache-key-secret` | Secret keying the digests of credentials in cache keys (forwarded Authorization headers and cookies, -backend-basic-auth), so cache keys stored on disk, in snapshots or on peers cannot be used to test credential guesses. Set the same value on every replica to share credential-scoped cache entries across replicas and restarts. Empty: a key derived from -peer-auth-token, else a random key per process (credential-scoped entries are then not reused after a restart or by other replicas). When neither this flag nor -cache-key-secret-file is given, read from the CACHE_KEY_SECRET environment variable. A flag value is readable in the process command line |
+| `-cache-key-secret-file` | string | (empty) | `extraArgs.cache-key-secret-file` | File holding the -cache-key-secret value, read once at startup |
 | `-cache-max` | int | `10000` | `extraArgs.cache-max` | Maximum cache entries |
 | `-cache-max-bytes` | int | `defaultCacheMaxBytes` | `extraArgs.cache-max-bytes` | Maximum in-memory L1 cache size in bytes |
 | `-cache-reuse-protection-percent` | int | `0` | `extraArgs.cache-reuse-protection-percent` | Share (percent, 0-90) of the memory caches' entry and byte budgets kept for entries read again since they were stored: under capacity pressure an entry stored but not read again is evicted first, so a one-time flood does not push out reused answers. Never changes a TTL or which answer is served; expiry evictions are unaffected. 0 (default) is plain LRU; 20 is the measured recommendation where capacity evictions of reused entries or one-time floods are seen |

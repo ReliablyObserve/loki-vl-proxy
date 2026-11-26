@@ -71,6 +71,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
 | semantics | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | 3 | 2 | unknown |
 | observability | `cache-eviction-signals` — The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has | 8 | 4 | partial |
+| semantics | `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | 13 | 5 | unknown |
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 12 | unknown |
 | resource_control | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | 7 | 9 | partial |
 | performance | `cache-reuse-retention` — Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer | 7 | 3 | partial |
@@ -102,12 +103,12 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | 2 | 1 | partial |
 | resource_control | `peer-cache-query-replies` — Completed query replies computed on one replica answer the same request on every replica | 2 | 1 | partial |
 | resource_control | `peer-cache-read-hedge` — A peer-cache read never waits on a paused or hung replica longer than the read hedge delay | 3 | 3 | partial |
-| resource_control | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | 3 | 7 | partial |
+| resource_control | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | 3 | 8 | partial |
 | resource_control | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | 3 | 1 | partial |
 | semantics | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | 8 | 10 | unknown |
 | observability | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | 14 | 8 | unknown |
 | semantics | `release-image-pinned-by-digest` — The chart can pin the released image by digest, and each release publishes that digest as a file | 4 | 1 | unknown |
-| semantics | `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | 4 | 2 | unknown |
+| semantics | `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | 4 | 3 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 13 | 13 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 12 | 22 | partial |
