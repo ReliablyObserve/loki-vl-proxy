@@ -572,7 +572,7 @@ Bounded hot read-ahead is implemented and remains disabled by default (`-peer-ho
 
 Runtime behavior:
 
-1. Owners expose a compact hot-key index on `/_cache/hot` (top N keys with score, size, and remaining TTL).
+1. Owners expose a compact hot-key index on `/_cache/hot` (top N keys with score, size, and remaining TTL). Keys of entries computed with a caller's forwarded credentials are left out, and a peer never prefetches one, so those entries stay on the replica that computed them.
 2. Peers pull owner hot indexes on a periodic, jittered loop.
 3. Prefetch selection is bounded and tenant-fair:
    - remaining TTL must be above threshold

@@ -87,15 +87,12 @@ func (p *Proxy) scopeFingerprint(ctx context.Context, orgID string) string {
 }
 
 // Called at startup/reload. Only a namespace digest is retained; credentials
-// never become cache-key text. Including all mappings also invalidates sibling
+// never become cache-key text, nor an unkeyed digest input. Including all mappings also invalidates sibling
 // tenant caches on reload, without any unbounded per-tenant memo table.
 func (p *Proxy) buildRoutingNamespace(routing requestRouting) string {
-	backend, cold := "", ""
-	if p.backend != nil {
-		backend = p.backend.String()
-	}
+	backend, cold := p.backendInKeys(), ""
 	if p.coldRouter != nil {
-		cold = p.coldRouter.coldBackend.String()
+		cold = p.urlInKeys(p.coldRouter.coldBackend)
 	}
 	var style LabelStyle
 	var fields map[string]string
@@ -103,7 +100,14 @@ func (p *Proxy) buildRoutingNamespace(routing requestRouting) string {
 	if routing.translator != nil {
 		style, fields, otel = routing.translator.style, routing.translator.vlToLoki, routing.translator.translateOTel
 	}
-	parts := []any{"scope-v3", backend, cold, p.backendHeaders, routing.tenants, routing.label, style, fields, otel, p.forwardTenantHeader}
+	// Backend header values (the -backend-basic-auth credentials) enter as
+	// keyed digests only (credential_digest.go); with none set the namespace
+	// is what it was.
+	headers := p.backendHeadersInKeys
+	if headers == nil && len(p.backendHeaders) > 0 {
+		headers = p.credentialDigester().headerValues(p.backendHeaders)
+	}
+	parts := []any{"scope-v3", backend, cold, headers, routing.tenants, routing.label, style, fields, otel, p.forwardTenantHeader}
 	if p.jsonLineFieldsAsLineKeys {
 		// Placeholder rows read as JSON lines answer otherwise: every cache
 		// identity of such a proxy is its own (json_line_keys.go).

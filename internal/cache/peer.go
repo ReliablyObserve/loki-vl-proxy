@@ -441,7 +441,8 @@ func (pc *PeerCache) ReplicationFactor() int {
 }
 
 // SetPushFilter sets which keys may be pushed to peers (nil allows all): a
-// key it rejects stays on the replica that wrote it.
+// key it rejects stays on the replica that wrote it, is left out of the hot
+// index served to peers and is never prefetched from one.
 func (pc *PeerCache) SetPushFilter(allow func(key string) bool) {
 	pc.mu.Lock()
 	pc.pushFilter = allow
@@ -1223,6 +1224,10 @@ func (pc *PeerCache) serveHotIndex(w http.ResponseWriter, r *http.Request, local
 		Entries: make([]hotIndexEntry, 0, len(entries)),
 	}
 	for _, e := range entries {
+		// A key the push filter keeps on this replica is not offered either.
+		if !pc.pushFilterAllows(e.Key) {
+			continue
+		}
 		resp.Entries = append(resp.Entries, hotIndexEntry(e))
 	}
 	body, err := json.Marshal(resp)
@@ -1561,7 +1566,9 @@ func (pc *PeerCache) selectReadAheadCandidates(candidates []hotIndexEntry) []hot
 }
 
 func (pc *PeerCache) prefetchHotKey(local *Cache, e hotIndexEntry) bool {
-	if local == nil || e.Key == "" {
+	if local == nil || e.Key == "" || !pc.pushFilterAllows(e.Key) {
+		// Never copy a key the push filter keeps on the replica that wrote it,
+		// whatever an older peer's hot index lists.
 		return false
 	}
 	if _, ttl, ok := local.GetWithTTL(e.Key); ok && ttl >= pc.readAheadMinTTL {

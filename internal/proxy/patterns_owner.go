@@ -24,7 +24,7 @@ const patternsOwnerTimeout = 30 * time.Second
 // replica in the peers' ring hold the state, so every peer answers the selector with the same patterns.
 func (p *Proxy) patternStateKey(r *http.Request, scope patternQueryScope) string {
 	sum := sha256.Sum256([]byte(p.patternStateTenantKey(r) + "\x00" + scope.filter.String()))
-	return "patterns_state:" + hex.EncodeToString(sum[:])
+	return "patterns_state:" + hex.EncodeToString(sum[:]) + credentialScopeMark(p.fingerprintFromCtx(r.Context(), r))
 }
 
 // patternsForwardedToUs reports whether a peer forwarded the request to this proxy as the state's owner.
@@ -45,6 +45,11 @@ func (p *Proxy) patternsForwardedToUs(r *http.Request) bool {
 // caller answers locally.
 func (p *Proxy) patternsFromOwner(r *http.Request, scope patternQueryScope) ([]patternResultEntry, bool) {
 	if p.peerCache == nil || p.peerAuthToken == "" || p.patternsForwardedToUs(r) {
+		return nil, false
+	}
+	if credentialScopeMark(p.fingerprintFromCtx(r.Context(), r)) != "" {
+		// A request read with the caller's credentials keeps its pattern state
+		// on this replica and its credentials off the peers.
 		return nil, false
 	}
 	self := p.peerCache.SelfAddr()

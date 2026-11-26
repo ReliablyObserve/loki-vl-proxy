@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -30,8 +31,8 @@ func validateCacheHandoverFlags(flushTimeout time.Duration, warmBytes int64, war
 // value and the environment overrides. Left out: the per-pod identity
 // (-peer-self, -peer-self-az, the service instance id), which changes when
 // Kubernetes recreates a pod and decides no answer, and credentials
-// (-backend-basic-auth, -otlp-headers and flag names holding token, password
-// or secret), which decide no answer either and are never hashed onto the
+// (-otlp-headers and flag names holding basic-auth, token, password or
+// secret), which decide no answer either and are never hashed onto the
 // disk. It is computed only when the hand-over is on (hashing
 // the executable reads it once); "" restores no memory-only answer.
 func cacheHandoverScope(fs *flag.FlagSet, env envConfig, flushTimeout time.Duration, warmBytes int64) string {
@@ -47,7 +48,7 @@ func cacheHandoverScope(fs *flag.FlagSet, env envConfig, flushTimeout time.Durat
 		if !handoverScopeFlag(f.Name) {
 			return
 		}
-		fmt.Fprintf(h, "flag %s=%s\n", f.Name, f.Value.String())
+		fmt.Fprintf(h, "flag %s=%s\n", f.Name, withoutURLUserinfo(f.Value.String()))
 	})
 	translateOTel := "unset"
 	if env.translateOTel != nil {
@@ -60,7 +61,7 @@ func cacheHandoverScope(fs *flag.FlagSet, env envConfig, flushTimeout time.Durat
 		{"label-style", env.labelStyle}, {"field-mapping", env.fieldMappingJSON}, {"metadata-field-mode", env.metadataFieldMode},
 		{"translate-otel", translateOTel}, {"extra-label-fields", env.extraLabelFields},
 	} {
-		fmt.Fprintf(h, "env %s=%s\n", kv[0], kv[1])
+		fmt.Fprintf(h, "env %s=%s\n", kv[0], withoutURLUserinfo(kv[1]))
 	}
 	return version + "|" + revision + "|" + exe + "|" + hex.EncodeToString(h.Sum(nil)[:16])
 }
@@ -91,14 +92,29 @@ func executableDigest() (string, error) {
 func handoverScopeFlag(name string) bool {
 	switch name {
 	case "peer-self", "peer-self-az", // the pod's address and zone (Kubernetes downward API)
-		"backend-basic-auth", "otlp-headers": // credentials whose names say nothing
+		"otlp-headers": // credentials whose name says nothing
 		return false
 	}
 	lower := strings.ToLower(name)
-	for _, secret := range []string{"token", "password", "secret"} {
+	for _, secret := range []string{"basic-auth", "token", "password", "secret"} {
 		if strings.Contains(lower, secret) {
 			return false
 		}
 	}
 	return true
+}
+
+// withoutURLUserinfo drops the user information of a URL value (a -backend
+// such as http://user:password@host): credentials decide no answer and are
+// never hashed onto the disk. Any other value is returned as it is.
+func withoutURLUserinfo(value string) string {
+	if !strings.Contains(value, "@") {
+		return value
+	}
+	u, err := url.Parse(value)
+	if err != nil || u.User == nil || u.Host == "" {
+		return value
+	}
+	u.User = nil
+	return u.String()
 }
