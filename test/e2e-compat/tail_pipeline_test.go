@@ -76,6 +76,8 @@ var tailPipelineQueries = []string{
 	`| drop env="tail"`,
 	`| logfmt | keep msg, app`,
 	`| logfmt | drop msg, level="warn"`,
+	`| drop env="tail" | env="tail"`,
+	`| drop env="tail" | env=""`,
 }
 
 type tailPipelineEntry struct {
