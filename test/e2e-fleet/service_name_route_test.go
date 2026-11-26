@@ -23,7 +23,9 @@ import (
 // conformance: semantics/service-name-stream-route
 func TestFleet_ServiceNameRouteViolationReachesPeers(t *testing.T) {
 	svc := fmt.Sprintf("sn-route-%d", time.Now().UnixNano())
-	end := time.Now().Add(-5 * time.Minute).Truncate(time.Minute)
+	// One whole hour: the read is one window of the proxy's 1h split, so it is narrowed (-service-name-stream-route-min-window
+	// is 30m) and the rows of both streams spread over it.
+	end := time.Now().Add(-5 * time.Minute).Truncate(time.Hour)
 	start := end.Add(-time.Hour)
 	var rows strings.Builder
 	for i := 0; i < 20; i++ {
@@ -31,7 +33,7 @@ func TestFleet_ServiceNameRouteViolationReachesPeers(t *testing.T) {
 			{"service.name": svc, "pod": svc + "-0", "_msg": fmt.Sprintf("own %d", i)},
 			{"service.name": svc + "-other", "pod": svc + "-1", "service_name": svc, "_msg": fmt.Sprintf("stored %d", i)},
 		} {
-			r["_time"] = start.Add(time.Duration(i+1) * time.Minute).Format(time.RFC3339Nano)
+			r["_time"] = start.Add(time.Duration(3*i+1) * time.Minute).Format(time.RFC3339Nano)
 			line, _ := json.Marshal(r)
 			rows.Write(line)
 			rows.WriteByte('\n')
@@ -49,7 +51,8 @@ func TestFleet_ServiceNameRouteViolationReachesPeers(t *testing.T) {
 	if resp, err := http.Post(fleetVLURL+"/internal/force_flush", "text/plain", nil); err == nil {
 		resp.Body.Close()
 	}
-	// lines answers `{service_name="svc"}` over the window moved back by shift, so each ask is a new window.
+	// lines answers `{service_name="svc"}` over the window moved back by shift, so each ask is a new window (a shift
+	// moves the window off the hour: proxy-b's two split reads both come from the remembered violation).
 	lines := func(addr string, shift time.Duration) int {
 		t.Helper()
 		params := url.Values{"query": {`{service_name="` + svc + `"}`}, "start": {strconv.FormatInt(start.Add(-shift).UnixNano(), 10)},
@@ -123,10 +126,18 @@ func TestFleet_ServiceNameRouteViolationReachesPeers(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	before := queryCalls(proxyAddrs[1])
+	remembered, narrowed, proofs := outcome(proxyAddrs[1], "remembered_violation"), outcome(proxyAddrs[1], "narrowed"), outcome(proxyAddrs[1], "violation")
 	if got := lines(proxyAddrs[1], time.Minute); got != 40 {
 		t.Fatalf("proxy-b answered %d lines, want 40", got)
 	}
-	if calls := queryCalls(proxyAddrs[1]) - before; calls != 1 {
-		t.Fatalf("proxy-b sent %v VictoriaLogs query calls for a service a peer found a violation of, want 1 (no narrowed read, no proof)", calls)
+	if outcome(proxyAddrs[1], "remembered_violation") <= remembered {
+		t.Fatal("proxy-b did not read the violation proxy-a pushed")
+	}
+	if outcome(proxyAddrs[1], "narrowed") != narrowed || outcome(proxyAddrs[1], "violation") != proofs {
+		t.Fatal("proxy-b narrowed or proved a read of a service a peer found a violation of")
+	}
+	// The window moved off the hour is two reads of the 1h split, both without the stream filter and no proof.
+	if calls := queryCalls(proxyAddrs[1]) - before; calls != 2 {
+		t.Fatalf("proxy-b sent %v VictoriaLogs query calls, want the 2 split reads (no narrowed read, no proof)", calls)
 	}
 }
