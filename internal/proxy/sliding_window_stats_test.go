@@ -137,7 +137,7 @@ func (e *vlStatsRangeEmulator) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 	body, buckets, ok := emulateVLStatsPipe(r.Form.Get("query"), start, end, func(yield func(int64, map[string]string, string)) {
 		for _, row := range e.rows {
-			yield(row.ts, map[string]string{"pod": row.pod}, row.msg)
+			yield(row.ts, map[string]string{"pod": row.pod, "ns": emulatedNamespace(row.pod)}, row.msg)
 		}
 	})
 	e.mu.Lock()
@@ -152,6 +152,15 @@ func (e *vlStatsRangeEmulator) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	e.mu.Unlock()
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	_, _ = w.Write(body)
+}
+
+// emulatedNamespace is the ns label of a pod: the last digit of its name modulo 3, so a grouping by ns holds several
+// pods.
+func emulatedNamespace(pod string) string {
+	if pod == "" {
+		return ""
+	}
+	return "ns-" + strconv.Itoa(int(pod[len(pod)-1])%3)
 }
 
 // syntheticRows spreads rows over [from, to] with deterministic jitter and puts
@@ -437,8 +446,10 @@ func TestSlidingWindowStats_TopKRanksBeyondSeriesCap(t *testing.T) {
 	_ = spike
 }
 
-// A high-cardinality grouping stops at -manual-range-metric-row-limit stats
-// rows with an error naming the flag, before the proxy keeps more rows.
+// A high-cardinality grouping whose single step holds more than
+// -manual-range-metric-row-limit stats rows stops with an error naming the
+// flag, before the proxy keeps more rows (a ranking reads its steps in time
+// chunks, so only one step over the bound refuses: sliding_window_chunks.go).
 // conformance: heavy-metric-fetch-bounds, limits/stats-row-limit-per-grid
 func TestSlidingWindowStats_RowLimitNamesFlag(t *testing.T) {
 	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
@@ -447,7 +458,7 @@ func TestSlidingWindowStats_RowLimitNamesFlag(t *testing.T) {
 	start := end.Add(-rng)
 	var rows []emulatedRow
 	for i := 0; i < 50; i++ {
-		rows = append(rows, emulatedRow{ts: start.Add(time.Duration(i) * time.Hour / 3).UnixNano(), pod: fmt.Sprintf("pod-%d", i)})
+		rows = append(rows, emulatedRow{ts: start.Add(12*time.Hour + time.Second).UnixNano(), pod: fmt.Sprintf("pod-%d", i)})
 	}
 	emu := &vlStatsRangeEmulator{t: t, rows: rows}
 	srv := httptest.NewServer(emu)

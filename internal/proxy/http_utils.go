@@ -25,7 +25,6 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/klauspost/compress/zstd"
@@ -589,7 +588,7 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 	}
 	// slog.Attr values carry no interface boxing, and the buffer holds every field
 	// the line can carry: the line costs no allocation of its own.
-	var buf [13]slog.Attr
+	var buf [18]slog.Attr
 	attrs := append(buf[:0], slog.Int("code", status), slog.String("error", text))
 	cause := err
 	if typed != nil {
@@ -624,6 +623,8 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 			attrs = append(attrs, slog.String("endpoint", meta.endpoint), slog.String("route", meta.route))
 		}
 	}
+	// The step and bucket grid of a range metric read: which step sized a read that passed its bound.
+	attrs = readGridAttrs(ctx, attrs)
 	p.log.LogAttrs(context.Background(), level, "request error", attrs...)
 }
 
@@ -1620,7 +1621,7 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		}
 	}
 	if origReq, ok := vlReq.Context().Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		clientID, clientSource := metrics.ResolveClientContext(origReq, p.metricsTrustProxyHeaders)
+		clientID, clientSource := p.resolveClient(origReq)
 		vlReq.Header[hdrVLClientID] = []string{clientID}
 		vlReq.Header[hdrVLClientSource] = []string{clientSource}
 		gp := grafanaClientProfileFromContext(origReq.Context())
@@ -1640,7 +1641,7 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		// reaches VictoriaLogs only when the operator trusts and forwards
 		// client identity (-metrics.trust-proxy-headers), never by default.
 		if p.metricsTrustProxyHeaders {
-			if authUser, authSource := metrics.ResolveAuthContext(origReq); authUser != "" {
+			if authUser, authSource := p.resolveAuth(origReq); authUser != "" {
 				vlReq.Header[hdrVLAuthUser] = []string{authUser}
 				vlReq.Header[hdrVLAuthSource] = []string{authSource}
 			}

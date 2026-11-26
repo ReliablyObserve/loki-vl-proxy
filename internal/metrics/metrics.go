@@ -153,6 +153,12 @@ type Metrics struct {
 	slowRequests              map[string]*atomic.Int64 // "system<sep>route" -> requests at or over the slow threshold
 	connectionLastStateByConn sync.Map                 // net.Conn -> state label
 
+	// Caller authentication (-server.auth-users-file): exported only once
+	// EnableAuthMetrics is called, so /metrics is unchanged with it off.
+	authEnabled        atomic.Bool
+	authFailures       [len(AuthFailureReasons)]atomic.Int64
+	authReloadFailures atomic.Int64
+
 	// Circuit breaker state function (injected)
 	cbStateFunc func() string
 
@@ -1155,6 +1161,28 @@ func (m *Metrics) canonicalClientLabel(clientID string) string {
 	m.knownClients[clientID] = struct{}{}
 	return clientID
 }
+
+// AuthFailureReasons are the reason labels of loki_vl_proxy_auth_failures_total
+// (internal/clientauth Reason names, in order).
+var AuthFailureReasons = [...]string{"missing", "malformed", "invalid", "tenant_denied", "busy"}
+
+// EnableAuthMetrics exports the caller authentication metrics, every reason
+// at zero from the start.
+func (m *Metrics) EnableAuthMetrics() { m.authEnabled.Store(true) }
+
+// RecordAuthFailure counts a request refused by caller authentication. A
+// reason outside AuthFailureReasons is not counted.
+func (m *Metrics) RecordAuthFailure(reason string) {
+	for i, r := range AuthFailureReasons {
+		if r == reason {
+			m.authFailures[i].Add(1)
+			return
+		}
+	}
+}
+
+// RecordAuthReloadFailure counts a users file reload that kept the last good users.
+func (m *Metrics) RecordAuthReloadFailure() { m.authReloadFailures.Add(1) }
 
 // RecordClientError records a client-side error with a reason category.
 func (m *Metrics) RecordClientError(endpoint, reason string) {
@@ -2212,6 +2240,17 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(connRotationReasons)
 	for _, reason := range connRotationReasons {
 		fmt.Fprintf(&sb, "loki_vl_proxy_http_connection_rotations_total{reason=%q} %d\n", reason, sConnectionRotations[reason].Load())
+	}
+
+	if m.authEnabled.Load() {
+		sb.WriteString("# HELP loki_vl_proxy_auth_failures_total Requests refused by caller authentication (-server.auth-users-file), by reason.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_auth_failures_total counter\n")
+		for i, reason := range AuthFailureReasons {
+			fmt.Fprintf(&sb, "loki_vl_proxy_auth_failures_total{reason=%q} %d\n", reason, m.authFailures[i].Load())
+		}
+		sb.WriteString("# HELP loki_vl_proxy_auth_users_reload_failures_total Users file reloads that failed and kept the last good users.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_auth_users_reload_failures_total counter\n")
+		fmt.Fprintf(&sb, "loki_vl_proxy_auth_users_reload_failures_total %d\n", m.authReloadFailures.Load())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_slow_requests_total Requests at or over their slow threshold (system loki: a client request over -slow-query-threshold; vl: one VictoriaLogs call, to the end of its body, over -slow-upstream-threshold), by route.\n")

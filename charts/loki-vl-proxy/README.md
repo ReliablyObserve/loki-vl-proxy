@@ -45,6 +45,9 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `adminAuth.existingSecretKey` | `token` | Key within `adminAuth.existingSecret` |
 | `deleteAuth.existingSecret` | `""` | Existing Secret holding the delete API's token, required by `extraArgs.delete-api-enabled: "true"` (rendering fails without it or `extraArgs.delete-api-auth-token`). The chart mounts the key as a file and renders `-delete-api-auth-token-file`. Every delete request must carry the token in `X-Delete-Token` or `Authorization: Bearer`. It is separate from the admin token: enabling deletes leaves the admin listener on loopback. Setting it together with `extraArgs.delete-api-auth-token` fails rendering |
 | `deleteAuth.existingSecretKey` | `token` | Key within `deleteAuth.existingSecret` |
+| `clientAuth.existingSecret` | `""` | Caller authentication, off when empty: an existing Secret holding the users file. The chart mounts the Secret's directory read-only at `clientAuth.mountPath` (no `subPath`, so a changed Secret reaches the pod and the proxy re-reads it) and sets `-server.auth-users-file`. Every route except the probes, `/metrics` and the peer routes then needs Basic or bearer credentials. Setting it together with `extraArgs."server.auth-users-file"` fails rendering |
+| `clientAuth.existingSecretKey` | `users.yaml` | Key within `clientAuth.existingSecret` that holds the users file |
+| `clientAuth.mountPath` | `/etc/loki-vl-proxy/auth` | Directory the users file is mounted in |
 | `backendAuth.existingSecret` | `""` | Existing Secret holding the VictoriaLogs basic-auth credentials as one `user:password` value. The chart mounts the key as a file and renders `-backend-basic-auth-file`. Setting it together with `extraArgs.backend-basic-auth` fails rendering |
 | `backendAuth.existingSecretKey` | `basic-auth` | Key within `backendAuth.existingSecret` |
 | `backendVersionAuth.existingSecret` | `""` | Existing Secret holding the `user:password` of `extraArgs.backend-version-url`. The chart mounts the key as a file and renders `-backend-version-basic-auth-file`. Setting it together with `extraArgs.backend-version-basic-auth` fails rendering |
@@ -263,6 +266,33 @@ Other sensitive inputs need no extra chart value:
 - **TLS** — `tls-cert-file`, `tls-key-file` and `tls-client-ca-file` are file paths, so no key material is in the pod spec. Mount a TLS Secret with `extraVolumes` and `extraVolumeMounts` and point the flags at it.
 - **Other flags** (for example a backend URL with credentials): put the value in a Secret, expose it with `extraEnv` (`valueFrom.secretKeyRef`) and reference it as `$(NAME)` in the `extraArgs` value. This keeps it out of the pod spec but not out of the process command line.
 - The proxy has no tenant credentials, OAuth or OIDC settings: `tenant-map` holds account and project IDs, not secrets.
+
+### Caller authentication
+
+To make the proxy check a credential on every Grafana request (no TLS needed between Grafana and the proxy), put a users file in a Secret and reference it:
+
+```bash
+htpasswd -nbBC 12 grafana '<password>' | cut -d: -f2    # bcrypt hash for password_hash
+printf %s '<token>' | sha256sum | cut -d' ' -f1         # digest for token_sha256
+kubectl create secret generic loki-vl-proxy-users --from-file=users.yaml
+```
+
+```yaml
+# users.yaml
+users:
+  - name: grafana
+    password_hash: "$2y$12$..."
+    tenant: team-a            # optional: the only X-Scope-OrgID this user may send
+  - name: ci
+    token_sha256: "<64 hex>"
+```
+
+```yaml
+clientAuth:
+  existingSecret: loki-vl-proxy-users
+```
+
+Then turn on Basic authentication in the Grafana Loki data source. The liveness, readiness and startup probes (`/alive`, `/ready`, `/health`), `/metrics` and the peer cache routes stay open; every other route answers `401` with `WWW-Authenticate` without a valid credential. With it on, the admin and delete tokens go in `X-Admin-Token` and `X-Delete-Token`. Keep `networkPolicy.enabled` (the default admits only Grafana pods on port 3100). See [Tenancy and authentication](../../docs/tenancy-and-auth.md#caller-authentication).
 
 ## Cold Storage (Victoria Lakehouse)
 

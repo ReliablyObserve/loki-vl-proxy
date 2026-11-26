@@ -35,7 +35,7 @@ func TestDeleteRoute_DisabledByDefaultAnswersLikeLoki(t *testing.T) {
 			c.RequireTenantHeader = true
 		},
 	}
-	registrars := map[string]func(*Proxy, *http.ServeMux){
+	registrars := map[string]func(*Proxy, RouteMux){
 		"RegisterRoutes":      (*Proxy).RegisterRoutes,
 		"RegisterProxyRoutes": (*Proxy).RegisterProxyRoutes,
 	}

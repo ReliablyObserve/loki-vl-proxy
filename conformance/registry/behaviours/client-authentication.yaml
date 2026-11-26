@@ -1,0 +1,103 @@
+id: client-authentication
+kind: semantics
+title: Caller authentication is off by default; on, every route but the probes, /metrics and the peer routes needs a Basic or bearer credential
+
+loki: |
+  Loki has no caller authentication of its own: a deployment puts an
+  authenticating gateway in front of it, and Grafana's Loki data source sends
+  Basic authentication or an Authorization header to that gateway. With
+  auth_enabled Loki answers a request without X-Scope-OrgID 401 "no org id"
+  (tenant-auth-follows-loki) and ignores Authorization.
+
+victorialogs: |
+  Not involved: the check runs before any route, and the caller's credential
+  is removed before any VictoriaLogs call unless the operator forwards
+  Authorization (credential-passthrough-as-configured).
+
+proxy: |
+  -server.auth-users-file (Helm clientAuth.existingSecret) turns it on; unset,
+  the listeners serve exactly as before (WithClientAuth returns the mux
+  itself, /metrics has no auth series). The file lists users by name with a
+  bcrypt password_hash (Basic) and/or a token_sha256 (Bearer) and an optional
+  tenant pin; a missing, empty or invalid file stops the start, and a bad
+  reload (-server.auth-users-reload-interval) keeps the last good users and is
+  logged and counted (loki_vl_proxy_auth_users_reload_failures_total).
+  WithClientAuth sits in front of every listener's mux (main, -admin-listen,
+  -metrics-listen) and classifies a request by the pattern the mux itself
+  matches: /ready, /health, /healthz, /alive, /livez, /metrics and the
+  /_cache/* peer routes (their own -peer-auth-token) are open; every other
+  pattern, and a path no pattern holds, needs a credential. A refusal is 401
+  "unauthorized" with WWW-Authenticate for the schemes the file holds, the
+  same text for every reason; the reason (missing, malformed, invalid,
+  tenant_denied, busy) goes to loki_vl_proxy_auth_failures_total and the log
+  line, never the user, password, token or hash. Bearer tokens are compared as
+  SHA-256 digests in constant time over every token user; a Basic password is
+  verified with bcrypt, an unknown name against the dearest hash in the file,
+  and a verified (or refused) credential is answered from an HMAC-keyed cache
+  (-server.auth-cache-ttl, a minute for refusals, 4096 entries each) before a
+  verification slot (-server.auth-max-concurrent-verifications, 429 after a
+  second) is taken. A pinned user may send no X-Scope-OrgID (the pin is set)
+  or exactly the pin; another tenant, a|b, two header lines or another
+  spelling is refused before any cache lookup, so it never receives another
+  tenant's cached answer. The authenticated name labels the client metrics
+  (bounded by -metrics.max-clients) and is enduser.id with enduser.source
+  auth_user. With caller authentication on, the admin and delete tokens are
+  read from X-Admin-Token and X-Delete-Token only.
+
+implementation:
+  - internal/clientauth/users.go
+  - internal/clientauth/auth.go
+  - internal/clientauth/watch.go
+  - internal/proxy/client_auth.go
+  - internal/proxy/middleware.go
+  - internal/proxy/proxy.go
+  - internal/lokierr/messages.go
+  - internal/metrics/metrics.go
+  - cmd/proxy/main.go
+  - charts/loki-vl-proxy/templates/deployment.yaml
+  - charts/loki-vl-proxy/templates/_helpers.tpl
+
+decisions:
+  - id: caller-auth-401-only-when-on
+    chosen: 'Optional caller authentication in the proxy (Basic with bcrypt hashes, bearer with SHA-256 digests, from a mounted users file), off by default; when on, a request without a valid credential gets 401 "unauthorized" with WWW-Authenticate'
+    over: [a gateway in front only (the documented option before; needs another component and, for client certificates, TLS between Grafana and the proxy), mTLS only, reusing Loki's 401 "no org id" text (misleading for a wrong password)]
+    why: |
+      Owner decision 2026-11-26 (issue 1784): a security review flagged that
+      log queries need no caller credential, and in-cluster traffic between
+      Grafana and the proxy has no TLS. The 401 is a deliberate difference
+      from Loki, which has no caller authentication, and occurs only when the
+      operator turns the feature on; with it off answers and performance are
+      unchanged. The text is the proxy's own and the same for every reason so
+      it does not enumerate users.
+    evidence: 'TestClientAuth_EveryRegisteredRouteIsProtectedOrExempt (every pattern of every listener topology, 2026-11-26), TestClientAuth_OffLeavesTheMuxAsItIs, BenchmarkAuthenticate (PR body)'
+    code: [internal/proxy/client_auth.go, internal/clientauth/auth.go, cmd/proxy/main.go]
+    tests: [TestClientAuth_EveryRegisteredRouteIsProtectedOrExempt, TestClientAuth_OffLeavesTheMuxAsItIs, TestClientAuth_AnswersAndMetrics, TestBuildRuntime_ClientAuthOnEveryListener, TestBuildClientAuth_FailsClosed]
+    quality: 'No route outside the exempt list answers without a credential; with the feature off the handler is the mux itself.'
+    pending: true
+  - id: caller-auth-bcrypt-bounded
+    chosen: 'A verified-credential cache keyed by HMAC-SHA256 with a per-process random key (no plaintext kept), a one-minute cache of refusals, and at most -server.auth-max-concurrent-verifications bcrypt runs at once, checked after the caches'
+    over: [bcrypt on every request (about 50 ms of a core at cost 10 for every Grafana request), a plaintext or plain-SHA-256 keyed cache (an offline target if memory leaks), an unbounded number of concurrent verifications (a flood of wrong passwords takes every core)]
+    why: |
+      Grafana sends the same credential on every request, so after the first
+      request a datasource costs one HMAC; a flood of distinct wrong
+      passwords costs at most the slot count in cores and never delays callers
+      already verified, because the caches are read before a slot is taken.
+    evidence: 'BenchmarkAuthenticate, Apple M-series, GOMAXPROCS=4, 2026-11-26 (numbers in the PR body)'
+    code: [internal/clientauth/auth.go]
+    tests: [TestAuthenticate_CachesSkipBcrypt, TestAuthenticate_CacheExpiresAndIsBounded, TestAuthenticate_BusyWhenEverySlotIsTaken, TestClientAuth_BusyAnswersQueueFull]
+    performance: 'BenchmarkAuthenticate in internal/clientauth/bench_test.go'
+    quality: 'A cached credential never waits for a verification slot; the caches hold at most 4096 entries each.'
+    pending: true
+  - id: caller-auth-tenant-pin-exact
+    chosen: 'A pinned user may send no X-Scope-OrgID (the pin is set) or exactly the pin, on one header line; anything else is refused with the same 401'
+    over: [overwriting the header with the pin (a|b would silently become one tenant), a 403 (another proxy-only status)]
+    why: |
+      The check runs before any route, tenant middleware or cache lookup, so
+      the routes that skip the tenant middleware (/config/tenant/v1/limits,
+      drilldown-limits) are covered and no spelling Loki's tenant parsing
+      would normalise reaches it.
+    evidence: 'TestClientAuth_TenantPinAndCacheIsolation, TestPinTenant (2026-11-26)'
+    code: [internal/clientauth/auth.go, internal/proxy/client_auth.go]
+    tests: [TestClientAuth_TenantPinAndCacheIsolation, TestPinTenant]
+    quality: 'A pinned user never reads another tenant, from VictoriaLogs or from a cache.'
+    pending: true

@@ -204,8 +204,16 @@
       "internal/metrics/cache_sizing_metrics_test.go",
       "internal/proxy/cache_layer_metrics_test.go"
     ],
+    "client-authentication": [
+      "cmd/proxy/client_auth_test.go",
+      "internal/clientauth/clientauth_test.go",
+      "internal/clientauth/fuzz_test.go",
+      "internal/proxy/client_auth_test.go",
+      "test/helm/client_auth_test.go"
+    ],
     "credential-passthrough-as-configured": [
       "cmd/proxy/secret_flags_test.go",
+      "internal/proxy/client_auth_test.go",
       "internal/proxy/credential_passthrough_test.go"
     ],
     "data-probing-and-freshness": [
@@ -216,6 +224,7 @@
     "delete-api-requires-token": [
       "cmd/proxy/delete_api_validation_test.go",
       "cmd/proxy/secret_flags_test.go",
+      "internal/proxy/client_auth_test.go",
       "internal/proxy/delete_route_test.go"
     ],
     "drilldown/client-detection-captured-header-sets": [
@@ -280,6 +289,7 @@
     "heavy-metric-fetch-bounds": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/range_metric_row_limit_error_test.go",
+      "internal/proxy/sliding_window_chunks_test.go",
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
@@ -475,6 +485,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
     "limits/stats-row-limit-per-grid": [
+      "internal/proxy/sliding_window_chunks_test.go",
       "internal/proxy/sliding_window_stats_test.go"
     ],
     "limits/top-n-ranking-not-silent": [
@@ -2313,6 +2324,11 @@
       "internal/querycorpus/loki_tie_check_test.go",
       "internal/querycorpus/rank_binary_loki_diff_test.go"
     ],
+    "semantics/ranked-parser-window-fine-step": [
+      "internal/logsql/parser_keeps_fields_test.go",
+      "internal/proxy/sliding_window_chunks_test.go",
+      "internal/querycorpus/ranked_parser_window_loki_diff_test.go"
+    ],
     "semantics/raw-nul-in-string-literal-accepted": [
       "internal/logql/lexer_edges_loki_test.go"
     ],
@@ -3079,6 +3095,7 @@
     ],
     "tenant-auth-follows-loki": [
       "cmd/proxy/tenant_routing_test.go",
+      "internal/proxy/client_auth_test.go",
       "internal/proxy/tenant_auth_parity_test.go",
       "internal/proxy/tenant_header_fuzz_test.go",
       "internal/proxy/tenant_isolation_leak_test.go",
@@ -3239,11 +3256,14 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 759,
+  "registry_items": 763,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
       "cache-restart-handover"
+    ],
+    "cmd/proxy/client_auth_test.go": [
+      "client-authentication"
     ],
     "cmd/proxy/delete_api_validation_test.go": [
       "delete-api-requires-token"
@@ -3371,6 +3391,12 @@
     "internal/capability/version_source_test.go": [
       "backend-version-source",
       "vl-backend-version-source"
+    ],
+    "internal/clientauth/clientauth_test.go": [
+      "client-authentication"
+    ],
+    "internal/clientauth/fuzz_test.go": [
+      "client-authentication"
     ],
     "internal/clientprofile/detect_test.go": [
       "drilldown/client-detection-captured-header-sets"
@@ -3569,6 +3595,9 @@
     ],
     "internal/logsql/outbound_guard_test.go": [
       "semantics/reserved-field-name-case-outbound"
+    ],
+    "internal/logsql/parser_keeps_fields_test.go": [
+      "semantics/ranked-parser-window-fine-step"
     ],
     "internal/logsql/parser_read_test.go": [
       "architecture-syntax-package-layering"
@@ -3862,6 +3891,12 @@
     "internal/proxy/chunked_range_windows_loki_test.go": [
       "drilldown/long-range-pieces-answer-like-loki",
       "loki_api_v1_query_range"
+    ],
+    "internal/proxy/client_auth_test.go": [
+      "client-authentication",
+      "credential-passthrough-as-configured",
+      "delete-api-requires-token",
+      "tenant-auth-follows-loki"
     ],
     "internal/proxy/client_profile_capture_test.go": [
       "drilldown/client-detection-captured-header-sets",
@@ -5122,6 +5157,11 @@
       "loki_api_v1_query_range",
       "series-limits-and-partial-results"
     ],
+    "internal/proxy/sliding_window_chunks_test.go": [
+      "heavy-metric-fetch-bounds",
+      "limits/stats-row-limit-per-grid",
+      "semantics/ranked-parser-window-fine-step"
+    ],
     "internal/proxy/sliding_window_stats_test.go": [
       "heavy-metric-fetch-bounds",
       "limits/stats-row-limit-per-grid",
@@ -5878,6 +5918,9 @@
     ],
     "internal/querycorpus/rank_step_grid_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/ranked_parser_window_loki_diff_test.go": [
+      "semantics/ranked-parser-window-fine-step"
     ],
     "internal/querycorpus/series_agg_grid_test.go": [
       "architecture-syntax-package-layering",
@@ -7226,6 +7269,9 @@
       "cache-key-credential-digest",
       "secrets-outside-process-arguments"
     ],
+    "test/helm/client_auth_test.go": [
+      "client-authentication"
+    ],
     "test/helm/image_test.go": [
       "release-image-pinned-by-digest"
     ],
@@ -7236,7 +7282,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 869,
+  "tests_with_markers": 877,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7274,6 +7320,7 @@
     "loki_api_v1_push",
     "loki_api_v1_status_buildinfo",
     "metric-identity/structured-metadata-splits-series",
+    "parsed-identity/extracted-name-held-by-the-line",
     "profiles/detected-fields-no-extracted-suffix",
     "profiles/empty-label-format-target-compositions",
     "profiles/existence-filter-on-sanitized-key",
@@ -7394,5 +7441,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 491
+  "wired_items": 493
 }

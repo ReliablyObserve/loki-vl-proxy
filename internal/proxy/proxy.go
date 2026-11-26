@@ -28,6 +28,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientauth"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
@@ -549,6 +550,11 @@ type Config struct {
 	BackendRetryMaxWait     time.Duration
 	BackendRetryBudgetRatio float64
 
+	// ClientAuth authenticates callers (-server.auth-users-file); nil leaves
+	// the read API open, as without it. WithClientAuth puts it in front of a
+	// listener's mux.
+	ClientAuth *clientauth.Authenticator
+
 	// Metrics/export hardening
 	MetricsMaxTenants            int
 	MetricsMaxClients            int
@@ -865,6 +871,8 @@ type Proxy struct {
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	deleteAPIAuthToken                    string
+	clientAuth                            *clientauth.Authenticator // nil: caller authentication off
+	forwardsAuthorization                 bool                      // Authorization is in forwardHeaders
 	tenantMapFileSet                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
@@ -1639,6 +1647,8 @@ func New(cfg Config) (*Proxy, error) {
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		deleteAPIAuthToken:                    cfg.DeleteAPIAuthToken,
+		clientAuth:                            cfg.ClientAuth,
+		forwardsAuthorization:                 forwardsAuthorizationHeader(cfg.ForwardHeaders),
 		tenantMapFileSet:                      cfg.TenantMapFile != "",
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
@@ -1984,6 +1994,14 @@ func New(cfg Config) (*Proxy, error) {
 		// Held VictoriaLogs refusals pushed by peers (vl_refusal.go).
 		p.peerCache.HandleEverywhere(p.receiveRefusal)
 	}
+	if p.clientAuth != nil {
+		p.metrics.EnableAuthMetrics()
+		if p.clientAuth.Users().Pins() > 0 && p.tenantHeaderIgnored(p.routingForContext(context.Background())) && p.log != nil {
+			// The pin is still enforced on the header, but with tenancy off
+			// every request reads the backend default tenant anyway.
+			p.log.Warn("auth users file pins tenants but tenancy is off (Loki's single-tenant mode): every user reads the backend default tenant; turn tenancy on to separate them")
+		}
+	}
 	return p, nil
 }
 
@@ -2292,7 +2310,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 // deployments (loopback admin / dedicated metrics port) call the more granular
 // RegisterProxyRoutes / RegisterAdminRoutes / RegisterMetricsRoute helpers
 // instead.
-func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterRoutes(mux RouteMux) {
 	p.RegisterProxyRoutes(mux)
 	if p.registerInstrumentation {
 		p.RegisterMetricsRoute(mux)
@@ -2307,7 +2325,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 // RegisterProxyRoutes registers Loki-compatible proxy routes, health endpoints,
 // and the internal peer-cache endpoints. It deliberately omits /metrics,
 // /admin/*, and /debug/* so callers can host those on dedicated listeners.
-func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterProxyRoutes(mux RouteMux) {
 	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
 		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h), p.rejectAdmission))
 	}
@@ -2398,7 +2416,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 // to hit a separate port from proxy traffic.
 //
 // No-op when registerInstrumentation is false on the Proxy config.
-func (p *Proxy) RegisterMetricsRoute(mux *http.ServeMux) {
+func (p *Proxy) RegisterMetricsRoute(mux RouteMux) {
 	if !p.registerInstrumentation {
 		return
 	}
@@ -2411,7 +2429,7 @@ func (p *Proxy) RegisterMetricsRoute(mux *http.ServeMux) {
 // -server.admin-auth-token is configured, so the binary boots safely with
 // admin surfaces only reachable from loopback. Honors registerInstrumentation
 // (cache flush + pprof) and enableQueryAnalytics independently.
-func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterAdminRoutes(mux RouteMux) {
 	if p.registerInstrumentation {
 		if p.enablePprof {
 			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
@@ -2846,6 +2864,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
+	// The window evaluator notes the step and bucket grid it reads, for the error log line (read_budget.go).
+	r = r.WithContext(withReadGridNote(r.Context()))
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while
