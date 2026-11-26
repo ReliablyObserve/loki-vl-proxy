@@ -17,6 +17,13 @@ workload:
   kind: Deployment
   # Deployment-only rollout strategy. Leave empty to use the Kubernetes default.
   deploymentStrategy: {}
+  # Deployment-only progressDeadlineSeconds. Unset renders none (the Kubernetes
+  # default, 600 s), except with a disk cache and its startup probe, where the
+  # chart renders: terminationGracePeriodSeconds + the startup probe window +
+  # (with cacheHandover) startupWarmTimeoutSeconds and minReadySeconds + 300 s,
+  # when that exceeds 600 (935 with a disk cache, 1170 with the hand-over, at
+  # the defaults). A warm-up timeout set through extraArgs is not counted.
+  progressDeadlineSeconds: null
   statefulSet:
     # Headless service name used by StatefulSet network identity.
     # Empty = <release>-headless.
@@ -295,9 +302,9 @@ extraArgs:
   # disk-cache-flush-interval: "5s"
   # disk-cache-max-bytes: "21474836480" # 20Gi logical LRU cap; bbolt retains free pages
   # Restart hand-over of the response cache (needs disk-cache-path; off by default).
-  # cache-shutdown-flush-timeout: "15s" # keep inside terminationGracePeriodSeconds
+  # cache-shutdown-flush-timeout: "60s" # keep inside terminationGracePeriodSeconds
   # cache-startup-warm-bytes: "268435456" # at most half of cache-max-bytes is warmed
-  # cache-startup-warm-timeout: "10s" # longest /ready waits for the warm-up
+  # cache-startup-warm-timeout: "120s" # ready when the warm-up finishes, or after this, whichever is first
   # otlp-endpoint: "http://otel-collector:4318/v1/metrics"
   # otlp-interval: "30s"
   # otlp-compression: "gzip"
@@ -305,9 +312,11 @@ extraArgs:
   # otlp-tls-skip-verify: "false"
   # Backend auth to VictoriaLogs
   # backend-basic-auth: "user:password"   # plain value is visible in the pod spec and `helm get values`; prefer backendAuth.existingSecret
+  # backend-basic-auth-file: ""                 # file holding user:password (backendAuth.existingSecret renders it)
   # VictoriaLogs release behind vmauth (vmauth answers /metrics itself; see docs/configuration.md "Backend version behind vmauth")
   # backend-version-url: "http://vlselect:9471/metrics"
   # backend-version-basic-auth: "user:password"   # prefer backendVersionAuth.existingSecret
+  # backend-version-basic-auth-file: ""         # file holding user:password (backendVersionAuth.existingSecret renders it)
   # backend-version: "v1.54.0"    # only when no endpoint reports the release
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
@@ -316,6 +325,7 @@ extraArgs:
   #                               # Requires the delete API's own token (deleteAuth.existingSecret): every delete request must carry it in X-Delete-Token or
   #                               # Authorization: Bearer; rendering fails without one. The admin token and the admin listener are unaffected.
   # delete-api-auth-token: ""     # the delete API's token; prefer deleteAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
+  # delete-api-auth-token-file: ""              # file holding the delete token (deleteAuth.existingSecret renders it)
   # Compatibility profile knobs:
   # - label-style: passthrough | underscores (binary default: underscores)
   # - metadata-field-mode: native | translated | hybrid (binary default: translated)
@@ -454,6 +464,7 @@ extraArgs:
   # server.enable-pprof: "false"
   # server.enable-query-analytics: "false"
   # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints; prefer adminAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
+  # server.admin-auth-token-file: ""            # file holding the admin token (adminAuth.existingSecret renders it)
   # tail.mode: "auto"                           # auto | native | synthetic
   # tail.allowed-origins: ""                    # comma-separated websocket origin allowlist
   # tail.backend-retry-window: "30s"            # how long a live tail stays open and retries while VictoriaLogs restarts or fails (resumes without repeating or skipping lines); 0 closes the tail on the first failure
@@ -461,7 +472,8 @@ extraArgs:
   # ruler-backend: ""                           # optional /rules passthrough backend
   # alerts-backend: ""                          # optional /alerts passthrough backend
   # extra-label-fields: "service.name,host.name"
-  # peer-auth-token: ""                         # DO NOT SET HERE — chart manages this flag from a Secret when peerCache.enabled=true; setting it here renders a duplicate -peer-auth-token CLI arg and the Go flag package will fatal at startup. Use peerCache.authToken or peerCache.existingSecret instead (see below). Rendering will fail with a clear error if this entry is uncommented while peerCache.enabled=true.
+  # peer-auth-token: ""                         # DO NOT SET HERE with peerCache.enabled=true: the chart passes -peer-auth-token-file from a Secret and rendering fails on the conflict. Use peerCache.authToken or peerCache.existingSecret (see below).
+  # peer-auth-token-file: ""                    # chart-managed when peerCache.enabled=true (rendering fails if set here too)
   # peer-insecure-ip-allowlist: "false"          # when true, allows legacy IP-only peer auth on /_cache/* (NOT recommended; default false requires --peer-auth-token)
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
   # peer-read-hedge-max-delay: "200ms"         # longest a read waits on one replica's headers before asking the next replica or reading VictoriaLogs; 0 = off
@@ -558,36 +570,36 @@ observability:
     registerInstrumentation: true
     metricsMaxConcurrency: 1
 
-# Admin/debug endpoint bearer token (-server.admin-auth-token) from an existing
-# Secret. The chart renders -server.admin-auth-token=$(ADMIN_AUTH_TOKEN) with the
-# variable sourced from a secretKeyRef, so the token never appears in the pod
-# spec or in `helm get values`. The plain value (extraArgs."server.admin-auth-token")
-# keeps working; setting both fails rendering.
+# Secrets from existing Secrets. The chart mounts the Secret key as a read-only
+# file under /var/run/secrets/loki-vl-proxy/ and passes the proxy its path
+# (-...-file), so the value is in no pod spec, process argument or environment
+# variable, and not in `helm get values`. The proxy reads the file once at
+# startup: restart the pods after rotating a Secret. A chart that renders a
+# -file flag needs an image of the same release or newer: an older proxy exits
+# on the unknown flag. A plain value in extraArgs keeps working but is readable
+# in the pod spec and in /proc; setting both fails rendering. See
+# docs/security.md.
+
+# Admin/debug endpoint bearer token (-server.admin-auth-token-file).
 adminAuth:
   existingSecret: ""
   existingSecretKey: "token"       # key within existingSecret
 
-# Delete API token (-delete-api-auth-token) from an existing Secret. Required by
-# extraArgs.delete-api-enabled: "true". The chart renders
-# -delete-api-auth-token=$(DELETE_API_AUTH_TOKEN) with the variable sourced from
-# a secretKeyRef. The plain value (extraArgs.delete-api-auth-token) keeps
-# working; setting both fails rendering. Separate from adminAuth: enabling
+# Delete API token (-delete-api-auth-token-file). Required by
+# extraArgs.delete-api-enabled: "true". Separate from adminAuth: enabling
 # deletes leaves the admin listener as it is.
 deleteAuth:
   existingSecret: ""
   existingSecretKey: "token"       # key within existingSecret
 
-# VictoriaLogs backend basic auth (-backend-basic-auth) from an existing Secret.
-# The Secret key holds the whole "user:password" string. The chart renders
-# -backend-basic-auth=$(BACKEND_BASIC_AUTH) from a secretKeyRef. The plain value
-# (extraArgs.backend-basic-auth) keeps working; setting both fails rendering.
+# VictoriaLogs backend basic auth (-backend-basic-auth-file). The Secret key
+# holds the whole "user:password" string.
 backendAuth:
   existingSecret: ""
   existingSecretKey: "basic-auth"  # key within existingSecret
 
-# Basic auth of -backend-version-url (-backend-version-basic-auth) from an existing Secret holding "user:password".
-# The chart renders -backend-version-basic-auth=$(BACKEND_VERSION_BASIC_AUTH) from a secretKeyRef; setting it
-# together with extraArgs.backend-version-basic-auth fails rendering.
+# Basic auth of -backend-version-url (-backend-version-basic-auth-file) from a
+# Secret key holding "user:password".
 backendVersionAuth:
   existingSecret: ""
   existingSecretKey: "basic-auth"  # key within existingSecret
@@ -858,14 +870,18 @@ probe:
     failureThreshold: 3
     successThreshold: 1
   startup:
-    # unset = off, or on with cacheHandover.enabled.
+    # unset = off, or on with a disk cache (persistence.enabled or
+    # extraArgs.disk-cache-path): the cache index is rebuilt before the
+    # listener opens, one disk read per record.
     enabled: null
     path: /health
     initialDelaySeconds: 5
     periodSeconds: 5
     timeoutSeconds: 3
-    # unset = 30, or 60 with cacheHandover.enabled (5 s + 60 x 5 s = 305 s for
-    # the process to open its listener before it is restarted).
+    # unset = 30, or 120 with a disk cache (5 s + 120 x 5 s = 605 s for the
+    # process to open its listener before it is restarted; about twice the
+    # estimated rebuild of 94,000 records on a volume with 3 ms reads). A pod
+    # that hangs before listening is restarted only after that long.
     failureThreshold: null
 
 # --- Pod Disruption Budget ---
@@ -1034,13 +1050,14 @@ lifecycle: {}
 #   already.
 # - a PodDisruptionBudget with maxUnavailable: 1 when replicaCount > 1 or HPA
 #   is on (podDisruptionBudget.enabled unset);
-# - a startup probe (probe.startup);
+# - a startup probe (probe.startup; a disk cache without the hand-over renders
+#   it too);
 # - minReadySeconds.
 cacheHandover:
   enabled: false
   # -cache-shutdown-flush-timeout. Set it here rather than in extraArgs, so the
   # grace period follows it.
-  shutdownFlushTimeoutSeconds: 15
+  shutdownFlushTimeoutSeconds: 60
   # -cache-startup-warm-bytes, integer bytes: at most half of -cache-max-bytes
   # is warmed (128 MiB at the default 256 MiB); also the most memory-only
   # answer bytes the shutdown keeps.

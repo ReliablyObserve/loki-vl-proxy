@@ -36,7 +36,31 @@ proxy: |
   revision, hash of every flag value and environment override except the pod
   identity and credentials), and it stays memory-only. Nothing is restored
   when the clock reads earlier than the flush started. Restored entries go
-  behind what live requests stored and never evict them.
+  behind what live requests stored and never evict them. The replica reports
+  ready when the warm-up finishes, or after the timeout (default 120 s; the
+  chart gives the shutdown flush 60 s), whichever comes first.
+  The warm-up restores in batches of at most 256 entries or about 4 MiB of
+  decoded values: one bbolt read transaction per batch with at most
+  min(GOMAXPROCS, 4) goroutines reading and decoding, one hold of the memory
+  lock to admit the batch, and a read-ahead of the next records into the page
+  cache (positioned reads in file order, at most 64 MiB ahead, eight 512 KiB
+  buffers). The deadline is checked before every batch; a purge that started
+  after the warm-up began stops it; a value queued for the disk wins over its
+  record, and a record queued, rewritten or dropped after the batch read it is
+  not restored. The warm-up counts no disk lookup and leaves the disk recency
+  as the ranks set it. Its plan, progress, estimate and outcome are metrics
+  (loki_vl_proxy_cache_restart_warm_*, with source="disk"), as is the start-up
+  index rebuild's duration; the log has the plan with an estimate, progress
+  every 2 s, a warning when the timeout will cut it, and the end with the skips
+  by reason.
+  Batch proof (internal/cache/restore_test.go): batches are bounded, limits
+  skip without losing later entries, queued and rewritten values win, a purge
+  between batches or between a read and its admission wins, the disk order is
+  unchanged, a full memory tier stops it, progress reads right mid-way, the
+  read-ahead covers the records and joins its goroutines, no second copy of
+  the values is held, and a batch holds the memory lock briefly. The real-size
+  throughput gate is TestRestoreWarm_ThroughputGate (LVP_RESTORE_GATE=1, not in
+  CI: it needs gigabytes of disk and memory).
   Unit proof (internal/cache/handover_test.go): recency order and hit counts
   survive, scope mismatch restores disk entries only, a write after the
   manifest, records without a manifest (crash before Close), a corrupt or
@@ -65,8 +89,7 @@ proxy: |
   lets extraArgs override each flag and refuses to render without a disk
   cache. It also renders a warm-up timeout of 120 s (a pod is ready when
   warm, or partly warm after it); a startup probe on /health (never /ready,
-  which also checks VictoriaLogs) with 60 failures 5 s apart, covering the
-  disk index rebuild before the listener opens; for a Deployment without a
+  which also checks VictoriaLogs); for a Deployment without a
   configured strategy RollingUpdate with maxSurge 0 and maxUnavailable 1 (a
   surge pod on the same file would wait for the bbolt lock; one replica has a
   rollout gap), while a StatefulSet's RollingUpdate already updates one pod
@@ -75,9 +98,46 @@ proxy: |
   Explicit probe.startup, workload.deploymentStrategy,
   podDisruptionBudget and cacheHandover.minReadySeconds settings win, and
   with the hand-over off the chart renders none of these.
+  A disk cache (persistence.enabled or a non-empty extraArgs.disk-cache-path),
+  with or without the hand-over, renders that startup probe with 120 failures
+  5 s apart (605 s) for the disk index rebuild before the listener opens, and
+  on a Deployment progressDeadlineSeconds = grace period + startup window +
+  (hand-over) warm-up timeout and minReadySeconds + 300 s, when above 600 (935
+  without the hand-over, 1170 with it, at the defaults);
+  workload.progressDeadlineSeconds replaces it, explicit probe.startup values
+  win, a StatefulSet gets no deadline, and without a disk cache the output is
+  unchanged (TestDiskCacheStartupWindowAndProgressDeadline).
+  Restore time targets per storage profile are in docs/disk-cache.md: local SSD
+  measured; EBS targets rest on a throttled local VM without added latency and
+  on latency estimates, with no EBS measurement.
 
 implementation:
   - internal/cache/handover.go
   - internal/cache/disk_handover.go
+  - internal/cache/restore.go
+  - internal/cache/disk_restore.go
+  - internal/cache/disk_restore_readahead.go
   - internal/proxy/cache_handover.go
   - cmd/proxy/cache_handover_scope.go
+
+decisions:
+  - id: restore-targets-and-probe-window-per-storage
+    chosen: 'Restore time targets per storage profile, split into the index rebuild (startup probe) and the warm-up (warm-up timeout); with a disk cache a 605 s startup window and a Deployment progress deadline derived from it; warm-up timeout 120 s and flush budget 60 s unchanged'
+    over: ['one pair of targets for every disk (2 GiB in 5 s, 4 GiB in 10 s)', 'a startup probe only with the restart hand-over, 305 s']
+    why: 'The index rebuild reads one record at a time, so on a network volume its time follows the read latency, which provisioned IOPS do not shorten; the liveness probe alone restarts a pod after about 35 to 50 s.'
+    evidence: '2026-11-26. Measured, Apple M5 Pro SSD, cold: s2 2 GiB rebuild 1.0 s + warm-up 0.47 s. Emulated on a throttled local VM without latency (not EBS), s2 2 GiB: 11.4 s at 125 MiB/s and 3,000 IOPS, 4.6 s at 375 and 6,500; 94,000 records rebuild in 31.9 s at 3,000 IOPS. Estimated at 3 ms a read: 288 s for 94,000 records, about 306 s for 100,000.'
+    code: [charts/loki-vl-proxy/templates/_helpers.tpl, charts/loki-vl-proxy/templates/deployment.yaml]
+    tests: [TestDiskCacheStartupWindowAndProgressDeadline, TestCacheHandoverChartOptions]
+    quality: 'Without a disk cache the rendered chart is unchanged; explicit probe and deadline values win. No restore or index rebuild code changed.'
+    performance: 'No code path changed; the restore benchmarks of restore-in-batches-with-read-ahead stand.'
+    pending: true
+  - id: restore-in-batches-with-read-ahead
+    chosen: 'Restore in batches (at most 256 entries or about 4 MiB per read transaction and per hold of the memory lock, decoded by at most min(GOMAXPROCS, 4) goroutines) with the next records read into the page cache by positioned reads in file order, at most 64 MiB ahead'
+    over: ['one lookup, transaction, decode and admission per entry in one goroutine', 'batches and parallel decode without the read-ahead (a cold page cache is still read through page faults)']
+    why: 'A restart restores gigabytes before the replica is ready; a cold disk read through page faults is the bottleneck.'
+    evidence: 'BenchmarkRestoreWarm, 2026-11-26, Apple M5 Pro, GOMAXPROCS=4, s2: 2 GiB restored from a cold page cache in 0.47 s (one entry at a time: 4.06 s; batches without the read-ahead: 2.25 s), from a warm one in 0.42 s (0.81 s).'
+    code: [internal/cache/handover.go, internal/cache/restore.go, internal/cache/disk_restore.go, internal/cache/disk_restore_readahead.go]
+    tests: [TestRestore_BatchesAreBoundedByBytes, TestRestore_APurgeDuringTheWarmUpWins, TestRestore_QueuedAndRewrittenValuesWinOverTheBatch, TestHandover_WarmPeakMemoryIsOneBatch, TestRestore_ReadAheadCoversTheRecordsAndStops]
+    quality: 'The same entries restored, hottest first, under the same budgets, expiry, purge and no-overwrite rules; the disk recency stays as the ranks set it.'
+    performance: 'BenchmarkRestoreWarm, BenchmarkRestoreShutdownFlush and BenchmarkRestoreIndexRebuild (internal/cache/restore_bench_test.go); opt-in gate TestRestoreWarm_ThroughputGate (400 MiB/s).'
+    pending: true

@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -60,6 +61,9 @@ type HandoverFlushReport struct {
 type HandoverWarmOptions struct {
 	Scope    string
 	MaxBytes int64
+	// OnPlan, when set, is called once with the plan, before any value is
+	// read. It must not block: the warm-up waits for it.
+	OnPlan func(RestoreProgress)
 }
 
 // HandoverWarmReport is what a start-up warm-up restored.
@@ -73,6 +77,8 @@ type HandoverWarmReport struct {
 	Skipped  int
 	Reason   string
 	Duration time.Duration
+	// Progress is the final plan and counts, with the skips by reason.
+	Progress RestoreProgress
 }
 
 // HandoverStats is the restart hand-over's state for the metrics.
@@ -90,6 +96,12 @@ type HandoverStats struct {
 	WarmSkipped                int64
 	WarmBytes                  int64
 	WarmDuration               time.Duration
+	// Restore is the warm-up's plan and progress, updated after every batch.
+	Restore RestoreProgress
+	// IndexRebuildDuration and IndexRebuildEntries are the disk tier's start-up
+	// index rebuild, which runs before the proxy listens.
+	IndexRebuildDuration time.Duration
+	IndexRebuildEntries  int64
 	// StartupL1Requests and StartupL1Hits count the memory tier's lookups
 	// and hits in the first StartupStatsWindow after TrackStartupWindow
 	// (frozen once it passes).
@@ -99,12 +111,12 @@ type HandoverStats struct {
 }
 
 type handoverCounters struct {
+	// mu guards the warm-up's progress, written once per batch.
+	mu                sync.Mutex
+	progress          RestoreProgress
+	warmDiskEntries   int64
+	warmMemoryEntries int64
 	warmDone          atomic.Bool
-	warmDiskEntries   atomic.Int64
-	warmMemoryEntries atomic.Int64
-	warmSkipped       atomic.Int64
-	warmBytes         atomic.Int64
-	warmNanos         atomic.Int64
 	startupTracked    atomic.Bool
 	startupFrozen     atomic.Bool
 	startupRequests   atomic.Int64
@@ -199,14 +211,21 @@ func (c *Cache) HandoverStats() HandoverStats {
 		return HandoverStats{}
 	}
 	s := &c.handoverStats
+	// Read done first: once it is set the progress below is final.
 	out := HandoverStats{
-		WarmDone:          s.warmDone.Load(),
-		WarmDiskEntries:   s.warmDiskEntries.Load(),
-		WarmMemoryEntries: s.warmMemoryEntries.Load(),
-		WarmSkipped:       s.warmSkipped.Load(),
-		WarmBytes:         s.warmBytes.Load(),
-		WarmDuration:      time.Duration(s.warmNanos.Load()),
-		StartupTracked:    s.startupTracked.Load(),
+		WarmDone:       s.warmDone.Load(),
+		StartupTracked: s.startupTracked.Load(),
+	}
+	s.mu.Lock()
+	out.Restore = s.progress
+	out.WarmDiskEntries, out.WarmMemoryEntries = s.warmDiskEntries, s.warmMemoryEntries
+	s.mu.Unlock()
+	if out.Restore.Outcome == RestoreRunning {
+		out.Restore.Elapsed = clockNow().Sub(out.Restore.Started)
+	}
+	out.WarmSkipped, out.WarmBytes, out.WarmDuration = out.Restore.SkippedEntries(), out.Restore.RestoredBytes, out.Restore.Elapsed
+	if c.l2 != nil {
+		out.IndexRebuildDuration, out.IndexRebuildEntries = c.l2.rebuildDuration, c.l2.rebuildEntries
 	}
 	if out.StartupTracked {
 		if s.startupFrozen.Load() {
@@ -437,151 +456,186 @@ func putHandoverChunks(ctx context.Context, dc *DiskCache, gen uint64, records [
 // WarmFromHandover loads the hand-over a graceful shutdown left into the
 // memory tier (see the package comment above) and then deletes it. It is
 // called once, at start-up; a second call finds nothing.
+//
+// It restores in batches (restore.go, disk_restore.go), hottest first. The
+// context and a purge are checked before every batch, so it stops at most one
+// batch after the deadline, and a batch a purge crossed is dropped whole. All
+// its goroutines have returned when it does.
 func (c *Cache) WarmFromHandover(ctx context.Context, opts HandoverWarmOptions) HandoverWarmReport {
 	var report HandoverWarmReport
 	if c == nil || c.disabled || c.l2 == nil {
 		return report
 	}
-	started := clockNow()
+	run := restoreRun{c: c, progress: RestoreProgress{Source: RestoreSourceDisk, Started: clockNow()}}
+	if deadline, ok := ctx.Deadline(); ok {
+		run.progress.Timeout = max(time.Until(deadline), 0)
+	}
+	// Read before the hand-over is taken: any purge from here on stops the
+	// warm-up (0, not allowed, while one runs).
+	generation, idle := c.diskPromotionGeneration()
 	state := c.l2.takeHandover()
 	if state == nil {
-		report.Reason = "none"
+		report.Reason = RestoreNone
+		// A second call must not replace what the first one restored.
+		if !c.handoverStats.warmDone.Load() {
+			run.finish(RestoreNone)
+		}
+		report.Progress = run.progress
 		c.handoverStats.warmDone.Store(true)
 		return report
 	}
-	defer func() {
-		c.l2.DropHandover()
-		report.Duration = clockNow().Sub(started)
-		s := &c.handoverStats
-		s.warmDiskEntries.Store(int64(report.DiskEntries))
-		s.warmMemoryEntries.Store(int64(report.MemoryEntries))
-		s.warmSkipped.Store(int64(report.Skipped))
-		s.warmBytes.Store(report.Bytes)
-		s.warmNanos.Store(int64(report.Duration))
-		s.warmDone.Store(true)
-	}()
 	report.Found = true
-	if clockNow().UnixNano() < state.manifest.FlushedAt {
-		report.Reason = "clock_behind_flush"
-		report.Skipped = len(state.items)
-		return report
-	}
-	sameScope := opts.Scope != "" && state.manifest.Scope == opts.Scope
-	budget := opts.MaxBytes
-	if share := int64(c.maxBytes / handoverWarmShareDivisor); budget > share {
-		budget = share
-	}
 	// Hottest first, so a budget or deadline keeps the hottest. Each entry goes
 	// in behind the previous one: the hottest restored entry ends nearest the
 	// front, every restored entry behind what live requests stored.
 	items := state.items
 	sort.SliceStable(items, func(i, j int) bool { return items[i].rank < items[j].rank })
-	for i, item := range items {
-		if ctx.Err() != nil {
-			report.Reason = "deadline"
-			report.Skipped += len(items) - i
-			break
-		}
-		if item.memory && !sameScope {
-			report.Skipped++
-			continue
-		}
-		if report.Bytes >= budget {
-			report.Skipped += len(items) - i
-			break
-		}
-		// A record's stored size (key and encoded value) never exceeds what
-		// it takes in memory (key and decoded value): skip before reading.
-		lowerBound := int64(item.size + len(item.key))
-		if !item.memory {
-			lowerBound = c.l2.storedSize(item.key)
-		}
-		if report.Bytes+lowerBound > budget {
-			report.Skipped++
-			continue
-		}
-		generation, allowed := c.diskPromotionGeneration()
-		if !allowed {
-			report.Reason = "purged"
-			report.Skipped += len(items) - i
-			break
-		}
-		var value []byte
-		var expiry int64
-		if item.memory {
-			v, exp, ok := c.l2.readHandoverMemory(item.key)
-			if !ok {
-				report.Skipped++
-				continue
-			}
-			value, expiry = v, exp
-		} else {
-			readAt := clockNow()
-			v, ttl, ok := c.l2.lookupWithTTL(item.key, false)
-			if !ok {
-				report.Skipped++
-				continue
-			}
-			value, expiry = v, readAt.Add(ttl).UnixNano()
-		}
-		size := entrySize(item.key, value)
-		if report.Bytes+int64(size) > budget {
-			report.Skipped++
-			continue
-		}
-		if !c.admitWarm(item.key, value, expiry, item.memory, item.hits, generation) {
-			report.Skipped++
-			continue
-		}
-		report.Bytes += int64(size)
-		if item.memory {
-			report.MemoryEntries++
-		} else {
-			report.DiskEntries++
-		}
+	sizes := c.l2.storedSizes(items)
+	budget := min(opts.MaxBytes, int64(c.maxBytes/handoverWarmShareDivisor))
+	run.progress.Outcome = RestoreRunning
+	run.progress.PlannedEntries, run.progress.BudgetBytes = int64(len(items)), max(budget, 0)
+	for _, size := range sizes {
+		run.progress.PlannedBytes += size
 	}
-	if report.Reason == "" {
-		report.Reason = "done"
+	run.publish()
+	if opts.OnPlan != nil {
+		opts.OnPlan(run.progress)
 	}
+	switch {
+	case clockNow().UnixNano() < state.manifest.FlushedAt:
+		report.Reason = "clock_behind_flush"
+		run.skipRest(sizes, RestoreSkipClock)
+	default:
+		sameScope := opts.Scope != "" && state.manifest.Scope == opts.Scope
+		report.Reason = run.restoreDisk(ctx, items, sizes, sameScope, restoreEpoch{generation: generation, idle: idle})
+	}
+	c.l2.DropHandover()
+	run.finish(report.Reason)
+	report.DiskEntries, report.MemoryEntries = int(run.disk), int(run.memory)
+	report.Bytes = run.progress.RestoredBytes
+	report.Skipped = int(run.progress.SkippedEntries())
+	report.Duration = run.progress.Elapsed
+	report.Progress = run.progress
+	c.handoverStats.warmDone.Store(true)
 	return report
 }
 
-// admitWarm stores one restored entry at the back of the LRU, only into free
-// room, never over a memory entry that is still fresh, and only while no purge
-// started since generation was read.
-func (c *Cache) admitWarm(key string, value []byte, expiry int64, memOnly bool, hits uint32, generation uint64) bool {
-	now := clockNow()
-	remaining := time.Unix(0, expiry).Sub(now)
-	if remaining <= 0 {
-		return false
+// restoreRun is one warm-up's own state; publish copies it to the metrics.
+type restoreRun struct {
+	c            *Cache
+	progress     RestoreProgress
+	disk, memory int64
+	// cursor is the number of planned entries processed.
+	cursor int
+}
+
+func (r *restoreRun) publish() {
+	s := &r.c.handoverStats
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.progress, s.warmDiskEntries, s.warmMemoryEntries = r.progress, r.disk, r.memory
+}
+
+func (r *restoreRun) finish(outcome string) {
+	r.progress.Outcome = outcome
+	r.progress.Elapsed = clockNow().Sub(r.progress.Started)
+	r.publish()
+}
+
+// skipRest counts every entry not processed yet as skipped for reason.
+func (r *restoreRun) skipRest(sizes []int64, reason RestoreSkip) {
+	for ; r.cursor < len(sizes); r.cursor++ {
+		r.progress.Skipped[reason]++
+		r.progress.ProcessedEntries++
+		r.progress.ProcessedBytes += sizes[r.cursor]
 	}
-	size := entrySize(key, value)
-	if size > c.maxBytes/10 {
-		return false
+}
+
+// restoreEpoch is the memory tier's purge generation when the warm-up began,
+// and whether no purge was running then.
+type restoreEpoch struct {
+	generation uint64
+	idle       bool
+}
+
+// restoreDisk restores the ranked items batch by batch and returns why it
+// stopped.
+func (r *restoreRun) restoreDisk(ctx context.Context, items []handoverItem, sizes []int64, sameScope bool, epoch restoreEpoch) string {
+	c := r.c
+	budget := r.progress.BudgetBytes
+	workers := restoreWorkers()
+	backing := make([]diskRestoreRead, restoreBatchKeys)
+	reads := make([]*diskRestoreRead, 0, restoreBatchKeys)
+	entries := make([]*restoreEntry, 0, restoreBatchKeys)
+	// The records the next batches decode are read into the page cache first:
+	// at most the budget's worth, as a stored record is not larger than its
+	// decoded value.
+	ahead := c.l2.startRestoreReadahead(ctx, items, sizes, budget)
+	defer ahead.stop()
+	for r.cursor < len(items) {
+		if ctx.Err() != nil {
+			r.skipRest(sizes, RestoreSkipDeadline)
+			return "deadline"
+		}
+		if r.progress.RestoredBytes >= budget {
+			r.skipRest(sizes, RestoreSkipOverBudget)
+			break
+		}
+		if generation, idle := c.diskPromotionGeneration(); !epoch.idle || !idle || generation != epoch.generation {
+			r.skipRest(sizes, RestoreSkipPurged)
+			return "purged"
+		}
+		slots, room := c.restoreRoom()
+		if slots == 0 {
+			r.skipRest(sizes, RestoreSkipMemoryFull)
+			break
+		}
+		reads, entries = reads[:0], entries[:0]
+		for i := r.cursor; i < min(r.cursor+min(restoreBatchKeys, slots), len(items)); i++ {
+			item := items[i]
+			read := &backing[len(reads)]
+			*read = diskRestoreRead{restoreEntry: restoreEntry{key: item.key, memOnly: item.memory, hits: item.hits}}
+			switch {
+			case item.memory && !sameScope:
+				read.skip = RestoreSkipOtherScope
+			// A record's stored size (key and encoded value) never exceeds what
+			// it takes in memory (key and decoded value): skip before reading.
+			case r.progress.RestoredBytes+sizes[i] > budget:
+				read.skip = RestoreSkipOverBudget
+			}
+			reads = append(reads, read)
+			entries = append(entries, &read.restoreEntry)
+		}
+		c.holdsKeys(entries)
+		c.l2.planRestore(reads)
+		n := c.l2.readRestoreBatch(reads, restoreLimits{
+			budget: budget - r.progress.RestoredBytes, room: room, maxEntry: int64(c.maxBytes / 10),
+			bytes: restoreBatchBytes, workers: workers,
+		})
+		restored := r.progress.RestoredBytes
+		if !c.admitRestoreBatch(entries[:n], epoch.generation, &restored, budget, func([]*restoreEntry) { c.l2.restoreFence(reads[:n]) }) {
+			r.skipRest(sizes, RestoreSkipPurged)
+			return "purged"
+		}
+		r.progress.RestoredBytes = restored
+		for _, e := range entries[:n] {
+			switch {
+			case e.skip != restoreKeep:
+				r.progress.Skipped[e.skip]++
+			case e.memOnly:
+				r.memory++
+				r.progress.RestoredEntries++
+			default:
+				r.disk++
+				r.progress.RestoredEntries++
+			}
+			r.progress.ProcessedEntries++
+			r.progress.ProcessedBytes += sizes[r.cursor]
+			r.cursor++
+		}
+		clear(backing) // the batch's values belong to the memory tier now
+		r.publish()
+		ahead.advance(r.cursor, r.progress.ProcessedBytes)
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.diskPurges != 0 || c.diskGeneration != generation {
-		return false
-	}
-	if _, ok := c.entries[key]; ok {
-		return false
-	}
-	if len(c.entries) >= c.maxEntries || c.curBytes+size > c.maxBytes {
-		return false
-	}
-	c.entries[key] = entry{value: value, expiresAt: now.Add(remaining), sizeBytes: size, memOnly: memOnly, restorable: memOnly, sourceExpiresAt: expiry}
-	c.curBytes += size
-	stats := &c.layerL1[c.layer(key)]
-	stats.entries.Add(1)
-	stats.bytes.Add(int64(size))
-	stats.admissions.Add(1)
-	stats.writeBytes.Add(int64(len(value)))
-	c.lruIndex[key] = c.lruList.PushBack(&lruEntry{key: key})
-	if hits > 0 && c.hitsOn.Load() {
-		c.hitsMu.Lock()
-		c.hits[key] = hits
-		c.hitsMu.Unlock()
-	}
-	return true
+	return RestoreDone
 }
