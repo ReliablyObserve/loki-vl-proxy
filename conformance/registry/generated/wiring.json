@@ -162,7 +162,9 @@
     ],
     "cache-restart-handover": [
       "cmd/proxy/cache_handover_scope_test.go",
+      "internal/cache/handover_peak_test.go",
       "internal/cache/handover_test.go",
+      "internal/metrics/cache_restart_metrics_test.go",
       "internal/proxy/cache_handover_test.go",
       "test/e2e-fleet/restart_handover_test.go",
       "test/helm/cache_handover_test.go"
@@ -3220,6 +3222,9 @@
       "semantics/error-cache-classes-and-ttl",
       "semantics/error-coalescing-request-flights"
     ],
+    "internal/cache/handover_peak_test.go": [
+      "cache-restart-handover"
+    ],
     "internal/cache/handover_test.go": [
       "cache-restart-handover"
     ],
@@ -3525,6 +3530,9 @@
       "status-405",
       "status-429",
       "status-500"
+    ],
+    "internal/metrics/cache_restart_metrics_test.go": [
+      "cache-restart-handover"
     ],
     "internal/metrics/callertracker_test.go": [
       "observability-slow-query-log"
@@ -7076,7 +7084,7 @@
       "cache-restart-handover"
     ]
   },
-  "tests_with_markers": 838,
+  "tests_with_markers": 840,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
