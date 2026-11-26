@@ -583,3 +583,65 @@ func TestPeerBulkServe_PeakMemoryIsOneBatch(t *testing.T) {
 		t.Fatalf("serving 64 MiB grew the live heap by %d MiB", grew>>20)
 	}
 }
+
+// persist queues restored values to the local disk: a full write queue is
+// committed once and tried again, the rest is counted as skipped; a value a
+// live write replaced since its admission, or anything after a purge, is never
+// written.
+//
+// conformance: cache-restart-handover
+func TestPeerRestore_PersistRetriesAFullQueueAndKeepsLiveWrites(t *testing.T) {
+	quietRestoreLogs(t)
+	dc, err := NewDiskCache(DiskCacheConfig{Path: t.TempDir() + "/c.db", MaxBufferBytes: 64 << 10, FlushSize: 1 << 20, FlushBytes: 1 << 30, FlushInterval: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dc.Close()
+	c := NewWithMaxBytes(time.Hour, 1000, 64<<20)
+	defer c.Close()
+	c.SetL2(dc)
+	r := newTestRestore(c, "")
+	defer r.cancel()
+	base := dc.reserveAccess(1001)
+	r.access.Store(int64(base))
+	r.accessFloor = int64(base) - 1000
+	admit := func(n int, prefix string) []*restoreEntry {
+		batch := make([]*restoreEntry, n)
+		for i := range batch {
+			batch[i] = &restoreEntry{key: fmt.Sprintf("%s-%02d", prefix, i), value: bytes.Repeat([]byte{'v'}, 4096), expiry: time.Now().Add(time.Hour).UnixNano()}
+		}
+		restored := int64(0)
+		if !c.admitRestoreBatch(batch, r.generation, &restored, 1<<30, nil) {
+			t.Fatal("admission refused")
+		}
+		return batch
+	}
+
+	batch := admit(40, "full")
+	r.persist(batch)
+	written, skipped := r.diskWrites.Load(), r.diskSkipped.Load()
+	if written+skipped != 40 || written <= 16 || skipped == 0 {
+		t.Fatalf("written %d, skipped %d: want a retry after the commit and the rest skipped", written, skipped)
+	}
+
+	// A live write since the admission wins, in memory and on disk.
+	live := admit(2, "live")
+	c.SetLocalAndDiskWithTTL(live[0].key, []byte("fresher"), time.Minute)
+	dc.Flush()
+	r.diskWrites.Store(0)
+	r.persist(live)
+	dc.Flush()
+	if v, ok := dc.Get(live[0].key); !ok || string(v) != "fresher" || r.diskWrites.Load() != 1 {
+		t.Fatalf("disk holds %q, %d writes: the restored value replaced a live write", v, r.diskWrites.Load())
+	}
+
+	// After a purge nothing is written.
+	late := admit(3, "late")
+	c.PurgeAll()
+	r.diskWrites.Store(0)
+	r.persist(late)
+	dc.Flush()
+	if entries, _ := dc.Size(); entries != 0 || r.diskWrites.Load() != 0 {
+		t.Fatalf("%d records, %d writes after a purge", entries, r.diskWrites.Load())
+	}
+}

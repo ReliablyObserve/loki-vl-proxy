@@ -686,10 +686,18 @@ func (pc *PeerCache) streamBulk(ctx context.Context, w http.ResponseWriter, loca
 			batchBytes += items[j].size
 			j++
 		}
+		readAt := time.Now()
 		recs := local.bulkReadBatch(items[i:j], memOK, codec)
 		skipped += int64(j-i) - int64(len(recs))
 		out.extend()
 		for _, r := range recs {
+			// The TTL left when the record is sent, not when its batch was
+			// read: the rate limit may hold it back, and the receiver starts
+			// the TTL when the record arrives.
+			if r.ttl -= time.Since(readAt); r.ttl < MinUsableTTL {
+				skipped++
+				continue
+			}
 			out.record(r)
 			if out.err != nil {
 				break

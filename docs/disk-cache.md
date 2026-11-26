@@ -179,7 +179,9 @@ serves them from disk as before.
 
 It is a separate transfer from the peer reads of single keys and from the
 hot-key read-ahead (`POST /_cache/bulk`, the same peer token as every
-`/_cache` route):
+`/_cache` route; with `-peer-insecure-ip-allowlist` instead of a token, a peer
+that has not discovered the new replica yet answers 403 and is skipped, so the
+restore needs the peer token):
 
 1. every peer is probed once (8 at a time; one that does not answer within
    `-peer-timeout` three times, 300-900 ms apart, is skipped). A peer of an
