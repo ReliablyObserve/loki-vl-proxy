@@ -150,7 +150,10 @@ const asPipe = " as "
 // quoted text that spells an unpack pipe or more unpacks than are told apart, leave the query to the translator.
 func (m metricLog) extractedPipes(b *strings.Builder, bases, labels []string, owner string) (copies bool, err error) {
 	for _, base := range bases {
-		if m.hasJoined(asPipe, translate.ExtractedScratch+"_"+base, "") {
+		// A filter on the label scratched it already and deleted the scratch fields after itself: the string
+		// translator reuses them, which the lowering writes only for a profile with alias functions, where it
+		// unpacks the key again (the translator's answer is not Loki's there).
+		if m.hasJoined(asPipe, translate.ExtractedScratch+"_"+base, "") && m.aliasField == nil {
 			return false, &NotLoweredError{Construct: owner + extractedConstruct}
 		}
 	}

@@ -5,9 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // FieldMappingLabelMode controls which names of a -field-mapping field the
@@ -181,31 +179,6 @@ func (lt *LabelTranslator) withAliases(prof lower.Profile) lower.Profile {
 		prof.AliasField, prof.FieldAlias = lt.aliasField, lt.fieldAlias
 	}
 	return prof
-}
-
-// aliasCollisionText gives the string translator's text, for a query the
-// lowering leaves to it, the collision check the lowering writes in the alias
-// and both modes: the translator matches a stream label name_extracted
-// collides with in _stream under its own name only, where an alias's stream
-// label is stored under its field. It rewrites only the exact checks the
-// translator prints (`__lxp_stream:~"[{,]name="`, the name with its
-// underscores as [._]), and returns text unchanged in the original mode.
-func (lt *LabelTranslator) aliasCollisionText(text string) string {
-	if !lt.listsAliases() {
-		return text
-	}
-	stream := translate.ExtractedScratch + "_stream"
-	for field, alias := range lt.vlToLoki {
-		if answer, ok := lt.aliasAnswer(field); !ok || answer != alias {
-			continue
-		}
-		plain := logsql.FieldFilter{Field: stream, Op: logsql.FieldOpRegexp, Value: translate.StreamLabelPattern(alias, nil)}.String()
-		if strings.Contains(text, plain) {
-			aliased := logsql.FieldFilter{Field: stream, Op: logsql.FieldOpRegexp, Value: translate.StreamLabelPattern(alias, []string{field})}.String()
-			text = strings.ReplaceAll(text, plain, aliased)
-		}
-	}
-	return text
 }
 
 // answerName is the name answers carry for the field a mapped label name reads.

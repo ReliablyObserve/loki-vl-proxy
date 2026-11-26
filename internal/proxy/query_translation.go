@@ -577,7 +577,6 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			return translationResult{err: err}, nil
 		}
 		legacy := translated
-		translated = p.labelTranslator.aliasCollisionText(translated)
 		translated = p.cacheTranslation(cacheKey, translated)
 		if p.loweringShadow != nil {
 			p.shadowLowering(shadowInput{query: normalized, keepLine: keepLine, label: labelFn, streamFields: streamFieldsMap, caps: caps, legacy: legacy})
