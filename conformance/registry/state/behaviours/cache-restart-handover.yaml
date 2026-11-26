@@ -12,9 +12,9 @@ reason: |
   is not run, and neither the restore nor the index rebuild is measured on a
   network volume (the EBS targets are emulated and estimated). A replica
   with a new or no disk restores from its peers (restore-from-peers-by-pull),
-  unit- and lifecycle-proven; its fleet proof
-  TestFleet_PeerRestoreRefillsAWipedDisk is in test/e2e-fleet, and the peer
-  restore is not measured over a real pod network (loopback measured, pod
-  networks computed).
+  unit-, lifecycle- and stack-proven (TestFleet_PeerRestoreRefillsAWipedDisk,
+  CI job e2e-fleet; a ring with the other replica on the previous build skips
+  it as unsupported); the peer restore is not measured over a real pod
+  network (loopback measured, pod networks computed).
 owner_decision: null
 waiver: null
