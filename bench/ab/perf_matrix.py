@@ -220,9 +220,12 @@ def request_url(base, shape, query, secs, step, run_end):
 
 
 def target_order(targets, k):
-    """The targets in the order a (shape, range) pair asks them: the builds (every target but the reference) swap
-    places on odd pairs (ABAB over the pairs), the reference keeps its place. Without this the first-listed build
-    always goes first and the second meets its post-request background work."""
+    """The targets in the order run k asks them, k counting the (shape, range) pairs and the runs within a pair: the
+    builds (every target but the reference) swap places on odd k (ABAB over the pairs and over the runs of a pair),
+    the reference keeps its place. Without this the first-listed build always goes first and the second meets its
+    post-request background work. Swapping per run too keeps a build's gap to its own next request from being fixed
+    for a whole pair: with one order a build's gap is the other build's request plus Loki's, so a build slowed once
+    gives the other a long gap and itself a short one, run after run."""
     builds = [t for t in targets if t[0] != REFERENCE_TARGET]
     if k % 2 and len(builds) > 1:
         swapped = iter(builds[::-1])
@@ -728,7 +731,7 @@ def main():
                 # outlast a cache's max staleness so each run meets an aged entry.
                 if run and shape.get("pause"):
                     time.sleep(float(shape["pause"]))
-                for tname, base in target_order(targets, pair - 1):
+                for tname, base in target_order(targets, pair - 1 + run):
                     if run == 0 and tname != REFERENCE_TARGET:  # Loki runs on its own host process: nothing to wait for
                         quiet_waited += quiet_before(targets, tname, logs, args.quiet_s, args.quiet_cap_s)
                     if secs >= 86400 and tname in long_runs and run >= int(long_runs[tname]):
