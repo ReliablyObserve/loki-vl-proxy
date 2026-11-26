@@ -613,7 +613,7 @@ class FirstPassOrderTest(unittest.TestCase):
             with open(out) as f:
                 return events, json.load(f)
 
-    def test_first_pass_alternates_the_first_build_per_shape_and_waits_before_each_cold_request(self):
+    def test_first_pass_alternates_the_first_build_per_shape_and_run_and_waits_before_each_cold_request(self):
         shapes = [{"name": "one", "query": "q"}, {"name": "two", "query": "q"}]
         events, raw = self.run_main(["--runs", "2", "--target", "base=http://base", "--target", "pr=http://pr",
                                      "--target", "loki=http://loki", "--quiet-log", "base=/l/base", "--quiet-log", "pr=/l/pr",
@@ -622,12 +622,12 @@ class FirstPassOrderTest(unittest.TestCase):
             # shape one, run 0: base first (waits for pr's log), then pr (waits for base's), then loki (no wait)
             ("quiet", ("/l/pr",), 3.0), ("request", "base"), ("quiet", ("/l/base",), 3.0), ("request", "pr"),
             ("request", "loki"),
-            # shape one, run 1 is warm: no wait
-            ("request", "base"), ("request", "pr"), ("request", "loki"),
-            # shape two swaps the builds
+            # shape one, run 1 is warm: no wait, and the builds swap
+            ("request", "pr"), ("request", "base"), ("request", "loki"),
+            # shape two starts with the builds swapped, and swaps them again on its run 1
             ("quiet", ("/l/base",), 3.0), ("request", "pr"), ("quiet", ("/l/pr",), 3.0), ("request", "base"),
             ("request", "loki"),
-            ("request", "pr"), ("request", "base"), ("request", "loki")])
+            ("request", "base"), ("request", "pr"), ("request", "loki")])
         self.assertIn("quiet_wait_s", raw)
         self.assertEqual({r["target"] for r in raw["rows"]}, {"base", "pr", "loki"})
 

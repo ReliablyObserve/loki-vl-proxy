@@ -126,6 +126,7 @@ func (m *Metrics) cacheSignalMetricSnapshots() []signalMetric {
 	m.mu.RLock()
 	signalsFn := m.cacheSignalStatsProvider
 	ttlFn := m.cacheTTLProvider
+	sizingFn := m.cacheSizingStatsProvider
 	m.mu.RUnlock()
 	var out []signalMetric
 	if signalsFn != nil {
@@ -226,6 +227,9 @@ func (m *Metrics) cacheSignalMetricSnapshots() []signalMetric {
 			readBytesMetric.points = append(readBytesMetric.points, signalPoint{labels: layer, hist: readBytes[l]})
 		}
 		out = append(out, evictions, rejections, ageMetric, hitsMetric, promotions, demotions, readSecondsMetric, readBytesMetric)
+	}
+	if sizingFn != nil {
+		out = append(out, cacheSizingMetrics(sizingFn())...)
 	}
 	if ttlFn != nil {
 		ttl := signalMetric{name: "loki_vl_proxy_cache_ttl_seconds", kind: "gauge", unit: "s",

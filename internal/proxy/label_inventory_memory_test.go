@@ -346,7 +346,7 @@ func TestLabelsInventory_PrefetchStaysWithinTheWindowWidth(t *testing.T) {
 			params := url.Values{"query": {"*"}, "start": {strconv.FormatInt(tc.start.UnixNano(), 10)}, "end": {strconv.FormatInt(tc.end.UnixNano(), 10)}}
 			plan := planInventorySegments(tc.start.UnixNano(), tc.end.UnixNano(), now.Add(-metadataInventorySealLag).UnixNano())
 			vl.reset()
-			p.fillTouchedDays(withNamesOnlyListing(context.Background()), "/select/logsql/stream_field_names", params, listingBase(p), plan, now, true)
+			p.fillTouchedDays(withNamesOnlyListing(context.Background()), "/select/logsql/stream_field_names", params, listingBase(p), plan, now, true, false)
 			settleBackground(t, p)
 			calls, spans := vl.reset()
 			var read time.Duration

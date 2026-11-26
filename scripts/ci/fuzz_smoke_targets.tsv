@@ -226,7 +226,9 @@ smoke	internal/proxy	FuzzStripOuterCallsMatchesRescanning	12s	-	the strip of out
 smoke	internal/proxy	FuzzCutLokiSplits	12s	-	the per-split Loki cut of a Drilldown partial answer terminates on any body, limit and split and never adds a series or a point
 smoke	internal/proxy	FuzzCutLokiSplitsMatchesReference	12s	-	the in-place per-split Loki cut keeps exactly the series and points of the plain cut over decoded JSON
 smoke	internal/proxy	FuzzLabelsInventoryCover	12s	-	names-only /labels listing with ends answered by their hours equals one full-range call
+smoke	internal/proxy	FuzzCredentialFingerprintsNeverCollide	12s	-	two requests share an auth fingerprint exactly when tenant scope, forwarded headers and forwarded cookies match, and a credential fingerprint is always the keyed digest
 smoke	internal/cache	FuzzHandoverManifestDecode	12s	-	cache restart hand-over manifest decode
 smoke	internal/cache	FuzzHandoverRecordDecode	12s	-	cache restart hand-over record decode
 smoke	internal/metrics	FuzzParseDurationBuckets	12s	-	-metrics.duration-buckets accepts only a bounded, finite, ascending list of bounds above zero
 smoke	internal/cache	FuzzRetentionOperations	12s	-	cache reuse retention segments
+smoke	internal/cache	FuzzSizingGhostLRU	12s	-	cache sizing ghost LRU bounds
