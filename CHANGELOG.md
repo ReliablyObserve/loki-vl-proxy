@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.365.0] - 2026-11-26
+
 ### Changed
 
 - The duration histograms reach 120 s: `15, 20, 30, 45, 60, 90, 120` follow the earlier bounds (all kept) in `loki_vl_proxy_request_duration_seconds`, `backend_duration_seconds`, `tenant_request_duration_seconds`, `client_request_duration_seconds`, `request_phase_seconds`, `internal_operation_duration_seconds` and the `window_*` duration histograms, on `/metrics` and OTLP. Before, every request over 10 s counted only in `+Inf`, so a quantile read exactly `10` and could not tell a slow request from a timeout. Each duration histogram series gains 7 series: a replica that just started goes from 1,538 to 1,895 series (`/metrics` gzip 10.6 kB to 11.8 kB). Count histograms are unchanged. The chart alert `LokiVLProxyHighLatency` (p99 over 10 s) can now fire: with the highest finite bound at 10 s its condition was never true ([#1765](https://github.com/ReliablyObserve/Loki-VL-proxy/issues/1765)).
