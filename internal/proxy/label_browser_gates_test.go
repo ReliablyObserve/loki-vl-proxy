@@ -122,10 +122,14 @@ func TestLabelBrowserGates_MovedWindowNoRequestPathCalls(t *testing.T) {
 //     must not get that day's names. A 24h window meets this when an end lies
 //     between 23:00 and 01:00, a 6h or 1h window when it has just crossed
 //     midnight or its start is about to.
-//   - "uncached": the moved window starts in an hour no earlier listing read,
-//     because the background reads span at most the window's width: a 1h window
-//     whose start moves back over an hour boundary, a 24h window whose start
-//     moves back over two.
+//   - "uncached": the moved window starts in an hour that no earlier listing
+//     read whole or in the background, because the background reads span at most
+//     the window's width: a 1h window (one hour read per listing) whose start
+//     moves back into an hour not read yet, a 24h window whose start moves back
+//     over two hour boundaries.
+//
+// Both conditions are necessary, not sufficient: many windows that meet them
+// are still answered from memory, from buckets earlier listings read.
 //
 // Such a window takes the path that reads VictoriaLogs (for the pieces not
 // cached: none when an earlier moved window already read them) and still lists

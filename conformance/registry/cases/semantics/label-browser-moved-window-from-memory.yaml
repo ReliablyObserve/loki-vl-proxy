@@ -28,10 +28,13 @@ why: |
   A 24h window meets it when an end lies between 23:00 and 01:00 UTC, a 6h
   or 1h window with an end that close to midnight (up to 1 call per 24h or 6h
   request and 10 per 1h request). Second, the moved window starts in an hour
-  no earlier listing read (memory miss uncached), because the background
-  reads span at most the window's width: a 1h window whose start moves back
-  over an hour boundary (7 calls), a 24h window whose start moves back over
-  two (2 calls). The second does not depend on the time of day.
+  that no earlier listing read whole or in the background (memory miss
+  uncached), because the background reads span at most the window's width:
+  a 1h window (one hour read per listing) whose start moves back into an hour
+  not read yet (7 calls), a 24h window whose start moves back over two hour
+  boundaries (2 calls). The second does not depend on the time of day. Both
+  conditions are necessary, not sufficient: many windows that meet them are
+  still answered from memory, from buckets earlier listings read.
 
   This case holds that behaviour with gates, in two kinds:
 

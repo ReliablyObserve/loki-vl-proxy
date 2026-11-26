@@ -144,7 +144,7 @@ decisions:
         effect: 'every label browser over a moved window waited for VictoriaLogs'
         fixed_by: '#1750'
         after: 'to be measured by the perf A/B of #1750'
-    quality: '/labels never drops a name of the exact answer and never lists a name of a UTC day whose part of the window holds no row; label values and every other listing are unchanged; with -metadata-max-staleness=0 every listing reads VictoriaLogs as before. A moved window still reads VictoriaLogs when its part of a UTC day is shorter than an hour with no bucket of its own in memory (no_rows_evidence), or when it starts in an hour the background reads, bounded to the window width, did not read (uncached): semantics/label-browser-moved-window-from-memory.'
+    quality: '/labels never drops a name of the exact answer and never lists a name of a UTC day whose part of the window holds no row; label values and every other listing are unchanged; with -metadata-max-staleness=0 every listing reads VictoriaLogs as before. A moved window still reads VictoriaLogs when its part of a UTC day is shorter than an hour with no bucket of its own in memory (no_rows_evidence), or when it starts in an hour no earlier listing read whole or in the background, which is bounded to the window width (uncached): semantics/label-browser-moved-window-from-memory.'
     performance:
       tracked: ['metadata-inventory refresh labels (label browser)', 'metadata-inventory refresh labels with selector']
       bound: 'perf block max_ratio 2.0, target 1.0; owner target for these rows: below Loki'
