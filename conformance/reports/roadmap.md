@@ -80,7 +80,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 108 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | — | 0 / 0 | 2 | — |
-| `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | — | 0 / 0 | 2 | — |
+| `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | — | 0 / 0 | 3 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 12 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | — | 0 / 0 | 4 | — |
@@ -90,7 +90,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | — | 0 / 0 | 10 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
 | `release-image-pinned-by-digest` — The chart can pin the released image by digest, and each release publishes that digest as a file | — | 0 / 0 | 1 | — |
-| `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | — | 0 / 0 | 2 | — |
+| `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | — | 0 / 0 | 3 | — |
 | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 6 | — |
 | `tail-reads-settled-rows` — A live tail reads only rows VictoriaLogs has made searchable, so no line of a stream is skipped | — | 0 / 0 | 3 | — |
 

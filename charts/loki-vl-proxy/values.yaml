@@ -616,13 +616,18 @@ backendVersionAuth:
 # Secret keying the digests of credentials in cache keys
 # (-cache-key-secret-file): forwarded Authorization headers and cookies
 # (-forward-authorization, -forward-headers, -forward-cookies) and
-# backendAuth. Unset, the proxy derives the key from the peer token
-# (peerCache.enabled), else uses a random key per process, and then
-# credential-scoped cache entries are not reused after a restart. The Secret
-# key holds any long random string; every replica reads the same Secret.
+# backendAuth. With existingSecret unset and generate=true, the chart keeps a
+# random value in <release>-cache-key: created on the first install, kept on
+# every upgrade (lookup), shared by every replica, so a replica with a
+# persistent cache keeps credential-scoped entries across restarts. A render
+# without cluster access (helm template, Argo CD) renders and mounts no key
+# rather than a new one per render: set existingSecret there. Deleting the
+# Secret rotates the key on the next upgrade (credential-scoped entries miss
+# once). See docs/security.md#cache-key-secret.
 cacheKeySecret:
   existingSecret: ""
   existingSecretKey: "secret"      # key within existingSecret
+  generate: true                   # keep a chart-generated key when existingSecret is unset
 
 # Custom Drilldown patterns always prepended to /loki/api/v1/patterns.
 # Runtime supports:

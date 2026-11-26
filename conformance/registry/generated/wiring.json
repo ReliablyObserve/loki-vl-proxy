@@ -158,7 +158,8 @@
     ],
     "cache-key-credential-digest": [
       "internal/proxy/cache_key_fingerprint_golden_test.go",
-      "internal/proxy/credential_digest_test.go"
+      "internal/proxy/credential_digest_test.go",
+      "test/helm/cache_key_secret_test.go"
     ],
     "cache-response-key-versions": [
       "internal/proxy/binary_empty_without_test.go",
@@ -1368,6 +1369,7 @@
     ],
     "secrets-outside-process-arguments": [
       "cmd/proxy/secret_flags_test.go",
+      "test/helm/cache_key_secret_test.go",
       "test/helm/secrets_test.go"
     ],
     "semantics/absent-over-time-semantics": [
@@ -7174,6 +7176,10 @@
     "test/helm/cache_handover_test.go": [
       "cache-restart-handover"
     ],
+    "test/helm/cache_key_secret_test.go": [
+      "cache-key-credential-digest",
+      "secrets-outside-process-arguments"
+    ],
     "test/helm/image_test.go": [
       "release-image-pinned-by-digest"
     ],
@@ -7184,7 +7190,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 858,
+  "tests_with_markers": 859,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
