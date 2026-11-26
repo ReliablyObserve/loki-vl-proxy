@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -17,7 +18,8 @@ import (
 
 // TestFleet_PeerRestoreRefillsAWipedDisk: the ring of two replicas of the
 // "handover" profile (-cache-startup-warm-bytes on, -peer-replication-factor
-// at its default 2, so both replicas hold every key). Replica a computes an
+// at its default 2, so both replicas hold every key; the CI run at RF 1 only
+// checks that the restore ends at once, as no other copy exists). Replica a computes an
 // answer from VictoriaLogs and pushes it to replica b. Replica b is then
 // removed with its volume and started on a new, empty one:
 //   - before /ready answers 200 it pulled its keys from replica a in one bulk
@@ -105,6 +107,20 @@ func TestFleet_PeerRestoreRefillsAWipedDisk(t *testing.T) {
 
 	m := scrapeMetrics(t, b)
 	peer := map[string]string{"source": "peer"}
+	if strings.Contains(os.Getenv("FLEET_PROXY_EXTRA_ARG"), "-peer-replication-factor=1") {
+		// One copy per key: the keys replica b owned were on its disk only (a
+		// non-owner keeps a shadow, which is never sent), so there is nothing
+		// to restore. The restore ends at once and b answers correctly.
+		if m.sum("loki_vl_proxy_cache_restart_warm_outcome", map[string]string{"source": "peer", "outcome": "running"}) != 0 ||
+			m.sum("loki_vl_proxy_cache_restart_warm_outcome", map[string]string{"source": "peer", "outcome": "deadline"}) != 0 {
+			t.Fatal("at RF 1 the peer restore did not end at once")
+		}
+		if again := get(b, q); !reflect.DeepEqual(again.data, first.data) {
+			t.Fatal("replica b answered differently")
+		}
+		t.Logf("RF 1: ready after %s; the restore had nothing to pull (the wiped copies had no other replica)", took.Round(time.Millisecond))
+		return
+	}
 	if got := m.sum("loki_vl_proxy_cache_restart_warm_outcome", map[string]string{"source": "peer", "outcome": "done"}); got != 1 {
 		t.Fatalf("peer restore outcome done = %v\n%s", got, replicaDiagnostics(b))
 	}

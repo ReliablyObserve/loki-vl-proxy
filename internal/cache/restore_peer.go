@@ -761,7 +761,8 @@ func (pc *PeerCache) bulkPost(ctx context.Context, addr string, req bulkRequest)
 	if err != nil {
 		return nil, err
 	}
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+peerBulkPath, bytes.NewReader(body))
+	endpoint := "http://" + addr + peerBulkPath
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

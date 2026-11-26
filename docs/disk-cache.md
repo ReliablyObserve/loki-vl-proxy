@@ -194,7 +194,9 @@ restore needs the peer token):
    decides ownership the same way. A peer sends the keys whose replicas include
    the restoring replica and for which it is the first of the other replicas
    among the peers asked: each key crosses the network once, also at a
-   replication factor of 3 or more;
+   replication factor of 3 or more. At a replication factor of 1 a key has no
+   other copy (a non-owner keeps only a short shadow, which is never sent), so
+   a replica that lost its disk finds nothing to restore;
 3. at most `-cache-startup-peer-restore-concurrency` (default 4) streams run at
    once. A peer streams its memory hot set in recency order, then the disk
    records it holds beyond it, newest first, and stops at the requester's

@@ -161,7 +161,7 @@ func TestCachePeerRestore_RouteRequiresThePeerToken(t *testing.T) {
 	peers := []string{serving.addr(), restoring.addr()}
 	serving.open(t, peers, "peer-secret", Config{})
 	seedServing(t, serving, 5)
-	resp, err := http.Post("http://"+serving.addr()+"/_cache/bulk", "application/json", strings.NewReader(`{"version":1}`))
+	resp, err := http.Post(serving.srv.URL+"/_cache/bulk", "application/json", strings.NewReader(`{"version":1}`))
 	if err != nil {
 		t.Fatal(err)
 	}
