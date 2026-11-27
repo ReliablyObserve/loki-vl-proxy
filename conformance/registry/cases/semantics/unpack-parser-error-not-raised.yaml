@@ -1,0 +1,32 @@
+id: semantics/unpack-parser-error-not-raised
+title: "A count or rate over an unpack of a line that is not a JSON object answers where Loki fails (open)"
+pending: true
+proves:
+  - parser-unpack
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki's unpack marks a line that is not a JSON object with JSONParserErr, and a metric query whose sample carries
+  it fails with the pipeline error (semantics/loki-pipeline-error-rules). The proxy's parser error check covers
+  `| json` (semantics/json-parser-error-under-wrappers) and not `| unpack`, so a count_over_time or rate over such
+  a line answers 200. A sum with no by or without clause needs no label, Loki parses no line for it and answers,
+  and the proxy matches it. Recorded with Loki's engine and VictoriaLogs v1.49.0 and v1.54.0
+  (TestUnpackSumMatchesLoki).
+request:
+  scope: query-grammar
+  entry: "TestUnpackSumMatchesLoki (internal/querycorpus): the job=bad range aggregations"
+  setup: "Send count_over_time over an unpack as /loki/api/v1/query_range over a stream holding a plain text line."
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: "Loki's 400 with the JSONParserErr pipeline error."
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy json_parser_error_check.go (no check for unpack)'
+  loki: '400 JSONParserErr'
+  proxy: '200 with the series'
+  planned_test: 'TestUnpackSumMatchesLoki (internal/querycorpus) holds the runs as an open difference'
+  clusters: []

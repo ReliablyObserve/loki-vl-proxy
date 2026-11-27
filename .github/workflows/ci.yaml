@@ -1222,7 +1222,7 @@ jobs:
             pattern: '^(TestSetup_IngestLogs|TestErrorFlightsLive_.*)$'
             outage: "1"
           - name: semantics
-            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrix.*|TestQuerySemanticsOperationsInventory|TestOperationsMatrix_.*|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestCompat_LabelFilterExpressionSyntax|TestCompat_RepeatedLabelFiltersApplyAllLikeLoki|TestCompat_IPLabelFilterEmbeddedAddressLikeLoki|TestCompat_KeywordLabelNamesLikeLoki|TestCompat_BinaryOperandLiterals|TestCompat_SelectorValueMustBeString|TestCompat_MarkerTextInStrings|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields|TestCompat_ReservedFieldNameCaseLikeLoki|TestCompat_ReservedFieldLabelsLikeLoki)$'
+            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrix.*|TestQuerySemanticsOperationsInventory|TestOperationsMatrix_.*|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestCompat_LabelFilterExpressionSyntax|TestCompat_RepeatedLabelFiltersApplyAllLikeLoki|TestCompat_IPLabelFilterEmbeddedAddressLikeLoki|TestCompat_KeywordLabelNamesLikeLoki|TestCompat_BinaryOperandLiterals|TestCompat_SelectorValueMustBeString|TestCompat_MarkerTextInStrings|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields|TestCompat_ReservedFieldNameCaseLikeLoki|TestCompat_ReservedFieldLabelsLikeLoki|TestCompat_UnpackSumsLikeLoki)$'
     name: e2e-compat (${{ matrix.group.name }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7

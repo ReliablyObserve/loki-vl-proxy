@@ -47,12 +47,40 @@ why: |
 
   The query plan lowers a count_over_time, rate or absent_over_time over an
   unpack followed only by drops and keeps (the text equals the translator's,
-  and the lines it counts are Loki's); every other shape is delegated under the name of
-  what it reads (unpack line, unpack line read, unpack label read, unpack
-  parser order) until the stages after an unpack read the promoted labels and
-  the replaced line as Loki does. The proxy's own evaluation of an unwrapped
-  value (internal/proxy ordered_json_metric.go) reads an unpack as a json
-  parser; unwrap_conversion_error.go reads it as Loki does.
+  and the lines it counts are Loki's), alone or under a sum with no by or
+  without clause;
+  every other shape is delegated under the name of what it reads (unpack line,
+  unpack line read, unpack label read, unpack parser order) until the stages
+  after an unpack read the promoted labels and the replaced line as Loki does.
+  TestUnpackSumMatchesLoki holds these aggregations to real Loki through the
+  proxy (recorded, VictoriaLogs v1.49.0 and v1.54.0): the sums answer Loki's
+  series and values, over lines that are no JSON object too (Loki parses no
+  line for a sum that needs no label).
+
+  Open in the served answers, its own case (the plan writes the translator's
+  text, so the lowering changes none of it):
+  semantics/unpack-parser-error-not-raised. The text screens of the query
+  handlers still turn every unpack away, so no query over an unpack is served
+  from the plan yet.
+
+  A pushdown of the packed rule is not exact: with `unpack_json fields
+  (_entry)` guarded by a raw-line regexp for a string `_entry`, then a second
+  unpack and a format of _msg, VictoriaLogs v1.49.0 and v1.54.0 still differ
+  from Loki on 23 adversarial lines (kept lines: 2 for a line filter, 4 for a
+  label filter; returned lines: 3 for a log query) over an empty `_entry`, a
+  nested string `_entry` next to a numeric top-level one, a duplicate key and
+  values that are not strings, and it takes about twice the translator text's
+  time for a count over 600k packed rows.
+
+  The proxy's own evaluation of an unwrapped value reads an unpack as a json
+  parser: an unwrap_over_time over a line that is not packed reads a value Loki
+  does not (sum_over_time over a stream with an unpacked "a":"1000" line
+  answered 1003 where Loki answers 3 with Loki's engine and VictoriaLogs
+  v1.49.0 and v1.54.0), and a sum over a max_over_time adds the
+  proxy's per-stream maxima where Loki adds those of its series, split by the
+  promoted labels. TestUnpackSumMatchesLoki lists these runs in unpackSumKnown
+  with two more: a count after a label filter on __error__ and after a line
+  filter that follows the unpack.
 
   Twelve additional historical series facets exercise unsupported unpack compositions on
   both endpoints: unpack before named JSON/unwrap, before raw unwrap with filters, after
@@ -106,12 +134,10 @@ gap:
   status: open
   impact: edge
   effort: M
-  area: 'internal/translator (`unpack` is written as unpack_json); closed when the query plan lowers the stages after an unpack with a packed-line test and the line replacement, and serves queries with a parser'
+  area: 'internal/translator (`unpack` is written as unpack_json); the query plan side is internal/queryplan/lower/unpack.go and internal/queryplan/lower/vector_agg.go (the ungrouped sum); closed when the plan lowers the stages after an unpack with a packed-line test and the line replacement, and serves queries with a parser'
   loki: 'an unpack promotes the string keys of a line holding a string _entry and replaces the line with it'
   proxy: 'unpack_json promotes the keys of every JSON line and keeps the packed line'
   planned_test: 'TestUnpackFamiliesMatchLoki (internal/queryplan/lower) holds the families to Loki''s recorded answers; an e2e row against Loki on a packed stream when the plan serves queries with a parser'
-  visual: none
-  visual_reason: 'packed streams only exist where an agent packs them; no Grafana panel of the compose stack sends them'
   clusters:
     - "002a7567"
     - "04e48111"
@@ -167,3 +193,10 @@ gap:
     - 'f5f3d3bc'
     - 'faf50493'
     - 'ff5a5d1e'
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
