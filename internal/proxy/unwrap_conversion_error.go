@@ -1672,7 +1672,7 @@ func unwrapLokiError(probe unwrapErrorProbe, base map[string]string, line, forma
 // parsers after a line_format read. labels is nil when a filter drops the line.
 func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, formatted string) (map[string]string, map[string]bool, bool) {
 	labels := cloneStringMap(base)
-	parsed := map[string]bool{}
+	parsed := map[string]bool{} // nosemgrep: trailofbits.go.iterate-over-empty-map.iterate-over-empty-map -- unwrapParseLine fills it before the range over it
 	preserve := probe.hints[errorLabel]
 	includeSourceErrors := probe.numeric || numericEqualityPipeline(probe.pipeline)
 	generatedError := ""
