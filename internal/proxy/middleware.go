@@ -285,7 +285,9 @@ func (p *Proxy) adminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p.adminAuthToken != "" {
 			got := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
-			if got == "" {
+			// With caller authentication on, Authorization is the caller's
+			// credential: the admin token is read from X-Admin-Token only.
+			if got == "" && p.clientAuth == nil {
 				auth := strings.TrimSpace(r.Header.Get("Authorization"))
 				if strings.HasPrefix(auth, "Bearer ") {
 					got = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
@@ -325,7 +327,9 @@ func (p *Proxy) deleteTokenMatches(r *http.Request) bool {
 		return false
 	}
 	got := strings.TrimSpace(r.Header.Get(deleteTokenHeader))
-	if got == "" {
+	// With caller authentication on, Authorization is the caller's
+	// credential: the delete token is read from X-Delete-Token only.
+	if got == "" && p.clientAuth == nil {
 		got = bearerToken(r)
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(p.deleteAPIAuthToken)) == 1
@@ -363,7 +367,7 @@ func (p *Proxy) deleteAuthMiddleware(next http.Handler) http.Handler {
 		r.Header.Del(deleteTokenHeader)
 		// An Authorization that carries the token goes too, also when the
 		// token was read from X-Delete-Token.
-		if subtle.ConstantTimeCompare([]byte(bearerToken(r)), []byte(p.deleteAPIAuthToken)) == 1 {
+		if p.clientAuth == nil && subtle.ConstantTimeCompare([]byte(bearerToken(r)), []byte(p.deleteAPIAuthToken)) == 1 {
 			r.Header.Del("Authorization")
 		}
 		next.ServeHTTP(w, r)
@@ -856,26 +860,22 @@ func (p *Proxy) compatCaptureLimit(sharedKey string) int {
 // Without it such a reply was cached nowhere on the Loki side when its range
 // ends within -query-range-freshness or it answers an instant query, and every
 // repeat asked VictoriaLogs again. It stays in this replica's memory: not on
-// disk and not pushed to peers, like the edge cache.
+// disk and not pushed to peers, like the edge cache. The shared key carries
+// the tenant, routing scope and request, so a restart hand-over may keep the
+// reply for a process of the same build and configuration
+// (-cache-shutdown-flush-timeout).
 func (p *Proxy) storeCompatOversizedReply(sharedKey, cacheKey string, value []byte, ttl time.Duration) {
 	if sharedKey == "" || p.cache == nil || len(cacheKey)+len(value) <= p.compatCache.MaxEntrySizeBytes() {
 		return
 	}
-	p.cache.SetLocalOnlyWithTTL(sharedKey, value, ttl)
+	p.cache.SetLocalOnlyRestorableWithTTL(sharedKey, value, ttl)
 }
 
 func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		cacheKey, cacheable := p.compatCacheKey(endpoint, r)
-		ttl := CacheTTLs[endpoint]
-		// For query_range (and query), use a fixed 5-minute TTL so the cache entry
-		// outlives the bucket used to generate the key (max(5min, step)) while keeping
-		// staleness imperceptible: on a 2-day chart a 5-min gap is 0.17% of width.
-		// Using step (up to 1h) as TTL caused visible empty spaces at the chart right edge.
-		if endpoint == "query_range" || endpoint == "query" {
-			ttl = 5 * time.Minute
-		}
+		ttl := compatAnswerTTL(endpoint)
 		if !cacheable || ttl <= 0 {
 			setCacheResult(r.Context(), "bypass")
 			// No response cache: identical requests in flight still share one

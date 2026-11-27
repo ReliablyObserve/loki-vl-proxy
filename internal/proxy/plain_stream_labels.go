@@ -130,7 +130,9 @@ func (p *Proxy) plainStreamLabelNamesFrom(ctx context.Context, query string, kno
 	mentioned := p.streamLabelNames.mentionedNames(query)
 	var out []string
 	for _, name := range knownNames {
-		if mentioned[name] {
+		// An alias's stream label lives in its mapped field, which no parser
+		// overwrites: the plain translation reads it (alias and both modes).
+		if mentioned[name] && !p.labelTranslator.isAliasLabel(name) {
 			out = append(out, name)
 		}
 	}

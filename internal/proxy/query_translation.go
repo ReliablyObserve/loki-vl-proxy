@@ -23,7 +23,6 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -36,7 +35,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
 		query := r.FormValue("query")
-		clientID := metrics.ResolveClientID(r, p.metricsTrustProxyHeaders)
+		clientID, _ := p.resolveClient(r)
 		p.metrics.RecordClientInflight(clientID, 1)
 		defer p.metrics.RecordClientInflight(clientID, -1)
 
@@ -148,7 +147,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			return
 		}
 
-		authUser, authSource := metrics.ResolveAuthContext(r)
+		authUser, authSource := p.resolveAuth(r)
 		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
 		peerAddr, _ := splitHostPortValue(r.RemoteAddr)
 		grafanaVersion := grafanaProfile.version
@@ -533,6 +532,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// A query the typed lowering covers is served from it: the same text, so the shadow has nothing to compare.
 		if p.queryPlanLowering {
 			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
+			prof = p.labelTranslator.withAliases(prof)
 			// A root identity over a range longer than the step writes its series hash ahead of the gate.
 			prof.IdentityAhead = ahead
 			// The planning budget (query_budget.go) stops the lowering at a node; a stopped lowering must not fall back
@@ -974,6 +974,7 @@ func (p *Proxy) keepUnwrapIdentity(query string) (labels []string, ok bool) {
 	streamFields := p.streamFieldsMap
 	p.configMu.RUnlock()
 	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
+	prof = p.labelTranslator.withAliases(prof)
 	if _, err := lower.PlanQuery(logqlpkg.CanonicalizeLogRanges(query), plan, prof); err != nil {
 		return nil, false
 	}

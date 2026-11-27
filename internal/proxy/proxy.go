@@ -28,6 +28,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientauth"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
@@ -239,6 +240,12 @@ type Config struct {
 	// BackendAllowUnsupportedVersion allows startup to continue when detected
 	// backend version is lower than BackendMinVersion. Use at your own risk.
 	BackendAllowUnsupportedVersion bool
+	// BackendVersionURL is a VictoriaLogs /metrics URL the release is read from instead of the backend's (behind
+	// vmauth the backend's is vmauth's own); BackendVersionBasicAuth ("user:password") is sent to that URL only.
+	BackendVersionURL       string
+	BackendVersionBasicAuth string
+	// BackendVersion is the release the operator declares; it enables only the gates a feature probe confirms.
+	BackendVersion string
 	// BackendVersionCheckTimeout bounds startup backend version checks.
 	BackendVersionCheckTimeout time.Duration
 	// BackendVersionReprobeInterval is how often the capability loop reads the VictoriaLogs release and probes the
@@ -410,6 +417,34 @@ type Config struct {
 	// keep-warm refresh of the labels cache (-labels-cache-warm=false). Label
 	// requests are still cached and served; only the proactive scans stop.
 	DisableLabelsCacheWarm bool
+	// CacheShutdownFlushTimeout bounds the restart hand-over a graceful
+	// Shutdown writes to the response cache's disk tier: the memory tier's
+	// recency order and hit counts, the records the disk lacks, and the
+	// restorable memory-only answers (up to CacheStartupWarmBytes). 0 (the
+	// default) writes none.
+	CacheShutdownFlushTimeout time.Duration
+	// CacheStartupWarmBytes is the most bytes Init's warm-up loads into the
+	// memory tier from the hand-over a previous graceful shutdown left; /ready
+	// answers 503 until it finishes or CacheStartupWarmTimeout passes. 0 (the
+	// default) loads none.
+	CacheStartupWarmBytes   int64
+	CacheStartupWarmTimeout time.Duration
+	// CacheHandoverScope returns the build and configuration identity:
+	// memory-only answers are restored only by a process with the same scope.
+	// It is called at most once, by the warm-up or the flush (off the start-up
+	// path, as computing it can read the executable); nil or "" restores none.
+	CacheHandoverScope func() string
+	// CacheStartupPeerRestore lets the start-up warm-up pull the entries this
+	// replica owns or replicates from its peers when it has nothing local to
+	// warm from (no hand-over, an empty or no disk tier): within
+	// CacheStartupWarmBytes and CacheStartupWarmTimeout, so only when the
+	// warm-up is on (cache_handover.go). CacheStartupPeerRestoreConcurrency
+	// is the peers streamed from at once (0: the default).
+	CacheStartupPeerRestore            bool
+	CacheStartupPeerRestoreConcurrency int
+	// CacheStartupPeerRestoreMaxBytesPS caps the bytes per second the peer
+	// restore reads from all its streams (0: none).
+	CacheStartupPeerRestoreMaxBytesPS int64
 
 	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
 	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error
@@ -430,8 +465,11 @@ type Config struct {
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
 	MetadataFieldMode MetadataFieldMode // how to expose non-label VL fields through field-oriented APIs
-	FieldMappings     []FieldMapping    // custom VL↔Loki field name mappings
-	TranslateOTel     *bool
+	// FieldMappingLabelMode selects the names of mapped fields that label
+	// listings show: original (default, also empty), alias or both.
+	FieldMappingLabelMode FieldMappingLabelMode
+	FieldMappings         []FieldMapping // custom VL↔Loki field name mappings
+	TranslateOTel         *bool
 
 	// Stream optimization
 	StreamFields []string // VL _stream_fields labels — use native stream selectors for these (faster)
@@ -470,6 +508,10 @@ type Config struct {
 	// Peer cache (fleet distribution)
 	PeerCache     *cache.PeerCache // optional peer cache for distributed fleet
 	PeerAuthToken string
+	// CacheKeySecret (-cache-key-secret) keys the digests of credentials in
+	// cache keys (credential_digest.go). Empty: a key derived from
+	// PeerAuthToken, else a random key per process.
+	CacheKeySecret string
 	// PeerInsecureIPAllowlist, when true, falls back to source-IP membership
 	// check on /_cache/* endpoints if no token is provided. Default false:
 	// requests without a valid X-Peer-Token are rejected with 401. Operators
@@ -511,12 +553,20 @@ type Config struct {
 	BackendRetryMaxWait     time.Duration
 	BackendRetryBudgetRatio float64
 
+	// ClientAuth authenticates callers (-server.auth-users-file); nil leaves
+	// the read API open, as without it. WithClientAuth puts it in front of a
+	// listener's mux.
+	ClientAuth *clientauth.Authenticator
+
 	// Metrics/export hardening
 	MetricsMaxTenants            int
 	MetricsMaxClients            int
 	MetricsTrustProxyHeaders     bool
 	MetricsExportSensitiveLabels bool
 	MetricsMaxConcurrency        int
+	// MetricsDurationBuckets are the bounds, in seconds, of the duration histograms
+	// (-metrics.duration-buckets); empty means metrics.DefaultDurationBuckets.
+	MetricsDurationBuckets []float64
 
 	// LogRequestSampleRate controls per-request access log sampling for successful (2xx)
 	// requests. 0 or 1 logs every request (default). N > 1 logs 1 in every N requests,
@@ -610,8 +660,9 @@ type Config struct {
 	// MetadataInventoryPrefetch (-metadata-inventory-prefetch) reads, in the
 	// background after a /labels listing, the inventory buckets a moved
 	// window of it needs to be answered from memory: the hours of its ends,
-	// the hour before it and the sealed UTC days it only partly covers, at
-	// most the window's own width per listing.
+	// the hour before it (and the hour two before it when the listing found a
+	// bucket it needed still being read) and the sealed UTC days it only
+	// partly covers, at most the window's own width per listing.
 	MetadataInventoryPrefetch bool
 	// DrilldownBurstWindowMs is the time window in milliseconds during which
 	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
@@ -803,6 +854,9 @@ type Proxy struct {
 	forwardHeaders                        []string          // headers to copy from client request to VL
 	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
 	backendHeaders                        map[string]string // static headers on all VL requests
+	backendHeadersInKeys                  map[string]string // backendHeaders with keyed digests for values, for the routing namespace
+	credentialDigest                      *credentialDigest // keys credential digests in cache keys
+	backendKeyText                        string            // urlInKeys(backend): the backend URL as cache keys spell it
 	backendCompression                    string
 	backendLoopback                       bool // true when backend host resolves to a loopback address
 	clientResponseCompression             string
@@ -820,6 +874,8 @@ type Proxy struct {
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	deleteAPIAuthToken                    string
+	clientAuth                            *clientauth.Authenticator // nil: caller authentication off
+	forwardsAuthorization                 bool                      // Authorization is in forwardHeaders
 	tenantMapFileSet                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
@@ -848,6 +904,7 @@ type Proxy struct {
 	metadataMaxStaleness                  time.Duration         // -metadata-max-staleness
 	metadataEdgeRefreshBudget             time.Duration         // -metadata-edge-refresh-budget
 	declaredLabelFields                   []string              // configured VL-native label fields (stream_fields + extras)
+	declaredLabelNames                    []string              // the same declarations as the operator spelled them
 	peerCache                             *cache.PeerCache      // L3 fleet peer cache
 	peerAuthToken                         string
 	peerInsecureIPAllowlist               bool // gate the legacy IP-allowlist fallback (default false: token required)
@@ -973,10 +1030,14 @@ type Proxy struct {
 	caps                               *capability.Layer // every gate: the VictoriaLogs release(s), probes, client profile
 	backendReprobeInterval             time.Duration
 	backendFeatureProbesDisabled       bool
-	backendVersionProbedAt             atomic.Int64 // Unix ns of the last probe round a traffic trigger started
-	capProbing                         atomic.Bool  // a probe round is running
+	backendVersionProbedAt             atomic.Int64   // Unix ns of the last probe round a traffic trigger started
+	versionSource                      *versionSource // -backend-version-url; nil reads the backend's /metrics
+	versionLogMu                       sync.Mutex
+	versionLogged                      versionLog
+	capProbing                         atomic.Bool // a probe round is running
 	capLoopStarted                     atomic.Bool
 	labelValuesIndexWarmReady          atomic.Bool
+	cacheHandover                      *cacheHandoverState
 	labelValuesIndexPersistStarted     atomic.Bool
 	labelValuesIndexPersistDirty       atomic.Bool
 	labelValuesIndexPersistStop        chan struct{}
@@ -1286,12 +1347,17 @@ func New(cfg Config) (*Proxy, error) {
 	// the header phase; subsequent body reads (NDJSON streaming) are not affected, so
 	// the forwarded WebSocket session can live as long as the client remains connected.
 	tailTransport.ResponseHeaderTimeout = 5 * time.Second
+	versionFrom, declaredRelease, err := newVersionSource(cfg, transport)
+	if err != nil {
+		return nil, err
+	}
 
 	maxLines := cfg.MaxLines
 	if maxLines <= 0 {
 		maxLines = DefaultMaxLines
 	}
 
+	credDigest := newCredentialDigest(cfg.CacheKeySecret, cfg.PeerAuthToken)
 	backendHeaders := maps.Clone(cfg.BackendHeaders)
 	if backendHeaders == nil {
 		backendHeaders = make(map[string]string)
@@ -1478,6 +1544,13 @@ func New(cfg Config) (*Proxy, error) {
 	if cfg.TranslateOTel != nil {
 		labelTranslator.SetTranslateOTel(*cfg.TranslateOTel)
 	}
+	labelMode, err := ParseFieldMappingLabelMode(string(cfg.FieldMappingLabelMode))
+	if err != nil {
+		return nil, err
+	}
+	labelTranslator.SetFieldMappingLabelMode(labelMode)
+	// After the mode: a declared base name of a mapped field is a query name of
+	// that field in the alias and both modes.
 	declaredLabelFields := buildDeclaredLabelFields(cfg.StreamFields, cfg.ExtraLabelFields, labelTranslator)
 	patternsEnabled := true
 	if cfg.PatternsEnabled != nil {
@@ -1493,7 +1566,7 @@ func New(cfg Config) (*Proxy, error) {
 		return nil, err
 	}
 	patternsCustom := normalizeCustomPatterns(cfg.PatternsCustom)
-	proxyMetrics := metrics.NewMetricsWithOptions(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels)
+	proxyMetrics := metrics.NewMetricsWithDurationBuckets(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels, cfg.MetricsDurationBuckets)
 	if cfg.Cache != nil {
 		proxyMetrics.SetCacheStatsProvider(cfg.Cache.Stats)
 	}
@@ -1504,6 +1577,7 @@ func New(cfg Config) (*Proxy, error) {
 	}
 
 	p := &Proxy{
+		versionSource: versionFrom,
 		backend:       u,
 		rulerBackend:  rulerURL,
 		alertsBackend: alertsURL,
@@ -1558,6 +1632,8 @@ func New(cfg Config) (*Proxy, error) {
 		forwardHeaders:                        append([]string(nil), cfg.ForwardHeaders...),
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
+		credentialDigest:                      credDigest,
+		backendHeadersInKeys:                  credDigest.headerValues(backendHeaders),
 		backendCompression:                    normalizeBackendCompression(cfg.BackendCompression),
 		backendLoopback:                       computeBackendLoopback(u),
 		clientResponseCompression:             cfg.ClientResponseCompression,
@@ -1582,6 +1658,8 @@ func New(cfg Config) (*Proxy, error) {
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		deleteAPIAuthToken:                    cfg.DeleteAPIAuthToken,
+		clientAuth:                            cfg.ClientAuth,
+		forwardsAuthorization:                 forwardsAuthorizationHeader(cfg.ForwardHeaders),
 		tenantMapFileSet:                      cfg.TenantMapFile != "",
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
@@ -1598,6 +1676,7 @@ func New(cfg Config) (*Proxy, error) {
 		labelBrowse:                           labelBrowse,
 		streamFieldsMap:                       buildStreamFieldsMap(cfg.StreamFields),
 		declaredLabelFields:                   declaredLabelFields,
+		declaredLabelNames:                    declaredLabelNamesOf(cfg.StreamFields, cfg.ExtraLabelFields),
 		peerCache:                             cfg.PeerCache,
 		peerAuthToken:                         cfg.PeerAuthToken,
 		peerInsecureIPAllowlist:               cfg.PeerInsecureIPAllowlist,
@@ -1655,6 +1734,7 @@ func New(cfg Config) (*Proxy, error) {
 		warmupMaxJitter:                       warmupMaxJitter,
 		labelsCacheWarm:                       !cfg.DisableLabelsCacheWarm,
 		labelValuesIndexedCache:               cfg.LabelValuesIndexedCache,
+		cacheHandover:                         newCacheHandoverState(cfg),
 		labelValuesHotLimit:                   labelValuesHotLimit,
 		labelValuesIndexMaxEntries:            labelValuesIndexMaxEntries,
 		labelValuesIndexPersistPath:           labelValuesPersistPath,
@@ -1699,6 +1779,9 @@ func New(cfg Config) (*Proxy, error) {
 		p.countVLCalls()
 	}
 	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
+	p.metrics.SetCacheSignalStatsProvider(p.cacheSignalStats)
+	p.metrics.SetCacheTTLProvider(p.cacheTTLs)
+	p.metrics.SetCacheSizingStatsProvider(p.cacheSizingStats)
 	coalescerStats := func() metrics.CoalescerStats {
 		return metrics.CoalescerStats{
 			Total:     p.coalescer.CoalescedTotal.Load(),
@@ -1716,6 +1799,7 @@ func New(cfg Config) (*Proxy, error) {
 		p.caps.SetWindow(capabilityWindowIntervals*p.backendReprobeInterval + p.probeRoundTimeout())
 	}
 	p.caps.Subscribe(p.onCapabilityChange)
+	p.caps.Declare(declaredRelease)
 	p.metrics.SetCapabilityStatsProvider(p.capabilityStats)
 	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {
 		// This coalescer's integrated call sites wrap raw VL HTTP operations;
@@ -1908,13 +1992,27 @@ func New(cfg Config) (*Proxy, error) {
 		},
 	}
 
+	p.backendKeyText = p.urlInKeys(p.backend)
 	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
+	if credDigest.source == credentialKeyEphemeral && (len(p.backendHeaders) > 0 || len(p.forwardHeaders) > 0 || len(p.forwardCookies) > 0) {
+		p.log.Warn("cache keys digest credentials under a per-process key: entries scoped by credentials are not reused after a restart or by other replicas; set -cache-key-secret (or -peer-auth-token) to the same value on every replica to keep them")
+	}
 	if p.peerCache != nil {
 		// Entries computed with a user's forwarded credentials stay on the
 		// replica that computed them.
 		p.peerCache.SetPushFilter(peerPushAllowed)
+		// Memory-only answers go to a restoring peer of the same scope only.
+		p.peerCache.SetBulkScope(p.cacheHandover.scope)
 		// Held VictoriaLogs refusals pushed by peers (vl_refusal.go).
 		p.peerCache.HandleEverywhere(p.receiveRefusal)
+	}
+	if p.clientAuth != nil {
+		p.metrics.EnableAuthMetrics()
+		if p.clientAuth.Users().Pins() > 0 && p.tenantHeaderIgnored(p.routingForContext(context.Background())) && p.log != nil {
+			// The pin is still enforced on the header, but with tenancy off
+			// every request reads the backend default tenant anyway.
+			p.log.Warn("auth users file pins tenants but tenancy is off (Loki's single-tenant mode): every user reads the backend default tenant; turn tenancy on to separate them")
+		}
 	}
 	return p, nil
 }
@@ -2063,6 +2161,7 @@ func (p *Proxy) Init() {
 	p.metrics.SetCircuitBreakerFunc(p.breaker.State)
 	p.labelValuesIndexWarmReady.Store(true)
 	p.patternsWarmReady.Store(true)
+	p.startResponseCacheWarm()
 	if p.labelValuesIndexedCache {
 		p.warmLabelValuesIndexOnStartup()
 		p.startLabelValuesIndexPersistenceLoop()
@@ -2105,6 +2204,8 @@ func (p *Proxy) rejectAdmission(w http.ResponseWriter, r *http.Request, err *lok
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
+	// The start-up warm-up stops first: nothing loads while the flush runs.
+	p.stopResponseCacheWarm()
 	p.loweringShadow.close(ctx)
 	p.statsExtentStores.close()
 	p.keepWarmMu.Lock()
@@ -2148,6 +2249,9 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 	if p.tailClient != nil {
 		p.tailClient.CloseIdleConnections()
 	}
+	// After every background writer stopped: the hand-over the next start
+	// warms from (the disk tier's Close writes its manifest last).
+	p.flushResponseCacheHandover()
 	if err := p.persistPatternsNow("shutdown"); err != nil {
 		return err
 	}
@@ -2174,8 +2278,10 @@ func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
 	p.configMu.Lock()
 	prevTranslateOTel := p.labelTranslator.translateOTel
+	prevLabelMode := p.labelTranslator.labelMode
 	p.labelTranslator = NewLabelTranslator(p.labelTranslator.style, mappings)
 	p.labelTranslator.SetTranslateOTel(prevTranslateOTel)
+	p.labelTranslator.SetFieldMappingLabelMode(prevLabelMode)
 	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	if p.translationCache != nil {
 		p.translationCache.InvalidatePrefix("")
@@ -2218,7 +2324,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 // deployments (loopback admin / dedicated metrics port) call the more granular
 // RegisterProxyRoutes / RegisterAdminRoutes / RegisterMetricsRoute helpers
 // instead.
-func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterRoutes(mux RouteMux) {
 	p.RegisterProxyRoutes(mux)
 	if p.registerInstrumentation {
 		p.RegisterMetricsRoute(mux)
@@ -2233,7 +2339,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 // RegisterProxyRoutes registers Loki-compatible proxy routes, health endpoints,
 // and the internal peer-cache endpoints. It deliberately omits /metrics,
 // /admin/*, and /debug/* so callers can host those on dedicated listeners.
-func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterProxyRoutes(mux RouteMux) {
 	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
 		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h), p.rejectAdmission))
 	}
@@ -2311,6 +2417,8 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 		mux.Handle("/_cache/hot", peerCacheHandler)
 		mux.Handle("/_cache/has", peerCacheHandler)
 		mux.Handle("/_cache/peers", peerCacheHandler)
+		// Peer bulk restore streams (internal/cache/peer_bulk_serve.go).
+		mux.Handle("/_cache/bulk", peerCacheHandler)
 		// Peer-side cache purge (fanout target of /admin/cache/flush?peers=1).
 		// Same shared-token gate; purges this node's caches only (no re-fanout).
 		mux.Handle("/_cache/purge", securityHeaders(p.peerCacheMiddleware(http.HandlerFunc(p.handlePeerCachePurge))))
@@ -2322,7 +2430,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 // to hit a separate port from proxy traffic.
 //
 // No-op when registerInstrumentation is false on the Proxy config.
-func (p *Proxy) RegisterMetricsRoute(mux *http.ServeMux) {
+func (p *Proxy) RegisterMetricsRoute(mux RouteMux) {
 	if !p.registerInstrumentation {
 		return
 	}
@@ -2335,7 +2443,7 @@ func (p *Proxy) RegisterMetricsRoute(mux *http.ServeMux) {
 // -server.admin-auth-token is configured, so the binary boots safely with
 // admin surfaces only reachable from loopback. Honors registerInstrumentation
 // (cache flush + pprof) and enableQueryAnalytics independently.
-func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterAdminRoutes(mux RouteMux) {
 	if p.registerInstrumentation {
 		if p.enablePprof {
 			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
@@ -2770,6 +2878,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
+	// The window evaluator notes the step and bucket grid it reads, for the error log line (read_budget.go).
+	r = r.WithContext(withReadGridNote(r.Context()))
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while

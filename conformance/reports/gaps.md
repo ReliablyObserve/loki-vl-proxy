@@ -52,9 +52,9 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 | 405 | 3 | 3 | 0 | 0 | 0 | 0 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 193 | 1 | 189 | 2 | 1 | 1 |
+| set at run time | 194 | 1 | 190 | 2 | 1 | 1 |
 
-The registry holds one item per status (12) and one per Loki error message (55) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
+The registry holds one item per status (12) and one per Loki error message (56) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 
 The error-layer gate (`TestErrorLayer_NoVictoriaLogsLeak`, every route through every VictoriaLogs failure mode) lists 0 route × failure-mode cells that still leak (0 cell × case pairs, ceiling 0) in `conformance/registry/error-layer-known-leaks.json`; the list may only shrink. Sites outside those routes and modes are not driven by the gate.
 
@@ -69,19 +69,28 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 11 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
+| semantics | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | 3 | 2 | unknown |
+| observability | `cache-eviction-signals` — The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has | 8 | 4 | partial |
+| semantics | `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | 13 | 5 | unknown |
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 12 | unknown |
-| semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 1 | proven |
+| resource_control | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | 10 | 15 | partial |
+| performance | `cache-reuse-retention` — Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer | 7 | 3 | partial |
+| observability | `cache-sizing-signals` — The cache says whether a larger budget or a longer TTL would answer more, how large the working set is, how long until a key is asked again, and its byte hit ratio per answer class | 7 | 3 | partial |
+| semantics | `client-authentication` — Caller authentication is off by default; on, every route but the probes, /metrics and the peer routes needs a Basic or bearer credential | 11 | 5 | unknown |
+| semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 3 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 12 | 3 | gap |
-| semantics | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | 5 | 2 | proven |
+| semantics | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | 5 | 4 | proven |
 | resource_control | `error-coalescing-and-error-cache` — Identical requests share one run, and failed answers are held for their class's TTL | 14 | 0 | proven |
-| limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 6 | partial |
+| semantics | `field-mapping-label-names` — A mapped field has one name in answers, and the operator chooses the names the label pickers list | 18 | 6 | unknown |
+| limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 7 | partial |
 | semantics | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | 2 | 2 | proven |
 | resource_control | `json-metric-unparsed-line-lookup-once` — A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests | 3 | 1 | partial |
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
 | semantics | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | 8 | 0 | unknown |
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 53 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
+| observability | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | 7 | 4 | unknown |
 | observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 6 | 5 | unknown |
 | observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 8 | 5 | unknown |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 11 | proven |
@@ -96,17 +105,19 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | 2 | 1 | partial |
 | resource_control | `peer-cache-query-replies` — Completed query replies computed on one replica answer the same request on every replica | 2 | 1 | partial |
 | resource_control | `peer-cache-read-hedge` — A peer-cache read never waits on a paused or hung replica longer than the read hedge delay | 3 | 3 | partial |
-| resource_control | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | 3 | 7 | partial |
+| resource_control | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | 3 | 8 | partial |
 | resource_control | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | 3 | 1 | partial |
 | semantics | `query-complexity-limits` — Operator limits on query size and on the proxy's own planning time | 8 | 10 | unknown |
 | observability | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | 14 | 8 | unknown |
+| semantics | `release-image-pinned-by-digest` — The chart can pin the released image by digest, and each release publishes that digest as a file | 4 | 1 | unknown |
+| semantics | `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | 4 | 3 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 13 | 13 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 12 | 22 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 5 | partial |
-| resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 2 | 5 | unknown |
+| resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 3 | 6 | unknown |
 | semantics | `tail-reads-settled-rows` — A live tail reads only rows VictoriaLogs has made searchable, so no line of a stream is skipped | 2 | 3 | unknown |
-| semantics | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | 4 | 5 | proven |
+| semantics | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | 4 | 6 | proven |
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 15 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 16 | 6 | proven |

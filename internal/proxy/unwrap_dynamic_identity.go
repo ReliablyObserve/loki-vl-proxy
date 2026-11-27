@@ -65,6 +65,7 @@ func (p *Proxy) lowersDynamicIdentity(query string) bool {
 	streamFields := p.streamFieldsMap
 	p.configMu.RUnlock()
 	prof := loweringProfile(translate.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
+	prof = p.labelTranslator.withAliases(prof)
 	_, err := lower.PlanQuery(logqlpkg.CanonicalizeLogRanges(query), plan, prof)
 	return err == nil
 }

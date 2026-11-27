@@ -4139,6 +4139,7 @@
       "warm_p50": 0.017
     }
   ],
+  "field-mapping-label-names": [],
   "limits/concurrent-full-retention-scans-exhaust-backend": [
     {
       "baseline": "release",
@@ -114243,6 +114244,7 @@
       "warm_p50": 0.01
     }
   ],
+  "semantics/ranked-parser-window-fine-step": [],
   "semantics/series-level-aggregation-bounded-memory": [
     {
       "baseline": "release",

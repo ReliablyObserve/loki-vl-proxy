@@ -80,6 +80,9 @@ func (f *replFleet) start(i int) {
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	nd.c.SetL3(nd.pc)
+	// The bulk governor paces and ramps but reads no process signals here,
+	// so restore tests do not depend on the test machine's load.
+	nd.pc.bulk.gov.signals = nil
 	c, pc := nd.c, nd.pc
 	nd.handler.Store(http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pc.ServeHTTP(w, r, c)

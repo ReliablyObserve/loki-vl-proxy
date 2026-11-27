@@ -383,6 +383,7 @@ jobs:
           cache: false
       # The full size, recorded again with the live Loki and VictoriaLogs oracles (both versions of the matrix).
       - name: Full-size grammar sweep with the live oracles
+        shell: bash
         env:
           LVP_RUN_ORACLES: "1"
           LVP_GRAMMAR_SWEEP_SIZE: full

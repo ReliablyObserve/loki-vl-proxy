@@ -3,6 +3,7 @@ package metrics
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +23,7 @@ var (
 	// flowFanoutBuckets are small-integer buckets: most requests cause a handful of each, a wide Drilldown
 	// page a few dozen.
 	flowFanoutBuckets = []float64{0, 1, 2, 3, 5, 8, 13, 21, 34, 55}
-	// cacheLookupBuckets reach below defaultBuckets' 1 ms: a memory hit takes microseconds.
+	// cacheLookupBuckets reach below the duration buckets' 1 ms: a memory hit takes microseconds.
 	cacheLookupBuckets = []float64{0.00001, 0.00005, 0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.05, 0.25, 1}
 )
 
@@ -40,13 +41,15 @@ type flowRouteHistograms struct {
 }
 
 type flowMetrics struct {
-	mu          sync.RWMutex
-	routes      map[string]*flowRouteHistograms
-	cacheLookup [len(cacheLookupTier)][len(cacheLookupResult)]*histogram
+	mu     sync.RWMutex
+	routes map[string]*flowRouteHistograms
+	// durationBuckets bound the per-phase time histograms.
+	durationBuckets []float64
+	cacheLookup     [len(cacheLookupTier)][len(cacheLookupResult)]*histogram
 }
 
-func newFlowMetrics() *flowMetrics {
-	f := &flowMetrics{routes: make(map[string]*flowRouteHistograms)}
+func newFlowMetrics(durationBuckets []float64) *flowMetrics {
+	f := &flowMetrics{routes: make(map[string]*flowRouteHistograms), durationBuckets: durationBuckets}
 	for i := range f.cacheLookup {
 		for j := range f.cacheLookup[i] {
 			f.cacheLookup[i][j] = newHistogramWithBuckets(cacheLookupBuckets)
@@ -67,7 +70,7 @@ func (f *flowMetrics) route(route string) *flowRouteHistograms {
 	if h = f.routes[route]; h == nil {
 		h = &flowRouteHistograms{}
 		for i := range h.phase {
-			h.phase[i] = newHistogram()
+			h.phase[i] = newHistogramWithBuckets(f.durationBuckets)
 		}
 		for i := range h.fanout {
 			h.fanout[i] = newHistogramWithBuckets(flowFanoutBuckets)
@@ -118,13 +121,35 @@ func (m *Metrics) RecordCacheLookup(tier, result string, d time.Duration) {
 	m.flow.cacheLookup[i][j].observe(max(d, 0).Seconds())
 }
 
-func writeHistogramSeries(sb *strings.Builder, name, labels string, h histogramSnapshot) {
-	for i, b := range h.buckets {
-		fmt.Fprintf(sb, "%s_bucket{%s,le=\"%g\"} %d\n", name, labels, b, h.counts[i])
+// writeBucketLines writes one series' cumulative bucket lines, name_bucket{labels,le="bound"} count, and its
+// +Inf line. Everything before the bound is built once: bucket lines are most of a /metrics answer.
+func writeBucketLines(sb *strings.Builder, name, labels string, h histogramSnapshot) {
+	prefix := name + "_bucket{" + labels
+	if labels != "" {
+		prefix += ","
 	}
-	fmt.Fprintf(sb, "%s_bucket{%s,le=\"+Inf\"} %d\n", name, labels, h.loadCount())
-	fmt.Fprintf(sb, "%s_sum{%s} %g\n", name, labels, h.loadSum())
-	fmt.Fprintf(sb, "%s_count{%s} %d\n", name, labels, h.loadCount())
+	prefix += `le="`
+	var num [32]byte
+	for i, b := range h.buckets {
+		sb.WriteString(prefix)
+		sb.Write(strconv.AppendFloat(num[:0], b, 'g', -1, 64))
+		sb.WriteString(`"} `)
+		sb.Write(strconv.AppendInt(num[:0], h.counts[i], 10))
+		sb.WriteByte('\n')
+	}
+	sb.WriteString(prefix)
+	sb.WriteString(`+Inf"} `)
+	sb.Write(strconv.AppendInt(num[:0], h.loadCount(), 10))
+	sb.WriteByte('\n')
+}
+
+func writeHistogramSeries(sb *strings.Builder, name, labels string, h histogramSnapshot) {
+	writeBucketLines(sb, name, labels, h)
+	if labels != "" {
+		labels = "{" + labels + "}"
+	}
+	fmt.Fprintf(sb, "%s_sum%s %g\n", name, labels, h.loadSum())
+	fmt.Fprintf(sb, "%s_count%s %d\n", name, labels, h.loadCount())
 }
 
 func (m *Metrics) writeRequestFlowMetrics(sb *strings.Builder) {

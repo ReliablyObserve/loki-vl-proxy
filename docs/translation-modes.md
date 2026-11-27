@@ -170,6 +170,8 @@ Custom mappings override automatic translation and apply in both directions.
 
 Use mapping when your VL schema does not follow common OTel naming or you need stable alias names for dashboards/alerts.
 
+A field can have several mappings. [`-field-mapping-label-mode`](configuration.md#field-mapping-label-modes) selects whether the label pickers show one name per field (the default), its aliases, or the aliases and its `-label-style` name.
+
 ## Recommended Decision Path
 
 1. If VL stores dotted OTel fields, start with `label-style=underscores`.

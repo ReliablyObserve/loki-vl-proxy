@@ -1,0 +1,104 @@
+# Peer restore latency proof (TestFleet_PeerRestoreUnderQueryLoad, opt-in with
+# LVP_PEER_LOAD=1; not part of the CI e2e-fleet job): two ready replicas that
+# hold the fixture (proxy-load-a serves, proxy-load-b is its neighbour) and
+# three that start later with empty disks and restore from them. Used with the
+# base file: `docker compose -f docker-compose.yml -f docker-compose.peerload.yml
+# --profile peerload ...`. PEERLOAD_CPUS limits the serving replica's cores.
+x-peerload-proxy: &peerload-proxy
+  profiles: ["peerload"]
+  image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
+  user: root
+  stop_grace_period: 40s
+  volumes:
+    - /cache
+  depends_on:
+    victorialogs:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "/usr/local/bin/healthcheck"]
+    interval: 2s
+    timeout: 2s
+    retries: 120
+    start_period: 5s
+
+services:
+  proxy-load-a:
+    <<: *peerload-proxy
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-load-a
+    cpus: ${PEERLOAD_CPUS:-1}
+    ports:
+      - "${FLEET_PROXY_LOAD_A_PORT:-3120}:3100"
+    command:
+      - "-peer-self=proxy-load-a:3100"
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-cache-ttl=10m"
+      - "-cache-max=200000"
+      - "-cache-max-bytes=1073741824"
+      - "-disk-cache-path=/cache/data.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-max-entries=200000"
+      - "-disk-cache-max-index-bytes=134217728"
+      - "-peer-write-through=true"
+      - "-peer-discovery=static"
+      - "-peer-static=proxy-load-a:3100,proxy-load-b:3100,proxy-load-c:3100,proxy-load-d:3100,proxy-load-e:3100"
+      - "-peer-auth-token=e2e-test-token"
+      - "-server.admin-auth-token=e2e-test-token"
+      - "-server.register-instrumentation=true"
+      - "-labels-cache-warm=false"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-debug-vl-calls-header=true"
+      - "-cache-shutdown-flush-timeout=20s"
+      - "-cache-startup-warm-bytes=268435456"
+      - "-cache-startup-warm-timeout=180s"
+      - "${PEERLOAD_SERVE_ARG:--log-level=info}"
+  proxy-load-b:
+    <<: *peerload-proxy
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-load-b
+    cpus: ${PEERLOAD_CPUS:-1}
+    ports:
+      - "${FLEET_PROXY_LOAD_B_PORT:-3121}:3100"
+    command:
+      - "-peer-self=proxy-load-b:3100"
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-cache-ttl=10m"
+      - "-cache-max=200000"
+      - "-cache-max-bytes=1073741824"
+      - "-disk-cache-path=/cache/data.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-max-entries=200000"
+      - "-disk-cache-max-index-bytes=134217728"
+      - "-peer-write-through=true"
+      - "-peer-discovery=static"
+      - "-peer-static=proxy-load-a:3100,proxy-load-b:3100,proxy-load-c:3100,proxy-load-d:3100,proxy-load-e:3100"
+      - "-peer-auth-token=e2e-test-token"
+      - "-server.admin-auth-token=e2e-test-token"
+      - "-server.register-instrumentation=true"
+      - "-labels-cache-warm=false"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-debug-vl-calls-header=true"
+      - "-cache-shutdown-flush-timeout=20s"
+      - "-cache-startup-warm-bytes=268435456"
+      - "-cache-startup-warm-timeout=180s"
+      - "${PEERLOAD_SERVE_ARG:--log-level=info}"
+  proxy-load-c:
+    <<: *peerload-proxy
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-load-c
+    ports:
+      - "${FLEET_PROXY_LOAD_C_PORT:-3122}:3100"
+    command: ["-peer-self=proxy-load-c:3100", "-listen=:3100", "-backend=http://victorialogs:9428", "-cache-ttl=10m", "-cache-max=200000", "-cache-max-bytes=2147483648", "-disk-cache-path=/cache/data.db", "-disk-cache-compress=true", "-disk-cache-max-entries=200000", "-disk-cache-max-index-bytes=134217728", "-peer-write-through=true", "-peer-discovery=static", "-peer-static=proxy-load-a:3100,proxy-load-b:3100,proxy-load-c:3100,proxy-load-d:3100,proxy-load-e:3100", "-peer-auth-token=e2e-test-token", "-server.admin-auth-token=e2e-test-token", "-server.register-instrumentation=true", "-labels-cache-warm=false", "-rate-limit-per-second=0", "-rate-limit-burst=0", "-cache-startup-warm-bytes=1073741824", "-cache-startup-warm-timeout=180s"]
+  proxy-load-d:
+    <<: *peerload-proxy
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-load-d
+    ports:
+      - "${FLEET_PROXY_LOAD_D_PORT:-3123}:3100"
+    command: ["-peer-self=proxy-load-d:3100", "-listen=:3100", "-backend=http://victorialogs:9428", "-cache-ttl=10m", "-cache-max=200000", "-cache-max-bytes=2147483648", "-disk-cache-path=/cache/data.db", "-disk-cache-compress=true", "-disk-cache-max-entries=200000", "-disk-cache-max-index-bytes=134217728", "-peer-write-through=true", "-peer-discovery=static", "-peer-static=proxy-load-a:3100,proxy-load-b:3100,proxy-load-c:3100,proxy-load-d:3100,proxy-load-e:3100", "-peer-auth-token=e2e-test-token", "-server.admin-auth-token=e2e-test-token", "-server.register-instrumentation=true", "-labels-cache-warm=false", "-rate-limit-per-second=0", "-rate-limit-burst=0", "-cache-startup-warm-bytes=1073741824", "-cache-startup-warm-timeout=180s"]
+  proxy-load-e:
+    <<: *peerload-proxy
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-load-e
+    ports:
+      - "${FLEET_PROXY_LOAD_E_PORT:-3124}:3100"
+    command: ["-peer-self=proxy-load-e:3100", "-listen=:3100", "-backend=http://victorialogs:9428", "-cache-ttl=10m", "-cache-max=200000", "-cache-max-bytes=2147483648", "-disk-cache-path=/cache/data.db", "-disk-cache-compress=true", "-disk-cache-max-entries=200000", "-disk-cache-max-index-bytes=134217728", "-peer-write-through=true", "-peer-discovery=static", "-peer-static=proxy-load-a:3100,proxy-load-b:3100,proxy-load-c:3100,proxy-load-d:3100,proxy-load-e:3100", "-peer-auth-token=e2e-test-token", "-server.admin-auth-token=e2e-test-token", "-server.register-instrumentation=true", "-labels-cache-warm=false", "-rate-limit-per-second=0", "-rate-limit-burst=0", "-cache-startup-warm-bytes=1073741824", "-cache-startup-warm-timeout=180s"]

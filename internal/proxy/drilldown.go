@@ -263,11 +263,28 @@ func (p *Proxy) metadataFieldExposures(vlField string) []metadataFieldExposure {
 	return p.labelTranslator.metadataFieldExposures(vlField, p.metadataFieldMode)
 }
 
+// addRowAlias records an alias the row's stream carries, allocating the set on
+// first use.
+func addRowAlias(set map[string]struct{}, alias string) map[string]struct{} {
+	if set == nil {
+		set = make(map[string]struct{}, 4)
+	}
+	set[alias] = struct{}{}
+	return set
+}
+
 func addDetectedField(fields map[string]*detectedFieldSummary, label, parser, typ string, jsonPath []string, value string) {
-	if label == "" || strings.TrimSpace(value) == "" {
+	if label == "" || strings.TrimSpace(value) == "" || shouldSuppressDetectedField(label) {
 		return
 	}
-	if shouldSuppressDetectedField(label) {
+	addParsedAliasField(fields, label, parser, typ, jsonPath, value)
+}
+
+// addParsedAliasField is addDetectedField for a parsed label named like an
+// alias (-field-mapping-label-mode alias and both): Loki lists it whatever its
+// name, so the suppressed names (namespace, cluster, app) are listed too.
+func addParsedAliasField(fields map[string]*detectedFieldSummary, label, parser, typ string, jsonPath []string, value string) {
+	if label == "" || strings.TrimSpace(value) == "" {
 		return
 	}
 	summary := fields[label]
@@ -1444,6 +1461,10 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	streamLabelSet := make(map[string]string)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	anyOTelWithServiceName := false
+	// rowAliases holds the aliases the row's stream carries (alias and both
+	// modes): a parsed key named like one is listed as name_extracted.
+	// Allocated on first use: only the alias and both modes write it.
+	var rowAliases map[string]struct{}
 	rowLevels := p.newLogRowLevels()
 	badRows := 0
 
@@ -1477,11 +1498,17 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				anyOTelWithServiceName = true
 			}
 		}
+		clear(rowAliases)
 		for key, value := range rawStreamLabels {
 			lokiLabel := key
 			if p.labelTranslator != nil {
 				if t := p.labelTranslator.ToLoki(key); t != "" {
 					lokiLabel = t
+				}
+				if alias, ok := p.labelTranslator.aliasAnswer(key); ok {
+					rowAliases = addRowAlias(rowAliases, alias)
+				} else if p.labelTranslator.isAliasLabel(lokiLabel) {
+					rowAliases = addRowAlias(rowAliases, lokiLabel) // a stored field named like the alias
 				}
 			}
 			labelNames[lokiLabel] = struct{}{}
@@ -1519,6 +1546,15 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 									stored := strings.Join(path, ".")
 									msgJSONKeys[stored] = struct{}{}
 									label := lokiJSONPathLabel(path)
+									if _, alias := rowAliases[label]; alias {
+										addParsedAliasField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(leaf), path, formatDetectedValueFJ(leaf))
+										return
+									}
+									if p.labelTranslator.isAliasLabel(label) {
+										// A stream label of other rows only: this row's parsed label.
+										addParsedAliasField(fields, label, "json", inferDetectedTypeFJ(leaf), path, formatDetectedValueFJ(leaf))
+										return
+									}
 									if shouldSuppressDetectedField(stored) {
 										return
 									}
@@ -1534,6 +1570,19 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 						}
 						key := string(keyBytes)
 						msgJSONKeys[key] = struct{}{}
+						if p.labelTranslator.listsAliases() {
+							label := p.detectedFieldName(key)
+							if _, alias := rowAliases[label]; alias {
+								// Named like an alias the row's stream carries.
+								addParsedAliasField(fields, label+extractedSuffix, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+								return
+							}
+							if p.labelTranslator.isAliasLabel(label) {
+								// An alias other rows' streams carry: this row's parsed label.
+								addParsedAliasField(fields, label, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+								return
+							}
+						}
 						if shouldSuppressDetectedField(key) {
 							return
 						}
@@ -1552,6 +1601,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 
 		obj, objErr := fjVal.Object()
 		if objErr == nil {
+			aliases := rowAliases // read by the closure: the loop variable stays off the heap
 			obj.Visit(func(keyBytes []byte, v *fj.Value) {
 				// Use string(keyBytes) directly in map lookups — compiler avoids
 				// allocation when the converted string is used only as a map key.
@@ -1576,6 +1626,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
 					if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
 						continue
+					}
+					if _, alias := aliases[exposure.name]; alias && exposure.isAlias {
+						continue // the stream label of an alias, as Loki lists no stream label
 					}
 					addDetectedField(fields, exposure.name, "", inferDetectedTypeFJ(v), nil, stringValue)
 					if summary := fields[exposure.name]; summary != nil {
@@ -1605,6 +1658,19 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 
 		for key, value := range parseLogfmtFields(msg) {
+			if p.labelTranslator.listsAliases() {
+				label := p.detectedFieldName(key)
+				if _, alias := rowAliases[label]; alias {
+					// Named like an alias the row's stream carries.
+					addParsedAliasField(fields, label+extractedSuffix, "logfmt", inferDetectedType(value), nil, value)
+					continue
+				}
+				if p.labelTranslator.isAliasLabel(label) {
+					// An alias other rows' streams carry: this row's parsed label.
+					addParsedAliasField(fields, label, "logfmt", inferDetectedType(value), nil, value)
+					continue
+				}
+			}
 			if shouldSuppressDetectedField(key) {
 				continue
 			}
@@ -1635,6 +1701,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 		if !isOTelSemantic {
 			continue
+		}
+		if _, alias := p.labelTranslator.aliasAnswer(key); alias {
+			continue // the stream label of the alias
 		}
 		for _, exposure := range p.metadataFieldExposures(key) {
 			if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
@@ -1780,20 +1849,22 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) (map[str
 		fillDetectedLabelsFJ(fjVal, labelBuf)
 		vlFJParserPool.Put(fjParser)
 
+		var one [1]string
 		for key, value := range labelBuf {
-			lokiLabel := lt.ToLoki(key)
-			if lokiLabel == "" {
-				continue
-			}
-			summary := summaries[lokiLabel]
-			if summary == nil {
-				summary = &detectedLabelSummary{
-					label:  lokiLabel,
-					values: map[string]struct{}{},
+			for _, lokiLabel := range lt.listedNames(key, &one) {
+				if lokiLabel == "" {
+					continue
 				}
-				summaries[lokiLabel] = summary
+				summary := summaries[lokiLabel]
+				if summary == nil {
+					summary = &detectedLabelSummary{
+						label:  lokiLabel,
+						values: map[string]struct{}{},
+					}
+					summaries[lokiLabel] = summary
+				}
+				summary.values[value] = struct{}{}
 			}
-			summary.values[value] = struct{}{}
 		}
 	}
 	if err := scanBodyError(scanner, badRows); err != nil {
@@ -2345,17 +2416,19 @@ func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string
 	for _, item := range parsed.Values {
 		labels := parseStreamLabels(item.Value)
 		ensureSyntheticServiceName(labels)
+		var one [1]string
 		for key, value := range labels {
-			lokiLabel := p.labelTranslator.ToLoki(key)
-			if lokiLabel == "" {
-				continue
+			for _, lokiLabel := range p.labelTranslator.listedNames(key, &one) {
+				if lokiLabel == "" {
+					continue
+				}
+				summary := summaries[lokiLabel]
+				if summary == nil {
+					summary = &detectedLabelSummary{label: lokiLabel, values: map[string]struct{}{}}
+					summaries[lokiLabel] = summary
+				}
+				summary.values[value] = struct{}{}
 			}
-			summary := summaries[lokiLabel]
-			if summary == nil {
-				summary = &detectedLabelSummary{label: lokiLabel, values: map[string]struct{}{}}
-				summaries[lokiLabel] = summary
-			}
-			summary.values[value] = struct{}{}
 		}
 	}
 	return summaries, nil
@@ -2396,6 +2469,7 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	}
 
 	type labelResult struct {
+		vlName    string
 		lokiLabel string
 		values    []string
 	}
@@ -2429,7 +2503,7 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 			if len(vals) == 0 {
 				return
 			}
-			resultsCh <- labelResult{lokiLabel: lokiName, values: vals}
+			resultsCh <- labelResult{vlName: vlName, lokiLabel: lokiName, values: vals}
 		}(name, lokiLabel)
 	}
 	wg.Wait()
@@ -2441,15 +2515,28 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	}
 
 	summaries := make(map[string]*detectedLabelSummary, len(labelNames))
+	var one [1]string
 	for r := range resultsCh {
-		summary := &detectedLabelSummary{
-			label:  r.lokiLabel,
-			values: make(map[string]struct{}, len(r.values)),
+		one[0] = r.lokiLabel
+		names := one[:]
+		if listed, ok := p.labelTranslator.listing[r.vlName]; ok {
+			names = listed
 		}
-		for _, v := range r.values {
-			summary.values[v] = struct{}{}
+		for _, lokiLabel := range names {
+			summary := summaries[lokiLabel]
+			// Two fields listed under one name share its values in the alias
+			// and both modes, as the stream and scan reads do.
+			if summary == nil || !p.labelTranslator.listsAliases() {
+				summary = &detectedLabelSummary{
+					label:  lokiLabel,
+					values: make(map[string]struct{}, len(r.values)),
+				}
+				summaries[lokiLabel] = summary
+			}
+			for _, v := range r.values {
+				summary.values[v] = struct{}{}
+			}
 		}
-		summaries[r.lokiLabel] = summary
 	}
 	return summaries, nil
 }

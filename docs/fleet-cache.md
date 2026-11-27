@@ -31,7 +31,7 @@ Both datasets exceed one node capacity. Tests check every key against its config
 
 The fleet cache enables multiple Loki-VL-proxy replicas to share cached data with minimal network overhead. Each key lives on its **replicas**: the **owner**, determined by consistent hashing, and the next distinct peers clockwise on the ring (`-peer-replication-factor`, default 2: owner and one backup). Other peers fetch from the replicas on local miss, owner first, and keep short-lived **shadow copies**. With write-through enabled (default), eligible long-TTL writes are pushed to every replica, so hot traffic pinned to one pod still warms the full fleet. A replica stores a pushed copy in memory and on disk and serves it from either, and never pushes it on.
 
-With RF=2 and a fresh, reachable backup, losing a replica needs no recompute: an owner that restarted without its disk asks its backup for its keys (one peer round trip per key, on first lookup), and while an owner is down, paused or slow, other peers get its keys from the backup: a lookup asks the backup as well once the owner has not sent its response headers within the read hedge delay (twice the measured peer header p99, at most `-peer-read-hedge-max-delay`, default 200 ms), and with no replica left to ask it reads VictoriaLogs after that maximum instead of waiting `-peer-timeout`. The call left on the slow owner finishes in the background, where its timeout suspends a paused owner; meanwhile reads ask the owner last (another replica answered first) or skip it (a lookup gave up on it). A copy is kept with the TTL it had left on the replica that served it, never extended, and a copy with less than 5 s left is never served. Values above the peers' 8 MiB body limit and entries computed with a user's forwarded credentials are never pushed.
+With RF=2 and a fresh, reachable backup, losing a replica needs no recompute: an owner that restarted without its disk asks its backup for its keys (one peer round trip per key, on first lookup; with the start-up warm-up on it pulls them in bulk before it reports ready, see [Restore from peers](disk-cache.md#restore-from-peers)), and while an owner is down, paused or slow, other peers get its keys from the backup: a lookup asks the backup as well once the owner has not sent its response headers within the read hedge delay (twice the measured peer header p99, at most `-peer-read-hedge-max-delay`, default 200 ms), and with no replica left to ask it reads VictoriaLogs after that maximum instead of waiting `-peer-timeout`. The call left on the slow owner finishes in the background, where its timeout suspends a paused owner; meanwhile reads ask the owner last (another replica answered first) or skip it (a lookup gave up on it). A copy is kept with the TTL it had left on the replica that served it, never extended, and a copy with less than 5 s left is never served. Values above the peers' 8 MiB body limit and entries computed with a user's forwarded credentials are never pushed.
 
 ```mermaid
 flowchart TD
@@ -495,7 +495,7 @@ peerCache:
   selfAZ: "us-east-1a"
 ```
 
-When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags and `-peer-auth-token=$(PEER_AUTH_TOKEN)`. The token Secret is resolved in this order:
+When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags and `-peer-auth-token-file` (the token Secret mounted as a file). The token Secret is resolved in this order:
 
 1. `peerCache.authToken` set: the chart renders `<release>-peer-auth-literal` with that value.
 2. `peerCache.existingSecret` set: the chart references your Secret (key `peerCache.existingSecretKey`, default `token`) and renders none.
@@ -572,7 +572,7 @@ Bounded hot read-ahead is implemented and remains disabled by default (`-peer-ho
 
 Runtime behavior:
 
-1. Owners expose a compact hot-key index on `/_cache/hot` (top N keys with score, size, and remaining TTL).
+1. Owners expose a compact hot-key index on `/_cache/hot` (top N keys with score, size, and remaining TTL). Keys of entries computed with a caller's forwarded credentials are left out, and a peer never prefetches one, so those entries stay on the replica that computed them.
 2. Peers pull owner hot indexes on a periodic, jittered loop.
 3. Prefetch selection is bounded and tenant-fair:
    - remaining TTL must be above threshold

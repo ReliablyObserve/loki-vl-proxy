@@ -1,0 +1,11 @@
+id: cache-eviction-signals
+state: partial
+pending: true
+reason: |
+  Unit-proven in internal/cache, internal/metrics and internal/proxy (every
+  reason, the invariant with the layer counters over random and concurrent
+  operations, exporter parity and the fixed series set, the dashboard row).
+  The sizing signals of #1767 are cache-sizing-signals, the retention policy
+  cache-reuse-retention. Not yet proven on a running fleet.
+owner_decision: null
+waiver: null

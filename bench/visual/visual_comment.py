@@ -63,7 +63,7 @@ from vio import dump_json, error_text, load_json, write_text
 MARKER = "<!-- visual-smoke -->"
 LABEL = "visual-change-expected"
 PIXEL_WARN = 0.03  # share of changed pixels main vs PR; header and time picker noise stays below it
-ORDER = {"15m": 0, "1h": 1, "6h": 2, "24h": 3, "7d": 4, "live": 5}
+ORDER = {"5m": 0, "15m": 1, "1h": 2, "6h": 3, "24h": 4, "7d": 5, "live": 6}
 SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 MD_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+!|<>~&$:@])")
 
