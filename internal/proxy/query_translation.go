@@ -802,28 +802,6 @@ func (p *Proxy) preferWorkingParserAt(ctx context.Context, logql, rawTime string
 	return p.preferWorkingParser(ctx, logql, start, end)
 }
 
-// rangeParserProbeWindow is the window the parser probe of a range request reads: its start and end as sent, or,
-// for a bound the request leaves out, the one Loki reads it with (lokiRangeBounds: end now, start an hour before or
-// since before), as Unix nanoseconds. A probe sent without a bound read the whole retention for the 25 newest
-// lines (#1821). A bound that does not parse is left as it is: the handlers answer Loki's error for it.
-func rangeParserProbeWindow(r *http.Request, now time.Time) (start, end string) {
-	start, end = r.FormValue("start"), r.FormValue("end")
-	if strings.TrimSpace(start) != "" && strings.TrimSpace(end) != "" {
-		return start, end
-	}
-	s, e, ok := lokiRangeBounds(r, now)
-	if !ok {
-		return start, end
-	}
-	if strings.TrimSpace(start) == "" {
-		start = strconv.FormatInt(s.UnixNano(), 10)
-	}
-	if strings.TrimSpace(end) == "" {
-		end = strconv.FormatInt(e.UnixNano(), 10)
-	}
-	return start, end
-}
-
 // parserProbeFallbackWindow bounds the probe for a range selector whose length
 // is not known (a literal the parser does not read as a duration).
 const parserProbeFallbackWindow = 5 * time.Minute

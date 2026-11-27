@@ -4,6 +4,8 @@ package e2e_compat
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -29,6 +31,9 @@ func TestCompat_ParserProbeDropKeepsTheRange(t *testing.T) {
 		logfmtLines.lines = append(logfmtLines.lines, slidingLiveLine{ts: ts, msg: fmt.Sprintf(`route=/r%d msg=tick`, i%3)})
 	}
 	ingestSlidingFixtures(t, jsonLines, logfmtLines)
+	// Loki answers a fresh stream's range metric queries empty for a while; wait until it holds both streams.
+	waitForLokiMetricDataSelector(t, jsonLines.selector())
+	waitForLokiMetricDataSelector(t, logfmtLines.selector())
 	for _, fx := range []struct {
 		name, pipe string
 		lines      slidingLiveFixture
@@ -60,6 +65,43 @@ func TestCompat_ParserProbeDropKeepsTheRange(t *testing.T) {
 			}
 			if proxy := nonSumRange(t, proxyURL, q, at.Add(-time.Hour), at, time.Minute); !reflect.DeepEqual(proxy, loki) {
 				t.Fatalf("%s:\n proxy %v\n  Loki %v", q, proxy, loki)
+			}
+		})
+	}
+}
+
+// A log query_range that leaves start and end out reads the hour before now in Loki. The step alignment moves
+// metric queries only, so the proxy sent the log read (and the parser probe of a query naming both parsers) to
+// VictoriaLogs with no time range: it read the whole retention and answered lines older than the hour. Here the
+// stream holds lines from 100 to 10 minutes ago; the answer holds only the last hour's, as Loki's does.
+//
+// conformance: semantics/parser-probe-drop-keeps-range, semantics/request-time-bounds, loki_api_v1_query_range
+func TestCompat_LogRangeWithoutBoundsReadsTheLastHour(t *testing.T) {
+	now := time.Now()
+	fx := slidingLiveFixture{app: fmt.Sprintf("range-no-bounds-%d", now.UnixNano())}
+	for i := 0; i < 46; i++ {
+		fx.lines = append(fx.lines, slidingLiveLine{ts: now.Add(-100*time.Minute + time.Duration(i)*2*time.Minute), msg: fmt.Sprintf(`{"route":"/r%d","seq":%d}`, i%3, i)})
+	}
+	ingestSlidingFixtures(t, fx)
+	for _, q := range []string{fx.selector() + ` | json | logfmt`, fx.selector() + ` | json`, fx.selector()} {
+		t.Run(q, func(t *testing.T) {
+			lines := func(base string) int {
+				status, body, resp := doJSONGET(t, base+"/loki/api/v1/query_range?"+url.Values{"query": {q}, "limit": {"100"}}.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+				if status != http.StatusOK || resp["status"] != "success" {
+					t.Fatalf("%s %s: %d %s", base, q, status, body)
+				}
+				n := 0
+				for _, ts := range responseStreamTimestamps(resp) {
+					n += len(ts)
+				}
+				return n
+			}
+			loki := lines(lokiURL)
+			if loki < 20 || loki > 32 {
+				t.Fatalf("%s: Loki answered %d lines, the last hour holds about 26 of the 46", q, loki)
+			}
+			if proxy := lines(proxyURL); proxy != loki {
+				t.Fatalf("%s: proxy answered %d lines, Loki %d", q, proxy, loki)
 			}
 		})
 	}

@@ -455,3 +455,48 @@ func TestParserProbeDropRejectsOldCopies(t *testing.T) {
 		})
 	}
 }
+
+// A log query_range that leaves start and end out reads the hour before now, as Loki does: its reads (the parser
+// probe and the log read) carry that window. The step alignment moves only metric queries, so the log read went to
+// VictoriaLogs with no time range and VictoriaLogs read the whole retention.
+//
+// conformance: semantics/parser-probe-drop-keeps-range, semantics/request-time-bounds, loki_api_v1_query_range
+func TestLogRangeWithoutBoundsReadsLokisWindow(t *testing.T) {
+	type read struct{ path, query, start, end string }
+	var mu sync.Mutex
+	var reads []read
+	b := &parserProbeBackend{lines: func(string, string) []string { return []string{`{"route":"/a"}`} }}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if strings.HasPrefix(r.URL.Path, "/select/") && strings.Contains(r.FormValue("query"), `app:="x"`) {
+			mu.Lock()
+			reads = append(reads, read{r.URL.Path, r.FormValue("query"), r.FormValue("start"), r.FormValue("end")})
+			mu.Unlock()
+		}
+		b.handler(w, r)
+	}))
+	t.Cleanup(backend.Close)
+	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	for _, q := range []string{`{app="x"} | json | logfmt`, `{app="x"} | json`} {
+		reads = nil
+		before := time.Now().UnixNano()
+		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+url.Values{"query": {q}, "limit": {"10"}}.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+		after := time.Now().UnixNano()
+		if res.Code != http.StatusOK || len(reads) == 0 {
+			t.Fatalf("%s: %d %s, %d reads", q, res.Code, res.Body, len(reads))
+		}
+		for _, rd := range reads {
+			if rd.start == "" || rd.end == "" {
+				t.Fatalf("%s: read without a time range: %+v", q, rd)
+			}
+			start, end := parserProbeVLTime(t, rd.start), parserProbeVLTime(t, rd.end)
+			if end < before-int64(time.Second) || end > after+int64(time.Second) || end-start < int64(time.Hour)-int64(time.Second) || end-start > int64(time.Hour)+(after-before)+int64(time.Second) {
+				t.Fatalf("%s: read window [%d, %d], want the hour before now (%d..%d): %+v", q, start, end, before, after, rd)
+			}
+		}
+	}
+}
