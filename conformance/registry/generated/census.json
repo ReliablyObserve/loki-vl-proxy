@@ -1293,7 +1293,7 @@
     "semantics/unwrap-extraction-list-series-identity | gap:open",
     "semantics/unwrap-extraction-list-series-identity | query",
     "semantics/unwrap-first-last-per-line-range-longer-than-step | compare:observed",
-    "semantics/unwrap-first-last-per-line-range-longer-than-step | gap:open",
+    "semantics/unwrap-first-last-per-line-range-longer-than-step | gap:fixed",
     "semantics/unwrap-first-last-per-line-range-longer-than-step | perf",
     "semantics/unwrap-first-last-per-line-range-longer-than-step | query",
     "semantics/unwrap-first-last-range-longer-than-step | compare:observed",
@@ -3825,7 +3825,7 @@
     },
     "page_kinds": {
       "drilldown": 23,
-      "explore": 145,
+      "explore": 146,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3968,6 +3968,7 @@
     "explore-unpack-sum-count",
     "explore-unwrap-conversion-error",
     "explore-unwrap-duration-seconds",
+    "explore-unwrap-first-last-per-line",
     "explore-unwrap-first-last-range-longer-than-step",
     "explore-unwrap-first-last-under-sum",
     "explore-unwrap-keep-series-identity",

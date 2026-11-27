@@ -115,14 +115,11 @@ var keepIdentityKnown = func() map[string]map[string]string {
 	plain := func(fn string) string {
 		return keepIdentityHead(fn) + `{job="kj"} | json | unwrap duration_ms [5m])`
 	}
-	// first and last over time on a range longer than the step, where each line is a series of its own (no keep, or
-	// a keep before the parser): the step buckets of the lines, not their windows.
-	const perLineSliding = "semantics/unwrap-first-last-per-line-range-longer-than-step"
-	sliding := []string{"step<range"}
-	for _, fn := range []string{"first_over_time", "last_over_time"} {
-		add(perLineSliding, sliding, "sum by (app) ("+plain(fn)+")", "sum("+plain(fn)+")")
-	}
-	add(perLineSliding, sliding, `sum by (app) (first_over_time({job="kj"} | keep app | json | unwrap duration_ms [5m]))`)
+	// first and last over time on a range longer than the step after a keep before the parser: each line is a series
+	// of its own, read from the step buckets of the lines, not their windows (with no keep the series hash of the
+	// parser's labels reads Loki's windows: lower.DynamicUnwrapIdentity).
+	add("semantics/keep-before-parser-unwrap-identity", []string{"step<range"},
+		`sum by (app) (first_over_time({job="kj"} | keep app | json | unwrap duration_ms [5m]))`)
 	// Without a keep each line is a Loki series of its own. quantile_over_time and rate_counter keep the stream's
 	// series (or the group's samples).
 	const perSeries = "semantics/unwrap-per-series-identity-raw-rows"
