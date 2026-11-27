@@ -128,17 +128,19 @@ func DropParserStages(query string, drop ParserType) string {
 	return ReadParserStages(query).Drop(drop)
 }
 
-// stageEndsCleanly reports a stage whose text ends where nothing would join the token before it once the stage is
-// removed: the end of the query, a blank, or a character that starts a token of its own (`|` of the next stage, `[`
-// of the range, `)` closing the range aggregation, `!`/`=`/`~` of a line filter, a comment). Anything else is left
-// as it is: the query keeps both stages.
+// stageEndsCleanly reports a stage after which, past any blanks, the query ends or a token starts that stands on
+// its own whatever precedes it: `|` of the next stage or line filter, `!` of a negated line filter, `[` of the range,
+// `)` closing the range aggregation or a parenthesised log query, a `#` comment. Anything else is left as it is: the
+// query keeps both stages (a spelling Parse accepts only with the stage in place).
 func stageEndsCleanly(query string, end int) bool {
-	if end >= len(query) {
-		return true
+	for ; end < len(query); end++ {
+		switch query[end] {
+		case ' ', '\t', '\n', '\r', '\v', '\f':
+			continue
+		case '|', '!', '[', ')', '#':
+			return true
+		}
+		return false
 	}
-	switch query[end] {
-	case ' ', '\t', '\n', '\r', '\v', '\f', '|', '[', ')', '!', '#':
-		return true
-	}
-	return false
+	return true
 }
