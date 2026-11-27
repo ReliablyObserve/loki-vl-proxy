@@ -168,6 +168,7 @@ In `both`, the names of stream and series labels are added as the answer leaves 
 - ungrouped metric results (and alert rules over them) carry one more label per name of a mapped stream field, so an alert keyed on its labels can fire once more as a new series;
 - the new names start with a cold cache: the mode has its own cache entries;
 - a `sum without (k8s_node_name)` keeps the other names of the field (`nodename`, `node`), as a Loki that stored both names would;
+- a key a `| json` or `| logfmt` stage extracts under the `-label-style` name of a mapped stream field (`k8s_pod_name=x` in the line of a stream holding `k8s.pod.name`) keeps that name with the parsed value, and that line gets no added `k8s_pod_name` stream label; a Loki that stored both names answers `k8s_pod_name_extracted` beside the stream label. The `_extracted` rules apply to aliases only;
 - answers grow by the added labels, and the route reads the whole JSON answer and writes it again once (no streaming in this mode; a cached answer is rewritten on each hit).
 
 The mode changes no VictoriaLogs request count. Replicas in `original`, `alias` or `both` keep their own cache entries (memory, disk and peers), which also carry the `-metadata-field-mode`; replicas that leave the flag unset share them with builds that predate the flag.
