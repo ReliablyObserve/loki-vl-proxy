@@ -17,6 +17,7 @@ smoke	internal/clientauth	FuzzParseUsersFile	12s	-	users file of caller authenti
 smoke	internal/clientauth	FuzzParseAuthorization	12s	-	Authorization header parsing of caller authentication
 smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadata normalization
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
+smoke	internal/proxy	FuzzFieldMappingLabelMode	12s	-	field-mapping label modes keep query names and list only names of their field
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
 smoke	internal/proxy	FuzzPlaceholderExclusion	12s	-	the placeholder exclusion of -json-line-fields-as-line-keys terminates and writes a filter VictoriaLogs parses

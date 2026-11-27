@@ -491,10 +491,16 @@ func (p *Proxy) fetchVLFieldValues(ctx context.Context, path string, params url.
 }
 
 func (p *Proxy) fetchPreferredLabelNames(ctx context.Context, params url.Values) ([]string, error) {
+	declared := p.snapshotDeclaredLabelFields()
+	if p.labelTranslator.listsAliases() && isNamesOnlyListing(ctx) {
+		// /labels lists an alias for a field with data only, so it keeps the
+		// declared fields apart from VictoriaLogs' names (lokiLabelListing).
+		declared = nil
+	}
 	if p.supportsStreamMetadataEndpoints() {
 		labels, err := p.fetchStreamFieldNamesCached(ctx, params)
 		if err == nil {
-			return appendDeclaredLabelFieldsIfData(labels, p.snapshotDeclaredLabelFields()), nil
+			return appendDeclaredLabelFieldsIfData(labels, declared), nil
 		}
 		if !shouldFallbackToGenericMetadata(err) {
 			return nil, err
@@ -512,7 +518,7 @@ func (p *Proxy) fetchPreferredLabelNames(ctx context.Context, params url.Values)
 			filtered = append(filtered, name)
 		}
 	}
-	return appendDeclaredLabelFieldsIfData(filtered, p.snapshotDeclaredLabelFields()), nil
+	return appendDeclaredLabelFieldsIfData(filtered, declared), nil
 }
 
 // appendDeclaredLabelFieldsIfData adds operator-declared label fields to a label
@@ -874,15 +880,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 				return nil, fetchErr
 			}
 
-			filtered := make([]string, 0, len(labels))
-			for _, v := range labels {
-				if isVLInternalField(v) {
-					continue
-				}
-				filtered = append(filtered, v)
-			}
-			labels = p.labelTranslator.TranslateLabelsList(filtered)
-			labels = appendSyntheticLabels(labels)
+			labels = p.lokiLabelListing(labels)
 			// Write back with the same window-scaled TTL the handler compares the
 			// remaining TTL against; the base TTL would make every later hit look
 			// stale and schedule another full-range refresh.
@@ -1276,15 +1274,7 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 			continue
 		}
 		p.labelWarmBackoff.succeeded(w.window)
-		filtered := make([]string, 0, len(labels))
-		for _, v := range labels {
-			if isVLInternalField(v) {
-				continue
-			}
-			filtered = append(filtered, v)
-		}
-		labels = p.labelTranslator.TranslateLabelsList(filtered)
-		labels = appendSyntheticLabels(labels)
+		labels = p.lokiLabelListing(labels)
 		entryTTL := ttl
 		if scaleTTLByWindow {
 			entryTTL = metadataWindowTTL(w.startStr, w.endStr, ttl)

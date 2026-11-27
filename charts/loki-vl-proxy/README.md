@@ -19,6 +19,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `extraArgs.cache-max` | `50000` | Maximum in-memory cache entries |
 | `extraArgs.label-style` | _(binary default: underscores)_ | Label translation mode: `passthrough` or `underscores` |
 | `extraArgs.metadata-field-mode` | _(binary default: translated)_ | Structured metadata exposure: `native`, `translated`, or `hybrid` |
+| `extraArgs.field-mapping-label-mode` | _(binary default: original)_ | Names of `field-mapping` fields in `/labels`, `detected_labels` and the volume target labels: `original`, `alias` or `both` |
 | `extraArgs.max-concurrent` | `64` | Per-replica in-flight request cap (excess gets `503`); also bounds concurrent backend operations. `0` = unlimited |
 | `extraArgs.backend-max-concurrent-heavy-queries` | `2` | Heavy VictoriaLogs queries (ranges at or above the threshold below) running at once, per replica. Excess requests wait, then get Loki's `429`. `0` = unlimited |
 | `extraArgs.backend-heavy-query-queue-wait` | `20s` | How long a heavy query waits for a slot before the `429` |
