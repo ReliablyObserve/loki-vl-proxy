@@ -110,7 +110,7 @@ func TestFieldMappingLabelMode_ParsedAliasCollisionDetectedFields(t *testing.T) 
 		}
 	}
 	for _, label := range []string{"pod_extracted", "namespace_extracted", "namespace"} {
-		if _, ok := collisionFields(t, FieldMappingLabelModeOriginal)[label]; ok {
+		if _, ok := collisionFields(t, FieldMappingLabelModeUnset)[label]; ok {
 			t.Errorf("default mode lists %s", label)
 		}
 	}
@@ -151,7 +151,7 @@ func TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL(t *testing.T) {
 		return s
 	}
 	for q, wants := range queries {
-		original := translate(FieldMappingLabelModeOriginal, q)
+		original := translate(FieldMappingLabelModeUnset, q)
 		unset := translate("", q)
 		if original != unset {
 			t.Errorf("%s: original and unset differ:\n%s\n%s", q, original, unset)
@@ -184,9 +184,9 @@ func TestFieldMappingLabelMode_NoUnderscoreFallbackForAlias(t *testing.T) {
 	const query = "* | unpack_logfmt | stats by (k8s.pod.name, k8s.namespace.name) count()"
 	for mode, want := range map[FieldMappingLabelMode]string{
 		// The default mode keeps its fallback: pod is the last mapping of k8s.pod.name.
-		FieldMappingLabelModeOriginal: "stats by (k8s.pod.name, k8s.namespace.name, pod, k8s_namespace_name) count()",
-		FieldMappingLabelModeAlias:    "stats by (k8s.pod.name, k8s.namespace.name) count()",
-		FieldMappingLabelModeBoth:     "stats by (k8s.pod.name, k8s.namespace.name) count()",
+		FieldMappingLabelModeUnset: "stats by (k8s.pod.name, k8s.namespace.name, pod, k8s_namespace_name) count()",
+		FieldMappingLabelModeAlias: "stats by (k8s.pod.name, k8s.namespace.name) count()",
+		FieldMappingLabelModeBoth:  "stats by (k8s.pod.name, k8s.namespace.name) count()",
 	} {
 		p := newMappingProxy(t, "http://127.0.0.1:1", nil, Config{LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated,
 			FieldMappingLabelMode: mode, FieldMappings: collisionMappings()})

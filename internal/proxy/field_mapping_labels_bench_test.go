@@ -20,7 +20,7 @@ func BenchmarkFieldMappingLabels(b *testing.B) {
 	}
 	stream := map[string]string{"k8s.namespace.name": "prod", "k8s.pod.name": "api-1", "host.name": "node-a", "service.name": "api"}
 	rows := strings.Repeat(`{"_msg":"x","_stream":"{k8s.namespace.name=\"prod\",k8s.pod.name=\"api-1\",host.name=\"node-a\",service.name=\"api\"}"}`+"\n", 200)
-	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeUnset, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 		p := &Proxy{labelTranslator: NewLabelTranslator(LabelStyleUnderscores, mappingTestMappings()),
 			declaredLabelNames: []string{"cluster", "host.name"}}
 		p.labelTranslator.SetFieldMappingLabelMode(mode)
@@ -68,7 +68,7 @@ func BenchmarkFieldMappingLabelRoutes(b *testing.B) {
 		{"volume", "/loki/api/v1/index/volume", "&targetLabels=pod"},
 		{"volumeRange", "/loki/api/v1/index/volume_range", "&targetLabels=pod&step=600"},
 	}
-	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeUnset, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 		for _, route := range routes {
 			for _, state := range []string{"cold", "repeat"} {
 				b.Run(route.name+"/"+state+"/"+string(mode), func(b *testing.B) {
@@ -118,7 +118,7 @@ func BenchmarkFieldMappingLabelRoutes(b *testing.B) {
 // like the aliases, and the lowering of a metric that groups by an alias after
 // a parser (the translation cache off).
 func BenchmarkFieldMappingAliasCollision(b *testing.B) {
-	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeUnset, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 		p := newMappingProxy(b, collisionVLFor(b), cache.NewDisabled(), Config{LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated,
 			FieldMappingLabelMode: mode, FieldMappings: collisionMappings()})
 		mux := http.NewServeMux()

@@ -22,7 +22,7 @@ func TestFieldMappingLabelModeConfig(t *testing.T) {
 		t.Fatalf("the flag must win over the environment: %q", got.labelMappingMode)
 	}
 	for value, want := range map[string]proxy.FieldMappingLabelMode{
-		"":         proxy.FieldMappingLabelModeOriginal,
+		"":         proxy.FieldMappingLabelModeUnset,
 		"original": proxy.FieldMappingLabelModeOriginal,
 		"alias":    proxy.FieldMappingLabelModeAlias,
 		"both":     proxy.FieldMappingLabelModeBoth,

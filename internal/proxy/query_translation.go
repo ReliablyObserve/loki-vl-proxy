@@ -2442,6 +2442,8 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	}
 
 	levelGrouping := requestedLevelGrouping(originalQuery)
+	// A grouping by another name of a mapped field answers under that name.
+	groupNames := p.requestedGroupNames(ctx, originalQuery)
 
 	// Reuse maps across iterations (same pattern as original).
 	translated := make(map[string]string, 8)
@@ -2494,7 +2496,9 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 					changed = true
 				default:
 					lokiKey := key
-					if !p.labelTranslator.IsPassthrough() {
+					if name, ok := groupNames[key]; ok {
+						lokiKey = name
+					} else if !p.labelTranslator.IsPassthrough() {
 						lokiKey = p.labelTranslator.ToLoki(key)
 					}
 					if lokiKey != key {

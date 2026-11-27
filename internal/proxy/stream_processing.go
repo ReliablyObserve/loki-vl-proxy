@@ -1333,7 +1333,7 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 				pfBuf[name] = stringValue
 				continue
 			}
-			smBuf[name] = stringValue
+			p.labelTranslator.setMetadata(smBuf, name, key, stringValue)
 		}
 	}
 
@@ -1474,7 +1474,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 			if isParsed {
 				pfBuf[name] = f.value
 			} else {
-				smBuf[name] = f.value
+				p.labelTranslator.setMetadata(smBuf, name, f.key, f.value)
 			}
 		}
 	}
@@ -2042,7 +2042,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 				pfBuf[name] = stringValue
 				continue
 			}
-			smBuf[name] = stringValue
+			p.labelTranslator.setMetadata(smBuf, name, key, stringValue)
 		}
 	}
 
