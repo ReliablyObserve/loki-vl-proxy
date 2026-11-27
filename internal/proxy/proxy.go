@@ -3524,8 +3524,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// An instant query carries time, not start and end: the probe reads the
 	// window the query evaluates at that time.
 	probed := p.preferWorkingParserAt(r.Context(), logqlQuery, r.FormValue("time"))
-	if probed != logqlQuery && unwrapLookup == nil && p.handleOrderedJSONMetric(w, r, start, probed, false) {
-		// The probe kept one parser: the query it left is answered by the route that answers that query sent as it
+	if probed != logqlQuery && unwrapLookup == nil && hasParserStage(probed, "json") != hasParserStage(probed, "logfmt") &&
+		p.handleOrderedJSONMetric(w, r, start, probed, false) {
+		// The probe kept one parser (a query it gave no verdict keeps both, its flags aside): the query it left is
+		// answered by the route that answers that query sent as it
 		// is (the ordered JSON evaluator answers `sum(count_over_time({…} | json [r]))` from VictoriaLogs stats),
 		// which the query naming both parsers was not offered before the probe.
 		return

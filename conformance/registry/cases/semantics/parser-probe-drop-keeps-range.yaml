@@ -32,6 +32,11 @@ why: |
   is. A range probe without start or end reads the window Loki reads the request with (lokiRangeBounds: end now,
   start an hour or `since` before). Answers cached by an earlier build for a metric query naming both parsers are
   not served: their keys carry the fence `@two-parser-metric-v1:` (one more cache miss per such query).
+  The instant query the probe leaves is offered to the route that answers that query sent alone (the ordered JSON
+  evaluator: `sum(count_over_time({...} | json [r]))` from VictoriaLogs stats), which the query naming both parsers
+  was not offered before the probe; it read every line of the window (`| limit 1000001`) and answered the row
+  limit's 400 past it. A log query_range without start or end read the whole retention (the step alignment moves
+  metric queries only): every read now uses the window Loki reads the request with.
 
   TestParserProbeDropMatchesRecordedLoki holds 1,792 requests to Loki's recorded engine answers: both parser orders
   with and without a drop of the error labels, plus the one-parser controls; count, rate, bytes_over_time,
@@ -41,9 +46,9 @@ why: |
   stage, so it never met the cut); instant and range; over JSON, logfmt, mixed and plain lines. approx_topk is
   held by the parser tests only (the Loki engine oracle did not answer its rows within ten minutes). No request
   shows the cut and every probe is well formed and bounded (main: 108 cut answers, 39 reads of LogQL text as a
-  phrase, 71 malformed or unbounded probes); 38 rows answer as Loki where main did not (two-parser rows matching
-  Loki: 514 to 552 of 896; controls 705 of 896 on both), and no row that answered as Loki on main differs now.
-  Fourteen instant rows (max, min, avg, count, stddev, stdvar or sum without over a bare count_over_time without a
+  phrase, 71 malformed or unbounded probes); 76 rows answer as Loki where main did not (two-parser rows matching
+  Loki: 514 to 590 of 896; controls 705 of 896 on both), and no row that answered as Loki on main differs now.
+  Thirteen instant rows (max, min, avg, count, stddev, stdvar or sum without over a bare count_over_time without a
   drop of the error labels, on logfmt or mixed lines) answered 400 on main with the cut's own message where Loki
   answers 400 JSONParserErr; they answer 200 now, as the other parser order of each of them already did on main
   (the JSON parser error check does not run on a query naming both parsers: semantics/two-parsers-keep-one). The
@@ -77,7 +82,7 @@ gap:
   area: "internal/proxy/query_translation.go preferWorkingParser (parserProbeLogQuery, rangeParserProbeWindow), internal/proxy/range_metric_compat.go twoParserMetricResponseKeyVersion, internal/logql/parser_stages.go ReadParserStages"
   loki: "200 with the metric answer; both stages run on every line"
   proxy: "the stage the probe does not keep is removed from the parsed query; the range and the rest of the query stay"
-  planned_test: 'TestParserProbeDropMatchesRecordedLoki, TestParserProbeDropReadsTheTree, TestRangeParserProbeReadsTheRequestWindow, TestParserProbeDropRejectsOldCopies (internal/proxy), TestDropParserStages, TestDropParserStagesKeepsTheTree, TestReadParserStagesLogQuery, FuzzDropParserStages (internal/logql), TestCompat_ParserProbeDropKeepsTheRange (test/e2e-compat, core)'
+  planned_test: 'TestParserProbeDropMatchesRecordedLoki, TestParserProbeDropReadsTheTree, TestRangeParserProbeReadsTheRequestWindow, TestLogRangeWithoutBoundsReadsLokisWindow, TestParserProbeDropRejectsOldCopies (internal/proxy), TestDropParserStages, TestDropParserStagesKeepsTheTree, TestReadParserStagesLogQuery, FuzzDropParserStages (internal/logql), TestCompat_ParserProbeDropKeepsTheRange, TestCompat_LogRangeWithoutBoundsReadsTheLastHour (test/e2e-compat, core)'
   visual: none
   visual_reason: 'the failing Drilldown and Explore panels showed an error or no data; the fixed answer is the Loki answer the recorded differential holds; live captures are owed'
   clusters: []
