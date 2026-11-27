@@ -502,7 +502,8 @@ test-only PRs keep their existing exemption from heavy product checks.
   evaluation phase, inclusive end, empty results, labels and error answers.
 - When Loki cannot serve a large request, compare every evaluation point
   with smaller Loki/oracle requests on the identical input and grid. Save
-  the answers in the existing golden-data catalog, check that partitions
+  the answers in the A/B run's saved results (its raw artifact; the A/B
+  harness stitches them, bench/ab/README.md), check that partitions
   have no holes/overlap, and retain a whole-request check at smaller ranges.
 - Report real API latency, response bytes, CPU and observed resident memory,
   scoped VL calls/bytes and cache reuse where available. Report Grafana

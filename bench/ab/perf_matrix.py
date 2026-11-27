@@ -390,21 +390,209 @@ def correctness_reference(base, shape, query, secs, step, end, tenant, timeout, 
     return record, decoded
 
 
-def first_window_correctness(responses, shape, rng, query, secs, step, end, targets, tenant, timeout):
+# Stitched Loki references (AGENTS.md, "AST/planner changes require runtime API and Grafana proof"): when Loki cannot
+# answer a whole query_range (its request timed out), its answer is put together from requests over consecutive pieces
+# of the same evaluation grid, asked one after another. The pieces are as long as the stack Loki's own
+# split_queries_by_interval (test/e2e-compat/loki-local-config.yaml), so each one is the work of one of the whole
+# request's own splits. Only the answer is taken from the pieces: the Loki timing of such a row stays its timeout.
+STITCH_PARTITION_S = 3600
+STITCHED_KIND = "stitched-query-range"
+
+
+def timed_out_row(row):
+    """True for a Loki row whose whole request timed out (is_timeout), sent or repeated by skipped_row."""
+    return isinstance(row, dict) and row.get("status") == 0 and "timed out" in str(row.get("signature") or "")
+
+
+def stitch_plan(start, end, step, part=STITCH_PARTITION_S):
+    """The pieces [(start, end), ...] of the grid start, start+step, ..., end (Loki's query_range includes its end).
+
+    The first piece starts at `start`, the last ends at `end` and every next piece starts one step after the previous
+    one ends, so each grid point is in exactly one piece: no hole, no overlap. A cut is the first grid point at or after
+    a multiple of `part`. Empty when the grid is not one: a start off the step (Loki's step alignment would then move
+    the pieces' starts and not the whole request's) or an end off the grid."""
+    if type(start) is not int or type(end) is not int or type(step) is not int or step <= 0 or part <= 0:
+        return []
+    if end < start or start % step or (end - start) % step:
+        return []
+    cuts, multiple = [], start // part + 1
+    while multiple * part <= end:
+        cut = start + -(-(multiple * part - start) // step) * step
+        if start < cut <= end and (not cuts or cut > cuts[-1]):
+            cuts.append(cut)
+        multiple += 1
+    bounds = [start, *cuts]
+    return [(s, bounds[i + 1] - step if i + 1 < len(bounds) else end) for i, s in enumerate(bounds)]
+
+
+def stitch_join(parts, step):
+    """Loki's whole matrix answer from (piece, decoded answer) pairs of stitch_plan, or (None, problem).
+
+    A series is one label set across the pieces; each point must sit on its piece's own grid and no timestamp may
+    repeat within a series. The joined answer lists the series by label set and their points by time."""
+    series = {}
+    for (start, end), decoded in parts:
+        data = decoded.get("data") if isinstance(decoded, dict) else None
+        if (not isinstance(data, dict) or data.get("resultType") != "matrix" or not isinstance(data.get("result"), list)
+                or decoded.get("warnings")):
+            return None, "piece answer is not a matrix"
+        for item in data["result"]:
+            metric, values = item.get("metric") if isinstance(item, dict) else None, item.get("values") if isinstance(item, dict) else None
+            if not isinstance(metric, dict) or not isinstance(values, list):
+                return None, "piece answer is not a matrix"
+            points = series.setdefault(json.dumps(metric, sort_keys=True), (metric, []))[1]
+            for value in values:
+                if (not isinstance(value, list) or len(value) != 2 or type(value[0]) not in (int, float)
+                        or not start <= value[0] <= end or (value[0] - start) % step):
+                    return None, "piece point off its grid"
+                points.append(value)
+    result = []
+    for key in sorted(series):
+        metric, points = series[key]
+        points.sort(key=lambda p: p[0])
+        if any(a[0] == b[0] for a, b in zip(points, points[1:])):
+            return None, "a point repeats across pieces"
+        result.append({"metric": metric, "values": points})
+    return {"status": "success", "data": {"resultType": "matrix", "result": result}}, ""
+
+
+def stitched_answer(base, shape, query, secs, step, end, tenant, timeout, spelling=None):
+    """(record, decoded): Loki's answer of the window [end-secs, end] put together from stitch_plan's pieces.
+
+    With `spelling` (an (actual query, mode) pair from correctness_spelling) every piece is a correctness read: that
+    spelling and Cache-Control: no-cache; without it the pieces are asked like the measured request. The pieces are
+    asked one after another, so Loki works on one piece at a time; the first piece that fails ends the read."""
+    actual, mode = spelling or (query, "measured")
+    headers = request_headers(shape)
+    if spelling:
+        headers = {k: v for k, v in headers.items() if k.lower() != "cache-control"}
+        headers["Cache-Control"] = "no-cache"
+    plan = stitch_plan(end - secs, end, step) if not shape.get("instant") and not shape.get("path") and not shape.get("logs") else []
+    record = dict(kind=STITCHED_KIND, partition_s=STITCH_PARTITION_S, end=end, history_start=end-secs-query_lookback(query),
+                  original_query=query, actual_query=actual, correctness_query_mode=mode,
+                  correctness_cache_control="no-cache" if spelling else None, partitions=[], complete=False, problem="")
+    if len(plan) < 3:  # the whole-request check asks two pieces at once: a smaller window than the whole needs three
+        return {**record, "problem": "no stitch plan for this request"}, None
+    parts = []
+    for start, stop in plan:
+        url = request_url(base, shape, actual, stop - start, step, stop)
+        status, body, dt, at, _ = request_full(url, headers, tenant, timeout, max_body_bytes=CORRECTNESS_BODY_CAP)
+        try:
+            decoded = strict_json(body) if status == 200 and len(body) <= CORRECTNESS_BODY_CAP else None
+        except (ValueError, UnicodeError):
+            decoded = None
+        data = decoded.get("data") if isinstance(decoded, dict) else None
+        stats = data.get("stats") if isinstance(data, dict) else None
+        raw = stats.get("cache") if isinstance(stats, dict) else None
+        piece = dict(start=start, end=stop, url=url, status=status, seconds=round(dt, 3), at=int(at),
+                     response_bytes=len(body), body_sha256=hashlib.sha256(body).hexdigest(),
+                     answer_proof=answer_proof(status, body, shape) if len(body) <= CORRECTNESS_BODY_CAP else None,
+                     warnings=bool(isinstance(decoded, dict) and decoded.get("warnings")), cache_raw=raw,
+                     cache=report.correctness_cache_projection(raw),
+                     signature=signature(status, body, False, query.lstrip().startswith(("topk", "bottomk"))))
+        piece["reference_skip"] = report.reference_skip(piece) if piece["cache"] is not None else "cache-status-invalid-or-hit"
+        record["partitions"].append(piece)
+        if status != 200 or piece["answer_proof"] != "answer" or piece["warnings"] or decoded is None:
+            return {**record, "problem": f"piece {start}-{stop} not answered"}, None
+        parts.append(((start, stop), decoded))
+    joined, problem = stitch_join(parts, step)
+    if joined is None:
+        return {**record, "problem": problem}, None
+    body = json.dumps(joined, separators=(",", ":"), sort_keys=True).encode()
+    # The pieces' cache counters summed: report.reference_skip reads them like one request's.
+    cache = report.sum_cache([{"cache": p["cache"]} for p in record["partitions"]])
+    record.update(complete=True, status=200, response_bytes=len(body), body_sha256=hashlib.sha256(body).hexdigest(),
+                  answer_proof=answer_proof(200, body, shape), cache=cache,
+                  signature=signature(200, body, False, query.lstrip().startswith(("topk", "bottomk"))),
+                  seconds=round(sum(p["seconds"] for p in record["partitions"]), 3))
+    if record["answer_proof"] != "answer" or len(body) > CORRECTNESS_BODY_CAP:
+        return {**record, "complete": False, "problem": "joined answer unusable"}, None
+    return record, joined
+
+
+def stitched_pieces_computed(record):
+    """True when Loki computed every piece: a usable cache projection that does not say its results cache held the
+    whole piece."""
+    return bool(record.get("partitions")) and all(
+        p.get("status") == 200 and p.get("answer_proof") == "answer" and p.get("cache") is not None
+        and p.get("reference_skip") == "" for p in record["partitions"])
+
+
+def restrict(joined, start, end):
+    """The joined answer's points in [start, end], series without one there left out."""
+    result = [{"metric": s["metric"], "values": [v for v in s["values"] if start <= v[0] <= end]}
+              for s in joined["data"]["result"]]
+    return {"status": "success", "data": {"resultType": "matrix", "result": [s for s in result if s["values"]]}}
+
+
+def stitched_reference(targets, shape, query, secs, step, end, tenant, timeout, measured):
+    """(reference, decoded): the original window's stitched Loki answer, and the whole-request check that proves the
+    stitching on this query.
+
+    `measured` is the (record, decoded) of the run's stitched answer. It is the reference when Loki computed every
+    piece of it; otherwise every piece is read again with a correctness spelling (extra read). The check asks Loki the
+    whole window of the two pieces around the middle cut, itself a correctness read, and compares that answer with the
+    stitched points of that window: a hole or an overlap at a cut would show there."""
+    record, joined = measured if measured else ({}, None)
+    extra = 0
+    # A stitch that failed is not tried again (stitch_row): only a complete one with a cached piece is read again.
+    if record.get("complete") and not stitched_pieces_computed(record):
+        extra = 1
+        record, joined = stitched_answer(targets["loki"], shape, query, secs, step, end, tenant, timeout,
+                                         spelling=correctness_spelling(query, shape))
+    ref = dict(record, phase="original-window", reference_kind=STITCHED_KIND, extra_reads=extra,
+               url=request_url(targets["loki"], shape, record.get("actual_query", query), secs, step, end),
+               reference_skip="", complete=False)
+    if not record.get("complete") or not stitched_pieces_computed(record):
+        return {**ref, "problem": record.get("problem") or "a piece was not computed"}, None
+    pieces = record["partitions"]
+    middle = len(pieces) // 2
+    start, stop = pieces[middle - 1]["start"], pieces[middle]["end"]
+    whole_ref, whole = correctness_reference(targets["loki"], shape, query, stop - start, step, stop, tenant, timeout)
+    facets = (differ.diff(correctness_endpoint(shape), whole_ref["status"], whole, 200, restrict(joined, start, stop),
+                          query=query) if whole_ref["complete"] and whole_ref["status"] == 200 else None)
+    ref["whole_check"] = dict(start=start, end=stop, url=whole_ref["url"], status=whole_ref["status"],
+                              seconds=whole_ref["seconds"], response_bytes=whole_ref["response_bytes"],
+                              body_sha256=whole_ref["body_sha256"], answer_proof=whole_ref["answer_proof"],
+                              cache_raw=whole_ref["cache_raw"], cache=whole_ref["cache"],
+                              reference_skip=whole_ref["reference_skip"], actual_query=whole_ref["actual_query"],
+                              correctness_query_mode=whole_ref["correctness_query_mode"],
+                              correctness_cache_control=whole_ref["correctness_cache_control"],
+                              facets=facets, matches=facets == [])
+    if facets != []:
+        return {**ref, "problem": "whole-request check differs from the stitched points"}, None
+    ref["complete"] = True
+    return ref, joined
+
+
+def first_window_correctness(responses, shape, rng, query, secs, step, end, targets, tenant, timeout, stitched=None):
     proof = dict(complete=False, end=end, history_start=end-secs-query_lookback(query), query=query,
                  range=rng, run=0, extra_reads=0, targets={}, measured_reference=None)
-    if set(responses) != set(targets) or "loki" not in responses or any(v.get("reply") is None for v in responses.values()):
+    loki = responses.get("loki") or {}
+    # Loki's whole request timed out (sent now, or in an earlier pass: loki_timeout): the reference is stitched.
+    timed_out = stitched is not None and timed_out_row(loki.get("row"))
+    if (set(responses) != set(targets) or "loki" not in responses
+            or any(v.get("reply") is None for name, v in responses.items() if not (name == "loki" and timed_out))):
         return {**proof, "problem": "measured body unavailable or retention cap exceeded"}
-    if (sum(len(v["reply"][1]) for v in responses.values()) > 3 * CORRECTNESS_BODY_CAP
+    if (sum(len(v["reply"][1]) for v in responses.values() if v.get("reply")) > 3 * CORRECTNESS_BODY_CAP
             or any(len(v["reply"][1]) > CORRECTNESS_BODY_CAP or not answer_proof(v["reply"][0], v["reply"][1], shape)
                    for name, v in responses.items() if name != "loki")):
         return {**proof, "problem": "measured proxy answer unavailable"}
-    ref, decoded = correctness_reference(targets["loki"], shape, query, secs, step, end, tenant, timeout,
-                                         measured=responses["loki"]["reply"])
-    proof["measured_reference"] = ref
-    if not ref["complete"] and ref["status"] == 200 and (not metadata_endpoint(shape) or not ref["cache_absent"]):
-        ref, decoded = correctness_reference(targets["loki"], shape, query, secs, step, end, tenant, timeout)
-        proof["extra_reads"] = 1
+    if timed_out:
+        row = loki["row"]
+        proof["measured_reference"] = {k: row.get(k) for k in ("status", "seconds", "signature", "response_bytes",
+                                                               "body_sha256", "answer_proof", "skipped")}
+        proof["measured_reference"].update(phase="original-window", end=end, history_start=proof["history_start"],
+                                           url=request_url(targets["loki"], shape, query, secs, step, end))
+        ref, decoded = stitched_reference(targets, shape, query, secs, step, end, tenant, timeout, stitched)
+        proof["extra_reads"] = ref["extra_reads"]
+    else:
+        ref, decoded = correctness_reference(targets["loki"], shape, query, secs, step, end, tenant, timeout,
+                                             measured=responses["loki"]["reply"])
+        proof["measured_reference"] = ref
+        if not ref["complete"] and ref["status"] == 200 and (not metadata_endpoint(shape) or not ref["cache_absent"]):
+            ref, decoded = correctness_reference(targets["loki"], shape, query, secs, step, end, tenant, timeout)
+            proof["extra_reads"] = 1
     proof["reference"] = ref
     if not ref["complete"]:
         return {**proof, "problem": "computed reference unavailable"}
@@ -448,6 +636,27 @@ def skipped_row(first, shape, rname, run, run_end, tname):
     return {"shape": shape, "range": rname, "run": run, "end": run_end, "target": tname, "status": first["status"],
             "seconds": first["seconds"], "signature": first["signature"], "vl_cpu_max": None, "vl_cpu_avg": None,
             "skipped": "loki_timeout"}
+
+
+def stitch_row(row, base, shape, query, secs, step, run_end, args, failed):
+    """Put Loki's answer of a timed-out (or not sent) run together from pieces (stitched_answer) and record it on the
+    row as "stitched"; the row's own status and seconds stay the timeout's. Returns (record, decoded).
+
+    `failed` holds the shapes and ranges whose stitch failed in this pass: like a timeout, a failed stitch is not
+    tried again on the later runs (their rows record why)."""
+    key = (shape["name"], row["range"])
+    if key in failed:
+        record, decoded = {"kind": STITCHED_KIND, "complete": False, "partitions": [],
+                           "problem": "not tried: an earlier run's stitch of this shape and range failed"}, None
+    else:
+        record, decoded = stitched_answer(base, shape, query, secs, step, run_end, args.tenant, args.timeout)
+        if not record["complete"]:
+            failed.add(key)
+    row["stitched"] = record
+    print(f"{shape['name'][:44]:44} {row['range']:>7} run{row['run']} {row['target']:8} stitched from "
+          f"{len(record['partitions'])} pieces in {sum(p['seconds'] for p in record['partitions']):.2f}s: "
+          f"{record.get('signature') or record['problem']}", flush=True)
+    return record, decoded
 
 
 def read_known_timeouts(path):
@@ -699,7 +908,7 @@ def main():
     sampler.start()
     timed_out = read_known_timeouts(args.known_timeouts)
     restart0, rows, timings, timeouts, aborted = restarts(), [], [], [], False
-    exact_repeats = []
+    exact_repeats, stitch_failed = [], set()
     pair, quiet_waited = 0, 0.0
     for shape in shape_set["shapes"]:
         if wanted and not any(shape["name"].startswith(w) for w in wanted):
@@ -737,13 +946,19 @@ def main():
                     if secs >= 86400 and tname in long_runs and run >= int(long_runs[tname]):
                         continue
                     key = (tname, shape["name"], rname)
+                    url = request_url(base, shape, query, secs, step, run_end)
                     if tname == REFERENCE_TARGET and key in timed_out:
                         row = skipped_row(timed_out[key], shape["name"], rname, run, run_end, tname)
                         rows.append(row)
                         print(f"{shape['name'][:44]:44} {rname:>7} run{run} {tname:8} {row['status']} not sent: "
                               f"{tname} timed out on this shape and range", flush=True)
+                        if args.range_plan:
+                            row.update(request_url=url, answer_proof=None,
+                                       history_start=run_end - secs - query_lookback(query))
+                            stitched = stitch_row(row, base, shape, query, secs, step, run_end, args, stitch_failed)
+                            if run == 0:
+                                source_bodies[tname] = {"row": row, "reply": None, "stitched": stitched}
                         continue
-                    url = request_url(base, shape, query, secs, step, run_end)
                     headers = request_headers(shape)
                     metered = args.proxy_metrics and tname != REFERENCE_TARGET
                     before = reuse.scrape(base) if metered else None
@@ -785,6 +1000,10 @@ def main():
                     if tname == REFERENCE_TARGET and is_timeout(status, body):
                         timed_out[key] = row
                         timeouts.append({k: row[k] for k in ("target", "shape", "range", "run", "status", "seconds", "signature")})
+                        if args.range_plan:
+                            stitched = stitch_row(row, base, shape, query, secs, step, run_end, args, stitch_failed)
+                            if tname in source_bodies:
+                                source_bodies[tname]["stitched"] = stitched
                     if status in (0, 502) and not healthy_and_unrestarted(restart0):
                         print(f"ABORT: {args.container} RestartCount changed; this run is invalid", flush=True)
                         aborted = True
@@ -793,7 +1012,8 @@ def main():
                     break
                 if args.range_plan and run == 0:
                     original = first_window_correctness(source_bodies, shape, rname, query, secs, step, run_end,
-                                                        dict(targets), args.tenant, args.timeout)
+                                                        dict(targets), args.tenant, args.timeout,
+                                                        stitched=source_bodies.get(REFERENCE_TARGET, {}).get("stitched"))
                     for value in source_bodies.values():
                         value["row"]["original_window_correctness"] = original
                     source_bodies.clear()
