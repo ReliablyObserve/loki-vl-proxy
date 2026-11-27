@@ -795,15 +795,15 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_cache_restart_warm_bytes` | gauge | none | `Low` | bytes the start-up warm-up restored |
 | `loki_vl_proxy_cache_restart_warm_duration_seconds` | gauge | none | `Low` | how long the start-up warm-up took; `/ready` answers 503 `response cache warming` meanwhile, at most `-cache-startup-warm-timeout` |
 | `loki_vl_proxy_cache_restart_warm_done` | gauge | none | `Low` | 1 once the start-up warm-up finished or found no hand-over |
-| `loki_vl_proxy_cache_restart_warm_planned_entries`, `..._planned_bytes` | gauge | `source` | `Low` | entries the warm-up found to restore and their bytes as stored (encoded disk bytes; a memory-only answer of the hand-over counts its decoded size), set before any value is read; `source` is `disk` |
+| `loki_vl_proxy_cache_restart_warm_planned_entries`, `..._planned_bytes` | gauge | `source` | `Low` | entries the warm-up found to restore and their bytes as stored (encoded disk bytes; a memory-only answer of the hand-over counts its decoded size), set before any value is read; `source` is `disk` (the restart hand-over) or `peer` (the [restore from peers](disk-cache.md#restore-from-peers) of a replica with nothing local to warm from: what the peers planned to send, in key and record bytes, growing as each stream starts). Every `loki_vl_proxy_cache_restart_warm_*` series with a `source` label has both |
 | `loki_vl_proxy_cache_restart_warm_budget_bytes` | gauge | `source` | `Low` | most decoded bytes the warm-up may restore |
 | `loki_vl_proxy_cache_restart_warm_processed_entries`, `..._processed_bytes` | gauge | `source` | `Low` | planned entries restored or skipped so far, and their stored bytes; updated after every batch (about 256 entries or 4 MiB) |
 | `loki_vl_proxy_cache_restart_warm_skipped_entries` | gauge | `source`, `reason` | `Low` | planned entries not restored: `expired`, `superseded` (a fresher entry), `too_large` (over a tenth of `-cache-max-bytes`), `over_budget`, `memory_full` (`-cache-max` or `-cache-max-bytes`), `other_scope`, `unreadable`, `deadline`, `purged`, `clock_behind_flush` |
 | `loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second` | gauge | `source` | `Low` | decoded bytes restored per second: so far while it runs, over the whole warm-up after |
 | `loki_vl_proxy_cache_restart_warm_remaining_seconds` | gauge | `source` | `Low` | estimated seconds left while the warm-up runs (elapsed x remaining share / done share); 0 otherwise |
 | `loki_vl_proxy_cache_restart_warm_timeout_seconds` | gauge | `source` | `Low` | the time the warm-up was given (`-cache-startup-warm-timeout`) |
-| `loki_vl_proxy_cache_restart_warm_outcome` | gauge | `source`, `outcome` | `Low` | 1 for `running`, or why the warm-up ended: `done`, `deadline`, `purged`, `clock_behind_flush`, `none` (no hand-over) |
-| `loki_vl_proxy_cache_restart_index_rebuild_duration_seconds`, `..._index_rebuild_entries` | gauge | `source` | `Low` | how long the disk cache's index rebuild took at start, before the proxy listened, and the records it holds |
+| `loki_vl_proxy_cache_restart_warm_outcome` | gauge | `source`, `outcome` | `Low` | 1 for `running`, or why the warm-up ended: `done`, `deadline`, `purged`, `clock_behind_flush`, `none` (no hand-over; for `peer`: no peer could send anything) |
+| `loki_vl_proxy_cache_restart_index_rebuild_duration_seconds`, `..._index_rebuild_entries` | gauge | `source` | `Low` | how long the disk cache's index rebuild took at start, before the proxy listened, and the records it holds (`source="disk"` only) |
 | `loki_vl_proxy_cache_startup_l1_requests`, `loki_vl_proxy_cache_startup_l1_hits` | gauge | none | `Low` | memory cache lookups and hits in the first 10 minutes after start, frozen after them: the start-up hit ratio with and without the warm-up |
 | `loki_vl_proxy_translations_total` | counter | none | `Low` | successful LogQL to LogsQL translations |
 | `loki_vl_proxy_translation_errors_total` | counter | none | `Low` | failed translations |
@@ -825,6 +825,8 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_http_connections` | gauge | `state` | `Low` | current downstream HTTP server connections by state |
 | `loki_vl_proxy_http_connection_transitions_total` | counter | `state` | `Low` | downstream HTTP server connection state transitions |
 | `loki_vl_proxy_http_connection_rotations_total` | counter | `reason` | `Low` | downstream HTTP/1.x connection rotations triggered by the proxy |
+| `loki_vl_proxy_auth_failures_total` | counter | `reason` (`missing`, `malformed`, `invalid`, `tenant_denied`, `busy`) | `Low` | requests refused by caller authentication (`-server.auth-users-file`); exported only with it on. `invalid` counts unknown users, wrong passwords and unknown tokens alike; `busy` counts `429` answers when every bcrypt slot (`-server.auth-max-concurrent-verifications`) stayed taken |
+| `loki_vl_proxy_auth_users_reload_failures_total` | counter | — | `Low` | users file reloads that failed and kept the last good users (the log line says why); exported only with caller authentication on |
 | `loki_vl_proxy_parser_metric_evaluations_total` | counter | `evaluator`, `reason` | `Low` | metric queries over a `\| json` or `\| logfmt` pipeline by the evaluator that answered them (`vl_stats_buckets`: VictoriaLogs stats over unpacked fields, no raw rows; `raw_rows`: the exact row evaluator, bounded by `-manual-range-metric-row-limit`) and why: `pushdown`; `probe` (a `\| limit 1` probe found a line the two parsers read differently, so the line shapes of that stream are worth a look); `ineligible` (a pipeline the pushdown does not cover: `keep`, a second parser, an `_extracted` or `__error__` label, a filter accepting the empty value without `drop __error__`); `grid` (no bucket grid for the step and range) |
 | `loki_vl_proxy_slow_requests_total` | counter | `system`, `route` | `Low` | requests at or over their slow threshold: `system="loki"` a client request over `-slow-query-threshold`, `system="vl"` one VictoriaLogs call over `-slow-upstream-threshold` (see Slow Queries) |
 
@@ -924,7 +926,7 @@ is in the [sizing guide](cache-troubleshooting.md#size-the-cache-from-its-evicti
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
-| `loki_vl_proxy_cache_evictions_total` | counter | `layer`, `tier`, `reason` | entries that left a tier; `expired` + `capacity` equals `loki_vl_proxy_cache_layer_evictions_total` summed over components |
+| `loki_vl_proxy_cache_evictions_total` | counter | `layer`, `tier`, `reason` | entries that left a tier; `expired` + `capacity` equals `loki_vl_proxy_cache_layer_evictions_total` summed over components (between L2 flushes: a scrape taken while one commits can see its layer count before its reasons) |
 | `loki_vl_proxy_cache_admission_rejections_total` | counter | `layer`, `tier`, `reason` | values a tier did not store; every reason but `memory_only` and `not_replica` sums to `loki_vl_proxy_cache_layer_rejections_total` |
 | `loki_vl_proxy_cache_entry_age_at_eviction_seconds` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | time since the value entered the tier on this replica; buckets 1s to 24h |
 | `loki_vl_proxy_cache_entry_hits_at_eviction` | histogram | `layer`, `tier`, `reason` (`expired`, `capacity`) | lookups the entry answered from that tier; buckets 0 to 100 |
@@ -933,6 +935,27 @@ is in the [sizing guide](cache-troubleshooting.md#size-the-cache-from-its-evicti
 | `loki_vl_proxy_cache_l2_read_seconds` | histogram | `layer` | one L2 lookup that read a record from bbolt: the index lock, the read and the decode; hits from the pending write queue are not reads; buckets 50µs to 500ms |
 | `loki_vl_proxy_cache_l2_read_bytes` | histogram | `layer` | encoded bytes of one L2 record read; buckets 256 B to 16 MiB |
 | `loki_vl_proxy_cache_ttl_seconds` | gauge | `class` | base TTL each answer class is stored with (table below) |
+
+Sizing signals, with `-cache-sizing-signals` (off by default; the primary cache only):
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `loki_vl_proxy_cache_ghost_hits_total` | counter | `tier` (`l1_memory`, `l2_disk`), `scenario` (`2x_bytes`, `2x_ttl`) | estimated misses of the tier that twice its entry and byte budgets, or every TTL doubled, would have answered (a ghost cache of keys only; never served) |
+| `loki_vl_proxy_cache_working_set_keys`, `loki_vl_proxy_cache_working_set_bytes` | gauge | `window` (`5m`, `1h`, `24h`) | estimated distinct memory-cache keys looked up or stored in the window, and their answer and key bytes |
+| `loki_vl_proxy_cache_reuse_interval_seconds` | histogram | `layer` | time between two request-level lookups of one key (hit or miss), from the sample (not scaled) |
+| `loki_vl_proxy_cache_hit_bytes_total` | counter | `class`, `tier` (`l1_memory`, `l2_disk`, `l3_peer`) | answer bytes request-level lookups got from each tier |
+| `loki_vl_proxy_cache_requested_bytes_total` | counter | `class` | answer bytes asked for: the hit bytes plus the bytes stored in memory after a full miss |
+| `loki_vl_proxy_cache_sizing_dropped_events_total` | counter | `tier` | sampled events a full buffer dropped; while above 0 the sampled figures are a lower bound |
+
+`class` is the answer class from the key's namespace: `query_range` (also the
+settled steps and windows), `query`, `series`, `labels` (label names, values
+and inventories), `volume` (also `index_stats`), `detected`, `patterns`,
+`other`. The ghosts, the working set and the reuse intervals follow a
+1-in-16 hash sample of the keys, scaled by 16 (the reuse histogram counts
+sampled lookups); lookups reach them through a lossy buffer, so under bursts
+they are a lower bound. Request-level lookups are the full-stack ones
+(`GetWithTier`, `GetSharedWithAge`) the cache tier requests count. The series
+set is fixed: 86 series.
 
 | `reason` | Tier | Cause |
 |---|---|---|
@@ -1055,6 +1078,14 @@ When the peer cache is enabled, `/metrics` appends these fleet-cache families (P
 | `loki_vl_proxy_peer_cache_fetch_duration_seconds` | histogram | `replica`, `outcome` | `Low` | duration of each peer-cache fetch by the replica asked (`owner`, `backup`) and its outcome (`hit`, `miss`, `error`); a fetch from a paused peer ends at `-peer-timeout` in the background (the read stopped waiting after the hedge delay), or earlier when another fetch's timeout suspends that peer |
 | `loki_vl_proxy_peer_cache_read_hedges_total` | counter | `action` | `Low` | peer-cache reads whose replica had not sent response headers within the hedge delay: `next_replica` (the next replica was asked as well and the first answer taken) or `gave_up` (no replica left; the read went on as a miss after `-peer-read-hedge-max-delay`) |
 | `loki_vl_proxy_peer_cache_read_hedge_delay_seconds` | gauge | — | `Low` | the current read hedge delay: twice the p99 of the measured peer header latencies, between 5 ms and `-peer-read-hedge-max-delay` (and half of `-peer-timeout`); 0 when hedging is off |
+| `loki_vl_proxy_peer_cache_bulk_serve_streams_total` | counter | `outcome` | `Low` | [peer restore](disk-cache.md#restore-from-peers) streams this replica served, by how they ended: `done`, `budget` (the requester's byte budget), `purged` (a local purge), `stopped` (the requester went away, a write failed, its deadline passed or this replica began shutting down), `throttled` (paused under pressure longer than `-peer-bulk-serve-max-pause`) |
+| `loki_vl_proxy_peer_cache_bulk_serve_rejected_total` | counter | `reason` | `Low` | peer restore requests this replica did not stream: `busy` (`-peer-bulk-serve-max-streams` in use; the requester asks again), `throttled` (the bulk governor is paused or under pressure; Retry-After 2 to 10 s), `restoring` (it restores from peers itself), `disabled`, `bad_request` |
+| `loki_vl_proxy_peer_cache_bulk_serve_records_total`, `..._bytes_total` | counter | — | `Low` | records and key plus record bytes this replica sent in peer restore streams (under `-peer-bulk-serve-max-bytes-per-second`) |
+| `loki_vl_proxy_peer_cache_bulk_serve_active` | gauge | — | `Low` | peer restore streams this replica serves now |
+| `loki_vl_proxy_peer_cache_bulk_serve_rate_bytes_per_second` | gauge | — | `Low` | the rate the bulk governor lets this replica's restore streams send now (it starts at 2 MiB/s, grows without pressure up to `-peer-bulk-serve-max-bytes-per-second`, halves under pressure); 0 while idle or paused |
+| `loki_vl_proxy_peer_cache_bulk_serve_state` | gauge | `state` | `Low` | 1 for the governor's state: `idle`, `ramping`, `ceiling`, `throttled`, `paused` |
+| `loki_vl_proxy_peer_cache_bulk_serve_pressure_total` | counter | `signal` | `Low` | governor ticks (200 ms) that saw pressure, by signal: `scheduler_latency`, `cpu`, `gc`, `memory`, `request_latency`, `peer_latency`, `disk_latency`, `network` |
+| `loki_vl_proxy_peer_cache_bulk_serve_rate_decreases_total`, `..._pauses_total`, `..._paused_seconds_total` | counter | — | `Low` | times pressure halved the rate, times a severe signal paused every stream, and the time they spent paused |
 | `loki_vl_proxy_peer_cache_errors_total` | counter | none | `Low` | peer-cache fetch errors |
 | `loki_vl_proxy_peer_cache_error_reason_total` | counter | `reason` | `Low` | peer-cache fetch errors by reason (emitted once any error has been recorded) |
 | `loki_vl_proxy_peer_cache_write_through_pushes_total` | counter | none | `Low` | successful pushes to a key's replicas (one per replica) |

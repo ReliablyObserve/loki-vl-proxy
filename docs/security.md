@@ -13,7 +13,7 @@ description: Security model, network exposure, tenant isolation, header forwardi
 - write ingestion API (`/loki/api/v1/push`) blocked (`405`)
 - admin/debug APIs disabled unless explicitly enabled
 - `/metrics` not served unless `-server.register-instrumentation=true`
-- query callers are not authenticated (see [Caller authentication](#caller-authentication))
+- query callers are not authenticated unless `-server.auth-users-file` is set (see [Caller authentication](#caller-authentication))
 
 `/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it behind its own token (`-delete-api-auth-token`, required: the proxy refuses to start without it) and runs Loki's delete requests as VictoriaLogs delete tasks (see [Delete API](#3-delete-api)).
 
@@ -31,6 +31,35 @@ In production, run the proxy behind an authenticating gateway (an ingress or rev
 
 Where a gateway is not available, require client certificates at the proxy: `-tls-cert-file`, `-tls-key-file`, `-tls-client-ca-file` and `-tls-require-client-cert=true`. A client certificate proves which client connected, not which tenant it may read, so combine it with a tenant map that only routes the tenants those clients are allowed to see.
 
+### Credentials checked by the proxy
+
+Without a gateway or TLS, `-server.auth-users-file` (Helm `clientAuth.existingSecret`) makes the proxy itself require Basic or bearer credentials; the file format, the routes it covers and the tenant pin are in [Tenancy and authentication](tenancy-and-auth.md#caller-authentication). It is off by default, and with it off the listeners serve exactly as before. What it guarantees:
+
+- **Default deny.** The check sits in front of every listener's router and decides by the route the router itself matches: only `/ready`, `/health`, `/healthz`, `/alive`, `/livez`, `/metrics` and the `/_cache/*` peer routes (`-peer-auth-token`) are open. A route added later is protected unless it is added to the exempt list; a test registers every route of every listener topology and checks each one.
+- **No user enumeration.** Every refusal is `401 unauthorized` with the same text. A Basic credential with an unknown name is compared with the most expensive bcrypt hash in the file, so it costs what a known name costs; bearer tokens are compared as SHA-256 digests in constant time against every token user. If the file mixes bcrypt costs, a wrong password answers faster for a cheaper hash, which tells a caller a known user's cost class (not whether a name exists): the proxy warns at start; hash every password at one cost (12 is a good default; it also warns below 10). bcrypt reads at most 72 bytes, so a longer password is refused.
+- **Bounded bcrypt cost.** Grafana sends the same credential on every request. A verified Basic credential is answered from a cache for `-server.auth-cache-ttl` (`5m`), keyed by HMAC-SHA256 with a random per-process key, so no password and no offline-attackable hash is kept; a refused one is refused from a second cache for at most a minute. Both caches hold at most 4096 entries and are checked before a verification slot is taken: at most `-server.auth-max-concurrent-verifications` (`4`) bcrypt runs happen at once, a request that waits a second for a slot gets `429 too many outstanding requests`, and callers already verified never wait behind a flood of wrong passwords. A reload of the users file clears both caches, so a removed user or rotated password stops working at the next reload.
+- **Fails closed.** A missing, empty or invalid file stops the start. A bad version later keeps the last good users and is reported (log line, `loki_vl_proxy_auth_users_reload_failures_total`).
+- **No secret leaves the check.** The credential is removed before VictoriaLogs unless `-forward-authorization` is set; no log line, metric, error or `/debug/queries` entry carries a password, token or hash (errors about the users file name the entry, never its value).
+- **Network path.** Keep the default chart `networkPolicy` (only pods labelled `app.kubernetes.io/name: grafana` reach port 3100) so the credential is not the only control, for example:
+
+  ```yaml
+  networkPolicy:
+    enabled: true
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: grafana
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: grafana
+        ports:
+          - port: 3100
+            protocol: TCP
+  ```
+
+  Without TLS a credential crosses the cluster network in clear text; use TLS (`-tls-cert-file`, `-tls-key-file`) where the network is not trusted.
+
 ## High-Impact Controls
 
 ### 1) Tenant Isolation
@@ -44,6 +73,9 @@ Setups, defaults and every option: [Tenancy and authentication](tenancy-and-auth
 - numeric tenants are canonical: with numeric passthrough, `X-Scope-OrgID: 7` routes to VictoriaLogs account `7`, while `007`, `00`, `-1` and anything above `4294967295` is refused with `403 unknown tenant` unless the tenant map lists that exact string, because Loki keeps `007` and `7` as different tenants and VictoriaLogs would otherwise merge them (or receive an invalid `AccountID`). Admission and the `AccountID`/`ProjectID` headers the proxy sets come from one resolver, so an admitted org is never served from `0:0` by accident (the cold tier also receives `X-Scope-OrgID` and resolves it itself; mirror tenant-map entries in its own alias table); see [Numeric tenants](tenancy-and-auth.md#numeric-tenants-and-strict-routing)
 - label-routing mode enforces the tenant constraint through VictoriaLogs `extra_stream_filters`, so request parameters and query pipelines cannot override it; the configured tenant field must be a stream field
 - cache and coalescer keys (memory, disk, peer, window, metadata and label-value indexes) include the resolved tenant routing, backend identity and forwarded-identity fingerprint, so entries are never shared across tenants or authorization scopes
+- credentials enter cache keys only as keyed digests: forwarded `Authorization` headers, other `-forward-headers` and `-forward-cookies` values, and `-backend-basic-auth` are digested with HMAC-SHA256 under a key derived (HKDF-SHA256) from `-cache-key-secret`, else from `-peer-auth-token`, else from random bytes per process. A cache key read from the disk cache, a snapshot, a peer or a debug log line cannot be used to test credential guesses without that secret, which is never written to the cache volume. Replicas or restarts with the same secret share credential-scoped entries; with different or no secret they miss (never another caller's answer), and without any secret credential-scoped entries are not reused after a restart or by other replicas (the proxy logs a warning at start). Keys of requests that carry no credential are unchanged. See [Cache key secret](#cache-key-secret)
+- entries computed with a caller's forwarded credentials stay on the replica that computed them: every key built from such a request carries the credential fingerprint, or a mark when the key hashes it, and the peer cache neither pushes those keys, lists them in its hot index, nor prefetches them; `/patterns` requests with forwarded credentials are answered by the replica that receives them instead of being forwarded to the pattern state's owner. A peer still answers a read of the exact key, which only a request with the same credentials and cache key secret can name
+- user information in the `-backend` or cold backend URL (`http://user:password@host`) is still sent to VictoriaLogs, but cache keys and the restart hand-over scope hold the URL without it (cache keys add its keyed digest), and log lines mask it
 
 **Lightweight tenant enforcement**: `-require-tenant-header=true` rejects any request missing an `X-Scope-OrgID` header with HTTP 401. This is a lighter alternative to full auth — it catches misconfigured clients without requiring a token/credential system.
 
@@ -59,7 +91,7 @@ Setups, defaults and every option: [Tenancy and authentication](tenancy-and-auth
 
 By default `/loki/api/v1/delete` is not registered: every method answers `404` with the body `404 page not found`, which is what Loki returns when deletion is disabled (Loki registers the route only with `-compactor.retention-enabled=true`, off by default). No tenant header or other check runs first, as in Loki. With `-delete-api-enabled=true` the route is registered:
 
-- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token`, `-delete-api-auth-token-file` or `DELETE_API_AUTH_TOKEN` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers Loki's `401 no org id` before any other check, so an unauthenticated caller learns nothing about the route; the log line names the missing token. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
+- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (only `X-Delete-Token` with caller authentication on, next to the caller's credential; constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token`, `-delete-api-auth-token-file` or `DELETE_API_AUTH_TOKEN` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers Loki's `401 no org id` before any other check, so an unauthenticated caller learns nothing about the route; the log line names the missing token. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
 - the tenant, as Loki checks it (`401 no org id`, Loki's tenant ID texts, `400 multiple org IDs present` for a multi-tenant header)
 - Loki's checks of the request, with Loki's texts (`query not set`, `invalid query expression`, `start time not set`, the time formats, `start time can't be greater than or equal to end time`, `max_interval`). Loki has no other guard, and neither has the proxy after the token: a token holder can delete every stream of a tenant (`{}`) over any range. Treat the token like a credential that can erase data
 - a create request runs as one VictoriaLogs delete task (`/delete/run_task`) scoped by the tenant's `AccountID`/`ProjectID` and a filter of the time range (both ends included) and the rows the same log query reads; a warning-level audit log line names the tenant, the query, the range, the client and the task id
@@ -219,7 +251,7 @@ The following are disabled by default and should stay restricted:
 - `/debug/pprof/*` (`-server.enable-pprof`)
 - `/admin/cache/flush` and `GET /admin/capabilities` (the VictoriaLogs releases seen and every capability gate; registered with `-server.register-instrumentation=true`, admin-token protected like the flush, and showing no secret, backend address or tenant)
 
-Enable only for controlled troubleshooting windows. Without `-server.admin-auth-token`, admin/debug routes are served only on `-admin-listen` (default `127.0.0.1:3101`), and the proxy refuses to start when these routes are enabled on a non-loopback address without a token. With a token, they move onto the main listener and require `Authorization: Bearer <token>` or `X-Admin-Token`. The chart keeps `admin-listen` on loopback and never publishes it through the Service.
+Enable only for controlled troubleshooting windows. Without `-server.admin-auth-token`, admin/debug routes are served only on `-admin-listen` (default `127.0.0.1:3101`), and the proxy refuses to start when these routes are enabled on a non-loopback address without a token. With a token, they move onto the main listener and require `Authorization: Bearer <token>` or `X-Admin-Token` (only `X-Admin-Token` with caller authentication on, which then also requires the caller's credential, on every listener). The chart keeps `admin-listen` on loopback and never publishes it through the Service.
 
 `/metrics` is not served by default. Set `-server.register-instrumentation=true` to enable it on the main listener, or add `-metrics-listen` for a dedicated port (the chart uses `:9091`). The default export suppresses per-tenant and per-client identity labels. Opt back in with `-metrics.export-sensitive-labels=true` only on trusted scrape paths.
 
@@ -227,7 +259,7 @@ Enable only for controlled troubleshooting windows. Without `-server.admin-auth-
 
 A flag value is part of the process command line. `/proc/<pid>/cmdline` is readable by every user that can see the process (unless `/proc` is mounted with `hidepid`), so it shows up in `ps` on the node, in containers that share the pod's process namespace, and in process listings collected by crash reports or node diagnostics. A `$(VAR)` reference in Kubernetes `args` does not help: the kubelet expands it before the container starts, so the plain value is in the arguments. An environment variable is narrower: `/proc/<pid>/environ` is readable only by a process allowed to trace it (the same user or `CAP_SYS_PTRACE`). A file is readable by whoever can read the file in the container's filesystem.
 
-The five secrets can be given without a flag value:
+The six secrets can be given without a flag value:
 
 | Secret | File flag | Environment variable | Chart value |
 |---|---|---|---|
@@ -236,6 +268,7 @@ The five secrets can be given without a flag value:
 | Delete API token | `-delete-api-auth-token-file` | `DELETE_API_AUTH_TOKEN` | `deleteAuth.existingSecret` |
 | VictoriaLogs basic auth | `-backend-basic-auth-file` | `BACKEND_BASIC_AUTH` | `backendAuth.existingSecret` |
 | Version URL basic auth | `-backend-version-basic-auth-file` | `BACKEND_VERSION_BASIC_AUTH` | `backendVersionAuth.existingSecret` |
+| Cache key secret | `-cache-key-secret-file` | `CACHE_KEY_SECRET` | `cacheKeySecret.existingSecret` |
 
 - The value flag wins, then the file flag, then the environment variable. A value flag and a file flag for the same secret stop startup.
 - A file flag whose file is missing, unreadable, empty or larger than 64 KiB stops startup. Line endings at the end of the file are dropped.
@@ -243,6 +276,25 @@ The five secrets can be given without a flag value:
 - The environment variables are read whenever they are set. `ADMIN_AUTH_TOKEN` in the environment therefore has the effect of `-server.admin-auth-token`: the admin and debug routes move to the main listener behind that token.
 - The Helm chart mounts each Secret key as a read-only file and passes the `-...-file` flag. A proxy image older than the chart does not know these flags and exits, so it never serves without the credential.
 - Values passed through `extraArgs` (including `$(NAME)` references) keep working and stay visible in the command line: move them to the chart values above or to `-...-file` flags.
+
+## Cache Key Secret
+
+Cache keys are stored with the answers: in the disk cache and its restart hand-over, in pattern and label-index snapshots, on peer replicas, in the peers' hot-key index and in debug log lines. When the proxy forwards credentials (`-forward-authorization`, `-forward-headers`, `-forward-cookies`) or authenticates to VictoriaLogs (`-backend-basic-auth`), those keys must keep different credentials apart without letting anyone who holds the keys check a guessed password. The proxy therefore digests credentials with HMAC-SHA256 under a key it derives at start:
+
+| Configured | Key | Credential-scoped entries |
+|---|---|---|
+| `-cache-key-secret` (or `-cache-key-secret-file`, `CACHE_KEY_SECRET`) | derived from that secret | reused by every replica and restart with the same secret |
+| else `-peer-auth-token` | derived from the peer token (never the token itself) | reused across a peer fleet, which shares the token already |
+| neither | random per process | not reused after a restart or by another replica; a fleet on `-peer-insecure-ip-allowlist` stops sharing them between replicas, and with `-backend-basic-auth` that is every entry |
+
+- Set `-cache-key-secret` to the same long random value on every replica that shares a disk cache or peers. A single replica with a persistent disk cache and forwarded or backend credentials needs it to keep those entries across restarts, and so does a fleet without a peer token (`-peer-insecure-ip-allowlist`) to share them.
+- The Helm chart provides one by default: with `cacheKeySecret.existingSecret` unset (and `cacheKeySecret.generate=true`), it keeps a random 64-character value in the Secret `<release>-cache-key`, created on the first install and kept on every upgrade through `lookup`. Every replica of the release mounts it, so a single replica with a persistent cache keeps credential-scoped entries across restarts. `cacheKeySecret.existingSecret` wins; so does a `-cache-key-secret`/`-cache-key-secret-file` set through `extraArgs`.
+- Renderers without cluster access (`helm template`, Argo CD and any tool where `lookup` returns nothing) cannot read the stored value. The chart then renders and mounts no cache key at all, instead of a new random value on every render that would replace the key at each sync. The proxy falls back to the peer token, else a key per process, and logs the per-process case at start. Use `cacheKeySecret.existingSecret` with such renderers.
+- Rotation: deleting `<release>-cache-key` (or pointing `existingSecret` at another value) makes the next install or upgrade use a new key once pods restart. Pods on the new key miss the credential-scoped entries of the old key, which age out; during the rolling restart old and new pods do not share those entries. No answer is served across keys.
+- Changing the secret, or the peer token it is derived from, makes credential-scoped entries miss once; nothing is served across the change.
+- Entries written by a build before keyed digests are never read by a later build: their keys have another form.
+- Requests that carry no credential (no forwarded header or cookie, no backend basic auth) have the same cache keys as before; only the tenant and routing scope is hashed for them, as before.
+- The restart hand-over scope never includes credential flags (`-backend-basic-auth`, `-backend-version-basic-auth`, tokens, secrets) or the user information of a URL value.
 
 ## Log and Error Redaction
 
@@ -253,7 +305,7 @@ The five secrets can be given without a flag value:
 
 ## Recommended Production Baseline
 
-- an authenticating gateway in front of the proxy that sets `X-Scope-OrgID` (see [Caller authentication](#caller-authentication)), or client certificates required at the proxy
+- an authenticating gateway in front of the proxy that sets `X-Scope-OrgID` (see [Caller authentication](#caller-authentication)), client certificates required at the proxy, or credentials checked by the proxy (`-server.auth-users-file`, with tenant pins)
 - explicit tenancy (`-tenant-map` or `-tenant-map-file`, with `-auth.enabled`): the default is one shared tenant
 - keep `-tenant.allow-global=false` unless you intentionally need wildcard backend-default access
 - strict `/tail` origin allowlist

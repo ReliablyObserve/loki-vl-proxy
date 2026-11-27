@@ -14,6 +14,7 @@
 {{- end }}
 {{- include "loki-vl-proxy.validateMetrics" . }}
 {{- include "loki-vl-proxy.validateSecrets" . }}
+{{- include "loki-vl-proxy.validateClientAuth" . }}
 apiVersion: apps/v1
 kind: {{ include "loki-vl-proxy.workloadKind" . }}
 metadata:
@@ -137,6 +138,12 @@ spec:
             {{- range $key, $value := .Values.extraArgs }}
             - {{ printf "-%s=%v" $key $value | quote }}
             {{- end }}
+            {{- /* Caller authentication: the users file is mounted from the
+                   Secret (a path, not a secret, in args). */}}
+            {{- $clientAuth := default (dict) .Values.clientAuth }}
+            {{- if $clientAuth.existingSecret }}
+            - {{ printf "-server.auth-users-file=%s/%s" (trimSuffix "/" (default "/etc/loki-vl-proxy/auth" $clientAuth.mountPath)) (default "users.yaml" $clientAuth.existingSecretKey) | quote }}
+            {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "deployment-environment")) (ne (default "" (get $observability "deploymentEnvironment")) "") }}
             - {{ printf "-deployment-environment=%v" (get $observability "deploymentEnvironment") | quote }}
             {{- end }}
@@ -212,6 +219,9 @@ spec:
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "cache-startup-warm-timeout") }}
             - {{ printf "-cache-startup-warm-timeout=%ds" (int .Values.cacheHandover.startupWarmTimeoutSeconds) | quote }}
+            {{- end }}
+            {{- if and (eq (toString .Values.cacheHandover.peerRestore) "false") (not (hasKey .Values.extraArgs "cache-startup-peer-restore")) }}
+            - "-cache-startup-peer-restore=false"
             {{- end }}
             {{- end }}
             {{- if and (gt (len .Values.patternsCustom.inline) 0) (not (hasKey .Values.extraArgs "patterns-custom")) }}
@@ -373,7 +383,7 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts $hostProcEnabled $customPatternsFileEnabled $secretFiles }}
+          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts $hostProcEnabled $customPatternsFileEnabled $secretFiles $clientAuth.existingSecret }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: cache-data
@@ -396,6 +406,13 @@ spec:
               mountPath: {{ .dir }}
               readOnly: true
             {{- end }}
+            {{- if $clientAuth.existingSecret }}
+            {{- /* The directory, not a subPath: the kubelet then replaces the
+                   file when the Secret changes, and the proxy re-reads it. */}}
+            - name: client-auth-users
+              mountPath: {{ trimSuffix "/" (default "/etc/loki-vl-proxy/auth" $clientAuth.mountPath) | quote }}
+              readOnly: true
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -403,7 +420,7 @@ spec:
         {{- with .Values.extraContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- if or .Values.extraVolumes $hostProcEnabled $customPatternsFileEnabled $secretFiles (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
+      {{- if or .Values.extraVolumes $hostProcEnabled $customPatternsFileEnabled $secretFiles $clientAuth.existingSecret (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
       volumes:
         {{- if and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet")) }}
         - name: cache-data
@@ -433,6 +450,15 @@ spec:
             items:
               - key: {{ .key | quote }}
                 path: {{ .path }}
+        {{- end }}
+        {{- if $clientAuth.existingSecret }}
+        - name: client-auth-users
+          secret:
+            secretName: {{ $clientAuth.existingSecret | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ default "users.yaml" $clientAuth.existingSecretKey | quote }}
+                path: {{ default "users.yaml" $clientAuth.existingSecretKey | quote }}
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}

@@ -55,12 +55,15 @@ const (
 	RestoreSkipDeadline
 	RestoreSkipPurged
 	RestoreSkipClock
+	// RestoreSkipPeerBusy is an entry a serving peer did not send because its
+	// bulk governor paused the stream past its maximum pause.
+	RestoreSkipPeerBusy
 	restoreSkipCount
 )
 
 var restoreSkipNames = [restoreSkipCount]string{
 	"", "expired", "superseded", "too_large", "over_budget", "memory_full",
-	"other_scope", "unreadable", "deadline", "purged", "clock_behind_flush",
+	"other_scope", "unreadable", "deadline", "purged", "clock_behind_flush", "peer_busy",
 }
 
 func (s RestoreSkip) String() string {

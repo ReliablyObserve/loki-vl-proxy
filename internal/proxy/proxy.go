@@ -28,6 +28,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/capability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientauth"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
@@ -447,6 +448,17 @@ type Config struct {
 	// It is called at most once, by the warm-up or the flush (off the start-up
 	// path, as computing it can read the executable); nil or "" restores none.
 	CacheHandoverScope func() string
+	// CacheStartupPeerRestore lets the start-up warm-up pull the entries this
+	// replica owns or replicates from its peers when it has nothing local to
+	// warm from (no hand-over, an empty or no disk tier): within
+	// CacheStartupWarmBytes and CacheStartupWarmTimeout, so only when the
+	// warm-up is on (cache_handover.go). CacheStartupPeerRestoreConcurrency
+	// is the peers streamed from at once (0: the default).
+	CacheStartupPeerRestore            bool
+	CacheStartupPeerRestoreConcurrency int
+	// CacheStartupPeerRestoreMaxBytesPS caps the bytes per second the peer
+	// restore reads from all its streams (0: none).
+	CacheStartupPeerRestoreMaxBytesPS int64
 
 	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
 	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error
@@ -507,6 +519,10 @@ type Config struct {
 	// Peer cache (fleet distribution)
 	PeerCache     *cache.PeerCache // optional peer cache for distributed fleet
 	PeerAuthToken string
+	// CacheKeySecret (-cache-key-secret) keys the digests of credentials in
+	// cache keys (credential_digest.go). Empty: a key derived from
+	// PeerAuthToken, else a random key per process.
+	CacheKeySecret string
 	// PeerInsecureIPAllowlist, when true, falls back to source-IP membership
 	// check on /_cache/* endpoints if no token is provided. Default false:
 	// requests without a valid X-Peer-Token are rejected with 401. Operators
@@ -547,6 +563,11 @@ type Config struct {
 	BackendRetryAttempts    int
 	BackendRetryMaxWait     time.Duration
 	BackendRetryBudgetRatio float64
+
+	// ClientAuth authenticates callers (-server.auth-users-file); nil leaves
+	// the read API open, as without it. WithClientAuth puts it in front of a
+	// listener's mux.
+	ClientAuth *clientauth.Authenticator
 
 	// Metrics/export hardening
 	MetricsMaxTenants            int
@@ -650,8 +671,9 @@ type Config struct {
 	// MetadataInventoryPrefetch (-metadata-inventory-prefetch) reads, in the
 	// background after a /labels listing, the inventory buckets a moved
 	// window of it needs to be answered from memory: the hours of its ends,
-	// the hour before it and the sealed UTC days it only partly covers, at
-	// most the window's own width per listing.
+	// the hour before it (and the hour two before it when the listing found a
+	// bucket it needed still being read) and the sealed UTC days it only
+	// partly covers, at most the window's own width per listing.
 	MetadataInventoryPrefetch bool
 	// DrilldownBurstWindowMs is the time window in milliseconds during which
 	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
@@ -843,6 +865,9 @@ type Proxy struct {
 	forwardHeaders                        []string          // headers to copy from client request to VL
 	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
 	backendHeaders                        map[string]string // static headers on all VL requests
+	backendHeadersInKeys                  map[string]string // backendHeaders with keyed digests for values, for the routing namespace
+	credentialDigest                      *credentialDigest // keys credential digests in cache keys
+	backendKeyText                        string            // urlInKeys(backend): the backend URL as cache keys spell it
 	backendCompression                    string
 	backendLoopback                       bool // true when backend host resolves to a loopback address
 	clientResponseCompression             string
@@ -864,6 +889,8 @@ type Proxy struct {
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	deleteAPIAuthToken                    string
+	clientAuth                            *clientauth.Authenticator // nil: caller authentication off
+	forwardsAuthorization                 bool                      // Authorization is in forwardHeaders
 	tenantMapFileSet                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
@@ -1344,6 +1371,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxLines = DefaultMaxLines
 	}
 
+	credDigest := newCredentialDigest(cfg.CacheKeySecret, cfg.PeerAuthToken)
 	backendHeaders := maps.Clone(cfg.BackendHeaders)
 	if backendHeaders == nil {
 		backendHeaders = make(map[string]string)
@@ -1611,6 +1639,8 @@ func New(cfg Config) (*Proxy, error) {
 		forwardHeaders:                        append([]string(nil), cfg.ForwardHeaders...),
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
+		credentialDigest:                      credDigest,
+		backendHeadersInKeys:                  credDigest.headerValues(backendHeaders),
 		backendCompression:                    normalizeBackendCompression(cfg.BackendCompression),
 		backendLoopback:                       computeBackendLoopback(u),
 		clientResponseCompression:             cfg.ClientResponseCompression,
@@ -1639,6 +1669,8 @@ func New(cfg Config) (*Proxy, error) {
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		deleteAPIAuthToken:                    cfg.DeleteAPIAuthToken,
+		clientAuth:                            cfg.ClientAuth,
+		forwardsAuthorization:                 forwardsAuthorizationHeader(cfg.ForwardHeaders),
 		tenantMapFileSet:                      cfg.TenantMapFile != "",
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
@@ -1759,6 +1791,7 @@ func New(cfg Config) (*Proxy, error) {
 	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
 	p.metrics.SetCacheSignalStatsProvider(p.cacheSignalStats)
 	p.metrics.SetCacheTTLProvider(p.cacheTTLs)
+	p.metrics.SetCacheSizingStatsProvider(p.cacheSizingStats)
 	coalescerStats := func() metrics.CoalescerStats {
 		return metrics.CoalescerStats{
 			Total:     p.coalescer.CoalescedTotal.Load(),
@@ -1969,14 +2002,28 @@ func New(cfg Config) (*Proxy, error) {
 		},
 	}
 
+	p.backendKeyText = p.urlInKeys(p.backend)
 	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
+	if credDigest.source == credentialKeyEphemeral && (len(p.backendHeaders) > 0 || len(p.forwardHeaders) > 0 || len(p.forwardCookies) > 0) {
+		p.log.Warn("cache keys digest credentials under a per-process key: entries scoped by credentials are not reused after a restart or by other replicas; set -cache-key-secret (or -peer-auth-token) to the same value on every replica to keep them")
+	}
 	if p.peerCache != nil {
 		// Entries computed with a user's forwarded credentials stay on the
 		// replica that computed them.
 		p.peerCache.SetPushFilter(peerPushAllowed)
+		// Memory-only answers go to a restoring peer of the same scope only.
+		p.peerCache.SetBulkScope(p.cacheHandover.scope)
 		// Held VictoriaLogs refusals (vl_refusal.go) and service_name route violations (service_name_route.go)
 		// pushed by peers.
 		p.peerCache.HandleEverywhere(p.receiveEverywhere)
+	}
+	if p.clientAuth != nil {
+		p.metrics.EnableAuthMetrics()
+		if p.clientAuth.Users().Pins() > 0 && p.tenantHeaderIgnored(p.routingForContext(context.Background())) && p.log != nil {
+			// The pin is still enforced on the header, but with tenancy off
+			// every request reads the backend default tenant anyway.
+			p.log.Warn("auth users file pins tenants but tenancy is off (Loki's single-tenant mode): every user reads the backend default tenant; turn tenancy on to separate them")
+		}
 	}
 	return p, nil
 }
@@ -2286,7 +2333,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 // deployments (loopback admin / dedicated metrics port) call the more granular
 // RegisterProxyRoutes / RegisterAdminRoutes / RegisterMetricsRoute helpers
 // instead.
-func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterRoutes(mux RouteMux) {
 	p.RegisterProxyRoutes(mux)
 	if p.registerInstrumentation {
 		p.RegisterMetricsRoute(mux)
@@ -2301,7 +2348,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 // RegisterProxyRoutes registers Loki-compatible proxy routes, health endpoints,
 // and the internal peer-cache endpoints. It deliberately omits /metrics,
 // /admin/*, and /debug/* so callers can host those on dedicated listeners.
-func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterProxyRoutes(mux RouteMux) {
 	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
 		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h), p.rejectAdmission))
 	}
@@ -2379,6 +2426,8 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 		mux.Handle("/_cache/hot", peerCacheHandler)
 		mux.Handle("/_cache/has", peerCacheHandler)
 		mux.Handle("/_cache/peers", peerCacheHandler)
+		// Peer bulk restore streams (internal/cache/peer_bulk_serve.go).
+		mux.Handle("/_cache/bulk", peerCacheHandler)
 		// Peer-side cache purge (fanout target of /admin/cache/flush?peers=1).
 		// Same shared-token gate; purges this node's caches only (no re-fanout).
 		mux.Handle("/_cache/purge", securityHeaders(p.peerCacheMiddleware(http.HandlerFunc(p.handlePeerCachePurge))))
@@ -2390,7 +2439,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 // to hit a separate port from proxy traffic.
 //
 // No-op when registerInstrumentation is false on the Proxy config.
-func (p *Proxy) RegisterMetricsRoute(mux *http.ServeMux) {
+func (p *Proxy) RegisterMetricsRoute(mux RouteMux) {
 	if !p.registerInstrumentation {
 		return
 	}
@@ -2403,7 +2452,7 @@ func (p *Proxy) RegisterMetricsRoute(mux *http.ServeMux) {
 // -server.admin-auth-token is configured, so the binary boots safely with
 // admin surfaces only reachable from loopback. Honors registerInstrumentation
 // (cache flush + pprof) and enableQueryAnalytics independently.
-func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
+func (p *Proxy) RegisterAdminRoutes(mux RouteMux) {
 	if p.registerInstrumentation {
 		if p.enablePprof {
 			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
@@ -2838,6 +2887,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
+	// The window evaluator notes the step and bucket grid it reads, for the error log line (read_budget.go).
+	r = r.WithContext(withReadGridNote(r.Context()))
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while

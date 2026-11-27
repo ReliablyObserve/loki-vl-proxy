@@ -13,6 +13,8 @@
 #                description (it runs as a seed-corpus test in `go test`). This list
 #                may only shrink (the script caps it); fix the reason and make the row
 #                `smoke`.
+smoke	internal/clientauth	FuzzParseUsersFile	12s	-	users file of caller authentication
+smoke	internal/clientauth	FuzzParseAuthorization	12s	-	Authorization header parsing of caller authentication
 smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadata normalization
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
@@ -216,6 +218,8 @@ smoke	internal/proxy	FuzzVLNotInMatchesTheNegatedClass	12s	-	probe regexps writt
 smoke	internal/logsql	FuzzWithGroupKeyInEveryStats	12s	-	the presence witness edit adds the key to every stats pipe and changes nothing else
 smoke	internal/proxy	FuzzListedWindowChunks	12s	-	an extraction list's windows read in time chunks under a small budget answer byte for byte what one read answers
 smoke	internal/proxy	FuzzStreamIdentityWindowChunks	12s	-	a stream-identity count, min, max or avg whose whole-range read passes the stats body bound, read in time chunks, answers byte for byte what one read answers
+smoke	internal/proxy	FuzzSlidingWindowChunks	12s	-	a topk or bottomk over a window metric whose grids are read in time chunks under a small row bound answers byte for byte what one read answers
+smoke	internal/logsql	FuzzParserKeepsFields	12s	-	the keep_original_fields edit of a parser pipe reads back with the same pipes and changes nothing else
 smoke	internal/proxy	FuzzDeleteRequest	12s	-	the delete API reads a create request with Loki's typed 400 or a request whose start is before its end
 smoke	internal/clientprofile	FuzzParseVersion	12s	-	a client version reads as major.minor.patch of at most four digits each or as unknown, and prints back to itself
 smoke	internal/clientprofile	FuzzDetect	12s	-	any User-Agent, Source tag and referer give a closed surface and bounded version labels; a Drilldown Source tag is always Drilldown
@@ -227,7 +231,10 @@ smoke	internal/proxy	FuzzCutLokiSplitsMatchesReference	12s	-	the in-place per-sp
 smoke	internal/proxy	FuzzLabelsInventoryCover	12s	-	names-only /labels listing with ends answered by their hours equals one full-range call
 smoke	internal/translate	FuzzServiceNameStreamFilterKeepsEveryDerivedRow	12s	-	the service_name stream filter keeps every row the derived service_name filter keeps where -service-name-stream-label-only holds
 smoke	internal/translate	FuzzServiceNameStreamFilterProofFindsEveryDroppedRow	12s	-	the automatic service_name route's proof finds a row exactly when the stream filter leaves out a row the derived service_name filter keeps, on every layout
+smoke	internal/proxy	FuzzCredentialFingerprintsNeverCollide	12s	-	two requests share an auth fingerprint exactly when tenant scope, forwarded headers and forwarded cookies match, and a credential fingerprint is always the keyed digest
 smoke	internal/cache	FuzzHandoverManifestDecode	12s	-	cache restart hand-over manifest decode
 smoke	internal/cache	FuzzHandoverRecordDecode	12s	-	cache restart hand-over record decode
+smoke	internal/cache	FuzzPeerBulkStream	12s	-	peer bulk restore stream decode and admission
 smoke	internal/metrics	FuzzParseDurationBuckets	12s	-	-metrics.duration-buckets accepts only a bounded, finite, ascending list of bounds above zero
 smoke	internal/cache	FuzzRetentionOperations	12s	-	cache reuse retention segments
+smoke	internal/cache	FuzzSizingGhostLRU	12s	-	cache sizing ghost LRU bounds

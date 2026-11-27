@@ -52,6 +52,31 @@ why: |
   -metadata-inventory-prefetch=false) and must then fail its check, so a gate
   that measures nothing cannot pass.
 
+  Windows asked back to back (the A/B harness asks one build's next window a
+  Loki request and the other build's request later) arrive while the
+  background reads of the listing before are still running. Such a window
+  waits for them at most -metadata-edge-refresh-budget, then reads
+  VictoriaLogs for the pieces it lacks: measured in process with a fake
+  VictoriaLogs (row count 25 ms, listing 100 ms, budget 100 ms, 24h windows
+  moved back 3617 s at 12:26, 23:26 and 18:45), every moved window took
+  127-335 ms with 1-8 request-path calls, against about 2 ms and none with
+  the background reads settled between windows. A listing that finds a
+  bucket it needs still being read now also reads the hour two before its
+  start (the hour the window after next starts in), a request earlier.
+  Windows 2-7, three passes (54 windows): back to back, main made calls on
+  54 (median 228 ms) and the PR on 36 (median 127 ms, 18 under 10 ms); 30 ms
+  apart main on 4 (median 97 ms) and the PR on none (median 66 ms); 60 ms
+  apart neither, main median 66 ms and the PR 6 ms.
+  TestLabelBrowserGates_BackToBackMovedWindows holds it without timing: each
+  background read is held until the next listing has its answer and
+  finishes before the one after; from the third run on a 24h window at
+  12:26, 23:26 and 18:45 makes no request-path call (base: 2 to 9 on every
+  run), and the windows that still read VictoriaLogs are pinned with their
+  reason and calls (the first two runs, a window starting just after an
+  hour, the 1h window, the runs ending in the hour after UTC midnight).
+  Listings asked slower than their background reads (cold, repeated,
+  refreshed, or moved with the reads settled) read the same hours as before.
+
   Timing gates, the perf A/B: this item's perf block locks the warm rows of
   the label browser shapes (explore labels and refresh labels, with and
   without a selector) at Loki's time (max_ratio 1.0), judged by the
@@ -122,7 +147,7 @@ gap:
   area: 'internal/proxy/metadata_inventory.go answerNamesFromMemory; internal/proxy/label_browser_gates_test.go'
   loki: 'Loki 3.7.10 lists the names of the window''s UTC day for stored data, from its index in 1-5 ms on the e2e stack and 2-66 ms in the CI A/B'
   proxy: 'moved windows answered from the label inventory in memory, no request-path VictoriaLogs call, bounded staleness and background prefetch'
-  planned_test: 'TestLabelBrowserGates_MovedWindowNoRequestPathCalls, TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries, TestLabelBrowserGates_BackgroundReadsWithinTheWindow, TestLabelBrowserGates_AnswersBetweenExactAndTheDays, TestLabelBrowserGates_WindowWithoutRowsListsNothing (internal/proxy)'
+  planned_test: 'TestLabelBrowserGates_MovedWindowNoRequestPathCalls, TestLabelBrowserGates_MovedWindowsAtHourAndDayBoundaries, TestLabelBrowserGates_BackToBackMovedWindows, TestLabelBrowserGates_BackgroundReadsWithinTheWindow, TestLabelBrowserGates_AnswersBetweenExactAndTheDays, TestLabelBrowserGates_WindowWithoutRowsListsNothing (internal/proxy)'
   clusters: []
 perf:
   max_ratio: 1.0

@@ -83,7 +83,7 @@ func TestCacheHandover_LogsPlanProgressWarningAndEnd(t *testing.T) {
 	deadline, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	ctx := &stalledCtx{Context: deadline, release: make(chan struct{})}
-	stop := next.p.logResponseCacheWarmProgress(deadline, time.Millisecond)
+	stop := next.p.logResponseCacheWarmProgress(deadline, time.Millisecond, func(s cache.HandoverStats) cache.RestoreProgress { return s.Restore })
 	result := make(chan cache.HandoverWarmReport, 1)
 	go func() {
 		result <- next.c.WarmFromHandover(ctx, cache.HandoverWarmOptions{Scope: next.p.cacheHandover.scope(), MaxBytes: 1 << 19, OnPlan: next.p.logResponseCacheWarmPlan})

@@ -16,6 +16,7 @@ var everySecret = []string{
 	"--set", "backendAuth.existingSecret=backend-sec",
 	"--set", "backendVersionAuth.existingSecret=version-sec",
 	"--set", "backendVersionAuth.existingSecretKey=custom-key",
+	"--set", "cacheKeySecret.existingSecret=cache-key-sec",
 }
 
 // Every secret the chart takes from a Secret is a mounted file named by a
@@ -32,6 +33,7 @@ func TestSecretsAreMountedFiles(t *testing.T) {
 			{"delete-api-auth-token", "secret-delete-auth", "delete-auth", "token", "delete-sec", "token"},
 			{"backend-basic-auth", "secret-backend-auth", "backend-auth", "basic-auth", "backend-sec", "basic-auth"},
 			{"backend-version-basic-auth", "secret-backend-version-auth", "backend-version-auth", "basic-auth", "version-sec", "custom-key"},
+			{"cache-key-secret", "secret-cache-key", "cache-key", "secret", "cache-key-sec", "secret"},
 		} {
 			dir := "/var/run/secrets/loki-vl-proxy/" + s.dir
 			for _, want := range []string{
@@ -48,7 +50,7 @@ func TestSecretsAreMountedFiles(t *testing.T) {
 			}
 		}
 		for _, gone := range []string{
-			"secretKeyRef", "PEER_AUTH_TOKEN", "ADMIN_AUTH_TOKEN", "DELETE_API_AUTH_TOKEN", "BACKEND_BASIC_AUTH", "BACKEND_VERSION_BASIC_AUTH",
+			"secretKeyRef", "PEER_AUTH_TOKEN", "ADMIN_AUTH_TOKEN", "DELETE_API_AUTH_TOKEN", "BACKEND_BASIC_AUTH", "BACKEND_VERSION_BASIC_AUTH", "CACHE_KEY_SECRET",
 		} {
 			if strings.Contains(rendered, gone) {
 				t.Errorf("%s: rendered workload still holds %q", kind, gone)
@@ -120,8 +122,8 @@ func TestSecretMountsNestUnderNoMount(t *testing.T) {
 			}
 		}
 	}
-	if secrets != 5 {
-		t.Fatalf("want 5 secret mounts among %v", paths)
+	if secrets != 6 {
+		t.Fatalf("want 6 secret mounts, got %d among %v", secrets, paths)
 	}
 }
 
@@ -139,6 +141,7 @@ func TestSecretExtraArgs(t *testing.T) {
 		{"delete-api-auth-token", "delete-api-auth-token", []string{"--set", "deleteAuth.existingSecret=s"}},
 		{"backend-basic-auth", "backend-basic-auth", []string{"--set", "backendAuth.existingSecret=s"}},
 		{"backend-version-basic-auth", "backend-version-basic-auth", []string{"--set", "backendVersionAuth.existingSecret=s"}},
+		{"cache-key-secret", "cache-key-secret", []string{"--set", "cacheKeySecret.existingSecret=s"}},
 	} {
 		for _, suffix := range []string{"", "-file"} {
 			set := []string{"--set", "extraArgs." + s.key + suffix + "=user:plain"}

@@ -27,6 +27,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/clientauth"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -205,6 +206,12 @@ type proxyRuntimeConfig struct {
 	cacheStartupWarmBytes               int64
 	cacheStartupWarmTimeout             time.Duration
 	cacheHandoverScope                  func() string
+	cacheStartupPeerRestore             bool
+	cacheStartupPeerRestoreConcurrency  int
+	peerBulkServeMaxStreams             int
+	peerBulkServeMaxBytesPerSecond      int64
+	peerBulkServeMaxPause               time.Duration
+	cacheStartupPeerRestoreMaxBytesPS   int64
 	labelStyle                          string
 	metadataFieldMode                   string
 	translateOTel                       *bool
@@ -232,6 +239,7 @@ type proxyRuntimeConfig struct {
 	peerTimeout                         time.Duration
 	peerReadHedgeMaxDelay               time.Duration
 	peerAuthToken                       string
+	cacheKeySecret                      string
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
 	peerReplicationFactor               int
@@ -317,6 +325,9 @@ type proxyRuntimeConfig struct {
 	metadataEdgeRefreshBudget           time.Duration
 	drilldownScanTimeout                time.Duration
 	peerInsecureIPAllowlist             bool
+	authUsersFile                       string
+	authCacheTTL                        time.Duration
+	authMaxConcurrentVerifications      int
 }
 
 type otlpRuntimeConfig struct {
@@ -399,6 +410,7 @@ type runtimeOptions struct {
 	cacheMaxBytes               int
 	cacheDisabled               bool
 	cacheRetention              cache.RetentionPolicy
+	cacheSizingSignals          bool
 	compatCacheEnabled          bool
 	compatCacheMaxPercent       int
 	diskCfg                     cache.DiskCacheConfig
@@ -543,6 +555,7 @@ func run(
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
 	cacheReuseProtectionPercent := fs.Int("cache-reuse-protection-percent", 0, "Share (percent, 0-90) of the memory caches' entry and byte budgets kept for entries read again since they were stored: under capacity pressure an entry stored but not read again is evicted first, so a one-time flood does not push out reused answers. Never changes a TTL or which answer is served; expiry evictions are unaffected. 0 (default) is plain LRU; 20 is the measured recommendation where capacity evictions of reused entries or one-time floods are seen")
+	cacheSizingSignals := fs.Bool("cache-sizing-signals", false, "Export the cache sizing signals of the primary cache: ghost hits (would twice the memory or disk budget, or twice the TTL, have answered a miss), the working set over 5m/1h/24h, the reuse interval between two lookups of a key, and hit and requested bytes per answer class (byte hit ratio). Costs about 50 ns per lookup (a key hash and two shared counters) and a bounded sample of at most 16384 keys per ghost and window; never changes what is cached or served")
 	cacheDemoteOnEvict := fs.Bool("cache-demote-on-evict", false, "When a capacity eviction removes an entry read at least once from memory, keep its disk copy newest in the disk cache's recency order, or write it to the disk cache with the TTL it has left when the disk holds none (never a longer TTL; never memory-only, patterns or non-owner shadow entries). Needs -disk-cache-path")
 	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead. It also turns off the request-level join: identical read requests in flight then run each on their own (held failures are still answered, see -error-cache-enabled)")
 	errorCacheEnabled := fs.Bool("error-cache-enabled", true, "Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held, except VictoriaLogs' refusal of the query the proxy wrote, which the same release always gives (see -error-cache-vl-refusal-ttl). Identical requests in flight share one run either way (see -coalescer-disabled)")
@@ -570,6 +583,9 @@ func run(
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages")
 	cacheShutdownFlushTimeout := fs.Duration("cache-shutdown-flush-timeout", 0, "Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds")
 	cacheStartupWarmBytes := fs.Int64("cache-startup-warm-bytes", 0, "Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none")
+	cacheStartupPeerRestore := fs.Bool("cache-startup-peer-restore", true, "With nothing local to warm from (no restart hand-over, and a disk cache that held no record at start, for example a new volume, or no disk cache), the start-up warm-up pulls the entries this replica owns or replicates from its peers in one streamed, checksummed transfer per peer before /ready answers 200: within -cache-startup-warm-bytes and -cache-startup-warm-timeout, so only when -cache-startup-warm-bytes is set and a peer cache is configured. Peers of an older build, or that do not answer, are skipped at once. false never restores from peers")
+	cacheStartupPeerRestoreMaxBytesPS := fs.Int64("cache-startup-peer-restore-max-bytes-per-second", 64<<20, "Most bytes per second the start-up peer restore reads from all its streams together (-cache-startup-peer-restore), so it leaves the network of its node to the replicas and other pods beside it. 0 sets no cap")
+	cacheStartupPeerRestoreConcurrency := fs.Int("cache-startup-peer-restore-concurrency", cache.DefaultPeerRestoreConcurrency, "Peers the start-up peer restore streams from at once (-cache-startup-peer-restore). Each stream holds at most one batch (256 entries or about 4 MiB) in memory")
 	cacheStartupWarmTimeout := fs.Duration("cache-startup-warm-timeout", 120*time.Second, "Longest /ready answers 503 (response cache warming) while the start-up warm-up runs: the replica reports ready when the warm-up finishes, or after this timeout, whichever comes first; the warm-up stops at this deadline with the hottest entries restored")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
@@ -653,7 +669,7 @@ func run(
 	backendMinConcurrentMetadataScans := fs.Int("backend-min-concurrent-metadata-scans", proxy.DefaultBackendMinConcurrentMetadataScans, "Floor of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: latency and failure feedback never shrink the limit below it, and below it a replica may start a scan while others' long work uses up to a quarter of VictoriaLogs' select slots. VictoriaLogs' full select slots, memory headroom and a silent /metrics still hold scans back. Must be <= -backend-max-concurrent-metadata-scans; 0 uses the default")
 	backendMetadataScanMemoryHeadroom := fs.Float64("backend-metadata-scan-memory-headroom", proxy.DefaultBackendMetadataScanMemoryHeadroom, "Fraction of the memory available to VictoriaLogs (vm_available_memory_bytes on its /metrics) that long-range metadata scans must leave free: a scan is admitted only while the memory VictoriaLogs has in use, plus the estimated cost of in-flight scans, of the selects it runs for others and of this one, stays below 1 minus this fraction. Costs are learned per endpoint, range and tenant from the memory growth while scans ran; a listing never measured runs alone. 0 disables the memory gate (latency and failure feedback remain)")
 	backendMetadataScanLatencyTolerance := fs.Float64("backend-metadata-scan-latency-tolerance", proxy.DefaultBackendMetadataScanLatencyTolerance, "How many times its no-load duration (per row when the rows are known) a long-range metadata scan that ran beside others may take before the adaptive limit shrinks by 20%. Must be >= 1; 0 uses the default")
-	metadataInventoryPrefetch := fs.Bool("metadata-inventory-prefetch", true, "After a /labels listing, read in the background the label inventory buckets that let a moved window of it be answered from memory (with -metadata-max-staleness above 0): the hour buckets holding the window's start and end and the hour before it, at most the window's own width of hours per listing (a window of 6h or more: up to three hours; 1h: one; under an hour: none). Each read is one row count and one listing, cached and shared by every later listing and peer, run in the background inventory lane (skipped when the metadata-scan limiter is closed). false keeps the memory answers to buckets the requests themselves read.")
+	metadataInventoryPrefetch := fs.Bool("metadata-inventory-prefetch", true, "After a /labels listing, read in the background the label inventory buckets that let a moved window of it be answered from memory (with -metadata-max-staleness above 0): the hour buckets holding the window's start and end and the hour before its start and, when the listing found a bucket it needed still being read by an earlier listing, the hour two before it, at most three and at most the window's own width of hours per listing (a window of 6h or more: up to three hours; 1h: one; under an hour: none). Each read is one row count and one listing, cached and shared by every later listing and peer, run in the background inventory lane (skipped when the metadata-scan limiter is closed). false keeps the memory answers to buckets the requests themselves read.")
 	metadataInventoryParallelism := fs.Int("metadata-inventory-parallelism", proxy.DefaultMetadataInventoryParallelism, "Label names and values (/labels, /label/{name}/values, detected field names) are listed from a time-bucketed inventory: day, hour, 5-minute and minute buckets cached in the read cache (memory, disk and peers) and merged, so a window moved by seconds reads only its edges from VictoriaLogs. This is how many bucket listings one request may have in flight, and how many segment reads an instant /index/volume may have in flight (-max-stats-cache-freshness). 0 turns the inventory and the volume segments off, making every listing and volume one VictoriaLogs call over the whole range")
 	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries, and metadata listings count as long-range for -backend-max-concurrent-metadata-scans. Must be > 0")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
@@ -771,6 +787,10 @@ func run(
 	enableQueryAnalytics := fs.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
 	adminAuthToken := fs.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set. When neither this flag nor -server.admin-auth-token-file is given, read from the ADMIN_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
 	adminAuthTokenFile := fs.String("server.admin-auth-token-file", "", "File holding the -server.admin-auth-token value, read once at startup")
+	authUsersFile := fs.String("server.auth-users-file", "", "Caller authentication: path of a YAML users file (users: [{name, password_hash (bcrypt) or token_sha256 (hex SHA-256 of a bearer token), tenant (optional pin)}]). Set, every route on every listener except /ready, /health, /healthz, /alive, /livez, /metrics and the /_cache/* peer routes (-peer-auth-token) needs Authorization: Basic or Bearer, and a missing or wrong credential gets 401 with WWW-Authenticate (a difference from Loki, which has no caller authentication). A missing, empty or invalid file stops the start; the file is re-read every -server.auth-users-reload-interval and a bad version keeps the last good users. A user with a tenant may only send that X-Scope-OrgID (none sends it for them). The credential is removed before VictoriaLogs unless -forward-authorization is set; admin and delete tokens then go in X-Admin-Token and X-Delete-Token. Empty: no caller authentication")
+	authUsersReloadInterval := fs.Duration("server.auth-users-reload-interval", 30*time.Second, "How often -server.auth-users-file is re-read; a changed file that parses replaces the users (verified credentials are verified again), one that does not keeps the last good users and is reported (log, loki_vl_proxy_auth_users_reload_failures_total). 0 reads it at start only")
+	authCacheTTL := fs.Duration("server.auth-cache-ttl", 5*time.Minute, "How long a verified Basic credential skips bcrypt (keyed by an HMAC with a per-process random key, so no password is kept); a refused one is refused without bcrypt for at most a minute. Grafana sends the same credential on every request, so this keeps bcrypt off the request path. 0 verifies every request with bcrypt")
+	authMaxConcurrentVerifications := fs.Int("server.auth-max-concurrent-verifications", 4, "Most bcrypt password verifications in flight at once, so a flood of wrong passwords costs at most this many cores; cached credentials never wait for a slot. A request that waits a second for a slot gets 429 too many outstanding requests")
 	tailAllowedOrigins := fs.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
 	tailMode := fs.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
 	tailBackendRetryWindow := fs.Duration("tail.backend-retry-window", 30*time.Second, "How long a live tail keeps its websocket open while VictoriaLogs fails for a reason a retry can fix (connection refused or reset, a timeout, a stream that ends or breaks, a 429 or 5xx answer): the proxy reopens the stream, or polls again, with a jittered backoff from 250 ms up to 5 s, and resumes from the last line sent without repeating or skipping one. Past the window, and at once for a failure no retry fixes (a malformed or oversize row, a 4xx VictoriaLogs answer), the tail closes with 1011 and Loki's text. 0 closes on the first failure.")
@@ -829,8 +849,13 @@ func run(
 	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
 	peerReadHedgeMaxDelay := fs.Duration("peer-read-hedge-max-delay", 200*time.Millisecond, "Longest a peer-cache read waits on one replica's response headers before it also asks the key's next replica or, with none left, goes on as a miss (VictoriaLogs or a local compute) while that call finishes in the background, where its -peer-timeout still suspends a paused peer. The delay used is twice the p99 of the measured peer header latencies, at least 5ms and at most this value and half of -peer-timeout. 0 turns hedging off: a read waits up to -peer-timeout on each replica.")
+	peerBulkServeMaxStreams := fs.Int("peer-bulk-serve-max-streams", cache.DefaultPeerBulkServeMaxStreams, "Peer bulk restore streams (a replica that starts with an empty disk pulling its entries, -cache-startup-peer-restore) this replica serves at once; a request beyond them is answered 429 at once and the requester asks again. 0 serves none: restoring peers skip this replica")
+	peerBulkServeMaxBytesPerSecond := fs.Int64("peer-bulk-serve-max-bytes-per-second", cache.DefaultPeerBulkServeMaxBytesPerSecond, "Ceiling of the bytes per second all peer bulk restore streams this replica serves send together (records as stored, compressed when the disk cache compresses). The streams run at a lower priority than every query and peer read: they start at 2 MiB/s, grow while the replica shows no pressure (scheduler latency, CPU, GC, memory, query, peer and disk latency, network) and halve or pause when it does. 0 sets no ceiling")
+	peerBulkServeMaxPause := fs.Duration("peer-bulk-serve-max-pause", cache.DefaultPeerBulkServeMaxPause, "Longest a peer bulk restore stream this replica serves stays paused under severe pressure before it ends (outcome throttled); the restoring replica keeps what it received")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set. When neither this flag nor -peer-auth-token-file is given, read from the PEER_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
 	peerAuthTokenFile := fs.String("peer-auth-token-file", "", "File holding the -peer-auth-token value, read once at startup")
+	cacheKeySecret := fs.String("cache-key-secret", "", "Secret keying the digests of credentials in cache keys (forwarded Authorization headers and cookies, -backend-basic-auth), so cache keys stored on disk, in snapshots or on peers cannot be used to test credential guesses. Set the same value on every replica to share credential-scoped cache entries across replicas and restarts. Empty: a key derived from -peer-auth-token, else a random key per process (credential-scoped entries are then not reused after a restart or by other replicas). When neither this flag nor -cache-key-secret-file is given, read from the CACHE_KEY_SECRET environment variable. A flag value is readable in the process command line")
+	cacheKeySecretFile := fs.String("cache-key-secret-file", "", "File holding the -cache-key-secret value, read once at startup")
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerReplicationFactor := fs.Int("peer-replication-factor", 2, "Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner.")
@@ -852,6 +877,7 @@ func run(
 	// Secrets are resolved here, before any check or component reads them.
 	explicitFlags, err := parseFlagsAndSecrets(fs, args, getenv, []secretFlag{
 		{name: "peer-auth-token", value: peerAuthToken, file: peerAuthTokenFile, env: "PEER_AUTH_TOKEN"},
+		{name: "cache-key-secret", value: cacheKeySecret, file: cacheKeySecretFile, env: "CACHE_KEY_SECRET"},
 		{name: "server.admin-auth-token", value: adminAuthToken, file: adminAuthTokenFile, env: "ADMIN_AUTH_TOKEN"},
 		{name: "delete-api-auth-token", value: deleteAPIAuthToken, file: deleteAPIAuthTokenFile, env: "DELETE_API_AUTH_TOKEN"},
 		{name: "backend-basic-auth", value: backendBasicAuth, file: backendBasicAuthFile, env: "BACKEND_BASIC_AUTH"},
@@ -978,6 +1004,7 @@ func run(
 		cacheMaxBytes:         *cacheMaxBytes,
 		cacheDisabled:         *cacheDisabled,
 		cacheRetention:        cache.RetentionPolicy{ProtectPercent: *cacheReuseProtectionPercent, DemoteOnEvict: *cacheDemoteOnEvict},
+		cacheSizingSignals:    *cacheSizingSignals,
 		compatCacheEnabled:    *compatCacheEnabled && !*cacheDisabled,
 		compatCacheMaxPercent: *compatCacheMaxPercent,
 		diskCfg: cache.DiskCacheConfig{
@@ -1130,6 +1157,12 @@ func run(
 			cacheStartupWarmBytes:               *cacheStartupWarmBytes,
 			cacheStartupWarmTimeout:             *cacheStartupWarmTimeout,
 			cacheHandoverScope:                  lazyCacheHandoverScope(fs, envCfg, *cacheShutdownFlushTimeout, *cacheStartupWarmBytes),
+			cacheStartupPeerRestore:             *cacheStartupPeerRestore,
+			cacheStartupPeerRestoreConcurrency:  *cacheStartupPeerRestoreConcurrency,
+			peerBulkServeMaxStreams:             *peerBulkServeMaxStreams,
+			peerBulkServeMaxBytesPerSecond:      *peerBulkServeMaxBytesPerSecond,
+			peerBulkServeMaxPause:               *peerBulkServeMaxPause,
+			cacheStartupPeerRestoreMaxBytesPS:   *cacheStartupPeerRestoreMaxBytesPS,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			translateOTel:                       envCfg.translateOTel,
@@ -1157,6 +1190,7 @@ func run(
 			peerTimeout:                         *peerTimeout,
 			peerReadHedgeMaxDelay:               *peerReadHedgeMaxDelay,
 			peerAuthToken:                       *peerAuthToken,
+			cacheKeySecret:                      *cacheKeySecret,
 			peerInsecureIPAllowlist:             *peerInsecureIPAllowlist,
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
@@ -1242,6 +1276,9 @@ func run(
 			metadataMaxStaleness:                *metadataMaxStaleness,
 			metadataEdgeRefreshBudget:           *metadataEdgeRefreshBudget,
 			drilldownScanTimeout:                *drilldownScanTimeout,
+			authUsersFile:                       *authUsersFile,
+			authCacheTTL:                        *authCacheTTL,
+			authMaxConcurrentVerifications:      *authMaxConcurrentVerifications,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1292,6 +1329,7 @@ func run(
 	if *tenantMapFile != "" && *tenantMapReloadInterval > 0 {
 		go watchTenantMapFile(ctx, *tenantMapFile, *tenantMapReloadInterval, runtime.proxy, logger)
 	}
+	startClientAuthWatcher(ctx, runtime.proxy, *authUsersFile, *authUsersReloadInterval, logger)
 	go runServerLoopFn(runtime.server, serverLoopOptions{
 		listenAddr:  envCfg.listenAddr,
 		backendURL:  envCfg.backendURL,
@@ -1438,10 +1476,15 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 			return nil, fmt.Errorf("cache retention: %w", err)
 		}
 	}
+	if opts.cacheSizingSignals {
+		// After SetL2, so the disk ghosts take the disk's budgets.
+		cacheLayer.EnableSizingSignals()
+	}
 	if !opts.cacheDisabled {
 		logger.Info("cache retention policy",
 			"reuse_protection_percent", opts.cacheRetention.ProtectPercent,
 			"demote_on_evict", opts.cacheRetention.DemoteOnEvict && opts.diskCfg.Path != "",
+			"sizing_signals", cacheLayer.SizingStats().Enabled,
 		)
 	}
 
@@ -1507,7 +1550,7 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	if rotator != nil {
 		serverOpts.connContext = rotator.ConnContextHook()
 	}
-	serverOpts.handler = wrapHandler(mux, opts.maxBodyBytes, opts.responseCompression, opts.responseCompressionMinBytes, rotator, p.GetMetrics())
+	serverOpts.handler = wrapHandler(p.WithClientAuth(mux), opts.maxBodyBytes, opts.responseCompression, opts.responseCompressionMinBytes, rotator, p.GetMetrics())
 	srv, err := buildHTTPServer(serverOpts)
 	if err != nil {
 		stopOTLP()
@@ -1516,6 +1559,10 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 		return nil, fmt.Errorf("build http server: %w", err)
 	}
 	srv.ConnState = p.GetMetrics().ConnStateHook()
+	// Peer bulk restore streams end when the drain starts instead of holding it.
+	srv.RegisterOnShutdown(p.StopPeerBulkStreams)
+	// Query latency is one of the bulk governor's pressure signals.
+	p.SetPeerBulkLoad(p.GetMetrics().RequestLoad)
 
 	// Build any auxiliary listeners requested by the topology decision above.
 	// Each aux server uses the same hardening timeouts as the main listener
@@ -1541,12 +1588,12 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	if splitAdmin {
 		adminMux := http.NewServeMux()
 		p.RegisterAdminRoutes(adminMux)
-		auxServers = append(auxServers, buildAux(adminAddr, "admin", adminMux))
+		auxServers = append(auxServers, buildAux(adminAddr, "admin", p.WithClientAuth(adminMux)))
 	}
 	if splitMetrics {
 		metricsMux := http.NewServeMux()
 		p.RegisterMetricsRoute(metricsMux)
-		auxServers = append(auxServers, buildAux(metricsAddr, "metrics", metricsMux))
+		auxServers = append(auxServers, buildAux(metricsAddr, "metrics", p.WithClientAuth(metricsMux)))
 	}
 
 	reloadCh, shutdownCh := buildSignalChannels(notify)
@@ -2287,6 +2334,10 @@ func startOTLPMetricsPusher(cfg otlpRuntimeConfig, m *metrics.Metrics, logger *s
 }
 
 func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
+	clientAuth, err := buildClientAuth(cfg.authUsersFile, cfg.authCacheTTL, cfg.authMaxConcurrentVerifications)
+	if err != nil {
+		return proxy.Config{}, err
+	}
 	alertsBackendURL := cfg.alertsBackendURL
 	if alertsBackendURL == "" {
 		alertsBackendURL = cfg.rulerBackendURL
@@ -2399,6 +2450,12 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			ReadAheadMaxObjectBytes:  cfg.peerHotReadAheadMaxObjectBytes,
 			ReadAheadTenantFairShare: cfg.peerHotReadAheadTenantFairShare,
 			ReadAheadErrorBackoff:    cfg.peerHotReadAheadErrorBackoff,
+
+			// Peer bulk restore streams this replica serves: 0 serves none or
+			// sets no rate, a negative value there.
+			BulkServeMaxStreams:        peerPushBufferBound(cfg.peerBulkServeMaxStreams),
+			BulkServeMaxBytesPerSecond: peerPushBufferBound(cfg.peerBulkServeMaxBytesPerSecond),
+			BulkServeMaxPause:          cfg.peerBulkServeMaxPause,
 		})
 	}
 
@@ -2524,6 +2581,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		EnablePprof:                        cfg.enablePprof,
 		EnableQueryAnalytics:               cfg.enableQueryAnalytics,
 		AdminAuthToken:                     cfg.adminAuthToken,
+		ClientAuth:                         clientAuth,
 		TailAllowedOrigins:                 parseCSV(cfg.tailAllowedOrigins),
 		TailMode:                           tailMode,
 		TailBackendRetryWindow:             cfg.tailBackendRetryWindow,
@@ -2546,6 +2604,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		CacheStartupWarmBytes:              cfg.cacheStartupWarmBytes,
 		CacheStartupWarmTimeout:            cfg.cacheStartupWarmTimeout,
 		CacheHandoverScope:                 cfg.cacheHandoverScope,
+		CacheStartupPeerRestore:            cfg.cacheStartupPeerRestore,
+		CacheStartupPeerRestoreConcurrency: cfg.cacheStartupPeerRestoreConcurrency,
+		CacheStartupPeerRestoreMaxBytesPS:  cfg.cacheStartupPeerRestoreMaxBytesPS,
 		DisableLabelsCacheWarm:             !cfg.labelsCacheWarm,
 		LogQLDottedNames:                   cfg.logqlDottedNames,
 		LabelBrowseExtensions:              cfg.labelBrowseExtensions,
@@ -2569,6 +2630,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		PatternsPeerWarmTimeout:            cfg.patternsPeerWarmTimeout,
 		PeerCache:                          peerCache,
 		PeerAuthToken:                      cfg.peerAuthToken,
+		CacheKeySecret:                     cfg.cacheKeySecret,
 		PeerInsecureIPAllowlist:            cfg.peerInsecureIPAllowlist,
 		ColdBackend: proxy.ColdBackendConfig{
 			URL:             cfg.coldBackendURL,
@@ -2694,6 +2756,9 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 	}
 	if cfg.peerReadHedgeMaxDelay < 0 {
 		return fmt.Errorf("invalid -peer-read-hedge-max-delay=%s (must be >= 0; 0 turns hedged peer reads off)", cfg.peerReadHedgeMaxDelay)
+	}
+	if cfg.cacheStartupPeerRestoreConcurrency < 0 || cfg.peerBulkServeMaxStreams < 0 || cfg.peerBulkServeMaxBytesPerSecond < 0 || cfg.peerBulkServeMaxPause < 0 || cfg.cacheStartupPeerRestoreMaxBytesPS < 0 {
+		return fmt.Errorf("invalid -cache-startup-peer-restore-concurrency=%d / -peer-bulk-serve-max-streams=%d / -peer-bulk-serve-max-bytes-per-second=%d (must be >= 0)", cfg.cacheStartupPeerRestoreConcurrency, cfg.peerBulkServeMaxStreams, cfg.peerBulkServeMaxBytesPerSecond)
 	}
 	if cfg.peerPushBufferMaxEntries < 0 || cfg.peerPushBufferMaxBytes < 0 {
 		return fmt.Errorf("invalid -peer-push-buffer-max-entries=%d / -peer-push-buffer-max-bytes=%d (must be >= 0; 0 turns the peer push buffer off)", cfg.peerPushBufferMaxEntries, cfg.peerPushBufferMaxBytes)
@@ -3065,5 +3130,63 @@ func logTenantRouting(logger *slog.Logger, cfg proxy.Config) {
 	default:
 		logger.Info("tenant routing", "mode", "default", "numeric_passthrough", true,
 			"detail", "a canonical decimal org (7, not 007) routes to the VictoriaLogs account of that number; non-canonical numbers are refused with 403 unless listed in the tenant map")
+	}
+}
+
+// buildClientAuth loads -server.auth-users-file; nil when it is not set. A
+// file that is missing, empty or invalid stops the start: with authentication
+// asked for, the proxy never opens without it.
+func buildClientAuth(path string, cacheTTL time.Duration, maxVerifications int) (*clientauth.Authenticator, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	if maxVerifications <= 0 {
+		return nil, fmt.Errorf("-server.auth-max-concurrent-verifications must be at least 1, got %d", maxVerifications)
+	}
+	if cacheTTL < 0 {
+		return nil, fmt.Errorf("-server.auth-cache-ttl must not be negative, got %s", cacheTTL)
+	}
+	users, err := clientauth.LoadFile(path, proxy.ValidateTenantPin)
+	if err != nil {
+		return nil, fmt.Errorf("-server.auth-users-file: %w", err)
+	}
+	return clientauth.New(users, clientauth.Options{
+		MaxConcurrentVerifications: maxVerifications,
+		CacheTTL:                   cacheTTL,
+		VerifyWait:                 clientauth.DefaultVerifyWait,
+	})
+}
+
+// startClientAuthWatcher reports the users caller authentication starts with
+// and re-reads the users file every interval until ctx is done.
+func startClientAuthWatcher(ctx context.Context, p *proxy.Proxy, path string, interval time.Duration, logger *slog.Logger) {
+	a := p.ClientAuth()
+	if a == nil {
+		return
+	}
+	logClientAuthUsers(logger, "caller authentication on", path, a.Users())
+	if interval <= 0 {
+		return
+	}
+	w := clientauth.NewWatcher(a, path, proxy.ValidateTenantPin, func(res clientauth.ReloadResult) {
+		if res.Err != nil {
+			p.GetMetrics().RecordAuthReloadFailure()
+			logger.Error("auth users file reload failed; keeping the last good users", "path", path, "error", res.Err, "users", res.Users.Len())
+			return
+		}
+		logClientAuthUsers(logger, "auth users file reloaded", path, res.Users)
+	})
+	go w.Run(ctx, interval)
+}
+
+// logClientAuthUsers says what the users file holds: counts only, never a
+// name, hash or token.
+func logClientAuthUsers(logger *slog.Logger, msg, path string, u *clientauth.Users) {
+	logger.Info(msg, "path", path, "users", u.Len(), "basic", u.HasBasic(), "bearer", u.HasBearer(), "tenant_pins", u.Pins())
+	if u.MixedCosts() {
+		logger.Warn("auth users file mixes bcrypt costs: a wrong password answers faster for a cheaper hash, which tells a caller the cost class of a known user; hash every password at one cost", "path", path)
+	}
+	if c := u.LowestCost(); c > 0 && c < 10 {
+		logger.Warn("auth users file holds bcrypt hashes below cost 10, cheap to brute-force if the file leaks; rehash them, for example with htpasswd -nbBC 12", "path", path, "lowest_cost", c)
 	}
 }

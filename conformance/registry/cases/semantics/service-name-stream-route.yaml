@@ -7,7 +7,8 @@ proves:
 consumer: drilldown
 why: |
   `{service_name="x"}` is the derived service_name filter, which VictoriaLogs evaluates on every stream of the
-  window (issue #1763). With -service-name-stream-route (default off until its VictoriaLogs load is measured) each log read of such a query of at least
+  window (issue #1763). With -service-name-stream-route (off by default, opt in: under concurrent load it cost throughput, latency and
+  VictoriaLogs CPU) each log read of such a query of at least
   -service-name-stream-route-min-window is sent with the stream filter
   `{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` in extra_filters
   and, at the same time, a proof read over the same window and tenant: the rows that filter leaves out and the
@@ -31,7 +32,7 @@ request:
     - -service-name-stream-route
   verify:
     blocked_by: proxy_only
-    reason: "no proxy of the e2e stack runs with -service-name-stream-route (off by default); the proof is the proxy with and without the route over VictoriaLogs v1.49.0 and v1.54.0 (TestServiceNameRouteAnswersOnVictoriaLogs), the proxy tests with a fake VictoriaLogs, and an isolated A/B stack run against Loki"
+    reason: "no proxy of the e2e-compat stack runs with -service-name-stream-route (off by default; the e2e-fleet replicas and the in-process e2e proxies do); the proof is the proxy with and without the route over VictoriaLogs v1.49.0 and v1.54.0 (TestServiceNameRouteAnswersOnVictoriaLogs), the proxy tests with a fake VictoriaLogs, and an isolated A/B stack run against Loki"
 compare:
   mode: exact
   fields: [status, data]

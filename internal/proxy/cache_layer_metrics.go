@@ -85,6 +85,18 @@ func (p *Proxy) cacheSignalStats() []metrics.CacheComponentSignals {
 	return out
 }
 
+// cacheSizingStats returns the sizing signals of the caches that have them on
+// (the primary cache with -cache-sizing-signals); atomics only, no cache lock.
+func (p *Proxy) cacheSizingStats() []cache.SizingSnapshot {
+	var out []cache.SizingSnapshot
+	p.distinctCacheStores(func(_ string, store *cache.Cache, _ bool) {
+		if s := store.SizingStats(); s.Enabled {
+			out = append(out, s)
+		}
+	})
+	return out
+}
+
 // compatAnswerTTL is the Loki answer cache's TTL for an endpoint. query_range
 // and query use a fixed 5 minutes so the entry outlives the bucket used to
 // generate the key (max(5min, step)) while keeping staleness imperceptible: on

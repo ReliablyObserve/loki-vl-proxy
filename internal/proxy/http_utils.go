@@ -25,7 +25,6 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/klauspost/compress/zstd"
@@ -589,7 +588,7 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 	}
 	// slog.Attr values carry no interface boxing, and the buffer holds every field
 	// the line can carry: the line costs no allocation of its own.
-	var buf [13]slog.Attr
+	var buf [18]slog.Attr
 	attrs := append(buf[:0], slog.Int("code", status), slog.String("error", text))
 	cause := err
 	if typed != nil {
@@ -624,6 +623,8 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 			attrs = append(attrs, slog.String("endpoint", meta.endpoint), slog.String("route", meta.route))
 		}
 	}
+	// The step and bucket grid of a range metric read: which step sized a read that passed its bound.
+	attrs = readGridAttrs(ctx, attrs)
 	p.log.LogAttrs(context.Background(), level, "request error", attrs...)
 }
 
@@ -1620,7 +1621,7 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		}
 	}
 	if origReq, ok := vlReq.Context().Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		clientID, clientSource := metrics.ResolveClientContext(origReq, p.metricsTrustProxyHeaders)
+		clientID, clientSource := p.resolveClient(origReq)
 		vlReq.Header[hdrVLClientID] = []string{clientID}
 		vlReq.Header[hdrVLClientSource] = []string{clientSource}
 		gp := grafanaClientProfileFromContext(origReq.Context())
@@ -1640,7 +1641,7 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		// reaches VictoriaLogs only when the operator trusts and forwards
 		// client identity (-metrics.trust-proxy-headers), never by default.
 		if p.metricsTrustProxyHeaders {
-			if authUser, authSource := metrics.ResolveAuthContext(origReq); authUser != "" {
+			if authUser, authSource := p.resolveAuth(origReq); authUser != "" {
 				vlReq.Header[hdrVLAuthUser] = []string{authUser}
 				vlReq.Header[hdrVLAuthSource] = []string{authSource}
 			}
@@ -1673,12 +1674,16 @@ func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
 	if len(identity) == 0 && len(cookies) == 0 {
 		return scope
 	}
+	if len(cookies) > 0 || p.forwardsCredentialHeader(r) {
+		// Credentials enter cache keys only through a keyed digest: a stored
+		// key cannot test guesses of them (credential_digest.go).
+		return p.credentialDigester().fingerprint(scope, identity, cookies)
+	}
+	// Trusted proxy identity alone (user names, client addresses) is no
+	// credential: the same SHA-256 on every replica, so peers share it.
 	// JSON encoding is unambiguous even when header values contain delimiters.
 	data, _ := json.Marshal([]any{scope, identity, cookies})
 	sum := sha256.Sum256(data)
-	if len(cookies) > 0 || p.forwardsCredentialHeader(r) {
-		return identityFingerprintPrefix + hex.EncodeToString(sum[:])
-	}
 	return hex.EncodeToString(sum[:])
 }
 
@@ -1697,16 +1702,33 @@ func (p *Proxy) forwardsCredentialHeader(r *http.Request) bool {
 // identityFingerprintPrefix starts the auth fingerprint of a request that
 // forwards a user's credentials or identity to VictoriaLogs (a
 // -forward-headers header or a -forward-cookies cookie). Cache keys carry
-// the fingerprint as ":auth:<fingerprint>", so entries computed with a
-// user's credentials are recognisable and never pushed to peer replicas
-// (peerPushAllowed): they stay on the replica that computed them.
+// the fingerprint in their text (":auth:", ":scope:" and other spellings),
+// or credentialScopeMark when they hash it, so entries computed with a user's
+// credentials are recognisable and never pushed to peer replicas
+// (peerPushAllowed) nor listed in the peers' hot index. A replica holding one
+// still answers a peer's read of that exact key (same credentials, same
+// digest key). After the prefix comes credentialDigestVersion and the keyed
+// digest (credential_digest.go).
 const identityFingerprintPrefix = "fwdid."
 
 // peerPushAllowed reports whether a cache entry may be pushed to the key's
-// peer replicas: not when it was computed with a user's forwarded
-// credentials or identity.
+// peer replicas or offered to them: not when it was computed with a user's
+// forwarded credentials or identity, whatever spelling its key carries the
+// fingerprint in. '.' and 'w' are no hex digits, so no digest in a key can
+// hold the prefix; a key whose own text holds it (a query mentioning it)
+// only stays local.
 func peerPushAllowed(key string) bool {
-	return !strings.Contains(key, ":auth:"+identityFingerprintPrefix)
+	return !strings.Contains(key, identityFingerprintPrefix)
+}
+
+// credentialScopeMark is what a key that hashes a fingerprint appends to stay
+// recognisable as credential-scoped: the digest hides the prefix. Empty for
+// any other fingerprint, so those keys are unchanged.
+func credentialScopeMark(fingerprint string) string {
+	if strings.HasPrefix(fingerprint, identityFingerprintPrefix) {
+		return ":" + identityFingerprintPrefix + "local"
+	}
+	return ""
 }
 
 // injectAuthFingerprint precomputes the forwardedAuthFingerprint for r and

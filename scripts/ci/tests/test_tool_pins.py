@@ -98,7 +98,8 @@ class ToolPinTests(unittest.TestCase):
                 self.assertIn("--hash=sha256:", block, f"{name}: {block.splitlines()[0]}")
 
     def test_semgrep_lock_keeps_the_fixed_overrides(self):
-        # semgrep pins mcp and OpenTelemetry to releases with open advisories.
+        # semgrep pins mcp, OpenTelemetry and wcmatch to releases with open
+        # advisories.
         # A Dependabot semgrep bump recompiles with pip-compile, which has no
         # overrides, and would bring them back.
         text = (REPO / "security" / "requirements-semgrep.txt").read_text()
@@ -110,6 +111,7 @@ class ToolPinTests(unittest.TestCase):
 
         self.assertGreaterEqual(version("mcp"), (1, 30, 0))
         self.assertGreaterEqual(version("opentelemetry-api"), (1, 45, 2))
+        self.assertGreaterEqual(version("wcmatch"), (11, 2))
         self.assertIn("--override requirements-semgrep.overrides", text.split("\n", 2)[1])
         workflow = (REPO / ".github" / "workflows" / "security-heavy.yaml").read_text()
         self.assertIn("pip install --no-deps --require-hashes -r security/requirements-semgrep.txt", workflow)

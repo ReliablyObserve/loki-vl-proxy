@@ -45,10 +45,16 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `adminAuth.existingSecretKey` | `token` | Key within `adminAuth.existingSecret` |
 | `deleteAuth.existingSecret` | `""` | Existing Secret holding the delete API's token, required by `extraArgs.delete-api-enabled: "true"` (rendering fails without it or `extraArgs.delete-api-auth-token`). The chart mounts the key as a file and renders `-delete-api-auth-token-file`. Every delete request must carry the token in `X-Delete-Token` or `Authorization: Bearer`. It is separate from the admin token: enabling deletes leaves the admin listener on loopback. Setting it together with `extraArgs.delete-api-auth-token` fails rendering |
 | `deleteAuth.existingSecretKey` | `token` | Key within `deleteAuth.existingSecret` |
+| `clientAuth.existingSecret` | `""` | Caller authentication, off when empty: an existing Secret holding the users file. The chart mounts the Secret's directory read-only at `clientAuth.mountPath` (no `subPath`, so a changed Secret reaches the pod and the proxy re-reads it) and sets `-server.auth-users-file`. Every route except the probes, `/metrics` and the peer routes then needs Basic or bearer credentials. Setting it together with `extraArgs."server.auth-users-file"` fails rendering |
+| `clientAuth.existingSecretKey` | `users.yaml` | Key within `clientAuth.existingSecret` that holds the users file |
+| `clientAuth.mountPath` | `/etc/loki-vl-proxy/auth` | Directory the users file is mounted in |
 | `backendAuth.existingSecret` | `""` | Existing Secret holding the VictoriaLogs basic-auth credentials as one `user:password` value. The chart mounts the key as a file and renders `-backend-basic-auth-file`. Setting it together with `extraArgs.backend-basic-auth` fails rendering |
 | `backendAuth.existingSecretKey` | `basic-auth` | Key within `backendAuth.existingSecret` |
 | `backendVersionAuth.existingSecret` | `""` | Existing Secret holding the `user:password` of `extraArgs.backend-version-url`. The chart mounts the key as a file and renders `-backend-version-basic-auth-file`. Setting it together with `extraArgs.backend-version-basic-auth` fails rendering |
 | `backendVersionAuth.existingSecretKey` | `basic-auth` | Key within `backendVersionAuth.existingSecret` |
+| `cacheKeySecret.existingSecret` | `""` | Existing Secret holding the key for credential digests in cache keys (forwarded `Authorization` headers and cookies, `backendAuth`). The chart mounts the key as a file and renders `-cache-key-secret-file`. Unset, the chart keeps a generated key (`cacheKeySecret.generate`). Setting it together with `extraArgs.cache-key-secret` fails rendering |
+| `cacheKeySecret.existingSecretKey` | `secret` | Key within `cacheKeySecret.existingSecret` |
+| `cacheKeySecret.generate` | `true` | With `existingSecret` unset, keep a random 64-character key in `<release>-cache-key`: created on the first install, kept on upgrades (`lookup`), so restarts keep credential-scoped cache entries. A render without cluster access (`helm template`, Argo CD) renders and mounts no key rather than a new one per render; use `existingSecret` there. Deleting the Secret rotates the key (credential-scoped entries miss once). `false`: the proxy derives the key from the peer token, else per process |
 | `observability.otlp.existingSecret` | `""` | Existing Secret holding the OTLP exporter headers (`key=value[,key=value]`, usually an `Authorization` value), exposed to the proxy as `OTLP_HEADERS` from a `secretKeyRef`. Setting it together with `observability.otlp.headers` or `extraArgs.otlp-headers` fails rendering |
 | `observability.otlp.existingSecretKey` | `headers` | Key within `observability.otlp.existingSecret` |
 | `serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitor |
@@ -75,6 +81,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `cacheHandover.shutdownFlushTimeoutSeconds` | `60` | `-cache-shutdown-flush-timeout` |
 | `cacheHandover.startupWarmBytes` | `134217728` | `-cache-startup-warm-bytes`, integer bytes (at most half of `-cache-max-bytes` is warmed) |
 | `cacheHandover.startupWarmTimeoutSeconds` | `120` | `-cache-startup-warm-timeout`: the pod is ready when the warm-up finishes, or partly warm after this long |
+| `cacheHandover.peerRestore` | `true` | A pod with nothing local to warm from (a new volume, an `emptyDir` disk) pulls the entries it owns or replicates from its peers instead, within the same bytes and timeout (needs `peerCache`); `false` renders `-cache-startup-peer-restore=false`. See [Restore from peers](../../docs/disk-cache.md#restore-from-peers) |
 | `cacheHandover.preStopSleepSeconds` | `5` | preStop sleep (native `sleep` action, rendered on Kubernetes 1.30+ only) before SIGTERM; `0` adds none |
 | `cacheHandover.minReadySeconds` | `15` | Workload `minReadySeconds` with the hand-over on; `0` renders none |
 | `systemMetrics.hostProc.enabled` | `false` | Mount five host `/proc` files (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) read-only as `hostPath` volumes and pass `-host-proc-root`, for host-level CPU, memory and PSI metrics. Off by default so the pod passes Pod Security `restricted`; see [Host system metrics](#host-system-metrics-opt-in) |
@@ -250,7 +257,7 @@ observability:
     existingSecret: loki-vl-proxy-otlp     # key "headers", value "Authorization=Bearer ..."
 ```
 
-For `adminAuth`, `deleteAuth`, `backendAuth`, `backendVersionAuth` and the peer token, the chart mounts the Secret key as a read-only file under `/var/run/secrets/loki-vl-proxy/` and passes the proxy its path with the matching `-...-file` flag, so the value is in no process argument or environment variable. The proxy reads the file once at startup: restart the pods after rotating a Secret. `OTLP_HEADERS` stays a `secretKeyRef` environment variable, read by the proxy when `-otlp-headers` is unset. Setting the plain value (or the `-file` flag) in `extraArgs` and `existingSecret` for the same item fails rendering.
+For `adminAuth`, `deleteAuth`, `backendAuth`, `backendVersionAuth`, `cacheKeySecret` and the peer token, the chart mounts the Secret key as a read-only file under `/var/run/secrets/loki-vl-proxy/` and passes the proxy its path with the matching `-...-file` flag, so the value is in no process argument or environment variable. The proxy reads the file once at startup: restart the pods after rotating a Secret. `OTLP_HEADERS` stays a `secretKeyRef` environment variable, read by the proxy when `-otlp-headers` is unset. Setting the plain value (or the `-file` flag) in `extraArgs` and `existingSecret` for the same item fails rendering.
 
 **Image version:** the `-...-file` flags need an image of the same release as the chart or newer. An older proxy exits with `flag provided but not defined` instead of starting without the credential, so a pinned older `image.tag` with any of these secrets does not roll out: keep chart and image together, or stay on the older chart.
 
@@ -259,6 +266,33 @@ Other sensitive inputs need no extra chart value:
 - **TLS** — `tls-cert-file`, `tls-key-file` and `tls-client-ca-file` are file paths, so no key material is in the pod spec. Mount a TLS Secret with `extraVolumes` and `extraVolumeMounts` and point the flags at it.
 - **Other flags** (for example a backend URL with credentials): put the value in a Secret, expose it with `extraEnv` (`valueFrom.secretKeyRef`) and reference it as `$(NAME)` in the `extraArgs` value. This keeps it out of the pod spec but not out of the process command line.
 - The proxy has no tenant credentials, OAuth or OIDC settings: `tenant-map` holds account and project IDs, not secrets.
+
+### Caller authentication
+
+To make the proxy check a credential on every Grafana request (no TLS needed between Grafana and the proxy), put a users file in a Secret and reference it:
+
+```bash
+htpasswd -nbBC 12 grafana '<password>' | cut -d: -f2    # bcrypt hash for password_hash
+printf %s '<token>' | sha256sum | cut -d' ' -f1         # digest for token_sha256
+kubectl create secret generic loki-vl-proxy-users --from-file=users.yaml
+```
+
+```yaml
+# users.yaml
+users:
+  - name: grafana
+    password_hash: "$2y$12$..."
+    tenant: team-a            # optional: the only X-Scope-OrgID this user may send
+  - name: ci
+    token_sha256: "<64 hex>"
+```
+
+```yaml
+clientAuth:
+  existingSecret: loki-vl-proxy-users
+```
+
+Then turn on Basic authentication in the Grafana Loki data source. The liveness, readiness and startup probes (`/alive`, `/ready`, `/health`), `/metrics` and the peer cache routes stay open; every other route answers `401` with `WWW-Authenticate` without a valid credential. With it on, the admin and delete tokens go in `X-Admin-Token` and `X-Delete-Token`. Keep `networkPolicy.enabled` (the default admits only Grafana pods on port 3100). See [Tenancy and authentication](../../docs/tenancy-and-auth.md#caller-authentication).
 
 ## Cold Storage (Victoria Lakehouse)
 

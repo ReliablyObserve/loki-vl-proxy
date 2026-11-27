@@ -422,6 +422,11 @@ cluster, so check at least:
   and recursion depth, fan-out, cache growth. Fuzz new parsers and decoders.
 - Tenant isolation: cache and plan keys carry the tenant scope; no answer is
   reused across tenants or served to a peer for another tenant.
+- Credentials in keys: a credential (forwarded header or cookie, backend
+  basic auth) reaches a cache key, snapshot or log line only through the keyed
+  digest in `internal/proxy/credential_digest.go`, never as a plain hash. A
+  key that hashes the fingerprint appends `credentialScopeMark`, so the peer
+  cache keeps the entry on its replica (`peerPushAllowed`).
 - Query injection: LogsQL is built from typed nodes or properly quoted values,
   never by splicing client text; client text never becomes proxy-internal
   syntax.
@@ -429,6 +434,14 @@ cluster, so check at least:
   messages, URLs or internal details.
 - Logs and telemetry: no credentials or tokens, bounded label cardinality.
 - Admin and peer routes keep their authentication.
+- Caller authentication (`-server.auth-users-file`) covers every route by
+  default: a new route is protected unless it is added to
+  `clientAuthExemptPatterns` (internal/proxy/client_auth.go), which holds only
+  probes, `/metrics` and routes with their own credential. A new listener puts
+  `WithClientAuth` in front of its mux. Never read `Authorization` for another
+  token while caller authentication is on (it is the caller's);
+  `TestClientAuth_EveryRegisteredRouteIsProtectedOrExempt` checks every
+  registered pattern.
 - Concurrency: no data races or goroutine leaks; work stops when its last
   waiter cancels.
 - Dependencies: no new module without review; versions and checksums pinned.

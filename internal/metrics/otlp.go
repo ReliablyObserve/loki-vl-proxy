@@ -1061,6 +1061,15 @@ func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	if len(rotationPoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_http_connection_rotations_total", "Downstream HTTP/1.x connection rotations triggered by the proxy.", "", rotationPoints...))
 	}
+	if p.metrics.authEnabled.Load() {
+		authPoints := make([]map[string]interface{}, 0, len(AuthFailureReasons))
+		for i, reason := range AuthFailureReasons {
+			authPoints = append(authPoints, p.counterDP("loki_vl_proxy_auth_failures_total", p.metrics.authFailures[i].Load(), now, attr("reason", reason)))
+		}
+		metrics = append(metrics,
+			p.sumMetric("loki_vl_proxy_auth_failures_total", "Requests refused by caller authentication (-server.auth-users-file), by reason.", "", authPoints...),
+			p.sumMetric("loki_vl_proxy_auth_users_reload_failures_total", "Users file reloads that failed and kept the last good users.", "", p.counterDP("loki_vl_proxy_auth_users_reload_failures_total", p.metrics.authReloadFailures.Load(), now)))
+	}
 	durationKeys := sortedKeys(mapsFromHists(p.metrics.clientDurations))
 	durationPoints := make([]map[string]interface{}, 0, len(durationKeys))
 	for _, key := range durationKeys {
@@ -1237,17 +1246,30 @@ func mapsFromHists(m map[string]*histogram) map[string]*histogram          { ret
 
 // cacheRestoreMetrics mirrors writeCacheRestoreProgress.
 func (p *OTLPPusher) cacheRestoreMetrics(h cache.HandoverStats, now int64) []map[string]interface{} {
-	source := attr("source", restoreSourceOfDisk)
+	sources := restoreSources(h)
+	var per [2][]restoreMetric
+	for s, rp := range sources {
+		per[s] = restoreMetrics(h, rp)
+	}
 	var out []map[string]interface{}
-	for _, m := range restoreMetrics(h) {
-		out = append(out, p.gaugeMetric(m.name, m.help, m.unit, p.gaugeDP(m.name, m.value, now, source)))
+	for i, m := range per[0] {
+		var points []map[string]interface{}
+		for s, rp := range sources {
+			if i < len(per[s]) {
+				points = append(points, p.gaugeDP(m.name, per[s][i].value, now, attr("source", string(rp.Source))))
+			}
+		}
+		out = append(out, p.gaugeMetric(m.name, m.help, m.unit, points...))
 	}
 	var skipped, outcomes []map[string]interface{}
-	for _, reason := range cache.RestoreSkipReasons() {
-		skipped = append(skipped, p.gaugeDP(restoreSkippedName, float64(h.Restore.Skipped[reason]), now, source, attr("reason", reason.String())))
-	}
-	for _, outcome := range cache.RestoreOutcomes() {
-		outcomes = append(outcomes, p.gaugeDP(restoreOutcomeName, float64(boolGauge(h.Restore.Outcome == outcome)), now, source, attr("outcome", outcome)))
+	for _, rp := range sources {
+		source := attr("source", string(rp.Source))
+		for _, reason := range cache.RestoreSkipReasons() {
+			skipped = append(skipped, p.gaugeDP(restoreSkippedName, float64(rp.Skipped[reason]), now, source, attr("reason", reason.String())))
+		}
+		for _, outcome := range cache.RestoreOutcomes() {
+			outcomes = append(outcomes, p.gaugeDP(restoreOutcomeName, float64(boolGauge(rp.Outcome == outcome)), now, source, attr("outcome", outcome)))
+		}
 	}
 	return append(out,
 		p.gaugeMetric(restoreSkippedName, restoreSkippedHelp, "", skipped...),

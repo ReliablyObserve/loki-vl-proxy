@@ -466,7 +466,7 @@ func (p *Proxy) patternStateTenantKey(r *http.Request) string {
 	identity, _ := json.Marshal([]any{
 		p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID")),
 		p.fingerprintFromCtx(r.Context(), r),
-		p.backend.String(), p.detectedLevelCacheKey(), p.defaultMsgValue(), p.patternGateKey(),
+		p.backendInKeys(), p.detectedLevelCacheKey(), p.defaultMsgValue(), p.patternGateKey(),
 	})
 	return string(identity)
 }

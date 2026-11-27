@@ -138,6 +138,12 @@ type Metrics struct {
 	clientInflight     map[string]*atomic.Int64 // "client" → in-flight requests
 	clientQueryLengths map[string]*histogram    // "client<sep>endpoint<sep>route" → query length histogram
 
+	// loadRequests and loadNanos count the client requests completed and
+	// their total time (tails left out): the peer bulk restore's pressure
+	// signal (RequestLoad).
+	loadRequests, loadNanos atomic.Int64
+	loadLatency             cache.LatencyHist
+
 	// Server-side request and connection visibility.
 	activeRequests            atomic.Int64
 	connectionStates          map[string]*atomic.Int64 // "state" -> current connections
@@ -146,6 +152,12 @@ type Metrics struct {
 	parserMetricEvaluators    map[string]*atomic.Int64 // "evaluator" -> parser-dependent range metric evaluations
 	slowRequests              map[string]*atomic.Int64 // "system<sep>route" -> requests at or over the slow threshold
 	connectionLastStateByConn sync.Map                 // net.Conn -> state label
+
+	// Caller authentication (-server.auth-users-file): exported only once
+	// EnableAuthMetrics is called, so /metrics is unchanged with it off.
+	authEnabled        atomic.Bool
+	authFailures       [len(AuthFailureReasons)]atomic.Int64
+	authReloadFailures atomic.Int64
 
 	// Circuit breaker state function (injected)
 	cbStateFunc func() string
@@ -166,6 +178,7 @@ type Metrics struct {
 	cacheLayerCoalescerStatsProvider func() [cache.LayerCount]CoalescerStats
 	cacheSignalStatsProvider         func() []CacheComponentSignals
 	cacheTTLProvider                 func() []CacheTTL
+	cacheSizingStatsProvider         func() []cache.SizingSnapshot
 }
 
 // CoalescerStats is a process-wide snapshot of duplicate backend work avoided.
@@ -714,12 +727,23 @@ type restoreMetric struct {
 	value            float64
 }
 
-// restoreMetrics lists the warm-up's plan, progress and the disk index
-// rebuild, as gauges updated after every batch.
-func restoreMetrics(h cache.HandoverStats) []restoreMetric {
-	p := h.Restore
+// restoreSources are the restores the metrics show, each under its source
+// label: the disk warm-up always, the peer bulk restore once one ran.
+func restoreSources(h cache.HandoverStats) []cache.RestoreProgress {
+	disk, peer := h.Restore, h.PeerRestore
+	disk.Source, peer.Source = cache.RestoreSource(restoreSourceOfDisk), cache.RestoreSource(restoreSourceOfPeer)
+	if peer.Outcome == "" {
+		return []cache.RestoreProgress{disk}
+	}
+	return []cache.RestoreProgress{disk, peer}
+}
+
+// restoreMetrics lists a restore's plan and progress and, for the disk
+// warm-up, the disk index rebuild, as gauges updated after every batch.
+func restoreMetrics(h cache.HandoverStats, p cache.RestoreProgress) []restoreMetric {
 	remaining, _ := p.Remaining()
-	return []restoreMetric{
+	out := make([]restoreMetric, 0, 12)
+	out = append(out, []restoreMetric{
 		{"loki_vl_proxy_cache_restart_warm_planned_entries", "Entries the restart warm-up found to restore.", "", float64(p.PlannedEntries)},
 		{"loki_vl_proxy_cache_restart_warm_planned_bytes", "Bytes of the entries the restart warm-up found to restore: encoded disk bytes, and the decoded size of memory-only answers.", "By", float64(p.PlannedBytes)},
 		{"loki_vl_proxy_cache_restart_warm_budget_bytes", "Most decoded bytes this warm-up may restore (-cache-startup-warm-bytes, at most half of -cache-max-bytes).", "By", float64(p.BudgetBytes)},
@@ -728,9 +752,14 @@ func restoreMetrics(h cache.HandoverStats) []restoreMetric {
 		{"loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second", "Decoded bytes restored per second: so far while the warm-up runs, over the whole warm-up after it.", "By/s", p.BytesPerSecond()},
 		{"loki_vl_proxy_cache_restart_warm_remaining_seconds", "Estimated seconds the running warm-up still needs, from its rate so far; 0 when none runs or nothing is measured yet.", "s", remaining.Seconds()},
 		{"loki_vl_proxy_cache_restart_warm_timeout_seconds", "Time the warm-up was given (-cache-startup-warm-timeout).", "s", p.Timeout.Seconds()},
-		{"loki_vl_proxy_cache_restart_index_rebuild_duration_seconds", "How long the disk cache's index rebuild took at start, before the proxy listened.", "s", h.IndexRebuildDuration.Seconds()},
-		{"loki_vl_proxy_cache_restart_index_rebuild_entries", "Records the disk cache's index held after the start-up rebuild.", "", float64(h.IndexRebuildEntries)},
+	}...)
+	if p.Source != cache.RestoreSourceDisk {
+		return out
 	}
+	return append(out,
+		restoreMetric{"loki_vl_proxy_cache_restart_index_rebuild_duration_seconds", "How long the disk cache's index rebuild took at start, before the proxy listened.", "s", h.IndexRebuildDuration.Seconds()},
+		restoreMetric{"loki_vl_proxy_cache_restart_index_rebuild_entries", "Records the disk cache's index held after the start-up rebuild.", "", float64(h.IndexRebuildEntries)},
+	)
 }
 
 const (
@@ -739,19 +768,37 @@ const (
 	restoreOutcomeName  = "loki_vl_proxy_cache_restart_warm_outcome"
 	restoreOutcomeHelp  = "1 for the restart warm-up's state: running, or why it ended (done, deadline, purged, clock_behind_flush, none)."
 	restoreSourceOfDisk = string(cache.RestoreSourceDisk)
+	restoreSourceOfPeer = string(cache.RestoreSourcePeer)
 )
 
 func writeCacheRestoreProgress(sb *strings.Builder, h cache.HandoverStats) {
-	for _, m := range restoreMetrics(h) {
-		fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n%s{source=%q} %g\n", m.name, m.help, m.name, m.name, restoreSourceOfDisk, m.value)
+	sources := restoreSources(h)
+	var per [2][]restoreMetric
+	for s, p := range sources {
+		per[s] = restoreMetrics(h, p)
+	}
+	// One HELP/TYPE per metric name, then its series of every source.
+	for i, m := range per[0] {
+		for _, part := range [...]string{"# HELP ", m.name, " ", m.help, "\n# TYPE ", m.name, " gauge\n"} {
+			sb.WriteString(part)
+		}
+		for s, p := range sources {
+			if i < len(per[s]) {
+				fmt.Fprintf(sb, "%s{source=%q} %g\n", m.name, string(p.Source), per[s][i].value)
+			}
+		}
 	}
 	fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n", restoreSkippedName, restoreSkippedHelp, restoreSkippedName)
-	for _, reason := range cache.RestoreSkipReasons() {
-		fmt.Fprintf(sb, "%s{source=%q,reason=%q} %d\n", restoreSkippedName, restoreSourceOfDisk, reason.String(), h.Restore.Skipped[reason])
+	for _, p := range sources {
+		for _, reason := range cache.RestoreSkipReasons() {
+			fmt.Fprintf(sb, "%s{source=%q,reason=%q} %d\n", restoreSkippedName, string(p.Source), reason.String(), p.Skipped[reason])
+		}
 	}
 	fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n", restoreOutcomeName, restoreOutcomeHelp, restoreOutcomeName)
-	for _, outcome := range cache.RestoreOutcomes() {
-		fmt.Fprintf(sb, "%s{source=%q,outcome=%q} %d\n", restoreOutcomeName, restoreSourceOfDisk, outcome, boolGauge(h.Restore.Outcome == outcome))
+	for _, p := range sources {
+		for _, outcome := range cache.RestoreOutcomes() {
+			fmt.Fprintf(sb, "%s{source=%q,outcome=%q} %d\n", restoreOutcomeName, string(p.Source), outcome, boolGauge(p.Outcome == outcome))
+		}
 	}
 }
 
@@ -802,6 +849,9 @@ func (m *Metrics) recordRequestWithLabels(system, direction, endpoint, route str
 		m.mu.Unlock()
 	}
 	counter.Add(1)
+	if direction == downstreamDirection {
+		m.countLoad(endpoint, duration)
+	}
 
 	if !hok {
 		m.mu.Lock()
@@ -835,7 +885,25 @@ func (m *Metrics) recordSeededRequest(endpoint string, statusCode int, duration 
 
 	counter.Add(1)
 	hist.observe(duration.Seconds())
+	m.countLoad(endpoint, duration)
 	return true
+}
+
+func (m *Metrics) countLoad(endpoint string, duration time.Duration) {
+	if endpoint != "tail" {
+		m.loadRequests.Add(1)
+		m.loadNanos.Add(int64(duration))
+		m.loadLatency.Observe(duration)
+	}
+}
+
+// RequestLoad returns the client requests completed so far, their total time
+// and their latency histogram.
+func (m *Metrics) RequestLoad() cache.BulkLoad {
+	if m == nil {
+		return cache.BulkLoad{}
+	}
+	return cache.BulkLoad{Requests: m.loadRequests.Load(), Nanos: m.loadNanos.Load(), Buckets: m.loadLatency.Snapshot()}
 }
 
 // RecordTenantRequest records a request for a specific tenant (X-Scope-OrgID).
@@ -1093,6 +1161,28 @@ func (m *Metrics) canonicalClientLabel(clientID string) string {
 	m.knownClients[clientID] = struct{}{}
 	return clientID
 }
+
+// AuthFailureReasons are the reason labels of loki_vl_proxy_auth_failures_total
+// (internal/clientauth Reason names, in order).
+var AuthFailureReasons = [...]string{"missing", "malformed", "invalid", "tenant_denied", "busy"}
+
+// EnableAuthMetrics exports the caller authentication metrics, every reason
+// at zero from the start.
+func (m *Metrics) EnableAuthMetrics() { m.authEnabled.Store(true) }
+
+// RecordAuthFailure counts a request refused by caller authentication. A
+// reason outside AuthFailureReasons is not counted.
+func (m *Metrics) RecordAuthFailure(reason string) {
+	for i, r := range AuthFailureReasons {
+		if r == reason {
+			m.authFailures[i].Add(1)
+			return
+		}
+	}
+}
+
+// RecordAuthReloadFailure counts a users file reload that kept the last good users.
+func (m *Metrics) RecordAuthReloadFailure() { m.authReloadFailures.Add(1) }
 
 // RecordClientError records a client-side error with a reason category.
 func (m *Metrics) RecordClientError(endpoint, reason string) {
@@ -2150,6 +2240,17 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(connRotationReasons)
 	for _, reason := range connRotationReasons {
 		fmt.Fprintf(&sb, "loki_vl_proxy_http_connection_rotations_total{reason=%q} %d\n", reason, sConnectionRotations[reason].Load())
+	}
+
+	if m.authEnabled.Load() {
+		sb.WriteString("# HELP loki_vl_proxy_auth_failures_total Requests refused by caller authentication (-server.auth-users-file), by reason.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_auth_failures_total counter\n")
+		for i, reason := range AuthFailureReasons {
+			fmt.Fprintf(&sb, "loki_vl_proxy_auth_failures_total{reason=%q} %d\n", reason, m.authFailures[i].Load())
+		}
+		sb.WriteString("# HELP loki_vl_proxy_auth_users_reload_failures_total Users file reloads that failed and kept the last good users.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_auth_users_reload_failures_total counter\n")
+		fmt.Fprintf(&sb, "loki_vl_proxy_auth_users_reload_failures_total %d\n", m.authReloadFailures.Load())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_slow_requests_total Requests at or over their slow threshold (system loki: a client request over -slow-query-threshold; vl: one VictoriaLogs call, to the end of its body, over -slow-upstream-threshold), by route.\n")

@@ -101,6 +101,8 @@ type metricRequest struct {
 	route lower.RouteRequest
 	// rowLimit is the proxy's -manual-range-metric-row-limit for the request (0: the default).
 	rowLimit int
+	// drilldown sends the request as Grafana Logs Drilldown does (its X-Query-Tags source).
+	drilldown bool
 }
 
 // metricQuery is one corpus row of the differential.
