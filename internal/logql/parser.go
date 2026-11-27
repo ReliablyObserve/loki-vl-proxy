@@ -315,6 +315,13 @@ type parser struct {
 	spell *spellState
 	// flagSpans collects the spans of the logfmt flags read, when not nil (StripParserFlags).
 	flagSpans *[][2]int
+	// stageSpans collects the spans of the parser stages of type stageSpanType read, when not nil
+	// (DropParserStages): from the end of the token before the stage's `|` to the end of its last token.
+	stageSpans    *[][2]int
+	stageSpanType ParserType
+	// stageArgs collects, with stageSpans, the spans of the arguments of the calls kept as text (label_replace,
+	// approx_topk): this parser reads over them, so DropParserStages reads each one on its own.
+	stageArgs *[][2]int
 	// rangeDepth is above 0 inside the argument of a range aggregation, where an unwrap stage may stand. plainUnwrapAt
 	// is one more than the offset of the first unwrap stage outside one: Loki's parser stops at that token whatever
 	// follows it.
@@ -615,6 +622,9 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 			if canon := canonicalizeLogRanges(arg, p.canon.perArgument); canon != arg {
 				p.addRewrite(argStart, argEnd, canon)
 			}
+		}
+		if p.stageArgs != nil {
+			p.noteCallArguments(argStart, endPos)
 		}
 		raw := strings.TrimSpace(p.sc.src[startPos:endPos])
 		o := &OpaqueMetricExpr{Raw: raw, Func: name, treeErr: treeErr}
@@ -1099,8 +1109,17 @@ func (p *parser) parsePipelineStage() (Stage, error) {
 	switch p.cur.Typ {
 	case TokPipe:
 		p.pipePos = p.pos()
+		if p.stageSpans == nil {
+			p.advance()
+			return p.parsePipeBody()
+		}
+		before := p.prevEnd
 		p.advance()
-		return p.parsePipeBody()
+		stage, err := p.parsePipeBody()
+		if ps, ok := stage.(*ParserStage); ok && err == nil && ps.Type == p.stageSpanType {
+			*p.stageSpans = append(*p.stageSpans, [2]int{before, p.prevEnd})
+		}
+		return stage, err
 	}
 
 	return nil, nil
@@ -1375,6 +1394,24 @@ func (p *parser) noteChecked(lq *LogQuery) {
 // actions answer ahead of a later syntax error as the others do. The call's parser notes them as it reads them and
 // jumps over the calls nested in it (quiet_calls.go): neither the call's text nor its tree is read again at each
 // level of a nesting. A call it cannot type, or without a sample expression, leaves the lists as they were.
+// noteCallArguments notes the spans of the arguments of a call kept as text (DropParserStages): its text after the
+// '(' at argStart, to its ')' just before endPos, split at the commas outside strings and brackets.
+func (p *parser) noteCallArguments(argStart, endPos int) {
+	src := p.sc.src
+	closing := endPos - 1
+	if argStart > closing || closing >= len(src) || src[closing] != ')' {
+		return
+	}
+	for pos := argStart; ; {
+		n := FirstArgumentLen(src[pos:closing])
+		*p.stageArgs = append(*p.stageArgs, [2]int{pos, pos + n})
+		if pos+n >= closing {
+			return
+		}
+		pos += n + 1
+	}
+}
+
 func (p *parser) typeCall(o *OpaqueMetricExpr, start int) {
 	if o.Func != "label_replace" {
 		typeOpaqueCallWith(o, p.calls, p.base+start, false, p.sc.budget) // a number or nothing: no log query to note

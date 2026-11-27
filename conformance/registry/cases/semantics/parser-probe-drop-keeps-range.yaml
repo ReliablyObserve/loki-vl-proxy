@@ -1,0 +1,65 @@
+id: semantics/parser-probe-drop-keeps-range
+title: "Keeping one of `| json` and `| logfmt` leaves the range of a metric query in place (fixed)"
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+  - parser-json
+  - parser-logfmt
+consumer: drilldown
+why: |
+  A query naming both `| json` and `| logfmt` that the ordered mixed-parser evaluator does not take makes the proxy
+  read 25 lines of the evaluated window and keep one of the two stages (preferWorkingParser,
+  internal/proxy/query_translation.go). The other stage was removed with a text pattern that, on a metric query,
+  took everything after the stage's word up to the next `|`. When that stage was the last one before the range
+  (`... | json | logfmt [3h]))` with json kept, `... | logfmt | json [3h]))` with logfmt kept) the range, the offset
+  and the closing parentheses went with it: an instant query answered 400 "log queries are not supported as an
+  instant query type, please change your query to a range query type", a range query answered log streams read
+  with the cut LogQL text as a VictoriaLogs phrase, and a bare range function answered 500, where Loki answers 200
+  (#1821, follow-up to #1825). The probe's log query was read with a text pattern too: it took a
+  quantile_over_time's parameter into the log query (`0.9, {...} | json | ...`) and missed a range with an offset,
+  so the probe sent VictoriaLogs a malformed query and the query kept both stages.
+
+  Fixed: the stage is removed where the parser read it (logql.DropParserStages: the stage's `|`, the blank before
+  it and its words go, the rest of the text stays as written, the arguments of label_replace and approx_topk are
+  read the same way), and the probe reads the log query of the query's range aggregation from the parsed tree. A
+  query that does not parse is left as it is. TestParserProbeDropMatchesRecordedLoki holds 1536 requests (both
+  parser orders with and without a drop of the error labels, count/rate/bytes/bytes_rate/absent/quantile, bare and
+  under sum, sum by, max, min, avg, count, topk, bottomk, sort, sort_desc, label_replace, binary with a number and
+  offset, plus the one-parser controls, instant and range, over JSON, logfmt, mixed and plain lines) to Loki's
+  recorded engine answers: no request shows the cut, the probe is well formed and bounded, 38 rows answer as Loki
+  where main did not and none moved away from Loki. The rows that still differ are the open
+  semantics/two-parsers-keep-one difference (the probe keeps one parser where Loki runs both) and differences
+  their one-parser forms share; they are listed in
+  internal/proxy/testdata/parser_probe_drop_known_differences.txt, a list that may only shrink.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum(count_over_time({service_name="ingress"} | json | logfmt [3h]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data.result]
+  expect: "Loki's 200 vector; the VictoriaLogs reads carry LogsQL, never the LogQL text."
+corpus:
+  dimensions:
+    shapes:
+      - query: 'sum(count_over_time({app="probe-drop"} | logfmt | json [3h]))'
+      - query: 'count_over_time({app="probe-drop"} | json | logfmt [1h] offset 1h)'
+      - query: 'quantile_over_time(0.9, {app="probe-drop"} | json | logfmt | unwrap x [5m])'
+      - query: 'label_replace(sum(count_over_time({app="probe-drop"} | json | logfmt [30m])), "copy", "$1", "route", "(.*)")'
+gap:
+  status: fixed
+  fixed_by: "#TBD"
+  impact: drilldown-visible
+  effort: S
+  area: "internal/proxy preferWorkingParser (removeParserStage, parserProbeLogQuery), internal/logql DropParserStages"
+  loki: "200 with the metric answer; both stages run on every line"
+  proxy: "the stage the probe does not keep is removed from the parsed query; the range and the rest of the query stay"
+  planned_test: 'TestParserProbeDropMatchesRecordedLoki, TestParserProbeDropReadsTheTree (internal/proxy), TestDropParserStages, TestDropParserStagesKeepsTheTree, FuzzDropParserStages (internal/logql)'
+  visual: none
+  visual_reason: 'the failing Drilldown and Explore panels showed an error or no data; the fixed answer is the Loki answer the recorded differential holds; live captures are owed'
+  clusters: []

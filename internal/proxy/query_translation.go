@@ -671,33 +671,18 @@ func pipelineHasParserStageOf(pipeline []logqlpkg.Stage, jsonStage, logfmtStage 
 	return false
 }
 
+// removeParserStage removes the parser's stages (json or logfmt) from a log or metric query where the parser read
+// them (logql.DropParserStages): the range, offset and everything around the stage stay as written. A text
+// pattern used to remove a metric query's stage with everything up to the next `|`, so a stage that was the last
+// one before its range took the range and the closing parentheses with it (#1821): an instant query answered
+// "log queries are not supported as an instant query type" and a range query answered log streams. A query that
+// does not parse is left as it is.
 func removeParserStage(query, parser string) string {
-	lq, err := parseLogQLQuery(noFlowCtx, query)
-	if err != nil {
-		// Fall back to regex on parse failure.
-		re := jsonParserStageRE
-		if parser == "logfmt" {
-			re = logfmtParserStageRE
-		}
-		result := re.ReplaceAllString(query, "")
-		for strings.Contains(result, "  ") {
-			result = strings.ReplaceAll(result, "  ", " ")
-		}
-		return strings.TrimSpace(result)
-	}
 	remove := logqlpkg.ParserJSON
 	if parser == "logfmt" {
 		remove = logqlpkg.ParserLogfmt
 	}
-	filtered := lq.Pipeline[:0]
-	for _, stage := range lq.Pipeline {
-		if ps, ok := stage.(*logqlpkg.ParserStage); ok && ps.Type == remove {
-			continue
-		}
-		filtered = append(filtered, stage)
-	}
-	lq.Pipeline = filtered
-	return lq.String()
+	return logqlpkg.DropParserStages(query, remove)
 }
 
 // extractLogQLOffset finds a LogQL offset modifier (e.g. "[5m] offset 1h"),
@@ -777,7 +762,10 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	// Mixed metric requests retain logfmt flags until typed admission above.
 	// The existing sampled fallback evaluates them as unflagged logfmt.
 	logql = logqlpkg.StripParserFlags(logql)
-	baseQuery := extractParserProbeQuery(logql)
+	baseQuery := parserProbeLogQuery(logql)
+	if baseQuery == "" {
+		baseQuery = extractParserProbeQuery(logql)
+	}
 	if baseQuery == "" {
 		baseQuery = logql
 	}
@@ -895,6 +883,47 @@ func saturatingSub(a, b int64) int64 {
 		return math.MinInt64
 	}
 	return a - b
+}
+
+// parserProbeLogQuery is the log query the parser probe reads for a query: the query itself when it is a log query,
+// or the log query of its first range aggregation, read from the parsed tree (through vector aggregations, binary
+// operands and a typed label_replace). The text pattern it replaces read a quantile_over_time's parameter into the
+// log query (`0.9, {a="b"} | json ...`), and missed a range with an offset; the probe then read nothing useful.
+// It is "" for a query that does not parse or holds no log query the tree reaches (a call kept as text).
+func parserProbeLogQuery(logql string) string {
+	expr, ok := sharedLogQLExpr(logql)
+	if !ok {
+		return ""
+	}
+	var find func(logqlpkg.Expr) *logqlpkg.LogQuery
+	find = func(e logqlpkg.Expr) *logqlpkg.LogQuery {
+		switch n := e.(type) {
+		case *logqlpkg.LogQuery:
+			return n
+		case *logqlpkg.RangeAggregation:
+			lq, _ := n.Inner.(*logqlpkg.LogQuery)
+			return lq
+		case *logqlpkg.VectorAggregation:
+			return find(n.Inner)
+		case *logqlpkg.BinOpExpr:
+			if lq := find(n.Left); lq != nil {
+				return lq
+			}
+			return find(n.Right)
+		case *logqlpkg.OpaqueMetricExpr:
+			if n.Typed && n.Inner != nil {
+				return find(n.Inner)
+			}
+		}
+		return nil
+	}
+	if _, isLog := expr.(*logqlpkg.LogQuery); isLog {
+		return logql
+	}
+	if lq := find(expr); lq != nil {
+		return lq.String()
+	}
+	return ""
 }
 
 var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|bytes_rate|rate_counter|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)

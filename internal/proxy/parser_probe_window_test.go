@@ -295,3 +295,60 @@ func FuzzInstantParserProbeWindow(f *testing.F) {
 		}
 	})
 }
+
+// The parser the probe does not keep is removed where the parser read its stage: a stage that is the last one before
+// the range leaves the range, the offset and the closing parentheses (#1821: the text pattern cut them, so an
+// instant query answered "log queries are not supported as an instant query type"). The probe reads the log query
+// of the query's range aggregation, read from the tree: a quantile_over_time's parameter is not part of it.
+//
+// conformance: semantics/parser-probe-drop-keeps-range, semantics/two-parsers-keep-one
+func TestParserProbeDropReadsTheTree(t *testing.T) {
+	for _, tc := range []struct{ query, keepJSON, keepLogfmt, probe string }{
+		{`sum(count_over_time({a="b"} | json | logfmt [3h]))`, `sum(count_over_time({a="b"} | json [3h]))`, `sum(count_over_time({a="b"} | logfmt [3h]))`, `{a="b"} | json | logfmt`},
+		{`count_over_time({a="b"} | logfmt | json [3h] offset 1h)`, `count_over_time({a="b"} | json [3h] offset 1h)`, `count_over_time({a="b"} | logfmt [3h] offset 1h)`, `{a="b"} | logfmt | json`},
+		{`quantile_over_time(0.9, {a="b"} | json | logfmt | unwrap x [3h])`, `quantile_over_time(0.9, {a="b"} | json | unwrap x [3h])`, `quantile_over_time(0.9, {a="b"} | logfmt | unwrap x [3h])`, `{a="b"} | json | logfmt | unwrap x`},
+		{`label_replace(sum(count_over_time({a="b"} | json | logfmt [30m])), "c", "$1", "a", "(.*)")`, `label_replace(sum(count_over_time({a="b"} | json [30m])), "c", "$1", "a", "(.*)")`, `label_replace(sum(count_over_time({a="b"} | logfmt [30m])), "c", "$1", "a", "(.*)")`, `{a="b"} | json | logfmt`},
+		{`{a="b"} | json | logfmt`, `{a="b"} | json`, `{a="b"} | logfmt`, `{a="b"} | json | logfmt`},
+	} {
+		if got := removeParserStage(tc.query, "logfmt"); got != tc.keepJSON {
+			t.Errorf("%s keeps json as %q, want %q", tc.query, got, tc.keepJSON)
+		}
+		if got := removeParserStage(tc.query, "json"); got != tc.keepLogfmt {
+			t.Errorf("%s keeps logfmt as %q, want %q", tc.query, got, tc.keepLogfmt)
+		}
+		if got := parserProbeLogQuery(tc.query); got != tc.probe {
+			t.Errorf("%s probes %q, want %q", tc.query, got, tc.probe)
+		}
+	}
+	if got := parserProbeLogQuery(`sum(count_over_time({a="b"} | json | logfmt [3h]`); got != "" {
+		t.Errorf("a query that does not parse probes %q", got)
+	}
+}
+
+// BenchmarkParserProbeDrop is the proxy's cost of keeping the parser the probe chose: the removal of the other
+// stage and the probe's log query, on the issue's Drilldown query (with and without the drop of the error labels).
+func BenchmarkParserProbeDrop(b *testing.B) {
+	for _, q := range []string{
+		`sum(count_over_time({cluster="c1", namespace="ns1", container="ingress"} | json | logfmt | drop __error__, __error_details__ [3h]))`,
+		`sum(count_over_time({cluster="c1", namespace="ns1", container="ingress"} | json | logfmt [3h]))`,
+	} {
+		name := "drop"
+		if !strings.Contains(q, "drop") {
+			name = "last-stage"
+		}
+		b.Run("remove/"+name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = removeParserStage(q, "logfmt")
+			}
+		})
+		b.Run("probe-query/"+name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if baseQuery := parserProbeLogQuery(q); baseQuery == "" {
+					baseQuery = extractParserProbeQuery(q)
+				}
+			}
+		})
+	}
+}
