@@ -229,12 +229,13 @@ func turnedAwayByStages(expr logqlpkg.Expr) bool {
 	}
 }
 
-// ungroupedSumOfLines reports a sum with no by or without clause directly over a count_over_time or a rate: the unpack
-// screen (skipsUnpackScreen) passes it.
+// ungroupedSumOfLines reports a sum with no by or without clause directly over a count_over_time, a rate or an
+// absent_over_time: the unpack screen (skipsUnpackScreen) passes it, so its parse is kept for the plan, which serves
+// none of an absence check (lower.SkipsUnpack).
 func ungroupedSumOfLines(v *logqlpkg.VectorAggregation) bool {
 	ra, ok := v.Inner.(*logqlpkg.RangeAggregation)
 	return ok && v.Op == logqlpkg.VectorSum && v.Grouping == nil &&
-		(ra.Op == logqlpkg.RangeCountOverTime || ra.Op == logqlpkg.RangeRate)
+		(ra.Op == logqlpkg.RangeCountOverTime || ra.Op == logqlpkg.RangeRate || ra.Op == logqlpkg.RangeAbsentOverTime)
 }
 
 // isVectorCall reports a vector(n) call, which the metric screen turns away at any level.
