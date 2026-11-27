@@ -2157,6 +2157,19 @@ func parseFieldMappingsJSON(raw string) ([]proxy.FieldMapping, error) {
 	return fieldMappings, nil
 }
 
+// parseFieldMappingFlags reads -field-mapping and -field-mapping-label-mode.
+func parseFieldMappingFlags(rawMappings, rawMode string) ([]proxy.FieldMapping, proxy.FieldMappingLabelMode, error) {
+	mappings, err := parseFieldMappingsJSON(rawMappings)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse field mappings: %w", err)
+	}
+	mode, err := proxy.ParseFieldMappingLabelMode(rawMode)
+	if err != nil {
+		return nil, "", err
+	}
+	return mappings, mode, nil
+}
+
 func parseDerivedFieldsJSON(raw string) ([]proxy.DerivedField, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
@@ -2363,15 +2376,11 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err != nil {
 		return proxy.Config{}, fmt.Errorf("parse tenant limits: %w", err)
 	}
-	fieldMappings, err := parseFieldMappingsJSON(cfg.fieldMappingJSON)
-	if err != nil {
-		return proxy.Config{}, fmt.Errorf("parse field mappings: %w", err)
-	}
-	ls, mfm, err := parseLabelModes(cfg.labelStyle, cfg.metadataFieldMode)
+	fieldMappings, labelMappingMode, err := parseFieldMappingFlags(cfg.fieldMappingJSON, cfg.fieldMappingLabelMode)
 	if err != nil {
 		return proxy.Config{}, err
 	}
-	labelMappingMode, err := proxy.ParseFieldMappingLabelMode(cfg.fieldMappingLabelMode)
+	ls, mfm, err := parseLabelModes(cfg.labelStyle, cfg.metadataFieldMode)
 	if err != nil {
 		return proxy.Config{}, err
 	}
