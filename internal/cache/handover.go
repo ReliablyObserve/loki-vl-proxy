@@ -34,6 +34,20 @@ import (
 // lookups and hits are counted for the start-up hit ratio.
 const StartupStatsWindow = 10 * time.Minute
 
+// StartupRatioWindows are the windows after TrackStartupWindow for which every
+// tier's hit ratio is kept: live until the window has passed, then frozen.
+var StartupRatioWindows = [startupRatioWindowCount]time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute}
+
+const (
+	startupRatioWindowCount = 3
+	// startupTierCount is the response cache's tiers: memory, disk, peer.
+	startupTierCount = 3
+)
+
+// TierLookups counts one tier's lookups and the hits among them, as
+// cache_tier_requests_total and cache_tier_hits_total do.
+type TierLookups struct{ Requests, Hits int64 }
+
 // handoverWarmShareDivisor caps a warm-up at half of the memory tier's bytes,
 // leaving the rest to what live requests store meanwhile.
 const handoverWarmShareDivisor = 2
@@ -110,6 +124,9 @@ type HandoverStats struct {
 	StartupTracked    bool
 	StartupL1Requests int64
 	StartupL1Hits     int64
+	// SinceStart holds, per StartupRatioWindows entry, the lookups and hits of
+	// the memory, disk and peer tiers (in that order) since TrackStartupWindow.
+	SinceStart [startupRatioWindowCount][startupTierCount]TierLookups
 }
 
 type handoverCounters struct {
@@ -125,6 +142,9 @@ type handoverCounters struct {
 	startupFrozen     atomic.Bool
 	startupRequests   atomic.Int64
 	startupHits       atomic.Int64
+	// sinceStart and sinceStartFrozen are the frozen windows (under mu).
+	sinceStart       [startupRatioWindowCount][startupTierCount]TierLookups
+	sinceStartFrozen [startupRatioWindowCount]bool
 }
 
 // EnableHandoverHits counts each memory entry's hits (in the promoter, off the
@@ -189,18 +209,41 @@ func (c *Cache) SetLocalOnlyRestorableWithTTL(key string, value []byte, ttl time
 }
 
 // TrackStartupWindow starts counting the memory tier's lookups and hits for
-// StartupStatsWindow; the counts freeze when it passes. Close stops it.
+// StartupStatsWindow, and every tier's for each of StartupRatioWindows; the
+// counts of a window freeze when it passes. Close stops it.
 func (c *Cache) TrackStartupWindow() {
 	if c == nil || c.disabled {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.startupTimer != nil {
+	if c.startupTimers != nil {
 		return
 	}
 	c.handoverStats.startupTracked.Store(true)
-	c.startupTimer = time.AfterFunc(StartupStatsWindow, c.freezeStartupWindow)
+	c.startupTimers = []*time.Timer{time.AfterFunc(StartupStatsWindow, c.freezeStartupWindow)}
+	for i, window := range StartupRatioWindows {
+		c.startupTimers = append(c.startupTimers, time.AfterFunc(window, func() { c.freezeRatioWindow(i) }))
+	}
+}
+
+// tierLookups reads the memory, disk and peer tiers' counters. Hits are read
+// first: a lookup counts its request before its hit, so a concurrent reading
+// never holds more hits than requests.
+func (c *Cache) tierLookups() (out [startupTierCount]TierLookups) {
+	for i, s := range [startupTierCount]*tierStats{&c.l1Stats, &c.l2Stats, &c.l3Stats} {
+		out[i].Hits = s.hits.Load()
+		out[i].Requests = s.requests.Load()
+	}
+	return out
+}
+
+func (c *Cache) freezeRatioWindow(i int) {
+	counts := c.tierLookups()
+	s := &c.handoverStats
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sinceStart[i], s.sinceStartFrozen[i] = counts, true
 }
 
 func (c *Cache) freezeStartupWindow() {
@@ -222,6 +265,16 @@ func (c *Cache) HandoverStats() HandoverStats {
 	}
 	s.mu.Lock()
 	out.Restore, out.PeerRestore = s.progress, s.peerProgress
+	if out.StartupTracked {
+		live := c.tierLookups()
+		for i := range out.SinceStart {
+			if s.sinceStartFrozen[i] {
+				out.SinceStart[i] = s.sinceStart[i]
+			} else {
+				out.SinceStart[i] = live
+			}
+		}
+	}
 	out.WarmDiskEntries, out.WarmMemoryEntries = s.warmDiskEntries, s.warmMemoryEntries
 	s.mu.Unlock()
 	if out.Restore.Outcome == RestoreRunning {

@@ -226,6 +226,7 @@ PR_819 = [
 PR_820 = [
     ".github/workflows/change-scope.yaml",
     ".github/workflows/changelog-pr.yaml",
+    ".github/workflows/local-proof-pr.yaml",
     "scripts/ci/change_scope.py",
     "scripts/ci/tests/test_change_scope.py",
 ]
