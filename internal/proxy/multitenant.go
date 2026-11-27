@@ -433,7 +433,7 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 			// is an error, so the two never share an entry.
 			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.responseProfileCacheKey(r, endpoint))
 		}
-		if !readCacheKeyFencedByTTL(endpoint) {
+		if len(p.answerCacheTTLs) != 0 && !readCacheKeyFencedByTTL(endpoint) {
 			// The merge is stored with endpointTTL (setMultiTenantMergeCache);
 			// the canonical key fenced the others already.
 			key += p.answerTTLKeyFence(endpoint)

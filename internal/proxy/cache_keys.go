@@ -130,7 +130,10 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 		if authScope != "" {
 			extraParts = append(extraParts, "auth:"+authScope)
 		}
-		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...) + p.readCacheKeyTTLFence(endpoint)
+		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...)
+		if fence := p.readCacheKeyTTLFence(endpoint); fence != "" {
+			computed += fence
+		}
 		p.readCacheKeyMemoMu.Lock()
 		if p.readCacheKeyMemo == nil {
 			p.readCacheKeyMemo = make(map[canonicalReadCacheMemoKey]string, 2048)
@@ -147,7 +150,11 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 	if authScope != "" {
 		extraParts = append(extraParts, "auth:"+authScope)
 	}
-	return computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...) + p.readCacheKeyTTLFence(endpoint)
+	key := computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...)
+	if fence := p.readCacheKeyTTLFence(endpoint); fence != "" {
+		key += fence
+	}
+	return key
 }
 
 func buildCanonicalReadCacheMemoKey(endpoint, orgID string, r *http.Request, extraParts []string) (canonicalReadCacheMemoKey, bool) {

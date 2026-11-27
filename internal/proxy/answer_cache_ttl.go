@@ -114,6 +114,9 @@ func (p *Proxy) compatAnswerTTL(endpoint string) time.Duration {
 // restart with a shorter setting) could otherwise be served past the
 // shorter TTL. '@' never appears in an encoded query string.
 func (p *Proxy) answerTTLKeyFence(endpoint string) string {
+	if p == nil || len(p.answerCacheTTLs) == 0 {
+		return ""
+	}
 	builtin := CacheTTLs[endpoint]
 	if ttl := p.endpointTTL(endpoint); ttl < builtin {
 		return "@ttl=" + ttl.String()
@@ -128,6 +131,9 @@ const detectedLabelsDetectionTTL = 30 * time.Second
 // detectLabelsTTLKeyFence fences the label detection cache's key once the
 // detected_labels setting is below its 30 s.
 func (p *Proxy) detectLabelsTTLKeyFence() string {
+	if p == nil || len(p.answerCacheTTLs) == 0 {
+		return ""
+	}
 	if ttl := p.shortenedTTL("detected_labels", detectedLabelsDetectionTTL); ttl < detectedLabelsDetectionTTL {
 		return "@ttl=" + ttl.String()
 	}
@@ -136,7 +142,7 @@ func (p *Proxy) detectLabelsTTLKeyFence() string {
 
 // readCacheKeyTTLFence is the fence of an endpoint's canonical read cache key.
 func (p *Proxy) readCacheKeyTTLFence(endpoint string) string {
-	if !readCacheKeyFencedByTTL(endpoint) {
+	if p == nil || len(p.answerCacheTTLs) == 0 || !readCacheKeyFencedByTTL(endpoint) {
 		return ""
 	}
 	return p.answerTTLKeyFence(endpoint)
