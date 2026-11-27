@@ -1,10 +1,13 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
@@ -161,6 +164,61 @@ func (lt *LabelTranslator) namesMappedField(name, vlField string) bool {
 		return false
 	}
 	return slices.Contains(lt.aliases[vlField], name)
+}
+
+// requestedGroupNames maps a mapped field that a by() grouping of query names
+// under another of its names than the one answers carry to that name, in the
+// listing modes: Loki answers a grouping under the label it names. The names
+// come from the typed plan (the plan memo when the handlers planned it). nil in
+// the default mode and when no grouping names such a field.
+func (p *Proxy) requestedGroupNames(ctx context.Context, query string) map[string]string {
+	lt := p.labelTranslator
+	if !lt.listsAliases() || query == "" {
+		return nil
+	}
+	plan, err := loweringPlan(ctx, logqlpkg.CanonicalizeLogRanges(query))
+	if err != nil || plan == nil {
+		return nil
+	}
+	var out map[string]string
+	add := func(g *queryplan.Grouping) {
+		if g == nil || g.Without {
+			return
+		}
+		for _, label := range g.Labels {
+			field, ok := lt.lokiToVL[label]
+			if _, mapped := lt.aliases[field]; !ok || !mapped || lt.ToLoki(field) == label {
+				continue
+			}
+			if _, named := out[field]; named {
+				continue // the first name a query gives the field
+			}
+			if out == nil {
+				out = make(map[string]string, 2)
+			}
+			out[field] = label
+		}
+	}
+	var walk func(queryplan.Node)
+	walk = func(n queryplan.Node) {
+		switch n := n.(type) {
+		case *queryplan.VectorAgg:
+			add(n.By)
+			walk(n.In)
+		case *queryplan.Rank:
+			add(n.By)
+			walk(n.In)
+		case *queryplan.RangeAgg:
+			add(n.By)
+		case *queryplan.BinOp:
+			walk(n.L)
+			walk(n.R)
+		case *queryplan.LabelReplace:
+			walk(n.In)
+		}
+	}
+	walk(plan.Root)
+	return out
 }
 
 // baseName is the name -label-style gives a field without a mapping.

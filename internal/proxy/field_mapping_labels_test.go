@@ -116,6 +116,13 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 					metric[name] = value
 				}
 			}
+			if r.URL.Path == "/select/logsql/stats_query_range" {
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{
+					"resultType": "matrix",
+					"result":     []any{map[string]any{"metric": metric, "values": []any{[]any{1767225300.0, "5"}}}},
+				}})
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{
 				"resultType": "vector",
 				"result":     []any{map[string]any{"metric": metric, "value": []any{1767225600.0, "5"}}},

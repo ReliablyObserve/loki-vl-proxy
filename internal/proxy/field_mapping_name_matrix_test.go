@@ -205,6 +205,38 @@ func nameMatrixShow(t testing.TB, style LabelStyle, mode FieldMappingLabelMode, 
 			t.Errorf("detected_field values of %s = %v, want %s", name, got, want)
 		}
 	}
+	// A grouping by any shown name answers under that name.
+	for _, name := range slices.Concat(row.labels, row.metadata) {
+		name, _, _ = strings.Cut(name, "=")
+		want := nameMatrixValue(name)
+		// A dotted name under underscores (native metadata names) groups under
+		// its underscore spelling, as an unmapped dotted field (host.name) does.
+		if want == "" || name == "service_name" || style == LabelStyleUnderscores && strings.Contains(name, ".") {
+			continue
+		}
+		// Without the flag an instant grouping by another name of a mapped field
+		// answers under the field's answer name, as on main.
+		if mode == FieldMappingLabelModeOriginal {
+			continue
+		}
+		q := fmt.Sprintf(`sum by (%s) (count_over_time({pod="api-1"}[5m]))`, name)
+		for _, path := range []string{"/loki/api/v1/query", "/loki/api/v1/query_range"} {
+			var out struct {
+				Data struct {
+					Result []struct {
+						Metric map[string]string `json:"metric"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			params := url.Values{"query": {q}, "time": {"1767225600"}, "step": {"60"}, "start": {"1767225300"}, "end": {"1767225600"}}
+			if err := json.Unmarshal(mappingGet(t, newProxy(), path, params), &out); err != nil {
+				t.Fatal(err)
+			}
+			if len(out.Data.Result) != 1 || out.Data.Result[0].Metric[name] != want || len(out.Data.Result[0].Metric) != 1 {
+				t.Errorf("%s %s = %+v, want {%s=%q}", path, q, out.Data.Result, name, want)
+			}
+		}
+	}
 	for _, pair := range row.metadata {
 		name := pair[:strings.IndexByte(pair, '=')]
 		field := nameMatrixField(name)
