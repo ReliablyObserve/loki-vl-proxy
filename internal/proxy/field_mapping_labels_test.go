@@ -21,12 +21,16 @@ import (
 )
 
 // mappingVL is a VictoriaLogs stand-in holding one stream whose fields are
-// stream fields, with a call count per endpoint.
+// stream fields, with a call count per endpoint. meta holds the row's fields
+// that are no stream fields (structured metadata); queries records the LogsQL
+// of every query call.
 type mappingVL struct {
 	fields map[string]string
+	meta   map[string]string
 
-	mu    sync.Mutex
-	calls map[string]int
+	mu      sync.Mutex
+	calls   map[string]int
+	queries []string
 }
 
 func (v *mappingVL) server(t testing.TB) *httptest.Server {
@@ -40,6 +44,11 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 		}
 		v.mu.Unlock()
 		_ = r.ParseForm()
+		if r.URL.Path == "/select/logsql/query" {
+			v.mu.Lock()
+			v.queries = append(v.queries, r.Form.Get("query"))
+			v.mu.Unlock()
+		}
 		field := r.Form.Get("field")
 		names := make([]string, 0, len(v.fields))
 		for name := range v.fields {
@@ -59,10 +68,23 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(map[string]any{"values": items})
 		}
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names", "/select/logsql/field_names":
+		case "/select/logsql/stream_field_names":
 			listing(names...)
-		case "/select/logsql/stream_field_values", "/select/logsql/field_values":
+		case "/select/logsql/field_names":
+			all := slices.Concat(names, slices.Sorted(maps.Keys(v.meta)))
+			listing(all...)
+		case "/select/logsql/stream_field_values":
 			if value, ok := v.fields[field]; ok {
+				listing(value)
+				return
+			}
+			listing()
+		case "/select/logsql/field_values":
+			if value, ok := v.fields[field]; ok {
+				listing(value)
+				return
+			}
+			if value, ok := v.meta[field]; ok {
 				listing(value)
 				return
 			}
@@ -72,6 +94,9 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 		case "/select/logsql/query":
 			row := map[string]string{"_time": "2026-01-01T00:00:00Z", "_msg": "hello", "_stream": stream, "_stream_id": "0"}
 			for name, value := range v.fields {
+				row[name] = value
+			}
+			for name, value := range v.meta {
 				row[name] = value
 			}
 			_ = json.NewEncoder(w).Encode(row)
@@ -86,6 +111,8 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 				if name == "_stream" {
 					metric[name] = stream
 				} else if value, ok := v.fields[name]; ok {
+					metric[name] = value
+				} else if value, ok := v.meta[name]; ok {
 					metric[name] = value
 				}
 			}
