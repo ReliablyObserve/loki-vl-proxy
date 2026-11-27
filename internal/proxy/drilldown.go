@@ -2693,7 +2693,7 @@ func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end st
 	} else {
 		query = defaultFieldDetectionQuery(query)
 	}
-	key := prefix + getOrgID(ctx) + ":" + query + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	key := prefix + getOrgID(ctx) + ":" + query + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit) + p.answerTTLKeyFence("detected_fields")
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
@@ -2752,7 +2752,7 @@ func (p *Proxy) setCachedDetectedFields(ctx context.Context, query, start, end s
 	if err != nil {
 		return
 	}
-	p.cache.SetWithTTL(p.detectedFieldsCacheKey(ctx, query, start, end, lineLimit), body, CacheTTLs["detected_fields"])
+	p.cache.SetWithTTL(p.detectedFieldsCacheKey(ctx, query, start, end, lineLimit), body, p.endpointTTL("detected_fields"))
 }
 
 func (p *Proxy) getCachedDetectedLabels(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string]*detectedLabelSummary, bool) {

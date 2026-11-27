@@ -875,7 +875,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		cacheKey, cacheable := p.compatCacheKey(endpoint, r)
-		ttl := compatAnswerTTL(endpoint)
+		ttl := p.compatAnswerTTL(endpoint)
 		if !cacheable || ttl <= 0 {
 			setCacheResult(r.Context(), "bypass")
 			// No response cache: identical requests in flight still share one

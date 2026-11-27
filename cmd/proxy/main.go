@@ -198,6 +198,7 @@ type proxyRuntimeConfig struct {
 	logStatsInterval                    time.Duration
 	logRateThreshold                    int
 	labelCacheTTL                       time.Duration
+	answerCacheTTLs                     map[string]time.Duration
 	labelsCacheWarm                     bool
 	logqlDottedNames                    string
 	labelBrowseExtensions               string
@@ -542,6 +543,17 @@ func run(
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
 	labelsCacheTTL := fs.Duration("labels-cache-ttl", 0, "Cache TTL for /labels and /label/{name}/values responses (default 5m). Keep-warm interval is derived automatically. 0 uses the default.")
+	fs.Duration("cache-answer-ttl-query-range", 0, "Shortens the cache TTL of /query_range answers in the Loki answer cache (their multi-tenant merge keeps the shorter of this and its 10s; the window and extent caches keep their own TTLs). Built-in 5m, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_QUERY_RANGE")
+	fs.Duration("cache-answer-ttl-query", 0, "Shortens the cache TTL of instant /query answers in the Loki answer cache (their multi-tenant merge keeps the shorter of this and its 10s). Built-in 5m, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_QUERY")
+	fs.Duration("cache-answer-ttl-labels", 0, "Shortens the cache TTL of /labels answers in the Loki answer cache and their multi-tenant merge (the label handler cache keeps -labels-cache-ttl). Built-in 5m, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_LABELS")
+	fs.Duration("cache-answer-ttl-label-values", 0, "Shortens the cache TTL of /label/{name}/values answers in the Loki answer cache and their multi-tenant merge (the label handler cache keeps -labels-cache-ttl). Built-in 5m, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_LABEL_VALUES")
+	fs.Duration("cache-answer-ttl-series", 0, "Shortens the cache TTL of /series answers in the Loki answer cache and their multi-tenant merge. Built-in 30s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_SERIES")
+	fs.Duration("cache-answer-ttl-detected-fields", 0, "Shortens the cache TTL of /detected_fields answers in the Loki answer cache, the read cache (still scaled with the request window, from this base) and the field detection cache. Built-in 90s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_DETECTED_FIELDS")
+	fs.Duration("cache-answer-ttl-detected-field-values", 0, "Shortens the cache TTL of /detected_field/{name}/values answers in the Loki answer cache and the read cache (still scaled with the request window, from this base). Built-in 90s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_DETECTED_FIELD_VALUES")
+	fs.Duration("cache-answer-ttl-detected-labels", 0, "Shortens the cache TTL of /detected_labels answers in the Loki answer cache and the read cache (still scaled with the request window, from this base). Built-in 90s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_DETECTED_LABELS")
+	fs.Duration("cache-answer-ttl-index-stats", 0, "Shortens the cache TTL of /index/stats answers in the Loki answer cache and the read cache. Built-in 10s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_INDEX_STATS")
+	fs.Duration("cache-answer-ttl-volume", 0, "Shortens the cache TTL of /index/volume answers in the Loki answer cache and the read cache. Built-in 10s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_VOLUME")
+	fs.Duration("cache-answer-ttl-volume-range", 0, "Shortens the cache TTL of /index/volume_range answers in the Loki answer cache and the read cache. Built-in 10s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_VOLUME_RANGE")
 	logqlDottedNames := fs.String("logql-dotted-names", "auto", `Dotted names in LogQL (k8s.namespace.name in a stream matcher, label filter, by/without list, keep/drop, label_format, json/logfmt parameters, unwrap):
   auto   - reject in the Loki-compatible profile (-label-style=underscores -metadata-field-mode=translated), accept otherwise (default)
   reject - answer Loki's 400 parse error, as Loki does; detected_fields names dotted JSON keys by Loki's sanitized name with the key in jsonPath
@@ -877,8 +889,9 @@ func run(
 	peerHotReadAheadTenantFairShare := fs.Int("peer-hot-read-ahead-tenant-fair-share", 50, "Maximum per-tenant share (percent) of key budget in fairness pass")
 	peerHotReadAheadErrorBackoff := fs.Duration("peer-hot-read-ahead-error-backoff", 15*time.Second, "Base read-ahead cooldown applied after peer/index errors")
 
-	// Secrets are resolved here, before any check or component reads them.
-	explicitFlags, err := parseFlagsAndSecrets(fs, args, getenv, []secretFlag{
+	// Secrets and the answer cache TTLs are resolved here, before any check
+	// or component reads them.
+	explicitFlags, answerCacheTTLs, err := parseFlagsSecretsAndAnswerTTLs(fs, args, getenv, []secretFlag{
 		{name: "peer-auth-token", value: peerAuthToken, file: peerAuthTokenFile, env: "PEER_AUTH_TOKEN"},
 		{name: "cache-key-secret", value: cacheKeySecret, file: cacheKeySecretFile, env: "CACHE_KEY_SECRET"},
 		{name: "server.admin-auth-token", value: adminAuthToken, file: adminAuthTokenFile, env: "ADMIN_AUTH_TOKEN"},
@@ -1152,6 +1165,7 @@ func run(
 			logStatsInterval:                    *logStatsInterval,
 			logRateThreshold:                    *logRateThreshold,
 			labelCacheTTL:                       *labelsCacheTTL,
+			answerCacheTTLs:                     answerCacheTTLs,
 			labelsCacheWarm:                     *labelsCacheWarm,
 			logqlDottedNames:                    *logqlDottedNames,
 			labelBrowseExtensions:               *labelBrowseExtensions,
@@ -2620,6 +2634,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
 		MetricsDurationBuckets:             durationBuckets,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
+		AnswerCacheTTLs:                    cfg.answerCacheTTLs,
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
 		CacheShutdownFlushTimeout:          cfg.cacheShutdownFlushTimeout,
 		CacheStartupWarmBytes:              cfg.cacheStartupWarmBytes,

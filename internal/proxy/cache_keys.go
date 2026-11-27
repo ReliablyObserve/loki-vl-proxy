@@ -130,7 +130,7 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 		if authScope != "" {
 			extraParts = append(extraParts, "auth:"+authScope)
 		}
-		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...)
+		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...) + p.readCacheKeyTTLFence(endpoint)
 		p.readCacheKeyMemoMu.Lock()
 		if p.readCacheKeyMemo == nil {
 			p.readCacheKeyMemo = make(map[canonicalReadCacheMemoKey]string, 2048)
@@ -147,7 +147,7 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 	if authScope != "" {
 		extraParts = append(extraParts, "auth:"+authScope)
 	}
-	return computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...)
+	return computeCanonicalReadCacheKey(endpoint, orgID, r, exactWindow, extraParts...) + p.readCacheKeyTTLFence(endpoint)
 }
 
 func buildCanonicalReadCacheMemoKey(endpoint, orgID string, r *http.Request, extraParts []string) (canonicalReadCacheMemoKey, bool) {
@@ -461,7 +461,7 @@ func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, e
 			}
 			payload := detectedFieldsPayload(fields) // the handler's answer, limit only with fields
 			// Window-scaled TTL, matching the handler's staleness comparison.
-			p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, metadataWindowTTL(start, end, CacheTTLs["detected_fields"]), payload)
+			p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, metadataWindowTTL(start, end, p.endpointTTL("detected_fields")), payload)
 			return nil, nil
 		})
 		if err != nil {
@@ -492,7 +492,7 @@ func (p *Proxy) refreshDetectedLabelsCacheAsync(orgID, cacheKey, query, start, e
 				"detectedLabels": labels,
 				"limit":          lineLimit,
 			}
-			p.setEndpointJSONCacheWithTTL("detected_labels", cacheKey, metadataWindowTTL(start, end, CacheTTLs["detected_labels"]), payload)
+			p.setEndpointJSONCacheWithTTL("detected_labels", cacheKey, metadataWindowTTL(start, end, p.endpointTTL("detected_labels")), payload)
 			return nil, nil
 		})
 		if err != nil {
@@ -527,7 +527,7 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 				"values": values,
 				"limit":  lineLimit,
 			}
-			p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, metadataWindowTTL(start, end, CacheTTLs["detected_field_values"]), payload)
+			p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, metadataWindowTTL(start, end, p.endpointTTL("detected_field_values")), payload)
 			return nil, nil
 		})
 		if err != nil {

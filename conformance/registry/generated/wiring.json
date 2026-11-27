@@ -150,6 +150,10 @@
       "internal/capability/version_source_test.go",
       "internal/proxy/backend_version_source_test.go"
     ],
+    "cache-answer-ttl-shorten-only": [
+      "cmd/proxy/answer_cache_ttl_test.go",
+      "internal/proxy/answer_cache_ttl_test.go"
+    ],
     "cache-eviction-signals": [
       "internal/cache/eviction_signals_test.go",
       "internal/metrics/cache_signal_dashboard_test.go",
@@ -179,6 +183,7 @@
       "internal/proxy/response_key_fences_test.go"
     ],
     "cache-restart-handover": [
+      "cmd/proxy/answer_cache_ttl_test.go",
       "cmd/proxy/cache_handover_scope_test.go",
       "internal/cache/handover_peak_test.go",
       "internal/cache/handover_test.go",
@@ -3362,9 +3367,13 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 775,
+  "registry_items": 776,
   "routes_without_registry_item": [],
   "test_to_items": {
+    "cmd/proxy/answer_cache_ttl_test.go": [
+      "cache-answer-ttl-shorten-only",
+      "cache-restart-handover"
+    ],
     "cmd/proxy/cache_handover_scope_test.go": [
       "cache-restart-handover"
     ],
@@ -3850,6 +3859,9 @@
       "prometheus_api_v1_rules",
       "semantics/tenant-label-default-aliases",
       "tenant-label-isolation"
+    ],
+    "internal/proxy/answer_cache_ttl_test.go": [
+      "cache-answer-ttl-shorten-only"
     ],
     "internal/proxy/backend_capabilities_test.go": [
       "instrumentation-reveals-no-secrets",
@@ -7532,7 +7544,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 909,
+  "tests_with_markers": 911,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7690,5 +7702,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 506
+  "wired_items": 507
 }
