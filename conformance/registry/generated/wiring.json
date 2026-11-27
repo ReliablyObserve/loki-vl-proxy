@@ -2419,6 +2419,20 @@
       "internal/proxy/stream_window_chunks_test.go",
       "test/e2e-compat/series_level_aggregation_fine_step_test.go"
     ],
+    "semantics/service-name-stream-filter": [
+      "internal/logsql/stream_filter_any_test.go",
+      "internal/proxy/service_name_stream_filter_oracle_test.go",
+      "internal/proxy/service_name_stream_filter_test.go",
+      "internal/translate/service_name_stream_filter_test.go",
+      "test/e2e-compat/service_name_stream_filter_test.go"
+    ],
+    "semantics/service-name-stream-route": [
+      "internal/proxy/service_name_route_oracle_test.go",
+      "internal/proxy/service_name_route_test.go",
+      "internal/translate/service_name_stream_filter_proof_test.go",
+      "test/e2e-compat/service_name_stream_filter_test.go",
+      "test/e2e-fleet/service_name_route_test.go"
+    ],
     "semantics/set-operation-folded-literal-operand": [
       "internal/proxy/query_tree_validation_test.go",
       "internal/querycorpus/grammar_sweep_test.go",
@@ -3028,6 +3042,9 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/series_count_aggregation_test.go"
     ],
+    "service-name-derivation": [
+      "test/e2e-compat/service_name_stream_filter_test.go"
+    ],
     "severity-detected-level-derivation": [
       "internal/proxy/detected_level_filter_test.go",
       "internal/proxy/detected_level_keys_gate_test.go",
@@ -3283,6 +3300,11 @@
       "internal/proxy/vl_refusal_test.go",
       "test/e2e-compat/vl_refusal_prediction_test.go"
     ],
+    "vl-stream-filter-or-groups-and-missing-label": [
+      "internal/proxy/service_name_route_oracle_test.go",
+      "internal/proxy/service_name_stream_filter_oracle_test.go",
+      "test/e2e-compat/service_name_stream_filter_test.go"
+    ],
     "vl-zstd-response-window": [
       "test/e2e-compat/vl_zstd_response_window_test.go"
     ],
@@ -3324,7 +3346,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 770,
+  "registry_items": 773,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3711,6 +3733,9 @@
     ],
     "internal/logsql/reserved_fields_test.go": [
       "semantics/translator-writes-reserved-field-names"
+    ],
+    "internal/logsql/stream_filter_any_test.go": [
+      "semantics/service-name-stream-filter"
     ],
     "internal/logsql/stream_group_test.go": [
       "semantics/detected-level-stream-stats-without-level"
@@ -5278,6 +5303,20 @@
       "loki_api_v1_query_range",
       "series-limits-and-partial-results"
     ],
+    "internal/proxy/service_name_route_oracle_test.go": [
+      "semantics/service-name-stream-route",
+      "vl-stream-filter-or-groups-and-missing-label"
+    ],
+    "internal/proxy/service_name_route_test.go": [
+      "semantics/service-name-stream-route"
+    ],
+    "internal/proxy/service_name_stream_filter_oracle_test.go": [
+      "semantics/service-name-stream-filter",
+      "vl-stream-filter-or-groups-and-missing-label"
+    ],
+    "internal/proxy/service_name_stream_filter_test.go": [
+      "semantics/service-name-stream-filter"
+    ],
     "internal/proxy/sliding_window_chunks_test.go": [
       "heavy-metric-fetch-bounds",
       "limits/stats-row-limit-per-grid",
@@ -6420,6 +6459,12 @@
     "internal/translate/selector_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/translate/service_name_stream_filter_proof_test.go": [
+      "semantics/service-name-stream-route"
+    ],
+    "internal/translate/service_name_stream_filter_test.go": [
+      "semantics/service-name-stream-filter"
+    ],
     "internal/translate/stream_alias_test.go": [
       "field-mapping-label-names"
     ],
@@ -7159,6 +7204,12 @@
       "metric-series-identity",
       "semantics/series-level-aggregation-bounded-memory"
     ],
+    "test/e2e-compat/service_name_stream_filter_test.go": [
+      "semantics/service-name-stream-filter",
+      "semantics/service-name-stream-route",
+      "service-name-derivation",
+      "vl-stream-filter-or-groups-and-missing-label"
+    ],
     "test/e2e-compat/sliding_sum_without_test.go": [
       "loki_api_v1_query_range",
       "metric-series-identity",
@@ -7402,6 +7453,9 @@
     "test/e2e-fleet/restart_handover_test.go": [
       "cache-restart-handover"
     ],
+    "test/e2e-fleet/service_name_route_test.go": [
+      "semantics/service-name-stream-route"
+    ],
     "test/e2e-fleet/settled_steps_test.go": [
       "quality/query-range-settled-steps"
     ],
@@ -7444,7 +7498,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 897,
+  "tests_with_markers": 906,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7596,12 +7650,11 @@
     "semantics/unwrap-wrapper-internal-line-series-identity",
     "semantics/uppercase-topk-ranks-once",
     "semantics/without-fold-detected-level-unknown",
-    "service-name-derivation",
     "severity/otlp-severity-before-vl-1.50",
     "severity/stored-log-dot-level-in-metric-chain",
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 500
+  "wired_items": 504
 }
