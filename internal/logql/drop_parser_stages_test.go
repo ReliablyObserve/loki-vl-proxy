@@ -109,6 +109,34 @@ func checkDropParserStages(t *testing.T, q string, drop ParserType) {
 	if want != gotTree {
 		t.Fatalf("DropParserStages(%q) = %q\ntree  %s\nwant  %s", q, got, gotTree, want)
 	}
+	// The probe's log query is the first range aggregation's, as the tree holds it.
+	if lq := ReadParserStages(q).LogQuery(); lq != "" {
+		parsed, err := ParseLogQuery(lq)
+		if err != nil {
+			t.Fatalf("ReadParserStages(%q).LogQuery() = %q, which does not parse: %v", q, lq, err)
+		}
+		if first := firstRangeLogQuery(before); first == nil || parsed.String() != first.String() {
+			t.Fatalf("ReadParserStages(%q).LogQuery() = %q, the tree's is %v", q, lq, first)
+		}
+	}
+}
+
+// firstRangeLogQuery is the log query of the first range aggregation the parser reads in e (not one inside a call
+// kept as text).
+func firstRangeLogQuery(e Expr) *LogQuery {
+	switch n := e.(type) {
+	case *RangeAggregation:
+		lq, _ := n.Inner.(*LogQuery)
+		return lq
+	case *VectorAggregation:
+		return firstRangeLogQuery(n.Inner)
+	case *BinOpExpr:
+		if lq := firstRangeLogQuery(n.Left); lq != nil {
+			return lq
+		}
+		return firstRangeLogQuery(n.Right)
+	}
+	return nil
 }
 
 // dropStagesTreeText prints e with the stages of type drop left out (strict: none may be there), and the inner
@@ -152,4 +180,25 @@ func groupingText(g *Grouping) string {
 		return ""
 	}
 	return g.String()
+}
+
+// The probe reads the log query of the first range aggregation as it is written; a log query that is not one span
+// of the text (stages after the range, a range inside a call kept as text, a log query) reads "".
+//
+// conformance: semantics/parser-probe-drop-keeps-range
+func TestReadParserStagesLogQuery(t *testing.T) {
+	for q, want := range map[string]string{
+		`sum(count_over_time({a="b"} | json | logfmt | drop __error__, __error_details__ [3h]))`: `{a="b"} | json | logfmt | drop __error__, __error_details__`,
+		`quantile_over_time(0.9, {a="b"} | json | logfmt | unwrap x [3h])`:                       `{a="b"} | json | logfmt | unwrap x`,
+		`sum(count_over_time({a="b"} | json | logfmt [1h] offset 1h))`:                           `{a="b"} | json | logfmt`,
+		`sum(count_over_time(({a="b"} | json | logfmt)[1h]))`:                                    `{a="b"} | json | logfmt`,
+		`count_over_time({a="b"}[3h] | json | logfmt)`:                                           "",
+		`label_replace(sum(count_over_time({a="b"} | json | logfmt [30m])), "a", "", "", "")`:    "",
+		`{a="b"} | json | logfmt`:                          "",
+		`sum(count_over_time({a="b"} | json | logfmt [3h]`: "",
+	} {
+		if got := ReadParserStages(q).LogQuery(); got != want {
+			t.Errorf("ReadParserStages(%q).LogQuery() = %q, want %q", q, got, want)
+		}
+	}
 }

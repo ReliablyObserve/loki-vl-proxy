@@ -20,17 +20,28 @@ why: |
   quantile_over_time's parameter into the log query (`0.9, {...} | json | ...`) and missed a range with an offset,
   so the probe sent VictoriaLogs a malformed query and the query kept both stages.
 
-  Fixed: the stage is removed where the parser read it (logql.DropParserStages: the stage's `|`, the blank before
-  it and its words go, the rest of the text stays as written, the arguments of label_replace and approx_topk are
-  read the same way), and the probe reads the log query of the query's range aggregation from the parsed tree. A
-  query that does not parse is left as it is. TestParserProbeDropMatchesRecordedLoki holds 1536 requests (both
+  A range request without start or end sent the probe without a time range too (the handler passed the bounds as
+  sent), so VictoriaLogs scanned the whole retention for the 25 newest lines, while the metric read itself used
+  Loki's default window.
+
+  Fixed: the query is read once by the parser (logql.ReadParserStages, the precedent being
+  logql.StripParserFlags): the probe reads the log query of the first range aggregation as written (the parsed
+  tree's text for a log query or one inside label_replace), and the stage the probe does not keep is removed where
+  the parser read it (the stage's `|`, the blank before it and its words go, the rest of the text stays as written,
+  the arguments of label_replace and approx_topk are read the same way). A query that does not parse is left as it
+  is. A range probe without start or end reads the window Loki reads the request with (lokiRangeBounds: end now,
+  start an hour or `since` before). Answers cached by an earlier build for a metric query naming both parsers are
+  not served: their keys carry the fence `@two-parser-metric-v1:` (one more cache miss per such query). TestParserProbeDropMatchesRecordedLoki holds 1536 requests (both
   parser orders with and without a drop of the error labels, count/rate/bytes/bytes_rate/absent/quantile, bare and
   under sum, sum by, max, min, avg, count, topk, bottomk, sort, sort_desc, label_replace, binary with a number and
   offset, plus the one-parser controls, instant and range, over JSON, logfmt, mixed and plain lines) to Loki's
   recorded engine answers: no request shows the cut, the probe is well formed and bounded, 38 rows answer as Loki
-  where main did not and none moved away from Loki. The rows that still differ are the open
-  semantics/two-parsers-keep-one difference (the probe keeps one parser where Loki runs both) and differences
-  their one-parser forms share; they are listed in
+  where main did not, and no row that answered as Loki on main differs now. Eight instant rows (max, min, avg or
+  count over a bare count_over_time without a drop of the error labels, on logfmt or mixed lines) answered 400 on
+  main with the cut's own message where Loki answers 400 JSONParserErr; they answer 200 now, as the other parser
+  order of the same queries already did on main (the JSON parser error check does not run on a query naming both
+  parsers: semantics/two-parsers-keep-one). The rows that still differ are that open difference (the probe keeps
+  one parser where Loki runs both) and differences their one-parser forms share; they are listed in
   internal/proxy/testdata/parser_probe_drop_known_differences.txt, a list that may only shrink.
 request:
   method: GET
@@ -56,10 +67,10 @@ gap:
   fixed_by: "#TBD"
   impact: drilldown-visible
   effort: S
-  area: "internal/proxy preferWorkingParser (removeParserStage, parserProbeLogQuery), internal/logql DropParserStages"
+  area: "internal/proxy preferWorkingParser (parserProbeLogQuery, rangeParserProbeWindow, twoParserMetricResponseKeyVersion), internal/logql ReadParserStages"
   loki: "200 with the metric answer; both stages run on every line"
   proxy: "the stage the probe does not keep is removed from the parsed query; the range and the rest of the query stay"
-  planned_test: 'TestParserProbeDropMatchesRecordedLoki, TestParserProbeDropReadsTheTree (internal/proxy), TestDropParserStages, TestDropParserStagesKeepsTheTree, FuzzDropParserStages (internal/logql)'
+  planned_test: 'TestParserProbeDropMatchesRecordedLoki, TestParserProbeDropReadsTheTree, TestRangeParserProbeReadsTheRequestWindow, TestParserProbeDropRejectsOldCopies (internal/proxy), TestDropParserStages, TestDropParserStagesKeepsTheTree, TestReadParserStagesLogQuery, FuzzDropParserStages (internal/logql)'
   visual: none
   visual_reason: 'the failing Drilldown and Explore panels showed an error or no data; the fixed answer is the Loki answer the recorded differential holds; live captures are owed'
   clusters: []

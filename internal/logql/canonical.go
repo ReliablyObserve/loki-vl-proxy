@@ -1,7 +1,6 @@
 package logql
 
 import (
-	"slices"
 	"strings"
 )
 
@@ -326,61 +325,6 @@ func onlyUnwrapStubs(expr Expr) bool {
 		}
 	}
 	return true
-}
-
-// DropParserStages removes every `| json` (drop ParserJSON) or `| logfmt` (ParserLogfmt) stage, with its flags and
-// field list, from the log queries of a log or metric query, where the parser read them: the stage's `|`, the blank
-// before it and its words go; the rest of the text stays as it was written. A stage that is the last one before a
-// range (`{a="b"} | json | logfmt [5m]`) leaves the range and everything after it in place. The arguments of a call
-// kept as text (label_replace, approx_topk) are read the same way, each on its own. A query that does not parse, or
-// holds no such stage, is returned as it is.
-func DropParserStages(query string, drop ParserType) string {
-	if drop != ParserJSON && drop != ParserLogfmt {
-		return query
-	}
-	if _, err := Parse(query); err != nil {
-		return query // validation answers Loki's error for it
-	}
-	var spans, args [][2]int
-	p := &parser{sc: newScanner(query), stageSpans: &spans, stageSpanType: drop, stageArgs: &args}
-	p.advance()
-	if _, err := p.parseExpr(); err != nil || p.cur.Typ != TokEOF || p.plainUnwrapAt > 0 || len(spans) == 0 && len(args) == 0 {
-		return query
-	}
-	// The edits, left to right: a stage removed, or an argument of a call kept as text read on its own. The parser
-	// reads over a call's arguments, so no stage span falls inside one.
-	type edit struct {
-		start, end int
-		text       string
-	}
-	edits := make([]edit, 0, len(spans)+len(args))
-	for _, sp := range spans {
-		edits = append(edits, edit{sp[0], sp[1], ""})
-	}
-	for _, a := range args {
-		if arg := query[a[0]:a[1]]; strings.Contains(arg, "|") {
-			if dropped := DropParserStages(arg, drop); dropped != arg {
-				edits = append(edits, edit{a[0], a[1], dropped})
-			}
-		}
-	}
-	if len(edits) == 0 {
-		return query
-	}
-	slices.SortFunc(edits, func(a, b edit) int { return a.start - b.start })
-	var b strings.Builder
-	b.Grow(len(query))
-	last := 0
-	for _, e := range edits {
-		if e.start < last || e.end < e.start || e.end > len(query) {
-			return query // overlapping edits: never splice a text the parser did not read once, left to right
-		}
-		b.WriteString(query[last:e.start])
-		b.WriteString(e.text)
-		last = e.end
-	}
-	b.WriteString(query[last:])
-	return b.String()
 }
 
 // StripParserFlags removes the logfmt flags of a query (`--strict`,

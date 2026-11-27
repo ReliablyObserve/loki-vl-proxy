@@ -3075,7 +3075,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		r = checked
 	}
 
-	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
+	// A range request may leave start or end out: the probe reads the window Loki gives it then.
+	probeStart, probeEnd := rangeParserProbeWindow(r, time.Now())
+	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, probeStart, probeEnd)
 	unwrapLookup.setQuery(logqlQuery)
 
 	if spec, ok := p.bareParserMetricSpec(logqlQuery); ok {

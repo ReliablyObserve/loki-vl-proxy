@@ -211,4 +211,3 @@ func parserProbeEmptyAnswer(body []byte) bool {
 	}
 	return json.Unmarshal(body, &reply) == nil && reply.Status == "success" && len(reply.Data.Result) == 0
 }
-

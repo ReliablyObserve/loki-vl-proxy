@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 // parserProbeBackend answers the parser probe (a `sort by (_time desc)` read
@@ -310,14 +312,21 @@ func TestParserProbeDropReadsTheTree(t *testing.T) {
 		{`label_replace(sum(count_over_time({a="b"} | json | logfmt [30m])), "c", "$1", "a", "(.*)")`, `label_replace(sum(count_over_time({a="b"} | json [30m])), "c", "$1", "a", "(.*)")`, `label_replace(sum(count_over_time({a="b"} | logfmt [30m])), "c", "$1", "a", "(.*)")`, `{a="b"} | json | logfmt`},
 		{`{a="b"} | json | logfmt`, `{a="b"} | json`, `{a="b"} | logfmt`, `{a="b"} | json | logfmt`},
 	} {
-		if got := removeParserStage(tc.query, "logfmt"); got != tc.keepJSON {
+		stages := logqlpkg.ReadParserStages(tc.query)
+		if got := stages.Drop(logqlpkg.ParserLogfmt); got != tc.keepJSON {
 			t.Errorf("%s keeps json as %q, want %q", tc.query, got, tc.keepJSON)
 		}
-		if got := removeParserStage(tc.query, "json"); got != tc.keepLogfmt {
+		if got := stages.Drop(logqlpkg.ParserJSON); got != tc.keepLogfmt {
 			t.Errorf("%s keeps logfmt as %q, want %q", tc.query, got, tc.keepLogfmt)
 		}
-		if got := parserProbeLogQuery(tc.query); got != tc.probe {
-			t.Errorf("%s probes %q, want %q", tc.query, got, tc.probe)
+		// The probe's log query: the text the parser read, or the tree's for a query whose log query is not one
+		// span of its text (inside label_replace, or a log query).
+		probe := stages.LogQuery()
+		if probe == "" {
+			probe = parserProbeLogQuery(tc.query)
+		}
+		if probe != tc.probe {
+			t.Errorf("%s probes %q, want %q", tc.query, probe, tc.probe)
 		}
 	}
 	if got := parserProbeLogQuery(`sum(count_over_time({a="b"} | json | logfmt [3h]`); got != "" {
@@ -325,8 +334,8 @@ func TestParserProbeDropReadsTheTree(t *testing.T) {
 	}
 }
 
-// BenchmarkParserProbeDrop is the proxy's cost of keeping the parser the probe chose: the removal of the other
-// stage and the probe's log query, on the issue's Drilldown query (with and without the drop of the error labels).
+// BenchmarkParserProbeDrop is the proxy's cost of keeping the parser the probe chose: the probe's log query and the
+// removal of the other stage, on the issue's Drilldown query (with and without the drop of the error labels).
 func BenchmarkParserProbeDrop(b *testing.B) {
 	for _, q := range []string{
 		`sum(count_over_time({cluster="c1", namespace="ns1", container="ingress"} | json | logfmt | drop __error__, __error_details__ [3h]))`,
@@ -336,18 +345,112 @@ func BenchmarkParserProbeDrop(b *testing.B) {
 		if !strings.Contains(q, "drop") {
 			name = "last-stage"
 		}
-		b.Run("remove/"+name, func(b *testing.B) {
+		// The probe's log query and the removal of the stage it does not keep, from one read of the query.
+		b.Run("read-probe-drop/"+name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = removeParserStage(q, "logfmt")
+				stages := logqlpkg.ReadParserStages(q)
+				if stages.LogQuery() == "" || stages.Drop(logqlpkg.ParserLogfmt) == q {
+					b.Fatal("no probe query or nothing removed")
+				}
 			}
 		})
-		b.Run("probe-query/"+name, func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if baseQuery := parserProbeLogQuery(q); baseQuery == "" {
-					baseQuery = extractParserProbeQuery(q)
+	}
+}
+
+// A range request may leave start or end out; Loki then reads the hour (or the since) before end, and end is now.
+// The probe read start and end as sent, so without them it went to VictoriaLogs with no time range and VictoriaLogs
+// scanned the whole retention for the 25 newest lines (#1821). It now reads the window Loki reads the request with.
+//
+// conformance: semantics/parser-probe-drop-keeps-range, semantics/request-time-bounds, loki_api_v1_query_range
+func TestRangeParserProbeReadsTheRequestWindow(t *testing.T) {
+	const query = `sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [5m]))`
+	endAt := strconv.FormatInt(parserProbeAt/1e9, 10)
+	for _, tc := range []struct {
+		name   string
+		params url.Values
+		window time.Duration // the window's length; its end is now when the request names none
+		fixed  bool          // the end is parserProbeAt
+	}{
+		{"no start or end", url.Values{"step": {"60"}}, time.Hour, false},
+		{"since", url.Values{"step": {"60"}, "since": {"3h"}}, 3 * time.Hour, false},
+		{"end only", url.Values{"step": {"60"}, "end": {endAt}}, time.Hour, true},
+		{"start and end", url.Values{"step": {"60"}, "start": {strconv.FormatInt(parserProbeAt/1e9-1800, 10)}, "end": {endAt}}, 30 * time.Minute, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &parserProbeBackend{lines: func(string, string) []string { return []string{"level=info msg=hi"} }}
+			p := newParserProbeProxy(t, b)
+			params := url.Values{"query": {query}}
+			for k, v := range tc.params {
+				params[k] = v
+			}
+			before := time.Now().UnixNano()
+			res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+			after := time.Now().UnixNano()
+			if res.Code != http.StatusOK || len(b.probes) != 1 {
+				t.Fatalf("%d %s, %d probes", res.Code, res.Body, len(b.probes))
+			}
+			if b.probes[0].Get("start") == "" || b.probes[0].Get("end") == "" {
+				t.Fatalf("unbounded probe %v", b.probes[0])
+			}
+			start, end := parserProbeVLTime(t, b.probes[0].Get("start")), parserProbeVLTime(t, b.probes[0].Get("end"))
+			if tc.fixed {
+				if end != parserProbeAt {
+					t.Fatalf("probe end %d, want %d", end, parserProbeAt)
 				}
+			} else if end < before || end > after {
+				t.Fatalf("probe end %d outside the request's now [%d, %d]", end, before, after)
+			}
+			// A bound the request leaves out is now when the handler reads it: the two may be read microseconds
+			// apart, never more than the request took.
+			if got := end - start; got < int64(tc.window)-int64(time.Microsecond) || got > int64(tc.window)+(after-before)+int64(time.Microsecond) {
+				t.Fatalf("probe window [%d, %d] is %v long, want %v", start, end, time.Duration(got), tc.window)
+			}
+		})
+	}
+}
+
+// A range query whose removed parser stage was the last before its range answered log streams with a 200, and the
+// response caches (memory, disk, peers) could hold that answer. The keys of a metric query naming both parsers carry
+// a fence now, so an answer cached under the key an earlier build wrote is never served: the edge (compat) key, the
+// range handler's key and its settled steps' base key all carry it, and an instant answer seeded under the edge key
+// without it is not served (it is, with the fence taken out).
+//
+// conformance: semantics/parser-probe-drop-keeps-range, cache-response-key-versions
+func TestParserProbeDropRejectsOldCopies(t *testing.T) {
+	const query = `sum(count_over_time({app="x"} | json | logfmt [3h]))`
+	for _, endpoint := range []string{"query", "query_range"} {
+		t.Run(endpoint, func(t *testing.T) {
+			b := &parserProbeBackend{lines: func(string, string) []string { return []string{`{"route":"/a"}`} }}
+			backend := httptest.NewServer(http.HandlerFunc(b.handler))
+			t.Cleanup(backend.Close)
+			p := newDLVBaselineProxy(t, backend.URL, true) // with the compat (edge) cache
+			params := url.Values{"query": {query}, "time": {strconv.FormatInt(parserProbeAt/1e9, 10)},
+				"start": {strconv.FormatInt(parserProbeAt/1e9-3600, 10)}, "end": {strconv.FormatInt(parserProbeAt/1e9, 10)}, "step": {"60"}}
+			target := "/loki/api/v1/" + endpoint + "?" + params.Encode()
+			r := httptest.NewRequest(http.MethodGet, target, nil)
+			r.Header.Set("X-Scope-OrgID", "team-a")
+			key, ok := p.compatCacheKey(endpoint, r)
+			if !ok || !strings.Contains(key, twoParserMetricResponseVersion) {
+				t.Fatalf("unfenced key: %s", key)
+			}
+			stale := []byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"stale":"true"},"values":[["1795780800000000000","cut"]]}]}}`)
+			p.compatCache.SetLocalOnlyWithTTL(strings.Replace(key, twoParserMetricResponseVersion, "", 1), stale, 5*time.Minute)
+			if endpoint == "query_range" {
+				// The range handler's own answer and its settled steps are keyed from queryRangeCacheKey.
+				for _, inner := range []string{p.queryRangeCacheKey(r, query), p.queryStepsBaseKey(r, query)} {
+					if !strings.Contains(inner, twoParserMetricResponseVersion) {
+						t.Fatalf("unfenced inner key: %s", inner)
+					}
+					p.cache.SetLocalOnlyWithTTL(strings.Replace(inner, twoParserMetricResponseVersion, "", 1), stale, 5*time.Minute)
+				}
+			}
+			res := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "team-a"})
+			if res.Code != http.StatusOK || bytes.Contains(res.Body.Bytes(), []byte("stale")) || bytes.Contains(res.Body.Bytes(), []byte(`"streams"`)) {
+				t.Fatalf("an answer cached under the old key was served: %d %s", res.Code, res.Body)
+			}
+			if len(b.probes) == 0 {
+				t.Fatal("the request did not reach VictoriaLogs")
 			}
 		})
 	}

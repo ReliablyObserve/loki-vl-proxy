@@ -136,9 +136,10 @@ why: |
   that may only shrink): series whose labels come from both parsers in Loki and from
   the kept one in the proxy, values of aggregations over those series, and Loki's
   400 JSONParserErr for a query without a drop of the error labels over lines that
-  are not JSON, which the proxy answers 200 once the probe kept logfmt. Of the 289
-  two-parser rows listed, 176 have a one-parser control that differs too on the same
-  fake backend; 113 differ only in the two-parser form.
+  are not JSON, which the proxy answers 200 once the probe kept logfmt (the JSON
+  parser error check does not run on a query naming both parsers). The one-parser
+  controls of the same matrix differ on the same fake backend for some of the same
+  shapes (151 of 768 rows).
 
 request:
   method: GET

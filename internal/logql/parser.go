@@ -315,13 +315,9 @@ type parser struct {
 	spell *spellState
 	// flagSpans collects the spans of the logfmt flags read, when not nil (StripParserFlags).
 	flagSpans *[][2]int
-	// stageSpans collects the spans of the parser stages of type stageSpanType read, when not nil
-	// (DropParserStages): from the end of the token before the stage's `|` to the end of its last token.
-	stageSpans    *[][2]int
-	stageSpanType ParserType
-	// stageArgs collects, with stageSpans, the spans of the arguments of the calls kept as text (label_replace,
-	// approx_topk): this parser reads over them, so DropParserStages reads each one on its own.
-	stageArgs *[][2]int
+	// stages collects where the json and logfmt stages, the arguments of the calls kept as text and the log query of
+	// the first range aggregation stand, when not nil (ReadParserStages).
+	stages *ParserStages
 	// rangeDepth is above 0 inside the argument of a range aggregation, where an unwrap stage may stand. plainUnwrapAt
 	// is one more than the offset of the first unwrap stage outside one: Loki's parser stops at that token whatever
 	// follows it.
@@ -623,7 +619,7 @@ func (p *parser) parseOpaqueCall(name string) (Expr, error) {
 				p.addRewrite(argStart, argEnd, canon)
 			}
 		}
-		if p.stageArgs != nil {
+		if p.stages != nil {
 			p.noteCallArguments(argStart, endPos)
 		}
 		raw := strings.TrimSpace(p.sc.src[startPos:endPos])
@@ -1109,15 +1105,15 @@ func (p *parser) parsePipelineStage() (Stage, error) {
 	switch p.cur.Typ {
 	case TokPipe:
 		p.pipePos = p.pos()
-		if p.stageSpans == nil {
+		if p.stages == nil {
 			p.advance()
 			return p.parsePipeBody()
 		}
 		before := p.prevEnd
 		p.advance()
 		stage, err := p.parsePipeBody()
-		if ps, ok := stage.(*ParserStage); ok && err == nil && ps.Type == p.stageSpanType {
-			*p.stageSpans = append(*p.stageSpans, [2]int{before, p.prevEnd})
+		if ps, ok := stage.(*ParserStage); ok && err == nil {
+			p.stages.noteStage(ps.Type, before, p.prevEnd)
 		}
 		return stage, err
 	}
@@ -1389,12 +1385,7 @@ func (p *parser) noteChecked(lq *LogQuery) {
 	p.checkedLogQueryCount++
 }
 
-// typeCall types the call kept as text o, whose text starts at offset start, with a parser of its own
-// (typeOpaqueCall), and keeps the log queries of its sample expression after the ones read before it, so that their
-// actions answer ahead of a later syntax error as the others do. The call's parser notes them as it reads them and
-// jumps over the calls nested in it (quiet_calls.go): neither the call's text nor its tree is read again at each
-// level of a nesting. A call it cannot type, or without a sample expression, leaves the lists as they were.
-// noteCallArguments notes the spans of the arguments of a call kept as text (DropParserStages): its text after the
+// noteCallArguments notes the spans of the arguments of a call kept as text (ReadParserStages): its text after the
 // '(' at argStart, to its ')' just before endPos, split at the commas outside strings and brackets.
 func (p *parser) noteCallArguments(argStart, endPos int) {
 	src := p.sc.src
@@ -1404,7 +1395,7 @@ func (p *parser) noteCallArguments(argStart, endPos int) {
 	}
 	for pos := argStart; ; {
 		n := FirstArgumentLen(src[pos:closing])
-		*p.stageArgs = append(*p.stageArgs, [2]int{pos, pos + n})
+		p.stages.args = append(p.stages.args, [2]int{pos, pos + n})
 		if pos+n >= closing {
 			return
 		}
@@ -1412,6 +1403,11 @@ func (p *parser) noteCallArguments(argStart, endPos int) {
 	}
 }
 
+// typeCall types the call kept as text o, whose text starts at offset start, with a parser of its own
+// (typeOpaqueCall), and keeps the log queries of its sample expression after the ones read before it, so that their
+// actions answer ahead of a later syntax error as the others do. The call's parser notes them as it reads them and
+// jumps over the calls nested in it (quiet_calls.go): neither the call's text nor its tree is read again at each
+// level of a nesting. A call it cannot type, or without a sample expression, leaves the lists as they were.
 func (p *parser) typeCall(o *OpaqueMetricExpr, start int) {
 	if o.Func != "label_replace" {
 		typeOpaqueCallWith(o, p.calls, p.base+start, false, p.sc.budget) // a number or nothing: no log query to note
@@ -2388,11 +2384,16 @@ func (p *parser) parseLogRange(ra *RangeAggregation) (rangeForm, error) {
 		p.advance()
 		open++
 	}
+	lqStart := p.pos()
 	lq, err := p.parseLogQuery()
 	if err != nil {
 		return form, err
 	}
 	ra.Inner = lq
+	first := p.stages != nil && !p.stages.rangeSeen
+	if first {
+		p.stages.rangeSeen, p.stages.logQuery = true, [2]int{lqStart, p.prevEnd}
+	}
 	if p.canon != nil {
 		form.log = strings.TrimSpace(p.sc.src[p.canon.queryStart:p.canon.queryEnd])
 	}
@@ -2415,6 +2416,9 @@ func (p *parser) parseLogRange(ra *RangeAggregation) (rangeForm, error) {
 	switch {
 	case !p.atStageStart():
 	case closed && bare && p.cur.Typ == TokPipe:
+		if first {
+			p.stages.logQuery = [2]int{} // stages after the range: the log query is not one span of the text
+		}
 		p.advance()
 		if p.cur.Typ != TokIdent || p.cur.Val != "unwrap" {
 			return form, p.syntaxErrorAt("unwrap")
@@ -2426,6 +2430,9 @@ func (p *parser) parseLogRange(ra *RangeAggregation) (rangeForm, error) {
 		lq.Pipeline = append(lq.Pipeline, unwrap)
 		fallthrough
 	case !closed && bare:
+		if first {
+			p.stages.logQuery = [2]int{}
+		}
 		form.alt = true
 		p.afterRange = true
 		for p.atStageStart() {

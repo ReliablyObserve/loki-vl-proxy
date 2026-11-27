@@ -671,20 +671,6 @@ func pipelineHasParserStageOf(pipeline []logqlpkg.Stage, jsonStage, logfmtStage 
 	return false
 }
 
-// removeParserStage removes the parser's stages (json or logfmt) from a log or metric query where the parser read
-// them (logql.DropParserStages): the range, offset and everything around the stage stay as written. A text
-// pattern used to remove a metric query's stage with everything up to the next `|`, so a stage that was the last
-// one before its range took the range and the closing parentheses with it (#1821): an instant query answered
-// "log queries are not supported as an instant query type" and a range query answered log streams. A query that
-// does not parse is left as it is.
-func removeParserStage(query, parser string) string {
-	remove := logqlpkg.ParserJSON
-	if parser == "logfmt" {
-		remove = logqlpkg.ParserLogfmt
-	}
-	return logqlpkg.DropParserStages(query, remove)
-}
-
 // extractLogQLOffset finds a LogQL offset modifier (e.g. "[5m] offset 1h"),
 // strips all occurrences from the query, and returns the offset duration.
 //
@@ -741,8 +727,7 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 // evaluates it (a step evaluator per side). A wrapper over an ordered mixed parser
 // metric also keeps its stages until its inner evaluator reads them.
 // Dropping one parser from the whole query would take it from the operand
-// that needs it, and the text rewrite of a metric query (removeParserStage)
-// cuts everything after a stage that is the last before its range.
+// that needs it.
 func operandsKeepTheirParsers(logql string) bool {
 	expr, err := parseLogQLExpr(noFlowCtx, stripLabelTransforms(logql))
 	if err != nil {
@@ -762,7 +747,16 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	// Mixed metric requests retain logfmt flags until typed admission above.
 	// The existing sampled fallback evaluates them as unflagged logfmt.
 	logql = logqlpkg.StripParserFlags(logql)
-	baseQuery := parserProbeLogQuery(logql)
+	// One read of the query gives the log query the probe reads and where the stage the probe does not keep
+	// stands; that stage is removed from the text where the parser read it, the rest of the query as written. A
+	// text pattern used to remove a metric query's stage with everything up to the next `|`, so a stage that was
+	// the last one before its range took the range and the closing parentheses with it (#1821), and read a
+	// quantile_over_time's parameter into the probe's log query.
+	stages := logqlpkg.ReadParserStages(logql)
+	baseQuery := stages.LogQuery()
+	if baseQuery == "" {
+		baseQuery = parserProbeLogQuery(logql)
+	}
 	if baseQuery == "" {
 		baseQuery = extractParserProbeQuery(logql)
 	}
@@ -780,10 +774,10 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	switch preferred {
 	case "json":
 		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_json", time.Since(opStart))
-		return removeParserStage(logql, "logfmt")
+		return stages.Drop(logqlpkg.ParserLogfmt)
 	case "logfmt":
 		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_logfmt", time.Since(opStart))
-		return removeParserStage(logql, "json")
+		return stages.Drop(logqlpkg.ParserJSON)
 	default:
 		p.observeInternalOperation(ctx, "prefer_working_parser", "no_parser_signal", time.Since(opStart))
 		return logql
@@ -806,6 +800,28 @@ func (p *Proxy) preferWorkingParserAt(ctx context.Context, logql, rawTime string
 		return logql
 	}
 	return p.preferWorkingParser(ctx, logql, start, end)
+}
+
+// rangeParserProbeWindow is the window the parser probe of a range request reads: its start and end as sent, or,
+// for a bound the request leaves out, the one Loki reads it with (lokiRangeBounds: end now, start an hour before or
+// since before), as Unix nanoseconds. A probe sent without a bound read the whole retention for the 25 newest
+// lines (#1821). A bound that does not parse is left as it is: the handlers answer Loki's error for it.
+func rangeParserProbeWindow(r *http.Request, now time.Time) (start, end string) {
+	start, end = r.FormValue("start"), r.FormValue("end")
+	if strings.TrimSpace(start) != "" && strings.TrimSpace(end) != "" {
+		return start, end
+	}
+	s, e, ok := lokiRangeBounds(r, now)
+	if !ok {
+		return start, end
+	}
+	if strings.TrimSpace(start) == "" {
+		start = strconv.FormatInt(s.UnixNano(), 10)
+	}
+	if strings.TrimSpace(end) == "" {
+		end = strconv.FormatInt(e.UnixNano(), 10)
+	}
+	return start, end
 }
 
 // parserProbeFallbackWindow bounds the probe for a range selector whose length

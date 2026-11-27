@@ -47,6 +47,12 @@ func unpackFence(query string) string {
 	return unpackMetricResponseKeyVersion(query, spelledOtherwise(query))
 }
 
+// twoParserFence is the fence of a metric query naming both parsers, after the unpack fence on every key.
+func twoParserFence(query string) string {
+	other := spelledOtherwise(query)
+	return twoParserMetricResponseKeyVersion(containsWord(query, "json", other), containsWord(query, "logfmt", other), query, other)
+}
+
 // rankOverBinaryLabelReplaceFence is the instant compat site's fence before the rune fence
 // (semantics/rank-binary-operand-label-replace-once), read on its own.
 func rankOverBinaryLabelReplaceFence(query string) string {
@@ -222,7 +228,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			endpoint := strings.TrimSuffix(strings.TrimPrefix(shape.path, "/loki/api/v1/"), "_nostep")
 
 			// The rune fence (rune_response_fence.go) ends the compat chains and is empty for a valid query.
-			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+rankOverBinaryLabelReplaceFence(query)+unpackFence(query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+unpackFence(query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)+unpackFence(query)
+			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+rankOverBinaryLabelReplaceFence(query)+unpackFence(query)+twoParserFence(query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+unpackFence(query)+twoParserFence(query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)+unpackFence(query)+twoParserFence(query)
 			if expr, ok := sharedLogQLExpr(fenceVariablesResolved(query)); ok && containsMixedParserMetric(expr) {
 				oldCompatQuery += mixedParserMetricResponseVersion
 				oldCompatRange += mixedParserMetricResponseVersion

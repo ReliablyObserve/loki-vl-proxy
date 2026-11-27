@@ -389,6 +389,7 @@ func fenceWants(query string) map[string]bool {
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
 	want["unpack-metric"] = metricOverUnpack(expr)
+	want["two-parser-metric"] = metricOverBothParsers(expr)
 	// The dynamic unwrap identity is a plan attribute: the screen in front of the plan must let every query through
 	// whose plan holds it. The plan is built here from the tree of the query as written, not read from the memo the
 	// fence reads (which holds the plan of the keyword lower cased text).
@@ -845,6 +846,7 @@ func fenceFires(name, query string) bool {
 		},
 		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
 		"unpack-metric":            func() string { return unpackMetricResponseKeyVersion(query, spelledOtherwise(query)) },
+		"two-parser-metric":        func() string { return twoParserFence(query) },
 		"unwrap-blank-spelling":    func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
 		"unwrap-conversion-blank":  func() string { return unwrapConversionBlankResponseKeyVersion(query) },
 		"extraction-list-windows":  func() string { return listedWindowsResponseKeyVersion(r, query) },
@@ -1322,6 +1324,23 @@ func metricOverUnpack(expr logqlpkg.Expr) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// metricOverBothParsers reports a range aggregation anywhere in the tree whose log query holds both a json and a
+// logfmt stage.
+func metricOverBothParsers(expr logqlpkg.Expr) bool {
+	switch n := expr.(type) {
+	case *logqlpkg.VectorAggregation:
+		return metricOverBothParsers(n.Inner)
+	case *logqlpkg.BinOpExpr:
+		return metricOverBothParsers(n.Left) || metricOverBothParsers(n.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return n.Typed && n.Inner != nil && metricOverBothParsers(n.Inner)
+	case *logqlpkg.RangeAggregation:
+		lq, ok := n.Inner.(*logqlpkg.LogQuery)
+		return ok && pipelineHasParserStageOf(lq.Pipeline, true, false) && pipelineHasParserStageOf(lq.Pipeline, false, true)
 	}
 	return false
 }
