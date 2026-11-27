@@ -560,8 +560,8 @@
     }
   },
   "route_parity": {
-    "rows": 2728,
-    "runs": 27280,
+    "rows": 2731,
+    "runs": 27310,
     "profiles": [
       "instant",
       "step=range",
@@ -654,7 +654,7 @@
       "VectorAgg route level filter": 120,
       "VectorAgg route no bucket grid": 8,
       "VectorAgg route operand": 80,
-      "VectorAgg route pipeline": 2290,
+      "VectorAgg route pipeline": 2320,
       "VectorAgg route unwrap filter": 10,
       "VectorAgg route unwrap pipeline": 1200,
       "VectorAgg route unwrap quantile": 80,
@@ -666,7 +666,7 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 26597,
+      "200": 26627,
       "400": 648,
       "500": 35
     },
@@ -677,15 +677,15 @@
       "24h chunk/RangeAgg": "60e988ade789fc89",
       "24h chunk/Rank": "6d96d682527e217e",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "f31338ab9d28c0b5",
+      "24h chunk/VectorAgg": "d7e0b68fbef8b796",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "f11e4be3335294a4",
       "instant/LabelReplace": "798a4a38b837a85a",
-      "instant/LogSelect": "b6451e888d873142",
+      "instant/LogSelect": "7c3a9bc856212726",
       "instant/RangeAgg": "bd369a6fb8d38329",
       "instant/Rank": "f9884733db5e1966",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "3667b94052a25867",
+      "instant/VectorAgg": "751bb0038c7eb533",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "1d4d6dfcc9e5c651",
       "step\u003crange/LabelReplace": "66bdc3ced64f633d",
@@ -693,7 +693,7 @@
       "step\u003crange/RangeAgg": "07c285148c39e8d7",
       "step\u003crange/Rank": "0dd11a5b361188f1",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "bf3677c399d43094",
+      "step\u003crange/VectorAgg": "a85f2f8bd0f7c8f4",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "e7c65162ed8163ef",
       "step=range/LabelReplace": "d1737570e48ff907",
@@ -701,7 +701,7 @@
       "step=range/RangeAgg": "17902e33d2715357",
       "step=range/Rank": "8a52257887a5acb3",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "d8780542f337ade6",
+      "step=range/VectorAgg": "ef2aea04ec569a1d",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "8591f9ce3c9eb797",
       "step\u003erange/LabelReplace": "2184ce913d875b82",
@@ -709,7 +709,7 @@
       "step\u003erange/RangeAgg": "82c5382844eddf7c",
       "step\u003erange/Rank": "9e161c0d7327b855",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "eff06bcd5aa9be7a",
+      "step\u003erange/VectorAgg": "8c1933901c2a68f7",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     },
     "calls": {
@@ -719,15 +719,15 @@
       "24h chunk/RangeAgg": "9a6ab33264912815",
       "24h chunk/Rank": "50158afd6613bf26",
       "24h chunk/Scalar": "2c7012c3274c662d",
-      "24h chunk/VectorAgg": "6ce7ed2578e7cbbc",
+      "24h chunk/VectorAgg": "7a1d9e5793209395",
       "24h chunk/VectorLit": "7aa978e4ba5a3f44",
       "instant/BinOp": "9a660305f05413cc",
       "instant/LabelReplace": "5ad1afd84a89211e",
-      "instant/LogSelect": "5ec762c7bd449faf",
-      "instant/RangeAgg": "8bc93e75ffce98b4",
+      "instant/LogSelect": "044cbe9a1d7e4afa",
+      "instant/RangeAgg": "9e4b0946551531e7",
       "instant/Rank": "b56bf55e6054ed29",
       "instant/Scalar": "4989874b8a3c42dc",
-      "instant/VectorAgg": "5841ba645d5112cb",
+      "instant/VectorAgg": "509e39470f4890dd",
       "instant/VectorLit": "0dc325c3d1510308",
       "step\u003crange/BinOp": "eb9ff89f69d642c6",
       "step\u003crange/LabelReplace": "a6eb9125cc6ca2c7",
@@ -735,7 +735,7 @@
       "step\u003crange/RangeAgg": "a8833388360f6045",
       "step\u003crange/Rank": "494f89d91e66699e",
       "step\u003crange/Scalar": "6db69b6718a0b07a",
-      "step\u003crange/VectorAgg": "cccdabfea94a6991",
+      "step\u003crange/VectorAgg": "92ca183c082bd433",
       "step\u003crange/VectorLit": "58ad28055f0b3615",
       "step=range/BinOp": "3bd6834b323b16ca",
       "step=range/LabelReplace": "03eac09029e5077c",
@@ -743,7 +743,7 @@
       "step=range/RangeAgg": "b9d729f2157c9b89",
       "step=range/Rank": "61f8c56ec00ad9a7",
       "step=range/Scalar": "6db69b6718a0b07a",
-      "step=range/VectorAgg": "0cd1a706a8043fe9",
+      "step=range/VectorAgg": "2c5c253c53a8e821",
       "step=range/VectorLit": "58ad28055f0b3615",
       "step\u003erange/BinOp": "8e8d437d3d9da9b5",
       "step\u003erange/LabelReplace": "abeb07bd846750ac",
@@ -751,7 +751,7 @@
       "step\u003erange/RangeAgg": "62042aa204107d07",
       "step\u003erange/Rank": "525e1edb8fc1c300",
       "step\u003erange/Scalar": "6db69b6718a0b07a",
-      "step\u003erange/VectorAgg": "cfdd96e5c199270f",
+      "step\u003erange/VectorAgg": "fcc781eab8c460b3",
       "step\u003erange/VectorLit": "58ad28055f0b3615"
     },
     "vl_calls": {
@@ -792,8 +792,8 @@
         "repeat_runs": 0
       },
       "24h chunk/VectorAgg": {
-        "runs": 2312,
-        "cold": 3626,
+        "runs": 2318,
+        "cold": 3638,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -817,9 +817,9 @@
       },
       "instant/LogSelect": {
         "runs": 542,
-        "cold": 16,
-        "repeat": 16,
-        "repeat_runs": 16
+        "cold": 0,
+        "repeat": 0,
+        "repeat_runs": 0
       },
       "instant/RangeAgg": {
         "runs": 1250,
@@ -840,8 +840,8 @@
         "repeat_runs": 0
       },
       "instant/VectorAgg": {
-        "runs": 2312,
-        "cold": 2562,
+        "runs": 2318,
+        "cold": 2574,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -888,8 +888,8 @@
         "repeat_runs": 0
       },
       "step\u003crange/VectorAgg": {
-        "runs": 2312,
-        "cold": 3622,
+        "runs": 2318,
+        "cold": 3634,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -936,8 +936,8 @@
         "repeat_runs": 0
       },
       "step=range/VectorAgg": {
-        "runs": 2312,
-        "cold": 3609,
+        "runs": 2318,
+        "cold": 3621,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -984,8 +984,8 @@
         "repeat_runs": 0
       },
       "step\u003erange/VectorAgg": {
-        "runs": 2312,
-        "cold": 3611,
+        "runs": 2318,
+        "cold": 3623,
         "repeat": 0,
         "repeat_runs": 0
       },
