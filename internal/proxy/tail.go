@@ -966,6 +966,9 @@ func (p *Proxy) indexLabelTailEntry(vlLine map[string]interface{}, lineFields ma
 	if !p.labelTranslator.IsPassthrough() {
 		labels = p.labelTranslator.TranslateLabelsMap(labels)
 	}
+	if p.labelTranslator.answersBothNames() {
+		p.labelTranslator.addBothNames(labels, nil)
+	}
 	ensureSyntheticServiceName(labels)
 	ts := strconv.FormatInt(t.UnixNano(), 10)
 	return tailEntry{ts: t.UnixNano(), stream: labels, value: []string{ts, msg}}, true
