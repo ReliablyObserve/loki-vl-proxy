@@ -637,10 +637,20 @@ def skipped_row(first, shape, rname, run, run_end, tname):
             "skipped": "loki_timeout"}
 
 
-def stitch_row(row, base, shape, query, secs, step, run_end, args):
+def stitch_row(row, base, shape, query, secs, step, run_end, args, failed):
     """Put Loki's answer of a timed-out (or not sent) run together from pieces (stitched_answer) and record it on the
-    row as "stitched"; the row's own status and seconds stay the timeout's. Returns (record, decoded)."""
-    record, decoded = stitched_answer(base, shape, query, secs, step, run_end, args.tenant, args.timeout)
+    row as "stitched"; the row's own status and seconds stay the timeout's. Returns (record, decoded).
+
+    `failed` holds the shapes and ranges whose stitch failed in this pass: like a timeout, a failed stitch is not
+    tried again on the later runs (their rows record why)."""
+    key = (shape["name"], row["range"])
+    if key in failed:
+        record, decoded = {"kind": STITCHED_KIND, "complete": False, "partitions": [],
+                           "problem": "not tried: an earlier run's stitch of this shape and range failed"}, None
+    else:
+        record, decoded = stitched_answer(base, shape, query, secs, step, run_end, args.tenant, args.timeout)
+        if not record["complete"]:
+            failed.add(key)
     row["stitched"] = record
     print(f"{shape['name'][:44]:44} {row['range']:>7} run{row['run']} {row['target']:8} stitched from "
           f"{len(record['partitions'])} pieces in {sum(p['seconds'] for p in record['partitions']):.2f}s: "
@@ -897,7 +907,7 @@ def main():
     sampler.start()
     timed_out = read_known_timeouts(args.known_timeouts)
     restart0, rows, timings, timeouts, aborted = restarts(), [], [], [], False
-    exact_repeats = []
+    exact_repeats, stitch_failed = [], set()
     pair, quiet_waited = 0, 0.0
     for shape in shape_set["shapes"]:
         if wanted and not any(shape["name"].startswith(w) for w in wanted):
@@ -944,7 +954,7 @@ def main():
                         if args.range_plan:
                             row.update(request_url=url, answer_proof=None,
                                        history_start=run_end - secs - query_lookback(query))
-                            stitched = stitch_row(row, base, shape, query, secs, step, run_end, args)
+                            stitched = stitch_row(row, base, shape, query, secs, step, run_end, args, stitch_failed)
                             if run == 0:
                                 source_bodies[tname] = {"row": row, "reply": None, "stitched": stitched}
                         continue
@@ -990,7 +1000,7 @@ def main():
                         timed_out[key] = row
                         timeouts.append({k: row[k] for k in ("target", "shape", "range", "run", "status", "seconds", "signature")})
                         if args.range_plan:
-                            stitched = stitch_row(row, base, shape, query, secs, step, run_end, args)
+                            stitched = stitch_row(row, base, shape, query, secs, step, run_end, args, stitch_failed)
                             if tname in source_bodies:
                                 source_bodies[tname]["stitched"] = stitched
                     if status in (0, 502) and not healthy_and_unrestarted(restart0):

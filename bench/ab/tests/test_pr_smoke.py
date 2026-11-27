@@ -161,6 +161,13 @@ class RuntimeProofTest(unittest.TestCase):
                           revision=revisions, profile=p) for p in pr_smoke.EXECUTION]
         meta = dict(revisions, runs=2, end=fake.END, seed_s=90000)
         self.assertEqual(pr_smoke.runtime_api_problems(summaries, sel, meta), [])
+        # A proxy answer that differs from the stitched Loki answer is that difference, not a Loki status problem.
+        changed = deepcopy(summaries)
+        changed[0]["rows"][0]["original_window_correctness"]["matrix"]["proof"]["targets"]["pr"].update(
+            parity_vs_reference="differs", facets=[{"kind": "series"}])
+        problems = pr_smoke.runtime_api_problems(changed, sel, meta)
+        self.assertTrue(any("original-window answer differs" in p for p in problems), problems)
+        self.assertFalse(any("unusable status" in p for p in problems), problems)
         for mutation in ("one-run-not-stitched", "proof-broken"):
             changed = deepcopy(summaries)
             first = changed[0]["rows"][0]

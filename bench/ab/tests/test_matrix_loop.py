@@ -875,9 +875,12 @@ class StitchedReferenceTest(unittest.TestCase):
         self.assertFalse(proof["complete"])
         self.assertFalse(proof["reference"]["whole_check"]["matches"])
         # A Loki that cannot answer the pieces either leaves no reference at all.
-        raw = self.run_matrix(self.loki([], whole_limit=0))
+        calls = []
+        raw = self.run_matrix(self.loki(calls, whole_limit=0))
         loki = [r for r in raw["rows"] if r["target"] == "loki"]
         self.assertTrue(all(not r["stitched"]["complete"] for r in loki))
+        # One whole request and one failed piece: a failed stitch is not tried again on the next run.
+        self.assertEqual(sum(1 for c in calls if c[0] == "loki"), 2)
         by_target = {}
         for r in raw["rows"]:
             by_target.setdefault(r["target"], []).append(r)

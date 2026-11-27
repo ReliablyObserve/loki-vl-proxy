@@ -489,6 +489,21 @@ def stitched_reference_problems(ref, shape, query, secs, step, end, loki_url):
     return []
 
 
+def stitched_phase(row, shape, phase, count):
+    """True when every run of a pass has a stitched Loki answer and the pass's original window holds a valid stitched
+    reference after a Loki timeout, whatever the proxies answered."""
+    wrapper = row.get("original_window_correctness", {}).get(phase) or {}
+    proof = wrapper.get("proof") if isinstance(wrapper, dict) else None
+    if not isinstance(proof, dict) or row.get("runtime_samples", {}).get(phase, {}).get("loki", {}).get("stitched") != count:
+        return False
+    ref, urls = proof.get("reference") or {}, wrapper.get("target_urls") or {}
+    secs, step = selection.load_shapes()["ranges"].get(row.get("range"), (0, 0))
+    return (ref.get("reference_kind") == perf_matrix.STITCHED_KIND and ref.get("complete") is True
+            and perf_matrix.timed_out_row(proof.get("measured_reference")) and type(proof.get("end")) is int
+            and isinstance(urls.get("loki"), str) and not stitched_reference_problems(
+                ref, shape, perf_matrix.shape_query(shape, step), secs, step, proof["end"], urls["loki"]))
+
+
 def cold_proof_problems(row, summary, shape, ranges, meta):
     """A cold median includes its original sample and every fresh matched request, not just a sidecar label."""
     problem = "incomplete cold-resample provenance"
@@ -656,9 +671,9 @@ def runtime_api_problems(summaries, sel, meta=None, mode="auto", supported=True)
                 # Loki's whole request timed out on every run of every pass ("0"), and each run's answer was stitched
                 # from pieces, each pass's original window with a valid stitched proof: the answer is Loki's, the
                 # timing is not compared (over2x counts the row as Loki not 200).
-                stitched = (target == "loki" and row.get("status", {}).get(target) == "0" and not any(computed.values())
-                            and all(row.get("runtime_samples", {}).get(phase, {}).get(target, {}).get("stitched") == count
-                                    for phase, count in passes.items()))
+                # Provenance only: an answer that differs from the stitched one is reported by its own proof problem.
+                stitched = (target == "loki" and row.get("status", {}).get(target) == "0"
+                            and all(stitched_phase(row, shape, phase, count) for phase, count in passes.items()))
                 if row.get("status", {}).get(target) not in ("200", "400", "422", "500") and not stitched:
                     problems.append(f"runtime API proof: {key} {target} missing or unusable status")
                 for signal in ("cold", "p50", "response_bytes"):
