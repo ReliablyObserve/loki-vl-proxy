@@ -1605,6 +1605,20 @@
    ]
   },
   {
+   "id": "explore-unpack-sum-rate",
+   "kind": "explore",
+   "query": "sum(rate({app=\"visual-unpack\"} | unpack | drop agent [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/ungrouped-sum-skips-unpack",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-unpack-sum-absent",
    "kind": "explore",
    "query": "sum(absent_over_time({app=\"visual-unpack-absent\"} | unpack [$__auto]))",

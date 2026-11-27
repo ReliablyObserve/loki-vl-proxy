@@ -3839,7 +3839,7 @@
     },
     "page_kinds": {
       "drilldown": 23,
-      "explore": 146,
+      "explore": 147,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3980,6 +3980,7 @@
     "explore-topk-without-keeps-labels",
     "explore-unpack-sum-absent",
     "explore-unpack-sum-count",
+    "explore-unpack-sum-rate",
     "explore-unwrap-conversion-error",
     "explore-unwrap-duration-seconds",
     "explore-unwrap-first-last-per-line",
