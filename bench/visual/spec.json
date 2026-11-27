@@ -1952,6 +1952,41 @@
    ]
   },
   {
+   "id": "dd-field-level-extracted-logfmt",
+   "kind": "drilldown",
+   "path": "service/{service}/field/level_extracted",
+   "service": true,
+   "serviceName": "cache-redis",
+   "ranges": [
+    "1h"
+   ],
+   "ci_ranges": [
+    "1h"
+   ],
+   "covers": [
+    "field-mapping-label-names",
+    "semantics/extracted-suffix-collision",
+    "loki_api_v1_detected_field_name_values",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-renamed-key-beside-stream-label",
+   "kind": "explore",
+   "query": "sum by (level, level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "ci_ranges": [
+    "1h"
+   ],
+   "covers": [
+    "field-mapping-label-names",
+    "semantics/extracted-suffix-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "dd-field-pipeline",
    "kind": "drilldown",
    "path": "service/{service}/field/pipeline",

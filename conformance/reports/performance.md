@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-30 of 117 items are locked; 5 carry an effort exception.
+30 of 118 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -223,6 +223,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `drilldown/patterns-full-range-counts` | 2 × 3 ranges | 6 same | worst 1.31s / 0.11s (1h) | 0.28s / 0.28s | differs; 3 slower than Loki cold | not locked |
 | `drilldown/patterns-one-series-per-level` | 2 × 3 ranges | 6 same | worst 1.31s / 0.11s (1h) | 0.28s / 0.28s | differs; 3 slower than Loki cold | not locked |
 | `explore-logs-volume-json` | 9 × 5 ranges | 32 same | worst 6.83s / 0.02s (24h) | 4.79s / 0.10s | same; 2 slower than Loki cold | not locked |
+| `field-mapping-label-names` | — | not measured | | | | not locked |
 | `limits/concurrent-full-retention-scans-exhaust-backend` | 8 × 4 ranges | 32 same | worst 0.46s / 0.00s (24h) | 0.09s † / 0.09s | same | locked 2026-10-27 |
 | `limits/drilldown-breakdown-exact` | 5 × 5 ranges | 23 same | worst 1.32s / 0.48s (24h) | 11.49s / 0.60s | differs | not locked |
 | `limits/metadata-scan-adaptive-limit` | 4 × 4 ranges | 16 same | worst 0.03s / 0.05s (24h) | 0.09s † / 0.06s | same | locked 2026-10-27 |

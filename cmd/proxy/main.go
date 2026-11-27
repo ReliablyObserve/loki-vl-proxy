@@ -58,6 +58,7 @@ type envConfig struct {
 	otlpHeaders       string
 	labelStyle        string
 	fieldMappingJSON  string
+	labelMappingMode  string
 	metadataFieldMode string
 	translateOTel     *bool
 	extraLabelFields  string
@@ -212,6 +213,7 @@ type proxyRuntimeConfig struct {
 	metadataFieldMode                   string
 	translateOTel                       *bool
 	fieldMappingJSON                    string
+	fieldMappingLabelMode               string
 	streamFieldsCSV                     string
 	extraLabelFieldsCSV                 string
 	labelValuesIndexedCache             bool
@@ -807,6 +809,7 @@ func run(
   hybrid      - expose both native VL field names and translated aliases when they differ`)
 	translateOTel := fs.Bool("translate-otel-attributes", true, "Translate known OTel semantic convention labels from underscore to dotted form in upstream queries (set false to preserve client label names)")
 	fieldMappingJSON := fs.String("field-mapping", "", `JSON custom field mappings: [{"vl_field":"service.name","loki_label":"service_name"}]`)
+	fieldMappingLabelMode := fs.String("field-mapping-label-mode", "", "Names of -field-mapping fields that /labels, detected_labels and the volume target labels show: original (default, also empty: one name per field, the loki_label of its last mapping), alias (the aliases, the loki_labels that differ from the -label-style name; a field without one under that name) or both (the aliases and the -label-style name). Queries and /label/{name}/values accept every name in every mode, and stream and series labels carry one name per field")
 	streamFieldsCSV := fs.String("stream-fields", "", `Comma-separated VL _stream_fields labels for stream selector optimization (e.g., "app,env,namespace")`)
 	extraLabelFieldsCSV := fs.String("extra-label-fields", "", `Comma-separated additional VL field names exposed on /labels and eligible for alias resolution (for example "host.id,custom.pipeline.processing")`)
 	labelValuesIndexedCache := fs.Bool("label-values-indexed-cache", false, "Enable indexed browse cache for /loki/api/v1/label/{name}/values (hot subset first for empty-query requests)")
@@ -914,6 +917,7 @@ func run(
 		otlpHeaders:       *otlpHeaders,
 		labelStyle:        *labelStyle,
 		fieldMappingJSON:  *fieldMappingJSON,
+		labelMappingMode:  *fieldMappingLabelMode,
 		metadataFieldMode: *metadataFieldMode,
 		translateOTel:     translateOTel,
 		extraLabelFields:  *extraLabelFieldsCSV,
@@ -1155,6 +1159,7 @@ func run(
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			translateOTel:                       envCfg.translateOTel,
 			fieldMappingJSON:                    envCfg.fieldMappingJSON,
+			fieldMappingLabelMode:               envCfg.labelMappingMode,
 			streamFieldsCSV:                     *streamFieldsCSV,
 			extraLabelFieldsCSV:                 envCfg.extraLabelFields,
 			labelValuesIndexedCache:             *labelValuesIndexedCache,
@@ -2001,6 +2006,9 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	if v := getenv("FIELD_MAPPING"); v != "" && cfg.fieldMappingJSON == "" {
 		cfg.fieldMappingJSON = v
 	}
+	if v := getenv("FIELD_MAPPING_LABEL_MODE"); v != "" && cfg.labelMappingMode == "" {
+		cfg.labelMappingMode = v
+	}
 	if v := getenv("METADATA_FIELD_MODE"); v != "" && cfg.metadataFieldMode == "hybrid" {
 		cfg.metadataFieldMode = v
 	}
@@ -2147,6 +2155,19 @@ func parseFieldMappingsJSON(raw string) ([]proxy.FieldMapping, error) {
 		return nil, err
 	}
 	return fieldMappings, nil
+}
+
+// parseFieldMappingFlags reads -field-mapping and -field-mapping-label-mode.
+func parseFieldMappingFlags(rawMappings, rawMode string) ([]proxy.FieldMapping, proxy.FieldMappingLabelMode, error) {
+	mappings, err := parseFieldMappingsJSON(rawMappings)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse field mappings: %w", err)
+	}
+	mode, err := proxy.ParseFieldMappingLabelMode(rawMode)
+	if err != nil {
+		return nil, "", err
+	}
+	return mappings, mode, nil
 }
 
 func parseDerivedFieldsJSON(raw string) ([]proxy.DerivedField, error) {
@@ -2355,9 +2376,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err != nil {
 		return proxy.Config{}, fmt.Errorf("parse tenant limits: %w", err)
 	}
-	fieldMappings, err := parseFieldMappingsJSON(cfg.fieldMappingJSON)
+	fieldMappings, labelMappingMode, err := parseFieldMappingFlags(cfg.fieldMappingJSON, cfg.fieldMappingLabelMode)
 	if err != nil {
-		return proxy.Config{}, fmt.Errorf("parse field mappings: %w", err)
+		return proxy.Config{}, err
 	}
 	ls, mfm, err := parseLabelModes(cfg.labelStyle, cfg.metadataFieldMode)
 	if err != nil {
@@ -2599,6 +2620,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetadataFieldMode:                  mfm,
 		TranslateOTel:                      cfg.translateOTel,
 		FieldMappings:                      fieldMappings,
+		FieldMappingLabelMode:              labelMappingMode,
 		StreamFields:                       parseCSV(cfg.streamFieldsCSV),
 		ExtraLabelFields:                   parseCSV(cfg.extraLabelFieldsCSV),
 		LabelValuesIndexedCache:            cfg.labelValuesIndexedCache,
