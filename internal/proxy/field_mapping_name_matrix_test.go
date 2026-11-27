@@ -189,7 +189,7 @@ func nameMatrixShow(t testing.TB, style LabelStyle, mode FieldMappingLabelMode, 
 	for _, name := range row.detectedLabels {
 		// The synthetic service_name of passthrough is no stored field the
 		// stand-in groups by.
-		if want := nameMatrixValue(name); want != "" && !(style == LabelStylePassthrough && name == "service_name") {
+		if want := nameMatrixValue(name); want != "" && (style != LabelStylePassthrough || name != "service_name") {
 			got := mappingVolume(t, newProxy(), url.Values{"query": {`{pod="api-1"}`}, "targetLabels": {name}})
 			if len(got) != 1 || got[0][name] != want {
 				t.Errorf("volume by %s = %v, want %s", name, got, want)

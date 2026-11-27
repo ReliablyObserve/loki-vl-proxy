@@ -173,6 +173,16 @@ func (lt *LabelTranslator) keepsMappedValue(name, vlField string) bool {
 	return mapped && owner != vlField
 }
 
+// setMetadata sets an entry's structured metadata name to the value of
+// vlField, unless the name already holds the value of the mapped field that
+// claims it (keepsMappedValue).
+func (lt *LabelTranslator) setMetadata(sm map[string]string, name, vlField, value string) {
+	if lt.keepsMappedValue(name, vlField) && sm[name] != "" {
+		return
+	}
+	sm[name] = value
+}
+
 // namesMappedField reports an alias a mapped field shows in structured
 // metadata and detected fields (mappedMetadataExposures, alias and both
 // modes). Detected fields list it even when it is a name they leave out for
