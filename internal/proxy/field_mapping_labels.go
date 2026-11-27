@@ -59,6 +59,7 @@ func (lt *LabelTranslator) SetFieldMappingLabelMode(mode FieldMappingLabelMode) 
 	}
 	lt.labelMode = mode
 	lt.listing = make(map[string][]string, len(lt.vlToLoki))
+	lt.aliases = make(map[string][]string, len(lt.vlToLoki))
 	// Aliases are read before any base name is registered as a query name.
 	aliases := make(map[string][]string, len(lt.vlToLoki))
 	var fields []string
@@ -87,6 +88,7 @@ func (lt *LabelTranslator) SetFieldMappingLabelMode(mode FieldMappingLabelMode) 
 			owner, owned = field, true
 		}
 		own := aliases[field]
+		lt.aliases[field] = own
 		if len(own) == 0 {
 			lt.vlToLoki[field] = base
 			lt.listing[field] = []string{base}
@@ -99,6 +101,66 @@ func (lt *LabelTranslator) SetFieldMappingLabelMode(mode FieldMappingLabelMode) 
 		}
 		lt.listing[field] = listed
 	}
+}
+
+// mappedMetadataExposures returns the names a mapped field has in structured
+// metadata and detected fields in the both mode: the names the metadata field
+// mode gives the field itself (native: the stored name; translated: the base
+// name; hybrid: both) and its aliases. The base name is one only while it reads
+// the field. false for any other field and mode.
+func (lt *LabelTranslator) mappedMetadataExposures(vlField string, mode MetadataFieldMode) ([]metadataFieldExposure, bool) {
+	if lt == nil || lt.labelMode != FieldMappingLabelModeBoth {
+		return nil, false
+	}
+	aliases, mapped := lt.aliases[vlField]
+	if !mapped {
+		return nil, false
+	}
+	base := lt.baseName(vlField)
+	ownsBase := lt.lokiToVL[base] == vlField
+	result := make([]metadataFieldExposure, 0, 2+len(aliases))
+	add := func(name string) {
+		if name == "" || slices.ContainsFunc(result, func(e metadataFieldExposure) bool { return e.name == name }) {
+			return
+		}
+		result = append(result, metadataFieldExposure{name: name, isAlias: name != vlField})
+	}
+	if mode != MetadataFieldModeTranslated || !ownsBase {
+		add(vlField)
+	}
+	if mode != MetadataFieldModeNative && ownsBase {
+		add(base)
+	}
+	for _, alias := range aliases {
+		add(alias)
+	}
+	return result, true
+}
+
+// withoutMappedNames leaves out of the names of an unmapped field those a
+// mapped field shows in the both mode: queries for such a name read the mapped
+// field, so an entry holding both fields shows that name once, with the mapped
+// field's value.
+func (lt *LabelTranslator) withoutMappedNames(vlField string, names []metadataFieldExposure) []metadataFieldExposure {
+	if lt == nil || lt.labelMode != FieldMappingLabelModeBoth {
+		return names
+	}
+	return slices.DeleteFunc(names, func(e metadataFieldExposure) bool {
+		owner := lt.lokiToVL[e.name]
+		_, mapped := lt.aliases[owner]
+		return owner != vlField && mapped
+	})
+}
+
+// namesMappedField reports a name a mapped field shows in structured metadata
+// and detected fields beside its own (mappedMetadataExposures): a loki_label
+// of the field's mappings. Detected fields list it even when it is a name they
+// leave out for other fields (namespace, cluster, app).
+func (lt *LabelTranslator) namesMappedField(name, vlField string) bool {
+	if lt == nil || lt.labelMode != FieldMappingLabelModeBoth {
+		return false
+	}
+	return slices.Contains(lt.aliases[vlField], name)
 }
 
 // baseName is the name -label-style gives a field without a mapping.
