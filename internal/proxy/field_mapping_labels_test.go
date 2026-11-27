@@ -672,9 +672,10 @@ func TestFieldMappingLabelMode_Invalid(t *testing.T) {
 	}
 }
 
-// Random mappings: the default mode changes nothing; the listing modes keep
-// every mapping name's query field, answer under one listed name, and every
-// listed alias reads its field.
+// Random mappings: the unset mode changes nothing; the original, alias and
+// both modes keep every mapping name's query field, answer under one listed
+// name, and every listed alias reads its field; the both mode's added answer
+// names never overwrite a label or add a skipped name.
 func FuzzFieldMappingLabelMode(f *testing.F) {
 	f.Add("k8s.namespace.name", "namespace", "k8s.namespace.name", "k8s_namespace_name", true)
 	f.Add("a.b", "a_b", "a_b", "a_b", true)
@@ -690,9 +691,37 @@ func FuzzFieldMappingLabelMode(f *testing.F) {
 		plain := NewLabelTranslator(style, mappings)
 		original := NewLabelTranslator(style, mappings)
 		original.SetFieldMappingLabelMode(FieldMappingLabelModeUnset)
-		for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+		for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 			lt := NewLabelTranslator(style, mappings)
 			lt.SetFieldMappingLabelMode(mode)
+			// The both mode's added names: never overwrite a label, never add a
+			// skipped name, only add a listed name of a field the labels carry.
+			if mode == FieldMappingLabelModeBoth {
+				labels := map[string]string{label1: "v1", label2: "v2", lt.ToLoki(field1): "a1"}
+				before := maps.Clone(labels)
+				skip := map[string]bool{lt.baseName(field2): true}
+				lt.addBothNames(labels, skip)
+				for k, v := range before {
+					if labels[k] != v {
+						t.Fatalf("both: %q overwritten: %q -> %q", k, v, labels[k])
+					}
+				}
+				for k := range labels {
+					if _, had := before[k]; had {
+						continue
+					}
+					if skip[k] {
+						t.Fatalf("both: skipped name %q added", k)
+					}
+					listed := false
+					for _, names := range lt.listing {
+						listed = listed || slices.Contains(names, k)
+					}
+					if !listed {
+						t.Fatalf("both: added %q is no listed name", k)
+					}
+				}
+			}
 			for _, m := range mappings {
 				if m.VLField == "" || m.LokiLabel == "" {
 					continue

@@ -168,3 +168,17 @@ func TestFieldMappingLabelMode_BothStreamLabels(t *testing.T) {
 		}
 	}
 }
+
+// With -stream-response the both mode's log answer is read whole before the
+// names are added: the stream labels carry them and the answer is complete.
+//
+// conformance: field-mapping-label-names, semantics/field-mapping-label-modes, loki_api_v1_query_range
+func TestFieldMappingLabelMode_BothStreamedLogAnswer(t *testing.T) {
+	vl := nameMatrixVL()
+	p := newMappingProxy(t, vl.server(t).URL, nil, Config{LabelStyle: LabelStyleUnderscores, FieldMappingLabelMode: FieldMappingLabelModeBoth,
+		FieldMappings: nameMatrixMappings(), StreamResponse: true})
+	want := []string{"k8s_node_name", "k8s_pod_name", "node", "nodename", "pod", "service_name"}
+	if got := mappingAnswerLabels(t, p, "/loki/api/v1/query_range"); !slices.Equal(got, want) {
+		t.Errorf("streamed stream labels %v, want %v", got, want)
+	}
+}
