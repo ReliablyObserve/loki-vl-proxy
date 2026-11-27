@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
-// A stored field named like a name the both mode gives a mapped field (an
-// alias, or the -label-style name) is not shown under that name: queries for
-// it read the mapped field, so the entry shows it once, with the mapped
-// field's value, on every run.
+// A stored field named like a name the both mode shows for a mapped field (an
+// alias, or the -label-style name) does not take that name from it: the entry
+// shows the name once, with the mapped field's value, on every run.
 //
 // conformance: field-mapping-label-names, semantics/field-mapping-label-modes
 func TestFieldMappingLabelMode_BothStoredFieldNamedLikeMappingName(t *testing.T) {
@@ -25,7 +24,9 @@ func TestFieldMappingLabelMode_BothStoredFieldNamedLikeMappingName(t *testing.T)
 			if meta["namespace"] != "prod" {
 				t.Fatalf("%s: namespace = %q, want the mapped field's prod (%v)", metadata, meta["namespace"], meta)
 			}
-			if v, ok := meta["k8s_namespace_name"]; ok && v != "prod" {
+			// native shows no k8s_namespace_name for the mapped field: the
+			// stored field of that name shows its own value there.
+			if v, ok := meta["k8s_namespace_name"]; ok && v != "prod" && metadata != MetadataFieldModeNative {
 				t.Fatalf("%s: k8s_namespace_name = %q, want the mapped field's prod (%v)", metadata, v, meta)
 			}
 		}

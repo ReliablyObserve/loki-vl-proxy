@@ -486,7 +486,7 @@ func (lt *LabelTranslator) metadataFieldExposures(vlField string, mode MetadataF
 		add(translated, translated != vlField)
 	}
 
-	return lt.withoutMappedNames(vlField, result)
+	return result
 }
 
 // isValidLabelName reports whether name can be returned unchanged from SanitizeLabelName.

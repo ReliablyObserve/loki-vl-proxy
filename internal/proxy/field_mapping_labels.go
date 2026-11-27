@@ -158,20 +158,19 @@ func (lt *LabelTranslator) mappedMetadataExposures(vlField string, mode Metadata
 	return result, true
 }
 
-// withoutMappedNames leaves out of the names of an unmapped field those that
-// are query names of a mapped field (an alias, or a base name the mode made
-// one): queries for such a name read the mapped field, so no answer shows it
-// for another field, and an entry holding both fields shows it once, with the
-// mapped field's value.
-func (lt *LabelTranslator) withoutMappedNames(vlField string, names []metadataFieldExposure) []metadataFieldExposure {
+// keepsMappedValue reports whether a structured metadata name already set for
+// an entry keeps its value against vlField: in the original, alias and both
+// modes, a name a mapped field claims as a query name (an alias, or a base name
+// the mode made one) keeps the mapped field's value against a stored field of
+// that name, whatever order the entry's fields come in, as queries for the name
+// read the mapped field. Parsed labels are not concerned.
+func (lt *LabelTranslator) keepsMappedValue(name, vlField string) bool {
 	if lt == nil || lt.labelMode == FieldMappingLabelModeUnset {
-		return names
+		return false
 	}
-	return slices.DeleteFunc(names, func(e metadataFieldExposure) bool {
-		owner := lt.lokiToVL[e.name]
-		_, mapped := lt.aliases[owner]
-		return owner != vlField && mapped
-	})
+	owner := lt.lokiToVL[name]
+	_, mapped := lt.aliases[owner]
+	return mapped && owner != vlField
 }
 
 // namesMappedField reports an alias a mapped field shows in structured
