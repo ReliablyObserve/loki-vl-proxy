@@ -12,31 +12,35 @@ why: |
   label: it answers the count of the selected lines, also over lines that are
   no JSON object (recorded rule semantics/loki-pipeline-error-rules; the sums
   of TestUnpackSumMatchesLoki over job=bad). An unpack never drops a line, and
-  the drops and keeps the query plan allows after it change labels only.
+  the drops the query plan allows after it change labels only.
 
   The string translator writes `| unpack_json` there, which makes VictoriaLogs
-  parse every selected line, and a `| keep a, b` after it groups a rate by the
-  unpacked values first. The query plan writes no stage from the unpack on for
-  this shape (lower.SkipsUnpack): a count is `<filters> | stats count()`, a rate
-  keeps the stream's series (`stats by (_stream) count()`, then the division and
-  the sum), as over the unpack. The proxy serves it from the plan under the
-  VectorAgg flip (skipsUnpackConstruct, internal/proxy/query_lowering.go).
+  parse every selected line. The query plan writes no stage from the unpack on
+  for this shape when the stages after the unpack are drops (lower.SkipsUnpack):
+  a count is `<filters> | stats count()`, a rate keeps the stream's series
+  (`stats by (_stream) count()`, then the division and the sum), as over the
+  unpack. The proxy serves it from the plan under the VectorAgg flip
+  (skipsUnpackConstruct, internal/proxy/query_lowering.go), also where a ranking
+  translates it as its operand.
 
   Not rewritten (each delegated or written as before, and tested):
   a by or without clause, `by ()` included (delegated as before); count, min,
   max, avg or any other function over the range aggregation; bytes_over_time
   and bytes_rate (Loki counts the bytes of `_entry`); absent_over_time (written
-  as before); an unwrap; a label filter, label_format, line filter,
+  as before); a keep after the unpack (the handlers group a rate behind it by
+  the kept labels: on 155k streams a stream-grouped rate without the unpack was
+  up to 1.35x slower than the translator's, so it keeps the unpack); an unwrap;
+  a label filter, label_format, line filter,
   line_format, decolorize or another parser after the unpack; a second parser
   anywhere; a log query. A sum of the shape under another aggregation, a
-  ranking, a label_replace or a binary operation keeps the translator's text
-  (the proxy serves only the root; the shadows hold the plan's text there as
-  this case).
+  label_replace or a binary operation keeps the translator's text (the shadows
+  hold the plan's text there as this case).
 
   Evidence: TestUnpackSumMatchesLoki (internal/querycorpus) runs the sums,
   with filters before and drops and keeps after the unpack, offset, lines that
   are no JSON object, packed lines whose keys are VictoriaLogs' own field
-  names, and selectors with no line, as instant and range requests (step equal
+  names, selectors with no line, and under `* 2`, a division, sort, topk,
+  label_replace and max, as instant and range requests (step equal
   to, below and above the range) through the proxy's handlers against Loki's
   engine and VictoriaLogs v1.49.0 and v1.54.0: every run answers Loki's series
   and values. TestUnpackLowering and FuzzUnpackLowering hold the written text.
@@ -61,7 +65,7 @@ corpus:
   dimensions:
     shapes:
       - query: 'sum(count_over_time({app="x"} | unpack [5m]))'
-      - query: 'sum(rate({app="x"} | unpack | keep a, b [5m]))'
+      - query: 'sum(rate({app="x"} | unpack | drop a, b [5m]))'
       - query: 'sum(count_over_time({app="x"} |= "k" | unpack | drop a [5m] offset 1h))'
       - query: 'sum by (app) (count_over_time({app="x"} | unpack [5m]))'
 perf:

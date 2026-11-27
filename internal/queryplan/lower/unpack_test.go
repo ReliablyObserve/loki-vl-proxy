@@ -310,6 +310,8 @@ func TestUnpackLowering(t *testing.T) {
 		`rate({app="x"} | unpack [5m])`,
 		`rate({app="x"} | unpack | drop a [5m])`,
 		`sum(absent_over_time({app="x"} | unpack [5m]))`,
+		`sum(rate({app="x"} | unpack | keep a, b [5m]))`,
+		`sum(count_over_time({app="x"} | unpack | drop a | keep b [5m]))`,
 	} {
 		op, err := unpackPlan(t, q, v54)
 		if err != nil {
@@ -329,17 +331,17 @@ func TestUnpackLowering(t *testing.T) {
 		}
 	}
 	// lowered with no stage from the unpack on: a sum with no clause of a count or a rate (semantics/ungrouped-sum-skips-unpack),
-	// at the root or under another aggregation; a rate keeps the stream's series the query over the unpack has.
+	// at the root or under another aggregation; a rate keeps the stream's series the query over the unpack has. A keep
+	// after the unpack keeps the unpack (the translator's text, above).
 	rateText := ` | stats by (_stream) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats sum(__lvp_rate)`
 	for q, want := range map[string]string{
 		`sum(count_over_time({app="x"} | unpack [5m]))`:                                     `app:="x" | stats count()`,
 		`sum(count_over_time({app="x"} | unpack | drop a, b [5m]))`:                         `app:="x" | stats count()`,
 		`sum(count_over_time({app="x"} | unpack | drop __error__, __error_details__ [5m]))`: `app:="x" | stats count()`,
 		`sum(count_over_time({app="x"} |= "k" | unpack | drop a [5m] offset 1h))`:           `app:="x" ~"k" | stats count()`,
-		`sum(count_over_time({app="x"} != "k" | l="a" | unpack | keep a | drop b [5m]))`:    `app:="x" NOT ~"k" l:="a" | stats count()`,
+		`sum(count_over_time({app="x"} != "k" | l="a" | unpack | drop b [5m]))`:             `app:="x" NOT ~"k" l:="a" | stats count()`,
 		`sum(count_over_time({app="x"} | line_format "x" | unpack [5m]))`:                   `app:="x" | format "x" | stats count()`,
 		`sum(rate({app="x"} | unpack [5m]))`:                                                `app:="x"` + rateText,
-		`sum(rate({app="x"} | unpack | keep a, b [5m]))`:                                    `app:="x"` + rateText,
 		`sum(rate({app="x"} |= "k" | unpack | drop a [5m] offset 1h))`:                      `app:="x" ~"k"` + rateText,
 		`max(sum(count_over_time({app="x"} | unpack [5m])))`:                                `app:="x" | stats count() as __lvp_inner | stats max(__lvp_inner)`,
 		`count(sum(count_over_time({app="x"} | unpack | drop a [5m])))`:                     `app:="x" | stats count() as __lvp_inner | stats count()`,
@@ -465,8 +467,9 @@ func FuzzUnpackLowering(f *testing.F) {
 			unpackOnly = fmt.Sprintf([]string{`%s`, `sum(%s)`, `sum by (a) (%s)`, `count(%s)`}[wrap%4], unpackOnly)
 		}
 		// A sum with no clause of a count or a rate is written with no stage from the unpack on: the translator's text
-		// of the query with nothing after the unpack, less its unpack_json pipe (semantics/ungrouped-sum-skips-unpack).
-		skipped := log%5 > 1 && wrap%4 == 1 && fn%5 < 2
+		// of the query with nothing after the unpack, less its unpack_json pipe (semantics/ungrouped-sum-skips-unpack); a
+		// keep after the unpack keeps it.
+		skipped := log%5 > 1 && wrap%4 == 1 && fn%5 < 2 && !strings.Contains(post, "keep")
 		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			prof := Profile{Caps: logsql.CapabilitiesFor(v)}
 			op, err := unpackPlan(t, q, prof)

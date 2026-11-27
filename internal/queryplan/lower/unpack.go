@@ -119,7 +119,8 @@ func unpackLowered(ra *queryplan.RangeAgg, owner string) (int, error) {
 // unpack on:
 // for a sum with no by or without clause above it. Loki parses no line for such a sum (it needs no label: the
 // recorded rule semantics/loki-pipeline-error-rules, and TestUnpackSumMatchesLoki over lines that are no JSON object),
-// and the stages unpackRangeFor allows after the unpack are drops and keeps, which change labels and keep every line,
+// and the stages it is written for after the unpack are drops (a keep keeps the unpack: keepsAfter), which change
+// labels and keep every line,
 // so the number of lines in each window is the one the query without them counts. VictoriaLogs then reads no line
 // for the unpack (semantics/ungrouped-sum-skips-unpack).
 func unpackSkipped(ra *queryplan.RangeAgg, at int) *queryplan.RangeAgg {
@@ -132,7 +133,7 @@ func unpackSkipped(ra *queryplan.RangeAgg, at int) *queryplan.RangeAgg {
 
 // SkipsUnpack reports a plan whose root is a sum with no by or without clause of a count_over_time or a rate over an
 // unpack the lowering writes with no stage from the unpack on (unpackSkipped): the proxy serves it from the plan,
-// where the string translator writes the unpack_json pipe and the drops and keeps after it
+// where the string translator writes the unpack_json pipe and the drops after it
 // (semantics/ungrouped-sum-skips-unpack).
 func SkipsUnpack(p *queryplan.Plan) bool {
 	return skipsUnpack(p.Root)
@@ -149,7 +150,18 @@ func skipsUnpack(n queryplan.Node) bool {
 		return false
 	}
 	at, err := unpackLowered(ra, "VectorAgg")
-	return at >= 0 && err == nil
+	return at >= 0 && err == nil && !keepsAfter(ra.In, at)
+}
+
+// keepsAfter reports a keep after the stage at: a rate behind it is grouped by the labels it leaves, which the
+// handlers read from the query, so the sum keeps the unpack there (the translator's text).
+func keepsAfter(sel *queryplan.LogSelect, at int) bool {
+	for _, st := range sel.Stages[at+1:] {
+		if _, ok := st.(*queryplan.Keep); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // WritesSkippedUnpack reports a plan with, at any depth, SkipsUnpack's shape: the lowering writes it with no stage from

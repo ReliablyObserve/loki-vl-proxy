@@ -3770,8 +3770,8 @@
      "instant": true
     },
     {
-     "name": "UP4 sum rate over unpack and a keep",
-     "query": "sum(rate({env=\"production\", app=\"api-gateway\"} | unpack | keep app [5m]))",
+     "name": "UP4 sum rate over unpack and a drop",
+     "query": "sum(rate({env=\"production\", app=\"api-gateway\"} | unpack | drop level [5m]))",
      "covers": [
       "semantics/translator-writes-unpack-as-unpack-json",
       "semantics/ungrouped-sum-skips-unpack",

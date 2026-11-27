@@ -162,7 +162,7 @@ func screenMetricQuery(canon string, flipped lower.MetricSet) bool {
 }
 
 // skipsUnpackConstruct is the flip of a sum with no by or without clause of a count_over_time or a rate over an
-// unpack followed only by drops and keeps (lower.SkipsUnpack): Loki parses no line for it, and the plan writes no
+// unpack followed only by drops (lower.SkipsUnpack): Loki parses no line for it, and the plan writes no
 // stage from the unpack on, where the string translator writes the unpack_json pipe that makes VictoriaLogs parse
 // every line (semantics/ungrouped-sum-skips-unpack). It is served under the VectorAgg flip; the corpus shadow holds
 // these rows as the case's, and TestUnpackSumMatchesLoki (internal/querycorpus) holds the answers to Loki.

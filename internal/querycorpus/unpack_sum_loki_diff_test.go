@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // The Loki differential of metric queries over an unpack: real
@@ -55,6 +56,9 @@ var unpackSumKnown = func() map[string]unpackSumOpen {
 		`count_over_time({job="bad"} | unpack != "k" [1m])`:         {unpackSumCase, ranged},
 		// A value is unwrapped from a line that is not packed.
 		`sum_over_time({job="uwline"} | unpack | unwrap a [1m])`: {unpackSumCase, all},
+		// A ranking over a sum of a rate behind a keep after the unpack (the translator's text, as on main): the
+		// proxy fails the request where Loki answers.
+		`sort(sum(rate({job="pk"} | unpack | keep a [1m])))`: {unpackSumCase, all},
 		// A sum over a maximum adds the maxima of Loki's series, which the promoted labels split.
 		`sum(max_over_time({job="uw"} | unpack | unwrap a [1m]))`:    {unpackSumCase, ranged},
 		`sum(max_over_time({job="uwbad"} | unpack | unwrap a [1m]))`: {unpackSumCase, []string{"v1.54.0 step<range", "v1.49.0 step<range"}},
@@ -126,6 +130,20 @@ func unpackSumQueries() []string {
 		`sum(rate({job="none"} | unpack | keep a [1m] offset 40m))`,
 		`sum by () (count_over_time({job="bad"} | unpack [1m]))`,
 	)
+	// The rewritten sum under the wrappers Loki keeps it through: the proxy serves only the root sum, so these keep the
+	// translator's text, and answer Loki's values all the same.
+	for _, sum := range []string{`sum(count_over_time({job="pk"} | unpack [1m]))`, `sum(rate({job="pk"} | unpack | drop a [1m]))`} {
+		out = append(out,
+			sum+` * 2`,
+			sum+` / sum(count_over_time({job="pk"}[1m]))`,
+			`sort(`+sum+`)`,
+			`topk(1, `+sum+`)`,
+			`label_replace(`+sum+`, "dst", "x", "", "")`,
+			`max(`+sum+`)`,
+		)
+	}
+	// A keep after the unpack keeps it (the translator's text): a ranking over such a sum.
+	out = append(out, `sort(sum(rate({job="pk"} | unpack | keep a [1m])))`)
 	// absent_over_time reads the same count at an instant.
 	return append(out, `sum(absent_over_time({job="none"} | unpack [1m]))`,
 		`absent_over_time({job="none"} | unpack [1m])`, `absent_over_time({job="pk"} | unpack [1m])`)
@@ -235,7 +253,8 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 				}
 				runs++
 				diff := parserErrorDiff(loki, run, true)
-				sum := strings.HasPrefix(mq.q, "sum(count") || strings.HasPrefix(mq.q, "sum(rate") || strings.HasPrefix(mq.q, "sum(absent") || strings.HasPrefix(mq.q, "sum by () (")
+				sum := strings.HasPrefix(mq.q, "sum(count") || strings.HasPrefix(mq.q, "sum(rate") || strings.HasPrefix(mq.q, "sum(absent") ||
+					strings.HasPrefix(mq.q, "sum by () (") || lower.WritesSkippedUnpack(mq.plan)
 				if sum && diff == "" && loki.Status == 200 {
 					if d := compareMetric(loki, run); len(d.classes) != 0 {
 						diff = fmt.Sprintf("another answer: %v", d.classes)

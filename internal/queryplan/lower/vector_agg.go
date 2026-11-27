@@ -128,7 +128,7 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 		}
 		switch {
 		case at < 0:
-		case ra.Op == logql.RangeAbsentOverTime:
+		case ra.Op == logql.RangeAbsentOverTime || keepsAfter(ra.In, at):
 			if ra, err = unpackRangeFor(ra, "VectorAgg"); err != nil {
 				return builtVector{}, err
 			}
