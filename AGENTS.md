@@ -468,6 +468,23 @@ its timing tables against Loki and its load test on top of this. Commit the
 benchmark rather than a throwaway one, and name it in the registry decision.
 
 
+## Local proof in the pull request before CI
+
+Every pull request carries its own evidence, from a build and test of the branch on an isolated stack, in its
+description before it relies on CI. CI confirms the evidence; it is not the first or only proof.
+
+- Scope it to the change. Show the data the change moves, as tables: new or changed metrics scraped together with the
+  actions that produced them, or API answers of main, the branch and Loki, VictoriaLogs calls and bytes, timings,
+  benchmarks, load, restart or peer behaviour.
+- Show screenshots of the dashboard panels or Grafana Explore and Logs Drilldown scenes that show the change itself,
+  with main, the branch and Loki side by side where it applies, and the control scenes.
+- State the date, the head SHA, the versions, the data set, what was not verified, and any later commit the run does
+  not cover. Keep CI results in a separate section.
+- Host local images on the `pr-visuals` branch under `pr-<number>-local/`. CI replaces the whole `pr-<number>/`
+  folder; remove the `-local` folder after the merge, as pruning does not match it.
+- Release, documentation, CI and test-only pull requests keep their exemption from product visuals and show their own
+  local check results.
+
 ## AST/planner changes require runtime API and Grafana proof
 
 A microbenchmark alone does not prove an AST/planner optimization. Every

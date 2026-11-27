@@ -1,0 +1,67 @@
+id: semantics/field-mapping-label-modes
+title: The label pickers list the names of a mapped field that -field-mapping-label-mode selects
+pending: true
+proves:
+  - field-mapping-label-names
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+  - loki_api_v1_detected_labels
+  - loki_api_v1_index_volume
+consumer: explore
+why: |
+  -field-mapping accepts several loki_labels for one VictoriaLogs field and queries work with each, but
+  /loki/api/v1/labels listed one name per field, the loki_label of the last mapping, so an alias never showed in the
+  label picker. Declaring the alias in -extra-label-fields did not help: the declared names are resolved to
+  VictoriaLogs fields, so the alias became the mapped field and was dropped as a duplicate (issue #1762). A
+  migration from Loki to VictoriaLogs with OpenTelemetry field names needs to choose which names the pickers show.
+
+  Loki has no field mapping, so the behaviour is the proxy's own setting; Loki's contract it keeps is that a listed
+  label has values and selects lines.
+
+  Decision: -field-mapping-label-mode with original (default), alias and both.
+  - original is the behaviour of a proxy without the setting: one name per field, the last mapping's loki_label.
+    Nothing changes for a deployment that does not set the flag, and its cache identities are unchanged.
+  - The base name of a field is the -label-style name without a mapping; its aliases are the mapping loki_labels
+    that differ from it and resolve back to the field (a loki_label given to two fields belongs to the later one).
+  - alias lists the aliases, or the base name when there is none; both lists the aliases and the base name.
+  - Answers (stream and series labels) carry one name per field in every mode, so series counts do not change: in
+    alias and both the last alias in -field-mapping order (the default mode's precedence among the aliases), or the
+    base name.
+  - The base name of a mapped field becomes a query name in alias and both, unless a mapping owns it.
+  - /labels adds the aliases of a field only when VictoriaLogs' stream field listing holds it. Declared names keep
+    the declared-field rule (listed when the window has data): a declared mapping loki_label as declared, so it is
+    never merged into its field, and another declared field the listing does not hold under its base name.
+  - detected_labels and volume targetLabels follow the same names.
+
+  No VictoriaLogs request is added: the names are derived from the listings the default mode reads. The routing
+  namespace of every cache key carries the mode and its listed names in alias and both, so replicas of different
+  modes never serve each other's answers.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "no proxy of the e2e stack sets field mappings; TestCompat_FieldMappingLabelModes runs the three modes in process against the stack's VictoriaLogs, TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers runs a ring of replicas in different modes over the peer tier, and unit tests hold every endpoint, the cache identities and the call counts"
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    original: one name per field, as without the setting. alias: the aliases of a mapped field, its -label-style name
+    when it has none. both: the aliases and the -label-style name. Every listed name has values.
+gap:
+  status: fixed
+  fixed_by: "#1762"
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/field_mapping_labels.go, TranslateLabelsList, detected_labels, volume targetLabels'
+  loki: 'a label the picker offers has values and selects lines; a series has one label per attribute'
+  proxy: 'the mode selects the listed names of a mapped field; answers carry one name per field'
+  planned_test: 'TestFieldMappingLabelMode_IssueReproduction, TestFieldMappingLabelMode_Endpoints, TestFieldMappingLabelMode_SharedCacheTier, TestCompat_FieldMappingLabelModes, TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers, TestCompat_FieldMappingAliasCollisionsMatchLoki, TestFieldMappingLabelMode_ParsedAliasCollisionDetectedFields, TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL'
+  clusters: []
+  visual: none
+  visual_reason: 'no proxy of the e2e or visual-smoke stack sets field mappings, so no CI capture reaches the setting; the names the pickers list are checked on a real VictoriaLogs by TestCompat_FieldMappingLabelModes and TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers'

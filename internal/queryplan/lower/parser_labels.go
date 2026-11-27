@@ -56,13 +56,18 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 	if !m.unpacked() {
 		return keyed{}, nil
 	}
+	// A grouping field that holds an alias's stream label (-field-mapping-label-mode alias and both) reads, on an
+	// entry whose stream lacks it, the parsed key of the alias's name, as Loki's label of that name does.
+	aliases := m.aliasCoalesce(by)
 	// A count of one label behind its existence check keeps the exact key the field breakdown of Grafana Drilldown
 	// relies on. A rate sums that count by the same label next, which then resolves it in the middle of the query.
 	if _, count := fn.(logsql.Count); count && len(by) == 1 && m.breakdownShape(by[0]) {
-		if again {
+		if again && aliases == "" {
 			return keyed{}, &NotLoweredError{Construct: owner + existsConstruct}
 		}
-		return keyed{}, nil
+		if aliases == "" {
+			return keyed{}, nil
+		}
 	}
 	var labelBuf [6]string
 	labels := labelBuf[:0]
@@ -73,10 +78,11 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 	// The aggregated label of a stats function is dropped when empty if a pipe resolved it or a copy defined it.
 	filterArg := arg != "" && (slices.Contains(labels, arg) || m.holdsCopy() && m.hasJoined(asPipe, arg, ""))
 	if len(labels) == 0 && !filterArg {
-		return keyed{}, nil
+		return keyed{text: aliases}, nil
 	}
 	var b strings.Builder
-	b.Grow(len(labels)*192 + 64)
+	b.Grow(len(labels)*192 + 64 + len(aliases))
+	b.WriteString(aliases)
 	copies := false
 	var bases, extracted []string
 	for _, l := range labels {
@@ -106,6 +112,28 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 	return keyed{text: b.String(), copies: copies}, nil
 }
 
+// aliasCoalesce is the pipes that fill each grouping field holding an alias's stream label from the parsed key of
+// the alias's name where the entry's stream lacks the field (Profile FieldAlias); "" without such a field.
+func (m metricLog) aliasCoalesce(by []string) string {
+	if m.fieldAlias == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, field := range by {
+		alias := m.fieldAlias(field)
+		if alias == "" {
+			continue
+		}
+		b.WriteByte(' ')
+		b.WriteString(logsql.PipeFormat{
+			If:          logsql.NotExpr{Expr: logsql.FieldFilter{Field: translate.LogsQLFieldName(field), Op: logsql.FieldOpAny}},
+			Template:    "<" + alias + ">",
+			ResultField: translate.LogsQLFieldName(field),
+		}.String())
+	}
+	return b.String()
+}
+
 // addResolvable appends label to labels when it is a name, not there yet, that the translator resolves.
 func (m metricLog) addResolvable(labels []string, label string) []string {
 	if label == "" || slices.Contains(labels, label) || !m.resolvable(label) {
@@ -122,7 +150,10 @@ const asPipe = " as "
 // quoted text that spells an unpack pipe or more unpacks than are told apart, leave the query to the translator.
 func (m metricLog) extractedPipes(b *strings.Builder, bases, labels []string, owner string) (copies bool, err error) {
 	for _, base := range bases {
-		if m.hasJoined(asPipe, translate.ExtractedScratch+"_"+base, "") {
+		// A filter on the label scratched it already and deleted the scratch fields after itself: the string
+		// translator reuses them, which the lowering writes only for a profile with alias functions, where it
+		// unpacks the key again (the translator's answer is not Loki's there).
+		if m.hasJoined(asPipe, translate.ExtractedScratch+"_"+base, "") && m.aliasField == nil {
 			return false, &NotLoweredError{Construct: owner + extractedConstruct}
 		}
 	}
@@ -136,7 +167,11 @@ func (m metricLog) extractedPipes(b *strings.Builder, bases, labels []string, ow
 			logfmt = append(logfmt, m.logfmtMask&(1<<i) != 0)
 		}
 	}
-	return translate.ExtractedStatsText(b, logfmt, bases, labels), nil
+	var aliases func(string) []string
+	if m.aliasField != nil {
+		aliases = func(base string) []string { return aliasFieldList(m.aliasField, base) }
+	}
+	return translate.ExtractedStatsTextAliased(b, logfmt, bases, labels, aliases), nil
 }
 
 // The texts keyPipes writes, taken from the typed pipes: the head of a filter pipe (` | filter `) and the tails of

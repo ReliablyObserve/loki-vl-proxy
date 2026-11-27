@@ -284,6 +284,14 @@
     "drilldown/patterns-range-end-inside-sample": [
       "internal/proxy/patterns_sample_end_test.go"
     ],
+    "field-mapping-label-names": [
+      "cmd/proxy/field_mapping_label_mode_test.go",
+      "internal/proxy/field_mapping_collision_test.go",
+      "internal/proxy/field_mapping_labels_test.go",
+      "internal/translate/stream_alias_test.go",
+      "test/e2e-compat/field_mapping_label_mode_test.go",
+      "test/e2e-fleet/field_mapping_label_mode_test.go"
+    ],
     "formatter-line-format": [
       "internal/logql/line_template_cache_test.go",
       "internal/logql/line_template_test.go"
@@ -551,6 +559,7 @@
       "test/e2e-compat/labels_alias_test.go"
     ],
     "loki_api_v1_label_name_values": [
+      "internal/proxy/field_mapping_labels_test.go",
       "internal/proxy/label_inventory_cover_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
@@ -560,6 +569,7 @@
     ],
     "loki_api_v1_labels": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/field_mapping_labels_test.go",
       "internal/proxy/label_browser_gates_test.go",
       "internal/proxy/label_cache_behavior_test.go",
       "internal/proxy/label_inventory_cover_oracle_test.go",
@@ -1735,6 +1745,13 @@
       "test/e2e-compat/extracted_metric_pushdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/json_label_probe_gates_test.go"
+    ],
+    "semantics/field-mapping-label-modes": [
+      "cmd/proxy/field_mapping_label_mode_test.go",
+      "internal/proxy/field_mapping_collision_test.go",
+      "internal/proxy/field_mapping_labels_test.go",
+      "test/e2e-compat/field_mapping_label_mode_test.go",
+      "test/e2e-fleet/field_mapping_label_mode_test.go"
     ],
     "semantics/first-last-over-time-translation": [
       "internal/querycorpus/first_last_offset_loki_diff_test.go"
@@ -3260,7 +3277,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 763,
+  "registry_items": 765,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3271,6 +3288,10 @@
     ],
     "cmd/proxy/delete_api_validation_test.go": [
       "delete-api-requires-token"
+    ],
+    "cmd/proxy/field_mapping_label_mode_test.go": [
+      "field-mapping-label-names",
+      "semantics/field-mapping-label-modes"
     ],
     "cmd/proxy/main_test.go": [
       "cache-reuse-retention",
@@ -4239,6 +4260,16 @@
       "semantics/stage-after-unwrap-accepted",
       "semantics/stage-name-followed-by-more-of-stage",
       "semantics/unwrap-in-log-query"
+    ],
+    "internal/proxy/field_mapping_collision_test.go": [
+      "field-mapping-label-names",
+      "semantics/field-mapping-label-modes"
+    ],
+    "internal/proxy/field_mapping_labels_test.go": [
+      "field-mapping-label-names",
+      "loki_api_v1_label_name_values",
+      "loki_api_v1_labels",
+      "semantics/field-mapping-label-modes"
     ],
     "internal/proxy/first_last_range_longer_than_step_test.go": [
       "loki_api_v1_query_range",
@@ -6295,6 +6326,9 @@
     "internal/translate/selector_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/translate/stream_alias_test.go": [
+      "field-mapping-label-names"
+    ],
     "internal/translate/unwrap_gate_syntax_test.go": [
       "semantics/unwrap-gate-parsefloat-divergences"
     ],
@@ -6613,6 +6647,10 @@
       "profiles/json-extraction-list-exposes-only-listed",
       "profiles/structured-metadata-label-collision",
       "semantics/extracted-suffix-collision"
+    ],
+    "test/e2e-compat/field_mapping_label_mode_test.go": [
+      "field-mapping-label-names",
+      "semantics/field-mapping-label-modes"
     ],
     "test/e2e-compat/first_last_range_longer_than_step_test.go": [
       "loki_api_v1_query_range",
@@ -7223,6 +7261,10 @@
     "test/e2e-compat/vl_zstd_response_window_test.go": [
       "vl-zstd-response-window"
     ],
+    "test/e2e-fleet/field_mapping_label_mode_test.go": [
+      "field-mapping-label-names",
+      "semantics/field-mapping-label-modes"
+    ],
     "test/e2e-fleet/oversized_reply_local_test.go": [
       "quality/edge-cache-oversized-reply"
     ],
@@ -7296,7 +7338,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 880,
+  "tests_with_markers": 886,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7455,5 +7497,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 493
+  "wired_items": 495
 }
