@@ -1515,6 +1515,7 @@
     "internal/cache/restore_test.go | cache-restart-handover",
     "internal/cache/retention_test.go | cache-reuse-retention",
     "internal/cache/retention_trace_test.go | cache-reuse-retention",
+    "internal/cache/since_start_test.go | cache-restart-handover",
     "internal/cache/sizing_signals_test.go | cache-sizing-signals",
     "internal/capability/docs_test.go | vl-capability-layer",
     "internal/capability/gates_test.go | vl-capability-layer",
@@ -1651,6 +1652,8 @@
     "internal/metrics/cache_restart_metrics_test.go | cache-restart-handover",
     "internal/metrics/cache_signal_dashboard_test.go | cache-eviction-signals",
     "internal/metrics/cache_signal_metrics_test.go | cache-eviction-signals",
+    "internal/metrics/cache_since_start_metrics_test.go | cache-restart-handover",
+    "internal/metrics/cache_since_start_metrics_test.go | observability-query-flow",
     "internal/metrics/cache_sizing_metrics_test.go | cache-sizing-signals",
     "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/capability_test.go | vl-capability-layer",
@@ -1762,6 +1765,7 @@
     "internal/proxy/cache_layer_metrics_test.go | cache-eviction-signals",
     "internal/proxy/cache_layer_metrics_test.go | cache-sizing-signals",
     "internal/proxy/cache_peer_restore_test.go | cache-restart-handover",
+    "internal/proxy/cache_reads_per_request_test.go | observability-query-flow",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-parenthesized-metric-as-text",
@@ -3771,7 +3775,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 884,
+      "go": 887,
       "playwright": 3
     },
     "page_kinds": {

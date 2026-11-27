@@ -482,6 +482,8 @@ description before it relies on CI. CI confirms the evidence; it is not the firs
   not cover. Keep CI results in a separate section.
 - Host local images on the `pr-visuals` branch under `pr-<number>-local/`. CI replaces the whole `pr-<number>/`
   folder; remove the `-local` folder after the merge, as pruning does not match it.
+- The `PR Local Proof` workflow (`scripts/ci/check_local_proof_pr.py`) fails a ready pull request whose section is
+  missing or holds only the template text. Drafts and automation pull requests pass; the reviewer judges the evidence.
 - Release, documentation, CI and test-only pull requests keep their exemption from product visuals and show their own
   local check results.
 

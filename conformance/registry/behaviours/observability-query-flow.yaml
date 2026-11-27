@@ -18,15 +18,21 @@ proxy: |
   flow.parse.count/ms (LogQL parses made with the request's context),
   flow.translate.count/ms (the translate_query operation, every outcome),
   flow.cache.lookups/hits/misses/stale/ms/bytes and flow.cache.by_tier (one
-  count per physical cache read, by the tier that answered), flow.vl.calls/ms/
+  count per cache lookup, by the tier that answered), flow.vl.calls/ms/
   bytes (VictoriaLogs calls timed to the end of their body) and flow.proxy.ms
   (the request's time minus VictoriaLogs and cache time, never below zero; an
   estimate, because parallel calls add up). A slow request's trace also lists
   each cache lookup (kind cache: tier, result, bytes, time), at most 16.
   Metrics: loki_vl_proxy_request_phase_seconds{route,phase},
   loki_vl_proxy_request_fanout{route,kind},
-  loki_vl_proxy_cache_lookup_seconds{tier,result}, all of fixed small label
-  sets.
+  loki_vl_proxy_cache_lookup_seconds{tier,result} and
+  loki_vl_proxy_cache_reads_per_request{route,tier}, all of fixed small label
+  sets. A read is one lookup of a request reaching one attached tier, hit or
+  miss: a lookup of the tier stack reads memory, disk and peers in order until
+  one answers; a memory-only lookup reads memory; a stale-recovery lookup reads
+  memory, then disk when memory had no usable value; a disabled cache is not
+  read. Reads outside a client request or after it ended are not counted. The
+  new histogram is also pushed over OTLP; the other three are scrape only.
 
 implementation:
   - internal/proxy/query_flow.go
@@ -35,6 +41,7 @@ implementation:
   - internal/proxy/query_translation.go
   - internal/metrics/request_flow.go
   - internal/cache/cache.go
+  - internal/cache/layer_stats.go
 
 decisions:
   - id: query-flow-counted-at-the-choke-points
@@ -69,3 +76,33 @@ decisions:
     performance:
       tracked: ['request path: allocations per request (benchstat)', 'cache read: ns/op of a hit']
       bound: 'a request without cache or VictoriaLogs work allocates 0 to 2 more (the log line) and ~190 B more; a cache read adds two clock reads, the shared lookup histogram lock and the request lock (twice with the trace on)'
+  - id: cache-reads-counted-by-tier-reached
+    chosen: 'A histogram per route and tier of the attached tiers each request lookup reached (hit or miss), derived in the proxy cache-read wrappers from the method and the answering tier'
+    over: ['counting only the answering tier', 'counting file reads of the disk database per request', 'counters threaded through the cache read methods', 'a tier label without a route', 'a layer label']
+    why: |
+      Issue #1802 needs the reads one page costs per tier, so that a change
+      that reads neighbouring buckets together or in larger records can be
+      measured by request. The answering tier hides the tiers a lookup went
+      through. File reads happen under the cache package, which has no request
+      context; they stay in loki_vl_proxy_cache_l2_read_seconds_count. Deriving
+      in the wrappers leaves the cache read methods unchanged. The route label
+      is the same bounded set request_fanout uses (owner 2026-11-27: kept); routes that never read a
+      cache get no series. Three 16-bit counts sit in padding of the request
+      telemetry, so a request allocates no more.
+    evidence: |
+      TestCacheReadsPerTier checks every wrapper against each tier set and value
+      place, and for the tier-stack methods against the movement of
+      cache_tier_requests_total. Base b919bdbb8 vs this change, 2026-11-27, Apple M5 Pro (shared, load
+      average about 6 to 7), GOMAXPROCS=4, benchstat n=8: cache.Get and the
+      cache read wrapper add no time (no significant difference or faster) and
+      0 allocs; request path ns/op, B/op and allocs/op show no significant
+      change beyond +1 B on a request without cache work; per request record
+      63.5 -> 79.3 ns, 0 allocs; flow section of a /metrics answer with 20
+      routes: none reading a cache 302 -> 301 us and 1.576 MiB both, all
+      reading one 311 -> 387 us and 1.576 -> 2.030 MiB.
+    code: [internal/proxy/query_flow.go, internal/proxy/telemetry.go, internal/metrics/request_flow.go, internal/cache/layer_stats.go]
+    tests: [TestCacheReadsPerTier, TestCacheReadsFollowPromotionAndDisabledCaches, TestCacheReadsOfCoalescedPeerLookups, TestCacheReadsPerRequestHistogram, TestCacheReadCountsSaturate, TestCacheReadsPerRequestExposition]
+    performance:
+      tracked: ['BenchmarkCacheReadWrapper', 'BenchmarkRequestPath', 'BenchmarkRequestFlowMetrics']
+      bound: 'cache read: no added allocation or measurable time; request: no added allocation, at most ~30 ns for the three observations; scrape: only routes that read a cache add series, 3 histograms each'
+    pending: true

@@ -44,6 +44,9 @@ type requestTelemetry struct {
 	// predictedRefusal: a call of the request was answered by a predicted
 	// VictoriaLogs refusal instead of being sent (vl_refusal.go).
 	predictedRefusal bool
+	// cacheReads counts the tier reads of the request's cache lookups
+	// (query_flow.go). It sits in the padding after the flag above.
+	cacheReads flowReads
 	// callerAttrs are the caller's log fields, resolved by the first line that names the caller and shared by the
 	// request's later lines (query_caller.go); callerResolved is set with them.
 	callerAttrs    []any
@@ -93,6 +96,7 @@ type requestTelemetrySnapshot struct {
 	internalOpsByType      map[string]int
 	internalDurationByType map[string]time.Duration
 	flow                   flowCounters
+	cacheReads             flowReads
 }
 
 type requestRouteMeta struct {
@@ -288,6 +292,7 @@ func snapshotTelemetry(ctx context.Context) requestTelemetrySnapshot {
 		internalOpsByType:      internalOpsByType,
 		internalDurationByType: internalDurationByType,
 		flow:                   rt.flow,
+		cacheReads:             rt.cacheReads,
 	}
 }
 
