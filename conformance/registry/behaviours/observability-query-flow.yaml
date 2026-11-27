@@ -86,7 +86,7 @@ decisions:
       through. File reads happen under the cache package, which has no request
       context; they stay in loki_vl_proxy_cache_l2_read_seconds_count. Deriving
       in the wrappers leaves the cache read methods unchanged. The route label
-      is the same bounded set request_fanout uses; routes that never read a
+      is the same bounded set request_fanout uses (owner 2026-11-27: kept); routes that never read a
       cache get no series. Three 16-bit counts sit in padding of the request
       telemetry, so a request allocates no more.
     evidence: |

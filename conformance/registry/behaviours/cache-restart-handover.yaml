@@ -49,7 +49,9 @@ proxy: |
   record, and a record queued, rewritten or dropped after the batch read it is
   not restored. The warm-up counts no disk lookup and leaves the disk recency
   as the ranks set it. Its plan, progress, estimate and outcome are metrics
-  (loki_vl_proxy_cache_restart_warm_*, with source="disk"), as is the start-up
+  (loki_vl_proxy_cache_restart_warm_*, with source="disk"; restored_entries and
+  restored_bytes are what the memory tier took, from either source, without
+  skipped entries), as is the start-up
   index rebuild's duration; the log has the plan with an estimate, progress
   every 2 s, a warning when the timeout will cut it, and the end with the skips
   by reason. How cold a new process is shows in
@@ -260,3 +262,12 @@ decisions:
     code: [internal/cache/handover.go, internal/metrics/cache_since_start_metrics.go]
     tests: [TestSinceStartWindowsFreezeAfterEachWindow, TestSinceStartCountsTheDiskTierAndStopsOnClose, TestCacheHitRatioSinceStartExposition]
     pending: true
+  - id: restored-entries-and-bytes-by-source
+    chosen: 'Two gauges beside the other warm-up progress gauges, restart_warm_restored_entries and restart_warm_restored_bytes with the source label, read from the counts the batch admission already keeps (what the memory tier took)'
+    over: ['deriving restored entries from processed minus skipped in queries (no restored bytes by source)', 'a new metric family with its own names', 'counting the values a peer restore also queues to disk']
+    why: 'Issue #1802 item to verify: how much came back at start-up by source; the existing restart_warm_entries and restart_warm_bytes cover the disk warm-up only and have no source label.'
+    evidence: 'TestRestore_StopsAtAFullMemoryTier and TestPeerRestore_NeverOverwritesFresherLocalData: the counts equal what memory holds, skipped entries excluded; TestMetrics_Handler_EmitsCacheRestartMetrics and TestOTLPPusher_RestoredEntriesAndBytesBySource: both sources on Prometheus and OTLP. No restore or read code changed.'
+    code: [internal/metrics/metrics.go, internal/cache/restore.go]
+    tests: [TestRestore_StopsAtAFullMemoryTier, TestPeerRestore_NeverOverwritesFresherLocalData, TestMetrics_Handler_EmitsCacheRestartMetrics, TestOTLPPusher_RestoredEntriesAndBytesBySource]
+    pending: true
+

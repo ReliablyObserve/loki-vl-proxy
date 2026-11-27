@@ -451,6 +451,9 @@ loki_vl_proxy_cache_restart_warm_processed_bytes
 loki_vl_proxy_cache_restart_warm_remaining_seconds
 loki_vl_proxy_cache_restart_warm_timeout_seconds
   - loki_vl_proxy_cache_restart_warm_duration_seconds
+# what came back, from the local disk or from peers
+loki_vl_proxy_cache_restart_warm_restored_entries
+loki_vl_proxy_cache_restart_warm_restored_bytes
 # the last restart's rate, to size the timeout
 loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second
 # a restart the deadline cut
