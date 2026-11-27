@@ -535,7 +535,8 @@ def stitched_reference(targets, shape, query, secs, step, end, tenant, timeout, 
     stitched points of that window: a hole or an overlap at a cut would show there."""
     record, joined = measured if measured else ({}, None)
     extra = 0
-    if not record.get("complete") or not stitched_pieces_computed(record):
+    # A stitch that failed is not tried again (stitch_row): only a complete one with a cached piece is read again.
+    if record.get("complete") and not stitched_pieces_computed(record):
         extra = 1
         record, joined = stitched_answer(targets["loki"], shape, query, secs, step, end, tenant, timeout,
                                          spelling=correctness_spelling(query, shape))
