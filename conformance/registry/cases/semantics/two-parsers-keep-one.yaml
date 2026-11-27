@@ -128,6 +128,19 @@ why: |
   retained. The case remains OPEN; these assignments grant no waiver, owner-kept
   projection, current runtime pass or fixed status.
 
+  TestParserProbeDropMatchesRecordedLoki (semantics/parser-probe-drop-keeps-range)
+  measures the probe route against recorded Loki engine answers over JSON, logfmt,
+  mixed and plain lines, both parser orders with and without a drop of the error
+  labels, under every wrapper, instant and range. The rows that still differ are
+  listed in internal/proxy/testdata/parser_probe_drop_known_differences.txt (a list
+  that may only shrink): series whose labels come from both parsers in Loki and from
+  the kept one in the proxy, values of aggregations over those series, and Loki's
+  400 JSONParserErr for a query without a drop of the error labels over lines that
+  are not JSON, which the proxy answers 200 once the probe kept logfmt (the JSON
+  parser error check does not run on a query naming both parsers). The one-parser
+  controls of the same matrix differ on the same fake backend for some of the same
+  shapes (191 of 896 rows).
+
 request:
   method: GET
   path: /loki/api/v1/query_range
