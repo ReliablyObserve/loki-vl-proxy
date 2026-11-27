@@ -1623,6 +1623,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-first-last-per-line",
+   "kind": "explore",
+   "query": "sum(last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+   "covers": [
+    "semantics/unwrap-first-last-per-line-range-longer-than-step",
+    "window-bounds-and-step-alignment",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-first-last-per-line-range-longer-than-step"
+   ]
+  },
+  {
    "id": "explore-unwrap-first-last-under-sum",
    "kind": "explore",
    "query": "sum by (service_name) (last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [$__auto]))",
