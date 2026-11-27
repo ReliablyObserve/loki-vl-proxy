@@ -2315,8 +2315,8 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 					p.queryStatsLayer(endpoint, p.lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
 							p.alignToStepMiddleware(endpoint,
-								p.compatCacheMiddleware(endpoint, route,
-									p.requestTimeBounds(endpoint, h)))))))), p.rejectAdmission)))))
+								p.bothNamesLayer(endpoint, p.compatCacheMiddleware(endpoint, route,
+									p.requestTimeBounds(endpoint, h))))))))), p.rejectAdmission)))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -3484,7 +3484,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		r = checked
 	}
 
-	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
+	// An instant query carries time, not start and end: the probe reads the
+	// window the query evaluates at that time.
+	logqlQuery = p.preferWorkingParserAt(r.Context(), logqlQuery, r.FormValue("time"))
 	unwrapLookup.setQuery(logqlQuery)
 
 	if spec, ok := p.bareParserMetricSpec(logqlQuery); ok {

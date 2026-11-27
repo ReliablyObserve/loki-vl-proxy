@@ -285,7 +285,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/error-layer-cancel-deadline` — A tail whose VictoriaLogs call times out or is cancelled ends the way Loki's does, with Loki's texts (fixed) | TBD-PR | 0 | 0 |
 | `semantics/error-layer-internal-go-text` — A tail stream that breaks after the upgrade closes with Loki's error, not a bare disconnect or Go reader wording (fixed) | TBD-PR | 0 | 0 |
 | `semantics/error-layer-transport-text` — Backend transport failures use sanitized Loki errors for every client | #941 | 0 | 0 |
-| `semantics/field-mapping-label-modes` — The label pickers list the names of a mapped field that -field-mapping-label-mode selects | #1762 | 0 | 0 |
+| `semantics/field-mapping-label-modes` — The answers show the names of a mapped field that -field-mapping-label-mode selects | #1762 | 0 | 0 |
 | `semantics/first-last-over-time-translation` — first_over_time and last_over_time with offset or a line filter, proof against Loki pending (open) | #1059 | 0 | 0 |
 | `semantics/instant-bare-range-detected-level-unknown` — an instant bare range function carries the detected_level=unknown label Loki puts on a stream with no level | #750 | 0 | 0 |
 | `semantics/ip-filter-json-stats-pushdown` — An ip() label filter after \| json in a metric query matches no line on the stats pushdown; Loki counts the lines in range (fixed) | #1156 | 0 | 0 |
@@ -370,6 +370,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/detected-fields-index-outside-sample` — The Loki profile discovers fields from the sampled lines | TBD-PR | 0 | 0 |
 | `semantics/detected-fields-json-body-filter` — Field discovery preserves a JSON parser before a filter on a body field | TBD-PR | 0 | 0 |
 | `semantics/detected-fields-no-logfmt-token-fields` — detected_fields with a level pill or a field filter lists Loki's fields, not the words of each line (fixed) | #1032 | 0 | 0 |
+| `semantics/instant-parser-probe-window` — The parser probe of an instant query reads the window the query evaluates (fixed) | #1825 | 0 | 0 |
 | `semantics/json-detected-level-error-split` — `sum by (detected_level)` over `\| json` with the parser errors kept, or `\| json \| __error__!=""`, is answered from VictoriaLogs stats,... | perf/detected-level-native-count | 0 | 0 |
 | `semantics/json-metric-step-wider-than-range` — A `\| json` metric whose range is shorter than the step (`[1m]` at a 120 s step) is answered from VictoriaLogs stats over the lines insid... | perf/dlv-step-longer-than-range | 0 | 0 |
 | `semantics/pattern-line-filter-anchoring` — A pattern line filter (`\|>`, `!>`) keeps exactly the lines Loki's pattern matcher accepts (fixed) | #747 | 0 | 0 |

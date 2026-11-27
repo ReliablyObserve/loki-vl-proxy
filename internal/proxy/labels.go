@@ -73,6 +73,8 @@ type LabelTranslator struct {
 	// and both modes; listing maps a mapped VL field to the names listings show.
 	labelMode FieldMappingLabelMode
 	listing   map[string][]string
+	// aliases maps a mapped VL field to its aliases (SetFieldMappingLabelMode).
+	aliases map[string][]string
 }
 
 // NewLabelTranslator creates a label translator with the given style and custom mappings.
@@ -452,6 +454,9 @@ func (lt *LabelTranslator) metadataFieldExposures(vlField string, mode MetadataF
 	}
 
 	mode = normalizeMetadataFieldMode(mode)
+	if names, ok := lt.mappedMetadataExposures(vlField, mode); ok {
+		return names
+	}
 	translated := vlField
 	if lt != nil {
 		translated = lt.ToLoki(vlField)

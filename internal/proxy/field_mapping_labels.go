@@ -1,64 +1,71 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // FieldMappingLabelMode controls which names of a -field-mapping field the
-// label listings show (/labels, detected_labels, the volume target labels).
-// Queries and /label/{name}/values accept every name of a mapping in every
-// mode, and stream and series labels always carry one name per field.
+// answers show: the label listings (/labels, detected_labels, the volume target
+// labels), stream and series labels, structured metadata and detected fields.
+// Queries and /label/{name}/values accept every name of a mapping in every mode.
 type FieldMappingLabelMode string
 
 const (
-	// FieldMappingLabelModeOriginal is the default: one name per field in every
-	// answer, the loki_label of the field's last mapping.
+	// FieldMappingLabelModeUnset is the flag left empty: one name per field in
+	// every answer, the loki_label of the field's last mapping (the behaviour of
+	// builds without the flag).
+	FieldMappingLabelModeUnset FieldMappingLabelMode = ""
+	// FieldMappingLabelModeOriginal shows a mapped field under its own name as
+	// stored, formatted only by -label-style (labels) and -metadata-field-mode
+	// (structured metadata and detected fields), with no alias.
 	FieldMappingLabelModeOriginal FieldMappingLabelMode = "original"
-	// FieldMappingLabelModeAlias lists a mapped field under its aliases (the
+	// FieldMappingLabelModeAlias shows a mapped field under its aliases only (the
 	// loki_labels that differ from the name -label-style gives the field), and a
-	// field without an alias under that name.
+	// field without an alias under its own name.
 	FieldMappingLabelModeAlias FieldMappingLabelMode = "alias"
-	// FieldMappingLabelModeBoth lists the aliases and the -label-style name.
+	// FieldMappingLabelModeBoth shows the field's own names and its aliases.
 	FieldMappingLabelModeBoth FieldMappingLabelMode = "both"
 )
 
 // ParseFieldMappingLabelMode reads a -field-mapping-label-mode value. Empty is
-// the default.
+// FieldMappingLabelModeUnset.
 func ParseFieldMappingLabelMode(value string) (FieldMappingLabelMode, error) {
 	switch mode := FieldMappingLabelMode(strings.TrimSpace(value)); mode {
-	case "":
-		return FieldMappingLabelModeOriginal, nil
-	case FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth:
+	case FieldMappingLabelModeUnset, FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth:
 		return mode, nil
 	default:
-		return "", fmt.Errorf("invalid -field-mapping-label-mode: %q (must be 'original', 'alias', or 'both')", value)
+		return "", fmt.Errorf("invalid -field-mapping-label-mode: %q (must be 'original', 'alias', or 'both', or empty)", value)
 	}
 }
 
 // SetFieldMappingLabelMode applies mode to the mappings. It is called once,
-// before the translator is shared. The original mode changes nothing.
+// before the translator is shared. The unset mode changes nothing.
 //
-// In the alias and both modes, for each mapped field:
+// In the original, alias and both modes, for each mapped field:
 //   - its base name is what -label-style gives it without a mapping;
 //   - its aliases are the loki_labels of its mappings that differ from the base
 //     name and resolve back to it (a loki_label given to two fields belongs to
 //     the later mapping), in -field-mapping order;
-//   - answers (stream and series labels) carry the last alias, or the base name
-//     when there is none;
-//   - listings show the aliases (alias mode) or the aliases and the base name
-//     (both mode), or the base name when there is no alias;
+//   - answers (stream and series labels) carry the base name in the original
+//     mode, else the last alias, or the base name when there is none;
+//   - listings show the base name (original), the aliases (alias) or the
+//     aliases and the base name (both), or the base name when there is no alias;
 //   - the base name becomes a query name of the field, unless a mapping or
-//     another mapped field already owns it.
+//     another mapped field already owns it; the aliases stay query names.
 func (lt *LabelTranslator) SetFieldMappingLabelMode(mode FieldMappingLabelMode) {
-	if mode != FieldMappingLabelModeAlias && mode != FieldMappingLabelModeBoth {
+	if mode != FieldMappingLabelModeOriginal && mode != FieldMappingLabelModeAlias && mode != FieldMappingLabelModeBoth {
 		return
 	}
 	lt.labelMode = mode
 	lt.listing = make(map[string][]string, len(lt.vlToLoki))
+	lt.aliases = make(map[string][]string, len(lt.vlToLoki))
 	// Aliases are read before any base name is registered as a query name.
 	aliases := make(map[string][]string, len(lt.vlToLoki))
 	var fields []string
@@ -87,18 +94,159 @@ func (lt *LabelTranslator) SetFieldMappingLabelMode(mode FieldMappingLabelMode) 
 			owner, owned = field, true
 		}
 		own := aliases[field]
-		if len(own) == 0 {
+		lt.aliases[field] = own
+		ownsBase := owned && owner == field
+		switch {
+		case len(own) == 0:
 			lt.vlToLoki[field] = base
 			lt.listing[field] = []string{base}
-			continue
+		case mode == FieldMappingLabelModeOriginal && ownsBase:
+			lt.vlToLoki[field] = base
+			lt.listing[field] = []string{base}
+		case mode == FieldMappingLabelModeOriginal:
+			// Another field reads the base name: the field keeps the name it
+			// has without the flag, the last mapping's.
+			lt.listing[field] = []string{lt.vlToLoki[field]}
+		default:
+			lt.vlToLoki[field] = own[len(own)-1]
+			listed := slices.Clone(own)
+			if mode == FieldMappingLabelModeBoth && ownsBase {
+				listed = append(listed, base)
+			}
+			lt.listing[field] = listed
 		}
-		lt.vlToLoki[field] = own[len(own)-1]
-		listed := slices.Clone(own)
-		if mode == FieldMappingLabelModeBoth && owned && owner == field {
-			listed = append(listed, base)
-		}
-		lt.listing[field] = listed
 	}
+}
+
+// mappedMetadataExposures returns the names a mapped field has in structured
+// metadata and detected fields in the original, alias and both modes. Its own
+// names are the ones the metadata field mode gives the field (native: the
+// stored name; translated: the base name; hybrid: both), the base name only
+// while it reads the field. The original mode shows the own names, the alias
+// mode the aliases (the own names for a field without one), the both mode
+// both. false for any other field and in the unset mode.
+func (lt *LabelTranslator) mappedMetadataExposures(vlField string, mode MetadataFieldMode) ([]metadataFieldExposure, bool) {
+	if lt == nil || lt.labelMode == FieldMappingLabelModeUnset {
+		return nil, false
+	}
+	aliases, mapped := lt.aliases[vlField]
+	if !mapped {
+		return nil, false
+	}
+	result := make([]metadataFieldExposure, 0, 2+len(aliases))
+	add := func(name string) {
+		if name == "" || slices.ContainsFunc(result, func(e metadataFieldExposure) bool { return e.name == name }) {
+			return
+		}
+		result = append(result, metadataFieldExposure{name: name, isAlias: name != vlField})
+	}
+	if lt.labelMode != FieldMappingLabelModeAlias || len(aliases) == 0 {
+		base := lt.baseName(vlField)
+		ownsBase := lt.lokiToVL[base] == vlField
+		if mode != MetadataFieldModeTranslated || !ownsBase {
+			add(vlField)
+		}
+		if mode != MetadataFieldModeNative && ownsBase {
+			add(base)
+		}
+	}
+	if lt.labelMode != FieldMappingLabelModeOriginal {
+		for _, alias := range aliases {
+			add(alias)
+		}
+	}
+	return result, true
+}
+
+// keepsMappedValue reports whether a structured metadata name already set for
+// an entry keeps its value against vlField: in the original, alias and both
+// modes, a name a mapped field claims as a query name (an alias, or a base name
+// the mode made one) keeps the mapped field's value against a stored field of
+// that name, whatever order the entry's fields come in, as queries for the name
+// read the mapped field. Parsed labels are not concerned.
+func (lt *LabelTranslator) keepsMappedValue(name, vlField string) bool {
+	if lt == nil || lt.labelMode == FieldMappingLabelModeUnset {
+		return false
+	}
+	owner := lt.lokiToVL[name]
+	_, mapped := lt.aliases[owner]
+	return mapped && owner != vlField
+}
+
+// setMetadata sets an entry's structured metadata name to the value of
+// vlField, unless the name already holds the value of the mapped field that
+// claims it (keepsMappedValue).
+func (lt *LabelTranslator) setMetadata(sm map[string]string, name, vlField, value string) {
+	if lt.keepsMappedValue(name, vlField) && sm[name] != "" {
+		return
+	}
+	sm[name] = value
+}
+
+// namesMappedField reports an alias a mapped field shows in structured
+// metadata and detected fields (mappedMetadataExposures, alias and both
+// modes). Detected fields list it even when it is a name they leave out for
+// other fields (namespace, cluster, app).
+func (lt *LabelTranslator) namesMappedField(name, vlField string) bool {
+	if lt == nil || (lt.labelMode != FieldMappingLabelModeAlias && lt.labelMode != FieldMappingLabelModeBoth) {
+		return false
+	}
+	return slices.Contains(lt.aliases[vlField], name)
+}
+
+// requestedGroupNames maps a mapped field that a by() grouping of query names
+// under another of its names than the one answers carry to that name, in the
+// listing modes: Loki answers a grouping under the label it names. The names
+// come from the typed plan (the plan memo when the handlers planned it). nil in
+// the default mode and when no grouping names such a field.
+func (p *Proxy) requestedGroupNames(ctx context.Context, query string) map[string]string {
+	lt := p.labelTranslator
+	if !lt.listsAliases() || query == "" {
+		return nil
+	}
+	plan, err := loweringPlan(ctx, logqlpkg.CanonicalizeLogRanges(query))
+	if err != nil || plan == nil {
+		return nil
+	}
+	var out map[string]string
+	add := func(g *queryplan.Grouping) {
+		if g == nil || g.Without {
+			return
+		}
+		for _, label := range g.Labels {
+			field, ok := lt.lokiToVL[label]
+			if _, mapped := lt.aliases[field]; !ok || !mapped || lt.ToLoki(field) == label {
+				continue
+			}
+			if _, named := out[field]; named {
+				continue // the first name a query gives the field
+			}
+			if out == nil {
+				out = make(map[string]string, 2)
+			}
+			out[field] = label
+		}
+	}
+	var walk func(queryplan.Node)
+	walk = func(n queryplan.Node) {
+		switch n := n.(type) {
+		case *queryplan.VectorAgg:
+			add(n.By)
+			walk(n.In)
+		case *queryplan.Rank:
+			add(n.By)
+			walk(n.In)
+		case *queryplan.RangeAgg:
+			add(n.By)
+		case *queryplan.BinOp:
+			walk(n.L)
+			walk(n.R)
+		case *queryplan.LabelReplace:
+			walk(n.In)
+		}
+	}
+	walk(plan.Root)
+	return out
 }
 
 // baseName is the name -label-style gives a field without a mapping.
@@ -130,7 +278,7 @@ func (lt *LabelTranslator) listedNames(vlField string, one *[1]string) []string 
 // name is renamed name_extracted beside it. false for a field without an alias
 // and in the original mode.
 func (lt *LabelTranslator) aliasAnswer(vlField string) (string, bool) {
-	if !lt.listsAliases() {
+	if !lt.listsAliases() || lt.labelMode == FieldMappingLabelModeOriginal {
 		return "", false
 	}
 	if _, mapped := lt.listing[vlField]; !mapped {
@@ -173,9 +321,10 @@ func (lt *LabelTranslator) fieldAlias(field string) string {
 }
 
 // withAliases gives a lowering profile the alias functions in the alias and
-// both modes; the original mode leaves them nil and its text unchanged.
+// both modes; the unset and original modes leave them nil and their text
+// unchanged.
 func (lt *LabelTranslator) withAliases(prof lower.Profile) lower.Profile {
-	if lt.listsAliases() {
+	if lt.listsAliases() && lt.labelMode != FieldMappingLabelModeOriginal {
 		prof.AliasField, prof.FieldAlias = lt.aliasField, lt.fieldAlias
 	}
 	return prof
@@ -274,7 +423,9 @@ func (p *Proxy) declaredListingNames(listed []string) []string {
 		if isVLInternalField(field) {
 			continue
 		}
-		if lt.isMappingName(declared, field) {
+		// The original mode shows no alias: a declared alias lists its field
+		// under the base name below.
+		if lt.isMappingName(declared, field) && lt.labelMode != FieldMappingLabelModeOriginal {
 			out = appendUniqueString(out, declared)
 			continue
 		}

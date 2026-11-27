@@ -21,12 +21,16 @@ import (
 )
 
 // mappingVL is a VictoriaLogs stand-in holding one stream whose fields are
-// stream fields, with a call count per endpoint.
+// stream fields, with a call count per endpoint. meta holds the row's fields
+// that are no stream fields (structured metadata); queries records the LogsQL
+// of every query call.
 type mappingVL struct {
 	fields map[string]string
+	meta   map[string]string
 
-	mu    sync.Mutex
-	calls map[string]int
+	mu      sync.Mutex
+	calls   map[string]int
+	queries []string
 }
 
 func (v *mappingVL) server(t testing.TB) *httptest.Server {
@@ -40,6 +44,11 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 		}
 		v.mu.Unlock()
 		_ = r.ParseForm()
+		if r.URL.Path == "/select/logsql/query" {
+			v.mu.Lock()
+			v.queries = append(v.queries, r.Form.Get("query"))
+			v.mu.Unlock()
+		}
 		field := r.Form.Get("field")
 		names := make([]string, 0, len(v.fields))
 		for name := range v.fields {
@@ -59,10 +68,23 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(map[string]any{"values": items})
 		}
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names", "/select/logsql/field_names":
+		case "/select/logsql/stream_field_names":
 			listing(names...)
-		case "/select/logsql/stream_field_values", "/select/logsql/field_values":
+		case "/select/logsql/field_names":
+			all := slices.Concat(names, slices.Sorted(maps.Keys(v.meta)))
+			listing(all...)
+		case "/select/logsql/stream_field_values":
 			if value, ok := v.fields[field]; ok {
+				listing(value)
+				return
+			}
+			listing()
+		case "/select/logsql/field_values":
+			if value, ok := v.fields[field]; ok {
+				listing(value)
+				return
+			}
+			if value, ok := v.meta[field]; ok {
 				listing(value)
 				return
 			}
@@ -72,6 +94,9 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 		case "/select/logsql/query":
 			row := map[string]string{"_time": "2026-01-01T00:00:00Z", "_msg": "hello", "_stream": stream, "_stream_id": "0"}
 			for name, value := range v.fields {
+				row[name] = value
+			}
+			for name, value := range v.meta {
 				row[name] = value
 			}
 			_ = json.NewEncoder(w).Encode(row)
@@ -87,7 +112,16 @@ func (v *mappingVL) server(t testing.TB) *httptest.Server {
 					metric[name] = stream
 				} else if value, ok := v.fields[name]; ok {
 					metric[name] = value
+				} else if value, ok := v.meta[name]; ok {
+					metric[name] = value
 				}
+			}
+			if r.URL.Path == "/select/logsql/stats_query_range" {
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{
+					"resultType": "matrix",
+					"result":     []any{map[string]any{"metric": metric, "values": []any{[]any{1767225300.0, "5"}}}},
+				}})
+				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{
 				"resultType": "vector",
@@ -298,7 +332,9 @@ func TestFieldMappingLabelMode_IssueReproduction(t *testing.T) {
 // conformance: field-mapping-label-names, semantics/field-mapping-label-modes
 func TestFieldMappingLabelMode_DeclaredMappingNames(t *testing.T) {
 	for mode, want := range map[FieldMappingLabelMode][]string{
-		FieldMappingLabelModeOriginal: {"k8s_namespace_name", "pod", "service_name"},
+		FieldMappingLabelModeUnset: {"k8s_namespace_name", "pod", "service_name"},
+		// No alias in the original mode: a declared alias lists its field's base name.
+		FieldMappingLabelModeOriginal: {"k8s_namespace_name", "k8s_pod_name", "service_name"},
 		FieldMappingLabelModeAlias:    {"k8s_namespace_name", "namespace", "pod", "service_name"},
 		FieldMappingLabelModeBoth:     {"k8s_namespace_name", "namespace", "pod", "service_name"},
 	} {
@@ -327,7 +363,7 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 	underscores := map[FieldMappingLabelMode]want{
 		// The default lists the last mapping of each field; the declared fields
 		// without data keep their last mapping too.
-		FieldMappingLabelModeOriginal: {
+		FieldMappingLabelModeUnset: {
 			labels:   []string{"cluster", "env", "host_name", "k8s_namespace_name", "pod", "service_name", "team"},
 			detected: []string{"host_name", "k8s_namespace_name", "pod", "service_name", "team"},
 			answers:  []string{"host_name", "k8s_namespace_name", "pod", "service_name", "team"},
@@ -342,11 +378,12 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 		FieldMappingLabelModeBoth: {
 			labels:   []string{"cluster", "custom_team", "deployment_environment", "host_name", "k8s_namespace_name", "k8s_pod_name", "namespace", "ns", "pod", "service_name", "team"},
 			detected: []string{"custom_team", "host_name", "k8s_namespace_name", "k8s_pod_name", "namespace", "ns", "pod", "service_name", "team"},
-			answers:  []string{"host_name", "ns", "pod", "service_name", "team"},
+			// Every listed name of a mapped stream field.
+			answers: []string{"custom_team", "host_name", "k8s_namespace_name", "k8s_pod_name", "namespace", "ns", "pod", "service_name", "team"},
 		},
 	}
 	passthrough := map[FieldMappingLabelMode]want{
-		FieldMappingLabelModeOriginal: {
+		FieldMappingLabelModeUnset: {
 			labels:   []string{"cluster", "env", "host.name", "k8s_namespace_name", "pod", "service.name", "service_name", "team"},
 			detected: []string{"host.name", "k8s_namespace_name", "pod", "service.name", "service_name", "team"},
 			answers:  []string{"host.name", "k8s_namespace_name", "pod", "service.name", "service_name", "team"},
@@ -361,13 +398,13 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 		FieldMappingLabelModeBoth: {
 			labels:   []string{"cluster", "custom.team", "deployment.environment", "host.name", "k8s.namespace.name", "k8s.pod.name", "k8s_namespace_name", "namespace", "ns", "pod", "service.name", "service_name", "team"},
 			detected: []string{"custom.team", "host.name", "k8s.namespace.name", "k8s.pod.name", "k8s_namespace_name", "namespace", "ns", "pod", "service.name", "service_name", "team"},
-			answers:  []string{"host.name", "k8s_namespace_name", "pod", "service.name", "service_name", "team"},
+			answers:  []string{"custom.team", "host.name", "k8s.namespace.name", "k8s.pod.name", "k8s_namespace_name", "namespace", "ns", "pod", "service.name", "service_name", "team"},
 		},
 	}
 	for style, wants := range map[LabelStyle]map[FieldMappingLabelMode]want{LabelStyleUnderscores: underscores, LabelStylePassthrough: passthrough} {
 		for _, metadata := range []MetadataFieldMode{MetadataFieldModeTranslated, MetadataFieldModeHybrid, MetadataFieldModeNative} {
 			originalCalls := map[string]map[string]int{}
-			for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+			for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeUnset, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 				t.Run(string(style)+"/"+string(metadata)+"/"+string(mode), func(t *testing.T) {
 					vl := mappingVLData()
 					backend := vl.server(t).URL
@@ -388,7 +425,7 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 							vl.snapshot()
 							request()
 							got := vl.snapshot()
-							if mode == FieldMappingLabelModeOriginal {
+							if mode == FieldMappingLabelModeUnset {
 								originalCalls[name+run] = got
 							} else if base, ok := originalCalls[name+run]; ok && !maps.Equal(got, base) {
 								t.Errorf("%s%s: VictoriaLogs calls %v, default mode %v", name, run, got, base)
@@ -435,7 +472,7 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 					for _, name := range names {
 						// A custom field's -label-style name is a query name in the
 						// listing modes, which list it; the default has no such name.
-						if mode == FieldMappingLabelModeOriginal && name == "custom_team" {
+						if mode == FieldMappingLabelModeUnset && name == "custom_team" {
 							continue
 						}
 						p = newProxy()
@@ -445,7 +482,7 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 							}
 						})
 					}
-					if mode == FieldMappingLabelModeOriginal {
+					if mode == FieldMappingLabelModeUnset {
 						return
 					}
 					// Volume answers under whichever name targetLabels asks for.
@@ -468,9 +505,9 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 // conformance: field-mapping-label-names, semantics/field-mapping-label-modes
 func TestFieldMappingLabelMode_VolumeLabelNames(t *testing.T) {
 	for mode, want := range map[FieldMappingLabelMode][]string{
-		FieldMappingLabelModeOriginal: {"host_name", "k8s_namespace_name", "pod", "service_name", "team"},
-		FieldMappingLabelModeAlias:    {"host_name", "namespace", "ns", "pod", "service_name", "team"},
-		FieldMappingLabelModeBoth:     {"custom_team", "host_name", "k8s_namespace_name", "k8s_pod_name", "namespace", "ns", "pod", "service_name", "team"},
+		FieldMappingLabelModeUnset: {"host_name", "k8s_namespace_name", "pod", "service_name", "team"},
+		FieldMappingLabelModeAlias: {"host_name", "namespace", "ns", "pod", "service_name", "team"},
+		FieldMappingLabelModeBoth:  {"custom_team", "host_name", "k8s_namespace_name", "k8s_pod_name", "namespace", "ns", "pod", "service_name", "team"},
 	} {
 		vl := mappingVLData()
 		p := newMappingProxy(t, vl.server(t).URL, nil, Config{LabelStyle: LabelStyleUnderscores, FieldMappingLabelMode: mode, FieldMappings: mappingTestMappings()})
@@ -492,7 +529,7 @@ func TestFieldMappingLabelMode_VolumeLabelNames(t *testing.T) {
 //
 // conformance: field-mapping-label-names, semantics/field-mapping-label-modes
 func TestFieldMappingLabelMode_AliasCollidesWithStoredField(t *testing.T) {
-	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeUnset, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 		vl := &mappingVL{fields: map[string]string{"k8s.namespace.name": "prod", "namespace": "legacy"}}
 		p := newMappingProxy(t, vl.server(t).URL, nil, Config{LabelStyle: LabelStyleUnderscores, FieldMappingLabelMode: mode,
 			FieldMappings: []FieldMapping{{VLField: "k8s.namespace.name", LokiLabel: "namespace"}}})
@@ -560,19 +597,16 @@ func TestFieldMappingLabelMode_SharedCacheTier(t *testing.T) {
 		return Config{LabelStyle: LabelStyleUnderscores, FieldMappingLabelMode: mode, FieldMappings: mappingTestMappings(),
 			ExtraLabelFields: []string{"cluster"}}
 	}
-	modes := []FieldMappingLabelMode{"", FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth}
+	modes := []FieldMappingLabelMode{FieldMappingLabelModeUnset, FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth}
 	namespaces := map[string]FieldMappingLabelMode{}
 	for _, mode := range modes {
 		p := newMappingProxy(t, srv.URL, shared, cfg(mode))
 		namespace := p.scopeFingerprint(context.Background(), "")
-		if prior, seen := namespaces[namespace]; seen && (prior != "" || mode != FieldMappingLabelModeOriginal) {
+		if prior, seen := namespaces[namespace]; seen {
 			t.Errorf("modes %q and %q share a cache namespace", prior, mode)
-		} else if !seen {
+		} else {
 			namespaces[namespace] = mode
 		}
-	}
-	if len(namespaces) != 3 {
-		t.Errorf("%d namespaces, want 3 (unset and original share one)", len(namespaces))
 	}
 	// The keys of the label-values index (and its persisted and peer
 	// snapshot) and of the label cache warm-up follow the namespace.
@@ -583,8 +617,8 @@ func TestFieldMappingLabelMode_SharedCacheTier(t *testing.T) {
 		indexKeys[p.scopedIndexOrg(nil, "")] = true
 		warmKeys[p.canonicalReadCacheKey("labels", "", warm)] = true
 	}
-	if len(indexKeys) != 3 || len(warmKeys) != 3 {
-		t.Errorf("%d index keys and %d warm-up keys, want 3 of each", len(indexKeys), len(warmKeys))
+	if len(indexKeys) != 4 || len(warmKeys) != 4 {
+		t.Errorf("%d index keys and %d warm-up keys, want 4 of each", len(indexKeys), len(warmKeys))
 	}
 	// Each proxy's answers through the shared cache equal the answers of a
 	// proxy of its mode with a cache of its own, in either order.
@@ -603,7 +637,7 @@ func TestFieldMappingLabelMode_SharedCacheTier(t *testing.T) {
 	for _, mode := range modes {
 		want[mode] = answers(newMappingProxy(t, srv.URL, nil, cfg(mode)))
 	}
-	for _, order := range [][]FieldMappingLabelMode{modes, {FieldMappingLabelModeBoth, FieldMappingLabelModeAlias, FieldMappingLabelModeOriginal, ""}} {
+	for _, order := range [][]FieldMappingLabelMode{modes, {FieldMappingLabelModeBoth, FieldMappingLabelModeAlias, FieldMappingLabelModeOriginal, FieldMappingLabelModeUnset}} {
 		shared.InvalidatePrefix("")
 		for _, mode := range order {
 			if got := answers(newMappingProxy(t, srv.URL, shared, cfg(mode))); !slices.Equal(got, want[mode]) {
@@ -638,9 +672,10 @@ func TestFieldMappingLabelMode_Invalid(t *testing.T) {
 	}
 }
 
-// Random mappings: the default mode changes nothing; the listing modes keep
-// every mapping name's query field, answer under one listed name, and every
-// listed alias reads its field.
+// Random mappings: the unset mode changes nothing; the original, alias and
+// both modes keep every mapping name's query field, answer under one listed
+// name, and every listed alias reads its field; the both mode's added answer
+// names never overwrite a label or add a skipped name.
 func FuzzFieldMappingLabelMode(f *testing.F) {
 	f.Add("k8s.namespace.name", "namespace", "k8s.namespace.name", "k8s_namespace_name", true)
 	f.Add("a.b", "a_b", "a_b", "a_b", true)
@@ -655,10 +690,38 @@ func FuzzFieldMappingLabelMode(f *testing.F) {
 		mappings := []FieldMapping{{VLField: field1, LokiLabel: label1}, {VLField: field2, LokiLabel: label2}}
 		plain := NewLabelTranslator(style, mappings)
 		original := NewLabelTranslator(style, mappings)
-		original.SetFieldMappingLabelMode(FieldMappingLabelModeOriginal)
-		for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+		original.SetFieldMappingLabelMode(FieldMappingLabelModeUnset)
+		for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 			lt := NewLabelTranslator(style, mappings)
 			lt.SetFieldMappingLabelMode(mode)
+			// The both mode's added names: never overwrite a label, never add a
+			// skipped name, only add a listed name of a field the labels carry.
+			if mode == FieldMappingLabelModeBoth {
+				labels := map[string]string{label1: "v1", label2: "v2", lt.ToLoki(field1): "a1"}
+				before := maps.Clone(labels)
+				skip := map[string]bool{lt.baseName(field2): true}
+				lt.addBothNames(labels, skip)
+				for k, v := range before {
+					if labels[k] != v {
+						t.Fatalf("both: %q overwritten: %q -> %q", k, v, labels[k])
+					}
+				}
+				for k := range labels {
+					if _, had := before[k]; had {
+						continue
+					}
+					if skip[k] {
+						t.Fatalf("both: skipped name %q added", k)
+					}
+					listed := false
+					for _, names := range lt.listing {
+						listed = listed || slices.Contains(names, k)
+					}
+					if !listed {
+						t.Fatalf("both: added %q is no listed name", k)
+					}
+				}
+			}
 			for _, m := range mappings {
 				if m.VLField == "" || m.LokiLabel == "" {
 					continue

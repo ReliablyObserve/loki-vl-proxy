@@ -25,21 +25,21 @@ var labelModeRing = []struct {
 }{
 	{replica{"proxy-labelmode-a", envOr("FLEET_PROXY_LABELMODE_A_URL", "http://localhost:3111")}, "alias"},
 	{replica{"proxy-labelmode-b", envOr("FLEET_PROXY_LABELMODE_B_URL", "http://localhost:3112")}, "alias"},
-	{replica{"proxy-labelmode-c", envOr("FLEET_PROXY_LABELMODE_C_URL", "http://localhost:3113")}, "original"},
+	{replica{"proxy-labelmode-c", envOr("FLEET_PROXY_LABELMODE_C_URL", "http://localhost:3113")}, "unset"},
 	{replica{"proxy-labelmode-d", envOr("FLEET_PROXY_LABELMODE_D_URL", "http://localhost:3114")}, "both"},
 }
 
 // labelModeMapped are the names of the two mapped fields; which of them a
 // listing holds depends on the mode.
 var labelModeMapped = map[string][]string{
-	"alias":    {"namespace", "pod"},
-	"original": {"k8s_namespace_name", "k8s_pod_name"},
-	"both":     {"k8s_namespace_name", "k8s_pod_name", "namespace", "pod"},
+	"alias": {"namespace", "pod"},
+	"unset": {"k8s_namespace_name", "k8s_pod_name"},
+	"both":  {"k8s_namespace_name", "k8s_pod_name", "namespace", "pod"},
 }
 
 // labelModeAnswerName is the one name stream and series labels carry for
 // k8s.namespace.name in each mode.
-var labelModeAnswerName = map[string]string{"alias": "namespace", "original": "k8s_namespace_name", "both": "namespace"}
+var labelModeAnswerName = map[string]string{"alias": "namespace", "unset": "k8s_namespace_name", "both": "namespace"}
 
 // TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers: replicas of a
 // peer ring that list different names for the same field mappings (a rollout
@@ -216,7 +216,7 @@ func TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers(t *testing.T) {
 				}
 			}
 			_ = json.Unmarshal([]byte(body), &out)
-			if mode == "original" {
+			if mode == "unset" {
 				// docs/KNOWN_ISSUES.md: the default listing answers a volume by
 				// a non-winning mapping name with no series, as on main.
 				if len(out.Data.Result) != 0 {
@@ -244,7 +244,11 @@ func TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers(t *testing.T) {
 					t.Errorf("%s: stream %v lacks %s=%q", label, s.Stream, labelModeAnswerName[mode], ns)
 				}
 				for _, other := range []string{"namespace", "k8s_namespace_name"} {
-					if _, ok := s.Stream[other]; ok && other != labelModeAnswerName[mode] {
+					// The both mode carries every listed name of the field.
+					if mode == "both" && s.Stream[other] != ns {
+						t.Errorf("%s: stream %v lacks %s=%q", label, s.Stream, other, ns)
+					}
+					if _, ok := s.Stream[other]; ok && mode != "both" && other != labelModeAnswerName[mode] {
 						t.Errorf("%s: stream %v carries a second name of the field", label, s.Stream)
 					}
 				}
@@ -305,9 +309,9 @@ func TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers(t *testing.T) {
 		for _, name := range names {
 			got := ask(rep.replica, reqs[name])
 			checkMode(rep.replica, rep.mode, apps[0], name, got.body)
-			// Listings differ in every other mode; answers carry the alias in
-			// both, so only the default listing's streams differ from a's.
-			if name == "labels" || name == "detected_labels" || (name == "logs_by_service_streams" && rep.mode == "original") {
+			// Listings differ in every other mode, and so do the streams: the
+			// default carries the last mapping, both every listed name.
+			if name == "labels" || name == "detected_labels" || name == "logs_by_service_streams" {
 				if got.body == first[name] {
 					t.Errorf("%s on %s (%s) answered a's alias answer", name, rep.name, rep.mode)
 				}
