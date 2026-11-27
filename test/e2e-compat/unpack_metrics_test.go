@@ -3,11 +3,14 @@
 package e2e_compat
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +19,12 @@ import (
 // lines without an `_entry` and a numeric `_entry`, one every 5 seconds for the last 20 minutes, under the app label
 // it returns, and waits until Loki and the proxy count every line.
 func unpackFixture(t *testing.T, prefix string, extra ...string) (app string, now time.Time) {
+	return unpackFixtureVia(t, prefix, false, extra...)
+}
+
+// unpackFixtureVia is unpackFixture; viaLokiPush sends VictoriaLogs the Loki push Loki gets, which VictoriaLogs stores
+// a JSON object of as its fields, with no line (its -defaultMsgValue in _msg).
+func unpackFixtureVia(t *testing.T, prefix string, viaLokiPush bool, extra ...string) (app string, now time.Time) {
 	t.Helper()
 	now = time.Now().UTC().Truncate(time.Second)
 	app = fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
@@ -24,7 +33,19 @@ func unpackFixture(t *testing.T, prefix string, extra ...string) (app string, no
 	for i := 0; i < 240; i++ {
 		lines = append(lines, fmt.Sprintf(shapes[i%len(shapes)], i))
 	}
-	pushStream(t, now.Add(-20*time.Minute), streamDef{Labels: map[string]string{"app": app}, Lines: lines, Interval: 5 * time.Second})
+	stream := streamDef{Labels: map[string]string{"app": app}, Lines: lines, Interval: 5 * time.Second}
+	if viaLokiPush {
+		var values [][]string
+		for i, line := range lines {
+			values = append(values, []string{strconv.FormatInt(stream.lineTime(now.Add(-20*time.Minute), i).UnixNano(), 10), line})
+		}
+		body, _ := json.Marshal(map[string]interface{}{"streams": []map[string]interface{}{{"stream": stream.Labels, "values": values}}})
+		for _, target := range []string{lokiURL + "/loki/api/v1/push", vlURL + "/insert/loki/api/v1/push"} {
+			dlPost(t, target, "application/json", body)
+		}
+	} else {
+		pushStream(t, now.Add(-20*time.Minute), stream)
+	}
 	forceVLFlush(t)
 	deadline := time.Now().Add(240 * time.Second)
 	for _, base := range []string{lokiURL, proxyURL} {
@@ -74,6 +95,21 @@ func unpackSamples(payload map[string]interface{}) map[string]float64 {
 	return out
 }
 
+// unpackErrorDetails is the details label of a parser error, which names one failing line.
+var unpackErrorDetails = regexp.MustCompile(`__error_details__="(?:[^"\\]|\\.)*"`)
+
+// unpackUnquote is the value of a details label as Loki writes it in an error (strconv quoting).
+func unpackUnquote(label string) string {
+	v, err := strconv.Unquote(strings.TrimPrefix(label, "__error_details__="))
+	if err != nil {
+		return label
+	}
+	return v
+}
+
+// unpackSelector is the stream selector of a query.
+var unpackSelector = regexp.MustCompile(`\{app="[^"]*"\}`)
+
 // unpackAgainstLoki asks Loki and the proxy one metric query, instant at `at` or over the ten minutes before it, and
 // holds the proxy to Loki's status and, for an answer, its series and values.
 func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
@@ -94,6 +130,22 @@ func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
 		t.Fatalf("HTTP status loki=%d proxy=%d\nloki:  %s\nproxy: %s", lokiStatus, proxyStatus, lokiBody, proxyBody)
 	}
 	if lokiStatus != http.StatusOK {
+		// An error is Loki's text too: the failing series names the sample's labels. Which failing line it names
+		// varies in Loki itself (the same query over the same data answered the details of either bad line of the
+		// window on consecutive asks), so the details are held by TestUnpackLineErrorMatchesRecordedLoki instead.
+		if unpackErrorDetails.ReplaceAllString(strings.TrimSpace(lokiBody), "") != unpackErrorDetails.ReplaceAllString(strings.TrimSpace(proxyBody), "") {
+			t.Fatalf("error text differs\nloki:  %s\nproxy: %s", lokiBody, proxyBody)
+		}
+		// The details the proxy names are the ones Loki's unpack gives a line of the evaluated window.
+		details, selector := unpackErrorDetails.FindString(proxyBody), unpackSelector.FindString(query)
+		if details == "" || selector == "" {
+			t.Fatalf("no details or selector in %s / %s", proxyBody, query)
+		}
+		named := url.Values{"query": {`sum by (__error_details__) (count_over_time(` + selector + ` | unpack | __error__!="" [16m]))`},
+			"time": {strconv.FormatInt(at.UnixNano(), 10)}}
+		if _, _, lokiNamed := doJSONGET(t, lokiURL+"/loki/api/v1/query?"+named.Encode(), headers); !strings.Contains(fmt.Sprint(unpackSamples(lokiNamed)), "__error_details__="+unpackUnquote(details)) {
+			t.Fatalf("Loki's unpack gives no line of the window %s: %v", details, unpackSamples(lokiNamed))
+		}
 		return
 	}
 	want, got := unpackSamples(lokiPayload), unpackSamples(proxyPayload)
@@ -111,18 +163,48 @@ func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
 }
 
 // A sum with no clause over an unpack is one series in Loki, at an instant too: the proxy answered a sum of a rate
-// with one series per stream there.
+// with one series per stream there. A count over a line an unpack rejects fails with Loki's pipeline error under any
+// function but a sum with no grouping, where the proxy answered.
 //
-// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line, semantics/unwrap-conversion-check-reads-unpack-unlike-loki, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line, semantics/unpack-parser-error-not-raised, semantics/unwrap-conversion-check-reads-unpack-unlike-loki, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_UnpackSumsLikeLoki(t *testing.T) {
 	app, now := unpackFixture(t, "unpacksum")
 	selector := fmt.Sprintf(`{app=%q}`, app)
+	badApp, badNow := unpackFixture(t, "unpackbad", `not json %d`, `["%d"]`, `{"a":"%d"`)
+	bad := fmt.Sprintf(`count_over_time({app=%q} | unpack [5m])`, badApp)
+	for i, query := range []string{
+		bad, `sum by (app) (` + bad + `)`, `topk(2, ` + bad + `)`, `sum(` + bad + `)`,
+		// A range aggregation of its own splits its series by the labels the unpack promotes, which the proxy does
+		// not follow yet (semantics/translator-writes-unpack-as-unpack-json): these are held to Loki under a sum.
+		`sum by (app) (rate({app="` + badApp + `"} |= "packed" | unpack [5m]))`,
+		`sum by (app) (count_over_time({app="` + badApp + `"} | unpack | drop __error__, __error_details__ [5m]))`,
+	} {
+		for _, endpoint := range []string{"query", "query_range"} {
+			t.Run("errors/"+endpoint+"/"+strconv.Itoa(i), func(t *testing.T) {
+				unpackAgainstLoki(t, query, endpoint, badNow)
+			})
+		}
+	}
 	// A value beside a numeric `_entry` is no label in Loki, so it converts nothing and fails nothing.
 	unwrapApp, unwrapNow := unpackFixture(t, "unpackunwrap", `{"a":"2","_entry":"x%d"}`, `{"a":"oops","_entry":%d}`)
 	for _, endpoint := range []string{"query", "query_range"} {
 		t.Run("unwrap/"+endpoint, func(t *testing.T) {
 			unpackAgainstLoki(t, fmt.Sprintf(`sum(sum_over_time({app=%q} | unpack | unwrap a [5m]))`, unwrapApp), endpoint, unwrapNow)
 		})
+	}
+	// JSON objects VictoriaLogs unpacked at ingest (a Loki push) keep no line there: Loki's unpack fails on none.
+	pushedApp, pushedNow := unpackFixtureVia(t, "unpackvlpush", true)
+	pushed := fmt.Sprintf(`{app=%q}`, pushedApp)
+	for i, query := range []string{
+		`sum by (app) (count_over_time(` + pushed + ` | unpack [5m]))`,
+		`sum by (app) (rate(` + pushed + ` | unpack | drop agent [5m]))`,
+		`max(count_over_time(` + pushed + ` | unpack | keep app [5m]))`,
+	} {
+		for _, endpoint := range []string{"query", "query_range"} {
+			t.Run("vlpush/"+endpoint+"/"+strconv.Itoa(i), func(t *testing.T) {
+				unpackAgainstLoki(t, query, endpoint, pushedNow)
+			})
+		}
 	}
 	for i, query := range []string{
 		`sum(rate(` + selector + ` | unpack [5m]))`,

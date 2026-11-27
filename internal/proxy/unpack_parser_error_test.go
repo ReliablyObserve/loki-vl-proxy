@@ -3,9 +3,15 @@ package proxy
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
@@ -37,6 +43,39 @@ func TestUnpackLineErrorMatchesRecordedLoki(t *testing.T) {
 			// metric reaches this reading for it (semantics/json-parser-error-hazard-lines-not-marked).
 		case got.Error() != row.Details:
 			t.Errorf("%q: details %q, Loki %q", row.Line, got, row.Details)
+		}
+	}
+}
+
+// The probe of a count over an unpack exists exactly where Loki can fail the query.
+//
+// conformance: semantics/unpack-parser-error-not-raised
+func TestUnpackErrorProbes(t *testing.T) {
+	for q, want := range map[string]int{
+		`count_over_time({a="b"} | unpack [1m])`:                                     1,
+		`rate({a="b"} |= "k" | unpack | drop x [1m] offset 5m)`:                      1,
+		`bytes_over_time({a="b"} | x="1" | unpack [1m])`:                             1,
+		`bytes_rate({a="b"} | unpack |= "k" [1m])`:                                   1,
+		`sum by (x) (count_over_time({a="b"} | unpack [1m]))`:                        1,
+		`max(count_over_time({a="b"} | unpack [1m]))`:                                1,
+		`count_over_time({a="b"} | unpack [1m]) + rate({a="b"} | unpack [1m])`:       2,
+		`label_replace(count_over_time({a="b"} | unpack [1m]), "d", "x", "d", ".*")`: 1,
+		`sum(count_over_time({a="b"} | unpack [1m]))`:                                0,
+		`sum(rate({a="b"} | unpack | keep x [1m]))`:                                  0,
+		`count_over_time({a="b"} | unpack | drop __error__, __error_details__ [1m])`: 0,
+		`count_over_time({a="b"} | unpack | __error__="" [1m])`:                      0,
+		`absent_over_time({a="b"} | unpack [1m])`:                                    0,
+		// Another parser beside the unpack: not covered yet (semantics/translator-writes-unpack-as-unpack-json).
+		`count_over_time({a="b"} | unpack | json [1m])`:   0,
+		`count_over_time({a="b"}[1m])`:                    0,
+		`sum_over_time({a="b"} | unpack | unwrap x [1m])`: 0,
+	} {
+		expr, ok := sharedLogQLExpr(RequestQueryText(q))
+		if !ok {
+			t.Fatalf("%s does not parse", q)
+		}
+		if got := len(jsonErrorProbes(expr)); got != want {
+			t.Errorf("%s: %d probes, want %d", q, got, want)
 		}
 	}
 }
@@ -110,4 +149,52 @@ func TestUnwrapPackedLabelsMatchRecordedLoki(t *testing.T) {
 			}
 		}
 	}
+}
+
+// End to end through the handlers for an unpack: Loki's error names the failing sample's labels, the ingest level
+// included under a sum by other labels (detected_level="unknown" on a line naming none); the reads mark an empty
+// line and VictoriaLogs' -defaultMsgValue as parsed, and a lookup that answers such a row (a JSON object VictoriaLogs
+// unpacked at ingest) answers the metric, as Loki's unpack fails on neither. (VictoriaLogs itself, the format the reads
+// send, is held by TestCompat_UnpackSumsLikeLoki over its Loki push route.)
+//
+// conformance: semantics/unpack-parser-error-not-raised, semantics/pipeline-error-text-parity, loki_api_v1_query_range
+func TestUnpackErrorCheckHandlers(t *testing.T) {
+	at := time.Unix(1700000000, 0)
+	bad := at.Add(3*time.Minute + 7*time.Second)
+	const query = `sum by (app) (count_over_time({app="pay"} | unpack [1m]))`
+	req := func() *http.Request {
+		v := url.Values{"query": {query}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.Add(10*time.Minute).UnixNano(), 10)}, "step": {"60"}}
+		return httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+v.Encode(), nil)
+	}
+	serve := func(p *Proxy) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		p.handleQueryRange(rec, req())
+		return rec
+	}
+	t.Run("Loki fails", func(t *testing.T) {
+		fake := &jsonMarkFakeVL{at: bad, line: "plain text line"}
+		rec := serve(newTestProxy(t, newJSONMarkFakeVL(t, fake).URL))
+		const want = `pipeline error: 'JSONParserErr' for series: '{__error__="JSONParserErr", __error_details__="expecting json object(6), but it is not", app="pay", detected_level="unknown", service_name="pay"}'.`
+		if rec.Code != http.StatusBadRequest || !strings.HasPrefix(rec.Body.String(), want) {
+			t.Fatalf("status %d: %q\nwant %q", rec.Code, rec.Body.String(), want)
+		}
+		calls, _ := fake.snapshot()
+		parsed := func(field string) string {
+			return `format if (` + field + `:="" OR ` + field + `:=` + strconv.Quote(vlDefaultMsgValue) + `) "1" as ` + jsonValidField
+		}
+		for _, c := range calls {
+			if strings.Contains(c, "unpack_json") && !strings.Contains(c, parsed("_msg")) && !strings.Contains(c, parsed("__vlm")) {
+				t.Errorf("a read that does not count the stored empty lines as parsed: %s", c)
+			}
+		}
+	})
+	t.Run("no line stored", func(t *testing.T) {
+		want := serve(newTestProxy(t, newJSONMarkFakeVL(t, &jsonMarkFakeVL{at: bad}).URL))
+		fake := &jsonMarkFakeVL{at: bad, line: vlDefaultMsgValue}
+		got := serve(newTestProxy(t, newJSONMarkFakeVL(t, fake).URL))
+		var g, w any
+		if got.Code != http.StatusOK || json.Unmarshal(got.Body.Bytes(), &g) != nil || json.Unmarshal(want.Body.Bytes(), &w) != nil || !reflect.DeepEqual(g, w) {
+			t.Fatalf("status %d: %s\nwant %s", got.Code, got.Body.String(), want.Body.String())
+		}
+	})
 }

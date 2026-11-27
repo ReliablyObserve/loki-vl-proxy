@@ -9,6 +9,43 @@ import (
 
 var testMark = logsql.JSONMark{Sentinel: "__vlp", Flag: "__lvp_perr"}
 
+// parsedMark also counts an empty line and a placeholder as parsed (the unpack check's mark).
+var parsedMark = logsql.JSONMark{Sentinel: "__vlp", Flag: "__lvp_perr", Parsed: []string{"", "missing _msg; see x"}}
+
+// The lines a mark counts as parsed get the sentinel right after the unpack, before the line is restored and before
+// the raw-row flag, and the lookup leaves them out; every text parses and is not marked twice.
+//
+// conformance: semantics/unpack-parser-error-not-raised
+func TestJSONMarkParsedLines(t *testing.T) {
+	const parsed = `format if (_msg:="" OR _msg:="missing _msg; see x") "1" as __vlp`
+	for _, tc := range []struct {
+		got  func() (string, bool)
+		want string
+	}{
+		{func() (string, bool) { return parsedMark.MarkStats(`job:="sp" | unpack_json | stats count() as c`) }, `| unpack_json | ` + parsed + ` | stats by (__vlp) count() as c`},
+		{func() (string, bool) {
+			return parsedMark.MarkStats(`job:="sp" | unpack_json | stats by (_stream) sum_len(_msg) as b`)
+		}, `| unpack_json | ` + parsed + ` | replace ("{\"__vlp\":1,", "{") at _msg limit 1`},
+		{func() (string, bool) { return parsedMark.MarkRows(`job:="sp" | unpack_json`) }, `| unpack_json | ` + parsed + ` | replace ("{\"__vlp\":1,", "{") at _msg limit 1`},
+		{func() (string, bool) { return parsedMark.Lookup(`job:="sp"`, 8) }, `unpack_json from __vlm fields (__vlp) | format if (__vlm:="" OR __vlm:="missing _msg; see x") "1" as __vlp | filter NOT __vlp:*`},
+	} {
+		got, ok := tc.got()
+		if !ok || !strings.Contains(got, tc.want) {
+			t.Errorf("got %s (%v)\nwant %s", got, ok, tc.want)
+			continue
+		}
+		if _, err := logsql.Parse(got); err != nil {
+			t.Errorf("%s does not parse: %v", got, err)
+		}
+		if _, twice := parsedMark.MarkStats(got); twice {
+			t.Errorf("%s: marked twice", got)
+		}
+	}
+	if got, _ := testMark.MarkStats(`job:="sp" | unpack_json | stats count() as c`); strings.Contains(got, "format if") {
+		t.Errorf("a mark with no parsed lines writes the format: %s", got)
+	}
+}
+
 // A stats query gets the splice before its first unpack_json and the sentinel in every stats grouping, the line
 // restored only when a later pipe reads it; a shape the mark cannot follow is left alone, and every text it writes
 // parses back to the same query.
@@ -116,7 +153,7 @@ func FuzzJSONMark(f *testing.F) {
 		if len(query) > 4096 {
 			return
 		}
-		for _, mark := range []func(string) (string, bool){testMark.MarkStats, testMark.MarkRows} {
+		for _, mark := range []func(string) (string, bool){testMark.MarkStats, testMark.MarkRows, parsedMark.MarkStats, parsedMark.MarkRows} {
 			got, ok := mark(query)
 			if !ok {
 				if got != query {
