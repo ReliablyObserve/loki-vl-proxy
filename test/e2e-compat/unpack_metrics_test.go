@@ -98,6 +98,18 @@ func unpackSamples(payload map[string]interface{}) map[string]float64 {
 // unpackErrorDetails is the details label of a parser error, which names one failing line.
 var unpackErrorDetails = regexp.MustCompile(`__error_details__="(?:[^"\\]|\\.)*"`)
 
+// unpackUnquote is the value of a details label as Loki writes it in an error (strconv quoting).
+func unpackUnquote(label string) string {
+	v, err := strconv.Unquote(strings.TrimPrefix(label, "__error_details__="))
+	if err != nil {
+		return label
+	}
+	return v
+}
+
+// unpackSelector is the stream selector of a query.
+var unpackSelector = regexp.MustCompile(`\{app="[^"]*"\}`)
+
 // unpackAgainstLoki asks Loki and the proxy one metric query, instant at `at` or over the ten minutes before it, and
 // holds the proxy to Loki's status and, for an answer, its series and values.
 func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
@@ -123,6 +135,16 @@ func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
 		// window on consecutive asks), so the details are held by TestUnpackLineErrorMatchesRecordedLoki instead.
 		if unpackErrorDetails.ReplaceAllString(strings.TrimSpace(lokiBody), "") != unpackErrorDetails.ReplaceAllString(strings.TrimSpace(proxyBody), "") {
 			t.Fatalf("error text differs\nloki:  %s\nproxy: %s", lokiBody, proxyBody)
+		}
+		// The details the proxy names are the ones Loki's unpack gives a line of the evaluated window.
+		details, selector := unpackErrorDetails.FindString(proxyBody), unpackSelector.FindString(query)
+		if details == "" || selector == "" {
+			t.Fatalf("no details or selector in %s / %s", proxyBody, query)
+		}
+		named := url.Values{"query": {`sum by (__error_details__) (count_over_time(` + selector + ` | unpack | __error__!="" [16m]))`},
+			"time": {strconv.FormatInt(at.UnixNano(), 10)}}
+		if _, _, lokiNamed := doJSONGET(t, lokiURL+"/loki/api/v1/query?"+named.Encode(), headers); !strings.Contains(fmt.Sprint(unpackSamples(lokiNamed)), "__error_details__="+unpackUnquote(details)) {
+			t.Fatalf("Loki's unpack gives no line of the window %s: %v", details, unpackSamples(lokiNamed))
 		}
 		return
 	}
