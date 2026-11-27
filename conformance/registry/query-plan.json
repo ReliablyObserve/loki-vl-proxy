@@ -560,8 +560,8 @@
     }
   },
   "route_parity": {
-    "rows": 2722,
-    "runs": 27220,
+    "rows": 2725,
+    "runs": 27250,
     "profiles": [
       "instant",
       "step=range",
@@ -643,18 +643,17 @@
       "VectorAgg LogSelect json extraction": 330,
       "VectorAgg LogSelect label filter json extraction label": 10,
       "VectorAgg LogSelect level filter after stage": 20,
-      "VectorAgg LogSelect unpack parser": 10,
       "VectorAgg grouping": 30,
       "VectorAgg nested unwrap": 40,
       "VectorAgg operand": 220,
       "VectorAgg parser extracted label": 20,
       "VectorAgg parser label filter": 80,
-      "VectorAgg route absent operand": 80,
+      "VectorAgg route absent operand": 90,
       "VectorAgg route evaluated level": 1730,
       "VectorAgg route level filter": 120,
       "VectorAgg route no bucket grid": 8,
       "VectorAgg route operand": 80,
-      "VectorAgg route pipeline": 2280,
+      "VectorAgg route pipeline": 2310,
       "VectorAgg route unwrap filter": 10,
       "VectorAgg route unwrap pipeline": 1200,
       "VectorAgg route unwrap quantile": 80,
@@ -666,7 +665,7 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 26539,
+      "200": 26569,
       "400": 646,
       "500": 35
     },
@@ -677,15 +676,15 @@
       "24h chunk/RangeAgg": "60e988ade789fc89",
       "24h chunk/Rank": "6d96d682527e217e",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "f353b1dbcbbf0ff2",
+      "24h chunk/VectorAgg": "fa7b652f949e998e",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "f11e4be3335294a4",
       "instant/LabelReplace": "032f7e0a805e849b",
       "instant/LogSelect": "63a510402b3fccf1",
-      "instant/RangeAgg": "bd369a6fb8d38329",
+      "instant/RangeAgg": "da5c2f46c206eedf",
       "instant/Rank": "f9884733db5e1966",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "ffc5eb5d5a751831",
+      "instant/VectorAgg": "bc3eb79c5d8fdb48",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "1d4d6dfcc9e5c651",
       "step\u003crange/LabelReplace": "42bc95d28466bf7d",
@@ -693,7 +692,7 @@
       "step\u003crange/RangeAgg": "07c285148c39e8d7",
       "step\u003crange/Rank": "0dd11a5b361188f1",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "85b635a170a5632f",
+      "step\u003crange/VectorAgg": "a42f983de3be235e",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "e7c65162ed8163ef",
       "step=range/LabelReplace": "d61fd97487b7bdaa",
@@ -701,7 +700,7 @@
       "step=range/RangeAgg": "17902e33d2715357",
       "step=range/Rank": "8a52257887a5acb3",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "84c6188f52eb17e8",
+      "step=range/VectorAgg": "9c220b7530e1c417",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "8591f9ce3c9eb797",
       "step\u003erange/LabelReplace": "42629c7225bb5b65",
@@ -709,7 +708,7 @@
       "step\u003erange/RangeAgg": "82c5382844eddf7c",
       "step\u003erange/Rank": "9e161c0d7327b855",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "7fd4a099bbe7449c",
+      "step\u003erange/VectorAgg": "aa186d6a2986ba00",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     },
     "calls": {
@@ -719,15 +718,15 @@
       "24h chunk/RangeAgg": "9a6ab33264912815",
       "24h chunk/Rank": "50158afd6613bf26",
       "24h chunk/Scalar": "2c7012c3274c662d",
-      "24h chunk/VectorAgg": "f1d35933667b1c5d",
+      "24h chunk/VectorAgg": "34dd4c8822c97f7a",
       "24h chunk/VectorLit": "7aa978e4ba5a3f44",
       "instant/BinOp": "9a660305f05413cc",
       "instant/LabelReplace": "aeae8ff070e99a9e",
       "instant/LogSelect": "026812a2ced42d16",
-      "instant/RangeAgg": "8bc93e75ffce98b4",
+      "instant/RangeAgg": "065c030736d6556b",
       "instant/Rank": "b56bf55e6054ed29",
       "instant/Scalar": "4989874b8a3c42dc",
-      "instant/VectorAgg": "c0c7c6e74635a7b8",
+      "instant/VectorAgg": "2dfba472c114fd6d",
       "instant/VectorLit": "0dc325c3d1510308",
       "step\u003crange/BinOp": "eb9ff89f69d642c6",
       "step\u003crange/LabelReplace": "4132736adcb602ab",
@@ -735,7 +734,7 @@
       "step\u003crange/RangeAgg": "a8833388360f6045",
       "step\u003crange/Rank": "494f89d91e66699e",
       "step\u003crange/Scalar": "6db69b6718a0b07a",
-      "step\u003crange/VectorAgg": "8ca7e6f3b7b0c40f",
+      "step\u003crange/VectorAgg": "a05f7a823e29c108",
       "step\u003crange/VectorLit": "58ad28055f0b3615",
       "step=range/BinOp": "3bd6834b323b16ca",
       "step=range/LabelReplace": "12385a9f8d6521b8",
@@ -743,7 +742,7 @@
       "step=range/RangeAgg": "b9d729f2157c9b89",
       "step=range/Rank": "61f8c56ec00ad9a7",
       "step=range/Scalar": "6db69b6718a0b07a",
-      "step=range/VectorAgg": "4cf79aa0db8e8ad6",
+      "step=range/VectorAgg": "b9fe678e1e7ef4ed",
       "step=range/VectorLit": "58ad28055f0b3615",
       "step\u003erange/BinOp": "8e8d437d3d9da9b5",
       "step\u003erange/LabelReplace": "54343a5d517086b5",
@@ -751,7 +750,7 @@
       "step\u003erange/RangeAgg": "62042aa204107d07",
       "step\u003erange/Rank": "525e1edb8fc1c300",
       "step\u003erange/Scalar": "6db69b6718a0b07a",
-      "step\u003erange/VectorAgg": "1716281b29781f59",
+      "step\u003erange/VectorAgg": "df9c91031dd797cc",
       "step\u003erange/VectorLit": "58ad28055f0b3615"
     },
     "vl_calls": {
@@ -792,8 +791,8 @@
         "repeat_runs": 0
       },
       "24h chunk/VectorAgg": {
-        "runs": 2304,
-        "cold": 3611,
+        "runs": 2310,
+        "cold": 3617,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -840,8 +839,8 @@
         "repeat_runs": 0
       },
       "instant/VectorAgg": {
-        "runs": 2304,
-        "cold": 2547,
+        "runs": 2310,
+        "cold": 2553,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -888,8 +887,8 @@
         "repeat_runs": 0
       },
       "step\u003crange/VectorAgg": {
-        "runs": 2304,
-        "cold": 3607,
+        "runs": 2310,
+        "cold": 3613,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -936,8 +935,8 @@
         "repeat_runs": 0
       },
       "step=range/VectorAgg": {
-        "runs": 2304,
-        "cold": 3594,
+        "runs": 2310,
+        "cold": 3600,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -984,8 +983,8 @@
         "repeat_runs": 0
       },
       "step\u003erange/VectorAgg": {
-        "runs": 2304,
-        "cold": 3596,
+        "runs": 2310,
+        "cold": 3602,
         "repeat": 0,
         "repeat_runs": 0
       },
