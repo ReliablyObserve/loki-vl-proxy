@@ -289,8 +289,11 @@ answer is held only for its class's TTL (`cache.Policy`). Keep it that way:
   release; `docs/reference/capability-gates.md` is regenerated
   (`go run ./cmd/configdoc`). Only a version that names VictoriaLogs counts as
   its release, the lowest release seen in the window decides, and an outage
-  never flips a gate. Cross-replica keys carry `Set.Digest()`, never a
-  per-process counter.
+  never flips a gate. A release the operator names (`-backend-version-url`,
+  `-backend-version`) enables only the gates a probe confirms; a probed gate
+  never gains release lines or flavours without revisiting that proof
+  (`TestProbedGatesProveTheirRelease`). Cross-replica keys carry
+  `Set.Digest()`, never a per-process counter.
 - Only a failure a peer would pay a VictoriaLogs call for, held 30 s or more,
   is pushed to peers (the peer cache's everywhere class); its peer key carries
   the build, the VictoriaLogs release and the routing digest, never a
@@ -419,6 +422,11 @@ cluster, so check at least:
   and recursion depth, fan-out, cache growth. Fuzz new parsers and decoders.
 - Tenant isolation: cache and plan keys carry the tenant scope; no answer is
   reused across tenants or served to a peer for another tenant.
+- Credentials in keys: a credential (forwarded header or cookie, backend
+  basic auth) reaches a cache key, snapshot or log line only through the keyed
+  digest in `internal/proxy/credential_digest.go`, never as a plain hash. A
+  key that hashes the fingerprint appends `credentialScopeMark`, so the peer
+  cache keeps the entry on its replica (`peerPushAllowed`).
 - Query injection: LogsQL is built from typed nodes or properly quoted values,
   never by splicing client text; client text never becomes proxy-internal
   syntax.
@@ -426,6 +434,14 @@ cluster, so check at least:
   messages, URLs or internal details.
 - Logs and telemetry: no credentials or tokens, bounded label cardinality.
 - Admin and peer routes keep their authentication.
+- Caller authentication (`-server.auth-users-file`) covers every route by
+  default: a new route is protected unless it is added to
+  `clientAuthExemptPatterns` (internal/proxy/client_auth.go), which holds only
+  probes, `/metrics` and routes with their own credential. A new listener puts
+  `WithClientAuth` in front of its mux. Never read `Authorization` for another
+  token while caller authentication is on (it is the caller's);
+  `TestClientAuth_EveryRegisteredRouteIsProtectedOrExempt` checks every
+  registered pattern.
 - Concurrency: no data races or goroutine leaks; work stops when its last
   waiter cancels.
 - Dependencies: no new module without review; versions and checksums pinned.
@@ -451,6 +467,25 @@ says why the request path does not change. A change to answers or routes keeps
 its timing tables against Loki and its load test on top of this. Commit the
 benchmark rather than a throwaway one, and name it in the registry decision.
 
+
+## Local proof in the pull request before CI
+
+Every pull request carries its own evidence, from a build and test of the branch on an isolated stack, in its
+description before it relies on CI. CI confirms the evidence; it is not the first or only proof.
+
+- Scope it to the change. Show the data the change moves, as tables: new or changed metrics scraped together with the
+  actions that produced them, or API answers of main, the branch and Loki, VictoriaLogs calls and bytes, timings,
+  benchmarks, load, restart or peer behaviour.
+- Show screenshots of the dashboard panels or Grafana Explore and Logs Drilldown scenes that show the change itself,
+  with main, the branch and Loki side by side where it applies, and the control scenes.
+- State the date, the head SHA, the versions, the data set, what was not verified, and any later commit the run does
+  not cover. Keep CI results in a separate section.
+- Host local images on the `pr-visuals` branch under `pr-<number>-local/`. CI replaces the whole `pr-<number>/`
+  folder; remove the `-local` folder after the merge, as pruning does not match it.
+- The `PR Local Proof` workflow (`scripts/ci/check_local_proof_pr.py`) fails a ready pull request whose section is
+  missing or holds only the template text. Drafts and automation pull requests pass; the reviewer judges the evidence.
+- Release, documentation, CI and test-only pull requests keep their exemption from product visuals and show their own
+  local check results.
 
 ## AST/planner changes require runtime API and Grafana proof
 
@@ -614,6 +649,15 @@ with Loki is the model: `conformance/scripts/perf_evidence.py --quality-summary`
 - State the current measured position only. README, docs and marketing pages do not compare with earlier
   versions of the proxy ("regression", "no longer", "improved from") or explain why a past build was slower; that
   history belongs to pull requests and the changelog.
+
+## Workflow steps fail when their commands fail
+
+A workflow step that pipes a command into `tee` or `tail` runs with `shell: bash`, which GitHub starts with
+`-eo pipefail`. A step with no shell gets `bash -e`, and its pipeline exits with the status of `tee` or `tail`, so
+the step passes when the tests behind it fail. Leave pipelines into early-exit consumers (`head`, `grep -q`) under
+the default shell, because pipefail turns their writer's SIGPIPE into a failure.
+`TestWorkflowStepsDoNotMaskPipeFailures` (`test/ciworkflows`) holds the rule. Its allowlist names the steps that
+still hide failures on main. Each entry is removed in the same pull request that fixes that step's failures.
 
 ## Production investigations
 

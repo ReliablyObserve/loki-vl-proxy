@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/http"
@@ -120,6 +121,8 @@ type Metrics struct {
 	windowDegradedBatches         atomic.Int64
 	windowPartialResponses        atomic.Int64
 	windowPrefilterDuration       *histogram
+	durationBuckets               []float64    // bounds of every duration histogram, in seconds
+	renderSize                    atomic.Int64 // bytes to reserve for the next /metrics answer
 	windowAdaptiveParallelCurrent atomic.Int64
 	windowAdaptiveLatencyEWMAms   atomic.Int64
 	windowAdaptiveErrorEWMAppm    atomic.Int64
@@ -135,6 +138,12 @@ type Metrics struct {
 	clientInflight     map[string]*atomic.Int64 // "client" → in-flight requests
 	clientQueryLengths map[string]*histogram    // "client<sep>endpoint<sep>route" → query length histogram
 
+	// loadRequests and loadNanos count the client requests completed and
+	// their total time (tails left out): the peer bulk restore's pressure
+	// signal (RequestLoad).
+	loadRequests, loadNanos atomic.Int64
+	loadLatency             cache.LatencyHist
+
 	// Server-side request and connection visibility.
 	activeRequests            atomic.Int64
 	connectionStates          map[string]*atomic.Int64 // "state" -> current connections
@@ -143,6 +152,12 @@ type Metrics struct {
 	parserMetricEvaluators    map[string]*atomic.Int64 // "evaluator" -> parser-dependent range metric evaluations
 	slowRequests              map[string]*atomic.Int64 // "system<sep>route" -> requests at or over the slow threshold
 	connectionLastStateByConn sync.Map                 // net.Conn -> state label
+
+	// Caller authentication (-server.auth-users-file): exported only once
+	// EnableAuthMetrics is called, so /metrics is unchanged with it off.
+	authEnabled        atomic.Bool
+	authFailures       [len(AuthFailureReasons)]atomic.Int64
+	authReloadFailures atomic.Int64
 
 	// Circuit breaker state function (injected)
 	cbStateFunc func() string
@@ -161,6 +176,9 @@ type Metrics struct {
 	cacheStatsProvider               func() cache.StatsSnapshot
 	cacheLayerStatsProvider          func() []CacheComponentStats
 	cacheLayerCoalescerStatsProvider func() [cache.LayerCount]CoalescerStats
+	cacheSignalStatsProvider         func() []CacheComponentSignals
+	cacheTTLProvider                 func() []CacheTTL
+	cacheSizingStatsProvider         func() []cache.SizingSnapshot
 }
 
 // CoalescerStats is a process-wide snapshot of duplicate backend work avoided.
@@ -176,9 +194,13 @@ type histogram struct {
 	sum     float64
 	count   int64
 	buckets []float64
-	counts  []int64
+	// counts holds each observation once, at the first bucket whose bound holds it; snapshot adds them up
+	// into the cumulative counts of the exposition.
+	counts []int64
 }
 
+// defaultBuckets bound the histograms that count something other than seconds (query length, windows per
+// request). Duration histograms take the instance's duration buckets (newDurationHistogram).
 var defaultBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 var countBuckets = []float64{1, 2, 4, 8, 16, 32, 64, 128}
 
@@ -333,10 +355,16 @@ func newHistogramWithBuckets(buckets []float64) *histogram {
 	}
 }
 
+func (m *Metrics) newDurationHistogram() *histogram {
+	return newHistogramWithBuckets(m.durationBuckets)
+}
+
 func newCountHistogram() *histogram {
 	return newHistogramWithBuckets(countBuckets)
 }
 
+// histogramSnapshot is a copy of a histogram with cumulative counts: counts[i] observations at or below
+// buckets[i].
 type histogramSnapshot struct {
 	sum     float64
 	count   int64
@@ -356,6 +384,9 @@ func (h *histogram) snapshot() histogramSnapshot {
 		counts:  append([]int64(nil), h.counts...),
 	}
 	h.mu.RUnlock()
+	for i := 1; i < len(s.counts); i++ {
+		s.counts[i] += s.counts[i-1]
+	}
 	return s
 }
 
@@ -366,10 +397,17 @@ func (h *histogram) observe(v float64) {
 	h.mu.Lock()
 	h.sum += v
 	h.count++
-	for i, b := range h.buckets {
-		if v <= b {
-			h.counts[i]++
+	// The bounds ascend: search for the first one that holds v. A NaN fits none.
+	first, end := 0, len(h.buckets)
+	for first < end {
+		if mid := int(uint(first+end) >> 1); v <= h.buckets[mid] {
+			end = mid
+		} else {
+			first = mid + 1
 		}
+	}
+	if first < len(h.counts) {
+		h.counts[first]++
 	}
 	h.mu.Unlock()
 }
@@ -383,6 +421,16 @@ func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
 }
 
 func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitiveLabels bool) *Metrics {
+	return NewMetricsWithDurationBuckets(maxTenantLabels, maxClientLabels, exportSensitiveLabels, nil)
+}
+
+// NewMetricsWithDurationBuckets is NewMetricsWithOptions with the bounds, in seconds, of the duration
+// histograms (-metrics.duration-buckets, as ParseDurationBuckets returns them); none means the defaults.
+func NewMetricsWithDurationBuckets(maxTenantLabels, maxClientLabels int, exportSensitiveLabels bool, durationBuckets []float64) *Metrics {
+	if len(durationBuckets) == 0 {
+		durationBuckets = defaultDurationBuckets
+	}
+	durationBuckets = append([]float64(nil), durationBuckets...)
 	if maxTenantLabels <= 0 {
 		maxTenantLabels = defaultMaxTenantLabels
 	}
@@ -404,7 +452,8 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		internalOperationDurations: make(map[string]*histogram),
 		loweringShadowTotal:        make(map[string]*atomic.Int64),
 		planDefectsTotal:           make(map[string]*atomic.Int64),
-		flow:                       newFlowMetrics(),
+		flow:                       newFlowMetrics(durationBuckets),
+		durationBuckets:            durationBuckets,
 		tupleModes:                 make(map[string]*atomic.Int64),
 		clientRequests:             make(map[string]*atomic.Int64),
 		clientDurations:            make(map[string]*histogram),
@@ -417,10 +466,10 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		connectionRotations:        make(map[string]*atomic.Int64),
 		parserMetricEvaluators:     make(map[string]*atomic.Int64),
 		slowRequests:               make(map[string]*atomic.Int64),
-		windowFetch:                newHistogram(),
-		windowMerge:                newHistogram(),
+		windowFetch:                newHistogramWithBuckets(durationBuckets),
+		windowMerge:                newHistogramWithBuckets(durationBuckets),
 		windowCount:                newHistogram(),
-		windowPrefilterDuration:    newHistogram(),
+		windowPrefilterDuration:    newHistogramWithBuckets(durationBuckets),
 		system:                     NewSystemMetrics(),
 		startTime:                  time.Now(),
 		maxTenantLabels:            maxTenantLabels,
@@ -485,11 +534,11 @@ func (m *Metrics) preRegisterZeroSeries() {
 	for _, seed := range defaultMetricSeedRoutes {
 		requestRouteKey := joinMetricKey(lokiSystemLabel, downstreamDirection, seed.endpoint, seed.route)
 		if _, ok := m.requestDurations[requestRouteKey]; !ok {
-			m.requestDurations[requestRouteKey] = newHistogram()
+			m.requestDurations[requestRouteKey] = m.newDurationHistogram()
 		}
 		routeKey := joinMetricKey(seed.endpoint, seed.route)
 		if _, ok := m.backendDurations[routeKey]; !ok {
-			m.backendDurations[routeKey] = newHistogram()
+			m.backendDurations[routeKey] = m.newDurationHistogram()
 		}
 		if _, ok := m.upstreamCallsPerRequest[routeKey]; !ok {
 			m.upstreamCallsPerRequest[routeKey] = newCountHistogram()
@@ -525,14 +574,14 @@ func (m *Metrics) preRegisterZeroSeries() {
 			}
 			tdk := joinMetricKey("__none__", seed.endpoint, seed.route)
 			if _, ok := m.tenantDurations[tdk]; !ok {
-				m.tenantDurations[tdk] = newHistogram()
+				m.tenantDurations[tdk] = m.newDurationHistogram()
 			}
 			cdk := joinMetricKey("__none__", seed.endpoint, seed.route)
 			if _, ok := m.clientRequests[cdk]; !ok {
 				m.clientRequests[cdk] = &atomic.Int64{}
 			}
 			if _, ok := m.clientDurations[cdk]; !ok {
-				m.clientDurations[cdk] = newHistogram()
+				m.clientDurations[cdk] = m.newDurationHistogram()
 			}
 			if _, ok := m.clientQueryLengths[cdk]; !ok {
 				m.clientQueryLengths[cdk] = newHistogram()
@@ -616,6 +665,144 @@ func writeCacheTierMetrics(sb *strings.Builder, stats cache.StatsSnapshot) {
 	sb.WriteString("# TYPE loki_vl_proxy_cache_bytes gauge\n")
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l1_memory", stats.Bytes)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l2_disk", stats.DiskBytes)
+	writeCacheRestartMetrics(sb, stats.Handover)
+}
+
+func boolGauge(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+// writeCacheRestartMetrics writes the response cache's restart hand-over
+// state: what the previous graceful shutdown left (read from its manifest at
+// start, since a stopping process is not scraped), what the start-up warm-up
+// restored, and the memory tier's lookups and hits in the first minutes.
+func writeCacheRestartMetrics(sb *strings.Builder, h cache.HandoverStats) {
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_previous_flush_records Records the previous graceful shutdown left in the restart hand-over, by kind: ranked = disk records with their memory recency, disk_write = disk records it wrote because the disk lacked them, memory = memory-only answers.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_previous_flush_records gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_records{kind=%q} %d\n", "ranked", h.PreviousFlushRanked)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_records{kind=%q} %d\n", "disk_write", h.PreviousFlushDiskWrites)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_records{kind=%q} %d\n", "memory", h.PreviousFlushMemoryEntries)
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_previous_flush_memory_bytes Memory-only answer bytes the previous graceful shutdown left in the restart hand-over.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_previous_flush_memory_bytes gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_memory_bytes %d\n", h.PreviousFlushMemoryBytes)
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_previous_flush_duration_seconds How long the previous graceful shutdown's hand-over flush took.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_previous_flush_duration_seconds gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_duration_seconds %g\n", h.PreviousFlushDuration.Seconds())
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_previous_flush_complete 1 when this process started from a valid hand-over whose flush finished within -cache-shutdown-flush-timeout, else 0.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_previous_flush_complete gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_previous_flush_complete %d\n", boolGauge(h.PreviousFlushFound && h.PreviousFlushComplete))
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_entries Entries the start-up warm-up restored into the memory cache, by kind (disk, memory), and ranked entries it skipped (skipped).\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_entries gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_entries{kind=%q} %d\n", "disk", h.WarmDiskEntries)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_entries{kind=%q} %d\n", "memory", h.WarmMemoryEntries)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_entries{kind=%q} %d\n", "skipped", h.WarmSkipped)
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_bytes Bytes the start-up warm-up restored into the memory cache.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_bytes gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_bytes %d\n", h.WarmBytes)
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_duration_seconds How long the start-up warm-up took.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_duration_seconds gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_duration_seconds %g\n", h.WarmDuration.Seconds())
+	sb.WriteString("# HELP loki_vl_proxy_cache_restart_warm_done 1 once the start-up warm-up finished (or found no hand-over), else 0.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_restart_warm_done gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_restart_warm_done %d\n", boolGauge(h.WarmDone))
+	writeCacheRestoreProgress(sb, h)
+	if !h.StartupTracked {
+		return
+	}
+	sb.WriteString("# HELP loki_vl_proxy_cache_startup_l1_requests Memory cache lookups in the first 10 minutes after start (frozen after them); with loki_vl_proxy_cache_startup_l1_hits, the start-up hit ratio.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_startup_l1_requests gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_startup_l1_requests %d\n", h.StartupL1Requests)
+	sb.WriteString("# HELP loki_vl_proxy_cache_startup_l1_hits Memory cache hits in the first 10 minutes after start (frozen after them).\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_startup_l1_hits gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_startup_l1_hits %d\n", h.StartupL1Hits)
+	writeSinceStartRatios(sb, h)
+}
+
+// restoreMetric is one gauge of the warm-up's plan and progress; both
+// exporters write the same list.
+type restoreMetric struct {
+	name, help, unit string
+	value            float64
+}
+
+// restoreSources are the restores the metrics show, each under its source
+// label: the disk warm-up always, the peer bulk restore once one ran.
+func restoreSources(h cache.HandoverStats) []cache.RestoreProgress {
+	disk, peer := h.Restore, h.PeerRestore
+	disk.Source, peer.Source = cache.RestoreSource(restoreSourceOfDisk), cache.RestoreSource(restoreSourceOfPeer)
+	if peer.Outcome == "" {
+		return []cache.RestoreProgress{disk}
+	}
+	return []cache.RestoreProgress{disk, peer}
+}
+
+// restoreMetrics lists a restore's plan and progress and, for the disk
+// warm-up, the disk index rebuild, as gauges updated after every batch.
+func restoreMetrics(h cache.HandoverStats, p cache.RestoreProgress) []restoreMetric {
+	remaining, _ := p.Remaining()
+	out := make([]restoreMetric, 0, 14)
+	out = append(out, []restoreMetric{
+		{"loki_vl_proxy_cache_restart_warm_planned_entries", "Entries the restart warm-up found to restore.", "", float64(p.PlannedEntries)},
+		{"loki_vl_proxy_cache_restart_warm_planned_bytes", "Bytes of the entries the restart warm-up found to restore: encoded disk bytes, and the decoded size of memory-only answers.", "By", float64(p.PlannedBytes)},
+		{"loki_vl_proxy_cache_restart_warm_budget_bytes", "Most decoded bytes this warm-up may restore (-cache-startup-warm-bytes, at most half of -cache-max-bytes).", "By", float64(p.BudgetBytes)},
+		{"loki_vl_proxy_cache_restart_warm_processed_entries", "Planned entries restored or skipped so far.", "", float64(p.ProcessedEntries)},
+		{"loki_vl_proxy_cache_restart_warm_processed_bytes", "Stored bytes of the planned entries restored or skipped so far.", "By", float64(p.ProcessedBytes)},
+		{"loki_vl_proxy_cache_restart_warm_restored_entries", "Planned entries restored into the memory cache so far; skipped entries are not in it.", "", float64(p.RestoredEntries)},
+		{"loki_vl_proxy_cache_restart_warm_restored_bytes", "Bytes (key and decoded value) of the entries restored into the memory cache so far.", "By", float64(p.RestoredBytes)},
+		{"loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second", "Decoded bytes restored per second: so far while the warm-up runs, over the whole warm-up after it.", "By/s", p.BytesPerSecond()},
+		{"loki_vl_proxy_cache_restart_warm_remaining_seconds", "Estimated seconds the running warm-up still needs, from its rate so far; 0 when none runs or nothing is measured yet.", "s", remaining.Seconds()},
+		{"loki_vl_proxy_cache_restart_warm_timeout_seconds", "Time the warm-up was given (-cache-startup-warm-timeout).", "s", p.Timeout.Seconds()},
+	}...)
+	if p.Source != cache.RestoreSourceDisk {
+		return out
+	}
+	return append(out,
+		restoreMetric{"loki_vl_proxy_cache_restart_index_rebuild_duration_seconds", "How long the disk cache's index rebuild took at start, before the proxy listened.", "s", h.IndexRebuildDuration.Seconds()},
+		restoreMetric{"loki_vl_proxy_cache_restart_index_rebuild_entries", "Records the disk cache's index held after the start-up rebuild.", "", float64(h.IndexRebuildEntries)},
+	)
+}
+
+const (
+	restoreSkippedName  = "loki_vl_proxy_cache_restart_warm_skipped_entries"
+	restoreSkippedHelp  = "Planned entries the restart warm-up did not restore, by reason."
+	restoreOutcomeName  = "loki_vl_proxy_cache_restart_warm_outcome"
+	restoreOutcomeHelp  = "1 for the restart warm-up's state: running, or why it ended (done, deadline, purged, clock_behind_flush, none)."
+	restoreSourceOfDisk = string(cache.RestoreSourceDisk)
+	restoreSourceOfPeer = string(cache.RestoreSourcePeer)
+)
+
+func writeCacheRestoreProgress(sb *strings.Builder, h cache.HandoverStats) {
+	sources := restoreSources(h)
+	var per [2][]restoreMetric
+	for s, p := range sources {
+		per[s] = restoreMetrics(h, p)
+	}
+	// One HELP/TYPE per metric name, then its series of every source.
+	for i, m := range per[0] {
+		for _, part := range [...]string{"# HELP ", m.name, " ", m.help, "\n# TYPE ", m.name, " gauge\n"} {
+			sb.WriteString(part)
+		}
+		for s, p := range sources {
+			if i < len(per[s]) {
+				fmt.Fprintf(sb, "%s{source=%q} %g\n", m.name, string(p.Source), per[s][i].value)
+			}
+		}
+	}
+	fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n", restoreSkippedName, restoreSkippedHelp, restoreSkippedName)
+	for _, p := range sources {
+		for _, reason := range cache.RestoreSkipReasons() {
+			fmt.Fprintf(sb, "%s{source=%q,reason=%q} %d\n", restoreSkippedName, string(p.Source), reason.String(), p.Skipped[reason])
+		}
+	}
+	fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s gauge\n", restoreOutcomeName, restoreOutcomeHelp, restoreOutcomeName)
+	for _, p := range sources {
+		for _, outcome := range cache.RestoreOutcomes() {
+			fmt.Fprintf(sb, "%s{source=%q,outcome=%q} %d\n", restoreOutcomeName, string(p.Source), outcome, boolGauge(p.Outcome == outcome))
+		}
+	}
 }
 
 // SetCircuitBreakerFunc sets the function to query CB state for metrics export.
@@ -665,12 +852,15 @@ func (m *Metrics) recordRequestWithLabels(system, direction, endpoint, route str
 		m.mu.Unlock()
 	}
 	counter.Add(1)
+	if direction == downstreamDirection {
+		m.countLoad(endpoint, duration)
+	}
 
 	if !hok {
 		m.mu.Lock()
 		hist, hok = m.requestDurations[histKey]
 		if !hok {
-			hist = newHistogram()
+			hist = m.newDurationHistogram()
 			m.requestDurations[histKey] = hist
 		}
 		m.mu.Unlock()
@@ -698,7 +888,25 @@ func (m *Metrics) recordSeededRequest(endpoint string, statusCode int, duration 
 
 	counter.Add(1)
 	hist.observe(duration.Seconds())
+	m.countLoad(endpoint, duration)
 	return true
+}
+
+func (m *Metrics) countLoad(endpoint string, duration time.Duration) {
+	if endpoint != "tail" {
+		m.loadRequests.Add(1)
+		m.loadNanos.Add(int64(duration))
+		m.loadLatency.Observe(duration)
+	}
+}
+
+// RequestLoad returns the client requests completed so far, their total time
+// and their latency histogram.
+func (m *Metrics) RequestLoad() cache.BulkLoad {
+	if m == nil {
+		return cache.BulkLoad{}
+	}
+	return cache.BulkLoad{Requests: m.loadRequests.Load(), Nanos: m.loadNanos.Load(), Buckets: m.loadLatency.Snapshot()}
 }
 
 // RecordTenantRequest records a request for a specific tenant (X-Scope-OrgID).
@@ -737,7 +945,7 @@ func (m *Metrics) RecordTenantRequestWithRoute(tenant, endpoint, route string, s
 		m.mu.Lock()
 		hist, hok = m.tenantDurations[durKey]
 		if !hok {
-			hist = newHistogram()
+			hist = m.newDurationHistogram()
 			m.tenantDurations[durKey] = hist
 		}
 		m.mu.Unlock()
@@ -837,7 +1045,7 @@ func (m *Metrics) RecordClientIdentityWithRoute(clientID, endpoint, route string
 		m.mu.Lock()
 		hist, hok = m.clientDurations[key]
 		if !hok {
-			hist = newHistogram()
+			hist = m.newDurationHistogram()
 			m.clientDurations[key] = hist
 		}
 		m.mu.Unlock()
@@ -956,6 +1164,28 @@ func (m *Metrics) canonicalClientLabel(clientID string) string {
 	m.knownClients[clientID] = struct{}{}
 	return clientID
 }
+
+// AuthFailureReasons are the reason labels of loki_vl_proxy_auth_failures_total
+// (internal/clientauth Reason names, in order).
+var AuthFailureReasons = [...]string{"missing", "malformed", "invalid", "tenant_denied", "busy"}
+
+// EnableAuthMetrics exports the caller authentication metrics, every reason
+// at zero from the start.
+func (m *Metrics) EnableAuthMetrics() { m.authEnabled.Store(true) }
+
+// RecordAuthFailure counts a request refused by caller authentication. A
+// reason outside AuthFailureReasons is not counted.
+func (m *Metrics) RecordAuthFailure(reason string) {
+	for i, r := range AuthFailureReasons {
+		if r == reason {
+			m.authFailures[i].Add(1)
+			return
+		}
+	}
+}
+
+// RecordAuthReloadFailure counts a users file reload that kept the last good users.
+func (m *Metrics) RecordAuthReloadFailure() { m.authReloadFailures.Add(1) }
 
 // RecordClientError records a client-side error with a reason category.
 func (m *Metrics) RecordClientError(endpoint, reason string) {
@@ -1474,7 +1704,7 @@ func (m *Metrics) RecordBackendDurationWithRoute(endpoint, route string, d time.
 		m.mu.Lock()
 		h, ok = m.backendDurations[key]
 		if !ok {
-			h = newHistogram()
+			h = m.newDurationHistogram()
 			m.backendDurations[key] = h
 		}
 		m.mu.Unlock()
@@ -1587,7 +1817,7 @@ func (m *Metrics) RecordInternalOperation(operation, outcome string, d time.Dura
 		if !hok {
 			hist, hok = m.internalOperationDurations[key]
 			if !hok {
-				hist = newHistogram()
+				hist = m.newDurationHistogram()
 				m.internalOperationDurations[key] = hist
 			}
 		}
@@ -1727,6 +1957,8 @@ func snapshotHistogramMap(m map[string]*histogram) map[string]histogramSnapshot 
 //nolint:gocyclo // serializes ~30 separate Prometheus metric families with per-family help/type/sort/iterate blocks; complexity is inherent to the exposition format.
 func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	var sb strings.Builder
+	// The answer is hundreds of kilobytes: size the buffer from the last one instead of growing it by doubling.
+	sb.Grow(int(m.renderSize.Load()))
 
 	// Snapshot map pointers under the lock, then release immediately.
 	// Values are *atomic.Int64 (read via .Load()) or *histogram (has its own mu),
@@ -1804,10 +2036,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		h := sRequestDurations[key]
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", parts[0], parts[1], parts[2], parts[3], b, h.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", parts[0], parts[1], parts[2], parts[3], h.loadCount())
+		writeBucketLines(&sb, "loki_vl_proxy_request_duration_seconds",
+			fmt.Sprintf(`system=%q,direction=%q,endpoint=%q,route=%q`, parts[0], parts[1], parts[2], parts[3]), h)
 		fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", parts[0], parts[1], parts[2], parts[3], h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_count{system=%q,direction=%q,endpoint=%q,route=%q} %d\n", parts[0], parts[1], parts[2], parts[3], h.loadCount())
 	}
@@ -2015,6 +2245,17 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "loki_vl_proxy_http_connection_rotations_total{reason=%q} %d\n", reason, sConnectionRotations[reason].Load())
 	}
 
+	if m.authEnabled.Load() {
+		sb.WriteString("# HELP loki_vl_proxy_auth_failures_total Requests refused by caller authentication (-server.auth-users-file), by reason.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_auth_failures_total counter\n")
+		for i, reason := range AuthFailureReasons {
+			fmt.Fprintf(&sb, "loki_vl_proxy_auth_failures_total{reason=%q} %d\n", reason, m.authFailures[i].Load())
+		}
+		sb.WriteString("# HELP loki_vl_proxy_auth_users_reload_failures_total Users file reloads that failed and kept the last good users.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_auth_users_reload_failures_total counter\n")
+		fmt.Fprintf(&sb, "loki_vl_proxy_auth_users_reload_failures_total %d\n", m.authReloadFailures.Load())
+	}
+
 	sb.WriteString("# HELP loki_vl_proxy_slow_requests_total Requests at or over their slow threshold (system loki: a client request over -slow-query-threshold; vl: one VictoriaLogs call, to the end of its body, over -slow-upstream-threshold), by route.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_slow_requests_total counter\n")
 	slowKeys := make([]string, 0, len(sSlowRequests))
@@ -2132,12 +2373,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			}
 			tenant, endpoint, route := parts[0], parts[1], parts[2]
 			h := sTenantDurations[key]
-			for i, b := range h.buckets {
-				fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, tenant, endpoint, route, b, h.counts[i])
-			}
-			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.loadCount())
+			writeBucketLines(&sb, "loki_vl_proxy_tenant_request_duration_seconds",
+				fmt.Sprintf(`system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q`, lokiSystemLabel, downstreamDirection, tenant, endpoint, route), h)
 			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_sum{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %g\n",
 				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.loadSum())
 			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_count{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %d\n",
@@ -2209,10 +2446,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		endpoint := parts[0]
 		route := parts[1]
 		h := sBackendDurations[key]
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, b, h.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, h.loadCount())
+		writeBucketLines(&sb, "loki_vl_proxy_backend_duration_seconds",
+			fmt.Sprintf(`system=%q,direction=%q,endpoint=%q,route=%q`, vlSystemLabel, upstreamDirection, endpoint, route), h)
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", vlSystemLabel, upstreamDirection, endpoint, route, h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_count{system=%q,direction=%q,endpoint=%q,route=%q} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, h.loadCount())
 	}
@@ -2232,10 +2467,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		endpoint := parts[0]
 		route := parts[1]
 		h := sUpstreamCallsPerRequest[key]
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, b, h.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.loadCount())
+		writeBucketLines(&sb, "loki_vl_proxy_upstream_calls_per_request",
+			fmt.Sprintf(`system=%q,direction=%q,endpoint=%q,route=%q`, lokiSystemLabel, downstreamDirection, endpoint, route), h)
 		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_count{system=%q,direction=%q,endpoint=%q,route=%q} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.loadCount())
 	}
@@ -2298,10 +2531,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		h := sInternalOperationDurations[key]
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"%g\"} %d\n", parts[0], parts[1], b, h.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"+Inf\"} %d\n", parts[0], parts[1], h.loadCount())
+		writeBucketLines(&sb, "loki_vl_proxy_internal_operation_duration_seconds",
+			fmt.Sprintf(`operation=%q,outcome=%q`, parts[0], parts[1]), h)
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_sum{operation=%q,outcome=%q} %g\n", parts[0], parts[1], h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_count{operation=%q,outcome=%q} %d\n", parts[0], parts[1], h.loadCount())
 	}
@@ -2337,34 +2568,19 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_window_fetch_seconds Query-range window backend fetch duration.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_fetch_seconds histogram\n")
 	if m.windowFetch != nil {
-		for i, b := range m.windowFetch.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"%g\"} %d\n", b, m.windowFetch.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"+Inf\"} %d\n", m.windowFetch.loadCount())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_sum %g\n", m.windowFetch.loadSum())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_count %d\n", m.windowFetch.loadCount())
+		writeHistogramSeries(&sb, "loki_vl_proxy_window_fetch_seconds", "", m.windowFetch.snapshot())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_window_merge_seconds Query-range window merge duration.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_merge_seconds histogram\n")
 	if m.windowMerge != nil {
-		for i, b := range m.windowMerge.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"%g\"} %d\n", b, m.windowMerge.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"+Inf\"} %d\n", m.windowMerge.loadCount())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_sum %g\n", m.windowMerge.loadSum())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_count %d\n", m.windowMerge.loadCount())
+		writeHistogramSeries(&sb, "loki_vl_proxy_window_merge_seconds", "", m.windowMerge.snapshot())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_window_count Query-range window count per request.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_count histogram\n")
 	if m.windowCount != nil {
-		for i, b := range m.windowCount.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"%g\"} %d\n", b, m.windowCount.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"+Inf\"} %d\n", m.windowCount.loadCount())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_sum %g\n", m.windowCount.loadSum())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_count %d\n", m.windowCount.loadCount())
+		writeHistogramSeries(&sb, "loki_vl_proxy_window_count", "", m.windowCount.snapshot())
 	}
 	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_attempt_total Query-range window prefilter attempts.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_attempt_total counter\n")
@@ -2401,12 +2617,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_duration_seconds Query-range window prefilter duration.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_duration_seconds histogram\n")
 	if m.windowPrefilterDuration != nil {
-		for i, b := range m.windowPrefilterDuration.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"%g\"} %d\n", b, m.windowPrefilterDuration.counts[i])
-		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"+Inf\"} %d\n", m.windowPrefilterDuration.loadCount())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_sum %g\n", m.windowPrefilterDuration.loadSum())
-		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_count %d\n", m.windowPrefilterDuration.loadCount())
+		writeHistogramSeries(&sb, "loki_vl_proxy_window_prefilter_duration_seconds", "", m.windowPrefilterDuration.snapshot())
 	}
 	sb.WriteString("# HELP loki_vl_proxy_window_adaptive_parallel_current Current adaptive query-range window parallelism.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_adaptive_parallel_current gauge\n")
@@ -2492,12 +2703,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			}
 			client, endpoint, route := parts[0], parts[1], parts[2]
 			h := sClientDurations[key]
-			for i, b := range h.buckets {
-				fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
-			}
-			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadCount())
+			writeBucketLines(&sb, "loki_vl_proxy_client_request_duration_seconds",
+				fmt.Sprintf(`system=%q,direction=%q,client=%q,endpoint=%q,route=%q`, lokiSystemLabel, downstreamDirection, client, endpoint, route), h)
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_sum{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %g\n",
 				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadSum())
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_count{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
@@ -2518,12 +2725,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			}
 			client, endpoint, route := parts[0], parts[1], parts[2]
 			h := sClientQueryLengths[key]
-			for i, b := range h.buckets {
-				fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
-			}
-			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadCount())
+			writeBucketLines(&sb, "loki_vl_proxy_client_query_length_chars",
+				fmt.Sprintf(`system=%q,direction=%q,client=%q,endpoint=%q,route=%q`, lokiSystemLabel, downstreamDirection, client, endpoint, route), h)
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_sum{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %g\n",
 				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadSum())
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_count{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
@@ -2553,5 +2756,6 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	m.system.WritePrometheus(&sb)
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	_, _ = w.Write([]byte(sb.String()))
+	m.renderSize.Store(int64(sb.Len() + sb.Len()/16))
+	_, _ = io.WriteString(w, sb.String())
 }

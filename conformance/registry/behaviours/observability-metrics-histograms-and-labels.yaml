@@ -1,0 +1,75 @@
+id: observability-metrics-histograms-and-labels
+kind: observability
+title: Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape
+pending: true
+
+loki: |
+  Not a Loki compatibility surface: the metric names and labels are the
+  proxy's own.
+
+victorialogs: |
+  A VictoriaLogs call ends at the timeout the proxy sends with it or at
+  -search.maxQueryDuration, so a backend duration of tens of seconds is an
+  ordinary slow answer and one at the timeout is a failure.
+
+proxy: |
+  Every duration histogram on /metrics and OTLP (request, backend, tenant and
+  client request duration, request phase, internal operation and query_range
+  window durations) has the bounds 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25,
+  0.5, 1, 2.5, 5, 10, 15, 20, 30, 45, 60, 90 and 120 seconds.
+  -metrics.duration-buckets replaces them (finite, above zero, ascending, at
+  most 32). Count histograms and the cache and peer fetch histograms keep their
+  own bounds. The request, backend, cache, client and tenant metrics label
+  their route family "endpoint"; the chart's ServiceMonitor sets honorLabels so
+  a scraper stores that value instead of its own target label of the same name,
+  and the proxy exposes no job, instance, namespace, pod, service or container
+  label.
+
+implementation:
+  - internal/metrics/duration_buckets.go
+  - internal/metrics/metrics.go
+  - internal/metrics/request_flow.go
+  - cmd/proxy/main.go
+  - charts/loki-vl-proxy/templates/servicemonitor.yaml
+  - charts/loki-vl-proxy/templates/deployment.yaml
+  - dashboard/loki-vl-proxy.json
+
+decisions:
+  - id: duration-buckets-reach-the-backend-timeout
+    chosen: 'Keep the twelve bounds and add 15, 20, 30, 45, 60, 90, 120; one list for every duration histogram, replaceable with -metrics.duration-buckets (at most 32)'
+    over: [stopping at 10s (every slower request counts in +Inf only), '15, 30, 60, 120, 300 only', separate lists per histogram family, native histograms]
+    why: |
+      Issue #1765: Drilldown requests of 12s, 19s, 29s and 60s (the
+      VictoriaLogs timeout) all read as a p95 of exactly 10. The added bounds
+      separate slow from timed out and end at the default -backend-timeout
+      (120s). Earlier bounds stay, so queries on le="10" keep working. Cost:
+      7 series per duration histogram series.
+    evidence: 'GitHub issue #1765; /metrics of one replica rendered on 2026-11-26, base against change: just started 1,538 to 1,895 series (gzip 10.6 kB to 11.8 kB), with sensitive labels 2,980 to 3,673; 256 tenants and clients on 5 routes 46,251 to 65,354 series'
+    code: [internal/metrics/duration_buckets.go, internal/metrics/metrics.go, cmd/proxy/main.go]
+    tests: [TestDefaultDurationBuckets, TestParseDurationBuckets, FuzzParseDurationBuckets, TestDurationHistogramsExposeTheBuckets, TestSlowRequestsAreToldApart, TestHistogramObserveBounds, TestHistogramCumulativeAndPerBucketCounts, TestOTLPDurationHistogramsUseTheBuckets, TestBuildProxyConfig_MetricsDurationBuckets, TestMetricsDurationBucketsValue]
+    quality: |
+      The earlier bounds are present, count histograms keep their own, a
+      configured list reaches every duration family on /metrics and OTLP, and
+      an invalid list stops startup naming the flag.
+    performance:
+      tracked: ['BenchmarkRecordRequestDurations', 'BenchmarkHistogramObserveDuration', 'BenchmarkMetricsRender']
+      bound: 'recording costs no allocation more and no time beyond noise; a /metrics render is not slower than with the twelve bounds'
+  - id: scrape-honors-the-proxy-endpoint-label
+    chosen: 'The chart ServiceMonitor sets honorLabels: true (serviceMonitor.honorLabels)'
+    over: [renaming the metric label (breaks every query on it; open for the owner), a metricRelabelings rule copying exported_endpoint back, documentation only]
+    why: |
+      The Prometheus Operator target label "endpoint" took the name, so every
+      series read endpoint="metrics" and the proxy value arrived as
+      exported_endpoint. Honouring labels fixes the shipped dashboard and
+      alerts without renaming a metric label. It is safe because the proxy
+      exposes no other target label name.
+    evidence: 'GitHub issue #1765 (observed exported_endpoint); the VictoriaMetrics operator copies endpoints[].honorLabels into the converted VMServiceScrape (operator source, factory/converter/apis.go, read 2026-11-26)'
+    code: [charts/loki-vl-proxy/templates/servicemonitor.yaml]
+    tests: [TestServiceMonitorHonorLabels, TestNoMetricLabelTakesOverATargetLabel, TestShippedQueriesMatchTheExposition]
+    quality: |
+      honorLabels renders true by default and when the key is unset, false when
+      turned off; every label the shipped dashboard and alerts select or group a
+      proxy metric by is one the proxy writes on it.
+    performance:
+      tracked: ['no request path change']
+      bound: 'scrape configuration only'

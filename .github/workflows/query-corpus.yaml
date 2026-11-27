@@ -51,6 +51,7 @@ jobs:
           go test -tags corpuscapture ./... -count=1 -timeout=30m
 
       - name: Build the corpus
+        shell: bash
         env:
           LVP_QUERY_CORPUS_DIR: /tmp/query-corpus-capture
           LVP_QUERY_CORPUS_OUT: /tmp/query-corpus/query-corpus.jsonl.gz

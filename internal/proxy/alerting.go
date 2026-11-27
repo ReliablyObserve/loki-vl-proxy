@@ -23,9 +23,16 @@ import (
 
 // handleReady returns readiness status.
 func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
-	if p.labelValuesIndexedCache && !p.labelValuesIndexWarmReady.Load() {
+	warming := ""
+	switch {
+	case p.responseCacheWarming():
+		warming = "response cache warming"
+	case p.labelValuesIndexedCache && !p.labelValuesIndexWarmReady.Load():
+		warming = "label values index warming"
+	}
+	if warming != "" {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("label values index warming"))
+		w.Write([]byte(warming))
 		return
 	}
 	if p.patternsEnabled && strings.TrimSpace(p.patternsPersistPath) != "" && !p.patternsWarmReady.Load() {

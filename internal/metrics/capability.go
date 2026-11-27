@@ -11,6 +11,9 @@ import (
 // are fixed, and the client series are capped by the layer (32 values per version label, 512 combinations).
 type CapabilityStats struct {
 	Epoch uint64
+	// VersionKnown is whether a VictoriaLogs release is known (read from the backend or -backend-version-url, or
+	// declared with -backend-version and not contradicted by a probe).
+	VersionKnown bool
 	// Releases are the releases in the window, one series each.
 	Releases []CapabilityRelease
 	// Gates are every gate's state.
@@ -90,6 +93,13 @@ type capabilityFamily struct {
 }
 
 var capabilityFamilies = []capabilityFamily{
+	{name: "loki_vl_proxy_backend_version_known", help: "1 when the proxy knows the VictoriaLogs release (read from the backend or -backend-version-url, or declared with -backend-version); 0 when it does not, and the gates that need the release stay off.", points: func(s CapabilityStats) []capabilityPoint {
+		v := 0.0
+		if s.VersionKnown {
+			v = 1
+		}
+		return []capabilityPoint{{nil, v}}
+	}},
 	{name: "loki_vl_proxy_backend_version_info", help: "The VictoriaLogs releases seen within the capability window (1 each); the lowest one decides the gates.", points: func(s CapabilityStats) []capabilityPoint {
 		out := make([]capabilityPoint, 0, len(s.Releases))
 		for _, r := range s.Releases {
@@ -97,7 +107,7 @@ var capabilityFamilies = []capabilityFamily{
 		}
 		return out
 	}},
-	{name: "loki_vl_proxy_capability_gate", help: "Capability gates: 1 when on, by gate, side and what decided it (version, probe, both, implied, default, mismatch).", points: func(s CapabilityStats) []capabilityPoint {
+	{name: "loki_vl_proxy_capability_gate", help: "Capability gates: 1 when on, by gate, side and what decided it (version, probe, both, implied, named, default, mismatch).", points: func(s CapabilityStats) []capabilityPoint {
 		out := make([]capabilityPoint, 0, len(s.Gates))
 		for _, g := range s.Gates {
 			v := 0.0

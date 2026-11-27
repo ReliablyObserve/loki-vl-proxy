@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"cmp"
 	"container/heap"
 	"context"
 	"errors"
@@ -9,12 +10,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 // Sliding-window log metrics (count_over_time, rate, bytes_over_time,
@@ -90,8 +93,17 @@ func (p *Proxy) slidingWindowStatsApplies(ctx context.Context, spec statsCompatS
 	if field != "__count__" && field != "__bytes__" {
 		return false
 	}
-	if step <= 0 || window <= 0 || end.Before(start) || queryUsesParserStages(spec.BaseQuery) {
+	if step <= 0 || window <= 0 || end.Before(start) {
 		return false
+	}
+	// A parser stage stays in the grids' stats pipe: VictoriaLogs groups by the parsed fields and counts every line,
+	// as the bucket reads do, with the parser keeping the fields a line already has (slidingGridParserBase). A query
+	// of several parser stages keeps the bucket reads, and so does a request checked for JSON parser errors: its
+	// bucket reads carry the check's marks (json_parser_error_check.go), the grids' stats pipe does not.
+	if queryUsesParserStages(spec.BaseQuery) {
+		if _, ok := slidingGridParserBase(spec.BaseQuery); !ok || jsonErrorCheckFrom(ctx) != nil {
+			return false
+		}
 	}
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit {
 		return false
@@ -131,7 +143,10 @@ func (p *Proxy) slidingWindowStatsApplies(ctx context.Context, spec statsCompatS
 // other failure is the client's answer, as it is for the recurrence: the heavier
 // path is not tried against a backend that is failing.
 func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, statsAggFunc, field, manualFunc string, fetchStart, start, end time.Time, step, window, bucket time.Duration, bucketsOK bool, sampleShift time.Duration) bool {
-	if _, ranked := rangeTopKFromContext(ctx); !ranked || statsAggFunc == "" || window == step || requestKeepsPartialSeries(ctx) {
+	// A tumbling window (range == step) of a query without a parser stage is one grid already; with a parser stage
+	// the bucket read is the route such a ranking took before the window grids read parser stages, and the stats
+	// extent cache reuses it, so it is tried first there too.
+	if _, ranked := rangeTopKFromContext(ctx); !ranked || statsAggFunc == "" || window == step && !queryUsesParserStages(spec.BaseQuery) || requestKeepsPartialSeries(ctx) {
 		return false
 	}
 	unranked := context.WithValue(ctx, rangeTopKKey{}, rangeTopK{})
@@ -240,9 +255,43 @@ func (p *Proxy) writeSlidingStatsRoute(w http.ResponseWriter, ctx context.Contex
 }
 
 func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, manualFunc, field string, start, end time.Time, step, window time.Duration) {
+	// The parser stage keeps the line's own fields (slidingWindowStatsApplies admitted a query with parser stages
+	// only when it can).
+	if base, ok := slidingGridParserBase(spec.BaseQuery); ok {
+		spec.BaseQuery = base
+	}
 	withBytes := field == "__bytes__"
 	steps := int(end.Sub(start) / step)
+	// The grids hold a step bucket of each series per step, twice (lines entering and leaving), and the seed.
+	gridBuckets := int64(2*steps + 1)
+	if window == step {
+		gridBuckets = int64(steps + 1)
+	}
+	noteReadGrid(ctx, "window-grids", step, window, step, gridBuckets)
 	stats := newSlidingStats(spec)
+	scale := 1.0
+	if manualFunc == "rate" || manualFunc == "bytes_rate" {
+		scale = window.Seconds()
+	}
+	if topK, ranked := rangeTopKFromContext(ctx); ranked {
+		// A ranking keeps k series per step: its grids are read in time chunks when one read would pass the row
+		// bound (sliding_window_chunks.go). With an aggregation around the ranking the series of the query are
+		// counted on its answer (manualSeriesLimit), not on this union.
+		maxBytes := p.limits().BufferedBackendBodyBytes
+		r := newSlidingRanker(topK, steps, maxBytes)
+		err := p.rankSlidingWindowChunks(ctx, r, stats, spec.BaseQuery, withBytes, scale, steps, start, step, window)
+		var body []byte
+		if err == nil {
+			body, err = r.encode(ctx, stats, p.manualSeriesLimit(ctx), start, step, maxBytes)
+		}
+		if err != nil {
+			p.writeErr(w, ctx, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+		return
+	}
 	var err error
 	if window == step {
 		// Tumbling windows need one grid: its bucket (T(k)-step, T(k)] is the
@@ -265,18 +314,7 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 		p.writeErr(w, ctx, err)
 		return
 	}
-	scale := 1.0
-	if manualFunc == "rate" || manualFunc == "bytes_rate" {
-		scale = window.Seconds()
-	}
-	var body []byte
-	if topK, ranked := rangeTopKFromContext(ctx); ranked {
-		// With an aggregation around the ranking the series of the query are
-		// counted on its answer (manualSeriesLimit), not on this union.
-		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, p.manualSeriesLimit(ctx), topK, start, step, p.limits().BufferedBackendBodyBytes)
-	} else {
-		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), start, step, p.limits().BufferedBackendBodyBytes)
-	}
+	body, err := stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), start, step, p.limits().BufferedBackendBodyBytes)
 	if err != nil {
 		p.writeErr(w, ctx, err)
 		return
@@ -303,6 +341,24 @@ func (p *Proxy) fetchSlidingStatsGrid(ctx context.Context, stats *slidingStats, 
 	// VictoriaLogs buckets are [B, B+bucket) with B = truncate(t+offset)-offset;
 	// starting them at anchor+1ns gives Loki's (edge, edge+bucket] windows.
 	offset := (size - ((anchorNS+1)%size+size)%size) % size
+	query := slidingGridQuery(stats, baseQuery, withBytes, size, offset)
+	return p.readSlidingStatsGrid(ctx, stats, query, withBytes, grid, anchorNS, buckets, size)
+}
+
+// slidingGridParserBase is baseQuery, whose pipes hold one parser stage (unpack_json, extract, extract_regexp or
+// unpack_logfmt), with that stage keeping the fields a line already has (logsql.ParserKeepsFields): Loki writes an
+// extracted label whose name a stream label or structured metadata already holds as name_extracted, so a grouping by
+// the name reads the line's own value, as the raw-row evaluator reads it (addGroupByParsedLabels). ok is false for a
+// query of several parser stages (one stage's label over another's is not read here) or none.
+func slidingGridParserBase(baseQuery string) (string, bool) {
+	// Without a parser stage (queryUsesParserStages) only an unpack_logfmt is rewritten: a pattern line filter's own
+	// extract is left as it is.
+	return logsql.ParserKeepsFields(baseQuery, !queryUsesParserStages(baseQuery))
+}
+
+// slidingGridQuery is the stats query of one grid: baseQuery's lines counted (and their bytes summed) per series in
+// buckets of size nanoseconds starting offset nanoseconds before a multiple of size.
+func slidingGridQuery(stats *slidingStats, baseQuery string, withBytes bool, size, offset int64) string {
 	by := "_time:" + strconv.FormatInt(size, 10) + "ns"
 	if offset != 0 {
 		by += " offset " + strconv.FormatInt(offset, 10) + "ns"
@@ -314,8 +370,13 @@ func (p *Proxy) fetchSlidingStatsGrid(ctx context.Context, stats *slidingStats, 
 	if withBytes {
 		agg = "sum_len(_msg) as " + slidingStatsValueName + ", count() as " + slidingStatsCountName
 	}
+	return baseQuery + " | stats by (" + by + ") " + agg
+}
+
+// readSlidingStatsGrid reads the rows of one grid's stats query into stats.
+func (p *Proxy) readSlidingStatsGrid(ctx context.Context, stats *slidingStats, query string, withBytes bool, grid uint8, anchorNS int64, buckets int, size int64) error {
 	params := url.Values{
-		"query": {baseQuery + " | stats by (" + by + ") " + agg},
+		"query": {query},
 		"start": {strconv.FormatInt(anchorNS+1, 10)},
 		"end":   {strconv.FormatInt(anchorNS+int64(buckets)*size+1, 10)},
 	}
@@ -588,60 +649,116 @@ func (h *topKHeap) better(a, b topKCandidate) bool {
 // plain client, the series with the most selected samples and Loki's warning
 // for Logs Drilldown.
 func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale float64, steps, maxSeries int, topK rangeTopK, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
-	offsets := s.bySeries()
+	r := newSlidingRanker(topK, steps, maxBytes)
+	if err := r.rank(ctx, s, withBytes, scale, steps, 0, int32(steps)+1, false); err != nil {
+		return nil, err
+	}
+	return r.encode(ctx, s, maxSeries, start, step, maxBytes)
+}
+
+// slidingRanker holds the heaps of a ranking whose windows are ranked in one pass or in time chunks
+// (rankSlidingWindowChunks): each step's heaps are filled by the pass that holds the step.
+type slidingRanker struct {
+	topK rangeTopK
 	// One group keeps a heap per step in a slice; groups keep one per step and
 	// group that holds a series, in a map.
-	type slot struct{ step, group int32 }
-	var byStep []*topKHeap
-	var byGroup map[slot]*topKHeap
-	groupOf := make([]int32, len(s.keys))
+	byStep  []*topKHeap
+	byGroup map[slidingRankSlot]*topKHeap
+	groupOf []int32
+	groups  map[string]int32
 	// Every sample a heap holds is a sample of the response, which costs at
 	// least slidingPointOverheadBytes there: the heaps of a response over the
 	// limit stop growing. In memory a held sample costs more than in the
 	// response (a 16-byte candidate plus its share of a heap header and map
 	// slot, about 60-100 bytes when every group is a single series), so this
 	// bounds the heaps to a small multiple of maxBytes, not to maxBytes.
-	kept, keptLimit, tooLarge := 0, maxBytes/slidingPointOverheadBytes, false
+	kept, keptLimit, maxBytes int
+}
+
+type slidingRankSlot struct{ step, group int32 }
+
+func newSlidingRanker(topK rangeTopK, steps, maxBytes int) *slidingRanker {
+	r := &slidingRanker{topK: topK, keptLimit: maxBytes / slidingPointOverheadBytes, maxBytes: maxBytes}
 	if topK.group == nil {
-		byStep = make([]*topKHeap, steps+1)
+		r.byStep = make([]*topKHeap, steps+1)
 	} else {
-		byGroup = make(map[slot]*topKHeap)
-		ids := map[string]int32{}
-		for series := range groupOf {
-			key := topKGroupKey(topK.group, s.metric(int32(series)))
-			id, ok := ids[key]
-			if !ok {
-				id = int32(len(ids))
-				ids[key] = id
+		r.byGroup = make(map[slidingRankSlot]*topKHeap)
+		r.groups = map[string]int32{}
+	}
+	return r
+}
+
+// rank adds the windows of s's records to the heaps: the steps base+k of the local steps k in [0, limit), the
+// windows slidingWindows derives over localSteps steps.
+//
+// A chunk of a chunked ranking (compact) visits only the series its records hold: the records are sorted by series and
+// bucket index, so the work is the chunk's, not every series the earlier chunks met.
+func (r *slidingRanker) rank(ctx context.Context, s *slidingStats, withBytes bool, scale float64, localSteps int, base, limit int32, compact bool) error {
+	var offsets []int
+	var order []int32
+	if compact {
+		slices.SortStableFunc(s.records, func(a, b slidingRecord) int {
+			if a.series != b.series {
+				return cmp.Compare(a.series, b.series)
 			}
-			groupOf[series] = id
+			return cmp.Compare(a.index, b.index)
+		})
+		for i, rec := range s.records {
+			if i == 0 || rec.series != s.records[i-1].series {
+				order = append(order, rec.series)
+				offsets = append(offsets, i)
+			}
+		}
+		offsets = append(offsets, len(s.records))
+	} else {
+		offsets = s.bySeries()
+	}
+	if r.byGroup != nil {
+		for series := len(r.groupOf); series < len(s.keys); series++ {
+			key := topKGroupKey(r.topK.group, s.metric(int32(series)))
+			id, ok := r.groups[key]
+			if !ok {
+				id = int32(len(r.groups))
+				r.groups[key] = id
+			}
+			r.groupOf = append(r.groupOf, id)
 		}
 	}
-	for series := range s.keys {
-		if series%4096 == 0 {
+	tooLarge := false
+	visits := len(s.keys)
+	if compact {
+		visits = len(order)
+	}
+	for i := 0; i < visits; i++ {
+		if i%4096 == 0 {
 			if err := ctx.Err(); err != nil {
-				return nil, err
+				return err
 			}
 		}
-		slidingWindows(s.records[offsets[series]:offsets[series+1]], withBytes, scale, steps, s.windowGrid, func(seg slidingSegment) {
-			for k := seg.from; k < seg.to && !tooLarge; k++ {
+		series, recs := i, s.records[offsets[i]:offsets[i+1]]
+		if compact {
+			series = int(order[i])
+		}
+		slidingWindows(recs, withBytes, scale, localSteps, s.windowGrid, func(seg slidingSegment) {
+			for k := seg.from; k < seg.to && k < limit && !tooLarge; k++ {
+				at := base + k
 				var h *topKHeap
-				if byStep != nil {
-					h = byStep[k]
+				if r.byStep != nil {
+					h = r.byStep[at]
 				} else {
-					h = byGroup[slot{k, groupOf[series]}]
+					h = r.byGroup[slidingRankSlot{at, r.groupOf[series]}]
 				}
 				if h == nil {
-					h = &topKHeap{descending: topK.descending, keys: s.keys}
-					if byStep != nil {
-						byStep[k] = h
+					h = &topKHeap{descending: r.topK.descending, keys: s.keys}
+					if r.byStep != nil {
+						r.byStep[at] = h
 					} else {
-						byGroup[slot{k, groupOf[series]}] = h
+						r.byGroup[slidingRankSlot{at, r.groupOf[series]}] = h
 					}
 				}
 				c := topKCandidate{series: int32(series), value: seg.value}
-				if h.Len() < topK.k {
-					if kept++; kept > keptLimit {
+				if h.Len() < r.topK.k {
+					if r.kept++; r.kept > r.keptLimit {
 						tooLarge = true
 						return
 					}
@@ -653,21 +770,26 @@ func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale flo
 			}
 		})
 		if tooLarge {
-			return nil, errSlidingResponseTooLarge(maxBytes)
+			return errSlidingResponseTooLarge(r.maxBytes)
 		}
 	}
+	return nil
+}
+
+// encode writes the ranked samples of every step, s naming the series.
+func (r *slidingRanker) encode(ctx context.Context, s *slidingStats, maxSeries int, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
 	points := make(map[int32][]slidingSegment)
 	collect := func(step int32, h *topKHeap) {
 		for _, c := range h.items {
 			points[c.series] = append(points[c.series], slidingSegment{from: step, to: step + 1, value: c.value})
 		}
 	}
-	for k, h := range byStep {
+	for k, h := range r.byStep {
 		if h != nil {
 			collect(int32(k), h)
 		}
 	}
-	for at, h := range byGroup {
+	for at, h := range r.byGroup {
 		collect(at.step, h)
 	}
 	ranked := make([]int32, 0, len(points))

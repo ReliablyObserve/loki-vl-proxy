@@ -1,0 +1,6 @@
+go test fuzz v1
+string("0")
+string("0")
+string("\x90")
+string("\x050")
+bool(true)

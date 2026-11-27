@@ -66,6 +66,15 @@ type LabelTranslator struct {
 	learnedAmbiguous map[string]struct{}
 
 	translateOTel bool
+
+	// mappings are the custom mappings in configuration order.
+	mappings []FieldMapping
+	// labelMode and listing are set by SetFieldMappingLabelMode for the alias
+	// and both modes; listing maps a mapped VL field to the names listings show.
+	labelMode FieldMappingLabelMode
+	listing   map[string][]string
+	// aliases maps a mapped VL field to its aliases (SetFieldMappingLabelMode).
+	aliases map[string][]string
 }
 
 // NewLabelTranslator creates a label translator with the given style and custom mappings.
@@ -78,6 +87,7 @@ func NewLabelTranslator(style LabelStyle, mappings []FieldMapping) *LabelTransla
 		learnedLokiToVL:  make(map[string]string),
 		learnedAmbiguous: make(map[string]struct{}),
 		translateOTel:    true,
+		mappings:         mappings,
 	}
 
 	// Register custom mappings (bidirectional)
@@ -390,7 +400,9 @@ func (lt *LabelTranslator) TranslateLabelsMapInto(src, dst map[string]string) {
 	}
 }
 
-// TranslateLabelsList translates a list of label names (response direction).
+// TranslateLabelsList translates a list of label names (response direction). In
+// the alias and both field-mapping label modes a mapped field gives every name
+// its listings show.
 func (lt *LabelTranslator) TranslateLabelsList(labels []string) []string {
 	lt.LearnFieldAliases(labels)
 	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
@@ -398,11 +410,13 @@ func (lt *LabelTranslator) TranslateLabelsList(labels []string) []string {
 	}
 	seen := make(map[string]bool, len(labels))
 	result := make([]string, 0, len(labels))
+	var one [1]string
 	for _, l := range labels {
-		translated := lt.ToLoki(l)
-		if !seen[translated] {
-			seen[translated] = true
-			result = append(result, translated)
+		for _, translated := range lt.listedNames(l, &one) {
+			if !seen[translated] {
+				seen[translated] = true
+				result = append(result, translated)
+			}
 		}
 	}
 	return result
@@ -440,6 +454,9 @@ func (lt *LabelTranslator) metadataFieldExposures(vlField string, mode MetadataF
 	}
 
 	mode = normalizeMetadataFieldMode(mode)
+	if names, ok := lt.mappedMetadataExposures(vlField, mode); ok {
+		return names
+	}
 	translated := vlField
 	if lt != nil {
 		translated = lt.ToLoki(vlField)

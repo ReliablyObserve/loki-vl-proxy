@@ -49,16 +49,46 @@ func LogsQLFieldName(name string) string {
 }
 
 // extractedCollides is the condition under which the label base is a stream label of the entry, so a parsed key
-// base is renamed: every stream has service_name in Loki; any other name is in _stream (a dotted spelling too).
-func extractedCollides(base string) logsql.FilterExpr {
+// base is renamed: every stream has service_name in Loki; any other name is in _stream (a dotted spelling too), or
+// one of aliasFields is (the stored fields of an alias, lower.Profile AliasField).
+func extractedCollides(base string, aliasFields []string) logsql.FilterExpr {
 	value := logsql.FieldFilter{Field: ExtractedScratch + "_" + base, Op: logsql.FieldOpAny}
 	if base == "service_name" {
 		return value
 	}
 	return logsql.AllOf{
-		logsql.FieldFilter{Field: ExtractedScratch + "_stream", Op: logsql.FieldOpRegexp, Value: `[{,]` + dotOrUnderscore(base) + `="`},
+		logsql.FieldFilter{Field: ExtractedScratch + "_stream", Op: logsql.FieldOpRegexp, Value: streamLabelPattern(base, aliasFields)},
 		value,
 	}
+}
+
+// StreamLabelPattern is the regexp a _stream copy matches when it holds the stream label base: the label under its
+// own name in either spelling, or one of aliasFields.
+func StreamLabelPattern(base string, aliasFields []string) string {
+	return streamLabelPattern(base, aliasFields)
+}
+
+func streamLabelPattern(base string, aliasFields []string) string {
+	name := dotOrUnderscore(base)
+	if len(aliasFields) == 0 {
+		return `[{,]` + name + `="`
+	}
+	b := make([]byte, 0, len(name)+32)
+	b = append(b, "[{,](?:"...)
+	b = append(b, name...)
+	for _, f := range aliasFields {
+		b = append(b, '|')
+		for i := 0; i < len(f); i++ {
+			switch c := f[i]; c {
+			case '\\', '.', '+', '*', '?', '(', ')', '|', '[', ']', '{', '}', '^', '$':
+				b = append(b, '\\', c)
+			default:
+				b = append(b, c)
+			}
+		}
+	}
+	b = append(b, ")=\""...)
+	return string(b)
 }
 
 // ExtractedFilter is the filter on the label base_extracted: parsed, a filter on the scratch field that holds
@@ -66,10 +96,16 @@ func extractedCollides(base string) logsql.FilterExpr {
 // the keys the label can be stored under, where it has not. ok is false when parsed holds a top-level space (an
 // alternation), which the string translator joins to the condition by plain text, so that it changes meaning.
 func ExtractedFilter(base string, parsed, literal logsql.FilterExpr) (logsql.FilterExpr, bool) {
+	return ExtractedFilterAliased(base, nil, parsed, literal)
+}
+
+// ExtractedFilterAliased is ExtractedFilter where the stream label base may also be stored as one of aliasFields
+// (StreamAliasFields).
+func ExtractedFilterAliased(base string, aliasFields []string, parsed, literal logsql.FilterExpr) (logsql.FilterExpr, bool) {
 	if HasTopLevelSpace(parsed.String()) {
 		return nil, false
 	}
-	collides := extractedCollides(base)
+	collides := extractedCollides(base, aliasFields)
 	return logsql.Group{Expr: logsql.AnyOf{
 		logsql.Group{Expr: logsql.AllOf{collides, parsed}},
 		logsql.Group{Expr: logsql.AllOf{logsql.NotExpr{Expr: logsql.Group{Expr: collides}}, logsql.Group{Expr: literal}}},

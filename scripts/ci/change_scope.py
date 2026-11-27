@@ -500,7 +500,7 @@ WORKFLOW_JOBS = {
 # releases), so a change to one needs nothing more from the pull request CI.
 NO_JOB_WORKFLOWS = (
     "auto-release.yaml", "cancel-conflicted-pr-runs.yaml", "changelog-pr.yaml", "codeql.yaml",
-    "daily-report.yaml", "docs-site.yaml", "error-answers-record.yaml", "ghcr-badges.yaml", "loc-badges.yaml", "parity-refresh.yaml", "perf-daily.yaml",
+    "daily-report.yaml", "docs-site.yaml", "error-answers-record.yaml", "ghcr-badges.yaml", "loc-badges.yaml", "local-proof-pr.yaml", "parity-refresh.yaml", "perf-daily.yaml",
     "pr-evidence-summary.yaml", "pr-labeler.yaml", "query-corpus.yaml", "release-pr-validation.yaml",
     "release.yaml", "scorecard.yaml", "security-heavy.yaml", "visual-smoke-cleanup.yaml",
 )
@@ -545,7 +545,7 @@ JOB_MAP = [
     # Scripts the release, changelog, helm and security-scan workflows run, and the unit tests of
     # scripts/ci (lint runs them).
     ("J5", (
-        "scripts/ci/tests/**", "scripts/ci/check_changelog_pr.py", "scripts/ci/cancel_conflicted_pr_runs.py",
+        "scripts/ci/tests/**", "scripts/ci/check_changelog_pr.py", "scripts/ci/check_local_proof_pr.py", "scripts/ci/cancel_conflicted_pr_runs.py",
         "scripts/ci/collect_release_assets.sh", "scripts/ci/commit_via_api.sh",
         "scripts/ci/extract_changelog_section.sh", "scripts/ci/fetch_ghcr_pulls.sh",
         "scripts/ci/changelog_release.py", "scripts/ci/release_plan.py", "scripts/ci/release_metadata.py",

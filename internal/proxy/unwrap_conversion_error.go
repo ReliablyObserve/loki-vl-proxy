@@ -1672,7 +1672,7 @@ func unwrapLokiError(probe unwrapErrorProbe, base map[string]string, line, forma
 // parsers after a line_format read. labels is nil when a filter drops the line.
 func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, formatted string) (map[string]string, map[string]bool, bool) {
 	labels := cloneStringMap(base)
-	parsed := map[string]bool{}
+	parsed := map[string]bool{} // nosemgrep: trailofbits.go.iterate-over-empty-map.iterate-over-empty-map -- unwrapParseLine fills it before the range over it
 	preserve := probe.hints[errorLabel]
 	includeSourceErrors := probe.numeric || numericEqualityPipeline(probe.pipeline)
 	generatedError := ""
@@ -1889,16 +1889,17 @@ func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string
 		})
 		return true
 	case logqlpkg.ParserUnpack:
-		if !strings.Contains(line, `"_entry"`) {
+		if err := unpackLineError(line); err != nil {
+			labels[errorLabel], labels[errorDetailsLabel] = "JSONParserErr", err.Error()
+			if generated != nil {
+				*generated = "JSONParserErr"
+			}
+			if preserveError {
+				labels["__preserve_error__"] = "true"
+			}
 			return true
 		}
-		_ = jsonparser.ObjectEach([]byte(line), func(key, value []byte, kind jsonparser.ValueType, _ int) error {
-			if kind != jsonparser.String || string(key) == "_entry" {
-				return nil
-			}
-			add(orderedJSONLabelName(string(key), true), orderedJSONScalar(value, kind), true)
-			return nil
-		})
+		unwrapPackedLabels(line, add)
 		return true
 	case logqlpkg.ParserRegexp:
 		re, err := regexp.Compile(unwrapRegexpParam(stage.Param))

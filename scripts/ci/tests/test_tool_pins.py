@@ -12,6 +12,9 @@ TOOL_IMAGE = re.compile(
 # `image: nginx:1.27-alpine` style references to the helper images of the test stacks and
 # the Helm test pods; Loki, VictoriaLogs and Grafana are pinned by the compatibility matrix.
 HELPER_IMAGE = re.compile(r"^\s*image:\s*(?P<ref>(?:busybox|nginx|python):\S+)")
+# The chart passes its helper images to the "loki-vl-proxy.image" template as parts.
+HELPER_PARTS = re.compile(r'"repository"\s+"(?P<ref>busybox|nginx|python)"')
+PINNED_PART = re.compile(r'"digest"\s+"sha256:[0-9a-f]{64}"')
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 
 TOOL_SOURCES = [
@@ -41,6 +44,9 @@ def unpinned_helper_images(text):
         match = HELPER_IMAGE.match(line)
         if match and not DIGEST.search(match.group("ref")):
             found.append((number, match.group("ref")))
+        parts = HELPER_PARTS.search(line)
+        if parts and not PINNED_PART.search(line):
+            found.append((number, parts.group("ref")))
     return found
 
 
@@ -92,7 +98,8 @@ class ToolPinTests(unittest.TestCase):
                 self.assertIn("--hash=sha256:", block, f"{name}: {block.splitlines()[0]}")
 
     def test_semgrep_lock_keeps_the_fixed_overrides(self):
-        # semgrep pins mcp and OpenTelemetry to releases with open advisories.
+        # semgrep pins mcp, OpenTelemetry and wcmatch to releases with open
+        # advisories.
         # A Dependabot semgrep bump recompiles with pip-compile, which has no
         # overrides, and would bring them back.
         text = (REPO / "security" / "requirements-semgrep.txt").read_text()
@@ -104,6 +111,7 @@ class ToolPinTests(unittest.TestCase):
 
         self.assertGreaterEqual(version("mcp"), (1, 30, 0))
         self.assertGreaterEqual(version("opentelemetry-api"), (1, 45, 2))
+        self.assertGreaterEqual(version("wcmatch"), (11, 2))
         self.assertIn("--override requirements-semgrep.overrides", text.split("\n", 2)[1])
         workflow = (REPO / ".github" / "workflows" / "security-heavy.yaml").read_text()
         self.assertIn("pip install --no-deps --require-hashes -r security/requirements-semgrep.txt", workflow)
@@ -126,6 +134,11 @@ class ToolPinTests(unittest.TestCase):
         self.assertEqual(
             unpinned_helper_images(f"image: busybox:1.36@sha256:{digest}\n  image: nginx:alpine\n"),
             [(2, "nginx:alpine")],
+        )
+        parts = '{{ include "x.image" (dict "repository" "busybox" "tag" "1.36"%s) }}'
+        self.assertEqual(
+            unpinned_helper_images(parts % f' "digest" "sha256:{digest}"' + "\n" + parts % ""),
+            [(2, "busybox")],
         )
         self.assertEqual(
             pip_without_hashes("pip install semgrep==1.0\npip install --require-hashes -r r.txt\n"),

@@ -611,6 +611,12 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if hasOrigSpec && origSpec.HasUnwrap && isSumAllLogRange(originalLogql) {
 		return false
 	}
+	// A sum, with no clause or a by clause, of a count or a rate over an unpack: VictoriaLogs answers it from
+	// stats, as it does the range query. The evaluator below groups a rate by the stream the translated stats name
+	// and reads every line of the window, which fails past its limits.
+	if hasOrigSpec && !origSpec.HasUnwrap && isUnpackSum(originalLogql) {
+		return false
+	}
 	// Instant queries with parser stages and explicit drop-error: use native VL stats.
 	// VL correctly evaluates [time-range, time] for instant queries; the drop-error opt-in
 	// means parse-failed lines are intentionally excluded — count-all semantics are acceptable.
@@ -802,6 +808,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
 		bucket, bucketsOK = slidingStatsBucket(step, step)
 	}
+	noteReadGrid(r.Context(), "buckets", step, origSpec.Window, bucket, readGridBuckets(startTS, endTS, origSpec.Window, bucket))
 	if !forceRawLevelRows && p.slidingWindowStatsApplies(r.Context(), spec, field, startTS, endTS, step, origSpec.Window, bucket, bucketsOK) {
 		if !p.writeRankedRangeFromBuckets(w, r.Context(), spec, statsAggFunc, field, manualFunc, fetchStart, startTS, endTS, step, origSpec.Window, bucket, bucketsOK, sampleShift) {
 			p.writeSlidingStatsRoute(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)
@@ -1123,6 +1130,62 @@ func isSumAllLogRange(query string) bool {
 		return !unwrapped
 	}
 	return false
+}
+
+// isUnpackSum reports a sum with no clause or a by clause of a count_over_time or a rate over a log query with an
+// unpack stage (semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line).
+// A without clause is not one: the labels it keeps are the ones the unpack promoted.
+func isUnpackSum(query string) bool {
+	_, ok := unpackSumGrouping(query)
+	return ok
+}
+
+// isUnpackSumAll reports an isUnpackSum whose sum has no label to group by: one series, whatever the log query
+// leaves of each line's labels.
+func isUnpackSumAll(query string) bool {
+	grouping, ok := unpackSumGrouping(query)
+	return ok && (grouping == nil || len(grouping.Labels) == 0)
+}
+
+// unpackSumGrouping is the grouping of the sum of an isUnpackSum query.
+func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
+	// The shared parse of the query: it is read, never changed.
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
+		return nil, false
+	}
+	agg, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok || agg.Op != logqlpkg.VectorSum || agg.Grouping != nil && agg.Grouping.Without {
+		return nil, false
+	}
+	ra, ok := agg.Inner.(*logqlpkg.RangeAggregation)
+	if !ok || ra.Grouping != nil || ra.Op != logqlpkg.RangeRate && ra.Op != logqlpkg.RangeCountOverTime {
+		return nil, false
+	}
+	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
+	if !ok {
+		return nil, false
+	}
+	for _, stage := range lq.Pipeline {
+		if p, isParser := stage.(*logqlpkg.ParserStage); isParser && p.Type == logqlpkg.ParserUnpack {
+			return agg.Grouping, true
+		}
+	}
+	return nil, false
+}
+
+// unpackMetricResponseVersion fences the answers to a metric query over an unpack cached before its semantics
+// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream).
+const unpackMetricResponseVersion = "@unpack-metric-v1:"
+
+// unpackMetricResponseKeyVersion is that fence: a text screen, so a query that names unpack and a rate or an
+// _over_time function is fenced whatever its shape (one more cache miss), and no query without an unpack changes
+// its key.
+func unpackMetricResponseKeyVersion(query string, other bool) string {
+	if containsWord(query, "unpack", other) && (containsWord(query, "rate", other) || containsWord(query, "_over_time", other)) {
+		return unpackMetricResponseVersion
+	}
+	return ""
 }
 
 const logfmtPresenceResponseVersion = "@logfmt-presence-v1:"

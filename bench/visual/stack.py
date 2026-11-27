@@ -247,6 +247,23 @@ def seed_field_sample_fixture(st, end):
             pass
 
 
+def seed_packed_unpack_fixture(st, end):
+    """Mirror lines a packing agent writes (a JSON object with a string `_entry`), next to ones `| unpack` leaves
+    as they are, for the sums over an unpack. Every line is a JSON object, so no parser error is part of it."""
+    app = "visual-unpack"
+    shapes = ('{{"agent":"a","_entry":"packed sample {0}"}}', '{{"agent":"a","sample":{0}}}',
+              '{{"agent":"a","_entry":{0}}}')
+    values = [[str((end - 3600 + i * 30) * 1_000_000_000 + 500_000_000), shapes[i % len(shapes)].format(i)]
+              for i in range(119)]
+    payload = json.dumps({"streams": [{"stream": {"app": app, "service_name": app}, "values": values}]}).encode()
+    for url in (f"{st.loki}/loki/api/v1/push",
+                f"{st.vl}/insert/loki/api/v1/push?disable_message_parsing=1"):
+        req = urllib.request.Request(url, data=payload,
+                                     headers={"Content-Type": "application/json", "X-Scope-OrgID": "0"})
+        with urllib.request.urlopen(req, timeout=60):
+            pass
+
+
 def start_grafana(a, trees_pr, out):
     """Grafana (Docker) with the three datasources and the pinned plugins; returns once its API answers.
 
@@ -377,6 +394,7 @@ def up(a):
         seed_bare_json_metric_fixture(st, end)
         seed_extraction_list_fixture(st, end)
         seed_field_sample_fixture(st, end)
+        seed_packed_unpack_fixture(st, end)
         ab.log(f"seeding Loki + VictoriaLogs: last {a.loki_hours}h")
         timed("seed_loki", st.seed, end - loki_start, end)
 
@@ -400,6 +418,9 @@ def up(a):
             # Also when a start failed: `down` stops only the PIDs recorded here, and a proxy left running holds its
             # port against the retry of the whole bring-up ("port is taken: a stale process would answer").
             state["pids"] = {p.name: p.proc.pid for p in procs if p.proc is not None}
+            # Where each build's cache flush answers, from its own flags (ci_run.flush_proxies): a stack file that
+            # gives the proxy an admin token moves the admin routes to the main listener and starts no other one.
+            state["flush"] = {p.name: dict(zip(("url", "token"), p.flush_target())) for p in procs}
             save()
         base, ids = grafana.result()
     state["grafana"] = base

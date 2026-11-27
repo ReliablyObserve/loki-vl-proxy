@@ -4139,6 +4139,7 @@
       "warm_p50": 0.017
     }
   ],
+  "field-mapping-label-names": [],
   "limits/concurrent-full-retention-scans-exhaust-backend": [
     {
       "baseline": "release",
@@ -70473,6 +70474,7 @@
       "warm_p50": 0.007
     }
   ],
+  "parser-unpack": [],
   "profiles/dotted-name-parse-error": [
     {
       "baseline": "release",
@@ -114245,6 +114247,7 @@
       "warm_p50": 0.01
     }
   ],
+  "semantics/ranked-parser-window-fine-step": [],
   "semantics/series-level-aggregation-bounded-memory": [
     {
       "baseline": "release",
@@ -115395,6 +115398,7 @@
       "warm_p50": 0.003
     }
   ],
+  "semantics/translator-writes-unpack-as-unpack-json": [],
   "semantics/two-parsers-keep-one": [],
   "semantics/unwrap-conversion-error": [
     {

@@ -3,6 +3,7 @@ package metrics
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,8 +23,16 @@ var (
 	// flowFanoutBuckets are small-integer buckets: most requests cause a handful of each, a wide Drilldown
 	// page a few dozen.
 	flowFanoutBuckets = []float64{0, 1, 2, 3, 5, 8, 13, 21, 34, 55}
-	// cacheLookupBuckets reach below defaultBuckets' 1 ms: a memory hit takes microseconds.
+	// cacheLookupBuckets reach below the duration buckets' 1 ms: a memory hit takes microseconds.
 	cacheLookupBuckets = []float64{0.00001, 0.00005, 0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.05, 0.25, 1}
+)
+
+// cacheTiers is the number of storage tiers a lookup can read: the first entries of cacheLookupTier.
+const cacheTiers = 3
+
+const (
+	cacheReadsName = "loki_vl_proxy_cache_reads_per_request"
+	cacheReadsHelp = "Cache tier reads one client request caused, by route and tier (l1_memory, l2_disk, l3_peer): each of the request's cache lookups reads every attached tier it reached, hit or miss. Observed for every request, zero included; exported for the routes that have read a cache."
 )
 
 // RequestFlow is what one client request caused, as RecordRequestFlow takes it. Each duration is the sum of the
@@ -31,22 +40,38 @@ var (
 // time minus VL and Cache, never below zero) is then an estimate.
 type RequestFlow struct {
 	ParseCount, TranslateCount, CacheLookups, CacheHits, VLCalls int
-	Parse, Translate, Cache, VL, Proxy                           time.Duration
+	// CacheReads is the tier reads of those lookups: memory, disk, peer.
+	CacheReads                         [cacheTiers]int
+	Parse, Translate, Cache, VL, Proxy time.Duration
 }
 
 type flowRouteHistograms struct {
 	phase  [len(flowPhases)]*histogram
 	fanout [len(flowFanoutKind)]*histogram
+	reads  [cacheTiers]*histogram
 }
 
 type flowMetrics struct {
-	mu          sync.RWMutex
-	routes      map[string]*flowRouteHistograms
-	cacheLookup [len(cacheLookupTier)][len(cacheLookupResult)]*histogram
+	mu     sync.RWMutex
+	routes map[string]*flowRouteHistograms
+	// durationBuckets bound the per-phase time histograms.
+	durationBuckets []float64
+	cacheLookup     [len(cacheLookupTier)][len(cacheLookupResult)]*histogram
 }
 
-func newFlowMetrics() *flowMetrics {
-	f := &flowMetrics{routes: make(map[string]*flowRouteHistograms)}
+// total is the sum of every observed value, read under the histogram's lock.
+func (h *histogram) total() float64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.sum
+}
+
+// readsACache reports whether any request of the route has read a cache (every read reaches memory first):
+// routes that never do get no reads series.
+func (h *flowRouteHistograms) readsACache() bool { return h.reads[0].total() > 0 }
+
+func newFlowMetrics(durationBuckets []float64) *flowMetrics {
+	f := &flowMetrics{routes: make(map[string]*flowRouteHistograms), durationBuckets: durationBuckets}
 	for i := range f.cacheLookup {
 		for j := range f.cacheLookup[i] {
 			f.cacheLookup[i][j] = newHistogramWithBuckets(cacheLookupBuckets)
@@ -67,10 +92,13 @@ func (f *flowMetrics) route(route string) *flowRouteHistograms {
 	if h = f.routes[route]; h == nil {
 		h = &flowRouteHistograms{}
 		for i := range h.phase {
-			h.phase[i] = newHistogram()
+			h.phase[i] = newHistogramWithBuckets(f.durationBuckets)
 		}
 		for i := range h.fanout {
 			h.fanout[i] = newHistogramWithBuckets(flowFanoutBuckets)
+		}
+		for i := range h.reads {
+			h.reads[i] = newHistogramWithBuckets(flowFanoutBuckets)
 		}
 		f.routes[route] = h
 	}
@@ -95,6 +123,9 @@ func (m *Metrics) RecordRequestFlow(endpoint, route string, flow RequestFlow) {
 	for i, n := range [...]int{flow.ParseCount, flow.TranslateCount, flow.CacheLookups, flow.CacheHits, flow.VLCalls} {
 		h.fanout[i].observe(float64(max(n, 0)))
 	}
+	for i, n := range flow.CacheReads {
+		h.reads[i].observe(float64(max(n, 0)))
+	}
 }
 
 // RecordCacheLookup records the time of one cache lookup by the tier that answered it (unknown when the lookup
@@ -118,13 +149,35 @@ func (m *Metrics) RecordCacheLookup(tier, result string, d time.Duration) {
 	m.flow.cacheLookup[i][j].observe(max(d, 0).Seconds())
 }
 
-func writeHistogramSeries(sb *strings.Builder, name, labels string, h histogramSnapshot) {
-	for i, b := range h.buckets {
-		fmt.Fprintf(sb, "%s_bucket{%s,le=\"%g\"} %d\n", name, labels, b, h.counts[i])
+// writeBucketLines writes one series' cumulative bucket lines, name_bucket{labels,le="bound"} count, and its
+// +Inf line. Everything before the bound is built once: bucket lines are most of a /metrics answer.
+func writeBucketLines(sb *strings.Builder, name, labels string, h histogramSnapshot) {
+	prefix := name + "_bucket{" + labels
+	if labels != "" {
+		prefix += ","
 	}
-	fmt.Fprintf(sb, "%s_bucket{%s,le=\"+Inf\"} %d\n", name, labels, h.loadCount())
-	fmt.Fprintf(sb, "%s_sum{%s} %g\n", name, labels, h.loadSum())
-	fmt.Fprintf(sb, "%s_count{%s} %d\n", name, labels, h.loadCount())
+	prefix += `le="`
+	var num [32]byte
+	for i, b := range h.buckets {
+		sb.WriteString(prefix)
+		sb.Write(strconv.AppendFloat(num[:0], b, 'g', -1, 64))
+		sb.WriteString(`"} `)
+		sb.Write(strconv.AppendInt(num[:0], h.counts[i], 10))
+		sb.WriteByte('\n')
+	}
+	sb.WriteString(prefix)
+	sb.WriteString(`+Inf"} `)
+	sb.Write(strconv.AppendInt(num[:0], h.loadCount(), 10))
+	sb.WriteByte('\n')
+}
+
+func writeHistogramSeries(sb *strings.Builder, name, labels string, h histogramSnapshot) {
+	writeBucketLines(sb, name, labels, h)
+	if labels != "" {
+		labels = "{" + labels + "}"
+	}
+	fmt.Fprintf(sb, "%s_sum%s %g\n", name, labels, h.loadSum())
+	fmt.Fprintf(sb, "%s_count%s %d\n", name, labels, h.loadCount())
 }
 
 func (m *Metrics) writeRequestFlowMetrics(sb *strings.Builder) {
@@ -161,6 +214,19 @@ func (m *Metrics) writeRequestFlowMetrics(sb *strings.Builder) {
 		}
 	}
 
+	sb.WriteString("# HELP " + cacheReadsName + " " + cacheReadsHelp + "\n")
+	sb.WriteString("# TYPE " + cacheReadsName + " histogram\n")
+	for _, route := range routes {
+		if !snaps[route].readsACache() {
+			continue
+		}
+		for i, tier := range cacheLookupTier[:cacheTiers] {
+			if s := snaps[route].reads[i].snapshot(); s.count > 0 {
+				writeHistogramSeries(sb, cacheReadsName, fmt.Sprintf("route=%q,tier=%q", route, tier), s)
+			}
+		}
+	}
+
 	sb.WriteString("# HELP loki_vl_proxy_cache_lookup_seconds Time of one cache lookup by the tier that answered it and its result.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_lookup_seconds histogram\n")
 	for i, tier := range cacheLookupTier {
@@ -170,4 +236,37 @@ func (m *Metrics) writeRequestFlowMetrics(sb *strings.Builder) {
 			}
 		}
 	}
+}
+
+// cacheReadsPerRequestMetrics mirrors the reads histogram of writeRequestFlowMetrics.
+func (p *OTLPPusher) cacheReadsPerRequestMetrics(now int64) []map[string]interface{} {
+	f := p.metrics.flow
+	if f == nil {
+		return nil
+	}
+	// The routes are copied first: a request of a route not seen yet waits for the write lock, and every other
+	// request would wait behind it while the points are built.
+	f.mu.RLock()
+	routes := make([]string, 0, len(f.routes))
+	snaps := make(map[string]*flowRouteHistograms, len(f.routes))
+	for route, h := range f.routes {
+		routes = append(routes, route)
+		snaps[route] = h
+	}
+	f.mu.RUnlock()
+	sort.Strings(routes)
+	points := make([]map[string]interface{}, 0, len(routes)*cacheTiers)
+	for _, route := range routes {
+		if !snaps[route].readsACache() {
+			continue
+		}
+		// A route that has read a cache has observed every tier, zero included.
+		for i, tier := range cacheLookupTier[:cacheTiers] {
+			points = append(points, p.histogramDP(snaps[route].reads[i], now, attr("http.route", route), attr("tier", tier)))
+		}
+	}
+	if len(points) == 0 {
+		return nil
+	}
+	return []map[string]interface{}{p.histogramMetric(cacheReadsName, cacheReadsHelp, "{read}", points...)}
 }

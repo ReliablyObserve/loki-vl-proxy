@@ -1,0 +1,127 @@
+[
+ {
+  "line": "",
+  "error": "",
+  "details": ""
+ },
+ {
+  "line": "{}",
+  "error": "",
+  "details": ""
+ },
+ {
+  "line": "{ }",
+  "error": "",
+  "details": ""
+ },
+ {
+  "line": "not json",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "{\"a\":\"1\",\"_entry\":\"k\"",
+  "error": "JSONParserErr",
+  "details": "Value is array, but can't find closing ']' symbol"
+ },
+ {
+  "line": "[\"k\"]",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "\"s\"",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "5",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "null",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "[",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "{",
+  "error": "JSONParserErr",
+  "details": "Malformed JSON error"
+ },
+ {
+  "line": " ",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": " {\"a\":\"1\"}",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "\t{}",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "x{\"a\":1}",
+  "error": "JSONParserErr",
+  "details": "expecting json object(6), but it is not"
+ },
+ {
+  "line": "{\"a\":\"1\"} x",
+  "error": "",
+  "details": ""
+ },
+ {
+  "line": "{\"_entry\":\"k\",}",
+  "error": "",
+  "details": ""
+ },
+ {
+  "line": "{\"a\":}",
+  "error": "JSONParserErr",
+  "details": "Unknown value type"
+ },
+ {
+  "line": "{\"a\":NaN}",
+  "error": "JSONParserErr",
+  "details": "Unknown value type"
+ },
+ {
+  "line": "{\"a\":\"1\",\"b\":{\"c\":}}",
+  "error": "",
+  "details": ""
+ },
+ {
+  "line": "{\"a\":\"1\",\"_entry\":\"\\q\"}",
+  "error": "JSONParserErr",
+  "details": "Encountered an invalid escape sequence in a string"
+ },
+ {
+  "line": "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\"\"}",
+  "error": "",
+  "details": ""
+ },
+ {
+  "line": "{\"a\":\"é\"}",
+  "error": "",
+  "details": ""
+ },
+ {
+  "line": "{\"a\" \"1\"}",
+  "error": "JSONParserErr",
+  "details": "Malformed JSON error"
+ },
+ {
+  "line": "{\"a\":\"1\" \"b\":\"2\"}",
+  "error": "JSONParserErr",
+  "details": "Value looks like object, but can't find closing '}' symbol"
+ }
+]

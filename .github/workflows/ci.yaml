@@ -197,6 +197,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Go test cache summary
+        shell: bash
         if: always()
         env:
           RESTORED_FROM: ${{ steps.gocache.outputs.cache-matched-key }}
@@ -300,6 +301,7 @@ jobs:
           python3 scripts/ci/merge_unit_shards.py --shards-dir shards --out-dir merged --shards "$SHARDS" ${complete[@]+"${complete[@]}"}
 
       - name: Coverage report
+        shell: bash
         run: go tool cover -func=merged/coverage.out | tail -1
 
       - name: Upload coverage
@@ -708,6 +710,7 @@ jobs:
             | tee bench-results.txt
 
       - name: Run label/field scale benchmarks (regression guard)
+        shell: bash
         run: |
           go test ./internal/proxy/ -run "^$" -bench 'BenchmarkProxy_Label(Keys|Values)_Scale_' -benchmem -count=1 -benchtime=200ms \
             | tee bench-label-fields.txt
@@ -780,6 +783,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run patterns scale benchmarks (regression guard)
+        shell: bash
         run: |
           go test ./internal/proxy/ -run "^$" -bench 'BenchmarkProxy_Patterns_Scale_' -benchmem -count=1 -benchtime=200ms \
             | tee bench-patterns.txt
@@ -848,6 +852,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run cache benchmarks (regression guard)
+        shell: bash
         run: |
           go test ./internal/cache -run "^$" -bench 'BenchmarkCache_(Get_Hit|SetWithTTL|TopHotKeys)$|BenchmarkPeerCache_(ThreePeers_ShadowCopyHit|ReadAheadCycle_Bounded)$' -benchmem -count=1 -benchtime=200ms \
             | tee bench-cache.txt
@@ -933,6 +938,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run stats translation benchmarks (regression guard)
+        shell: bash
         run: |
           go test ./internal/proxy/ -run "^$" -bench 'BenchmarkStatsTranslation_' -benchmem -count=1 -benchtime=200ms \
             | tee bench-stats-translation.txt
@@ -984,6 +990,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run load tests
+        shell: bash
         run: |
           go test ./internal/proxy/ -run "TestLoad" -v -timeout=120s -count=1 \
             | tee load-results.txt
@@ -1086,6 +1093,7 @@ jobs:
         run: python3 -m unittest discover -s bench/parity/tests
 
       - name: Registry report for this change
+        shell: bash
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -1214,7 +1222,7 @@ jobs:
             pattern: '^(TestSetup_IngestLogs|TestErrorFlightsLive_.*)$'
             outage: "1"
           - name: semantics
-            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrix.*|TestQuerySemanticsOperationsInventory|TestOperationsMatrix_.*|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestCompat_LabelFilterExpressionSyntax|TestCompat_RepeatedLabelFiltersApplyAllLikeLoki|TestCompat_IPLabelFilterEmbeddedAddressLikeLoki|TestCompat_KeywordLabelNamesLikeLoki|TestCompat_BinaryOperandLiterals|TestCompat_SelectorValueMustBeString|TestCompat_MarkerTextInStrings|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields|TestCompat_ReservedFieldNameCaseLikeLoki|TestCompat_ReservedFieldLabelsLikeLoki)$'
+            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrix.*|TestQuerySemanticsOperationsInventory|TestOperationsMatrix_.*|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestCompat_LabelFilterExpressionSyntax|TestCompat_RepeatedLabelFiltersApplyAllLikeLoki|TestCompat_IPLabelFilterEmbeddedAddressLikeLoki|TestCompat_KeywordLabelNamesLikeLoki|TestCompat_BinaryOperandLiterals|TestCompat_SelectorValueMustBeString|TestCompat_MarkerTextInStrings|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields|TestCompat_ReservedFieldNameCaseLikeLoki|TestCompat_ReservedFieldLabelsLikeLoki|TestCompat_UnpackSumsLikeLoki)$'
     name: e2e-compat (${{ matrix.group.name }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -1357,10 +1365,10 @@ jobs:
           for rf in 1 2; do
             export FLEET_PROXY_EXTRA_ARG="-peer-replication-factor=$rf"
             export FLEET_PROOF_REPORT="$RUNNER_TEMP/fleet-peer-cache-proof-rf$rf.json"
-            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
+            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge --profile handover --profile labelmode down -v
             docker compose -f test/e2e-fleet/docker-compose.yml up -d --no-build --wait --wait-timeout 180
-            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry|TestFleet_QueryRangeWindowsServeMovedRangesOnPeers|TestFleet_PushesBufferedForAPausedReplicaReachItWhenItAnswers|TestFleet_VLRefusalHeldAcrossReplicas)$' ./test/e2e-fleet/
-            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
+            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry|TestFleet_QueryRangeWindowsServeMovedRangesOnPeers|TestFleet_PushesBufferedForAPausedReplicaReachItWhenItAnswers|TestFleet_VLRefusalHeldAcrossReplicas|TestFleet_RestartHandoverKeepsTheResponseCacheWarm|TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers|TestFleet_PeerRestoreRefillsAWipedDisk)$' ./test/e2e-fleet/
+            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge --profile handover --profile labelmode down -v
           done
 
       - name: Record fleet evidence source
@@ -1390,12 +1398,12 @@ jobs:
       - name: Fleet logs on failure
         if: failure()
         working-directory: test/e2e-fleet
-        run: docker compose --profile edge logs --no-color --tail=300
+        run: docker compose --profile edge --profile handover --profile labelmode logs --no-color --tail=300
 
       - name: Tear down fleet
         if: always()
         working-directory: test/e2e-fleet
-        run: docker compose --profile edge down -v
+        run: docker compose --profile edge --profile handover --profile labelmode down -v
 
   e2e-ui:
     runs-on: ubuntu-latest
@@ -1554,6 +1562,7 @@ jobs:
           cache: true
 
       - name: Stress tests (concurrency + race detector)
+        shell: bash
         run: |
           go test -tags=stress -race -parallel=16 -timeout=120s -v ./internal/proxy/ \
             -run '^(TestTranslation|TestCoalescer|TestRangeMetric)' \
@@ -1581,6 +1590,7 @@ jobs:
           cache: true
 
       - name: Memory-leak tests (bounded heap growth + race detector)
+        shell: bash
         run: |
           go test -tags=memleak -race -run 'TestMemLeak_' -timeout=10m -v ./internal/proxy/ \
             | tee memleak-results.txt

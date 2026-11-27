@@ -1,0 +1,37 @@
+name: PR Local Proof
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-proof-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  local-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Unit test local proof gate
+        run: python -m unittest scripts.ci.tests.test_check_local_proof_pr
+
+      # The description is data: it reaches the script through the environment, never the shell.
+      - name: Require the Local proof section
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        run: python scripts/ci/check_local_proof_pr.py

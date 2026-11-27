@@ -27,6 +27,10 @@
   "24h-20s": [
    86400,
    20
+  ],
+  "80s-50ms": [
+   80,
+   0.05
   ]
  },
  "sets": {
@@ -3700,6 +3704,143 @@
      "case_id": "mixed_parser_reverse_group",
      "covers": [
       "semantics/two-parsers-keep-one"
+     ]
+    }
+   ]
+  },
+  "ranked-parser-fine-step": {
+   "description": "Issue #1795: a ranking or a sum over a [1h] window metric with a parser stage on a short range at a fine step (50 ms over 80 s, 200 ms over 5 minutes). Grafana's own step over 80 s is about 53 ms; the A/B runs 50 ms, a step that divides the whole-second ends, so Loki's frontend and the proxy lay the same grid: at 53 ms Loki with its defaults answered one step more than the proxy's step-aligned grid in every run (1511 or 1512 steps where 80 s holds 1510 or 1511), so its ranking holds more than k series per step, which the harness takes as no computed answer, and a sum has one timestamp more per series: no 53 ms row had a usable Loki reference. 53 ms itself is pinned against the Loki engine by TestRankedParserWindowMatchesLoki (53 ms, 50 ms, 1 s, 10 s). A gcd(step, window) bucket grid there is past the 11,000-bucket bound, so the proxy answers from the window recurrence's step-sized grids with the parser stage kept in the stats pipe (semantics/ranked-parser-window-fine-step) instead of the raw rows of the hour. RP1 ranks the nginx-ingress status codes from a regexp, RP2 the same from a pattern stage (both written as the LogQL printer prints them, so the frozen string translator's reading of a ranking's spelling, reprint_translation_test.go, does not change when the proxy prints them again), RP3 sums a pattern stage by method. Run with the control set.",
+   "ranges": [
+    "80s-50ms",
+    "5m-200ms"
+   ],
+   "shapes": [
+    {
+     "name": "RP1 topk status by regexp, 1h window, fine step",
+     "query": "topk (3,sum by (status) (count_over_time({app=\"nginx-ingress\"} | regexp `\" (?P<status>[0-9]{3}) `[1h])))",
+     "covers": [
+      "semantics/ranked-parser-window-fine-step",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "RP2 topk status by pattern, 1h window, fine step",
+     "query": "topk (3,sum by (status) (count_over_time({app=\"nginx-ingress\"} | pattern `<_> - <_> [<_>] \"<_>\" <status> <_>`[1h])))",
+     "covers": [
+      "semantics/ranked-parser-window-fine-step",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "RP3 sum by method of a pattern, 1h window, fine step",
+     "query": "sum by (method) (rate({app=\"nginx-ingress\"} | pattern `<_> - <_> [<_>] \"<method> <_>\" <_>` [1h]))",
+     "covers": [
+      "semantics/ranked-parser-window-fine-step",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  },
+  "field-mapping-alias-collision": {
+   "description": "Issue #1762 (-field-mapping-label-mode): the query shapes whose lowering the alias rules change, on the generator's collision data (level is a stream label and a key of the json and logfmt lines). The A/B stack sets no field mapping and main has no such flag, so these rows run the default mode, which the rules must leave unchanged (field-mapping-label-names: original and unset write the same text): FA1-FA3 are the Logs Drilldown breakdown of a renamed key (a filter on an _extracted name with a grouping by a parser key: count, rate, and a stream label beside it), which the metric screen admits in alias and both mode and leaves to the string translator in the default mode; FA4-FA6 are lowered from the plan in every mode through the changed functions (a filter on an _extracted name under a grouping by the stream label, label_replace over a grouping by an _extracted name, a log query filtering an _extracted name). The alias and both answers are proven against Loki by TestCompat_FieldMappingAliasCollisionsMatchLoki. Shapes are written as the LogQL printer prints them. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h"
+   ],
+   "shapes": [
+    {
+     "name": "FA1 breakdown of a renamed key, logfmt count",
+     "query": "sum by (level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\"[1m]))",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA2 breakdown of a renamed key, json rate",
+     "query": "sum by (level_extracted) (rate({service_name=\"api-gateway\"} | json | level_extracted!=\"\"[1m]))",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA3 breakdown of a renamed key beside its stream label, logfmt count",
+     "query": "sum by (level, level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\"[1m]))",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA4 logfmt filter on a renamed key, by the stream label",
+     "query": "sum by (level) (count_over_time({service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\"[1m]))",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "semantics/json-extracted-metric-pushdown",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA5 label_replace over a grouping by a renamed key",
+     "query": "label_replace(sum by (level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt [1m])), \"lvl\", \"$1\", \"level_extracted\", \"(.*)\")",
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "FA6 logs, logfmt filter on a renamed key",
+     "query": "{service_name=\"cache-redis\"} | logfmt | level_extracted=~\"err.*\"",
+     "logs": true,
+     "covers": [
+      "field-mapping-label-names",
+      "semantics/extracted-suffix-collision",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  },
+  "unpack-sum": {
+   "description": "A sum with no by or without clause of a count or an absence check over `| unpack`, which the query plan lowers (the handlers still serve it from the string translator). The seeded lines are JSON objects with no `_entry`, which unpack leaves as they are.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "UP1 sum count_over_time over unpack",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | unpack [5m]))",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "parser-unpack",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "UP2 sum count_over_time over unpack and a drop, instant",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | unpack | drop level [1h]))",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "parser-unpack",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "UP3 sum absent_over_time over unpack with no stream",
+     "query": "sum(absent_over_time({env=\"production\", app=\"no-such-service\"} | unpack [5m]))",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "parser-unpack",
+      "loki_api_v1_query_range"
      ]
     }
    ]

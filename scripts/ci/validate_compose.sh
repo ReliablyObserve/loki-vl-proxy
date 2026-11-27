@@ -45,6 +45,7 @@ STACKS=(
   "test/e2e-compat/docker-compose.yml bench/ab/docker-compose.ab.yml bench/visual/docker-compose.visual.yml"
   "test/e2e-compat/docker-compose.yml bench/ab/docker-compose.ab.yml bench/visual/docker-compose.visual.yml bench/parity/docker-compose.parity.yml"
   "test/e2e-fleet/docker-compose.yml test/e2e-fleet/docker-compose.http-discovery.yml"
+  "test/e2e-fleet/docker-compose.yml test/e2e-fleet/docker-compose.peerload.yml"
 )
 
 # Every tracked compose file must appear in at least one stack.

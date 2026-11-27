@@ -174,7 +174,18 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		keys = translate.ParsedKeysOf(label, translated)
 	}
 	if keys == nil {
-		return lb.leafFilter(e, lb.label), ""
+		f := lb.leafFilter(e, lb.label)
+		if fields := lb.streamAliasFields(label); len(fields) > 0 && lb.keyParsers > 0 {
+			// An alias's stream label (-field-mapping-label-mode alias and both) where the entry's stream holds its
+			// field, the parsed key of the alias's name where it does not, as Loki's label of that name reads.
+			has := logsql.FieldFilter{Field: translate.LogsQLFieldName(fields[0]), Op: logsql.FieldOpAny}
+			parsed := lb.parsedFieldLeaf(logsql.QuoteFieldName(label), e)
+			f = logsql.Group{Expr: logsql.AnyOf{
+				logsql.Group{Expr: logsql.AllOf{has, f}},
+				logsql.Group{Expr: logsql.AllOf{logsql.NotExpr{Expr: has}, parsed}},
+			}}
+		}
+		return f, ""
 	}
 	op, _ := translate.LookupLabelFilterOp(e.Cmp) // the operator is known
 	isIP := e.Kind == logql.LabelFilterValueIP
@@ -197,12 +208,29 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		// A parsed label Loki renamed name_extracted where the stream has the label: its value is in a scratch
 		// field the parsers unpack the key into.
 		parsed := lb.parsedFieldLeaf(translate.ExtractedScratch+"_"+base, e)
-		if f, ok = translate.ExtractedFilter(base, parsed, f); !ok {
+		aliasFields := aliasFieldList(lb.aliasField, base)
+		if f, ok = translate.ExtractedFilterAliased(base, aliasFields, parsed, f); !ok {
 			return logsql.FieldFilter{}, "LogSelect label filter _extracted"
 		}
 		lb.noteBase(base)
 	}
 	return f, ""
+}
+
+// streamAliasFields is aliasFieldList of the profile's AliasField.
+func (lb *leafBuilder) streamAliasFields(label string) []string {
+	return aliasFieldList(lb.aliasField, label)
+}
+
+// aliasFieldList is the stored field aliasField names for label as a list, nil for none or a nil aliasField.
+func aliasFieldList(aliasField func(string) string, label string) []string {
+	if aliasField == nil {
+		return nil
+	}
+	if field := aliasField(label); field != "" {
+		return []string{field}
+	}
+	return nil
 }
 
 // noteBase records a label whose name_extracted rename the query's filters read, for the query and for the stage.

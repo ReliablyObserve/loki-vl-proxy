@@ -43,6 +43,11 @@ func oldCompatQueryRangeFences(r *http.Request, query string) string {
 	return oldCompatQueryFences(r, query) + listedWindowsResponseKeyVersion(r, query) + logfmtPresenceResponseKeyVersion(r, query) + rankOverBinaryFence(query)
 }
 
+// unpackFence is the fence of a metric query over an unpack, last before the rune fence on every key.
+func unpackFence(query string) string {
+	return unpackMetricResponseKeyVersion(query, spelledOtherwise(query))
+}
+
 // rankOverBinaryLabelReplaceFence is the instant compat site's fence before the rune fence
 // (semantics/rank-binary-operand-label-replace-once), read on its own.
 func rankOverBinaryLabelReplaceFence(query string) string {
@@ -219,7 +224,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			endpoint := strings.TrimSuffix(strings.TrimPrefix(shape.path, "/loki/api/v1/"), "_nostep")
 
 			// The rune fence (rune_response_fence.go) ends the compat chains and is empty for a valid query.
-			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+rankOverBinaryLabelReplaceFence(query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)
+			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+rankOverBinaryLabelReplaceFence(query)+unpackFence(query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+unpackFence(query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)+unpackFence(query)
 			if expr, ok := sharedLogQLExpr(fenceVariablesResolved(query)); ok && containsMixedParserMetric(expr) {
 				oldCompatQuery += mixedParserMetricResponseVersion
 				oldCompatRange += mixedParserMetricResponseVersion
@@ -246,7 +251,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			for _, f := range []string{
 				orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
-				streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion,
+				streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion, unpackMetricResponseVersion,
 				markerBytesLabelValueResponseVersion, numericEqualityResponseVersion,
 			} {
 				if strings.Contains(oldInner, f) {
@@ -279,7 +284,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 	for _, f := range []string{
 		orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 		detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
-		streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion,
+		streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion, unpackMetricResponseVersion,
 		markerBytesLabelValueResponseVersion, numericEqualityResponseVersion,
 	} {
 		if !fired[f] {

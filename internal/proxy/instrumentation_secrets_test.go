@@ -40,6 +40,9 @@ func TestInstrumentation_RevealsNoSecrets(t *testing.T) {
 		peerA       = "10.99.88.77:3100"
 		peerB       = "10.99.88.78:3100"
 		clientAuth  = "client-secret-bearer-31337"
+		versionKey  = "version-secret-key-31337"
+		versionPw   = "version-secret-password-31337"
+		versionHost = "10.99.88.66:9471"
 	)
 	for _, sensitive := range []bool{false, true} {
 		pc := cache.NewPeerCache(cache.PeerConfig{SelfAddr: peerA, DiscoveryType: "static", StaticPeers: peerA + "," + peerB, AuthToken: peerToken, Timeout: 50 * time.Millisecond})
@@ -52,6 +55,7 @@ func TestInstrumentation_RevealsNoSecrets(t *testing.T) {
 			TenantMap:                    map[string]TenantMapping{org: {AccountID: account, ProjectID: project}},
 			ForwardHeaders:               []string{"Authorization"},
 			MetricsExportSensitiveLabels: sensitive,
+			BackendVersionURL:            "http://" + versionHost + "/metrics?authKey=" + versionKey, BackendVersionBasicAuth: "reader:" + versionPw,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -65,7 +69,8 @@ func TestInstrumentation_RevealsNoSecrets(t *testing.T) {
 			mux.ServeHTTP(httptest.NewRecorder(), r)
 		}
 		secrets := []string{adminToken, deleteToken, peerToken, backendPw, backendUsr, base64.StdEncoding.EncodeToString([]byte(backendUsr + ":" + backendPw)),
-			account, project + `"`, peerA, peerB, "10.99.88.", vlHost, clientAuth}
+			account, project + `"`, peerA, peerB, "10.99.88.", vlHost, clientAuth,
+			versionKey, versionPw, versionHost, base64.StdEncoding.EncodeToString([]byte("reader:" + versionPw))}
 		if !sensitive {
 			secrets = append(secrets, org)
 		}
