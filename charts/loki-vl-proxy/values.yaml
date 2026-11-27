@@ -373,7 +373,7 @@ extraArgs:
   # label-style: "underscores"  # default; convert VL dotted fields (service.name) to Loki underscores (service_name); set via flag, LABEL_STYLE env does not override it
   # translate-otel-attributes: "true"  # rewrite known OTel labels to dotted form in upstream queries (set "false" for underscore storage)
   # field-mapping: '[{"vl_field":"custom.field","loki_label":"custom_label"}]'
-  # field-mapping-label-mode: "original"   # original | alias | both: names of mapped fields in /labels, detected_labels and volume target labels (default original: one per field)
+  # field-mapping-label-mode: "both"   # unset (default: one name per field) | original | alias | both: names of mapped fields in label lists, stream and series labels, structured metadata and detected fields
   # Derived fields (trace linking)
   # derived-fields: '[{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]'
   # stream-response: "true"  # chunked transfer encoding for large results

@@ -286,7 +286,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/error-layer-cancel-deadline` — A tail whose VictoriaLogs call times out or is cancelled ends the way Loki's does, with Loki's texts (fixed) | TBD-PR | 0 | 0 |
 | `semantics/error-layer-internal-go-text` — A tail stream that breaks after the upgrade closes with Loki's error, not a bare disconnect or Go reader wording (fixed) | TBD-PR | 0 | 0 |
 | `semantics/error-layer-transport-text` — Backend transport failures use sanitized Loki errors for every client | #941 | 0 | 0 |
-| `semantics/field-mapping-label-modes` — The label pickers list the names of a mapped field that -field-mapping-label-mode selects | #1762 | 0 | 0 |
+| `semantics/field-mapping-label-modes` — The answers show the names of a mapped field that -field-mapping-label-mode selects | #1762 | 0 | 0 |
 | `semantics/first-last-over-time-translation` — first_over_time and last_over_time with offset or a line filter, proof against Loki pending (open) | #1059 | 0 | 0 |
 | `semantics/instant-bare-range-detected-level-unknown` — an instant bare range function carries the detected_level=unknown label Loki puts on a stream with no level | #750 | 0 | 0 |
 | `semantics/ip-filter-json-stats-pushdown` — An ip() label filter after \| json in a metric query matches no line on the stats pushdown; Loki counts the lines in range (fixed) | #1156 | 0 | 0 |

@@ -41,6 +41,7 @@ func TestCompat_FieldMappingLabelModes(t *testing.T) {
 		labels []string
 		answer string
 	}{
+		proxy.FieldMappingLabelModeUnset:    {[]string{"k8s_namespace_name", "service_name"}, "k8s_namespace_name"},
 		proxy.FieldMappingLabelModeOriginal: {[]string{"k8s_namespace_name", "service_name"}, "k8s_namespace_name"},
 		proxy.FieldMappingLabelModeAlias:    {[]string{"namespace", "service_name"}, "namespace"},
 		proxy.FieldMappingLabelModeBoth:     {[]string{"k8s_namespace_name", "namespace", "service_name"}, "namespace"},
@@ -125,11 +126,15 @@ func TestCompat_FieldMappingLabelModes(t *testing.T) {
 					t.Errorf("stream %v lacks %s", stream, want.answer)
 				}
 				for _, other := range []string{"namespace", "k8s_namespace_name"} {
-					if _, ok := stream[other]; ok && other != want.answer {
+					// The both mode carries every listed name of the field.
+					if mode == proxy.FieldMappingLabelModeBoth && stream[other] != namespace {
+						t.Errorf("stream %v lacks %s", stream, other)
+					}
+					if _, ok := stream[other]; ok && mode != proxy.FieldMappingLabelModeBoth && other != want.answer {
 						t.Errorf("stream %v carries a second name of the field", stream)
 					}
 				}
-				if mode == proxy.FieldMappingLabelModeOriginal && name != want.answer {
+				if mode == proxy.FieldMappingLabelModeUnset && name != want.answer {
 					continue // docs/KNOWN_ISSUES.md: volume by another mapping name
 				}
 				volume := get("/loki/api/v1/index/volume?query=" + selector + "&targetLabels=" + name + "&" + window)
@@ -306,12 +311,55 @@ func TestCompat_FieldMappingAliasCollisionsMatchLoki(t *testing.T) {
 					t.Errorf("%s: %d %s", r.name, status, out)
 					continue
 				}
+				if mode == proxy.FieldMappingLabelModeBoth && strings.HasPrefix(r.name, "logs") {
+					// The both mode's stream labels carry the -label-style name
+					// of a mapped field beside its alias, with its value; the
+					// rest is the pre-migration Loki's answer.
+					var added int
+					out, added = withoutBothNames(t, out)
+					if added == 0 {
+						t.Errorf("%s: no stream carries k8s_pod_name beside pod", r.name)
+					}
+				}
 				if got := r.norm(t, out); got != want[r.name] {
 					t.Errorf("%s:\n proxy %s\n  Loki %s", r.name, got, want[r.name])
 				}
 			}
 		})
 	}
+}
+
+// withoutBothNames removes from the stream labels of a log answer the names the
+// both mode adds (k8s_pod_name beside pod, k8s_namespace_name beside namespace)
+// when their value is the alias's, and counts the streams that carried one.
+func withoutBothNames(t *testing.T, body string) (string, int) {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := out["data"].(map[string]any)
+	results, _ := data["result"].([]any)
+	added := 0
+	for _, r := range results {
+		stream, _ := r.(map[string]any)["stream"].(map[string]any)
+		for name, alias := range map[string]string{"k8s_pod_name": "pod", "k8s_namespace_name": "namespace"} {
+			if v, ok := stream[name]; ok {
+				if v != stream[alias] {
+					t.Errorf("stream %v: %s=%v beside %s=%v", stream, name, v, alias, stream[alias])
+				}
+				delete(stream, name)
+				if name == "k8s_pod_name" {
+					added++
+				}
+			}
+		}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b), added
 }
 
 // collisionFieldsNorm is a detected_fields answer by name, parsers and

@@ -1623,6 +1623,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				// is structured metadata (Loki: parsers null); beside any
 				// other line it may be a key VictoriaLogs unpacked from it.
 				metadataOnly := msgJSONKeys != nil && !isJSONLineField(key, msgObjectKeys)
+				_, streamAlias := p.labelTranslator.aliasAnswer(key)
+				_, onStream := rawStreamLabels[key]
+				streamAlias = streamAlias && onStream
 				for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
 					if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
 						continue
@@ -1630,7 +1633,16 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 					if _, alias := aliases[exposure.name]; alias && exposure.isAlias {
 						continue // the stream label of an alias, as Loki lists no stream label
 					}
-					addDetectedField(fields, exposure.name, "", inferDetectedTypeFJ(v), nil, stringValue)
+					if streamAlias && exposure.isAlias {
+						continue // another name of that stream label (both mode)
+					}
+					if p.labelTranslator.namesMappedField(exposure.name, key) {
+						// A mapping name is listed whatever its name, as the label
+						// pickers list it (both mode).
+						addParsedAliasField(fields, exposure.name, "", inferDetectedTypeFJ(v), nil, stringValue)
+					} else {
+						addDetectedField(fields, exposure.name, "", inferDetectedTypeFJ(v), nil, stringValue)
+					}
 					if summary := fields[exposure.name]; summary != nil {
 						if metadataOnly {
 							summary.metadataOnly = true
@@ -1960,7 +1972,7 @@ func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string
 	out := make(map[string]*detectedFieldSummary, len(fieldNames))
 	for field, hits := range fieldNames {
 		for _, exposure := range p.metadataFieldExposures(field) {
-			if shouldSuppressDetectedField(exposure.name) {
+			if shouldSuppressDetectedField(exposure.name) && !p.labelTranslator.namesMappedField(exposure.name, field) {
 				continue
 			}
 			out[exposure.name] = &detectedFieldSummary{
