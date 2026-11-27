@@ -492,6 +492,11 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// text, kept apart from the lowering's.
 		cacheKey = "\x00stream-identity\x00" + cacheKey
 	}
+	if absentPresence(ctx) {
+		// The presence query of an absent_over_time: the translator's text over an unpack, kept apart from a client's
+		// sum, which the lowering writes with no unpack (absentPresenceKey).
+		cacheKey = "\x00absent-presence\x00" + cacheKey
+	}
 	ahead := !baseIdentity && identityAhead(ctx)
 	if ahead {
 		// A root dynamic identity over a range longer than the step (dynamicIdentityWindows): the lowering's text with

@@ -27,7 +27,9 @@ why: |
   a by or without clause, `by ()` included (delegated as before); count, min,
   max, avg or any other function over the range aggregation; bytes_over_time
   and bytes_rate (Loki counts the bytes of `_entry`); absent_over_time (written
-  as before); a keep after the unpack (the handlers group a rate behind it by
+  as before, with the presence query it is answered from: that query is a sum of
+  a count, and the proxy marks it so it keeps the unpack, absentPresenceKey,
+  TestAbsentOverTimePresenceKeepsTheUnpack); a keep after the unpack (the handlers group a rate behind it by
   the kept labels: on 155k streams a stream-grouped rate without the unpack was
   up to 1.35x slower than the translator's, so it keeps the unpack); an unwrap;
   a label filter, label_format, line filter,

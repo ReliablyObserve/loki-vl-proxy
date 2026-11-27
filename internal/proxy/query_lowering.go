@@ -229,12 +229,12 @@ func turnedAwayByStages(expr logqlpkg.Expr) bool {
 	}
 }
 
-// ungroupedSumOfLines reports a sum with no by or without clause directly over a count_over_time, a rate or an
-// absent_over_time: the unpack screen (skipsUnpackScreen) passes it.
+// ungroupedSumOfLines reports a sum with no by or without clause directly over a count_over_time or a rate: the unpack
+// screen (skipsUnpackScreen) passes it.
 func ungroupedSumOfLines(v *logqlpkg.VectorAggregation) bool {
 	ra, ok := v.Inner.(*logqlpkg.RangeAggregation)
 	return ok && v.Op == logqlpkg.VectorSum && v.Grouping == nil &&
-		(ra.Op == logqlpkg.RangeCountOverTime || ra.Op == logqlpkg.RangeRate || ra.Op == logqlpkg.RangeAbsentOverTime)
+		(ra.Op == logqlpkg.RangeCountOverTime || ra.Op == logqlpkg.RangeRate)
 }
 
 // isVectorCall reports a vector(n) call, which the metric screen turns away at any level.
@@ -335,8 +335,9 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	// The screen named the construct; the plan's root has the last word.
 	if lower.CountsVarianceSeries(plan) {
 		construct = countVarianceConstruct
-	} else if lower.SkipsUnpack(plan) {
-		// Served under the VectorAgg flip, with every other divergence of the plan's text left to the translator.
+	} else if lower.SkipsUnpack(plan) && !absentPresence(ctx) {
+		// Served under the VectorAgg flip, with every other divergence of the plan's text left to the translator. The
+		// presence query of an absent_over_time keeps the unpack (absentPresenceKey).
 		if construct = skipsUnpackConstruct; !slices.Contains(p.flippedConstructs, "VectorAgg") || !writesTranslatorText(plan, prof) {
 			return "", false
 		}
