@@ -755,6 +755,7 @@
       "internal/proxy/topk_range_edge_test.go",
       "internal/proxy/topk_tie_nondeterminism_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
+      "internal/proxy/unpack_parser_error_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_convert_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
@@ -2271,6 +2272,7 @@
       "internal/proxy/ordered_json_valid_split_test.go",
       "internal/proxy/ordered_json_vector_cache_test.go",
       "internal/proxy/ordered_json_vector_test.go",
+      "internal/proxy/unpack_parser_error_test.go",
       "internal/querycorpus/binop_without_empty_loki_diff_test.go",
       "internal/querycorpus/parser_error_wrappers_loki_diff_test.go",
       "test/e2e-compat/parser_error_matrix_test.go"
@@ -2676,6 +2678,7 @@
       "internal/proxy/compat_oversized_reply_test.go"
     ],
     "semantics/unpack-parser-error-not-raised": [
+      "internal/logsql/json_mark_test.go",
       "internal/proxy/unpack_parser_error_test.go",
       "internal/querycorpus/unpack_error_lines_test.go",
       "internal/querycorpus/unpack_sum_loki_diff_test.go",
@@ -3640,7 +3643,8 @@
       "architecture-syntax-package-layering"
     ],
     "internal/logsql/json_mark_test.go": [
-      "semantics/json-parser-error-under-wrappers"
+      "semantics/json-parser-error-under-wrappers",
+      "semantics/unpack-parser-error-not-raised"
     ],
     "internal/logsql/keyword_fields_test.go": [
       "semantics/translator-writes-keyword-field-names-bare"
@@ -5529,6 +5533,8 @@
       "semantics/proxy-accepts-operators-not-in-loki"
     ],
     "internal/proxy/unpack_parser_error_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/pipeline-error-text-parity",
       "semantics/unpack-parser-error-not-raised",
       "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
     ],

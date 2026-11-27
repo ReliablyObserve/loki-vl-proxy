@@ -13,9 +13,15 @@ why: |
   log query whose only parser is the unpack, with line filters and label filters before it and line filters, drops
   and keeps after it: the mark rides on the metric's own VictoriaLogs reads, so a query whose lines all parse sends
   no further request. A sum with no grouping needs no label, Loki parses no line for it and answers; a drop of
-  __error__ intercepts. Held to Loki by TestUnpackSumMatchesLoki (recorded, VictoriaLogs v1.49.0 and v1.54.0),
-  TestUnpackLineErrorMatchesRecordedLoki and TestCompat_UnpackSumsLikeLoki. Answers cached before carry no
-  `@unpack-metric-v2:` fence.
+  __error__ intercepts. The error names the failing sample's labels as Loki's does, the level its ingest set
+  included under a sum by other labels (detected_level="unknown" on a line naming none). A row VictoriaLogs keeps no
+  line for (an empty line, or a JSON object a Loki push sent it, which it stores as fields with its -defaultMsgValue
+  in _msg) is no error, as Loki's unpack fails on neither: the reads count such a row as parsed, so it takes no lookup.
+  Held to Loki by TestUnpackSumMatchesLoki (recorded, VictoriaLogs v1.49.0 and v1.54.0),
+  TestUnpackLineErrorMatchesRecordedLoki, TestUnpackErrorCheckHandlers and TestCompat_UnpackSumsLikeLoki (error text,
+  and lines sent through VictoriaLogs' Loki push route). Loki names any failing line of the window in the details
+  (the same query over the same data answered either of two on consecutive asks), so the live check holds the rest
+  of the text. Answers cached before carry no `@unpack-metric-v2:` fence.
 
   Not covered: lines VictoriaLogs reads as JSON while Loki's unpack rejects them (a value NaN, an invalid escape:
   semantics/json-parser-error-hazard-lines-not-marked); an unpack next to another parser, followed by a label filter
@@ -36,5 +42,5 @@ gap:
   area: 'internal/proxy/unpack_parser_error.go (unpackErrorProbeFor, unpackLineError); internal/proxy/json_parser_error_check.go'
   loki: '400 JSONParserErr'
   proxy: '400 JSONParserErr'
-  planned_test: 'TestUnpackSumMatchesLoki (internal/querycorpus); TestUnpackLineErrorMatchesRecordedLoki, TestUnpackErrorProbes, FuzzUnpackLineError (internal/proxy); TestCompat_UnpackSumsLikeLoki (test/e2e-compat, group semantics)'
+  planned_test: 'TestUnpackSumMatchesLoki (internal/querycorpus); TestUnpackLineErrorMatchesRecordedLoki, TestUnpackErrorProbes, TestUnpackErrorCheckHandlers, FuzzUnpackLineError (internal/proxy); TestJSONMarkParsedLines, FuzzJSONMark (internal/logsql); TestCompat_UnpackSumsLikeLoki (test/e2e-compat, group semantics)'
   clusters: []

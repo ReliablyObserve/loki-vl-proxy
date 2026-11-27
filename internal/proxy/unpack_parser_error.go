@@ -110,3 +110,13 @@ func unpackErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorA
 	}
 	return jsonErrorProbe{plan: plan, window: ra.RangeDuration, offset: ra.OffsetDuration}, true
 }
+
+// unpacksLine reports a plan of the unpack error check (unpackErrorProbeFor), whose only parser is an unpack.
+func (plan *orderedJSONMetricPlan) unpacksLine() bool {
+	for _, stage := range plan.stages {
+		if stage.unpack {
+			return true
+		}
+	}
+	return false
+}

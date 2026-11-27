@@ -3,11 +3,14 @@
 package e2e_compat
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +19,12 @@ import (
 // lines without an `_entry` and a numeric `_entry`, one every 5 seconds for the last 20 minutes, under the app label
 // it returns, and waits until Loki and the proxy count every line.
 func unpackFixture(t *testing.T, prefix string, extra ...string) (app string, now time.Time) {
+	return unpackFixtureVia(t, prefix, false, extra...)
+}
+
+// unpackFixtureVia is unpackFixture; viaLokiPush sends VictoriaLogs the Loki push Loki gets, which VictoriaLogs stores
+// a JSON object of as its fields, with no line (its -defaultMsgValue in _msg).
+func unpackFixtureVia(t *testing.T, prefix string, viaLokiPush bool, extra ...string) (app string, now time.Time) {
 	t.Helper()
 	now = time.Now().UTC().Truncate(time.Second)
 	app = fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
@@ -24,7 +33,19 @@ func unpackFixture(t *testing.T, prefix string, extra ...string) (app string, no
 	for i := 0; i < 240; i++ {
 		lines = append(lines, fmt.Sprintf(shapes[i%len(shapes)], i))
 	}
-	pushStream(t, now.Add(-20*time.Minute), streamDef{Labels: map[string]string{"app": app}, Lines: lines, Interval: 5 * time.Second})
+	stream := streamDef{Labels: map[string]string{"app": app}, Lines: lines, Interval: 5 * time.Second}
+	if viaLokiPush {
+		var values [][]string
+		for i, line := range lines {
+			values = append(values, []string{strconv.FormatInt(stream.lineTime(now.Add(-20*time.Minute), i).UnixNano(), 10), line})
+		}
+		body, _ := json.Marshal(map[string]interface{}{"streams": []map[string]interface{}{{"stream": stream.Labels, "values": values}}})
+		for _, target := range []string{lokiURL + "/loki/api/v1/push", vlURL + "/insert/loki/api/v1/push"} {
+			dlPost(t, target, "application/json", body)
+		}
+	} else {
+		pushStream(t, now.Add(-20*time.Minute), stream)
+	}
 	forceVLFlush(t)
 	deadline := time.Now().Add(240 * time.Second)
 	for _, base := range []string{lokiURL, proxyURL} {
@@ -74,6 +95,9 @@ func unpackSamples(payload map[string]interface{}) map[string]float64 {
 	return out
 }
 
+// unpackErrorDetails is the details label of a parser error, which names one failing line.
+var unpackErrorDetails = regexp.MustCompile(`__error_details__="(?:[^"\\]|\\.)*"`)
+
 // unpackAgainstLoki asks Loki and the proxy one metric query, instant at `at` or over the ten minutes before it, and
 // holds the proxy to Loki's status and, for an answer, its series and values.
 func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
@@ -94,6 +118,12 @@ func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
 		t.Fatalf("HTTP status loki=%d proxy=%d\nloki:  %s\nproxy: %s", lokiStatus, proxyStatus, lokiBody, proxyBody)
 	}
 	if lokiStatus != http.StatusOK {
+		// An error is Loki's text too: the failing series names the sample's labels. Which failing line it names
+		// varies in Loki itself (the same query over the same data answered the details of either bad line of the
+		// window on consecutive asks), so the details are held by TestUnpackLineErrorMatchesRecordedLoki instead.
+		if unpackErrorDetails.ReplaceAllString(strings.TrimSpace(lokiBody), "") != unpackErrorDetails.ReplaceAllString(strings.TrimSpace(proxyBody), "") {
+			t.Fatalf("error text differs\nloki:  %s\nproxy: %s", lokiBody, proxyBody)
+		}
 		return
 	}
 	want, got := unpackSamples(lokiPayload), unpackSamples(proxyPayload)
@@ -139,6 +169,20 @@ func TestCompat_UnpackSumsLikeLoki(t *testing.T) {
 		t.Run("unwrap/"+endpoint, func(t *testing.T) {
 			unpackAgainstLoki(t, fmt.Sprintf(`sum(sum_over_time({app=%q} | unpack | unwrap a [5m]))`, unwrapApp), endpoint, unwrapNow)
 		})
+	}
+	// JSON objects VictoriaLogs unpacked at ingest (a Loki push) keep no line there: Loki's unpack fails on none.
+	pushedApp, pushedNow := unpackFixtureVia(t, "unpackvlpush", true)
+	pushed := fmt.Sprintf(`{app=%q}`, pushedApp)
+	for i, query := range []string{
+		`sum by (app) (count_over_time(` + pushed + ` | unpack [5m]))`,
+		`sum by (app) (rate(` + pushed + ` | unpack | drop agent [5m]))`,
+		`max(count_over_time(` + pushed + ` | unpack | keep app [5m]))`,
+	} {
+		for _, endpoint := range []string{"query", "query_range"} {
+			t.Run("vlpush/"+endpoint+"/"+strconv.Itoa(i), func(t *testing.T) {
+				unpackAgainstLoki(t, query, endpoint, pushedNow)
+			})
+		}
 	}
 	for i, query := range []string{
 		`sum(rate(` + selector + ` | unpack [5m]))`,

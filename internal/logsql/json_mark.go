@@ -25,6 +25,25 @@ import (
 type JSONMark struct {
 	Sentinel string // the member the splice adds, unpacked as a field
 	Flag     string // set to "1" on a marked raw row
+	// Parsed are lines counted as parsed though they hold no JSON object: the sentinel is set on them after the
+	// unpack (a line exactly equal to one of them), so they are not marked.
+	Parsed []string
+}
+
+// parsed is the pipe that sets the sentinel on the lines of field equal to one of Parsed, none without Parsed.
+func (m JSONMark) parsed(field string) []Pipe {
+	if len(m.Parsed) == 0 {
+		return nil
+	}
+	var cond FilterExpr
+	for _, line := range m.Parsed {
+		if cond == nil {
+			cond = FieldExact(field, line)
+		} else {
+			cond = Or(cond, FieldExact(field, line))
+		}
+	}
+	return []Pipe{PipeFormat{Template: "1", ResultField: m.Sentinel, If: cond}}
 }
 
 // splice is the pipes that add the sentinel member to field.
@@ -312,10 +331,14 @@ func (m JSONMark) markStats(query string) (string, string) {
 	if !stats {
 		return "", RefusedNoStats
 	}
+	after := m.parsed("_msg")
 	if readsLine {
 		// The line is restored only when a pipe after the unpack reads it (a line filter, the bytes of the line).
+		after = append(after, m.restore()...)
+	}
+	if len(after) > 0 {
 		_, end := k.pipeText(k.at)
-		k.inserts = append(k.inserts, insert{end, pipesText(m.restore())})
+		k.inserts = append(k.inserts, insert{end, pipesText(after)})
 	}
 	return k.checked()
 }
@@ -353,7 +376,7 @@ func (m JSONMark) markRows(query string) (string, string) {
 			k.keepField(i, m.Flag) // a keep stage: the mark stays on the row
 		}
 	}
-	tail := append(m.restore(),
+	tail := append(append(m.parsed("_msg"), m.restore()...),
 		PipeFormat{Template: "1", ResultField: m.Flag, If: Not(FieldAny(m.Sentinel))},
 		PipeDelete{Labels: []string{m.Sentinel}},
 	)
@@ -374,6 +397,9 @@ func (m JSONMark) Lookup(base string, limit int, drop ...string) (string, bool) 
 	pipes = append(pipes, m.splice(copied)...)
 	pipes = append(pipes,
 		PipeUnpackJSON{From: copied, Fields: []string{m.Sentinel}},
+	)
+	pipes = append(pipes, m.parsed(copied)...)
+	pipes = append(pipes,
 		PipeFilter{Expr: Not(FieldAny(m.Sentinel))},
 		PipeDelete{Labels: append([]string{copied, m.Sentinel}, drop...)},
 		PipeSort{By: []SortField{{Field: "_time"}}},

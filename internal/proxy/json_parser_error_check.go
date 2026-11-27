@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -160,6 +161,9 @@ func (plan *orderedJSONMetricPlan) dropsParserErrors() bool {
 // jsonErrorCheck is the JSON parser error detection of one Loki request.
 type jsonErrorCheck struct {
 	probes []jsonErrorProbe
+	// parsedLines are the stored lines the mark counts as parsed (unpackParsedLines), none when a probe parses
+	// JSON: Loki's unpack fails on none of them.
+	parsedLines []string
 
 	mu sync.Mutex
 	// rawHits are the marked rows the raw-row evaluators read, confirmed when
@@ -251,7 +255,7 @@ func (p *Proxy) startJSONParserErrorCheck(w http.ResponseWriter, r *http.Request
 	}
 	ctx := r.Context()
 	if c := unwrapCheckFrom(ctx); c != nil {
-		c.json = &jsonErrorCheck{probes: probes}
+		c.json = p.newJSONErrorCheck(probes)
 		if c.writer != nil {
 			return r, nil
 		}
@@ -268,11 +272,38 @@ func (p *Proxy) startJSONParserErrorCheck(w http.ResponseWriter, r *http.Request
 		// Binary operands are evaluated on the step-aligned axis (alignBinaryRangeRequest).
 		start, end = start.Add(-time.Duration(start.UnixNano()%int64(step))), end.Add(-time.Duration(end.UnixNano()%int64(step)))
 	}
-	c := &unwrapCheck{instant: !isRange, start: start, end: end, step: step, query: logql, json: &jsonErrorCheck{probes: probes}}
+	c := &unwrapCheck{instant: !isRange, start: start, end: end, step: step, query: logql, json: p.newJSONErrorCheck(probes)}
 	ctx = context.WithValue(ctx, unwrapCheckKey{}, c)
 	l := &unwrapLookupWriter{p: p, ctx: ctx, parent: r.Context(), check: c, out: w, header: http.Header{}, query: logql}
 	c.writer = l
 	return r.WithContext(ctx), l
+}
+
+// newJSONErrorCheck is the check of probes. When every probe is an unpack, the lines VictoriaLogs keeps none of
+// (an empty one, the -defaultMsgValue of a JSON object it unpacked at ingest, as a Loki push does) are counted as
+// parsed by the mark: Loki's unpack fails on neither, so they take no lookup and no second read.
+func (p *Proxy) newJSONErrorCheck(probes []jsonErrorProbe) *jsonErrorCheck {
+	j := &jsonErrorCheck{probes: probes}
+	for i := range probes {
+		if !probes[i].plan.unpacksLine() {
+			return j
+		}
+	}
+	j.parsedLines = []string{"", vlDefaultMsgValue}
+	if v := p.defaultMsgValue(); v != "" && v != vlDefaultMsgValue {
+		j.parsedLines = append(j.parsedLines, v)
+	}
+	return j
+}
+
+// markSpec is the mark of the check's reads and the prefix of its texts in the memo.
+func (j *jsonErrorCheck) markSpec() (logsql.JSONMark, string) {
+	if len(j.parsedLines) == 0 {
+		return jsonErrorMarkSpec, ""
+	}
+	spec := jsonErrorMarkSpec
+	spec.Parsed = j.parsedLines
+	return spec, "u" + strings.Join(j.parsedLines, "\x00") + "\x00"
 }
 
 // jsonErrorMarkSpec marks, around a query's own unpack_json, the lines
@@ -312,14 +343,14 @@ type jsonMarkMemo struct {
 	bytes    int
 }
 
-// mark is mark(query) through the memo; rows tells the raw-row form.
-func (m *jsonMarkMemo) mark(query string, rows bool, mark func(string) (string, bool)) (string, bool) {
+// mark is mark(query) through the memo; rows tells the raw-row form, spec the mark's own prefix (markSpec).
+func (m *jsonMarkMemo) mark(query string, rows bool, spec string, mark func(string) (string, bool)) (string, bool) {
 	if len(query) > jsonMarkMemoMaxText {
 		return mark(query) // a very long text is marked each time: the memo stays bounded in bytes
 	}
-	key := "s" + query
+	key := spec + "s" + query
 	if rows {
-		key = "r" + query
+		key = spec + "r" + query
 	}
 	m.mu.Lock()
 	e, hit := m.entries[key]
@@ -350,7 +381,8 @@ func (j *jsonErrorCheck) jsonCountingStatsQuery(ctx context.Context, path string
 	if off, _ := ctx.Value(jsonErrorMarkOffKey{}).(bool); off {
 		return params, nil, false
 	}
-	rewritten, ok := jsonMarkedTexts.mark(params.Get("query"), false, jsonErrorMarkSpec.MarkStats)
+	spec, tag := j.markSpec()
+	rewritten, ok := jsonMarkedTexts.mark(params.Get("query"), false, tag, spec.MarkStats)
 	if !ok {
 		return params, nil, false
 	}
@@ -463,7 +495,8 @@ func (j *jsonErrorCheck) rawRowsQuery(base string) string {
 	if j == nil {
 		return base
 	}
-	marked, _ := jsonMarkedTexts.mark(base, true, jsonErrorMarkSpec.MarkRows)
+	spec, tag := j.markSpec()
+	marked, _ := jsonMarkedTexts.mark(base, true, tag, spec.MarkRows)
 	return marked
 }
 
@@ -724,7 +757,8 @@ func (c *unwrapCheck) jsonLookup(ctx context.Context, p *Proxy, probe *jsonError
 		base = withWindowPhaseFilter(ctx, base, c.start.Add(-probe.offset), c.step, probe.window)
 	}
 	// The phase is no label: the lookup drops it with its own fields.
-	query, ok := jsonErrorMarkSpec.Lookup(base, jsonLookupRows, "__lvp_window_phase")
+	spec, _ := c.json.markSpec()
+	query, ok := spec.Lookup(base, jsonLookupRows, "__lvp_window_phase")
 	if !ok {
 		return jsonFoundError{}, false, errJSONLookupUnbuilt
 	}
@@ -770,6 +804,16 @@ func (p *Proxy) orderedJSONRowPipelineError(ctx context.Context, plan *orderedJS
 	}
 	levels := p.newLogRowLevels()
 	if !plan.acceptDerivedLevel(base, &levels, row, desc) {
+		return nil
+	}
+	if base[detectedLevelLabel] == "" {
+		// Loki's error names the failing sample's labels, which carry the level its ingest set under any
+		// aggregation (detected_level="unknown" on a line that names none), though a sum by other labels drops it.
+		withDerivedLevel(base, levels.stringRow(row, levels.streamLabels(row["_stream"], desc.streamLabels)), desc.streamLabels)
+	}
+	if plan.unpacksLine() && isVLMissingMsg(row["_msg"], p.defaultMsgValue()) {
+		// VictoriaLogs keeps no line for an empty one or for a JSON object it unpacked at ingest (a Loki push):
+		// Loki's unpack fails on neither.
 		return nil
 	}
 	labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels, row)
