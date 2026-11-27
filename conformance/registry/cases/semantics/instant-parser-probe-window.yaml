@@ -1,0 +1,56 @@
+id: semantics/instant-parser-probe-window
+title: "The parser probe of an instant query reads the window the query evaluates (fixed)"
+pending: true
+proves:
+  - loki_api_v1_query
+  - parser-json
+  - parser-logfmt
+consumer: drilldown
+why: |
+  A query naming both `| json` and `| logfmt` that is not evaluated by the ordered mixed-parser evaluator makes the
+  proxy read 25 recent lines from VictoriaLogs to choose one of the two stages (preferWorkingParser,
+  internal/proxy/query_translation.go). The instant handler passed the request's start and end, which an instant
+  query does not carry, so the read went to VictoriaLogs without a time range: VictoriaLogs scanned the whole
+  retention for the newest 25 lines. Logs Drilldown sends such a query on every service page
+  (`sum(count_over_time({...} | json | logfmt | drop __error__, __error_details__ [$__auto]))`, instant); on a busy
+  selector it took 19.4 s (#1821). The verdict also came from the newest lines of the retention, not from the
+  lines the query evaluates: a query at an earlier time over logfmt lines, with newer JSON lines after it, kept
+  json, so `max by (route) (count_over_time(... | json | logfmt | drop __error__, __error_details__ [1h]))`
+  answered one series without route where Loki groups the logfmt lines by route (measured on Loki 3.7.10 and
+  VictoriaLogs v1.49.0 and v1.54.0, 2026-11-27).
+
+  Fixed: the instant probe reads the union of the query's range selector windows at its time,
+  (t-offset-range, t-offset], sent as VictoriaLogs' [start, end) like the instant stats read; an absent time is
+  now, as Loki reads it; a selector whose length is unknown reads 5 minutes. A query without a range selector (a
+  log query, which Loki refuses at an instant) sends no probe and gets Loki's 400 without a VictoriaLogs call. A
+  window without lines gives no verdict and the query keeps both stages, as before; it then evaluates the same
+  empty window. The range handler's probe is unchanged ([start, end]).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum(count_over_time({service_name="ingress"} | json | logfmt | drop __error__, __error_details__ [3h]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data.result]
+  expect: "Loki's answer; the probe VictoriaLogs receives carries start and end of the evaluated window."
+corpus:
+  dimensions:
+    shapes:
+      - query: 'max by (route) (count_over_time({app="probe-window"} | json | logfmt | drop __error__, __error_details__ [1h]))'
+      - query: 'max by (route) (count_over_time({app="probe-window"} | json | logfmt | drop __error__, __error_details__ [1h] offset 1h))'
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: drilldown-visible
+  effort: S
+  area: "internal/proxy handleQuery parser probe (preferWorkingParserAt, instantParserProbeWindow)"
+  loki: "every stage runs on the lines of the evaluated window"
+  proxy: "the probe reads the evaluated window; the stage it keeps is chosen from those lines"
+  planned_test: 'TestInstantParserProbeReadsTheQueryWindow, TestInstantLogQueryWithTwoParsersSendsNoProbe, TestInstantParserProbeChoosesFromTheEvaluatedLines, TestInstantParserProbeWindowUnion (internal/proxy), TestCompat_InstantParserProbeReadsTheQueryWindow (test/e2e-compat, core)'
+  visual: none
+  visual_reason: 'the Drilldown service pages render the same counts before and after on a stream whose newest lines match the evaluated ones; the difference shows at an earlier time, covered by the e2e test'
+  clusters: []

@@ -40,6 +40,7 @@ smoke	internal/proxy	FuzzMetadataValidationKeepsTheRouteRules	12s	-	metadata que
 smoke	internal/proxy	FuzzFormatVLStep	12s	-	format VL step
 smoke	internal/proxy	FuzzNormalizeMetadataPairs	12s	-	normalize metadata pairs
 smoke	internal/proxy	FuzzCombineBinaryMetricResultsScalarPath	12s	-	combine binary metric results scalar path
+smoke	internal/proxy	FuzzInstantParserProbeWindow	12s	-	instant parser probe window from the parsed query
 smoke	internal/proxy	FuzzParseOriginalRangeMetricSpec	12s	-	parse original range metric spec
 smoke	internal/proxy	FuzzParseLegacyRulesPath	20s	-	parse legacy rules path
 smoke	internal/proxy	FuzzExtractLogPatterns	12s	-	extract log patterns

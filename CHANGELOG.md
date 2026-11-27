@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An instant query (`/loki/api/v1/query`) that names both `| json` and `| logfmt` no longer makes VictoriaLogs scan the whole retention (#1821). The proxy reads 25 recent lines to choose one of the two parser stages; the instant handler passed `start` and `end`, which an instant query does not carry, so that read went out without a time range. Logs Drilldown sends such a query on every service page (`sum(count_over_time({...} | json | logfmt | drop __error__, __error_details__ [$__auto]))`), and on a busy selector it waited 19 s for that read. The read now covers the window the query evaluates at its `time` (the union of its range selectors, with their `offset`; an absent `time` is now), and a log query, which Loki refuses at an instant, sends no read before Loki's 400. The parser is now chosen from the lines the query evaluates, not from the newest lines of the retention: a query at an earlier time whose window holds logfmt lines, with newer JSON lines after it, answered one series where Loki groups by the logfmt labels, and now answers Loki's series (`TestCompat_InstantParserProbeReadsTheQueryWindow`, Loki 3.7.10, VictoriaLogs v1.49.0 and v1.54.0).
+
 ## [2.375.0] - 2026-11-27
 
 ### Added
