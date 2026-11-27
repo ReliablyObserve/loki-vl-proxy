@@ -505,7 +505,8 @@ func groupedRankingName(name string) string {
 // buckets, the series that lie in one bucket folded in VictoriaLogs), so its answers cached under v2 with the stream's
 // series are not served. v4: lines that hold the same keys in another order are one series (the hash reads the
 // fields sorted by name, set_stream_fields, where pack_json followed the line's key order), so answers cached under v3
-// with such a series split in two are not served.
+// with such a series split in two are not served. first_over_time and last_over_time joined the identity under v4:
+// their keys did not carry the fence before, so their answers cached with the stream's series are not served.
 const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v4:"
 
 // dynamicUnwrapIdentityResponseKeyVersion is the fence of a query whose plan has that identity at any depth

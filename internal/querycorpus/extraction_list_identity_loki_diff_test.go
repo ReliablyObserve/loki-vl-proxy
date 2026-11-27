@@ -224,10 +224,11 @@ var extractionListKnown = func() map[string]map[string]string {
 
 // extractionListKnownRuns are the differences of extractionListKnown, with the registry case of each:
 //   - semantics/unwrap-extraction-list-series-identity: what the extraction list's identity does not reach yet: count
-//     over the series, first, last, quantile, rate and rate_counter under an aggregation, a json alias, a ranking,
+//     over the series (first and last under a count too), quantile, rate and rate_counter under an aggregation, a
+//     json alias, a ranking,
 //     sort and a grouping by an extracted label, a count of lines;
 //   - semantics/unwrap-per-series-identity-raw-rows: a range longer than the step keeps the stream's series (and an
-//     ungrouped sum each line's) for what the identity does not serve (first, last, quantile, rate_counter, a json
+//     ungrouped sum each line's) for what the identity does not serve (quantile, rate_counter, a json
 //     alias); the identity's own shapes merge each series' step buckets into its window (listedIdentityWindows);
 //   - semantics/stdvar-grouped-pooled-variance: an aggregation by labels over stdvar_over_time the identity does not
 //     serve (a range longer than the step) takes the variance of the group's pooled samples (count by counts the
@@ -252,21 +253,9 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (sum_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-extraction-list-series-identity", `sum(first_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(first_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-extraction-list-series-identity", `sum by (ns) (first_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (first_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-extraction-list-series-identity", `sum(first_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(first_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-extraction-list-series-identity", `sum by (ns) (first_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (first_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-extraction-list-series-identity", `sum(last_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(last_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-extraction-list-series-identity", `sum by (ns) (last_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (last_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"semantics/unwrap-extraction-list-series-identity", `sum(last_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
-	{"semantics/unwrap-per-series-identity-raw-rows", `sum(last_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"semantics/unwrap-extraction-list-series-identity", `sum by (ns) (last_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (last_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum(quantile_over_time(0.9, {app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(quantile_over_time(0.9, {app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
