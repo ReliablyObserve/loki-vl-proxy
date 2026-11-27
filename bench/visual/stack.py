@@ -253,7 +253,11 @@ def seed_packed_unpack_fixture(st, end):
     app = "visual-unpack"
     shapes = ('{{"agent":"a","_entry":"packed sample {0}"}}', '{{"agent":"a","sample":{0}}}',
               '{{"agent":"a","_entry":{0}}}')
-    values = [[str((end - 3600 + i * 30) * 1_000_000_000 + 500_000_000), shapes[i % len(shapes)].format(i)]
+    # Loki counts volume from its index in whole kilobytes, so a tiny service ties at 0 bytes with the other small
+    # fixtures and the Drilldown landing page then picks a different one than through the proxy. The blank padding
+    # (no new label or value) keeps this service above them on both sides.
+    values = [[str((end - 3600 + i * 30) * 1_000_000_000 + 500_000_000),
+               shapes[i % len(shapes)].format(i)[:-1] + " " * 600 + "}"]
               for i in range(119)]
     payload = json.dumps({"streams": [{"stream": {"app": app, "service_name": app}, "values": values}]}).encode()
     for url in (f"{st.loki}/loki/api/v1/push",

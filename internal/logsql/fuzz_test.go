@@ -109,6 +109,10 @@ func FuzzParseRoundTrip(f *testing.F) {
 	f.Add("error")
 	f.Add(`error AND app:="nginx"`)
 	f.Add(`{app="nginx", env="prod"}`)
+	// A stream filter of several groups (the service_name stream filter, translate.ServiceNameStreamFilter).
+	f.Add(`{service_name="a" or service_name="", service.name="a" or service_name="", service.name=""} (service_name:="a" OR (service_name:="" "service.name":="a"))`)
+	f.Add(`{a="1" or}`)
+	f.Add(`{or="1"}`)
 	f.Add(`_time:5m`)
 	f.Add(`* | unpack_json | filter level:="error" | stats by (host) count() as cnt`)
 	f.Add(`latency:range(100,500)`)

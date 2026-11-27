@@ -112,7 +112,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `release-image-pinned-by-digest` — The chart can pin the released image by digest, and each release publishes that digest as a file | 4 | 1 | unknown |
 | semantics | `secrets-outside-process-arguments` — The proxy's secrets need no process argument, and never reach logs or admin answers | 4 | 3 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 13 | 13 | partial |
-| identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
+| identity | `service-name-derivation` — service_name follows Loki's discovery order | 20 | 1 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 12 | 22 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 5 | partial |
 | resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 3 | 6 | unknown |

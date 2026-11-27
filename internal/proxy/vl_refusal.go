@@ -485,6 +485,15 @@ func (p *Proxy) syncRefusal(endpoint, query, key string, a *cache.Answer, until 
 	}
 }
 
+// receiveEverywhere hands a value of the everywhere class a peer pushed to its receiver by key prefix.
+func (p *Proxy) receiveEverywhere(key string, value []byte, ttl time.Duration) {
+	if strings.HasPrefix(key, serviceNameRouteSyncKeyPrefix) {
+		p.receiveServiceNameRouteOff(key, value, ttl)
+		return
+	}
+	p.receiveRefusal(key, value, ttl)
+}
+
 // receiveRefusal holds a refusal a peer pushed, when this replica runs the
 // same build against the same VictoriaLogs release with the same routing
 // configuration; its hold is the peer's plus a random share

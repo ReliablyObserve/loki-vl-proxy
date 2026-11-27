@@ -1077,6 +1077,8 @@ func (p *parser) parseStreamFilter() (FilterExpr, error) {
 	p.advance() // consume {
 
 	var matchers []LabelMatcher
+	// groups are the matcher groups before an `or` ({a="1" or b="2"}, StreamFilterAny); none without one.
+	var groups [][]LabelMatcher
 
 	for {
 		tok := p.peek()
@@ -1086,6 +1088,12 @@ func (p *parser) parseStreamFilter() (FilterExpr, error) {
 		}
 		if tok.Typ == TokEOF {
 			return nil, fmt.Errorf("logsql: unclosed stream filter {")
+		}
+		if tok.Typ == TokOr && len(matchers) > 0 {
+			p.advance()
+			groups = append(groups, matchers)
+			matchers = nil
+			continue
 		}
 
 		// Parse label name
@@ -1124,6 +1132,12 @@ func (p *parser) parseStreamFilter() (FilterExpr, error) {
 		}
 	}
 
+	if groups != nil {
+		if len(matchers) == 0 {
+			return nil, fmt.Errorf("logsql: expected a label matcher after or in stream filter")
+		}
+		return StreamFilterAny{Groups: append(groups, matchers)}, nil
+	}
 	return StreamFilter{Matchers: matchers}, nil
 }
 

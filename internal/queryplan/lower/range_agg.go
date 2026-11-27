@@ -208,7 +208,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if keepsSpelling(in, Profile{Label: prof.Label}) {
 		return metricLog{}, &NotLoweredError{Construct: owner + " " + escapedSpellingConstruct}
 	}
-	q, levelChain, err := logSelectQuery(in, Profile{Label: prof.Label, metric: true, AliasField: prof.AliasField, FieldAlias: prof.FieldAlias})
+	q, levelChain, err := logSelectQuery(in, Profile{Label: prof.Label, metric: true, AliasField: prof.AliasField, FieldAlias: prof.FieldAlias, ServiceNameStreamLabelOnly: prof.ServiceNameStreamLabelOnly})
 	if err != nil {
 		if nl, ok := err.(*NotLoweredError); ok {
 			return metricLog{}, &NotLoweredError{Construct: owner + " " + nl.Construct}
