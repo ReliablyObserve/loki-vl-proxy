@@ -91,7 +91,12 @@ why: |
   chunked 24h answer equals the one-read 6h answer at the same step on all
   5,415 shared points). The replica keeps the chunk size for ten minutes, so a
   repeat reads in chunks at once and throws no read away. A request whose read
-  fits the bound reads and answers exactly as before (no chunk).
+  fits the bound reads and answers exactly as before (no chunk). A pruned
+  detected_level read (its witness check) that passes the bound under a
+  caller that reads in chunks ends with the overflow, rather than being sent
+  again over the whole range with the full chain, which holds the same groups
+  and passed the bound too (F1/F4 24h at 20s read 123 MB whole for it;
+  TestLevelWitnessResponse).
 request:
   method: GET
   path: /loki/api/v1/query_range

@@ -856,6 +856,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			break
 		}
 		readCtx, meter := withStatsReadMeter(r.Context())
+		meter.chunks = chunkReads.rereadsInChunks(r, windowAggFunc)
 		series, ok, err := collect(readCtx, fetchStart, endTS)
 		if p.rereadOverflowedInChunks(w, r, meter, &chunkReads, spec, origSpec, manualFunc, windowAggFunc, startTS, endTS, step, bucket, sampleShift) {
 			return true
