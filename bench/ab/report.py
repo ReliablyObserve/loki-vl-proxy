@@ -234,14 +234,32 @@ def timing_verdict(base, cand, noise, min_delta):
     return "same"
 
 
+STITCHED_KIND = "stitched-query-range"  # perf_matrix.STITCHED_KIND
+
+
+def reference_view(row):
+    """A reference row as its answer reads: a Loki request that timed out (sent, or not sent after an earlier
+    timeout) with a complete stitched answer (perf_matrix.stitched_answer) answers with the stitched status, proof,
+    size, signature and cache counters. Its seconds stay the timeout's: no Loki timing is taken from the pieces."""
+    stitched = row.get("stitched")
+    if (not isinstance(stitched, dict) or stitched.get("kind") != STITCHED_KIND or stitched.get("complete") is not True
+            or row.get("status") != 0 or "timed out" not in str(row.get("signature") or "")):
+        return row
+    return {**row, "status": stitched.get("status"), "answer_proof": stitched.get("answer_proof"),
+            "response_bytes": stitched.get("response_bytes"), "signature": stitched.get("signature"),
+            "cache": stitched.get("cache"), "stitched_view": True,
+            "skipped": None}  # a run whose whole request was not sent again: its pieces were
+
+
 def request_samples(by_target, runs, reference, candidate, tolerance=0):
     """Check every measured request before aggregating. A later run cannot fill an earlier hole."""
+    by_target = {t: [reference_view(r) for r in rows] if t == reference else rows for t, rows in by_target.items()}
     refs = {r["run"]: r for r in by_target.get(reference, [])}
     candidates = {r["run"]: r for r in by_target.get(candidate, [])}
     evidence = {}
     for target, rows in by_target.items():
         good, starts, ends = [], [], []
-        resource_runs = 0
+        resource_runs, stitched = 0, 0
         corrected_rejections = []
         for r in rows:
             seconds = r.get("seconds")
@@ -265,6 +283,7 @@ def request_samples(by_target, runs, reference, candidate, tolerance=0):
                     and (r["history_start"], r["end"]) == (ref.get("history_start"), ref.get("end"))
                     and (proof == "answer" and r["status"] == 200 or matched_error or corrected)):
                 good.append(r["run"])
+                stitched += bool(r.get("stitched_view"))
                 if corrected:
                     corrected_rejections.append({"run": r["run"], "status": r["status"], "proof": proof,
                                                  "signature": r["signature"]})
@@ -283,6 +302,9 @@ def request_samples(by_target, runs, reference, candidate, tolerance=0):
                             "start": min(starts, default=None), "end": max(ends, default=None)}
         if corrected_rejections:
             evidence[target]["corrected_rejections"] = corrected_rejections
+        if stitched:
+            # Runs whose answer was stitched from pieces: their timing is the whole request's timeout.
+            evidence[target]["stitched"] = stitched
     return evidence
 
 
@@ -351,10 +373,11 @@ def summarize(args):
         def sig_by_run(t):
             return {r["run"]: r["signature"] for r in by_target.get(t, [])}
 
-        cand, base, ref = sig_by_run(args.candidate), sig_by_run(args.baseline), sig_by_run(args.reference)
+        cand, base = sig_by_run(args.candidate), sig_by_run(args.baseline)
+        ref = {r["run"]: r["signature"] for r in map(reference_view, by_target.get(args.reference, []))}
         # Only the reference runs Loki computed are compared; the others are counted by reason.
         skipped = {}
-        for r in by_target.get(args.reference, []):
+        for r in map(reference_view, by_target.get(args.reference, [])):
             reason = reference_skip(r)
             if reason:
                 skipped[reason] = skipped.get(reason, 0) + 1

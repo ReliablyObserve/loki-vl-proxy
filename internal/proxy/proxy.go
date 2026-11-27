@@ -2978,6 +2978,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A range request may leave start or end out: Loki reads it with end now and start an hour (or since) before.
+	// Every read below, the parser probe's too, uses that window (a log query is not moved by the step alignment).
+	r = withLokiRangeBounds(r, time.Now())
+
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
 	// Extract and apply LogQL offset: strip the offset clause and shift start/end
@@ -3519,7 +3523,16 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	// An instant query carries time, not start and end: the probe reads the
 	// window the query evaluates at that time.
-	logqlQuery = p.preferWorkingParserAt(r.Context(), logqlQuery, r.FormValue("time"))
+	probed := p.preferWorkingParserAt(r.Context(), logqlQuery, r.FormValue("time"))
+	if probed != logqlQuery && unwrapLookup == nil && hasParserStage(probed, "json") != hasParserStage(probed, "logfmt") &&
+		p.handleOrderedJSONMetric(w, r, start, probed, false) {
+		// The probe kept one parser (a query it gave no verdict keeps both, its flags aside): the query it left is
+		// answered by the route that answers that query sent as it
+		// is (the ordered JSON evaluator answers `sum(count_over_time({…} | json [r]))` from VictoriaLogs stats),
+		// which the query naming both parsers was not offered before the probe.
+		return
+	}
+	logqlQuery = probed
 	unwrapLookup.setQuery(logqlQuery)
 
 	if spec, ok := p.bareParserMetricSpec(logqlQuery); ok {
