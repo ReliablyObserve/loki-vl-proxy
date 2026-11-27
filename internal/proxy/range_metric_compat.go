@@ -1154,6 +1154,11 @@ func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
 	if !ok {
 		return nil, false
 	}
+	return unpackSumGroupingOf(expr)
+}
+
+// unpackSumGroupingOf is unpackSumGrouping of a parsed node.
+func unpackSumGroupingOf(expr logqlpkg.Expr) (*logqlpkg.Grouping, bool) {
 	agg, ok := expr.(*logqlpkg.VectorAggregation)
 	if !ok || agg.Op != logqlpkg.VectorSum || agg.Grouping != nil && agg.Grouping.Without {
 		return nil, false
