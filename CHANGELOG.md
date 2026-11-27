@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `-field-mapping-label-mode=original` now shows a mapped field under its own name only, with no alias, on every answer surface (label lists, stream and series labels, structured metadata, detected fields): the stored name formatted by `-label-style` for labels and by `-metadata-field-mode` for structured metadata and detected fields (`native` the stored name, `translated` the `-label-style` name, `hybrid` both). Before, an explicit `original` meant the default. Leave the flag unset to keep one name per field, the `loki_label` of its last mapping, exactly as before; a deployment that sets no flag sees no change in answers or cache identities.
+- `-field-mapping-label-mode=alias` shows a mapped field under its aliases only in every `-metadata-field-mode`: `native` and `hybrid` no longer add the stored name in structured metadata and detected fields, and detected fields list an alias whatever its name (`namespace` included).
+
+### Added
+
+- `-field-mapping-label-mode=both` shows a mapped field's own names and its aliases on every surface: structured metadata, detected fields and `/detected_field/<name>/values` (for `k8s.namespace.name` mapped to `namespace`: `translated` `k8s_namespace_name` and `namespace`, `native` `k8s.namespace.name` and `namespace`, `hybrid` all three), and the stream labels of log lines (query_range, tail), `/series` and metric series carry every listed name of a mapped field with its value. The names are added after evaluation, so series counts, values, groupings, `without` and binary matching are the alias mode's; a grouped answer keeps only the labels its `by()` or `on()` names. Ungrouped results and alerts over them carry one more label per name (an alert keyed on labels can fire once more), the mode starts with its own cache entries, and a log answer takes about 25% more time to write. No VictoriaLogs request is added. Every combination of `-label-style`, `-field-mapping-label-mode` and `-metadata-field-mode` is held by a recorded matrix (`TestFieldMappingLabelMode_NameMatrix`).
+
 ### Fixed
+
+- In `-field-mapping-label-mode` `original`, `alias` and `both`, an instant grouping by another name of a mapped field answers under that name: `sum by (node) (...)` over a field mapped to `node` and `nodename` answered `{nodename=...}` on `/loki/api/v1/query`, while `query_range` answered `{node=...}`. Without the flag nothing changes.
 
 - `/labels` can list a field-mapping alias that the field's later mapping hid (#1762): set `-field-mapping-label-mode` to `alias` or `both`. In those modes a `-extra-label-fields` or `-stream-fields` entry that is a mapping's `loki_label` is listed as declared whenever the window has data, instead of being merged into the mapped field. In those modes a key a `| json` or `| logfmt` stage extracts under the name of an alias answers as Loki answers a parsed label that collides with a stream label: `<alias>_extracted` in `detected_fields`, its values, log answers, label filters and groupings where the entry's stream holds the alias's field, the alias itself (the parsed key) where it does not; the stored field of an alias is no detected field. Checked against Loki 3.7.10 holding the same lines under the pre-migration names (`TestCompat_FieldMappingAliasCollisionsMatchLoki`).
 
