@@ -77,7 +77,7 @@ gap:
   area: "internal/proxy preferWorkingParser (parserProbeLogQuery, rangeParserProbeWindow, twoParserMetricResponseKeyVersion), internal/logql ReadParserStages"
   loki: "200 with the metric answer; both stages run on every line"
   proxy: "the stage the probe does not keep is removed from the parsed query; the range and the rest of the query stay"
-  planned_test: 'TestParserProbeDropMatchesRecordedLoki, TestParserProbeDropReadsTheTree, TestRangeParserProbeReadsTheRequestWindow, TestParserProbeDropRejectsOldCopies (internal/proxy), TestDropParserStages, TestDropParserStagesKeepsTheTree, TestReadParserStagesLogQuery, FuzzDropParserStages (internal/logql)'
+  planned_test: 'TestParserProbeDropMatchesRecordedLoki, TestParserProbeDropReadsTheTree, TestRangeParserProbeReadsTheRequestWindow, TestParserProbeDropRejectsOldCopies (internal/proxy), TestDropParserStages, TestDropParserStagesKeepsTheTree, TestReadParserStagesLogQuery, FuzzDropParserStages (internal/logql), TestCompat_ParserProbeDropKeepsTheRange (test/e2e-compat, core)'
   visual: none
   visual_reason: 'the failing Drilldown and Explore panels showed an error or no data; the fixed answer is the Loki answer the recorded differential holds; live captures are owed'
   clusters: []
