@@ -21,10 +21,10 @@ func parserProbeDropRows(at time.Time) map[string][]pushdownRow {
 	// Loki's ingester stores the level it detects in each line as structured metadata.
 	level := func(l string) map[string]string { return map[string]string{"detected_level": l} }
 	jsonLine := func(i int) string {
-		return fmt.Sprintf(`{"route":"/r%d","level":"info","x":%d}`, i%3, i%5+1)
+		return fmt.Sprintf(`{"route":"/r%d","level":"info","x":%d}`, parserProbeDropRoute(i), i%5+1)
 	}
 	logfmtLine := func(i int) string {
-		return fmt.Sprintf(`route=/r%d level=warn x=%d`, i%3, i%5+1)
+		return fmt.Sprintf(`route=/r%d level=warn x=%d`, parserProbeDropRoute(i), i%5+1)
 	}
 	sets := map[string][]pushdownRow{}
 	for i := 0; i < 24; i++ {
@@ -41,9 +41,19 @@ func parserProbeDropRows(at time.Time) map[string][]pushdownRow {
 	return sets
 }
 
+// parserProbeDropRoute spreads the lines over three routes unevenly (1/2, 1/3, 1/6 of them), so that no two routes
+// count alike in a window: a ranking or a sort over tied values orders them as each engine happens to.
+func parserProbeDropRoute(i int) int {
+	return [6]int{0, 0, 0, 1, 1, 2}[i%6]
+}
+
 // parserProbeDropQueries are the queries naming both `| json` and `| logfmt` whose second parser is the last stage
-// before the range, in both orders, with and without a drop of the error labels after them: every range function
-// over the lines and three over an unwrap, under every wrapper Loki keeps a parser error and an answer through.
+// before the range, in both orders, with and without a drop of the error labels after them, and their one-parser
+// controls: the range functions over the lines (count, rate, bytes, bytes_rate, absent), under the wrappers Loki
+// keeps a parser error and an answer through (sum, sum by, sum without, max, min, avg, count, stddev, stdvar, topk,
+// bottomk, sort, sort_desc, label_replace, a nested aggregation, a binary with a number, offset), and
+// quantile_over_time over an unwrap for the probe's log query. A function over an unwrap has the unwrap as its
+// last stage, so no parser stage is the last before its range.
 func parserProbeDropQueries() []string {
 	var out []string
 	// The one-parser pipelines are the controls: the queries the probe leaves, which it never reads.
@@ -53,7 +63,8 @@ func parserProbeDropQueries() []string {
 		count := `count_over_time(` + sel + ` [5m])`
 		for _, wrap := range []string{"%s", "sum(%s)", "sum by (route) (%s)", "max(%s)", "min(%s)", "avg(%s)", "count(%s)",
 			"topk(2, sum by (route) (%s))", "bottomk(2, sum by (route) (%s))", "sort(sum by (route) (%s))", "sort_desc(sum by (route) (%s))",
-			`label_replace(sum(%s), "copy", "$1", "route", "(.*)")`, "sum(%s) + 1", "1 + sum(%s)"} {
+			`label_replace(sum(%s), "copy", "$1", "route", "(.*)")`, "sum(%s) + 1", "1 + sum(%s)",
+			"sum without (route) (%s)", "stddev(%s)", "stdvar(%s)", "max(sum by (route) (%s))"} {
 			out = append(out, fmt.Sprintf(wrap, count))
 		}
 		out = append(out, `sum(count_over_time(`+sel+` [5m] offset 2m))`)

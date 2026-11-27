@@ -139,7 +139,7 @@ why: |
   are not JSON, which the proxy answers 200 once the probe kept logfmt (the JSON
   parser error check does not run on a query naming both parsers). The one-parser
   controls of the same matrix differ on the same fake backend for some of the same
-  shapes (151 of 768 rows).
+  shapes (191 of 896 rows).
 
 request:
   method: GET

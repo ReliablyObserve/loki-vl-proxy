@@ -31,17 +31,24 @@ why: |
   the arguments of label_replace and approx_topk are read the same way). A query that does not parse is left as it
   is. A range probe without start or end reads the window Loki reads the request with (lokiRangeBounds: end now,
   start an hour or `since` before). Answers cached by an earlier build for a metric query naming both parsers are
-  not served: their keys carry the fence `@two-parser-metric-v1:` (one more cache miss per such query). TestParserProbeDropMatchesRecordedLoki holds 1536 requests (both
-  parser orders with and without a drop of the error labels, count/rate/bytes/bytes_rate/absent/quantile, bare and
-  under sum, sum by, max, min, avg, count, topk, bottomk, sort, sort_desc, label_replace, binary with a number and
-  offset, plus the one-parser controls, instant and range, over JSON, logfmt, mixed and plain lines) to Loki's
-  recorded engine answers: no request shows the cut, the probe is well formed and bounded, 38 rows answer as Loki
-  where main did not, and no row that answered as Loki on main differs now. Eight instant rows (max, min, avg or
-  count over a bare count_over_time without a drop of the error labels, on logfmt or mixed lines) answered 400 on
-  main with the cut's own message where Loki answers 400 JSONParserErr; they answer 200 now, as the other parser
-  order of the same queries already did on main (the JSON parser error check does not run on a query naming both
-  parsers: semantics/two-parsers-keep-one). The rows that still differ are that open difference (the probe keeps
-  one parser where Loki runs both) and differences their one-parser forms share; they are listed in
+  not served: their keys carry the fence `@two-parser-metric-v1:` (one more cache miss per such query).
+
+  TestParserProbeDropMatchesRecordedLoki holds 1,792 requests to Loki's recorded engine answers: both parser orders
+  with and without a drop of the error labels, plus the one-parser controls; count, rate, bytes_over_time,
+  bytes_rate and absent_over_time, bare and under sum, sum by, sum without, max, min, avg, count, stddev, stdvar,
+  topk, bottomk, sort, sort_desc, label_replace, a nested aggregation, a binary with a number and an offset, and
+  quantile_over_time over an unwrap for the probe's log query (a function over an unwrap has the unwrap as its last
+  stage, so it never met the cut); instant and range; over JSON, logfmt, mixed and plain lines. approx_topk is
+  held by the parser tests only (the Loki engine oracle did not answer its rows within ten minutes). No request
+  shows the cut and every probe is well formed and bounded (main: 108 cut answers, 39 reads of LogQL text as a
+  phrase, 71 malformed or unbounded probes); 38 rows answer as Loki where main did not (two-parser rows matching
+  Loki: 514 to 552 of 896; controls 705 of 896 on both), and no row that answered as Loki on main differs now.
+  Fourteen instant rows (max, min, avg, count, stddev, stdvar or sum without over a bare count_over_time without a
+  drop of the error labels, on logfmt or mixed lines) answered 400 on main with the cut's own message where Loki
+  answers 400 JSONParserErr; they answer 200 now, as the other parser order of each of them already did on main
+  (the JSON parser error check does not run on a query naming both parsers: semantics/two-parsers-keep-one). The
+  rows that still differ are that open difference (the probe keeps one parser where Loki runs both) and
+  differences their one-parser forms share; they are listed in
   internal/proxy/testdata/parser_probe_drop_known_differences.txt, a list that may only shrink.
 request:
   method: GET

@@ -461,6 +461,9 @@ func fenceMisses(query string) []string {
 
 var fenceSpellingBases = []string{
 	`sum(rate({app="a"} |= "k" | unpack | drop x [5m]))`,
+	`sum(count_over_time({app="a"} | json | logfmt [5m]))`, "bytes_rate({app=\"a\"} |\tLOGFMT | JSON [5m])",
+	`rate_counter({app="a"} | json | logfmt # c
+| unwrap n [5m])`, `label_replace(quantile_over_time(0.9, {app="a"} | logfmt | json | unwrap n [5m]), "a", "", "", "")`,
 	"rate({app=\"a\"} |\tunwrap n [5m])", "sum(max_over_time({app=\"a\"} | json |\r\nunwrap  bytes(n) [5m]))",
 	`sum_over_time({app="a"} |  unwrap n [5m]) / sum_over_time({app="a"} | unwrap n [5m])`,
 	`{app="a"} | json | unwrap n | keep a`,
