@@ -2468,6 +2468,24 @@
    "fixes": [
     "semantics/two-parsers-keep-one"
    ]
+  },
+  {
+   "id": "explore-parser-probe-drop",
+   "kind": "explore",
+   "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/parser-probe-drop-keeps-range",
+    "parser-json",
+    "parser-logfmt",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/parser-probe-drop-keeps-range"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,
