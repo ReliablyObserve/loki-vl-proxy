@@ -1,5 +1,5 @@
 id: semantics/unwrap-first-last-per-line-range-longer-than-step
-title: first_over_time and last_over_time with unwrap over a series per line read one step, not Loki's window, for a range longer than the step (open)
+title: first_over_time and last_over_time with unwrap over a series per line read Loki's window for a range longer than the step
 pending: true
 proves:
   - window-bounds-and-step-alignment
@@ -20,10 +20,24 @@ why: |
   answers 19011 where Loki answers 128874, for first and last, under sum and
   sum by (app), and with a keep before the parser.
 
-  Fix to make: the window from VictoriaLogs for these series, for example one
-  stats_query_range per phase of the step within the range (each a tumbling
-  window of the range, which VictoriaLogs answers exactly) when range/step is
-  small, or the series identity of the per-line work.
+  Measured on the bench/ab seed (perf-smoke, 2026-11-27, set unwrap-first-last
+  F3, `sum(last_over_time({service_name="payment-service"} | logfmt | unwrap
+  amount [5m]))`, every line a series by its tx_id, one batch every 10 s): at
+  1h (5 s step) Loki 721 points, the proxy 360; at 6h (10 s) the points agree
+  and the values are 30.4 times lower (8,188,916.8 against 268,914.8); at 24h
+  (60 s) 5.8 times lower.
+
+  Fixed: first_over_time and last_over_time are functions of the parser's
+  dynamic identity (lower.DynamicUnwrapIdentity), as avg, max, min, stddev and
+  stdvar were: the lowering hashes the stream and each line's parsed labels
+  less the unwrapped one into __lvp_sid and keeps each series' row of the
+  earliest or the latest time (row_min / row_max(_time, value)); on a range
+  longer than the step the hash is written ahead of the unwrap gate
+  (Profile.IdentityAhead), VictoriaLogs answers the row per series and
+  anchored bucket, the window evaluator merges each series' buckets into
+  (t-range, t] (mergeUnwrapBuckets) and the outer aggregation folds the
+  series. A keep before the parser is not that identity and stays open under
+  semantics/keep-before-parser-unwrap-identity.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -40,13 +54,14 @@ compare:
   expect: |
     Loki's window value at every step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "this change"
   impact: explore-visible
   effort: M
-  area: 'internal/proxy unwrapWindowBuckets (a grouping by _msg, or by _stream with a parser, keeps the step buckets)'
+  area: 'internal/queryplan/lower unwrap_dynamic.go (dynamicIdentity); internal/proxy unwrap_dynamic_identity.go (dynamicWindowRange), query_lowering.go (dynamicIdentityFuncs)'
   loki: 'the window (t-range, t] of every evaluation time, a series per stream and parsed labels'
-  proxy: 'one step bucket per point for a series per line'
-  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus, listed runs)'
+  proxy: 'the series hash of the parser''s labels, each series'' window merged from its anchored buckets'
+  planned_test: 'TestUnwrapDynamicIdentityMatchLoki and TestKeepUnwrapIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs v1.49.0 and v1.54.0 oracles); TestDynamicUnwrapIdentity and TestDynamicUnwrapIdentityLowering (internal/queryplan/lower)'
   clusters: []
 perf:
   max_ratio: 2.0

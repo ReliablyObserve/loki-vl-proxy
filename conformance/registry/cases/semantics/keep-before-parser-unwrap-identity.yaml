@@ -14,8 +14,11 @@ why: |
   parse the same keys stay apart, and the stream's labels name the series.
   Measured with the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0
   (TestKeepUnwrapIdentityMatchLoki): quantile and stddev under sum by (app)
-  differ on every request kind; first_over_time differs only where
-  semantics/unwrap-first-last-per-line-range-longer-than-step does. The plan's series
+  differ on every request kind; first_over_time differs on a range longer
+  than the step (step<range), where each line's step bucket answers instead of
+  the window. With no keep, the series hash of the parser's labels reads Loki's
+  windows for first and last (semantics/unwrap-first-last-per-line-range-longer-than-step,
+  fixed); a keep before the parser is not that identity. The plan's series
   attribute (queryplan.SeriesLabels) says it: Kept with Dynamic. VictoriaLogs
   stats cannot name the parsed keys (semantics/unwrap-per-series-identity-raw-rows).
 request:

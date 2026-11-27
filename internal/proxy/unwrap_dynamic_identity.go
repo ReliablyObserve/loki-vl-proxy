@@ -199,7 +199,7 @@ func (p *Proxy) binaryOperandSides(r *http.Request, binOp *logqlpkg.BinOpExpr) (
 }
 
 // dynamicWindowRange is the range of a query whose function the window evaluator merges from step buckets (avg, max,
-// min, stddev and stdvar over time) under a dynamic identity's shape; ok is false for any other query.
+// min, stddev, stdvar, first and last over time) under a dynamic identity's shape; ok is false for any other query.
 func dynamicWindowRange(query string) (time.Duration, bool) {
 	query = dynamicQuery(query)
 	if !dynamicIdentityScreen(query) {
@@ -218,7 +218,8 @@ func dynamicWindowRange(query string) (time.Duration, bool) {
 		return 0, false
 	}
 	switch ra.Op {
-	case logqlpkg.RangeAvgOverTime, logqlpkg.RangeMaxOverTime, logqlpkg.RangeMinOverTime, logqlpkg.RangeStddevOverTime, logqlpkg.RangeStdvarOverTime:
+	case logqlpkg.RangeAvgOverTime, logqlpkg.RangeMaxOverTime, logqlpkg.RangeMinOverTime, logqlpkg.RangeStddevOverTime, logqlpkg.RangeStdvarOverTime,
+		logqlpkg.RangeFirstOverTime, logqlpkg.RangeLastOverTime:
 		return ra.RangeDuration, ra.RangeDuration > 0
 	}
 	return 0, false
