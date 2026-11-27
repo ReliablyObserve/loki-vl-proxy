@@ -5092,6 +5092,94 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "id": 103,
+      "title": "Cache Tier Reads per Request (mean)",
+      "description": "Tier reads one client request caused, by route and tier: each cache lookup reads every attached tier it reached, hit or miss. Compare l2_disk before and after a change to see the disk lookups a page costs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 249,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (route, tier) (rate(loki_vl_proxy_cache_reads_per_request_sum[5m])) / sum by (route, tier) (rate(loki_vl_proxy_cache_reads_per_request_count[5m]))",
+          "legendFormat": "{{route}} {{tier}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 104,
+      "title": "Cache Hit Ratio Since Start",
+      "description": "Share of each tier's lookups that hit in the first 1, 5 and 15 minutes after a replica started: live until the minutes have passed, then frozen. Shows how cold a new pod is.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 249,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_cache_hit_ratio_since_start",
+          "legendFormat": "{{instance}} {{tier}} first {{minutes}}m",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
