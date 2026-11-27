@@ -44,7 +44,7 @@ corpus:
       - query: 'max by (route) (count_over_time({app="probe-window"} | json | logfmt | drop __error__, __error_details__ [1h] offset 1h))'
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1825"
   impact: drilldown-visible
   effort: S
   area: "internal/proxy handleQuery parser probe (preferWorkingParserAt, instantParserProbeWindow)"
