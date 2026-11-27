@@ -66,19 +66,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 			return nil, err
 		}
 
-		filtered := make([]string, 0, len(labels))
-		for _, v := range labels {
-			// Filter VL internal fields only (before translation). A detected_level
-			// stream field is an index label, as in Loki.
-			if isVLInternalField(v) {
-				continue
-			}
-			filtered = append(filtered, v)
-		}
-
-		// Apply label name translation (e.g., dots → underscores)
-		labels = p.labelTranslator.TranslateLabelsList(filtered)
-		labels = appendSyntheticLabels(labels)
+		labels = p.lokiLabelListing(labels)
 		// Loki answers label names sorted, as the cached answer is; VictoriaLogs
 		// orders its listing by hits.
 		sort.Strings(labels)
@@ -923,6 +911,10 @@ func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, quer
 	resolution := p.labelTranslator.ResolveLabelCandidates(fieldName, available)
 	if len(resolution.candidates) == 0 {
 		resolution = fieldResolution{candidates: []string{fieldName}}
+		// A mapping name the alias mode does not list reads its field's labels.
+		if answer, ok := p.labelTranslator.answerName(fieldName); ok && summaries[fieldName] == nil {
+			resolution.candidates = []string{answer}
+		}
 	}
 
 	valueSet := make(map[string]struct{})

@@ -78,9 +78,10 @@ why: |
   is a subset of Loki's in every one of 12 windows (20 of 26, 46 of 86). Over
   120 random windows the memory answers were all between the exact answer and
   Loki's, 3 of them listing names beyond the exact one. After a listing, the
-  hours holding the window's start and end and the hour before it, at most
-  the window's width per listing, are read in the background inventory lane
-  (fillTouchedDays).
+  hours holding the window's start and end and the hour before it and, when
+  the listing found a bucket it needed still being read by an earlier one,
+  the hour two before it, at most three and the window's width per listing,
+  are read in the background inventory lane (fillTouchedDays).
 
   Implemented in internal/proxy/metadata_inventory.go (bucket plan, merge,
   revalidation, counted buckets, coverFinePieces, coverPays, resolveCovers,

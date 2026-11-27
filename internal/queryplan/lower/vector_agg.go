@@ -117,6 +117,18 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	default:
 		return builtVector{}, &NotLoweredError{Construct: "VectorAgg " + string(va.Op)}
 	}
+	// A sum with no clause adds up every series of a count, a rate or an absence check, so it reads nothing an unpack
+	// splits the series by: it is lowered over an unpack where the range aggregation under it is (unpackRangeFor).
+	// src still holds the stages as the client wrote them, an unwrap included.
+	if sumReadsNoSeries(va, ra) && unwrapStage(src) == nil {
+		unpacked, err := unpackRangeFor(ra, "VectorAgg")
+		if err != nil {
+			return builtVector{}, err
+		}
+		if unpacked != ra {
+			ra, src = unpacked, unpacked.In
+		}
+	}
 	if ra.By != nil {
 		return builtVector{}, &NotLoweredError{Construct: "VectorAgg grouping"}
 	}
@@ -176,6 +188,13 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	// the log query and of the pipes that resolved them.
 	stats = rateVectorPipes(stats, va.Op, labels, log, log.holdsCopy() || keys.copies)
 	return builtVector{log: log, keys: keys.text, stats: stats, without: without, raw: raw}, nil
+}
+
+// sumReadsNoSeries reports a sum with no by or without clause of a count, a rate or an absence check: one number
+// over every line, however the lines split into series.
+func sumReadsNoSeries(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) bool {
+	return va.Op == logql.VectorSum && va.By == nil &&
+		(ra.Op == logql.RangeCountOverTime || ra.Op == logql.RangeRate || ra.Op == logql.RangeAbsentOverTime)
 }
 
 // vectorClauseOf is vectorClause, reading an empty `without ()` clause as a fold of no labels when keepEmpty is set:

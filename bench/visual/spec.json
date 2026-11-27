@@ -91,6 +91,20 @@
    ]
   },
   {
+   "id": "explore-ranked-parser-fine-step",
+   "kind": "explore",
+   "query": "topk(3, sum by (status) (count_over_time({app=\"nginx-ingress\"} | regexp `\" (?P<status>[0-9]{3}) ` [1h])))",
+   "ranges": [
+    "5m"
+   ],
+   "ci_ranges": [
+    "5m"
+   ],
+   "covers": [
+    "semantics/ranked-parser-window-fine-step"
+   ]
+  },
+  {
    "id": "explore-nested-json-filtered-rate",
    "kind": "explore",
    "query": "max(sum by (cluster) (rate({env=\"production\"} | json | __error__=\"\" [$__auto])))",
@@ -1596,6 +1610,34 @@
    ]
   },
   {
+   "id": "explore-unpack-sum-count",
+   "kind": "explore",
+   "query": "sum(count_over_time({app=\"visual-unpack\"} | unpack [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/translator-writes-unpack-as-unpack-json",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unpack-sum-absent",
+   "kind": "explore",
+   "query": "sum(absent_over_time({app=\"visual-unpack-absent\"} | unpack [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/translator-writes-unpack-as-unpack-json",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-unwrap-parser-series-identity",
    "kind": "explore",
    "query": "sum by (app) (avg_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [$__auto]))",
@@ -1926,6 +1968,41 @@
     "loki_api_v1_detected_field_name_values",
     "parser-json",
     "parsed-label-series-identity",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "dd-field-level-extracted-logfmt",
+   "kind": "drilldown",
+   "path": "service/{service}/field/level_extracted",
+   "service": true,
+   "serviceName": "cache-redis",
+   "ranges": [
+    "1h"
+   ],
+   "ci_ranges": [
+    "1h"
+   ],
+   "covers": [
+    "field-mapping-label-names",
+    "semantics/extracted-suffix-collision",
+    "loki_api_v1_detected_field_name_values",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-renamed-key-beside-stream-label",
+   "kind": "explore",
+   "query": "sum by (level, level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "ci_ranges": [
+    "1h"
+   ],
+   "covers": [
+    "field-mapping-label-names",
+    "semantics/extracted-suffix-collision",
     "loki_api_v1_query_range"
    ]
   },

@@ -1,0 +1,37 @@
+id: semantics/unpack-instant-grouped-sum-reads-every-line
+title: "An instant grouped sum of a count or a rate over an unpack answers from stats, not from every line"
+pending: true
+proves:
+  - parser-unpack
+  - loki_api_v1_query
+consumer: explore
+why: |
+  An instant `sum by (...) (count_over_time(... | unpack [r]))` read every log line of the window into the proxy and
+  answered 500 over a 24h window of 600,000 lines, where Loki answers. A sum with no clause or a by clause of a
+  count_over_time or a rate over an unpack now reads VictoriaLogs' stats at an instant, as the range query does, so
+  the proxy's memory holds one row per series. Held to Loki by TestUnpackSumMatchesLoki (recorded, VictoriaLogs
+  v1.49.0 and v1.54.0) and TestCompat_UnpackSumsLikeLoki.
+
+  Not covered: other instant shapes over an unpack (a range aggregation of its own, a sum without, min, max, avg,
+  count, topk), which still read raw lines, and a grouping by a label the unpack promotes from a line that is not
+  packed (semantics/translator-writes-unpack-as-unpack-json).
+request:
+  scope: query-grammar
+  entry: "TestUnpackSumMatchesLoki (internal/querycorpus): the grouped sums"
+  setup: "Send an instant sum by (job) of a count over an unpack as /loki/api/v1/query over a long window."
+compare:
+  mode: exact
+  fields: [status, series labels, values]
+  expect: "Loki's series and values."
+gap:
+  status: fixed
+  fixed_by: "#1758"
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/range_metric_compat.go (isUnpackSum)'
+  loki: '200 with one series per group'
+  proxy: 'the same, from one stats query'
+  planned_test: 'TestUnpackSumMatchesLoki (internal/querycorpus); TestIsUnpackSumAll (internal/proxy); TestCompat_UnpackSumsLikeLoki (test/e2e-compat, group semantics)'
+  clusters: []
+  visual: none
+  visual_reason: 'the failure needs a window with more lines than the proxy reads raw; the compose stack seeds no such window of lines under an unpack'

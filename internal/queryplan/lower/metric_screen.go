@@ -38,12 +38,18 @@ import (
 // The screen only turns queries away: the typed gate on the plan and the lowering still decide every query it
 // passes, so one it passes in error costs a plan and is translated as before. The proxy's corpus test holds it to the
 // plan: the rows it passes that the plan then leaves to the translator, and the served rows it turns away.
-func ScreenMetric(query string) string {
+func ScreenMetric(query string) string { return screenMetric(query, false) }
+
+// screenMetric is ScreenMetric; aliases admits a label filter on an `_extracted` name with a grouping or unwrapped
+// label that may be a sanitized parser key, which the lowering writes for a profile with alias functions (Profile
+// AliasField: -field-mapping-label-mode alias and both), where the string translator's text is not Loki's answer.
+func screenMetric(query string, aliases bool) string {
 	query = strings.TrimSpace(query)
 	var s metricScan
 	if !s.scan(query) || s.ranges == 0 || s.needsUnwrap && !s.unwrap || s.keep && s.unwrap ||
 		s.nestedVector && s.unwrap ||
-		s.exists && s.candidate && (s.rate || s.existsThen) || s.extractedFilter && s.candidate || s.jsonPath {
+		s.exists && s.candidate && (s.rate || s.existsThen) && (!aliases || !s.extractedFilter) ||
+		s.extractedFilter && s.candidate && !aliases || s.jsonPath {
 		return ""
 	}
 	if s.binary {
@@ -106,7 +112,12 @@ func metricBit(c string) MetricSet {
 // ScreenMetricIn is ScreenMetric for a caller that serves only the constructs of set: "" for any other. The first
 // word of the query bounds its construct (label_replace, a vector aggregation or a binary, a range aggregation or a
 // binary, or a binary), so a query that can be none of set is turned away before the text is scanned.
-func ScreenMetricIn(query string, set MetricSet) string {
+func ScreenMetricIn(query string, set MetricSet) string { return screenMetricIn(query, set, false) }
+
+// ScreenMetricAliasIn is ScreenMetricIn for a profile with alias functions (screenMetric).
+func ScreenMetricAliasIn(query string, set MetricSet) string { return screenMetricIn(query, set, true) }
+
+func screenMetricIn(query string, set MetricSet, aliases bool) string {
 	query = strings.TrimSpace(query)
 	j := 0
 	for j < len(query) && isNameByte(query[j]) {
@@ -124,7 +135,7 @@ func ScreenMetricIn(query string, set MetricSet) string {
 	if set&can == 0 {
 		return ""
 	}
-	if c := ScreenMetric(query); set&metricBit(c) != 0 {
+	if c := screenMetric(query, aliases); set&metricBit(c) != 0 {
 		return c
 	}
 	return ""

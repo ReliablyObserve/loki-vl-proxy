@@ -13,8 +13,11 @@
 #                description (it runs as a seed-corpus test in `go test`). This list
 #                may only shrink (the script caps it); fix the reason and make the row
 #                `smoke`.
+smoke	internal/clientauth	FuzzParseUsersFile	12s	-	users file of caller authentication
+smoke	internal/clientauth	FuzzParseAuthorization	12s	-	Authorization header parsing of caller authentication
 smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadata normalization
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
+smoke	internal/proxy	FuzzFieldMappingLabelMode	12s	-	field-mapping label modes keep query names and list only names of their field
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
 smoke	internal/proxy	FuzzPlaceholderExclusion	12s	-	the placeholder exclusion of -json-line-fields-as-line-keys terminates and writes a filter VictoriaLogs parses
@@ -39,6 +42,7 @@ smoke	internal/proxy	FuzzMetadataValidationKeepsTheRouteRules	12s	-	metadata que
 smoke	internal/proxy	FuzzFormatVLStep	12s	-	format VL step
 smoke	internal/proxy	FuzzNormalizeMetadataPairs	12s	-	normalize metadata pairs
 smoke	internal/proxy	FuzzCombineBinaryMetricResultsScalarPath	12s	-	combine binary metric results scalar path
+smoke	internal/proxy	FuzzInstantParserProbeWindow	12s	-	instant parser probe window from the parsed query
 smoke	internal/proxy	FuzzParseOriginalRangeMetricSpec	12s	-	parse original range metric spec
 smoke	internal/proxy	FuzzParseLegacyRulesPath	20s	-	parse legacy rules path
 smoke	internal/proxy	FuzzExtractLogPatterns	12s	-	extract log patterns
@@ -173,6 +177,7 @@ smoke	internal/proxy	FuzzLokiRunLinesEstimate	12s	-	query stats limit-filled log
 smoke	internal/proxy	FuzzEntryPieces	12s	-	query stats pieces holding a returned log entry
 smoke	internal/logql	FuzzMayHaveNonFilterStage	12s	-	the stage screen the lowering flip asks never misses a parser stage and never panics
 smoke	internal/queryplan/lower	FuzzParserLowering	12s	-	json, logfmt, drop and keep lower to the query the string translator writes
+smoke	internal/proxy	FuzzUnpackLineError	12s	-	the proxy reads a line an unpack parses without failing: an empty line and a JSON object set no error, a line with no opening brace Loki's not-an-object error
 smoke	internal/queryplan/lower	FuzzUnpackLowering	12s	-	an unpack under a range aggregation lowers to the query the string translator writes only where the result reads neither its labels nor its line
 smoke	internal/queryplan/lower	FuzzLabelFilterAfterParserLowering	12s	-	label filters after a json or logfmt parser lower to the query the string translator writes, byte for byte
 smoke	internal/queryplan/lower	FuzzNumericEqualityLowering	12s	-	numeric, duration and bytes equality after a json or logfmt parser lower to a numeric comparison on any literal, or leave it to the string translator
@@ -217,6 +222,8 @@ smoke	internal/proxy	FuzzVLNotInMatchesTheNegatedClass	12s	-	probe regexps writt
 smoke	internal/logsql	FuzzWithGroupKeyInEveryStats	12s	-	the presence witness edit adds the key to every stats pipe and changes nothing else
 smoke	internal/proxy	FuzzListedWindowChunks	12s	-	an extraction list's windows read in time chunks under a small budget answer byte for byte what one read answers
 smoke	internal/proxy	FuzzStreamIdentityWindowChunks	12s	-	a stream-identity count, min, max or avg whose whole-range read passes the stats body bound, read in time chunks, answers byte for byte what one read answers
+smoke	internal/proxy	FuzzSlidingWindowChunks	12s	-	a topk or bottomk over a window metric whose grids are read in time chunks under a small row bound answers byte for byte what one read answers
+smoke	internal/logsql	FuzzParserKeepsFields	12s	-	the keep_original_fields edit of a parser pipe reads back with the same pipes and changes nothing else
 smoke	internal/proxy	FuzzDeleteRequest	12s	-	the delete API reads a create request with Loki's typed 400 or a request whose start is before its end
 smoke	internal/clientprofile	FuzzParseVersion	12s	-	a client version reads as major.minor.patch of at most four digits each or as unknown, and prints back to itself
 smoke	internal/clientprofile	FuzzDetect	12s	-	any User-Agent, Source tag and referer give a closed surface and bounded version labels; a Drilldown Source tag is always Drilldown
@@ -226,3 +233,10 @@ smoke	internal/proxy	FuzzStripOuterCallsMatchesRescanning	12s	-	the strip of out
 smoke	internal/proxy	FuzzCutLokiSplits	12s	-	the per-split Loki cut of a Drilldown partial answer terminates on any body, limit and split and never adds a series or a point
 smoke	internal/proxy	FuzzCutLokiSplitsMatchesReference	12s	-	the in-place per-split Loki cut keeps exactly the series and points of the plain cut over decoded JSON
 smoke	internal/proxy	FuzzLabelsInventoryCover	12s	-	names-only /labels listing with ends answered by their hours equals one full-range call
+smoke	internal/proxy	FuzzCredentialFingerprintsNeverCollide	12s	-	two requests share an auth fingerprint exactly when tenant scope, forwarded headers and forwarded cookies match, and a credential fingerprint is always the keyed digest
+smoke	internal/cache	FuzzHandoverManifestDecode	12s	-	cache restart hand-over manifest decode
+smoke	internal/cache	FuzzHandoverRecordDecode	12s	-	cache restart hand-over record decode
+smoke	internal/cache	FuzzPeerBulkStream	12s	-	peer bulk restore stream decode and admission
+smoke	internal/metrics	FuzzParseDurationBuckets	12s	-	-metrics.duration-buckets accepts only a bounded, finite, ascending list of bounds above zero
+smoke	internal/cache	FuzzRetentionOperations	12s	-	cache reuse retention segments
+smoke	internal/cache	FuzzSizingGhostLRU	12s	-	cache sizing ghost LRU bounds

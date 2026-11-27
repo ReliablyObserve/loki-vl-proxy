@@ -1,0 +1,42 @@
+id: parsed-identity/extracted-name-held-by-the-line
+title: A parsed name a stream label or structured metadata already holds groups by the parsed value on the bucket reads (open)
+pending: true
+proves:
+  - parsed-label-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki names an extracted label whose name the line already holds (a stream
+  label or structured metadata) name_extracted, so `sum by (peer_ip)` over
+  `| regexp "(?P<peer_ip>...)"` or `| logfmt` groups such a line by its own
+  peer_ip. VictoriaLogs' parser pipes overwrite the field, so the
+  stats_query_range bucket reads group by the parsed value. Found by the #1795
+  differential: on main the raw-row evaluator matched Loki for a stream label
+  and not for structured metadata, and every bucket read and the logfmt window
+  grids differed. The window grids now keep the line's value
+  (keep_original_fields, internal/logsql/parser_keeps_fields.go); the bucket
+  reads at steps whose grid fits the bound still differ.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (peer_ip) (count_over_time({app="edge-collide-sm"} | regexp `(?P<peer_ip>\S+) - - .* "(?P<client_ip>[^"]+)"$` [1h]))'
+    start: '2025-12-31T23:58:40Z'
+    end: '2026-01-01T00:00:00Z'
+    step: '10'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    Loki's series: the line's structured metadata or stream label value.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/range_metric_compat.go statsBucketRoutes (the bucket reads keep the parser pipe as translated)'
+  loki: 'Loki engine oracle (test/oracle/loki): the line''s own value, the parsed one as name_extracted'
+  proxy: 'the window grids match; the stats_query_range bucket reads group by the parsed value'
+  planned_test: 'TestRankedParserWindowMatchesLoki rankedParserKnown (fails when a bucket-read run matches, to close this case)'
+  clusters: []

@@ -388,6 +388,7 @@ func fenceWants(query string) map[string]bool {
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
+	want["unpack-metric"] = metricOverUnpack(expr)
 	// The dynamic unwrap identity is a plan attribute: the screen in front of the plan must let every query through
 	// whose plan holds it. The plan is built here from the tree of the query as written, not read from the memo the
 	// fence reads (which holds the plan of the keyword lower cased text).
@@ -458,6 +459,7 @@ func fenceMisses(query string) []string {
 }
 
 var fenceSpellingBases = []string{
+	`sum(rate({app="a"} |= "k" | unpack | drop x [5m]))`,
 	"rate({app=\"a\"} |\tunwrap n [5m])", "sum(max_over_time({app=\"a\"} | json |\r\nunwrap  bytes(n) [5m]))",
 	`sum_over_time({app="a"} |  unwrap n [5m]) / sum_over_time({app="a"} | unwrap n [5m])`,
 	`{app="a"} | json | unwrap n | keep a`,
@@ -842,6 +844,7 @@ func fenceFires(name, query string) bool {
 			return ""
 		},
 		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
+		"unpack-metric":            func() string { return unpackMetricResponseKeyVersion(query, spelledOtherwise(query)) },
 		"unwrap-blank-spelling":    func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
 		"unwrap-conversion-blank":  func() string { return unwrapConversionBlankResponseKeyVersion(query) },
 		"extraction-list-windows":  func() string { return listedWindowsResponseKeyVersion(r, query) },
@@ -1308,4 +1311,27 @@ func BenchmarkRankOverBinaryFence(b *testing.B) {
 			}
 		})
 	}
+}
+
+// metricOverUnpack reports a range aggregation anywhere in the tree whose log query holds an unpack stage.
+func metricOverUnpack(expr logqlpkg.Expr) bool {
+	switch n := expr.(type) {
+	case *logqlpkg.VectorAggregation:
+		return metricOverUnpack(n.Inner)
+	case *logqlpkg.BinOpExpr:
+		return metricOverUnpack(n.Left) || metricOverUnpack(n.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return n.Typed && n.Inner != nil && metricOverUnpack(n.Inner)
+	case *logqlpkg.RangeAggregation:
+		lq, ok := n.Inner.(*logqlpkg.LogQuery)
+		if !ok {
+			return false
+		}
+		for _, stage := range lq.Pipeline {
+			if p, ok := stage.(*logqlpkg.ParserStage); ok && p.Type == logqlpkg.ParserUnpack {
+				return true
+			}
+		}
+	}
+	return false
 }

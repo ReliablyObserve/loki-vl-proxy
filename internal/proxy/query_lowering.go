@@ -276,7 +276,7 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	}
 	flipped := lower.MetricSetOf(p.flippedConstructs)
 	metricFlipped := flipped != 0
-	if !screenMetricQuery(canon, flipped) {
+	if !screenMetricQuery(canon, flipped) && (prof.AliasField == nil || lower.ScreenMetricAliasIn(canon, flipped) == "") {
 		return "", false
 	}
 	// A parser's series identity is served by lowerDynamicIdentity where the handlers read it; a query it does not

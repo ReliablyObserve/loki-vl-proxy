@@ -1,0 +1,34 @@
+id: semantics/unpack-instant-sum-rate-per-stream
+title: "An instant sum of a rate over an unpack answers one series, as Loki does"
+pending: true
+proves:
+  - parser-unpack
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  An instant `sum(rate(... | unpack [r]))` is one series in Loki. The proxy answered one series per stream, each
+  with the stream labels and detected_level: its evaluator over raw log rows took the grouping of the translated
+  stats (by stream). A sum of a count_over_time or a rate with no by or without clause over an unpack now reads
+  VictoriaLogs' stats at an instant, as the same query does over a range, and the query plan writes the same query
+  text. Held to Loki by TestUnpackSumMatchesLoki (recorded, VictoriaLogs v1.49.0 and v1.54.0) and
+  TestCompat_UnpackSumsLikeLoki. Instant answers cached before this carry no `@unpack-metric-v1:` fence and are
+  not served.
+request:
+  scope: query-grammar
+  entry: "TestUnpackSumMatchesLoki (internal/querycorpus): the instant sum of a rate"
+  setup: "Send sum of a rate over an unpack as /loki/api/v1/query over two streams."
+compare:
+  mode: exact
+  fields: [status, series labels, values]
+  expect: "Loki's single series and value."
+gap:
+  status: fixed
+  fixed_by: "#1758"
+  impact: edge
+  effort: M
+  area: 'internal/proxy/range_metric_compat.go (isUnpackSumAll, unpackMetricResponseVersion); internal/proxy/response_key_fences.go; internal/queryplan/lower/vector_agg.go (sumReadsNoSeries)'
+  loki: 'one series'
+  proxy: 'one series'
+  planned_test: 'TestUnpackSumMatchesLoki (internal/querycorpus); TestIsUnpackSumAll, TestUnpackMetricFence, FuzzResponseKeyFencesMatchParsedTree (internal/proxy); TestUnpackLowering, FuzzUnpackLowering (internal/queryplan/lower); TestCompat_UnpackSumsLikeLoki (test/e2e-compat, group semantics)'
+  clusters: []

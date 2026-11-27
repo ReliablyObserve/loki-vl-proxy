@@ -226,6 +226,9 @@ func runMetricHandler(t *testing.T, prof diffProfile, mr metricRequest, front *m
 	}
 	req := httptest.NewRequest(http.MethodGet, path+"?"+mr.form.Encode(), nil)
 	req.Header.Set("X-Scope-OrgID", "0")
+	if mr.drilldown {
+		req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+	}
 	rec := httptest.NewRecorder()
 	front.mu.Lock()
 	front.sent, front.missing = nil, nil

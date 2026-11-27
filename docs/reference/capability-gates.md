@@ -2,7 +2,7 @@
 
 # Capability gates
 
-Every input that turns an optimisation or a behaviour on or off is one gate of one table. The proxy decides each gate from the VictoriaLogs release behind it (the lowest release seen in the last window, so a mixed pool or a rolling upgrade never enables a gate one member lacks), the feature probes it runs against VictoriaLogs (`-backend-feature-probes`), and, as hooks, the Loki compatibility target and the client profile of a request. `GET /admin/capabilities` shows the releases seen, every gate and what decided it; the metrics `loki_vl_proxy_backend_version_info`, `loki_vl_proxy_capability_gate`, `loki_vl_proxy_capability_mismatch_total`, `loki_vl_proxy_capability_epoch` and `loki_vl_proxy_backend_feature_probe_total` carry the same.
+Every input that turns an optimisation or a behaviour on or off is one gate of one table. The proxy decides each gate from the VictoriaLogs release behind it (the lowest release seen in the last window, so a mixed pool or a rolling upgrade never enables a gate one member lacks), the feature probes it runs against VictoriaLogs (`-backend-feature-probes`), and, as hooks, the Loki compatibility target and the client profile of a request. `GET /admin/capabilities` shows the releases seen, every gate and what decided it; the metrics `loki_vl_proxy_backend_version_known`, `loki_vl_proxy_backend_version_info`, `loki_vl_proxy_capability_gate`, `loki_vl_proxy_capability_mismatch_total`, `loki_vl_proxy_capability_epoch` and `loki_vl_proxy_backend_feature_probe_total` carry the same.
 
 ## Kinds
 
@@ -29,6 +29,10 @@ With no release readable, a probe that finds a feature present also bounds the r
 | `vl.extra_filters_len` | behaviour | `v1.54.0` | none | the refusal prediction of extra_filters and extra_stream_filters longer than -search.maxQueryLen | `vl/capabilities/vl-extra-filters-too-long` | VictoriaLogs v1.54.0 (#1923) |
 | `vl.mixed_json_row_stats` | capability | `v1.49.0` | none | certified mixed JSON/logfmt count/rate statistics with the exact original-row complement (ordered_json_mixed_stats.go) | `vl/capabilities/mixed-json-row-stats` | actual VictoriaLogs v1.49.0 and v1.54.0 class-partition and recorded Loki range oracles |
 
+## A release the operator names
+
+Behind `vmauth` the backend's `/metrics` is vmauth's own. `-backend-version-url` names another VictoriaLogs `/metrics` endpoint to read; `-backend-version` declares the release. A named release is a claim about the backend, not its own answer: it turns on only the gates a probe confirms (a feature of the gate's release or a later one found present), `safety` guards included, turns off a gate newer than itself (leaving it undecided), and loses to a lower release read from the backend. A feature probe that finds absent a feature of a named release discards that release. See [Backend version behind vmauth](../configuration.md#backend-version-behind-vmauth).
+
 ## Digest and epoch
 
 The set of gates has a digest: a content hash of the effective release, its flavour and every gate's on and decided bits. It is the same on every replica of the same backend, so the cross-replica keys that depend on the gate set (held VictoriaLogs refusals and their peer sync, the request flight keys) carry it and an entry built under another gate set is a miss. The epoch counts the changes of the set in this process and moves only when the digest does.
@@ -37,6 +41,9 @@ The set of gates has a digest: a content hash of the effective release, its flav
 
 | Flag | Default | Meaning |
 |---|---|---|
+| `-backend-version-url` | none | VictoriaLogs `/metrics` URL to read the release from instead of the backend's |
+| `-backend-version-basic-auth` | none | Basic auth sent to the version URL only |
+| `-backend-version` | none | The declared release; like the version URL it enables only what the probes confirm |
 | `-backend-version-reprobe-interval` | `5m` | How often the release is read again and the gates probed; `0` disables the periodic round |
 | `-backend-feature-probes` | `true` | Run the feature probes; `false` decides the gates from the release alone |
 | `-backend-version-check-timeout` | `5s` | Timeout of each probe request |

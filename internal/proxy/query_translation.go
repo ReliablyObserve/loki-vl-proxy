@@ -23,7 +23,6 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -36,7 +35,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
 		query := r.FormValue("query")
-		clientID := metrics.ResolveClientID(r, p.metricsTrustProxyHeaders)
+		clientID, _ := p.resolveClient(r)
 		p.metrics.RecordClientInflight(clientID, 1)
 		defer p.metrics.RecordClientInflight(clientID, -1)
 
@@ -66,7 +65,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			proxyOverhead = 0
 		}
 		p.metrics.RecordUpstreamCallsPerRequestWithRoute(endpoint, route, telemetry.upstreamCalls)
-		p.metrics.RecordRequestFlow(endpoint, route, telemetry.flow.metricsFlow(elapsed))
+		flow := telemetry.flow.metricsFlow(elapsed)
+		flow.CacheReads = telemetry.cacheReads.counts()
+		p.metrics.RecordRequestFlow(endpoint, route, flow)
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
@@ -148,7 +149,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			return
 		}
 
-		authUser, authSource := metrics.ResolveAuthContext(r)
+		authUser, authSource := p.resolveAuth(r)
 		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
 		peerAddr, _ := splitHostPortValue(r.RemoteAddr)
 		grafanaVersion := grafanaProfile.version
@@ -533,6 +534,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// A query the typed lowering covers is served from it: the same text, so the shadow has nothing to compare.
 		if p.queryPlanLowering {
 			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
+			prof = p.labelTranslator.withAliases(prof)
 			// A root identity over a range longer than the step writes its series hash ahead of the gate.
 			prof.IdentityAhead = ahead
 			// The planning budget (query_budget.go) stops the lowering at a node; a stopped lowering must not fall back
@@ -800,6 +802,101 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	}
 }
 
+// preferWorkingParserAt is preferWorkingParser for an instant query evaluated
+// at rawTime (the request's time, already moved by a uniform offset; empty is
+// now, as Loki reads it). The probe reads the window the query evaluates
+// (instantParserProbeWindow), not the whole retention. A query without a range
+// selector reads no lines (a log query, which Loki refuses at an instant), so
+// no probe is sent and the query is left as it is.
+func (p *Proxy) preferWorkingParserAt(ctx context.Context, logql, rawTime string) string {
+	if !hasParserStage(logql, "json") || !hasParserStage(logql, "logfmt") {
+		return p.preferWorkingParser(ctx, logql, "", "") // not probed: one parser at most
+	}
+	start, end, probe := instantParserProbeWindow(logql, rawTime, time.Now())
+	if !probe {
+		p.observeInternalOperation(ctx, "prefer_working_parser", "bypass", 0)
+		return logql
+	}
+	return p.preferWorkingParser(ctx, logql, start, end)
+}
+
+// parserProbeFallbackWindow bounds the probe for a range selector whose length
+// is not known (a literal the parser does not read as a duration).
+const parserProbeFallbackWindow = 5 * time.Minute
+
+// instantParserProbeWindow is the window an instant query evaluated at rawTime
+// reads: the union of its range selectors' windows (t-offset-range, t-offset],
+// in VictoriaLogs' [start, end) form as the instant stats read sends it
+// (proxyStatsQuery), as Unix nanoseconds. A selector of unknown length reads
+// parserProbeFallbackWindow. probe is false for a query without a range
+// selector.
+func instantParserProbeWindow(logql, rawTime string, now time.Time) (start, end string, probe bool) {
+	at, ok := parseFlexibleUnixNanos(rawTime)
+	if !ok {
+		at = now.UnixNano()
+	}
+	var lo, hi int64
+	found := false
+	add := func(offset, length time.Duration) {
+		if length <= 0 {
+			length = parserProbeFallbackWindow
+		}
+		windowEnd := saturatingSub(at, int64(offset))
+		if windowStart := saturatingSub(windowEnd, int64(length)); !found || windowStart < lo {
+			lo = windowStart
+		}
+		if !found || windowEnd > hi {
+			hi = windowEnd
+		}
+		found = true
+	}
+	var visit func(logqlpkg.Expr)
+	visit = func(e logqlpkg.Expr) {
+		switch n := e.(type) {
+		case *logqlpkg.RangeAggregation:
+			add(n.OffsetDuration, n.RangeDuration)
+		case *logqlpkg.VectorAggregation:
+			visit(n.Inner)
+		case *logqlpkg.BinOpExpr:
+			visit(n.Left)
+			visit(n.Right)
+		case *logqlpkg.OpaqueMetricExpr:
+			if n.Typed && n.Inner != nil {
+				visit(n.Inner)
+				return
+			}
+			// A call kept as text: its range selectors, read from the text as
+			// the max_query_range check reads them (maxQueryRangeError).
+			matches := opaqueRangeSelectorRE.FindAllStringSubmatch(n.Raw, -1)
+			for _, m := range matches {
+				add(0, parseLokiDuration(m[1]))
+			}
+			if len(matches) == 0 {
+				add(0, 0)
+			}
+		}
+	}
+	if expr, parsed := sharedLogQLExpr(logql); parsed {
+		visit(expr)
+	} else {
+		add(0, 0)
+	}
+	// Bounds an int64 cannot hold (a time far past the epoch's range) give no
+	// window: the query is left as it is, as for a probe that read no lines.
+	if !found || hi == math.MaxInt64 || lo >= hi {
+		return "", "", false
+	}
+	return strconv.FormatInt(lo+1, 10), strconv.FormatInt(hi+1, 10), true
+}
+
+// saturatingSub is a-b for b >= 0, held at math.MinInt64.
+func saturatingSub(a, b int64) int64 {
+	if a < math.MinInt64+b {
+		return math.MinInt64
+	}
+	return a - b
+}
+
 var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|bytes_rate|rate_counter|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)
 
 func (p *Proxy) probePreferredParser(ctx context.Context, baseQuery, start, end string) string {
@@ -974,6 +1071,7 @@ func (p *Proxy) keepUnwrapIdentity(query string) (labels []string, ok bool) {
 	streamFields := p.streamFieldsMap
 	p.configMu.RUnlock()
 	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
+	prof = p.labelTranslator.withAliases(prof)
 	if _, err := lower.PlanQuery(logqlpkg.CanonicalizeLogRanges(query), plan, prof); err != nil {
 		return nil, false
 	}
@@ -2315,6 +2413,8 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	}
 
 	levelGrouping := requestedLevelGrouping(originalQuery)
+	// A grouping by another name of a mapped field answers under that name.
+	groupNames := p.requestedGroupNames(ctx, originalQuery)
 
 	// Reuse maps across iterations (same pattern as original).
 	translated := make(map[string]string, 8)
@@ -2367,7 +2467,9 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 					changed = true
 				default:
 					lokiKey := key
-					if !p.labelTranslator.IsPassthrough() {
+					if name, ok := groupNames[key]; ok {
+						lokiKey = name
+					} else if !p.labelTranslator.IsPassthrough() {
 						lokiKey = p.labelTranslator.ToLoki(key)
 					}
 					if lokiKey != key {

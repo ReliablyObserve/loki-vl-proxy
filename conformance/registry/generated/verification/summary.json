@@ -1,8 +1,8 @@
 {
  "generated_by": "go run ./test/dailyreport",
- "date": "2026-11-25",
- "commit": "ab92c97588142c1008f50787e8bf97f7b2dcab6f",
- "run": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45575205310",
+ "date": "2026-11-27",
+ "commit": "b9761cf33f1bf1e8386c7449862316df52f020f6",
+ "run": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45964681850",
  "loki_version": "3.7.10",
  "victorialogs_versions": [
   "v1.49.0",
@@ -11,11 +11,11 @@
  "red": true,
  "reasons": [
   "drilldown/index_volume/single-sample-returns-vector differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
+  "drilldown/patterns-one-series-per-level differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "limits/label-values-not-truncated-by-default differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "profiles/label-browse-params-ignored differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "profiles/label-endpoints-window-and-data differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "quality/query-range-settled-steps differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
-  "semantics/comments-signed-compound-offsets differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "semantics/detected-fields-no-logfmt-token-fields differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "semantics/detected-level-stream-stats-without-level differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "semantics/json-parser-error-under-wrappers differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
@@ -28,9 +28,11 @@
   "semantics/stddev-stdvar-grouped-values differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "semantics/topk-bottomk-range-series differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "semantics/topk-grouped-spellings differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
+  "semantics/topk-over-vector-aggregation differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "semantics/tumbling-window-single-grid differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "semantics/unwrap-conversion-error differs from Loki on VictoriaLogs v1.49.0, and the registry holds it fixed",
   "drilldown/index_volume/single-sample-returns-vector differs from Loki on VictoriaLogs v1.54.0, and the registry holds it fixed",
+  "drilldown/patterns-one-series-per-level differs from Loki on VictoriaLogs v1.54.0, and the registry holds it fixed",
   "limits/label-values-not-truncated-by-default differs from Loki on VictoriaLogs v1.54.0, and the registry holds it fixed",
   "profiles/label-browse-params-ignored differs from Loki on VictoriaLogs v1.54.0, and the registry holds it fixed",
   "profiles/label-endpoints-window-and-data differs from Loki on VictoriaLogs v1.54.0, and the registry holds it fixed",
@@ -52,17 +54,17 @@
   "semantics/unwrap-conversion-error differs from Loki on VictoriaLogs v1.54.0, and the registry holds it fixed",
   "scheduled workflow parity-refresh.yaml: last scheduled run 2026-11-21 ended failure",
   "scheduled workflow perf-daily.yaml: last scheduled run 2026-11-23 ended failure",
-  "scheduled workflow query-corpus.yaml: last scheduled run 2026-11-25 ended failure",
-  "scheduled workflow security-heavy.yaml: last scheduled run 2026-11-25 ended failure",
+  "scheduled workflow query-corpus.yaml: last scheduled run 2026-11-27 ended failure",
+  "scheduled workflow security-heavy.yaml: last scheduled run 2026-11-27 ended failure",
   "error answers: the stack's Loki answers 0 recorded row(s) differently (re-record exit 0)",
-  "query-corpus.yaml: the live re-verification of the sweep and the differentials ended failure on 2026-11-25",
-  "parity slice: 1 difference cluster(s) are claimed by no registry case",
+  "query-corpus.yaml: the live re-verification of the sweep and the differentials ended failure on 2026-11-27",
+  "perf smoke: 2 row(s) above 2x Loki",
   "perf smoke: 7 row(s) of the weekly ratchet lost",
   "perf smoke: 1 first ask(s) above their absolute bound",
-  "perf smoke: 8 row(s) reuse the proxy's cache less than the day before"
+  "perf smoke: 1 row(s) reuse the proxy's cache less than the day before"
  ],
  "workflows": {
-  "checked_at": "2026-11-25T08:19:50Z",
+  "checked_at": "2026-11-27T08:20:04Z",
   "scheduled": 12,
   "problems": [
    {
@@ -76,32 +78,32 @@
     "workflow": "perf-daily.yaml"
    },
    {
-    "problem": "last scheduled run 2026-11-25 ended failure",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45533254545",
+    "problem": "last scheduled run 2026-11-27 ended failure",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45928611441",
     "workflow": "query-corpus.yaml"
    },
    {
-    "problem": "last scheduled run 2026-11-25 ended failure",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45544322609",
+    "problem": "last scheduled run 2026-11-27 ended failure",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45937821919",
     "workflow": "security-heavy.yaml"
    }
   ]
  },
  "registry": {
-  "cases": 502,
+  "cases": 512,
   "by_status": {
    "documented": 16,
-   "fixed": 173,
-   "no gap": 104,
-   "open": 199,
+   "fixed": 178,
+   "no gap": 105,
+   "open": 201,
    "owner-kept": 7,
-   "upstream": 3
+   "upstream": 5
   },
   "open_by_impact": {
    "api-only": 21,
    "drilldown-visible": 18,
    "edge": 47,
-   "explore-visible": 111,
+   "explore-visible": 113,
    "grafana-datasource": 2
   },
   "case_status": {
@@ -156,6 +158,7 @@
    "limits/metadata-scan-adaptive-limit": "no gap",
    "limits/metadata-scan-queue-429": "no gap",
    "limits/metric-grpc-send-message-cap": "open",
+   "limits/metric-sample-cap-is-a-flag-and-memory-bound": "no gap",
    "limits/multi-tenant-limit-combination": "no gap",
    "limits/parser-metric-raw-rows-body-cap": "open",
    "limits/per-tenant-override": "no gap",
@@ -174,6 +177,7 @@
    "metric-identity/structured-metadata-splits-series": "owner-kept",
    "parsed-identity/bare-parser-metric-duplicates-extracted": "open",
    "parsed-identity/dynamic-key-parsers": "owner-kept",
+   "parsed-identity/extracted-name-held-by-the-line": "open",
    "parsed-identity/regexp-partial-match-series-count": "open",
    "profiles/detected-fields-dotted-json-keys": "no gap",
    "profiles/detected-fields-no-extracted-suffix": "owner-kept",
@@ -182,8 +186,10 @@
    "profiles/dotted-names-accepted-outside-loki-profile": "no gap",
    "profiles/empty-label-format-target-compositions": "open",
    "profiles/existence-filter-on-sanitized-key": "open",
+   "profiles/grafana-rejected-query-uncaught-error": "upstream",
    "profiles/grafana-shows-loki-error-text": "no gap",
    "profiles/grafana-stats-error-as-warning": "documented",
+   "profiles/grafana-uppercase-metric-log-volume": "upstream",
    "profiles/json-extraction-list-exposes-only-listed": "fixed",
    "profiles/json-extraction-list-missing-key": "open",
    "profiles/json-line-stored-without-line": "documented",
@@ -349,7 +355,9 @@
    "semantics/keep-identity-outer-by-drops-kept-label": "open",
    "semantics/keep-leaves-labels-loki-drops": "fixed",
    "semantics/keyword-fold-runes-read-as-keyword": "fixed",
+   "semantics/label-browser-cold-first-listing": "open",
    "semantics/label-browser-latency-cold-and-refresh": "no gap",
+   "semantics/label-browser-moved-window-from-memory": "fixed",
    "semantics/label-filter-after-regexp-parser-misses-metadata": "open",
    "semantics/label-filter-before-parser-pushdown": "no gap",
    "semantics/label-filter-before-parser-reads-ingest-json-key": "open",
@@ -371,7 +379,9 @@
    "semantics/label-replace-new-label": "fixed",
    "semantics/label-replace-over-log-selector-accepted": "open",
    "semantics/label-replace-range-binary-marker": "fixed",
+   "semantics/label-values-declared-non-stream-fields": "fixed",
    "semantics/labels-end-inclusive-like-loki": "fixed",
+   "semantics/labels-point-window-is-the-index-day": "fixed",
    "semantics/last-over-time-line-filter-offset-points": "open",
    "semantics/last-over-time-vl149-row-max-wrong-row": "open",
    "semantics/level-grouped-deviation-label-residual": "open",
@@ -451,6 +461,7 @@
    "semantics/rank-over-binary-operation": "fixed",
    "semantics/rank-over-stream-first-aggregation-range": "open",
    "semantics/ranked-parser-metric-identity-residual": "open",
+   "semantics/ranked-parser-window-fine-step": "fixed",
    "semantics/ranked-rate-ratio-point-grid-residual": "open",
    "semantics/raw-nul-in-string-literal-accepted": "fixed",
    "semantics/regexp-chain-led-by-ip": "open",
@@ -606,6 +617,7 @@
    "severity/stored-log-dot-level-in-metric-chain": "open",
    "versions/capabilities-floor-vs-matrix": "fixed",
    "versions/rejected-stats-query-wording-vl-1.47": "fixed",
+   "versions/release-unknown-behind-vmauth": "fixed",
    "versions/stats-bucket-label-v1.45": "owner-kept"
   }
  },
@@ -613,66 +625,28 @@
   "v1.49.0": {
    "behaviour_changed": 7,
    "counts": {
-    "blocked": 120,
+    "blocked": 125,
     "data_unchecked": 12,
-    "differs": 91,
-    "empty": 25,
+    "differs": 92,
+    "empty": 27,
     "matches": 187,
     "not_comparable": 1,
-    "not_executable": 65,
-    "unstable": 1
+    "not_executable": 68
    },
    "proposed_close": 27,
-   "regressions": 20,
+   "regressions": 21,
    "reuse": {
     "counts": {
      "cache_not_reused": 1,
-     "reused": 257
+     "reused": 259
     },
     "not_reused": [
      "drilldown/fields-pill-json-path-extracted-empty"
     ],
-    "cold_vl_calls": 475,
+    "cold_vl_calls": 476,
     "repeat_vl_calls": 2,
     "repeat_hit_ratio": {
-     "loki:l1_memory": 0.980247,
-     "loki:l2_disk": 0,
-     "loki:l3_peer": 0,
-     "unknown:l1_memory": 0,
-     "vl:l1_memory": 0.6,
-     "vl:l2_disk": 0,
-     "vl:l3_peer": 0
-    },
-    "background_vl_calls": 1,
-    "calls_from_header": 258
-   }
-  },
-  "v1.54.0": {
-   "behaviour_changed": 7,
-   "counts": {
-    "blocked": 120,
-    "data_unchecked": 12,
-    "differs": 91,
-    "empty": 25,
-    "matches": 187,
-    "not_comparable": 1,
-    "not_executable": 65,
-    "unstable": 1
-   },
-   "proposed_close": 27,
-   "regressions": 20,
-   "reuse": {
-    "counts": {
-     "cache_not_reused": 1,
-     "reused": 257
-    },
-    "not_reused": [
-     "drilldown/fields-pill-json-path-extracted-empty"
-    ],
-    "cold_vl_calls": 509,
-    "repeat_vl_calls": 2,
-    "repeat_hit_ratio": {
-     "loki:l1_memory": 0.985112,
+     "loki:l1_memory": 0.97555,
      "loki:l2_disk": 0,
      "loki:l3_peer": 0,
      "unknown:l1_memory": 0,
@@ -680,8 +654,43 @@
      "vl:l2_disk": 0,
      "vl:l3_peer": 0
     },
-    "background_vl_calls": 1,
-    "calls_from_header": 258
+    "calls_from_header": 260
+   }
+  },
+  "v1.54.0": {
+   "behaviour_changed": 7,
+   "counts": {
+    "blocked": 125,
+    "data_unchecked": 12,
+    "differs": 92,
+    "empty": 27,
+    "matches": 187,
+    "not_comparable": 1,
+    "not_executable": 68
+   },
+   "proposed_close": 27,
+   "regressions": 21,
+   "reuse": {
+    "counts": {
+     "cache_not_reused": 1,
+     "reused": 259
+    },
+    "not_reused": [
+     "drilldown/fields-pill-json-path-extracted-empty"
+    ],
+    "cold_vl_calls": 509,
+    "repeat_vl_calls": 2,
+    "repeat_hit_ratio": {
+     "loki:l1_memory": 0.982759,
+     "loki:l2_disk": 0,
+     "loki:l3_peer": 0,
+     "unknown:l1_memory": 0,
+     "vl:l1_memory": 0,
+     "vl:l2_disk": 0,
+     "vl:l3_peer": 0
+    },
+    "background_vl_calls": 2,
+    "calls_from_header": 260
    }
   }
  },
@@ -720,75 +729,73 @@
   },
   "live_check": {
    "conclusion": "failure",
-   "date": "2026-11-25",
-   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45533254545",
+   "date": "2026-11-27",
+   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45951828083",
    "workflow": "query-corpus.yaml"
   },
   "recorded_file": "conformance/registry/grammar-sweep.json"
  },
  "parity": {
-  "clusters": 20,
+  "clusters": 21,
   "conformance_ok": false,
   "exit": 0,
   "loki": "v3.7.10",
   "mode": "validate",
   "not_reproducible": 0,
-  "problems": 1100,
-  "ref": "ab92c975",
-  "requests": 212,
-  "unclaimed": 1,
-  "unclaimed_ids": [
-   "7c8d07d7"
-  ],
+  "problems": 1097,
+  "ref": "b9761cf3",
+  "requests": 210,
+  "unclaimed": 0,
+  "unclaimed_ids": [],
   "verdicts": {
    "blocked": 0,
    "both_empty": 45,
-   "differ": 37,
-   "same": 130
+   "differ": 36,
+   "same": 129
   }
  },
  "perf_daily": {
-  "commit": "ab92c97588142c1008f50787e8bf97f7b2dcab6f",
-  "comparable": 398,
-  "date": "2026-11-25",
+  "commit": "b9761cf33f1bf1e8386c7449862316df52f020f6",
+  "comparable": 415,
+  "date": "2026-11-27",
   "distribution": {
    "cold": {
-    "above": 0,
-    "below": 97,
-    "between": 9,
-    "close": 79,
-    "green": 176,
-    "rows": 185,
-    "share_below": 52.4,
-    "share_green": 95.1
+    "above": 2,
+    "below": 102,
+    "between": 10,
+    "close": 80,
+    "green": 182,
+    "rows": 194,
+    "share_below": 52.6,
+    "share_green": 93.8
    },
    "warm": {
     "above": 0,
     "below": 18,
     "between": 0,
-    "close": 195,
-    "green": 213,
-    "rows": 213,
-    "share_below": 8.5,
+    "close": 203,
+    "green": 221,
+    "rows": 221,
+    "share_below": 8.1,
     "share_green": 100
    }
   },
   "first_ask": [
    {
-    "loki_s": 0.03,
+    "loki_s": 0.029,
     "max_s": 0.6,
     "profile": "loki-defaults",
-    "proxy_s": 0.256,
+    "proxy_s": 0.242,
     "range": "1h",
     "set": "drilldown-patterns",
     "shape": "DP1 patterns of a plain-text service",
     "state": "within"
    },
    {
-    "loki_s": 0.39,
+    "loki_s": 0.279,
     "max_s": 1.6,
     "profile": "loki-defaults",
-    "proxy_s": 2.461,
+    "proxy_s": 2.316,
     "range": "1h",
     "set": "drilldown-patterns",
     "shape": "DP2 patterns of an environment",
@@ -797,10 +804,10 @@
   ],
   "first_ask_over": [
    {
-    "loki_s": 0.39,
+    "loki_s": 0.279,
     "max_s": 1.6,
     "profile": "loki-defaults",
-    "proxy_s": 2.461,
+    "proxy_s": 2.316,
     "range": "1h",
     "set": "drilldown-patterns",
     "shape": "DP2 patterns of an environment",
@@ -808,52 +815,71 @@
    }
   ],
   "loki_failed": 8,
-  "over_2x": [],
-  "ratchet_lost": [
+  "over_2x": [
    {
-    "detail": "cold 1.76 s → 1.76 s against Loki's computed 870 ms → 1.11 s, held for two runs",
+    "loki_s": 0.243,
+    "mode": "cold",
     "profile": "loki-defaults",
+    "proxy_s": 0.819,
     "range": "6h",
-    "set": "json-filter-pushdown",
-    "shape": "A explore volume, 2 filters, drop"
+    "set": "mixed-parser-metrics",
+    "shape": "explicit JSON then logfmt grouped count"
    },
    {
-    "detail": "cold 1.65 s → 1.62 s against Loki's computed 1.08 s → 990 ms, held for two runs",
+    "loki_s": 0.244,
+    "mode": "cold",
+    "profile": "aligned",
+    "proxy_s": 0.889,
+    "range": "6h",
+    "set": "mixed-parser-metrics",
+    "shape": "explicit JSON then logfmt grouped count"
+   }
+  ],
+  "ratchet_lost": [
+   {
+    "detail": "cold 1.62 s → 1.67 s against Loki's computed 1.06 s → 1.18 s, held for two runs",
     "profile": "loki-defaults",
     "range": "6h",
     "set": "extracted-pushdown",
     "shape": "X1 json filter level_extracted, by level"
    },
    {
-    "detail": "cold 354 ms → 351 ms against Loki's computed 262 ms → 243 ms, held for two runs",
+    "detail": "cold 360 ms → 352 ms against Loki's computed 240 ms → 242 ms, held for two runs",
     "profile": "loki-defaults",
     "range": "6h",
     "set": "unwrap-conversion-error",
     "shape": "E2 json duration_ms p95 by service"
    },
    {
-    "detail": "cold 399 ms → 383 ms against Loki's computed 276 ms → 263 ms, held for two runs",
+    "detail": "cold 267 ms → 282 ms against Loki's computed 201 ms → 215 ms, held for two runs",
+    "profile": "loki-defaults",
+    "range": "6h",
+    "set": "json-detected-level",
+    "shape": "DLV1 drilldown logs volume, json"
+   },
+   {
+    "detail": "cold 399 ms → 371 ms against Loki's computed 255 ms → 237 ms, held for two runs",
     "profile": "aligned",
     "range": "1h",
     "set": "json-filter-pushdown",
     "shape": "A explore volume, 2 filters, drop"
    },
    {
-    "detail": "cold 1.67 s → 1.66 s against Loki's computed 971 ms → 969 ms, held for two runs",
+    "detail": "cold 1.66 s → 1.69 s against Loki's computed 950 ms → 977 ms, held for two runs",
     "profile": "aligned",
     "range": "6h",
     "set": "json-filter-pushdown",
     "shape": "A explore volume, 2 filters, drop"
    },
    {
-    "detail": "cold 1.62 s → 1.62 s against Loki's computed 1.04 s → 1.05 s, held for two runs",
+    "detail": "cold 1.56 s → 1.55 s against Loki's computed 1.04 s → 1.04 s, held for two runs",
     "profile": "aligned",
     "range": "6h",
     "set": "extracted-pushdown",
     "shape": "X1 json filter level_extracted, by level"
    },
    {
-    "detail": "cold 351 ms → 370 ms against Loki's computed 279 ms → 278 ms, held for two runs",
+    "detail": "cold 373 ms → 358 ms against Loki's computed 269 ms → 286 ms, held for two runs",
     "profile": "aligned",
     "range": "6h",
     "set": "unwrap-conversion-error",
@@ -862,76 +888,27 @@
   ],
   "ratchet_problem": "",
   "reuse": {
-   "cold_vl_bytes": 114452191,
-   "cold_vl_calls": 522,
+   "cold_vl_bytes": 115567993,
+   "cold_vl_calls": 572,
    "exact_problems": 4,
    "exact_repeat_vl_calls": 0,
-   "exact_rows": 213,
-   "exact_without_vl_calls": 213,
-   "repeat_vl_bytes": 24561085,
-   "repeat_vl_calls": 486,
-   "repeat_without_vl_calls": 8,
-   "rows": 217
+   "exact_rows": 221,
+   "exact_without_vl_calls": 221,
+   "repeat_vl_bytes": 23895832.5,
+   "repeat_vl_calls": 464.5,
+   "repeat_without_vl_calls": 15,
+   "rows": 225
   },
   "reuse_lost": [
    {
-    "detail": "moved-window repeat VictoriaLogs bytes 218844 -> 425103",
-    "profile": "aligned",
-    "range": "6h",
-    "set": "loki-profile-otel-metadata",
-    "shape": "O1 explore logs, underscore structured-metadata filter"
-   },
-   {
-    "detail": "loki:l1_memory hit ratio 1.00 -> 0.60; vl:l1_memory hit ratio 0.91 -> 0.79",
+    "detail": "vl:l1_memory hit ratio 1.00 -> 0.80",
     "profile": "loki-defaults",
     "range": "1h",
-    "set": "metadata-freshness",
-    "shape": "label values env ending now"
-   },
-   {
-    "detail": "loki:l1_memory hit ratio 1.00 -> 0.60",
-    "profile": "loki-defaults",
-    "range": "6h",
-    "set": "metadata-freshness",
-    "shape": "label values env ending now"
-   },
-   {
-    "detail": "loki:l1_memory hit ratio 1.00 -> 0.33",
-    "profile": "loki-defaults",
-    "range": "1h",
-    "set": "metadata-inventory",
-    "shape": "explore labels (label browser)"
-   },
-   {
-    "detail": "loki:l1_memory hit ratio 1.00 -> 0.33",
-    "profile": "loki-defaults",
-    "range": "6h",
-    "set": "metadata-inventory",
-    "shape": "explore labels (label browser)"
-   },
-   {
-    "detail": "loki:l1_memory hit ratio 1.00 -> 0.50",
-    "profile": "loki-defaults",
-    "range": "1h",
-    "set": "metadata-inventory",
-    "shape": "explore labels with selector"
-   },
-   {
-    "detail": "loki:l1_memory hit ratio 1.00 -> 0.50",
-    "profile": "loki-defaults",
-    "range": "6h",
-    "set": "metadata-inventory",
-    "shape": "explore labels with selector"
-   },
-   {
-    "detail": "vl:l1_memory hit ratio 1.00 -> 0.46",
-    "profile": "loki-defaults",
-    "range": "1h",
-    "set": "stream-label-shadowed",
-    "shape": "SL1 labels tab by version, level pill"
+    "set": "nested-aggregation",
+    "shape": "N2 max by namespace of sum by namespace,app, rate"
    }
   ],
-  "rows": 217
+  "rows": 225
  },
  "perf_weekly": {
   "date": "2026-11-23",
@@ -982,28 +959,29 @@
  },
  "coverage": {
   "v1.49.0": {
-   "cases": 502,
-   "proven_live": 278,
-   "proven_by_test": 146,
-   "not_proven": 78,
+   "cases": 512,
+   "proven_live": 279,
+   "proven_by_test": 150,
+   "not_proven": 83,
    "not_proven_by": {
     "blocked: empty_answer": 3,
     "blocked: fault": 1,
     "blocked: fixture": 33,
     "blocked: moved_window": 15,
     "blocked: placeholder_time": 3,
+    "blocked: proxy_only": 2,
     "blocked: volume": 4,
     "blocked: write": 1,
-    "empty": 11,
-    "not_executable": 7
+    "empty": 12,
+    "not_executable": 9
    },
    "ci": {
     "workflow": "ci.yaml",
-    "conclusion": "success",
-    "date": "2026-11-24",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45457424232",
+    "conclusion": "cancelled",
+    "date": "2026-11-26",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45903267498",
     "jobs": {
-     "bench": "success",
+     "bench": "cancelled",
      "conformance": "success",
      "docker": "success",
      "e2e-compat": "success",
@@ -1066,28 +1044,29 @@
    }
   },
   "v1.54.0": {
-   "cases": 502,
-   "proven_live": 278,
-   "proven_by_test": 146,
-   "not_proven": 78,
+   "cases": 512,
+   "proven_live": 279,
+   "proven_by_test": 150,
+   "not_proven": 83,
    "not_proven_by": {
     "blocked: empty_answer": 3,
     "blocked: fault": 1,
     "blocked: fixture": 33,
     "blocked: moved_window": 15,
     "blocked: placeholder_time": 3,
+    "blocked: proxy_only": 2,
     "blocked: volume": 4,
     "blocked: write": 1,
-    "empty": 11,
-    "not_executable": 7
+    "empty": 12,
+    "not_executable": 9
    },
    "ci": {
     "workflow": "ci.yaml",
-    "conclusion": "success",
-    "date": "2026-11-24",
-    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45457424232",
+    "conclusion": "cancelled",
+    "date": "2026-11-26",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/45903267498",
     "jobs": {
-     "bench": "success",
+     "bench": "cancelled",
      "conformance": "success",
      "docker": "success",
      "e2e-compat": "success",

@@ -1,0 +1,37 @@
+id: vl-backend-version-source
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  Where the VictoriaLogs release comes from when the backend does not report it:
+  vmauth answers /metrics and /health itself on its listen address (unless its
+  -httpInternalListenAddr moves them), so the proxy reads vmauth's own version
+  and no VictoriaLogs release. -backend-version-url names a VictoriaLogs
+  /metrics endpoint to read instead (-backend-version-basic-auth for it alone);
+  -backend-version declares the release.
+proxy_usage: |
+  The version URL is read at startup and in every re-probe round with its own
+  client: no backend auth, header or tenant, no redirect, at most 2 MiB, within
+  -backend-version-check-timeout. A named release (either flag) is a claim about
+  the backend: both flags need -backend-feature-probes=true, a probe that finds a
+  feature of that release absent discards it, and it turns on only the gates a
+  probe confirms, safety guards included, so none newer than the newest probed
+  feature (vl.extra_filters_len, which needs a release VictoriaLogs reports
+  through the queried address). The lowest release wins (releases read in the
+  window, the declared one, a read from the backend). The reason of
+  a failed read is on the `backend version compatibility check` WARN line, and
+  loki_vl_proxy_backend_version_known is 0 while no release is known.
+fallback: |
+  A failed or rejected named release leaves the gates as for an unknown release
+  (the probes decide what they can; the crash guard holds). A failed read keeps
+  what was known.
+proves:
+  - internal/capability TestNamedReleaseNeverEnablesWhatTheBackendLacks (every named and actual release v1.49.0 to v1.54.0, every subset of probe answers)
+  - internal/capability TestNamedReleaseGatesWhenTheProbesAgree
+  - internal/capability TestVersionURLMixedAndContradicted
+  - internal/capability TestBackendReadingWinsOverTheSameVersionURLRelease
+  - internal/proxy TestVersionURLAnswers (VictoriaLogs, vmauth, 401, 404, 500, redirect, timeout, oversize; no credential in logs or to another host)
+  - internal/proxy TestPartialCheckNamesTheReason
+  - internal/proxy TestDeclaredVersionAgainstProbes

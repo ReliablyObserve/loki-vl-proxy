@@ -1,0 +1,142 @@
+id: field-mapping-label-names
+kind: semantics
+title: 'The operator chooses the names a mapped field shows in answers: one per field, its own, its aliases or both'
+pending: true
+
+loki: |
+  Loki has no field mapping: a label has the name it was written with, the
+  pickers list it, and a series carries it once.
+
+victorialogs: |
+  VictoriaLogs stores one field (for example k8s.namespace.name) and lists it
+  under that name only.
+
+proxy: |
+  -field-mapping may give one field several Loki names. Queries, filters,
+  groupings and label values accept every one in every mode, and a grouping
+  answers under the name it gives. -field-mapping-label-mode selects the names
+  a mapped field shows on every answer surface (label lists, stream and series
+  labels, structured metadata, detected fields): unset (default, one name per
+  field, the last mapping's), original (its own name formatted by -label-style
+  and -metadata-field-mode), alias (the aliases only) or both (the own names
+  and the aliases; stream and series labels carry every listed name, added
+  after evaluation so series and matching are the alias mode's). The names
+  are derived from the VictoriaLogs listings the default reads, and the cache
+  identities of original, alias and both carry the mode, its names, a names
+  version and the metadata field mode. In alias and both a key a json or
+  logfmt stage extracts under an alias's name is read as Loki reads a parsed
+  label that collides with a stream label: alias_extracted where the entry's
+  stream holds the alias's field, the alias where it does not.
+
+implementation:
+  - internal/proxy/field_mapping_labels.go
+  - internal/proxy/labels.go
+  - internal/proxy/drilldown.go
+  - internal/proxy/volume.go
+  - internal/proxy/request_scope.go
+  - internal/proxy/plain_stream_labels.go
+  - internal/proxy/metric_binary.go
+  - internal/proxy/cache_keys.go
+  - internal/translate/extracted_label.go
+  - internal/translate/parsed_labels.go
+  - internal/queryplan/lower/label_filter_parsed.go
+  - internal/queryplan/lower/parser_labels.go
+  - internal/queryplan/lower/metric_screen.go
+  - internal/queryplan/lower/lower.go
+  - internal/queryplan/lower/range_agg.go
+  - internal/queryplan/lower/label_replace.go
+  - internal/proxy/query_lowering.go
+  - internal/proxy/field_mapping_both_answers.go
+  - internal/proxy/query_translation.go
+  - internal/proxy/stream_processing.go
+  - internal/proxy/tail.go
+  - internal/proxy/proxy.go
+
+cases:
+  - semantics/field-mapping-label-modes
+
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
+
+decisions:
+  - id: listing-names-by-mode-one-answer-name
+    chosen: 'A mode for the names of a mapped field; answers keep one name per field in unset, original and alias (in alias the last alias in -field-mapping order, else the -label-style name); both carries every listed name (see both-names-added-after-evaluation); unset is the behaviour without the setting'
+    over: [listing every mapping name by default (changes the pickers of every deployment that has mappings), answering with the first alias (differs from the precedence the default applies, the last mapping)]
+    why: |
+      A migration needs the old Loki names in the pickers, and a deployment
+      that does not set the flag must see no change, answers and cache keys
+      included. The last alias keeps the default's precedence among the
+      aliases. A declared mapping name is listed as declared, and the mode
+      adds an alias only for a field VictoriaLogs' stream field listing holds.
+      Owner 2026-11-27: putting every name into stream and series labels, which
+      this record first chose against, is what both means (both-names-added-
+      after-evaluation).
+    evidence: 'internal/proxy/field_mapping_labels_test.go (2026-11-25): the issue reproduction per mode, every mode and label endpoint for both label styles and three metadata field modes with equal VictoriaLogs call counts, one shared cache between modes; test/e2e-compat TestCompat_FieldMappingLabelModes on VictoriaLogs v1.49.0 and v1.54.0; test/e2e-fleet TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers (2026-11-26, peer replication factor 1 and 2): in one peer ring of two alias replicas, one with the flag unset and one both replica, the second alias replica answers the first one''s labels, label values, detected_labels and log answers with no VictoriaLogs call in the fleet, the other two answer their own names and read VictoriaLogs themselves (24 calls for the six requests, as many as the first cold answers), and a replica that lost memory and disk answers alias names again'
+    code: [internal/proxy/field_mapping_labels.go, internal/proxy/labels.go, internal/proxy/request_scope.go]
+    tests: [TestFieldMappingLabelMode_IssueReproduction, TestFieldMappingLabelMode_Endpoints, TestFieldMappingLabelMode_DeclaredMappingNames, TestFieldMappingLabelMode_SharedCacheTier, FuzzFieldMappingLabelMode, TestCompat_FieldMappingLabelModes, TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers]
+    quality: 'The unset mode answers and keys are unchanged; every listed name has values.'
+    performance: 'No VictoriaLogs call added on any label route (BenchmarkFieldMappingLabelRoutes: labels 1, label values 2, detected_labels 7, volume 1 cold and 0 on a repeat in every mode). BenchmarkFieldMappingLabelRoutes and BenchmarkFieldMappingLabels (Apple M5 Pro, GOMAXPROCS=2, 2026-11-26, 8 interleaved runs): original equals the base build in time, bytes and allocations; with the fixture mappings a cold detected_labels allocates 2% more in alias and 10% more in both, which answer more names, and a 66-field /labels listing 8 allocations more.'
+  - id: mode-names-own-alias-both
+    chosen: 'unset (empty, the default) keeps one name per field, the last mapping''s; original shows the field''s own name only, formatted by -label-style (labels) and -metadata-field-mode (structured metadata and detected fields: native stored, translated the -label-style name, hybrid both); alias shows the aliases only in every metadata field mode; both shows the own names and the aliases; unmapped fields unchanged'
+    over: [original meaning the default (the first release of the flag; owner 2026-11-27 gave original its own meaning and the unset flag the default), alias adding the stored name in native and hybrid (owner: alias shows what is in the alias, no other option), original always showing the raw dotted name (kept to the label style and metadata field mode, which the owner confirmed)]
+    why: |
+      Owner 2026-11-27 on #1762: "alias means always whats in alias is
+      priority not adding any other options; original means we passing the
+      original for example from OTEL native one as they are without any
+      aliasing in labels; both means original and alias coexists", and both
+      "should work similary in all hybrid, translated and native". A
+      deployment that leaves the flag unset keeps today's answers and cache
+      identities. A grouping by another name of a mapped field answers under
+      that name (Loki answers a grouping under the label it names), read from
+      the typed plan. A name a mapped field claims keeps the mapped field's
+      value in structured metadata against a stored field of that name, as
+      queries for the name read the mapped field; parsed labels are untouched.
+    evidence: 'internal/proxy/testdata/field_mapping_name_matrix.golden (2026-11-27): every -label-style x mode x -metadata-field-mode on labels, detected_labels, series, stream labels with and without categorize-labels, structured metadata and detected fields, recorded at the base first; the unset rows are byte-identical to the base build''s default rows (54 lines), and every shown name answers label values, volume targetLabels, detected field values, a label filter reading its field and instant and range groupings under that name'
+    code: [internal/proxy/field_mapping_labels.go, internal/proxy/labels.go, internal/proxy/drilldown.go, internal/proxy/stream_processing.go, internal/proxy/query_translation.go, internal/proxy/request_scope.go, cmd/proxy/main.go]
+    tests: [TestFieldMappingLabelMode_NameMatrix, TestFieldMappingLabelMode_BothStoredFieldNamedLikeMappingName, TestFieldMappingLabelMode_BothNamesIdentity, TestFieldMappingLabelMode_ParsedAliasKeyInLogAnswer, TestFieldMappingLabelMode_SharedCacheTier, TestFieldMappingLabelModeConfig]
+    quality: 'The unset rows of the matrix equal the base build''s default rows; every name a surface shows is asked back.'
+    performance: 'BenchmarkFieldMappingAnswerNames (Apple M5 Pro, GOMAXPROCS=4, 6 interleaved runs, 2026-11-27, base 3d166503f): unset equals the base on logs, metric, series and detected_fields in time (within noise), bytes and allocations; original and alias within noise on logs, metric and series; detected_fields in alias allocates 7% more and in original 0.7% more, which list more names.'
+  - id: both-names-added-after-evaluation
+    chosen: 'In both, the stream labels of log lines and the labels of series carry every listed name of a mapped field with its value, added as the answer leaves the query, query_range and series routes (tail per line), outside the response cache; a field a by(), on() or group_left/right names gains no name, a name a without lists is never added, and no label an answer carries is overwritten'
+    over: [adding the names when stream labels are translated (groupings, without, ignoring and vector matching would then read two labels per field and change matching and without results against the alias mode), adding them to grouped answers (Loki answers a grouping with the labels it names only)]
+    why: |
+      Owner 2026-11-27: "we cannot loose k8s_namespace_name and see also
+      namespace as in labels also in structured metadata when we just choose
+      to see both", confirmed for indexed labels on log lines and series with
+      the side effects one more label in ungrouped results and alerts and a
+      cold cache on switching. Evaluation keeps one name per field, so series
+      counts, values and matching equal the alias mode's. A without keeps the
+      other names of the field (sum without (k8s_node_name) keeps nodename and
+      node), as a Loki that stored both names would.
+    evidence: 'TestFieldMappingLabelMode_BothSeriesMatchAlias (2026-11-27): 16 shapes on query and query_range (ungrouped, by, without by either name, topk, sort_desc, label_replace on a field name and on another, a binary operation, ignoring, on, group_left, a comparison) answer the alias mode''s series, values and count, with the added names equal to the answer name''s value; TestFieldMappingLabelMode_BothStreamLabels: log lines, /series and tail carry every name, VictoriaLogs calls equal the alias mode''s and a repeat makes none'
+    code: [internal/proxy/field_mapping_both_answers.go, internal/proxy/proxy.go, internal/proxy/tail.go]
+    tests: [TestFieldMappingLabelMode_BothSeriesMatchAlias, TestFieldMappingLabelMode_BothStreamLabels, TestFieldMappingLabelMode_NameMatrix, TestCompat_FieldMappingLabelModes, TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers]
+    quality: 'Series counts, values and matching equal the alias mode''s on every shape; grouped answers carry only the labels they name.'
+    performance: 'BenchmarkFieldMappingAnswerNames (Apple M5 Pro, GOMAXPROCS=4, 6 interleaved runs, 2026-11-27): both versus the base build''s both, 200 log lines with structured metadata +21% time and +26% bytes (the route reads and writes the JSON answer once, pooled parser and arena), /series +7% time, ungrouped instant metric within noise, detected_fields +30% (more names); no VictoriaLogs call added; the other modes do not run the layer.'
+  - id: alias-parsed-key-collision-extracted
+    chosen: 'In alias and both, a parsed key (json or logfmt) named like an alias is alias_extracted where the entry''s stream holds the alias''s field and the alias where it does not, in detected_fields, field values, log answers, label filters and groupings; the stored field of an alias is no detected field; original is unchanged'
+    over: [keeping the default rule of dropping a parsed key named like a stream label (the Fields tab then showed the stream field under the alias with no parser, and a filter or grouping on alias_extracted matched nothing), applying the rule in original too (the owner kept original unchanged byte for byte)]
+    why: |
+      Owner decision 2026-11-26 on #1762: alias mode answers what a Loki that
+      stored the alias answers. VictoriaLogs keeps the alias's stream label in
+      its own field (k8s.pod.name), which no parser overwrites, so the lowering
+      matches the collision against that field in _stream, fills a grouping
+      field from the parsed key where the stream lacks it, and reads a filter
+      on the alias from the field where the stream holds it and from the parsed
+      key elsewhere. The lowering learns the alias fields through two typed
+      profile functions only the alias and both modes set (lower.Profile
+      AliasField and FieldAlias), so the default mode writes the same text. In
+      these modes the metric screen also admits a label filter on an _extracted
+      name with a grouping by a parser key (the Logs Drilldown field breakdown
+      of a renamed key, count and rate), which the default mode leaves to the
+      string translator; the lowering unpacks the key again for the grouping.
+    evidence: 'Live on Loki 3.7.10 and VictoriaLogs v1.54.0 (2026-11-26): 156 requests over logfmt, json, mixed (half the streams without the mapped field) and plain services, detected_fields, field values, log filters, instant and range groupings; alias equals the pre-migration Loki on every collision row, unset equals main on every row; the LogsQL it writes accepted and round-tripped by VictoriaLogs v1.49.0 and v1.54.0 (test/oracle/vl check, roundtrip: 28/28); TestCompat_FieldMappingAliasCollisionsMatchLoki'
+    code: [internal/proxy/drilldown.go, internal/proxy/field_mapping_labels.go, internal/translate/extracted_label.go, internal/queryplan/lower/parser_labels.go, internal/queryplan/lower/label_filter_parsed.go, internal/queryplan/lower/metric_screen.go, internal/queryplan/lower/lower.go, internal/queryplan/lower/range_agg.go, internal/queryplan/lower/label_replace.go, internal/proxy/query_lowering.go]
+    tests: [TestFieldMappingLabelMode_ParsedAliasCollisionDetectedFields, TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL, TestFieldMappingLabelMode_NoUnderscoreFallbackForAlias, TestExtractedFilterAliased, TestStreamLabelPattern, FuzzFieldMappingLabelMode, TestCompat_FieldMappingAliasCollisionsMatchLoki]
+    quality: 'alias and both answer the collision rows as Loki with the pre-migration names; original and unset write the same LogsQL and answers as before.'
+    performance: 'BenchmarkFieldMappingAliasCollision. Main versus this change on the paths it touches in the default mode (detected_fields, translation, lowering; Apple M5 Pro, GOMAXPROCS=4, 6 runs, 2026-11-26): allocs/op identical, B/op -0.14% (geomean), time within noise; the alias modes allocate 30% more in a detected_fields scan of keys named like aliases (892 vs 686), the lowering the same.'

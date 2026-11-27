@@ -165,8 +165,9 @@ requests and their answers stay the same. A capture whose only finding is a base
 error answer only the PR shows, not recaptured, not a fix page) is therefore loaded
 again in two more pairs, after the recapture and before the Live tail pass
 (`ci_run.repeat_runtime`). Before each pair both proxies' caches are flushed
-(`POST /admin/cache/flush` on their admin listener: the response and compatibility
-caches, memory and disk tiers) and both proxy logs go quiet; the first pair loads the
+(`POST /admin/cache/flush`, on the main listener with the
+admin token when the stack file gives the proxy one, else on the admin listener: the
+response and compatibility caches, memory and disk tiers) and both proxy logs go quiet; the first pair loads the
 PR first, the second the base first. Each pair is one Playwright run of that page alone
 (one worker, base and PR only, the first pass's settle rule). The rule: per build, the
 median of each judged value over the first pass and the two repeats, judged by the same

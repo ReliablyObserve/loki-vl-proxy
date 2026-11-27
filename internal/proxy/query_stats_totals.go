@@ -163,6 +163,9 @@ func (sc statsTotalsScope) key(kind, expr string) string {
 	var key [len(statsTotalsKeyPrefix) + 2*sha256.Size]byte
 	copy(key[:], statsTotalsKeyPrefix)
 	hex.Encode(key[len(statsTotalsKeyPrefix):], sum[:])
+	if mark := credentialScopeMark(sc[2]); mark != "" {
+		return string(key[:]) + mark
+	}
 	return string(key[:])
 }
 

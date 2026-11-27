@@ -10,6 +10,7 @@ import http.server
 import inspect
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,7 @@ import ci_run  # noqa: E402
 import compare  # noqa: E402
 import merge  # noqa: E402
 import shards  # noqa: E402
+import stack  # noqa: E402
 import visual_comment as vc  # noqa: E402
 from vio import dump_json, load_json  # noqa: E402
 
@@ -202,11 +204,13 @@ class RuleTest(unittest.TestCase):
 
 class FlushServer(http.server.BaseHTTPRequestHandler):
     status = 200
+    token = ""  # when set, the admin token every request must carry (the proxy's adminMiddleware)
     hits = []
 
     def do_POST(self):
         FlushServer.hits.append(self.path)
-        self.send_response(FlushServer.status)
+        refused = FlushServer.token and self.headers.get("X-Admin-Token") != FlushServer.token
+        self.send_response(401 if refused else FlushServer.status)
         self.send_header("Content-Length", "2")
         self.end_headers()
         self.wfile.write(b"{}")
@@ -315,8 +319,10 @@ class RunTest(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         self.addCleanup(srv.server_close)
         self.addCleanup(srv.shutdown)
-        port = srv.server_address[1] - 1  # the admin listener is the proxy's port + 1
-        state = {"out": self.out, "ports": {"main": port, "pr": port}}
+        target = {"url": f"http://127.0.0.1:{srv.server_address[1]}/admin/cache/flush", "token": ""}
+        state = {"out": self.out, "ports": {"main": 1, "pr": 3}, "flush": {"main": target, "pr": target}}
+        with self.assertRaisesRegex(OSError, "no cache flush target recorded for the main proxy"):
+            ci_run.flush_proxies({**state, "flush": {}})
         Path(self.out, "proxy-main-aligned.log").write_text("x")
         with self.assertRaises(OSError):  # no log of the PR build to wait on: no cold sample
             ci_run.flush_proxies(state)
@@ -332,6 +338,46 @@ class RunTest(unittest.TestCase):
             obs = ci_run.repeat_pair(self.a, self.out, "explore-logs-json", "15m", "explore", ("pr", "main"), 1000, 5,
                                      dict(state, end=1000), ci_run.first_pass_observation(row), time.time() + 60)
         self.assertIn("cache flush refused", obs["why"])
+
+    def test_the_flush_reaches_the_proxies_the_stack_starts(self):
+        """The visual stack's service has an admin token, so its admin routes ride the main listener and no admin
+        listener is started: the flush must go to the proxy's own port, with the token, as stack.up records it from
+        the command the stack file gives the build. A flush sent to port + 1 is refused and nothing is repeated."""
+        compose = Path(stack.ab.ROOT, stack.ab.BASE_COMPOSE).read_text()
+        block = re.search(rf"^  {re.escape(stack.SERVICE)}:\n(.*?)(?=^  [\w-]+:\n|\Z)", compose, re.M | re.S).group(1)
+        token = re.search(r'^\s*- "-server\.admin-auth-token=([^"]+)"', block, re.M).group(1)
+        FlushServer.status, FlushServer.token, FlushServer.hits = 200, token, []
+        self.addCleanup(setattr, FlushServer, "token", "")
+        servers = []
+        for _ in ("main", "pr"):
+            srv = http.server.HTTPServer(("127.0.0.1", 0), FlushServer)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            self.addCleanup(srv.server_close)
+            self.addCleanup(srv.shutdown)
+            servers.append(srv)
+        ports = {name: srv.server_address[1] for name, srv in zip(("main", "pr"), servers)}
+
+        def start(specs, out, st, procs):
+            for name, binary, _, port in specs:
+                procs.append(stack.ab.Proxy(name, binary, [f"-server.admin-auth-token={token}"], {}, port, out))
+                Path(procs[-1].log_path).write_text("x")
+
+        args = Namespace(out=self.out, project="t", overlay=[], no_level_label=False, skip_seed=True, end=1000,
+                         hours=1, loki_hours=1, main_ref="origin/main")
+        with mock.patch.dict(stack.PORTS, ports), mock.patch.object(stack.ab, "build", lambda ref, out: stack.ab.ROOT), \
+                mock.patch.object(stack.ab, "wait_http", lambda *a: None), \
+                mock.patch.object(stack, "start_grafana", lambda *a: ("http://grafana", [])), \
+                mock.patch.object(stack, "wait_plugins", lambda *a: (0, [])), \
+                mock.patch.object(stack, "start_proxies", start):
+            stack.up(args)
+        state = load_json(os.path.join(self.out, "state.json"))
+        self.assertEqual(state["flush"], {name: {"url": f"http://127.0.0.1:{port}/admin/cache/flush", "token": token}
+                                          for name, port in ports.items()})
+        self.assertTrue(ci_run.flush_proxies(dict(state, out=self.out)))
+        self.assertEqual(FlushServer.hits, ["/admin/cache/flush"] * 2)
+        wrong = {name: dict(target, token="") for name, target in state["flush"].items()}
+        with self.assertRaisesRegex(OSError, "HTTP 401"):
+            ci_run.flush_proxies(dict(state, out=self.out, flush=wrong))
 
     def test_a_pair_past_its_deadline_is_stopped_with_its_children(self):
         t0 = time.time()

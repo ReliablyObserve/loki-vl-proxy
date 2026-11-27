@@ -8,7 +8,7 @@ generated:   # rewritten by conformance/scripts/error_registry.py
     - "admin authentication required"
     - "multiple org IDs present"
     - "peer authentication required"
-  loki_messages: ["msg-no-org-id"]
+  loki_messages: ["msg-no-org-id", "msg-unauthorized"]
   recorded_rows: 0
   comparable_rows: 0
   matching_rows: 0
