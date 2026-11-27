@@ -11,6 +11,13 @@
 
 - list checks/tests you ran locally or in CI
 
+## Local proof (Required, filled in before relying on CI)
+
+- date, head SHA, versions and data set of the run on your own isolated stack
+- the data this change moves, as tables: metrics scraped with the actions that produced them, or main vs PR vs Loki answers, VictoriaLogs calls, timings and load
+- screenshots of the panels or Explore/Logs Drilldown scenes that show the change, plus controls (images under `pr-<number>-local/` on `pr-visuals`); release, CI, documentation and test-only PRs show their local check results instead
+- what was not verified, and later commits the run does not cover
+
 ## Docs (Required)
 
 - the README and `docs/` pages this change affects (compatibility coverage, performance, query plan, configuration, observability), updated in this PR, or why none are
