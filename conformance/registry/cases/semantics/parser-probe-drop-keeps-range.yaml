@@ -71,7 +71,7 @@ corpus:
       - query: 'label_replace(sum(count_over_time({app="probe-drop"} | json | logfmt [30m])), "copy", "$1", "route", "(.*)")'
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#1832"
   impact: drilldown-visible
   effort: S
   area: "internal/proxy preferWorkingParser (parserProbeLogQuery, rangeParserProbeWindow, twoParserMetricResponseKeyVersion), internal/logql ReadParserStages"
