@@ -5,6 +5,7 @@
     "cancel-conflicted-pr-runs.yaml": {"group": "maintenance", "required": false, "verifies": "After a push to main, cancels the pull request runs of open pull requests that now conflict with main."},
     "change-scope.yaml": {"group": "pr-gates", "required": false, "verifies": "Reusable: reports which lanes of jobs a pull request needs (product, stack, baseline) from its changed files."},
     "changelog-pr.yaml": {"group": "pr-gates", "required": false, "verifies": "A pull request that changes shipped code carries a CHANGELOG entry under Unreleased."},
+    "local-proof-pr.yaml": {"group": "pr-gates", "required": false, "verifies": "A ready pull request written by a person has a filled-in Local proof section in its description."},
     "ci.yaml": {"group": "pr-gates", "required": true, "verifies": "Unit tests, race, fuzz smoke, lint, conformance gate, image, compose stacks (e2e-compat, fleet, UI), helm and docker checks."},
     "codeql.yaml": {"group": "pr-gates", "required": true, "verifies": "CodeQL analysis of the Go code and the workflows, also weekly on main."},
     "compat-drilldown.yaml": {"group": "pr-gates", "required": true, "verifies": "Logs Drilldown compatibility against the pinned and matrix Grafana and plugin versions."},
