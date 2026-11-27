@@ -58,7 +58,7 @@ func TestDropParserStagesKeepsTheTree(t *testing.T) {
 }
 
 // FuzzDropParserStages: for any text, the stages removed leave a query whose tree is the given query's without
-// them, and a text that does not parse is returned as it is.
+// them (or the query is left as it is), and a text that does not parse is returned as it is.
 //
 // conformance: semantics/parser-probe-drop-keeps-range
 func FuzzDropParserStages(f *testing.F) {
@@ -101,13 +101,16 @@ func checkDropParserStages(t *testing.T, q string, drop ParserType) {
 		}
 		return
 	}
-	after, err := Parse(got)
-	if err != nil {
-		t.Fatalf("DropParserStages(%q) = %q, which does not parse: %v", q, got, err)
-	}
-	want, gotTree := dropStagesTreeText(before, drop, false), dropStagesTreeText(after, drop, true)
-	if want != gotTree {
-		t.Fatalf("DropParserStages(%q) = %q\ntree  %s\nwant  %s", q, got, gotTree, want)
+	// A query left as it is was declined (a stage whose removal would join two tokens): it keeps both stages.
+	if got != q {
+		after, err := Parse(got)
+		if err != nil {
+			t.Fatalf("DropParserStages(%q) = %q, which does not parse: %v", q, got, err)
+		}
+		want, gotTree := dropStagesTreeText(before, drop, false), dropStagesTreeText(after, drop, true)
+		if want != gotTree {
+			t.Fatalf("DropParserStages(%q) = %q\ntree  %s\nwant  %s", q, got, gotTree, want)
+		}
 	}
 	// The probe's log query is the first range aggregation's, as the tree holds it.
 	if lq := ReadParserStages(q).LogQuery(); lq != "" {
@@ -200,5 +203,18 @@ func TestReadParserStagesLogQuery(t *testing.T) {
 		if got := ReadParserStages(q).LogQuery(); got != want {
 			t.Errorf("ReadParserStages(%q).LogQuery() = %q, want %q", q, got, want)
 		}
+	}
+}
+
+// A stage whose removal would join the token before it to the text after it is not removed: the query keeps both
+// stages, as a query the probe gives no verdict does.
+//
+// conformance: semantics/parser-probe-drop-keeps-range
+func TestDropParserStagesDeclinesAJoin(t *testing.T) {
+	if got := DropParserStages("{}|A|logfmt%00", ParserLogfmt); got != "{}|A|logfmt%00" {
+		t.Fatalf("got %q", got)
+	}
+	if got := DropParserStages(`sum(count_over_time({a="b"}|json|logfmt[5m]))`, ParserLogfmt); got != `sum(count_over_time({a="b"}|json[5m]))` {
+		t.Fatalf("got %q", got)
 	}
 }

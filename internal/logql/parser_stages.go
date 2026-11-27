@@ -83,6 +83,9 @@ func (s ParserStages) Drop(drop ParserType) string {
 	}
 	edits := make([]edit, 0, len(spans)+len(s.args))
 	for _, sp := range spans {
+		if !stageEndsCleanly(s.query, sp[1]) {
+			return s.query // what follows the stage would join the token before it
+		}
 		edits = append(edits, edit{sp[0], sp[1], ""})
 	}
 	for _, a := range s.args {
@@ -123,4 +126,19 @@ func DropParserStages(query string, drop ParserType) string {
 		return query
 	}
 	return ReadParserStages(query).Drop(drop)
+}
+
+// stageEndsCleanly reports a stage whose text ends where nothing would join the token before it once the stage is
+// removed: the end of the query, a blank, or a character that starts a token of its own (`|` of the next stage, `[`
+// of the range, `)` closing the range aggregation, `!`/`=`/`~` of a line filter, a comment). Anything else is left
+// as it is: the query keeps both stages.
+func stageEndsCleanly(query string, end int) bool {
+	if end >= len(query) {
+		return true
+	}
+	switch query[end] {
+	case ' ', '\t', '\n', '\r', '\v', '\f', '|', '[', ')', '!', '#':
+		return true
+	}
+	return false
 }
