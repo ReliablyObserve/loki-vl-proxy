@@ -91,6 +91,20 @@
    ]
   },
   {
+   "id": "explore-ranked-parser-fine-step",
+   "kind": "explore",
+   "query": "topk(3, sum by (status) (count_over_time({app=\"nginx-ingress\"} | regexp `\" (?P<status>[0-9]{3}) ` [1h])))",
+   "ranges": [
+    "5m"
+   ],
+   "ci_ranges": [
+    "5m"
+   ],
+   "covers": [
+    "semantics/ranked-parser-window-fine-step"
+   ]
+  },
+  {
    "id": "explore-nested-json-filtered-rate",
    "kind": "explore",
    "query": "max(sum by (cluster) (rate({env=\"production\"} | json | __error__=\"\" [$__auto])))",

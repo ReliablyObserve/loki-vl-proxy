@@ -114243,6 +114243,7 @@
       "warm_p50": 0.01
     }
   ],
+  "semantics/ranked-parser-window-fine-step": [],
   "semantics/series-level-aggregation-bounded-memory": [
     {
       "baseline": "release",

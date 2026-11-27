@@ -434,6 +434,17 @@ type Config struct {
 	// It is called at most once, by the warm-up or the flush (off the start-up
 	// path, as computing it can read the executable); nil or "" restores none.
 	CacheHandoverScope func() string
+	// CacheStartupPeerRestore lets the start-up warm-up pull the entries this
+	// replica owns or replicates from its peers when it has nothing local to
+	// warm from (no hand-over, an empty or no disk tier): within
+	// CacheStartupWarmBytes and CacheStartupWarmTimeout, so only when the
+	// warm-up is on (cache_handover.go). CacheStartupPeerRestoreConcurrency
+	// is the peers streamed from at once (0: the default).
+	CacheStartupPeerRestore            bool
+	CacheStartupPeerRestoreConcurrency int
+	// CacheStartupPeerRestoreMaxBytesPS caps the bytes per second the peer
+	// restore reads from all its streams (0: none).
+	CacheStartupPeerRestoreMaxBytesPS int64
 
 	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
 	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error
@@ -1990,6 +2001,8 @@ func New(cfg Config) (*Proxy, error) {
 		// Entries computed with a user's forwarded credentials stay on the
 		// replica that computed them.
 		p.peerCache.SetPushFilter(peerPushAllowed)
+		// Memory-only answers go to a restoring peer of the same scope only.
+		p.peerCache.SetBulkScope(p.cacheHandover.scope)
 		// Held VictoriaLogs refusals pushed by peers (vl_refusal.go).
 		p.peerCache.HandleEverywhere(p.receiveRefusal)
 	}
@@ -2404,6 +2417,8 @@ func (p *Proxy) RegisterProxyRoutes(mux RouteMux) {
 		mux.Handle("/_cache/hot", peerCacheHandler)
 		mux.Handle("/_cache/has", peerCacheHandler)
 		mux.Handle("/_cache/peers", peerCacheHandler)
+		// Peer bulk restore streams (internal/cache/peer_bulk_serve.go).
+		mux.Handle("/_cache/bulk", peerCacheHandler)
 		// Peer-side cache purge (fanout target of /admin/cache/flush?peers=1).
 		// Same shared-token gate; purges this node's caches only (no re-fanout).
 		mux.Handle("/_cache/purge", securityHeaders(p.peerCacheMiddleware(http.HandlerFunc(p.handlePeerCachePurge))))
@@ -2863,6 +2878,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
+	// The window evaluator notes the step and bucket grid it reads, for the error log line (read_budget.go).
+	r = r.WithContext(withReadGridNote(r.Context()))
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while

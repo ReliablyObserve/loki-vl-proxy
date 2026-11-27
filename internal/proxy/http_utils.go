@@ -588,7 +588,7 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 	}
 	// slog.Attr values carry no interface boxing, and the buffer holds every field
 	// the line can carry: the line costs no allocation of its own.
-	var buf [13]slog.Attr
+	var buf [18]slog.Attr
 	attrs := append(buf[:0], slog.Int("code", status), slog.String("error", text))
 	cause := err
 	if typed != nil {
@@ -623,6 +623,8 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 			attrs = append(attrs, slog.String("endpoint", meta.endpoint), slog.String("route", meta.route))
 		}
 	}
+	// The step and bucket grid of a range metric read: which step sized a read that passed its bound.
+	attrs = readGridAttrs(ctx, attrs)
 	p.log.LogAttrs(context.Background(), level, "request error", attrs...)
 }
 
