@@ -73,6 +73,10 @@ func TestMetrics_Handler_EmitsCacheRestartMetrics(t *testing.T) {
 			`loki_vl_proxy_cache_restart_warm_budget_bytes{source="disk"} 1.073741824e+09`,
 			`loki_vl_proxy_cache_restart_warm_processed_entries{source="disk"} 55`,
 			`loki_vl_proxy_cache_restart_warm_processed_bytes{source="disk"} 1000`,
+			`loki_vl_proxy_cache_restart_warm_restored_entries{source="disk"} 53`,
+			`loki_vl_proxy_cache_restart_warm_restored_bytes{source="disk"} 3000`,
+			`loki_vl_proxy_cache_restart_warm_restored_entries{source="peer"} 29`,
+			`loki_vl_proxy_cache_restart_warm_restored_bytes{source="peer"} 2000`,
 			`loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second{source="disk"} 1500`,
 			`loki_vl_proxy_cache_restart_warm_remaining_seconds{source="disk"} 6`,
 			`loki_vl_proxy_cache_restart_warm_timeout_seconds{source="disk"} 10`,
@@ -129,6 +133,8 @@ func TestOTLPPusher_IncludesCacheRestartMetrics(t *testing.T) {
 			"loki_vl_proxy_cache_restart_warm_budget_bytes",
 			"loki_vl_proxy_cache_restart_warm_processed_entries",
 			"loki_vl_proxy_cache_restart_warm_processed_bytes",
+			"loki_vl_proxy_cache_restart_warm_restored_entries",
+			"loki_vl_proxy_cache_restart_warm_restored_bytes",
 			"loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second",
 			"loki_vl_proxy_cache_restart_warm_remaining_seconds",
 			"loki_vl_proxy_cache_restart_warm_timeout_seconds",
@@ -171,5 +177,48 @@ func TestMetrics_RequestLoadCountsClientRequests(t *testing.T) {
 	var nilMetrics *Metrics
 	if nilMetrics.RequestLoad() != (cache.BulkLoad{}) {
 		t.Fatal("nil metrics")
+	}
+}
+
+// The restored series carry each source's own counts over OTLP: what the memory tier took, without the skipped.
+// conformance: cache-restart-handover
+func TestOTLPPusher_RestoredEntriesAndBytesBySource(t *testing.T) {
+	data, err := json.Marshal(NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, NewMetrics()).cacheRestoreMetrics(restartStats(false).Handover, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded []struct {
+		Name  string `json:"name"`
+		Gauge struct {
+			DataPoints []struct {
+				AsDouble   float64 `json:"asDouble"`
+				Attributes []struct {
+					Value struct {
+						StringValue string `json:"stringValue"`
+					} `json:"value"`
+				} `json:"attributes"`
+			} `json:"dataPoints"`
+		} `json:"gauge"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]float64{}
+	for _, m := range decoded {
+		for _, dp := range m.Gauge.DataPoints {
+			if len(dp.Attributes) == 1 {
+				got[m.Name+"/"+dp.Attributes[0].Value.StringValue] = dp.AsDouble
+			}
+		}
+	}
+	for key, want := range map[string]float64{
+		"loki_vl_proxy_cache_restart_warm_restored_entries/disk": 53,
+		"loki_vl_proxy_cache_restart_warm_restored_bytes/disk":   3000,
+		"loki_vl_proxy_cache_restart_warm_restored_entries/peer": 29,
+		"loki_vl_proxy_cache_restart_warm_restored_bytes/peer":   2000,
+	} {
+		if g, ok := got[key]; !ok || g != want {
+			t.Errorf("%s = %v (present %v), want %v", key, g, ok, want)
+		}
 	}
 }

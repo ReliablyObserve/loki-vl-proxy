@@ -718,6 +718,7 @@ func writeCacheRestartMetrics(sb *strings.Builder, h cache.HandoverStats) {
 	sb.WriteString("# HELP loki_vl_proxy_cache_startup_l1_hits Memory cache hits in the first 10 minutes after start (frozen after them).\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_startup_l1_hits gauge\n")
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_startup_l1_hits %d\n", h.StartupL1Hits)
+	writeSinceStartRatios(sb, h)
 }
 
 // restoreMetric is one gauge of the warm-up's plan and progress; both
@@ -742,13 +743,15 @@ func restoreSources(h cache.HandoverStats) []cache.RestoreProgress {
 // warm-up, the disk index rebuild, as gauges updated after every batch.
 func restoreMetrics(h cache.HandoverStats, p cache.RestoreProgress) []restoreMetric {
 	remaining, _ := p.Remaining()
-	out := make([]restoreMetric, 0, 12)
+	out := make([]restoreMetric, 0, 14)
 	out = append(out, []restoreMetric{
 		{"loki_vl_proxy_cache_restart_warm_planned_entries", "Entries the restart warm-up found to restore.", "", float64(p.PlannedEntries)},
 		{"loki_vl_proxy_cache_restart_warm_planned_bytes", "Bytes of the entries the restart warm-up found to restore: encoded disk bytes, and the decoded size of memory-only answers.", "By", float64(p.PlannedBytes)},
 		{"loki_vl_proxy_cache_restart_warm_budget_bytes", "Most decoded bytes this warm-up may restore (-cache-startup-warm-bytes, at most half of -cache-max-bytes).", "By", float64(p.BudgetBytes)},
 		{"loki_vl_proxy_cache_restart_warm_processed_entries", "Planned entries restored or skipped so far.", "", float64(p.ProcessedEntries)},
 		{"loki_vl_proxy_cache_restart_warm_processed_bytes", "Stored bytes of the planned entries restored or skipped so far.", "By", float64(p.ProcessedBytes)},
+		{"loki_vl_proxy_cache_restart_warm_restored_entries", "Planned entries restored into the memory cache so far; skipped entries are not in it.", "", float64(p.RestoredEntries)},
+		{"loki_vl_proxy_cache_restart_warm_restored_bytes", "Bytes (key and decoded value) of the entries restored into the memory cache so far.", "By", float64(p.RestoredBytes)},
 		{"loki_vl_proxy_cache_restart_warm_throughput_bytes_per_second", "Decoded bytes restored per second: so far while the warm-up runs, over the whole warm-up after it.", "By/s", p.BytesPerSecond()},
 		{"loki_vl_proxy_cache_restart_warm_remaining_seconds", "Estimated seconds the running warm-up still needs, from its rate so far; 0 when none runs or nothing is measured yet.", "s", remaining.Seconds()},
 		{"loki_vl_proxy_cache_restart_warm_timeout_seconds", "Time the warm-up was given (-cache-startup-warm-timeout).", "s", p.Timeout.Seconds()},

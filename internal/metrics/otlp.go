@@ -309,6 +309,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	metrics = append(metrics, p.connectionMetrics(now)...)
 	metrics = append(metrics, p.requestMetrics(now)...)
 	metrics = append(metrics, p.upstreamFanoutMetrics(now)...)
+	metrics = append(metrics, p.cacheReadsPerRequestMetrics(now)...)
 	metrics = append(metrics, p.tenantMetrics(now)...)
 	metrics = append(metrics, p.clientErrorMetrics(now)...)
 	metrics = append(metrics, p.endpointCacheMetrics(now)...)
@@ -458,6 +459,7 @@ func (p *OTLPPusher) cacheRestartMetrics(h cache.HandoverStats, now int64) []map
 	if !h.StartupTracked {
 		return out
 	}
+	out = append(out, p.sinceStartRatioMetrics(h, now)...)
 	return append(out,
 		p.gaugeMetric("loki_vl_proxy_cache_startup_l1_requests",
 			"Memory cache lookups in the first 10 minutes after start (frozen after them); with loki_vl_proxy_cache_startup_l1_hits, the start-up hit ratio.", "",
