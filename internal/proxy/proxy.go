@@ -279,6 +279,20 @@ type Config struct {
 	// fallback, skipping the per-row scan of the line body. Zero value keeps
 	// Loki's full derivation.
 	DisableDetectedLevelBodyScan bool
+	// ServiceNameStreamLabelOnly is the operator's statement that VictoriaLogs stores service_name only as a stream
+	// label (if at all) and service.name never as a regular field of a row whose stream has a service.name label:
+	// a positive service_name selector matcher then also sends the stream filter of the streams that can hold its
+	// rows (translate.ServiceNameStreamFilter). Zero value: the derivation's filter alone.
+	ServiceNameStreamLabelOnly bool
+	// ServiceNameStreamRoute turns on the automatic service_name stream filter (service_name_route.go): a log query
+	// read narrowed to the streams that can hold its service, kept only when a VictoriaLogs read beside it finds no
+	// row the narrowing leaves out. -service-name-stream-route, off by default (as the zero value).
+	ServiceNameStreamRoute bool
+	// ServiceNameStreamRouteMinWindow is the shortest read window the automatic route narrows (0: every window).
+	ServiceNameStreamRouteMinWindow time.Duration
+	// ServiceNameStreamRouteViolationTTL is how long a found row the narrowing leaves out keeps a tenant's service on
+	// the derived filter alone (0: not remembered).
+	ServiceNameStreamRouteViolationTTL time.Duration
 	// TranslateShadowSample is the share (0-1) of the string translator's cache misses that the typed lowering
 	// also translates in the background to be compared with it (see lowering_shadow.go). 0 turns it off.
 	TranslateShadowSample float64
@@ -871,6 +885,10 @@ type Proxy struct {
 	backendDefaultMsgValue                string
 	jsonLineFieldsAsLineKeys              bool
 	detectedLevelBodyScan                 bool
+	serviceNameStreamLabelOnly            bool
+	serviceNameStreamRoute                bool
+	serviceNameRouteMinWindow             time.Duration
+	serviceNameRouteViolationTTL          time.Duration
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	deleteAPIAuthToken                    string
@@ -1648,6 +1666,10 @@ func New(cfg Config) (*Proxy, error) {
 		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
 		jsonLineFieldsAsLineKeys:              cfg.JSONLineFieldsAsLineKeys,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
+		serviceNameStreamLabelOnly:            cfg.ServiceNameStreamLabelOnly,
+		serviceNameStreamRoute:                cfg.ServiceNameStreamRoute,
+		serviceNameRouteMinWindow:             cfg.ServiceNameStreamRouteMinWindow,
+		serviceNameRouteViolationTTL:          cfg.ServiceNameStreamRouteViolationTTL,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
 		flippedConstructs:                     QueryPlanFlippedConstructs,
@@ -2003,8 +2025,9 @@ func New(cfg Config) (*Proxy, error) {
 		p.peerCache.SetPushFilter(peerPushAllowed)
 		// Memory-only answers go to a restoring peer of the same scope only.
 		p.peerCache.SetBulkScope(p.cacheHandover.scope)
-		// Held VictoriaLogs refusals pushed by peers (vl_refusal.go).
-		p.peerCache.HandleEverywhere(p.receiveRefusal)
+		// Held VictoriaLogs refusals (vl_refusal.go) and service_name route violations (service_name_route.go)
+		// pushed by peers.
+		p.peerCache.HandleEverywhere(p.receiveEverywhere)
 	}
 	if p.clientAuth != nil {
 		p.metrics.EnableAuthMetrics()
@@ -3211,6 +3234,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		stepsRun.arm()
 		p.proxyStatsQueryRange(sc, r, stats)
 	} else {
+		// A log query of one service reads the streams that can hold it when VictoriaLogs shows, beside each read,
+		// that the narrowing leaves out no row (service_name_route.go).
+		r = p.withServiceNameRoute(r, parsedForRouting)
 		if !p.proxyLogQueryWindowed(sc, r, logsqlQuery) {
 			if p.coldRouter != nil {
 				p.proxyLogQueryWithCold(sc, r, logsqlQuery)
@@ -3346,6 +3372,13 @@ func (p *Proxy) appendResponseProfileCacheKey(dst []byte, r *http.Request, endpo
 			dst = append(dst, "/ms-"...)
 			dst = strconv.AppendInt(dst, int64(limits.MaxQuerySeries), 10)
 		}
+	}
+	// An answer read through the service_name stream filter (-service-name-stream-label-only) is kept apart from
+	// one read without it, so turning the flag off never serves an answer the operator's statement decided. Every
+	// query with a service_name matcher spells these bytes; other queries, and every query while the flag is off,
+	// keep their keys.
+	if p.serviceNameStreamLabelOnly && strings.Contains(r.FormValue("query"), "service_name") {
+		dst = append(dst, "/sn-stream"...)
 	}
 	return dst
 }

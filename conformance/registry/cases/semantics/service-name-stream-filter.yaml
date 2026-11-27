@@ -1,0 +1,58 @@
+id: semantics/service-name-stream-filter
+title: A service_name selector reads only that service's streams when the operator declares service_name a stream label
+pending: true
+proves:
+  - service-name-derivation
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  `{service_name="x"}` is matched on the service_name the proxy derives (the first non-empty of service_name,
+  service.name, service, app, ... or unknown_service), as a filter of one OR branch per source field. VictoriaLogs
+  evaluates that filter on every block of every stream in the window, so a Logs Drilldown panel of one service
+  scans every service's streams (issue #1763: 8.7 s and 20 s calls in an OpenTelemetry deployment where
+  service.name is a stream field).
+
+  With -service-name-stream-label-only (default off) the operator declares that service_name is stored only as a
+  stream label, if at all, and service.name never as a regular field of a row whose stream has a service.name
+  label. A positive `service_name="x"` matcher (x not empty) then also writes the stream filter
+  `{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}`, first, beside the
+  unchanged derived filter. Under the declaration a row derives x only from a stream that filter keeps (a missing
+  label reads as "" in a stream filter), so the rows kept are the same and VictoriaLogs selects the streams from its
+  stream index. Negated, regexp and empty matchers, a selector whose stream filter a declared -stream-fields
+  matcher already writes, the delete API, the shadows and the translator keep the derived filter alone. Answers
+  read with the flag are cached under keys of their own (the response profile part `/sn-stream`), so turning the
+  flag off never serves one.
+
+  Where the declaration is false the stream filter can leave rows out: a regular service_name field (structured
+  metadata, a JSON key outside the stream fields) in a stream of another service, or a regular service.name beside
+  a service.name stream label of another value (VictoriaLogs reads the regular field as the row's service.name,
+  verified on v1.49.0 and v1.54.0). The configuration reference gives the queries that check a deployment.
+
+  Measured (VictoriaLogs v1.49.0 and v1.54.0 in process, 2400 and 9600 streams, 5.8M and 11.5M rows over 24 h,
+  one service of 300 or 1200, cold = fresh VictoriaLogs process, median of 3 cold and 24 repeats): log, parser,
+  level-grouped and field-grouped stats queries up to 9x faster at 10m, 1h and 24h (the least gain, about
+  1x, on 24 h field-grouped stats where the service's own rows dominate), none slower beyond noise; with
+  service.name as a regular field only (no gain possible) about 1.5 ms slower on the first read, equal on repeats;
+  beside a declared stream-field matcher a second stream filter was slower on the first read, so none is written
+  there.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"}'
+    start: now-1h
+    end: now
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+  proxy_flags:
+    - -service-name-stream-label-only
+  verify:
+    blocked_by: proxy_only
+    reason: "no proxy of the e2e stack runs with -service-name-stream-label-only; the proof is the proxy with and without the flag over VictoriaLogs v1.49.0 and v1.54.0 (TestServiceNameStreamFilterAnswersOnVictoriaLogs) and the e2e comparison with Loki (TestCompat_ServiceNameStreamFilterLikeLoki)"
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    The answer the proxy gives without the flag, which is Loki's: the same streams, lines and values; only the
+    VictoriaLogs reads change.

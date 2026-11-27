@@ -46,6 +46,9 @@ type Profile struct {
 	AliasField, FieldAlias func(string) string
 	// metric says the log query is the one of a metric row (metricLogQuery).
 	metric bool
+	// ServiceNameStreamLabelOnly writes a positive service_name selector matcher with the stream filter of the
+	// streams that can hold its rows (translate.SelectorOptions): the operator's -service-name-stream-label-only.
+	ServiceNameStreamLabelOnly bool
 	// Budget, when set, is asked at every node the lowering visits whether the caller's time for planning is spent;
 	// the lowering then stops with ErrBudgetExhausted. The caller must not read that error as a construct that is
 	// not lowered. It changes nothing a lowering writes.
@@ -241,7 +244,8 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 	level.flush(&q)
 	q.flush()
 	q.pipes = appendScratchDeletes(q.pipes, lf, len(read) > 0)
-	f, err := translate.StreamSelectorFilterNamed(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteFieldName)
+	f, err := translate.StreamSelectorFilterOpts(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteFieldName,
+		translate.SelectorOptions{ServiceNameStreamLabelOnly: prof.ServiceNameStreamLabelOnly})
 	if err != nil {
 		return logsql.Query{}, false, err
 	}
