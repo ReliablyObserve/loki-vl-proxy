@@ -129,6 +129,15 @@ func (c *Cache) DiskCache() *DiskCache {
 	return c.l2
 }
 
+// Tiers reports whether the cache reads at all (enabled) and which tiers
+// behind memory are attached. Attachments are configured before serving.
+func (c *Cache) Tiers() (disk, peer, enabled bool) {
+	if c == nil || c.disabled {
+		return false, false, false
+	}
+	return c.l2 != nil, c.l3 != nil, true
+}
+
 // LayerStats returns bounded O(1) snapshots. Disk counters include queue hits;
 // encoded record bytes are logical bbolt traffic, not physical device I/O.
 func (c *Cache) LayerStats() (out [LayerCount]LayerStatsSnapshot) {

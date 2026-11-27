@@ -279,6 +279,11 @@ func TestRestore_StopsAtAFullMemoryTier(t *testing.T) {
 	if warm.Reason != RestoreDone || warm.DiskEntries != 100 || warm.Progress.Skipped[RestoreSkipMemoryFull] != n-100 {
 		t.Fatalf("warm %+v", warm)
 	}
+	// The restored counts are what the memory tier took: nothing of the skipped entries.
+	_, held := f.c.Size()
+	if p := f.c.HandoverStats().Restore; p.RestoredEntries != 100 || p.RestoredBytes != int64(held) || p.RestoredEntries+p.SkippedEntries() != n {
+		t.Fatalf("restored %d entries, %d bytes; memory holds %d bytes: %+v", p.RestoredEntries, p.RestoredBytes, held, p)
+	}
 }
 
 // conformance: cache-restart-handover
