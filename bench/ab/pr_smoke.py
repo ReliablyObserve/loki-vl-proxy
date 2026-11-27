@@ -471,6 +471,13 @@ def stitched_reference_problems(ref, shape, query, secs, step, end, loki_url):
     if not all(read(p, actual, p["start"], p["end"]) for p in pieces) or ref.get("cache") != report.sum_cache(
             [{"cache": p["cache"]} for p in pieces]):
         return problem
+    # The joined answer holds every piece's points, once: the pieces share no grid point and the join rejects a
+    # repeat, so its points are their sum, and a series is in one piece at least and in each piece at most once.
+    joined, parts = report.SIG_RE.fullmatch(ref.get("signature") or ""), [report.SIG_RE.fullmatch(p.get("signature") or "") for p in pieces]
+    if (not joined or not all(parts) or int(joined.group(2)) != sum(int(m.group(2)) for m in parts)
+            or (joined.group(1) == "ranked") != any(m.group(1) == "ranked" for m in parts)
+            or joined.group(1) != "ranked" and not max(int(m.group(1)) for m in parts) <= int(joined.group(1)) <= sum(int(m.group(1)) for m in parts)):
+        return ["stitched Loki answer does not hold its pieces' points"]
     check, middle = ref.get("whole_check") or {}, len(plan) // 2
     start, stop = plan[middle - 1][0], plan[middle][1]
     spelled = check.get("actual_query")

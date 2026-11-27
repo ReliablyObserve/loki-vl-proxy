@@ -135,6 +135,8 @@ class RuntimeProofTest(unittest.TestCase):
             "whole-check-plain": lambda w: ref(w)["whole_check"].update(actual_query=shape["query"]),
             "loki-answered": lambda w: (w["proof"]["measured_reference"].update(status=200, signature="series=1"),
                                         w["measured"]["loki"].update(status=200)),
+            "joined-drops-points": lambda w: ref(w).update(signature=ref(w)["signature"].replace(" points=", " points=1")),
+            "joined-extra-series": lambda w: ref(w).update(signature="series=99" + ref(w)["signature"][ref(w)["signature"].index(" points="):]),
             "summed-cache": lambda w: ref(w).update(cache={"result": {"entriesFound": 0, "entriesRequested": 1}}),
             "candidate-differs": lambda w: w["proof"]["targets"]["pr"].update(parity_vs_reference="differs", facets=[{"kind": "series"}]),
         }
