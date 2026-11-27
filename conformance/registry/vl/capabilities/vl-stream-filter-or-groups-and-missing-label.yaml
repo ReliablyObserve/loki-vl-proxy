@@ -1,0 +1,38 @@
+id: vl-stream-filter-or-groups-and-missing-label
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  A stream filter of several matcher groups, {a="x" or a="", b="x" or a="", b=""}, is one stream filter: VictoriaLogs
+  keeps the streams that match every matcher of at least one group and selects them from its stream index (an OR of
+  separate stream filters, {a="x"} OR {b="x"}, is evaluated per block instead). A matcher with the empty value matches
+  a stream that lacks the label. A stream label is also the row's field of that name with the same value, unless the
+  row carries a regular field of the same name, which VictoriaLogs then reads as the field (measured with an
+  OpenTelemetry resource attribute service.name beside a log attribute service.name, and a service_name stream label
+  beside structured metadata service_name). Measured on VictoriaLogs v1.49.0 and v1.54.0 (2026-11-25): the grouped
+  filter answers as the field-filter chain beside it on every source layout, and the OR of filters loses most of the
+  speed.
+proxy_usage: |
+  -service-name-stream-label-only writes {service_name="x" or service_name="", service.name="x" or service_name="",
+  service.name=""} before the derived service_name filter of a positive service_name="x" selector matcher
+  (translate.ServiceNameStreamFilter). The answer is the same as without it only if VictoriaLogs reads the groups,
+  the missing label and the stream labels as above; the flag's documentation names the duplicate-field case as a row
+  the operator's declaration excludes.
+  The automatic route (-service-name-stream-route, default off) sends the same stream filter in extra_filters, an
+  argument VictoriaLogs parses as a filter (a value not starting with `{"`) and ANDs with the query and its
+  subqueries (v1.49.0 and v1.54.0, app/vlselect/logsql parseCommonArgs); the stream filter there selects the streams
+  from the stream index as it does in the query text (measured equal timings and answers). Its answer is used only
+  when a proof read beside it finds no row the filter leaves out, so a VictoriaLogs whose semantics differed would
+  make the route fall back, not answer differently, provided the proof's own reading holds: a stream label is a
+  field of each of its rows, overridden only by a non-empty regular field of the same name
+  (TestServiceNameRouteAnswersOnVictoriaLogs holds every answer to the route off, violating layouts included).
+fallback: |
+  The flag is off by default, and off sends the derived filter alone. The route falls back to the read without the
+  stream filter on a found row, a failed or timed-out proof and a refused narrowed read. A VictoriaLogs release that changed these
+  semantics fails TestServiceNameStreamFilterAnswersOnVictoriaLogs (serve oracle, v1.49.0 and the newest release, in
+  the PR quality report) and TestVLCapability_ServiceNameStreamFilterLikeLoki (the version matrix) before it is
+  supported.
+proves:
+  - service-name-derivation
