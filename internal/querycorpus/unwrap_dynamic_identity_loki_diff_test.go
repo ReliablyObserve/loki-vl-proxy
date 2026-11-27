@@ -80,6 +80,9 @@ var dynamicIdentityBinaryQueries = func() []string {
 		`sum(` + maxApp + ` - ` + minApp + `)`,
 		`sum(max_over_time({job="de"} | json | unwrap duration_ms [5m])) - sum(min_over_time({job="de"} | json | unwrap duration_ms [5m]))`,
 		`sum by (app) (max_over_time({job="dj"} | json | unwrap duration_ms [1m])) - sum by (app) (count_over_time({job="dj"} | json [5m]))`,
+		// first and last over time: a value per series, their row of the latest or earliest time.
+		dj("last_over_time", " by (app)") + ` - ` + dj("first_over_time", " by (app)"),
+		dl("sum", "last_over_time") + ` / on (app) ` + dl("sum", "avg_over_time"),
 	}
 }()
 
