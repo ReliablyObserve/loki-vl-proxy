@@ -915,6 +915,7 @@
     "semantics/parsed-unwrap-vector-fold-values-residual | query",
     "semantics/parser-probe-drop-keeps-range | compare:observed",
     "semantics/parser-probe-drop-keeps-range | gap:fixed",
+    "semantics/parser-probe-drop-keeps-range | perf",
     "semantics/parser-probe-drop-keeps-range | query",
     "semantics/parser-reads-unicode-blank-as-white-space | compare:observed",
     "semantics/parser-reads-unicode-blank-as-white-space | gap:fixed",
@@ -3828,7 +3829,7 @@
     },
     "page_kinds": {
       "drilldown": 23,
-      "explore": 146,
+      "explore": 147,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3842,7 +3843,7 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 118,
+    "shape_covers_distinct": 119,
     "shapes_path_only": 10,
     "unwired_items": 155,
     "wired_items": 501
@@ -3946,6 +3947,7 @@
     "explore-numeric-equality-count",
     "explore-numeric-equality-error-logs",
     "explore-numeric-equality-logs",
+    "explore-parser-probe-drop",
     "explore-pattern-filter-anchored",
     "explore-plain-level-metric",
     "explore-ranked-parser-fine-step",
@@ -4661,6 +4663,9 @@
     "parenthesized-range-or-filters/PR5 rate by app, pipeline after the range",
     "parenthesized-range-or-filters/PR6 doubly parenthesised range",
     "parenthesized-range-or-filters/PR7 instant, parenthesised line filter",
+    "parser-probe-drop/PD1 instant count, json then logfmt last before the range",
+    "parser-probe-drop/PD2 count, json then logfmt last before the range",
+    "parser-probe-drop/PD3 instant Drilldown count, json, logfmt, drop (control)",
     "pattern-line-filter-anchoring/A1 nginx include GET, log query",
     "pattern-line-filter-anchoring/A2 nginx exclude GET, log query",
     "pattern-line-filter-anchoring/A3 nginx include GET, count_over_time",
