@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-30 of 119 items are locked; 5 carry an effort exception.
+30 of 120 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -301,6 +301,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.02s / 0.03s (24h) | 0.06s † / 0.06s | differs | locked 2026-10-27 |
 | `semantics/nested-aggregation-outer-by-native-routes` | 16 × 3 ranges | 27 same | worst 0.78s / 0.02s (6h) | 1.60s / 0.05s | same | not locked |
 | `semantics/parenthesized-log-range` | 7 × 5 ranges | 25 same | worst 1.52s / 0.01s (24h) | 5.00s / 0.04s | same | locked 2026-10-27 |
+| `semantics/parser-probe-drop-keeps-range` | — | not measured | | | | not locked |
 | `semantics/pattern-line-filter` | 4 × 1 ranges | 4 same | worst 0.04s / 0.03s (1h) | 0.04s / 0.02s | same | locked 2026-10-27 |
 | `semantics/pattern-line-filter-anchoring` | 9 × 2 ranges | 18 same | worst 0.24s / 0.01s (24h) | 0.19s / 0.01s | same; 1 slower than Loki cold | not locked |
 | `semantics/pipeline-error-text-parity` | 2 × 4 ranges | 4 same | worst 1.09s / 0.01s (24h) | 1.13s / 0.02s | same | not locked |

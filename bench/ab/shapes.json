@@ -3789,6 +3789,48 @@
      ]
     }
    ]
+  },
+  "parser-probe-drop": {
+   "description": "Issue #1821: a metric naming both `| json` and `| logfmt` whose second parser is the last stage before its range. The parser probe keeps one of the two stages; the text pattern that removed the other took the range with it (instant 400 \"log queries are not supported\", range 500). PD3 is the Logs Drilldown count with the drop of the error labels, whose VictoriaLogs requests do not change.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "PD1 instant count, json then logfmt last before the range",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt [1h]))",
+     "covers": [
+      "semantics/parser-probe-drop-keeps-range",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "PD2 count, json then logfmt last before the range",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt [5m]))",
+     "covers": [
+      "semantics/parser-probe-drop-keeps-range",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PD3 instant Drilldown count, json, logfmt, drop (control)",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [1h]))",
+     "covers": [
+      "semantics/parser-probe-drop-keeps-range",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    }
+   ]
   }
  }
 }
