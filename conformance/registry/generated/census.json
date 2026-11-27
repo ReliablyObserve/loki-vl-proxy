@@ -1489,6 +1489,8 @@
     "internal/cache/eviction_signals_test.go | cache-eviction-signals",
     "internal/cache/handover_peak_test.go | cache-restart-handover",
     "internal/cache/handover_test.go | cache-restart-handover",
+    "internal/cache/peer_bulk_governor_test.go | cache-restart-handover",
+    "internal/cache/peer_bulk_wire_test.go | cache-restart-handover",
     "internal/cache/peer_close_conn_test.go | shutdown-releases-background-work",
     "internal/cache/peer_everywhere_test.go | semantics/error-cache-vl-refusal-peer-sync",
     "internal/cache/peer_hedge_test.go | peer-cache-patterns",
@@ -1505,6 +1507,7 @@
     "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
+    "internal/cache/restore_peer_test.go | cache-restart-handover",
     "internal/cache/restore_test.go | cache-restart-handover",
     "internal/cache/retention_test.go | cache-reuse-retention",
     "internal/cache/retention_trace_test.go | cache-reuse-retention",
@@ -1754,6 +1757,7 @@
     "internal/proxy/cache_key_fingerprint_golden_test.go | cache-key-credential-digest",
     "internal/proxy/cache_layer_metrics_test.go | cache-eviction-signals",
     "internal/proxy/cache_layer_metrics_test.go | cache-sizing-signals",
+    "internal/proxy/cache_peer_restore_test.go | cache-restart-handover",
     "internal/proxy/canonical_spelling_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/proxy/canonical_spelling_loki_test.go | semantics/translator-reads-parenthesized-metric-as-text",
@@ -3705,6 +3709,8 @@
     "test/e2e-fleet/peer_cache_proof_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/peer_push_replay_test.go | peer-cache-fleet-recovery",
     "test/e2e-fleet/peer_push_replay_test.go | peer-cache-push-replay",
+    "test/e2e-fleet/peer_restore_load_test.go | cache-restart-handover",
+    "test/e2e-fleet/peer_restore_test.go | cache-restart-handover",
     "test/e2e-fleet/query_range_window_moved_reuse_test.go | semantics/query-range-window-full-limit-reads",
     "test/e2e-fleet/restart_handover_test.go | cache-restart-handover",
     "test/e2e-fleet/settled_steps_test.go | quality/query-range-settled-steps",
@@ -3735,7 +3741,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 868,
+      "go": 874,
       "playwright": 3
     },
     "page_kinds": {

@@ -181,10 +181,16 @@
       "cmd/proxy/cache_handover_scope_test.go",
       "internal/cache/handover_peak_test.go",
       "internal/cache/handover_test.go",
+      "internal/cache/peer_bulk_governor_test.go",
+      "internal/cache/peer_bulk_wire_test.go",
+      "internal/cache/restore_peer_test.go",
       "internal/cache/restore_test.go",
       "internal/metrics/cache_restart_metrics_test.go",
       "internal/proxy/cache_handover_log_test.go",
       "internal/proxy/cache_handover_test.go",
+      "internal/proxy/cache_peer_restore_test.go",
+      "test/e2e-fleet/peer_restore_load_test.go",
+      "test/e2e-fleet/peer_restore_test.go",
       "test/e2e-fleet/restart_handover_test.go",
       "test/helm/cache_handover_test.go"
     ],
@@ -3308,6 +3314,12 @@
     "internal/cache/handover_test.go": [
       "cache-restart-handover"
     ],
+    "internal/cache/peer_bulk_governor_test.go": [
+      "cache-restart-handover"
+    ],
+    "internal/cache/peer_bulk_wire_test.go": [
+      "cache-restart-handover"
+    ],
     "internal/cache/peer_close_conn_test.go": [
       "shutdown-releases-background-work"
     ],
@@ -3341,6 +3353,9 @@
     ],
     "internal/cache/peer_test.go": [
       "peer-cache-patterns"
+    ],
+    "internal/cache/restore_peer_test.go": [
+      "cache-restart-handover"
     ],
     "internal/cache/restore_test.go": [
       "cache-restart-handover"
@@ -3856,6 +3871,9 @@
     "internal/proxy/cache_layer_metrics_test.go": [
       "cache-eviction-signals",
       "cache-sizing-signals"
+    ],
+    "internal/proxy/cache_peer_restore_test.go": [
+      "cache-restart-handover"
     ],
     "internal/proxy/canonical_spelling_loki_test.go": [
       "loki_api_v1_query_range",
@@ -7210,6 +7228,12 @@
       "peer-cache-fleet-recovery",
       "peer-cache-push-replay"
     ],
+    "test/e2e-fleet/peer_restore_load_test.go": [
+      "cache-restart-handover"
+    ],
+    "test/e2e-fleet/peer_restore_test.go": [
+      "cache-restart-handover"
+    ],
     "test/e2e-fleet/query_range_window_moved_reuse_test.go": [
       "semantics/query-range-window-full-limit-reads"
     ],
@@ -7258,7 +7282,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 871,
+  "tests_with_markers": 877,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

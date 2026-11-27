@@ -315,7 +315,8 @@ services:
 
   # Restart hand-over of the response cache (-cache-shutdown-flush-timeout,
   # -cache-startup-warm-bytes), started and removed by
-  # TestFleet_RestartHandoverKeepsTheResponseCacheWarm
+  # TestFleet_RestartHandoverKeepsTheResponseCacheWarm and
+  # TestFleet_PeerRestoreRefillsAWipedDisk
   # (`docker compose --profile handover up proxy-handover-a proxy-handover-b`):
   # a ring of two replicas of their own, outside proxy-a/b/c's.
   proxy-handover-a:
