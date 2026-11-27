@@ -247,6 +247,23 @@ def seed_field_sample_fixture(st, end):
             pass
 
 
+def seed_packed_unpack_fixture(st, end):
+    """Mirror lines a packing agent writes (a JSON object with a string `_entry`), next to ones `| unpack` leaves
+    as they are, for the sums over an unpack. Every line is a JSON object, so no parser error is part of it."""
+    app = "visual-unpack"
+    shapes = ('{{"agent":"a","_entry":"packed sample {0}"}}', '{{"agent":"a","sample":{0}}}',
+              '{{"agent":"a","_entry":{0}}}')
+    values = [[str((end - 3600 + i * 30) * 1_000_000_000 + 500_000_000), shapes[i % len(shapes)].format(i)]
+              for i in range(119)]
+    payload = json.dumps({"streams": [{"stream": {"app": app, "service_name": app}, "values": values}]}).encode()
+    for url in (f"{st.loki}/loki/api/v1/push",
+                f"{st.vl}/insert/loki/api/v1/push?disable_message_parsing=1"):
+        req = urllib.request.Request(url, data=payload,
+                                     headers={"Content-Type": "application/json", "X-Scope-OrgID": "0"})
+        with urllib.request.urlopen(req, timeout=60):
+            pass
+
+
 def start_grafana(a, trees_pr, out):
     """Grafana (Docker) with the three datasources and the pinned plugins; returns once its API answers.
 
@@ -377,6 +394,7 @@ def up(a):
         seed_bare_json_metric_fixture(st, end)
         seed_extraction_list_fixture(st, end)
         seed_field_sample_fixture(st, end)
+        seed_packed_unpack_fixture(st, end)
         ab.log(f"seeding Loki + VictoriaLogs: last {a.loki_hours}h")
         timed("seed_loki", st.seed, end - loki_start, end)
 

@@ -32,6 +32,13 @@ victorialogs: |
 consumers: [explore]
 cases:
   - semantics/translator-writes-unpack-as-unpack-json
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
 victorialogs_candidates:
   - id: pipe-unpack-json
     since: v1.40.0
