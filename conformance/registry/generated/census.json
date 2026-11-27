@@ -799,6 +799,9 @@
     "semantics/log-query-default-limit | compare:observed",
     "semantics/log-query-default-limit | gap:fixed",
     "semantics/log-query-default-limit | query",
+    "semantics/log-range-default-window | compare:observed",
+    "semantics/log-range-default-window | gap:fixed",
+    "semantics/log-range-default-window | query",
     "semantics/logfmt-drop-error-offset-count-failure | compare:observed",
     "semantics/logfmt-drop-error-offset-count-failure | gap:open",
     "semantics/logfmt-drop-error-offset-count-failure | query",
@@ -2354,8 +2357,8 @@
     "internal/proxy/parser_probe_window_test.go | loki_api_v1_query",
     "internal/proxy/parser_probe_window_test.go | loki_api_v1_query_range",
     "internal/proxy/parser_probe_window_test.go | semantics/instant-parser-probe-window",
+    "internal/proxy/parser_probe_window_test.go | semantics/log-range-default-window",
     "internal/proxy/parser_probe_window_test.go | semantics/parser-probe-drop-keeps-range",
-    "internal/proxy/parser_probe_window_test.go | semantics/request-time-bounds",
     "internal/proxy/parser_probe_window_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/pattern_cluster_test.go | drilldown/patterns-mined-differently",
     "internal/proxy/pattern_cluster_test.go | loki_api_v1_patterns",
@@ -3582,8 +3585,8 @@
     "test/e2e-compat/parser_error_matrix_test.go | semantics/pipeline-error-text-parity",
     "test/e2e-compat/parser_probe_drop_test.go | loki_api_v1_query",
     "test/e2e-compat/parser_probe_drop_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/parser_probe_drop_test.go | semantics/log-range-default-window",
     "test/e2e-compat/parser_probe_drop_test.go | semantics/parser-probe-drop-keeps-range",
-    "test/e2e-compat/parser_probe_drop_test.go | semantics/request-time-bounds",
     "test/e2e-compat/pattern_line_filter_captures_test.go | loki_api_v1_query",
     "test/e2e-compat/pattern_line_filter_captures_test.go | loki_api_v1_query_range",
     "test/e2e-compat/pattern_line_filter_captures_test.go | semantics/pattern-line-filter-invalid-captures",
@@ -3836,7 +3839,7 @@
   "counts": {
     "case_consumers": {
       "any": 50,
-      "api": 124,
+      "api": 125,
       "drilldown": 67,
       "explore": 270,
       "grafana-datasource": 4,
@@ -3865,7 +3868,7 @@
     "shape_covers_distinct": 119,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 505
+    "wired_items": 506
   },
   "gates": [
     "A/B shape selection",

@@ -397,6 +397,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/label-list-trailing-comma` — A label list with a trailing, doubled or leading comma, an empty drop or keep, or two names without a comma is Loki's 400 with Loki's tex... | this change | 0 | 0 |
 | `semantics/line-filter-error-quotes-the-run` — A line filter error quotes the run of line filters Loki builds together and names the filter Loki names (fixed) | #1242 | 0 | 0 |
 | `semantics/log-query-default-limit` — A range log query that sends no limit gets Loki's default of 100 entries (fixed) | pending | 0 | 0 |
+| `semantics/log-range-default-window` — A log query_range without start or end reads the hour before now, as Loki does (fixed) | #1832 | 0 | 0 |
 | `semantics/logql-unicode-runes` — LogQL reads the characters of every Unicode category as Loki's lexer does: only an ASCII digit starts a number, and the parser returns on... | this change | 0 | 0 |
 | `semantics/loki-error-phase-order` — A query with two errors answers the one Loki answers, in Loki's order of checks (fixed; residuals open) | #1580 | 0 | 0 |
 | `semantics/metadata-routes-validate-before-selector-rule` — Metadata routes report Loki's validation error of a query before `only label matchers` or `only log selector` (fixed for the tree checks) | TBD-PR | 0 | 0 |

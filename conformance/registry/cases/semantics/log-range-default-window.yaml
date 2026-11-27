@@ -1,0 +1,41 @@
+id: semantics/log-range-default-window
+title: "A log query_range without start or end reads the hour before now, as Loki does (fixed)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki reads a query_range that leaves start or end out with end now and start an hour (or `since`) before. The
+  proxy moves the bounds of a metric query through the step alignment (-align-queries-with-step, default on), but a
+  log query is not aligned: its read (`... | sort by (_time desc)`, limit) and the parser probe of a query naming
+  both `| json` and `| logfmt` went to VictoriaLogs with no time range. VictoriaLogs read the whole retention and
+  the answer held lines older than the hour (measured 2026-11-27 on Loki 3.7.10 and VictoriaLogs v1.54.0 and
+  v1.49.0: 46 lines where Loki answered 25, for a stream with lines from 100 to 10 minutes ago).
+
+  Fixed: the range handler sets a missing start or end to the window Loki reads the request with
+  (withLokiRangeBounds, lokiRangeBounds) before any read. A bound that does not parse is left as it is: the
+  handlers answer Loki's error for it. Found with the parser probe work of #1821.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | json | logfmt'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data.result]
+  expect: "Loki's lines of the last hour; the VictoriaLogs reads carry start and end."
+gap:
+  status: fixed
+  fixed_by: "#1832"
+  impact: api-only
+  effort: S
+  area: "internal/proxy/step_align.go withLokiRangeBounds, internal/proxy/proxy.go handleQueryRange"
+  loki: "end now, start an hour (or since) before end"
+  proxy: "the same window, set before any VictoriaLogs read"
+  planned_test: 'TestLogRangeWithoutBoundsReadsLokisWindow (internal/proxy), TestCompat_LogRangeWithoutBoundsReadsTheLastHour (test/e2e-compat, core)'
+  visual: none
+  visual_reason: 'an API window default; Grafana always sends start and end'
+  clusters: []

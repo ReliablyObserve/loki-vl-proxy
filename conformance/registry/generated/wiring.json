@@ -2127,6 +2127,10 @@
       "internal/proxy/limit_fallbacks_unreachable_test.go",
       "test/e2e-compat/log_query_default_limit_test.go"
     ],
+    "semantics/log-range-default-window": [
+      "internal/proxy/parser_probe_window_test.go",
+      "test/e2e-compat/parser_probe_drop_test.go"
+    ],
     "semantics/logfmt-existence-filter-ungrouped-sum": [
       "internal/proxy/ordered_json_vector_cache_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go"
@@ -2396,9 +2400,7 @@
       "internal/proxy/route_gate_test.go"
     ],
     "semantics/request-time-bounds": [
-      "internal/proxy/parser_probe_window_test.go",
-      "internal/proxy/time_bounds_test.go",
-      "test/e2e-compat/parser_probe_drop_test.go"
+      "internal/proxy/time_bounds_test.go"
     ],
     "semantics/reserved-field-name-case-outbound": [
       "internal/logsql/outbound_guard_test.go",
@@ -3360,7 +3362,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 774,
+  "registry_items": 775,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -4934,8 +4936,8 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/instant-parser-probe-window",
+      "semantics/log-range-default-window",
       "semantics/parser-probe-drop-keeps-range",
-      "semantics/request-time-bounds",
       "semantics/two-parsers-keep-one"
     ],
     "internal/proxy/pattern_cluster_test.go": [
@@ -7120,8 +7122,8 @@
     "test/e2e-compat/parser_probe_drop_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
-      "semantics/parser-probe-drop-keeps-range",
-      "semantics/request-time-bounds"
+      "semantics/log-range-default-window",
+      "semantics/parser-probe-drop-keeps-range"
     ],
     "test/e2e-compat/pattern_line_filter_captures_test.go": [
       "loki_api_v1_query",
@@ -7688,5 +7690,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 505
+  "wired_items": 506
 }

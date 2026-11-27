@@ -362,7 +362,7 @@ func BenchmarkParserProbeDrop(b *testing.B) {
 // The probe read start and end as sent, so without them it went to VictoriaLogs with no time range and VictoriaLogs
 // scanned the whole retention for the 25 newest lines (#1821). It now reads the window Loki reads the request with.
 //
-// conformance: semantics/parser-probe-drop-keeps-range, semantics/request-time-bounds, loki_api_v1_query_range
+// conformance: semantics/log-range-default-window, semantics/parser-probe-drop-keeps-range, loki_api_v1_query_range
 func TestRangeParserProbeReadsTheRequestWindow(t *testing.T) {
 	const query = `sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [5m]))`
 	endAt := strconv.FormatInt(parserProbeAt/1e9, 10)
@@ -460,7 +460,7 @@ func TestParserProbeDropRejectsOldCopies(t *testing.T) {
 // probe and the log read) carry that window. The step alignment moves only metric queries, so the log read went to
 // VictoriaLogs with no time range and VictoriaLogs read the whole retention.
 //
-// conformance: semantics/parser-probe-drop-keeps-range, semantics/request-time-bounds, loki_api_v1_query_range
+// conformance: semantics/log-range-default-window, semantics/parser-probe-drop-keeps-range, loki_api_v1_query_range
 func TestLogRangeWithoutBoundsReadsLokisWindow(t *testing.T) {
 	type read struct{ path, query, start, end string }
 	var mu sync.Mutex

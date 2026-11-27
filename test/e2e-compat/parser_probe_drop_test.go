@@ -30,10 +30,9 @@ func TestCompat_ParserProbeDropKeepsTheRange(t *testing.T) {
 		jsonLines.lines = append(jsonLines.lines, slidingLiveLine{ts: ts, msg: fmt.Sprintf(`{"route":"/r%d","msg":"tick"}`, i%3)})
 		logfmtLines.lines = append(logfmtLines.lines, slidingLiveLine{ts: ts, msg: fmt.Sprintf(`route=/r%d msg=tick`, i%3)})
 	}
+	// The lines are 20 to 80 minutes old: Loki answers them at once (its fresh-stream blank window holds recent
+	// data only), and every subtest fails on an empty Loki answer rather than comparing empty with empty.
 	ingestSlidingFixtures(t, jsonLines, logfmtLines)
-	// Loki answers a fresh stream's range metric queries empty for a while; wait until it holds both streams.
-	waitForLokiMetricDataSelector(t, jsonLines.selector())
-	waitForLokiMetricDataSelector(t, logfmtLines.selector())
 	for _, fx := range []struct {
 		name, pipe string
 		lines      slidingLiveFixture
@@ -75,7 +74,7 @@ func TestCompat_ParserProbeDropKeepsTheRange(t *testing.T) {
 // VictoriaLogs with no time range: it read the whole retention and answered lines older than the hour. Here the
 // stream holds lines from 100 to 10 minutes ago; the answer holds only the last hour's, as Loki's does.
 //
-// conformance: semantics/parser-probe-drop-keeps-range, semantics/request-time-bounds, loki_api_v1_query_range
+// conformance: semantics/log-range-default-window, semantics/parser-probe-drop-keeps-range, loki_api_v1_query_range
 func TestCompat_LogRangeWithoutBoundsReadsTheLastHour(t *testing.T) {
 	now := time.Now()
 	fx := slidingLiveFixture{app: fmt.Sprintf("range-no-bounds-%d", now.UnixNano())}
