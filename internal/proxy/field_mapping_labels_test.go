@@ -378,7 +378,8 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 		FieldMappingLabelModeBoth: {
 			labels:   []string{"cluster", "custom_team", "deployment_environment", "host_name", "k8s_namespace_name", "k8s_pod_name", "namespace", "ns", "pod", "service_name", "team"},
 			detected: []string{"custom_team", "host_name", "k8s_namespace_name", "k8s_pod_name", "namespace", "ns", "pod", "service_name", "team"},
-			answers:  []string{"host_name", "ns", "pod", "service_name", "team"},
+			// Every listed name of a mapped stream field.
+			answers: []string{"custom_team", "host_name", "k8s_namespace_name", "k8s_pod_name", "namespace", "ns", "pod", "service_name", "team"},
 		},
 	}
 	passthrough := map[FieldMappingLabelMode]want{
@@ -397,7 +398,7 @@ func TestFieldMappingLabelMode_Endpoints(t *testing.T) {
 		FieldMappingLabelModeBoth: {
 			labels:   []string{"cluster", "custom.team", "deployment.environment", "host.name", "k8s.namespace.name", "k8s.pod.name", "k8s_namespace_name", "namespace", "ns", "pod", "service.name", "service_name", "team"},
 			detected: []string{"custom.team", "host.name", "k8s.namespace.name", "k8s.pod.name", "k8s_namespace_name", "namespace", "ns", "pod", "service.name", "service_name", "team"},
-			answers:  []string{"host.name", "k8s_namespace_name", "pod", "service.name", "service_name", "team"},
+			answers:  []string{"custom.team", "host.name", "k8s.namespace.name", "k8s.pod.name", "k8s_namespace_name", "namespace", "ns", "pod", "service.name", "service_name", "team"},
 		},
 	}
 	for style, wants := range map[LabelStyle]map[FieldMappingLabelMode]want{LabelStyleUnderscores: underscores, LabelStylePassthrough: passthrough} {

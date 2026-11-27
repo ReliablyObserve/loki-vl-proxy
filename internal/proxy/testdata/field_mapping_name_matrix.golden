@@ -86,28 +86,28 @@ detected_fields: detected_level host.name host_name namespace service.name servi
 ## underscores/both/translated
 labels: k8s_node_name k8s_pod_name node nodename pod service_name
 detected_labels: k8s_node_name k8s_pod_name node nodename pod service_name
-series: nodename=node-a pod=api-1 service_name=api
-stream (categorize-labels): nodename=node-a pod=api-1 service_name=api
+series: k8s_node_name=node-a k8s_pod_name=api-1 node=node-a nodename=node-a pod=api-1 service_name=api
+stream (categorize-labels): k8s_node_name=node-a k8s_pod_name=api-1 node=node-a nodename=node-a pod=api-1 service_name=api
 structured metadata: custom_team=core host_name=host-a k8s_namespace_name=prod namespace=prod squad=core team=core
-stream (default encoding): custom_team=core host_name=host-a k8s_namespace_name=prod namespace=prod nodename=node-a pod=api-1 service_name=api squad=core team=core
+stream (default encoding): custom_team=core host_name=host-a k8s_namespace_name=prod k8s_node_name=node-a k8s_pod_name=api-1 namespace=prod node=node-a nodename=node-a pod=api-1 service_name=api squad=core team=core
 detected_fields: custom_team detected_level host_name k8s_namespace_name namespace service_name squad team
 
 ## underscores/both/native
 labels: k8s_node_name k8s_pod_name node nodename pod service_name
 detected_labels: k8s_node_name k8s_pod_name node nodename pod service_name
-series: nodename=node-a pod=api-1 service_name=api
-stream (categorize-labels): nodename=node-a pod=api-1 service_name=api
+series: k8s_node_name=node-a k8s_pod_name=api-1 node=node-a nodename=node-a pod=api-1 service_name=api
+stream (categorize-labels): k8s_node_name=node-a k8s_pod_name=api-1 node=node-a nodename=node-a pod=api-1 service_name=api
 structured metadata: custom.team=core host.name=host-a k8s.namespace.name=prod namespace=prod squad=core team=core
-stream (default encoding): nodename=node-a pod=api-1 service_name=api
+stream (default encoding): k8s_node_name=node-a k8s_pod_name=api-1 node=node-a nodename=node-a pod=api-1 service_name=api
 detected_fields: custom.team detected_level host.name k8s.namespace.name k8s.node.name k8s.pod.name namespace service.name service_name squad team
 
 ## underscores/both/hybrid
 labels: k8s_node_name k8s_pod_name node nodename pod service_name
 detected_labels: k8s_node_name k8s_pod_name node nodename pod service_name
-series: nodename=node-a pod=api-1 service_name=api
-stream (categorize-labels): nodename=node-a pod=api-1 service_name=api
+series: k8s_node_name=node-a k8s_pod_name=api-1 node=node-a nodename=node-a pod=api-1 service_name=api
+stream (categorize-labels): k8s_node_name=node-a k8s_pod_name=api-1 node=node-a nodename=node-a pod=api-1 service_name=api
 structured metadata: custom.team=core custom_team=core host.name=host-a host_name=host-a k8s.namespace.name=prod k8s_namespace_name=prod namespace=prod squad=core team=core
-stream (default encoding): nodename=node-a pod=api-1 service_name=api
+stream (default encoding): k8s_node_name=node-a k8s_pod_name=api-1 node=node-a nodename=node-a pod=api-1 service_name=api
 detected_fields: custom.team custom_team detected_level host.name host_name k8s.namespace.name k8s.node.name k8s.pod.name k8s_namespace_name namespace service.name service_name squad team
 
 ## passthrough/unset/translated
@@ -194,26 +194,26 @@ detected_fields: detected_level host.name namespace service.name service_name sq
 ## passthrough/both/translated
 labels: k8s.node.name k8s.pod.name node nodename pod service.name service_name
 detected_labels: k8s.node.name k8s.pod.name node nodename pod service.name service_name
-series: nodename=node-a pod=api-1 service.name=api service_name=api
-stream (categorize-labels): nodename=node-a pod=api-1 service.name=api service_name=api
+series: k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
+stream (categorize-labels): k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
 structured metadata: custom.team=core host.name=host-a k8s.namespace.name=prod namespace=prod squad=core team=core
-stream (default encoding): nodename=node-a pod=api-1 service.name=api service_name=api
+stream (default encoding): k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
 detected_fields: custom.team detected_level host.name k8s.namespace.name k8s.node.name k8s.pod.name namespace service.name service_name squad team
 
 ## passthrough/both/native
 labels: k8s.node.name k8s.pod.name node nodename pod service.name service_name
 detected_labels: k8s.node.name k8s.pod.name node nodename pod service.name service_name
-series: nodename=node-a pod=api-1 service.name=api service_name=api
-stream (categorize-labels): nodename=node-a pod=api-1 service.name=api service_name=api
+series: k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
+stream (categorize-labels): k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
 structured metadata: custom.team=core host.name=host-a k8s.namespace.name=prod namespace=prod squad=core team=core
-stream (default encoding): nodename=node-a pod=api-1 service.name=api service_name=api
+stream (default encoding): k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
 detected_fields: custom.team detected_level host.name k8s.namespace.name k8s.node.name k8s.pod.name namespace service.name service_name squad team
 
 ## passthrough/both/hybrid
 labels: k8s.node.name k8s.pod.name node nodename pod service.name service_name
 detected_labels: k8s.node.name k8s.pod.name node nodename pod service.name service_name
-series: nodename=node-a pod=api-1 service.name=api service_name=api
-stream (categorize-labels): nodename=node-a pod=api-1 service.name=api service_name=api
+series: k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
+stream (categorize-labels): k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
 structured metadata: custom.team=core host.name=host-a k8s.namespace.name=prod namespace=prod squad=core team=core
-stream (default encoding): nodename=node-a pod=api-1 service.name=api service_name=api
+stream (default encoding): k8s.node.name=node-a k8s.pod.name=api-1 node=node-a nodename=node-a pod=api-1 service.name=api service_name=api
 detected_fields: custom.team detected_level host.name k8s.namespace.name k8s.node.name k8s.pod.name namespace service.name service_name squad team

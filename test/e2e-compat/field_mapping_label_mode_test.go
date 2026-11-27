@@ -41,9 +41,10 @@ func TestCompat_FieldMappingLabelModes(t *testing.T) {
 		labels []string
 		answer string
 	}{
-		proxy.FieldMappingLabelModeUnset: {[]string{"k8s_namespace_name", "service_name"}, "k8s_namespace_name"},
-		proxy.FieldMappingLabelModeAlias: {[]string{"namespace", "service_name"}, "namespace"},
-		proxy.FieldMappingLabelModeBoth:  {[]string{"k8s_namespace_name", "namespace", "service_name"}, "namespace"},
+		proxy.FieldMappingLabelModeUnset:    {[]string{"k8s_namespace_name", "service_name"}, "k8s_namespace_name"},
+		proxy.FieldMappingLabelModeOriginal: {[]string{"k8s_namespace_name", "service_name"}, "k8s_namespace_name"},
+		proxy.FieldMappingLabelModeAlias:    {[]string{"namespace", "service_name"}, "namespace"},
+		proxy.FieldMappingLabelModeBoth:     {[]string{"k8s_namespace_name", "namespace", "service_name"}, "namespace"},
 	} {
 		t.Run(string(mode), func(t *testing.T) {
 			server := labelModeServer(t, func(cfg *proxy.Config) {
@@ -125,7 +126,11 @@ func TestCompat_FieldMappingLabelModes(t *testing.T) {
 					t.Errorf("stream %v lacks %s", stream, want.answer)
 				}
 				for _, other := range []string{"namespace", "k8s_namespace_name"} {
-					if _, ok := stream[other]; ok && other != want.answer {
+					// The both mode carries every listed name of the field.
+					if mode == proxy.FieldMappingLabelModeBoth && stream[other] != namespace {
+						t.Errorf("stream %v lacks %s", stream, other)
+					}
+					if _, ok := stream[other]; ok && mode != proxy.FieldMappingLabelModeBoth && other != want.answer {
 						t.Errorf("stream %v carries a second name of the field", stream)
 					}
 				}

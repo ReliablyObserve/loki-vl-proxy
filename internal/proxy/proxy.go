@@ -2315,8 +2315,8 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 					p.queryStatsLayer(endpoint, p.lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
 							p.alignToStepMiddleware(endpoint,
-								p.compatCacheMiddleware(endpoint, route,
-									p.requestTimeBounds(endpoint, h)))))))), p.rejectAdmission)))))
+								p.bothNamesLayer(endpoint, p.compatCacheMiddleware(endpoint, route,
+									p.requestTimeBounds(endpoint, h))))))))), p.rejectAdmission)))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the

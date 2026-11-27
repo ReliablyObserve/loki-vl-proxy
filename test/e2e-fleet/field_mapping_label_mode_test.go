@@ -244,7 +244,11 @@ func TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers(t *testing.T) {
 					t.Errorf("%s: stream %v lacks %s=%q", label, s.Stream, labelModeAnswerName[mode], ns)
 				}
 				for _, other := range []string{"namespace", "k8s_namespace_name"} {
-					if _, ok := s.Stream[other]; ok && other != labelModeAnswerName[mode] {
+					// The both mode carries every listed name of the field.
+					if mode == "both" && s.Stream[other] != ns {
+						t.Errorf("%s: stream %v lacks %s=%q", label, s.Stream, other, ns)
+					}
+					if _, ok := s.Stream[other]; ok && mode != "both" && other != labelModeAnswerName[mode] {
 						t.Errorf("%s: stream %v carries a second name of the field", label, s.Stream)
 					}
 				}
@@ -305,9 +309,9 @@ func TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers(t *testing.T) {
 		for _, name := range names {
 			got := ask(rep.replica, reqs[name])
 			checkMode(rep.replica, rep.mode, apps[0], name, got.body)
-			// Listings differ in every other mode; answers carry the alias in
-			// both, so only the default listing's streams differ from a's.
-			if name == "labels" || name == "detected_labels" || (name == "logs_by_service_streams" && rep.mode == "unset") {
+			// Listings differ in every other mode, and so do the streams: the
+			// default carries the last mapping, both every listed name.
+			if name == "labels" || name == "detected_labels" || name == "logs_by_service_streams" {
 				if got.body == first[name] {
 					t.Errorf("%s on %s (%s) answered a's alias answer", name, rep.name, rep.mode)
 				}
