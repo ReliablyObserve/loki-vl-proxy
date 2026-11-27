@@ -178,7 +178,7 @@ func recordEveryHistogram(m *Metrics, d time.Duration) {
 	m.RecordClientIdentityWithRoute("grafana", "query_range", "", d, 1)
 	m.RecordClientQueryLengthWithRoute("grafana", "query_range", "", 40)
 	m.RecordInternalOperation("translate_query", "translated", d)
-	m.RecordRequestFlow("query_range", "/loki/api/v1/query_range", RequestFlow{VLCalls: 1, VL: d})
+	m.RecordRequestFlow("query_range", "/loki/api/v1/query_range", RequestFlow{VLCalls: 1, VL: d, CacheReads: [3]int{1}})
 	m.RecordCacheLookup("l1_memory", "hit", time.Millisecond)
 	m.RecordQueryRangeWindowFetchDuration(d)
 	m.RecordQueryRangeWindowMergeDuration(d)
@@ -226,6 +226,7 @@ func TestDurationHistogramsExposeTheBuckets(t *testing.T) {
 				"loki_vl_proxy_upstream_calls_per_request": countBuckets,
 				"loki_vl_proxy_request_fanout":             flowFanoutBuckets,
 				"loki_vl_proxy_cache_lookup_seconds":       cacheLookupBuckets,
+				"loki_vl_proxy_cache_reads_per_request":    flowFanoutBuckets,
 			} {
 				got := bounds[family]
 				if len(got) != len(want)+1 {

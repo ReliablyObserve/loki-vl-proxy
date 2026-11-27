@@ -103,7 +103,7 @@ type Cache struct {
 	hitsOn        atomic.Bool
 	hitsMu        sync.Mutex
 	hits          map[string]uint32
-	startupTimer  *time.Timer
+	startupTimers []*time.Timer
 	handoverStats handoverCounters
 
 	// promoteBuf is a lossy ring buffer for deferred LRU promotion.
@@ -334,8 +334,8 @@ func (c *Cache) Close() {
 		close(c.done)
 	}
 	c.mu.Lock()
-	if c.startupTimer != nil {
-		c.startupTimer.Stop()
+	for _, t := range c.startupTimers {
+		t.Stop()
 	}
 	c.mu.Unlock()
 	if s := c.sizing; s != nil {

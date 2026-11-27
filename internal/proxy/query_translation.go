@@ -65,7 +65,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			proxyOverhead = 0
 		}
 		p.metrics.RecordUpstreamCallsPerRequestWithRoute(endpoint, route, telemetry.upstreamCalls)
-		p.metrics.RecordRequestFlow(endpoint, route, telemetry.flow.metricsFlow(elapsed))
+		flow := telemetry.flow.metricsFlow(elapsed)
+		flow.CacheReads = telemetry.cacheReads.counts()
+		p.metrics.RecordRequestFlow(endpoint, route, flow)
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)

@@ -160,8 +160,9 @@ memory-only replies. The Helm chart sets the flags, a grace period covering the
 HTTP drain and the flush, a preStop sleep, a startup probe for the index
 rebuild and a one-replica-at-a-time rollout with `cacheHandover.enabled=true`
 (chart README, "Rolling restarts with a warm cache"). The metrics are listed in
-[Observability](observability.md) (`loki_vl_proxy_cache_restart_*` and
-`loki_vl_proxy_cache_startup_l1_*`).
+[Observability](observability.md) (`loki_vl_proxy_cache_restart_*`,
+`loki_vl_proxy_cache_startup_l1_*` and, per tier at 1, 5 and 15 minutes after
+start, `loki_vl_proxy_cache_hit_ratio_since_start`).
 
 ### Restore from peers
 

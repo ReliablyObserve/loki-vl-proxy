@@ -805,6 +805,7 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_cache_restart_warm_outcome` | gauge | `source`, `outcome` | `Low` | 1 for `running`, or why the warm-up ended: `done`, `deadline`, `purged`, `clock_behind_flush`, `none` (no hand-over; for `peer`: no peer could send anything) |
 | `loki_vl_proxy_cache_restart_index_rebuild_duration_seconds`, `..._index_rebuild_entries` | gauge | `source` | `Low` | how long the disk cache's index rebuild took at start, before the proxy listened, and the records it holds (`source="disk"` only) |
 | `loki_vl_proxy_cache_startup_l1_requests`, `loki_vl_proxy_cache_startup_l1_hits` | gauge | none | `Low` | memory cache lookups and hits in the first 10 minutes after start, frozen after them: the start-up hit ratio with and without the warm-up |
+| `loki_vl_proxy_cache_hit_ratio_since_start` | gauge | `tier`, `minutes` | `Low` | share of a response cache tier's lookups that hit between the start and `minutes` (`1`, `5`, `15`) after it, per `tier` (`l1_memory`, `l2_disk`, `l3_peer`): live until those minutes have passed, then frozen for the life of the process. The lookups are those of `loki_vl_proxy_cache_tier_requests_total` (reads of the whole tier stack; memory-only reads are not in it), so the disk ratio is over the lookups memory missed and the peer ratio over those memory and disk missed. A tier without lookups in a window has no series. Prometheus and OTLP |
 | `loki_vl_proxy_translations_total` | counter | none | `Low` | successful LogQL to LogsQL translations |
 | `loki_vl_proxy_translation_errors_total` | counter | none | `Low` | failed translations |
 | `loki_vl_proxy_internal_operation_total` | counter | `operation`, `outcome` | `Medium` | named internal operations including translation, parser preference, rewrites and upstream body completion |
@@ -814,6 +815,7 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_internal_operation_duration_seconds` | histogram | `operation`, `outcome` | `Medium` | named-operation duration; backend_body_read includes HTTP and consumer time |
 | `loki_vl_proxy_request_phase_seconds` | histogram | `route`, `phase` | `Low` | time one client request spent per phase: `parse`, `translate`, `cache`, `vl`, `proxy` (the request's time minus `vl` and `cache`, so it includes `parse` and `translate`; an estimate when calls ran in parallel); a phase that did not run is not observed, `proxy` always is; Prometheus scrape only |
 | `loki_vl_proxy_request_fanout` | histogram | `route`, `kind` | `Low` | work one client request caused, observed for every request, zero included: `parse`, `translate`, `cache_lookup`, `cache_hit`, `vl_call` counts; buckets 0, 1, 2, 3, 5, 8, 13, 21, 34, 55; Prometheus scrape only |
+| `loki_vl_proxy_cache_reads_per_request` | histogram | `route`, `tier` | `Low` | cache tier reads one client request caused, per `tier` (`l1_memory`, `l2_disk`, `l3_peer`); what one read is: [Cache reads per request](#cache-reads-per-request). Observed for every request, zero included; a route has series once one of its requests has read a cache. Buckets as `request_fanout`. Prometheus and OTLP (OTLP names the route attribute `http.route`, as for the other route metrics) |
 | `loki_vl_proxy_cache_lookup_seconds` | histogram | `tier`, `result` | `Low` | time of one cache lookup by the tier that answered (`l1_memory`, `l2_disk`, `l3_peer`, `unknown` for a miss of the full stack) and `result` (`hit`, `miss`, `stale`); buckets from 10 microseconds; Prometheus scrape only |
 | `loki_vl_proxy_backend_read_bytes_total` | counter | `kind` | `Low` | consumed decoded VL HTTP body bytes recorded at close; fixed `raw`, `stats`, `metadata`, `other` kinds; not encoded network traffic or cache bytes; both Prometheus and OTLP |
 | `loki_vl_proxy_coalesced_total` | counter | none | `Low` | requests served from coalesced results |
@@ -1246,6 +1248,28 @@ Kubernetes notes:
 - For per-pod attribution in OTLP backends, set `OTEL_SERVICE_INSTANCE_ID` from pod name and `OTEL_SERVICE_NAMESPACE` from pod namespace (the upstream chart now injects these by default).
 - CI includes a metric-name guard so new app metrics must stay under the `loki_vl_proxy_*` prefix unless explicitly allowlisted for compatibility.
 
+### Cache reads per request
+
+One **read** is one cache lookup of a client request reaching one storage tier,
+whether the tier has the entry or not. A request's lookups are the ones
+`loki_vl_proxy_request_fanout{kind="cache_lookup"}` counts; each reads the
+attached tiers it reaches, in order, until one answers:
+
+| The lookup | `l1_memory` | `l2_disk` | `l3_peer` |
+|---|---|---|---|
+| of the tier stack, answered from memory | 1 | 0 | 0 |
+| of the tier stack, answered from disk | 1 | 1 | 0 |
+| of the tier stack, answered by a peer, or by no tier | 1 | 1 if a disk cache is attached | 1 if a peer cache is attached |
+| of memory only (hit, miss, expired entry) | 1 | 0 | 0 |
+| of an expired entry after a backend failure (memory, then disk) | 1 | 1 if memory had no usable value and a disk cache is attached | 0 |
+| of a disabled cache | 0 | 0 | 0 |
+
+- A disk hit is copied into memory, so the next lookup of the key reads memory only.
+- An `l2_disk` read is a lookup of the disk tier: its index may answer without touching the file, and a value still queued for writing is served from memory. The records read from the file are `loki_vl_proxy_cache_l2_read_seconds_count`, which also counts background and peer-serving reads and is not split by request.
+- An `l3_peer` read is a lookup reaching the peer tier. No request is sent when this replica is the key's only owner or the owner's breaker is open, and lookups that wait on one in-flight peer fetch each count one read.
+- Work shared by several requests counts for the request whose context runs it; a request waiting for it counts only its own lookups.
+- Not counted: reads outside a client request (background refreshes and warm-ups, the restart and peer restore, requests peers send to this replica), reads after the request ended, the label and metadata inventory's internal presence checks, and the translation memo.
+
 ### PromQL Drilldowns For Slowness And Client Errors
 
 Use these queries to quickly isolate downstream client pain, upstream slowness, and route-specific cache efficiency:
@@ -1263,6 +1287,8 @@ Use these queries to quickly isolate downstream client pain, upstream slowness, 
 | Cache lookups per request, p95 by route | `histogram_quantile(0.95, sum(rate(loki_vl_proxy_request_fanout_bucket{kind="cache_lookup"}[5m])) by (le, route))` |
 | Share of request time in cache vs VictoriaLogs, by route | `sum(rate(loki_vl_proxy_request_phase_seconds_sum{phase="cache"}[5m])) by (route) / sum(rate(loki_vl_proxy_request_phase_seconds_sum{phase=~"cache\|vl\|proxy"}[5m])) by (route)` and the same with `phase="vl"` (`parse` and `translate` run inside `proxy`, so leave them out of the denominator) |
 | Where the time goes (`cache`, `vl`, `proxy` add up to the request time; `parse` and `translate` are part of `proxy`) | `sum(rate(loki_vl_proxy_request_phase_seconds_sum{phase=~"cache\|vl\|proxy"}[5m])) by (phase)` |
+| Disk reads per request, mean by route | `sum(rate(loki_vl_proxy_cache_reads_per_request_sum{tier="l2_disk"}[5m])) by (route) / sum(rate(loki_vl_proxy_cache_reads_per_request_count{tier="l2_disk"}[5m])) by (route)` |
+| How cold a new replica is (first minute) | `loki_vl_proxy_cache_hit_ratio_since_start{minutes="1"}` |
 | p99 cache lookup time by tier | `histogram_quantile(0.99, sum(rate(loki_vl_proxy_cache_lookup_seconds_bucket{result="hit"}[5m])) by (le, tier))` |
 
 For latency histograms, keep dashboards on `p50`, `p95`, and `p99` rather than averages. Averages hide tail latency incidents. For exact proxy-only overhead, use structured logs (`proxy.overhead_ms`) alongside the latency histograms; subtracting histogram quantiles is not mathematically reliable.

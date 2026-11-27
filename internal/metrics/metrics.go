@@ -718,6 +718,7 @@ func writeCacheRestartMetrics(sb *strings.Builder, h cache.HandoverStats) {
 	sb.WriteString("# HELP loki_vl_proxy_cache_startup_l1_hits Memory cache hits in the first 10 minutes after start (frozen after them).\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_startup_l1_hits gauge\n")
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_startup_l1_hits %d\n", h.StartupL1Hits)
+	writeSinceStartRatios(sb, h)
 }
 
 // restoreMetric is one gauge of the warm-up's plan and progress; both

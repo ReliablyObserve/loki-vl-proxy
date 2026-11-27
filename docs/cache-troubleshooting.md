@@ -238,8 +238,11 @@ stores; with `-cache-reuse-protection-percent` the real memory tier is not
 plain LRU, so its ghosts approximate it.
 
 Cache lookups per client request are
-`loki_vl_proxy_request_fanout{kind="cache_lookup"}` (by route). The split of those
-lookups by tier is not measured. Requests that are never cached (the settled
+`loki_vl_proxy_request_fanout{kind="cache_lookup"}` (by route), and the tiers
+those lookups read are `loki_vl_proxy_cache_reads_per_request{route,tier}`
+([what one read is](observability.md#cache-reads-per-request)). How cold a
+restarted replica is shows in
+`loki_vl_proxy_cache_hit_ratio_since_start{tier,minutes}`. Requests that are never cached (the settled
 steps cache's `canceled`, `error`, `oversize`, `headers` and `evaluator`
 admission reasons above) are counted by the internal-operation metrics, not by
 these families. Eviction histograms observe only expiry and capacity evictions;

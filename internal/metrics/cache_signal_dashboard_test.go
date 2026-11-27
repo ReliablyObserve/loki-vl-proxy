@@ -5,8 +5,15 @@ import (
 	"encoding/json"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+)
+
+// readFamilies are the row's panels over the request-flow and start-up families, with the labels they group by.
+var (
+	readFamilies = []string{"loki_vl_proxy_cache_reads_per_request", "loki_vl_proxy_cache_hit_ratio_since_start"}
+	readLabels   = []string{"route"}
 )
 
 // The shipped dashboards' Cache efficiency row reads only the families and
@@ -63,14 +70,14 @@ func TestCacheEfficiencyDashboardRowMatchesTheExporters(t *testing.T) {
 		for _, target := range panel.Targets {
 			for _, name := range metricName.FindAllString(target.Expr, -1) {
 				family := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(name, "_bucket"), "_sum"), "_count")
-				if _, ok := signalFamilies[family]; !ok {
+				if _, ok := signalFamilies[family]; !ok && !slices.Contains(readFamilies, family) {
 					t.Fatalf("panel %q reads %s, which the signal exporters do not write", panel.Title, name)
 				}
 				shown[family] = true
 			}
 			for _, group := range grouping.FindAllStringSubmatch(target.Expr, -1) {
 				for _, label := range strings.Split(group[1], ",") {
-					if label = strings.TrimSpace(label); !signalSampleLabels[label] {
+					if label = strings.TrimSpace(label); !signalSampleLabels[label] && !slices.Contains(readLabels, label) {
 						t.Fatalf("panel %q groups by %q, not an exported label", panel.Title, label)
 					}
 				}
@@ -78,6 +85,11 @@ func TestCacheEfficiencyDashboardRowMatchesTheExporters(t *testing.T) {
 		}
 	}
 	for family := range signalFamilies {
+		if !shown[family] {
+			t.Errorf("no panel shows %s", family)
+		}
+	}
+	for _, family := range readFamilies {
 		if !shown[family] {
 			t.Errorf("no panel shows %s", family)
 		}

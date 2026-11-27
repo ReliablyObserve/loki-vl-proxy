@@ -52,7 +52,11 @@ proxy: |
   (loki_vl_proxy_cache_restart_warm_*, with source="disk"), as is the start-up
   index rebuild's duration; the log has the plan with an estimate, progress
   every 2 s, a warning when the timeout will cut it, and the end with the skips
-  by reason.
+  by reason. How cold a new process is shows in
+  loki_vl_proxy_cache_startup_l1_* (memory, first 10 minutes) and in
+  loki_vl_proxy_cache_hit_ratio_since_start{tier,minutes}: each tier's hit ratio
+  of the tier-stack lookups in the first 1, 5 and 15 minutes, live until the
+  window has passed and then frozen, absent for a tier without lookups.
   Batch proof (internal/cache/restore_test.go): batches are bounded, limits
   skip without losing later entries, queued and rewritten values win, a purge
   between batches or between a read and its admission wins, the disk order is
@@ -196,6 +200,7 @@ implementation:
   - internal/cache/restore_peer.go
   - internal/cache/peer_bulk_serve.go
   - internal/cache/peer_bulk_wire.go
+  - internal/metrics/cache_since_start_metrics.go
 
 decisions:
   - id: restore-at-lower-priority-than-queries
@@ -237,4 +242,21 @@ decisions:
     tests: [TestRestore_BatchesAreBoundedByBytes, TestRestore_APurgeDuringTheWarmUpWins, TestRestore_QueuedAndRewrittenValuesWinOverTheBatch, TestHandover_WarmPeakMemoryIsOneBatch, TestRestore_ReadAheadCoversTheRecordsAndStops]
     quality: 'The same entries restored, hottest first, under the same budgets, expiry, purge and no-overwrite rules; the disk recency stays as the ranks set it.'
     performance: 'BenchmarkRestoreWarm, BenchmarkRestoreShutdownFlush and BenchmarkRestoreIndexRebuild (internal/cache/restore_bench_test.go); opt-in gate TestRestoreWarm_ThroughputGate (400 MiB/s).'
+    pending: true
+  - id: start-up-hit-ratio-per-tier-and-window
+    chosen: 'The start-up window mechanism keeps every tier''s lookups and hits at 1, 5 and 15 minutes, beside the 10-minute memory figure, and exports one ratio per tier and window'
+    over: ['a second tracker beside the start-up window', 'one ratio over all tiers', 'exporting a window only once it has passed', 'a ratio of 0 for a tier without lookups']
+    why: |
+      Issue #1802 asks how cold a new replica is and for how long. The counters
+      are those of cache_tier_requests_total and cache_tier_hits_total, so no
+      read costs more. Per tier shows whether a cold replica is served by disk
+      or peers. Live-then-frozen is what the 10-minute figure already does; a
+      tier nobody read has no ratio.
+    evidence: |
+      TestSinceStartWindowsFreezeAfterEachWindow runs the real timers under a
+      synthetic clock: each window keeps its counts after it passes while the
+      later ones move. TestCacheHitRatioSinceStartExposition checks Prometheus
+      and OTLP.
+    code: [internal/cache/handover.go, internal/metrics/cache_since_start_metrics.go]
+    tests: [TestSinceStartWindowsFreezeAfterEachWindow, TestSinceStartCountsTheDiskTierAndStopsOnClose, TestCacheHitRatioSinceStartExposition]
     pending: true
