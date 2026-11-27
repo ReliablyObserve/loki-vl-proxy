@@ -3484,7 +3484,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		r = checked
 	}
 
-	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
+	// An instant query carries time, not start and end: the probe reads the
+	// window the query evaluates at that time.
+	logqlQuery = p.preferWorkingParserAt(r.Context(), logqlQuery, r.FormValue("time"))
 	unwrapLookup.setQuery(logqlQuery)
 
 	if spec, ok := p.bareParserMetricSpec(logqlQuery); ok {
