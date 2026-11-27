@@ -147,17 +147,25 @@ func (p *Proxy) bothNamesSkip(ctx context.Context, query string) (skip map[strin
 	return skip, all
 }
 
+// bothNamesParsers and bothNamesArenas are reused across answers.
+var (
+	bothNamesParsers fj.ParserPool
+	bothNamesArenas  fj.ArenaPool
+)
+
 // withBothNamesBody adds the names (addBothNames) to every stream and series
 // label object of a Loki answer: data.result[].stream, data.result[].metric
 // and the /series data[]. An answer it cannot read, or that gains no name, is
 // returned as it is.
 func (lt *LabelTranslator) withBothNamesBody(body []byte, skip map[string]bool) []byte {
-	var parser fj.Parser
+	parser := bothNamesParsers.Get()
+	defer bothNamesParsers.Put(parser)
 	v, err := parser.ParseBytes(body)
 	if err != nil || string(v.GetStringBytes("status")) != "success" {
 		return body
 	}
-	var arena fj.Arena
+	arena := bothNamesArenas.Get()
+	defer bothNamesArenas.Put(arena)
 	added := false
 	objects := v.GetArray("data")
 	if objects == nil {
@@ -170,7 +178,7 @@ func (lt *LabelTranslator) withBothNamesBody(body []byte, skip map[string]bool) 
 		}
 	}
 	for _, o := range objects {
-		if obj, err := o.Object(); err == nil && lt.addBothNamesFJ(obj, skip, &arena) {
+		if obj, err := o.Object(); err == nil && lt.addBothNamesFJ(obj, skip, arena) {
 			added = true
 		}
 	}
