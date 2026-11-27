@@ -576,6 +576,8 @@ func (p *Proxy) volumeNamesForRow(req volumeRequest, plan volumePlan, row map[st
 	if plan.unpackLevels {
 		ensureDetectedLevel(translated)
 	}
+	// A target label may be any name of a mapped field.
+	p.labelTranslator.addRequestedNames(translated, plan.keys)
 	for key := range plan.required {
 		if translated[key] == "" {
 			return nil
@@ -590,7 +592,7 @@ func (p *Proxy) volumeNamesForRow(req volumeRequest, plan volumePlan, row map[st
 					names = append(names, name)
 				}
 			}
-			return names
+			return append(names, p.labelTranslator.otherListedNames(translated)...)
 		}
 		for _, key := range plan.keys {
 			if translated[key] != "" {
