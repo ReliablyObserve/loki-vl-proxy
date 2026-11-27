@@ -383,26 +383,42 @@ def original_window_problems(wrapper, shape, rng, sample, meta, phase="matrix"):
         return ["invalid original-window source"]
     ref, old = proof.get("reference") or {}, proof.get("measured_reference") or {}
     target_urls = wrapper.get("target_urls") or {}
+    # Loki's whole request timed out and its answer was stitched from pieces (perf_matrix.stitched_reference):
+    # the measured Loki receipt is that timeout, and the reference is checked piece by piece below.
+    stitched = ref.get("reference_kind") == perf_matrix.STITCHED_KIND
     endpoints = {t: answers.source_endpoint(measured[t].get("request_url")) for t in measured}
     if not isinstance(target_urls, dict) or set(target_urls) != set(measured) or any(v is None for v in endpoints.values()) or endpoints["loki"] in (endpoints["base"], endpoints["pr"]):
         return ["invalid or proxy-as-Loki measured source"]
     for target in ("base", "pr", "loki"):
         receipt = old if target == "loki" else proof["targets"][target]
+        timeout = stitched and target == "loki"
         if (any(measured[target].get(k) != receipt.get(k) for k in ("status", "response_bytes", "body_sha256", "answer_proof"))
                 or measured[target].get("end") != end or measured[target].get("history_start") != proof["history_start"]
-                or type(receipt.get("response_bytes")) is not int or not 0 < receipt["response_bytes"] <= perf_matrix.CORRECTNESS_BODY_CAP
-                or not re.fullmatch(r"[0-9a-f]{64}", receipt.get("body_sha256") or "")):
+                or (not timeout or receipt.get("skipped") != "loki_timeout") and (
+                    type(receipt.get("response_bytes")) is not int or not 0 < receipt["response_bytes"] <= perf_matrix.CORRECTNESS_BODY_CAP
+                    or not re.fullmatch(r"[0-9a-f]{64}", receipt.get("body_sha256") or ""))):
             return ["original-window body provenance mismatch"]
         if (answers.source_endpoint(target_urls[target]) is None or measured[target]["request_url"] !=
                 perf_matrix.request_url(target_urls[target], shape, query, secs, step, end)):
             return ["measured request does not match declared target"]
-        if not (receipt.get("status") == 200 and receipt.get("answer_proof") == "answer" or
+        if timeout:
+            # A whole request that timed out, sent in this pass or (skipped) in an earlier one: nothing else.
+            if (not perf_matrix.timed_out_row(receipt) or receipt.get("answer_proof") is not None
+                    or receipt.get("skipped") not in (None, "loki_timeout")
+                    or receipt.get("skipped") and (receipt.get("response_bytes"), receipt.get("body_sha256")) != (None, None)):
+                return ["invalid original-window query contract"]
+        elif not (receipt.get("status") == 200 and receipt.get("answer_proof") == "answer" or
                 receipt.get("status") in (400, 422, 500) and str(receipt.get("answer_proof", "")).startswith("rejection:")):
             return ["invalid original-window query contract"]
+    if stitched:
+        problems = stitched_reference_problems(ref, shape, query, secs, step, end, target_urls["loki"])
+        if problems:
+            return problems
     extra, actual = proof.get("extra_reads"), ref.get("actual_query")
     if (type(extra) is not int or extra not in (0, 1) or ref.get("complete") is not True or ref.get("phase") != "original-window"
             or ref.get("original_query") != query or ref.get("end") != end or ref.get("history_start") != proof["history_start"]
-            or not isinstance(actual, str) or (extra == 0 and (actual != query or ref != old))
+            or not isinstance(actual, str) or (extra == 0 and (actual != query or (ref.get("correctness_query_mode") != "measured"
+                                                                                   if stitched else ref != old)))
             or extra == 1 and (ref.get("correctness_query_mode") != "space-tab-suffix-128"
                               or not actual.startswith(query) or len(actual) != len(query)+128 or set(actual[len(query):]) - {" ", "\t"})):
         return ["invalid original-window reference spelling"]
@@ -412,7 +428,7 @@ def original_window_problems(wrapper, shape, rng, sample, meta, phase="matrix"):
     url = perf_matrix.urllib.parse.urlsplit(ref["url"])
     expected = perf_matrix.urllib.parse.urlsplit(perf_matrix.request_url(target_urls["loki"], shape, actual, secs, step, end))
     rejection = isinstance(ref.get("answer_proof"), str) and ref["answer_proof"].startswith("rejection:")
-    cache = report.correctness_cache_projection(ref.get("cache_raw"))
+    cache = report.correctness_cache_projection(ref.get("cache_raw")) if not stitched else ref.get("cache")
     observation = report.metadata_observation(shape, ref) and extra == 0
     target_parities = {t: report.correctness_parity(shape, proof["targets"][t].get("facets")) for t in ("base", "pr")}
     if (url.scheme not in ("http", "https") or not url.netloc or
@@ -427,6 +443,42 @@ def original_window_problems(wrapper, shape, rng, sample, meta, phase="matrix"):
             or type(ref.get("response_bytes")) is not int or not 0 < ref["response_bytes"] <= perf_matrix.CORRECTNESS_BODY_CAP
             or not re.fullmatch(r"[0-9a-f]{64}", ref.get("body_sha256") or "")):
         return ["incomplete original-window reference body"]
+    return []
+
+
+def stitched_reference_problems(ref, shape, query, secs, step, end, loki_url):
+    """A stitched Loki reference (perf_matrix.stitched_reference): the pieces are exactly stitch_plan's for the
+    window, recomputed here, so no grid point is missing or asked twice; Loki computed and answered every piece;
+    and Loki's whole answer of a smaller window across the middle cut equals the stitched points there."""
+    problem = ["invalid stitched Loki reference"]
+    plan = perf_matrix.stitch_plan(end - secs, end, step)
+    pieces, actual = ref.get("partitions"), ref.get("actual_query")
+    if (len(plan) < 3 or ref.get("kind") != perf_matrix.STITCHED_KIND or ref.get("partition_s") != perf_matrix.STITCH_PARTITION_S
+            or not isinstance(pieces, list) or [(p.get("start"), p.get("end")) if isinstance(p, dict) else None for p in pieces] != plan):
+        return problem
+    def read(receipt, query_text, start, stop, computed=True):
+        url = perf_matrix.urllib.parse.urlsplit(receipt.get("url") or "")
+        wanted = perf_matrix.request_url(loki_url, shape, query_text, stop - start, step, stop)
+        expected = perf_matrix.urllib.parse.urlsplit(wanted)
+        projected = report.correctness_cache_projection(receipt.get("cache_raw"))
+        return (url.scheme in ("http", "https") and url.netloc
+                and answers.source_endpoint(receipt.get("url")) == answers.source_endpoint(wanted) is not None
+                and (url.path, url.query) == (expected.path, expected.query)
+                and receipt.get("status") == 200 and receipt.get("answer_proof") == "answer" and not receipt.get("warnings")
+                and type(receipt.get("response_bytes")) is int and 0 < receipt["response_bytes"] <= perf_matrix.CORRECTNESS_BODY_CAP
+                and re.fullmatch(r"[0-9a-f]{64}", receipt.get("body_sha256") or "")
+                and (not computed or projected is not None and receipt.get("cache") == projected and receipt.get("reference_skip") == ""))
+    if not all(read(p, actual, p["start"], p["end"]) for p in pieces) or ref.get("cache") != report.sum_cache(
+            [{"cache": p["cache"]} for p in pieces]):
+        return problem
+    check, middle = ref.get("whole_check") or {}, len(plan) // 2
+    start, stop = plan[middle - 1][0], plan[middle][1]
+    spelled = check.get("actual_query")
+    if (check.get("start") != start or check.get("end") != stop or stop - start >= secs or not isinstance(spelled, str)
+            or check.get("correctness_query_mode") != "space-tab-suffix-128" or check.get("correctness_cache_control") != "no-cache"
+            or not spelled.startswith(query) or len(spelled) != len(query) + 128 or set(spelled[len(query):]) - {" ", "\t"}
+            or not read(check, spelled, start, stop) or check.get("facets") != [] or check.get("matches") is not True):
+        return ["stitched Loki reference has no matching whole-request check"]
     return []
 
 
@@ -594,7 +646,13 @@ def runtime_api_problems(summaries, sel, meta=None, mode="auto", supported=True)
             for phase in passes:
                 problems.extend(f"runtime API proof: {key} {phase} {p}" for p in computed[phase])
             for target in ("base", "pr", "loki"):
-                if row.get("status", {}).get(target) not in ("200", "400", "422", "500"):
+                # Loki's whole request timed out on every run of every pass ("0"), and each run's answer was stitched
+                # from pieces, each pass's original window with a valid stitched proof: the answer is Loki's, the
+                # timing is not compared (over2x counts the row as Loki not 200).
+                stitched = (target == "loki" and row.get("status", {}).get(target) == "0" and not any(computed.values())
+                            and all(row.get("runtime_samples", {}).get(phase, {}).get(target, {}).get("stitched") == count
+                                    for phase, count in passes.items()))
+                if row.get("status", {}).get(target) not in ("200", "400", "422", "500") and not stitched:
                     problems.append(f"runtime API proof: {key} {target} missing or unusable status")
                 for signal in ("cold", "p50", "response_bytes"):
                     if not number(row.get(signal, {}).get(target)):

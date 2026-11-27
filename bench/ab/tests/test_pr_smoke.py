@@ -101,6 +101,72 @@ class RuntimeProofTest(unittest.TestCase):
         self.assertEqual(pr_smoke.report.correctness_parity({"path": "/loki/api/v1/patterns"},
                          [{"kind": "patterns", "detail": "different patterns", "documented": "drilldown/patterns-mined-differently"}]), "differs")
 
+    def test_stitched_loki_reference_proves_its_pieces_cuts_and_status(self):
+        """F1 (series-level-fine-step): Loki times out on the whole 24h request; its stitched answer is the reference."""
+        from copy import deepcopy
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import test_matrix_loop as loop
+        spec = pr_smoke.selection.load_shapes()
+        name = "F1 sum by over a ratio of two per-stream metrics, 20s step"
+        shape = next(s for s in spec["sets"]["series-level-fine-step"]["shapes"] if s["name"] == name)
+        fake = loop.StitchedReferenceTest()
+        fake.SHAPE = shape
+        raw = fake.run_matrix(fake.loki([]))
+        by_target = {}
+        for r in raw["rows"]:
+            by_target.setdefault(r["target"], []).append(r)
+        samples = pr_smoke.report.request_samples(by_target, 2, "loki", "pr")
+        wrapper = pr_smoke.report.original_window(by_target, "loki", raw["target_urls"])
+        meta = {"end": fake.END, "seed_s": 90000}
+        check = lambda item: pr_smoke.original_window_problems(item, shape, "24h-20s", samples["loki"], meta)
+        self.assertEqual(check(wrapper), [])
+        ref = lambda item: item["proof"]["reference"]
+        mutations = {
+            "hole": lambda w: ref(w)["partitions"].pop(3),
+            "overlap": lambda w: ref(w)["partitions"][3].update(end=ref(w)["partitions"][3]["end"] + 20),
+            "piece-cached": lambda w: ref(w)["partitions"][3]["cache_raw"]["result"].update(entriesFound=1),
+            "piece-failed": lambda w: ref(w)["partitions"][5].update(status=500),
+            "piece-from-proxy": lambda w: ref(w)["partitions"][5].update(url=ref(w)["partitions"][5]["url"].replace("http://loki/", "http://pr/")),
+            "piece-other-window": lambda w: ref(w)["partitions"][5].update(url=ref(w)["partitions"][6]["url"]),
+            "no-whole-check": lambda w: ref(w).pop("whole_check"),
+            "whole-check-differs": lambda w: ref(w)["whole_check"].update(matches=False, facets=[{"kind": "values"}]),
+            "whole-check-elsewhere": lambda w: ref(w)["whole_check"].update(start=ref(w)["partitions"][0]["start"]),
+            "whole-check-cached": lambda w: ref(w)["whole_check"]["cache_raw"]["result"].update(entriesFound=1),
+            "whole-check-plain": lambda w: ref(w)["whole_check"].update(actual_query=shape["query"]),
+            "loki-answered": lambda w: (w["proof"]["measured_reference"].update(status=200, signature="series=1"),
+                                        w["measured"]["loki"].update(status=200)),
+            "summed-cache": lambda w: ref(w).update(cache={"result": {"entriesFound": 0, "entriesRequested": 1}}),
+            "candidate-differs": lambda w: w["proof"]["targets"]["pr"].update(parity_vs_reference="differs", facets=[{"kind": "series"}]),
+        }
+        for mutation, change in mutations.items():
+            changed = deepcopy(wrapper)
+            change(changed)
+            self.assertTrue(check(changed), mutation)
+        # The cell's whole runtime proof: Loki's status stays the timeout ("0"), accepted only with every run stitched.
+        sel = {"sets": {"series-level-fine-step": [name]},
+               "runtime_proof": {"required": True, "cells": {f"series-level-fine-step/{name}": ["24h-20s"]}}}
+        revisions = {"base": "a" * 40, "head": "b" * 40}
+        cost = {"rss_max_sampled_bytes": 100, "rss_samples": 2, "cpu_samples": 2, "cpu_seconds": 0}
+        repeat = dict(cost, metric_runs_expected=1, rss_runs_measured=1, cpu_runs_measured=1)
+        for target in ("base", "pr"):
+            samples[target]["resource_runs"] = 2
+        times = dict(base=27.0, pr=27.0, loki=180.0)
+        row = dict(shape=name, range="24h-20s", status={"base": "200", "pr": "200", "loki": "0"}, cold=times, p50=times,
+                   response_bytes=times, parity_vs_reference="same", runtime_samples={"matrix": samples},
+                   original_window_correctness={"matrix": wrapper},
+                   reuse={t: {"cold": cost, "repeat": repeat} for t in ("base", "pr")})
+        summaries = [dict(set="series-level-fine-step", baseline="base", candidate="pr", reference="loki", rows=[deepcopy(row)],
+                          revision=revisions, profile=p) for p in pr_smoke.EXECUTION]
+        meta = dict(revisions, runs=2, end=fake.END, seed_s=90000)
+        self.assertEqual(pr_smoke.runtime_api_problems(summaries, sel, meta), [])
+        for mutation in ("one-run-not-stitched", "proof-broken"):
+            changed = deepcopy(summaries)
+            first = changed[0]["rows"][0]
+            if mutation == "one-run-not-stitched": first["runtime_samples"]["matrix"]["loki"]["stitched"] = 1
+            else: first["original_window_correctness"]["matrix"]["proof"]["reference"]["partitions"].pop()
+            problems = pr_smoke.runtime_api_problems(changed, sel, meta)
+            self.assertTrue(any("loki missing or unusable status" in p for p in problems), (mutation, problems))
+
     def fixture(self):
         name = next(sh["name"] for sh in pr_smoke.selection.load_shapes()["sets"]["control"]["shapes"] if pr_smoke.range_metric(sh))
         sel = {"sets": {"control": [name]}, "runtime_proof": {"required": True, "cells": {f"control/{name}": ["1h"]}}}

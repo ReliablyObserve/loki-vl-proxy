@@ -749,5 +749,142 @@ class ReplayedVerdictsTest(unittest.TestCase):
                                       row["status"]["loki"], False), "loki_failed")
 
 
+class StitchedReferenceTest(unittest.TestCase):
+    """A Loki that cannot answer a whole request: its answer is stitched from pieces of the same grid (AGENTS.md)."""
+    SHAPE = {"name": "F", "query": 'sum by (app) (count_over_time({env="p"}[5m]))'}
+    END = 1_800_000_060  # on the minute, not on the hour: the first and the last piece are partial
+
+    @staticmethod
+    def value(app, t):
+        return str((t // 20) % 7 + (1 if app == "a" else 3))
+
+    def loki(self, calls, cached=(), whole_limit=7200, boundary_shift=0):
+        """request_full for base, pr and a Loki that times out above whole_limit seconds; `cached` lists the plain
+        spelling's pieces (by end) that Loki's results cache answers whole; boundary_shift moves the whole-request
+        check's points (a Loki that would disagree at a cut)."""
+        def request(url, headers, tenant, timeout, **kwargs):
+            target = urllib.parse.urlsplit(url).netloc
+            params = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            start, end, step = int(params["start"][0]), int(params["end"][0]), int(params["step"][0])
+            spelled = params["query"][0] != self.SHAPE["query"]
+            calls.append((target, start, end, spelled, headers.get("Cache-Control")))
+            if target == "loki" and end - start > whole_limit:
+                return 0, b"timed out", 180.0, 1000, None
+            result = []
+            for app in ("a", "b"):
+                # b has samples only in the window's second half: a series that some pieces do not hold.
+                points = [[t, self.value(app, t)] for t in range(start, end + 1, step)
+                          if app == "a" or t >= self.END - 43200]
+                if target == "loki" and end - start <= whole_limit and end - start > 3600 and boundary_shift:
+                    points = [[t, str(int(v) + boundary_shift)] for t, v in points]
+                if points:
+                    result.append({"metric": {"app": app}, "values": points})
+            found = int(target == "loki" and not spelled and end in cached)
+            body = json.dumps({"status": "success", "data": {"resultType": "matrix", "result": result, "stats": {
+                "cache": {"result": {"entriesRequested": 1, "entriesFound": found}}}}}).encode()
+            return 200, body, 0.1, 1000 + len(calls), None
+        return request
+
+    def run_matrix(self, request, runs=2, known=None):
+        spec = {"ranges": {"24h-20s": [86400, 20]}, "sets": {"series-level-fine-step": {"description": "unit", "ranges": ["24h-20s"], "shapes": [self.SHAPE]}}}
+        with tempfile.TemporaryDirectory() as directory:
+            output, selection = os.path.join(directory, "raw.json"), os.path.join(directory, "selection.json")
+            with open(selection, "w") as handle:
+                json.dump({"runtime_proof": {"cells": {"series-level-fine-step/" + self.SHAPE["name"]: ["24h-20s"]}}}, handle)
+            argv = ["perf_matrix.py", "--set", "series-level-fine-step", "--runs", str(runs), "--end", str(self.END),
+                    "--range-plan", selection, "--out", output]
+            if known:
+                with open(os.path.join(directory, "first.json"), "w") as handle:
+                    json.dump(known, handle)
+                argv += ["--known-timeouts", os.path.join(directory, "first.json")]
+            for target in ("base", "pr", "loki"):
+                argv += ["--target", target + "=http://" + target]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(perf_matrix, "load_shapes", return_value=spec), \
+                    mock.patch.object(perf_matrix, "request_full", request), mock.patch.object(perf_matrix, "CPUSampler", FakeSampler), \
+                    mock.patch.object(perf_matrix.subprocess, "check_output", return_value="0\n"), \
+                    mock.patch.object(perf_matrix.urllib.request, "urlopen") as health, contextlib.redirect_stdout(io.StringIO()):
+                health.return_value.__enter__.return_value.status = 200
+                perf_matrix.main()
+            with open(output) as handle:
+                return json.load(handle)
+
+    def test_plan_covers_every_grid_point_once_and_cuts_on_the_hour(self):
+        for start, end, step in ((1_800_000_060 - 86400, 1_800_000_060, 20), (0, 7200, 60), (3600, 3600 * 5, 120),
+                                 (1_799_998_200, 1_800_003_600, 20), (40, 3640, 20)):
+            plan = perf_matrix.stitch_plan(start, end, step)
+            points = [t for s, e in plan for t in range(s, e + 1, step)]
+            self.assertEqual(points, list(range(start, end + 1, step)), (start, end, step))
+            self.assertEqual(plan[0][0], start)
+            self.assertEqual(plan[-1][1], end)
+            for (_, e), (s, _) in zip(plan, plan[1:]):
+                self.assertEqual(s, e + step)
+                self.assertEqual(s % perf_matrix.STITCH_PARTITION_S, 0)
+        self.assertEqual(len(perf_matrix.stitch_plan(1_800_000_060 - 86400, 1_800_000_060, 20)), 25)
+        for start, end, step in ((10, 7210, 20), (0, 7210, 20), (0, 7200, 0), (7200, 0, 20), (0.0, 7200, 20)):
+            self.assertEqual(perf_matrix.stitch_plan(start, end, step), [], (start, end, step))
+
+    def test_join_rejects_points_off_the_grid_and_repeats(self):
+        def piece(points):
+            return {"data": {"resultType": "matrix", "result": [{"metric": {"a": "1"}, "values": points}]}}
+        joined, problem = perf_matrix.stitch_join([((0, 40), piece([[0, "1"], [40, "2"]])), ((60, 100), piece([[100, "3"]]))], 20)
+        self.assertEqual((joined["data"]["result"], problem), ([{"metric": {"a": "1"}, "values": [[0, "1"], [40, "2"], [100, "3"]]}], ""))
+        for parts in ([((0, 40), piece([[50, "1"]]))], [((0, 40), piece([[30, "1"]]))], [((0, 40), piece([[40, "1"]])), ((40, 80), piece([[40, "1"]]))],
+                      [((0, 40), {"data": {"resultType": "vector", "result": []}})], [((0, 40), dict(piece([]), warnings=["w"]))]):
+            self.assertIsNone(perf_matrix.stitch_join(parts, 20)[0], parts)
+
+    def test_timed_out_loki_gets_a_stitched_reference_and_complete_samples(self):
+        calls = []
+        raw = self.run_matrix(self.loki(calls))
+        loki = sorted((r for r in raw["rows"] if r["target"] == "loki"), key=lambda r: r["run"])
+        self.assertEqual([(r["status"], r.get("skipped")) for r in loki], [(0, None), (0, "loki_timeout")])
+        self.assertTrue(all(r["stitched"]["complete"] and len(r["stitched"]["partitions"]) == 25 for r in loki))
+        self.assertEqual(loki[0]["seconds"], 180.0)  # the timing stays the whole request's timeout
+        proof = next(r for r in raw["rows"] if r["run"] == 0)["original_window_correctness"]
+        self.assertTrue(proof["complete"], proof.get("problem") or proof["reference"].get("problem"))
+        self.assertEqual(proof["extra_reads"], 0)
+        self.assertEqual(proof["targets"]["pr"]["parity_vs_reference"], "same")
+        check = proof["reference"]["whole_check"]
+        self.assertEqual((check["end"] - check["start"], check["matches"]), (7200 - 20, True))
+        # One whole timeout, 25 pieces per run, one whole-request check: nothing else reaches Loki.
+        self.assertEqual(sum(1 for c in calls if c[0] == "loki"), 1 + 25 * 2 + 1)
+        by_target = {}
+        for r in raw["rows"]:
+            by_target.setdefault(r["target"], []).append(r)
+        samples = report.request_samples(by_target, 2, "loki", "pr")
+        self.assertEqual({t: (v["complete"], v["measured"]) for t, v in samples.items()},
+                         {"base": (True, 2), "pr": (True, 2), "loki": (True, 2)})
+        self.assertEqual(samples["loki"]["stitched"], 2)
+        # A confirm pass that does not send Loki the whole request again still proves its original window.
+        confirm = self.run_matrix(self.loki([]), runs=3, known=raw)
+        first = next(r for r in confirm["rows"] if r["run"] == 0)["original_window_correctness"]
+        self.assertTrue(first["complete"], first)
+        self.assertEqual(first["measured_reference"]["skipped"], "loki_timeout")
+
+    def test_cached_pieces_are_read_again_and_a_cut_mismatch_is_no_reference(self):
+        calls = []
+        plan = perf_matrix.stitch_plan(self.END - 86400, self.END, 20)
+        raw = self.run_matrix(self.loki(calls, cached={plan[3][1]}))
+        proof = next(r for r in raw["rows"] if r["run"] == 0)["original_window_correctness"]
+        self.assertTrue(proof["complete"], proof)
+        self.assertEqual(proof["extra_reads"], 1)
+        spelled = [c for c in calls if c[0] == "loki" and c[3]]
+        self.assertEqual(len(spelled), 25 + 1)
+        self.assertTrue(all(c[4] == "no-cache" for c in spelled))
+        raw = self.run_matrix(self.loki([], boundary_shift=1))
+        proof = next(r for r in raw["rows"] if r["run"] == 0)["original_window_correctness"]
+        self.assertFalse(proof["complete"])
+        self.assertFalse(proof["reference"]["whole_check"]["matches"])
+        # A Loki that cannot answer the pieces either leaves no reference at all.
+        raw = self.run_matrix(self.loki([], whole_limit=0))
+        loki = [r for r in raw["rows"] if r["target"] == "loki"]
+        self.assertTrue(all(not r["stitched"]["complete"] for r in loki))
+        by_target = {}
+        for r in raw["rows"]:
+            by_target.setdefault(r["target"], []).append(r)
+        samples = report.request_samples(by_target, 2, "loki", "pr")
+        # The builds were measured on both runs (the window of each run is known); Loki's answer is missing.
+        self.assertEqual((samples["pr"]["measured"], samples["loki"]["measured"], samples["loki"]["complete"]), (2, 0, False))
+
+
 if __name__ == "__main__":
     unittest.main()
